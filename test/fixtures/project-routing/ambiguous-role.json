@@ -1,0 +1,6 @@
+{
+  "name": "Unknown file role requires clarification",
+  "scope": [{ "path": "assets/runtime.payload" }],
+  "expectedRoutes": ["ambiguous"],
+  "clarificationRequired": true
+}

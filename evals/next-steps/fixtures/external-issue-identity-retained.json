@@ -1,0 +1,51 @@
+{
+  "name": "external-issue-identity-retained",
+  "description": "Completed-run recommendation semantics; no work is executed.",
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "repository": "flow",
+    "provider": "github"
+  },
+  "pullRequest": 42,
+  "operations": {},
+  "snapshot": {
+    "completed": true,
+    "emitter": "apply",
+    "languageChat": "de",
+    "sourceAssociation": {
+      "kind": "external-issue",
+      "tool": "linear",
+      "reference": "OPS-17",
+      "connection": "established read-only fixture"
+    },
+    "outcome": {
+      "completedWork": ["Previous package completed"],
+      "delivery": "merged",
+      "externalIssueState": "retained-for-planning"
+    },
+    "retainedPlanningBasis": {
+      "body": "Independent documentation package is retained for planning; clarification is needed before implementation.",
+      "state": "retained-for-planning",
+      "approved": false,
+      "freshCompleteRead": true
+    },
+    "readContext": "No optional source context has been read. Use only the explicitly associated handles.",
+    "reportFacts": [
+      "The configured target is external, tracker.externalTool is linear, and its established connection has already supplied the complete OPS-17 record. OPS-17 is not a forge issue number."
+    ],
+    "availableExposedTools": [
+      "plan",
+      "plan-issue",
+      "docs",
+      "apply",
+      "merge-gate",
+      "iterate",
+      "pr",
+      "review",
+      "open-plans",
+      "build"
+    ]
+  },
+  "artifacts": {}
+}

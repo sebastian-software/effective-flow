@@ -1,0 +1,62 @@
+{
+  "name": "A lost activate response is settled by a fresh inventory that proves the generation active",
+  "harness": "claude",
+  "config": "true",
+  "inventory": "baseline",
+  "baselineEvidence": "ready",
+  "activation": "lost-response",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": "ambiguous:active",
+    "operations": [
+      "inventory",
+      "protocol",
+      "activate",
+      "inventory",
+      "start",
+      "start-packet",
+      "finish-packet",
+      "finalize"
+    ],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast"],
+        "fallback": "none",
+        "fastAttemptConsumed": true,
+        "attempt": "started"
+      }
+    ],
+    "incidents": [],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
+    "events": []
+  }
+}

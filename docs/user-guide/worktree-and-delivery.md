@@ -1,0 +1,455 @@
+# Worktree and Delivery
+
+As soon as an Effective Flow tool changes code, tests, or documentation (`build`, `fix`,
+`refactor`, `docs`, `maintain`, `apply`), the same question comes up twice: **where** does the
+work run, and **how** does the result come back into your target branch? The same delivery boundary
+also matters when [`/effective-flow deliver`](./tools-deliver.md#effective-flow-deliver) turns
+current-session local changes into a pull request. Two separate, independent configuration blocks
+govern the normal implementation path – `worktree` for the execution location and `delivery` for
+the delivery branch and its completion. The exact field values are in
+[Configuration](./configuration.md#block-worktree) – this guide explains the interplay.
+
+## Worktree: the execution location
+
+By default (`worktree.enabled: true`) the implementation runs in a Git worktree. When the
+session starts in the repository's main checkout, Effective Flow creates a separate worktree
+with its own branch. When the session already runs in a linked, user-created, or harness-native
+worktree, Effective Flow reuses it and does not create a nested one. The result is:
+
+- The repository's main checkout – including its uncommitted changes – stays untouched when
+  execution uses a separate worktree.
+- The entire run stays tied to one verified checkout instead of depending on ambient process
+  state.
+
+An Effective Flow-owned worktree is created under
+`<worktree.baseDir>/<repo-name>/<session-id>` (default base
+`.effective-flow/.worktrees`) via `git worktree add` together with the delivery branch. Only
+that newly created worktree runs automatic setup according to `worktree.setup`: lockfile-based
+dependency installation, no setup (`none`), or a command you specify. A reused worktree is
+assumed to have been prepared by its user or harness, so setup is not repeated unless you
+explicitly request it or a missing prerequisite requires a decision.
+
+Whoever explicitly wants to work in their current checkout – for example for a quick,
+non-delivered trial run – sets `worktree.enabled: false` or requests it explicitly in the task
+("without worktree", "directly on the current branch").
+
+### Verified execution-location receipt
+
+Before Effective Flow changes anything, it records and verifies an execution-location receipt:
+
+- the canonical repository identity (Git common directory), absolute execution root, and
+  absolute runtime-state root;
+- the expected branch, or an explicitly expected detached HEAD and exact commit;
+- whether the checkout is in-place, harness-managed, or Effective Flow-created;
+- who owns setup and cleanup, and which workflow or component owns the receipt.
+
+Every write-capable phase and delegated worker verifies that receipt before its first write and
+after a resume or Handoff. File operations use absolute paths; shell operations use the receipt
+root as their per-call working directory or use `git -C <root>`. Effective Flow never relies on
+a previous `cd` or on a subagent inheriting a persistent working directory.
+
+If the root, repository, branch, detached commit, or linked-worktree registration differs,
+Effective Flow stops before editing, setup, validation that may write caches, staging, commits,
+branch changes, or cleanup. It reports the expected and actual location and leaves all
+checkouts intact.
+
+The two roots deliberately serve different purposes:
+
+- `EXECUTION_ROOT` holds tracked code, tests, documentation, validation output, staging, and
+  commits. It changes when Effective Flow enters a delivery or component worktree.
+- `RUNTIME_STATE_ROOT` is the repository's verified main checkout. Effective Flow derives it
+  from the first record of `git worktree list --porcelain` before resolving a report or creating
+  a worktree, and keeps it unchanged for the run.
+
+Local reports, backlinks, `memory.json`, caches, migrations, and other `.effective-flow/` state
+use absolute paths below `RUNTIME_STATE_ROOT`. This also applies when a task starts in a linked
+or native worktree, so removing an Effective Flow-owned worktree cannot remove its report or
+memory. If the main checkout is bare, missing, moved, belongs to another repository, or a
+runtime path escapes through a symlink, Effective Flow stops without changing state. Ignore or
+tracked-state problems point to `/effective-flow setup`; Effective Flow does not fall back to a
+worktree-local runtime directory.
+
+### Persisted worktree lifecycle
+
+Every newly created Effective Flow delivery, partial-diff, plan-publication, or `apply-review`
+component worktree gets its own lifecycle record under
+`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/`. Effective Flow writes the record only after
+the execution-location receipt exists and records the repository and worktree identity, branch,
+branch creation commit (OID), workflow and purpose, ownership, timestamps, status, and
+branch-cleanup policy.
+Reused, user-created, and harness-managed worktrees do not receive Effective Flow ownership this
+way.
+
+The recorded `creationOid` is immutable evidence of where Effective Flow created the branch, not
+the branch's expected final tip. During cleanup, that commit must still resolve and remain an
+ancestor of the current recorded branch tip. Normal committed work therefore advances `HEAD`
+without invalidating the record. Rewritten or divergent history, including a branch tip that no
+longer descends from `creationOid`, blocks automatic cleanup.
+
+The lifecycle makes later cleanup explicit instead of relying on path or age heuristics:
+
+| Status                | Meaning and cleanup behavior                                                                                                 |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `active`              | The owning workflow may still be running or may have been interrupted unexpectedly. Cleanup keeps the worktree.              |
+| `cleanup-ready`       | The intended work is safely stored or integrated. Cleanup may remove the worktree if every fresh safety check also passes.   |
+| `aborted`             | The workflow stopped deliberately before cleanup eligibility. Cleanup keeps the worktree for inspection or recovery.         |
+| `failed`              | The workflow failed before cleanup eligibility. Cleanup keeps the worktree and its contents.                                 |
+| `cleanup-in-progress` | One verified actor has claimed the removal attempt. Other workflows and cleanup runs leave the worktree and claim untouched. |
+| `cleanup-failed`      | A normal removal attempt did not finish. A later cleanup may retry only after all safety checks pass again.                  |
+
+An `aborted` or `failed` record can return to `active` in exactly one case: a later run on the same
+published plan resumes the worktree the interrupted run left behind (see
+[Resumption by adoption](#resumption-by-adoption)). Nothing else adopts a worktree, and a
+user-created or harness-managed one is never adopted.
+
+All status changes use a per-record lock and fresh receipt, Git registration, and lifecycle
+checks. Before removing a worktree, the owning actor changes an eligible record to
+`cleanup-in-progress` with its run ID and timestamp. A foreign or apparently abandoned lock or
+claim is never broken automatically. There is no TTL, heartbeat, or stale-after setting: elapsed
+time cannot prove that a workflow has ended safely.
+
+The lifecycle record remains until worktree removal and any permitted branch follow-up are fully
+verified. If a crash happens between those steps, a later cleanup reconciles the registration,
+path, branch policy, and claim. It removes only its own record when the result is complete;
+otherwise it reports partial cleanup and preserves the remaining state.
+
+### Harness-native worktrees
+
+[Claude Code subagents](https://code.claude.com/docs/en/sub-agents) do not provide a portable
+arbitrary-CWD contract, while [Claude Code isolation](https://code.claude.com/docs/en/worktrees)
+creates a separate Claude-managed worktree. Effective Flow uses native isolation only for a
+self-contained delegation that does not need an already selected Effective Flow root; the two
+forms of isolation are never stacked.
+
+[Codex app worktrees and Handoff](https://learn.chatgpt.com/docs/environments/git-worktrees)
+remain Codex-managed. Effective Flow reuses such a worktree, revalidates it after Handoff or
+resume, and never removes it. A detached Codex worktree is accepted only while its recorded
+commit still matches; branch-based delivery first needs a branch created or adopted through
+the supported app flow and a new verified receipt.
+
+## Delivery: the delivery branch
+
+There is deliberately **no** dedicated `delivery.enabled` switch anymore. Delivery is always
+active whenever work happens in the worktree or on a dedicated delivery branch – in the
+default case, therefore, always. The delivery branch is named
+`<delivery.branchPrefix>/<skill>/<slug>` (e.g. `effective-flow/build/user-login`), derived from
+the plan title, task description, issue, or finding; on a name collision Effective Flow appends
+a numeric suffix and reports the chosen name. An empty `delivery.branchPrefix` drops the prefix and
+its slash, giving `<skill>/<slug>` (e.g. `build/user-login`). Empty is valid in every mode and is the
+default in [hidden mode](#hidden-mode).
+
+`delivery.baseBranch` serves as the starting point. Without that key, Effective Flow derives the
+default from the repository: `origin/` plus the branch `origin/HEAD` names, and `origin/main` only
+where that ref does not resolve. An explicitly configured value is used as written; where it names
+a different branch than `origin/HEAD`, the run names both once and suggests
+`git remote set-head origin -a`, without blocking anything. The value is a remote
+ref only when the part before its first `/` is a configured remote – local branch names carry
+slashes too, so `feature/foo` stays that branch, and a value without any `/` is never a remote
+ref. For a configured remote, Effective Flow first fetches the current state via `git fetch`, so
+the delivery branch does not start out stale; a failed fetch or resolution stops the run rather
+than quietly starting from a possibly stale local branch. Without that remote – a purely local project, for instance – no such ref can exist, so
+Effective Flow resolves the value locally: as it stands first, and only if that fails its local
+branch part (`main` for `origin/main`), reporting that substitution. If no candidate resolves, the
+run aborts instead of creating a base branch.
+
+Resolution records two results, and every later step uses one of them instead of re-reading the
+configured value:
+
+- the **resolved base ref** – what the delivery branch is created from and what a commit range is
+  computed against (`origin/main` for `origin/main`; `feature/foo` for a local `feature/foo`);
+- the **resolved local base branch** – the local branch that merge, switch-back, and the
+  pull-request target use (`main` for `origin/main`; `feature/foo` for a local `feature/foo`).
+
+### Delivering local changes from the current session
+
+`/effective-flow deliver` is the standalone bridge from uncommitted local work to a pull request.
+It derives a candidate file/state selection from concrete changes made in the current session,
+reconciles it with Git, and always asks you to confirm the complete ordered selection. Unstaged and
+untracked files can be selected. A partially staged file is shown as two choices – its staged state
+and its complete working-tree state. When session evidence is missing, contradictory, or admits
+several scopes, the tool asks for clarification; without an exact selection, it aborts before
+creating a branch or changing any index, commit, remote, or forge state.
+
+After selection, `deliver` proposes an ordered partition into coherent commits and asks you to
+confirm the exact paths, order, and tentative commit effect for every group. It then refreshes the
+configured base and creates a fresh `<delivery.branchPrefix>/deliver/<slug>` branch (or
+`deliver/<slug>` with an empty prefix) in an
+Effective Flow-owned worktree. Only the confirmed states are transferred. The source checkout may
+be dirty, detached, on the base branch, or harness-managed; once `deliver` has recorded its
+evidence, it remains unchanged, including its index and all non-selected files. The only earlier
+write is an optional fast-forward to the branch's upstream, which runs only when you confirm it
+before the selection (see
+[When your branch is behind its upstream](tools-deliver.md#when-your-branch-is-behind-its-upstream)).
+
+Each group is staged separately in the delivery worktree and committed through the staged-only
+`commit` tool. The pull request is opened through the commit-only `pr` tool only after all groups
+and the final clean branch have been verified. If a later group fails, the branch and worktree stay
+available with earlier commits and the remaining uncommitted groups exactly at that boundary;
+nothing is pushed, no pull request is opened, and successful commits are not rewritten.
+
+### In-place only, without worktree
+
+If `worktree.enabled: false` but a delivery action (PR, merge, branch) is still wanted,
+Effective Flow creates the delivery branch directly in the main repo instead of in a worktree. If
+your current working tree then contains uncommitted changes that should not become part of the
+delivery branch, Effective Flow asks, instead of silently staging, stashing, or overwriting them.
+
+### What gets committed and what stays local
+
+Of the Effective Flow artifacts, **only the plan file** is committed – and even that only if the
+workflow led one, and never in [hidden mode](#hidden-mode). All other `.effective-flow/` artifacts (`memory.json`, `cache.json`, local
+review reports, investigations, the worktrees themselves) remain pure bookkeeping in the main
+repo and are never carried into the delivery branch. Report-name collision checks and finding
+number reads/writes also inspect only that main-checkout runtime directory.
+
+Implementation workflows preserve any verified commits they created earlier, then inventory only
+their known residual output: code, tests, documentation, and the applicable plan state. They stage
+only those literal paths and delegate the actual commit to the staged-only `commit` tool. An extra
+changed path blocks delivery instead of being swept into the commit. The returned parent, branch,
+tree, and remaining state must match before the workflow can continue to PR or merge.
+
+## Completion action (`delivery.completion`)
+
+After the actual work is finished, `delivery.completion` (default `merge`) decides what happens
+with the finished delivery branch unless the current invocation contains one unambiguous,
+affirmative request for `pr`, `merge`, or `branch`:
+
+| Value    | Behavior                                                                                                                                                                                                         |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `merge`  | The branch is merged locally into the resolved local base branch via fast-forward or a merge commit. On a conflict, Effective Flow stops, leaves the branch, and informs you – no automatic conflict resolution. |
+| `pr`     | The branch is pushed, [`/effective-flow pr`](./tools-deliver.md) opens a pull request against the resolved local base branch.                                                                                    |
+| `branch` | The branch is simply left in the local repo; you decide later yourself about a PR or merge.                                                                                                                      |
+
+If `delivery.completion` is not set (`null`), Effective Flow asks again on every run for the
+desired action.
+
+`delivery.completion` also governs plan publication. With `pr` or `null`,
+[`/effective-flow plan`](./tools-understand.md#publishing-the-plan-as-a-draft-pull-request) offers
+to publish the finished plan as a draft pull request; with `merge`, `branch`, or no row at all, the
+plan stays local. An implementing run that finds such a pull request for its plan
+[continues on it](#continuing-on-a-published-plans-pull-request) and completes as `pr`, or stops
+when the effective completion is `merge` or `branch`.
+
+An explicit completion request has precedence over the configured value for that run. Effective
+Flow records the evidence before delivery setup and reports both values when, for example, an
+explicit request for `pr` replaces configured `merge`; it does not modify the project-setup ADR.
+Negated requests ("do not open a PR"), hypothetical or descriptive mentions, and a bare mention of
+an action are not overrides. Alternatives or simultaneous requests for several actions are
+ambiguous: Effective Flow asks you to choose one and aborts before delivery mutation if the choice
+remains unresolved.
+
+Invoking `/effective-flow deliver` is itself an affirmative request for `pr`. It always opens a
+pull request after successful commits and reports when this replaces a different configured
+completion action. It does not use `delivery.completion` as its default.
+
+After successful completion, Effective Flow removes a worktree only when its receipt proves
+that this workflow created that exact path and branch for the recorded purpose and a fresh
+verification confirms a clean, matching checkout. The delivery branch itself is retained in
+the local repo. Dirty, moved, missing, mismatched, user-created, and harness-managed worktrees
+stay in place and Effective Flow reports why. A retained Effective Flow-created worktree keeps
+its lifecycle record so a later [`/effective-flow cleanup`](./tools-setup.md#effective-flow-cleanup)
+can reassess it. Effective Flow never force-removes a worktree.
+
+### Updating existing pull requests
+
+If an already opened pull request needs subsequent changes, they always come as **new
+commits** on the same branch – never via `commit --amend`, interactive rebase, squash, or
+force-push. If a normal push fails because of diverged remote history, Effective Flow stops and
+reports the conflict, instead of overwriting the history.
+
+## Plan file: status change at the delivery point
+
+If the workflow led a plan file, Effective Flow marks it as implemented only right at the
+delivery point – that is, just before the PR is opened or the branch is merged – and archives it
+under `<plan.dir>/archive/`. This status change is committed along with it and is thus part of the
+PR or merge.
+
+What archiving does depends on the state the plan is in: a plan Git already tracks in the delivery
+checkout is renamed – the ordinary case for a published plan, which is tracked on its pull
+request's branch – a plan the planning run left untracked is written into the archive and added,
+and a plan an earlier run already archived is refreshed where it is rather than re-added at top
+level. The redundant, still untracked copy left behind where the plan was written is removed once
+the archived state is safely in the delivery branch and the copy has not changed in the meantime –
+that copy is what would otherwise make a later `git pull` refuse. That is your main checkout, or
+the checkout of the Claude Code or Codex worktree session in which the plan was written; the plan
+is also taken over from there, and a checkout that does not belong to this repository blocks
+archival. Details on the plan format are in [Understanding tools](./tools-understand.md).
+
+In [hidden mode](#hidden-mode) the plan lives only in your main checkout under
+`.effective-flow/plan/`, so there is nothing to commit. Whatever the delivery shape, Effective Flow
+marks the plan implemented and moves it to `.effective-flow/plan/archive/` in the main checkout
+with a no-clobber move. It first checks that the plan is ignored and untracked. It stages nothing,
+takes nothing into the delivery branch, and does not remove the main-checkout copy, because that
+copy is the only one. If a file already exists at the archive path, it stops, reports both paths,
+and changes nothing.
+
+## Continuing on a published plan's pull request
+
+When [`/effective-flow plan`](./tools-understand.md#publishing-the-plan-as-a-draft-pull-request)
+published a plan as a draft pull request, `build`, `fix`, `refactor`, and `docs` – directly or
+through `apply` – continue on that pull request instead of opening a second one. Once the base is
+resolved, a run whose source is a plan file looks for it. The check is skipped in
+[hidden mode](#hidden-mode) and for a plan under `<plan.dir>/archive/`.
+
+Discovery goes through the remote helper and uses only the marker it parses; no pull-request body or
+comment reaches the run. A marker-carrying pull request whose head branch is not in this repository
+– a fork's, a deleted fork's, or one whose repository the forge does not state, since discovery
+never reads a single pull request back – is ignored and reported, never blocking. A remaining candidate counts only when its marker names this plan, it
+is open and still a draft – a ready pull request, or one whose draft state the forge does not
+state, fails the check – its base is the resolved local base branch, and its branch changes nothing
+but the plan against the merge base with that base. A pure merge of the base into the head therefore
+passes.
+Because Git allows branch names such as `x/$(id)` or `a;b`, the head branch must first pass
+`git check-ref-format --branch`; a name that fails is reported as an unsafe head branch name and is
+never used in a command, and every command receives the name as one single-quoted argument. The
+head is never fetched with force: a head that cannot be fetched, such as one that was force-updated
+on the remote, is reported as "head could not be fetched", never as a change to other paths, and
+keeps failing the check until you run `git fetch` yourself. The outcome is one of:
+
+- **No plan pull request:** the run continues exactly as it would without one.
+- **Exactly one verified pull request:** the run continues on its head branch, with no new branch
+  name.
+- **Several, or one that fails a check:** the run stops and lists each with its number, URL, and
+  failed check. For a branch that changes a path other than the plan, the report adds that neither
+  `merge-gate` nor `iterate` finishes a plan pull request: neither archives the plan nor finishes
+  the draft.
+
+So do not run `merge-gate` or `iterate` on a plan pull request before `apply`: a commit they push
+onto the plan branch that changes a path other than the plan makes this verification fail.
+
+A found plan pull request fixes the completion action to `pr`. The run decides on the effective
+completion: an explicit request in the current invocation first, else the configured row, where a
+missing row means `merge`. An effective `merge` or `branch` stops the run and names the pull
+request, because the run never merges locally around an open draft. An explicit `pr` request
+continues and is reported as an override of a configured or missing `merge` or `branch` row. A
+`null` or invalid row is overridden, and both values are reported.
+
+If your local plan differs from the one on the pull request's branch, the run first scans the local
+plan with the same content check as `plan`'s publication. A high-confidence finding, or a scan that
+fails, stops the run before any question and names the findings by class, field and line, so
+**Republish** is never offered when it could only fail. Otherwise the run asks once, naming the
+audience and the remaining content-check findings exactly as `plan`'s publication question does: **Republish**
+commits your local version onto the plan branch as a new commit and continues, **Stop** ends the
+run and leaves both versions unchanged. A non-interactive run stops without asking. After
+**Republish**, the run requires the publication to report the pull request as updated, fetches the
+head again, and repeats every check and the plan comparison; anything else stops the run.
+
+### Discovery unavailable
+
+If discovery fails – a missing or unauthenticated CLI, an unsupported operation, an unreachable
+forge, or an unreadable answer – the run cannot rule out a plan pull request. When the effective
+completion is `merge` or `branch`, including a missing row, which means `merge`, it continues and
+reports that. When it is `pr` or `null` (an invalid row counts as `null`), an interactive run asks
+once: **Continue** delivers on a new branch as if no plan pull request existed, **Stop**
+ends the run before any branch, worktree, or commit exists. A non-interactive run stops.
+
+### Where the run works
+
+The run works on the pull request's head branch and never creates a branch with `-b`:
+
+- If your checkout already has that branch checked out, clean and at the pull request's head, the
+  run works there in place.
+- If another linked worktree holds the branch, the run tries
+  [resumption by adoption](#resumption-by-adoption). Any other holder or state stops the run and
+  names it.
+- If no checkout holds the branch, it creates a dedicated Effective Flow worktree for it. With
+  `worktree.enabled: false` it still does so and says so, because switching your checkout would
+  collide with its untracked copy of the plan.
+- In a Claude Code or Codex worktree session, that worktree is a **sibling** under the configured
+  base directory of your main checkout, never nested in the session's worktree, and the report says
+  that the changes live there.
+
+A missing local branch is created as a tracking branch at the pull request's head, and a local
+branch that is behind is fast-forwarded. A local branch that is ahead or has diverged stops the run.
+
+A run in place **without any delivery action** only looks for the plan pull request. If it finds a
+verified one, it stops before the plan is archived, because archiving the plan there would leave
+the pull request unfinished. With no plan pull request it continues, several candidates or a
+failing one stop it as above, and unavailable discovery is reported while the run continues
+without delivery.
+
+### Resumption by adoption
+
+A run that stopped or failed keeps its worktree and branch, with lifecycle status `aborted` or
+`failed`. Running the implementing tool on the same plan again resumes that worktree when exactly
+one lifecycle record matches it: the same repository, branch, and workflow, with a creation commit
+equal to the pull request's current head. Under the record lock, Effective Flow then proves a clean
+worktree on the exact branch, and the record returns to `active`. The retained setup is not
+repeated, and the commits the earlier run made count as this run's own. If no record or several
+match, or a proof fails, the run stops and names the retained worktree.
+
+### Finishing the pull request
+
+At the delivery point, the run first requires implementation evidence: its commits and remaining
+output must touch at least one path other than the plan and its archive path. Without it, the run
+ends in a controlled stop. It keeps the worktree and branch, archives nothing, pushes nothing, and
+leaves the draft untouched.
+
+With evidence, the plan is archived in the final commit like any tracked plan. The run asks
+`/effective-flow pr` to finish the draft only when that archive succeeded. When archival stopped
+instead, for example on a collision or a failed probe, the delivery still commits and pushes the
+implementation, but the pull request stays a draft and the report names the archival outcome.
+Otherwise `/effective-flow pr` reuses the draft and finishes it before any PR review is published.
+It derives the final Conventional-Commit title and description and updates the body while keeping
+the plan marker. Then it marks the pull request ready for review, always as the last change; on
+Forgejo, while the pull request is still a draft, the body is updated first and the retitle and the
+ready transition follow as one final title edit. If the handoff names the draft but `pr` finds no
+matching pull request, it stops instead of creating a new one. If one of these steps fails, the pull
+request stays a draft and the report names the step. Recover by running `/effective-flow pr` on that
+branch yourself.
+
+## Hidden mode
+
+With `visibility: hidden` (see [Configuration](./configuration.md#hidden-mode)), delivery leaves no
+trace of Effective Flow in the branch, its history, or the pull request:
+
+- Branch names use the empty default prefix, `<skill>/<slug>`. A prefix containing
+  `effective-flow` is rejected, and a slug derived from a title that names Effective Flow is
+  cleaned of the name when the branch is built (falling back to `change`), with the adjustment
+  reported.
+- Plans and concepts stay under `.effective-flow/` in the main checkout. Workers read the plan by
+  its absolute path there, and the delivery branch carries no path below `.effective-flow/`.
+- No commit message, branch name, pull-request title or body, or summary comment references a path
+  under `.effective-flow/` or names Effective Flow. `/effective-flow pr` references no plan file.
+- `delivery.prReview` is forced to `off`, so no review findings are posted on the pull request, and
+  comments posted by `iterate` carry no marker (see
+  [Remote tracker](./remote-tracker.md#hidden-mode)).
+
+## Interplay with `/effective-flow pr`
+
+At effective `pr` completion, the final step delegates to
+[`/effective-flow pr`](./tools-deliver.md#effective-flow-pr) with the exact prepared head branch,
+base branch, verified head OID, and successful commit-only handoff. `pr` creates no branch and
+accepts no working-tree content: it pushes only the verified commit range and handles PR creation
+or exact head/base reuse of a pull request from this repository, including host detection for `gh` or `tea` (see
+[Remote Tracker](./remote-tracker.md)). On a
+[published plan's pull request](#continuing-on-a-published-plans-pull-request) the handoff also
+names the draft, and `pr` finishes it instead of leaving the reused pull request untouched.
+
+A direct `pr` call requires a clean, attached, non-base checkout whose branch contains at least one
+commit against the refreshed base. Staged, unstaged, or untracked content makes the invocation
+abort rather than silently excluding it. Use `deliver` when local content still needs selection or
+isolation.
+
+## Distinction: the apply-review-specific worktree
+
+`applyReview.worktree.*` (see [Configuration](./configuration.md#block-applyreview)) is a
+**separate, independent** mechanism of [`/effective-flow apply`](./tools-implement.md) when
+working through review findings: it isolates the **parallel** processing of several findings in
+separate worktrees and brings their commits back onto your current branch via cherry-pick – so
+it creates **no** delivery branch in the sense of this guide. Both mechanisms can use the same
+physical `baseDir`, since they use different session and path segments; do not confuse them
+when configuring. Each component and the original integration root have separate receipts, and
+each Effective Flow-created component has a separate lifecycle record. A component becomes
+`cleanup-ready` only after successful integration and validation. Component cleanup requires
+proof that Effective Flow created that exact worktree; an aborted, failed, or ambiguously
+integrated component remains available for inspection.
+
+## See also
+
+- [Configuration](./configuration.md) – complete field reference for `delivery` and
+  `worktree`
+- [Implementation tools](./tools-implement.md) – tools that use this mechanism
+- [Delivery tools](./tools-deliver.md) – `/effective-flow deliver`, `commit`, and `pr`
+- [Troubleshooting](./troubleshooting.md) – worktree conflicts and uncommitted changes
+- [Glossary](./glossary.md) – worktree, delivery, delivery branch

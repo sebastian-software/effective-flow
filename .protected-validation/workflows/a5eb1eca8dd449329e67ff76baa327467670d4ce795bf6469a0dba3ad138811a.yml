@@ -1,0 +1,431 @@
+name: Release
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  release:
+    name: Release Please
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      delivery_commit: ${{ steps.deliver.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          # The delivery push must authenticate as the delivery GitHub App, which is
+          # the `main` ruleset's sole bypass actor. A persisted GITHUB_TOKEN lands in
+          # the repository git config as `http.https://github.com/.extraheader`, which
+          # outranks the credentials in the push URL and is inherited by `git worktree`
+          # — the push would run as github-actions[bot] and be rejected (issue #274).
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Format check
+        run: pnpm agent:check
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build distribution
+        run: node build.mjs
+
+      - name: Distribution and installation smoke tests
+        run: pnpm test:distribution
+
+      - name: Create release token
+        id: release-token
+        # Pinned to a commit rather than the movable `v3` tag: this step receives the release
+        # App's private key, so the trusted implementation must be immutable. Renovate keeps
+        # the pin current, as it already does for the pins in close-develop-issues.yml. The
+        # other create-github-app-token steps in this workflow are still on the tag — see the
+        # follow-up issue for making that consistent.
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: effective-flow
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Release Please
+        id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
+        with:
+          # Not redundant: the action defaults this input to `${{ github.token }}`, and
+          # GitHub restricts what events raised by the default token may start. The
+          # release pull request would be authored by github-actions[bot] and its CI
+          # would park in `action_required` forever (issue #279). The short-lived App
+          # token also avoids a long-lived, person-bound credential on the release path.
+          token: ${{ steps.release-token.outputs.token }}
+          # The default branch is the built delivery branch `main` (no source /
+          # no release-please config). release-please must target the source
+          # branch `develop`, where its config and manifest live.
+          target-branch: develop
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      - name: Package distribution
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        run: tar -czf "effective-flow-${{ steps.release.outputs.tag_name }}.tar.gz" -C dist .
+
+      - name: Upload release archive
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ steps.release.outputs.tag_name }}" "effective-flow-${{ steps.release.outputs.tag_name }}.tar.gz" --clobber
+
+      - name: Verify uploaded release archive
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          verify_dir="$(mktemp -d)"
+          asset="effective-flow-${{ steps.release.outputs.tag_name }}.tar.gz"
+          gh release download "${{ steps.release.outputs.tag_name }}" --pattern "$asset" --dir "$verify_dir"
+          node scripts/distribution-smoke.mjs archive "$verify_dir/$asset"
+
+      - name: Publish the verified release
+        # Immutable releases are enabled on this repository, and a published immutable release
+        # accepts no further asset. release-please therefore creates the release as a draft
+        # (`draft: true`, with `force-tag-creation: true` so the tag exists immediately), and
+        # it stays a draft until its archive is uploaded and verified above. Publishing comes
+        # before delivery to `main`.
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${{ steps.release.outputs.tag_name }}" --draft=false
+
+      - name: Create delivery token
+        id: delivery-token
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.DELIVERY_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DELIVERY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: effective-flow
+          permission-contents: write
+
+      - name: Deliver portable skill, consumer docs, and trusted automation to main
+        id: deliver
+        # The delivery branch `main` is the default branch, so it carries what a
+        # consumer sees: exactly one portable `effective-flow/` skill candidate
+        # PLUS the canonical root LICENSE, the consumer-facing docs — the
+        # marketing-entry README.md and docs/user-guide/ — and the trusted
+        # issue-closing workflow/helper. It deliberately does NOT carry
+        # docs/developer-guide/ (develop-only), CI, or release workflows.
+        # Consumers that do not run a build (dalo, `npx skills`) grab finished
+        # artifacts straight from here.
+        #
+        # It also carries a generated AGENTS.md plus a one-line CLAUDE.md importing it.
+        # Those exist because a coding agent working in a checkout of this branch loads
+        # CLAUDE.md unconditionally and reads nothing else on its own: the README footer
+        # already names `develop`, but nothing makes an agent read a README before it
+        # starts editing. Both are written by deliver-docs.mjs and reset by
+        # stage-delivery.mjs, so the delivered set stays declarative.
+        #
+        # deliver-docs.mjs rewrites developer-guide links in the delivered docs to
+        # absolute develop URLs (they would dangle on `main`) and appends a footer
+        # pointing contributors at `develop`. This appends a fresh commit — it never
+        # force-pushes — so consumer commit pins stay valid. Requires the delivery
+        # branch `main` to already exist (seeded once during the develop/main
+        # rollout); it does not run until a release is created.
+        #
+        # Renovate reads its config from the default branch, which is this delivery
+        # `main`. The delivered `renovate.json` is copied from the canonical root
+        # `renovate.json`, whose `baseBranchPatterns: ["develop"]` makes Renovate scan
+        # manifests and open update PRs against the source branch `develop`, not the
+        # config-less delivery `main`.
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        env:
+          DELIVERY_TOKEN: ${{ steps.delivery-token.outputs.token }}
+        run: |
+          # Bounded retry for every network operation on the delivery path. On 2026-08-19 a
+          # single transient HTTP 403 on the push stranded effective-flow-v1.60.1 permanently:
+          # every persistent precondition was verified unchanged, so the denial was
+          # GitHub-side and momentary, and there is deliberately no re-delivery path
+          # (issue #278). An in-run retry is NOT that rejected re-delivery: #278 rejects a
+          # re-delivery path in any form, because a workflow reaches `main` only through a
+          # *successful* delivery and would therefore first need the very thing it was meant to
+          # repair. A retry inside the already running release job needs nothing on `main`, so
+          # that reasoning stays untouched.
+          #
+          # The retried command runs in the `if` test position, which makes its exemption from
+          # `errexit` syntactically obvious at a glance.
+          retry() {
+            # Both counters are function-local. `retry` retries a named unit, so a unit that
+            # itself calls `retry` would otherwise reset the outer loop's shared `n` — silently
+            # collapsing three attempts to one, or never terminating. A local `attempts` also
+            # keeps the `[` test below from ever seeing an empty bound.
+            local attempts=3
+            local n=1
+            while :; do
+              if "$@"; then return 0; fi
+              # The command itself is deliberately not echoed: the push URL carries the
+              # delivery App installation token, and Actions masking must not be the only
+              # barrier keeping it out of the run log. The failing command's own stderr sits
+              # directly above this line and already identifies what failed.
+              if [ "$n" -ge "$attempts" ]; then echo "failed after $attempts attempts" >&2; return 1; fi
+              echo "attempt $n failed, retrying" >&2
+              sleep $(( n == 1 ? 5 : 15 ))
+              n=$(( n + 1 ))
+            done
+          }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Belt and braces with `persist-credentials: false` above: any surviving
+          # credential header outranks the delivery App token in the push URL and is
+          # inherited by the worktree below. `|| true` because the key is absent in the
+          # normal case and `git config --unset-all` exits 5 for a missing key under
+          # `bash -e`; a genuine failure still surfaces as a rejected push.
+          git config --unset-all http.https://github.com/.extraheader || true
+          retry git fetch origin main
+          work="$(mktemp -d)"
+          git worktree add --force "$work" origin/main
+          node scripts/stage-delivery.mjs "$work" "$GITHUB_REPOSITORY" develop
+          node scripts/distribution-smoke.mjs delivery "$work"
+          git -C "$work" add -A
+          if git -C "$work" diff --cached --quiet; then
+            echo "No delivery changes for ${{ steps.release.outputs.tag_name }}"
+          else
+            git -C "$work" commit -m "chore(delivery): ${{ steps.release.outputs.tag_name }}"
+            # Push with the dedicated delivery GitHub App token so it is the sole bypass
+            # identity once the `main` ruleset restricts direct pushes (issue #143).
+            retry git -C "$work" push "https://x-access-token:${DELIVERY_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main
+          fi
+          echo "commit=$(git -C "$work" rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git worktree remove --force "$work"
+
+      - name: Verify delivered commit
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        run: |
+          # Same bounded retry as the delivery step above, for the same 2026-08-19 v1.60.1
+          # incident: one transient failure here strands a released version just as the push
+          # does, and a stale read raises a `delivery-failed` alarm for a delivery that landed.
+          # An in-run retry is NOT the re-delivery rejected in issue #278: that rejection covers
+          # a re-delivery path in any form, because a workflow reaches `main` only through a
+          # *successful* delivery and would therefore first need the very thing it was meant to
+          # repair. A retry inside the already running release job needs nothing on `main`. Each
+          # `run:` block is its own shell, so each defines its own copy.
+          #
+          # The retried command runs in the `if` test position, which makes its exemption from
+          # `errexit` syntactically obvious at a glance and reads the same as the guarded
+          # returns in `confirm_delivered_commit` below.
+          retry() {
+            # Both counters are function-local. `retry` retries a named unit, so a unit that
+            # itself calls `retry` would otherwise reset the outer loop's shared `n` — silently
+            # collapsing three attempts to one, or never terminating. A local `attempts` also
+            # keeps the `[` test below from ever seeing an empty bound.
+            local attempts=3
+            local n=1
+            while :; do
+              if "$@"; then return 0; fi
+              # The command itself is deliberately not echoed: the push URL carries the
+              # delivery App installation token, and Actions masking must not be the only
+              # barrier keeping it out of the run log. The failing command's own stderr sits
+              # directly above this line and already identifies what failed.
+              if [ "$n" -ge "$attempts" ]; then echo "failed after $attempts attempts" >&2; return 1; fi
+              echo "attempt $n failed, retrying" >&2
+              sleep $(( n == 1 ? 5 : 15 ))
+              n=$(( n + 1 ))
+            done
+          }
+          # The fetch and the comparison are retried as ONE unit. Retrying the fetch alone
+          # would leave a read-after-write lag on `origin/main` failing the comparison for a
+          # delivery that actually landed, which contradicts the alarm's premise that an open
+          # alarm always means real, current drift.
+          confirm_delivered_commit() {
+            if ! git fetch origin main; then return 1; fi
+            if ! test "$(git rev-parse origin/main)" = "${{ steps.deliver.outputs.commit }}"; then return 1; fi
+            return 0
+          }
+          retry confirm_delivered_commit
+          verify_work="$(mktemp -d)"
+          git worktree add --detach "$verify_work" "${{ steps.deliver.outputs.commit }}"
+          node scripts/distribution-smoke.mjs delivery "$verify_work"
+          git worktree remove --force "$verify_work"
+
+      - name: Close a resolved delivery alarm
+        # A green delivery makes any open alarm obsolete. Closing it keeps the signal
+        # honest: an open alarm issue then always means real, current drift. Leaving
+        # resolved alarms open would teach the maintainer to skim past them, which is
+        # the exact failure mode issue #278 exists to fix.
+        #
+        # `continue-on-error` on purpose: the delivery has already succeeded by this
+        # point, and a stale open alarm is recoverable while a red run on a good
+        # delivery would erode trust in the very signal this adds.
+        # `success()` is spelled out rather than relied upon implicitly. A custom `if`
+        # without a status check function already gets `success()` applied, so this is a
+        # no-op — but the consequence of being wrong is a false "delivery succeeded"
+        # comment on a live alarm, and the implicit rule is easy to misread.
+        if: ${{ success() && steps.release.outputs.release_created == 'true' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # Closes every open alarm, not just the first. The workflow has no concurrency
+          # group, so two failing runs can race past the lookup below and open one alarm
+          # each; closing only one would leave a stale alarm behind forever, which is the
+          # noise this whole mechanism exists to avoid.
+          gh issue list --label delivery-failed --state open --limit 50 --json number --jq '.[].number' |
+            while read -r number; do
+              [ -n "$number" ] || continue
+              gh issue comment "$number" --body "Delivery succeeded for \`$TAG\`. Run: $RUN_URL"
+              gh issue close "$number"
+            done
+
+      - name: Report a failed delivery
+        # Detection already exists — `Verify delivered commit` above fails hard when the
+        # payload does not reach `main`. What was missing is visibility: `v1.53.0` and
+        # `v1.54.0` went undelivered for two releases because nobody was watching red
+        # release runs (issues #274, #278). A run notification scrolls past; an assigned
+        # issue stays in a list that gets worked.
+        #
+        # Gated on `release_created` so an ordinary red run — failing unit tests, a bad
+        # build — raises nothing: no release means no drift, and a signal that cries wolf
+        # gets ignored. `failure()` excludes cancellation, where the state is genuinely
+        # unknown and a false alarm would be worse than silence.
+        #
+        # The assignee is `github.actor`, the person whose push produced this release.
+        # NOT `github.repository_owner`: that is the `sebastian-software` organization,
+        # and GitHub accepts only user accounts with repository access as assignees.
+        # Assignment is best effort — losing the alarm would be worse than losing it.
+        #
+        # Repair is unchanged and deliberate: cut the next release. Re-delivery was
+        # considered and rejected in #278, because a workflow only becomes reachable on
+        # `main` after a successful delivery publishes it there.
+        if: ${{ failure() && steps.release.outputs.release_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          gh label create delivery-failed \
+            --description "A release was created but its delivery to main did not land" \
+            --color B60205 --force || true
+          # `origin/main` may be unfetched if the run failed before the delivery step;
+          # an unknown value is fine here, an aborted alarm is not.
+          delivered="unknown"
+          if git show origin/main:effective-flow/SKILL.md >/tmp/delivered-skill.md 2>/dev/null; then
+            delivered="$(sed -n 's/.*version \([^ )]*\).*/\1/p' /tmp/delivered-skill.md | head -n 1)"
+            delivered="${delivered:-unknown}"
+          fi
+          body="$(printf '%s\n' \
+            "Release \`$TAG\` was created, but the run then failed before the payload was confirmed on \`main\`." \
+            "" \
+            "- Released tag: \`$TAG\`" \
+            "- Currently delivered on \`main\`: \`${delivered:-unknown}\`" \
+            "- Failed run: $RUN_URL" \
+            "" \
+            "Consumers install from the default branch \`main\`, so they keep receiving the delivered version above until this is repaired." \
+            "" \
+            "**Repair:** cut the next release deliberately. There is no re-delivery path by design (#278) — a workflow only becomes reachable on \`main\` after a successful delivery publishes it there." \
+            "" \
+            "This issue closes itself once a later release delivers successfully.")"
+          existing="$(gh issue list --label delivery-failed --state open --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            # `gh issue create` prints the issue URL; it has no --json output. Assigning in a
+            # second call keeps a rejected assignee — a bot actor, or one without repository
+            # access — from aborting creation and costing the alarm itself.
+            url="$(gh issue create --title "Delivery to main failed for $TAG" --label delivery-failed --body "$body")"
+            gh issue edit "$url" --add-assignee "$ACTOR" || echo "Could not assign $ACTOR; $url stays unassigned"
+          fi
+
+  update-team-catalog:
+    name: Update team catalog
+    needs: release
+    # Disabled: the catalog side does not resolve `effective-flow` as a Dalo source, so Dalo exits
+    # with `unknown source` and this downstream job failed every created release — last seen on
+    # release 1.52.2 — marking an otherwise successful release run red. The job body is kept
+    # intact (scoped app tokens, checksum-pinned Dalo binary, pin update), so re-enabling is a
+    # one-line change once the target repository carries the reviewed `dalo.toml` declaration
+    # whose catalog ID is `effective-flow`: restore the gate on the `release` job's result and its
+    # created-release output. Until then the catalog pin is advanced manually.
+    if: false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Create Effective Flow source token
+        id: source-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.DALO_CATALOG_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DALO_CATALOG_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: effective-flow
+          permission-contents: read
+
+      - name: Create team catalog target token
+        id: target-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.DALO_CATALOG_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DALO_CATALOG_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: skills.sebastian-software.com
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Check out team catalog
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: sebastian-software/skills.sebastian-software.com
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.target-token.outputs.token }}
+          persist-credentials: false
+          path: team-catalog
+
+      - name: Install verified Dalo 0.9.2
+        env:
+          DALO_SHA256: 7f7b7b4948a5cd156948bb0a8ceaa4889c09cd6d53397c07370c663bac1343ef
+        run: |
+          package="dalo-0.9.2-x86_64-unknown-linux-musl"
+          archive="$package.tar.gz"
+          curl --fail --silent --show-error --location \
+            --output "$RUNNER_TEMP/$archive" \
+            "https://github.com/sebastian-software/dalo/releases/download/dalo-v0.9.2/$archive"
+          echo "$DALO_SHA256  $RUNNER_TEMP/$archive" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
+          install -m 0755 "$RUNNER_TEMP/$package/dalo" "$RUNNER_TEMP/dalo"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/dalo" --version
+
+      - name: Update Effective Flow team-catalog pin
+        env:
+          DALO_SOURCE_TOKEN: ${{ steps.source-token.outputs.token }}
+          GH_TOKEN: ${{ steps.target-token.outputs.token }}
+        run: |
+          node scripts/update-team-catalog.mjs \
+            --repo "$GITHUB_WORKSPACE/team-catalog" \
+            --delivery-commit "${{ needs.release.outputs.delivery_commit }}" \
+            --release-tag "${{ needs.release.outputs.tag_name }}"

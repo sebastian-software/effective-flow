@@ -1,0 +1,7 @@
+.claude/settings.local.json
+.DS_Store
+dist/
+dist.tmp/
+dist.bak/
+node_modules/
+.effective-flow/

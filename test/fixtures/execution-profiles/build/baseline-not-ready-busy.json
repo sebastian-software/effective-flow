@@ -1,0 +1,43 @@
+{
+  "name": "Another run in flight makes activate report busy, and the later start fails into an unmeasured run",
+  "harness": "codex",
+  "config": "true",
+  "inventory": "baseline",
+  "baselineEvidence": "ready",
+  "external": [
+    {
+      "at": "before-activate",
+      "operation": "start"
+    }
+  ],
+  "startResult": "INCOMPLETE_EVIDENCE",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "none",
+    "persistedGenerationState": "baseline",
+    "activation": "not-ready:busy",
+    "operations": ["inventory", "protocol", "activate", "start"],
+    "packets": [
+      {
+        "eligibility": "not-evaluated",
+        "selectedProfile": "quality",
+        "recorded": false,
+        "wire": null,
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": null
+      }
+    ],
+    "incidents": [],
+    "finalize": null,
+    "events": []
+  }
+}

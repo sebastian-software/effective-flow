@@ -1,0 +1,35 @@
+{
+  "name": "Enabled opt-in with generation review reads inventory and reserves nothing",
+  "harness": "claude",
+  "config": "true",
+  "inventory": "review",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "review",
+    "persistedGenerationState": "review",
+    "activation": null,
+    "operations": ["inventory"],
+    "packets": [
+      {
+        "eligibility": "not-evaluated",
+        "selectedProfile": "quality",
+        "recorded": false,
+        "wire": null,
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": null
+      }
+    ],
+    "incidents": [],
+    "finalize": null,
+    "events": []
+  }
+}

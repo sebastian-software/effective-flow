@@ -1,0 +1,125 @@
+{
+  "name": "A scope incident the refactor survives charges the Fast attempt, runs every later packet Quality, and completes by the comparison",
+  "harness": "codex",
+  "config": "true",
+  "inventory": "active",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/a.mjs"],
+      "initialOutcome": "scope-incident",
+      "incident": "scope"
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/b.mjs"]
+    }
+  ],
+  "refactor": {
+    "baseline": {
+      "requiredComparator": "available",
+      "optionalEvidence": "available",
+      "preExistingFailure": false
+    },
+    "rounds": [
+      {
+        "incorporation": true,
+        "phase5": "unchanged"
+      }
+    ]
+  },
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": null,
+    "operations": [
+      "inventory",
+      "start",
+      "start-packet",
+      "record-incident",
+      "finish-packet",
+      "start-packet",
+      "finish-packet",
+      "finalize"
+    ],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast", "quality"],
+        "fallback": "scope-incident",
+        "fastAttemptConsumed": true,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "scope-incident",
+        "fastAttemptConsumed": true,
+        "attempt": "started"
+      }
+    ],
+    "incidents": ["scope"],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 1,
+      "packets": [
+        {
+          "fallback": "scope-incident",
+          "escalated": true
+        },
+        {
+          "fallback": "scope-incident",
+          "escalated": true
+        }
+      ]
+    },
+    "events": [],
+    "refactor": {
+      "comparator": "available",
+      "rounds": [
+        {
+          "phase3": "initial",
+          "incorporation": "quality",
+          "comparison": "no-regression"
+        }
+      ],
+      "validation": {
+        "status": "passed",
+        "requiredCount": 2,
+        "totalCount": 3,
+        "satisfiedCount": 2
+      },
+      "review": {
+        "status": "completed",
+        "severityCounts": {
+          "critical": 0,
+          "important": 0,
+          "note": 0
+        }
+      },
+      "externalReview": "finalized",
+      "completionStatus": "completed"
+    }
+  }
+}

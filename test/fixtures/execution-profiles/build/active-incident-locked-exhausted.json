@@ -1,0 +1,74 @@
+{
+  "name": "A record-incident that stays LOCKED after its retries reports a value-free alert and persists on a confirmed retry",
+  "harness": "codex",
+  "config": "true",
+  "inventory": "active",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"],
+      "incident": "data-integrity",
+      "incidentLocked": 3,
+      "incidentRetry": "Retry"
+    }
+  ],
+  "completion": "failed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": null,
+    "operations": [
+      "inventory",
+      "start",
+      "start-packet",
+      "record-incident",
+      "record-incident",
+      "record-incident",
+      "record-incident",
+      "finish-packet",
+      "finalize"
+    ],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast"],
+        "fallback": "none",
+        "fastAttemptConsumed": true,
+        "attempt": "started"
+      }
+    ],
+    "incidents": ["data-integrity"],
+    "finalize": {
+      "completionStatus": "failed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
+    "events": [
+      {
+        "kind": "alert",
+        "operation": "record-incident",
+        "report": "value-free-alert"
+      },
+      {
+        "kind": "ask",
+        "topic": "retry-incident"
+      }
+    ]
+  }
+}

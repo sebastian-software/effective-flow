@@ -1,0 +1,348 @@
+# Tool reference: Implement a change
+
+This group leads from the clarified plan or issue to finished code. Four of the seven Tools
+(build, fix, refactor, docs) share the same base pattern; `apply` is the pure
+router, `maintain` runs recurring maintenance without plan input (see below), and
+`iterate` continues an already-delivered change:
+
+- They can be started directly with a requirement **or** reference a plan file already
+  produced by `/effective-flow plan`. A referenced plan file must first
+  pass the **clarification gate** (sufficiently concrete acceptance criteria, affected
+  files, no open core questions); if it doesn't, the tool points to
+  `/effective-flow plan` or `/effective-flow review <plan file>`.
+- With delivery/worktree mode active, the actual implementation runs in a separate
+  delivery branch or worktree; at the end there is a completion action (`pr`, `merge`, or
+  `branch`). One unambiguous affirmative request for exactly one of those actions in the current
+  invocation overrides `delivery.completion` for that run, and the result reports both the
+  configured value and the applied override. Negated, hypothetical, descriptive, or merely
+  mentioned actions are not overrides; ambiguous alternatives trigger a question and abort before
+  delivery mutation if unresolved. For details see
+  [Worktree and delivery](worktree-and-delivery.md#completion-action-deliverycompletion).
+  `/effective-flow apply` itself implements nothing, it only delegates.
+- At handback, implementation workflows preserve any verified commits already created, then stage
+  only the literal paths in their recorded residual output. They delegate the actual commit to the
+  staged-only `commit` tool and verify its parent, branch, tree, and remaining state. Only a
+  successful committed handoff may reach commit-only `pr`; an unknown extra path blocks delivery
+  instead of being added implicitly.
+- Before implementation starts, they declare one measurable completion condition derived from the
+  acceptance criteria and the validation plan, and they verify it through the validator and the
+  routed reviewers rather than by self-assessment. Correction rounds are bounded; if the condition
+  still does not hold, the tool escalates to you instead of looping on.
+- Every run maintains a visible overview of the known remaining phases and reconciles it before
+  reporting completion. After each major phase, it reports the result and next step in chat, then
+  continues with the next step unless an approval gate or a genuine blocker requires input. If task
+  tracking is unavailable or fails irrecoverably, the overview and subsequent progress move to
+  chat; the exact visual presentation remains up to the harness.
+- Before analysis, they review the available host skills (see
+  [Skill discovery](skill-discovery.md)) and respect their respective
+  write boundary.
+- `build`, `fix`, `refactor`, and `maintain` run a **mandatory documentation sync gate** right
+  after their implementation phase. It is not skippable: for every documentation surface the
+  change could invalidate — in-code documentation and CLI help, user-facing documents, technical
+  documents, repository convention files — the run records one verdict. Either the surface was
+  updated, or it demonstrably has no impact (a bare "not relevant" does not count), or it is
+  blocked. A blocked surface is current-scope and stops completion the same way an active-slice
+  defect does. When the tool runs non-interactively — its caller announced a non-interactive run
+  state, or, without that announcement, it runs as a sub-run of `apply-review`, `apply-issues`, or
+  `iterate` (a gated `iterate` announces nothing to its items, so this sub-run rule decides for
+  them) — it is returned to the owner for correction; it is never exported as an
+  `/effective-flow docs` finding. Most small
+  changes end in "no impact" verdicts — the gate makes documentation debt visible, it does not
+  manufacture busywork.
+- `build`, `fix`, and `refactor` capture a **diff baseline** of the working tree right before
+  their first implementation write (`refactor` after its behavior baseline). Whenever a step needs
+  "the files this run changed", they compute the delta since that point, so edits that already
+  existed when the run started never count as the run's change. That one path list drives the
+  documentation sync gate, validator routing, reviewer routing and, in `build`, the formatter.
+  Each reviewer receives the diff and assesses the hunks of its own routed paths instead of
+  relying on the implementer's report. When `iterate` or `apply-review` runs several items in one
+  checkout, each item's delta is limited to its own files. An aborted run leaves its snapshot under
+  `.effective-flow/runs/<RUN_ID>/diff-baseline/` for
+  [`/effective-flow cleanup`](tools-setup.md#effective-flow-cleanup).
+- They classify affected files or domains independently. Specialized JavaScript/TypeScript,
+  Node.js, and Rust routes remain preferred; other clearly identified product code uses a
+  disclosed reduced-depth product route; tooling and configuration use a separate tooling-only
+  route. See [Language support](language-support.md).
+
+`<plan.dir>` is the `plan.dir` value from the Effective Flow project-setup ADR (default
+`docs/plan`; see [Configuration](configuration.md#block-plan)).
+
+## `/effective-flow apply`
+
+**Purpose:** Pure entry router. Takes any apply source – plan file,
+local review report, direct review finding, legacy review epic, or any tracker issue –, classifies
+it via the shared apply-source detection, and delegates to the responsible internal tool
+(internally `apply-plan`, `apply-review`, or `apply-issues`; these are not directly callable via
+`/effective-flow`). `apply` implements nothing itself.
+
+**When to use:** As the standard entry point to implement a finished source, without having to
+decide yourself which tool is responsible.
+
+**Typical call:** `/effective-flow apply [<plan file>|<report path>|<issue reference>]`
+
+**Input/output:** Without an argument, `apply` lists local candidates (open plans from
+`<plan.dir>/`, report files under `.effective-flow/review/`) and, on a tracker target, additionally
+open direct review findings plus legacy review epics without listing their children twice, and then
+asks for the concrete source. The output consists of the
+detected source type, the resolved handle, and the started target tool. For an issue or remote
+review finding that will be implemented, the owning internal workflow first passes clarification
+and approval, then advances the work item at least to started immediately before it delegates the
+first code change. Forge issues use `effective-flow-issue-in-progress`; external issues use the
+freshly validated native state from `tracker.externalStartedState`. A failed transition stops that
+item before code changes.
+
+Review re-entry is fail-closed: only a fresh explicit `admitted` record is implementable. A legacy
+open or Important finding is re-evaluated. Credible incomplete high risk is `uncertain` and blocks
+for evidence/containment; a sub-threshold finding is terminally `closed` with an idempotent receipt,
+not converted into an ADR.
+
+**Interplay:** Pure classification and routing layer; implementation, validation,
+review, and commit preparation lie entirely with the respective target tool. With an
+ambiguous or mixed source type, `apply` asks instead of guessing heuristically. The internal
+issue-owning workflow also writes the pull request's lifecycle receipt and later hands observation
+to [`/effective-flow merge-gate`](./tools-deliver.md). Delegated `build`, `fix`, `refactor`, and
+`docs` runs do not repeat the tracker transition. Skipped, `wontfix`, terminal, container-only, and
+failed-before-start items remain unchanged. If an issue is already in progress but no unique prior
+delivery can be recovered from its comments and one exact-reference PR search, `apply` fails closed
+instead of resetting or implementing it again.
+
+## `/effective-flow build`
+
+**Purpose:** Orchestrates the complete feature workflow: intent gate, optional planning via
+`/effective-flow plan`, implementation, documentation, tests, validation, review, and completion.
+
+**When to use:** New functionality, a new UI element, a new page, a new integration, or
+changed user behavior. If the intent is instead detected as a bugfix, refactoring, or pure
+documentation, `build` refers to `/effective-flow fix`, `/effective-flow refactor`, or `/effective-flow docs`
+and terminates.
+
+**Typical call:** `/effective-flow build <requirement>` or `/effective-flow build <plan file>`
+
+**Input/output:** Input is the feature requirement or a referenced plan file.
+Output is the code changes including tests and docs, an updated plan file (status
+`Umgesetzt`/`Implemented`, review-findings summary, archived under `<plan.dir>/archive/` – by a
+rename or an add, depending on whether the plan was already tracked, and never re-added at top
+level if an earlier run already archived it) as well as – with delivery/worktree mode active – a
+delivery branch with PR, merge, or left-standing branch.
+
+**Interplay:** Delegates internally per affected file/domain to specialized or reduced-depth
+implementer and reviewer workers, plus repository-native test, validation, and documentation
+workers. Mixed repositories keep each route separate. Current-scope findings must be corrected in
+the active run or keep it blocked. Only an independent admitted residual may be written to a report
+under `.effective-flow/review/` for later processing through `/effective-flow apply` or the
+appropriate implementation workflow.
+
+**Model tiers:** Every worker and sub-agent the workflow starts runs on a model tier
+(`mechanical`, `standard` or `deep`) in every installation type: routed implementers and reviewers
+run `deep`; tests, validation, and documentation run `standard`. This is the Quality assignment the
+Fast pilot below departs from. A `standard` spawn may move one tier for a stated reason, a `deep`
+spawn never moves down, and a retry or correction runs at least on the role or site default. Setting
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` fixes the subagent model, so the workflow passes only the tier's
+effort, and
+`CLAUDE_CODE_EFFORT_LEVEL` overrides the effort. See
+[Getting started](getting-started.md#recommended-calling-model). When `effective-flow pr` has to draft the PR body, it does so on the `mechanical` tier.
+
+**Fast field pilot:** `build` and `refactor` are the two workflows that take part in the opt-in
+Quality/Fast pilot; `refactor`'s differences are listed in its section below.
+Without `executionProfiles.fast.enabled: true`, on a portable installation, or while no pilot
+generation is in `baseline` or `active`, every implementer runs Quality and nothing is recorded.
+With the opt-in on a native harness, `build` classifies every initial implementation packet (its
+routing bucket, or a narrower plan packet with independent ownership) through the fail-closed
+eligibility gate before the first implementer starts, and records the run locally. During the
+baseline every packet still runs Quality. In an active generation, an eligible packet uses the Fast
+implementer for its first attempt only; coupled packets, unclear ownership, missing native
+capability, or a present `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` keep it on Quality. If the Fast attempt
+fails, the routed Quality implementer continues exactly once from the retained changes in the same
+checkout, and it never returns to Fast. Every later correction—requirements repair, validator
+repair, review incorporation, final-validator repair, conflict resolution, and retries—uses Quality.
+Documentation, tests, validation, review, and delivery are unchanged. In a baseline generation,
+each measured run first asks the helper to activate the generation, which happens automatically
+once the preregistered window and sample are met. Setup and baseline start are described under
+[Setup](tools-setup.md#fast-pilot-block).
+
+## `/effective-flow fix`
+
+**Purpose:** Orchestrates the bugfix workflow: investigation, reproduction, gap analysis,
+diagnosis validation, minimal fix, regression test, validation, and completion – leaner
+than `build`, since by default no dedicated planning phase is prepended.
+
+**When to use:** A concrete defect is to be fixed: something doesn't work as
+expected or there is a regression.
+
+**Typical call:** `/effective-flow fix <defect description>` or `/effective-flow fix <plan file>`
+
+**Input/output:** Input is the defect description, a plan file, or the call suggestion
+from a `/effective-flow investigate` report. Output is the minimal fix including regression test, the
+updated plan file (if referenced), and – with delivery/worktree mode active – the
+usual delivery branch with a completion action.
+
+**Interplay:** Often builds directly on a `/effective-flow investigate` report. Unlike
+`investigate`, `fix` does not stop at observing: phase 2 reproduces the defect and specifies a
+failing test (file, case, expected failure), and phase 3 writes that test and confirms it fails
+before any implementer starts. The test is written only after the diff baseline is captured, so it
+lands in the delivery checkout and counts as part of the fix. If it does not fail as expected, the
+run returns to diagnosis before any implementation.
+
+## `/effective-flow refactor`
+
+**Purpose:** Orchestrates structural or readability improvements without an intended
+behavior change. Before the restructuring it takes a baseline from the repository-native tests,
+lint, type, build, and documentation checks that can be discovered safely and compares it again after the refactoring, as a safety net against
+regressions.
+
+**When to use:** Code is to be restructured, technical debt reduced, or performance
+improved, without the external behavior changing.
+
+**Typical call:** `/effective-flow refactor <description>` or `/effective-flow refactor <plan file>`
+
+**Input/output:** Input is the refactoring requirement or a plan file. Output is
+the restructured code including confirmation that the discovered repository-native checks are still green and
+unchanged relative to the baseline, plus – with delivery/worktree mode active – a delivery branch
+and a completion action.
+
+**Interplay:** Runs the mandatory documentation sync gate like every other implementation tool –
+documentation must describe the restructured code, never a behavior change, so a refactoring
+without a changed public surface typically ends in "no impact" verdicts. New features or unplanned
+bugfixes stay deliberately out of scope during the run – `/effective-flow build` or
+`/effective-flow fix` are responsible for those.
+
+**Baseline and behavior invariance:** The baseline marks each check the approved acceptance
+criteria require for the comparison. A required check that cannot be established stops the run
+before the refactoring starts; a check that already fails reproducibly blocks nothing, but its
+exact result stays the comparison target, and an unchanged failure is reported as unsuccessful,
+never as success. Every implementer handoff repeats the baseline evidence and the structure-only
+assignment. If the work turns out to need a behavior or public-contract change, a migration, a
+concurrency or unsafe-code change, or an open architecture decision, the run stops for replanning
+and offers to capture it as a future-work issue (or a new plan without an issue tracker).
+
+**Fast field pilot:** `refactor` follows the `build` pilot rules above, with these differences: it
+classifies its packets only after the baseline is complete, and a packet whose baseline has a
+pre-existing failure or missing optional evidence stays Quality. Review incorporation and every
+pass of the regression loop always use the routed Quality implementer.
+
+## `/effective-flow docs`
+
+**Purpose:** Orchestrates documentation changes: README files, developer guides,
+API/CLI documentation, skill documentation, migration notes, changelogs, and
+in-code documentation. Changes product or code behavior only when the change itself is
+documentation-adjacent (e.g. CLI help text or JSDoc/TSDoc).
+
+**When to use:** Documentation is missing, outdated, or is to be restructured, without
+product behavior changing. This reference document itself was created via `/effective-flow docs`.
+
+**Typical call:** `/effective-flow docs <description>` or `/effective-flow docs <doc plan file>`
+
+**Input/output:** Input is the documentation requirement or a plan file with the
+header lines `**Doku-Kategorie:**` and `**Ziel-Pfad:**`. Output is the new or updated
+document. By default it lands in one of the four categories (`docs/user-guide/`,
+`docs/developer-guide/`, `docs/operations/`, `docs/runbooks/`) – but that structure is a default,
+not a mandate: if the documentation owner's repository discovery finds an established, working
+documentation structure, `docs` writes into that structure instead and names it in the doc plan
+for your approval. The target path is always required; the category is required only for targets
+inside the four categories, and `docs` asks only when a required value is missing or a stated
+category contradicts its target path.
+
+**Interplay:** The model-configured `docs-writer` and `code-documenter` agents remain Effective
+Flow workers, but apply the authoritative documentation guidance of the central
+`effective-delivery` skill, which owns migration and technical documentation as one strand of its
+wider delivery scope. Effective Flow retains category, path, language, approval, and delivery
+decisions; the workers no longer duplicate general README, API/CLI, example, JSDoc/TSDoc, or
+rustdoc playbooks. For details on language routing, see
+[Language support](language-support.md); for details on the category and
+naming convention, see [Plan conventions](../developer-guide/plan-conventions.md).
+
+## `/effective-flow maintain`
+
+**Purpose:** Orchestrates lean, recurring maintenance of a Node project:
+dependency updates, security/audit fixes, and breaking-change adaptation on major bumps.
+Deliberately not a scheduler – automatic, time-triggered bumping is handled by tools like
+Renovate or Dependabot; `maintain` is the interactive "clean up now" run.
+
+**When to use:** Outdated dependencies or security findings are to be cleaned up.
+Not suited for general refactoring (→ `/effective-flow refactor`), bugfixes without
+dependency relation (→ `/effective-flow fix`), or new functionality (→ `/effective-flow build`).
+
+**Typical call:** `/effective-flow maintain`
+
+**Input/output:** No input needed; the tool detects the package manager from the lockfile. Output
+is a group overview (safe batch, major individually, security) for selection, then a
+dedicated commit per implemented group and a summary of the deferred
+"manual" updates.
+
+**Interplay:** `maintain` is a **thin adapter** around the **dependency path** of the central
+`effective-delivery` skill – that path provides the actual update mechanics (ecosystem
+detection, risk grouping, changelog research, compatibility adaptation, validation strategy,
+update reporting), while `maintain` owns only the orchestration and delivery (scope gate, green
+baseline, one commit per group, worktree/PR handback) and tells the skill "Effective Flow owns
+delivery", so that two delivery loops don't run. If the skill is missing, a deliberately
+minimal fallback kicks in. `maintain` refuses to update as long as the before baseline is already
+red, and instead points to `/effective-flow fix`. For code adaptations to breaking
+changes, a reviewer pass runs as with `build`/`refactor`.
+Compatibility adaptations use the same per-file routing as other implementation workflows, so
+unsupported product code goes to the reduced-depth product workers rather than the tooling-only
+generic implementer.
+
+## `/effective-flow iterate`
+
+**Purpose:** Feeds review remarks from an existing pull request – review bots like
+Greptile **and** human reviewers – as well as additional free-text instructions as new
+commits back into the same PR. A "mini build" on an already-delivered change:
+classifies each point, delegates to `/effective-flow fix`, `/effective-flow refactor`, `/effective-flow build`, or
+`/effective-flow docs`, replies to the addressed review threads, and resolves them.
+
+**When to use:** A workflow like `/effective-flow build` has already created a PR, and afterwards
+remarks have come in (Greptile/reviewer comments) that should be incorporated – or an
+existing change is to be specifically improved via free-text instruction. For a new
+change from scratch, `/effective-flow build`, `/effective-flow fix`, `/effective-flow refactor`, or
+`/effective-flow docs` are responsible instead.
+
+**Typical call:** `/effective-flow iterate [<PR reference>] [<free-text instructions>]` – the
+PR reference is optional (`#42`, bare number, or PR URL); without it, `iterate` tries to resolve
+the open PR of the current branch.
+
+**Input/output:** In **PR mode**, `iterate` reads the review threads of all reviewers fresh,
+classifies each point (actionable, already addressed, or pure question), and obtains an
+approval. Output is **one commit per implemented point** on the PR head branch (only new
+commits – no force-push, amend, or rebase), a short reply plus resolution per addressed
+thread, and a summary comment. Pure reviewer questions are deferred and listed in the summary,
+not automatically answered on the merits. When another workflow delegates to it and supplies an
+identifier per item, `iterate` additionally returns exactly one outcome for each of those
+identifiers – `implemented`, `deferred`, `rejected`, or `unassessed`, the last meaning nobody judged
+that item, including a named thread it left out as already addressed – so the caller can match the result against what it handed over; see
+[`/effective-flow merge-gate`](tools-deliver.md). Without a PR (**local mode**), `iterate` iterates
+based on the free-text instructions on the diff of the current branch against the base branch
+and commits locally, without pushing or commenting.
+
+**Review still in flight:** In PR mode, before it classifies anything, `iterate` checks whether a
+configured automatic reviewer is still running against the current head. Classifying a thread set
+that is still growing is the problem this prevents: `iterate` would implement, reply, resolve and
+push, and the reviewer would then have to start over against a head that has moved. If a reviewer
+is still running, `iterate` names it and what proved it – a configured check context in a
+non-terminal state, or a trigger comment for this head with no reviewer output yet – and asks once
+whether to **wait** for it, **proceed** anyway, or **abort**. "Wait" is one bounded wait followed by
+one fresh read, not a poll loop; if the reviewer is still running after that, the run ends with a
+report instead of waiting again. A run that cannot be asked returns `ABORT: review still in flight`
+and names the reviewers. Runs delegated by [`/effective-flow merge-gate`](tools-deliver.md) are
+exempt, because the gate has already established the reviewer state and says so explicitly; the
+exemption rides on that announcement alone, not on a run being scoped to certain threads or merely
+running non-interactively. Local mode has no pull request and is unaffected.
+
+**Interplay:** Extends the apply chain by the previously missing source
+"PR review comments": `/effective-flow apply` reads Effective Flow's own reports or issues, `iterate` reads
+the threads left directly on the PR. The actual implementation is handled by the existing
+implementation tools; existing PRs are updated exclusively via new commits. GitHub
+(`gh`) and Forgejo/Gitea (`tea`) are supported – on GitHub, `iterate` replies to a thread and
+resolves it through the GraphQL mutation; on a `tea`-backed forge it does both through `tea api`
+where the instance's API description declares both routes, as Gitea does; one route alone enables
+neither write. Forgejo declares neither,
+so there `iterate` writes nothing into the thread and reports the reply and the resolution as
+manual steps.
+
+## Further reading
+
+- [Worktree and delivery](worktree-and-delivery.md) – delivery branch, worktree,
+  PR/merge/branch completion
+- [Configuration](configuration.md) – `delivery.*`, `worktree.*`, `plan.*`
+- [Skill discovery](skill-discovery.md) – how these tools use host skills
+- [Tools: Ensure quality](tools-quality.md) – how the review reports that get incorporated here
+  are created

@@ -1,0 +1,722 @@
+# Architecture
+
+This document describes how Effective Flow is built as a repository: the source-to-dist model,
+the router with lazy loading, and the split across the two harnesses Claude Code and Codex.
+Behavior rules for agents (language rules, commit conventions, plan-file conventions) live
+canonically in the shipped fragments under [`src/shared/`](../../src/shared/), and the
+repository rules (including no-AI-attribution) in [`AGENTS.md`](../../AGENTS.md) – this document
+references them instead of duplicating them.
+
+## Central language resolution
+
+Human-readable output uses the target project's project-setup ADR rather than harness-specific
+defaults. `language.project` is the common `de`/`en` fallback; optional overrides select source
+prose, user documentation, technical documentation, local workflow artifacts, Forge prose,
+Git/release prose, and the interactive output a run speaks to the user. Missing artifact-surface
+overrides inherit the project language, and a completely missing configuration resolves to `en`.
+
+Resolution order is artifact-specific: an explicit user request wins; while editing, a
+recognizable existing artifact language comes next; a new artifact then uses its surface
+override, `language.project`, and finally `en`. Orchestrating tools resolve every language needed
+for a run once and pass the concrete values to delegated workers. A standalone tool performs the
+same resolution itself. Workers do not independently reparse the ADR, which prevents parallel
+writers from making inconsistent choices.
+
+Interactive output is the one surface outside that model. `language.chat` is not an artifact
+surface, so neither the preserve-existing-language step nor inheritance applies to it: an absent
+row means mirror the language the user writes in, and a configured value outranks that language
+while still yielding to an explicit in-message request. It is also not part of the delegation
+payload, precisely because workers do not reparse the ADR and hold no value to apply — delegated
+reports and agent notices are relayed verbatim inside orchestrator framing that does follow the
+key. The always-loaded router, `version`, and the `pr-review` deprecation notice emit before any
+configuration read and stay on the conversation language. The contract is
+[`src/shared/chat-language.md`](../../src/shared/chat-language.md), an eager include in every tool
+that speaks, because every emitted line is its decision point.
+
+Publication target selects the surface. Plans, local reviews, and investigations use
+`language.workflow`; issues, PR bodies, comments, and remote reviews use `language.forge`;
+commit descriptions, Conventional-Commit PR titles, changelog prose, and release-note prose use
+`language.git`. Root README/user-guide work uses `language.documentation.user`; developer/API,
+operations, and runbook work uses `language.documentation.technical`; code comments, test
+descriptions, and in-code documentation use `language.source`; what the run says to the user uses
+`language.chat`. Product UI and CLI localization is outside this model.
+
+This selection affects visible prose only. Config keys and encoded values, identifiers, API
+names, labels, HTML markers, finding IDs, action values, paths, Conventional-Commit types, branch
+slugs, schemas, and internal runtime/wisdom headings remain stable. German and English plan and
+review templates remain readable; a writer emits one complete language variant per artifact.
+See [Configuration](../user-guide/configuration.md#block-language) for the user-facing schema and
+[`src/shared/language-rules.md`](../../src/shared/language-rules.md) for the executable contract.
+
+## Source-to-dist model
+
+Effective Flow is **not** a runtime product but a build: `build.mjs` reads the Markdown sources
+under `src/` and generates two harness-native artifacts plus one portable manager target under
+`dist/`.
+
+- Only `src/` is edited. `dist/` is generated and gitignored – changes there are lost on the
+  next build.
+- Source and delivery live on **two branches**: `develop` (source, no `dist/`) and the default
+  branch `main` (carries only the portable `effective-flow/` payload **and** the consumer-facing docs –
+  `README.md` + `docs/user-guide/` –, but **not** the developer docs `docs/developer-guide/`;
+  written mechanically by the release workflow). For details see
+  [Release and installation](release-and-installation.md#source-and-delivery-branch).
+- The source layout **mirrors the output**: the folder determines the category, the file name
+  without `.md` the name. There is therefore no `name` or `type` field in the frontmatter.
+- Details on the build flow, the placeholders, and the guards are in
+  [`build-system.md`](build-system.md).
+
+## Thin router with lazy loading
+
+`src/SKILL.md` is the router: a tool catalog, a dispatch rule, and the minimal universal
+worker-resolution and leaf-handoff bootstrap. It never loads all tools up front but references,
+on the call `/effective-flow <tool>` (Claude) or `$effective-flow <tool>` (Codex), exactly the one
+matching `tools/<tool>.md`. Tool-specific behavior stays in that lazily loaded file. This keeps the
+session lean and avoids token exhaustion from unnecessarily preloaded tool instructions.
+
+With no `<tool>` or an unknown one, the router only prints the tool list and does nothing else.
+
+The worker-resolution and leaf-handoff bootstrap is the router's one universal behavioral
+contract: it establishes how any selected tool starts a named worker without preloading any worker
+contract. Tool-specific behavior remains outside the router. The router formerly also carried the
+eagerly included `session-title` fragment, on two grounds: the fragment's trigger fires in nearly
+every work-subject run, and the context-budget guard left no room anywhere else — `build` and
+`plan` sat at exactly the 700-line limit, where a `lazy-include` pointer per tool was assumed to
+fail the build. Both grounds are gone. The budget refactor returned headroom, a rendered pointer
+costs one line rather than four, and "nearly every work-subject run" was never every session: a
+catalog-only invocation and the contractually silent tools paid for a contract they can never act
+on.
+
+`session-title` therefore now loads from the tools that emit a title and from nowhere else, beside
+the `session-rename` mechanism each of them already points at. The two lists inside the fragment —
+the emitting tools and the silent ones — partition the exposed tool set, and a test in
+`test/session-contracts.test.mjs` fails when a tool appears in neither or in both. `setup` is
+silent, and its capability probe keeps its own authorization: the probe title and its call shape
+are stated in `src/tools/setup.md` and in `src/shared/session-rename.md`, which `setup` reads by
+explicit path.
+
+The router resolves only **eager** includes, so nothing lazy can live there: a `lazy-include` fence
+in `src/SKILL.md` registers no fragment and fails the build on the unresolved pointer. That is the
+mechanical reason mode- and tool-specific behavior stays out of the router. The inline worker
+bootstrap is intentionally minimal and universal; anything else the router carried would be paid
+for in every session.
+
+The same progressive disclosure applies **within** a tool: mode-gated shared fragments (e.g.
+worktree delivery, remote tracker, report handling) are no longer inlined eagerly but loaded on
+demand via `lazy-include` only at the decision point. Details and the context budget are in
+[`build-system.md`](build-system.md) under "Progressive disclosure beyond the router".
+
+Effective Flow knows two building-block types:
+
+| Type       | Description                                  | Invocation                                                   |
+| ---------- | -------------------------------------------- | ------------------------------------------------------------ |
+| **Tool**   | Workflow or utility instruction              | `/effective-flow <tool>` (loads `tools/<tool>.md`)           |
+| **Worker** | specialized contract (implementer, reviewer) | internally by tools as a native or built-in/general subagent |
+
+## Delegation mandate
+
+Invoking a tool is the user's standing request for internal delegation: a harness default that
+discourages unrequested sub-agents does not apply inside a run.
+[`src/shared/delegation-mandate.md`](../../src/shared/delegation-mandate.md) is the single source
+of truth, eagerly included in every delegating tool (`build`, `fix`, `refactor`, `docs`,
+`maintain`, `review`, `iterate`, `deliver`, `apply-review`, `apply-issues`, `plan`, `plan-issue`,
+`investigate`, `merge-gate`) and in every worker under `src/agents/`; `plan-review` and
+`concept-review` carry
+it for read-only analysis fan-out only, restating their existing ban on starting implementers,
+test writers, validators, and reviewers next to the include. Delegating to a named worker role is
+mandatory; analysis and exploration delegation is the default at the workflow/tool orchestration
+level, with a narrow triviality exception. Only the orchestrator starts workers or analysis
+fan-out. Each worker is a leaf executor: it starts no child, never re-delegates its assignment or
+a write, and returns missing essential context to the orchestrator. The orchestrator launches a
+worker with zero inherited turns when supported, otherwise the smallest supported history, and
+provides a compact, self-contained handoff containing the objective, relevant artifact paths,
+scoped paths and ownership, execution and runtime-state roots for write-capable work, resolved
+language, authority and write limits, and the completion protocol.
+
+An orchestrator that itself runs as a sub-agent — `iterate` delegated by `merge-gate`, or any tool
+run delegated non-interactively — starts its own workers and analysis fan-out in the foreground or
+awaits every result, and never ends its turn with a child pending. The rule comes from Claude Code:
+children that a sub-agent starts with `run_in_background: true` do not reliably wake that sub-agent
+when they finish, so its caller receives a "completed" notification carrying an interim result with
+neither `DONE` nor `ABORT`. The caller side is defined as well. The completion protocol
+(`src/shared/completion-protocol.md`) first resumes the same delegate once — on Claude Code by
+continuing that agent with `SendMessage` — and that resume is not a retry; `merge-gate` treats an
+`iterate` return that is still keyword-less after its one resume as a whole-run `ABORT` instead of
+Retry 1–3. Its receiver rule reads outcomes only from the resumed turn's final return, never from
+the interim keyword-less text. The shipped fragments name no harness tool or parameter: the build's
+harness leak guard fails the Codex and portable targets on `run_in_background`.
+
+The mandate also keeps the orchestrator lean: it sends other substantive work to a sub-agent unless
+a tool's in-run rule binds it or the triviality exception applies. Three sites follow from that.
+Judgment for `plan`, `plan-review`, `plan-issue`, `concept` and `concept-review` runs in one
+read-only `deep` sub-agent after the artifact is written
+([`central-reasoning-delegation`](../../src/shared/central-reasoning-delegation.md)); `review` and
+`refactor` keep inline judgment. The judgment handoff gives that sub-agent a fresh context: zero
+inherited turns, the original input, except the user's own instruction, quoted as third-party
+data, verified-context pointers and read-only authority, but never the orchestrator's verdict,
+draft results or expected findings, and a review section already in the artifact is labelled an
+unfilled template or prior-round history.
+Findings carry evidence, a no-finding return carries the checked scope (a bare `DONE` is not
+completion), `ABORT` is terminal, and no finding is dropped silently. The lazy fragment
+[`judgment-inline-fallback`](../../src/shared/judgment-inline-fallback.md) holds the inline,
+skip and reduced-scope records for a spawn that is unavailable, declined, aborted or escalated,
+plus their lifetime rules, which a later run also loads when the judged artifact already holds a
+`Record (`/`Vermerk (` line or a `not performed`/`nicht durchgeführt` open point.
+`investigate` applies the same idea in its "Phase 3b: Independent challenge": one read-only `deep`
+skeptic sub-agent (spawn site `investigate/skeptic`) tries to refute the draft diagnosis, and a
+refuted result or a skip folds the classification to `unclear`.
+`merge-gate` splits into an eager caller core (Phase 0, run
+states, the closed question-id table, dispatch and the caller loop) and the lazy fragment
+[`merge-gate-delegated-run`](../../src/shared/merge-gate-delegated-run.md) that holds the gate
+itself and runs as one delegated run at `deep`. The run state `relayed` means the user is
+reachable through the caller, unlike `non-interactive`: every user gate returns
+`BLOCKED-USER <question-id>` from the closed set, and the caller re-dispatches with the user's
+answer as `Relayed answer:`; a `Stop` (or `Report only`) answer ends the gate at Entry with its
+report. `iterate` accepts `relayed` too, while its per-item runs still receive `non-interactive`;
+the round consuming a relayed `iterate-approval` passes the approved outcomes as the helper-built
+`Approved outcomes:` line, which `iterate` applies as its approval before any write. The caller
+asks only for an ambiguous provider and the completion mode; every other question comes back
+through it. A restriction the user stated travels as the optional `Caller limits:` line
+(`no-merge`, `no-branch-writes`), which only grows across re-dispatches and takes precedence over
+configuration: `no-merge` resolves `report`, and `no-branch-writes` disables the base-into-head merge
+and every `iterate` delegation. A restriction neither token expresses is never mapped onto them: the
+caller asks for a restatement or stops, and if the user insists runs the gate inline, where the
+restriction binds every phase: each `iterate` round then runs inline too, and every worker or
+workflow handoff restates the restriction verbatim.
+
+The delegated gate needs four levels of nesting below the main session: main session (0) →
+delegated gate run (1) → the `iterate` round it dispatches (2) → the per-item `fix` or `build` run
+that `iterate` starts (3) → that run's implementer or validator (4); the conflict resolver and its
+validator sit at level 2. On Claude, Claude Code's documented default nesting depth of 3, as
+reported in the host-capability note of
+[the plan](../plan/archive/2026-10-16-per-spawn-model-tiers-and-lean-orchestrator.md), refuses the
+per-item run's level-4 spawns, so that run performs its worker roles inline as declined
+delegations. Independent validation on
+that path is therefore reduced, a known trade-off of running `iterate` in its own subagent. The
+Codex limit is host-configured (`agents.max_depth`).
+Before any gate write, and whenever its wisdom file holds no passed-probe record, the delegated
+run's Entry probe starts one no-op child at tier `mechanical` and then records the pass, so a
+re-dispatch never probes again. No spawn tool, or a probe the host refuses or that fails, returns
+`ABORT nested-spawn-unavailable`, and the caller runs the gate inline and says so once. The probe is behavioural because a host can keep
+the spawn tool at its depth limit and refuse only the call: the Codex CLI answers such a call
+"Agent depth limit reached". A deeper spawn the host later refuses for depth is a declined
+delegation under the delegation mandate, never a tier-parameter rejection
+([`model-tiers`](../../src/shared/model-tiers.md), "Host overrides").
+
+Every Claude worker omits `Agent` and `Task` from `claude.tools`, regardless of its own read/write
+authority. Withholding the capability is the enforceable Claude boundary: if a worker receives a
+sub-agent tool, prose cannot prevent it from starting a child with that child's own capabilities,
+and the parenthesised `Agent(<type>)` form is an unrestricted grant rather than a type filter.
+Codex and portable workers carry the same leaf contract in their instructions; their worker
+metadata does not expose an equivalent per-role tool-list boundary. Inline execution stays
+legitimate only as a disclosed orchestrator fallback — never silent. Workflow-to-workflow
+delegation (`apply-plan`, `merge-gate` → `iterate`) keeps the receiving tool's mechanics and gates
+and is out of scope for this mandate — which is why `merge-gate` carries the include for its
+worker-role delegations (`merge-conflict-resolver`, `code-validator`), while each `iterate` round
+runs in a built-in subagent at the `deep` spawn site
+`merge-gate-delegation-contract/iterate-delegation`, and that subagent reads `tools/iterate.md`
+first. That handoff's
+message is never written by hand: the shipped `delegation-envelope` runtime helper builds it from
+structured input and then validates it against a digest and a manifest snapshot before dispatch.
+Above the delimiter it carries six control lines (`Item filter:`, `Summary comment:`,
+`Review guard:`, `Next steps:`, `Run state:`, `Language context:`), the boundary token, and the item
+manifest; `iterate` reads every switch from that region only. A `build` or `validate` failure, or a
+helper missing from the installed build, is a sender-side contract error: the gate stops before
+`iterate` is invoked, makes no remote write, and consumes no round. Delegation
+mechanics are Effective Flow's own
+orchestration ownership, so this carries no central-skill relationship under the layered
+ownership contract — canonical for the classification and the ownership-check mechanics in
+[`skill-ownership.md`](skill-ownership.md), summarized in
+[`AGENTS.md`](../../AGENTS.md#skill-discovery).
+
+## Source directories
+
+```text
+src/
+├── SKILL.md      # Router: catalog + dispatch + universal worker bootstrap
+├── tools/        # one .md per tool → every consumer target's tools/<name>.md
+├── agents/       # one .md contract per worker → native sidecars + portable resources
+└── shared/       # include fragments, embedded via `include` fence
+```
+
+- **`src/tools/<name>.md`**: A tool is only callable via `/effective-flow <name>` if its name is
+  in exactly one group of `TOOL_GROUPS` in `build.mjs` (see
+  [`build-system.md`](build-system.md)). Unlisted tools (e.g. `apply-plan`, `apply-review`,
+  `apply-issues`) are **internal**: built but not visible in the router catalog; `apply` loads
+  the matching internal instruction on demand depending on the detected source.
+- **Deprecated tool aliases**: a renamed exposed tool can keep its old name callable through
+  `DEPRECATED_TOOL_ALIASES` in `build.mjs` (see [`build-system.md`](build-system.md)) instead of
+  shipping the rename as a breaking change. An alias is also an internal tool source — absent from
+  `TOOL_GROUPS`, so it is reachable by name only and never appears in the router catalog, the
+  router frontmatter description, or `argument-hint`. The router's dispatch rule still routes it,
+  through a generated `{{DEPRECATED_ALIASES}}` clause that names the alias, its replacement, and
+  the tool source it forwards to. `pr-review` is such an alias for `merge-gate` today: invoking it
+  reports the deprecation once and then forwards the run unchanged to `tools/merge-gate.md`,
+  carrying no gate logic of its own. It is removed with the next deliberate major release.
+- **`src/agents/<name>.md`**: Workers are **not** `/effective-flow` tools. Workflow tools call
+  them internally as subagents. The frontmatter carries one top-level `tier:` (the role's default
+  model tier) and the remaining native configuration under `claude:` (color, tools) and `codex:`
+  (sandbox mode); the body is also the single contract rendered into the portable target. The
+  native model and effort derive from the tier, so a per-agent model or effort field fails the
+  build. Claude tool lists omit `Agent` and `Task` because every worker is a leaf. The `tier:`
+  fields are the canonical worker-profile assignments.
+- **`src/shared/<name>.md`**: Include fragments embedded via the ` ```include ` fence into tools
+  and agents (e.g. `delegation-mandate`, `task-tracking`, `skill-discovery`, `goal-completion`)
+  or deferred via a ` ```lazy-include ` pointer (e.g. `worktree-integration`, which every one of
+  its consumers now loads on demand: seven tools directly, and `plan` through the
+  `plan-publication` fragment). `execution-location` is the canonical nested fragment
+  for repository/root/checkout receipts, write-boundary preflight and ownership-safe cleanup;
+  both delivery and `apply-review` component worktrees include it instead of duplicating the
+  contract.
+
+## Cross-harness execution locations
+
+Effective Flow treats two absolute Git-verified roots as data, not as ambient process state.
+Write-capable workers receive a receipt containing the canonical `EXECUTION_ROOT`, retained
+`RUNTIME_STATE_ROOT`, common Git directory, branch or detached OID, origin, setup owner, and
+workflow/component purpose. They revalidate it at their first write boundary and after resume
+or Handoff.
+
+Before worktree creation or local report-source resolution, Effective Flow parses the first
+record of `git worktree list --porcelain` as the main checkout. It rejects bare, missing,
+moved, noncanonical, or common-directory-mismatched records and retains the resulting physical
+path as `RUNTIME_STATE_ROOT`. Tracked files and Git lifecycle operations use `EXECUTION_ROOT`;
+all `.effective-flow/` reads, report-name collision checks, backlinks, memory/cache updates, and
+migrations use canonical absolute handles below `RUNTIME_STATE_ROOT`. Prospective paths
+canonicalize their nearest existing ancestor, so `..` and existing symlink escapes fail closed.
+An in-place main-checkout run has identical roots; linked/native and Effective Flow-owned
+worktrees have different roots.
+
+Claude native `isolation: worktree` and Codex app worktrees remain harness-owned. They may be used
+or reused where appropriate, and Effective Flow never removes one. Normal implementation does not
+nest another delivery worktree around an existing native checkout. The standalone `deliver`
+partial-diff lifecycle is the narrow exception: once it has recorded the source evidence, it treats
+the dirty or detached harness checkout as immutable and creates a separate Effective Flow-owned
+delivery worktree from the refreshed configured base. The source and delivery receipts remain distinct, and neither may be
+substituted for the other.
+
+Effective Flow-created delivery, partial-diff and review-component worktrees have distinct receipts
+and may be cleaned up only after fresh ownership and state verification. Cleanup never targets or
+alters `RUNTIME_STATE_ROOT`, which is why local reports and memory survive component and delivery
+worktree removal.
+
+### Hidden-mode boundary
+
+Hidden mode (`visibility: hidden`, see [`configuration.md`](configuration.md#hidden-mode)) moves
+configuration, plans, and concepts below `RUNTIME_STATE_ROOT/.effective-flow/`, so they share the
+runtime-state boundary above. Workers read a hidden plan by its absolute main-checkout path. The
+delivery branch never carries a path below `.effective-flow/`, and plan archival runs only in the
+main checkout. The ignore entry lives in the Git common directory's `info/exclude`, which every
+linked worktree shares, so the existing `git check-ignore --no-index` predicates hold in each
+worktree without a tracked `.gitignore` line.
+
+## Delivery orchestration boundaries
+
+## Issue Buddy runtime boundary
+
+Issue Buddy is an unattended workflow edge that judges trusted GitHub issues and delegates plan
+creation to a built-in planning worker. The orchestrator owns the pass, retry budget, report and
+publication authority; it never reads issue, comment, plan, or commit prose itself. Issue-derived
+content is confined to the delegated planning context and publication text is generated from fixed
+templates.
+
+The pass runs in the primary checkout and does not create or use a worktree. It keeps the existing
+runtime-state guard, loopback TCP mutation mutex, and whole-pass lock. A held lock is an operator
+stop; the pass never breaks it or releases it after an unrelated process. Before collection it
+reads repository visibility once through the remote tracker. Dry runs accept public, private, or
+unknown visibility; publication is public-only in stage 1. Public operator runs use the operator's
+forge credential, so scheduled publication waits for the later credential-isolation and bot-rule
+work.
+
+Issue Buddy reports use opt-in `reportVersion: 2` metadata for repository visibility and preserved
+plan leftovers. New readers accept versions 1 and 2; version 1 behavior and schema remain
+unchanged. Collection filters leftover metadata before judgment limits, slicing, and recovery.
+Plan publication binds the collected base OID, the inspected branch tip, and the plan blob OID
+before it records a result, so drift stops the pass without spending an issue retry.
+
+Delivery is split across one orchestrator and two narrow leaf tools:
+
+- `deliver` owns candidate discovery from current-session file-operation evidence, mandatory
+  confirmation of the exact file/state manifest as the sole routine approval, automatic derivation
+  and non-blocking display of ordered coherent commit groups, exact partition validation, fresh
+  branch/worktree creation, selected-state transfer, validation, per-group staging, and verification
+  of the resulting commits. There is no commit-group approval or refinement round; unresolved
+  grouping stops before staging. The dependency-free `delivery-selection` runtime binds the selected
+  staged or working-tree states to source `HEAD`, applies them to the refreshed base with conflict
+  detection, and reconciles the exact resulting diff without emitting file content.
+
+  Before any of that, and after the source execution-location receipt is verified, `deliver` runs
+  one pre-evidence upstream step. The helper's `upstream-status` operation fetches the current
+  branch's own upstream (`@{u}`) non-interactively (`GIT_TERMINAL_PROMPT=0`,
+  `GCM_INTERACTIVE=never`) with a 60-second timeout. Only the default `ssh` gets
+  `GIT_SSH_COMMAND=ssh -o BatchMode=yes`; a user-configured SSH command or program
+  (`GIT_SSH_COMMAND`, `core.sshCommand`, `GIT_SSH`) or an SSH variant setting
+  (`GIT_SSH_VARIANT`, `ssh.variant`) is used unchanged, because rewriting a user's command cannot
+  be done safely across wrappers, quoting, and variants, so only the timeout bounds a host-key or
+  passphrase prompt there. Every inherited `GIT_TRACE*` variable and
+  `GIT_CURL_VERBOSE` is removed for the fetch, so its stderr cannot echo the SSH command,
+  credentials, or fetched data. Its `fetch.error`, like a
+  refused merge's `stderr`, redacts URL userinfo, query and fragment, and obvious token forms. It
+  skips the fetch for a local upstream or an invalid remote or merge ref, and classifies the
+  branch as `detached`,
+  `no-upstream`, `upstream-gone`, `untracked-upstream`, `up-to-date`, `ahead`, `behind`,
+  `behind-overlap`, or `diverged`, where `upstream-gone` means a tracking ref Git knows no longer
+  resolves to a commit while `untracked-upstream` means Git resolves no tracking ref at all — a
+  URL in place of a remote name, or a fetch refspec that does not map the merge ref — so a fetch
+  that succeeded is not contradicted and `fetch.stale` stays `null`, and where `behind-overlap`
+  means an incoming path overlaps a staged, unstaged, untracked, or ignored local path or an
+  incoming gitlink. A failed status call, a failed, stale, or
+  skipped fetch, and every state without a possible update end the step with a notice. Only `behind`, `behind-overlap`, and
+  `diverged` load the lazy `source-upstream-sync` fragment, which asks the user and, on an explicit
+  confirmation, calls the helper's `fast-forward` operation: a dry run, then `--apply` against the
+  pinned branch, `HEAD`, and upstream OIDs, running `merge --ff-only --no-overwrite-ignore` with
+  hooks disabled and post-verifying the new `HEAD` and every previously dirty or ignored path. A
+  failure reports `mutationMayHaveSucceeded` and Git's capped `stderr` where available; `true`, or
+  a missing field, is a hard stop before selection. Unanswered
+  and non-interactive runs continue without an update.
+
+  The step sits before evidence capture, and therefore before `bind-manifest`, because the manifest
+  binds the selected states to source `HEAD` and `verify-source` reports any later `HEAD` change as
+  `SOURCE_DRIFT`; an update after binding would force a fresh confirmation. The source-checkout
+  invariant therefore reads "unchanged from the moment the source evidence is captured", with the
+  confirmed fast-forward as its only earlier write. It compares against `@{u}`, not
+  `delivery.baseBranch`, so on a feature branch a conflict with newer base content can still stop
+  `transfer` later.
+
+- `commit` owns only `git commit` for an already staged diff. It never selects, stages, unstages, or
+  validates files. A delivery caller supplies a verified execution-location receipt, declared path
+  group, and expected index-tree OID; the result reports enough exact Git state for the caller to
+  verify the parent, branch, commit tree, and remaining changes.
+- `pr` owns only publication of commits from a prepared branch. A direct call requires a clean,
+  attached, non-base checkout. A returning delivery caller supplies the exact head, base, verified
+  head OID, and successful commit-only evidence. `pr` never creates or switches a branch, stages or
+  commits files, or treats dirt in another checkout as PR content.
+
+After manifest confirmation, `deliver` proceeds automatically through transfer, validation,
+sequential commit execution, and PR publication while preserving every fail-closed boundary.
+Manifest drift requires redisplay and reconfirmation. It stages and verifies one derived group at a
+time. If a later group, hook, receipt check, or tree comparison fails, earlier commits and all
+remaining local states stay on the run-owned branch/worktree; no push or PR occurs and no successful
+commit is rewritten. Only a clean final branch with a non-empty verified commit range is handed to
+`pr`, after the worktree is removed through its ownership-safe lifecycle and the local branch is
+retained.
+
+Implementation workflows use the same boundary at handback: they preserve verified earlier
+commits, stage only their recorded residual output, call `commit`, verify its receipt, and call `pr`
+only for an effective `pr` completion. Completion precedence is established before delivery setup.
+Exactly one unambiguous affirmative current-invocation request for `pr`, `merge`, or `branch`
+overrides `delivery.completion`; negated, hypothetical, descriptive, or alternative wording does
+not. The report records both configured and applied values without mutating configuration.
+Invoking `deliver` is itself explicit `pr` intent, so that tool never inherits another completion
+action.
+
+## Persisted worktree lifecycle
+
+[`src/shared/worktree-lifecycle.md`](../../src/shared/worktree-lifecycle.md) is the common lifecycle
+contract for every Effective Flow-created delivery, partial-diff, plan-publication, and
+`apply-review` component worktree. It consumes the canonical execution-location receipt and runtime-state safety contracts
+instead of restating repository identity, path containment, ignore, or tracked-state rules. The
+delivery and component-worktree creation paths both register through this shared contract;
+user-created, reused, and harness-managed worktrees remain outside Effective Flow ownership.
+
+Eight tools can create an Effective Flow-owned worktree: `build`, `fix`, `docs`, `refactor`,
+`maintain`, `iterate`, `merge-gate` and `plan`, whose publication commits the plan in a temporary
+worktree under its own `<SESSION_ID>-plan-publication` path. They reach `worktree-integration` only through a lazy
+pointer, so each also eagerly includes
+[`src/shared/worktree-record-obligation.md`](../../src/shared/worktree-record-obligation.md). That
+short fragment makes loading `worktree-integration` mandatory before any `git worktree add`, requires
+the record write immediately after the `effective-flow-created` receipt, and adds an exit
+self-check that each tool triggers with one line in its completion step. The self-check derives its
+set from durable state – the linked worktrees at the run's `SESSION_ID` path in
+`git worktree list --porcelain` and the records matching the run's `sessionId` and `workflow` – and
+accepts only a deleted record with an unregistered worktree, or a record in `cleanup-ready`,
+`aborted`, `failed` or `cleanup-failed`. It sets a record left `active` to `aborted` or `failed`
+once, reports an unrecorded registered worktree as a manual-reconciliation defect, and never
+removes or claims a worktree or backfills a record. `iterate`'s pull-request checkout follows the
+same adapter as `merge-gate`: in place when the invocation checkout is clean and on the head
+branch, otherwise one owned worktree for the existing head branch without `-b`, recorded at once
+and closed through the handback after the push. A guard test in
+`test/worktree-lifecycle-contract.test.mjs` derives the host set from every tool that includes
+`worktree-integration` eagerly, lazily or transitively, and requires the eager obligation include
+in each.
+
+After receipt creation, each owned worktree gets a versioned record under
+`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/`. The record binds the session or component,
+workflow and purpose, canonical repository and worktree identities, branch and creation OID,
+ownership, timestamps, lifecycle status, and branch follow-up policy. Records are atomic,
+gitignored runtime state. Every write, replacement, lock, or deletion revalidates the exact
+absolute runtime handle through the runtime-state safety guard.
+
+The record's immutable `creationOid` identifies the commit from which the worktree branch was
+created; it is not a frozen expected branch tip. Fresh verification requires that `creationOid`
+still resolves as a commit and is an ancestor of the current recorded branch tip. Valid committed
+work can advance `HEAD`, while rewritten or divergent history that breaks this ancestry fails
+closed and blocks cleanup.
+
+The state machine is explicit: creation starts at `active`; durably securing the intended changes
+on the branch or completing component integration moves to `cleanup-ready`; controlled stops and
+errors move to `aborted` or `failed`.
+The one way back is adoption, `aborted` or `failed` → `active`, which only
+[`src/shared/plan-pr-continuation.md`](../../src/shared/plan-pr-continuation.md) performs to resume
+an interrupted run on a published plan's pull request. Under the record lock it freshly proves an
+Effective Flow-created `delivery` record with no foreign lock or claim, the same repository,
+runtime-state root, branch, and workflow, exactly one matching Git registration that is neither
+locked nor prunable, a `creationOid` equal to the freshly fetched remote head and an ancestor of
+the local tip, and a clean worktree. It then rewrites only `status`, `reason`, `updatedAt`, and
+`sessionId`; `creationOid`, the branch, and the receipt snapshot never change. A harness-managed,
+user-managed, or recordless worktree is never adopted.
+An eligible cleanup actor serializes a fresh read and validation with a per-record lock, then
+claims `cleanup-ready` or `cleanup-failed` as `cleanup-in-progress` with its run ID and timestamp.
+A failed normal removal returns to `cleanup-failed`; complete and reverified worktree and branch
+cleanup removes only that actor's record. Foreign locks and claims are never stolen, even when
+they appear old.
+
+Cleanup derives eligibility from the intersection of independent evidence: owned lifecycle,
+matching receipt, current Git registration, branch and purpose agreement, clean status, and the
+absence of `locked` or `prunable` attributes. It never targets the main worktree or its own
+execution worktree and never uses `--force`, broad `git worktree prune`, or `git branch -D`.
+Existing worktrees without a lifecycle record remain diagnostic-only. There is no TTL, heartbeat,
+or stale-after configuration: an old `active` or `cleanup-in-progress` record can represent a
+crash, but elapsed time cannot prove cleanup eligibility.
+
+Every cleanup run reconciles partial outcomes and reports removed worktrees, failed attempts, and
+all remaining linked worktrees except the main worktree. A current linked execution worktree
+remains in that final inventory even though it is excluded as a removal target. Each retained
+entry carries its checkout identity, observed status, individual retention reason, and safe next
+step.
+
+## Three consumer targets
+
+The build generates three independent outputs from the same source:
+
+| Consumer                     | Skill target                    | Worker resolution                                                                                                                                                                               |
+| ---------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native Claude artifact       | `dist/claude/effective-flow/`   | native base `.md` agents plus five generated `-fast` implementer sidecars under `dist/claude/agents/`, deployed by `./install-skill.sh local` and `./local-link.sh`                             |
+| Native Codex artifact        | `dist/codex/effective-flow/`    | native base `.toml` agents plus five generated `-fast` sidecars and twelve generated tier variants under `dist/codex/agents/`; role-file model and reasoning settings win over spawn parameters |
+| DALO / Skills CLI (end user) | `dist/portable/effective-flow/` | bundled `workers/effective-flow-<name>.md` contracts, loaded one at a time and delegated through the harness's built-in general-purpose subagent mechanism                                      |
+
+All outputs use the same `effective-flow-<name>` base-worker namespace and carry the same version
+stamp. Each native skill directory also carries a schema-2 `native-agent-inventory.json`; its
+`baseWorkers`, `fastWorkers`, `standardWorkers`, and `tierWorkers` lists are canonical, the two
+inventories agree on the complete base-worker and standard-worker sets, list five Fast sidecars
+each, and reconcile
+against the actual agent directories. They are build and installation consistency manifests, not
+proof that a running host discovered or accepted an agent. Rendered-reference guards ensure every
+native reference has an exact representation and every portable reference has an exact worker
+contract. Portable instructions never request those
+identifiers as custom roles: if built-in delegation is unavailable, they fail clearly instead
+of pretending that a worker ran, while a single spawn the host refuses at run time takes the
+delegation mandate's inline fallback. In every target, the caller starts a worker with zero inherited
+turns when supported, otherwise the smallest supported history, and supplies the compact,
+self-contained handoff defined by the delegation mandate. The worker remains a leaf.
+
+The release archive retains all three targets for verification and release maintenance; it is
+not a supported end-user installation interface. The default branch publishes only the portable
+skill at `effective-flow/`, which is the payload consumed by DALO and Skills CLI.
+
+## Caller and worker model profiles
+
+The model running the Effective Flow tool is the **caller**: it interprets the workflow,
+delegates work, and integrates the results. Native worker sidecars have independent,
+role-specific profiles. Every profile is one of three provider-neutral **model tiers**:
+`mechanical`, `standard` and `deep`. Implementers, reviewers, and the merge-conflict resolver
+declare `deep` (Claude `opus` with `high` effort, Codex `gpt-6.1-sol` with `high` reasoning
+effort); documentation, testing, validation, and other support roles declare `standard` (Claude
+`sonnet`/`medium`, Codex `gpt-5.6-luna`/`medium`). `mechanical` (Claude `haiku`/`low`, Codex
+`gpt-5.6-luna`/`low`) is reserved for read-only drafts or fact returns that meet the eligibility criteria in
+[Build system](./build-system.md#model-tiers); the PR body draft in `pr` step 9 is the first such
+site, besides the no-op nested-spawn probe. The individual
+files under `src/agents/` remain the exhaustive source of truth for which role belongs to which
+tier; `MODEL_TIER_MAPPINGS` in `build.mjs` is the only place the concrete values live. Tiers are
+build metadata and no configuration key, so `executionProfiles` stays the only model-related
+project setting (see [Configuration ownership](./configuration.md#model-tiers)).
+
+Tiers also govern spawns that are not workers. Every spawn instruction in `src/tools` and
+`src/shared` carries a spawn-site marker that the build replaces with the site's resolved tier and
+its values for the target (Claude values in `dist/claude`, Codex values in `dist/codex`, both
+keyed by spawn mechanism in `dist/portable`), so every spawn in every target passes a model and
+effort and none inherits the parent's by omission. The lazily loaded `model-tiers` fragment owns
+the rules: a bounded one-step margin (a `deep` default never moves down; a `standard` default may
+move one step with a stated reason; a retry runs at least on the role or site default) and the
+host overrides. A Fast attempt passes only its Fast reference's own values, never the site's tier
+line (owned by `execution-profiles`). The native sidecar values remain the harness-enforced fallback when a spawn passes
+none. A per-spawn tier now wins over `CLAUDE_CODE_SUBAGENT_MODEL`; `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`
+is the opt-out for the model: Claude Code then drops the Agent tool's `model` parameter, and the
+orchestrator passes only the tier's effort; `CLAUDE_CODE_EFFORT_LEVEL`
+overrides the effort and is not detected. See
+[Per-spawn model tiers](../adr/per-spawn-model-tiers.md) and
+[Model tiers](./build-system.md#model-tiers).
+
+Caller defaults are deliberately documentation rather than generated skill configuration.
+This keeps Effective Flow from overriding a user's global or project harness settings and lets
+the caller be escalated for unusually ambiguous or architecture-heavy work without changing
+the worker fleet. Claude can apply a model or effort override from skill frontmatter for the
+current turn, but the next user prompt returns to the session selection; Effective Flow therefore
+does not place a caller override in its router. Native worker metadata is rendered only into the
+Claude and Codex sidecars.
+Portable worker contracts contain no native model metadata, but portable spawn sites pass the
+tier's values for whichever harness executes them. A portable host with neither spawn mechanism
+inherits the parent's model and says so once.
+
+The native execution-profile capability is deliberately asymmetric. For the five implementation
+roles selected by the validated project-routing table, Claude and Codex receive generated `-fast`
+sidecars whose worker body, tools, color, and leaf boundary match the base role. Codex also receives
+mechanical and deep tier variants for the six standard roles. Codex role-file model and reasoning
+settings take precedence over spawn parameters, so generated role names carry the effective native
+selection while direct base-role invocation remains safe. The mappings and eligible route
+classification are centralized in `build.mjs`.
+Portable builds do not receive inventories, Fast sidecars, aliases, or native profile metadata and
+remain Quality-only.
+
+`src/tools/build.md` and `src/tools/refactor.md` are the only sources authorized to use a Fast
+profile reference, each only inside its initial implementation phase. Both adopt it: `build`
+Phase 2 and `refactor` Phase 3, after its Phase 2 baseline, carry the five Fast references inline
+on the implementer selector lines and lazy-load the policy, whose "Initial implementation phase"
+section owns their shared packet contract, and the workflow-record fragment. A native artifact or
+valid inventory therefore does not make a run select Fast by itself: the adopting workflow executes the runtime
+eligibility and capability gate for every initial packet immediately before selection, uses Fast
+only for the first attempted spawn of an eligible packet in an active generation, and continues a
+failed attempt exactly once with the routed Quality implementer from the retained state in the same
+checkout. On Claude Code, the presence of
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` produces `profile-unavailable` and selects Quality; an actual
+host rejection after a Fast request remains the distinct `spawn-rejected` fallback.
+
+## Local pilot measurement boundary
+
+The shipped pilot runtime is a fourth dependency-free script subsystem. Its entry point, core,
+and protocol modules are copied byte-for-byte into every target, but all evidence belongs to the
+verified runtime root at `.effective-flow/model-tiering-pilot/`; none belongs in `src/`, `dist/`,
+the merge-gate behavioral-evaluation archive, or the tracked project-setup ADR. The protocol module
+is the executable authority for bounded schemas, limits, timing, aggregation, metrics, adoption
+gates, and enums. The build reconciles its policy projection with
+`src/shared/execution-profiles.md` and its documentation projection with the marked mirror in the
+[protocol guide](model-tiering-pilot-protocol.md).
+
+Configuration, lifecycle state, and native representation are intentionally independent. The
+strict `executionProfiles.fast.enabled` row admits a project to the lifecycle, a generation owns
+baseline/active/suspended/review state, and native inventories prove only that artifacts agree with
+their installation. No one layer activates another. Guided setup block 10 writes the row and
+offers the confirmed `begin-baseline` and `resume` actions; `build` reads the row and the
+generation, never calls either action, and lets the helper activate a baseline generation, which
+it does only once the preregistered window and sample are met.
+
+`build` owns its workflow record through
+[`src/shared/pilot-measurement-workflow.md`](../../src/shared/pilot-measurement-workflow.md), loaded
+lazily in Phase 2. A measured run (enabled configuration, native harness, proven `baseline` or
+`active` generation) first calls `activate` when the generation is in `baseline`, classifies every
+initial packet under the state that results, reserves all of them with one `start`,
+calls `start-packet` immediately before each packet's first spawn and `finish-packet` when its
+initial phase ends, and calls `finalize` exactly once at every exit. Admission is serialized: any
+in-flight reservation makes `start` fail and the run proceeds as unmeasured Quality. A critical
+incident is recorded through `record-incident` by its category; the helper maps it to the
+suspending outcome. After any incident, no packet not yet spawned in that run attempts Fast, and an
+unpersisted incident is retried only on confirmation, otherwise pointing to Guided setup's
+`Disable`. The workflow never suspends for a failed finalization: the helper persists
+`finalization-failed` itself on a mid-write fault, and lock contention or a rejected request leaves
+the pilot unchanged. Either way the run offers a confirmed `reconcile-record` in the same run,
+because no later run holds the workflow capability; otherwise only `discard-generation` or `purge`
+clears the incomplete record. `refactor` records nothing yet.
+
+Minimal workflow records and optional detailed traces are separate channels. A trace requires an
+explicit request in the current run; project configuration cannot confer that consent and no
+consent identity or text is retained. `merge-gate` has a third, deliberately unlinkable channel:
+while a baseline or active generation exists, non-observer runs may contribute anonymous
+period-level correction observations, but never a workflow-record identifier. The runtime fails
+toward Quality, preserves incomplete evidence for reconciliation, and separates private aggregate
+evaluation from any later publication approval.
+
+The storage layer is crash-safe and capability-bound. Namespace serialization admits at most one
+current generation; lifecycle locks exclude packet writers during review and deletion, while
+separate packet locks permit unrelated timers to overlap. Suspension transitions freeze every
+admission path until complete. Timing receipts bind cross-process intervals to the packet and prove
+monotonic, wall-clock, boot, and salted-host continuity. Review binds evidence plus private/public
+aggregate digests, and deletion uses exclusive digest-named tombstones with fail-closed retry
+inventory rather than unscoped recursive cleanup.
+
+## Diff baseline
+
+`build`, `fix` and `refactor` act on "the files this run changed" in several steps: documentation
+sync, validator routing, reviewer scope and, in `build`, the formatter. The diff baseline computes
+that set instead of leaving each step to estimate it. The contract lives in the lazily loaded
+[`src/shared/diff-baseline.md`](../../src/shared/diff-baseline.md); the fifth dependency-free
+script subsystem, `diff-baseline.mjs` over `diff-baseline-core.mjs`, does the work. Its snapshot
+mechanics, what they guarantee the real repository and what the helper refuses are described under
+[Runtime scripts](build-system.md#runtime-scripts). It is distinct from `refactor`'s Phase 2
+behavior baseline, which records check results.
+
+Each run captures exactly once, after its execution-location receipt is verified and any owned
+setup ran, and before its first implementation write: `build` at the end of Phase 2 step 0, `fix`
+at the end of Phase 3 step 0, and `refactor` after its behavior-baseline checks are documented, so
+files those checks generate never count as the refactoring's change. Every delivery mode captures
+the same way, which gives an in-place run, a reused worktree, or a run that starts on a dirty tree
+a reference point that a creation OID alone never provided. Because `fix` may no longer write
+before capture, its Phase 2 only specifies the failing reproduction test, and the test-writer
+writes it at the start of Phase 3, after capture and before any implementer.
+
+The run renders its delta before documentation sync, before every validation or review round and
+after every correction or incorporation pass. The latest render's path list drives all consumers:
+it is the documentation-sync change set, it selects the `code-validator` routing buckets (whose
+checks still run at repository-native breadth), it routes reviewers and, in `build`, it names the
+files to format. Every reviewer assignment names the absolute `diff.patch` path plus only the
+reviewer's routed bucket's slice of the path list; baseline and tree OIDs stay with the
+orchestrator. The four reviewer workers eagerly include
+[`src/shared/reviewer-assigned-change.md`](../../src/shared/reviewer-assigned-change.md): given a
+diff path, they assess its hunks for their assigned paths and read other hunks and full files only
+for context, never relying on the implementer's report; without one, as in `review`, they review
+the assigned files as before. When
+`iterate` or `apply-review` runs several items in one checkout and the delegation handoff supplies
+an owned or affected file set, the item renders only that literal path scope, so a sibling's edits
+never enter its change.
+
+The directory lives at `<RUNTIME_STATE_ROOT>/.effective-flow/runs/<RUN_ID>/diff-baseline/`, which
+is distinct from the worktree lifecycle records under `worktree-runs/`; the diff baseline owns only
+the `diff-baseline/` subdirectory of its run directory. A successful run discards it; an aborted or
+escalated run leaves it for `cleanup`, which lists stale diff baselines in its dry run and deletes
+one only after explicit confirmation. Because the diff can carry working-tree secrets, it stays in
+ignored runtime state with owner-only permissions and is never quoted into a tracker item, pull
+request, commit or report.
+
+## Repo structure at a glance
+
+```text
+effective-flow/                        (Repo)
+├── src/                      # Sources (see above)
+├── docs/                     # Project documentation
+│   ├── plan/                 # Implementation plans (ISO-date slug, see plan-conventions.md)
+│   ├── user-guide/           # End-user documentation (delivered to main)
+│   └── developer-guide/      # this document and its neighbors (develop only)
+├── dist/                     # Generated, gitignored
+│   ├── claude/               # native skill + agents/effective-flow-*.md
+│   ├── codex/                # native skill + agents/effective-flow-*.toml
+│   └── portable/effective-flow/ # manager skill + workers/effective-flow-*.md
+├── build.mjs                 # Build script (see build-system.md)
+├── install-skill.sh          # Default: drives DALO install/update; `local`: native checkout copy
+└── local-link.sh             # Developer build + symlink helper
+```
+
+## Further reading
+
+- [`build-system.md`](build-system.md) – build flow, placeholder syntax, guards.
+- [`plan-conventions.md`](plan-conventions.md) – naming scheme and lifecycle of the plan files.
+- [`release-and-installation.md`](release-and-installation.md) – versioning and installation.
+- [`AGENTS.md`](../../AGENTS.md) – canonical repository **rules**: use of the Effective Flow
+  skill, no-AI-attribution, and the Claude leaf boundary of agent tool lists; language,
+  delegation, commit, plan and concept contracts are the shipped fragments under
+  [`src/shared/`](../../src/shared/). Its skill-discovery, build,
+  versioning and ownership sections are short forms; the **mechanics** are canonical in
+  [`skill-ownership.md`](skill-ownership.md), [`build-system.md`](build-system.md) and
+  [`release-and-installation.md`](release-and-installation.md).
+
+## Planned Feature build boundary
+
+The build caller keeps intent, canonical status, clarification, retired-key/configuration preflight, approval basis and dispatch decisions eager. `apply-plan` resolves the source and follows that same caller in the current run. Exactly one initially fresh built-in workflow runner at `deep` reads `shared/build-delegated-run.md` and owns phases 2–7, with the existing specialist roles, Fast selector and independent quality gates. This workflow orchestrator may spawn its workers; named workers remain leaves. A completed runner cannot accept another plan.
+
+`shared/build-run-contract.md` defines bounded artifact control, same-agent question continuation and terminal evidence. The parent carries request/result references and a visible progress projection; complete plans, diffs, findings and logs remain with the runner and their artifacts. The helper bounds dispatch to 8 KiB and control JSON to 16 KiB UTF-8, without promising a token count or intercepting arbitrary host text. It binds immutable sources and index/worktree/untracked snapshots, so an unchanged HEAD alone cannot validate a resume. Before setup it records the already-resolved execution mode with `authorize-execution`; after setup it binds the fresh receipt with `transition-execution`. Required phase or wisdom evidence uses the runtime-only `retain-evidence` operation, which accepts one exact identifier plus either bounded UTF-8 content or an allowed source artifact, copies exact bytes to a fixed runtime-owned evidence file, and returns a standard file reference. The returned digest identifies the retained bytes only; it does not assert native execution or gate success. Retention remains allowed after verified handoff for runtime-only evidence and is refused after terminal completion. Durable gate receipts and immutable Git deliverables survive baseline cleanup and owned-worktree removal.
+
+Completion preserves the approved plan as the source text and applies a bounded status/archive/completion-section transformation only after the existing independent-review and final-validation receipts are bound by `prepare-completion`. `seal-delivery` proves the staged tree against that basis. A changed product byte requires the independent marked `code-validator` formatting-only proof with exact before/after digests, or renewed affected review and final-validation receipts; a plan-only completion transformation keeps the original gates. The explicit completion-transform marker is therefore a separate code-validator site, alongside the caller and nesting-probe sites.
+
+Every resumed decision freshly resolves the owning configuration source, priority and effective values from the originating checkout before accepting the old basis; after product handoff, only the resolver-owned runtime policy and purpose-specific post-handoff receipts remain in scope. The existing body-free `plan-pr-continuation` discovery and owner binding remain authoritative; build-run records that result and adds no publication or checkout-adoption authority.
+
+The runner proves its nested leaf level using one completed read-only `standard` probe before mutation. A host without delegation, same-agent continuation or sufficient nesting takes the complete inline execution fragment, visibly marked isolation unavailable. After mutation, loss of the original agent or transient pilot capability causes a controlled stop with retained artifacts. User questions pause that same logical build with active ownership and no held lock; capabilities never enter persisted control records. Only the originating interactive build mode can relay the existing review-publication ask; merge-gate relays and truly non-interactive runs retain their limits. After `handoff`, product authority is ended and only runtime-only delivery, archival, cleanup, pilot-finalization and completion outcomes remain; the original agent handle is used once for the owning pilot finalization and is never reconstructed from records. `record-return` proves an actual in-place checkout restore. A separate terminal continuation projection names the next workflow and restrictions, not live authority.
+
+The active tier decision is [Per-spawn model tiers](../adr/per-spawn-model-tiers.md). Behavioural and paired context/cost measurements are release evidence, separate from structural tests; fallback runs cannot count as isolation successes.

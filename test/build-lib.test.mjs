@@ -1,0 +1,7305 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  escapeRegex,
+  extractFrontmatter,
+  extractBody,
+  normalizeLineEndings,
+  getField,
+  getNested,
+  getNestedArray,
+  getNestedList,
+  cleanDescription,
+  firstSentence,
+  normalizeCodexSandboxMode,
+  normalizeClaudeEffort,
+  normalizeCodexReasoningEffort,
+  validateAgentProfileMappings,
+  validateModelTierMappings,
+  resolveAgentTier,
+  MODEL_TIERS,
+  LEGACY_AGENT_MODEL_FIELDS,
+  collectSpawnSiteMarkers,
+  parseSpawnSiteTable,
+  reconcileSpawnSites,
+  renderSpawnSiteLine,
+  renderSpawnSiteMarkers,
+  renderModelTierRoleDefaults,
+  renderModelTierTable,
+  renderModelTierDirectives,
+  findProviderModelNames,
+  MODEL_TIER_TABLE_START,
+  MODEL_TIER_TABLE_END,
+  validateRefs,
+  assertQuotedDescription,
+  transformRefs,
+  parseAskBlock,
+  renderBody,
+  missingCategoryReadmes,
+  findSelfReferentialContractPhrases,
+  ASK_MAX_HEADER_LENGTH,
+  ASK_SCORING,
+  renderScoringInstruction,
+  renderLazyPointer,
+  resolveLazyIncludes,
+  resolveEagerIncludes,
+  findUnresolvedEagerIncludes,
+  assertNoUnresolvedEagerIncludes,
+  findUnresolvedLazyIncludes,
+  assertNoUnresolvedLazyIncludes,
+  findUnresolvedPlaceholders,
+  assertNoUnresolvedPlaceholders,
+  collectIncludeNames,
+  assertNoEagerLazyOverlap,
+  renderDeprecatedAliasClause,
+  DOCUMENTATION_SYNC_CONSUMERS,
+  findDocumentationSyncViolations,
+  findRuntimeStateSafetyViolations,
+  findRuntimeDirMigrationViolations,
+  findMemoryStateContractViolations,
+  developerGuideBaseUrl,
+  rewriteDeveloperGuideLinks,
+  appendDeliveryFooter,
+  deliveryFooter,
+  DELIVERY_FOOTER_MARKER,
+  deliveryGuidance,
+  DELIVERY_GUIDANCE_MARKER,
+  PORTABLE_WORKER_DELEGATION,
+  collectRenderedWorkerRefs,
+  HARNESS_TOOL_PARAMETER_OWNERSHIP,
+  findForeignHarnessToolParameters,
+  REPOSITORY_ONLY_SKIP_DIRS,
+  collectRepositoryOnlyFiles,
+  applyRepositoryOnlyAllowlist,
+  findRepositoryOnlyReferences,
+  findVerbatimSourceLocations,
+  findProhibitedConsumerScriptCommands,
+  findRemoteTrackerRecipeViolations,
+  findRetiredConfigDocViolations,
+  findStaleAdrContractClaims,
+  findStaleBrandReferences,
+  parseProjectRoutingTable,
+  assertProjectRoutingContract,
+  classifyProjectRoutingScope,
+  PROJECT_ROUTING_REQUIRED_ROUTES,
+  parseExecutionProfileContract,
+  assertExecutionProfileContract,
+  executionProfilePolicyProjection,
+  assertPilotMeasurementPolicyProjection,
+  parsePilotMeasurementDocumentationProjection,
+  assertPilotMeasurementDocumentationProjection,
+  PILOT_MEASUREMENT_DOCUMENTATION_START,
+  PILOT_MEASUREMENT_DOCUMENTATION_END,
+  PLAN_CONTRACT_MAPPING_START,
+  PLAN_CONTRACT_MAPPING_END,
+  PLAN_CONTRACT_PLACEHOLDERS_START,
+  PLAN_CONTRACT_PLACEHOLDERS_END,
+  parsePlanContractMarkedTable,
+  assertPlanContractProjection,
+  assertPlanPlaceholderProjection,
+  extractPlanTemplateTokens,
+  parseNextStepsTable,
+  assertNextStepsContract,
+  findNextStepsDocViolations,
+  NEXT_STEPS_TABLE_START,
+  NEXT_STEPS_TABLE_END,
+  parseSkillOwnershipManifest,
+  parseSkillOwnershipTable,
+  collectRecommendedSkillChains,
+  collectRecommendedSkillSections,
+  parseSkillOwnershipRelevanceGateOwners,
+  assertDisjointConsumerNames,
+  assertSkillOwnershipContract,
+  assertAgentSkillRecommendationRoster,
+  collectToolReferences,
+  assertWorkflowEdgeContract,
+  assertSuccessorSetsReachExposedTools,
+  deriveSetupStatusProjection,
+  assertSetupStatusProjection,
+} from '../build-lib.mjs';
+import {
+  exposedToolsReaching,
+  validateOwnersProjection,
+} from '../src/scripts/setup-status-core.mjs';
+import { auditSkillOwnership } from '../scripts/audit-skill-ownership.mjs';
+import {
+  PILOT_MEASUREMENT_DOCUMENTATION_PROJECTION,
+  PILOT_MEASUREMENT_POLICY_PROJECTION,
+  canonicalizeJson,
+} from '../src/scripts/pilot-measurement-protocol.mjs';
+import { PLAN_CONTRACT_MAPPING, PLAN_PLACEHOLDERS } from '../src/scripts/plan-lint-core.mjs';
+import {
+  AGENT_PROFILE_MAPPINGS,
+  FAST_PROFILE_AGENTS,
+  MODEL_TIER_MAPPINGS,
+} from './support/native-profile-config.mjs';
+
+const DELIVERY = { repo: 'sebastian-software/effective-flow', sourceBranch: 'develop' };
+
+const refConfig = {
+  exposedTools: ['build', 'fix', 'apply'],
+  agentPrefix: 'effective-flow-',
+  skillName: 'effective-flow',
+  knownTools: new Set(['build', 'fix', 'apply', 'apply-plan']),
+  knownAgents: new Set(['nodejs-implementer', 'code-validator']),
+};
+
+const profileMappings = {
+  fast: {
+    claude: { model: 'sonnet', effort: 'medium' },
+    codex: { model: 'gpt-5.6-luna', reasoning_effort: 'medium' },
+  },
+};
+
+const profileRefConfig = {
+  ...refConfig,
+  profileMappings,
+  fastProfileAgents: new Set(['nodejs-implementer']),
+};
+
+// --- Frontmatter extraction ---
+
+test('extractFrontmatter / extractBody split on the fence', () => {
+  const src = '---\ndescription: "x"\n---\nbody line\n';
+  assert.equal(extractFrontmatter(src), 'description: "x"');
+  assert.equal(extractBody(src), 'body line\n');
+});
+
+// --- getField ---
+
+test('getField parses quoted and bare scalars', () => {
+  assert.equal(getField('description: "hello"', 'description'), 'hello');
+  assert.equal(getField('name: firmo', 'name'), 'firmo');
+});
+
+test('getField keeps a value ending in an inner quote (no last-char loss)', () => {
+  assert.equal(getField('description: "a"b"', 'description'), 'a"b');
+});
+
+test('getField returns "" for a missing optional field', () => {
+  assert.equal(getField('name: firmo', 'description'), '');
+});
+
+test('getField throws with context for a missing required field', () => {
+  assert.throws(
+    () => getField('name: firmo', 'description', { required: true, context: 'x.md' }),
+    /Missing required field "description".*x\.md/,
+  );
+});
+
+test('getField rejects an unterminated quoted value', () => {
+  assert.throws(() => getField('description: "oops', 'description'), /Unterminated quoted value/);
+});
+
+// --- getNested / getNestedArray / getNestedList ---
+
+const agentFm =
+  'description: "d"\nclaude:\n  model: opus\n  tools: [Read, Write, Edit]\n  skills: [frontend-design]\ncodex:\n  model: gpt\n';
+
+test('getNested reads a nested scalar', () => {
+  assert.equal(getNested(agentFm, 'claude', 'model'), 'opus');
+  assert.equal(getNested(agentFm, 'codex', 'model'), 'gpt');
+  assert.equal(getNested(agentFm, 'claude', 'color'), '');
+});
+
+test('getNestedArray parses an inline array', () => {
+  assert.equal(getNestedArray(agentFm, 'claude', 'tools'), 'Read,Write,Edit');
+});
+
+test('getNestedArray throws on a non-inline array', () => {
+  const fm = 'claude:\n  tools:\n    - Read\n    - Write\n';
+  assert.throws(
+    () => getNestedArray(fm, 'claude', 'tools', { context: 'a.md' }),
+    /Expected inline array.*a\.md/,
+  );
+});
+
+test('getNestedList parses an inline list', () => {
+  assert.equal(getNestedList(agentFm, 'claude', 'skills'), '  - frontend-design');
+});
+
+test('getNestedList does not bleed past a blank line or dedent', () => {
+  const fm = 'claude:\n  skills:\n    - one\n    - two\n\n  model: opus\n';
+  assert.equal(getNestedList(fm, 'claude', 'skills'), '  - one\n  - two');
+});
+
+// --- cleanDescription / firstSentence ---
+
+test('cleanDescription strips SKILL/AGENT/profile refs', () => {
+  assert.equal(
+    cleanDescription(
+      'use {{SKILL:fix}}, {{AGENT:test-writer}}, and {{AGENT_PROFILE:nodejs-implementer:fast}}',
+    ),
+    'use fix, test-writer, and nodejs-implementer',
+  );
+});
+
+test('firstSentence returns the first sentence only', () => {
+  assert.equal(firstSentence('First. Second.'), 'First.');
+});
+
+// --- normalizeCodexSandboxMode ---
+
+test('normalizeCodexSandboxMode maps and rejects', () => {
+  assert.equal(normalizeCodexSandboxMode('full', 'a'), 'danger-full-access');
+  assert.equal(normalizeCodexSandboxMode('', 'a'), '');
+  assert.throws(() => normalizeCodexSandboxMode('bogus', 'a'), /Unsupported codex sandbox_mode/);
+});
+
+// --- normalizeClaudeEffort ---
+
+test('normalizeClaudeEffort accepts every supported exact value', () => {
+  for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) {
+    assert.equal(normalizeClaudeEffort(effort, 'test-writer', 'src/agents/test-writer.md'), effort);
+  }
+});
+
+test('normalizeClaudeEffort rejects missing values with agent and source context', () => {
+  for (const effort of [undefined, null, '']) {
+    assert.throws(
+      () => normalizeClaudeEffort(effort, 'test-writer', 'src/agents/test-writer.md'),
+      /Missing required claude effort for test-writer.*src\/agents\/test-writer\.md/,
+    );
+  }
+});
+
+test('normalizeClaudeEffort rejects unsupported, whitespace, and case-variant values', () => {
+  for (const effort of ['bogus', ' ', ' medium ', 'Medium', 'XHIGH']) {
+    assert.throws(
+      () => normalizeClaudeEffort(effort, 'nodejs-implementer', 'src/agents/nodejs-implementer.md'),
+      /Unsupported claude effort .* for nodejs-implementer.*src\/agents\/nodejs-implementer\.md.*expected one of: low, medium, high, xhigh, max/,
+    );
+  }
+});
+
+test('Codex profile mappings accept only supported model/reasoning pairs', () => {
+  assert.equal(
+    normalizeCodexReasoningEffort(
+      'gpt-5.6-luna',
+      'medium',
+      'nodejs-implementer',
+      'profile fixture',
+    ),
+    'medium',
+  );
+  assert.throws(
+    () =>
+      normalizeCodexReasoningEffort(
+        'gpt-5.6-luna',
+        'ultra',
+        'nodejs-implementer',
+        'profile fixture',
+      ),
+    /Unsupported Codex model\/reasoning combination.*profile fixture/,
+  );
+  assert.throws(
+    () =>
+      normalizeCodexReasoningEffort(
+        'gpt-5.6-luna',
+        'Medium',
+        'nodejs-implementer',
+        'profile fixture',
+      ),
+    /Unsupported Codex reasoning effort.*profile fixture/,
+  );
+});
+
+test('validateAgentProfileMappings rejects incomplete, extra, or malformed mappings', () => {
+  assert.equal(validateAgentProfileMappings(profileMappings), profileMappings);
+  for (const [mapping, expected] of [
+    [{}, /Agent-profile fast mapping must be an object/],
+    [{ fast: profileMappings.fast, slow: profileMappings.fast }, /unsupported field\(s\): slow/],
+    [
+      { fast: { claude: profileMappings.fast.claude } },
+      /Agent-profile Codex fast mapping must be an object/,
+    ],
+    [
+      {
+        fast: {
+          ...profileMappings.fast,
+          claude: { ...profileMappings.fast.claude, extra: true },
+        },
+      },
+      /unsupported field\(s\): extra/,
+    ],
+    [
+      {
+        fast: {
+          ...profileMappings.fast,
+          claude: { model: '', effort: 'medium' },
+        },
+      },
+      /Claude fast model must be a non-empty string/,
+    ],
+    [
+      {
+        fast: {
+          ...profileMappings.fast,
+          codex: { model: 'gpt-5.6-luna', reasoning_effort: 'ultra' },
+        },
+      },
+      /Unsupported Codex model\/reasoning combination/,
+    ],
+  ]) {
+    assert.throws(() => validateAgentProfileMappings(mapping), expected);
+  }
+});
+
+// --- validateRefs (dead-reference guard) ---
+
+test('validateRefs accepts known refs', () => {
+  assert.doesNotThrow(() =>
+    validateRefs('{{SKILL:fix}} {{SKILL:apply-plan}} {{AGENT:code-validator}}', {
+      knownTools: refConfig.knownTools,
+      knownAgents: refConfig.knownAgents,
+    }),
+  );
+});
+
+test('validateRefs accepts only known agents and the fast profile for profile refs', () => {
+  assert.doesNotThrow(() =>
+    validateRefs('{{AGENT_PROFILE:nodejs-implementer:fast}}', {
+      knownTools: refConfig.knownTools,
+      knownAgents: refConfig.knownAgents,
+    }),
+  );
+  assert.throws(
+    () =>
+      validateRefs('{{AGENT_PROFILE:missing:fast}}', {
+        knownTools: refConfig.knownTools,
+        knownAgents: refConfig.knownAgents,
+      }),
+    /Unknown agent reference \{\{AGENT_PROFILE:missing:fast\}\}/,
+  );
+  assert.throws(
+    () =>
+      validateRefs('{{AGENT_PROFILE:nodejs-implementer:quality}}', {
+        knownTools: refConfig.knownTools,
+        knownAgents: refConfig.knownAgents,
+      }),
+    /Unknown agent profile "quality".*expected "fast"/,
+  );
+});
+
+test('validateRefs throws on an unknown tool ref with context', () => {
+  assert.throws(
+    () =>
+      validateRefs('{{SKILL:aply}}', {
+        knownTools: refConfig.knownTools,
+        knownAgents: refConfig.knownAgents,
+        context: 'x.md',
+      }),
+    /Unknown tool reference \{\{SKILL:aply\}\}.*x\.md/,
+  );
+});
+
+test('validateRefs throws on an unknown agent ref', () => {
+  assert.throws(
+    () =>
+      validateRefs('{{AGENT:code-validater}}', {
+        knownTools: refConfig.knownTools,
+        knownAgents: refConfig.knownAgents,
+      }),
+    /Unknown agent reference/,
+  );
+});
+
+// Legacy `sf-`-prefixed placeholders are rejected with a migration message
+// rather than the generic unknown-reference error (issue #106).
+test('validateRefs rejects a legacy sf- tool ref with a migration message', () => {
+  assert.throws(
+    () =>
+      validateRefs('{{SKILL:sf-fix}}', {
+        knownTools: refConfig.knownTools,
+        knownAgents: refConfig.knownAgents,
+        context: 'x.md',
+      }),
+    /Legacy placeholder \{\{SKILL:sf-fix\}\} is no longer supported.*drop the "sf-" prefix.*x\.md/,
+  );
+});
+
+test('validateRefs rejects a legacy sf- agent ref with a migration message', () => {
+  assert.throws(
+    () =>
+      validateRefs('{{AGENT:sf-test-writer}}', {
+        knownTools: refConfig.knownTools,
+        knownAgents: refConfig.knownAgents,
+      }),
+    /Legacy placeholder \{\{AGENT:sf-test-writer\}\} is no longer supported/,
+  );
+});
+
+test('validateRefs prefers the legacy message even when the sf- name is unknown', () => {
+  // An internal tool name with the legacy prefix still reports migration, not
+  // "unknown tool reference".
+  assert.throws(
+    () =>
+      validateRefs('{{SKILL:sf-apply-plan}}', {
+        knownTools: refConfig.knownTools,
+        knownAgents: refConfig.knownAgents,
+      }),
+    /Legacy placeholder \{\{SKILL:sf-apply-plan\}\} is no longer supported/,
+  );
+});
+
+// --- Central-skill ownership contract (#168) ---
+
+function skillOwnershipManifest(overrides = {}) {
+  return parseSkillOwnershipManifest(
+    JSON.stringify({
+      schemaVersion: 1,
+      relationships: [
+        {
+          skill: 'effective-web',
+          consumers: [{ consumer: 'test-writer', classification: 'route-when-relevant' }],
+        },
+      ],
+      relevanceGateOwners: [],
+      externalRecommendationAllowlist: ['impeccable', 'frontend-design'],
+      ...overrides,
+    }),
+    { context: 'skill-ownership.json' },
+  );
+}
+
+function skillOwnershipTable(skills = ['effective-web']) {
+  const rows = skills.map(
+    (skill) => `| \`${skill}\` | \`test-writer\` | route-when-relevant | Test coverage |`,
+  );
+  return parseSkillOwnershipTable(
+    [
+      '<!-- skill-ownership-table:start -->',
+      '| Central skill | Effective-Flow consumer(s) | Classification | Domain coverage |',
+      '| --- | --- | --- | --- |',
+      ...rows,
+      '<!-- skill-ownership-table:end -->',
+    ].join('\n'),
+    { context: 'skill-ownership.md' },
+  );
+}
+
+function assertSyntheticSkillOwnershipContract({
+  manifest = skillOwnershipManifest(),
+  inventoryRows = skillOwnershipTable(),
+  recommendation = '- `effective-web › impeccable › frontend-design`',
+  relevanceGateOwners = [],
+  knownConsumers = new Set(['test-writer', 'ui-implementer']),
+  recommendationCapableConsumers = new Set(['test-writer', 'ui-implementer']),
+} = {}) {
+  const recommendationChains = collectRecommendedSkillChains([
+    {
+      consumer: 'test-writer',
+      context: 'agents/test-writer.md',
+      text: `## Recommended skills\n\n${recommendation}\n`,
+    },
+  ]);
+  assertSkillOwnershipContract(
+    {
+      manifest,
+      inventoryRows,
+      recommendationChains,
+      relevanceGateOwners,
+      knownConsumers,
+      recommendationCapableConsumers,
+    },
+    { context: 'synthetic ownership contract' },
+  );
+  return recommendationChains;
+}
+
+test('skill-ownership helpers accept a valid relationship with external fallback skills', () => {
+  const recommendationChains = assertSyntheticSkillOwnershipContract();
+
+  assert.deepEqual(recommendationChains, [
+    {
+      consumer: 'test-writer',
+      context: 'agents/test-writer.md',
+      skills: ['effective-web', 'impeccable', 'frontend-design'],
+    },
+  ]);
+});
+
+test('parseSkillOwnershipManifest rejects duplicate relationships', () => {
+  const relationship = {
+    skill: 'effective-web',
+    consumers: [{ consumer: 'test-writer', classification: 'route-when-relevant' }],
+  };
+
+  assert.throws(
+    () => skillOwnershipManifest({ relationships: [relationship, relationship] }),
+    /Duplicate skill-ownership relationship for "effective-web".*skill-ownership\.json/,
+  );
+});
+
+test('parseSkillOwnershipManifest rejects unsupported coupling fields and malformed consumers', () => {
+  assert.throws(
+    () => skillOwnershipManifest({ requiredUpstreamRevision: 'abc123' }),
+    /unsupported field\(s\): requiredUpstreamRevision.*skill-ownership\.json/,
+  );
+  assert.throws(
+    () =>
+      skillOwnershipManifest({
+        relationships: [
+          {
+            skill: 'effective-web',
+            consumers: [
+              { consumer: 'not a real source !!!', classification: 'route-when-relevant' },
+            ],
+          },
+        ],
+      }),
+    /must be a kebab-case skill name.*skill-ownership\.json/,
+  );
+});
+
+test('parseSkillOwnershipManifest rejects an invalid classification', () => {
+  assert.throws(
+    () =>
+      skillOwnershipManifest({
+        relationships: [
+          {
+            skill: 'effective-web',
+            consumers: [{ consumer: 'test-writer', classification: 'advisory' }],
+          },
+        ],
+      }),
+    /invalid or missing classification "advisory".*skill-ownership\.json/,
+  );
+});
+
+test('parseSkillOwnershipManifest rejects a missing classification', () => {
+  assert.throws(
+    () =>
+      skillOwnershipManifest({
+        relationships: [
+          {
+            skill: 'effective-web',
+            consumers: [{ consumer: 'test-writer' }],
+          },
+        ],
+      }),
+    /invalid or missing classification "".*skill-ownership\.json/,
+  );
+});
+
+test('assertSkillOwnershipContract rejects a stale Markdown inventory row', () => {
+  assert.throws(
+    () =>
+      assertSyntheticSkillOwnershipContract({
+        inventoryRows: skillOwnershipTable(['effective-web', 'stale-skill']),
+      }),
+    /stale or extra Markdown row\(s\): stale-skill.*synthetic ownership contract/,
+  );
+});
+
+test('assertSkillOwnershipContract rejects an unowned recommendation', () => {
+  const manifest = skillOwnershipManifest({
+    relationships: [
+      {
+        skill: 'effective-web',
+        consumers: [{ consumer: 'ui-implementer', classification: 'delegate' }],
+      },
+    ],
+  });
+
+  assert.throws(
+    () => assertSyntheticSkillOwnershipContract({ manifest, recommendation: '- `effective-web`' }),
+    /Unowned recommendation "effective-web" for consumer "test-writer".*agents\/test-writer\.md/,
+  );
+});
+
+test('assertSkillOwnershipContract rejects a stale relevance-gate owner', () => {
+  const manifest = skillOwnershipManifest({ relevanceGateOwners: ['effective-web'] });
+
+  assert.throws(
+    () => assertSyntheticSkillOwnershipContract({ manifest, relevanceGateOwners: [] }),
+    /stale manifest owner\(s\): effective-web.*synthetic ownership contract/,
+  );
+});
+
+test('assertSkillOwnershipContract rejects an unknown fallback token', () => {
+  assert.throws(
+    () =>
+      assertSyntheticSkillOwnershipContract({
+        recommendation: '- `effective-web › impeccable › frontend-desgin`',
+      }),
+    /Unknown external fallback skill "frontend-desgin".*agents\/test-writer\.md/,
+  );
+});
+
+test('collectRecommendedSkillChains rejects unquoted or split fallback syntax', () => {
+  for (const recommendation of ['- effective-web', '- `effective-web` › typo-skill']) {
+    assert.throws(
+      () =>
+        assertSyntheticSkillOwnershipContract({
+          recommendation,
+        }),
+      /must start with exactly one backticked skill or fallback chain.*agents\/test-writer\.md/,
+    );
+  }
+});
+
+test('assertSkillOwnershipContract rejects a relationship with an unknown consumer', () => {
+  const manifest = skillOwnershipManifest({
+    relationships: [
+      {
+        skill: 'effective-web',
+        consumers: [{ consumer: 'ghost-worker', classification: 'delegate' }],
+      },
+    ],
+  });
+
+  assert.throws(
+    () =>
+      assertSyntheticSkillOwnershipContract({
+        manifest,
+        recommendation: '- `impeccable`',
+        knownConsumers: new Set(['test-writer']),
+      }),
+    /Unknown Effective Flow consumer "ghost-worker" for skill "effective-web"/,
+  );
+});
+
+const checkedInSkillOwnershipManifest = parseSkillOwnershipManifest(
+  readFileSync(new URL('../docs/developer-guide/skill-ownership.json', import.meta.url), 'utf8'),
+  { context: 'docs/developer-guide/skill-ownership.json' },
+);
+const checkedInSkillOwnershipRows = parseSkillOwnershipTable(
+  readFileSync(new URL('../docs/developer-guide/skill-ownership.md', import.meta.url), 'utf8'),
+  { context: 'docs/developer-guide/skill-ownership.md' },
+);
+const checkedInRecommendationSources = ['tools', 'agents'].flatMap((directory) => {
+  const sourceDirectory = new URL(`../src/${directory}/`, import.meta.url);
+  return readdirSync(sourceDirectory)
+    .filter((file) => file.endsWith('.md'))
+    .sort()
+    .map((file) => ({
+      consumer: file.slice(0, -'.md'.length),
+      context: `${directory}/${file}`,
+      text: readFileSync(new URL(file, sourceDirectory), 'utf8'),
+    }));
+});
+const checkedInRecommendationChains = collectRecommendedSkillChains(checkedInRecommendationSources);
+const checkedInKnownOwnershipConsumers = new Set(
+  ['tools', 'agents', 'shared'].flatMap((directory) => {
+    const sourceDirectory = new URL(`../src/${directory}/`, import.meta.url);
+    return readdirSync(sourceDirectory)
+      .filter((file) => file.endsWith('.md'))
+      .map((file) => file.slice(0, -'.md'.length));
+  }),
+);
+const checkedInRecommendationCapableConsumers = new Set(
+  checkedInRecommendationSources.map((source) => source.consumer),
+);
+const checkedInRelevanceGateOwners = parseSkillOwnershipRelevanceGateOwners(
+  readFileSync(new URL('../src/shared/central-reasoning-delegation.md', import.meta.url), 'utf8'),
+  { context: 'src/shared/central-reasoning-delegation.md' },
+);
+
+test('checked-in skill-ownership manifest, table, recommendations, and marker stay reconciled', () => {
+  assert.doesNotThrow(() =>
+    assertSkillOwnershipContract(
+      {
+        manifest: checkedInSkillOwnershipManifest,
+        inventoryRows: checkedInSkillOwnershipRows,
+        recommendationChains: checkedInRecommendationChains,
+        relevanceGateOwners: checkedInRelevanceGateOwners,
+        knownConsumers: checkedInKnownOwnershipConsumers,
+        recommendationCapableConsumers: checkedInRecommendationCapableConsumers,
+      },
+      { context: 'checked-in skill-ownership contract' },
+    ),
+  );
+});
+
+test('checked-in skill-ownership diagnostics name a deliberately removed skill', () => {
+  const manifestWithoutEffectiveWeb = {
+    ...checkedInSkillOwnershipManifest,
+    relationships: checkedInSkillOwnershipManifest.relationships.filter(
+      ({ skill }) => skill !== 'effective-web',
+    ),
+    relevanceGateOwners: checkedInSkillOwnershipManifest.relevanceGateOwners.filter(
+      (skill) => skill !== 'effective-web',
+    ),
+  };
+
+  assert.throws(
+    () =>
+      assertSkillOwnershipContract(
+        {
+          manifest: manifestWithoutEffectiveWeb,
+          inventoryRows: checkedInSkillOwnershipRows,
+          recommendationChains: checkedInRecommendationChains,
+          relevanceGateOwners: checkedInRelevanceGateOwners.filter(
+            (skill) => skill !== 'effective-web',
+          ),
+          knownConsumers: checkedInKnownOwnershipConsumers,
+          recommendationCapableConsumers: checkedInRecommendationCapableConsumers,
+        },
+        { context: 'checked-in skill-ownership contract' },
+      ),
+    /stale or extra Markdown row\(s\): effective-web.*checked-in skill-ownership contract/,
+  );
+});
+
+test('checked-in skill-ownership diagnostics name a deliberately removed Markdown row', () => {
+  const rowsWithoutEffectiveWeb = checkedInSkillOwnershipRows.filter(
+    ({ skill }) => skill !== 'effective-web',
+  );
+
+  assert.throws(
+    () =>
+      assertSkillOwnershipContract(
+        {
+          manifest: checkedInSkillOwnershipManifest,
+          inventoryRows: rowsWithoutEffectiveWeb,
+          recommendationChains: checkedInRecommendationChains,
+          relevanceGateOwners: checkedInRelevanceGateOwners,
+          knownConsumers: checkedInKnownOwnershipConsumers,
+          recommendationCapableConsumers: checkedInRecommendationCapableConsumers,
+        },
+        { context: 'checked-in skill-ownership contract' },
+      ),
+    /missing Markdown row\(s\): effective-web.*checked-in skill-ownership contract/,
+  );
+});
+
+// --- Reverse check: a declared relationship nobody recommends (guard b) ---
+
+test('the ownership contract rejects a relationship no tool or agent consumer recommends', () => {
+  assert.throws(
+    () =>
+      assertSyntheticSkillOwnershipContract({
+        // `ui-implementer` is the relationship's only checkable consumer and
+        // never names the skill; the one recommendation in the synthetic tree
+        // comes from `test-writer`. Classified route-when-relevant, so the
+        // per-relationship branch is what has to catch it.
+        manifest: skillOwnershipManifest({
+          relationships: [
+            {
+              skill: 'effective-web',
+              consumers: [{ consumer: 'ui-implementer', classification: 'route-when-relevant' }],
+            },
+          ],
+        }),
+        recommendation: '- `impeccable`',
+        recommendationCapableConsumers: new Set(['test-writer', 'ui-implementer']),
+      }),
+    /Unrecommended relationship for skill "effective-web": none of its tool or agent consumers \(ui-implementer\) names it/,
+  );
+});
+
+test('the ownership reverse check rejects a delegate consumer that stopped recommending', () => {
+  // The drift this guard exists for: one delegating consumer swaps its owner
+  // while a sibling keeps the relationship alive. A per-relationship check would
+  // pass — `test-writer` still recommends `effective-web` — and the layered
+  // contract for `ui-implementer` would be dead with a green build.
+  assert.throws(
+    () =>
+      assertSyntheticSkillOwnershipContract({
+        manifest: skillOwnershipManifest({
+          relationships: [
+            {
+              skill: 'effective-web',
+              consumers: [
+                { consumer: 'test-writer', classification: 'delegate' },
+                { consumer: 'ui-implementer', classification: 'delegate' },
+              ],
+            },
+          ],
+        }),
+        recommendation: '- `effective-web`',
+      }),
+    /Unrecommended delegate consumer "ui-implementer" for skill "effective-web": a delegating consumer must name its owner/,
+  );
+});
+
+test('the ownership reverse check rejects a delegate owner behind an available fallback member', () => {
+  // Ordered selection takes the first available, non-excluded member of a
+  // chain and never both, so `impeccable › effective-web` applies `impeccable`
+  // whenever it is installed. Crediting the trailing owner would let a
+  // delegating consumer keep the declaration while the runtime applies
+  // something else — the layered contract dead, the build green.
+  assert.throws(
+    () =>
+      assertSyntheticSkillOwnershipContract({
+        manifest: skillOwnershipManifest({
+          relationships: [
+            {
+              skill: 'effective-web',
+              consumers: [{ consumer: 'test-writer', classification: 'delegate' }],
+            },
+          ],
+        }),
+        recommendation: '- `impeccable › effective-web`',
+      }),
+    /Unrecommended delegate consumer "test-writer" for skill "effective-web": a delegating consumer must name its owner in a "## Recommended skills" section, as the first member of its fallback chain/,
+  );
+});
+
+test('the ownership reverse check accepts a delegate owner ahead of its fallback members', () => {
+  // The same pair in the order every checked-in source writes it: the owner
+  // leads and the alternatives stay reachable behind it.
+  assert.doesNotThrow(() =>
+    assertSyntheticSkillOwnershipContract({
+      manifest: skillOwnershipManifest({
+        relationships: [
+          {
+            skill: 'effective-web',
+            consumers: [{ consumer: 'test-writer', classification: 'delegate' }],
+          },
+        ],
+      }),
+      recommendation: '- `effective-web › impeccable`',
+    }),
+  );
+});
+
+test('the ownership reverse check keeps a trailing fallback member reachable per relationship', () => {
+  // Position decides authority, not reachability: a `route-when-relevant`
+  // relationship named only behind another member is still reached whenever
+  // that member is unavailable, so the weaker branch keeps the full set.
+  assert.doesNotThrow(() =>
+    assertSyntheticSkillOwnershipContract({
+      manifest: skillOwnershipManifest({
+        relationships: [
+          {
+            skill: 'effective-web',
+            consumers: [{ consumer: 'test-writer', classification: 'route-when-relevant' }],
+          },
+        ],
+      }),
+      recommendation: '- `impeccable › effective-web`',
+    }),
+  );
+});
+
+test('the ownership reverse check keeps route-when-relevant consumers per relationship', () => {
+  // `plan` and its relevance-gate siblings reach their owner through the
+  // structured marker, not through a section, so a sibling recommendation is
+  // enough for them.
+  assert.doesNotThrow(() =>
+    assertSyntheticSkillOwnershipContract({
+      manifest: skillOwnershipManifest({
+        relationships: [
+          {
+            skill: 'effective-web',
+            consumers: [
+              { consumer: 'test-writer', classification: 'delegate' },
+              { consumer: 'ui-implementer', classification: 'route-when-relevant' },
+            ],
+          },
+        ],
+      }),
+      recommendation: '- `effective-web`',
+    }),
+  );
+});
+
+test('the ownership reverse check exempts shared-fragment consumers by kind', () => {
+  // `language-rules` and its three siblings are shared fragments: they express
+  // ownership as prose inside the tool that embeds them and can never carry a
+  // `## Recommended skills` section, so a relationship reachable only through
+  // them has nothing to check.
+  assert.doesNotThrow(() =>
+    assertSyntheticSkillOwnershipContract({
+      manifest: skillOwnershipManifest({
+        relationships: [
+          {
+            skill: 'effective-web',
+            consumers: [{ consumer: 'language-rules', classification: 'delegate' }],
+          },
+        ],
+      }),
+      recommendation: '- `impeccable`',
+      knownConsumers: new Set(['test-writer', 'language-rules']),
+      recommendationCapableConsumers: new Set(['test-writer', 'ui-implementer']),
+    }),
+  );
+});
+
+test('a tool and agent sharing a basename cross-satisfy the delegate obligation', () => {
+  // The hole the disjointness guard closes, pinned as the reason it exists: the
+  // pair key carries no consumer kind, so a tool named `test-writer` fills the
+  // pair the same-named *agent* owes. The agent could drop its owner entirely
+  // and the build would stay green — which is exactly what the guard below
+  // prevents by refusing the collision in the first place.
+  const manifest = skillOwnershipManifest({
+    relationships: [
+      {
+        skill: 'effective-web',
+        consumers: [{ consumer: 'test-writer', classification: 'delegate' }],
+      },
+    ],
+  });
+  const toolOnlyChains = collectRecommendedSkillChains([
+    {
+      consumer: 'test-writer',
+      context: 'tools/test-writer.md',
+      text: '## Recommended skills\n\n- `effective-web`\n',
+    },
+  ]);
+
+  assert.doesNotThrow(() =>
+    assertSkillOwnershipContract(
+      {
+        manifest,
+        inventoryRows: skillOwnershipTable(),
+        // The agent source names nothing; only the colliding tool recommends.
+        recommendationChains: toolOnlyChains,
+        relevanceGateOwners: [],
+        knownConsumers: new Set(['test-writer']),
+        recommendationCapableConsumers: new Set(['test-writer']),
+      },
+      { context: 'colliding consumer names' },
+    ),
+  );
+  assert.throws(
+    () =>
+      assertDisjointConsumerNames(
+        { toolNames: ['test-writer', 'plan'], agentNames: ['test-writer', 'ui-implementer'] },
+        { context: 'central-skill ownership guard' },
+      ),
+    /Tool and agent share the basename\(s\) test-writer:.*cross-satisfy its "delegate" obligation.*central-skill ownership guard/s,
+  );
+});
+
+test('the checked-in tool and agent basenames stay disjoint', () => {
+  const sourceNames = (directory) => {
+    const sourceDirectory = new URL(`../src/${directory}/`, import.meta.url);
+    return readdirSync(sourceDirectory)
+      .filter((file) => file.endsWith('.md'))
+      .map((file) => file.slice(0, -'.md'.length));
+  };
+
+  assert.doesNotThrow(() =>
+    assertDisjointConsumerNames(
+      {
+        toolNames: sourceNames('tools'),
+        agentNames: sourceNames('agents'),
+        sharedNames: sourceNames('shared'),
+      },
+      { context: 'checked-in sources' },
+    ),
+  );
+});
+
+test('a shared fragment named like a tool or agent fails the disjoint-name guard', () => {
+  // Invariant: the setup-status projection derives consumerKind from a bare name, so a shared
+  // fragment must never share its basename with a tool or an agent.
+  assert.throws(
+    () =>
+      assertDisjointConsumerNames(
+        { toolNames: ['plan'], agentNames: ['docs-writer'], sharedNames: ['docs-writer', 'x'] },
+        { context: 'central-skill ownership guard' },
+      ),
+    /Shared fragment and tool or agent share the basename\(s\) docs-writer:.*consumerKind.*central-skill ownership guard/s,
+  );
+  assert.doesNotThrow(() =>
+    assertDisjointConsumerNames({ toolNames: ['plan'], agentNames: ['docs-writer'] }),
+  );
+});
+
+// --- Setup-status ownership projection (#485) ---
+
+const projectionTools = () =>
+  new Map([
+    ['merge-gate', 'Evaluates notes through {{SKILL:iterate}}.\n'],
+    [
+      'iterate',
+      '```include\nwriting-rules\n```\nSpawn {{AGENT:docs-writer}}.\n<!-- spawn-site:iterate/docs -->\n',
+    ],
+    ['build', '```lazy-include\nlazy-gate\nwhen: rarely\n```\nSee {{SKILL:iterate}} later.\n'],
+    ['apply', 'Delegates to {{SKILL:apply-review}}.\n'],
+    ['apply-review', 'Read `tools/apply-review-remote.md`.\n'],
+    ['apply-review-remote', 'Loaded by tools/apply-review.md.\n'],
+    ['pr-review', 'Forwards to {{SKILL:merge-gate}}.\n'],
+  ]);
+const projectionAgents = () =>
+  new Map([
+    ['docs-writer', '```include\nlanguage-rules\n```\nHand over to {{AGENT:marketing-writer}}.\n'],
+    ['marketing-writer', 'Writes.\n'],
+  ]);
+const projectionShared = () =>
+  new Map([
+    ['writing-rules', 'Plain.\n'],
+    ['language-rules', 'Rules.\n'],
+    ['lazy-gate', '```include\nnested-gate\n```\n'],
+    ['nested-gate', 'Nested.\n'],
+  ]);
+const PROJECTION_EXPOSED = ['apply', 'build', 'iterate', 'merge-gate'];
+const PROJECTION_EDGES = [
+  { from: 'merge-gate', to: 'iterate', mode: 'pr' },
+  { from: 'apply', to: 'apply-review' },
+  { from: 'apply-review', to: 'apply-review-remote' },
+];
+
+function projectionManifest(consumers) {
+  return parseSkillOwnershipManifest(
+    JSON.stringify({
+      schemaVersion: 1,
+      relationships: Object.entries(consumers).map(([skill, rows]) => ({
+        skill,
+        consumers: rows.map(([consumer, classification = 'delegate']) => ({
+          consumer,
+          classification,
+        })),
+      })),
+      relevanceGateOwners: [],
+      externalRecommendationAllowlist: [],
+    }),
+  );
+}
+
+function deriveProjection(manifest, overrides = {}) {
+  return deriveSetupStatusProjection({
+    manifest,
+    toolSources: projectionTools(),
+    agentSources: projectionAgents(),
+    sharedSources: projectionShared(),
+    exposedTools: PROJECTION_EXPOSED,
+    workflowEdges: PROJECTION_EDGES,
+    spawnSites: [{ id: 'iterate/docs', clauses: [{ role: 'docs-writer', tier: 'standard' }] }],
+    version: '1.68.0',
+    ...overrides,
+  });
+}
+
+test('collectToolReferences finds the three tool reference forms', () => {
+  const references = collectToolReferences(
+    'Use {{SKILL:apply-plan}}, read tools/apply-review-remote.md, and\n```lazy-include\niterate\nwhen: x\n```\n',
+  );
+  assert.deepEqual([...references.get('apply-plan')], ['skill']);
+  assert.deepEqual([...references.get('apply-review-remote')], ['path']);
+  assert.deepEqual([...references.get('iterate')], ['lazy-include']);
+});
+
+test('the projection follows declared edges, spawns and include closures onto exposed tools', () => {
+  // Invariant: merge-gate inherits the owners of iterate through its declared workflow edge, while a
+  // bare {{SKILL:iterate}} mention (build) is no edge; an agent-hosted shared consumer is reached
+  // through the agents.<host> scope; only delegate rows are projected.
+  const manifest = projectionManifest({
+    'effective-delivery': [['iterate'], ['apply-review-remote'], ['nested-gate']],
+    'effective-writing': [['language-rules'], ['marketing-writer', 'route-when-relevant']],
+  });
+  const projection = deriveProjection(manifest);
+  assert.equal(projection.schemaVersion, 1);
+  assert.equal(projection.version, '1.68.0');
+  assert.deepEqual(projection.exposedTools, PROJECTION_EXPOSED);
+  // Every shipped edge carries its mode, null when it runs the target in every mode.
+  assert.deepEqual(projection.workflowEdges, [
+    { from: 'merge-gate', to: 'iterate', mode: 'pr' },
+    { from: 'apply', to: 'apply-review', mode: null },
+    { from: 'apply-review', to: 'apply-review-remote', mode: null },
+  ]);
+  const row = (consumer) => projection.owners.find((entry) => entry.consumer === consumer);
+  assert.deepEqual(row('iterate'), {
+    skill: 'effective-delivery',
+    consumer: 'iterate',
+    consumerKind: 'tool',
+    classification: 'delegate',
+    tools: ['iterate', 'merge-gate'],
+    reach: [
+      { tool: 'iterate', scope: 'tools.iterate' },
+      { tool: 'merge-gate', scope: 'tools.iterate' },
+    ],
+  });
+  assert.deepEqual(row('apply-review-remote').reach, [
+    { tool: 'apply', scope: 'tools.apply-review-remote' },
+  ]);
+  // A lazy include and its own eager include are part of the host tool's closure.
+  assert.deepEqual(row('nested-gate').reach, [{ tool: 'build', scope: 'tools.build' }]);
+  assert.equal(row('language-rules').consumerKind, 'shared');
+  assert.deepEqual(row('language-rules').reach, [
+    { tool: 'iterate', scope: 'agents.docs-writer' },
+    { tool: 'merge-gate', scope: 'agents.docs-writer' },
+  ]);
+  assert.equal(row('marketing-writer'), undefined, 'route-when-relevant rows are not projected');
+  // The shipped script accepts what the build writes.
+  assert.doesNotThrow(() => validateOwnersProjection(JSON.parse(JSON.stringify(projection))));
+});
+
+test('the projection follows named spawn roles and ignores prohibition and descriptive agent tokens', () => {
+  // Invariant: named dependencies come from actual marked execution sites, including routed
+  // alternatives and shared sites; prohibition tokens and generic analysis spawn prose add none.
+  const toolSources = new Map([
+    [
+      'build',
+      '```lazy-include\nverification\nwhen: needed\n```\n<!-- spawn-site:build/routed -->\n',
+    ],
+    ['commit', 'Do not run {{AGENT:test-writer}} or {{AGENT:code-validator}}.\n'],
+    ['deliver', 'Runs {{SKILL:commit}}.\n'],
+    ['setup', 'Do not run {{AGENT:code-validator}}.\n'],
+    [
+      'concept',
+      'Reference {{AGENT:test-writer}}; generic analysis follows.\n<!-- spawn-site:concept/analysis -->\n',
+    ],
+  ]);
+  const agentSources = new Map([
+    ['test-writer', 'Tests.\n'],
+    ['code-validator', 'Checks.\n'],
+    ['docs-writer', 'Writes docs.\n'],
+  ]);
+  const sharedSources = new Map([['verification', '<!-- spawn-site:verification/check -->\n']]);
+  const spawnSites = parseSpawnSiteTable(
+    [
+      '## Spawn sites',
+      '| Site | Spawn | Tier | Down |',
+      '| --- | --- | --- | --- |',
+      '| `build/routed` | Routed implementation or tests | `role:test-writer,docs-writer` | `yes` |',
+      '| `verification/check` | Conditional validation | `role:code-validator` | `yes` |',
+      '| `concept/analysis` | Generic analysis | `deep` | `no` |',
+    ].join('\n'),
+    { agentTiers: new Map([...agentSources.keys()].map((name) => [name, 'standard'])) },
+  );
+  const input = {
+    manifest: projectionManifest({
+      'effective-engineering': [['test-writer']],
+      'effective-delivery': [['code-validator'], ['docs-writer']],
+    }),
+    toolSources,
+    agentSources,
+    sharedSources,
+    spawnSites,
+    exposedTools: [...toolSources.keys()],
+    workflowEdges: [{ from: 'deliver', to: 'commit' }],
+    version: '1.68.0',
+  };
+  const projection = deriveSetupStatusProjection(input);
+  for (const row of projection.owners) assert.deepEqual(row.tools, ['build']);
+  assert.throws(
+    () => deriveSetupStatusProjection({ ...input, spawnSites: [] }),
+    /Unknown spawn-site "build\/routed"/,
+  );
+});
+
+test('the projection guards reject a consumer no exposed tool reaches and diverging rows', () => {
+  // Invariant: guard (b) — every delegate consumer maps to at least one exposed tool; guard (a) —
+  // the projected delegate rows equal the manifest's.
+  const unreachable = projectionManifest({ 'effective-marketing': [['marketing-writer']] });
+  assert.throws(
+    () => deriveProjection(unreachable),
+    /delegate consumer "marketing-writer" \(effective-marketing\) maps to no exposed tool/,
+  );
+  const manifest = projectionManifest({ 'effective-delivery': [['iterate'], ['writing-rules']] });
+  const projection = deriveProjection(manifest);
+  assert.throws(
+    () =>
+      assertSetupStatusProjection({ ...projection, owners: projection.owners.slice(1) }, manifest),
+    /missing delegate row effective-delivery \/ iterate \/ delegate/,
+  );
+  assert.throws(
+    () =>
+      assertSetupStatusProjection(
+        {
+          ...projection,
+          owners: [...projection.owners, { ...projection.owners[0], skill: 'effective-web' }],
+        },
+        manifest,
+      ),
+    /delegate row effective-web \/ iterate \/ delegate is not in the manifest/,
+  );
+  assert.throws(
+    () => deriveProjection(projectionManifest({ 'effective-web': [['ghost']] })),
+    /manifest consumer "ghost" is no tool, agent or shared source/,
+  );
+});
+
+test('the workflow edge guard checks declared edges forward and internal references in reverse', () => {
+  // Invariant: a declared edge needs a matching reference in its source (forward), and every
+  // reference from a tool source to an internal tool is declared (reverse); aliases are excluded.
+  const contract = (overrides = {}) =>
+    assertWorkflowEdgeContract({
+      toolSources: projectionTools(),
+      exposedTools: PROJECTION_EXPOSED,
+      aliases: ['pr-review'],
+      workflowEdges: PROJECTION_EDGES,
+      pointerReferences: [{ from: 'apply-review-remote', to: 'apply-review' }],
+      toolModes: { iterate: ['local', 'pr'] },
+      ...overrides,
+    });
+  assert.doesNotThrow(() => contract());
+  assert.throws(
+    () => contract({ workflowEdges: [...PROJECTION_EDGES, { from: 'build', to: 'apply-review' }] }),
+    /workflow edge build -> apply-review has no matching reference .* in src\/tools\/build\.md/,
+  );
+  assert.throws(
+    () => contract({ pointerReferences: [] }),
+    /src\/tools\/apply-review-remote\.md references the internal tool "apply-review" without a declared workflow edge or pointer reference/,
+  );
+  assert.throws(
+    () => contract({ workflowEdges: PROJECTION_EDGES.slice(0, 2) }),
+    /src\/tools\/apply-review\.md references the internal tool "apply-review-remote"/,
+  );
+  assert.throws(
+    () =>
+      contract({ workflowEdges: [...PROJECTION_EDGES, { from: 'pr-review', to: 'merge-gate' }] }),
+    /names a deprecated alias/,
+  );
+  assert.throws(
+    () =>
+      contract({
+        workflowEdges: [...PROJECTION_EDGES, { from: 'merge-gate', to: 'iterate', mode: 'pr' }],
+      }),
+    /merge-gate -> iterate is declared more than once/,
+  );
+});
+
+test('workflow edge references include the transitive eager and lazy shared closure', () => {
+  // Invariant: delivery handoffs in shared contracts validate as host edges, while references
+  // alone remain pointers and undeclared internal handoffs still fail closed.
+  const toolSources = new Map([
+    ['plan', '```lazy-include\npublication\nwhen: publishing\n```\n'],
+    ['commit', 'Commit.\n'],
+    ['pr', 'Open a PR.\n'],
+    ['internal', 'Internal workflow.\n'],
+  ]);
+  const sharedSources = new Map([
+    ['publication', '```include\nnested\n```\n'],
+    [
+      'nested',
+      'Run {{SKILL:commit}}. See tools/internal.md.\n```lazy-include\npublication\nwhen: again\n```\n',
+    ],
+    ['unrelated', 'Run {{SKILL:pr}}.\n'],
+  ]);
+  const input = {
+    toolSources,
+    sharedSources,
+    exposedTools: ['plan', 'commit', 'pr'],
+    workflowEdges: [{ from: 'plan', to: 'commit' }],
+    pointerReferences: [{ from: 'plan', to: 'internal' }],
+  };
+  assert.doesNotThrow(() => assertWorkflowEdgeContract(input));
+  assert.throws(
+    () => assertWorkflowEdgeContract({ ...input, pointerReferences: [] }),
+    /plan\.md.*internal tool "internal" without a declared workflow edge or pointer reference/,
+  );
+  assert.throws(
+    () =>
+      assertWorkflowEdgeContract({
+        ...input,
+        workflowEdges: [...input.workflowEdges, { from: 'plan', to: 'pr' }],
+      }),
+    /plan -> pr has no matching reference/,
+  );
+  const projection = deriveSetupStatusProjection({
+    ...input,
+    exposedTools: [...input.exposedTools, 'internal'],
+    agentSources: new Map(),
+    manifest: projectionManifest({ 'effective-delivery': [['commit'], ['internal']] }),
+    version: '1.68.0',
+  });
+  assert.deepEqual(projection.owners.find(({ consumer }) => consumer === 'commit').tools, [
+    'commit',
+    'plan',
+  ]);
+  assert.deepEqual(projection.owners.find(({ consumer }) => consumer === 'internal').tools, [
+    'internal',
+  ]);
+});
+
+test('the workflow edge guard accepts only resolver modes of the target on an edge', () => {
+  // Invariant: an edge's mode decides which (tool, mode) retired-row evaluation maps onto its
+  // source, so it must be a real resolver mode of the target, never on a pointer, and one pair
+  // never mixes a mode-less edge with a mode-specific one.
+  const contract = (overrides = {}) =>
+    assertWorkflowEdgeContract({
+      toolSources: projectionTools(),
+      exposedTools: PROJECTION_EXPOSED,
+      aliases: ['pr-review'],
+      workflowEdges: PROJECTION_EDGES,
+      pointerReferences: [{ from: 'apply-review-remote', to: 'apply-review' }],
+      toolModes: { iterate: ['local', 'pr'] },
+      ...overrides,
+    });
+  assert.doesNotThrow(() => contract());
+  assert.doesNotThrow(() =>
+    contract({
+      workflowEdges: [...PROJECTION_EDGES, { from: 'merge-gate', to: 'iterate', mode: 'local' }],
+    }),
+  );
+  assert.throws(
+    () => contract({ toolModes: { iterate: ['local'] } }),
+    /workflow edge merge-gate -> iterate \(mode pr\): "pr" is no resolver mode of iterate \(local\)/,
+  );
+  assert.throws(
+    () =>
+      contract({
+        workflowEdges: [
+          ...PROJECTION_EDGES.slice(1),
+          { from: 'apply', to: 'apply-review', mode: 'x' },
+        ],
+      }),
+    /"x" is no resolver mode of apply-review \(none\)/,
+  );
+  assert.throws(
+    () => contract({ workflowEdges: [...PROJECTION_EDGES, { from: 'merge-gate', to: 'iterate' }] }),
+    /merge-gate -> iterate mixes a mode-less edge with mode-specific edges/,
+  );
+  assert.throws(
+    () =>
+      contract({
+        pointerReferences: [{ from: 'apply-review-remote', to: 'apply-review', mode: 'local' }],
+      }),
+    /pointer reference apply-review-remote -> apply-review carries a mode/,
+  );
+});
+
+test('every successor set must be run by an exposed tool in its mode', () => {
+  // Invariant: `setup status` can name an exposed tool for every retired-row stop; a successor-set
+  // tool, or one of its modes, no declared edge reaches fails the build instead of degrading to the
+  // resolver's own tool name at runtime.
+  const guard = (workflowEdges) =>
+    assertSuccessorSetsReachExposedTools({
+      successorSets: [
+        { tool: 'build', mode: null },
+        { tool: 'apply-review', mode: 'remote' },
+        { tool: 'iterate', mode: 'local' },
+        { tool: 'setup', mode: null },
+      ],
+      exemptTools: ['setup'],
+      exposedTools: ['apply', 'build', 'merge-gate'],
+      workflowEdges,
+      reaching: exposedToolsReaching,
+    });
+  assert.doesNotThrow(() =>
+    guard([
+      { from: 'apply', to: 'apply-review', mode: null },
+      { from: 'merge-gate', to: 'iterate', mode: 'local' },
+    ]),
+  );
+  assert.throws(
+    () =>
+      guard([
+        { from: 'apply', to: 'apply-review', mode: null },
+        { from: 'merge-gate', to: 'iterate', mode: 'pr' },
+      ]),
+    /iterate \(mode local\) is run by no exposed tool/,
+  );
+  assert.throws(() => guard([]), /apply-review \(mode remote\) is run by no exposed tool/);
+});
+
+test('the ownership reverse check requires a Set of recommendation-capable consumers', () => {
+  assert.throws(
+    () =>
+      assertSyntheticSkillOwnershipContract({
+        recommendationCapableConsumers: ['test-writer'],
+      }),
+    /recommendationCapableConsumers must be a Set/,
+  );
+});
+
+test('checked-in relationships are all reachable from a recommendation', () => {
+  assert.doesNotThrow(() =>
+    assertSkillOwnershipContract(
+      {
+        manifest: checkedInSkillOwnershipManifest,
+        inventoryRows: checkedInSkillOwnershipRows,
+        recommendationChains: checkedInRecommendationChains,
+        relevanceGateOwners: checkedInRelevanceGateOwners,
+        knownConsumers: checkedInKnownOwnershipConsumers,
+        recommendationCapableConsumers: checkedInRecommendationCapableConsumers,
+      },
+      { context: 'checked-in skill-ownership contract' },
+    ),
+  );
+});
+
+// --- Agent skill-recommendation roster (guard a) ---
+
+const checkedInAgentNames = readdirSync(new URL('../src/agents/', import.meta.url))
+  .filter((file) => file.endsWith('.md'))
+  .map((file) => file.slice(0, -'.md'.length))
+  .sort();
+const checkedInAgentRecommendationChains = checkedInRecommendationChains.filter((chain) =>
+  chain.context.startsWith('agents/'),
+);
+const checkedInAgentSections = collectRecommendedSkillSections(
+  checkedInRecommendationSources.filter((source) => source.context.startsWith('agents/')),
+);
+// The manifest's declared relationship skills — the only ones that satisfy the
+// roster. An allowlisted external skill (`context7-mcp`, `humanizer`, …) owns no
+// Effective Flow domain and cannot stand in for a central owner.
+const checkedInOwnedSkills = new Set(
+  checkedInSkillOwnershipManifest.relationships.map((relationship) => relationship.skill),
+);
+// The expected membership of build.mjs's exemption set. A separate test pins
+// this against the set build.mjs actually declares, so a one-sided edit fails.
+const SKILL_RECOMMENDATION_EXEMPT_AGENTS_EXPECTED = new Set(['merge-conflict-resolver']);
+
+function assertSyntheticAgentRoster({
+  agents = ['test-writer', 'merge-conflict-resolver'],
+  // Section presence and a parseable recommendation are separate inputs, so a
+  // synthetic case can carry a heading that names no skill.
+  sections = ['test-writer'],
+  recommending = ['test-writer'],
+  // What the synthetic recommendation names. Only a manifest-declared skill
+  // satisfies the roster, so an external-only case sets this to an allowlisted
+  // token instead.
+  recommendedSkills = ['effective-engineering'],
+  ownedSkills = new Set(['effective-engineering']),
+  exemptAgents = new Set(['merge-conflict-resolver']),
+} = {}) {
+  assertAgentSkillRecommendationRoster(
+    {
+      agents,
+      sectionAgents: new Set(sections),
+      recommendationChains: recommending.map((consumer) => ({
+        consumer,
+        skills: recommendedSkills,
+        context: `agents/${consumer}.md`,
+      })),
+      exemptAgents,
+      ownedSkills,
+    },
+    { context: 'synthetic agent roster' },
+  );
+}
+
+test('the agent roster accepts a recommending agent beside an exempt one', () => {
+  assert.doesNotThrow(() => assertSyntheticAgentRoster());
+});
+
+test('the agent roster rejects an agent without a recommended-skills section', () => {
+  assert.throws(
+    () => assertSyntheticAgentRoster({ sections: [], recommending: [] }),
+    /src\/agents\/test-writer\.md carries no "## Recommended skills" section; add the central skill it delegates to, or add "test-writer" to SKILL_RECOMMENDATION_EXEMPT_AGENTS/,
+  );
+});
+
+test('the agent roster rejects a stale exemption for a missing agent', () => {
+  assert.throws(
+    () => assertSyntheticAgentRoster({ exemptAgents: new Set(['ghost-worker']) }),
+    /stale skill-recommendation exemption: SKILL_RECOMMENDATION_EXEMPT_AGENTS lists "ghost-worker", but src\/agents\/ghost-worker\.md does not exist/,
+  );
+});
+
+test('the agent roster is two-sided: an exempt agent must carry no section', () => {
+  assert.throws(
+    () =>
+      assertSyntheticAgentRoster({
+        sections: ['test-writer', 'merge-conflict-resolver'],
+        recommending: ['test-writer', 'merge-conflict-resolver'],
+      }),
+    /src\/agents\/merge-conflict-resolver\.md carries a "## Recommended skills" section but is listed in SKILL_RECOMMENDATION_EXEMPT_AGENTS/,
+  );
+});
+
+test('the agent roster rejects a section that names no skill', () => {
+  // A heading with no parseable bullet is neither a missing section nor a
+  // fulfilled obligation, so it gets its own diagnosis instead of the
+  // misleading "carries no section".
+  assert.throws(
+    () => assertSyntheticAgentRoster({ sections: ['test-writer'], recommending: [] }),
+    /src\/agents\/test-writer\.md carries a "## Recommended skills" section that names no skill; add the central skill it delegates to as a backticked bullet/,
+  );
+});
+
+test('the agent roster rejects a section that names only an external skill', () => {
+  // `context7-mcp` is allowlisted and legitimate, but it owns no Effective Flow
+  // domain. Counting any parsed bullet let a new agent ship a second copy of a
+  // centrally owned playbook while naming no owner at all — exactly the hole
+  // this roster guard exists to close.
+  assert.throws(
+    () => assertSyntheticAgentRoster({ recommendedSkills: ['context7-mcp'] }),
+    /src\/agents\/test-writer\.md recommends no skill declared in the ownership manifest; an allowlisted external skill alone does not satisfy the roster/,
+  );
+});
+
+test('the agent roster accepts a chain that names a declared owner beside external skills', () => {
+  // The shape the checked-in agents ship: a declared owner with allowlisted
+  // alternatives behind it stays a fulfilled obligation.
+  assert.doesNotThrow(() =>
+    assertSyntheticAgentRoster({ recommendedSkills: ['effective-engineering', 'context7-mcp'] }),
+  );
+});
+
+test('the agent roster requires a non-empty set of manifest-declared skills', () => {
+  // An empty owned set would fail every agent for the wrong reason, so it is a
+  // misconfiguration of the guard rather than a finding about a source.
+  for (const ownedSkills of [['effective-engineering'], new Set()]) {
+    assert.throws(
+      () => assertSyntheticAgentRoster({ ownedSkills }),
+      /Agent skill-recommendation ownedSkills must be a non-empty Set/,
+    );
+  }
+});
+
+test('an exempt agent with a bulletless section still fails the two-sided check', () => {
+  // Keying on chains alone let this pass: the empty section produced no chain,
+  // so the exemption looked honoured while the source declared one anyway.
+  assert.throws(
+    () =>
+      assertSyntheticAgentRoster({
+        sections: ['test-writer', 'merge-conflict-resolver'],
+      }),
+    /src\/agents\/merge-conflict-resolver\.md carries a "## Recommended skills" section but is listed in SKILL_RECOMMENDATION_EXEMPT_AGENTS/,
+  );
+});
+
+test('collectRecommendedSkillSections sees a heading the chain collector cannot use', () => {
+  const sources = [
+    { consumer: 'bulletless', context: 'agents/bulletless.md', text: '## Recommended skills\n\n' },
+    { consumer: 'none', context: 'agents/none.md', text: '# Agent\n\nNo section here.\n' },
+  ];
+  assert.deepEqual([...collectRecommendedSkillSections(sources)], ['bulletless']);
+  assert.deepEqual(collectRecommendedSkillChains(sources), []);
+});
+
+test('the agent roster refuses to pass vacuously on an empty roster', () => {
+  // A roster check that iterates nothing would report success for the wrong
+  // reason, exactly as the neighbouring source guards guard against.
+  assert.throws(
+    () => assertSyntheticAgentRoster({ agents: [] }),
+    /Agent skill-recommendation roster must be a non-empty array/,
+  );
+  assert.throws(
+    () => assertSyntheticAgentRoster({ exemptAgents: ['merge-conflict-resolver'] }),
+    /Agent skill-recommendation exemptions must be a Set/,
+  );
+  assert.throws(
+    () =>
+      assertAgentSkillRecommendationRoster(
+        {
+          agents: ['test-writer'],
+          sectionAgents: ['test-writer'],
+          recommendationChains: [],
+          exemptAgents: new Set(),
+        },
+        { context: 'synthetic agent roster' },
+      ),
+    /Agent skill-recommendation sections must be a Set/,
+  );
+});
+
+test('every checked-in agent recommends a central skill or is the one exemption', () => {
+  assert.ok(checkedInAgentNames.length > 0, 'expected at least one src/agents/*.md source');
+  assert.doesNotThrow(() =>
+    assertAgentSkillRecommendationRoster(
+      {
+        agents: checkedInAgentNames,
+        sectionAgents: checkedInAgentSections,
+        recommendationChains: checkedInAgentRecommendationChains,
+        exemptAgents: SKILL_RECOMMENDATION_EXEMPT_AGENTS_EXPECTED,
+        ownedSkills: checkedInOwnedSkills,
+      },
+      { context: 'checked-in agent roster' },
+    ),
+  );
+
+  // Stated independently of the guard: every non-exempt agent names a skill the
+  // ownership manifest declares, not merely an allowlisted external one.
+  const externalOnly = checkedInAgentNames.filter(
+    (name) =>
+      !SKILL_RECOMMENDATION_EXEMPT_AGENTS_EXPECTED.has(name) &&
+      !checkedInAgentRecommendationChains.some(
+        (chain) =>
+          chain.consumer === name && chain.skills.some((skill) => checkedInOwnedSkills.has(skill)),
+      ),
+  );
+  assert.deepEqual(externalOnly, [], 'every non-exempt agent must name a declared central owner');
+
+  // `merge-conflict-resolver` is the only expected exemption, and it carries its
+  // reason in prose rather than only in build.mjs.
+  const resolver = readFileSync(
+    new URL('../src/agents/merge-conflict-resolver.md', import.meta.url),
+    'utf8',
+  );
+  assert.match(resolver, /declares \*\*no\*\* recommended central skill/);
+  const recommending = new Set(checkedInAgentRecommendationChains.map((chain) => chain.consumer));
+  assert.deepEqual(
+    checkedInAgentNames.filter((name) => !recommending.has(name)),
+    ['merge-conflict-resolver'],
+  );
+});
+
+test('effective-marketing is declared, tabled, and preferred by the marketing writer', () => {
+  const relationship = checkedInSkillOwnershipManifest.relationships.find(
+    ({ skill }) => skill === 'effective-marketing',
+  );
+  assert.ok(
+    relationship,
+    'skill-ownership.json must declare an "effective-marketing" relationship',
+  );
+  assert.deepEqual(relationship.consumers, [
+    { consumer: 'marketing-writer', classification: 'delegate' },
+  ]);
+  assert.ok(
+    checkedInSkillOwnershipRows.some(({ skill }) => skill === 'effective-marketing'),
+    'skill-ownership.md must carry an "effective-marketing" row',
+  );
+  assert.ok(
+    !checkedInSkillOwnershipManifest.externalRecommendationAllowlist.includes(
+      'effective-marketing',
+    ),
+    'effective-marketing must not be both a relationship and an external recommendation',
+  );
+
+  const marketingWriter = readFileSync(
+    new URL('../src/agents/marketing-writer.md', import.meta.url),
+    'utf8',
+  );
+  // One ordered chain, not four independent bullets: the first available member
+  // wins, so the central skill takes precedence and the copy skills stay
+  // reachable behind it.
+  assert.match(
+    marketingWriter,
+    /- `effective-marketing › copywriting › copy-editing › marketing-psychology`/,
+  );
+  assert.match(
+    marketingWriter,
+    /The root README is split, and the split is declared/,
+    'the root README split must stay declared',
+  );
+});
+
+test('advisory ownership audit accepts checkout, skills directory, and listing inputs', (t) => {
+  const fixture = mkdtempSync(join(tmpdir(), 'effective-flow-ownership-audit-'));
+  t.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const skillsDirectory = join(fixture, 'skills');
+  for (const skill of ['effective-web', 'review-candidate']) {
+    const skillDirectory = join(skillsDirectory, skill);
+    mkdirSync(skillDirectory, { recursive: true });
+    writeFileSync(join(skillDirectory, 'SKILL.md'), `# ${skill}\n`);
+  }
+  const listing = join(fixture, 'skills.txt');
+  writeFileSync(listing, 'skills/effective-web\nskills/review-candidate\n');
+  const manifestPath = new URL('../docs/developer-guide/skill-ownership.json', import.meta.url);
+  const manifestBefore = readFileSync(manifestPath, 'utf8');
+
+  for (const input of [fixture, skillsDirectory, listing]) {
+    const result = auditSkillOwnership(input);
+    assert.deepEqual(result.candidates, ['review-candidate']);
+  }
+  assert.equal(readFileSync(manifestPath, 'utf8'), manifestBefore);
+  assert.throws(
+    () => auditSkillOwnership(join(fixture, 'missing')),
+    /Skills directory or listing not found/,
+  );
+
+  const cli = spawnSync(
+    process.execPath,
+    [fileURLToPath(new URL('../scripts/audit-skill-ownership.mjs', import.meta.url)), fixture],
+    { encoding: 'utf8' },
+  );
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.match(cli.stdout, /review-candidate/);
+  assert.match(cli.stdout, /Audit output is advisory/);
+});
+
+// --- Shared project-routing contract (#164) ---
+
+const projectRoutingSource = readFileSync(
+  new URL('../src/shared/project-routing.md', import.meta.url),
+  'utf8',
+);
+const projectRoutes = parseProjectRoutingTable(projectRoutingSource, {
+  context: 'src/shared/project-routing.md',
+});
+
+test('parseProjectRoutingTable reads the ordered machine-readable table', () => {
+  assert.deepEqual(
+    projectRoutes.map(({ priority, route, matcher, decision }) => ({
+      priority,
+      route,
+      matcher,
+      decision,
+    })),
+    [
+      {
+        priority: 10,
+        route: 'excluded-generated-vendored',
+        matcher: 'excluded',
+        decision: 'exclude',
+      },
+      {
+        priority: 20,
+        route: 'documentation',
+        matcher: 'documentation',
+        decision: 'route',
+      },
+      { priority: 30, route: 'tooling', matcher: 'tooling', decision: 'route' },
+      {
+        priority: 40,
+        route: 'frontend-js-ts',
+        matcher: 'frontend-js-ts',
+        decision: 'route',
+      },
+      {
+        priority: 50,
+        route: 'node-backend-cli',
+        matcher: 'node-backend-cli',
+        decision: 'route',
+      },
+      { priority: 60, route: 'rust', matcher: 'rust-product', decision: 'route' },
+      {
+        priority: 70,
+        route: 'generic-product',
+        matcher: 'generic-product',
+        decision: 'route-degraded',
+      },
+      { priority: 80, route: 'ambiguous', matcher: 'otherwise', decision: 'clarify' },
+    ],
+  );
+});
+
+test('assertProjectRoutingContract locks required routes, order, fallbacks, and live agent names', () => {
+  assert.doesNotThrow(() =>
+    assertProjectRoutingContract(projectRoutes, { context: 'src/shared/project-routing.md' }),
+  );
+  assert.deepEqual(
+    PROJECT_ROUTING_REQUIRED_ROUTES.map(({ route }) => route),
+    projectRoutes.map(({ route }) => route),
+  );
+  const generic = projectRoutes.find(({ route }) => route === 'generic-product');
+  assert.equal(generic.implementer, '{{AGENT:generic-product-implementer}}');
+  assert.equal(generic.reviewer, '{{AGENT:generic-product-reviewer}}');
+  assert.ok(
+    projectRoutes.findIndex(({ route }) => route === 'tooling') <
+      projectRoutes.findIndex(({ route }) => route === 'generic-product'),
+  );
+  assert.equal(projectRoutes.at(-1).route, 'ambiguous');
+});
+
+test('parseProjectRoutingTable rejects malformed and non-deterministic tables', () => {
+  assert.throws(() => parseProjectRoutingTable('| Priority | Route |\n'), /exactly one start/);
+  assert.throws(
+    () =>
+      parseProjectRoutingTable(
+        projectRoutingSource.replace(
+          /(\|\s*)20(\s*\|\s*`documentation`)/,
+          (_, before, after) => `${before}10${after}`,
+        ),
+      ),
+    /strictly ascending/,
+  );
+  assert.throws(
+    () =>
+      assertProjectRoutingContract(
+        projectRoutes.map((route) =>
+          route.route === 'generic-product'
+            ? { ...route, implementer: '{{AGENT:generic-implementer}}' }
+            : route,
+        ),
+      ),
+    /generic-product-implementer/,
+  );
+});
+
+const projectRoutingFixtures = [
+  'python-product.json',
+  'go-product.json',
+  'unknown-product.json',
+  'tooling-only.json',
+  'frontend-js-ts.json',
+  'node-backend-cli.json',
+  'rust-product.json',
+  'mixed-repository.json',
+  'ambiguous-role.json',
+];
+
+for (const fixtureFile of projectRoutingFixtures) {
+  const fixture = JSON.parse(
+    readFileSync(new URL(`fixtures/project-routing/${fixtureFile}`, import.meta.url), 'utf8'),
+  );
+  test(`project routing fixture: ${fixture.name}`, () => {
+    const result = classifyProjectRoutingScope(projectRoutes, fixture.scope, {
+      context: fixtureFile,
+    });
+    assert.deepEqual(
+      result.files.map(({ route }) => route),
+      fixture.expectedRoutes,
+    );
+    assert.equal(result.clarificationRequired, fixture.clarificationRequired);
+  });
+}
+
+test('mixed project routing retains every specialist and fallback bucket in table order', () => {
+  const fixture = JSON.parse(
+    readFileSync(
+      new URL('fixtures/project-routing/mixed-repository.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  const result = classifyProjectRoutingScope(projectRoutes, fixture.scope);
+  assert.deepEqual(
+    result.buckets.map(({ route }) => route),
+    [
+      'excluded-generated-vendored',
+      'documentation',
+      'tooling',
+      'frontend-js-ts',
+      'node-backend-cli',
+      'rust',
+      'generic-product',
+    ],
+  );
+});
+
+// --- Shared execution-profile contract ---
+
+const executionProfileSource = readFileSync(
+  new URL('../src/shared/execution-profiles.md', import.meta.url),
+  'utf8',
+);
+
+test('parseExecutionProfileContract reads every marked policy table and normalizes CRLF', () => {
+  const parsed = parseExecutionProfileContract(executionProfileSource, {
+    context: 'src/shared/execution-profiles.md',
+  });
+  assert.deepEqual(Object.keys(parsed), [
+    'profiles',
+    'configCases',
+    'gate',
+    'states',
+    'decisionMappings',
+    'transitions',
+    'rules',
+    'fallbacks',
+    'controls',
+    'transferFields',
+  ]);
+  assert.doesNotThrow(() =>
+    assertExecutionProfileContract(parsed, { context: 'src/shared/execution-profiles.md' }),
+  );
+  assert.deepEqual(
+    parseExecutionProfileContract(executionProfileSource.replaceAll('\n', '\r\n')),
+    parsed,
+  );
+});
+
+test('parseExecutionProfileContract follows GFM pipe escaping and preserves Markdown content', () => {
+  const replaceIntent = (intent) =>
+    executionProfileSource.replace(
+      'strongest-available-configured-implementation-capability',
+      intent,
+    );
+  for (const [name, markdown, expected] of [
+    ['escaped-pipe', 'left \\| right', 'left | right'],
+    ['backtick-wrapped-escaped-pipe', '`left \\| right`', '`left | right`'],
+    ['bold-escaped-pipe', '**left \\| right**', '**left | right**'],
+    ['unmatched-literal-backtick', '`unmatched literal', '`unmatched literal'],
+  ]) {
+    const parsed = parseExecutionProfileContract(replaceIntent(markdown), {
+      context: `${name}.md`,
+    });
+    assert.equal(parsed.profiles[0].intent, expected, name);
+  }
+
+  for (const [name, markdown] of [
+    ['unescaped-inline-code-pipe', '`left | right`'],
+    ['even-backslash-structural-pipe', 'left \\\\| right'],
+  ]) {
+    assert.throws(
+      () => parseExecutionProfileContract(replaceIntent(markdown), { context: `${name}.md` }),
+      new RegExp(`profile row has 3 cells; expected 2.*${name}\\.md`),
+    );
+  }
+});
+
+test('parseExecutionProfileContract rejects missing, duplicated, and reversed markers', () => {
+  const start = '<!-- execution-profile-profile:start -->';
+  const end = '<!-- execution-profile-profile:end -->';
+  assert.throws(
+    () => parseExecutionProfileContract(executionProfileSource.replace(start, '')),
+    /profile table requires exactly one start and end marker/,
+  );
+  assert.throws(
+    () => parseExecutionProfileContract(`${executionProfileSource}\n${start}\n`),
+    /profile table requires exactly one start and end marker/,
+  );
+  const reversed = executionProfileSource
+    .replace(start, '<!-- marker-placeholder -->')
+    .replace(end, start)
+    .replace('<!-- marker-placeholder -->', end);
+  assert.throws(
+    () => parseExecutionProfileContract(reversed, { context: 'fixture.md' }),
+    /profile table markers are out of order.*fixture\.md/,
+  );
+});
+
+test('parseExecutionProfileContract rejects malformed table structure and values', () => {
+  assert.throws(
+    () =>
+      parseExecutionProfileContract(
+        executionProfileSource.replace(
+          /<!-- execution-profile-profile:start -->[\s\S]*?<!-- execution-profile-profile:end -->/,
+          '<!-- execution-profile-profile:start -->\n<!-- execution-profile-profile:end -->',
+        ),
+      ),
+    /profile table has no data rows/,
+  );
+  assert.throws(
+    () =>
+      parseExecutionProfileContract(
+        executionProfileSource.replace('| Profile | Intent', '| Tier | Intent'),
+      ),
+    /profile table headers must be: Profile, Intent/,
+  );
+  assert.throws(
+    () =>
+      parseExecutionProfileContract(executionProfileSource.replace('| ------- |', '| ~~~~~~~ |')),
+    /profile table has an invalid separator row/,
+  );
+  assert.throws(
+    () =>
+      parseExecutionProfileContract(
+        executionProfileSource.replace(
+          '| quality | strongest-available-configured-implementation-capability |',
+          '| quality |',
+        ),
+      ),
+    /profile row has 1 cells; expected 2.*"\| quality \|"/,
+  );
+  assert.throws(
+    () =>
+      parseExecutionProfileContract(
+        executionProfileSource.replace(
+          '| quality | strongest-available-configured-implementation-capability |',
+          '| quality |  |',
+        ),
+      ),
+    /profile rows cannot contain empty cells/,
+  );
+  assert.throws(
+    () =>
+      parseExecutionProfileContract(
+        executionProfileSource.replace(/\| 1\s+\| disabled/, '| zero | disabled'),
+      ),
+    /state field "precedence" must be a positive integer.*"zero"/,
+  );
+});
+
+test('the pilot runtime projection exactly reconciles with the canonical execution-profile tables', () => {
+  const contract = parseExecutionProfileContract(executionProfileSource, {
+    context: 'src/shared/execution-profiles.md',
+  });
+  assert.deepEqual(executionProfilePolicyProjection(contract), PILOT_MEASUREMENT_POLICY_PROJECTION);
+  assert.doesNotThrow(() =>
+    assertPilotMeasurementPolicyProjection(contract, {
+      context: 'policy projection fixture',
+    }),
+  );
+
+  for (const mutate of [
+    (projection) => {
+      projection.generationStates[2] = 'pilot';
+    },
+    (projection) => {
+      projection.statePrecedence[8].selectedProfile = 'quality';
+    },
+    (projection) => {
+      projection.pilotControlMappings[8].suspensionReason = 'none';
+    },
+    (projection) => {
+      projection.unregistered = true;
+    },
+  ]) {
+    const projection = structuredClone(PILOT_MEASUREMENT_POLICY_PROJECTION);
+    mutate(projection);
+    assert.throws(
+      () =>
+        assertPilotMeasurementPolicyProjection(contract, {
+          projection,
+          context: 'drifted projection fixture',
+        }),
+      /runtime policy projection diverges.*drifted projection fixture/,
+    );
+  }
+});
+
+test('the marked pilot protocol guide contains the exact canonical documentation projection', () => {
+  const guide = readFileSync(
+    new URL('../docs/developer-guide/model-tiering-pilot-protocol.md', import.meta.url),
+    'utf8',
+  );
+  const projection = parsePilotMeasurementDocumentationProjection(guide, {
+    context: 'model-tiering-pilot-protocol.md',
+  });
+  assert.deepEqual(projection, PILOT_MEASUREMENT_DOCUMENTATION_PROJECTION);
+  assert.doesNotThrow(() =>
+    assertPilotMeasurementDocumentationProjection(projection, {
+      context: 'model-tiering-pilot-protocol.md',
+    }),
+  );
+});
+
+test('the pilot protocol documentation parser rejects marker, canonicalization, and content drift', () => {
+  const canonical = canonicalizeJson(PILOT_MEASUREMENT_DOCUMENTATION_PROJECTION);
+  const mirror = (json) =>
+    `${PILOT_MEASUREMENT_DOCUMENTATION_START}\n\n\`\`\`json\n${json}\n\`\`\`\n\n${PILOT_MEASUREMENT_DOCUMENTATION_END}`;
+
+  assert.throws(
+    () =>
+      parsePilotMeasurementDocumentationProjection(
+        mirror(canonical).replace(PILOT_MEASUREMENT_DOCUMENTATION_START, ''),
+      ),
+    /requires exactly one protocol start and end marker/,
+  );
+  assert.throws(
+    () =>
+      parsePilotMeasurementDocumentationProjection(
+        `${mirror(canonical)}\n${PILOT_MEASUREMENT_DOCUMENTATION_START}`,
+      ),
+    /requires exactly one protocol start and end marker/,
+  );
+  assert.throws(
+    () =>
+      parsePilotMeasurementDocumentationProjection(
+        mirror(JSON.stringify(PILOT_MEASUREMENT_DOCUMENTATION_PROJECTION)),
+      ),
+    /not canonical JSON/,
+  );
+
+  const drifted = structuredClone(PILOT_MEASUREMENT_DOCUMENTATION_PROJECTION);
+  drifted.aggregation.algorithmVersion += 1;
+  const parsed = parsePilotMeasurementDocumentationProjection(mirror(canonicalizeJson(drifted)));
+  assert.throws(
+    () =>
+      assertPilotMeasurementDocumentationProjection(parsed, {
+        context: 'drifted documentation fixture',
+      }),
+    /documentation projection diverges.*drifted documentation fixture/,
+  );
+});
+
+// --- Plan-lint contract projection ---
+
+const planContractSource = readFileSync(
+  new URL('../src/shared/plan-contract.md', import.meta.url),
+  'utf8',
+);
+const planToolSource = readFileSync(new URL('../src/tools/plan.md', import.meta.url), 'utf8');
+
+function planMappingRows(source = planContractSource) {
+  return parsePlanContractMarkedTable(source, {
+    startMarker: PLAN_CONTRACT_MAPPING_START,
+    endMarker: PLAN_CONTRACT_MAPPING_END,
+    context: 'plan-contract.md',
+  });
+}
+
+function planPlaceholderRows(source = planContractSource) {
+  return parsePlanContractMarkedTable(source, {
+    startMarker: PLAN_CONTRACT_PLACEHOLDERS_START,
+    endMarker: PLAN_CONTRACT_PLACEHOLDERS_END,
+    context: 'plan-contract.md',
+  });
+}
+
+test('the unmodified plan contract and plan template pass both plan-lint projection guards', () => {
+  const mapping = planMappingRows();
+  assert.deepEqual(mapping[0], ['Meaning', 'German', 'English']);
+  assert.equal(mapping.length - 1, PLAN_CONTRACT_MAPPING.length);
+  assert.doesNotThrow(() => assertPlanContractProjection(mapping, { context: 'plan-contract.md' }));
+  const placeholders = planPlaceholderRows();
+  assert.equal(placeholders.length - 1, PLAN_PLACEHOLDERS.length);
+  assert.doesNotThrow(() =>
+    assertPlanPlaceholderProjection(placeholders, {
+      context: 'plan-contract.md',
+      planTemplateSource: planToolSource,
+      planTemplateContext: 'plan.md',
+    }),
+  );
+  const tokens = extractPlanTemplateTokens(planToolSource);
+  assert.ok(tokens.includes('[Title]'));
+  assert.ok(tokens.includes('[measurable criterion]'));
+  assert.ok(!tokens.includes('[ ]'));
+});
+
+test('the review-result mapping cell parses as two code spans', () => {
+  const row = planMappingRows().find(([meaning]) => meaning === 'Review result');
+  assert.deepEqual(row, [
+    'Review result',
+    '`**Ergebnis:** Freigegeben` / `Überarbeitung nötig`',
+    '`**Result:** Approved` / `Revision required`',
+  ]);
+  const drifted = planContractSource.replace(
+    '`**Result:** Approved` / `Revision required`',
+    '`**Result:** Approved / Revision required`',
+  );
+  assert.throws(
+    () => assertPlanContractProjection(planMappingRows(drifted), { context: 'drifted' }),
+    /^Error: plan-lint projection: mapping row "Review result" English cell must be/,
+  );
+});
+
+test('the plan-lint mapping guard fails on a drifted mapping table', () => {
+  const relabeled = planContractSource.replace(
+    '`**Plan status:** Not implemented`',
+    '`**Plan status:** Not started    `',
+  );
+  assert.throws(
+    () => assertPlanContractProjection(planMappingRows(relabeled), { context: 'drifted' }),
+    /^Error: plan-lint projection: mapping row "Status, open" English cell must be .*\(in drifted\)$/,
+  );
+  const withoutRow = planContractSource
+    .split('\n')
+    .filter((line) => !line.startsWith('| Review findings '))
+    .join('\n');
+  assert.throws(
+    () => assertPlanContractProjection(planMappingRows(withoutRow), { context: 'drifted' }),
+    new RegExp(
+      `^Error: plan-lint projection: mapping table has ${PLAN_CONTRACT_MAPPING.length - 1} rows; expected ${PLAN_CONTRACT_MAPPING.length} \\(missing row "Review findings"\\)`,
+    ),
+  );
+  assert.throws(
+    () => planMappingRows(planContractSource.replace(PLAN_CONTRACT_MAPPING_END, '')),
+    /^Error: plan-lint projection: table requires exactly one/,
+  );
+});
+
+test('the plan-lint placeholder guard fails on a drifted placeholder table', () => {
+  const retranslated = planContractSource.replace('`[messbares Kriterium]`', '`[Kriterium]`');
+  assert.throws(
+    () =>
+      assertPlanPlaceholderProjection(planPlaceholderRows(retranslated), {
+        context: 'drifted',
+        planTemplateSource: planToolSource,
+        planTemplateContext: 'plan.md',
+      }),
+    /^Error: plan-lint projection: placeholder row "Acceptance criterion" German cell must be "\[messbares Kriterium\]"/,
+  );
+  const extra = planContractSource.replace(
+    `${PLAN_CONTRACT_PLACEHOLDERS_END}`,
+    `| Extra | \`[Extra]\` | \`[Extra]\` |\n${PLAN_CONTRACT_PLACEHOLDERS_END}`,
+  );
+  assert.throws(
+    () => assertPlanPlaceholderProjection(planPlaceholderRows(extra), { context: 'drifted' }),
+    /^Error: plan-lint projection: placeholder table has 13 rows; expected 12 \(unexpected row "Extra"\)/,
+  );
+});
+
+test('the plan-lint placeholder guard fails on a plan template token the table lacks', () => {
+  const template = planToolSource.replace(
+    '- [ ] [measurable criterion]',
+    '- [ ] [measurable criterion]\n- [ ] [new template token]',
+  );
+  assert.notEqual(template, planToolSource);
+  assert.throws(
+    () =>
+      assertPlanPlaceholderProjection(planPlaceholderRows(), {
+        context: 'plan-contract.md',
+        planTemplateSource: template,
+        planTemplateContext: 'plan.md',
+      }),
+    /^Error: plan-lint projection: plan template token "\[new template token\]" is missing from the placeholder table \(in plan\.md/,
+  );
+});
+
+function assertPlanTemplateDrift(template, pattern) {
+  assert.notEqual(template, planToolSource);
+  assert.throws(
+    () =>
+      assertPlanPlaceholderProjection(planPlaceholderRows(), {
+        context: 'plan-contract.md',
+        planTemplateSource: template,
+        planTemplateContext: 'plan.md',
+      }),
+    pattern,
+  );
+}
+
+test('the plan-lint placeholder guard fails on a template review result the table does not hold', () => {
+  assertPlanTemplateDrift(
+    planToolSource.replace(
+      '**Result:** Approved / Revision required',
+      '**Result:** Approved / Rejected',
+    ),
+    /^Error: plan-lint projection: plan template \*\*Result:\*\* value must be "Approved \/ Revision required"; found "Approved \/ Rejected" \(in plan\.md/,
+  );
+});
+
+test('the plan-lint placeholder guard fails unless Phase 3 holds exactly one markdown fence', () => {
+  assertPlanTemplateDrift(
+    planToolSource.replace('\n### Phase 4', '\n```markdown\n# [Title]\n```\n\n### Phase 4'),
+    /^Error: plan-lint projection: plan Phase 3 holds 2 ```markdown fences; expected exactly one template fence/,
+  );
+});
+
+test('the plan-lint placeholder guard fails on a table token the template no longer uses', () => {
+  assertPlanTemplateDrift(
+    planToolSource.replace('- [Edge case and expected behavior]', '- An edge case.'),
+    /^Error: plan-lint projection: placeholder table token "\[Edge case and expected behavior\]" does not occur in the plan template \(in plan\.md/,
+  );
+});
+
+// --- Shared next-steps contract ---
+
+// A synthetic table keeps the malformed-input cases independent of the live
+// fragment: a broken table there must fail its own test, not every case below.
+function nextStepsTable(...rows) {
+  return [
+    'prose above the contract',
+    '',
+    NEXT_STEPS_TABLE_START,
+    '',
+    '| Tool | Condition | Then | Or |',
+    '| ---- | --------- | ---- | --- |',
+    ...rows,
+    '',
+    NEXT_STEPS_TABLE_END,
+    '',
+    'prose below the contract',
+  ].join('\n');
+}
+
+const NEXT_STEPS_ROWS = [
+  '| concept | deep review declined | {{SKILL:review}} <concept-file> | — |',
+  '| plan | deep review done | {{SKILL:apply}} <plan-file> | {{SKILL:plan}} <plan-file> |',
+  '| review | local report written | {{SKILL:apply}} <report> | — |',
+  '| apply | plan clarity gate failed | {{SKILL:plan}} <plan-file> | — |',
+];
+const nextStepsFixture = nextStepsTable(...NEXT_STEPS_ROWS);
+const nextStepsEmitting = new Set(['concept', 'plan', 'review', 'apply']);
+
+const NEXT_STEPS_DOC_HEAD = [
+  '# Tool flow',
+  '',
+  'What each tool proposes next.',
+  '',
+  '| Tool | Condition | Then | Or |',
+  '| ---- | --------- | ---- | --- |',
+];
+const NEXT_STEPS_DOC_ROWS = [
+  '| `concept` | deep review declined | `/effective-flow review <concept-file>` | — |',
+  '| `plan` | deep review done | `/effective-flow apply <plan-file>` | `/effective-flow plan <plan-file>` |',
+  '| `review` | local report written | `/effective-flow apply <report>` | — |',
+  '| `apply` | plan clarity gate failed | `/effective-flow plan <plan-file>` | — |',
+];
+
+function nextStepsDoc(mutate = (rows) => rows) {
+  return [...NEXT_STEPS_DOC_HEAD, ...mutate([...NEXT_STEPS_DOC_ROWS])].join('\n');
+}
+
+function replaceDocRow(index, row) {
+  return (rows) => {
+    rows[index] = row;
+    return rows;
+  };
+}
+
+test('parseNextStepsTable reads the live shared next-steps table', () => {
+  const source = readFileSync(new URL('../src/shared/next-steps.md', import.meta.url), 'utf8');
+  const edges = parseNextStepsTable(source, { context: 'src/shared/next-steps.md' });
+
+  assert.ok(edges.length > 0, 'the live table must carry rows');
+  for (const edge of edges) {
+    assert.ok(edge.tool, `every row names a tool: ${JSON.stringify(edge)}`);
+    assert.ok(edge.then, `every row carries a first edge: ${JSON.stringify(edge)}`);
+  }
+  // The requirement's core fix: planning hands the user `apply <plan-file>`
+  // instead of a guessed implementation tool.
+  assert.ok(
+    edges.some((edge) => edge.tool === 'plan' && edge.then.startsWith('{{SKILL:apply}}')),
+    'the live table must route a finished plan to apply',
+  );
+  // Every edge target is itself a tool with rows, so no edge leads into a
+  // terminal that recommends nothing.
+  assert.doesNotThrow(() =>
+    assertNextStepsContract(edges, {
+      emittingTools: new Set(edges.map((edge) => edge.tool)),
+      context: 'src/shared/next-steps.md',
+    }),
+  );
+});
+
+test('parseNextStepsTable normalizes cells and keeps source order', () => {
+  const edges = parseNextStepsTable(nextStepsFixture, { context: 'fixture' });
+  assert.deepEqual(edges, [
+    {
+      tool: 'concept',
+      condition: 'deep review declined',
+      then: '{{SKILL:review}} <concept-file>',
+      or: '',
+    },
+    {
+      tool: 'plan',
+      condition: 'deep review done',
+      then: '{{SKILL:apply}} <plan-file>',
+      or: '{{SKILL:plan}} <plan-file>',
+    },
+    {
+      tool: 'review',
+      condition: 'local report written',
+      then: '{{SKILL:apply}} <report>',
+      or: '',
+    },
+    {
+      tool: 'apply',
+      condition: 'plan clarity gate failed',
+      then: '{{SKILL:plan}} <plan-file>',
+      or: '',
+    },
+  ]);
+  // oxfmt pads every column, so the parser must not depend on the cell width.
+  assert.deepEqual(
+    parseNextStepsTable(nextStepsFixture.replace(/\| concept /, '|  concept   ')),
+    edges,
+  );
+});
+
+test('parseNextStepsTable rejects a missing or duplicated marker pair', () => {
+  assert.throws(
+    () => parseNextStepsTable('| Tool | Condition | Then | Or |\n'),
+    /exactly one start and end marker/,
+  );
+  assert.throws(
+    () => parseNextStepsTable(`${nextStepsFixture}\n${NEXT_STEPS_TABLE_START}\n`),
+    /exactly one start and end marker/,
+  );
+  assert.throws(
+    () =>
+      parseNextStepsTable(
+        [NEXT_STEPS_TABLE_END, '', ...NEXT_STEPS_ROWS, '', NEXT_STEPS_TABLE_START].join('\n'),
+      ),
+    /markers are out of order/,
+  );
+});
+
+test('parseNextStepsTable rejects a malformed table body', () => {
+  assert.throws(
+    () => parseNextStepsTable([NEXT_STEPS_TABLE_START, '', NEXT_STEPS_TABLE_END].join('\n')),
+    /has no data rows/,
+  );
+  assert.throws(
+    () => parseNextStepsTable(nextStepsFixture.replace('| Or |', '| Otherwise |')),
+    /headers must be: Tool, Condition, Then, Or/,
+  );
+  assert.throws(
+    () => parseNextStepsTable(nextStepsFixture.replace('| --------- |', '| ~~~~~~~~~ |')),
+    /invalid separator row/,
+  );
+  // The cell count alone is unusable against a table of dozens of rows, so the
+  // offending row has to be part of the message.
+  assert.throws(
+    () => parseNextStepsTable(nextStepsTable('| plan | deep review done | {{SKILL:apply}} |')),
+    /row has 3 cells; expected 4: "\| plan \| deep review done \| \{\{SKILL:apply\}\} \|"/,
+  );
+});
+
+test('parseNextStepsTable rejects an empty tool, condition or first edge, and a duplicate row key', () => {
+  assert.throws(
+    () => parseNextStepsTable(nextStepsTable('|  | deep review done | {{SKILL:apply}} | — |')),
+    /require a tool, a condition, and a first edge/,
+  );
+  // The condition is the end state a run matches its row on; an empty one makes
+  // the row unaddressable instead of merely undocumented.
+  assert.throws(
+    () => parseNextStepsTable(nextStepsTable('| plan |  | {{SKILL:apply}} <plan-file> | — |')),
+    /require a tool, a condition, and a first edge/,
+  );
+  assert.throws(
+    () => parseNextStepsTable(nextStepsTable('| plan | deep review done | — | — |')),
+    /require a tool, a condition, and a first edge/,
+  );
+  assert.throws(
+    () => parseNextStepsTable(nextStepsTable(NEXT_STEPS_ROWS[1], NEXT_STEPS_ROWS[1])),
+    /Duplicate next-steps row "plan \| deep review done"/,
+  );
+  // Two distinct rows whose fields concatenate to the same string are not a
+  // duplicate: the key is encoded, so the field boundary survives it.
+  assert.doesNotThrow(() =>
+    parseNextStepsTable(
+      nextStepsTable(
+        '| plan | deep review done | {{SKILL:apply}} <plan-file> | — |',
+        '| plan deep | review done | {{SKILL:plan}} <plan-file> | — |',
+      ),
+    ),
+  );
+});
+
+test('assertNextStepsContract accepts a table that covers its emitting set exactly', () => {
+  assert.doesNotThrow(() =>
+    assertNextStepsContract(parseNextStepsTable(nextStepsFixture), {
+      emittingTools: nextStepsEmitting,
+      context: 'fixture',
+    }),
+  );
+});
+
+test('assertNextStepsContract rejects a third edge and an unresolvable edge cell', () => {
+  const threeEdges = parseNextStepsTable(
+    nextStepsTable(
+      ...NEXT_STEPS_ROWS.slice(0, 1),
+      '| plan | deep review done | {{SKILL:apply}} <plan-file> | {{SKILL:review}} <plan-file> {{SKILL:plan}} <plan-file> |',
+      ...NEXT_STEPS_ROWS.slice(2),
+    ),
+  );
+  assert.throws(
+    () => assertNextStepsContract(threeEdges, { emittingTools: nextStepsEmitting }),
+    /carries 3 edges; at most two are allowed/,
+  );
+
+  const handWritten = parseNextStepsTable(
+    nextStepsTable(
+      ...NEXT_STEPS_ROWS.slice(0, 3),
+      '| apply | gate failed | plan <plan-file> | — |',
+    ),
+  );
+  assert.throws(
+    () => assertNextStepsContract(handWritten, { emittingTools: nextStepsEmitting }),
+    /invalid Then cell "plan <plan-file>"/,
+  );
+});
+
+test('assertNextStepsContract rejects a second reference hidden in one edge cell', () => {
+  // The argument tail of the cell shape matches anything, so a second reference
+  // rides along inside it: the shape check reports the first target only, and
+  // the row-level count stays at two because the `Or` cell is empty. Without the
+  // per-cell count the smuggled target reaches no check at all and ships as the
+  // raw `tools/apply-plan.md` path the renderer produces for it.
+  const smuggled = parseNextStepsTable(
+    nextStepsTable(
+      ...NEXT_STEPS_ROWS.slice(0, 3),
+      '| apply | plan clarity gate failed | {{SKILL:apply}} <plan-file> {{SKILL:apply-plan}} | — |',
+    ),
+  );
+  assert.throws(
+    () => assertNextStepsContract(smuggled, { emittingTools: nextStepsEmitting }),
+    /has a Then cell with 2 references .*; expected exactly one/,
+  );
+});
+
+test('assertNextStepsContract rejects an edge target the user cannot invoke', () => {
+  // Emitting and invocable are different questions: a tool may own rows while
+  // the renderer still writes it as `tools/<name>.md`, which nobody can type.
+  const edges = parseNextStepsTable(nextStepsFixture);
+  assert.throws(
+    () =>
+      assertNextStepsContract(edges, {
+        emittingTools: nextStepsEmitting,
+        invocableTools: new Set([...nextStepsEmitting].filter((name) => name !== 'apply')),
+      }),
+    /recommends "apply", which is not a user-invocable tool/,
+  );
+  assert.throws(
+    () =>
+      assertNextStepsContract(edges, {
+        emittingTools: nextStepsEmitting,
+        invocableTools: [],
+      }),
+    /non-empty invocable tool set/,
+  );
+  // Omitted, the emitting set stays the fallback, so the check can never be
+  // silently skipped by a caller that forgets the argument.
+  assert.doesNotThrow(() =>
+    assertNextStepsContract(edges, {
+      emittingTools: nextStepsEmitting,
+      invocableTools: nextStepsEmitting,
+    }),
+  );
+});
+
+test('assertNextStepsContract rejects an edge target outside the emitting set', () => {
+  const deadTarget = parseNextStepsTable(
+    nextStepsTable(
+      ...NEXT_STEPS_ROWS.slice(0, 3),
+      '| apply | plan clarity gate failed | {{SKILL:apply-plan}} <plan-file> | — |',
+    ),
+  );
+  assert.throws(
+    () => assertNextStepsContract(deadTarget, { emittingTools: nextStepsEmitting }),
+    /recommends "apply-plan", which is not an emitting tool/,
+  );
+});
+
+test('assertNextStepsContract enforces two-way coverage between the table and the emitting set', () => {
+  const edges = parseNextStepsTable(nextStepsFixture);
+  assert.throws(
+    () =>
+      assertNextStepsContract(edges, {
+        emittingTools: new Set([...nextStepsEmitting, 'commit', 'pr']),
+      }),
+    /emitting tool\(s\) without a row: commit, pr/,
+  );
+  assert.throws(
+    () =>
+      assertNextStepsContract(edges, {
+        emittingTools: new Set([...nextStepsEmitting].filter((name) => name !== 'concept')),
+      }),
+    /row\(s\) for a non-emitting tool: concept/,
+  );
+  assert.throws(() => assertNextStepsContract(edges, {}), /non-empty emitting tool set/);
+});
+
+test('findNextStepsDocViolations accepts a documentation page in the rendered invocation form', () => {
+  assert.deepEqual(
+    findNextStepsDocViolations(nextStepsDoc(), parseNextStepsTable(nextStepsFixture), {
+      context: 'docs/user-guide/tool-flow.md',
+    }),
+    [],
+  );
+});
+
+test('findNextStepsDocViolations flags one mismatching row per column', () => {
+  const edges = parseNextStepsTable(nextStepsFixture);
+  const context = 'docs/user-guide/tool-flow.md';
+  const cases = [
+    {
+      column: 'Tool',
+      row: 1,
+      expected: 'concept',
+      actual: 'concept-review',
+      mutation: replaceDocRow(
+        0,
+        '| `concept-review` | deep review declined | `/effective-flow review <concept-file>` | — |',
+      ),
+    },
+    {
+      column: 'Condition',
+      row: 1,
+      expected: 'deep review declined',
+      actual: 'deep review skipped',
+      mutation: replaceDocRow(
+        0,
+        '| `concept` | deep review skipped | `/effective-flow review <concept-file>` | — |',
+      ),
+    },
+    {
+      column: 'Then',
+      row: 3,
+      expected: '/effective-flow apply <report>',
+      actual: '/effective-flow apply',
+      mutation: replaceDocRow(
+        2,
+        '| `review` | local report written | `/effective-flow apply` | — |',
+      ),
+    },
+    {
+      column: 'Or',
+      row: 2,
+      expected: '/effective-flow plan <plan-file>',
+      actual: '',
+      mutation: replaceDocRow(
+        1,
+        '| `plan` | deep review done | `/effective-flow apply <plan-file>` | — |',
+      ),
+    },
+  ];
+
+  for (const { column, row, expected, actual, mutation } of cases) {
+    assert.deepEqual(
+      findNextStepsDocViolations(nextStepsDoc(mutation), edges, { context }),
+      [{ row, column, expected, actual, context }],
+      `mismatching ${column} column must be reported once`,
+    );
+  }
+});
+
+test('findNextStepsDocViolations reports a missing table, a missing row, and a surplus row', () => {
+  const edges = parseNextStepsTable(nextStepsFixture);
+  const context = 'docs/user-guide/tool-flow.md';
+
+  assert.deepEqual(
+    findNextStepsDocViolations('# Tool flow\n\nNo table here.\n', edges, { context }),
+    [
+      {
+        row: 0,
+        column: 'table',
+        expected: 'Tool | Condition | Then | Or',
+        actual: 'missing',
+        context,
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    findNextStepsDocViolations(
+      nextStepsDoc((rows) => rows.slice(0, 3)),
+      edges,
+      { context },
+    ),
+    [
+      {
+        row: 4,
+        column: 'row',
+        expected: 'apply | plan clarity gate failed | /effective-flow plan <plan-file> | ',
+        actual: 'missing',
+        context,
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    findNextStepsDocViolations(
+      nextStepsDoc((rows) => [...rows, '| `commit` | always | `/effective-flow pr` | — |']),
+      edges,
+      { context },
+    ),
+    [
+      {
+        row: 5,
+        column: 'row',
+        expected: 'no further row',
+        actual: 'commit | always | /effective-flow pr | ',
+        context,
+      },
+    ],
+  );
+});
+
+test('findNextStepsDocViolations reports a documentation table without a separator row', () => {
+  const edges = parseNextStepsTable(nextStepsFixture);
+  const context = 'docs/user-guide/tool-flow.md';
+  const violation = { row: 0, column: 'separator', expected: '--- | --- | --- | ---', context };
+
+  // Skipping the alignment row blindly would swallow the first data row and
+  // report every following row as shifted — a cascade in place of the one real
+  // defect.
+  assert.deepEqual(
+    findNextStepsDocViolations(
+      [...NEXT_STEPS_DOC_HEAD.slice(0, -1), ...NEXT_STEPS_DOC_ROWS].join('\n'),
+      edges,
+      { context },
+    ),
+    [{ ...violation, actual: NEXT_STEPS_DOC_ROWS[0] }],
+  );
+
+  assert.deepEqual(
+    findNextStepsDocViolations(NEXT_STEPS_DOC_HEAD.slice(0, -1).join('\n'), edges, { context }),
+    [{ ...violation, actual: 'missing' }],
+  );
+});
+
+// --- assertQuotedDescription (quoting guard) ---
+
+test('assertQuotedDescription accepts a strictly quoted description', () => {
+  assert.doesNotThrow(() => assertQuotedDescription('description: "ok"'));
+});
+
+test('assertQuotedDescription rejects an unquoted description', () => {
+  assert.throws(
+    () => assertQuotedDescription('description: nope', { context: 'x.md' }),
+    /strictly double-quoted.*x\.md/,
+  );
+});
+
+test('assertQuotedDescription rejects a missing description', () => {
+  assert.throws(() => assertQuotedDescription('name: firmo'), /Missing description field/);
+});
+
+// --- transformRefs ---
+
+test('transformRefs maps exposed vs internal tools and agents per harness', () => {
+  assert.equal(transformRefs('{{SKILL:fix}}', 'claude', refConfig), '/effective-flow fix');
+  assert.equal(transformRefs('{{SKILL:fix}}', 'codex', refConfig), '$effective-flow fix');
+  assert.equal(
+    transformRefs('{{FLOW}} plan #118', 'claude', refConfig),
+    '/effective-flow plan #118',
+  );
+  assert.equal(
+    transformRefs('{{FLOW}} plan #118', 'codex', refConfig),
+    '$effective-flow plan #118',
+  );
+  assert.equal(transformRefs('{{SKILL:apply-plan}}', 'claude', refConfig), '`tools/apply-plan.md`');
+  assert.equal(transformRefs('{{SKILL:apply-plan}}', 'codex', refConfig), '`tools/apply-plan.md`');
+  assert.equal(
+    transformRefs('{{AGENT:nodejs-implementer}}', 'claude', refConfig),
+    '`effective-flow-nodejs-implementer`',
+  );
+  assert.equal(
+    transformRefs('{{AGENT:nodejs-implementer}}', 'codex', refConfig),
+    '`effective-flow-nodejs-implementer`',
+  );
+  assert.equal(
+    transformRefs('{{AGENT:nodejs-implementer}}', 'portable', refConfig),
+    '`effective-flow-nodejs-implementer`',
+  );
+});
+
+test('portable refs use harness-neutral tool notation', () => {
+  assert.equal(transformRefs('{{FLOW}} fix', 'portable', refConfig), 'effective-flow fix');
+  assert.equal(transformRefs('{{SKILL:fix}}', 'portable', refConfig), 'effective-flow fix');
+});
+
+test('profile refs render the exact Claude, Codex, and portable contracts', () => {
+  const token = '{{AGENT_PROFILE:nodejs-implementer:fast}}';
+  assert.equal(
+    transformRefs(token, 'claude', profileRefConfig),
+    '`effective-flow-nodejs-implementer-fast`',
+  );
+  assert.equal(
+    transformRefs(token, 'codex', profileRefConfig),
+    '`effective-flow-nodejs-implementer-fast`',
+  );
+  assert.equal(
+    transformRefs(token, 'portable', profileRefConfig),
+    '`effective-flow-nodejs-implementer` (portable build: Fast unavailable, Quality only)',
+  );
+});
+
+// Invariant: `{{BUILD_TARGET}}` renders the consumer target itself, so a shared fragment can tell a
+// portable installation from a native one without inferring it from the host that runs it.
+test('BUILD_TARGET renders the consumer target and rejects an unknown one', () => {
+  for (const target of ['claude', 'codex', 'portable']) {
+    assert.equal(
+      transformRefs('This is the `{{BUILD_TARGET}}` build.', target, refConfig),
+      `This is the \`${target}\` build.`,
+    );
+  }
+  assert.throws(
+    () => transformRefs('{{BUILD_TARGET}}', 'native', { ...refConfig, context: 'target.md' }),
+    /Unknown rendered target "native" \(in target\.md\)/,
+  );
+});
+
+test('profile refs reject ineligible agents and missing mapping guards', () => {
+  assert.throws(
+    () => transformRefs('{{AGENT_PROFILE:code-validator:fast}}', 'claude', profileRefConfig),
+    /Agent "code-validator" is not eligible for the Fast profile/,
+  );
+  assert.throws(
+    () =>
+      transformRefs('{{AGENT_PROFILE:nodejs-implementer:fast}}', 'claude', {
+        ...refConfig,
+        fastProfileAgents: profileRefConfig.fastProfileAgents,
+      }),
+    /Agent-profile mappings must be an object/,
+  );
+  assert.throws(
+    () =>
+      transformRefs('{{AGENT_PROFILE:nodejs-implementer:fast}}', 'claude', {
+        ...refConfig,
+        profileMappings,
+      }),
+    /requires fastProfileAgents/,
+  );
+});
+
+// Rendering must apply the same guard as validation: the known-name sets are
+// required, so transformRefs can never render an unvalidated reference (#106).
+test('transformRefs requires the known-name sets', () => {
+  for (const harness of ['claude', 'codex']) {
+    assert.throws(
+      () =>
+        transformRefs('{{SKILL:fix}}', harness, {
+          exposedTools: refConfig.exposedTools,
+          agentPrefix: refConfig.agentPrefix,
+          skillName: refConfig.skillName,
+          context: 'x.md',
+        }),
+      /transformRefs requires knownTools and knownAgents.*x\.md/,
+    );
+  }
+});
+
+// No accepted placeholder can render a non-existent target: legacy sf- refs are
+// rejected for exposed tools, internal tools, and agents, on both harnesses.
+test('transformRefs rejects legacy sf- refs for exposed, internal, and agent names on both harnesses', () => {
+  const legacyRefs = [
+    '{{SKILL:sf-fix}}', // exposed tool
+    '{{SKILL:sf-apply-plan}}', // internal tool
+    '{{AGENT:sf-test-writer}}', // agent
+  ];
+  for (const harness of ['claude', 'codex']) {
+    for (const ref of legacyRefs) {
+      assert.throws(
+        () => transformRefs(ref, harness, refConfig),
+        /Legacy placeholder .* is no longer supported/,
+        `${ref} on ${harness}`,
+      );
+    }
+  }
+});
+
+// --- renderDeprecatedAliasClause ---
+
+// Mirror the three per-harness invocation spellings build.mjs's own
+// skillInvocation(harness, name) produces, so a drift in either place would
+// show up as a mismatch here rather than being masked by a shared helper.
+const HARNESS_INVOCATIONS = {
+  claude: (name) => `/effective-flow ${name}`,
+  codex: (name) => `$effective-flow ${name}`,
+  portable: (name) => `effective-flow ${name}`,
+};
+
+test('renderDeprecatedAliasClause renders one bullet per alias, using the caller invocation syntax', () => {
+  const aliases = [{ alias: 'pr-review', replacement: 'merge-gate' }];
+  for (const [harness, skillInvocation] of Object.entries(HARNESS_INVOCATIONS)) {
+    const clause = renderDeprecatedAliasClause(aliases, skillInvocation);
+    // Every harness must name the alias's own invocation and the replacement's invocation in
+    // that harness's exact spelling — a hard-coded `/effective-flow` here would pass on Claude
+    // and silently mis-render on Codex/portable.
+    assert.match(
+      clause,
+      new RegExp(`\`${escapeRegex(skillInvocation('pr-review'))}\``),
+      `${harness}: must render the alias invocation`,
+    );
+    assert.match(
+      clause,
+      new RegExp(`\`${escapeRegex(skillInvocation('merge-gate'))}\``),
+      `${harness}: must render the replacement invocation`,
+    );
+  }
+});
+
+test('renderDeprecatedAliasClause names both the alias file and the replacement file', () => {
+  const clause = renderDeprecatedAliasClause(
+    [{ alias: 'pr-review', replacement: 'merge-gate' }],
+    HARNESS_INVOCATIONS.claude,
+  );
+  // The dispatch rule only routes an unlisted name if the clause tells the reader which two
+  // tool files are involved; naming just the alias (or just the replacement) would leave the
+  // "read tools/merge-gate.md" step unstated.
+  assert.match(clause, /`tools\/pr-review\.md`/, 'must name the alias tool file');
+  assert.match(clause, /`tools\/merge-gate\.md`/, 'must name the replacement tool file');
+});
+
+test('renderDeprecatedAliasClause returns an empty string for an empty alias list', () => {
+  assert.equal(renderDeprecatedAliasClause([], HARNESS_INVOCATIONS.claude), '');
+});
+
+test('renderDeprecatedAliasClause throws on a non-array alias list', () => {
+  assert.throws(
+    () => renderDeprecatedAliasClause('pr-review', HARNESS_INVOCATIONS.claude),
+    /must be an array/,
+  );
+});
+
+test('renderDeprecatedAliasClause throws when skillInvocation is not a function', () => {
+  assert.throws(
+    () =>
+      renderDeprecatedAliasClause([{ alias: 'pr-review', replacement: 'merge-gate' }], undefined),
+    /requires a skillInvocation\(name\) function/,
+  );
+});
+
+test('renderDeprecatedAliasClause throws on an entry with a blank alias', () => {
+  assert.throws(
+    () =>
+      renderDeprecatedAliasClause(
+        [{ alias: '', replacement: 'merge-gate' }],
+        HARNESS_INVOCATIONS.claude,
+      ),
+    /requires an alias name/,
+  );
+});
+
+test('renderDeprecatedAliasClause throws on an entry with a blank replacement', () => {
+  assert.throws(
+    () =>
+      renderDeprecatedAliasClause(
+        [{ alias: 'pr-review', replacement: '' }],
+        HARNESS_INVOCATIONS.claude,
+      ),
+    /requires a replacement tool name/,
+  );
+});
+
+test('renderBody rejects a legacy sf- ref on both harnesses', () => {
+  for (const harness of ['claude', 'codex']) {
+    assert.throws(
+      () => renderBody('Ruft {{SKILL:sf-fix}} auf.\n', harness, { ...refConfig, context: 't.md' }),
+      /Legacy placeholder \{\{SKILL:sf-fix\}\} is no longer supported.*t\.md/,
+    );
+  }
+});
+
+// --- parseAskBlock ---
+
+test('parseAskBlock parses an options block', () => {
+  const block =
+    'header: Commits\nquestion: Welche?\noptions:\n  - label: A\n    description: erste\n  - label: B\n    description: zweite\n';
+  const r = parseAskBlock(block);
+  assert.equal(r.header, 'Commits');
+  assert.equal(r.question, 'Welche?');
+  assert.equal(r.language, 'en');
+  assert.deepEqual(r.options, [
+    { label: 'A', description: 'erste' },
+    { label: 'B', description: 'zweite' },
+  ]);
+});
+
+test('parseAskBlock handles an approval block', () => {
+  const r = parseAskBlock('header: Freigabe\nquestion: Ok?\ntype: approval\nlanguage: de\n');
+  assert.equal(r.type, 'approval');
+  assert.equal(r.language, 'de');
+  assert.deepEqual(r.options, []);
+});
+
+test('parseAskBlock throws with context on a missing header', () => {
+  assert.throws(
+    () => parseAskBlock('question: Q\n', { context: 'x.md' }),
+    /missing header field.*x\.md/,
+  );
+});
+
+test('parseAskBlock enforces the header length limit', () => {
+  const long = 'x'.repeat(ASK_MAX_HEADER_LENGTH + 1);
+  assert.throws(
+    () => parseAskBlock(`header: ${long}\nquestion: Q\ntype: approval\n`, { context: 'x.md' }),
+    /exceeds 12 characters.*x\.md/,
+  );
+});
+
+test('parseAskBlock rejects an unknown type', () => {
+  assert.throws(
+    () => parseAskBlock('header: H\nquestion: Q\ntype: aproval\n', { context: 'x.md' }),
+    /unknown type "aproval".*x\.md/,
+  );
+});
+
+test('parseAskBlock rejects invalid and empty language values with source context', () => {
+  for (const [languageLine, expectedValue] of [
+    ['language: fr', 'fr'],
+    ['language: EN', 'EN'],
+    ['language:', ''],
+  ]) {
+    assert.throws(
+      () =>
+        parseAskBlock(`header: H\nquestion: Q\ntype: approval\n${languageLine}\n`, {
+          context: 'workflow.md',
+        }),
+      new RegExp(`unknown language "${expectedValue}".*allowed: en, de.*workflow\\.md`),
+    );
+  }
+});
+
+test('parseAskBlock rejects duplicate language fields with source context', () => {
+  for (const languageLines of ['language: en\nlanguage: de', 'language: de\nlanguage: de']) {
+    assert.throws(
+      () =>
+        parseAskBlock(`header: H\nquestion: Q\ntype: approval\n${languageLines}\n`, {
+          context: 'duplicate.md',
+        }),
+      /duplicate language fields.*duplicate\.md/,
+    );
+  }
+});
+
+// --- parseAskBlock: type scored and the strict line grammar ---
+
+// Builds an ask block body from its key lines and `[label, description]` option pairs, so each
+// rejection test below differs from a valid block by exactly the line it is about.
+function askBlockLines(keys, options) {
+  const lines = [...keys];
+  if (options) {
+    lines.push('options:');
+    for (const [label, description] of options) {
+      lines.push(`  - label: ${label}`, `    description: ${description}`);
+    }
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+const scoredOptions = [
+  ['Revise', 'Edit the plan in place'],
+  ['New', 'Start a new plan'],
+  ['Abort', 'Stop here'],
+];
+
+test('parseAskBlock parses a scored block and returns its exempt labels', () => {
+  const r = parseAskBlock(
+    askBlockLines(
+      ['header: Revision', 'question: Q?', 'type: scored', 'unscored: Abort'],
+      scoredOptions,
+    ),
+  );
+  assert.equal(r.type, 'scored');
+  assert.deepEqual(r.unscored, ['Abort']);
+  assert.deepEqual(
+    r.options.map((option) => option.label),
+    ['Revise', 'New', 'Abort'],
+  );
+});
+
+test('parseAskBlock returns an empty unscored list when no label is exempt', () => {
+  const scored = parseAskBlock(
+    askBlockLines(['header: H', 'question: Q?', 'type: scored'], scoredOptions),
+  );
+  const options = parseAskBlock(askBlockLines(['header: H', 'question: Q?'], scoredOptions));
+  const approval = parseAskBlock('header: H\nquestion: Q?\ntype: approval\n');
+  assert.deepEqual(scored.unscored, []);
+  assert.deepEqual(options.unscored, []);
+  assert.deepEqual(approval.unscored, []);
+});
+
+test('parseAskBlock splits several exempt labels on the pipe separator', () => {
+  const r = parseAskBlock(
+    askBlockLines(
+      ['header: H', 'question: Q?', 'type: scored', 'unscored: Ask later | Abort, now'],
+      [
+        ['A', 'first'],
+        ['B', 'second'],
+        ['Ask later', 'decide at run time'],
+        ['Abort, now', 'a label that carries a comma'],
+      ],
+    ),
+  );
+  assert.deepEqual(r.unscored, ['Ask later', 'Abort, now']);
+});
+
+test('parseAskBlock rejects unscored: on an options fence', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(
+        askBlockLines(['header: H', 'question: Q?', 'unscored: Abort'], scoredOptions),
+        {
+          context: 'u.md',
+        },
+      ),
+    /^Error: ASK block "H" declares unscored: but is not of type scored \(in u\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects unscored: on an approval fence', () => {
+  assert.throws(
+    () =>
+      parseAskBlock('header: H\nquestion: Q?\ntype: approval\nunscored: Abort\n', {
+        context: 'u.md',
+      }),
+    /ASK block "H" declares unscored: but is not of type scored.*u\.md/,
+  );
+});
+
+test('parseAskBlock rejects an options block in an approval fence', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(
+        askBlockLines(['header: H', 'question: Q?', 'type: approval'], [['Yes', 'go']]),
+        { context: 'a.md' },
+      ),
+    /ASK block "H" of type approval must not declare options.*a\.md/,
+  );
+});
+
+test('parseAskBlock rejects a bare options: line in an approval fence', () => {
+  assert.throws(
+    () => parseAskBlock('header: H\nquestion: Q?\ntype: approval\noptions:\n', { context: 'a.md' }),
+    /ASK block "H" of type approval must not declare options.*a\.md/,
+  );
+});
+
+test('parseAskBlock rejects option lines without an options: line in an approval fence', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(
+        'header: H\nquestion: Q?\ntype: approval\n  - label: Yes\n    description: go\n',
+        {
+          context: 'a.md',
+        },
+      ),
+    /ASK block "H" of type approval must not declare options.*a\.md/,
+  );
+});
+
+test('parseAskBlock rejects an exempt label that names no option', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(
+        askBlockLines(
+          ['header: H', 'question: Q?', 'type: scored', 'unscored: Cancel'],
+          scoredOptions,
+        ),
+        { context: 's.md' },
+      ),
+    /ASK block "H" exempts unknown option "Cancel" in unscored:.*s\.md/,
+  );
+});
+
+test('parseAskBlock rejects a scored fence with fewer than two scorable options', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(
+        askBlockLines(
+          ['header: H', 'question: Q?', 'type: scored', 'unscored: Abort'],
+          [
+            ['Go', 'continue'],
+            ['Abort', 'stop'],
+          ],
+        ),
+        { context: 's.md' },
+      ),
+    /ASK block "H" of type scored needs at least two scorable options, found 1.*s\.md/,
+  );
+});
+
+test('parseAskBlock rejects a scored fence with a single option and no exemption', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(
+        askBlockLines(['header: H', 'question: Q?', 'type: scored'], [['Go', 'continue']]),
+        {
+          context: 's.md',
+        },
+      ),
+    /needs at least two scorable options, found 1.*s\.md/,
+  );
+});
+
+test('parseAskBlock rejects an options fence whose options: block holds no option', () => {
+  for (const type of [[], ['type: scored'], ['type: options']]) {
+    assert.throws(
+      () =>
+        parseAskBlock(askBlockLines(['header: H', 'question: Q?', ...type], []), {
+          context: 'o.md',
+        }),
+      /^Error: ASK block missing options \(in o\.md\)$/,
+      `type ${type[0] ?? '(default)'} accepted an options: line with no option`,
+    );
+  }
+});
+
+test('parseAskBlock rejects every duplicate key', () => {
+  for (const [key, value] of [
+    ['header', 'H'],
+    ['question', 'Q?'],
+    ['type', 'scored'],
+    ['when', 'always'],
+    ['unscored', 'Abort'],
+  ]) {
+    const keys = ['header: H', 'question: Q?', 'type: scored', 'when: always', 'unscored: Abort'];
+    assert.throws(
+      () =>
+        parseAskBlock(askBlockLines([...keys, `${key}: ${value}`], scoredOptions), {
+          context: 'd.md',
+        }),
+      new RegExp(`^Error: ASK block has duplicate ${key} fields \\(in d\\.md\\)$`),
+    );
+  }
+});
+
+test('parseAskBlock rejects a second options: line', () => {
+  const block = `${askBlockLines(['header: H', 'question: Q?'], scoredOptions)}options:\n`;
+  assert.throws(
+    () => parseAskBlock(block, { context: 'd.md' }),
+    /ASK block has duplicate options fields.*d\.md/,
+  );
+});
+
+test('parseAskBlock rejects an unconsumed line after a description', () => {
+  const block = [
+    'header: H',
+    'question: Q?',
+    'options:',
+    '  - label: A',
+    '    description: first',
+    '    and a wrapped second line',
+    '  - label: B',
+    '    description: second',
+  ].join('\n');
+  assert.throws(
+    () => parseAskBlock(block, { context: 'g.md' }),
+    /^Error: ASK block "H" has an unconsumed line "and a wrapped second line" \(in g\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects an unconsumed line between a label and its description', () => {
+  const block = [
+    'header: H',
+    'question: Q?',
+    'options:',
+    '  - label: A',
+    '    stray note',
+    '    description: first',
+    '  - label: B',
+    '    description: second',
+  ].join('\n');
+  assert.throws(
+    () => parseAskBlock(block, { context: 'g.md' }),
+    /^Error: ASK block "H" has an unconsumed line "stray note" \(in g\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects an unconsumed line directly after options:', () => {
+  const block = [
+    'header: H',
+    'question: Q?',
+    'options:',
+    '  pick one of these',
+    '  - label: A',
+    '    description: first',
+    '  - label: B',
+    '    description: second',
+  ].join('\n');
+  assert.throws(
+    () => parseAskBlock(block, { context: 'g.md' }),
+    /^Error: ASK block "H" has an unconsumed line "pick one of these" \(in g\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects a key line after the options block', () => {
+  const block = `${askBlockLines(['header: H', 'question: Q?'], scoredOptions)}type: scored\n`;
+  assert.throws(
+    () => parseAskBlock(block, { context: 'g.md' }),
+    /^Error: ASK block "H" has line "type: scored" after the options block; every key must precede options: \(in g\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects an option label without a description line', () => {
+  const followedByLabel = [
+    'header: H',
+    'question: Q?',
+    'options:',
+    '  - label: A',
+    '  - label: B',
+    '    description: second',
+  ].join('\n');
+  assert.throws(
+    () => parseAskBlock(followedByLabel, { context: 'x.md' }),
+    /^Error: ASK block "H" has option "A" without a description line \(in x\.md\)$/,
+  );
+  const lastLabel = [
+    'header: H',
+    'question: Q?',
+    'options:',
+    '  - label: A',
+    '    description: first',
+    '  - label: B',
+  ].join('\n');
+  assert.throws(
+    () => parseAskBlock(lastLabel, { context: 'x.md' }),
+    /^Error: ASK block "H" has option "B" without a description line \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects an option with an empty label', () => {
+  const block = [
+    'header: H',
+    'question: Q?',
+    'options:',
+    '  - label:',
+    '    description: first',
+    '  - label: B',
+    '    description: second',
+  ].join('\n');
+  assert.throws(
+    () => parseAskBlock(block, { context: 'x.md' }),
+    /^Error: ASK block "H" has option line "- label:" with an empty label \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects an option with an empty description', () => {
+  const block = [
+    'header: H',
+    'question: Q?',
+    'options:',
+    '  - label: A',
+    '    description:',
+    '  - label: B',
+    '    description: second',
+  ].join('\n');
+  assert.throws(
+    () => parseAskBlock(block, { context: 'x.md' }),
+    /^Error: ASK block "H" has option "A" with an empty description \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects a description line that does not directly follow a label', () => {
+  const orphan = `${askBlockLines(['header: H', 'question: Q?'], scoredOptions)}    description: extra\n`;
+  assert.throws(
+    () => parseAskBlock(orphan, { context: 'x.md' }),
+    /^Error: ASK block "H" has description line "description: extra" that does not directly follow an option label \(in x\.md\)$/,
+  );
+  assert.throws(
+    () => parseAskBlock('header: H\nquestion: Q?\n    description: stray\n', { context: 'x.md' }),
+    /^Error: ASK block "H" has description line "description: stray" that does not directly follow an option label \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects an empty when field', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(askBlockLines(['when:', 'header: H', 'question: Q?'], scoredOptions), {
+        context: 'x.md',
+      }),
+    /^Error: ASK block "H" has an empty when field \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects an empty entry in unscored:', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(
+        askBlockLines(
+          ['header: H', 'question: Q?', 'type: scored', 'unscored: Abort | | New'],
+          scoredOptions,
+        ),
+        { context: 'x.md' },
+      ),
+    /^Error: ASK block "H" has an empty label in unscored: "Abort \| \| New" \(in x\.md\)$/,
+  );
+  assert.throws(
+    () =>
+      parseAskBlock(
+        askBlockLines(['header: H', 'question: Q?', 'type: scored', 'unscored:   '], scoredOptions),
+        { context: 'x.md' },
+      ),
+    /^Error: ASK block "H" has an empty label in unscored: "" \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects a label listed twice in unscored:', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(
+        askBlockLines(
+          ['header: H', 'question: Q?', 'type: scored', 'unscored: Abort | Abort'],
+          scoredOptions,
+        ),
+        { context: 'x.md' },
+      ),
+    /^Error: ASK block "H" lists "Abort" twice in unscored: \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock rejects a quotation mark inside an unscored: label', () => {
+  for (const [label, pattern] of [
+    [
+      'Say "no"',
+      /^Error: ASK block "H" has a quotation mark in unscored: label "Say "no"" \(in x\.md\)$/,
+    ],
+    [
+      'Sag „nein“',
+      /^Error: ASK block "H" has a quotation mark in unscored: label "Sag „nein“" \(in x\.md\)$/,
+    ],
+    [
+      'Stop“',
+      /^Error: ASK block "H" has a quotation mark in unscored: label "Stop“" \(in x\.md\)$/,
+    ],
+  ]) {
+    assert.throws(
+      () =>
+        parseAskBlock(
+          askBlockLines(
+            ['header: H', 'question: Q?', 'type: scored', `unscored: ${label}`],
+            [...scoredOptions, [label, 'a quoted label']],
+          ),
+          { context: 'x.md' },
+        ),
+      pattern,
+    );
+  }
+});
+
+test('parseAskBlock rejects a duplicate option label in a scored fence only', () => {
+  const duplicated = [
+    ['Go', 'continue now'],
+    ['Go', 'continue later'],
+    ['Wait', 'hold'],
+  ];
+  assert.throws(
+    () =>
+      parseAskBlock(askBlockLines(['header: H', 'question: Q?', 'type: scored'], duplicated), {
+        context: 'x.md',
+      }),
+    /^Error: ASK block "H" of type scored has duplicate option label "Go" \(in x\.md\)$/,
+  );
+  assert.equal(
+    parseAskBlock(askBlockLines(['header: H', 'question: Q?'], duplicated)).options.length,
+    3,
+  );
+});
+
+test('parseAskBlock names a key line after options: when the header is missing', () => {
+  const block = `${askBlockLines(['question: Q?'], scoredOptions)}header: H\n`;
+  assert.throws(
+    () => parseAskBlock(block, { context: 'x.md' }),
+    /^Error: ASK block missing header field; the block has line "header: H" after the options block; every key must precede options: \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock names an indented key line when the header or question is missing', () => {
+  assert.throws(
+    () =>
+      parseAskBlock(askBlockLines(['  header: H', 'question: Q?'], scoredOptions), {
+        context: 'x.md',
+      }),
+    /^Error: ASK block missing header field; the block has an unconsumed line "header: H" \(in x\.md\)$/,
+  );
+  assert.throws(
+    () =>
+      parseAskBlock(askBlockLines(['header: H', '  question: Q?'], scoredOptions), {
+        context: 'x.md',
+      }),
+    /^Error: ASK block missing question field; the block has an unconsumed line "question: Q\?" \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock keeps the plain missing-field message without a structural error', () => {
+  assert.throws(
+    () => parseAskBlock('question: Q?\ntype: approval\n', { context: 'x.md' }),
+    /^Error: ASK block missing header field \(in x\.md\)$/,
+  );
+});
+
+test('parseAskBlock no longer lets a description containing type: approval change the type', () => {
+  const r = parseAskBlock(
+    askBlockLines(
+      ['header: H', 'question: Q?'],
+      [
+        ['Gate', 'Switch this ask to type: approval later'],
+        ['Keep', 'Leave it'],
+      ],
+    ),
+  );
+  assert.equal(r.type, null);
+  assert.deepEqual(r.options, [
+    { label: 'Gate', description: 'Switch this ask to type: approval later' },
+    { label: 'Keep', description: 'Leave it' },
+  ]);
+});
+
+test('renderBody localizes only generated ask scaffolding for both harnesses', () => {
+  const optionsBlock = (language) =>
+    [
+      '```ask',
+      'when: die Freigabe fehlt',
+      'header: Freigabe',
+      'question: Weiter?',
+      ...(language ? [`language: ${language}`] : []),
+      'options:',
+      '  - label: Ja',
+      '    description: Die Quelle bleibt unverändert',
+      '```',
+    ].join('\n');
+  const approvalBlock = (language) =>
+    [
+      '```ask',
+      'when: approval is required',
+      'header: Approval',
+      'question: Continue?',
+      'type: approval',
+      ...(language ? [`language: ${language}`] : []),
+      '```',
+    ].join('\n');
+
+  assert.equal(
+    renderBody(optionsBlock(), 'claude', { ...refConfig, context: 'default-options.md' }),
+    [
+      'If die Freigabe fehlt:',
+      '',
+      'Use the `AskUserQuestion` tool with the following parameters:',
+      '- header: "Freigabe"',
+      '- question: "Weiter?"',
+      '- multiSelect: false',
+      '- options:',
+      '  - label: "Ja", description: "Die Quelle bleibt unverändert"',
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(optionsBlock(), 'codex', { ...refConfig, context: 'default-options.md' }),
+    [
+      'If die Freigabe fehlt: Ask the user: **Weiter?**',
+      '- Ja -- Die Quelle bleibt unverändert',
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(optionsBlock('de'), 'claude', { ...refConfig, context: 'german-options.md' }),
+    [
+      'Wenn die Freigabe fehlt:',
+      '',
+      'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:',
+      '- header: "Freigabe"',
+      '- question: "Weiter?"',
+      '- multiSelect: false',
+      '- options:',
+      '  - label: "Ja", description: "Die Quelle bleibt unverändert"',
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(optionsBlock('de'), 'codex', { ...refConfig, context: 'german-options.md' }),
+    [
+      'Wenn die Freigabe fehlt: Frage den User: **Weiter?**',
+      '- Ja -- Die Quelle bleibt unverändert',
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(approvalBlock(), 'claude', { ...refConfig, context: 'default-approval.md' }),
+    [
+      'If approval is required:',
+      '',
+      'Use the `AskUserQuestion` tool with the following parameters:',
+      '- header: "Approval"',
+      '- question: "Continue?"',
+      '- multiSelect: false',
+      '- options:',
+      '  - label: "Yes", description: "Approval granted"',
+      '  - label: "Adjust", description: "Enter feedback as free text"',
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(approvalBlock(), 'codex', { ...refConfig, context: 'default-approval.md' }),
+    'If approval is required: Ask the user: **Continue?** Answer with "Yes" or enter feedback as free text.',
+  );
+  assert.equal(
+    renderBody(approvalBlock('de'), 'claude', { ...refConfig, context: 'german-approval.md' }),
+    [
+      'Wenn approval is required:',
+      '',
+      'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:',
+      '- header: "Approval"',
+      '- question: "Continue?"',
+      '- multiSelect: false',
+      '- options:',
+      '  - label: "Ja", description: "Freigabe erteilt"',
+      '  - label: "Anpassen", description: "Feedback als Freitext eingeben"',
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(approvalBlock('de'), 'codex', { ...refConfig, context: 'german-approval.md' }),
+    'Wenn approval is required: Frage den User: **Continue?** Antworte mit "Ja" oder gib Feedback als Freitext.',
+  );
+});
+
+test('portable ask rendering uses the Codex-equivalent English default', () => {
+  const body = [
+    '```ask',
+    'when: approval is required',
+    'header: Approval',
+    'question: Continue?',
+    'type: approval',
+    '```',
+  ].join('\n');
+  const expected =
+    'If approval is required: Ask the user: **Continue?** Answer with "Yes" or enter feedback as free text.';
+
+  assert.equal(renderBody(body, 'codex', { ...refConfig, context: 'ask.md' }), expected);
+  assert.equal(renderBody(body, 'portable', { ...refConfig, context: 'ask.md' }), expected);
+});
+
+// --- Scored ask rendering ---
+
+// The full rendered scoring lines, written out by hand rather than derived from `ASK_SCORING`, so a
+// change to the constant or to the sentence around it fails here instead of moving both sides.
+const SCORING_LINE_EN_ABORT =
+  'Before asking, score each option except "Abort" for this context: start its description with "n/10 – <short reason>; " before the original text (1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right; a 9–10 names its edge over the next-best option unless the two are tied; equal fit gets equal scores); keep the listed options in order, leave labels unchanged except for chat-language translation, and add neither a "(Recommended)" marker nor a translated equivalent.';
+const SCORING_LINE_DE_ABORT =
+  'Bewerte vor dem Fragen jede Option außer „Abort“ für diesen Kontext: Beginne ihre Beschreibung vor dem ursprünglichen Text mit „n/10 – <kurze Begründung>; “ (1–2 nicht empfohlen, 3–4 schwach, 5–6 tragfähig mit Abwägungen, 7–8 passt gut, 9–10 eindeutig richtig; eine 9–10 nennt ihren Vorsprung vor der nächstbesten Option, außer bei Gleichstand; gleiche Eignung erhält gleiche Werte); behalte die Reihenfolge der Optionen bei, ändere Labels nur für die Übersetzung in die Chat-Sprache und füge weder eine Markierung „(Recommended)“ noch eine übersetzte Entsprechung hinzu.';
+
+function scoredAskFence({ language, when, type = 'scored', unscored = 'Abort' } = {}) {
+  return [
+    '```ask',
+    ...(when ? [`when: ${when}`] : []),
+    'header: Revision',
+    'question: Revise the plan?',
+    `type: ${type}`,
+    ...(unscored ? [`unscored: ${unscored}`] : []),
+    ...(language ? [`language: ${language}`] : []),
+    'options:',
+    '  - label: Revise',
+    '    description: Edit the plan in place',
+    '  - label: New',
+    '    description: Start a new plan',
+    '  - label: Abort',
+    '    description: Stop here',
+    '```',
+  ].join('\n');
+}
+
+const claudeScoredOptions = [
+  '- header: "Revision"',
+  '- question: "Revise the plan?"',
+  '- multiSelect: false',
+  '- options:',
+  '  - label: "Revise", description: "Edit the plan in place"',
+  '  - label: "New", description: "Start a new plan"',
+  '  - label: "Abort", description: "Stop here"',
+];
+const codexScoredOptions = [
+  '- Revise -- Edit the plan in place',
+  '- New -- Start a new plan',
+  '- Abort -- Stop here',
+];
+
+test('renderScoringInstruction renders the full English line from the exported constant', () => {
+  assert.equal(renderScoringInstruction('en', ['Abort']), SCORING_LINE_EN_ABORT);
+  assert.ok(SCORING_LINE_EN_ABORT.includes(ASK_SCORING.en.bands));
+  assert.ok(SCORING_LINE_EN_ABORT.includes(ASK_SCORING.en.topScore));
+  assert.ok(SCORING_LINE_EN_ABORT.includes(ASK_SCORING.en.tie));
+});
+
+test('renderScoringInstruction renders the full German line from the exported constant', () => {
+  assert.equal(renderScoringInstruction('de', ['Abort']), SCORING_LINE_DE_ABORT);
+  assert.ok(SCORING_LINE_DE_ABORT.includes(ASK_SCORING.de.bands));
+});
+
+// Equal fit gets equal scores, so two options can share a 9–10; the top-score clause must then not
+// demand an edge that does not exist, or the two rules contradict each other.
+test('the top-score clause exempts a tie in both languages', () => {
+  assert.match(ASK_SCORING.en.topScore, /next-best option unless the two are tied$/);
+  assert.match(ASK_SCORING.de.topScore, /nächstbesten Option, außer bei Gleichstand$/);
+});
+
+test('renderScoringInstruction omits the except clause when no label is exempt', () => {
+  assert.equal(
+    renderScoringInstruction('en'),
+    SCORING_LINE_EN_ABORT.replace(' except "Abort"', ''),
+  );
+  assert.match(
+    renderScoringInstruction('en', []),
+    /^Before asking, score each option for this context: /,
+  );
+  assert.equal(
+    renderScoringInstruction('de', []),
+    SCORING_LINE_DE_ABORT.replace(' außer „Abort“', ''),
+  );
+});
+
+test('renderScoringInstruction joins several exempt labels with commas and a conjunction', () => {
+  assert.match(
+    renderScoringInstruction('en', ['A', 'B', 'C']),
+    /^Before asking, score each option except "A", "B" and "C" for this context: /,
+  );
+  assert.match(
+    renderScoringInstruction('de', ['A', 'B']),
+    /^Bewerte vor dem Fragen jede Option außer „A“ und „B“ für diesen Kontext: /,
+  );
+});
+
+test('renderScoringInstruction rejects a language without scoring copy', () => {
+  assert.throws(() => renderScoringInstruction('fr'), /No scoring instruction for language "fr"/);
+});
+
+test('a scored ask renders its scoring line first on Claude, in English and German', () => {
+  assert.equal(
+    renderBody(scoredAskFence(), 'claude', { ...refConfig, context: 'scored.md' }),
+    [
+      SCORING_LINE_EN_ABORT,
+      'Use the `AskUserQuestion` tool with the following parameters:',
+      ...claudeScoredOptions,
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(scoredAskFence({ language: 'de' }), 'claude', {
+      ...refConfig,
+      context: 'scored.md',
+    }),
+    [
+      SCORING_LINE_DE_ABORT,
+      'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:',
+      ...claudeScoredOptions,
+    ].join('\n'),
+  );
+});
+
+test('a conditional scored ask keeps its scoring line inside the when block on Claude', () => {
+  assert.equal(
+    renderBody(scoredAskFence({ when: 'the plan is archived' }), 'claude', {
+      ...refConfig,
+      context: 'scored.md',
+    }),
+    [
+      'If the plan is archived:',
+      '',
+      SCORING_LINE_EN_ABORT,
+      'Use the `AskUserQuestion` tool with the following parameters:',
+      ...claudeScoredOptions,
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(scoredAskFence({ when: 'der Plan archiviert ist', language: 'de' }), 'claude', {
+      ...refConfig,
+      context: 'scored.md',
+    }),
+    [
+      'Wenn der Plan archiviert ist:',
+      '',
+      SCORING_LINE_DE_ABORT,
+      'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:',
+      ...claudeScoredOptions,
+    ].join('\n'),
+  );
+});
+
+test('a scored ask renders its scoring line after the question on Codex, in English and German', () => {
+  assert.equal(
+    renderBody(scoredAskFence(), 'codex', { ...refConfig, context: 'scored.md' }),
+    ['Ask the user: **Revise the plan?**', SCORING_LINE_EN_ABORT, ...codexScoredOptions].join('\n'),
+  );
+  assert.equal(
+    renderBody(scoredAskFence({ language: 'de' }), 'codex', {
+      ...refConfig,
+      context: 'scored.md',
+    }),
+    ['Frage den User: **Revise the plan?**', SCORING_LINE_DE_ABORT, ...codexScoredOptions].join(
+      '\n',
+    ),
+  );
+});
+
+test('a conditional scored ask keeps the when prefix on the question line on Codex', () => {
+  assert.equal(
+    renderBody(scoredAskFence({ when: 'the plan is archived' }), 'codex', {
+      ...refConfig,
+      context: 'scored.md',
+    }),
+    [
+      'If the plan is archived: Ask the user: **Revise the plan?**',
+      SCORING_LINE_EN_ABORT,
+      ...codexScoredOptions,
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(scoredAskFence({ when: 'der Plan archiviert ist', language: 'de' }), 'codex', {
+      ...refConfig,
+      context: 'scored.md',
+    }),
+    [
+      'Wenn der Plan archiviert ist: Frage den User: **Revise the plan?**',
+      SCORING_LINE_DE_ABORT,
+      ...codexScoredOptions,
+    ].join('\n'),
+  );
+});
+
+test('portable renders a scored ask exactly as Codex does', () => {
+  for (const variant of [
+    {},
+    { language: 'de' },
+    { when: 'the plan is archived' },
+    { when: 'der Plan archiviert ist', language: 'de' },
+  ]) {
+    const fence = scoredAskFence(variant);
+    assert.equal(
+      renderBody(fence, 'portable', { ...refConfig, context: 'scored.md' }),
+      renderBody(fence, 'codex', { ...refConfig, context: 'scored.md' }),
+      `portable diverged from Codex for ${JSON.stringify(variant)}`,
+    );
+  }
+});
+
+test('a scored ask renders exactly one line more than the same ask as options', () => {
+  for (const harness of ['claude', 'codex', 'portable']) {
+    for (const variant of [
+      {},
+      { language: 'de' },
+      { when: 'the plan is archived' },
+      { when: 'der Plan archiviert ist', language: 'de' },
+    ]) {
+      const config = { ...refConfig, context: 'scored.md' };
+      const scored = renderBody(scoredAskFence(variant), harness, config);
+      const options = renderBody(
+        scoredAskFence({ ...variant, type: 'options', unscored: null }),
+        harness,
+        config,
+      );
+      const scoringLine = variant.language === 'de' ? SCORING_LINE_DE_ABORT : SCORING_LINE_EN_ABORT;
+      const label = `${harness} ${JSON.stringify(variant)}`;
+      assert.equal(scored.split('\n').length, options.split('\n').length + 1, label);
+      assert.equal(scored.replace(`${scoringLine}\n`, ''), options, label);
+    }
+  }
+});
+
+test('a scored ask without unscored: renders no except clause', () => {
+  const fence = scoredAskFence({ unscored: null });
+  const claude = renderBody(fence, 'claude', { ...refConfig, context: 'scored.md' });
+  const codex = renderBody(fence, 'codex', { ...refConfig, context: 'scored.md' });
+  const line = SCORING_LINE_EN_ABORT.replace(' except "Abort"', '');
+  assert.equal(claude.split('\n')[0], line);
+  assert.equal(codex.split('\n')[1], line);
+  assert.doesNotMatch(`${claude}\n${codex}`, /score each option except/);
+});
+
+// --- Retired goal mode ---
+
+const sourceToolsUrl = new URL('../src/tools/', import.meta.url);
+const sourceAgentsUrl = new URL('../src/agents/', import.meta.url);
+const sourceSharedUrl = new URL('../src/shared/', import.meta.url);
+const sourceToolNames = readdirSync(sourceToolsUrl)
+  .filter((file) => file.endsWith('.md'))
+  .map((file) => file.slice(0, -3));
+const sourceAgentNames = readdirSync(sourceAgentsUrl)
+  .filter((file) => file.endsWith('.md'))
+  .map((file) => file.slice(0, -3));
+// Deliberately marker-only: this config lists every tool as exposed, although
+// apply-plan, apply-issues and apply-review are internal in the real build and
+// therefore render as `tools/<name>.md`. Use it for presence/absence markers only;
+// never add invocation-shape assertions on top of it. `build` Phase 2 carries Fast-profile
+// tokens, so the config also supplies the native profile mapping and the Fast-capable
+// implementers, both derived from build.mjs by the shared test support module.
+const sourceRenderConfig = {
+  exposedTools: sourceToolNames,
+  agentPrefix: 'effective-flow-',
+  skillName: 'effective-flow',
+  knownTools: new Set(sourceToolNames),
+  knownAgents: new Set(sourceAgentNames),
+  profileMappings: AGENT_PROFILE_MAPPINGS,
+  fastProfileAgents: FAST_PROFILE_AGENTS,
+};
+
+// Resolve a tool body once — eager-include resolution is harness-independent.
+// Line endings are normalized exactly as build.mjs does before extractBody, so a
+// CRLF or BOM checkout cannot silently reduce the body to an empty string.
+function resolveSourceToolBody(name) {
+  const context = `tools/${name}.md`;
+  const source = normalizeLineEndings(readFileSync(new URL(`${name}.md`, sourceToolsUrl), 'utf8'));
+  const body = resolveEagerIncludes(extractBody(source), {
+    context,
+    readFragment: (fragment) =>
+      normalizeLineEndings(readFileSync(new URL(`${fragment}.md`, sourceSharedUrl), 'utf8')),
+  });
+  return { context, body };
+}
+
+// The build placeholder, the Codex direct-start capability, the option label in
+// either project language, and any residual `/goal` invocation.
+const RETIRED_GOAL_MARKERS = [
+  /\{\{GOAL_START\}\}/,
+  /create_goal/,
+  /Autonom(?:ous)? via `?\/goal/i,
+  /\/goal\b/,
+];
+
+const FORMER_GOAL_GATE_TOOLS = [
+  'build',
+  'fix',
+  'refactor',
+  'docs',
+  'iterate',
+  'maintain',
+  'apply-plan',
+  'apply-issues',
+  'apply-review',
+];
+
+test('no Markdown source under src/ reintroduces goal-mode wiring', () => {
+  const sources = [
+    {
+      context: 'SKILL.md',
+      text: readFileSync(new URL('../src/SKILL.md', import.meta.url), 'utf8'),
+    },
+    ...['tools', 'shared', 'agents'].flatMap((directory) =>
+      readdirSync(new URL(`../src/${directory}/`, import.meta.url))
+        .filter((file) => file.endsWith('.md'))
+        .sort()
+        .map((file) => ({
+          context: `${directory}/${file}`,
+          text: readFileSync(new URL(`../src/${directory}/${file}`, import.meta.url), 'utf8'),
+        })),
+    ),
+  ];
+  const scanned = new Set(sources.map(({ context }) => context));
+
+  for (const required of ['SKILL.md', 'tools/build.md', 'shared/goal-completion.md']) {
+    assert.ok(scanned.has(required), `scan missed ${required}`);
+  }
+  assert.ok(
+    sources.some(({ context }) => context.startsWith('agents/')),
+    'scan collected no agent source',
+  );
+
+  for (const { context, text } of sources) {
+    assert.ok(text.length > 0, `${context}: empty source`);
+    for (const marker of RETIRED_GOAL_MARKERS) {
+      assert.doesNotMatch(text, marker, `${context}: ${marker}`);
+    }
+  }
+});
+
+test('no former goal gate revives goal-mode wiring in any harness render', () => {
+  for (const tool of FORMER_GOAL_GATE_TOOLS) {
+    const { context, body: callerBody } = resolveSourceToolBody(tool);
+    const body =
+      tool === 'build'
+        ? resolveEagerIncludes(
+            readFileSync(new URL('../src/shared/build-delegated-run.md', import.meta.url), 'utf8'),
+            {
+              readFragment: (name) =>
+                readFileSync(new URL(`../src/shared/${name}.md`, import.meta.url), 'utf8'),
+            },
+          )
+        : callerBody;
+
+    for (const harness of ['claude', 'codex', 'portable']) {
+      const rendered = renderBody(body, harness, { ...sourceRenderConfig, context });
+
+      // Non-vacuity plus retained half: the completion control that outlived the
+      // goal mode must survive the render, without the goal-run wording.
+      assert.match(rendered, /Goal-driven completion control/, `${tool}: ${harness} retained half`);
+      assert.doesNotMatch(
+        rendered,
+        /once the native goal is active/i,
+        `${tool}: ${harness} goal-run wording`,
+      );
+
+      for (const marker of RETIRED_GOAL_MARKERS) {
+        assert.doesNotMatch(rendered, marker, `${tool}: ${harness} ${marker}`);
+      }
+    }
+  }
+});
+
+// --- renderBody end-to-end ---
+
+test('renderBody resolves ask and reference syntax for Codex', () => {
+  const body = [
+    '```ask',
+    'header: Start',
+    'question: Start now?',
+    'type: approval',
+    '```',
+    '',
+    'Continue with {{SKILL:fix}}.',
+  ].join('\n');
+  const rendered = renderBody(body, 'codex', { ...refConfig, context: 'ask-refs.md' });
+
+  assert.match(rendered, /Ask the user: \*\*Start now\?\*\*/);
+  assert.match(rendered, /Continue with \$effective-flow fix\./);
+  assert.doesNotMatch(rendered, /```ask|\{\{SKILL:/);
+});
+
+test('renderBody runs ask + ref transforms for claude', () => {
+  const body = 'Intro {{SKILL:fix}} and {{AGENT:code-validator}}.\n';
+  assert.equal(
+    renderBody(body, 'claude', { ...refConfig, context: 't.md' }),
+    'Intro /effective-flow fix and `effective-flow-code-validator`.\n',
+  );
+});
+
+test('renderBody uses Codex skill invocation syntax for exposed tool refs', () => {
+  const body = 'Intro {{SKILL:fix}} and {{AGENT:code-validator}}.\n';
+  assert.equal(
+    renderBody(body, 'codex', { ...refConfig, context: 't.md' }),
+    'Intro $effective-flow fix and `effective-flow-code-validator`.\n',
+  );
+});
+
+test('renderBody gives portable worker refs an explicit one-contract delegation protocol', () => {
+  const body = 'Start {{AGENT:code-validator}}.\n';
+  const rendered = renderBody(body, 'portable', { ...refConfig, context: 't.md' });
+  assert.ok(rendered.startsWith(PORTABLE_WORKER_DELEGATION));
+  assert.match(rendered, /read only its matching `workers\/effective-flow-<worker>\.md` file/);
+  assert.match(rendered, /built-in general-purpose subagent mechanism/);
+  assert.match(
+    rendered,
+    /only the workflow\/tool orchestrator starts workers or analysis fan-out/i,
+  );
+  assert.match(rendered, /zero inherited turns when supported/i);
+  assert.match(rendered, /otherwise its smallest supported history/i);
+  assert.match(rendered, /compact, self-contained handoff/i);
+  for (const field of [
+    'objective',
+    'relevant artifact paths',
+    'scoped paths and ownership',
+    'execution and runtime-state roots when writes are allowed',
+    'resolved language',
+    'authority and write limits',
+    'completion protocol',
+  ]) {
+    assert.match(rendered, new RegExp(field), `portable worker handoff must include ${field}`);
+  }
+  assert.match(rendered, /worker is a leaf executor/i);
+  assert.match(rendered, /starts no child/i);
+  assert.match(rendered, /returns missing essential context to the orchestrator/i);
+  // A host without built-in delegation still stops, but one spawn refused at run time (e.g. at
+  // the host's depth limit) must take the mandate's inline fallback instead of stopping the run.
+  assert.match(
+    rendered,
+    /If the host offers no built-in subagent delegation, stop with a clear explanation; a single spawn the host refuses at run time is a declined delegation and follows the delegation mandate's inline fallback\./,
+  );
+  assert.match(rendered, /Never claim that an undiscoverable worker ran\./);
+  assert.match(rendered, /Start `effective-flow-code-validator`\./);
+  assert.equal(rendered.match(/## Portable worker delegation/g)?.length, 1);
+});
+
+test('renderBody adds the portable bootstrap for a profile-only worker reference', () => {
+  const rendered = renderBody('{{AGENT_PROFILE:nodejs-implementer:fast}}\n', 'portable', {
+    ...profileRefConfig,
+    context: 'profile-only.md',
+  });
+  assert.ok(rendered.startsWith(PORTABLE_WORKER_DELEGATION));
+  assert.match(
+    rendered,
+    /`effective-flow-nodejs-implementer` \(portable build: Fast unavailable, Quality only\)/,
+  );
+  assert.doesNotMatch(rendered, /AGENT_PROFILE/);
+  assert.equal(rendered.match(/## Portable worker delegation/g)?.length, 1);
+});
+
+test('renderBody does not add portable worker instructions when no worker is referenced', () => {
+  const rendered = renderBody('Run {{SKILL:fix}}.\n', 'portable', {
+    ...refConfig,
+    context: 't.md',
+  });
+  assert.doesNotMatch(rendered, /Portable worker delegation/);
+  assert.equal(rendered, 'Run effective-flow fix.\n');
+});
+
+test('collectRenderedWorkerRefs filters exact known namespaced worker identifiers', () => {
+  const known = new Set(['effective-flow-code-validator']);
+  assert.deepEqual(
+    collectRenderedWorkerRefs(
+      '`effective-flow-code-validator` `effective-flow-project-setup` `code-validator`',
+      'effective-flow-',
+      known,
+    ),
+    ['effective-flow-code-validator'],
+  );
+});
+
+// --- Harness-specific command-tool parameter guard (#163) ---
+
+test('HARNESS_TOOL_PARAMETER_OWNERSHIP defines the explicit native ownership matrix', () => {
+  assert.deepEqual(HARNESS_TOOL_PARAMETER_OWNERSHIP, {
+    run_in_background: ['claude'],
+    'yield-time_ms': ['codex'],
+    sandbox_permissions: ['codex'],
+  });
+});
+
+test('findForeignHarnessToolParameters allows native parameters only on their owning target', () => {
+  const text = [
+    'run_in_background: true',
+    'yield-time_ms: 10000',
+    'sandbox_permissions: require_escalated',
+  ].join('\n');
+
+  assert.deepEqual(findForeignHarnessToolParameters(text, 'claude'), [
+    { line: 2, parameter: 'yield-time_ms', owners: ['codex'] },
+    { line: 3, parameter: 'sandbox_permissions', owners: ['codex'] },
+  ]);
+  assert.deepEqual(findForeignHarnessToolParameters(text, 'codex'), [
+    { line: 1, parameter: 'run_in_background', owners: ['claude'] },
+  ]);
+  assert.deepEqual(findForeignHarnessToolParameters(text, 'portable'), [
+    { line: 1, parameter: 'run_in_background', owners: ['claude'] },
+    { line: 2, parameter: 'yield-time_ms', owners: ['codex'] },
+    { line: 3, parameter: 'sandbox_permissions', owners: ['codex'] },
+  ]);
+});
+
+test('findForeignHarnessToolParameters matches exact identifiers and reports source lines', () => {
+  const text = [
+    'prefixed_run_in_background: ignored',
+    'run_in_background_suffix: ignored',
+    '`run_in_background`: true',
+    'yield-time-ms: ignored',
+    'sandbox_permissions.extra: detected',
+  ].join('\n');
+
+  assert.deepEqual(findForeignHarnessToolParameters(text, 'portable'), [
+    { line: 3, parameter: 'run_in_background', owners: ['claude'] },
+    { line: 5, parameter: 'sandbox_permissions', owners: ['codex'] },
+  ]);
+});
+
+test('findForeignHarnessToolParameters rejects unknown rendered targets', () => {
+  assert.throws(
+    () => findForeignHarnessToolParameters('run_in_background: true', 'unknown'),
+    /Unknown rendered target "unknown"/,
+  );
+});
+
+// Repository-only reference guard (#497): shipped text must not name a file that exists only in
+// this source repository, neither as a dead relative link nor as an inline code span.
+const REPO_ONLY_FILES = new Set([
+  'docs/developer-guide/skill-ownership.md',
+  'scripts/remote-tracker.mjs',
+  'build.mjs',
+  'build-lib.mjs',
+  'test/build-lib.test.mjs',
+]);
+const REPO_ONLY_PAYLOAD = new Set([
+  'effective-flow/SKILL.md',
+  'effective-flow/tools/maintain.md',
+  'effective-flow/tools/a.md',
+  'effective-flow/shared/x.md',
+  'effective-flow/scripts/remote-tracker.mjs',
+  'agents/effective-flow-code-validator.md',
+]);
+const detectRepositoryOnly = (content, options = {}) =>
+  findRepositoryOnlyReferences(content, {
+    filePath: 'effective-flow/tools/maintain.md',
+    payloadFiles: REPO_ONLY_PAYLOAD,
+    repositoryOnlyFiles: REPO_ONLY_FILES,
+    ...options,
+  });
+
+test('findRepositoryOnlyReferences reports dead, root-absolute, reference-definition, image and escaping links', () => {
+  const content = [
+    'See [the guide](../../docs/developer-guide/skill-ownership.md) for details.',
+    'Absolute [root](/docs/developer-guide/skill-ownership.md) link.',
+    '[guide]: ../../docs/developer-guide/skill-ownership.md',
+    '![diagram](../../site/diagram.png)',
+    'Resolving [fragment](../shared/x.md#part) and [query](../shared/x.md?raw=1).',
+    'Missing [fragment](../shared/missing.md#part) and [query](../shared/gone.md?raw=1).',
+    'Escaping [outside](../../../outside.md) the payload.',
+    'Titled [dead](../gone.md "Title") link.',
+    '   [wrapped]: <../gone-wrapped.md>',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../../docs/developer-guide/skill-ownership.md' },
+    { line: 2, kind: 'link', reference: '/docs/developer-guide/skill-ownership.md' },
+    { line: 3, kind: 'link', reference: '../../docs/developer-guide/skill-ownership.md' },
+    { line: 4, kind: 'link', reference: '../../site/diagram.png' },
+    { line: 6, kind: 'link', reference: '../shared/gone.md?raw=1' },
+    { line: 6, kind: 'link', reference: '../shared/missing.md#part' },
+    { line: 7, kind: 'link', reference: '../../../outside.md' },
+    { line: 8, kind: 'link', reference: '../gone.md' },
+    { line: 9, kind: 'link', reference: '../gone-wrapped.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences allows scheme, fragment-only and payload-resolving links', () => {
+  const content = [
+    'External [site](https://example.com/docs/developer-guide/skill-ownership.md).',
+    'Mail [us](mailto:team@example.com).',
+    'Jump to [the section](#section).',
+    'Sibling [shared](../shared/x.md) file.',
+    'Wrapped [shared](<../shared/x.md>) file.',
+    'Titled [shared](../shared/x.md "Shared fragment") file.',
+    'Same directory [a](a.md) and [a](./a.md#top).',
+    '[ext]: https://example.com/guide',
+    '[local]: <../shared/x.md>',
+    '![icon](../shared/x.md)',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), []);
+});
+
+test('findRepositoryOnlyReferences treats every relative link in a native sidecar as a finding', () => {
+  const content = 'Read [the fragment](../effective-flow/shared/x.md) first.';
+  const options = { filePath: 'agents/effective-flow-code-validator.md' };
+
+  assert.deepEqual(detectRepositoryOnly(content, { ...options, sidecar: false }), []);
+  assert.deepEqual(detectRepositoryOnly(content, options), []);
+  assert.deepEqual(detectRepositoryOnly(content, { ...options, sidecar: true }), [
+    { line: 1, kind: 'link', reference: '../effective-flow/shared/x.md' },
+  ]);
+  assert.deepEqual(
+    detectRepositoryOnly('[site](https://example.com) and [top](#top)', {
+      ...options,
+      sidecar: true,
+    }),
+    [],
+  );
+});
+
+test('findRepositoryOnlyReferences reports code spans naming repository-only files', () => {
+  const content = [
+    'The manifest is `docs/developer-guide/skill-ownership.md`.',
+    'Run ``build.mjs`` locally.',
+    'Also `./build.mjs` and `build-lib.mjs:73` and `build-lib.mjs:73:5`.',
+    'Padded `` build.mjs `` span.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'code-span', reference: 'docs/developer-guide/skill-ownership.md' },
+    { line: 2, kind: 'code-span', reference: 'build.mjs' },
+    { line: 3, kind: 'code-span', reference: './build.mjs' },
+    { line: 3, kind: 'code-span', reference: 'build-lib.mjs:73' },
+    { line: 3, kind: 'code-span', reference: 'build-lib.mjs:73:5' },
+    { line: 4, kind: 'code-span', reference: ' build.mjs ' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences allows directories, placeholders, target conventions and payload files', () => {
+  const content = [
+    'The directory `docs/developer-guide/` holds guides.',
+    'Invoke `<skill-root>/scripts/x.mjs` and `<skill-root>/scripts/remote-tracker.mjs`.',
+    'Target projects own `AGENTS.md`, `README.md` and `package.json`.',
+    'The setup lives in `docs/adr/effective-flow-project-setup.md`.',
+    'The shipped helper `scripts/remote-tracker.mjs` resolves in the payload.',
+    'A longer path `docs/developer-guide/skill-ownership.md.bak` is not in the set.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), []);
+});
+
+test('findRepositoryOnlyReferences gives payload resolution precedence over the repository-only set', () => {
+  const repositoryOnlyFiles = new Set([
+    'effective-flow/SKILL.md',
+    '../shared/x.md',
+    'scripts/remote-tracker.mjs',
+    'build.mjs',
+  ]);
+  const content = [
+    'Exact `effective-flow/SKILL.md` payload path.',
+    'Relative `../shared/x.md` payload path.',
+    'Suffix `scripts/remote-tracker.mjs` payload path.',
+    'Unshipped `build.mjs` path.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content, { repositoryOnlyFiles }), [
+    { line: 4, kind: 'code-span', reference: 'build.mjs' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences skips fenced blocks and links inside code spans', () => {
+  const content = [
+    '```sh',
+    'node build.mjs [g](../../docs/developer-guide/skill-ownership.md) `build.mjs`',
+    '```',
+    '~~~',
+    '```',
+    '`build.mjs` [g](../../docs/developer-guide/skill-ownership.md)',
+    '~~~',
+    '  ````md',
+    '  ```',
+    '`build.mjs`',
+    '  ````',
+    'Literal `[a](../../docs/developer-guide/skill-ownership.md)` is not a link.',
+    'After the fences `build.mjs` counts again.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 13, kind: 'code-span', reference: 'build.mjs' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences skips an unclosed fence to the end of the file', () => {
+  const content = [
+    'Before `build.mjs`.',
+    '~~~~',
+    '`build.mjs` [g](../../docs/developer-guide/skill-ownership.md)',
+    '~~~',
+    '`build-lib.mjs`',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'code-span', reference: 'build.mjs' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences sorts by line, kind and reference and normalizes CRLF', () => {
+  const content = [
+    'Intro line.',
+    '[g](../../docs/developer-guide/skill-ownership.md) with `build.mjs` and `build-lib.mjs`',
+    '[z](../zed.md) then [a](../alpha.md)',
+    '',
+  ].join('\r\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 2, kind: 'code-span', reference: 'build-lib.mjs' },
+    { line: 2, kind: 'code-span', reference: 'build.mjs' },
+    { line: 2, kind: 'link', reference: '../../docs/developer-guide/skill-ownership.md' },
+    { line: 3, kind: 'link', reference: '../alpha.md' },
+    { line: 3, kind: 'link', reference: '../zed.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences reports dead links whose text nests balanced brackets', () => {
+  const content = [
+    'See [the [guide]](../missing.md).',
+    '![a [b] c](../gone.png)',
+    'Deep [a [b [c]] d](../deep.md) nesting.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../missing.md' },
+    { line: 2, kind: 'link', reference: '../gone.png' },
+    { line: 3, kind: 'link', reference: '../deep.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences reports dead links whose text contains escaped brackets', () => {
+  const content = [
+    '[a \\] b](../missing.md)',
+    '[a \\[ b](../other.md)',
+    'Escaped backslash [x \\\\](../double.md) still closes the text.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../missing.md' },
+    { line: 2, kind: 'link', reference: '../other.md' },
+    { line: 3, kind: 'link', reference: '../double.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences allows nested and escaped link text that resolves in the payload', () => {
+  const content = [
+    '[the [shared] fragment](../shared/x.md)',
+    '[x \\] y](../shared/x.md)',
+    '![icon [small]](../shared/x.md)',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), []);
+});
+
+test('findRepositoryOnlyReferences reports reference definitions whose label contains escaped brackets', () => {
+  const content = [
+    '[a \\] b]: ../missing.md',
+    '[c \\[ d]: ../shared/x.md',
+    '[a [b]]: ../missing-def.md',
+    '[ ]: ../blank.md',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../missing.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences does not treat an escaped opening bracket as a link', () => {
+  assert.deepEqual(detectRepositoryOnly('\\[not a link](../missing.md)'), []);
+});
+
+test('findRepositoryOnlyReferences does not treat text closed only by an escaped bracket as a link', () => {
+  assert.deepEqual(detectRepositoryOnly('[a\\](../missing.md)'), []);
+});
+
+test('findRepositoryOnlyReferences detects an inner link after an unbalanced outer bracket', () => {
+  assert.deepEqual(detectRepositoryOnly('[outer [inner](../inner-missing.md)'), [
+    { line: 1, kind: 'link', reference: '../inner-missing.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences reports three-backtick code spans naming repository-only files', () => {
+  const content = ['Run ```build.mjs``` locally.', 'Padded ``` build-lib.mjs ``` span.'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'code-span', reference: 'build.mjs' },
+    { line: 2, kind: 'code-span', reference: ' build-lib.mjs ' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences closes a four-backtick code span only at the next four-backtick run', () => {
+  // The inner double-backtick runs belong to the first span's content and must neither open nor
+  // close a span of their own; the second four-backtick span is detected on its own.
+  const content = 'Quad ```` ``build.mjs`` ```` span, then ````build-lib.mjs```` here.';
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'code-span', reference: 'build-lib.mjs' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences keeps backtick runs without a same-length closer literal', () => {
+  const content = [
+    'Mismatch ```build.mjs`` here.',
+    'Open ``build.mjs``` and `build-lib.mjs` here.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 2, kind: 'code-span', reference: 'build-lib.mjs' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences reports dead links with a parenthesized title', () => {
+  const content = [
+    'See [guide](../missing.md (title)).',
+    'Wrapped [w](<../gone-wrapped.md> (A longer title)) link.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../missing.md' },
+    { line: 2, kind: 'link', reference: '../gone-wrapped.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences allows payload-resolving links with a parenthesized title', () => {
+  const content = [
+    '[shared](../shared/x.md (Shared fragment))',
+    'Wrapped [shared](<../shared/x.md> (title)) link.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), []);
+});
+
+test('findRepositoryOnlyReferences accepts escaped parentheses inside a parenthesized title', () => {
+  const content = [
+    '[g](../gone.md (a \\) b))',
+    'Resolving [s](../shared/x.md (a \\( b \\) c)) here.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../gone.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences reports dead links whose double-quoted title holds an escaped quote', () => {
+  const content = [
+    'See [guide](../missing.md "a \\"title\\"").',
+    'Wrapped [w](<../gone-wrapped.md> "say \\"hi\\"") link.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../missing.md' },
+    { line: 2, kind: 'link', reference: '../gone-wrapped.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences reports dead links whose single-quoted title holds an escaped quote', () => {
+  const content = [
+    "See [g](../gone.md 'it\\'s') here.",
+    "Wrapped [w](<../gone-single.md> 'don\\'t') link.",
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'link', reference: '../gone.md' },
+    { line: 2, kind: 'link', reference: '../gone-single.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences allows payload-resolving links whose quoted title holds an escaped quote', () => {
+  const content = [
+    '[shared](../shared/x.md "a \\"title\\"")',
+    "[shared](../shared/x.md 'it\\'s')",
+    'Wrapped [shared](<../shared/x.md> "say \\"hi\\"") link.',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), []);
+});
+
+test('findRepositoryOnlyReferences does not open a fence on a four-space-indented backtick line', () => {
+  const content = ['    ```', '[g](../missing.md)'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 2, kind: 'link', reference: '../missing.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences does not open a fence on a four-space-indented tilde line', () => {
+  const content = ['    ~~~', '[g](../missing.md)'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 2, kind: 'link', reference: '../missing.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences does not open a fence on a tab-indented backtick line', () => {
+  const content = ['\t```', '[g](../missing.md)'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 2, kind: 'link', reference: '../missing.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences still skips a fence opened and closed with up to three spaces of indentation', () => {
+  const content = [
+    '   ```',
+    '[g](../inside.md)',
+    '   ```',
+    '  ~~~',
+    '[t](../inside-tilde.md)',
+    '  ~~~',
+    '[h](../after.md)',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 7, kind: 'link', reference: '../after.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences closes an open fence only at a closer indented up to three spaces', () => {
+  const content = [
+    '```',
+    '    ```',
+    '[g](../inside.md)',
+    '\t```',
+    '[i](../still-inside.md)',
+    '```',
+    '[h](../after.md)',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 7, kind: 'link', reference: '../after.md' },
+  ]);
+});
+
+// Invariant: CommonMark forbids a backtick in a backtick fence's info string,
+// so such a line is inline text (here a code span), never a fence opener.
+test('findRepositoryOnlyReferences scans a backtick line whose info string contains a backtick as inline text', () => {
+  const content = ['```build.mjs```', '[g](../missing.md)'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 1, kind: 'code-span', reference: 'build.mjs' },
+    { line: 2, kind: 'link', reference: '../missing.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences still opens a backtick fence with a backtick-free info string', () => {
+  const content = ['```js', '[g](../inside.md) `build.mjs`', '```', '[h](../after.md)'].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 4, kind: 'link', reference: '../after.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences still opens a tilde fence whose info string contains a backtick', () => {
+  const content = ['~~~ a`b', '[g](../inside.md) `build.mjs`', '~~~', '[h](../after.md)'].join(
+    '\n',
+  );
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 4, kind: 'link', reference: '../after.md' },
+  ]);
+});
+
+// Invariant: a closing fence carries only optional trailing spaces or tabs
+// after its run; a fence-character line with trailing text stays fence content.
+test('findRepositoryOnlyReferences does not close a fence at a fence run followed by text', () => {
+  const content = ['```', '``` not a closer', '[g](../inside.md)', '```', '[h](../after.md)'].join(
+    '\n',
+  );
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 5, kind: 'link', reference: '../after.md' },
+  ]);
+});
+
+test('findRepositoryOnlyReferences closes a fence at a closer followed only by spaces or tabs', () => {
+  const content = [
+    '```',
+    '[g](../inside.md)',
+    '```   ',
+    '[h](../after.md)',
+    '~~~',
+    '[i](../inside-tilde.md)',
+    '~~~ \t',
+    '[j](../after-tilde.md)',
+  ].join('\n');
+
+  assert.deepEqual(detectRepositoryOnly(content), [
+    { line: 4, kind: 'link', reference: '../after.md' },
+    { line: 8, kind: 'link', reference: '../after-tilde.md' },
+  ]);
+});
+
+test('findVerbatimSourceLocations lists every matching source line in path order', () => {
+  const reference = '../../docs/developer-guide/skill-ownership.md';
+  const sources = new Map([
+    [
+      'src/tools/maintain.md',
+      ['# Maintain', `See [guide](${reference}).`, 'Nothing here.', `[g]: ${reference}`].join('\n'),
+    ],
+    ['src/agents/test-writer.md', ['Intro', `Twice ${reference} and ${reference}`].join('\r\n')],
+    ['src/shared/skill-discovery.md', `First ${reference}\n`],
+    ['src/shared/unrelated.md', '../../docsXdeveloper-guide/skill-ownershipXmd'],
+  ]);
+  const expected = [
+    'src/agents/test-writer.md:2',
+    'src/shared/skill-discovery.md:1',
+    'src/tools/maintain.md:2',
+    'src/tools/maintain.md:4',
+  ];
+
+  assert.deepEqual(findVerbatimSourceLocations(reference, sources), expected);
+  assert.deepEqual(findVerbatimSourceLocations(reference, Object.fromEntries(sources)), expected);
+});
+
+test('findVerbatimSourceLocations returns an empty list when no source carries the reference', () => {
+  // The rendered reference comes from a placeholder expansion, so no source carries it verbatim.
+  const sources = new Map([['src/tools/maintain.md', 'Read `{{FLOW}}/tools/maintain.md` next.']]);
+
+  assert.deepEqual(findVerbatimSourceLocations('build.mjs', new Map()), []);
+  assert.deepEqual(findVerbatimSourceLocations('effective-flow/tools/maintain.md', sources), []);
+  assert.deepEqual(findVerbatimSourceLocations('build.mjs', {}), []);
+});
+
+test('applyRepositoryOnlyAllowlist removes allowlisted entries without mutating its input', () => {
+  const files = new Set(['docs/developer-guide/README.md', 'docs/developer-guide/build-system.md']);
+
+  const result = applyRepositoryOnlyAllowlist(files, ['docs/developer-guide/README.md']);
+
+  assert.ok(result instanceof Set);
+  assert.notEqual(result, files);
+  assert.deepEqual([...result], ['docs/developer-guide/build-system.md']);
+  assert.deepEqual(
+    [...files],
+    ['docs/developer-guide/README.md', 'docs/developer-guide/build-system.md'],
+  );
+
+  const unchanged = applyRepositoryOnlyAllowlist(files, []);
+  assert.notEqual(unchanged, files);
+  assert.deepEqual([...unchanged].sort(), [...files].sort());
+});
+
+test('applyRepositoryOnlyAllowlist fails on every stale entry at once', () => {
+  const files = new Set(['docs/developer-guide/README.md']);
+
+  assert.throws(
+    () =>
+      applyRepositoryOnlyAllowlist(files, [
+        'docs/developer-guide/README.md',
+        'docs/developer-guide/gone.md',
+        'test/removed.test.mjs',
+      ]),
+    (error) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /stale repository-only reference allowlist entry/);
+      assert.match(error.message, /names no file under the repository-only roots/);
+      assert.match(error.message, /"docs\/developer-guide\/gone\.md"/);
+      assert.match(error.message, /"test\/removed\.test\.mjs"/);
+      assert.doesNotMatch(error.message, /"docs\/developer-guide\/README\.md"/);
+      return true;
+    },
+  );
+  assert.deepEqual([...files], ['docs/developer-guide/README.md']);
+});
+
+test('REPOSITORY_ONLY_SKIP_DIRS names the generated, dependency and Git directories', () => {
+  assert.deepEqual([...REPOSITORY_ONLY_SKIP_DIRS], ['node_modules', 'dist', 'dist.tmp', '.git']);
+  assert.ok(Object.isFrozen(REPOSITORY_ONLY_SKIP_DIRS));
+});
+
+test('collectRepositoryOnlyFiles walks roots as POSIX paths and skips generated directories', () => {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'effective-flow-repository-only-'));
+  const write = (path, content = 'x\n') => {
+    const absolute = join(repoRoot, ...path.split('/'));
+    mkdirSync(join(absolute, '..'), { recursive: true });
+    writeFileSync(absolute, content);
+  };
+  try {
+    write('docs/developer-guide/skill-ownership.md');
+    write('docs/developer-guide/nested/deep.md');
+    write('docs/adr/outside-roots.md');
+    write('test/build-lib.test.mjs');
+    write('test/fixtures/keep.md');
+    write('test/fixtures/node_modules/pkg/index.js');
+    write('test/dist/x.md');
+    write('test/fixtures/dist.tmp/y.md');
+    write('test/fixtures/.git/HEAD');
+    write('node_modules/top/index.js');
+    write('build.mjs');
+    write('build-lib.mjs');
+
+    const files = collectRepositoryOnlyFiles(repoRoot, {
+      roots: ['docs/developer-guide', 'test', 'missing-root'],
+      rootFiles: ['build.mjs', 'README.md.src', 'docs'],
+    });
+
+    assert.ok(files instanceof Set);
+    assert.deepEqual(
+      [...files].sort(),
+      [
+        'build.mjs',
+        'docs/developer-guide/nested/deep.md',
+        'docs/developer-guide/skill-ownership.md',
+        'test/build-lib.test.mjs',
+        'test/fixtures/keep.md',
+      ].sort(),
+    );
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test('collectRepositoryOnlyFiles returns an empty set when no root exists', () => {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'effective-flow-repository-only-empty-'));
+  try {
+    const files = collectRepositoryOnlyFiles(repoRoot, {
+      roots: ['docs/developer-guide', 'src'],
+      rootFiles: ['build.mjs'],
+    });
+    assert.ok(files instanceof Set);
+    assert.equal(files.size, 0);
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test('code-validator remains a harness-neutral adapter to central validation', () => {
+  const source = readFileSync(new URL('../src/agents/code-validator.md', import.meta.url), 'utf8');
+  const body = extractBody(source);
+  assert.doesNotMatch(source, /\brun_in_background\b/);
+
+  for (const target of ['claude', 'codex', 'portable']) {
+    const rendered = renderBody(body, target, {
+      ...refConfig,
+      context: `src/agents/code-validator.md (${target})`,
+    });
+
+    assert.deepEqual(findForeignHarnessToolParameters(rendered, target), [], target);
+    assert.match(rendered, /`effective-delivery` is the declared domain owner/, target);
+    assert.match(rendered, /do not keep\s+a second ecosystem command matrix/is, target);
+    assert.match(rendered, /`full`.*`quick`.*`off`/s, target);
+    assert.match(rendered, /`PASSED`, `FAILED`, `SKIPPED \(<reason>\)`, or `TIMEOUT`/, target);
+    assert.match(rendered, /each bucket and exact assigned scope/, target);
+    assert.doesNotMatch(rendered, /120-second/, target);
+    assert.doesNotMatch(rendered, /TypeScript → Linting → Build/, target);
+    assert.doesNotMatch(rendered, /Cargo check or Cargo build → Clippy/, target);
+  }
+});
+
+test('central-skill adapters retain Effective Flow ownership without duplicate handbooks', () => {
+  const readSource = (path) => readFileSync(new URL(`../src/${path}`, import.meta.url), 'utf8');
+  const adapters = {
+    'agents/docs-writer.md': 'effective-delivery',
+    'agents/code-documenter.md': 'effective-delivery',
+    'agents/test-writer.md': 'effective-engineering',
+    'agents/e2e-tester.md': 'effective-web',
+    'agents/code-validator.md': 'effective-delivery',
+    'agents/rust-implementer.md': 'effective-engineering',
+    'agents/nodejs-implementer.md': 'effective-engineering',
+  };
+
+  for (const [path, owner] of Object.entries(adapters)) {
+    const source = readSource(path);
+    assert.match(source, new RegExp(`\\b${owner}\\b`), path);
+    assert.match(source, /## Minimal fallback/, path);
+    assert.match(source, /Effective Flow (?:retains|constraints)/i, path);
+  }
+
+  // The Rust implementer delegates its whole domain playbook. Anchor the removals
+  // beside the positive delegation assertion so a rewritten source cannot pass
+  // the negative greps vacuously.
+  const rustImplementer = readSource('agents/rust-implementer.md');
+  assert.match(rustImplementer, /`effective-engineering` is the declared domain owner/);
+  assert.match(rustImplementer, /Do not keep a\s+second Rust handbook here/);
+  for (const heading of [
+    '## Project structure and Cargo',
+    '## Error handling',
+    '## Ownership, types and traits',
+    '## Concurrency',
+    '## unsafe',
+    '## Database',
+    '## Logging',
+    '## Security',
+    '## Toolchain',
+  ]) {
+    assert.doesNotMatch(rustImplementer, new RegExp(`^${escapeRegex(heading)}$`, 'm'), heading);
+  }
+  // CLI contracts are *not* delegated: the skill treats exit codes, stream
+  // separation and `--help` only in `cli-contracts.md`, which hangs off the
+  // testing route that `route-rust.md` cross-links solely for test placement,
+  // public-API coverage, doctests and smoke evidence. Under the same
+  // route-reachability rule that keeps `### CLI tools` in the Node source, this
+  // stays — with the reason in the source, not only here.
+  assert.match(rustImplementer, /^### CLI tools$/m);
+  assert.match(rustImplementer, /The retention rule is \*\*route reachability\*\*/);
+  assert.match(rustImplementer, /cli-contracts\.md/);
+  // The named crate defaults survive only as the minimal fallback for a
+  // greenfield module; everywhere else the skill's discovery-first policy wins.
+  const fallbackStart = rustImplementer.indexOf('## Minimal fallback');
+  assert.ok(fallbackStart > 0, 'rust-implementer must carry a minimal fallback');
+  const afterFallback = rustImplementer.slice(fallbackStart + '## Minimal fallback'.length);
+  const fallbackEnd = afterFallback.search(/^## /m);
+  const outsideFallback =
+    rustImplementer.slice(0, fallbackStart) + afterFallback.slice(fallbackEnd);
+  assert.doesNotMatch(outsideFallback, /anyhow|thiserror|tokio|async-std|clap|sqlx|diesel|tracing/);
+
+  // The Node implementer delegates only the language layer. Everything a reader
+  // of `route-typescript.md` cannot reach stays, with the rule that decides it.
+  const nodejsImplementer = readSource('agents/nodejs-implementer.md');
+  assert.match(nodejsImplementer, /`effective-engineering` is the declared domain owner/);
+  assert.match(nodejsImplementer, /Do not keep a\s+second TypeScript handbook here/);
+  assert.doesNotMatch(nodejsImplementer, /^#+ Error handling$/m);
+  assert.match(nodejsImplementer, /The retention rule is \*\*route reachability\*\*/);
+  assert.match(nodejsImplementer, /route-typescript\.md/);
+  for (const retained of [
+    '### Backend APIs',
+    '### CLI tools',
+    '### Node.js applications',
+    '### Database',
+    '### Logging',
+    '### Security',
+  ]) {
+    assert.match(nodejsImplementer, new RegExp(`^${escapeRegex(retained)}$`, 'm'), retained);
+  }
+  // The house package-manager rule contradicts the skill and is retained
+  // deliberately, so delegation must not quietly take it along.
+  assert.match(nodejsImplementer, /`pnpm exec <tool>`, not `npx`/);
+
+  // iterate keeps orchestration authority; the pr-review handoff does no discovery, code or Git.
+  const iterate = readSource('tools/iterate.md');
+  assert.match(iterate, /pr-review-handoff\/v1/);
+  assert.match(iterate, /performs no discovery,\s+implementation, Git/);
+  assert.match(iterate, /Effective Flow remains the caller and owns freshness, approval/);
+
+  const discovery = readSource('shared/skill-discovery.md');
+  assert.match(
+    discovery,
+    /Never load the `effective-flow` router recursively/,
+    'skill discovery must never re-enter the effective-flow router',
+  );
+
+  const dependencyPolicy = readSource('shared/dependency-version-policy.md');
+  assert.match(dependencyPolicy, /`effective-delivery` is the declared domain owner/);
+  assert.doesNotMatch(dependencyPolicy, /pnpm view|cargo search|stable major tag/);
+
+  // The docs tool delegates documentation craft to effective-delivery. Anchor each
+  // removal beside the positive delegation assertion so a rewritten section cannot
+  // pass the negative greps vacuously.
+  const docs = readSource('tools/docs.md');
+  assert.match(docs, /`effective-delivery` is the declared domain owner/);
+  assert.doesNotMatch(docs, /Do not invent substantive statements/);
+  assert.doesNotMatch(docs, /Keep examples runnable/);
+
+  const codeDocumenter = readSource('agents/code-documenter.md');
+  assert.match(codeDocumenter, /`effective-delivery` is the declared domain owner/);
+  assert.doesNotMatch(codeDocumenter, /Prefer self-documenting code/);
+
+  // An established repository documentation structure outranks the prescribed
+  // standard structure; Effective Flow defines no local test for "established".
+  const docCategories = readSource('shared/doc-categories.md');
+  assert.match(docCategories, /takes precedence over the prescribed standard structure/);
+  assert.match(docCategories, /local test for what counts as/);
+
+  // The marketing writer restates the root README's follow-up targets, so it must
+  // resolve them from the effective structure rather than the standard paths.
+  const marketingWriter = readSource('agents/marketing-writer.md');
+  assert.match(
+    marketingWriter,
+    /resolve the two documentation targets from the \*\*effective\s+structure\*\*/,
+  );
+  assert.match(marketingWriter, /do not fall back\s+to the standard paths/);
+
+  // The documentation sync gate routes documentation work and is therefore an
+  // adapter surface where a second craft handbook could grow unnoticed.
+  const syncContract = readSource('shared/documentation-sync-contract.md').replace(/\s+/g, ' ');
+  assert.match(syncContract, /`effective-delivery` is the declared domain owner/);
+  assert.match(syncContract, /minimal repository-led fallback declared in/);
+  assert.doesNotMatch(syncContract, /audience|reading order|runnable example/i);
+});
+
+// --- Fixture-based end-to-end snapshot ---
+
+test('end-to-end: fixture asks render in English by default and German by opt-in', () => {
+  const fixture = [
+    '---',
+    'description: "A fixture tool that delegates to {{SKILL:fix}}."',
+    '---',
+    '',
+    '# Fixture',
+    '',
+    'Ruft {{SKILL:fix}} und {{AGENT:nodejs-implementer}} auf.',
+    '',
+    '```ask',
+    'when: Freigabe erforderlich',
+    'header: Freigabe',
+    'question: Weiter?',
+    'options:',
+    '  - label: Ja',
+    '    description: Direkt fortfahren',
+    '  - label: Anpassen',
+    '    description: Quelldetails ändern',
+    '```',
+    '',
+    '```ask',
+    'header: Approval',
+    'question: Continue?',
+    'type: approval',
+    'language: de',
+    '```',
+    '',
+  ].join('\n');
+
+  const fm = extractFrontmatter(fixture);
+  const body = extractBody(fixture);
+  assert.doesNotThrow(() => assertQuotedDescription(fm));
+  validateRefs(`${fm}\n${body}`, refConfig);
+
+  const expectedClaude = [
+    '',
+    '# Fixture',
+    '',
+    'Ruft /effective-flow fix und `effective-flow-nodejs-implementer` auf.',
+    '',
+    'If Freigabe erforderlich:',
+    '',
+    'Use the `AskUserQuestion` tool with the following parameters:',
+    '- header: "Freigabe"',
+    '- question: "Weiter?"',
+    '- multiSelect: false',
+    '- options:',
+    '  - label: "Ja", description: "Direkt fortfahren"',
+    '  - label: "Anpassen", description: "Quelldetails ändern"',
+    '',
+    'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:',
+    '- header: "Approval"',
+    '- question: "Continue?"',
+    '- multiSelect: false',
+    '- options:',
+    '  - label: "Ja", description: "Freigabe erteilt"',
+    '  - label: "Anpassen", description: "Feedback als Freitext eingeben"',
+    '',
+  ].join('\n');
+  assert.equal(renderBody(body, 'claude', { ...refConfig, context: 'fixture.md' }), expectedClaude);
+
+  const expectedCodex = [
+    '',
+    '# Fixture',
+    '',
+    'Ruft $effective-flow fix und `effective-flow-nodejs-implementer` auf.',
+    '',
+    'If Freigabe erforderlich: Ask the user: **Weiter?**',
+    '- Ja -- Direkt fortfahren',
+    '- Anpassen -- Quelldetails ändern',
+    '',
+    'Frage den User: **Continue?** Antworte mit "Ja" oder gib Feedback als Freitext.',
+    '',
+  ].join('\n');
+  assert.equal(renderBody(body, 'codex', { ...refConfig, context: 'fixture.md' }), expectedCodex);
+});
+
+test('end-to-end: a scored fixture ask adds only its scoring line on every target', () => {
+  const fixture = [
+    '---',
+    'description: "A fixture tool with a scored decision."',
+    '---',
+    '',
+    '# Fixture',
+    '',
+    '```ask',
+    'when: the target is ambiguous',
+    'header: Revision',
+    'question: Revise, restart, or stop?',
+    'type: scored',
+    'unscored: Abort',
+    'options:',
+    '  - label: Revise in place',
+    '    description: Reuse the file, keep its history',
+    '  - label: New plan',
+    '    description: Start over under a new name',
+    '  - label: Abort',
+    '    description: Change nothing',
+    '```',
+    '',
+  ].join('\n');
+
+  const fm = extractFrontmatter(fixture);
+  const body = extractBody(fixture);
+  assert.doesNotThrow(() => assertQuotedDescription(fm));
+  validateRefs(`${fm}\n${body}`, refConfig);
+
+  const expectedClaude = [
+    '',
+    '# Fixture',
+    '',
+    'If the target is ambiguous:',
+    '',
+    SCORING_LINE_EN_ABORT,
+    'Use the `AskUserQuestion` tool with the following parameters:',
+    '- header: "Revision"',
+    '- question: "Revise, restart, or stop?"',
+    '- multiSelect: false',
+    '- options:',
+    '  - label: "Revise in place", description: "Reuse the file, keep its history"',
+    '  - label: "New plan", description: "Start over under a new name"',
+    '  - label: "Abort", description: "Change nothing"',
+    '',
+  ].join('\n');
+  assert.equal(renderBody(body, 'claude', { ...refConfig, context: 'fixture.md' }), expectedClaude);
+
+  const expectedCodex = [
+    '',
+    '# Fixture',
+    '',
+    'If the target is ambiguous: Ask the user: **Revise, restart, or stop?**',
+    SCORING_LINE_EN_ABORT,
+    '- Revise in place -- Reuse the file, keep its history',
+    '- New plan -- Start over under a new name',
+    '- Abort -- Change nothing',
+    '',
+  ].join('\n');
+  assert.equal(renderBody(body, 'codex', { ...refConfig, context: 'fixture.md' }), expectedCodex);
+  assert.equal(
+    renderBody(body, 'portable', { ...refConfig, context: 'fixture.md' }),
+    expectedCodex,
+  );
+});
+
+test('end-to-end: fixture rejects an invalid ask language with source context', () => {
+  const body = [
+    '```ask',
+    'header: Approval',
+    'question: Continue?',
+    'type: approval',
+    'language: fr',
+    '```',
+  ].join('\n');
+
+  for (const harness of ['claude', 'codex']) {
+    assert.throws(
+      () => renderBody(body, harness, { ...refConfig, context: 'invalid-fixture.md' }),
+      /unknown language "fr".*invalid-fixture\.md/,
+    );
+  }
+});
+
+test('missingCategoryReadmes flags mandatory categories that hold docs but no README', () => {
+  // developer-guide has documents but no README -> flagged
+  assert.deepEqual(
+    missingCategoryReadmes({ 'developer-guide': ['architecture.md', 'build-system.md'] }),
+    ['developer-guide'],
+  );
+  // README present -> not flagged
+  assert.deepEqual(
+    missingCategoryReadmes({ 'developer-guide': ['README.md', 'architecture.md'] }),
+    [],
+  );
+  // empty or README-only category -> not flagged
+  assert.deepEqual(missingCategoryReadmes({ 'user-guide': [] }), []);
+  assert.deepEqual(missingCategoryReadmes({ 'user-guide': ['README.md'] }), []);
+  // non-.md files do not count as documents
+  assert.deepEqual(missingCategoryReadmes({ 'user-guide': ['.keep', 'logo.png'] }), []);
+  // both mandatory categories are evaluated independently
+  assert.deepEqual(
+    missingCategoryReadmes({
+      'user-guide': ['README.md', 'installation.md'],
+      'developer-guide': ['architecture.md'],
+    }),
+    ['developer-guide'],
+  );
+});
+
+// --- Self-contained agent-contract guard (#100) ---
+
+test('findSelfReferentialContractPhrases flags historical "ursprüngliche(r) Agent" comparisons', () => {
+  const hits = findSelfReferentialContractPhrases(
+    'description: "Erstellt In-Code-Dokumentation mit derselben Tiefe wie der ursprüngliche Agent: JSDoc."',
+  );
+  assert.equal(hits.length, 1);
+  assert.match(hits[0].label, /ursprüngliche/);
+  assert.equal(hits[0].match, 'ursprüngliche Agent');
+  // inflected forms are caught too
+  assert.equal(
+    findSelfReferentialContractPhrases('… wie der ursprünglichen Agent durch …').length,
+    1,
+  );
+});
+
+test('findSelfReferentialContractPhrases flags "original agent" and "same depth as the"', () => {
+  assert.equal(findSelfReferentialContractPhrases('same depth as the original agent').length, 2);
+});
+
+test('findSelfReferentialContractPhrases flags relative-to-sibling scope', () => {
+  const hits = findSelfReferentialContractPhrases(
+    'description: "Implementiert Rust-Code mit derselben fachlichen Tiefe wie der Node.js-Implementer: Cargo."',
+  );
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].match, 'wie der Node.js-Implementer');
+  assert.equal(
+    findSelfReferentialContractPhrases('Rust-Review wie der Node.js-Reviewer durch').length,
+    1,
+  );
+});
+
+test('findSelfReferentialContractPhrases flags sibling contractions and the genitive', () => {
+  // "beim"/"vom"/"im" (= bei/von/in dem) are as idiomatic as "wie der …".
+  assert.equal(
+    findSelfReferentialContractPhrases('… mit derselben Tiefe wie beim Node.js-Reviewer.').length,
+    1,
+  );
+  assert.equal(
+    findSelfReferentialContractPhrases('genauso wie vom Rust-Implementer erwartet').length,
+    1,
+  );
+  // Genitive "-Reviewers" must not slip through a suffix word boundary.
+  const gen = findSelfReferentialContractPhrases('Prüftiefe wie des Node.js-Reviewers ausgelegt');
+  assert.equal(gen.length, 1);
+  assert.equal(gen[0].match, 'wie des Node.js-Reviewers');
+});
+
+test('findSelfReferentialContractPhrases flags "Wie bei {{AGENT:…}}" contract substitute', () => {
+  const hits = findSelfReferentialContractPhrases('Wie bei `{{AGENT:frontend-reviewer}}`.');
+  assert.equal(hits.length, 1);
+  assert.match(hits[0].label, /contract substitute/);
+});
+
+test('findSelfReferentialContractPhrases allows legitimate {{AGENT:X}} delegation', () => {
+  // A bare delegation reference is not a contract substitute.
+  assert.deepEqual(
+    findSelfReferentialContractPhrases('An `{{AGENT:code-validator}}` delegieren.'),
+    [],
+  );
+  // "Wie bei" gates on {{AGENT:…}} only — a {{SKILL:…}} cross-reference is allowed.
+  assert.deepEqual(
+    findSelfReferentialContractPhrases('Wie bei `{{SKILL:review}}` beschrieben.'),
+    [],
+  );
+  // Self-contained, concrete scope descriptions produce no hits.
+  assert.deepEqual(
+    findSelfReferentialContractPhrases(
+      'description: "Führt spezialisiertes Backend- und CLI-Review durch: API Design, Security."',
+    ),
+    [],
+  );
+  // Legitimate prose using "ursprünglich" for a branch/plan/body — not "Agent".
+  assert.deepEqual(
+    findSelfReferentialContractPhrases(
+      'Cherry-pick zurück in den ursprünglichen Branch; auch wenn der ursprüngliche Body dünn ist.',
+    ),
+    [],
+  );
+});
+
+// --- Lazy-include directive (#99) ---
+
+test('renderLazyPointer renders a load pointer with and without a trigger', () => {
+  assert.equal(
+    renderLazyPointer('worktree-integration', 'the delivery mode is determined'),
+    '**Load on demand:** Read `shared/worktree-integration.md`, when the delivery mode is determined.',
+  );
+  // No trigger clause → just the load pointer, still ending in a period.
+  assert.equal(
+    renderLazyPointer('config-migration', ''),
+    '**Load on demand:** Read `shared/config-migration.md`.',
+  );
+});
+
+test('resolveLazyIncludes replaces fences with pointers and collects unique names', () => {
+  const body = [
+    'Before.',
+    '```lazy-include',
+    'config-migration',
+    'when: the config is read',
+    '```',
+    'Middle.',
+    '```lazy-include',
+    'issue-tracker',
+    'when: the tracker mode `remote` is active',
+    '```',
+    'After.',
+  ].join('\n');
+  const { body: out, names } = resolveLazyIncludes(body);
+  assert.deepEqual(names, ['config-migration', 'issue-tracker']);
+  assert.match(
+    out,
+    /\*\*Load on demand:\*\* Read `shared\/config-migration\.md`, when the config is read\./,
+  );
+  assert.match(out, /Read `shared\/issue-tracker\.md`, when the tracker mode `remote` is active\./);
+  // The fence markers are gone; the surrounding prose is preserved.
+  assert.doesNotMatch(out, /```lazy-include/);
+  assert.match(out, /Before\.[\s\S]*Middle\.[\s\S]*After\./);
+});
+
+test('resolveLazyIncludes de-duplicates a fragment referenced twice', () => {
+  const body = [
+    '```lazy-include',
+    'config-migration',
+    'when: A',
+    '```',
+    '```lazy-include',
+    'config-migration',
+    'when: B',
+    '```',
+  ].join('\n');
+  const { names } = resolveLazyIncludes(body);
+  assert.deepEqual(names, ['config-migration']);
+});
+
+test('resolveLazyIncludes tolerates a fence without a when trigger', () => {
+  const { body, names } = resolveLazyIncludes('```lazy-include\nplan-numbering\n```');
+  assert.deepEqual(names, ['plan-numbering']);
+  assert.equal(body, '**Load on demand:** Read `shared/plan-numbering.md`.');
+});
+
+test('collectIncludeNames separates eager and lazy includes', () => {
+  const body = [
+    '```include',
+    'language-rules',
+    '```',
+    '```lazy-include',
+    'config-migration',
+    'when: X',
+    '```',
+    '```include',
+    'task-tracking',
+    '```',
+  ].join('\n');
+  const { eager, lazy } = collectIncludeNames(body);
+  assert.deepEqual([...eager].sort(), ['language-rules', 'task-tracking']);
+  assert.deepEqual([...lazy], ['config-migration']);
+});
+
+test('assertNoEagerLazyOverlap passes for disjoint sets and throws on overlap', () => {
+  assert.doesNotThrow(() =>
+    assertNoEagerLazyOverlap(new Set(['language-rules']), new Set(['config-migration'])),
+  );
+  assert.throws(
+    () =>
+      assertNoEagerLazyOverlap(new Set(['config-migration', 'x']), new Set(['config-migration']), {
+        context: 'tools/build.md',
+      }),
+    /both eager- and lazy-included \(in tools\/build\.md\): config-migration/,
+  );
+});
+
+test('documentation-sync consumer guard demands an eager include in every implementation tool', () => {
+  const eagerBody = ['```include', 'documentation-sync', '```'].join('\n');
+  const lazyBody = ['```lazy-include', 'documentation-sync', 'when: docs are due', '```'].join(
+    '\n',
+  );
+
+  // Every consumer carries the eager core -> no violation.
+  assert.deepEqual(
+    findDocumentationSyncViolations(
+      new Map(
+        DOCUMENTATION_SYNC_CONSUMERS.map((context) => [context, collectIncludeNames(eagerBody)]),
+      ),
+    ),
+    [],
+  );
+
+  // A missing include is a violation naming the offending consumer.
+  const missing = findDocumentationSyncViolations(
+    new Map([
+      ['shared/build-delegated-run.md', collectIncludeNames(eagerBody)],
+      ['tools/fix.md', collectIncludeNames('no includes here')],
+      ['tools/refactor.md', collectIncludeNames(eagerBody)],
+      ['tools/maintain.md', collectIncludeNames(eagerBody)],
+    ]),
+  );
+  assert.deepEqual(
+    missing.map((violation) => violation.context),
+    ['tools/fix.md'],
+  );
+  assert.match(missing[0].reason, /eager/);
+
+  // A lazy pointer does not satisfy the guard: a `when:` condition the model may
+  // judge inapplicable is exactly the skip this gate removes.
+  const lazyOnly = findDocumentationSyncViolations(
+    new Map(
+      DOCUMENTATION_SYNC_CONSUMERS.map((context) => [
+        context,
+        collectIncludeNames(context === 'tools/maintain.md' ? lazyBody : eagerBody),
+      ]),
+    ),
+  );
+  assert.deepEqual(
+    lazyOnly.map((violation) => violation.context),
+    ['tools/maintain.md'],
+  );
+  assert.match(lazyOnly[0].reason, /lazily/);
+
+  // A consumer that was never read at all must not pass silently.
+  const absent = findDocumentationSyncViolations(new Map());
+  assert.deepEqual(
+    absent.map((violation) => violation.context).sort(),
+    [...DOCUMENTATION_SYNC_CONSUMERS].sort(),
+  );
+});
+
+test('resolveEagerIncludes recursively expands nested fragments in deterministic order', () => {
+  const fragments = new Map([
+    ['outer', 'outer-start\n```include\ninner\n```\nouter-end\n'],
+    ['inner', 'inner-body\n'],
+  ]);
+
+  assert.equal(
+    resolveEagerIncludes('root-start\n```include\nouter\n```\nroot-end\n', {
+      context: 'tools/example.md',
+      readFragment: (name) => fragments.get(name),
+    }),
+    'root-start\nouter-start\ninner-body\nouter-end\nroot-end\n',
+  );
+});
+
+test('resolveEagerIncludes rejects cycles and missing targets with the complete chain', () => {
+  const cyclic = new Map([
+    ['a', '```include\nb\n```\n'],
+    ['b', '```include\na\n```\n'],
+  ]);
+
+  assert.throws(
+    () =>
+      resolveEagerIncludes('```include\na\n```\n', {
+        context: 'tools/cycle.md',
+        readFragment: (name) => cyclic.get(name),
+      }),
+    /eager include cycle \(in tools\/cycle\.md\): tools\/cycle\.md -> shared\/a\.md -> shared\/b\.md -> shared\/a\.md/,
+  );
+  assert.throws(
+    () =>
+      resolveEagerIncludes('```include\nmissing\n```\n', {
+        context: 'tools/missing.md',
+        readFragment: () => undefined,
+      }),
+    /cannot resolve eager include "missing" \(in tools\/missing\.md\)[\s\S]*fragment reader returned no text/,
+  );
+});
+
+test('unresolved eager-include output is rejected with source line diagnostics', () => {
+  const unresolved = 'before\n```include\nmemory-state\n```\nafter\n';
+  assert.deepEqual(findUnresolvedEagerIncludes(unresolved), [{ line: 2, name: 'memory-state' }]);
+  assert.throws(
+    () => assertNoUnresolvedEagerIncludes(unresolved, { context: 'generated/tools/x.md' }),
+    /unresolved eager include fence \(in generated\/tools\/x\.md\): line 2 \(memory-state\)/,
+  );
+});
+
+test('unresolved lazy-include output is rejected with source line diagnostics', () => {
+  const unresolved =
+    'before\n```lazy-include\npr-review-integration\nwhen: a PR exists\n```\nafter\n';
+  assert.deepEqual(findUnresolvedLazyIncludes(unresolved), [
+    { line: 2, name: 'pr-review-integration' },
+  ]);
+  assert.throws(
+    () => assertNoUnresolvedLazyIncludes(unresolved, { context: 'generated/shared/x.md' }),
+    /unresolved lazy include fence \(in generated\/shared\/x\.md\): line 2 \(pr-review-integration\)/,
+  );
+  // A rendered pointer is the resolved form and must not trip the guard.
+  assert.doesNotThrow(() =>
+    assertNoUnresolvedLazyIncludes(resolveLazyIncludes(unresolved).body, { context: 'x' }),
+  );
+  // The eager guard must not fire on a lazy fence, nor the lazy guard on an eager one.
+  assert.doesNotThrow(() => assertNoUnresolvedEagerIncludes(unresolved, { context: 'x' }));
+  assert.doesNotThrow(() =>
+    assertNoUnresolvedLazyIncludes('a\n```include\nmemory-state\n```\n', { context: 'x' }),
+  );
+});
+
+// --- Unresolved placeholder guard ---
+
+test('the placeholder guard rejects any unresolved token, not a known-name list', () => {
+  const body = [
+    'A live one: {{SKILL:fix}}',
+    'A retired one: {{GOAL_START}}',
+    'A typo: {{SKIL:fix}}',
+    'An invented one: {{NEVER_IMPLEMENTED:x y}}',
+  ].join('\n');
+
+  assert.deepEqual(findUnresolvedPlaceholders(body), [
+    { line: 1, placeholder: '{{SKILL:fix}}', name: 'SKILL' },
+    { line: 2, placeholder: '{{GOAL_START}}', name: 'GOAL_START' },
+    { line: 3, placeholder: '{{SKIL:fix}}', name: 'SKIL' },
+    { line: 4, placeholder: '{{NEVER_IMPLEMENTED:x y}}', name: 'NEVER_IMPLEMENTED' },
+  ]);
+  assert.throws(
+    () => assertNoUnresolvedPlaceholders(body, { context: 'rendered claude file tools/x.md' }),
+    /unresolved placeholder \(in rendered claude file tools\/x\.md\): line 1 \(\{\{SKILL:fix\}\}\), line 2 \(\{\{GOAL_START\}\}\), line 3 \(\{\{SKIL:fix\}\}\), line 4 \(\{\{NEVER_IMPLEMENTED:x y\}\}\)/,
+  );
+});
+
+test('the placeholder guard passes on resolved output and non-placeholder braces', () => {
+  const resolved = transformRefs(
+    'Run {{SKILL:fix}} via {{FLOW}} with {{AGENT:code-validator}}.',
+    'claude',
+    {
+      ...refConfig,
+      context: 'tools/x.md',
+    },
+  );
+
+  assert.doesNotThrow(() => assertNoUnresolvedPlaceholders(resolved, { context: 'tools/x.md' }));
+  // Braces that are not placeholder-shaped stay legal in prose and code fences.
+  assert.deepEqual(
+    findUnresolvedPlaceholders('`{{ value }}` and `{{lowercase}}` and `{ {SPACED} }`'),
+    [],
+  );
+});
+
+// --- Runtime-state write-safety coverage guard (#165) ---
+
+test('findRuntimeStateSafetyViolations rejects an unguarded runtime writer', () => {
+  const violations = findRuntimeStateSafetyViolations({
+    'tools/new-writer.md': 'Write `.effective-flow/new-state.json` now.\n',
+  });
+
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].context, 'tools/new-writer.md');
+  assert.equal(violations[0].line, 1);
+  assert.equal(
+    violations[0].reason,
+    'runtime mutation is not preceded by the canonical safety guard',
+  );
+});
+
+test('findRuntimeStateSafetyViolations accepts an earlier canonical include', () => {
+  const sources = {
+    'tools/guarded-writer.md': [
+      '```lazy-include',
+      'runtime-state-safety',
+      '```',
+      'Write `.effective-flow/new-state.json` now.',
+    ].join('\n'),
+  };
+
+  assert.deepEqual(findRuntimeStateSafetyViolations(sources), []);
+});
+
+test('findRuntimeStateSafetyViolations requires a lazy trigger that covers eager mutations', () => {
+  const migration = 'Write `.effective-flow/memory.json` migration marker.\n';
+  const narrow = {
+    'tools/cleanup.md': [
+      '```lazy-include',
+      'runtime-state-safety',
+      'when: confirmed legacy data is copied into `.effective-flow/`',
+      '```',
+      '```include',
+      'effective-flow-dir-migration',
+      '```',
+    ].join('\n'),
+    'shared/effective-flow-dir-migration.md': migration,
+  };
+  const complete = {
+    ...narrow,
+    'tools/cleanup.md': narrow['tools/cleanup.md'].replace(
+      'when: confirmed legacy data is copied into `.effective-flow/`',
+      'when: any confirmed legacy copy or removal, runtime migration, memory, or tracker-marker mutation is imminent',
+    ),
+  };
+
+  assert.deepEqual(
+    findRuntimeStateSafetyViolations(narrow).map(({ reason }) => reason),
+    [
+      'runtime-state-safety trigger does not cover this mutation: "confirmed legacy data is copied into `.effective-flow/`"',
+    ],
+  );
+  assert.deepEqual(findRuntimeStateSafetyViolations(complete), []);
+});
+
+test('findRuntimeStateSafetyViolations follows a guarded shared owner', () => {
+  const sources = {
+    'tools/owner.md': '```include\nruntime-writer\n```\n',
+    'shared/runtime-writer.md': [
+      '```lazy-include',
+      'runtime-state-safety',
+      '```',
+      'Write `.effective-flow/cache.json` now.',
+    ].join('\n'),
+  };
+
+  assert.deepEqual(findRuntimeStateSafetyViolations(sources), []);
+});
+
+test('findRuntimeStateSafetyViolations does not classify read-only config lookup as a writer', () => {
+  const sources = {
+    'tools/reader.md': 'Read `.effective-flow/config.json` as a transitional fallback.\n',
+  };
+
+  assert.deepEqual(findRuntimeStateSafetyViolations(sources), []);
+});
+
+test('findRuntimeStateSafetyViolations rejects adversarial mutation verbs', () => {
+  const mutations = [
+    ['persist', 'Persist state to'],
+    ['save', 'Save state to'],
+    ['append', 'Append data to'],
+    ['edit', 'Edit'],
+    ['touch', 'Touch'],
+    ['move', 'Move data into'],
+    ['unlink', 'Unlink'],
+    ['symlink', 'Symlink an artifact at'],
+    ['store', 'Store state in'],
+    ['record', 'Record state in'],
+    ['emit', 'Emit output to'],
+    ['replace', 'Replace'],
+  ];
+
+  for (const [name, instruction] of mutations) {
+    const violations = findRuntimeStateSafetyViolations({
+      [`tools/${name}.md`]: `${instruction} \`.effective-flow/${name}.json\`.\n`,
+    });
+    assert.equal(violations.length, 1, `${name} must be classified as a runtime mutation`);
+    assert.equal(
+      violations[0].reason,
+      'runtime mutation is not preceded by the canonical safety guard',
+    );
+  }
+});
+
+test('findRuntimeStateSafetyViolations ignores clear passive descriptions', () => {
+  const sources = {
+    'tools/descriptions.md': [
+      'The historical report was created under `.effective-flow/review/` by a previous release.',
+      'The existing `.effective-flow/cache.json` was saved by a previous release.',
+      'The documentation says the report is stored at `.effective-flow/review/report.md`.',
+      'The read-only `.effective-flow/memory.json` is not written by this lookup.',
+    ].join('\n'),
+  };
+
+  assert.deepEqual(findRuntimeStateSafetyViolations(sources), []);
+});
+
+test('findRuntimeStateSafetyViolations preserves shared-consumer ordering', () => {
+  const sharedWriter = 'Save state to `.effective-flow/shared-state.json`.\n';
+  const lateGuardSources = {
+    'tools/late-guard.md': [
+      '```include',
+      'runtime-writer',
+      '```',
+      '```lazy-include',
+      'runtime-state-safety',
+      '```',
+    ].join('\n'),
+    'shared/runtime-writer.md': sharedWriter,
+  };
+  const earlyGuardSources = {
+    'tools/early-guard.md': [
+      '```lazy-include',
+      'runtime-state-safety',
+      '```',
+      '```include',
+      'runtime-writer',
+      '```',
+    ].join('\n'),
+    'shared/runtime-writer.md': sharedWriter,
+  };
+
+  const lateViolations = findRuntimeStateSafetyViolations(lateGuardSources);
+  assert.equal(lateViolations.length, 1);
+  assert.equal(lateViolations[0].context, 'shared/runtime-writer.md');
+  assert.deepEqual(lateViolations[0].includeChain, [
+    'tools/late-guard.md',
+    'shared/runtime-writer.md',
+  ]);
+  assert.deepEqual(findRuntimeStateSafetyViolations(earlyGuardSources), []);
+});
+
+test('findRuntimeStateSafetyViolations accepts setup marker writes only after complete validation', () => {
+  const guard = '```lazy-include\nruntime-state-safety\n```';
+  const repair = 'Remove tracked `.effective-flow/config.json` with git rm --cached.';
+  const sentinel = 'Run git check-ignore --no-index -- .effective-flow/config.json.';
+  const target = 'Run git check-ignore --no-index -- .effective-flow/memory.json.';
+  const tracked = 'Run git ls-files -- .effective-flow/.';
+  const write = 'Write `.effective-flow/memory.json` migration marker.';
+  const safe = [guard, repair, sentinel, target, tracked, write].join('\n');
+  const unsafe = [guard, repair, sentinel, write, target, tracked].join('\n');
+
+  assert.deepEqual(
+    findRuntimeStateSafetyViolations({ 'tools/setup.md': safe }),
+    [],
+    'complete validation must permit the marker write',
+  );
+  assert.deepEqual(
+    findRuntimeStateSafetyViolations({ 'tools/setup.md': unsafe }).map(({ reason }) => reason),
+    ['setup runtime marker write is not preceded by complete target-state validation'],
+    'partial validation must not permit the marker write',
+  );
+});
+
+// --- Runtime-directory migration prerequisite coverage guard (#174) ---
+
+test('findRuntimeDirMigrationViolations rejects an absent or late migration prerequisite', () => {
+  const absent = {
+    'tools/absent.md': 'Write `.effective-flow/memory.json` now.\n',
+  };
+  const late = {
+    'tools/late.md': [
+      'Write `.effective-flow/cache.json` now.',
+      '```lazy-include',
+      'effective-flow-dir-migration',
+      '```',
+    ].join('\n'),
+  };
+
+  assert.deepEqual(
+    findRuntimeDirMigrationViolations(absent).map(({ context, line, reason }) => ({
+      context,
+      line,
+      reason,
+    })),
+    [
+      {
+        context: 'tools/absent.md',
+        line: 1,
+        reason: 'runtime mutation is not preceded by the runtime-directory migration prerequisite',
+      },
+    ],
+  );
+  assert.equal(findRuntimeDirMigrationViolations(late).length, 1);
+});
+
+test('findRuntimeDirMigrationViolations preserves nested shared-writer ordering', () => {
+  const sharedWriter = 'Save state to `.effective-flow/shared-state.json`.\n';
+  const lateSources = {
+    'tools/late-owner.md': [
+      '```include',
+      'runtime-writer',
+      '```',
+      '```lazy-include',
+      'effective-flow-dir-migration',
+      '```',
+    ].join('\n'),
+    'shared/runtime-writer.md': sharedWriter,
+  };
+  const earlySources = {
+    'tools/early-owner.md': [
+      '```lazy-include',
+      'effective-flow-dir-migration',
+      '```',
+      '```include',
+      'runtime-writer',
+      '```',
+    ].join('\n'),
+    'shared/runtime-writer.md': sharedWriter,
+  };
+
+  const [violation] = findRuntimeDirMigrationViolations(lateSources);
+  assert.equal(violation.context, 'shared/runtime-writer.md');
+  assert.deepEqual(violation.includeChain, ['tools/late-owner.md', 'shared/runtime-writer.md']);
+  assert.deepEqual(findRuntimeDirMigrationViolations(earlySources), []);
+});
+
+test('findRuntimeDirMigrationViolations exempts the migration fragment itself', () => {
+  const sources = {
+    'tools/writer.md': [
+      '```lazy-include',
+      'effective-flow-dir-migration',
+      '```',
+      'Write `.effective-flow/cache.json` now.',
+    ].join('\n'),
+    'shared/effective-flow-dir-migration.md':
+      'Write `.effective-flow/memory.json` migration marker.\n',
+  };
+
+  assert.deepEqual(findRuntimeDirMigrationViolations(sources), []);
+  assert.deepEqual(
+    findRuntimeDirMigrationViolations(sources, {
+      rootContexts: ['shared/effective-flow-dir-migration.md'],
+    }),
+    [],
+  );
+});
+
+test('migration-fragment mutations still require the runtime-state safety guard', () => {
+  const sources = {
+    'tools/unguarded.md': '```include\neffective-flow-dir-migration\n```\n',
+    'shared/effective-flow-dir-migration.md':
+      'Write `.effective-flow/memory.json` migration marker.\n',
+  };
+
+  assert.deepEqual(
+    findRuntimeStateSafetyViolations(sources).map(({ context, reason }) => ({ context, reason })),
+    [
+      {
+        context: 'shared/effective-flow-dir-migration.md',
+        reason: 'runtime mutation is not preceded by the canonical safety guard',
+      },
+    ],
+  );
+});
+
+// --- Shared memory-state mutation coverage guard (#176) ---
+
+test('findMemoryStateContractViolations rejects an absent or late memory contract', () => {
+  const absent = {
+    'tools/absent.md': 'Write `.effective-flow/memory.json` now.\n',
+  };
+  const late = {
+    'tools/late.md': [
+      'Write `.effective-flow/memory.json` now.',
+      '```include',
+      'memory-state',
+      '```',
+    ].join('\n'),
+  };
+
+  assert.deepEqual(
+    findMemoryStateContractViolations(absent).map(({ context, line, reason }) => ({
+      context,
+      line,
+      reason,
+    })),
+    [
+      {
+        context: 'tools/absent.md',
+        line: 1,
+        reason: 'memory mutation is not preceded by the shared memory-state contract',
+      },
+    ],
+  );
+  assert.equal(findMemoryStateContractViolations(late).length, 1);
+});
+
+test('findMemoryStateContractViolations follows a shared owner and preserves ordering', () => {
+  const writer = 'Update `.effective-flow/memory.json` now.\n';
+  const guarded = {
+    'tools/guarded.md': '```include\nowner\n```\n',
+    'shared/owner.md': ['```include', 'memory-state', '```', writer].join('\n'),
+    'shared/memory-state.md': 'Canonical protocol.\n',
+  };
+  const late = {
+    'tools/late.md': '```include\nowner\n```\n',
+    'shared/owner.md': [writer, '```include', 'memory-state', '```'].join('\n'),
+    'shared/memory-state.md': 'Canonical protocol.\n',
+  };
+
+  assert.deepEqual(findMemoryStateContractViolations(guarded), []);
+  const [violation] = findMemoryStateContractViolations(late);
+  assert.equal(violation.context, 'shared/owner.md');
+  assert.deepEqual(violation.includeChain, ['tools/late.md', 'shared/owner.md']);
+});
+
+test('the memory-state contract may describe its own atomic writes', () => {
+  assert.deepEqual(
+    findMemoryStateContractViolations(
+      {
+        'shared/memory-state.md': 'Atomically replace `.effective-flow/memory.json`.\n',
+      },
+      { rootContexts: ['shared/memory-state.md'] },
+    ),
+    [],
+  );
+});
+
+test('delivered memory coverage does not follow an unresolved eager include fence', () => {
+  const unresolvedDelivery = {
+    'tools/eager.md': [
+      '```include',
+      'memory-state',
+      '```',
+      'Write `.effective-flow/memory.json` now.',
+    ].join('\n'),
+    'shared/memory-state.md': '## Shared memory-state mutation\n',
+  };
+  const resolvedDelivery = {
+    'tools/eager.md': [
+      '## Shared memory-state mutation',
+      'Write `.effective-flow/memory.json` now.',
+    ].join('\n'),
+  };
+
+  assert.equal(
+    findMemoryStateContractViolations(unresolvedDelivery, { delivered: true }).length,
+    1,
+  );
+  assert.deepEqual(findMemoryStateContractViolations(resolvedDelivery, { delivered: true }), []);
+});
+
+// --- Consumer-document command guard (#160) ---
+
+test('findProhibitedConsumerScriptCommands allows explanatory filename mentions', () => {
+  const prose = [
+    '`install-skill.sh` is a maintainer utility.',
+    'The local-link.sh and local-common.sh files remain on the source branch.',
+    'See https://github.com/example/project/blob/develop/install-skill.sh for its implementation.',
+  ].join('\n');
+  assert.deepEqual(findProhibitedConsumerScriptCommands(prose), []);
+});
+
+test('findProhibitedConsumerScriptCommands rejects direct local script invocations', () => {
+  const markdown = [
+    'Install it:',
+    '```sh',
+    './install-skill.sh',
+    './local-link.sh',
+    '```',
+    'Do not suggest `./local-common.sh` inline either.',
+  ].join('\n');
+  assert.deepEqual(findProhibitedConsumerScriptCommands(markdown), [
+    { line: 3, command: './install-skill.sh' },
+    { line: 4, command: './local-link.sh' },
+    { line: 6, command: './local-common.sh' },
+  ]);
+});
+
+test('findProhibitedConsumerScriptCommands rejects shell-interpreter invocations', () => {
+  const markdown = [
+    'bash install-skill.sh',
+    'sh ./local-link.sh',
+    'source local-common.sh',
+    'zsh ./install-skill.sh local',
+  ].join('\n');
+  assert.deepEqual(findProhibitedConsumerScriptCommands(markdown), [
+    { line: 1, command: 'bash install-skill.sh' },
+    { line: 2, command: 'sh ./local-link.sh' },
+    { line: 3, command: 'source local-common.sh' },
+    { line: 4, command: 'zsh ./install-skill.sh' },
+  ]);
+});
+
+test('findRemoteTrackerRecipeViolations rejects prompt-encoded tracker recipes', () => {
+  const markdown = [
+    'Use `gh api repos/o/r/issues`.',
+    'Run `tea issue edit 4`.',
+    'Read `git remote get-url origin`.',
+    'Assemble `mutation($id: ID!) { resolveReviewThread(input: { threadId: $id }) }`.',
+  ].join('\n');
+  assert.deepEqual(
+    findRemoteTrackerRecipeViolations(markdown).map(({ kind }) => kind),
+    ['direct-gh-command', 'direct-tea-command', 'manual-origin-parse', 'manual-graphql'],
+  );
+});
+
+test('findRemoteTrackerRecipeViolations allows provider-neutral helper instructions', () => {
+  assert.deepEqual(
+    findRemoteTrackerRecipeViolations(
+      'Invoke `node <skill-root>/scripts/remote-tracker.mjs issue-read` and handle its envelope.',
+    ),
+    [],
+  );
+});
+
+test('remote-tracker recipe guard scans router, tools, shared fragments, and agents', () => {
+  const buildSource = readFileSync(new URL('../build.mjs', import.meta.url), 'utf8');
+  assert.match(buildSource, /\[TOOLS_DIR, SHARED_DIR, AGENTS_DIR\]/);
+  assert.match(
+    buildSource,
+    /findRemoteTrackerRecipeViolations\(readFileSync\(ROUTER_SRC, 'utf8'\)\)/,
+  );
+});
+
+// --- Retired consumer-configuration references ---
+
+test('findRetiredConfigDocViolations allows the retired path only in its migration section', () => {
+  const markdown = [
+    '# Configuration',
+    '',
+    '## Migrating a legacy JSON configuration',
+    '',
+    'Setup can import `.effective-flow/config.json` into the project-setup ADR.',
+    '',
+    '### What setup preserves',
+    '',
+    'The old `.effective-flow/config.json` remains on disk.',
+  ].join('\n');
+
+  assert.deepEqual(
+    findRetiredConfigDocViolations('docs/user-guide/configuration.md', markdown),
+    [],
+  );
+});
+
+test('findRetiredConfigDocViolations rejects operational retired-config prose', () => {
+  const markdown = [
+    '# Configuration',
+    '',
+    'Edit `.effective-flow/config.json` to choose remote mode.',
+    '',
+    '## Migrating a legacy JSON configuration',
+    '',
+    'Migration prose may name `.effective-flow/config.json`.',
+  ].join('\n');
+
+  assert.deepEqual(findRetiredConfigDocViolations('docs/user-guide/configuration.md', markdown), [
+    {
+      file: 'docs/user-guide/configuration.md',
+      line: 3,
+      kind: 'retired-config-outside-migration',
+      reference: '.effective-flow/config.json',
+    },
+  ]);
+});
+
+test('findRetiredConfigDocViolations requires both an allowlisted file and section', () => {
+  const markdown = [
+    '# Troubleshooting',
+    '',
+    '## Migrating a legacy JSON configuration',
+    '',
+    'Read `.effective-flow/config.json`.',
+  ].join('\n');
+
+  assert.deepEqual(findRetiredConfigDocViolations('docs/user-guide/troubleshooting.md', markdown), [
+    {
+      file: 'docs/user-guide/troubleshooting.md',
+      line: 5,
+      kind: 'retired-config-outside-migration',
+      reference: '.effective-flow/config.json',
+    },
+  ]);
+});
+
+test('findRetiredConfigDocViolations always rejects the retired negation with actionable diagnostics', () => {
+  const markdown = [
+    '# Configuration',
+    '',
+    '## Migrating a legacy JSON configuration',
+    '',
+    'Do not restore `!.effective-flow/config.json`.',
+  ].join('\n');
+
+  assert.deepEqual(findRetiredConfigDocViolations('./docs/user-guide/configuration.md', markdown), [
+    {
+      file: 'docs/user-guide/configuration.md',
+      line: 5,
+      kind: 'retired-negation',
+      reference: '!.effective-flow/config.json',
+    },
+  ]);
+});
+
+// --- Retired brand references ---
+
+test('findStaleBrandReferences rejects every capitalized leftover of the retired brand', () => {
+  const markdown = [
+    '# Title',
+    '',
+    'Firmo keeps the mapping.',
+    'The placeholder {{FIRMO}} renders the bare invocation.',
+  ].join('\n');
+
+  assert.deepEqual(findStaleBrandReferences(markdown), [
+    { line: 3, reference: 'Firmo' },
+    { line: 4, reference: 'FIRMO' },
+  ]);
+});
+
+test('findStaleBrandReferences allows the frozen setup marker and the lowercase surfaces', () => {
+  const markdown = [
+    'An old marker `**Firmo project setup:** <path>` is recognized as equivalent on read.',
+    'Labels keep the `firmo-` prefix and `.firmo/` paths stay readable.',
+  ].join('\n');
+
+  assert.deepEqual(findStaleBrandReferences(markdown), []);
+});
+
+test('findStaleBrandReferences still reports a stale mention beside the frozen marker', () => {
+  const markdown = 'Firmo writes `**Firmo project setup:**` into AGENTS.md.';
+
+  assert.deepEqual(findStaleBrandReferences(markdown), [{ line: 1, reference: 'Firmo' }]);
+});
+
+test('findStaleBrandReferences reads build-script comments and string literals alike', () => {
+  const script = [
+    "const FROZEN = '**Firmo project setup:**';",
+    '// otherwise Firmo carries a second, drifting standards copy.',
+  ].join('\n');
+
+  assert.deepEqual(findStaleBrandReferences(script), [{ line: 2, reference: 'Firmo' }]);
+});
+
+test('the stale brand guard scans the source tree and both build scripts', () => {
+  const buildSource = readFileSync(new URL('../build.mjs', import.meta.url), 'utf8');
+  assert.match(buildSource, /findStaleBrandReferences\(readFileSync\(file, 'utf8'\)\)/);
+  assert.match(buildSource, /visit\(SOURCE_DIR\);/);
+  assert.match(
+    buildSource,
+    /const sourceFiles = \[join\(ROOT_DIR, 'build\.mjs'\), join\(ROOT_DIR, 'build-lib\.mjs'\)\];/,
+  );
+  assert.match(buildSource, /frozen backcompat marker "\*\*Firmo project setup:\*\*"/);
+});
+
+// Read the stale brand guard's own block out of build.mjs. The enumerated file
+// names below also occur in the neighbouring guards, so a whole-file match
+// would pass even when this guard never sees them.
+const readStaleBrandGuardBlock = () => {
+  const buildSource = readFileSync(new URL('../build.mjs', import.meta.url), 'utf8');
+  const start = buildSource.indexOf(
+    '// --- Guard: the retired brand never returns to the sources ---',
+  );
+  assert.ok(start >= 0, 'build.mjs must still carry the stale brand guard');
+  const rest = buildSource.slice(start);
+  const end = rest.indexOf('\n// --- ', 1);
+  assert.ok(end > 0, 'the stale brand guard must still be followed by another build section');
+  return rest.slice(0, end);
+};
+
+test('the stale brand guard reports a brand-carrying file name as its own kind', () => {
+  const block = readStaleBrandGuardBlock();
+  // The base name is scanned separately from the content: prepending it would
+  // shift every reported content line by one.
+  assert.match(block, /findStaleBrandReferences\(basename\(file\)\)/);
+  assert.ok(
+    !/basename\(file\)[^\n]*\+[^\n]*readFileSync/.test(block),
+    'the file name must not be prepended to the scanned content',
+  );
+  assert.match(block, /kind: 'file name'/);
+  assert.match(block, /kind \? ` {2}\$\{file\}: \$\{kind\}: \$\{reference\}`/);
+});
+
+test('the stale brand guard scans the enumerated normative documentation', () => {
+  const block = readStaleBrandGuardBlock();
+  for (const literal of [
+    "join(ROOT_DIR, 'AGENTS.md')",
+    "join(ROOT_DIR, 'README.md.src')",
+    "join(ROOT_DIR, 'README.md')",
+    "join(ROOT_DIR, 'docs', 'readme-theme.md')",
+    "join(ROOT_DIR, 'docs', 'adr')",
+    "join(ROOT_DIR, 'docs', 'developer-guide')",
+    'DOCS_USER_GUIDE',
+  ]) {
+    assert.ok(block.includes(literal), `the stale brand guard must scan ${literal}`);
+  }
+  // The exclusions are deliberate, so the guard states each reason rather than
+  // leaving a later reader to "complete" the list.
+  for (const excluded of ['docs/plan/', 'docs/review/', 'local-common.sh']) {
+    assert.ok(block.includes(excluded), `the stale brand guard must justify excluding ${excluded}`);
+  }
+});
+
+test('no scanned source outside the frozen marker carries the retired brand', () => {
+  const scanned = [];
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, directory);
+      if (entry.isDirectory()) visit(child);
+      else if (/\.(?:md|mjs|json)$/.test(entry.name)) scanned.push([entry.name, child]);
+    }
+  };
+  visit(new URL('../src/', import.meta.url));
+  for (const directory of ['docs/adr/', 'docs/developer-guide/', 'docs/user-guide/']) {
+    visit(new URL(`../${directory}`, import.meta.url));
+  }
+  for (const name of ['build.mjs', 'build-lib.mjs', 'AGENTS.md', 'README.md.src', 'README.md']) {
+    scanned.push([name, new URL(`../${name}`, import.meta.url)]);
+  }
+  // Enumerated individually by the guard because it sits at the top level of
+  // `docs/`, outside the three scanned directories. The guard scans a file's
+  // base name, so pair that base name with the path rather than scanning the
+  // path itself.
+  scanned.push(['readme-theme.md', new URL('../docs/readme-theme.md', import.meta.url)]);
+
+  const violations = [];
+  for (const [name, url] of scanned) {
+    for (const hit of findStaleBrandReferences(name)) {
+      violations.push(`${name}: file name: ${hit.reference}`);
+    }
+    for (const hit of findStaleBrandReferences(readFileSync(url, 'utf8'))) {
+      violations.push(`${name}:${hit.line}: ${hit.reference}`);
+    }
+  }
+
+  assert.deepEqual(violations, []);
+});
+
+test('the build scripts stay clean on the marker exemption, not on being skipped', () => {
+  // A guard blind to its own host file is how the first leftover survived in
+  // build.mjs. Both scripts do carry a capitalized occurrence -- the frozen
+  // marker literal -- so a clean scan here proves the exemption ran rather than
+  // the file being passed over.
+  for (const name of ['build.mjs', 'build-lib.mjs']) {
+    const source = readFileSync(new URL(`../${name}`, import.meta.url), 'utf8');
+    const capitalized = [...source.matchAll(/firmo/gi)]
+      .map((match) => match[0])
+      .filter((reference) => reference !== 'firmo');
+
+    assert.deepEqual(capitalized, ['Firmo'], `${name} must carry only the frozen marker`);
+    assert.deepEqual(findStaleBrandReferences(source), [], `${name} must report no violation`);
+  }
+});
+
+// --- Target-project language contract ---
+
+test('checked-in language configuration remains complete and migration-only', () => {
+  const readSource = (path) => readFileSync(new URL(`../src/${path}`, import.meta.url), 'utf8');
+  const languageRules = readSource('shared/language-rules.md');
+
+  for (const key of [
+    'language.project',
+    'language.source',
+    'language.documentation.user',
+    'language.documentation.technical',
+    'language.workflow',
+    'language.forge',
+    'language.git',
+    'language.chat',
+  ]) {
+    assert.match(languageRules, new RegExp(`\\b${key.replaceAll('.', '\\.')}\\b`));
+  }
+  // The fragment test pins the non-inheritance where the fragment states it. The same rule is
+  // restated here, in the file the resolver and every agent carry, and mutation showed all three
+  // ways of breaking it left the suite green: deleting the carve-out, inverting it to fall
+  // through to `language.project`, and dropping the table row. The key-presence loop above does
+  // not cover any of them -- it matches the key anywhere in the file, so the carve-out prose
+  // satisfies it once the row is gone, and the row satisfies it once the prose is gone.
+  assert.match(languageRules, /\|\s*`language\.chat`\s*\|/);
+  assert.match(languageRules, /`language\.chat` is not an artifact\s+surface/);
+  assert.match(
+    languageRules,
+    /for a missing \*\*and\*\* for\s+an invalid value — both mirror the user instead of falling through to `language\.project`/,
+  );
+  // The unqualified form this change deliberately narrowed. Left standing it would read as
+  // covering `language.chat` too, which is the collapse the carve-out exists to prevent.
+  assert.doesNotMatch(languageRules, /A missing override means inheritance/);
+
+  // Languages resolve once per run; an orchestrated agent never re-reads the setup ADR.
+  assert.match(languageRules, /resolves every required surface once per run/i);
+  assert.match(languageRules, /must not\s+independently re-read the project setup ADR/i);
+
+  // The forge issue-reference keywords are machine tokens. Left out of these enumerations, a run
+  // with `language.forge: de` translated the closing line, the code host registered no closing
+  // link, and the delivered issue stayed open after merge. `Refs` is the non-closing counterpart,
+  // never a variant of the auto-close keyword, so the group is named without collapsing the two.
+  // One assertion per source site that states the rule.
+  assert.match(
+    languageRules,
+    /forge\s+issue-reference keywords — the auto-close keyword with its variants \(`Closes #<issue>`\) and the\s+non-closing `Refs #<issue>` — are not localized/,
+  );
+  assert.match(
+    readSource('shared/issue-tracker-forge.md').replace(/\s+/g, ' '),
+    /as do the forge issue-reference keywords — the auto-close keyword with its variants \(`Closes #<issue>`\) and the non-closing `Refs #<issue>` —/,
+  );
+  assert.match(
+    readSource('shared/tracker-target.md').replace(/\s+/g, ' '),
+    /Both forge reference keywords above are machine tokens — the auto-close keyword with its variants and the non-closing `Refs` alike/,
+  );
+  for (const tool of ['tools/apply-issues.md', 'tools/apply-review-remote.md', 'tools/pr.md']) {
+    assert.match(
+      readSource(tool).replace(/\s+/g, ' '),
+      /(?:Both forge keywords are machine tokens|the non-closing `Refs` — is a machine token) the code host parses: (?:write them|keep it) in English whatever `language\.forge` resolves to, never translated/,
+      `missing forge issue-reference keyword language rule: ${tool}`,
+    );
+  }
+
+  const agentDomains = {
+    'marketing-writer': ['language.documentation.user'],
+    'docs-writer': [
+      'language.documentation.user',
+      'language.documentation.technical',
+      'language.git',
+    ],
+    'code-documenter': ['language.source'],
+    'test-writer': ['language.source'],
+    'e2e-tester': ['language.source'],
+    'code-validator': ['language.source'],
+  };
+  for (const [agent, domains] of Object.entries(agentDomains)) {
+    const source = readSource(`agents/${agent}.md`);
+    for (const domain of domains) assert.match(source, new RegExp(domain.replaceAll('.', '\\.')));
+    // An orchestrated agent takes its languages as supplied; only direct invocation resolves.
+    assert.match(source, /supplied by the\s+orchestrator/is);
+    assert.match(source, /direct\s+invocation resolves the shared language rule itself/is);
+  }
+
+  const planStatus = readSource('shared/plan-status.md');
+  for (const marker of [
+    '**Planungsstatus:** Nicht umgesetzt',
+    '**Planungsstatus:** Umgesetzt',
+    '**Plan status:** Not implemented',
+    '**Plan status:** Implemented',
+  ]) {
+    assert.ok(planStatus.includes(marker), `missing bilingual plan form: ${marker}`);
+  }
+
+  const setup = readSource('tools/setup.md');
+  for (const form of [
+    '# Effective Flow project setup',
+    '# Effective-Flow-Projektsetup',
+    '| Key | Value |',
+    '| Schlüssel | Wert |',
+  ]) {
+    assert.ok(setup.includes(form), `missing bilingual setup form: ${form}`);
+  }
+  assert.doesNotMatch(
+    setup,
+    /\|\s*(?:review\.|worktree\.|language\.)[^|]*\|[^|]*(?:fokussiert|wahr|falsch|\(leer\))[^|]*\|/i,
+  );
+
+  const markerReferences = ['tools', 'shared', 'agents'].flatMap((directory) =>
+    readdirSync(new URL(`../src/${directory}/`, import.meta.url))
+      .filter((file) => file.endsWith('.md'))
+      .sort()
+      .map((file) => ({ file: `${directory}/${file}`, source: readSource(`${directory}/${file}`) }))
+      .filter(({ source }) => source.includes('plan.markerLanguage'))
+      .map(({ file, source }) => [file, source.match(/plan\.markerLanguage/g).length]),
+  );
+  // setup's Guided language question, with its legacy-key migration, lives in the lazy
+  // `setup-guided-core-switches` fragment; the core keeps the schema and summary mentions.
+  assert.deepEqual(markerReferences, [
+    ['tools/setup.md', 2],
+    ['shared/config-setup-migration.md', 1],
+    ['shared/language-rules.md', 2],
+    ['shared/setup-guided-core-switches.md', 2],
+  ]);
+});
+
+test('the chat-language fragment pins its domain, its mirror default and its exceptions', () => {
+  const fragment = readFileSync(new URL('../src/shared/chat-language.md', import.meta.url), 'utf8');
+  // Matched against whitespace-normalized prose. Every assertion below is about a word
+  // sequence, never about where a line happens to wrap; pinning the wrapping too would
+  // turn a harmless re-wrap into a failure, and a failure nobody believes is the one that
+  // gets "fixed" by loosening the assertion.
+  const prose = fragment.replace(/\s+/g, ' ');
+
+  // Eager presence is not execution. The fragment ships in 26 tools, but its value is read
+  // through a lazy config pointer, so a run that emits its first status line before resolving
+  // would never come back -- the "silently not running" failure mode the eager decision was
+  // made to avoid, reappearing one level down. The timing is therefore part of the rule.
+  assert.match(
+    prose,
+    /Resolve `language\.chat` once, before this run's first interactive output, and hold it for the whole run/,
+  );
+
+  // The value domain, bound to the sentence that names the key so it cannot drift onto some
+  // other subject. `de`/`en` alone would still be satisfied by a source that re-admitted a
+  // third token, so the absence of `auto` is asserted twice: once as the stated rule, and
+  // once as a count, because a re-introduced `auto` value would be a *second* occurrence
+  // beside this negation.
+  assert.match(prose, /It is `de` or `en`; there is no `auto`/);
+  // Counting backticked `auto` was tried and does not guard this: re-admitting the value
+  // means rewriting the negation in the same edit, so the count stays at one, while an
+  // unbackticked "a value of auto also means mirror" slips past entirely. Assert the shape
+  // a permissive rule actually takes instead, spelling-insensitively.
+  assert.doesNotMatch(
+    prose,
+    /\bor\s+`?auto`?\b/i,
+    'the domain stays two-valued; `auto` is never offered as a third',
+  );
+
+  // The one key that does not inherit. Asserting only "mirror the user's language" would
+  // still pass if the never-inherit half were dropped, and dropping it is exactly how
+  // `language.chat` would silently collapse into the other seven keys.
+  assert.match(
+    prose,
+    /a missing row means \*\*mirror the user's language\*\*, never inherit `language\.project`/,
+  );
+  assert.match(
+    prose,
+    /Precedence: an explicit in-message request, then a configured value, then the conversation language, then `language\.project`, then `en`/,
+  );
+  // An invalid value is the absent row, not a jump up the chain -- the same non-inheritance,
+  // stated for the error path.
+  assert.match(
+    prose,
+    /An invalid value is reported and treated as an absent row — mirror, not a jump to `language\.project`/,
+  );
+
+  // Setup Profile is the one deliberate bootstrap exception. It may bind the answer after the
+  // first ask so the second ask uses the selected language, but the pending row still crosses the
+  // same common confirmation gate. Every legacy setup mode and every other tool stays resolve-once.
+  assert.match(
+    prose,
+    /sole bootstrap exception is `\{\{SKILL:setup\}\}` in Profile mode.*asks `Chat` in that language as its first substantive question.*binds the selected `de`, `en`, or recognizable mirrored conversation language once for its second question and the remainder of that setup run/,
+  );
+  assert.match(
+    prose,
+    /Mirror is pending removal of `language\.chat`; English and German are pending `en`\/`de`, and none is persisted before setup's common confirmation/,
+  );
+  assert.match(
+    prose,
+    /Express, Guided, and every non-setup tool retain the ordinary resolve-once-before-output rule and never rebind their chat language during a run/,
+  );
+
+  // The `ask` block is the only interactive surface built as a literal parameter list, so a
+  // run holding "translate the question" would pass header and labels through untouched and
+  // produce a half-translated dialog. The parts are named for that reason.
+  assert.match(prose, /an `ask` block's header, question, option labels and descriptions/);
+
+  // Delegated output is relayed, never translated: the key is not handed down, so a run may
+  // be visibly bilingual.
+  assert.match(prose, /Delegated output is relayed \*\*verbatim\*\*: this key is not handed down/);
+
+  // The three documented exceptions, asserted as one clause. Naming them separately would let
+  // the shared reason -- that all three precede any config read -- be lost while each name
+  // still appeared somewhere in the file.
+  assert.match(
+    prose,
+    /The router catalog, `\{\{SKILL:version\}\}` and the `pr-review` notice precede any config read and stay on the conversation language/,
+  );
+
+  // The fragment is eager in 26 tools, so it must stay a pointer host rather than inlining
+  // the config locator or the typography rules into every one of them.
+  const { eager, lazy } = collectIncludeNames(fragment);
+  assert.deepEqual([...eager], [], 'chat-language must eager-include nothing');
+  assert.deepEqual([...lazy].sort(), ['config-migration', 'typography-rules']);
+});
+
+test('workflow report consumers retain bilingual status and direct-finding prose', () => {
+  const readSource = (path) => readFileSync(new URL(`../src/${path}`, import.meta.url), 'utf8');
+  const localReviewStatusConsumers = [
+    'shared/unresolved-review-report.md',
+    'shared/build-delegated-run.md',
+    'tools/fix.md',
+    'tools/refactor.md',
+    'tools/maintain.md',
+  ];
+  for (const file of localReviewStatusConsumers) {
+    const source = readSource(file);
+    assert.match(source, /Open.*Not implemented/s);
+    assert.match(source, /Offen.*Nicht umgesetzt/s);
+  }
+
+  const workflowReport = readSource('shared/unresolved-review-report.md');
+  assert.match(workflowReport, /English: `- \*\*Status\*\*: Fixed \| Open \| Not implemented`/);
+  assert.match(workflowReport, /German: `- \*\*Status\*\*: Behoben \| Offen \| Nicht umgesetzt`/);
+
+  const build = readSource('shared/build-delegated-run.md');
+  assert.match(build, /status values \(`Behoben`, `Offen \/ Nicht umgesetzt`\)/);
+  assert.doesNotMatch(build, /status tokens used by report readers remain unchanged/);
+
+  const review = readSource('tools/review.md');
+  for (const directFindingText of [
+    'direct issue is created per admitted root cause',
+    'no new review epic/container is created',
+    '**Create direct finding issues:**',
+    '**No new container:**',
+  ]) {
+    assert.ok(
+      review.includes(directFindingText),
+      `review is missing direct-finding prose: ${directFindingText}`,
+    );
+  }
+});
+
+test('durable follow-up gate ownership and include documentation reconcile', () => {
+  const manifest = parseSkillOwnershipManifest(
+    readFileSync(new URL('../docs/developer-guide/skill-ownership.json', import.meta.url), 'utf8'),
+  );
+  const relationship = (skill) =>
+    manifest.relationships
+      .find((entry) => entry.skill === skill)
+      .consumers.find((entry) => entry.consumer === 'durable-follow-up-gate');
+  assert.deepEqual(relationship('effective-product'), {
+    consumer: 'durable-follow-up-gate',
+    classification: 'delegate',
+  });
+  assert.deepEqual(relationship('effective-delivery'), {
+    consumer: 'durable-follow-up-gate',
+    classification: 'delegate',
+  });
+
+  const guide = readFileSync(
+    new URL('../docs/developer-guide/skill-ownership.md', import.meta.url),
+    'utf8',
+  );
+  const table = parseSkillOwnershipTable(guide);
+  for (const skill of ['effective-product', 'effective-delivery']) {
+    assert.ok(
+      table.find((row) => row.skill === skill).consumers.includes('durable-follow-up-gate'),
+      `${skill} guide row must name durable-follow-up-gate`,
+    );
+  }
+
+  const buildGuide = readFileSync(
+    new URL('../docs/developer-guide/build-system.md', import.meta.url),
+    'utf8',
+  );
+  assert.match(buildGuide, /`durable-follow-up-gate` is the single semantic source/);
+  // Gate order is the invariant: admission precedes ID reservation and artifact writes.
+  assert.match(buildGuide, /Keep admission before ID reservation and\s+artifact writes/);
+});
+
+// --- ADR ownership-contract consistency ---
+
+test('findStaleAdrContractClaims rejects a deliberate divergence claim', () => {
+  assert.deepEqual(
+    findStaleAdrContractClaims(
+      'The living ADR model is a deliberate divergence from the host `effective-product` skill.',
+    ),
+    [
+      {
+        line: 1,
+        kind: 'stale-divergence',
+        claim: 'deliberate divergence',
+      },
+    ],
+  );
+});
+
+test('findStaleAdrContractClaims supports verb-adverb divergence order', () => {
+  assert.deepEqual(
+    findStaleAdrContractClaims('Effective Flow diverges deliberately from effective-product.'),
+    [{ line: 1, kind: 'stale-divergence', claim: 'diverges deliberately' }],
+  );
+});
+
+test('findStaleAdrContractClaims supports intentional divergence wording', () => {
+  assert.deepEqual(
+    findStaleAdrContractClaims('Effective Flow intentionally diverges from effective-product.'),
+    [{ line: 1, kind: 'stale-divergence', claim: 'intentionally diverges' }],
+  );
+});
+
+test('findStaleAdrContractClaims allows locally negated divergence wording', () => {
+  assert.deepEqual(
+    findStaleAdrContractClaims('This is not a deliberate divergence from effective-product.'),
+    [],
+  );
+  assert.deepEqual(
+    findStaleAdrContractClaims(
+      'Effective Flow no longer deliberately diverges from effective-product.',
+    ),
+    [],
+  );
+});
+
+test('findStaleAdrContractClaims rejects immutable and numbered skill-contract variants', () => {
+  const markdown = [
+    '# ADR guidance',
+    '',
+    'The `effective-product` skill requires immutable ADRs.',
+    '',
+    'Numbered records are mandatory under `effective-product`.',
+  ].join('\n');
+
+  assert.deepEqual(findStaleAdrContractClaims(markdown), [
+    {
+      line: 3,
+      kind: 'immutable-numbered-skill-contract',
+      claim: 'immutable',
+    },
+    {
+      line: 5,
+      kind: 'immutable-numbered-skill-contract',
+      claim: 'Numbered',
+    },
+  ]);
+});
+
+test('findStaleAdrContractClaims accepts the aligned ownership wording', () => {
+  const markdown =
+    'The authoritative `effective-product` skill discovers and follows this repository’s living, mutable, numberless, slug-named ADR convention.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), []);
+});
+
+test('findStaleAdrContractClaims allows explicitly corrected historical context', () => {
+  const markdown = [
+    'Earlier versions described the slug model as a deliberate divergence from an allegedly',
+    'immutable/numbered `effective-product` skill. That premise is outdated: `effective-product`',
+    'now supports the declared living model, so this is no longer a divergence.',
+  ].join('\n');
+  assert.deepEqual(findStaleAdrContractClaims(markdown), []);
+});
+
+test('findStaleAdrContractClaims rejects historical wording without an explicit correction', () => {
+  const markdown =
+    'Earlier guidance called `effective-product` immutable and numbered, and this remains our contract.';
+  assert.equal(findStaleAdrContractClaims(markdown).length, 2);
+});
+
+test('findStaleAdrContractClaims does not let corrected history waive a later current claim', () => {
+  const markdown =
+    'Earlier guidance described a deliberate divergence from `effective-product`, but that premise is outdated; Effective Flow now deliberately diverges from `effective-product`.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), [
+    { line: 1, kind: 'stale-divergence', claim: 'deliberately diverges' },
+  ]);
+});
+
+test('findStaleAdrContractClaims evaluates later immutable claims independently', () => {
+  const markdown =
+    'Earlier guidance said effective-product is immutable and numbered. That premise is outdated. Current guidance says effective-product is immutable.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), [
+    { line: 1, kind: 'immutable-numbered-skill-contract', claim: 'immutable' },
+  ]);
+});
+
+test('findStaleAdrContractClaims associates an immediate skill-contract continuation', () => {
+  const markdown =
+    'The effective-product skill defines the contract. It requires immutable, numbered ADRs.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), [
+    { line: 1, kind: 'immutable-numbered-skill-contract', claim: 'immutable' },
+    { line: 1, kind: 'immutable-numbered-skill-contract', claim: 'numbered' },
+  ]);
+});
+
+test('findStaleAdrContractClaims allows locally negated immutable and numbered wording', () => {
+  const markdown = 'The effective-product skill does not require immutable or numbered ADRs.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), []);
+});
+
+test('findStaleAdrContractClaims does not associate an unrelated divergence sentence', () => {
+  const markdown =
+    'Effective Flow deliberately diverges from another policy. The effective-product skill follows the repository convention.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), []);
+});
+
+test('findStaleAdrContractClaims does not use unrelated old and support prose as a waiver', () => {
+  const markdown =
+    'The old ADR directory remains readable. The effective-product skill requires immutable ADRs. The parser now supports tables.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), [
+    { line: 1, kind: 'immutable-numbered-skill-contract', claim: 'immutable' },
+  ]);
+});
+
+test('findStaleAdrContractClaims requires history in the stale candidate sentence', () => {
+  const markdown =
+    'Earlier releases used Markdown. Effective Flow deliberately diverges from effective-product. The build now supports Windows.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), [
+    { line: 1, kind: 'stale-divergence', claim: 'deliberately diverges' },
+  ]);
+});
+
+test('findStaleAdrContractClaims ignores numbered legacy compatibility without a skill claim', () => {
+  const markdown =
+    'Existing numbered legacy ADRs remain readable; new records use the numberless slug convention.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), []);
+});
+
+// The guard runs over this file in `node build.mjs`, and the reframing added prose about the
+// living slug model being a default rather than the convention. `STALE_ADR_DESCRIPTOR_RE` is a
+// bare word match, so a sentence phrased around "numbered" or "immutable" near the skill name
+// would break the build rather than the suite.
+test('findStaleAdrContractClaims reports no hit for the reframed adr-convention fragment', () => {
+  const convention = readFileSync(
+    new URL('../src/shared/adr-convention.md', import.meta.url),
+    'utf8',
+  );
+  assert.deepEqual(findStaleAdrContractClaims(convention), []);
+});
+
+// --- Delivery-branch documentation transforms ---
+
+test('rewriteDeveloperGuideLinks rewrites the root-README form to an absolute URL', () => {
+  const out = rewriteDeveloperGuideLinks('siehe [Technik](docs/developer-guide/README.md).', {
+    ...DELIVERY,
+    fromRoot: true,
+  });
+  assert.equal(
+    out,
+    'siehe [Technik](https://github.com/sebastian-software/effective-flow/blob/develop/docs/developer-guide/README.md).',
+  );
+});
+
+test('rewriteDeveloperGuideLinks rewrites the user-guide form to an absolute URL', () => {
+  const out = rewriteDeveloperGuideLinks(
+    'siehe [Skill-Ownership](../developer-guide/skill-ownership.md) dort.',
+    { ...DELIVERY, fromRoot: false },
+  );
+  assert.equal(
+    out,
+    `siehe [Skill-Ownership](${developerGuideBaseUrl(DELIVERY.repo, DELIVERY.sourceBranch)}/skill-ownership.md) dort.`,
+  );
+});
+
+test('rewriteDeveloperGuideLinks maps any user-guide nesting depth to the same base', () => {
+  const base = developerGuideBaseUrl(DELIVERY.repo, DELIVERY.sourceBranch);
+  assert.equal(
+    rewriteDeveloperGuideLinks('[a](../developer-guide/a.md)', { ...DELIVERY, fromRoot: false }),
+    `[a](${base}/a.md)`,
+  );
+  assert.equal(
+    rewriteDeveloperGuideLinks('[a](../../developer-guide/a.md)', { ...DELIVERY, fromRoot: false }),
+    `[a](${base}/a.md)`,
+  );
+});
+
+test('rewriteDeveloperGuideLinks is idempotent (already-absolute link untouched)', () => {
+  const once = rewriteDeveloperGuideLinks('[x](docs/developer-guide/a.md)', {
+    ...DELIVERY,
+    fromRoot: true,
+  });
+  const twice = rewriteDeveloperGuideLinks(once, { ...DELIVERY, fromRoot: true });
+  assert.equal(twice, once);
+});
+
+test('rewriteDeveloperGuideLinks leaves other links untouched', () => {
+  const src =
+    '[user](docs/user-guide/README.md) und [ext](https://example.com/developer-guide/x.md)';
+  assert.equal(rewriteDeveloperGuideLinks(src, { ...DELIVERY, fromRoot: true }), src);
+});
+
+test('rewriteDeveloperGuideLinks leaves a plain-text path mention (no link) alone', () => {
+  const src = 'Kategorien sind `docs/developer-guide/` und `docs/user-guide/`.';
+  assert.equal(rewriteDeveloperGuideLinks(src, { ...DELIVERY, fromRoot: true }), src);
+});
+
+test('rewriteDeveloperGuideLinks requires repo and sourceBranch', () => {
+  assert.throws(
+    () => rewriteDeveloperGuideLinks('x', { fromRoot: true }),
+    /requires repo and sourceBranch/,
+  );
+});
+
+test('appendDeliveryFooter appends the footer with the marker and source-branch link', () => {
+  const out = appendDeliveryFooter('# Titel\n\nText.\n', DELIVERY);
+  assert.ok(out.includes(DELIVERY_FOOTER_MARKER));
+  assert.ok(out.includes('https://github.com/sebastian-software/effective-flow/tree/develop'));
+  assert.ok(out.trimStart().startsWith('# Titel'));
+  assert.ok(out.endsWith(deliveryFooter(DELIVERY.repo, DELIVERY.sourceBranch) + '\n'));
+});
+
+test('appendDeliveryFooter is idempotent (no second footer)', () => {
+  const once = appendDeliveryFooter('# Titel\n', DELIVERY);
+  const twice = appendDeliveryFooter(once, DELIVERY);
+  assert.equal(twice, once);
+  assert.equal(twice.split(DELIVERY_FOOTER_MARKER).length - 1, 1);
+});
+
+test('appendDeliveryFooter requires repo and sourceBranch', () => {
+  assert.throws(() => appendDeliveryFooter('x', { repo: 'a/b' }), /requires repo and sourceBranch/);
+});
+
+test('deliveryGuidance names the marker, the source branch and its tree link', () => {
+  // Asserted against a repo/branch pair this repository never uses, so a body that
+  // hardcoded `sebastian-software/effective-flow` or `develop` cannot pass by accident.
+  const { agents } = deliveryGuidance('acme/thing', 'trunk');
+  assert.ok(agents.includes(DELIVERY_GUIDANCE_MARKER));
+  assert.ok(agents.includes('trunk'));
+  assert.ok(agents.includes('https://github.com/acme/thing/tree/trunk'));
+});
+
+test('deliveryGuidance states the three things the file exists to say', () => {
+  // The assertions above all hold for a body reduced to a bare link: marker, branch
+  // name and URL survive every rewrite that deletes the actual message. This file
+  // exists only to tell an agent standing in a delivery checkout that it is on the
+  // wrong branch, so the message itself is the contract — pin it, or the guard
+  // silently degrades to a link checker.
+  const { agents } = deliveryGuidance('acme/thing', 'trunk');
+  assert.match(agents, /machine-managed delivery branch/);
+  assert.match(agents, /overwritten by the next delivery/);
+  assert.match(agents, /do not open a pull request against this branch/);
+  // A worktree under `<repo>/.claude/worktrees/` sits inside the source checkout, so a
+  // parent-directory CLAUDE.md is loaded alongside this one and describes the source
+  // branch. Without this sentence the two read as equally authoritative.
+  assert.match(agents, /Guidance loaded from a surrounding checkout/);
+});
+
+test('deliveryGuidance rejects missing arguments like its neighbour', () => {
+  // appendDeliveryFooter throws on the same omission. Without this, a caller that
+  // dropped an argument would emit a body linking `github.com/undefined/tree/undefined`.
+  assert.throws(() => deliveryGuidance(), /requires repo and sourceBranch/);
+  assert.throws(() => deliveryGuidance('acme/thing'), /requires repo and sourceBranch/);
+});
+
+test('deliveryGuidance carries no frontmatter and no bare @ token', () => {
+  const { agents } = deliveryGuidance(DELIVERY.repo, DELIVERY.sourceBranch);
+  // Two separate hazards of the delivery branch, both invisible until they fire:
+  // frontmatter carrying `name: effective-flow` would enroll this file in
+  // scripts/distribution-smoke.mjs's skill-candidate enumeration, and any `@token`
+  // is read by Claude Code as a further import — from AGENTS.md, which CLAUDE.md
+  // already imports. Neither is a formatting preference. `@` is banned outright
+  // rather than only outside code spans, because this body is generated: it never
+  // needs one, so the cheapest assertion is also the strictest.
+  assert.ok(!agents.startsWith('---'));
+  assert.ok(!agents.includes('name: effective-flow'));
+  assert.ok(!agents.includes('@'));
+});
+
+test('deliveryGuidance returns exactly the one-line CLAUDE.md import', () => {
+  // Equality, not `includes`: CLAUDE.md is loaded unconditionally, so anything
+  // beyond the import is always-on context this file has no mandate to spend.
+  const { claude } = deliveryGuidance(DELIVERY.repo, DELIVERY.sourceBranch);
+  assert.equal(claude, '@AGENTS.md\n');
+});
+
+test('deliveryGuidance is idempotent (a re-delivery writes identical bytes)', () => {
+  // Both files are written whole rather than appended, so re-running the delivery
+  // step must not produce a diff on the delivery branch.
+  const once = deliveryGuidance(DELIVERY.repo, DELIVERY.sourceBranch);
+  const twice = deliveryGuidance(DELIVERY.repo, DELIVERY.sourceBranch);
+  assert.equal(twice.agents, once.agents);
+  assert.equal(twice.claude, once.claude);
+});
+
+// --- Model tiers ---
+//
+// Invariant: MODEL_TIER_MAPPINGS is the single source of every tier's Claude Code and Codex values,
+// so the build rejects any mapping a harness could not run: a missing or extra tier or harness key,
+// a Claude model outside the alias allowlist, a Claude effort outside the supported levels, and a
+// Codex model/effort pair the model does not support.
+
+function tierMappings(mutate = (mappings) => mappings) {
+  return mutate(structuredClone(MODEL_TIER_MAPPINGS));
+}
+
+test('the declared model-tier mapping is valid and covers exactly the three tiers', () => {
+  assert.equal(validateModelTierMappings(MODEL_TIER_MAPPINGS), MODEL_TIER_MAPPINGS);
+  assert.deepEqual(Object.keys(MODEL_TIER_MAPPINGS), [...MODEL_TIERS]);
+  assert.deepEqual(MODEL_TIERS, ['mechanical', 'standard', 'deep']);
+});
+
+test('validateModelTierMappings rejects a missing tier', () => {
+  assert.throws(
+    () =>
+      validateModelTierMappings(
+        tierMappings((m) => {
+          delete m.mechanical;
+          return m;
+        }),
+      ),
+    /Model-tier mappings is missing "mechanical"/,
+  );
+});
+
+test('validateModelTierMappings rejects an extra tier key', () => {
+  assert.throws(
+    () => validateModelTierMappings(tierMappings((m) => ({ ...m, premium: m.deep }))),
+    /Model-tier mappings has unsupported field\(s\): premium/,
+  );
+});
+
+test('validateModelTierMappings rejects a missing harness', () => {
+  assert.throws(
+    () =>
+      validateModelTierMappings(
+        tierMappings((m) => {
+          delete m.standard.codex;
+          return m;
+        }),
+      ),
+    /Model-tier "standard" mapping is missing "codex"/,
+  );
+});
+
+test('validateModelTierMappings rejects an extra harness key', () => {
+  assert.throws(
+    () =>
+      validateModelTierMappings(
+        tierMappings((m) => {
+          m.deep.gemini = { model: 'x' };
+          return m;
+        }),
+      ),
+    /Model-tier "deep" mapping has unsupported field\(s\): gemini/,
+  );
+});
+
+test('validateModelTierMappings rejects a missing or extra per-harness value key', () => {
+  assert.throws(
+    () =>
+      validateModelTierMappings(
+        tierMappings((m) => {
+          delete m.deep.claude.effort;
+          return m;
+        }),
+      ),
+    /Model-tier "deep" mapping for claude is missing "effort"/,
+  );
+  assert.throws(
+    () =>
+      validateModelTierMappings(
+        tierMappings((m) => {
+          m.deep.codex.model_reasoning_effort = 'high';
+          return m;
+        }),
+      ),
+    /Model-tier "deep" mapping for codex has unsupported field\(s\): model_reasoning_effort/,
+  );
+});
+
+test('validateModelTierMappings rejects a Claude model outside haiku, sonnet and opus', () => {
+  for (const model of ['claude-opus-5-5', 'Opus', 'gpt-6.1-sol', '']) {
+    assert.throws(
+      () =>
+        validateModelTierMappings(
+          tierMappings((m) => {
+            m.deep.claude.model = model;
+            return m;
+          }),
+        ),
+      /Unsupported Claude model ".*" for model tier "deep".*expected one of: haiku, sonnet, opus/,
+      model,
+    );
+  }
+});
+
+test('validateModelTierMappings rejects a Claude effort outside the supported levels', () => {
+  assert.throws(
+    () =>
+      validateModelTierMappings(
+        tierMappings((m) => {
+          m.mechanical.claude.effort = 'minimal';
+          return m;
+        }),
+      ),
+    /Unsupported claude effort "minimal" for model tier "mechanical"/,
+  );
+});
+
+test('validateModelTierMappings rejects a Codex model/effort pair outside the supported pairs', () => {
+  assert.throws(
+    () =>
+      validateModelTierMappings(
+        tierMappings((m) => {
+          m.standard.codex.reasoning_effort = 'ultra';
+          return m;
+        }),
+      ),
+    /Unsupported Codex model\/reasoning combination for model tier "standard": gpt-5\.6-luna\/ultra/,
+  );
+  assert.throws(
+    () =>
+      validateModelTierMappings(
+        tierMappings((m) => {
+          m.standard.codex.model = 'gpt-4';
+          return m;
+        }),
+      ),
+    /Unsupported Codex model\/reasoning combination for model tier "standard": gpt-4\/medium/,
+  );
+});
+
+// Invariant: an agent's `tier:` is the single source of its native model and effort. A missing,
+// unknown or duplicate tier and any of the four legacy per-harness fields fail.
+
+const tierFrontmatter = (lines) =>
+  ['description: "x"', ...lines, 'claude:', '  color: cyan', 'codex:', '  sandbox_mode: read-only']
+    .filter((line) => line !== null)
+    .join('\n');
+
+test('resolveAgentTier returns the declared tier', () => {
+  for (const tier of MODEL_TIERS) {
+    assert.equal(resolveAgentTier(tierFrontmatter([`tier: ${tier}`]), { agentName: 'a' }), tier);
+  }
+});
+
+test('resolveAgentTier rejects a missing tier', () => {
+  assert.throws(
+    () => resolveAgentTier(tierFrontmatter([]), { agentName: 'a', context: 'agents/a.md' }),
+    /Missing required field "tier" for agent "a" \(in agents\/a\.md\)/,
+  );
+});
+
+test('resolveAgentTier rejects an unknown tier', () => {
+  assert.throws(
+    () => resolveAgentTier(tierFrontmatter(['tier: premium']), { agentName: 'a' }),
+    /Unknown tier "premium" for agent "a".*expected one of: mechanical, standard, deep/,
+  );
+});
+
+test('resolveAgentTier rejects a duplicate tier', () => {
+  assert.throws(
+    () => resolveAgentTier(tierFrontmatter(['tier: deep', 'tier: deep']), { agentName: 'a' }),
+    /Duplicate field "tier" for agent "a"/,
+  );
+});
+
+test('resolveAgentTier rejects each reappearing legacy model or effort field', () => {
+  assert.equal(LEGACY_AGENT_MODEL_FIELDS.length, 4);
+  for (const [section, key] of LEGACY_AGENT_MODEL_FIELDS) {
+    const frontmatter = tierFrontmatter(['tier: deep']).replace(
+      `${section}:\n`,
+      `${section}:\n  ${key}: x\n`,
+    );
+    assert.throws(
+      () => resolveAgentTier(frontmatter, { agentName: 'a' }),
+      new RegExp(`Agent "a" declares legacy field "${section}\\.${key}"`),
+      `${section}.${key}`,
+    );
+  }
+});
+
+test('every checked-in agent declares the planned default tier', () => {
+  const expected = {
+    deep: [
+      'frontend-reviewer',
+      'generic-implementer',
+      'generic-product-implementer',
+      'generic-product-reviewer',
+      'merge-conflict-resolver',
+      'nodejs-implementer',
+      'nodejs-reviewer',
+      'rust-implementer',
+      'rust-reviewer',
+      'ui-implementer',
+    ],
+    standard: [
+      'code-documenter',
+      'code-validator',
+      'docs-writer',
+      'e2e-tester',
+      'marketing-writer',
+      'test-writer',
+    ],
+  };
+  const actual = { deep: [], standard: [] };
+  for (const name of checkedInAgentNames) {
+    const source = readFileSync(new URL(`../src/agents/${name}.md`, import.meta.url), 'utf8');
+    const tier = resolveAgentTier(extractFrontmatter(source), { agentName: name });
+    (actual[tier] ??= []).push(name);
+  }
+  assert.deepEqual(actual, expected);
+});
+
+// Invariant: a spawn-site marker is a line of its own whose `<owner>/<id>` names its source, and it
+// resolves through exactly one spawn-site table row in both directions.
+
+test('collectSpawnSiteMarkers accepts indented marker lines and keeps their position', () => {
+  const text = 'Spawn a sub-agent.\n   <!-- spawn-site:build/explore -->\nmore\n';
+  assert.deepEqual(collectSpawnSiteMarkers(text, { owner: 'build', context: 'tools/build.md' }), [
+    { id: 'build/explore', line: 2, context: 'tools/build.md' },
+  ]);
+});
+
+test('collectSpawnSiteMarkers rejects a marker that does not stand on its own line', () => {
+  assert.throws(
+    () => collectSpawnSiteMarkers('Spawn it. <!-- spawn-site:build/explore -->', {}),
+    /Malformed spawn-site marker/,
+  );
+  assert.throws(
+    () => collectSpawnSiteMarkers('<!-- spawn-site:build/explore-->', {}),
+    /Malformed spawn-site marker/,
+  );
+});
+
+test('collectSpawnSiteMarkers rejects a malformed id and a foreign owner', () => {
+  assert.throws(
+    () => collectSpawnSiteMarkers('<!-- spawn-site:build -->', {}),
+    /Malformed spawn-site id "build"/,
+  );
+  assert.throws(
+    () => collectSpawnSiteMarkers('<!-- spawn-site:Build/Explore -->', {}),
+    /Malformed spawn-site id "Build\/Explore"/,
+  );
+  assert.throws(
+    () => collectSpawnSiteMarkers('<!-- spawn-site:fix/explore -->', { owner: 'build' }),
+    /must be prefixed with its owning source "build\/"/,
+  );
+});
+
+// Invariant: a marker inside any fenced block (verbatim, ask, include or lazy-include) would be
+// rendered as fence content or vanish with the directive, so it fails instead.
+test('collectSpawnSiteMarkers rejects a marker inside a fenced block', () => {
+  for (const info of ['', 'text', 'ask', 'include', 'lazy-include']) {
+    const text = `Spawn it.\n\n   \`\`\`${info}\n   <!-- spawn-site:build/explore -->\n   \`\`\`\n`;
+    assert.throws(
+      () => collectSpawnSiteMarkers(text, { owner: 'build' }),
+      /Spawn-site marker inside a fenced block/,
+      info,
+    );
+  }
+  assert.throws(
+    () => collectSpawnSiteMarkers('~~~~\n<!-- spawn-site:build/explore -->\n~~~~\n', {}),
+    /inside a fenced block/,
+  );
+  // After the fence closes, a marker is collected as usual.
+  assert.deepEqual(
+    collectSpawnSiteMarkers(
+      '```ask\nheader: X\n```\n\nSpawn it.\n<!-- spawn-site:build/explore -->\n',
+      { owner: 'build' },
+    ).map(({ line }) => line),
+    [6],
+  );
+});
+
+const spawnAgentTiers = new Map([
+  ['code-validator', 'standard'],
+  ['test-writer', 'standard'],
+  ['nodejs-implementer', 'deep'],
+]);
+
+function spawnTable(rows, { header = '| Site | Spawn | Tier | Down |' } = {}) {
+  return [
+    '# Model tiers',
+    '',
+    '## Spawn sites',
+    '',
+    header,
+    '| ---- | ----- | ---- | ---- |',
+    ...rows,
+    '',
+    '## After',
+    '',
+    '| not | the | spawn | table |',
+  ].join('\n');
+}
+
+const parseSites = (rows, options = {}) =>
+  parseSpawnSiteTable(spawnTable(rows, options), {
+    agentTiers: spawnAgentTiers,
+    context: 'shared/model-tiers.md',
+  });
+
+test('parseSpawnSiteTable accepts an empty table', () => {
+  assert.deepEqual(parseSites([]), []);
+});
+
+test('parseSpawnSiteTable resolves literal tiers and role tiers in table order', () => {
+  const sites = parseSites([
+    '| `build/explore` | Explore fan-out | `standard` | `yes` |',
+    '| `cleanup/scan` | Inventory scan | `mechanical` | `no` |',
+    '| `build/validate` | Validators | `role:code-validator,test-writer` | `no` |',
+    '| `build/mixed` | Implementer then validator | `role:nodejs-implementer,code-validator` | `yes` |',
+  ]);
+  assert.deepEqual(
+    sites.map(({ id, spawn, clauses, downAllowed }) => ({ id, spawn, clauses, downAllowed })),
+    [
+      {
+        id: 'build/explore',
+        spawn: 'Explore fan-out',
+        clauses: [{ role: null, tier: 'standard' }],
+        downAllowed: true,
+      },
+      {
+        id: 'cleanup/scan',
+        spawn: 'Inventory scan',
+        clauses: [{ role: null, tier: 'mechanical' }],
+        downAllowed: false,
+      },
+      {
+        id: 'build/validate',
+        spawn: 'Validators',
+        clauses: [
+          { role: 'code-validator', tier: 'standard' },
+          { role: 'test-writer', tier: 'standard' },
+        ],
+        downAllowed: false,
+      },
+      {
+        id: 'build/mixed',
+        spawn: 'Implementer then validator',
+        clauses: [
+          { role: 'nodejs-implementer', tier: 'deep' },
+          { role: 'code-validator', tier: 'standard' },
+        ],
+        downAllowed: true,
+      },
+    ],
+  );
+});
+
+test('parseSpawnSiteTable rejects a missing heading, a wrong header and a missing separator', () => {
+  assert.throws(
+    () => parseSpawnSiteTable('# Model tiers\n', { agentTiers: spawnAgentTiers }),
+    /exactly one "## Spawn sites" heading/,
+  );
+  assert.throws(
+    () => parseSites([], { header: '| Site | Spawn | Tier |' }),
+    /Spawn-site table header must be Site \| Spawn \| Tier \| Down/,
+  );
+  assert.throws(
+    () =>
+      parseSpawnSiteTable('## Spawn sites\n\n| Site | Spawn | Tier | Down |\n', {
+        agentTiers: spawnAgentTiers,
+      }),
+    /needs a separator row/,
+  );
+});
+
+test('parseSpawnSiteTable rejects a malformed row', () => {
+  assert.throws(
+    () => parseSites(['| `build/explore` | Explore | `standard` |']),
+    /Spawn-site table row must have 4 cells \(in shared\/model-tiers\.md:7\)/,
+  );
+  assert.throws(
+    () => parseSites(['| build/explore | Explore | `standard` | `yes` |']),
+    /Spawn-site Site cell must be one inline code span/,
+  );
+  assert.throws(
+    () => parseSites(['| `build` | Explore | `standard` | `yes` |']),
+    /Malformed spawn-site id "build"/,
+  );
+  assert.throws(
+    () =>
+      parseSites([
+        '| `build/explore` | Explore | `standard` | `yes` |',
+        '| `build/explore` | Again | `standard` | `yes` |',
+      ]),
+    /Duplicate spawn-site row "build\/explore"/,
+  );
+  assert.throws(
+    () => parseSites(['| `build/explore` | Uses {{AGENT:code-validator}} | `standard` | `yes` |']),
+    /needs a plain Spawn description without placeholders/,
+  );
+});
+
+test('parseSpawnSiteTable rejects a malformed tier', () => {
+  for (const tier of ['`premium`', '`role:`', '`role:Code-Validator`', 'standard']) {
+    assert.throws(
+      () => parseSites([`| \`build/explore\` | Explore | ${tier} | \`yes\` |`]),
+      /Unknown spawn-site tier|must be one inline code span/,
+      tier,
+    );
+  }
+  assert.throws(
+    () => parseSites(['| `build/explore` | Explore | `role:unknown-agent` | `yes` |']),
+    /names unknown role "unknown-agent"/,
+  );
+  assert.throws(
+    () => parseSites(['| `build/explore` | Explore | `role:test-writer,test-writer` | `yes` |']),
+    /repeats a role/,
+  );
+});
+
+test('parseSpawnSiteTable rejects a malformed Down value and a deep site that may move down', () => {
+  assert.throws(
+    () => parseSites(['| `build/explore` | Explore | `standard` | `maybe` |']),
+    /Down must be `yes` or `no`/,
+  );
+  assert.throws(
+    () => parseSites(['| `build/plan-review` | Plan review | `deep` | `yes` |']),
+    /resolves to tier "deep", which never moves down/,
+  );
+  assert.throws(
+    () => parseSites(['| `build/implement` | Implementer | `role:nodejs-implementer` | `yes` |']),
+    /resolves to tier "deep", which never moves down/,
+  );
+});
+
+test('reconcileSpawnSites requires every marker to be unique and known, and every row marked', () => {
+  const sites = parseSites(['| `build/explore` | Explore | `standard` | `yes` |']);
+  const marker = (id, context = 'tools/build.md', line = 3) => ({ id, context, line });
+  assert.doesNotThrow(() => reconcileSpawnSites(sites, [marker('build/explore')]));
+  assert.throws(
+    () => reconcileSpawnSites(sites, [marker('build/explore'), marker('build/unknown')]),
+    /Unknown spawn-site "build\/unknown" \(in tools\/build\.md:3\)/,
+  );
+  assert.throws(
+    () =>
+      reconcileSpawnSites(sites, [
+        marker('build/explore'),
+        marker('build/explore', 'tools/build.md', 9),
+      ]),
+    /Duplicate spawn-site marker "build\/explore" \(in tools\/build\.md:3 and tools\/build\.md:9\)/,
+  );
+  assert.throws(
+    () => reconcileSpawnSites(sites, []),
+    /Spawn-site table row "build\/explore" has no marker/,
+  );
+});
+
+// Invariant: a rendered spawn-site line carries only the target's own values in inline code (never
+// a line-start `model:`/`effort:` key), both forms in portable, and the no-downward-move flag only
+// for a standard clause.
+
+const renderSite = (row, harness) =>
+  renderSpawnSiteLine(parseSites([row])[0], harness, { mappings: MODEL_TIER_MAPPINGS });
+
+test('renderSpawnSiteLine renders the target form for a standard site', () => {
+  const row = '| `build/explore` | Explore | `standard` | `yes` |';
+  assert.equal(
+    renderSite(row, 'claude'),
+    'Tier `standard`: pass `model: sonnet` and `effort: medium` on the Agent tool (rules: `model-tiers`).',
+  );
+  assert.equal(
+    renderSite(row, 'codex'),
+    'Tier `standard`: pass `model: gpt-5.6-luna` and `reasoning_effort: medium` on the spawn (rules: `model-tiers`).',
+  );
+  assert.equal(
+    renderSite(row, 'portable'),
+    'Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).',
+  );
+});
+
+test('renderSpawnSiteLine flags a Down: no standard site and never a deep or mechanical one', () => {
+  assert.equal(
+    renderSite('| `build/validate` | Validator | `standard` | `no` |', 'claude'),
+    'Tier `standard`: pass `model: sonnet` and `effort: medium` on the Agent tool (rules: `model-tiers`, no downward move).',
+  );
+  assert.equal(
+    renderSite('| `build/plan-review` | Plan review | `deep` | `no` |', 'codex'),
+    'Tier `deep`: pass `model: gpt-6.1-sol` and `reasoning_effort: high` on the spawn (rules: `model-tiers`).',
+  );
+  assert.equal(
+    renderSite('| `cleanup/scan` | Scan | `mechanical` | `no` |', 'claude'),
+    'Tier `mechanical`: pass `model: haiku` and `effort: low` on the Agent tool (rules: `model-tiers`).',
+  );
+});
+
+test('renderSpawnSiteLine renders several roles of one tier once and differing tiers per role', () => {
+  assert.equal(
+    renderSite(
+      '| `build/validate` | Validators | `role:code-validator,test-writer` | `no` |',
+      'codex',
+    ),
+    'Tier `standard`: select the named role’s configured sidecar (rules: `model-tiers`, no downward move).',
+  );
+  const mixed = '| `build/mixed` | Both | `role:nodejs-implementer,code-validator` | `no` |';
+  assert.equal(
+    renderSite(mixed, 'claude'),
+    'Tier `deep` for {{AGENT:nodejs-implementer}}: pass `model: opus` and `effort: high` on the Agent tool. ' +
+      'Tier `standard` for {{AGENT:code-validator}}: pass `model: sonnet` and `effort: medium` on the Agent tool ' +
+      '(rules: `model-tiers`, no downward move).',
+  );
+  assert.equal(
+    renderSite(mixed, 'portable'),
+    'Tier `deep` for {{AGENT:nodejs-implementer}}: Claude Code Agent tool `model: opus`, `effort: high`; ' +
+      'Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high`. ' +
+      'Tier `standard` for {{AGENT:code-validator}}: Claude Code Agent tool `model: sonnet`, `effort: medium`; ' +
+      'Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).',
+  );
+});
+
+test('renderSpawnSiteMarkers replaces each marker line, keeps its indentation, and rejects an unknown site', () => {
+  const sites = new Map(
+    parseSites(['| `build/explore` | Explore | `standard` | `yes` |']).map((site) => [
+      site.id,
+      site,
+    ]),
+  );
+  const body = '1. Spawn an Explore sub-agent.\n   <!-- spawn-site:build/explore -->\n2. Next.\n';
+  const rendered = renderSpawnSiteMarkers(body, 'claude', {
+    sites,
+    mappings: MODEL_TIER_MAPPINGS,
+  });
+  assert.equal(
+    rendered,
+    '1. Spawn an Explore sub-agent.\n   Tier `standard`: pass `model: sonnet` and `effort: medium` on the Agent tool (rules: `model-tiers`).\n2. Next.\n',
+  );
+  assert.doesNotMatch(rendered, /^\s*(?:model|effort|reasoning_effort)\s*[:=]/m);
+  assert.throws(
+    () =>
+      renderSpawnSiteMarkers('<!-- spawn-site:build/other -->', 'codex', {
+        sites,
+        mappings: MODEL_TIER_MAPPINGS,
+        context: 'tools/build.md',
+      }),
+    /Unknown spawn-site "build\/other" \(in tools\/build\.md\)/,
+  );
+});
+
+test('the generated model-tiers parts render role defaults and the per-target harness table', () => {
+  assert.equal(
+    renderModelTierRoleDefaults(spawnAgentTiers),
+    [
+      '| Role | Tier |',
+      '| ---- | ---- |',
+      '| `code-validator` | `standard` |',
+      '| `nodejs-implementer` | `deep` |',
+      '| `test-writer` | `standard` |',
+    ].join('\n'),
+  );
+  assert.equal(
+    renderModelTierTable('claude', MODEL_TIER_MAPPINGS),
+    [
+      MODEL_TIER_TABLE_START,
+      '| Tier | Claude Code Agent tool |',
+      '| ---- | ---- |',
+      '| `mechanical` | `model: haiku`, `effort: low` |',
+      '| `standard` | `model: sonnet`, `effort: medium` |',
+      '| `deep` | `model: opus`, `effort: high` |',
+      MODEL_TIER_TABLE_END,
+    ].join('\n'),
+  );
+  assert.equal(
+    renderModelTierTable('codex', MODEL_TIER_MAPPINGS),
+    [
+      MODEL_TIER_TABLE_START,
+      '| Tier | Codex spawn |',
+      '| ---- | ---- |',
+      '| `mechanical` | `model: gpt-5.6-luna`, `reasoning_effort: low` |',
+      '| `standard` | `model: gpt-5.6-luna`, `reasoning_effort: medium` |',
+      '| `deep` | `model: gpt-6.1-sol`, `reasoning_effort: high` |',
+      MODEL_TIER_TABLE_END,
+    ].join('\n'),
+  );
+  assert.equal(
+    renderModelTierTable('portable', MODEL_TIER_MAPPINGS),
+    [
+      MODEL_TIER_TABLE_START,
+      '| Tier | Claude Code Agent tool | Codex spawn |',
+      '| ---- | ---- | ---- |',
+      '| `mechanical` | `model: haiku`, `effort: low` | `model: gpt-5.6-luna`, `reasoning_effort: low` |',
+      '| `standard` | `model: sonnet`, `effort: medium` | `model: gpt-5.6-luna`, `reasoning_effort: medium` |',
+      '| `deep` | `model: opus`, `effort: high` | `model: gpt-6.1-sol`, `reasoning_effort: high` |',
+      MODEL_TIER_TABLE_END,
+    ].join('\n'),
+  );
+  const rendered = renderModelTierDirectives(
+    '## Role defaults\n\n{{MODEL_TIER_ROLE_DEFAULTS}}\n\n{{MODEL_TIER_TABLE}}\n',
+    'codex',
+    { sites: new Map(), mappings: MODEL_TIER_MAPPINGS, agentTiers: spawnAgentTiers },
+  );
+  assert.doesNotMatch(rendered, /\{\{MODEL_TIER_/);
+  assert.match(rendered, /\| `nodejs-implementer` \| `deep` \|/);
+  assert.doesNotMatch(rendered, /\b(?:haiku|sonnet|opus)\b/);
+});
+
+// Invariant: provider model names reach portable output only as build-generated tier text (the
+// marked harness table and the two-harness values of a rendered spawn-site line); anywhere else,
+// and in any native target for the other provider, they are findings.
+
+const PROVIDER_NAMES = ['haiku', 'sonnet', 'opus', 'gpt-5.6-luna', 'gpt-6.1-sol'];
+const GENERATED = {
+  modelNames: PROVIDER_NAMES,
+  allowGenerated: true,
+  mappings: MODEL_TIER_MAPPINGS,
+};
+
+test('findProviderModelNames exempts only build-generated tier text in portable mode', () => {
+  const site = renderSite('| `build/explore` | Explore | `standard` | `no` |', 'portable');
+  const generated = [
+    'Intro.',
+    renderModelTierTable('portable', MODEL_TIER_MAPPINGS),
+    `   ${site}`,
+  ].join('\n');
+  assert.deepEqual(findProviderModelNames(generated, GENERATED), []);
+  assert.ok(findProviderModelNames(generated, { modelNames: PROVIDER_NAMES }).length > 0);
+  assert.deepEqual(findProviderModelNames('Prefer Sonnet here.\nUse gpt-6.1-sol.', GENERATED), [
+    { line: 1, name: 'Sonnet' },
+    { line: 2, name: 'gpt-6.1-sol' },
+  ]);
+  assert.deepEqual(findProviderModelNames(site.replace('(rules:', 'or opus (rules:'), GENERATED), [
+    { line: 1, name: 'opus' },
+  ]);
+  // A hand-written line in the rendered shape whose values are no mapped pair is still caught.
+  assert.deepEqual(
+    findProviderModelNames(
+      'Tier `deep`: Claude Code Agent tool `model: sonnet`, `effort: high`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: high` (rules: `model-tiers`).',
+      GENERATED,
+    ),
+    [
+      { line: 1, name: 'sonnet' },
+      { line: 1, name: 'gpt-5.6-luna' },
+    ],
+  );
+  // Inside the markers only an exact rendered table line is exempt.
+  assert.deepEqual(
+    findProviderModelNames(
+      `${MODEL_TIER_TABLE_START}\n| \`deep\` | \`model: sonnet\`, \`effort: high\` |\n${MODEL_TIER_TABLE_END}`,
+      GENERATED,
+    ),
+    [{ line: 2, name: 'sonnet' }],
+  );
+  assert.throws(
+    () => findProviderModelNames('x', { modelNames: PROVIDER_NAMES, allowGenerated: true }),
+    /needs mappings/,
+  );
+  assert.deepEqual(
+    findProviderModelNames('magnum-opus and opusculum', { modelNames: PROVIDER_NAMES }),
+    [],
+  );
+});
+
+test('findProviderModelNames rejects an unbalanced generated-table marker', () => {
+  assert.throws(
+    () => findProviderModelNames(`${MODEL_TIER_TABLE_START}\n| sonnet |`, GENERATED),
+    /start marker without end/,
+  );
+  assert.throws(
+    () => findProviderModelNames(MODEL_TIER_TABLE_END, GENERATED),
+    /end marker without start/,
+  );
+});

@@ -1,0 +1,57 @@
+{
+  "name": "actual-postmerge-reconciliation-reentry",
+  "description": "Completed-run recommendation semantics; no work is executed.",
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "repository": "flow",
+    "provider": "github"
+  },
+  "pullRequest": 42,
+  "operations": {},
+  "snapshot": {
+    "completed": true,
+    "emitter": "merge-gate",
+    "languageChat": "de",
+    "sourceAssociation": {
+      "kind": "forge-issue",
+      "reference": "#37",
+      "repository": "example/flow",
+      "validatedLifecycleReceipt": true
+    },
+    "outcome": {
+      "completedWork": ["A merged"],
+      "delivery": "merged",
+      "pullRequest": 42,
+      "issueState": "unobservable",
+      "reconciliation": "Receipt-bound post-merge state read was unavailable. Closure observation is unresolved and observer-only merge-gate 42 can retry it. No terminal-transition decision or write is authorized."
+    },
+    "retainedPlanningBasis": {
+      "issueBody": "This issue contains only package A; close after the merged delivery is verified.",
+      "comments": [
+        {
+          "id": 3701,
+          "body": "<!-- effective-flow-plan-issues -->\n\n## Completed planning\n\n**Recommended workflow:** Feature\n\n### Requirement\n\nDeliver package A and verify issue closure after merge. No later package belongs to this issue.\n\n### Implementation sequence\n\n1. Implement A.\n2. Merge the PR.\n3. Observe the receipt-bound linked issue terminal state.\n\n### Plan review\n\n**Result:** Approved\n\n### Open points\n\n- No implementation open points.\n",
+          "standalone": true,
+          "newestCanonical": true
+        }
+      ],
+      "freshCompleteRead": true
+    },
+    "readContext": "No optional source context has been read. Use only the explicitly associated handles.",
+    "reportFacts": ["Package A finished successfully."],
+    "availableExposedTools": [
+      "plan",
+      "plan-issue",
+      "docs",
+      "apply",
+      "merge-gate",
+      "iterate",
+      "pr",
+      "review",
+      "open-plans",
+      "build"
+    ]
+  },
+  "artifacts": {}
+}

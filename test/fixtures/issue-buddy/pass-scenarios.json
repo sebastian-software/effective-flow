@@ -1,0 +1,13 @@
+{
+  "dryLocalOnly": { "mode": "dry-run", "visibility": "public", "readiness": "ready" },
+  "publishDraft": { "mode": "publish", "visibility": "public", "readiness": "ready" },
+  "privateStop": { "mode": "publish", "visibility": "private", "readiness": "ready" },
+  "unknownStop": { "mode": "publish", "visibility": "unknown", "readiness": "ready" },
+  "malformedReadiness": { "mode": "publish", "visibility": "public", "readiness": "malformed" },
+  "nestedSpawnFailure": {
+    "mode": "publish",
+    "visibility": "public",
+    "readiness": "ready",
+    "nested": "fail"
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "name": "q2a-canonical-record-lags-merged",
+  "description": "Completed-run recommendation semantics; no work is executed.",
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "repository": "flow",
+    "provider": "github"
+  },
+  "pullRequest": 42,
+  "operations": {},
+  "snapshot": {
+    "completed": true,
+    "emitter": "merge-gate",
+    "languageChat": "de",
+    "sourceAssociation": {
+      "kind": "forge-issue",
+      "reference": "#37",
+      "repository": "example/flow",
+      "validatedLifecycleReceipt": true
+    },
+    "outcome": {
+      "completedWork": ["Q2a PR #40 merged", "Q2a PR #42 merged"],
+      "delivery": "merged",
+      "pullRequest": 42,
+      "issueState": "open",
+      "observation": "Complete; parent intentionally stays open for later packages. No terminal-transition reconciliation remains."
+    },
+    "retainedPlanningBasis": {
+      "issueBody": "Migration requires Q2a fixtures, Q2b qualification, Q2c evidence, then E activation.",
+      "comments": [
+        {
+          "id": 3700,
+          "body": "<!-- effective-flow-plan-issues -->\n\n## Completed planning\n\n**Recommended workflow:** Feature\n\n### Requirement\n\nDeliver Q2a migration fixtures before Q2b operational qualification.\n\n### Implementation sequence\n\n1. Q2a: merge the two migration PRs.\n2. Q2b: prepare the qualification plan after the Q2a merges are recorded. Qualification needs a separate approval.\n3. Q2c: release evidence, after qualification.\n4. E: activation, after a separate operator decision.\n\n### Plan review\n\n**Result:** Approved for Q2a only\n\n### Open points\n\n- Q2b has not been planned or approved.\n",
+          "standalone": true,
+          "newestCanonical": true
+        }
+      ],
+      "freshCompleteRead": true
+    },
+    "readContext": "Phase 5.5 already read the complete issue and canonical comments exactly once. Reuse these retained results; no comment reread is available.",
+    "reportFacts": ["Package A finished successfully."],
+    "availableExposedTools": [
+      "plan",
+      "plan-issue",
+      "docs",
+      "apply",
+      "merge-gate",
+      "iterate",
+      "pr",
+      "review",
+      "open-plans",
+      "build"
+    ]
+  },
+  "artifacts": {}
+}

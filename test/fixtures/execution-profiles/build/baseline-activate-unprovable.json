@@ -1,0 +1,39 @@
+{
+  "name": "An ambiguous activate whose inventory re-read fails leaves the run unmeasured",
+  "harness": "codex",
+  "config": "true",
+  "inventory": "baseline",
+  "baselineEvidence": "ready",
+  "activation": "unprovable",
+  "replay": false,
+  "replayReason": "The replay cannot make a guarded inventory read fail right after a lost activate response without corrupting the generation it then proves; this fixture pins the fragment's unprovable branch.",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "none",
+    "persistedGenerationState": "baseline",
+    "activation": "ambiguous:unprovable",
+    "operations": ["inventory", "protocol", "activate", "inventory"],
+    "packets": [
+      {
+        "eligibility": "not-evaluated",
+        "selectedProfile": "quality",
+        "recorded": false,
+        "wire": null,
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": null
+      }
+    ],
+    "incidents": [],
+    "finalize": null,
+    "events": []
+  }
+}

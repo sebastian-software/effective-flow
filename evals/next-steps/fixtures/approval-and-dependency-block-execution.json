@@ -1,0 +1,44 @@
+{
+  "name": "approval-and-dependency-block-execution",
+  "description": "Completed-run recommendation semantics; no work is executed.",
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "repository": "flow",
+    "provider": "github"
+  },
+  "pullRequest": 42,
+  "operations": {},
+  "snapshot": {
+    "completed": true,
+    "emitter": "build",
+    "languageChat": "de",
+    "sourceAssociation": {
+      "kind": "local-plan",
+      "path": "docs/plan/2026-10-08-packages.md"
+    },
+    "outcome": {
+      "completedWork": ["A parser implemented and merged"],
+      "delivery": "merged",
+      "pullRequest": 42
+    },
+    "retainedPlanningBasis": null,
+    "readContext": "No optional source context has been read. Use only the explicitly associated handles.",
+    "reportFacts": ["Package A finished successfully."],
+    "availableExposedTools": [
+      "plan",
+      "plan-issue",
+      "docs",
+      "apply",
+      "merge-gate",
+      "iterate",
+      "pr",
+      "review",
+      "open-plans",
+      "build"
+    ]
+  },
+  "artifacts": {
+    "docs/plan/2026-10-08-packages.md": "# Package plan\n\n**Plan status:** Not implemented\n**Recommended workflow:** Feature\n\n## Requirement\n\nDeliver package A then B.\n\n## Implementation sequence\n\n- [ ] A: implement parser.\n- [ ] B: deploy qualification; needs explicit operator approval (not granted) and dependency Q0 qualification (not done). No existing execution workflow covers deployment.\n\n## Plan review\n\n**Result:** Approved\n\n## Open points\n\n- No open points.\n"
+  }
+}

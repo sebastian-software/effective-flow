@@ -1,0 +1,1848 @@
+import { randomUUID } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import {
+  chmodSync,
+  copyFileSync,
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  rmdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import {
+  buildPortableSkill,
+  digestFile,
+  digestOf,
+  freshnessVerdict,
+  pristineScenarioBuildIdentity,
+  scenarioBuildIdentity,
+} from './build-identity.mjs';
+import { assessAbortedEvidence, evaluateEvidence } from './evaluate.mjs';
+import { stopReceiptHostAbort } from './host-abort.mjs';
+import { assertProfileMatchesPin, normalizeProfile, PROFILE_KEYS, sameKeys } from './profile.mjs';
+import { sealedEvidencePath, validateArchivedPairing } from './run-evidence.mjs';
+import { provisionSlot, TRACKER_STUB_SKILL_PATH } from './scaffold.mjs';
+import { auxiliaryLogPath, sandboxPaths, validatePositiveInteger } from './sandbox.mjs';
+import { discoverSuite, REQUIRED_RUNS, selectScenarios } from './suite.mjs';
+
+// The parent this process was launched under, captured once at module load and deliberately not on
+// entry to the wait below. A `publishRound` child spends seconds on `loadRound`,
+// `validateAllSealed`, `discoverSuite` and a full `buildPortableSkill` before it reaches a
+// boundary, so a child orphaned during that window would already read the reparented value on
+// entry and the backstop would never fire.
+const LAUNCH_PPID = process.ppid;
+
+const REPOSITORY_ROOT = resolve(import.meta.dirname, '..', '..');
+const PHYSICAL_REPOSITORY_ROOT = realpathSync(REPOSITORY_ROOT);
+const PREPARED_DIGEST_KEYS = [
+  'buildIdentity',
+  'fixture',
+  'projectAgents',
+  'projectConfig',
+  'prompt',
+  'runMetadata',
+  'trackerStub',
+];
+const RECEIPT_KEYS = [
+  'completed',
+  'initialWorkingRoot',
+  'nonForked',
+  'profile',
+  'schemaVersion',
+  'taskInput',
+];
+
+function json(path) {
+  return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+// The suite's canonical archive, and whether a given scenario's run pairs a second evidence file
+// with its call log. Both were module constants while this file served one suite; they are the two
+// places the lifecycle below has to ask the suite rather than assume.
+function resultsDirOf(suite) {
+  return resolve(suite.root, 'results');
+}
+
+function auxiliaryFor(suite, scenario) {
+  const auxiliary = suite.auxiliaryEvidence;
+  if (!auxiliary) return null;
+  return auxiliary.required(scenario) ? auxiliary : null;
+}
+
+// The evidence the sealing step itself writes, for a scenario whose suite declares it — the
+// `iterate` suite's sandbox git state. `null` for every other scenario and for a suite that declares
+// none, which is every path `merge-gate` takes.
+function sealedFor(suite, scenario) {
+  const sealed = suite.sealedEvidence;
+  if (!sealed) return null;
+  return sealed.required(scenario) ? sealed : null;
+}
+
+// Every partner a scenario's archived run carries beside its call log and stamp, in the form
+// `validateArchivedPairing` reads: the auxiliary trace and the sealed evidence, each when the suite
+// declares it at all, marked required or not for this scenario.
+function archivedPartners(suite, scenario) {
+  const partners = [];
+  if (suite.auxiliaryEvidence) {
+    partners.push({
+      suffix: suite.auxiliaryEvidence.archiveSuffix,
+      required: auxiliaryFor(suite, scenario) !== null,
+    });
+  }
+  if (suite.sealedEvidence) {
+    partners.push({
+      suffix: suite.sealedEvidence.archiveSuffix,
+      required: sealedFor(suite, scenario) !== null,
+    });
+  }
+  return partners;
+}
+
+// Observe the sealed evidence the suite declares for this attempt, without writing it. `null` for a
+// scenario that has none.
+function captureSealedEvidence(suite, scenario, paths) {
+  const sealed = sealedFor(suite, scenario);
+  if (!sealed) return null;
+  const text = sealed.capture({ scenario, paths });
+  if (typeof text !== 'string') {
+    throw new Error(`${scenario}: the suite's sealed-evidence capture returned no text`);
+  }
+  return text;
+}
+
+// Write the sealed evidence the suite observes for this attempt, replacing whatever is at its path.
+// A run could have left a file there, and the point of evidence the seal writes is that the run did
+// not author it. Written through a temporary file and a rename, so an interrupted seal leaves either
+// the old file or the whole new one, and a resumed seal observes and writes again. A caller that
+// already observed the state passes that text, so what it judged is what is written.
+function writeSealedEvidence(
+  suite,
+  scenario,
+  paths,
+  text = captureSealedEvidence(suite, scenario, paths),
+) {
+  if (text === null) return;
+  const target = sealedEvidencePath(suite, paths);
+  const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
+  writeFileSync(temporary, text, { flag: 'wx' });
+  renameSync(temporary, target);
+}
+
+function nonEmptyFile(path) {
+  return existsSync(path) && statSync(path).size > 0;
+}
+
+// Whether an attempt left anything a run writes, which is the line between "the session produced
+// evidence, seal and evaluate it" and "nothing happened, retry it as aborted".
+//
+// For a suite whose scenarios all read the forge, that line is a non-empty call log, and it stays
+// exactly that. A suite whose evaluator permits an empty call log for a scenario — the `iterate`
+// suite, whose correct refusals happen before the first forge read — cannot draw it there, since
+// its best runs leave no call at all. For such a scenario the paired auxiliary evidence counts too:
+// the exit-channel record is what the run wrote. An attempt with neither reads as not yet run in
+// `status`, and `retry-aborted` still accepts it as one that was stopped; sealing it on a
+// completed-session receipt is decided separately, below.
+function attemptLeftEvidence(suite, scenario, paths) {
+  if (nonEmptyFile(paths.callLog)) return true;
+  if (!permitsEmptyCallLog(suite, scenario)) return false;
+  const auxiliaryLog = auxiliaryFor(suite, scenario) ? auxiliaryLogPath(suite, paths) : null;
+  return auxiliaryLog !== null && nonEmptyFile(auxiliaryLog);
+}
+
+// The evaluator's explicit answer, checked with `=== true` so anything else keeps the strict rule.
+function permitsEmptyCallLog(suite, scenario) {
+  return suite.evaluator.permitsEmptyCallLog?.(scenario) === true;
+}
+
+// Whether a completed attempt may be sealed although it left nothing, and why not when it may not.
+//
+// For a suite whose scenarios all read the forge — every scenario whose evaluator does not permit an
+// empty call log — an attempt with no call left nothing to evaluate, and sealing it stays refused.
+//
+// Where the evaluator permits an empty call log, "left nothing" is itself an outcome. Sealing
+// requires a host receipt attesting `completed: true`, so what reaches this point is a session that
+// ran to its end and wrote neither a call nor a report; it evaluates to the finding that it reported
+// nothing. Refusing the seal would leave `retry-aborted` as the only exit, and that command requires
+// attesting the session was **stopped**: an honest operator would be stuck, and a regression that
+// ends silently could be retried until some run happened to speak — survivorship bias dressed up as
+// a retry. `retry-aborted` stays what it is for, a session that really was stopped.
+function sealRefusalWithoutEvidence(suite, scenario, paths) {
+  if (attemptLeftEvidence(suite, scenario, paths)) return null;
+  if (permitsEmptyCallLog(suite, scenario)) return null;
+  return 'has no non-empty call log';
+}
+
+// What counts as "the attempt left evidence" for this scenario, in words, for the refusals that
+// depend on it. A suite whose evaluator permits an empty call log counts the paired exit-channel
+// record too, and saying only "non-empty log" there would name a condition the code does not check.
+function evidenceDescription(suite, scenario) {
+  const auxiliary = auxiliaryFor(suite, scenario);
+  return permitsEmptyCallLog(suite, scenario) && auxiliary
+    ? `a non-empty call log or ${auxiliary.fileName}`
+    : 'a non-empty log';
+}
+
+function stableJson(value) {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function atomicJson(path, value, { exclusive = false } = {}) {
+  mkdirSync(dirname(path), { recursive: true });
+  const temporary = `${path}.tmp-${process.pid}-${randomUUID()}`;
+  writeFileSync(temporary, stableJson(value), { flag: 'wx' });
+  if (exclusive && existsSync(path)) {
+    rmSync(temporary, { force: true });
+    throw new Error(`refusing to replace immutable file ${path}`);
+  }
+  renameSync(temporary, path);
+}
+
+function sameProfile(left, right) {
+  return (
+    sameKeys(left, PROFILE_KEYS) &&
+    sameKeys(right, PROFILE_KEYS) &&
+    PROFILE_KEYS.every((key) => left[key] === right[key])
+  );
+}
+
+function sameHostReceipt(left, right) {
+  return (
+    sameKeys(left, RECEIPT_KEYS) &&
+    sameKeys(right, RECEIPT_KEYS) &&
+    RECEIPT_KEYS.filter((key) => key !== 'profile').every((key) => left[key] === right[key]) &&
+    sameProfile(left.profile, right.profile)
+  );
+}
+
+function contained(root, candidate, label) {
+  const normalizedRoot = resolve(root);
+  const normalized = resolve(candidate);
+  if (normalized !== normalizedRoot && !normalized.startsWith(`${normalizedRoot}${sep}`)) {
+    throw new Error(`${label} escapes ${normalizedRoot}: ${candidate}`);
+  }
+  return normalized;
+}
+
+function blockingWait(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+function lockWaitMilliseconds(kind) {
+  const name =
+    kind === 'publication'
+      ? 'EFFECTIVE_FLOW_EVAL_PUBLICATION_LOCK_WAIT_MS'
+      : 'EFFECTIVE_FLOW_EVAL_SLOT_LOCK_WAIT_MS';
+  const fallback = kind === 'publication' ? 10_000 : 2_000;
+  const value = process.env[name] === undefined ? fallback : Number(process.env[name]);
+  if (!Number.isSafeInteger(value) || value < 0 || value > 30_000) {
+    throw new Error(`${name} must be an integer from 0 through 30000`);
+  }
+  return value;
+}
+
+function lockOwner(lockPath) {
+  const names = readdirSync(lockPath).filter((name) => name.endsWith('.owner.json'));
+  if (names.length !== 1) throw new Error(`lock at ${lockPath} has no unique readable owner`);
+  const ownerPath = resolve(lockPath, names[0]);
+  const owner = json(ownerPath);
+  const token = names[0].slice(0, -'.owner.json'.length);
+  if (
+    !/^[0-9a-f-]{36}$/.test(token) ||
+    owner.token !== token ||
+    !Number.isSafeInteger(owner.pid) ||
+    owner.pid < 1
+  ) {
+    throw new Error(`lock at ${lockPath} has no readable owner`);
+  }
+  return { ...owner, ownerPath, token };
+}
+
+function reapLockIfStale(lockPath) {
+  if (!existsSync(lockPath)) return true;
+  let owner;
+  try {
+    owner = lockOwner(lockPath);
+  } catch {
+    return false;
+  }
+  if (owner.pid === process.pid) return false;
+  try {
+    process.kill(owner.pid, 0);
+    return false;
+  } catch (error) {
+    if (error?.code !== 'ESRCH') throw error;
+  }
+  const reapedPath = `${lockPath}.reaped-${owner.token}`;
+  try {
+    renameSync(lockPath, reapedPath);
+    return true;
+  } catch (error) {
+    if (['EEXIST', 'ENOTEMPTY', 'ENOENT'].includes(error?.code)) return true;
+    throw error;
+  }
+}
+
+function releaseLock(lockPath, token) {
+  let owner;
+  try {
+    owner = lockOwner(lockPath);
+  } catch {
+    return;
+  }
+  if (owner.token !== token) return;
+  try {
+    rmSync(resolve(lockPath, `${token}.owner.json`), { force: true });
+    rmdirSync(lockPath);
+  } catch (error) {
+    if (!['ENOENT', 'ENOTEMPTY'].includes(error?.code)) throw error;
+  }
+}
+
+function withLock(lockPath, action, { kind = 'slot', waitMilliseconds } = {}) {
+  const wait = waitMilliseconds ?? lockWaitMilliseconds(kind);
+  const deadline = Date.now() + wait;
+  const token = randomUUID();
+  const candidate = `${lockPath}.candidate-${token}`;
+  mkdirSync(dirname(lockPath), { recursive: true });
+  mkdirSync(candidate);
+  atomicJson(
+    resolve(candidate, `${token}.owner.json`),
+    { pid: process.pid, token },
+    { exclusive: true },
+  );
+  let reportedWait = false;
+  try {
+    for (;;) {
+      try {
+        renameSync(candidate, lockPath);
+        break;
+      } catch (error) {
+        if (!['EEXIST', 'ENOTEMPTY'].includes(error?.code)) throw error;
+        const waitMarker = process.env.EFFECTIVE_FLOW_EVAL_LOCK_WAIT_MARKER;
+        if (waitMarker && !reportedWait) {
+          writeFileSync(waitMarker, kind);
+          reportedWait = true;
+        }
+        if (reapLockIfStale(lockPath)) continue;
+        if (Date.now() >= deadline) {
+          throw new Error(`timed out waiting for live ${kind} lock: ${lockPath}`);
+        }
+        blockingWait(20);
+      }
+    }
+    try {
+      return action();
+    } finally {
+      // The one boundary that proceeds when its launch parent dies: a throw here would skip the
+      // `releaseLock` on the next line and swallow whatever exception is already in flight.
+      pauseAtBoundary('before-lock-release', { orphanAction: 'proceed' });
+      releaseLock(lockPath, token);
+    }
+  } finally {
+    rmSync(candidate, { recursive: true, force: true });
+  }
+}
+
+// Waits for the release sentinel, or parks indefinitely when the boundary has none, and leaves
+// either way once the launch parent is gone. Returns `false` for that backstop exit, which is what
+// decides whether the caller throws.
+//
+// The backstop is a liveness check rather than a duration on purpose: a duration is a budget some
+// other process's startup and build work has to beat, which is the class of flake this gate exists
+// to remove. POSIX reparents an orphan onto init, so the parent's death shows up either as a
+// changed `ppid` or as `1`. It covers the child's **direct** parent dying — the test-file process,
+// or the `round.mjs` controller. It does not cover a SIGKILLed `node --test` runner, because
+// node:test runs each file in its own subprocess that survives and keeps its pid, nor a node:test
+// timeout, which fails a test without terminating the test-file process; a parked child left by
+// either is the caller's to kill.
+function waitForBoundaryRelease(name, release) {
+  for (;;) {
+    if (release && existsSync(release)) return true;
+    if (process.ppid !== LAUNCH_PPID || process.ppid <= 1) {
+      process.stderr.write(`launch parent exited while paused at ${name}\n`);
+      return false;
+    }
+    blockingWait(release ? 20 : 1_000);
+  }
+}
+
+// Two rules on a backstop exit, and they differ because the boundaries sit on opposite sides of
+// `withLock`'s `finally`. A boundary **inside** the locked action throws: its process is now
+// unsupervised, and resuming would run a real publication — a `renameSync` of the canonical
+// results directory — with nobody watching, so it ends non-zero instead. The lock is released
+// either way, because `releaseLock` below sits in a `finally`.
+//
+// `before-lock-release` is the deliberate exception and proceeds, because that call *is* inside
+// that `finally`: a throw there would skip the `releaseLock` on the next line and swallow any
+// exception already in flight. Its call site passes `orphanAction: 'proceed'` and says so.
+function pauseAtBoundary(name, { orphanAction = 'throw' } = {}) {
+  if (process.env.EFFECTIVE_FLOW_EVAL_PAUSE_AT !== name) return;
+  const marker = process.env.EFFECTIVE_FLOW_EVAL_PAUSE_MARKER;
+  if (!marker) throw new Error(`${name} pause requires a marker path`);
+  writeFileSync(marker, name);
+  const released = waitForBoundaryRelease(name, process.env.EFFECTIVE_FLOW_EVAL_PAUSE_RELEASE);
+  if (!released && orphanAction === 'throw') {
+    throw new Error(`launch parent exited while paused at ${name}`);
+  }
+}
+
+// The same gate, with one difference: it consumes its release file, so a controller can stop the
+// same boundary again later in the process. `verify` is the only caller that needs that, and it
+// needs it because its retry has to be observable: the torn-read path below is reachable only when
+// *both* walks see a corpus that moves, and a one-shot gate would let the second walk read a
+// settled corpus and hide the error a test is asserting. Consuming the release also closes the
+// lost wakeup the pair would otherwise have — a controller deletes the marker before it writes the
+// release, so the next marker it sees can only be the next pause and never the one it just
+// answered.
+//
+// It shares the wait above, and so the same backstop, but proceeds on a backstop exit rather than
+// throwing: its only boundary is `verify`, which takes no lock and writes nothing, so an orphaned
+// walk has nothing to damage by finishing. The `rmSync` below is already a no-op on an absent
+// file, so leaving the wait without a release cannot break it.
+function pauseAtRepeatableBoundary(name) {
+  if (process.env.EFFECTIVE_FLOW_EVAL_PAUSE_AT !== name) return;
+  const marker = process.env.EFFECTIVE_FLOW_EVAL_PAUSE_MARKER;
+  if (!marker) throw new Error(`${name} pause requires a marker path`);
+  const release = process.env.EFFECTIVE_FLOW_EVAL_PAUSE_RELEASE;
+  if (!release) throw new Error(`${name} pause requires a release path`);
+  writeFileSync(marker, name);
+  waitForBoundaryRelease(name, release);
+  rmSync(release, { force: true });
+}
+
+// The profile rules live in the unhashed `profile.mjs`, which `suite-loader.mjs` shares; re-exported
+// so the round coordinator's public surface stays what it was before they moved.
+export { normalizeProfile };
+
+function sourceRevision() {
+  return execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: REPOSITORY_ROOT,
+    encoding: 'utf8',
+  }).trim();
+}
+
+export function createRound(
+  suite,
+  {
+    scenarios = [],
+    profile = {},
+    base = suite.sandboxBase,
+    roundId = `${Date.now().toString(36)}-${randomUUID()}`,
+  } = {},
+) {
+  const selected = selectScenarios(suite, scenarios);
+  const normalizedProfile = normalizeProfile(profile);
+  // The pin is checked before anything is created or built, so a deviating or omitted pinned flag
+  // leaves no round root behind. It is read from the `suite` argument, never from an import, so
+  // the suite a round is created for is the suite whose pin it is held to.
+  assertProfileMatchesPin(suite.expectedProfile, normalizedProfile, 'the round profile');
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(roundId)) throw new Error(`invalid round id ${roundId}`);
+  const roundRoot = contained(base, resolve(base, roundId), 'round root');
+  mkdirSync(resolve(base), { recursive: true });
+  mkdirSync(roundRoot, { recursive: false });
+  const outputRoot = resolve(roundRoot, 'build');
+  let builtSkillRoot;
+  try {
+    builtSkillRoot = buildPortableSkill(outputRoot);
+    const identities = Object.fromEntries(
+      selected.map((scenario) => [
+        scenario,
+        pristineScenarioBuildIdentity(suite, scenario, builtSkillRoot),
+      ]),
+    );
+    const slots = [];
+    for (const scenario of selected) {
+      for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
+        const provisioned = provisionSlot(suite, {
+          roundRoot,
+          scenario,
+          slot,
+          attempt: 1,
+          builtSkillRoot,
+          profile: normalizedProfile,
+          identity: identities[scenario],
+        });
+        const state = {
+          schemaVersion: 1,
+          currentAttempt: 1,
+          discardedAttempts: 0,
+          expectedDigests: provisioned.preparedDigests,
+        };
+        atomicJson(provisioned.paths.state, state, { exclusive: true });
+        slots.push({
+          scenario,
+          slot,
+          slotRoot: provisioned.paths.slotRoot,
+          promptDigest: provisioned.metadata.promptDigest,
+          expectedDigests: provisioned.preparedDigests,
+        });
+      }
+    }
+    const manifest = {
+      schemaVersion: 1,
+      roundId,
+      createdAt: new Date().toISOString(),
+      creatorCheckout: PHYSICAL_REPOSITORY_ROOT,
+      sourceRevision: sourceRevision(),
+      requiredRuns: REQUIRED_RUNS,
+      scenarios: selected,
+      profile: normalizedProfile,
+      builtSkillRoot,
+      identities,
+      slots,
+    };
+    const manifestPath = resolve(roundRoot, 'manifest.json');
+    atomicJson(manifestPath, manifest, { exclusive: true });
+    chmodSync(manifestPath, 0o444);
+    return { manifest, manifestPath, roundRoot };
+  } catch (error) {
+    rmSync(roundRoot, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+export function loadRound(suite, handle, { base = suite.sandboxBase, mutating = true } = {}) {
+  if (!handle) throw new Error('a round id or manifest path is required');
+  const candidate = handle.includes(sep) ? resolve(handle) : resolve(base, handle, 'manifest.json');
+  const manifestPath = contained(base, candidate, 'round manifest');
+  const roundRoot = dirname(manifestPath);
+  if (!existsSync(manifestPath)) throw new Error(`no round manifest at ${manifestPath}`);
+  if (lstatSync(roundRoot).isSymbolicLink() || lstatSync(manifestPath).isSymbolicLink()) {
+    throw new Error('round roots and manifests may not be symlinks');
+  }
+  contained(realpathSync(base), realpathSync(roundRoot), 'physical round root');
+  const manifest = json(manifestPath);
+  if (manifest.schemaVersion !== 1 || manifest.requiredRuns !== REQUIRED_RUNS) {
+    throw new Error(`unsupported or malformed round manifest at ${manifestPath}`);
+  }
+  const discovered = discoverSuite(suite);
+  const uniqueScenarios = [...new Set(manifest.scenarios ?? [])];
+  if (
+    !Array.isArray(manifest.scenarios) ||
+    uniqueScenarios.length !== manifest.scenarios.length ||
+    uniqueScenarios.some((scenario) => !discovered.scenarios.includes(scenario))
+  ) {
+    throw new Error(`round manifest has unknown or duplicate scenarios at ${manifestPath}`);
+  }
+  if (!sameProfile(normalizeProfile(manifest.profile), manifest.profile)) {
+    throw new Error('round manifest execution profile is incomplete or non-canonical');
+  }
+  const expectedSlots = uniqueScenarios.length * REQUIRED_RUNS;
+  if (!Array.isArray(manifest.slots) || manifest.slots.length !== expectedSlots) {
+    throw new Error(`round manifest must state exactly ${expectedSlots} slots`);
+  }
+  const slotKeys = new Set();
+  for (const slot of manifest.slots) {
+    if (!uniqueScenarios.includes(slot.scenario))
+      throw new Error('round manifest slot has an unknown scenario');
+    validatePositiveInteger(slot.slot, 'manifest slot');
+    if (slot.slot > REQUIRED_RUNS)
+      throw new Error(`manifest slot ${slot.slot} exceeds ${REQUIRED_RUNS}`);
+    const key = `${slot.scenario}:${slot.slot}`;
+    if (slotKeys.has(key)) throw new Error(`round manifest duplicates slot ${key}`);
+    slotKeys.add(key);
+    const expected = sandboxPaths(roundRoot, slot.scenario, slot.slot, 1).slotRoot;
+    if (slot.slotRoot !== expected)
+      throw new Error(`round manifest slot root is not canonical for ${key}`);
+    if (!/^sha256:[0-9a-f]{64}$/.test(slot.promptDigest ?? '')) {
+      throw new Error(`round manifest has no prompt digest for ${key}`);
+    }
+    if (
+      !slot.expectedDigests ||
+      !sameKeys(slot.expectedDigests, PREPARED_DIGEST_KEYS) ||
+      Object.values(slot.expectedDigests).some((digest) => !/^sha256:[0-9a-f]{64}$/.test(digest))
+    ) {
+      throw new Error(`round manifest has malformed prepared digests for ${key}`);
+    }
+  }
+  if (
+    typeof manifest.builtSkillRoot !== 'string' ||
+    contained(roundRoot, manifest.builtSkillRoot, 'built skill root') !== manifest.builtSkillRoot
+  ) {
+    throw new Error('round manifest has a non-canonical built skill root');
+  }
+  if (
+    !existsSync(manifest.builtSkillRoot) ||
+    lstatSync(manifest.builtSkillRoot).isSymbolicLink() ||
+    !lstatSync(manifest.builtSkillRoot).isDirectory()
+  ) {
+    throw new Error('round manifest built skill root is missing, symlinked, or not a directory');
+  }
+  contained(
+    realpathSync(roundRoot),
+    realpathSync(manifest.builtSkillRoot),
+    'physical built skill root',
+  );
+  for (const scenario of uniqueScenarios) {
+    if (manifest.identities?.[scenario]?.scenario !== scenario) {
+      throw new Error(`round manifest has no build identity for ${scenario}`);
+    }
+  }
+  if (mutating && manifest.creatorCheckout !== PHYSICAL_REPOSITORY_ROOT) {
+    throw new Error(
+      `round belongs to ${manifest.creatorCheckout}; this checkout may inspect but not mutate it`,
+    );
+  }
+  return { manifest, manifestPath, roundRoot };
+}
+
+function currentAttempt(manifest, roundRoot, scenario, slot) {
+  if (!manifest.scenarios.includes(scenario)) throw new Error(`round does not contain ${scenario}`);
+  validatePositiveInteger(slot, 'slot');
+  if (slot > manifest.requiredRuns)
+    throw new Error(`slot ${slot} exceeds ${manifest.requiredRuns}`);
+  const statePath = sandboxPaths(roundRoot, scenario, slot, 1).state;
+  const slotRoot = dirname(statePath);
+  if (
+    !existsSync(slotRoot) ||
+    lstatSync(slotRoot).isSymbolicLink() ||
+    !lstatSync(slotRoot).isDirectory() ||
+    !existsSync(statePath) ||
+    lstatSync(statePath).isSymbolicLink() ||
+    !lstatSync(statePath).isFile()
+  ) {
+    throw new Error(`${scenario}/${slot} has a missing, symlinked, or irregular slot state`);
+  }
+  contained(realpathSync(roundRoot), realpathSync(slotRoot), 'physical slot root');
+  contained(realpathSync(roundRoot), realpathSync(statePath), 'physical slot state');
+  const state = json(statePath);
+  validatePositiveInteger(state.currentAttempt, 'current attempt');
+  if (!state.expectedDigests || typeof state.discardedAttempts !== 'number') {
+    throw new Error(`${scenario}/${slot} has malformed slot state`);
+  }
+  if (!sameKeys(state.expectedDigests, PREPARED_DIGEST_KEYS)) {
+    throw new Error(`${scenario}/${slot} state has incomplete prepared digests`);
+  }
+  if (state.currentAttempt === 1) {
+    const declared = manifest.slots.find(
+      (entry) => entry.scenario === scenario && entry.slot === slot,
+    );
+    if (JSON.stringify(state.expectedDigests) !== JSON.stringify(declared.expectedDigests)) {
+      throw new Error(`${scenario}/${slot} state disagrees with the immutable manifest`);
+    }
+  }
+  const paths = sandboxPaths(roundRoot, scenario, slot, state.currentAttempt);
+  if (
+    !existsSync(paths.attemptRoot) ||
+    lstatSync(paths.slotRoot).isSymbolicLink() ||
+    lstatSync(paths.attemptRoot).isSymbolicLink()
+  ) {
+    throw new Error(`${scenario}/${slot} contains a symlinked slot or attempt root`);
+  }
+  contained(realpathSync(roundRoot), realpathSync(paths.attemptRoot), 'physical attempt root');
+  return { state, paths };
+}
+
+function safeHostReceipt(receipt, manifest, paths) {
+  if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)) {
+    throw new Error('host receipt must be an object');
+  }
+  if (!sameKeys(receipt, RECEIPT_KEYS)) {
+    throw new Error(`host receipt fields must be exactly ${RECEIPT_KEYS.join(', ')}`);
+  }
+  if (
+    receipt.schemaVersion !== 1 ||
+    receipt.nonForked !== true ||
+    receipt.completed !== true ||
+    receipt.taskInput !== 'rendered-prompt-only' ||
+    receipt.initialWorkingRoot !== paths.projectRoot
+  ) {
+    throw new Error('host receipt does not attest the required non-forked slot-project session');
+  }
+  if (
+    !receipt.profile ||
+    typeof receipt.profile !== 'object' ||
+    Array.isArray(receipt.profile) ||
+    !sameKeys(receipt.profile, PROFILE_KEYS)
+  ) {
+    throw new Error(`host receipt profile fields must be exactly ${PROFILE_KEYS.join(', ')}`);
+  }
+  const normalizedReceiptProfile = normalizeProfile(receipt.profile);
+  if (
+    !sameProfile(receipt.profile, normalizedReceiptProfile) ||
+    !sameProfile(receipt.profile, manifest.profile)
+  ) {
+    throw new Error('host receipt execution profile does not match the round profile');
+  }
+  const serialized = JSON.stringify(receipt);
+  if (/(?:session|thread|task)[_-]?id|https?:\/\/|account|e-?mail/i.test(serialized)) {
+    throw new Error('host receipt contains a sensitive or link-like field/value');
+  }
+  return receipt;
+}
+
+function preparedDigests(suite, paths) {
+  const config = resolve(paths.projectRoot, 'docs', 'adr', 'effective-flow-project-setup.md');
+  return {
+    log: digestFile(paths.callLog),
+    prompt: digestFile(paths.prompt),
+    buildIdentity: digestFile(paths.buildIdentity),
+    fixture: digestFile(paths.fixture),
+    projectAgents: digestFile(resolve(paths.projectRoot, 'AGENTS.md')),
+    projectConfig: digestFile(config),
+    runMetadata: digestFile(paths.runMetadata),
+    trackerStub: digestFile(resolve(paths.skillRoot, TRACKER_STUB_SKILL_PATH)),
+  };
+}
+
+// A paired auxiliary trace — for `merge-gate`, the configured-reviewer scenario's echo trace — is
+// part of that scenario's sealed evidence unit, so a write to it after sealing is
+// `changed-after-seal` exactly as a write to the call log is.
+//
+// So is the sealed evidence the sealing step writes, under the suite's own digest key. A suite that
+// declares none — `merge-gate` — digests exactly the keys it always did.
+function sealDigests(suite, paths, scenario) {
+  const auxiliary = auxiliaryFor(suite, scenario);
+  const sealed = sealedFor(suite, scenario);
+  return {
+    ...preparedDigests(suite, paths),
+    hostReceipt: digestFile(paths.hostReceipt),
+    ...(auxiliary ? { [auxiliary.sealDigestKey]: digestFile(auxiliaryLogPath(suite, paths)) } : {}),
+    ...(sealed ? { [sealed.sealDigestKey]: digestFile(sealedEvidencePath(suite, paths)) } : {}),
+  };
+}
+
+export function sealAttempt(
+  suite,
+  { handle, scenario, slot, hostReceipt, base = suite.sandboxBase },
+) {
+  const { manifest, roundRoot } = loadRound(suite, handle, { base });
+  const slotLock = sandboxPaths(roundRoot, scenario, slot, 1).slotLock;
+  return withLock(slotLock, () => {
+    const { state, paths } = currentAttempt(manifest, roundRoot, scenario, slot);
+    safeHostReceipt(hostReceipt, manifest, paths);
+    if (existsSync(paths.sealReceipt)) {
+      if (existsSync(paths.hostReceipt) && sameHostReceipt(json(paths.hostReceipt), hostReceipt)) {
+        return json(paths.sealReceipt);
+      }
+      throw new Error(`${scenario}/${slot} is already sealed with a different host receipt`);
+    }
+    if (existsSync(paths.callLogLock))
+      throw new Error(`call-log lock is still live at ${paths.callLogLock}`);
+    const refusal = sealRefusalWithoutEvidence(suite, scenario, paths);
+    if (refusal !== null) throw new Error(`${scenario}/${slot} ${refusal}`);
+    // **An absent call log and an empty one are the same observation, and are made the same file
+    // here.** The stub creates the log on its first call, so a run that correctly made none leaves
+    // no file at all. Materialising it as an empty file before anything is digested means the seal,
+    // the published archive and every later evaluation see one state — zero records — rather than
+    // two spellings of it, and `run-<n>.jsonl` exists in the archive like every other run's.
+    if (!existsSync(paths.callLog)) writeFileSync(paths.callLog, '', { flag: 'wx' });
+    const auxiliaryLog = auxiliaryFor(suite, scenario) ? auxiliaryLogPath(suite, paths) : null;
+    if (auxiliaryLog) {
+      if (existsSync(`${auxiliaryLog}.lock`))
+        throw new Error(`auxiliary-trace lock is still live at ${auxiliaryLog}.lock`);
+      if (!existsSync(auxiliaryLog))
+        throw new Error(`${scenario}/${slot} has no paired auxiliary trace at ${auxiliaryLog}`);
+    }
+    const metadata = json(paths.runMetadata);
+    const currentPreparedDigests = preparedDigests(suite, paths);
+    const preparedSubset = Object.fromEntries(
+      Object.keys(state.expectedDigests).map((key) => [key, currentPreparedDigests[key]]),
+    );
+    if (JSON.stringify(preparedSubset) !== JSON.stringify(state.expectedDigests)) {
+      throw new Error(
+        'slot fixture, prompt, metadata, stub, or project inputs changed before sealing',
+      );
+    }
+    if (
+      metadata.scenario !== scenario ||
+      metadata.slot !== slot ||
+      metadata.attempt !== state.currentAttempt ||
+      metadata.projectRoot !== paths.projectRoot ||
+      metadata.skillRoot !== paths.skillRoot ||
+      JSON.stringify(metadata.profile) !== JSON.stringify(manifest.profile) ||
+      metadata.promptDigest !== digestFile(paths.prompt)
+    ) {
+      throw new Error('slot metadata no longer matches the prepared attempt');
+    }
+    const actualIdentity = scenarioBuildIdentity(suite, scenario, paths.skillRoot);
+    if (JSON.stringify(actualIdentity) !== JSON.stringify(manifest.identities[scenario])) {
+      throw new Error('slot build or immutable scenario inputs changed before sealing');
+    }
+    if (JSON.stringify(json(paths.buildIdentity)) !== JSON.stringify(actualIdentity)) {
+      throw new Error('slot build-identity file changed before sealing');
+    }
+    if (existsSync(paths.hostReceipt)) {
+      if (!sameHostReceipt(json(paths.hostReceipt), hostReceipt)) {
+        throw new Error('attempt already carries a different host receipt');
+      }
+    } else {
+      atomicJson(paths.hostReceipt, hostReceipt, { exclusive: true });
+    }
+    pauseAtBoundary('host-receipt-written');
+    // Observed last, after every refusal above, so a refused seal leaves no such file behind and the
+    // state recorded is the one the session ended in.
+    writeSealedEvidence(suite, scenario, paths);
+    const receipt = {
+      schemaVersion: 1,
+      scenario,
+      slot,
+      attempt: metadata.attempt,
+      sealedAt: new Date().toISOString(),
+      buildDigest: actualIdentity.digest,
+      digests: sealDigests(suite, paths, scenario),
+    };
+    atomicJson(paths.sealReceipt, receipt, { exclusive: true });
+    return receipt;
+  });
+}
+
+function changedAfterSeal(suite, paths, scenario) {
+  if (!existsSync(paths.sealReceipt)) return false;
+  const sealed = json(paths.sealReceipt);
+  const auxiliaryLog = auxiliaryFor(suite, scenario) ? auxiliaryLogPath(suite, paths) : null;
+  if (auxiliaryLog && !existsSync(auxiliaryLog)) return true;
+  const sealedPath = sealedFor(suite, scenario) ? sealedEvidencePath(suite, paths) : null;
+  if (sealedPath && !existsSync(sealedPath)) return true;
+  const current = sealDigests(suite, paths, scenario);
+  return JSON.stringify(sealed.digests) !== JSON.stringify(current);
+}
+
+export function roundStatus(suite, handle, { base = suite.sandboxBase } = {}) {
+  const { manifest, roundRoot } = loadRound(suite, handle, { base, mutating: false });
+  return manifest.slots.map(({ scenario, slot }) => {
+    const transitionPath = retryTransitionPath(roundRoot, scenario, slot);
+    if (existsSync(transitionPath)) {
+      const transition = validateRetryTransition(scenario, slot, json(transitionPath));
+      const paths = sandboxPaths(roundRoot, scenario, slot, transition.toAttempt);
+      return {
+        scenario,
+        slot,
+        attempt: transition.toAttempt,
+        status: 'retry-pending',
+        prompt: paths.prompt,
+        projectRoot: paths.projectRoot,
+      };
+    }
+    const { state, paths } = currentAttempt(manifest, roundRoot, scenario, slot);
+    let status = 'prepared';
+    if (attemptLeftEvidence(suite, scenario, paths)) status = 'unsealed';
+    if (existsSync(paths.sealReceipt)) {
+      if (changedAfterSeal(suite, paths, scenario)) status = 'changed-after-seal';
+      else {
+        const evaluation = evaluateAttempt(suite, manifest, scenario, paths);
+        status = evaluation.validityProblems.length > 0 ? 'invalid' : 'sealed';
+      }
+    }
+    return {
+      scenario,
+      slot,
+      attempt: state.currentAttempt,
+      status,
+      prompt: paths.prompt,
+      projectRoot: paths.projectRoot,
+    };
+  });
+}
+
+function evaluateAttempt(suite, manifest, scenario, paths) {
+  const fixture = json(paths.fixture);
+  const auxiliaryLog = auxiliaryLogPath(suite, paths);
+  const sealedPath = sealedEvidencePath(suite, paths);
+  return evaluateEvidence(suite, {
+    scenario,
+    logText: readFileSync(paths.callLog, 'utf8'),
+    fixture,
+    projectRoot: paths.projectRoot,
+    buildIdentity: json(paths.buildIdentity),
+    expectedBuildIdentity: manifest.identities[scenario],
+    answerableOperations: new Set(Object.keys(fixture.operations ?? {})),
+    auxiliaryText:
+      auxiliaryLog && existsSync(auxiliaryLog) ? readFileSync(auxiliaryLog, 'utf8') : null,
+    sealedEvidenceText:
+      sealedPath && existsSync(sealedPath) ? readFileSync(sealedPath, 'utf8') : null,
+  });
+}
+
+function retryTransitionPath(roundRoot, scenario, slot) {
+  return resolve(sandboxPaths(roundRoot, scenario, slot, 1).slotRoot, 'retry-transition.json');
+}
+
+function validateRetryTransition(scenario, slot, transition) {
+  if (
+    !transition ||
+    !sameKeys(transition, [
+      'discardedAttempts',
+      'expectedDigests',
+      'fromAttempt',
+      'reason',
+      'schemaVersion',
+      'toAttempt',
+    ]) ||
+    transition.schemaVersion !== 1 ||
+    transition.toAttempt !== transition.fromAttempt + 1 ||
+    !sameKeys(transition.expectedDigests, PREPARED_DIGEST_KEYS)
+  ) {
+    throw new Error(`${scenario}/${slot} has a malformed retry transition`);
+  }
+  return transition;
+}
+
+function finishRetryTransition({ roundRoot, scenario, slot, transition, pause = false }) {
+  validateRetryTransition(scenario, slot, transition);
+  const previous = sandboxPaths(roundRoot, scenario, slot, transition.fromAttempt);
+  const next = sandboxPaths(roundRoot, scenario, slot, transition.toAttempt);
+  const quarantined = resolve(previous.quarantineRoot, `attempt-${transition.fromAttempt}`);
+  if (!existsSync(next.attemptRoot)) {
+    throw new Error(`${scenario}/${slot} retry transition has no prepared replacement attempt`);
+  }
+  mkdirSync(previous.quarantineRoot, { recursive: true });
+  if (existsSync(previous.attemptRoot)) {
+    if (existsSync(quarantined)) {
+      throw new Error(`${scenario}/${slot} retry transition has two copies of its prior attempt`);
+    }
+    renameSync(previous.attemptRoot, quarantined);
+  } else if (!existsSync(quarantined)) {
+    throw new Error(`${scenario}/${slot} retry transition lost its prior attempt`);
+  }
+  if (pause) pauseAtBoundary('retry-quarantined');
+  atomicJson(next.state, {
+    schemaVersion: 1,
+    currentAttempt: transition.toAttempt,
+    discardedAttempts: transition.discardedAttempts,
+    expectedDigests: transition.expectedDigests,
+  });
+  rmSync(retryTransitionPath(roundRoot, scenario, slot), { force: true });
+  return { attempt: transition.toAttempt, prompt: next.prompt };
+}
+
+function recoverRetryTransition({ roundRoot, scenario, slot }) {
+  const path = retryTransitionPath(roundRoot, scenario, slot);
+  if (!existsSync(path)) return null;
+  const transition = json(path);
+  const statePath = sandboxPaths(roundRoot, scenario, slot, 1).state;
+  const state = json(statePath);
+  if (state.currentAttempt === transition.toAttempt) {
+    rmSync(path, { force: true });
+    return {
+      attempt: transition.toAttempt,
+      prompt: sandboxPaths(roundRoot, scenario, slot, transition.toAttempt).prompt,
+    };
+  }
+  if (state.currentAttempt !== transition.fromAttempt) {
+    throw new Error(`${scenario}/${slot} retry transition disagrees with slot state`);
+  }
+  return finishRetryTransition({ roundRoot, scenario, slot, transition });
+}
+
+function reprovision({
+  suite,
+  manifest,
+  roundRoot,
+  scenario,
+  slot,
+  state,
+  paths,
+  reason,
+  hostAbort = null,
+  sealedEvidenceText = null,
+}) {
+  const discardLimit = suite.retryDiscardLimit(scenario);
+  if (state.discardedAttempts >= discardLimit) {
+    throw new Error(
+      `${scenario}/${slot} already discarded ${state.discardedAttempts} attempts, the limit being ` +
+        `${discardLimit}; stop for investigation`,
+    );
+  }
+  writeSealedEvidence(suite, scenario, paths, sealedEvidenceText);
+  const next = state.currentAttempt + 1;
+  const provisioned = provisionSlot(suite, {
+    roundRoot,
+    scenario,
+    slot,
+    attempt: next,
+    builtSkillRoot: manifest.builtSkillRoot,
+    profile: manifest.profile,
+    identity: manifest.identities[scenario],
+  });
+  atomicJson(resolve(paths.attemptRoot, 'retry.json'), {
+    reason,
+    retainedAt: new Date().toISOString(),
+    ...(hostAbort ? { hostAbort } : {}),
+  });
+  const transition = {
+    schemaVersion: 1,
+    fromAttempt: state.currentAttempt,
+    toAttempt: next,
+    discardedAttempts: state.discardedAttempts + 1,
+    reason,
+    expectedDigests: provisioned.preparedDigests,
+  };
+  atomicJson(retryTransitionPath(roundRoot, scenario, slot), transition, { exclusive: true });
+  return finishRetryTransition({ roundRoot, scenario, slot, transition, pause: true });
+}
+
+export function retryInvalid(suite, { handle, scenario, slot, reason, base = suite.sandboxBase }) {
+  const { manifest, roundRoot } = loadRound(suite, handle, { base });
+  const slotLock = sandboxPaths(roundRoot, scenario, slot, 1).slotLock;
+  return withLock(slotLock, () => {
+    const recovered = recoverRetryTransition({ roundRoot, scenario, slot });
+    if (recovered) return recovered;
+    const { state, paths } = currentAttempt(manifest, roundRoot, scenario, slot);
+    if (!existsSync(paths.sealReceipt)) throw new Error('retry-invalid requires a sealed attempt');
+    if (changedAfterSeal(suite, paths, scenario)) {
+      return reprovision({
+        suite,
+        manifest,
+        roundRoot,
+        scenario,
+        slot,
+        state,
+        paths,
+        reason: reason || 'attempt changed after sealing',
+      });
+    }
+    const result = evaluateAttempt(suite, manifest, scenario, paths);
+    if (result.validityProblems.length === 0) {
+      throw new Error(
+        result.findings.length > 0
+          ? 'valid behavioural findings are retained and may not be retried'
+          : 'valid evidence may not be retried',
+      );
+    }
+    return reprovision({
+      suite,
+      manifest,
+      roundRoot,
+      scenario,
+      slot,
+      state,
+      paths,
+      reason: reason || result.validityProblems.join('; '),
+    });
+  });
+}
+
+// Retries an attempt the host stopped. Two shapes of stop receipt are accepted, and which one an
+// attempt needs depends on what it left.
+//
+// **An attempt that left nothing** is retried on the plain receipt `{schemaVersion, stopped,
+// reason}`: no call log or paired trace holds anything to lose. The sealed evidence is the
+// exception, because the run does not write it — a commit, a push to the sandbox `origin` or an edit
+// leaves no call and no report — so for a scenario that declares it the attempt is judged below
+// before any retry, whichever receipt it carries, and a finding in that evidence or a record that
+// cannot be read refuses the retry as it would for an attempt that left a call.
+//
+// **An attempt that left evidence** is retried only when the host stopped it for a reason outside
+// the run, and only when what it left shows no deviation. The receipt adds `cause` and `hostError`,
+// the provider's own error line, checked against the closed set in `host-abort.mjs` for the round's
+// harness. That is what keeps an early end from being attested as a capacity abort: a session that
+// ended on its own conclusion printed no such line. Before anything moves, the partial evidence —
+// the call log, the paired trace, and for a suite that declares it the sealed evidence, observed now
+// exactly as `seal` would — is judged by `assessAbortedEvidence`. Evidence that cannot be read, and
+// evidence that already holds a decisive finding, refuse the retry: a deviation is retained, never
+// discarded, and the slot then needs investigation rather than another run. Otherwise the observed
+// sealed evidence is written into the attempt and the whole attempt is quarantined like any other
+// retried one, its `retry.json` carrying the cause and the error line beside the reason.
+//
+// The completed-session seal is no alternative for such an attempt and is not offered one: its
+// receipt attests `completed: true`, which a stopped session cannot truthfully claim.
+export function retryAborted(
+  suite,
+  { handle, scenario, slot, assertion, base = suite.sandboxBase },
+) {
+  const { manifest, roundRoot } = loadRound(suite, handle, { base });
+  const slotLock = sandboxPaths(roundRoot, scenario, slot, 1).slotLock;
+  return withLock(slotLock, () => {
+    const recovered = recoverRetryTransition({ roundRoot, scenario, slot });
+    if (recovered) return recovered;
+    const { state, paths } = currentAttempt(manifest, roundRoot, scenario, slot);
+    const hostAbort = stopReceiptHostAbort(assertion, manifest.profile.harness);
+    if (existsSync(paths.sealReceipt)) throw new Error('sealed attempts use retry-invalid');
+    const leftEvidence = attemptLeftEvidence(suite, scenario, paths);
+    if (leftEvidence && !hostAbort) {
+      throw new Error(
+        `${evidenceDescription(suite, scenario)} must be sealed and evaluated before any retry, ` +
+          'unless the stop receipt attests a host abort with its cause and hostError',
+      );
+    }
+    const sealedEvidenceText =
+      leftEvidence || sealedFor(suite, scenario)
+        ? discardableSealedEvidence(suite, scenario, slot, paths)
+        : null;
+    return reprovision({
+      suite,
+      manifest,
+      roundRoot,
+      scenario,
+      slot,
+      state,
+      paths,
+      reason: hostAbort ? `${hostAbort.cause}: ${assertion.reason}` : assertion.reason,
+      hostAbort,
+      sealedEvidenceText,
+    });
+  });
+}
+
+// The judgement `retryAborted` makes of an attempt that left evidence, and of every attempt whose
+// scenario declares sealed evidence, since only the seal's own observation shows what such an
+// attempt did outside its call log and paired trace. Returns the sealed evidence it observed —
+// `null` for a suite that declares none — which `reprovision` writes into the attempt before
+// quarantining it, so the retained attempt carries the state it was judged on.
+function discardableSealedEvidence(suite, scenario, slot, paths) {
+  if (existsSync(paths.callLogLock)) {
+    throw new Error(`call-log lock is still live at ${paths.callLogLock}`);
+  }
+  const auxiliaryLog = auxiliaryFor(suite, scenario) ? auxiliaryLogPath(suite, paths) : null;
+  if (auxiliaryLog && existsSync(`${auxiliaryLog}.lock`)) {
+    throw new Error(`auxiliary-trace lock is still live at ${auxiliaryLog}.lock`);
+  }
+  const sealedText = captureSealedEvidence(suite, scenario, paths);
+  const assessment = assessAbortedEvidence(suite, {
+    scenario,
+    logText: existsSync(paths.callLog) ? readFileSync(paths.callLog, 'utf8') : '',
+    fixture: json(paths.fixture),
+    projectRoot: paths.projectRoot,
+    auxiliaryText:
+      auxiliaryLog && existsSync(auxiliaryLog) ? readFileSync(auxiliaryLog, 'utf8') : null,
+    sealedEvidenceText: sealedText,
+  });
+  if (assessment.unjudgeable.length > 0) {
+    throw new Error(
+      `${scenario}/${slot} partial evidence cannot be judged (${assessment.unjudgeable.join('; ')}); ` +
+        'it is retained, stop for investigation',
+    );
+  }
+  if (assessment.decisiveFindings.length > 0) {
+    throw new Error(
+      `${scenario}/${slot} partial evidence already holds a behavioural finding ` +
+        `(${assessment.decisiveFindings.join('; ')}); it is retained and may not be retried`,
+    );
+  }
+  return sealedText;
+}
+
+function filesUnder(root, directory = root) {
+  const files = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = resolve(directory, entry.name);
+    if (entry.isSymbolicLink()) throw new Error(`generation contains a symlink: ${path}`);
+    if (entry.isDirectory()) files.push(...filesUnder(root, path));
+    else if (entry.isFile() && relative(root, path) !== '.generation.json') files.push(path);
+    else if (!entry.isFile()) throw new Error(`generation contains a non-regular file: ${path}`);
+  }
+  return files;
+}
+
+function generationContentDigest(directory) {
+  const lines = filesUnder(directory)
+    .map((path) => `${relative(directory, path)} ${digestFile(path)}`)
+    .sort();
+  return digestOf(lines.join('\n'));
+}
+
+function generationInfo(directory) {
+  if (!existsSync(directory)) return null;
+  const markerPath = resolve(directory, '.generation.json');
+  if (!existsSync(markerPath)) {
+    return { generation: 'legacy', contentDigest: generationContentDigest(directory) };
+  }
+  const marker = json(markerPath);
+  if (
+    !sameKeys(marker, ['contentDigest', 'generation', 'schemaVersion']) ||
+    marker.schemaVersion !== 1 ||
+    !/^[0-9a-f-]{36}$/.test(marker.generation ?? '') ||
+    marker.contentDigest !== generationContentDigest(directory)
+  ) {
+    throw new Error(`generation marker or content is invalid at ${markerPath}`);
+  }
+  return marker;
+}
+
+function sameGeneration(actual, expected) {
+  return (
+    actual !== null &&
+    expected !== null &&
+    actual.generation === expected.generation &&
+    actual.contentDigest === expected.contentDigest
+  );
+}
+
+function ensureCanonicalGeneration(suite, candidate, scenarios, identities) {
+  const findings = [];
+  const allowedTopLevel = new Set([...scenarios, '.generation.json']);
+  const unknownTopLevel = readdirSync(candidate, { withFileTypes: true })
+    .filter((entry) => !allowedTopLevel.has(entry.name))
+    .map((entry) => entry.name)
+    .sort();
+  if (unknownTopLevel.length > 0) {
+    throw new Error(
+      `candidate has unknown top-level result entries: ${unknownTopLevel.join(', ')}`,
+    );
+  }
+  for (const scenario of scenarios) {
+    const directory = resolve(candidate, scenario);
+    if (!existsSync(directory)) {
+      throw new Error(`candidate is missing discovered scenario directory: ${scenario}`);
+    }
+    if (lstatSync(directory).isSymbolicLink() || !lstatSync(directory).isDirectory()) {
+      throw new Error(`${scenario} candidate entry is not a regular directory`);
+    }
+    const auxiliary = auxiliaryFor(suite, scenario);
+    const sealed = sealedFor(suite, scenario);
+    validateArchivedPairing(directory, archivedPartners(suite, scenario));
+    const suffixes = ['jsonl', 'build.json', 'prompt.txt', 'metadata.json'];
+    if (auxiliary) suffixes.push(auxiliary.archiveSuffix);
+    if (sealed) suffixes.push(sealed.archiveSuffix);
+    const names = readdirSync(directory).sort();
+    for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
+      for (const suffix of suffixes) {
+        const name = `run-${slot}.${suffix}`;
+        if (!names.includes(name)) throw new Error(`${scenario} candidate is missing ${name}`);
+      }
+    }
+    const allowed = new Set(
+      Array.from({ length: REQUIRED_RUNS }, (_, index) => index + 1).flatMap((slot) =>
+        suffixes.map((suffix) => `run-${slot}.${suffix}`),
+      ),
+    );
+    const extra = names.filter((name) => !allowed.has(name));
+    if (extra.length > 0)
+      throw new Error(`${scenario} candidate has unexpected files: ${extra.join(', ')}`);
+    const fixture = json(resolve(suite.root, 'fixtures', `${scenario}.json`));
+    for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
+      const target = resolve(directory, `run-${slot}`);
+      const metadata = json(`${target}.metadata.json`);
+      const stamp = json(`${target}.build.json`);
+      if (
+        metadata.scenario !== scenario ||
+        metadata.slot !== slot ||
+        metadata.promptDigest !== digestFile(`${target}.prompt.txt`) ||
+        metadata.buildDigest !== stamp.digest
+      ) {
+        throw new Error(`${scenario}/run-${slot} metadata does not bind its archived files`);
+      }
+      // Every slot of the candidate generation, newly published and carried forward alike, has to
+      // have been recorded with the pinned profile. The instrument binding is the primary guard:
+      // a pin edit changes the hashed suite configuration, so a carried-forward stamp from before
+      // it already fails the identity check below. This assertion is the defense in depth that
+      // still holds against hand-edited metadata or a future change to the hash membership. The
+      // top-level `profile` is the one to check: sealing guarantees it equals the host receipt's.
+      assertProfileMatchesPin(
+        suite.expectedProfile,
+        metadata.profile,
+        `${scenario}/run-${slot} archived profile`,
+      );
+      const evaluation = evaluateEvidence(suite, {
+        scenario,
+        logText: readFileSync(`${target}.jsonl`, 'utf8'),
+        fixture,
+        projectRoot: metadata.projectRoot,
+        buildIdentity: stamp,
+        expectedBuildIdentity: identities[scenario],
+        answerableOperations: new Set(Object.keys(fixture.operations ?? {})),
+        auxiliaryText: auxiliary
+          ? readFileSync(`${target}.${auxiliary.archiveSuffix}`, 'utf8')
+          : null,
+        sealedEvidenceText: sealed
+          ? readFileSync(`${target}.${sealed.archiveSuffix}`, 'utf8')
+          : null,
+      });
+      if (evaluation.validityProblems.length > 0) {
+        throw new Error(
+          `${scenario}/run-${slot} is invalid evidence: ${evaluation.validityProblems.join('; ')}`,
+        );
+      }
+      findings.push(...evaluation.findings.map((finding) => ({ scenario, slot, finding })));
+    }
+  }
+  return findings;
+}
+
+function rollbackHandledPublication({ journalPath, results, publicationRoot }) {
+  const journal = json(journalPath);
+  const candidate = contained(publicationRoot, journal.candidate, 'publication candidate');
+  const backup = contained(publicationRoot, journal.backup, 'publication backup');
+  const observedResults = generationInfo(results);
+  const observedBackup = generationInfo(backup);
+
+  if (sameGeneration(observedResults, journal.candidateGeneration)) {
+    rmSync(results, { recursive: true, force: true });
+  } else if (
+    observedResults !== null &&
+    !sameGeneration(observedResults, journal.previousGeneration)
+  ) {
+    throw new Error('handled publication rollback found a contradictory canonical generation');
+  }
+
+  if (journal.previousGeneration !== null && !existsSync(results)) {
+    if (!sameGeneration(observedBackup, journal.previousGeneration)) {
+      throw new Error('handled publication rollback cannot identify the previous generation');
+    }
+    renameSync(backup, results);
+  }
+
+  rmSync(candidate, { recursive: true, force: true });
+  rmSync(backup, { recursive: true, force: true });
+  rmSync(journalPath, { force: true });
+  const restored = generationInfo(results);
+  if (
+    (journal.previousGeneration === null && restored !== null) ||
+    (journal.previousGeneration !== null && !sameGeneration(restored, journal.previousGeneration))
+  ) {
+    throw new Error('handled publication rollback did not restore the previous generation');
+  }
+}
+
+function writeJournal(path, journal) {
+  atomicJson(path, journal);
+  if (process.env.EFFECTIVE_FLOW_EVAL_PROMOTION_PAUSE_AT === journal.phase) {
+    const marker = process.env.EFFECTIVE_FLOW_EVAL_PROMOTION_PAUSE_MARKER;
+    if (!marker) throw new Error('promotion pause requires a marker path');
+    writeFileSync(marker, journal.phase);
+    for (;;) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1_000);
+  }
+  if (process.env.EFFECTIVE_FLOW_EVAL_PROMOTION_FAIL_AT === journal.phase) {
+    throw new Error(`injected publication failure at ${journal.phase}`);
+  }
+}
+
+function recoverPublicationLocked({ resultsDir, publicationRoot }) {
+  const journalPath = resolve(publicationRoot, '.results-publication.json');
+  if (!existsSync(journalPath)) {
+    return { recovered: false };
+  }
+  const journal = json(journalPath);
+  const results = resolve(resultsDir);
+  const candidate = contained(publicationRoot, journal.candidate, 'publication candidate');
+  const backup = contained(publicationRoot, journal.backup, 'publication backup');
+  const observed = {
+    results: generationInfo(results),
+    candidate: generationInfo(candidate),
+    backup: generationInfo(backup),
+  };
+  for (const [place, info] of Object.entries(observed)) {
+    const allowed =
+      info === null ||
+      sameGeneration(info, journal.candidateGeneration) ||
+      sameGeneration(info, journal.previousGeneration);
+    if (!allowed) throw new Error(`publication recovery found a contradictory ${place} generation`);
+  }
+  if (sameGeneration(observed.results, journal.candidateGeneration)) {
+    // The new generation is installed; only cleanup remained.
+  } else if (sameGeneration(observed.results, journal.previousGeneration)) {
+    // Nothing was renamed yet, so roll back the unused candidate.
+  } else if (
+    observed.results === null &&
+    sameGeneration(observed.candidate, journal.candidateGeneration)
+  ) {
+    if (
+      journal.previousGeneration !== null &&
+      !sameGeneration(observed.backup, journal.previousGeneration)
+    ) {
+      throw new Error('publication recovery cannot identify the previous generation backup');
+    }
+    renameSync(candidate, results);
+  } else if (
+    observed.results === null &&
+    observed.candidate === null &&
+    sameGeneration(observed.backup, journal.previousGeneration)
+  ) {
+    renameSync(backup, results);
+  } else {
+    throw new Error('publication journal has no deterministic recovery path');
+  }
+  rmSync(candidate, { recursive: true, force: true });
+  rmSync(backup, { recursive: true, force: true });
+  rmSync(journalPath, { force: true });
+  return { recovered: true };
+}
+
+// An explicit root is the caller-verified conventional main checkout of this same repository.
+// The owning workflow still guards runtime writes immediately before invoking publication/recovery.
+export function publicationLockPath(suite, publicationRoot = suite.root, publicationRuntimeRoot) {
+  let lockRoot = REPOSITORY_ROOT;
+  if (publicationRuntimeRoot !== undefined) {
+    if (
+      typeof publicationRuntimeRoot !== 'string' ||
+      !isAbsolute(publicationRuntimeRoot) ||
+      resolve(publicationRuntimeRoot) !== publicationRuntimeRoot ||
+      !existsSync(publicationRuntimeRoot) ||
+      realpathSync(publicationRuntimeRoot) !== publicationRuntimeRoot
+    )
+      throw new Error('publicationRuntimeRoot must be an absolute normalized physical main root');
+    const gitDirectory = resolve(publicationRuntimeRoot, '.git');
+    const common = execFileSync('git', ['rev-parse', '--git-common-dir'], {
+      cwd: REPOSITORY_ROOT,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+    if (
+      !existsSync(gitDirectory) ||
+      !lstatSync(gitDirectory).isDirectory() ||
+      lstatSync(gitDirectory).isSymbolicLink() ||
+      gitDirectory !== realpathSync(resolve(REPOSITORY_ROOT, common))
+    )
+      throw new Error('publicationRuntimeRoot must own this repository common Git directory');
+    lockRoot = publicationRuntimeRoot;
+  }
+  const key = digestOf(resolve(publicationRoot)).slice('sha256:'.length);
+  return resolve(
+    lockRoot,
+    '.effective-flow',
+    suite.runtimeStateDir,
+    'publication-locks',
+    `${key}.lock`,
+  );
+}
+
+export function recoverPublication(
+  suite,
+  { resultsDir = resultsDirOf(suite), publicationRoot = suite.root, publicationRuntimeRoot } = {},
+) {
+  const lockPath = publicationLockPath(suite, publicationRoot, publicationRuntimeRoot);
+  mkdirSync(publicationRoot, { recursive: true });
+  return withLock(
+    lockPath,
+    () => {
+      pauseAtBoundary('publication-lock-held');
+      return recoverPublicationLocked({ resultsDir: resolve(resultsDir), publicationRoot });
+    },
+    { kind: 'publication', waitMilliseconds: 0 },
+  );
+}
+
+function validateSealedSlot(suite, manifest, roundRoot, scenario, slot) {
+  const { paths } = currentAttempt(manifest, roundRoot, scenario, slot);
+  if (!existsSync(paths.sealReceipt)) throw new Error(`${scenario}/${slot} is not sealed`);
+  if (changedAfterSeal(suite, paths, scenario))
+    throw new Error(`${scenario}/${slot} changed after sealing`);
+  const sealed = json(paths.sealReceipt);
+  const metadata = json(paths.runMetadata);
+  const host = json(paths.hostReceipt);
+  safeHostReceipt(host, manifest, paths);
+  const actualIdentity = scenarioBuildIdentity(suite, scenario, paths.skillRoot);
+  if (
+    sealed.scenario !== scenario ||
+    sealed.slot !== slot ||
+    sealed.attempt !== metadata.attempt ||
+    sealed.buildDigest !== actualIdentity.digest ||
+    JSON.stringify(actualIdentity) !== JSON.stringify(manifest.identities[scenario]) ||
+    JSON.stringify(json(paths.buildIdentity)) !== JSON.stringify(actualIdentity)
+  ) {
+    throw new Error(`${scenario}/${slot} seal or source identity no longer matches the round`);
+  }
+  const evaluation = evaluateAttempt(suite, manifest, scenario, paths);
+  if (evaluation.validityProblems.length > 0) {
+    throw new Error(
+      `${scenario}/${slot} is invalid evidence: ${evaluation.validityProblems.join('; ')}`,
+    );
+  }
+  return { scenario, slot, paths, sealed, metadata, host, findings: evaluation.findings };
+}
+
+function validateAllSealed(suite, manifest, roundRoot) {
+  return manifest.slots.map(({ scenario, slot }) =>
+    validateSealedSlot(suite, manifest, roundRoot, scenario, slot),
+  );
+}
+
+function assertCopiedArtifacts(suite, entry, target) {
+  const auxiliary = auxiliaryFor(suite, entry.scenario);
+  const sealed = sealedFor(suite, entry.scenario);
+  const copied = {
+    log: digestFile(`${target}.jsonl`),
+    buildIdentity: digestFile(`${target}.build.json`),
+    prompt: digestFile(`${target}.prompt.txt`),
+    ...(auxiliary
+      ? { [auxiliary.sealDigestKey]: digestFile(`${target}.${auxiliary.archiveSuffix}`) }
+      : {}),
+    ...(sealed ? { [sealed.sealDigestKey]: digestFile(`${target}.${sealed.archiveSuffix}`) } : {}),
+  };
+  for (const [name, digest] of Object.entries(copied)) {
+    if (digest !== entry.sealed.digests[name]) {
+      throw new Error(`${entry.scenario}/${entry.slot} copied ${name} does not match its seal`);
+    }
+  }
+}
+
+export function publishRound(
+  suite,
+  {
+    handle,
+    base = suite.sandboxBase,
+    resultsDir = resultsDirOf(suite),
+    publicationRoot = suite.root,
+    publicationRuntimeRoot,
+  },
+) {
+  const publicationLock = publicationLockPath(suite, publicationRoot, publicationRuntimeRoot);
+  const { manifest, roundRoot } = loadRound(suite, handle, { base });
+  validateAllSealed(suite, manifest, roundRoot);
+
+  const discovered = discoverSuite(suite);
+  const currentIdentities = {};
+  const currentBuild = mkdtempSync(resolve(tmpdir(), 'effective-flow-eval-publish-'));
+  let currentSkillRoot;
+  try {
+    currentSkillRoot = buildPortableSkill(currentBuild);
+    for (const scenario of discovered.scenarios) {
+      const current = pristineScenarioBuildIdentity(suite, scenario, currentSkillRoot);
+      currentIdentities[scenario] = current;
+      if (
+        manifest.scenarios.includes(scenario) &&
+        JSON.stringify(current) !== JSON.stringify(manifest.identities[scenario])
+      ) {
+        throw new Error(`source or eval instrument drifted since round preparation: ${scenario}`);
+      }
+    }
+  } catch (error) {
+    rmSync(currentBuild, { recursive: true, force: true });
+    throw error;
+  }
+
+  const publicationJournal = resolve(publicationRoot, '.results-publication.json');
+  const canonicalResults = resolve(resultsDir);
+  mkdirSync(publicationRoot, { recursive: true });
+  if (dirname(canonicalResults) !== resolve(publicationRoot)) {
+    throw new Error(
+      'results, candidate, journal, and backup must share one parent filesystem path',
+    );
+  }
+  try {
+    return withLock(
+      publicationLock,
+      () => {
+        pauseAtBoundary('publication-lock-held');
+        recoverPublicationLocked({ resultsDir: canonicalResults, publicationRoot });
+        const evaluations = validateAllSealed(suite, manifest, roundRoot);
+        const generation = randomUUID();
+        const candidate = resolve(publicationRoot, `.results-candidate-${generation}`);
+        const backup = resolve(publicationRoot, `.results-backup-${generation}`);
+        try {
+          if (existsSync(canonicalResults))
+            cpSync(canonicalResults, candidate, { recursive: true });
+          else mkdirSync(candidate);
+          rmSync(resolve(candidate, '.generation.json'), { force: true });
+          for (const scenario of manifest.scenarios) {
+            rmSync(resolve(candidate, scenario), { recursive: true, force: true });
+            mkdirSync(resolve(candidate, scenario), { recursive: true });
+          }
+          for (const { scenario, slot, paths } of evaluations) {
+            const target = resolve(candidate, scenario, `run-${slot}`);
+            copyFileSync(paths.callLog, `${target}.jsonl`);
+            copyFileSync(paths.buildIdentity, `${target}.build.json`);
+            copyFileSync(paths.prompt, `${target}.prompt.txt`);
+            const auxiliary = auxiliaryFor(suite, scenario);
+            if (auxiliary) {
+              copyFileSync(auxiliaryLogPath(suite, paths), `${target}.${auxiliary.archiveSuffix}`);
+            }
+            const sealedEvidence = sealedFor(suite, scenario);
+            if (sealedEvidence) {
+              copyFileSync(
+                sealedEvidencePath(suite, paths),
+                `${target}.${sealedEvidence.archiveSuffix}`,
+              );
+            }
+            const entry = evaluations.find(
+              (evaluation) => evaluation.scenario === scenario && evaluation.slot === slot,
+            );
+            assertCopiedArtifacts(suite, entry, target);
+            const { metadata, sealed, host } = entry;
+            atomicJson(`${target}.metadata.json`, {
+              schemaVersion: 1,
+              roundId: manifest.roundId,
+              scenario,
+              slot,
+              attempt: metadata.attempt,
+              sourceRevision: manifest.sourceRevision,
+              projectRoot: metadata.projectRoot,
+              profile: manifest.profile,
+              promptDigest: metadata.promptDigest,
+              fixtureDigest: metadata.fixtureDigest,
+              buildDigest: sealed.buildDigest,
+              hostAttestation: host,
+            });
+          }
+          const findings = ensureCanonicalGeneration(
+            suite,
+            candidate,
+            discovered.scenarios,
+            currentIdentities,
+          );
+          const candidateGeneration = {
+            schemaVersion: 1,
+            generation,
+            contentDigest: generationContentDigest(candidate),
+          };
+          atomicJson(resolve(candidate, '.generation.json'), candidateGeneration, {
+            exclusive: true,
+          });
+          const previousGeneration = generationInfo(canonicalResults);
+          const journal = {
+            schemaVersion: 1,
+            generation,
+            candidate,
+            backup,
+            candidateGeneration,
+            previousGeneration,
+            phase: 'candidate-ready',
+          };
+          writeJournal(publicationJournal, journal);
+          validateAllSealed(suite, manifest, roundRoot);
+          const finalBuild = mkdtempSync(resolve(tmpdir(), 'effective-flow-eval-final-publish-'));
+          try {
+            const finalSkillRoot = buildPortableSkill(finalBuild);
+            for (const scenario of discovered.scenarios) {
+              const current = pristineScenarioBuildIdentity(suite, scenario, finalSkillRoot);
+              if (JSON.stringify(current) !== JSON.stringify(currentIdentities[scenario])) {
+                throw new Error(
+                  `source or eval instrument drifted during publication: ${scenario}`,
+                );
+              }
+            }
+          } finally {
+            rmSync(finalBuild, { recursive: true, force: true });
+          }
+          pauseAtBoundary('after-final-build');
+          validateAllSealed(suite, manifest, roundRoot);
+          if (!sameGeneration(generationInfo(candidate), candidateGeneration)) {
+            throw new Error('publication candidate changed before installation');
+          }
+          if (existsSync(canonicalResults)) renameSync(canonicalResults, backup);
+          journal.phase = 'old-renamed';
+          writeJournal(publicationJournal, journal);
+          renameSync(candidate, canonicalResults);
+          journal.phase = 'new-installed';
+          writeJournal(publicationJournal, journal);
+          rmSync(backup, { recursive: true, force: true });
+          rmSync(publicationJournal, { force: true });
+          return { generation, findings };
+        } catch (error) {
+          if (existsSync(publicationJournal)) {
+            try {
+              rollbackHandledPublication({
+                journalPath: publicationJournal,
+                results: canonicalResults,
+                publicationRoot,
+              });
+            } catch (rollbackError) {
+              throw new AggregateError(
+                [error, rollbackError],
+                `publication failed and rollback could not restore the previous generation: ${error.message}`,
+              );
+            }
+          } else {
+            rmSync(candidate, { recursive: true, force: true });
+            rmSync(backup, { recursive: true, force: true });
+          }
+          throw error;
+        }
+      },
+      { kind: 'publication' },
+    );
+  } finally {
+    rmSync(currentBuild, { recursive: true, force: true });
+  }
+}
+
+// The read-only half of this file, and the owner of one question: does the archived corpus still
+// describe the working tree? Nothing here writes, and nothing here takes the publication lock —
+// running it must stay safe beside a publication, beside a round, and inside a CI step that has no
+// business serialising against either.
+//
+// It exists because the question moved. It used to be asked once per pull request, as an assertion
+// inside `pnpm test`, where a stale answer turned an ordinary pull request red and the only remedy
+// was a fresh round of six scenarios times five runs. The claim the evidence supports is about the
+// build that ships, so the enforcement belongs at the release point and the *report* belongs
+// everywhere: `pnpm eval <tool> verify` prints the verdict on every pull request and
+// `--mode strict` fails only on the release pull request. The structural assertions — a stamp
+// exists, a log parses, five runs of five — stay hard in `pnpm test`, because they are properties
+// of the archived files alone rather than of the pair.
+//
+// **A verdict is not an operational error, and the two must not arrive the same way.** Every state
+// this can reach — current, waived, stale, short, surplus, absent — is returned. A build that
+// fails, an archived stamp that will not parse, a results directory that cannot be read: those
+// throw, because they mean no verdict was produced at all. The CLI maps that split onto its exit
+// code, and without it a broken build would make the required check red on ordinary pull requests
+// through the very step added to keep it green.
+// The behavioural log, not the stamp: a slot exists here because somebody archived a call log for
+// it, and whether that log has a stamp beside it is the `missing-stamp` verdict rather than a
+// reason to leave the slot out of the count. Naming it after the log keeps that ordering visible.
+const RUN_LOG_RE = /^run-(\d+)\.jsonl$/;
+
+function archivedSlots(directory) {
+  return readdirSync(directory)
+    .map((name) => RUN_LOG_RE.exec(name))
+    .filter((match) => match !== null)
+    .map((match) => Number(match[1]))
+    .sort((left, right) => left - right);
+}
+
+// Reads one archived stamp. An unreadable or unparseable file is re-thrown with the run it belongs
+// to in the message: `JSON.parse`'s own text names a byte offset and nothing else, and an operator
+// reading a CI log needs to know which of thirty files to look at. It is deliberately not a
+// verdict — see the header above.
+function archivedStamp(scenario, directory, slot) {
+  const path = resolve(directory, `run-${slot}.build.json`);
+  if (!existsSync(path)) return null;
+  try {
+    return json(path);
+  } catch (error) {
+    throw new Error(`${scenario}/run-${slot}.build.json is unreadable: ${error.message}`, {
+      cause: error,
+    });
+  }
+}
+
+// The per-scenario state, in the order a reader should hear it. `absent`, `short` and `surplus`
+// come before `stale` because they describe a round that was never finished, or one whose shape is
+// wrong, rather than evidence that has aged: telling an operator their corpus drifted, when what
+// actually happened is that nobody ever recorded it, sends them to re-run a round they have not
+// started. The per-run verdicts are reported either way, so a short round that is also stale still
+// says so.
+//
+// **A count that is wrong in the other direction is its own state.** Fewer runs than required is
+// `short` and the remedy is to finish the round; more is `surplus`, where the round is already
+// over-complete and the remedy is to find out what put an extra slot there. Reporting the second as
+// the first prints `short 6/5 run(s)` and sends an operator to record a run nobody needs.
+// `ensureCanonicalGeneration` refuses the same shape at publication as unexpected files, so the two
+// layers now name it rather than one of them calling it something else. Both fail strict: a round
+// of an unexpected size is not evidence anyone can read as five of five.
+//
+// **`missing-stamp` is folded into `stale` here, and only here.** These are the two per-run
+// verdicts that make a scenario unusable, and a scenario line has one job: say whether this
+// scenario can back a release. It cannot, either way, and the run list below it names each affected
+// slot with its own verdict, so the distinction the per-run states exist to keep is printed rather
+// than lost. The rule that the two must not report the same way is about a run, not about this
+// rollup — see the header of `freshnessVerdict` in `build-identity.mjs`.
+function scenarioFreshness(suite, scenario, identity, resultsDir) {
+  const directory = resolve(resultsDir, scenario);
+  if (!existsSync(directory)) {
+    return { scenario, state: 'absent', runs: [], drift: [] };
+  }
+  const runs = archivedSlots(directory).map((slot) => {
+    const verdict = {
+      slot,
+      ...freshnessVerdict(suite, scenario, archivedStamp(scenario, directory, slot), identity),
+    };
+    const problems = suite.verifyArchivedScenario?.({ scenario, slot, directory, identity }) ?? [];
+    if (!Array.isArray(problems))
+      throw new Error('suite archive verifier returned malformed problems');
+    return problems.length ? { ...verdict, state: 'invalid', problems } : verdict;
+  });
+  const firstStale = runs.find((run) => run.state === 'stale');
+  const drift = firstStale?.drift ?? [];
+  const unusable = runs.some((run) => !['current', 'waived'].includes(run.state));
+  let state = 'current';
+  if (runs.length === 0) state = 'absent';
+  else if (runs.length < REQUIRED_RUNS) state = 'short';
+  else if (runs.length > REQUIRED_RUNS) state = 'surplus';
+  else if (
+    suite.verifyArchivedScenario &&
+    JSON.stringify(runs.map((run) => run.slot)) !== '[1,2,3,4,5]'
+  )
+    state = 'invalid';
+  else if (unusable) state = runs.some((run) => run.state === 'invalid') ? 'invalid' : 'stale';
+  return { scenario, state, runs, drift };
+}
+
+// One walk of the corpus, with the archived generation read before it and again after it. Nothing
+// here writes and nothing here takes a lock; the reason the generation is read twice instead is in
+// `verifyFreshness` below.
+function pinnedScenarioWalk(suite, discovered, skillRoot, resultsDir) {
+  const before = generationInfo(resultsDir);
+  const scenarios = discovered.scenarios.map((scenario) => {
+    // The seam a test tears the corpus through, and it belongs *inside* the loop rather than
+    // between the two generation reads. A boundary outside the loop would only prove that the
+    // comparison works, while the state this guards against is a walk that read one scenario from
+    // the old generation and the next one from the new.
+    pauseAtRepeatableBoundary('verify-scenario-read');
+    return scenarioFreshness(
+      suite,
+      scenario,
+      pristineScenarioBuildIdentity(suite, scenario, skillRoot),
+      resultsDir,
+    );
+  });
+  const after = generationInfo(resultsDir);
+  if (sameGeneration(before, after)) return { pinned: true, scenarios };
+  // `generationInfo` answers `null` for a directory that is not there, and that answer is
+  // genuinely ambiguous: a fresh clone that has never recorded a round reads exactly like the
+  // instant between `publishRound`'s two renames. Null on *both* sides is the only shape that can
+  // be the harmless one, so it is retried like a tear and, surviving the retry, accepted — every
+  // scenario then reports `absent`, which is what this command answered before it pinned anything.
+  return { pinned: false, settledAbsent: before === null && after === null, scenarios };
+}
+
+// Builds the portable skill **once** into a throwaway root and computes every scenario's identity
+// from it. Throwaway rather than the checkout's `dist/` for the reason stated at the top of
+// `build-identity.mjs`: `build.mjs` swaps through fixed `dist.tmp` and `dist.bak` paths, so a build
+// that shares a destination with a concurrent one dies mid-rename — and this runs in CI beside
+// whatever else the job is doing.
+export function verifyFreshness(suite, { resultsDir = resultsDirOf(suite) } = {}) {
+  const discovered = discoverSuite(suite);
+  const outputRoot = mkdtempSync(resolve(tmpdir(), 'effective-flow-eval-verify-'));
+  try {
+    const skillRoot = buildPortableSkill(outputRoot);
+    // The corpus is read under a pinned generation rather than under the publication lock, and
+    // that choice is why this command can be run where it is run. `publishRound` renames the
+    // canonical directory away and the candidate into its place, so a walk that straddles either
+    // rename reads a directory that is briefly not there — every scenario `absent` — or mixes one
+    // scenario from the old generation with the next from the new one. Taking the publication lock
+    // would close that window and take the lock-freedom stated at the top of this section with it:
+    // `verify` would block behind the publication that ends a three-hour round, and in CI it would
+    // wait out a lock left behind by a killed one. Pinning proves the same thing after the fact and
+    // still writes nothing — `generationInfo` and `sameGeneration` are what publication itself uses
+    // to prove its candidate did not move, and both reads keep their tolerance for an unmarked
+    // "legacy" corpus, because an unmarked corpus is a state publication deliberately supports.
+    //
+    // **Exactly one retry, and a torn second walk is not a verdict.** The rename window is
+    // microseconds wide, so a second tear means something other than a passing publication is
+    // moving the corpus, and waiting it out would trade a fast, honest failure for an open-ended
+    // one. A torn read produced no verdict at all, so it throws and report mode exits nonzero for
+    // it exactly as it does for an unreadable stamp — see the header above. It is deliberately not
+    // a further scenario state: a state would be printed as a verdict about the gate, and this
+    // says nothing about the gate at all.
+    let walk = pinnedScenarioWalk(suite, discovered, skillRoot, resultsDir);
+    if (!walk.pinned) walk = pinnedScenarioWalk(suite, discovered, skillRoot, resultsDir);
+    if (!walk.pinned && !walk.settledAbsent) {
+      throw new Error(
+        `the archived corpus changed while it was being read, twice over: ${resolve(resultsDir)}`,
+      );
+    }
+    const { scenarios: recordedScenarios } = walk;
+    // A suite may own additional sealed lanes (for example paired measurements). Their verifier
+    // gets the same throwaway candidate build and participates in the existing strict verdict.
+    // Existing suites and their root receipt schemas remain unchanged.
+    const additional = suite.verifyAdditionalEvidence?.({ skillRoot, resultsDir }) ?? [];
+    if (
+      !Array.isArray(additional) ||
+      additional.some(
+        (row) =>
+          typeof row.scenario !== 'string' ||
+          typeof row.state !== 'string' ||
+          !Array.isArray(row.runs),
+      )
+    ) {
+      throw new Error('suite additional evidence verifier returned a malformed verdict');
+    }
+    const scenarios = [
+      ...recordedScenarios,
+      ...additional.map((row) => ({ ...row, drift: row.drift ?? [] })),
+    ];
+    return {
+      requiredRuns: REQUIRED_RUNS,
+      resultsDir: resolve(resultsDir),
+      scenarios,
+      // What `--mode strict` fails on, decided here rather than in the CLI so the rule is one
+      // expression a test can read. At a release point "nothing was observed" is not an acceptable
+      // state, even though it is a legitimate skip in a fresh checkout — so `absent` and `short`
+      // fail beside `stale`.
+      failsStrict: scenarios.some(({ state }) => state !== 'current'),
+    };
+  } finally {
+    rmSync(outputRoot, { recursive: true, force: true });
+  }
+}

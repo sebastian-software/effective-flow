@@ -1,0 +1,873 @@
+# Changelog
+
+## [1.69.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.68.0...effective-flow-v1.69.0) (2026-10-20)
+
+
+### Features
+
+* add a read-only setup status mode that diagnoses configuration, ignore state, domain owners and version ([#571](https://github.com/sebastian-software/effective-flow/issues/571)) ([baa7474](https://github.com/sebastian-software/effective-flow/commit/baa74743adfe05ea90b3dec782904ff8e1abff9a))
+* add bounded Forgejo check polling ([#578](https://github.com/sebastian-software/effective-flow/issues/578)) ([2ce106f](https://github.com/sebastian-software/effective-flow/commit/2ce106fd16b09762ec117ec4541d93be4d3a558e))
+* add Issue Buddy runtime ([025301d](https://github.com/sebastian-software/effective-flow/commit/025301db1dc029577e4964dab9ea038494e39a96))
+* add the unattended plan publication core ([e7d021e](https://github.com/sebastian-software/effective-flow/commit/e7d021e874f79412fad71976cf68cc41e05dc80b))
+* add unattended Issue Buddy planning passes ([de23f9b](https://github.com/sebastian-software/effective-flow/commit/de23f9b2ab7a93b747aa22a4d985824899d2c916))
+* draft the PR body on the mechanical tier ([#569](https://github.com/sebastian-software/effective-flow/issues/569)) ([f0929fd](https://github.com/sebastian-software/effective-flow/commit/f0929fd59767bc6c8e7ea7f438f9bb0b8972704b))
+* run the plan, concept and diagnosis checks in a fresh-context reviewer ([#568](https://github.com/sebastian-software/effective-flow/issues/568)) ([19c38d5](https://github.com/sebastian-software/effective-flow/commit/19c38d52bc3db305084025a1be5f6c939055e6a0)), closes [#475](https://github.com/sebastian-software/effective-flow/issues/475)
+* support unattended planning and readiness checks ([#573](https://github.com/sebastian-software/effective-flow/issues/573)) ([9b347b4](https://github.com/sebastian-software/effective-flow/commit/9b347b415abd90366ca90a11a3b71a25e0378139))
+
+
+### Bug Fixes
+
+* keep dependent next steps behind delivery ([#580](https://github.com/sebastian-software/effective-flow/issues/580)) ([917c9bd](https://github.com/sebastian-software/effective-flow/commit/917c9bd697d7ee9f86d19ed4f5345dae38b3743b))
+
+## [1.68.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.67.1...effective-flow-v1.68.0) (2026-10-17)
+
+
+### Features
+
+* let setup apply targeted free-text changes after first-time setup ([#558](https://github.com/sebastian-software/effective-flow/issues/558)) ([0730aed](https://github.com/sebastian-software/effective-flow/commit/0730aed9ac0748adba87921ec5c4605d43a06bed))
+* point the merge-gate reviewer advisory at targeted setup ([#559](https://github.com/sebastian-software/effective-flow/issues/559)) ([648e013](https://github.com/sebastian-software/effective-flow/commit/648e01345f35d432c7fc8ad6727ef58e1d413ce6))
+* run every delegated spawn on a provider-neutral model tier ([#563](https://github.com/sebastian-software/effective-flow/issues/563)) ([e02d194](https://github.com/sebastian-software/effective-flow/commit/e02d194ea3ffb4a0bdb0ab985a0996956a17a275))
+* run merge-gate as a delegated run and move plan judgment into a deep subagent ([#564](https://github.com/sebastian-software/effective-flow/issues/564)) ([266eb7e](https://github.com/sebastian-software/effective-flow/commit/266eb7e22d1171d41da333cdd3c9eb0d08c31c68))
+
+
+### Bug Fixes
+
+* create Forgejo comments through the status-aware API ([1c67144](https://github.com/sebastian-software/effective-flow/commit/1c671441d6d9226abb0e58590a556e1d34512f57)), closes [#560](https://github.com/sebastian-software/effective-flow/issues/560)
+
+## [1.67.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.67.0...effective-flow-v1.67.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* detect review-thread write support per tea instance and group replies ([#553](https://github.com/sebastian-software/effective-flow/issues/553)) ([39376bb](https://github.com/sebastian-software/effective-flow/commit/39376bba26044115d61975b6182252d8ea9f848e))
+* serve tea review-thread writes only as a pair and close iterate outcome gaps ([#556](https://github.com/sebastian-software/effective-flow/issues/556)) ([eb68ee0](https://github.com/sebastian-software/effective-flow/commit/eb68ee077a3381b16419e20b9d6ec42656b74e36))
+
+## [1.67.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.66.1...effective-flow-v1.67.0) (2026-10-10)
+
+
+### Features
+
+* adopt the Fast field pilot in refactor ([#534](https://github.com/sebastian-software/effective-flow/issues/534)) ([b5a993b](https://github.com/sebastian-software/effective-flow/commit/b5a993bceb72a30e8e3b055b35059b52de5cb801))
+* prefer associated plans for next-step recommendations ([#547](https://github.com/sebastian-software/effective-flow/issues/547)) ([bab4ed5](https://github.com/sebastian-software/effective-flow/commit/bab4ed5e8542bef401bb2f9897a32fcd3975d823))
+
+## [1.66.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.66.0...effective-flow-v1.66.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* publish the release only after its archive is attached and verified ([#520](https://github.com/sebastian-software/effective-flow/issues/520)) ([2cac710](https://github.com/sebastian-software/effective-flow/commit/2cac710ec9ad53a2d4777a7a59806ddca8fe8e2d))
+
+## [1.66.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.65.0...effective-flow-v1.66.0) (2026-10-02)
+
+
+### Features
+
+* adopt the Fast field pilot in build and expose it in setup ([#513](https://github.com/sebastian-software/effective-flow/issues/513)) ([a7cd218](https://github.com/sebastian-software/effective-flow/commit/a7cd21805da310c1b0f394b96564392482a054dd))
+* lint plan files with a deterministic plan-lint helper ([#502](https://github.com/sebastian-software/effective-flow/issues/502)) ([6cc65fe](https://github.com/sebastian-software/effective-flow/commit/6cc65fef39cf4037b4efd6941a5796fecebab5d2))
+* make the pilot measurement helper ready for workflow adoption ([#512](https://github.com/sebastian-software/effective-flow/issues/512)) ([93881e5](https://github.com/sebastian-software/effective-flow/commit/93881e51a6d135d4af5e0fa85e0d6639a29553a0))
+* pin the merge-gate eval profile to gpt-6-sol at medium effort ([#465](https://github.com/sebastian-software/effective-flow/issues/465)) ([fc84de8](https://github.com/sebastian-software/effective-flow/commit/fc84de8447f9cf5f565f4ecd9bc320214b070f84))
+* publish finished plans as draft pull requests and implement on them ([#511](https://github.com/sebastian-software/effective-flow/issues/511)) ([e002492](https://github.com/sebastian-software/effective-flow/commit/e002492686c0155b55e9f7615b167c9caab6c72c))
+* record a diff baseline and hand the run's diff to validators and reviewers ([#503](https://github.com/sebastian-software/effective-flow/issues/503)) ([42b3992](https://github.com/sebastian-software/effective-flow/commit/42b3992ebe4dc03d816507c75c65e179a3417de6))
+* score decision options from 1 to 10 instead of a binary recommendation ([#499](https://github.com/sebastian-software/effective-flow/issues/499)) ([2653f50](https://github.com/sebastian-software/effective-flow/commit/2653f506be99eb8261c46134b00947b70a25ba07))
+
+
+### Bug Fixes
+
+* correct stale wording in open-plans, concept and the runtime-script docs ([#498](https://github.com/sebastian-software/effective-flow/issues/498)) ([e846936](https://github.com/sebastian-software/effective-flow/commit/e8469365ee5cdb4d0a2d35b63367660dbe4d4ca9))
+* count skipped and neutral checks as passing in merge-gate ([#514](https://github.com/sebastian-software/effective-flow/issues/514)) ([469ac3b](https://github.com/sebastian-software/effective-flow/commit/469ac3b746c5794996c577caf36a30bc9337c339))
+* end every iterate abort on its full reason line and re-record both eval suites ([#515](https://github.com/sebastian-software/effective-flow/issues/515)) ([5d53777](https://github.com/sebastian-software/effective-flow/commit/5d53777010d038673d1a572e165c419a1d4f87cb))
+* let merge-gate clear a ready pull request whose head never moves ([#468](https://github.com/sebastian-software/effective-flow/issues/468)) ([9294620](https://github.com/sebastian-software/effective-flow/commit/92946204eed57e8f534ae8f1124e155e3a4ade73))
+* remove repository-only doc references from shipped prompts and guard against them ([#500](https://github.com/sebastian-software/effective-flow/issues/500)) ([1bfe4df](https://github.com/sebastian-software/effective-flow/commit/1bfe4df89a88a99a6b522829862ba01a6d99286c))
+
+## [1.65.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.64.0...effective-flow-v1.65.0) (2026-09-25)
+
+
+### Features
+
+* add a hidden mode that keeps Effective Flow out of the repository ([#459](https://github.com/sebastian-software/effective-flow/issues/459)) ([7ebba7a](https://github.com/sebastian-software/effective-flow/commit/7ebba7a4b9fe411105a179a2abc2cf41148fa86b))
+* add pilot measurement lifecycle ([8c2e2f9](https://github.com/sebastian-software/effective-flow/commit/8c2e2f991fb847b2841c6cd47437f010b31063fc))
+* declare the central skills authoritative for commit and ADR conventions ([#454](https://github.com/sebastian-software/effective-flow/issues/454)) ([c628f3f](https://github.com/sebastian-software/effective-flow/commit/c628f3fa72058213a1bf24d339da24a2417f55a1))
+* define execution profile activation contract ([#456](https://github.com/sebastian-software/effective-flow/issues/456)) ([7d1dcd5](https://github.com/sebastian-software/effective-flow/commit/7d1dcd55d6e15047f1c3dd6d05c7d310d258599c))
+* delegate diagnostic depth to effective-delivery ([#448](https://github.com/sebastian-software/effective-flow/issues/448)) ([1a49994](https://github.com/sebastian-software/effective-flow/commit/1a499941b59fc269fb337dbf4611b23674c617f5))
+* gate merge-gate eval freshness at the release pull request ([#445](https://github.com/sebastian-software/effective-flow/issues/445)) ([dcd2897](https://github.com/sebastian-software/effective-flow/commit/dcd28974f5fae9ab5c8032d3921aec2b9da2c8bc))
+* render native execution profiles ([32e6288](https://github.com/sebastian-software/effective-flow/commit/32e628820a48973eb313a54e6e2d7fc021293c86))
+
+
+### Bug Fixes
+
+* bound the gate's own trigger comments per head and scope the check-wait question ([#446](https://github.com/sebastian-software/effective-flow/issues/446)) ([cecb5e5](https://github.com/sebastian-software/effective-flow/commit/cecb5e54fb731ca540a9a48f32cb0f543005a888))
+* close the eleven remaining review notes ([#451](https://github.com/sebastian-software/effective-flow/issues/451)) ([45950b0](https://github.com/sebastian-software/effective-flow/commit/45950b029db939e0cfcac29d2f2864573a393c97))
+* document the Forgejo account class and drop a fallback that cannot fire ([#442](https://github.com/sebastian-software/effective-flow/issues/442)) ([139273e](https://github.com/sebastian-software/effective-flow/commit/139273e684b148fb14d0e41006e009a2c0d4c33d))
+* keep the product name out of hidden-mode branch slugs ([#460](https://github.com/sebastian-software/effective-flow/issues/460)) ([864ed65](https://github.com/sebastian-software/effective-flow/commit/864ed65d3865f5aba341d77a180213a2c8f74d2b))
+* make every worktree-creating tool write its lifecycle record ([#462](https://github.com/sebastian-software/effective-flow/issues/462)) ([d7e0f91](https://github.com/sebastian-software/effective-flow/commit/d7e0f91a47b25845ef29043301a13a9b056431e3))
+* scan file names and normative documentation for the retired brand ([#439](https://github.com/sebastian-software/effective-flow/issues/439)) ([b3716ca](https://github.com/sebastian-software/effective-flow/commit/b3716cac6b4055cad964b492f455e344d43893ac))
+* stop merge-gate before provisioning when the head branch is occupied ([#463](https://github.com/sebastian-software/effective-flow/issues/463)) ([d0046fb](https://github.com/sebastian-software/effective-flow/commit/d0046fba5ac4f2784e47f308b78f06c597638cf5))
+* synchronise the eval round test on a release sentinel, not a fixed hold ([#447](https://github.com/sebastian-software/effective-flow/issues/447)) ([bf749fb](https://github.com/sebastian-software/effective-flow/commit/bf749fb26176bafcc80775d4d6c65600afec8be2))
+
+## [1.64.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.63.0...effective-flow-v1.64.0) (2026-09-19)
+
+
+### Features
+
+* add behavioural evals for the merge gate ([#399](https://github.com/sebastian-software/effective-flow/issues/399)) ([364f4d0](https://github.com/sebastian-software/effective-flow/commit/364f4d0114263bc6167099f2fdf3bbb65176f8dd))
+* add profile-first setup flow ([#424](https://github.com/sebastian-software/effective-flow/issues/424)) ([473e518](https://github.com/sebastian-software/effective-flow/commit/473e518d4b6f2ea54ef361945472cba8d19b2487))
+* configure the language of interactive output with language.chat ([#408](https://github.com/sebastian-software/effective-flow/issues/408)) ([887cdf8](https://github.com/sebastian-software/effective-flow/commit/887cdf850dd537bb4f8ca3bf88157ec15e86d1c4))
+* deliver branch-model guidance and derive the base-branch default ([#409](https://github.com/sebastian-software/effective-flow/issues/409)) ([19ef541](https://github.com/sebastian-software/effective-flow/commit/19ef541231a0cec4256c519813db3a12ecc0563e))
+* gate durable derived work at product completion ([#428](https://github.com/sebastian-software/effective-flow/issues/428)) ([3c6e35b](https://github.com/sebastian-software/effective-flow/commit/3c6e35b4f07823e4c0da5b4f72a5594c6ff21963))
+* import AGENTS.md from CLAUDE.md and split the canonical guidance ([#397](https://github.com/sebastian-software/effective-flow/issues/397)) ([9adffe2](https://github.com/sebastian-software/effective-flow/commit/9adffe286a700f69c6bdfbe3b45f6fb5d70073ba))
+* offer an upstream fast-forward before deliver selects files ([#430](https://github.com/sebastian-software/effective-flow/issues/430)) ([b164053](https://github.com/sebastian-software/effective-flow/commit/b164053ced4dcefa066502dd80b1b600a10694f3))
+* parallelize merge-gate eval rounds ([#427](https://github.com/sebastian-software/effective-flow/issues/427)) ([2c39546](https://github.com/sebastian-software/effective-flow/commit/2c39546653dcb54bacc8eb798db759a9f92879c6))
+* rename the Claude Code session natively and retire the butler ([#405](https://github.com/sebastian-software/effective-flow/issues/405)) ([0e48411](https://github.com/sebastian-software/effective-flow/commit/0e484115427391f7bb0b8865fe2bae13891ee60b))
+* report a linked issue's recorded open points after a merge ([#407](https://github.com/sebastian-software/effective-flow/issues/407)) ([1d8a0ed](https://github.com/sebastian-software/effective-flow/commit/1d8a0edeecd0cf58eb6b6afe29fe72b5c9fcc902))
+* validate merge-gate delegation envelopes before dispatch ([#431](https://github.com/sebastian-software/effective-flow/issues/431)) ([b043480](https://github.com/sebastian-software/effective-flow/commit/b043480aad45d433461acb1567fef81c09226c9a))
+
+
+### Bug Fixes
+
+* bind eval stamps to the files a run loads and reject a missing runtime root ([#406](https://github.com/sebastian-software/effective-flow/issues/406)) ([2c82846](https://github.com/sebastian-software/effective-flow/commit/2c82846d4c7621ae08dca3c6b744153d715f8c9a))
+* generate the router's tool list instead of hand-writing it ([02e6696](https://github.com/sebastian-software/effective-flow/commit/02e669619ac4128701c9e4c81388866b81b77ed5))
+* keep archived eval rounds valid across a release version bump ([#436](https://github.com/sebastian-software/effective-flow/issues/436)) ([2800923](https://github.com/sebastian-software/effective-flow/commit/2800923a445401fd70b7abdf5e2ba8e4ec99f364))
+* keep the forge auto-close keyword English in a translated PR body ([#415](https://github.com/sebastian-software/effective-flow/issues/415)) ([243a3c2](https://github.com/sebastian-software/effective-flow/commit/243a3c23cffbabd8fc08c7cd61ca7d5c2ef779d4))
+* let an operator waive an unreported check list at the verified head ([#417](https://github.com/sebastian-software/effective-flow/issues/417)) ([4321151](https://github.com/sebastian-software/effective-flow/commit/4321151a370157e73421db261a9a7ed9660e45fe))
+* resolve a local base branch when no remote is configured ([4740ca0](https://github.com/sebastian-software/effective-flow/commit/4740ca06be7697fb7734575786686d6e56f830e4))
+* resolve the base branch once and name both of its results ([#391](https://github.com/sebastian-software/effective-flow/issues/391)) ([8d559ec](https://github.com/sebastian-software/effective-flow/commit/8d559eca71bdd2df7d58d2ef75d89b8fb682fee3))
+* resume keyword-less delegated returns instead of stalling on pending children ([#433](https://github.com/sebastian-software/effective-flow/issues/433)) ([4453c7f](https://github.com/sebastian-software/effective-flow/commit/4453c7fb1d5f6553f120a8637765551a25728680))
+* retire the legacy worktree.* and prReview.* configuration reads ([08713c6](https://github.com/sebastian-software/effective-flow/commit/08713c60e8a397e4752b5f91723fbf3cd1315f59))
+* retire the stale Firmo branding from shipped descriptions ([ce23e7a](https://github.com/sebastian-software/effective-flow/commit/ce23e7ad8133b241943a4476f6622880f0787fb8))
+* settle Forgejo bot threads through the reviewer's later approval ([#435](https://github.com/sebastian-software/effective-flow/issues/435)) ([8ee7bea](https://github.com/sebastian-software/effective-flow/commit/8ee7bea0a32d75a5904dc009326b2ab9b438acde)), closes [#434](https://github.com/sebastian-software/effective-flow/issues/434)
+
+## [1.63.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.62.0...effective-flow-v1.63.0) (2026-08-28)
+
+
+### Features
+
+* automate delivery after manifest confirmation ([12f8aa7](https://github.com/sebastian-software/effective-flow/commit/12f8aa7d5f42d728940ee21197923fc88bf53175))
+* follow a project's declared ADR naming convention ([#385](https://github.com/sebastian-software/effective-flow/issues/385)) ([848f3c0](https://github.com/sebastian-software/effective-flow/commit/848f3c0211dc0fd5ecdb3c179934daecdaf982dd))
+* offer a terminal issue transition after the merge gate ([#383](https://github.com/sebastian-software/effective-flow/issues/383)) ([61d8286](https://github.com/sebastian-software/effective-flow/commit/61d8286a0f4220f9c67e64c8cde5753a6c422c37))
+
+## [1.62.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.61.0...effective-flow-v1.62.0) (2026-08-25)
+
+
+### Features
+
+* add recensor to merge gate ([933826e](https://github.com/sebastian-software/effective-flow/commit/933826ee14788fcea1b52dc03c31397194544f50))
+* deliver local changes through clean pull request branches ([874a897](https://github.com/sebastian-software/effective-flow/commit/874a89771c530a8d5f50ad61d5bd89927a25a2c8))
+* suggest setup for unconfigured reviewers ([#376](https://github.com/sebastian-software/effective-flow/issues/376)) ([b460a1c](https://github.com/sebastian-software/effective-flow/commit/b460a1c28351dd5957aaee6cf1b1d39e27592a1a))
+
+## [1.61.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.60.2...effective-flow-v1.61.0) (2026-08-21)
+
+
+### Features
+
+* put the work reference first in the session title ([#371](https://github.com/sebastian-software/effective-flow/issues/371)) ([9c87034](https://github.com/sebastian-software/effective-flow/commit/9c87034f87a2c21e29fa2de249f3b9df9d989bd5))
+* raise the merge gate's default round budget to ten ([#369](https://github.com/sebastian-software/effective-flow/issues/369)) ([8a5a331](https://github.com/sebastian-software/effective-flow/commit/8a5a331b2434fb6be4f8afdf02c5fd193cb656ee))
+* read pull-request reviews and block a merge on an unassessed verdict ([#366](https://github.com/sebastian-software/effective-flow/issues/366)) ([4e79ff9](https://github.com/sebastian-software/effective-flow/commit/4e79ff9925f8656ab7f95d5f4ad080a8333e2983)), closes [#364](https://github.com/sebastian-software/effective-flow/issues/364)
+* send the butler rename request as soon as the title is fixed ([#373](https://github.com/sebastian-software/effective-flow/issues/373)) ([24c8c8f](https://github.com/sebastian-software/effective-flow/commit/24c8c8f69a94b530dfb16afb348b5e4af22675c0))
+
+
+### Bug Fixes
+
+* bind the merge gate's return consumption to pre-recorded item identifiers ([#368](https://github.com/sebastian-software/effective-flow/issues/368)) ([1dbf453](https://github.com/sebastian-software/effective-flow/commit/1dbf453512e256933e58b275790b81fa44089fb8))
+* block an undecided review verdict and delimit the delegation channel ([#367](https://github.com/sebastian-software/effective-flow/issues/367)) ([73a9498](https://github.com/sebastian-software/effective-flow/commit/73a949868a10836e2a81371d716626f528cd5a0b))
+* give the plan archive handshake a state model it can execute ([#365](https://github.com/sebastian-software/effective-flow/issues/365)) ([4e2b432](https://github.com/sebastian-software/effective-flow/commit/4e2b43298d2f70d03defae1117128736dbbdd1b7))
+* move a revised plan back from the archive without staging the rename ([#362](https://github.com/sebastian-software/effective-flow/issues/362)) ([830e07a](https://github.com/sebastian-software/effective-flow/commit/830e07a8599420682f4ade4422e757629df66e8d))
+* point every central-skill reference at its consolidated successor ([#374](https://github.com/sebastian-software/effective-flow/issues/374)) ([05c4733](https://github.com/sebastian-software/effective-flow/commit/05c4733d5e32639872554508de89c97af4c0ddcc))
+* render nested lazy-include fences in shipped shared fragments ([#361](https://github.com/sebastian-software/effective-flow/issues/361)) ([cbcea61](https://github.com/sebastian-software/effective-flow/commit/cbcea6117ebfcca5cedd30453510bbd4195a7210))
+* stop the merge gate from merging on a delegated outcome alone ([#372](https://github.com/sebastian-software/effective-flow/issues/372)) ([c1d96db](https://github.com/sebastian-software/effective-flow/commit/c1d96db099a1136d51ce439a4804ab76f8c1b1bf))
+
+## [1.60.2](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.60.1...effective-flow-v1.60.2) (2026-08-19)
+
+
+### Bug Fixes
+
+* retry every network operation on the release delivery path ([#359](https://github.com/sebastian-software/effective-flow/issues/359)) ([de3ba34](https://github.com/sebastian-software/effective-flow/commit/de3ba34f1a4e056073b3ebf499407a7d301cbd89))
+
+## [1.60.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.60.0...effective-flow-v1.60.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* correct the Forgejo tea-renderer reads and the resolve capability claim ([#357](https://github.com/sebastian-software/effective-flow/issues/357)) ([9efe8c5](https://github.com/sebastian-software/effective-flow/commit/9efe8c587d19282e48aad181e1a1ebbc1aee401d))
+* read the Forgejo commit-status state from its JSON tag ([#355](https://github.com/sebastian-software/effective-flow/issues/355)) ([6cec190](https://github.com/sebastian-software/effective-flow/commit/6cec190adad6a453e1563ad45cec4a00b9dcd977))
+
+## [1.60.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.59.0...effective-flow-v1.60.0) (2026-08-17)
+
+
+### Features
+
+* make the decomposition stable-key marker target-aware ([#352](https://github.com/sebastian-software/effective-flow/issues/352)) ([6be9529](https://github.com/sebastian-software/effective-flow/commit/6be952972370157d723708e399ae41a10e655ba1))
+
+## [1.59.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.58.0...effective-flow-v1.59.0) (2026-08-16)
+
+
+### Features
+
+* allow plan-issue to create native sub-issues ([#350](https://github.com/sebastian-software/effective-flow/issues/350)) ([a881d3f](https://github.com/sebastian-software/effective-flow/commit/a881d3f99ac74abc8e625fde0e912c7b17f086ea))
+* exclude the merge gate's own account from the human-comment guard ([#346](https://github.com/sebastian-software/effective-flow/issues/346)) ([455caf2](https://github.com/sebastian-software/effective-flow/commit/455caf2c9f4256f945bacfee29b5706f95803af3))
+* track issue lifecycle through merge ([#348](https://github.com/sebastian-software/effective-flow/issues/348)) ([3440025](https://github.com/sebastian-software/effective-flow/commit/344002564662cc778d47ba0d33fb07f41e34d535))
+
+
+### Bug Fixes
+
+* use native ChatGPT Desktop task titles ([043bc6c](https://github.com/sebastian-software/effective-flow/commit/043bc6c990f6455ef767303884e82c0dbb495ffd))
+
+## [1.58.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.57.1...effective-flow-v1.58.0) (2026-08-12)
+
+
+### Features
+
+* resolve a merge conflict with the base in the merge gate ([#341](https://github.com/sebastian-software/effective-flow/issues/341)) ([12145c5](https://github.com/sebastian-software/effective-flow/commit/12145c561f345bdd63740763872c09c07b4bcf47))
+* run the merge gate against a Forgejo remote ([#343](https://github.com/sebastian-software/effective-flow/issues/343)) ([63241e1](https://github.com/sebastian-software/effective-flow/commit/63241e10555fd18392b0d8326e6c8d3ee5d87d18)), closes [#340](https://github.com/sebastian-software/effective-flow/issues/340)
+
+
+### Bug Fixes
+
+* confirm the Forgejo merge head before reporting it ([#345](https://github.com/sebastian-software/effective-flow/issues/345)) ([08da54e](https://github.com/sebastian-software/effective-flow/commit/08da54e24ea002a26987ca474b2a15091d0fa45b))
+* **deps:** update oxc toolchain to ^0.62.0 ([#338](https://github.com/sebastian-software/effective-flow/issues/338)) ([e8c6fd1](https://github.com/sebastian-software/effective-flow/commit/e8c6fd18b1808b6b46cfa0db69e1bfdf39bdc873))
+* **deps:** update pnpm/action-setup digest to 0977fd9 ([#337](https://github.com/sebastian-software/effective-flow/issues/337)) ([aba3373](https://github.com/sebastian-software/effective-flow/commit/aba3373d2fd83adea86464cc3380893c2f579388))
+* report every open DALO acceptance step when a gate blocks ([#335](https://github.com/sebastian-software/effective-flow/issues/335)) ([5b2b9e7](https://github.com/sebastian-software/effective-flow/commit/5b2b9e7db0af231061a0a9f7a1a22421d3f6b57b))
+* stop duplicating tracker labels on every apply run ([#342](https://github.com/sebastian-software/effective-flow/issues/342)) ([abe0d3a](https://github.com/sebastian-software/effective-flow/commit/abe0d3aa50d577341e5770aa505ccaadb37ed282))
+
+## [1.57.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.57.0...effective-flow-v1.57.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* never remove a native install before DALO can install the replacement ([#333](https://github.com/sebastian-software/effective-flow/issues/333)) ([1d2f49a](https://github.com/sebastian-software/effective-flow/commit/1d2f49a63ac9f5d7e230b530ade790a76df273f6))
+
+## [1.57.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.56.1...effective-flow-v1.57.0) (2026-08-10)
+
+
+### Features
+
+* apply a session title on Claude Code through a rename butler ([#330](https://github.com/sebastian-software/effective-flow/issues/330)) ([ebf2c6b](https://github.com/sebastian-software/effective-flow/commit/ebf2c6b2fdf0a981ac9e6a9b43c3f740998ca140))
+* install and update the skill through DALO by default ([#331](https://github.com/sebastian-software/effective-flow/issues/331)) ([2f6a809](https://github.com/sebastian-software/effective-flow/commit/2f6a80974b1dc7f82be5d49a5bdce31643bbfa2b))
+* let a Codex run apply its own session title ([#327](https://github.com/sebastian-software/effective-flow/issues/327)) ([6ab4c5d](https://github.com/sebastian-software/effective-flow/commit/6ab4c5d1e308abbb7a4af450c4f56c51cfebf4db))
+* recommend up to two next steps after every tool run ([#328](https://github.com/sebastian-software/effective-flow/issues/328)) ([4abed61](https://github.com/sebastian-software/effective-flow/commit/4abed611f375e13f084284864badf595d104449a))
+
+
+### Bug Fixes
+
+* require installer evidence before deleting a native skill directory ([#332](https://github.com/sebastian-software/effective-flow/issues/332)) ([8d6ef36](https://github.com/sebastian-software/effective-flow/commit/8d6ef362e1640bfb48b25bcee789cc9ae2b8db62))
+
+## [1.56.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.56.0...effective-flow-v1.56.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* match a configured reviewer login on both surfaces the gate reads ([#325](https://github.com/sebastian-software/effective-flow/issues/325)) ([4031685](https://github.com/sebastian-software/effective-flow/commit/40316858b1937696751d3c547f1275342552a256))
+
+## [1.56.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.55.4...effective-flow-v1.56.0) (2026-08-05)
+
+
+### Deprecations
+
+* `/effective-flow pr-review` is now `/effective-flow merge-gate`. **This release is not a breaking change:** the old invocation keeps working as a deprecated alias that prints a notice once and then forwards the run unchanged to the merge gate. It is absent from the tool overview and from autocomplete, and it is removed with the next deliberate major release. The `prReview.*` configuration keys are renamed to `mergeGate.*`; the old names are still read for one generation and `/effective-flow setup` rewrites a legacy block in place. `delivery.prReview` is unaffected.
+
+### Features
+
+* keep the old pr-review name working as a deprecated alias ([#324](https://github.com/sebastian-software/effective-flow/issues/324)) ([9dc8f60](https://github.com/sebastian-software/effective-flow/commit/9dc8f60abf4b55a1ebc07ae2cca7f9ce0bce40c4))
+* make sub-agent delegation the authorized default ([#318](https://github.com/sebastian-software/effective-flow/issues/318)) ([9cc99d3](https://github.com/sebastian-software/effective-flow/commit/9cc99d35e9d37c307d188eb7ac061049f21ef844))
+* rename the pr-review tool to merge-gate and guard iterate against a review in flight ([#317](https://github.com/sebastian-software/effective-flow/issues/317)) ([88979a7](https://github.com/sebastian-software/effective-flow/commit/88979a709c13dc4f56a783c0c3bc8cba1d0bc103))
+
+
+### Bug Fixes
+
+* let the merge gate recognize its own outside-diff review comment ([#322](https://github.com/sebastian-software/effective-flow/issues/322)) ([824a746](https://github.com/sebastian-software/effective-flow/commit/824a74610c52f91de5d43143cafc0c0ec9e487af)), closes [#321](https://github.com/sebastian-software/effective-flow/issues/321)
+* stop treating an emoji acknowledgment as proof a reviewer has no check ([#320](https://github.com/sebastian-software/effective-flow/issues/320)) ([11e6339](https://github.com/sebastian-software/effective-flow/commit/11e6339ae970d8af10d4bd40394a3c8c9601b393))
+
+## [1.55.4](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.55.3...effective-flow-v1.55.4) (2026-07-30)
+
+
+### Bug Fixes
+
+* keep redaction linear on an unbroken token run ([#316](https://github.com/sebastian-software/effective-flow/issues/316)) ([eca5aef](https://github.com/sebastian-software/effective-flow/commit/eca5aef4a4cb558cca4a9fb31b5e2929d3a27a2e)), closes [#315](https://github.com/sebastian-software/effective-flow/issues/315)
+* read check requiredness so requireAllChecks can decide ([b911ea6](https://github.com/sebastian-software/effective-flow/commit/b911ea603f37e83e9c4eb3448980655a0461459e))
+* stop the merge gate counting its own output as human discussion ([#312](https://github.com/sebastian-software/effective-flow/issues/312)) ([fa92d81](https://github.com/sebastian-software/effective-flow/commit/fa92d81e52ac0f3c6b740b2dfa9baeef4b467e37))
+
+## [1.55.3](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.55.2...effective-flow-v1.55.3) (2026-07-30)
+
+
+### Bug Fixes
+
+* **deps:** update oxc toolchain to ^0.61.0 ([#309](https://github.com/sebastian-software/effective-flow/issues/309)) ([3e4e4dc](https://github.com/sebastian-software/effective-flow/commit/3e4e4dc9a729a329e753b2f6c1537c22d0600c41))
+* stop pr-checks-wait failing when no required check has reported ([2042371](https://github.com/sebastian-software/effective-flow/commit/2042371af5906cf94d6e9d99f98b29428df81bf1))
+
+## [1.55.2](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.55.1...effective-flow-v1.55.2) (2026-07-30)
+
+
+### Bug Fixes
+
+* split pr-checks-wait into a watch and a JSON read ([83c5ad9](https://github.com/sebastian-software/effective-flow/commit/83c5ad96694cdc199ac55292b253410a54013dc0)), closes [#303](https://github.com/sebastian-software/effective-flow/issues/303)
+
+## [1.55.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.55.0...effective-flow-v1.55.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* recognize the merge gate's own comments across runs ([#297](https://github.com/sebastian-software/effective-flow/issues/297)) ([e9ebb0e](https://github.com/sebastian-software/effective-flow/commit/e9ebb0e8f10e4cae6dcd9bf9aed1905e7d9c4364))
+
+## [1.55.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.54.4...effective-flow-v1.55.0) (2026-07-28)
+
+
+### Features
+
+* add a pull-request merge gate as /effective-flow pr-review ([#295](https://github.com/sebastian-software/effective-flow/issues/295)) ([e92401e](https://github.com/sebastian-software/effective-flow/commit/e92401e312d759b43ef3876181eb8795f5c51411))
+
+## [1.54.4](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.54.3...effective-flow-v1.54.4) (2026-07-28)
+
+
+### Bug Fixes
+
+* **deps:** update actions/github-script action to v9 ([#290](https://github.com/sebastian-software/effective-flow/issues/290)) ([12a8cc2](https://github.com/sebastian-software/effective-flow/commit/12a8cc2f24028d901bc87ee0aaaf6e3356c2e509))
+* **deps:** update oxc toolchain to ^0.60.0 ([#288](https://github.com/sebastian-software/effective-flow/issues/288)) ([07c19e5](https://github.com/sebastian-software/effective-flow/commit/07c19e50934050efbe32b5ba9bb4781db3927198))
+* **deps:** update pnpm to v11.17.0 ([#289](https://github.com/sebastian-software/effective-flow/issues/289)) ([2bcc176](https://github.com/sebastian-software/effective-flow/commit/2bcc176e94fec93a06995f3d71e5997222ebc3a4))
+
+## [1.54.3](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.54.2...effective-flow-v1.54.3) (2026-07-28)
+
+
+### Bug Fixes
+
+* carry the worktree lifecycle contract in apply-issues ([5dbaec4](https://github.com/sebastian-software/effective-flow/commit/5dbaec435cef4955f48202dabd3d7b59cfeeb412)), closes [#283](https://github.com/sebastian-software/effective-flow/issues/283)
+
+## [1.54.2](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.54.1...effective-flow-v1.54.2) (2026-07-28)
+
+
+### Bug Fixes
+
+* surface a failed delivery as an assigned issue ([14f797a](https://github.com/sebastian-software/effective-flow/commit/14f797a3059f1f8fca9a2cc381c9c84ad3eb4b53)), closes [#278](https://github.com/sebastian-software/effective-flow/issues/278)
+
+## [1.54.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.54.0...effective-flow-v1.54.1) (2026-07-28)
+
+
+### Bug Fixes
+
+* deliver to main as the delivery app instead of github-actions[bot] ([#277](https://github.com/sebastian-software/effective-flow/issues/277)) ([4ff4584](https://github.com/sebastian-software/effective-flow/commit/4ff4584b95f5b7fd6a4a962615c08515ba6ed618))
+* normalize tea list labels flattened into a string ([#273](https://github.com/sebastian-software/effective-flow/issues/273)) ([e91cdf4](https://github.com/sebastian-software/effective-flow/commit/e91cdf4db05bd879a506f4dcecc60431840172d3)), closes [#257](https://github.com/sebastian-software/effective-flow/issues/257)
+* recover the tea result URL from escaped create output ([f9ccd9b](https://github.com/sebastian-software/effective-flow/commit/f9ccd9b1e5df6111ebebe53b2c532b7f4d776f9f)), closes [#270](https://github.com/sebastian-software/effective-flow/issues/270)
+
+## [1.54.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.53.0...effective-flow-v1.54.0) (2026-07-27)
+
+
+### Features
+
+* add the concept tool and its deep concept review ([#269](https://github.com/sebastian-software/effective-flow/issues/269)) ([674b6c1](https://github.com/sebastian-software/effective-flow/commit/674b6c1d84dc09c4bd7a87a903d9eefd1ef85374))
+* defer documentation structure and craft to tech-docs ([#266](https://github.com/sebastian-software/effective-flow/issues/266)) ([3018135](https://github.com/sebastian-software/effective-flow/commit/3018135f94a812b90a8c093b9278be0763fb6148))
+* drop the autonomous /goal mode from every workflow ([#271](https://github.com/sebastian-software/effective-flow/issues/271)) ([6fe6a31](https://github.com/sebastian-software/effective-flow/commit/6fe6a31cc6755e294e7685c60df96f23fea755a6))
+* make the documentation check a fixed part of the implementation tools ([c54755a](https://github.com/sebastian-software/effective-flow/commit/c54755ad932b4cf71d22d1b6a9b424d09248a09a))
+* publish review findings onto pull requests through pr-review ([#265](https://github.com/sebastian-software/effective-flow/issues/265)) ([5da62ac](https://github.com/sebastian-software/effective-flow/commit/5da62aca5613f0b7795e1330c59212049df18fa9))
+
+
+### Bug Fixes
+
+* resolve the root README follow-up targets from the effective structure ([#268](https://github.com/sebastian-software/effective-flow/issues/268)) ([8d8c3b4](https://github.com/sebastian-software/effective-flow/commit/8d8c3b46d4fdb8cd1133a5e650dff49651b0a334))
+* root forge CLI operations in the main checkout ([#263](https://github.com/sebastian-software/effective-flow/issues/263)) ([2dddb72](https://github.com/sebastian-software/effective-flow/commit/2dddb7202b18ce3ebb71410d3a3741d3c2c8b5ef))
+
+## [1.53.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.52.2...effective-flow-v1.53.0) (2026-07-27)
+
+
+### Features
+
+* let the project setup name an external tracker target ([#260](https://github.com/sebastian-software/effective-flow/issues/260)) ([b8322cf](https://github.com/sebastian-software/effective-flow/commit/b8322cfa7ce82f6f15d71a1b30b8ac7074b206d5))
+* propose a session title once a run knows its subject ([#258](https://github.com/sebastian-software/effective-flow/issues/258)) ([e3bfed4](https://github.com/sebastian-software/effective-flow/commit/e3bfed43772ac8d2013c6a430b91961b3dcdc61a))
+* withhold security findings from the tracker until confirmed ([#255](https://github.com/sebastian-software/effective-flow/issues/255)) ([6591a11](https://github.com/sebastian-software/effective-flow/commit/6591a11c646f98a2b6204a8c6fb8765c5d40625a))
+
+## [1.52.2](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.52.1...effective-flow-v1.52.2) (2026-07-23)
+
+
+### Bug Fixes
+
+* exercise the main delivery app-token push ([#143](https://github.com/sebastian-software/effective-flow/issues/143)) ([8b21ce9](https://github.com/sebastian-software/effective-flow/commit/8b21ce912b4856074fb38e5dc1e5ab169d50c108))
+
+## [1.52.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.52.0...effective-flow-v1.52.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* correct the LICENSE copyright year to 2026 ([#249](https://github.com/sebastian-software/effective-flow/issues/249)) ([2f1d0a8](https://github.com/sebastian-software/effective-flow/commit/2f1d0a8de3dc89d9a4853383061f0f70bc7a1363))
+
+## [1.52.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.51.0...effective-flow-v1.52.0) (2026-07-23)
+
+
+### Features
+
+* distribute MIT license across release targets ([#244](https://github.com/sebastian-software/effective-flow/issues/244)) ([a969945](https://github.com/sebastian-software/effective-flow/commit/a969945465f36457bced69e6383ef68035f91c70))
+
+
+### Bug Fixes
+
+* localize review status handoffs ([#246](https://github.com/sebastian-software/effective-flow/issues/246)) ([a770961](https://github.com/sebastian-software/effective-flow/commit/a770961719ad7b66f572ff4ea550b09a33c101ac))
+* trigger legacy runtime migration in setup and cleanup ([#242](https://github.com/sebastian-software/effective-flow/issues/242)) ([a6dc9a4](https://github.com/sebastian-software/effective-flow/commit/a6dc9a427f3b3ef0ca564cd49f174185e45820db))
+
+## [1.51.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.50.0...effective-flow-v1.51.0) (2026-07-22)
+
+
+### Features
+
+* add lifecycle-aware worktree cleanup ([#236](https://github.com/sebastian-software/effective-flow/issues/236)) ([d254b7e](https://github.com/sebastian-software/effective-flow/commit/d254b7e475713a2ae0dbdcc450122542b11b0d80))
+* define role-based model profiles ([#238](https://github.com/sebastian-software/effective-flow/issues/238)) ([bff15b3](https://github.com/sebastian-software/effective-flow/commit/bff15b332ec13ac7d684b1644e3acbfe968ed99e))
+* show progress for goal-driven workflows ([#239](https://github.com/sebastian-software/effective-flow/issues/239)) ([926db0d](https://github.com/sebastian-software/effective-flow/commit/926db0d9273cc16feaf9efb13365146fa3d204f9))
+
+## [1.50.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.49.0...effective-flow-v1.50.0) (2026-07-21)
+
+
+### Features
+
+* automate team catalog updates after releases ([#234](https://github.com/sebastian-software/effective-flow/issues/234)) ([e1e80ee](https://github.com/sebastian-software/effective-flow/commit/e1e80ee0bf028ef978fedd19c40f0076f4312132))
+
+## [1.49.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.48.0...effective-flow-v1.49.0) (2026-07-21)
+
+
+### Features
+
+* add generic product-language fallback ([#203](https://github.com/sebastian-software/effective-flow/issues/203)) ([80cf27c](https://github.com/sebastian-software/effective-flow/commit/80cf27cd734959f33acc0a973cc318fc68e86bdd))
+* align issue planning review flow ([#232](https://github.com/sebastian-software/effective-flow/issues/232)) ([cc295ac](https://github.com/sebastian-software/effective-flow/commit/cc295ac017536a33ff739e03225ff0fa98e3d4cd))
+* **ci:** close issues merged into develop ([#229](https://github.com/sebastian-software/effective-flow/issues/229)) ([7a87c70](https://github.com/sebastian-software/effective-flow/commit/7a87c70affd2375d2eba96050c648c4db9ba92ba))
+* configure language by artifact surface ([#228](https://github.com/sebastian-software/effective-flow/issues/228)) ([87f4ed8](https://github.com/sebastian-software/effective-flow/commit/87f4ed8b05cbe65af3fcee321d7cf24b0356992a))
+* start Codex goals directly ([#230](https://github.com/sebastian-software/effective-flow/issues/230)) ([2c57b95](https://github.com/sebastian-software/effective-flow/commit/2c57b95ad433251dbc73c3505a959103c2e4a883))
+* validate central skill ownership relationships ([#206](https://github.com/sebastian-software/effective-flow/issues/206)) ([190cd40](https://github.com/sebastian-software/effective-flow/commit/190cd4040a381ee1640f63c98fe91d83c3a67df1))
+
+
+### Bug Fixes
+
+* align active workflow terminology ([#216](https://github.com/sebastian-software/effective-flow/issues/216)) ([6f478bd](https://github.com/sebastian-software/effective-flow/commit/6f478bd951db530d263d973be5e9e86d9e4f9894))
+* align ADR ownership contract ([#205](https://github.com/sebastian-software/effective-flow/issues/205)) ([22ad506](https://github.com/sebastian-software/effective-flow/commit/22ad5066f6f76a9a532732f1a4adc34009d70d99))
+* check lifecycle branch commits before push ([#221](https://github.com/sebastian-software/effective-flow/issues/221)) ([051dfd4](https://github.com/sebastian-software/effective-flow/commit/051dfd4043a83ac4f8cb24a6657025c357e70e8d))
+* clean delivery state after red maintenance baseline ([#219](https://github.com/sebastian-software/effective-flow/issues/219)) ([0022474](https://github.com/sebastian-software/effective-flow/commit/0022474fc4792ac1217bb4433e713e22684a3813))
+* define Rust validator result contract ([#227](https://github.com/sebastian-software/effective-flow/issues/227)) ([d0a5f54](https://github.com/sebastian-software/effective-flow/commit/d0a5f544e3a7249d042c3bab2865ac5a9c757274))
+* enforce runtime state write safety ([#207](https://github.com/sebastian-software/effective-flow/issues/207)) ([409dbbf](https://github.com/sebastian-software/effective-flow/commit/409dbbf96a87b3ed10c2cda94fd52c48bf04e944))
+* localize generated workflow scaffolding ([#226](https://github.com/sebastian-software/effective-flow/issues/226)) ([5d87c4d](https://github.com/sebastian-software/effective-flow/commit/5d87c4d897c69e4f0131893025ec3554466764b8))
+* make distribution harness-correct and agent-complete ([#198](https://github.com/sebastian-software/effective-flow/issues/198)) ([9df0e7e](https://github.com/sebastian-software/effective-flow/commit/9df0e7effe9bebc891b143d42ed9dd367403e451))
+* make goal prompts easy to copy ([#231](https://github.com/sebastian-software/effective-flow/issues/231)) ([e95da04](https://github.com/sebastian-software/effective-flow/commit/e95da04be62b3fe8fc3f008028eb0d8296c0c2ec))
+* make README follow-up links conditional ([#212](https://github.com/sebastian-software/effective-flow/issues/212)) ([1d4aeb6](https://github.com/sebastian-software/effective-flow/commit/1d4aeb666d5d83a50b63473933defefd3e8df6bf))
+* make validator concurrency harness-neutral ([#200](https://github.com/sebastian-software/effective-flow/issues/200)) ([0c214b0](https://github.com/sebastian-software/effective-flow/commit/0c214b0c24273cb1abe299e275c37cf8e291814a))
+* migrate partial legacy runtime state ([#209](https://github.com/sebastian-software/effective-flow/issues/209)) ([713ad55](https://github.com/sebastian-software/effective-flow/commit/713ad55ee3a0a564c24758bc759e42feecb0ac18))
+* migrate project setup configuration to ADR ([#210](https://github.com/sebastian-software/effective-flow/issues/210)) ([ac0b702](https://github.com/sebastian-software/effective-flow/commit/ac0b7025517c9165be2101faf87336ebe52c5546))
+* preserve runtime state across worktree execution ([#215](https://github.com/sebastian-software/effective-flow/issues/215)) ([aff5da9](https://github.com/sebastian-software/effective-flow/commit/aff5da9b30c9fff5207554ccdd69e7e8864c18c1))
+* preserve transitional setup config source ([#223](https://github.com/sebastian-software/effective-flow/issues/223)) ([225056a](https://github.com/sebastian-software/effective-flow/commit/225056a1d99596695095e12df29d452b13235f36))
+* re-review refactor regression repairs ([#222](https://github.com/sebastian-software/effective-flow/issues/222)) ([dc3dfe7](https://github.com/sebastian-software/effective-flow/commit/dc3dfe70e8628797a0785d782a1c7bea34f1eb26))
+* reject invalid installer arguments ([#208](https://github.com/sebastian-software/effective-flow/issues/208)) ([4deb8f5](https://github.com/sebastian-software/effective-flow/commit/4deb8f52452a62e7160c3dc921ec83420f054a7d))
+* resolve archived plans during plan review ([#218](https://github.com/sebastian-software/effective-flow/issues/218)) ([5e3dced](https://github.com/sebastian-software/effective-flow/commit/5e3dced24a4f20703f8f1af8012ff0ca66e6c893))
+* restore installer version reporting ([#196](https://github.com/sebastian-software/effective-flow/issues/196)) ([2f015c4](https://github.com/sebastian-software/effective-flow/commit/2f015c40f52d8abcc96cdb0560e84a235592d9d8))
+* reuse existing pull requests during delivery ([#213](https://github.com/sebastian-software/effective-flow/issues/213)) ([b1c4e4b](https://github.com/sebastian-software/effective-flow/commit/b1c4e4bb562aff4cbcbe3e1dea580f2795d4a328))
+* serialize finding memory updates ([#214](https://github.com/sebastian-software/effective-flow/issues/214)) ([a402a5a](https://github.com/sebastian-software/effective-flow/commit/a402a5a110d15e46f01fcd612d1d03bafec78198))
+* serialize iterate item commits ([#217](https://github.com/sebastian-software/effective-flow/issues/217)) ([1cf6864](https://github.com/sebastian-software/effective-flow/commit/1cf68648efe24ba3113f5357b396b5c48332d24b))
+* terminate validator process trees on timeout ([#225](https://github.com/sebastian-software/effective-flow/issues/225)) ([7879bd3](https://github.com/sebastian-software/effective-flow/commit/7879bd32d7aec868e8f245460b2713d87ba8a814))
+* verify worktree execution locations ([#201](https://github.com/sebastian-software/effective-flow/issues/201)) ([2223cc9](https://github.com/sebastian-software/effective-flow/commit/2223cc96ff42b2134bd472ebdc5ad02614a67d8c))
+
+## [1.48.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.47.0...effective-flow-v1.48.0) (2026-07-18)
+
+
+### Features
+
+* **ci:** deliver consumer docs to the delivery branch on release ([#146](https://github.com/sebastian-software/effective-flow/issues/146)) ([0f539b8](https://github.com/sebastian-software/effective-flow/commit/0f539b8782a53352c293f6368dcc5c74c4a13470))
+
+
+### Bug Fixes
+
+* **ci:** deliver a renovate.json to main that targets develop ([#154](https://github.com/sebastian-software/effective-flow/issues/154)) ([6bb5b78](https://github.com/sebastian-software/effective-flow/commit/6bb5b781ab5204304dec7953fa0d207c209a9dbd))
+* **ci:** point release-please at the develop source branch ([#144](https://github.com/sebastian-software/effective-flow/issues/144)) ([997b2ed](https://github.com/sebastian-software/effective-flow/commit/997b2ed7fffb6b8b2cd1655b04d56ff32d8acb9f)), closes [#92](https://github.com/sebastian-software/effective-flow/issues/92)
+* **deps:** update actions/setup-node action to v7 ([#157](https://github.com/sebastian-software/effective-flow/issues/157)) ([8d873b4](https://github.com/sebastian-software/effective-flow/commit/8d873b42d2970a25c737f1c3a1855978cc7612c4))
+* **deps:** update oxc toolchain to ^0.59.0 ([#155](https://github.com/sebastian-software/effective-flow/issues/155)) ([09f9699](https://github.com/sebastian-software/effective-flow/commit/09f9699ede8e3bcf1e3574af020c56d9594183ad))
+* **deps:** update pnpm to v11.11.0 ([#156](https://github.com/sebastian-software/effective-flow/issues/156)) ([64cd7b6](https://github.com/sebastian-software/effective-flow/commit/64cd7b640317f0de36331e2a57fc20970dd517bf))
+
+## [1.47.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.46.0...effective-flow-v1.47.0) (2026-07-18)
+
+
+### Features
+
+* accept English plan status marker alongside German ([f85aa57](https://github.com/sebastian-software/effective-flow/commit/f85aa57a9c05c238de7a0f274f795993bf035d90))
+* add /review command for structured code review with actionable findings ([1ea60ee](https://github.com/sebastian-software/effective-flow/commit/1ea60eeb2c43d8dfdca9cd2c08210f715bc1310f))
+* add apply-plan workflow router ([ec3aee0](https://github.com/sebastian-software/effective-flow/commit/ec3aee091474678ed4839b6e135b248771daf90a))
+* add apply-review worktree strategy ([98af886](https://github.com/sebastian-software/effective-flow/commit/98af886d115caa5cb47b2e46e352bb8e1b3c2cc2))
+* add argument-hint listing all firmo tools for slash-command autocomplete ([#7](https://github.com/sebastian-software/effective-flow/issues/7)) ([bb84bad](https://github.com/sebastian-software/effective-flow/commit/bb84bad7acc5f32ad981c95187f7b938486064d8))
+* add central language rules with include mechanism for all agent skills ([8332bb7](https://github.com/sebastian-software/effective-flow/commit/8332bb7377a9c60c3abc16959b7cc272a95b85b4))
+* add cleanup tool for finalizing migration leftovers ([#121](https://github.com/sebastian-software/effective-flow/issues/121)) ([5505082](https://github.com/sebastian-software/effective-flow/commit/550508236c412a0bd68df89d51129f4b461eaf3f))
+* add delivery branch lifecycle ([#72](https://github.com/sebastian-software/effective-flow/issues/72)) ([0e253b1](https://github.com/sebastian-software/effective-flow/commit/0e253b16752f8f66f4cefb5fdb68393270d7455a))
+* add design-decision awareness to review workflow ([53259fb](https://github.com/sebastian-software/effective-flow/commit/53259fb48b2d7176155edaf5136d178871d8c6fc))
+* add design-decision cross-check phase to review skill workflow ([c727575](https://github.com/sebastian-software/effective-flow/commit/c727575b538c73075f593568581a39f6c2947e7c))
+* add doc category directories convention ([3f76d0e](https://github.com/sebastian-software/effective-flow/commit/3f76d0e369aa131a4618213d47a0d464dc6ee14b))
+* add docs workflow skill ([c60e87b](https://github.com/sebastian-software/effective-flow/commit/c60e87b00050e10275e939cb758fca6d5e02eb1d))
+* add dual-platform support for Codex and Claude Code ([79b5e5b](https://github.com/sebastian-software/effective-flow/commit/79b5e5bda6c96003b9e271f1f609d2c034e959a9))
+* add explicit /goal gate to sf-apply-issues ([24aefd0](https://github.com/sebastian-software/effective-flow/commit/24aefd09387da7fb6d73b0aab47b95e96b258f15))
+* add final validation phase with auto-fix to apply-review workflow ([d300172](https://github.com/sebastian-software/effective-flow/commit/d3001724ae1ed5e1572ee7bb2d5cd72924434057))
+* add finding scope selection to review skill ([13674a0](https://github.com/sebastian-software/effective-flow/commit/13674a09cbb4603c2398e84f1f92d55fb2d58583))
+* add generic implementer dependency policy ([#66](https://github.com/sebastian-software/effective-flow/issues/66)) ([ed77c88](https://github.com/sebastian-software/effective-flow/commit/ed77c888f1f19d5db2139e36716d6e2e48246db4))
+* add goal-driven completion to sf-apply-review ([15a5d02](https://github.com/sebastian-software/effective-flow/commit/15a5d02259776e2287f61a61f74a6bd7f5e6394b))
+* add goal-driven completion to workflow skills ([dd79698](https://github.com/sebastian-software/effective-flow/commit/dd7969868b301fdc38d5a92fe4b1292eea44af89))
+* add initial state documentation step to build-feature workflow ([0d761ea](https://github.com/sebastian-software/effective-flow/commit/0d761eaaf0137c896a581919e808775cdf33f586))
+* add interactive plan review flow ([#67](https://github.com/sebastian-software/effective-flow/issues/67)) ([aecd69c](https://github.com/sebastian-software/effective-flow/commit/aecd69c6216bf915e258bd2008de7296e825c25d))
+* add issue-driven workflow skills sf-apply-issues and sf-plan-issues ([5ec936a](https://github.com/sebastian-software/effective-flow/commit/5ec936a03413be91a9848bc9b9d7ba37a4c627da))
+* add iterate tool to fold PR review feedback into an existing PR ([#115](https://github.com/sebastian-software/effective-flow/issues/115)) ([13fb55b](https://github.com/sebastian-software/effective-flow/commit/13fb55b9cc9d44edae8eaacba7190203b3a8fcd6))
+* add Node.js backend and CLI support with dedicated agents ([452159e](https://github.com/sebastian-software/effective-flow/commit/452159e0f09de7ab9bb95d8b2ed1729719914a7d))
+* add open plans skill ([48259b3](https://github.com/sebastian-software/effective-flow/commit/48259b3f947186f43302e3eff9b38b9ccb1c27e4))
+* add opt-in worktree integration and sf-pr skill ([db64b5c](https://github.com/sebastian-software/effective-flow/commit/db64b5cff7631449ea8581d6e1776378ec0ce48b))
+* add per-item task tracking to apply-review and review skills ([d6be3a3](https://github.com/sebastian-software/effective-flow/commit/d6be3a3732350a21facecb56c9c259165a632d8f))
+* add persistent memory file for review finding counter and move reports to docs/review ([6956bd9](https://github.com/sebastian-software/effective-flow/commit/6956bd9bc99538511eb6bdb60aa1d934ff78df2f))
+* add plan workflow recommendations ([265246a](https://github.com/sebastian-software/effective-flow/commit/265246a29ab0f33d453dfc380415d83588eaae54))
+* add plan-level review step ([1ccd104](https://github.com/sebastian-software/effective-flow/commit/1ccd104cd49b6694eff421ee569d6e0631895425))
+* add platform-specific ASK block transforms and restructure marketplace layout ([6e3f2dc](https://github.com/sebastian-software/effective-flow/commit/6e3f2dc99a205b59266b4080bb86d3e33c415e0f))
+* add pre-commit-gate shared include to enforce verification before commits ([f5d0fe3](https://github.com/sebastian-software/effective-flow/commit/f5d0fe39531cd0859815c7196baaac944eb91685))
+* add remote issue-tracker mode for review and apply-review ([#3](https://github.com/sebastian-software/effective-flow/issues/3)) ([96ffedd](https://github.com/sebastian-software/effective-flow/commit/96ffedda28acb8cbb3e337a13731b2dc07e58669))
+* add review speed profiles ([4248b96](https://github.com/sebastian-software/effective-flow/commit/4248b96fe53dff41dd1e3b3f878430b9b4b03b08))
+* add rule to preserve existing comments across implementer and documenter skills ([d102ed5](https://github.com/sebastian-software/effective-flow/commit/d102ed5b3af5b9e04f8d428b063cedeae8fa0ae1))
+* add Rust implementer and reviewer agents ([7a733cb](https://github.com/sebastian-software/effective-flow/commit/7a733cb94edb0178a9a4400e55541f74ebc93ce3))
+* add session-isolated wisdom accumulation for parallel workflows ([ed88fd4](https://github.com/sebastian-software/effective-flow/commit/ed88fd43e8e477621e79742769fce22a872af1f9))
+* add sf-apply router with shared apply source detection ([db1b4b2](https://github.com/sebastian-software/effective-flow/commit/db1b4b2ebf6e25b6fefe583299c700eee255a67a))
+* add sf-apply-review orchestrator skill for automated review finding delegation ([d172384](https://github.com/sebastian-software/effective-flow/commit/d17238438eb93505cde48fb68e0f9d71707925cd))
+* add sf-frontend-workflows plugin with orchestrated agents and commands ([9a196d3](https://github.com/sebastian-software/effective-flow/commit/9a196d3c3896f1ec174f12cbacac90d900ac716b))
+* add sf-investigate analysis skill and shared investigation includes ([edff1fb](https://github.com/sebastian-software/effective-flow/commit/edff1fb75a046ec1717a2f1ac68a9aad542e1c42))
+* add sf-setup skill for gitignore and config bootstrap ([60e8e31](https://github.com/sebastian-software/effective-flow/commit/60e8e3138c97b02f59b494f87770fe34185a2676))
+* add sf-version skill with git short hash in version string ([4059ffa](https://github.com/sebastian-software/effective-flow/commit/4059ffa2642513cf4f430eb3698626089b23277c))
+* add slim sf-maintain orchestrator for dependency maintenance ([07e28a3](https://github.com/sebastian-software/effective-flow/commit/07e28a333251cac8f03d6a406ccd2af5040c5522))
+* add standalone planning workflow ([a48f919](https://github.com/sebastian-software/effective-flow/commit/a48f9198b5e2c30933b801649699435a3691e03f))
+* add static marketing homepage under site/ ([#59](https://github.com/sebastian-software/effective-flow/issues/59)) ([fe9436b](https://github.com/sebastian-software/effective-flow/commit/fe9436b0fcad752165805a57a78fa1bdd2596671))
+* add structured review output with finding details to build-feature and refactor ([90a4ace](https://github.com/sebastian-software/effective-flow/commit/90a4acef8ae1ca841b5322285f41c3cf43abd1c5))
+* add tool-agnostic task tracking include to all skills ([85523da](https://github.com/sebastian-software/effective-flow/commit/85523da3bfe4b98c05e9a78047dcfc796698222e))
+* adopt release-please automation ([#71](https://github.com/sebastian-software/effective-flow/issues/71)) ([ac5998b](https://github.com/sebastian-software/effective-flow/commit/ac5998b161d2af5bb6e9090c751f12b6f35df9b1))
+* **agents:** prefer effective-web skill in frontend agents ([#90](https://github.com/sebastian-software/effective-flow/issues/90)) ([8eba25b](https://github.com/sebastian-software/effective-flow/commit/8eba25bd89c4319955796bb237365ae36a04cd3a))
+* **agents:** prefer metro-english over humanizer in docs agents ([#93](https://github.com/sebastian-software/effective-flow/issues/93)) ([1db020f](https://github.com/sebastian-software/effective-flow/commit/1db020f4b4a825ec9f7d8370696888890e690507))
+* **apply-review:** delegate ADR authoring to decision-records ([#135](https://github.com/sebastian-software/effective-flow/issues/135)) ([44791ee](https://github.com/sebastian-software/effective-flow/commit/44791ee48f69b1a4b04703cd4ac23f5607784b9f))
+* assess apply-review cherry-pick conflicts ([97cffd8](https://github.com/sebastian-software/effective-flow/commit/97cffd842414284249a9de1b13997f71d2fe825a))
+* auto-detect plan status marker language in sf-plan ([67af62f](https://github.com/sebastian-software/effective-flow/commit/67af62f149eccde8c31fffda8520fa9121f006a7))
+* **build:** lazy-load mode-gated shared fragments for progressive disclosure ([#140](https://github.com/sebastian-software/effective-flow/issues/140)) ([769ae8a](https://github.com/sebastian-software/effective-flow/commit/769ae8aa6e66b52e80704003f3be2b8e47c553af)), closes [#99](https://github.com/sebastian-software/effective-flow/issues/99)
+* **ci:** deliver built dist to a delivery branch on release ([#141](https://github.com/sebastian-software/effective-flow/issues/141)) ([6b55022](https://github.com/sebastian-software/effective-flow/commit/6b5502278c92907f3dd08c41ab3e43809096ccbb)), closes [#92](https://github.com/sebastian-software/effective-flow/issues/92)
+* default review finding scope to critical+important without interactive prompt ([e8a12ea](https://github.com/sebastian-software/effective-flow/commit/e8a12eaa01dcf7db67664dc5fd51b96c9f7e0045))
+* discover and apply host skills across firmo tools and agents ([#86](https://github.com/sebastian-software/effective-flow/issues/86)) ([1178fb0](https://github.com/sebastian-software/effective-flow/commit/1178fb0170ddefc431e5cd6f836c27f34ef257e5))
+* **docs:** complete the Rust documentation path across doc agents and workflows ([#134](https://github.com/sebastian-software/effective-flow/issues/134)) ([f4b5cc1](https://github.com/sebastian-software/effective-flow/commit/f4b5cc14bd61a0f017c80d80834f92082e07061d)), closes [#102](https://github.com/sebastian-software/effective-flow/issues/102)
+* **docs:** prescribe default documentation structure with marketing README ([#95](https://github.com/sebastian-software/effective-flow/issues/95)) ([caf379d](https://github.com/sebastian-software/effective-flow/commit/caf379d9b22f61ff0929c8e54823c0edb0aeb629))
+* dual-platform build with Codex subagents and Claude Code plugin format ([c9a76f4](https://github.com/sebastian-software/effective-flow/commit/c9a76f458d23c99dc3a340a66d7fd15cbc16dd66))
+* embed detailed review findings report into plan files ([f92ca62](https://github.com/sebastian-software/effective-flow/commit/f92ca627e37b0490c48a8eaf736eb154e42ccc7c))
+* enforce file-splitting over line compression for file-length violations ([03091c7](https://github.com/sebastian-software/effective-flow/commit/03091c749155d1ac5f5b5ff0a2ae3d293594173e))
+* forbid Co-Authored-By trailers across committing skills ([716e233](https://github.com/sebastian-software/effective-flow/commit/716e2338e1add11781ddb0091c8f9f6c2312d917))
+* generate ADRs for intentionally rejected review findings ([93edb1d](https://github.com/sebastian-software/effective-flow/commit/93edb1d337f755d6335bbd2a7a586befce95b676))
+* generate marketplace.json in build and read version from version.txt ([c45a2a7](https://github.com/sebastian-software/effective-flow/commit/c45a2a708431edb3610e9194e02ed3399d952f70))
+* guarantee unique plan numbers via shared numbering convention ([76ce43a](https://github.com/sebastian-software/effective-flow/commit/76ce43a46b5826568c1cc5dbd02dde1a1dfc202d))
+* guard the mandatory documentation category README in the build ([#129](https://github.com/sebastian-software/effective-flow/issues/129)) ([1ae5902](https://github.com/sebastian-software/effective-flow/commit/1ae59022bba88973dde80da966f66852b4739b45))
+* guided setup wizard (plan 0071) ([#80](https://github.com/sebastian-software/effective-flow/issues/80)) ([edde0f1](https://github.com/sebastian-software/effective-flow/commit/edde0f1cc9a0c70b577304e7274c885816059c6c))
+* harden build guards, add transform tests and atomic dist write ([#61](https://github.com/sebastian-software/effective-flow/issues/61)) ([b058b15](https://github.com/sebastian-software/effective-flow/commit/b058b150bfa08385833997cfb70075cd5af9a17b))
+* include plan file in worktree handback PR ([#1](https://github.com/sebastian-software/effective-flow/issues/1)) ([fd843ac](https://github.com/sebastian-software/effective-flow/commit/fd843ac79db9283e0d1680cbec939a249a14b919))
+* intent-grouped router tool catalog (plan 0072) ([#81](https://github.com/sebastian-software/effective-flow/issues/81)) ([789de1d](https://github.com/sebastian-software/effective-flow/commit/789de1d936765b45f7e038f9028b48da4f39e26a))
+* layered skill ownership contract with a skill inventory ([#130](https://github.com/sebastian-software/effective-flow/issues/130)) ([ca238ec](https://github.com/sebastian-software/effective-flow/commit/ca238ec278243860ec473eb69fdf7ceca1cbe1b9)), closes [#114](https://github.com/sebastian-software/effective-flow/issues/114)
+* make agent descriptions and reviewer contracts self-contained ([#138](https://github.com/sebastian-software/effective-flow/issues/138)) ([b2573c6](https://github.com/sebastian-software/effective-flow/commit/b2573c6b5452fd2831f302ee8dd7b84a2559bf12))
+* make the autonomous /goal handoff an explicit choice ([687e103](https://github.com/sebastian-software/effective-flow/commit/687e10353a5f71e7659434b041fdab618dc602e1))
+* migrate workflow plugin to codex skills ([759bbdb](https://github.com/sebastian-software/effective-flow/commit/759bbdbb3407a69b2e9a9f2ea3fda54ec4efb6df))
+* parallelize apply-review delegation via pre-analysis and sub-groups ([b2601d7](https://github.com/sebastian-software/effective-flow/commit/b2601d78c07b14bc4c1d76dce677557c7e650ce9))
+* parallelize sf-code-validator checks for faster validation ([bfc53c4](https://github.com/sebastian-software/effective-flow/commit/bfc53c412a1b70f132313a7d8e18506689d29a9b))
+* parallelize sf-review for higher throughput ([dc1850b](https://github.com/sebastian-software/effective-flow/commit/dc1850bc53bb1a2ec112da4a77d6204beefc3de7))
+* prioritize worktree commit strategy in apply-review prompt ([2ef81e0](https://github.com/sebastian-software/effective-flow/commit/2ef81e0cdc8aabb3dc02b9fcb4c2c73f3af1537c))
+* report installed firmo version in install output ([#84](https://github.com/sebastian-software/effective-flow/issues/84)) ([2df6dc8](https://github.com/sebastian-software/effective-flow/commit/2df6dc8ac87b62b41cbaea5066567e5a1a343d74))
+* simplify firmo toolset (plan 0070) ([#78](https://github.com/sebastian-software/effective-flow/issues/78)) ([6822b92](https://github.com/sebastian-software/effective-flow/commit/6822b921220080b8a1cac13503f1b9fe04c5191f))
+* **skills:** recommend skills-repo skills across firmo agents and tools ([#97](https://github.com/sebastian-software/effective-flow/issues/97)) ([c8b17fb](https://github.com/sebastian-software/effective-flow/commit/c8b17fb672ee4f69b3b8b594be5a985d2e9635df))
+* store Firmo config in a living Projektsetup ADR; treat ADRs as living documents ([#109](https://github.com/sebastian-software/effective-flow/issues/109)) ([9b8b7a9](https://github.com/sebastian-software/effective-flow/commit/9b8b7a9113f1566be81af28aeee5bb877cefe4bc))
+* update Codex agent models to GPT-5.6 ([#76](https://github.com/sebastian-software/effective-flow/issues/76)) ([5bc89dc](https://github.com/sebastian-software/effective-flow/commit/5bc89dce82d1c76bf36dc3feadf2226c3e676c2e))
+
+
+### Bug Fixes
+
+* add canonical plan status line to initial-state template in build tool ([#52](https://github.com/sebastian-software/effective-flow/issues/52)) ([6f75e13](https://github.com/sebastian-software/effective-flow/commit/6f75e1326160dac7a4909ba36130fbcaadd91a34))
+* align docs and sources on Firmo terminology, labels and conventions ([#63](https://github.com/sebastian-software/effective-flow/issues/63)) ([99be22d](https://github.com/sebastian-software/effective-flow/commit/99be22d693e485b39c8e4738e62b1bd8fe97f7dc))
+* assign unique plan number ([9ece8df](https://github.com/sebastian-software/effective-flow/commit/9ece8dfa231cd57b16374fffe5b1cbb0308cc0d0))
+* centralize review decision filtering ([276521b](https://github.com/sebastian-software/effective-flow/commit/276521b9d9887130e2fa1e0fa3f664f42849e9e2))
+* choose commit type by impact in shared commit-message rules ([1213c21](https://github.com/sebastian-software/effective-flow/commit/1213c21d30fda66414bb61923cad267879f4c716))
+* clarify review finding scope options ([a1bc9d5](https://github.com/sebastian-software/effective-flow/commit/a1bc9d5e63939965e0e761bb2fa8927d04bfe6ea))
+* clean stale Codex deployment targets ([6623f0c](https://github.com/sebastian-software/effective-flow/commit/6623f0cf63ce9e7f7c950a82aac6f12b3b6937f8))
+* clean up leftover stashes in apply-review workflow ([18797ed](https://github.com/sebastian-software/effective-flow/commit/18797eda4722daa80393e46ae7eaca78bc17da4a))
+* close stale review audit finding ([05b0317](https://github.com/sebastian-software/effective-flow/commit/05b0317f8127317ccb0594f3e8a847850cdbacec))
+* correct claude plugin install path ([c103181](https://github.com/sebastian-software/effective-flow/commit/c103181321a82683cd211db0d4ceedd0ff520b24))
+* correct corrupted ue-to-umlaut replacements in agent sources ([#56](https://github.com/sebastian-software/effective-flow/issues/56)) ([e267bc6](https://github.com/sebastian-software/effective-flow/commit/e267bc60d410e7b92c3e15e0a1be7d2954de8d2d))
+* correct local-update.sh dist path ([61e0f8b](https://github.com/sebastian-software/effective-flow/commit/61e0f8b58c6af8c819a166f02069c6356b5958e5))
+* correct README build command and dist tree ([c3cf366](https://github.com/sebastian-software/effective-flow/commit/c3cf36656db48240ac446fedfcc1c4926bc629a9))
+* define setup preset values inline instead of referencing README sections ([#55](https://github.com/sebastian-software/effective-flow/issues/55)) ([860430b](https://github.com/sebastian-software/effective-flow/commit/860430bda9b642698a7b850b5678ecea82d263e3))
+* document SESSION_ID generation in fix and refactor ([46b4d20](https://github.com/sebastian-software/effective-flow/commit/46b4d20796a6144cf52ab9708b0facbc222c8f1c))
+* enforce Conventional Commit type in generated PR titles ([#122](https://github.com/sebastian-software/effective-flow/issues/122)) ([5835d9f](https://github.com/sebastian-software/effective-flow/commit/5835d9fa80682a7a7849fec641dc17c2d5dffb7f)), closes [#117](https://github.com/sebastian-software/effective-flow/issues/117)
+* escape codex agent toml metadata ([9fb0edd](https://github.com/sebastian-software/effective-flow/commit/9fb0edd94b2aa7d4c65ce0ee35955a857d21f21f))
+* fail build on invalid skill sources ([bbf8686](https://github.com/sebastian-software/effective-flow/commit/bbf8686944e8a0df2d09cf5cf52a3e03c3ff4917))
+* fall back to nogit placeholder when git hash is unavailable ([#54](https://github.com/sebastian-software/effective-flow/issues/54)) ([cdd7a9f](https://github.com/sebastian-software/effective-flow/commit/cdd7a9f99971ede2c46f70cfe25d678e8fd42e9d))
+* forbid AI-attribution footers and session links in PR, issue and commit output ([#82](https://github.com/sebastian-software/effective-flow/issues/82)) ([2077ee8](https://github.com/sebastian-software/effective-flow/commit/2077ee87ca71905e005f504ed565ecac9b01a085))
+* keep .sf-plugin/config.json tracked in sf-setup gitignore entry ([f2ed193](https://github.com/sebastian-software/effective-flow/commit/f2ed193e0a0dba8c3d78da88b6e6a380a10ea02d))
+* keep apply-review worktrees inside plugin state ([1126121](https://github.com/sebastian-software/effective-flow/commit/1126121965e5378713518a69e95c8efee93c852a))
+* keep internal tracking ids out of commits ([b974ecd](https://github.com/sebastian-software/effective-flow/commit/b974ecdf5d9353b72b90812fc09931b7d1ced6f1))
+* make Claude link script portable ([2e6594b](https://github.com/sebastian-software/effective-flow/commit/2e6594ba89273da1ef933bae62b1149a4809d07d))
+* make plan reservation order deterministic via second-precise timestamp ([3b42fcb](https://github.com/sebastian-software/effective-flow/commit/3b42fcb7b38cb15a4f4f1cc3dd0cc87609283d7b))
+* make single-marker unclear rule canonical for plan status detection ([#51](https://github.com/sebastian-software/effective-flow/issues/51)) ([3491519](https://github.com/sebastian-software/effective-flow/commit/349151955ed4a56220de37c7bd4bb18e1b2955a2))
+* never auto-fill the developer-only Entwickler-Anmerkung field ([92469c4](https://github.com/sebastian-software/effective-flow/commit/92469c409b9c659e12f0fadae20ba513c6992a3a))
+* normalize codex agent sandbox modes ([10dd250](https://github.com/sebastian-software/effective-flow/commit/10dd2507ef60d5ecf05d67990b49c6f7ab739ed0))
+* prevent duplicate plan numbers from overlapping reservations ([08cfd58](https://github.com/sebastian-software/effective-flow/commit/08cfd58698cbd6634d66de6b3eeaa3dc17dab10d))
+* quote description in generated frontmatter ([b5080d4](https://github.com/sebastian-software/effective-flow/commit/b5080d4be883e724eb75b317a8f3307b82192b51))
+* read issue comments in apply-issues and plan-issues flow ([eb0c74b](https://github.com/sebastian-software/effective-flow/commit/eb0c74baf68ebbc2df9ba61f287d068155f1a87a))
+* reference exposed /firmo apply command in user-facing strings ([#48](https://github.com/sebastian-software/effective-flow/issues/48)) ([1a2b342](https://github.com/sebastian-software/effective-flow/commit/1a2b34254bbc653fae4c7f9d853575faa17d2989))
+* register firmo agents under ~/.claude/agents for Claude Code ([ebd2c97](https://github.com/sebastian-software/effective-flow/commit/ebd2c97b41cbaacef13574f495d7bdec84d3e3cf))
+* reject legacy sf- placeholders consistently during validation and rendering ([#126](https://github.com/sebastian-software/effective-flow/issues/126)) ([7796237](https://github.com/sebastian-software/effective-flow/commit/77962370d0fd7c48768d053f28ed810c0d33c775)), closes [#106](https://github.com/sebastian-software/effective-flow/issues/106)
+* render codex firmo hints with skill syntax ([#69](https://github.com/sebastian-software/effective-flow/issues/69)) ([76f4fb3](https://github.com/sebastian-software/effective-flow/commit/76f4fb3c5538b0df896d335e85e33dcd8991a5f2))
+* render plain text and exposed entry point instead of internal skill paths in artifact templates ([#49](https://github.com/sebastian-software/effective-flow/issues/49)) ([8740b4e](https://github.com/sebastian-software/effective-flow/commit/8740b4e7e871e948976393fd4d4f8395b333d305))
+* replace claude-only skill references ([8f1826c](https://github.com/sebastian-software/effective-flow/commit/8f1826c6a980385afb95dc03910c32b49a0bc75e))
+* replace dead src/shared references in setup config schema with skill sources ([#50](https://github.com/sebastian-software/effective-flow/issues/50)) ([6dd89e8](https://github.com/sebastian-software/effective-flow/commit/6dd89e805f3cd3cd92bba54fe5120f6db8d97757))
+* replace stash reverse-apply check with finding-completion analysis ([4aeae6c](https://github.com/sebastian-software/effective-flow/commit/4aeae6c9e4ab7b61a33361788e3229c4e31ab614))
+* require new commits for PR updates ([#74](https://github.com/sebastian-software/effective-flow/issues/74)) ([52c5106](https://github.com/sebastian-software/effective-flow/commit/52c51060a6e05faafd66ec5480e27f5a36df4d88))
+* restore non-empty dist output broken by frontmatter strip bug ([#6](https://github.com/sebastian-software/effective-flow/issues/6)) ([7be7656](https://github.com/sebastian-software/effective-flow/commit/7be76564f8c5657945fd75e22e8af428ac6a82ec))
+* restrict Codex sandbox to workspace-write for non-e2e agents ([#53](https://github.com/sebastian-software/effective-flow/issues/53)) ([faf7e11](https://github.com/sebastian-software/effective-flow/commit/faf7e117e19fed5c4b9e6cffdbdc1e4a05abd9af))
+* route non-GitHub remotes through tea ([c570389](https://github.com/sebastian-software/effective-flow/commit/c57038929a67a80ce5db56dfca79050a1dd7353e))
+* scope configMigration memory status under per-area subkeys ([#57](https://github.com/sebastian-software/effective-flow/issues/57)) ([980e349](https://github.com/sebastian-software/effective-flow/commit/980e349139d6a7ebc957722e7095558e35f884b7))
+* serialize apply-review finding commits ([61948d4](https://github.com/sebastian-software/effective-flow/commit/61948d4746c3d2ea94dbbedaba5b17c480de6e73))
+* serialize apply-review findings that share files across action groups ([#123](https://github.com/sebastian-software/effective-flow/issues/123)) ([2fcbf58](https://github.com/sebastian-software/effective-flow/commit/2fcbf58623fa0e0ab93a8f612712cc3d2bc8789c)), closes [#101](https://github.com/sebastian-software/effective-flow/issues/101)
+* serialize low-confidence apply-review findings ([3a42897](https://github.com/sebastian-software/effective-flow/commit/3a42897f510cbc546a91173d135b1b8ee1f298c1))
+* shorten ask fence header to fit AskUserQuestion 12-char limit ([#47](https://github.com/sebastian-software/effective-flow/issues/47)) ([d0a27e0](https://github.com/sebastian-software/effective-flow/commit/d0a27e0c26552a56b32838208ed9aa36bf280811))
+* stop prompting for ADR creation in sf-build and sf-refactor ([2c74fa4](https://github.com/sebastian-software/effective-flow/commit/2c74fa44af273307d66238e57bc92b80c7fa6a94))
+* store apply review commit lock in plugin state ([5055203](https://github.com/sebastian-software/effective-flow/commit/5055203515143f0b0a947d99e3ce9c1c91c1946d))
+* unify plan marker-language resolution across build and docs ([#128](https://github.com/sebastian-software/effective-flow/issues/128)) ([9f175c4](https://github.com/sebastian-software/effective-flow/commit/9f175c46ce3951f4ad6739b930dd4e0bbd0b3584)), closes [#103](https://github.com/sebastian-software/effective-flow/issues/103)
+* update task tracking migration notes ([2cc0fcb](https://github.com/sebastian-software/effective-flow/commit/2cc0fcbd071be688f0c93a39ed8c29dd548ad78f))
+* wait for all apply-review subgroups ([79b3349](https://github.com/sebastian-software/effective-flow/commit/79b3349206481ad20a2748232a5005af0fda46cd))
+
+## [1.46.0](https://github.com/sebastian-software/firmo/compare/firmo-v1.45.0...firmo-v1.46.0) (2026-07-16)
+
+
+### Features
+
+* **agents:** prefer effective-web skill in frontend agents ([#90](https://github.com/sebastian-software/firmo/issues/90)) ([8eba25b](https://github.com/sebastian-software/firmo/commit/8eba25bd89c4319955796bb237365ae36a04cd3a))
+
+## [1.45.0](https://github.com/sebastian-software/firmo/compare/firmo-v1.44.0...firmo-v1.45.0) (2026-07-15)
+
+
+### Features
+
+* discover and apply host skills across firmo tools and agents ([#86](https://github.com/sebastian-software/firmo/issues/86)) ([1178fb0](https://github.com/sebastian-software/firmo/commit/1178fb0170ddefc431e5cd6f836c27f34ef257e5))
+
+## [1.44.0](https://github.com/fastner/firmo/compare/firmo-v1.43.1...firmo-v1.44.0) (2026-07-14)
+
+
+### Features
+
+* report installed firmo version in install output ([#84](https://github.com/fastner/firmo/issues/84)) ([2df6dc8](https://github.com/fastner/firmo/commit/2df6dc8ac87b62b41cbaea5066567e5a1a343d74))
+
+## [1.43.1](https://github.com/fastner/firmo/compare/firmo-v1.43.0...firmo-v1.43.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* forbid AI-attribution footers and session links in PR, issue and commit output ([#82](https://github.com/fastner/firmo/issues/82)) ([2077ee8](https://github.com/fastner/firmo/commit/2077ee87ca71905e005f504ed565ecac9b01a085))
+
+## [1.43.0](https://github.com/fastner/firmo/compare/firmo-v1.42.0...firmo-v1.43.0) (2026-07-10)
+
+
+### Features
+
+* guided setup wizard (plan 0071) ([#80](https://github.com/fastner/firmo/issues/80)) ([edde0f1](https://github.com/fastner/firmo/commit/edde0f1cc9a0c70b577304e7274c885816059c6c))
+* intent-grouped router tool catalog (plan 0072) ([#81](https://github.com/fastner/firmo/issues/81)) ([789de1d](https://github.com/fastner/firmo/commit/789de1d936765b45f7e038f9028b48da4f39e26a))
+* simplify firmo toolset (plan 0070) ([#78](https://github.com/fastner/firmo/issues/78)) ([6822b92](https://github.com/fastner/firmo/commit/6822b921220080b8a1cac13503f1b9fe04c5191f))
+
+## [1.42.0](https://github.com/fastner/firmo/compare/firmo-v1.41.1...firmo-v1.42.0) (2026-07-10)
+
+
+### Features
+
+* update Codex agent models to GPT-5.6 ([#76](https://github.com/fastner/firmo/issues/76)) ([5bc89dc](https://github.com/fastner/firmo/commit/5bc89dce82d1c76bf36dc3feadf2226c3e676c2e))
+
+## [1.41.1](https://github.com/fastner/firmo/compare/firmo-v1.41.0...firmo-v1.41.1) (2026-07-09)
+
+
+### Bug Fixes
+
+* require new commits for PR updates ([#74](https://github.com/fastner/firmo/issues/74)) ([52c5106](https://github.com/fastner/firmo/commit/52c51060a6e05faafd66ec5480e27f5a36df4d88))
+
+## [1.41.0](https://github.com/fastner/firmo/compare/firmo-v1.40.1...firmo-v1.41.0) (2026-07-09)
+
+
+### Features
+
+* accept English plan status marker alongside German ([f85aa57](https://github.com/fastner/firmo/commit/f85aa57a9c05c238de7a0f274f795993bf035d90))
+* add /review command for structured code review with actionable findings ([1ea60ee](https://github.com/fastner/firmo/commit/1ea60eeb2c43d8dfdca9cd2c08210f715bc1310f))
+* add apply-plan workflow router ([ec3aee0](https://github.com/fastner/firmo/commit/ec3aee091474678ed4839b6e135b248771daf90a))
+* add apply-review worktree strategy ([98af886](https://github.com/fastner/firmo/commit/98af886d115caa5cb47b2e46e352bb8e1b3c2cc2))
+* add argument-hint listing all firmo tools for slash-command autocomplete ([#7](https://github.com/fastner/firmo/issues/7)) ([bb84bad](https://github.com/fastner/firmo/commit/bb84bad7acc5f32ad981c95187f7b938486064d8))
+* add central language rules with include mechanism for all agent skills ([8332bb7](https://github.com/fastner/firmo/commit/8332bb7377a9c60c3abc16959b7cc272a95b85b4))
+* add delivery branch lifecycle ([#72](https://github.com/fastner/firmo/issues/72)) ([0e253b1](https://github.com/fastner/firmo/commit/0e253b16752f8f66f4cefb5fdb68393270d7455a))
+* add design-decision awareness to review workflow ([53259fb](https://github.com/fastner/firmo/commit/53259fb48b2d7176155edaf5136d178871d8c6fc))
+* add design-decision cross-check phase to review skill workflow ([c727575](https://github.com/fastner/firmo/commit/c727575b538c73075f593568581a39f6c2947e7c))
+* add doc category directories convention ([3f76d0e](https://github.com/fastner/firmo/commit/3f76d0e369aa131a4618213d47a0d464dc6ee14b))
+* add docs workflow skill ([c60e87b](https://github.com/fastner/firmo/commit/c60e87b00050e10275e939cb758fca6d5e02eb1d))
+* add dual-platform support for Codex and Claude Code ([79b5e5b](https://github.com/fastner/firmo/commit/79b5e5bda6c96003b9e271f1f609d2c034e959a9))
+* add explicit /goal gate to sf-apply-issues ([24aefd0](https://github.com/fastner/firmo/commit/24aefd09387da7fb6d73b0aab47b95e96b258f15))
+* add final validation phase with auto-fix to apply-review workflow ([d300172](https://github.com/fastner/firmo/commit/d3001724ae1ed5e1572ee7bb2d5cd72924434057))
+* add finding scope selection to review skill ([13674a0](https://github.com/fastner/firmo/commit/13674a09cbb4603c2398e84f1f92d55fb2d58583))
+* add generic implementer dependency policy ([#66](https://github.com/fastner/firmo/issues/66)) ([ed77c88](https://github.com/fastner/firmo/commit/ed77c888f1f19d5db2139e36716d6e2e48246db4))
+* add goal-driven completion to sf-apply-review ([15a5d02](https://github.com/fastner/firmo/commit/15a5d02259776e2287f61a61f74a6bd7f5e6394b))
+* add goal-driven completion to workflow skills ([dd79698](https://github.com/fastner/firmo/commit/dd7969868b301fdc38d5a92fe4b1292eea44af89))
+* add initial state documentation step to build-feature workflow ([0d761ea](https://github.com/fastner/firmo/commit/0d761eaaf0137c896a581919e808775cdf33f586))
+* add interactive plan review flow ([#67](https://github.com/fastner/firmo/issues/67)) ([aecd69c](https://github.com/fastner/firmo/commit/aecd69c6216bf915e258bd2008de7296e825c25d))
+* add issue-driven workflow skills sf-apply-issues and sf-plan-issues ([5ec936a](https://github.com/fastner/firmo/commit/5ec936a03413be91a9848bc9b9d7ba37a4c627da))
+* add Node.js backend and CLI support with dedicated agents ([452159e](https://github.com/fastner/firmo/commit/452159e0f09de7ab9bb95d8b2ed1729719914a7d))
+* add open plans skill ([48259b3](https://github.com/fastner/firmo/commit/48259b3f947186f43302e3eff9b38b9ccb1c27e4))
+* add opt-in worktree integration and sf-pr skill ([db64b5c](https://github.com/fastner/firmo/commit/db64b5cff7631449ea8581d6e1776378ec0ce48b))
+* add per-item task tracking to apply-review and review skills ([d6be3a3](https://github.com/fastner/firmo/commit/d6be3a3732350a21facecb56c9c259165a632d8f))
+* add persistent memory file for review finding counter and move reports to docs/review ([6956bd9](https://github.com/fastner/firmo/commit/6956bd9bc99538511eb6bdb60aa1d934ff78df2f))
+* add plan workflow recommendations ([265246a](https://github.com/fastner/firmo/commit/265246a29ab0f33d453dfc380415d83588eaae54))
+* add plan-level review step ([1ccd104](https://github.com/fastner/firmo/commit/1ccd104cd49b6694eff421ee569d6e0631895425))
+* add platform-specific ASK block transforms and restructure marketplace layout ([6e3f2dc](https://github.com/fastner/firmo/commit/6e3f2dc99a205b59266b4080bb86d3e33c415e0f))
+* add pre-commit-gate shared include to enforce verification before commits ([f5d0fe3](https://github.com/fastner/firmo/commit/f5d0fe39531cd0859815c7196baaac944eb91685))
+* add remote issue-tracker mode for review and apply-review ([#3](https://github.com/fastner/firmo/issues/3)) ([96ffedd](https://github.com/fastner/firmo/commit/96ffedda28acb8cbb3e337a13731b2dc07e58669))
+* add review speed profiles ([4248b96](https://github.com/fastner/firmo/commit/4248b96fe53dff41dd1e3b3f878430b9b4b03b08))
+* add rule to preserve existing comments across implementer and documenter skills ([d102ed5](https://github.com/fastner/firmo/commit/d102ed5b3af5b9e04f8d428b063cedeae8fa0ae1))
+* add Rust implementer and reviewer agents ([7a733cb](https://github.com/fastner/firmo/commit/7a733cb94edb0178a9a4400e55541f74ebc93ce3))
+* add session-isolated wisdom accumulation for parallel workflows ([ed88fd4](https://github.com/fastner/firmo/commit/ed88fd43e8e477621e79742769fce22a872af1f9))
+* add sf-apply router with shared apply source detection ([db1b4b2](https://github.com/fastner/firmo/commit/db1b4b2ebf6e25b6fefe583299c700eee255a67a))
+* add sf-apply-review orchestrator skill for automated review finding delegation ([d172384](https://github.com/fastner/firmo/commit/d17238438eb93505cde48fb68e0f9d71707925cd))
+* add sf-frontend-workflows plugin with orchestrated agents and commands ([9a196d3](https://github.com/fastner/firmo/commit/9a196d3c3896f1ec174f12cbacac90d900ac716b))
+* add sf-investigate analysis skill and shared investigation includes ([edff1fb](https://github.com/fastner/firmo/commit/edff1fb75a046ec1717a2f1ac68a9aad542e1c42))
+* add sf-setup skill for gitignore and config bootstrap ([60e8e31](https://github.com/fastner/firmo/commit/60e8e3138c97b02f59b494f87770fe34185a2676))
+* add sf-version skill with git short hash in version string ([4059ffa](https://github.com/fastner/firmo/commit/4059ffa2642513cf4f430eb3698626089b23277c))
+* add slim sf-maintain orchestrator for dependency maintenance ([07e28a3](https://github.com/fastner/firmo/commit/07e28a333251cac8f03d6a406ccd2af5040c5522))
+* add standalone planning workflow ([a48f919](https://github.com/fastner/firmo/commit/a48f9198b5e2c30933b801649699435a3691e03f))
+* add static marketing homepage under site/ ([#59](https://github.com/fastner/firmo/issues/59)) ([fe9436b](https://github.com/fastner/firmo/commit/fe9436b0fcad752165805a57a78fa1bdd2596671))
+* add structured review output with finding details to build-feature and refactor ([90a4ace](https://github.com/fastner/firmo/commit/90a4acef8ae1ca841b5322285f41c3cf43abd1c5))
+* add tool-agnostic task tracking include to all skills ([85523da](https://github.com/fastner/firmo/commit/85523da3bfe4b98c05e9a78047dcfc796698222e))
+* adopt release-please automation ([#71](https://github.com/fastner/firmo/issues/71)) ([ac5998b](https://github.com/fastner/firmo/commit/ac5998b161d2af5bb6e9090c751f12b6f35df9b1))
+* assess apply-review cherry-pick conflicts ([97cffd8](https://github.com/fastner/firmo/commit/97cffd842414284249a9de1b13997f71d2fe825a))
+* auto-detect plan status marker language in sf-plan ([67af62f](https://github.com/fastner/firmo/commit/67af62f149eccde8c31fffda8520fa9121f006a7))
+* default review finding scope to critical+important without interactive prompt ([e8a12ea](https://github.com/fastner/firmo/commit/e8a12eaa01dcf7db67664dc5fd51b96c9f7e0045))
+* dual-platform build with Codex subagents and Claude Code plugin format ([c9a76f4](https://github.com/fastner/firmo/commit/c9a76f458d23c99dc3a340a66d7fd15cbc16dd66))
+* embed detailed review findings report into plan files ([f92ca62](https://github.com/fastner/firmo/commit/f92ca627e37b0490c48a8eaf736eb154e42ccc7c))
+* enforce file-splitting over line compression for file-length violations ([03091c7](https://github.com/fastner/firmo/commit/03091c749155d1ac5f5b5ff0a2ae3d293594173e))
+* forbid Co-Authored-By trailers across committing skills ([716e233](https://github.com/fastner/firmo/commit/716e2338e1add11781ddb0091c8f9f6c2312d917))
+* generate ADRs for intentionally rejected review findings ([93edb1d](https://github.com/fastner/firmo/commit/93edb1d337f755d6335bbd2a7a586befce95b676))
+* generate marketplace.json in build and read version from version.txt ([c45a2a7](https://github.com/fastner/firmo/commit/c45a2a708431edb3610e9194e02ed3399d952f70))
+* guarantee unique plan numbers via shared numbering convention ([76ce43a](https://github.com/fastner/firmo/commit/76ce43a46b5826568c1cc5dbd02dde1a1dfc202d))
+* harden build guards, add transform tests and atomic dist write ([#61](https://github.com/fastner/firmo/issues/61)) ([b058b15](https://github.com/fastner/firmo/commit/b058b150bfa08385833997cfb70075cd5af9a17b))
+* include plan file in worktree handback PR ([#1](https://github.com/fastner/firmo/issues/1)) ([fd843ac](https://github.com/fastner/firmo/commit/fd843ac79db9283e0d1680cbec939a249a14b919))
+* make the autonomous /goal handoff an explicit choice ([687e103](https://github.com/fastner/firmo/commit/687e10353a5f71e7659434b041fdab618dc602e1))
+* migrate workflow plugin to codex skills ([759bbdb](https://github.com/fastner/firmo/commit/759bbdbb3407a69b2e9a9f2ea3fda54ec4efb6df))
+* parallelize apply-review delegation via pre-analysis and sub-groups ([b2601d7](https://github.com/fastner/firmo/commit/b2601d78c07b14bc4c1d76dce677557c7e650ce9))
+* parallelize sf-code-validator checks for faster validation ([bfc53c4](https://github.com/fastner/firmo/commit/bfc53c412a1b70f132313a7d8e18506689d29a9b))
+* parallelize sf-review for higher throughput ([dc1850b](https://github.com/fastner/firmo/commit/dc1850bc53bb1a2ec112da4a77d6204beefc3de7))
+* prioritize worktree commit strategy in apply-review prompt ([2ef81e0](https://github.com/fastner/firmo/commit/2ef81e0cdc8aabb3dc02b9fcb4c2c73f3af1537c))
+
+
+### Bug Fixes
+
+* add canonical plan status line to initial-state template in build tool ([#52](https://github.com/fastner/firmo/issues/52)) ([6f75e13](https://github.com/fastner/firmo/commit/6f75e1326160dac7a4909ba36130fbcaadd91a34))
+* align docs and sources on Firmo terminology, labels and conventions ([#63](https://github.com/fastner/firmo/issues/63)) ([99be22d](https://github.com/fastner/firmo/commit/99be22d693e485b39c8e4738e62b1bd8fe97f7dc))
+* assign unique plan number ([9ece8df](https://github.com/fastner/firmo/commit/9ece8dfa231cd57b16374fffe5b1cbb0308cc0d0))
+* centralize review decision filtering ([276521b](https://github.com/fastner/firmo/commit/276521b9d9887130e2fa1e0fa3f664f42849e9e2))
+* choose commit type by impact in shared commit-message rules ([1213c21](https://github.com/fastner/firmo/commit/1213c21d30fda66414bb61923cad267879f4c716))
+* clarify review finding scope options ([a1bc9d5](https://github.com/fastner/firmo/commit/a1bc9d5e63939965e0e761bb2fa8927d04bfe6ea))
+* clean stale Codex deployment targets ([6623f0c](https://github.com/fastner/firmo/commit/6623f0cf63ce9e7f7c950a82aac6f12b3b6937f8))
+* clean up leftover stashes in apply-review workflow ([18797ed](https://github.com/fastner/firmo/commit/18797eda4722daa80393e46ae7eaca78bc17da4a))
+* close stale review audit finding ([05b0317](https://github.com/fastner/firmo/commit/05b0317f8127317ccb0594f3e8a847850cdbacec))
+* correct claude plugin install path ([c103181](https://github.com/fastner/firmo/commit/c103181321a82683cd211db0d4ceedd0ff520b24))
+* correct corrupted ue-to-umlaut replacements in agent sources ([#56](https://github.com/fastner/firmo/issues/56)) ([e267bc6](https://github.com/fastner/firmo/commit/e267bc60d410e7b92c3e15e0a1be7d2954de8d2d))
+* correct local-update.sh dist path ([61e0f8b](https://github.com/fastner/firmo/commit/61e0f8b58c6af8c819a166f02069c6356b5958e5))
+* correct README build command and dist tree ([c3cf366](https://github.com/fastner/firmo/commit/c3cf36656db48240ac446fedfcc1c4926bc629a9))
+* define setup preset values inline instead of referencing README sections ([#55](https://github.com/fastner/firmo/issues/55)) ([860430b](https://github.com/fastner/firmo/commit/860430bda9b642698a7b850b5678ecea82d263e3))
+* document SESSION_ID generation in fix and refactor ([46b4d20](https://github.com/fastner/firmo/commit/46b4d20796a6144cf52ab9708b0facbc222c8f1c))
+* escape codex agent toml metadata ([9fb0edd](https://github.com/fastner/firmo/commit/9fb0edd94b2aa7d4c65ce0ee35955a857d21f21f))
+* fail build on invalid skill sources ([bbf8686](https://github.com/fastner/firmo/commit/bbf8686944e8a0df2d09cf5cf52a3e03c3ff4917))
+* fall back to nogit placeholder when git hash is unavailable ([#54](https://github.com/fastner/firmo/issues/54)) ([cdd7a9f](https://github.com/fastner/firmo/commit/cdd7a9f99971ede2c46f70cfe25d678e8fd42e9d))
+* keep .sf-plugin/config.json tracked in sf-setup gitignore entry ([f2ed193](https://github.com/fastner/firmo/commit/f2ed193e0a0dba8c3d78da88b6e6a380a10ea02d))
+* keep apply-review worktrees inside plugin state ([1126121](https://github.com/fastner/firmo/commit/1126121965e5378713518a69e95c8efee93c852a))
+* keep internal tracking ids out of commits ([b974ecd](https://github.com/fastner/firmo/commit/b974ecdf5d9353b72b90812fc09931b7d1ced6f1))
+* make Claude link script portable ([2e6594b](https://github.com/fastner/firmo/commit/2e6594ba89273da1ef933bae62b1149a4809d07d))
+* make plan reservation order deterministic via second-precise timestamp ([3b42fcb](https://github.com/fastner/firmo/commit/3b42fcb7b38cb15a4f4f1cc3dd0cc87609283d7b))
+* make single-marker unclear rule canonical for plan status detection ([#51](https://github.com/fastner/firmo/issues/51)) ([3491519](https://github.com/fastner/firmo/commit/349151955ed4a56220de37c7bd4bb18e1b2955a2))
+* never auto-fill the developer-only Entwickler-Anmerkung field ([92469c4](https://github.com/fastner/firmo/commit/92469c409b9c659e12f0fadae20ba513c6992a3a))
+* normalize codex agent sandbox modes ([10dd250](https://github.com/fastner/firmo/commit/10dd2507ef60d5ecf05d67990b49c6f7ab739ed0))
+* prevent duplicate plan numbers from overlapping reservations ([08cfd58](https://github.com/fastner/firmo/commit/08cfd58698cbd6634d66de6b3eeaa3dc17dab10d))
+* quote description in generated frontmatter ([b5080d4](https://github.com/fastner/firmo/commit/b5080d4be883e724eb75b317a8f3307b82192b51))
+* read issue comments in apply-issues and plan-issues flow ([eb0c74b](https://github.com/fastner/firmo/commit/eb0c74baf68ebbc2df9ba61f287d068155f1a87a))
+* reference exposed /firmo apply command in user-facing strings ([#48](https://github.com/fastner/firmo/issues/48)) ([1a2b342](https://github.com/fastner/firmo/commit/1a2b34254bbc653fae4c7f9d853575faa17d2989))
+* register firmo agents under ~/.claude/agents for Claude Code ([ebd2c97](https://github.com/fastner/firmo/commit/ebd2c97b41cbaacef13574f495d7bdec84d3e3cf))
+* render codex firmo hints with skill syntax ([#69](https://github.com/fastner/firmo/issues/69)) ([76f4fb3](https://github.com/fastner/firmo/commit/76f4fb3c5538b0df896d335e85e33dcd8991a5f2))
+* render plain text and exposed entry point instead of internal skill paths in artifact templates ([#49](https://github.com/fastner/firmo/issues/49)) ([8740b4e](https://github.com/fastner/firmo/commit/8740b4e7e871e948976393fd4d4f8395b333d305))
+* replace claude-only skill references ([8f1826c](https://github.com/fastner/firmo/commit/8f1826c6a980385afb95dc03910c32b49a0bc75e))
+* replace dead src/shared references in setup config schema with skill sources ([#50](https://github.com/fastner/firmo/issues/50)) ([6dd89e8](https://github.com/fastner/firmo/commit/6dd89e805f3cd3cd92bba54fe5120f6db8d97757))
+* replace stash reverse-apply check with finding-completion analysis ([4aeae6c](https://github.com/fastner/firmo/commit/4aeae6c9e4ab7b61a33361788e3229c4e31ab614))
+* restore non-empty dist output broken by frontmatter strip bug ([#6](https://github.com/fastner/firmo/issues/6)) ([7be7656](https://github.com/fastner/firmo/commit/7be76564f8c5657945fd75e22e8af428ac6a82ec))
+* restrict Codex sandbox to workspace-write for non-e2e agents ([#53](https://github.com/fastner/firmo/issues/53)) ([faf7e11](https://github.com/fastner/firmo/commit/faf7e117e19fed5c4b9e6cffdbdc1e4a05abd9af))
+* route non-GitHub remotes through tea ([c570389](https://github.com/fastner/firmo/commit/c57038929a67a80ce5db56dfca79050a1dd7353e))
+* scope configMigration memory status under per-area subkeys ([#57](https://github.com/fastner/firmo/issues/57)) ([980e349](https://github.com/fastner/firmo/commit/980e349139d6a7ebc957722e7095558e35f884b7))
+* serialize apply-review finding commits ([61948d4](https://github.com/fastner/firmo/commit/61948d4746c3d2ea94dbbedaba5b17c480de6e73))
+* serialize low-confidence apply-review findings ([3a42897](https://github.com/fastner/firmo/commit/3a42897f510cbc546a91173d135b1b8ee1f298c1))
+* shorten ask fence header to fit AskUserQuestion 12-char limit ([#47](https://github.com/fastner/firmo/issues/47)) ([d0a27e0](https://github.com/fastner/firmo/commit/d0a27e0c26552a56b32838208ed9aa36bf280811))
+* stop prompting for ADR creation in sf-build and sf-refactor ([2c74fa4](https://github.com/fastner/firmo/commit/2c74fa44af273307d66238e57bc92b80c7fa6a94))
+* store apply review commit lock in plugin state ([5055203](https://github.com/fastner/firmo/commit/5055203515143f0b0a947d99e3ce9c1c91c1946d))
+* update task tracking migration notes ([2cc0fcb](https://github.com/fastner/firmo/commit/2cc0fcbd071be688f0c93a39ed8c29dd548ad78f))
+* wait for all apply-review subgroups ([79b3349](https://github.com/fastner/firmo/commit/79b3349206481ad20a2748232a5005af0fda46cd))
+
+## [1.40.1](https://github.com/fastner/firmo/compare/v1.40.0...v1.40.1) (2026-07-08)
+
+### Bug Fixes
+
+- route non-GitHub remotes through `tea`
+
+## [1.40.0](https://github.com/fastner/firmo/compare/v1.39.1...v1.40.0) (2026-07-08)
+
+### Bug Fixes
+
+- clarify versioning rules for pull-request-delivered fixes
+
+## [1.39.1](https://github.com/fastner/firmo/compare/v1.38.0...v1.39.1) (2026-07-08)
+
+### Features
+
+- add CI workflow for format checks, tests, build, Shellcheck, and releases
+- add build guards for dead `{{SKILL:X}}`/`{{AGENT:X}}` references and strictly quoted descriptions
+- add `node:test` coverage for build transformations in `build-lib.mjs`
+- add `hinweis` severity label for remote review findings
+- add project changelog
+
+### Bug Fixes
+
+- render Codex Firmo invocation hints as `$firmo ...` instead of `/firmo ...`
+
+### Miscellaneous Chores
+
+- write `dist/` atomically via a temporary directory
+- fail on unsupported frontmatter instead of silently emitting empty values
+- use „Firmo“/„Skill“ wording consistently in shipped sources
+- align `worktree.branchPrefix` default to `firmo`
+- offer open review epics when `apply` runs without arguments in remote mode
+- clean up README/AGENTS.md, structure diagrams, plan status markers, and German typography
+- remove obsolete `TODO.md`
+
+## [1.38.0](https://github.com/fastner/firmo/compare/v1.37.0...v1.38.0) (2026-07-08)
+
+### Features
+
+- add static marketing site and safe project configuration defaults
+- add slash-command `argument-hint`
+
+### Miscellaneous Chores
+
+- migrate issue-tracker labels from `sf-` to `firmo-` while keeping read compatibility
+
+## [1.37.0](https://github.com/fastner/firmo/compare/v1.36.0...v1.37.0) (2026-07-08)
+
+### Features
+
+- add single lazy-loading `/firmo <tool>` router skill
+- add remote issue-tracker mode for `review` and `apply-review`
+- add `apply` router with shared apply-source detection
+- add issue-driven `apply-issues` and `plan-issue` workflows
+
+### Miscellaneous Chores
+
+- rename source layout to Firmo and move sources into mirrored `src/` structure
+- ship Claude agents as registered subagents under `~/.claude/agents`
+
+## [1.36.0](https://github.com/fastner/firmo/compare/v1.35.1...v1.36.0) (2026-07-08)
+
+### Features
+
+- add opt-in worktree integration and `pr` skill
+- add `setup` skill for `.gitignore` and config bootstrap
+- add `investigate` analysis workflow
+- add Rust implementer and reviewer agents
+- add goal-driven workflow completion
+
+## [1.35.1](https://github.com/fastner/firmo/releases/tag/v1.35.1) (2026-07-08)
+
+### Features
+
+- add lightweight `maintain` orchestrator for dependency maintenance
+- add `pnpm`/oxfmt tooling with `agent:check`
+- add unique, language-sensitive plan status markers
+- add documentation category conventions

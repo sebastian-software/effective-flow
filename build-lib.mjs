@@ -1,0 +1,6120 @@
+import {
+  PILOT_MEASUREMENT_DOCUMENTATION_PROJECTION,
+  PILOT_MEASUREMENT_POLICY_PROJECTION,
+  canonicalizeJson,
+} from './src/scripts/pilot-measurement-protocol.mjs';
+import { PLAN_CONTRACT_MAPPING, PLAN_PLACEHOLDERS } from './src/scripts/plan-lint-core.mjs';
+import { readdirSync, statSync } from 'node:fs';
+import { join, posix } from 'node:path';
+
+// Pure, importable transformation helpers for build.mjs.
+//
+// These functions are extracted from build.mjs so the Markdown -> skill
+// transforms can be unit-tested (node:test) without running the full I/O
+// build. Nothing here writes to the filesystem and, apart from the read-only
+// walk in collectRepositoryOnlyFiles, nothing reads it either; all other inputs
+// and outputs are strings or plain data. build.mjs owns the I/O, the source config
+// (EXPOSED_TOOLS, agent prefix) and the known-name sets, and passes them in.
+
+// Allowed `type` values for an ```ask``` block. `approval` renders a yes/no
+// gate; the default (no `type`) renders an options question; `scored` renders
+// an options question preceded by one scoring instruction line. Any other value
+// is a typo and must fail the build.
+export const ASK_ALLOWED_TYPES = ['approval', 'options', 'scored'];
+export const ASK_ALLOWED_LANGUAGES = ['en', 'de'];
+// AskUserQuestion header chips are capped at 12 characters (see R-0000001).
+export const ASK_MAX_HEADER_LENGTH = 12;
+
+function contextSuffix(context) {
+  return context ? ` (in ${context})` : '';
+}
+
+// Placeholder names carried over from the pre-rename era (`{{SKILL:sf-fix}}`,
+// `{{AGENT:sf-test-writer}}`). Effective Flow does not alias these to their new
+// names — they are rejected at validation time so the rendering step can never
+// turn an accepted placeholder into a dead `tools/sf-*.md` / `sf-*` reference.
+// See docs/developer-guide/build-system.md ("Legacy-Aliase").
+const LEGACY_REF_PREFIX = 'sf-';
+
+function assertNotLegacyRef(marker, name, context) {
+  if (name.startsWith(LEGACY_REF_PREFIX)) {
+    throw new Error(
+      `Legacy placeholder {{${marker}:${name}}} is no longer supported; drop the "${LEGACY_REF_PREFIX}" prefix and use the current name${contextSuffix(context)}`,
+    );
+  }
+}
+
+export function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function normalizeLineEndings(content) {
+  return content.replace(/\r\n/g, '\n');
+}
+
+export function extractFrontmatter(content) {
+  const match = content.match(/^---\n([\s\S]*?)\n---\n/);
+  return match ? match[1] : '';
+}
+
+export function extractBody(content) {
+  const match = content.match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
+  return match ? match[1].replace(/\n+$/, '\n') : '';
+}
+
+// Parse a single scalar value from the text following `key:`. Handles bare and
+// double-quoted values and rejects the frontmatter shapes this simple parser
+// does not support (block/multi-line scalars, unterminated quotes) instead of
+// silently returning a truncated string.
+function parseScalar(rawValue, key, context) {
+  const value = rawValue.trim();
+  if (value === '') return '';
+  if (value.startsWith('|') || value.startsWith('>')) {
+    throw new Error(`Multi-line scalar for "${key}" is not supported${contextSuffix(context)}`);
+  }
+  if (value.startsWith('"')) {
+    if (value.length < 2 || !value.endsWith('"')) {
+      throw new Error(`Unterminated quoted value for "${key}"${contextSuffix(context)}`);
+    }
+    return value.slice(1, -1);
+  }
+  return value;
+}
+
+// Extract the indented block of a nested `section:` header, or null if absent.
+function sectionBlock(frontmatter, section) {
+  const sectionRe = new RegExp(`^${escapeRegex(section)}:\\s*$`, 'm');
+  const sectionMatch = sectionRe.exec(frontmatter);
+  if (!sectionMatch) return null;
+  const afterSection = frontmatter.slice(sectionMatch.index + sectionMatch[0].length);
+  const sectionEnd = afterSection.search(/^\S/m);
+  return sectionEnd === -1 ? afterSection : afterSection.slice(0, sectionEnd);
+}
+
+export function getField(frontmatter, key, { required = false, context } = {}) {
+  const re = new RegExp(`^${escapeRegex(key)}:(.*)$`, 'm');
+  const match = frontmatter.match(re);
+  if (!match) {
+    if (required) throw new Error(`Missing required field "${key}"${contextSuffix(context)}`);
+    return '';
+  }
+  const value = parseScalar(match[1], key, context);
+  if (required && value === '') {
+    throw new Error(`Empty required field "${key}"${contextSuffix(context)}`);
+  }
+  return value;
+}
+
+export function getNested(frontmatter, section, key, { context } = {}) {
+  const block = sectionBlock(frontmatter, section);
+  if (block === null) return '';
+  const keyRe = new RegExp(`^\\s+${escapeRegex(key)}:(.*)$`, 'm');
+  const match = block.match(keyRe);
+  if (!match) return '';
+  return parseScalar(match[1], `${section}.${key}`, context);
+}
+
+export function getNestedArray(frontmatter, section, key, { context } = {}) {
+  const block = sectionBlock(frontmatter, section);
+  if (block === null) return '';
+  const keyRe = new RegExp(`^\\s+${escapeRegex(key)}:(.*)$`, 'm');
+  const keyMatch = block.match(keyRe);
+  if (!keyMatch) return '';
+  const rest = keyMatch[1].trim();
+  if (!rest.startsWith('[')) {
+    throw new Error(`Expected inline array for "${section}.${key}"${contextSuffix(context)}`);
+  }
+  if (!rest.endsWith(']')) {
+    throw new Error(`Unterminated inline array for "${section}.${key}"${contextSuffix(context)}`);
+  }
+  return rest.slice(1, -1).replace(/\s/g, '');
+}
+
+export function getNestedList(frontmatter, section, key, { context } = {}) {
+  const block = sectionBlock(frontmatter, section);
+  if (block === null) return '';
+  // `[ \t]*` (not `\s*`) so the same-line-value match cannot cross the newline
+  // and swallow the first item of a multi-line list.
+  const keyRe = new RegExp(`^(\\s+)${escapeRegex(key)}:[ \\t]*(.*)$`, 'm');
+  const keyMatch = block.match(keyRe);
+  if (!keyMatch) return '';
+  const keyIndent = keyMatch[1].length;
+  const rest = keyMatch[2].trim();
+
+  // Inline array [a, b, c]
+  if (rest.startsWith('[')) {
+    if (!rest.endsWith(']')) {
+      throw new Error(`Unterminated inline list for "${section}.${key}"${contextSuffix(context)}`);
+    }
+    const items = rest
+      .slice(1, -1)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return items.map((item) => `  - ${item}`).join('\n');
+  }
+
+  // Multi-line list: contiguous `- item` lines indented deeper than the key.
+  // Stops at the first blank line or dedent so it cannot absorb items from a
+  // following key or block.
+  const afterKey = block.slice(keyMatch.index + keyMatch[0].length);
+  const items = [];
+  let started = false;
+  for (const line of afterKey.split('\n')) {
+    const itemMatch = line.match(/^(\s+)-\s+(.+)/);
+    if (itemMatch && itemMatch[1].length > keyIndent) {
+      items.push(`  - ${itemMatch[2].trim()}`);
+      started = true;
+    } else if (line.trim() === '') {
+      // The newline right after the key line is not a separator; only a blank
+      // line *after* the first item ends the list.
+      if (started) break;
+    } else {
+      break; // dedent or a different key ends the list
+    }
+  }
+  return items.join('\n');
+}
+
+export function cleanDescription(desc) {
+  return desc
+    .replace(/\{\{SKILL:([^}]+)\}\}/g, '$1')
+    .replace(/\{\{AGENT:([^}]+)\}\}/g, '$1')
+    .replace(/\{\{AGENT_PROFILE:([^:}]+):([^}]+)\}\}/g, '$1');
+}
+
+export function firstSentence(text) {
+  const cleaned = cleanDescription(text).trim();
+  const match = cleaned.match(/^(.*?[.!?])(\s|$)/s);
+  return (match ? match[1] : cleaned).trim();
+}
+
+export function tomlString(value) {
+  return JSON.stringify(value);
+}
+
+export function normalizeCodexSandboxMode(mode, skillName) {
+  const normalized = {
+    full: 'danger-full-access',
+    read_only: 'read-only',
+    'read-only': 'read-only',
+    'workspace-write': 'workspace-write',
+    'danger-full-access': 'danger-full-access',
+  }[mode];
+
+  if (!mode) return '';
+
+  if (!normalized) {
+    throw new Error(`Unsupported codex sandbox_mode "${mode}" for ${skillName}`);
+  }
+
+  return normalized;
+}
+
+const CLAUDE_EFFORT_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+const CODEX_REASONING_EFFORT_LEVELS = new Set([
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+  'ultra',
+]);
+const CODEX_MODEL_REASONING_EFFORTS = Object.freeze({
+  'gpt-6.1-sol': Object.freeze(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']),
+  'gpt-5.6-luna': Object.freeze(['low', 'medium', 'high', 'xhigh', 'max']),
+});
+const AGENT_PROFILE_REF_RE = /\{\{AGENT_PROFILE:([^:}]+):([^}]+)\}\}/g;
+
+export function normalizeClaudeEffort(effort, agentName, context) {
+  if (!effort) {
+    throw new Error(`Missing required claude effort for ${agentName}${contextSuffix(context)}`);
+  }
+
+  if (!CLAUDE_EFFORT_LEVELS.has(effort)) {
+    throw new Error(
+      `Unsupported claude effort "${effort}" for ${agentName}${contextSuffix(context)}; expected one of: low, medium, high, xhigh, max`,
+    );
+  }
+
+  return effort;
+}
+
+export function normalizeCodexReasoningEffort(model, effort, agentName, context) {
+  if (!CODEX_REASONING_EFFORT_LEVELS.has(effort)) {
+    throw new Error(
+      `Unsupported Codex reasoning effort "${effort ?? ''}" for ${agentName}${contextSuffix(context)}`,
+    );
+  }
+  if (!CODEX_MODEL_REASONING_EFFORTS[model]?.includes(effort)) {
+    throw new Error(
+      `Unsupported Codex model/reasoning combination for ${agentName}: ${model}/${effort}${contextSuffix(context)}`,
+    );
+  }
+  return effort;
+}
+
+export function validateAgentProfileMappings(mappings, { context } = {}) {
+  assertPlainObject(mappings, 'Agent-profile mappings', context);
+  assertOnlyKeys(mappings, ['fast'], 'Agent-profile mappings', context);
+  assertPlainObject(mappings.fast, 'Agent-profile fast mapping', context);
+  assertOnlyKeys(mappings.fast, ['claude', 'codex'], 'Agent-profile fast mapping', context);
+
+  const claude = mappings.fast.claude;
+  assertPlainObject(claude, 'Agent-profile Claude fast mapping', context);
+  assertOnlyKeys(claude, ['model', 'effort'], 'Agent-profile Claude fast mapping', context);
+  if (typeof claude.model !== 'string' || claude.model.trim() === '') {
+    throw new Error(
+      `Agent-profile Claude fast model must be a non-empty string${contextSuffix(context)}`,
+    );
+  }
+  normalizeClaudeEffort(claude.effort, 'Fast profile', context);
+
+  const codex = mappings.fast.codex;
+  assertPlainObject(codex, 'Agent-profile Codex fast mapping', context);
+  assertOnlyKeys(codex, ['model', 'reasoning_effort'], 'Agent-profile Codex fast mapping', context);
+  if (typeof codex.model !== 'string' || codex.model.trim() === '') {
+    throw new Error(
+      `Agent-profile Codex fast model must be a non-empty string${contextSuffix(context)}`,
+    );
+  }
+  normalizeCodexReasoningEffort(codex.model, codex.reasoning_effort, 'Fast profile', context);
+
+  return mappings;
+}
+
+// --- Model tiers (per-spawn model and reasoning effort) ---
+//
+// Three provider-neutral tiers name the model class a spawn runs on. Build metadata
+// (`MODEL_TIER_MAPPINGS` in build.mjs) maps each tier once to its Claude Code and Codex values; an
+// agent source declares only its default `tier:`, and every spawn instruction in `src/tools` or
+// `src/shared` carries a `<!-- spawn-site:<owner>/<id> -->` marker line whose site resolves through
+// the `## Spawn sites` table in `src/shared/model-tiers.md`. The build replaces each marker line
+// with that site's rendered tier line in the target's own form.
+export const MODEL_TIERS = Object.freeze(['mechanical', 'standard', 'deep']);
+export const CLAUDE_TIER_MODELS = Object.freeze(['haiku', 'sonnet', 'opus']);
+const MODEL_TIER_HARNESS_KEYS = Object.freeze({
+  claude: Object.freeze(['model', 'effort']),
+  codex: Object.freeze(['model', 'reasoning_effort']),
+});
+// The four per-agent fields `tier:` replaced. Any of them reappearing would be a second source
+// for a sidecar value, so each one fails the build.
+export const LEGACY_AGENT_MODEL_FIELDS = Object.freeze([
+  Object.freeze(['claude', 'model']),
+  Object.freeze(['claude', 'effort']),
+  Object.freeze(['codex', 'model']),
+  Object.freeze(['codex', 'model_reasoning_effort']),
+]);
+
+function assertExactKeys(value, keys, label, context) {
+  assertPlainObject(value, label, context);
+  assertOnlyKeys(value, keys, label, context);
+  for (const key of keys) {
+    if (!Object.hasOwn(value, key)) {
+      throw new Error(`${label} is missing "${key}"${contextSuffix(context)}`);
+    }
+  }
+}
+
+export function validateModelTierMappings(mappings, { context } = {}) {
+  assertExactKeys(mappings, MODEL_TIERS, 'Model-tier mappings', context);
+  for (const tier of MODEL_TIERS) {
+    const label = `Model-tier "${tier}" mapping`;
+    assertExactKeys(mappings[tier], Object.keys(MODEL_TIER_HARNESS_KEYS), label, context);
+    const { claude, codex } = mappings[tier];
+    assertExactKeys(claude, MODEL_TIER_HARNESS_KEYS.claude, `${label} for claude`, context);
+    if (!CLAUDE_TIER_MODELS.includes(claude.model)) {
+      throw new Error(
+        `Unsupported Claude model "${claude.model}" for model tier "${tier}"${contextSuffix(context)}; expected one of: ${CLAUDE_TIER_MODELS.join(', ')}`,
+      );
+    }
+    normalizeClaudeEffort(claude.effort, `model tier "${tier}"`, context);
+    assertExactKeys(codex, MODEL_TIER_HARNESS_KEYS.codex, `${label} for codex`, context);
+    normalizeCodexReasoningEffort(
+      codex.model,
+      codex.reasoning_effort,
+      `model tier "${tier}"`,
+      context,
+    );
+  }
+  return mappings;
+}
+
+// Resolve an agent source's default tier from its frontmatter. The tier is the single source of
+// the native sidecar's model and effort, so a missing, unknown or duplicate `tier:` and any legacy
+// per-harness model/effort field fail.
+export function resolveAgentTier(frontmatter, { agentName, context } = {}) {
+  for (const [section, key] of LEGACY_AGENT_MODEL_FIELDS) {
+    const block = sectionBlock(frontmatter, section);
+    if (block !== null && new RegExp(`^\\s+${escapeRegex(key)}:`, 'm').test(block)) {
+      throw new Error(
+        `Agent "${agentName}" declares legacy field "${section}.${key}"${contextSuffix(context)}; declare one top-level "tier:" instead, its model and effort derive from MODEL_TIER_MAPPINGS`,
+      );
+    }
+  }
+  const tierLines = frontmatter.split('\n').filter((line) => /^tier:/.test(line));
+  if (tierLines.length === 0) {
+    throw new Error(
+      `Missing required field "tier" for agent "${agentName}"${contextSuffix(context)}`,
+    );
+  }
+  if (tierLines.length > 1) {
+    throw new Error(`Duplicate field "tier" for agent "${agentName}"${contextSuffix(context)}`);
+  }
+  const tier = parseScalar(tierLines[0].slice('tier:'.length), 'tier', context);
+  if (!MODEL_TIERS.includes(tier)) {
+    throw new Error(
+      `Unknown tier "${tier}" for agent "${agentName}"${contextSuffix(context)}; expected one of: ${MODEL_TIERS.join(', ')}`,
+    );
+  }
+  return tier;
+}
+
+const KEBAB = '[a-z0-9]+(?:-[a-z0-9]+)*';
+export const SPAWN_SITE_ID_RE = new RegExp(`^(${KEBAB})/(${KEBAB})$`);
+export const SPAWN_SITE_MARKER_PREFIX = '<!-- spawn-site:';
+const SPAWN_SITE_MARKER_LINE_RE = /^([ \t]*)<!-- spawn-site:(\S+) -->[ \t]*$/;
+
+// Every marker line of one source, in order. A line that mentions the marker prefix in any other
+// shape or inside any fenced block (an `ask`, `include` or `lazy-include` fence included), an id
+// that is not `<owner>/<id>` in kebab case, or an owner that differs from the source's own name
+// fails, so a malformed marker can never survive as an inert comment.
+export function collectSpawnSiteMarkers(text, { owner, context } = {}) {
+  const markers = [];
+  const lines = normalizeLineEndings(text).split('\n');
+  let fence = null;
+  for (const [index, line] of lines.entries()) {
+    const fenceMatch = line.match(/^[ \t]*(`{3,}|~{3,})/);
+    if (fenceMatch) {
+      const run = fenceMatch[1];
+      if (fence === null) fence = run;
+      else if (run[0] === fence[0] && run.length >= fence.length && line.trim() === run) {
+        fence = null;
+      }
+    }
+    if (!line.includes(SPAWN_SITE_MARKER_PREFIX)) continue;
+    const where = `${context ?? 'source'}:${index + 1}`;
+    if (fence !== null) {
+      throw new Error(
+        `Spawn-site marker inside a fenced block (in ${where}); place it in the spawn instruction's paragraph or list item`,
+      );
+    }
+    const match = line.match(SPAWN_SITE_MARKER_LINE_RE);
+    if (!match) {
+      throw new Error(
+        `Malformed spawn-site marker (in ${where}); expected a line of its own: <!-- spawn-site:<owner>/<id> -->`,
+      );
+    }
+    const idMatch = match[2].match(SPAWN_SITE_ID_RE);
+    if (!idMatch) {
+      throw new Error(
+        `Malformed spawn-site id "${match[2]}" (in ${where}); expected <owner>/<id> in kebab case`,
+      );
+    }
+    if (owner !== undefined && idMatch[1] !== owner) {
+      throw new Error(
+        `Spawn-site marker "${match[2]}" (in ${where}) must be prefixed with its owning source "${owner}/"`,
+      );
+    }
+    markers.push({ id: match[2], line: index + 1, context });
+  }
+  return markers;
+}
+
+export const MODEL_TIER_SPAWN_SITES_HEADING = '## Spawn sites';
+export const SPAWN_SITE_TABLE_HEADERS = Object.freeze(['Site', 'Spawn', 'Tier', 'Down']);
+const SPAWN_SITE_SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
+
+function spawnSiteTableCells(line, where) {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('|') || !trimmed.endsWith('|') || trimmed.length < 2) {
+    throw new Error(`Malformed spawn-site table row (in ${where}): ${line}`);
+  }
+  return trimmed
+    .slice(1, -1)
+    .split('|')
+    .map((cell) => cell.trim());
+}
+
+function spawnSiteCode(cell, column, where) {
+  const match = cell.match(/^`([^`]+)`$/);
+  if (!match) {
+    throw new Error(
+      `Spawn-site ${column} cell must be one inline code span (in ${where}): ${cell}`,
+    );
+  }
+  return match[1];
+}
+
+// Parse the `## Spawn sites` table of model-tiers.md into resolved sites. `agentTiers` maps every
+// agent source name to its `tier:`; a `role:` row resolves to those tiers. An empty table (header
+// and separator only) is valid. Each site becomes `{ id, spawn, clauses, downAllowed, line }`,
+// where `clauses` lists `{ role, tier }` (`role` null for a literal tier) in table order.
+export function parseSpawnSiteTable(markdown, { agentTiers, context } = {}) {
+  if (!(agentTiers instanceof Map)) {
+    throw new Error(`parseSpawnSiteTable requires agentTiers${contextSuffix(context)}`);
+  }
+  const lines = normalizeLineEndings(markdown).split('\n');
+  const headings = lines.flatMap((line, index) =>
+    line === MODEL_TIER_SPAWN_SITES_HEADING ? [index] : [],
+  );
+  if (headings.length !== 1) {
+    throw new Error(
+      `Model tiers need exactly one "${MODEL_TIER_SPAWN_SITES_HEADING}" heading${contextSuffix(context)}; found ${headings.length}`,
+    );
+  }
+  let end = lines.findIndex((line, index) => index > headings[0] && /^#{1,2} /.test(line));
+  if (end === -1) end = lines.length;
+  const section = lines.slice(headings[0] + 1, end).map((text, offset) => ({
+    text,
+    line: headings[0] + 2 + offset,
+  }));
+  const tableStart = section.findIndex(({ text }) => text.trim().startsWith('|'));
+  if (tableStart === -1) {
+    throw new Error(`"${MODEL_TIER_SPAWN_SITES_HEADING}" has no table${contextSuffix(context)}`);
+  }
+  let tableEnd = section.findIndex(
+    ({ text }, index) => index > tableStart && !text.trim().startsWith('|'),
+  );
+  if (tableEnd === -1) tableEnd = section.length;
+  if (section.slice(tableEnd).some(({ text }) => text.trim().startsWith('|'))) {
+    throw new Error(
+      `"${MODEL_TIER_SPAWN_SITES_HEADING}" must hold exactly one table${contextSuffix(context)}`,
+    );
+  }
+  const table = section.slice(tableStart, tableEnd);
+  const at = (line) => `${context ?? 'model-tiers'}:${line}`;
+  const header = spawnSiteTableCells(table[0].text, at(table[0].line));
+  if (JSON.stringify(header) !== JSON.stringify(SPAWN_SITE_TABLE_HEADERS)) {
+    throw new Error(
+      `Spawn-site table header must be ${SPAWN_SITE_TABLE_HEADERS.join(' | ')} (in ${at(table[0].line)})`,
+    );
+  }
+  const separator = table[1];
+  if (
+    !separator ||
+    spawnSiteTableCells(separator.text, at(separator.line)).length !== 4 ||
+    !spawnSiteTableCells(separator.text, at(separator.line)).every((cell) =>
+      SPAWN_SITE_SEPARATOR_CELL_RE.test(cell),
+    )
+  ) {
+    throw new Error(
+      `Spawn-site table needs a separator row after its header (in ${at(table[0].line + 1)})`,
+    );
+  }
+
+  const sites = [];
+  const seen = new Set();
+  for (const { text, line } of table.slice(2)) {
+    const where = at(line);
+    const cells = spawnSiteTableCells(text, where);
+    if (cells.length !== 4) {
+      throw new Error(`Spawn-site table row must have 4 cells (in ${where}): ${text}`);
+    }
+    const [siteCell, spawn, tierCell, downCell] = cells;
+    const id = spawnSiteCode(siteCell, 'Site', where);
+    if (!SPAWN_SITE_ID_RE.test(id)) {
+      throw new Error(`Malformed spawn-site id "${id}" (in ${where}); expected <owner>/<id>`);
+    }
+    if (seen.has(id)) throw new Error(`Duplicate spawn-site row "${id}" (in ${where})`);
+    seen.add(id);
+    if (spawn === '' || spawn.includes('{{')) {
+      throw new Error(
+        `Spawn-site "${id}" needs a plain Spawn description without placeholders (in ${where})`,
+      );
+    }
+    const tierValue = spawnSiteCode(tierCell, 'Tier', where);
+    let clauses;
+    if (MODEL_TIERS.includes(tierValue)) {
+      clauses = [{ role: null, tier: tierValue }];
+    } else {
+      const roleMatch = tierValue.match(new RegExp(`^role:(${KEBAB}(?:,${KEBAB})*)$`));
+      if (!roleMatch) {
+        throw new Error(
+          `Unknown spawn-site tier "${tierValue}" for "${id}" (in ${where}); expected ${MODEL_TIERS.join(', ')} or role:<agent>[,<agent>…]`,
+        );
+      }
+      const roles = roleMatch[1].split(',');
+      if (new Set(roles).size !== roles.length) {
+        throw new Error(`Spawn-site "${id}" repeats a role (in ${where})`);
+      }
+      clauses = roles.map((role) => {
+        if (!agentTiers.has(role)) {
+          throw new Error(`Spawn-site "${id}" names unknown role "${role}" (in ${where})`);
+        }
+        return { role, tier: agentTiers.get(role) };
+      });
+    }
+    const down = spawnSiteCode(downCell, 'Down', where);
+    if (down !== 'yes' && down !== 'no') {
+      throw new Error(`Spawn-site "${id}" Down must be \`yes\` or \`no\` (in ${where}): ${down}`);
+    }
+    if (down === 'yes' && clauses.every(({ tier }) => tier === 'deep')) {
+      throw new Error(
+        `Spawn-site "${id}" resolves to tier "deep", which never moves down; its Down must be \`no\` (in ${where})`,
+      );
+    }
+    sites.push({ id, spawn, clauses, downAllowed: down === 'yes', line });
+  }
+  return sites;
+}
+
+// Reconcile marker lines with table rows in both directions: every marker id is unique across all
+// sources and has a row, and every row has a marker.
+export function reconcileSpawnSites(sites, markers, { context } = {}) {
+  const rows = new Set(sites.map(({ id }) => id));
+  const markerAt = new Map();
+  for (const marker of markers) {
+    const where = `${marker.context ?? 'source'}:${marker.line}`;
+    if (markerAt.has(marker.id)) {
+      throw new Error(
+        `Duplicate spawn-site marker "${marker.id}" (in ${markerAt.get(marker.id)} and ${where})`,
+      );
+    }
+    markerAt.set(marker.id, where);
+    if (!rows.has(marker.id)) {
+      throw new Error(
+        `Unknown spawn-site "${marker.id}" (in ${where}); add its row to the spawn-site table${contextSuffix(context)}`,
+      );
+    }
+  }
+  for (const { id } of sites) {
+    if (!markerAt.has(id)) {
+      throw new Error(
+        `Spawn-site table row "${id}" has no marker in src/tools or src/shared${contextSuffix(context)}`,
+      );
+    }
+  }
+}
+
+function tierValuesPhrase(tier, harness, mappings, context) {
+  const { claude, codex } = mappings[tier];
+  if (harness === 'claude') {
+    return `pass \`model: ${claude.model}\` and \`effort: ${claude.effort}\` on the Agent tool`;
+  }
+  if (harness === 'codex') {
+    return `pass \`model: ${codex.model}\` and \`reasoning_effort: ${codex.reasoning_effort}\` on the spawn`;
+  }
+  if (harness === 'portable') {
+    return (
+      `Claude Code Agent tool \`model: ${claude.model}\`, \`effort: ${claude.effort}\`; ` +
+      `Codex spawn \`model: ${codex.model}\`, \`reasoning_effort: ${codex.reasoning_effort}\``
+    );
+  }
+  throw new Error(`Unknown rendered target "${harness}"${contextSuffix(context)}`);
+}
+
+// The shape of a rendered spawn-site line; the portable provider-name guard exempts inside it only
+// the exact two-harness values phrases rendered from the mappings.
+const RENDERED_SPAWN_SITE_LINE_RE =
+  /^[ \t]*Tier `[a-z]+`.* \(rules: `model-tiers`(?:, no downward move)?\)\.$/;
+
+// Line numbers of every rendered spawn-site tier line in a rendered body. Workers spawn nothing,
+// so a worker body must yield none.
+export function findRenderedSpawnSiteLines(text) {
+  return normalizeLineEndings(text)
+    .split('\n')
+    .flatMap((line, index) => (RENDERED_SPAWN_SITE_LINE_RE.test(line) ? [index + 1] : []));
+}
+
+// Render one site's tier line. A single resolved tier renders once; differing role tiers render
+// one clause per role. A standard clause at a `Down: no` site states that it may not move down.
+export function renderSpawnSiteLine(site, harness, { mappings, context } = {}) {
+  const tiers = [...new Set(site.clauses.map(({ tier }) => tier))];
+  const noDown = !site.downAllowed && tiers.includes('standard');
+  const suffix = ` (rules: \`model-tiers\`${noDown ? ', no downward move' : ''}).`;
+  const values = (tier, role) =>
+    harness === 'codex' && role
+      ? 'select the named role’s configured sidecar'
+      : tierValuesPhrase(tier, harness, mappings, context);
+  if (tiers.length === 1) {
+    return `Tier \`${tiers[0]}\`: ${values(
+      tiers[0],
+      site.clauses.every(({ role }) => role),
+    )}${suffix}`;
+  }
+  return (
+    site.clauses
+      .map(({ role, tier }) => `Tier \`${tier}\` for {{AGENT:${role}}}: ${values(tier, role)}`)
+      .join('. ') + suffix
+  );
+}
+
+// Replace every spawn-site marker line of a resolved body with its site's tier line, keeping the
+// marker's indentation. `sites` maps site id to resolved site.
+export function renderSpawnSiteMarkers(body, harness, { sites, mappings, context } = {}) {
+  if (!body.includes(SPAWN_SITE_MARKER_PREFIX)) return body;
+  const markers = collectSpawnSiteMarkers(body, { context });
+  const lines = body.split('\n');
+  for (const { id, line } of markers) {
+    const site = sites.get(id);
+    if (!site) {
+      throw new Error(`Unknown spawn-site "${id}"${contextSuffix(context)}`);
+    }
+    const indent = lines[line - 1].match(/^[ \t]*/)[0];
+    lines[line - 1] = `${indent}${renderSpawnSiteLine(site, harness, { mappings, context })}`;
+  }
+  return lines.join('\n');
+}
+
+export const MODEL_TIER_TABLE_START = '<!-- model-tier-table:start -->';
+export const MODEL_TIER_TABLE_END = '<!-- model-tier-table:end -->';
+export const MODEL_TIER_GENERATED_PLACEHOLDERS = Object.freeze([
+  '{{MODEL_TIER_ROLE_DEFAULTS}}',
+  '{{MODEL_TIER_TABLE}}',
+  '{{MODEL_TIER_ROLE_SELECTION}}',
+]);
+
+// Role | Tier for every agent source, sorted by name.
+export function renderModelTierRoleDefaults(agentTiers) {
+  const rows = [...agentTiers].sort(([left], [right]) => left.localeCompare(right));
+  return ['| Role | Tier |', '| ---- | ---- |']
+    .concat(rows.map(([role, tier]) => `| \`${role}\` | \`${tier}\` |`))
+    .join('\n');
+}
+
+// The harness values per tier between the generated-table markers: the Claude column for the
+// Claude target, the Codex column for Codex, and both, keyed by spawn mechanism, for portable.
+export function renderModelTierTable(harness, mappings, { context } = {}) {
+  const columns = {
+    claude: [
+      [
+        'Claude Code Agent tool',
+        ({ claude }) => `\`model: ${claude.model}\`, \`effort: ${claude.effort}\``,
+      ],
+    ],
+    codex: [
+      [
+        'Codex spawn',
+        ({ codex }) => `\`model: ${codex.model}\`, \`reasoning_effort: ${codex.reasoning_effort}\``,
+      ],
+    ],
+  };
+  columns.portable = [...columns.claude, ...columns.codex];
+  const selected = columns[harness];
+  if (!selected) throw new Error(`Unknown rendered target "${harness}"${contextSuffix(context)}`);
+  const header = `| Tier | ${selected.map(([title]) => title).join(' | ')} |`;
+  const separator = `| ---- | ${selected.map(() => '----').join(' | ')} |`;
+  const rows = MODEL_TIERS.map(
+    (tier) => `| \`${tier}\` | ${selected.map(([, cell]) => cell(mappings[tier])).join(' | ')} |`,
+  );
+  return [MODEL_TIER_TABLE_START, header, separator, ...rows, MODEL_TIER_TABLE_END].join('\n');
+}
+
+// All model-tier build directives for one resolved body and target: spawn-site marker lines and
+// the two generated model-tiers parts. Runs before renderBody, so a multi-role line's
+// {{AGENT:…}} references receive their target syntax there.
+export function renderModelTierDirectives(
+  body,
+  harness,
+  { sites, mappings, agentTiers, context } = {},
+) {
+  const withSites = renderSpawnSiteMarkers(body, harness, { sites, mappings, context });
+  if (!MODEL_TIER_GENERATED_PLACEHOLDERS.some((token) => withSites.includes(token))) {
+    return withSites;
+  }
+  return withSites
+    .replaceAll('{{MODEL_TIER_ROLE_DEFAULTS}}', () => renderModelTierRoleDefaults(agentTiers))
+    .replaceAll('{{MODEL_TIER_TABLE}}', () => renderModelTierTable(harness, mappings, { context }))
+    .replaceAll('{{MODEL_TIER_ROLE_SELECTION}}', () =>
+      harness === 'codex'
+        ? 'For a named native role, select its base sidecar at the role default. For an allowed move of a standard role, choose `effective-flow-<role>-tier-mechanical` or `effective-flow-<role>-tier-deep`; use the base role again for standard. These variants preserve the worker instructions and pin the selected tier. A variant retains its underlying base role for defaults and retry rules; a mechanical variant is never a new retry default. Never override a named role with spawn model or effort parameters: Codex loads the role configuration after those parameters and can silently replace them. Deep roles have no tier variants. Built-in/default spawns use the Harness values directly.'
+        : 'Pass the Harness values directly on the spawn.',
+    );
+}
+
+function providerNamePattern(names) {
+  const alternatives = [...new Set(names)].map(escapeRegex).join('|');
+  return new RegExp(`(?<![A-Za-z0-9_-])(?:${alternatives})(?![A-Za-z0-9_-])`, 'gi');
+}
+
+// Provider model names in rendered text, as `{ line, name }`. With `allowGenerated`, only the
+// portable build-generated tier text rendered from `mappings` is exempt: a line between the
+// model-tier-table markers that equals a rendered table line, and an exact two-harness values
+// phrase inside a rendered spawn-site line. An unbalanced table marker fails.
+export function findProviderModelNames(
+  text,
+  { modelNames, allowGenerated = false, mappings, context } = {},
+) {
+  const pattern = providerNamePattern(modelNames);
+  let tableLines = new Set();
+  let valuePhrases = [];
+  if (allowGenerated) {
+    if (!mappings) {
+      throw new Error(
+        `findProviderModelNames needs mappings with allowGenerated${contextSuffix(context)}`,
+      );
+    }
+    tableLines = new Set(renderModelTierTable('portable', mappings, { context }).split('\n'));
+    valuePhrases = MODEL_TIERS.map((tier) => tierValuesPhrase(tier, 'portable', mappings, context));
+  }
+  const findings = [];
+  let inTable = false;
+  for (const [index, line] of normalizeLineEndings(text).split('\n').entries()) {
+    if (allowGenerated && line === MODEL_TIER_TABLE_START) {
+      if (inTable) throw new Error(`Nested model-tier table start marker at line ${index + 1}`);
+      inTable = true;
+      continue;
+    }
+    if (allowGenerated && line === MODEL_TIER_TABLE_END) {
+      if (!inTable)
+        throw new Error(`Model-tier table end marker without start at line ${index + 1}`);
+      inTable = false;
+      continue;
+    }
+    if (inTable && tableLines.has(line)) continue;
+    const scanned =
+      allowGenerated && RENDERED_SPAWN_SITE_LINE_RE.test(line)
+        ? valuePhrases.reduce((rest, phrase) => rest.replaceAll(phrase, ''), line)
+        : line;
+    for (const match of scanned.matchAll(pattern)) {
+      findings.push({ line: index + 1, name: match[0] });
+    }
+  }
+  if (inTable) throw new Error('Model-tier table start marker without end');
+  return findings;
+}
+
+// Fail the build if any {{SKILL:X}} / {{AGENT:X}} reference points at a name
+// that has no matching tool/agent source.
+export function validateRefs(text, { knownTools, knownAgents, context } = {}) {
+  for (const m of text.matchAll(/\{\{SKILL:([^}]+)\}\}/g)) {
+    assertNotLegacyRef('SKILL', m[1], context);
+    if (!knownTools.has(m[1])) {
+      throw new Error(`Unknown tool reference {{SKILL:${m[1]}}}${contextSuffix(context)}`);
+    }
+  }
+  for (const m of text.matchAll(/\{\{AGENT:([^}]+)\}\}/g)) {
+    assertNotLegacyRef('AGENT', m[1], context);
+    if (!knownAgents.has(m[1])) {
+      throw new Error(`Unknown agent reference {{AGENT:${m[1]}}}${contextSuffix(context)}`);
+    }
+  }
+  for (const m of text.matchAll(AGENT_PROFILE_REF_RE)) {
+    const [, agent, profile] = m;
+    assertNotLegacyRef('AGENT_PROFILE', agent, context);
+    if (!knownAgents.has(agent)) {
+      throw new Error(
+        `Unknown agent reference {{AGENT_PROFILE:${agent}:${profile}}}${contextSuffix(context)}`,
+      );
+    }
+    if (profile !== 'fast') {
+      throw new Error(
+        `Unknown agent profile "${profile}" in {{AGENT_PROFILE:${agent}:${profile}}}; expected "fast"${contextSuffix(context)}`,
+      );
+    }
+  }
+}
+
+const NATIVE_AGENT_INVENTORY_KEYS = Object.freeze([
+  'schemaVersion',
+  'harness',
+  'baseWorkers',
+  'fastWorkers',
+  'tierWorkers',
+  'standardWorkers',
+]);
+const NATIVE_AGENT_STEM_RE = /^effective-flow-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function assertCanonicalStringArray(value, label, context) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array${contextSuffix(context)}`);
+  }
+  const sorted = [...value].sort();
+  for (const [index, entry] of value.entries()) {
+    if (typeof entry !== 'string' || !NATIVE_AGENT_STEM_RE.test(entry)) {
+      throw new Error(`${label} contains an invalid worker stem${contextSuffix(context)}`);
+    }
+    if (index > 0 && value[index - 1] >= entry) {
+      throw new Error(`${label} must be sorted and unique${contextSuffix(context)}`);
+    }
+    if (entry !== sorted[index]) {
+      throw new Error(`${label} must be sorted and unique${contextSuffix(context)}`);
+    }
+  }
+}
+
+function canonicalNativeAgentInventory(inventory) {
+  return `${JSON.stringify(
+    {
+      schemaVersion: inventory.schemaVersion,
+      harness: inventory.harness,
+      baseWorkers: inventory.baseWorkers,
+      fastWorkers: inventory.fastWorkers,
+      ...(inventory.schemaVersion === 2
+        ? { tierWorkers: inventory.tierWorkers, standardWorkers: inventory.standardWorkers }
+        : {}),
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+export function parseNativeAgentInventory(content, { context, allowLegacy = false } = {}) {
+  if (Buffer.isBuffer(content)) content = content.toString('utf8');
+  if (typeof content !== 'string') {
+    throw new Error(`Native agent inventory must be UTF-8 text${contextSuffix(context)}`);
+  }
+
+  let inventory;
+  try {
+    inventory = JSON.parse(content);
+  } catch {
+    throw new Error(`Native agent inventory must be valid JSON${contextSuffix(context)}`);
+  }
+  assertPlainObject(inventory, 'Native agent inventory', context);
+  const keys = Object.keys(inventory);
+  const expectedKeys =
+    allowLegacy && inventory.schemaVersion === 1
+      ? NATIVE_AGENT_INVENTORY_KEYS.slice(0, -2)
+      : NATIVE_AGENT_INVENTORY_KEYS;
+  if (
+    keys.length !== expectedKeys.length ||
+    keys.some((key, index) => key !== expectedKeys[index])
+  ) {
+    throw new Error(
+      `Native agent inventory keys must be exactly ${expectedKeys.join(', ')} in canonical order${contextSuffix(context)}`,
+    );
+  }
+  if (inventory.schemaVersion !== 2 && !(allowLegacy && inventory.schemaVersion === 1)) {
+    throw new Error(`Native agent inventory schemaVersion must be 2${contextSuffix(context)}`);
+  }
+  if (!['claude', 'codex'].includes(inventory.harness)) {
+    throw new Error(
+      `Native agent inventory harness must be claude or codex${contextSuffix(context)}`,
+    );
+  }
+  assertCanonicalStringArray(inventory.baseWorkers, 'Native baseWorkers', context);
+  assertCanonicalStringArray(inventory.fastWorkers, 'Native fastWorkers', context);
+  if (inventory.schemaVersion === 2) {
+    assertCanonicalStringArray(inventory.tierWorkers, 'Native tierWorkers', context);
+    assertCanonicalStringArray(inventory.standardWorkers, 'Native standardWorkers', context);
+    if (inventory.standardWorkers.some((worker) => !inventory.baseWorkers.includes(worker))) {
+      throw new Error(
+        `Native standardWorkers must be declared base workers${contextSuffix(context)}`,
+      );
+    }
+  }
+  if (inventory.baseWorkers.length === 0) {
+    throw new Error(`Native baseWorkers must not be empty${contextSuffix(context)}`);
+  }
+  const all = [
+    ...inventory.baseWorkers,
+    ...inventory.fastWorkers,
+    ...(inventory.tierWorkers ?? []),
+  ];
+  const overlap = all.filter((worker, index) => all.indexOf(worker) !== index);
+  if (overlap.length > 0) {
+    throw new Error(
+      `Native baseWorkers, fastWorkers and tierWorkers must be disjoint${contextSuffix(context)}`,
+    );
+  }
+  if (content !== canonicalNativeAgentInventory(inventory)) {
+    throw new Error(`Native agent inventory bytes are not canonical${contextSuffix(context)}`);
+  }
+  return inventory;
+}
+
+function inventoryArtifactStems(artifacts, harness, context) {
+  if (!Array.isArray(artifacts)) {
+    throw new Error(`Native ${harness} artifacts must be an array${contextSuffix(context)}`);
+  }
+  const extension = harness === 'claude' ? '.md' : '.toml';
+  const stems = artifacts.map((artifact) => {
+    const artifactName = typeof artifact === 'string' ? artifact : artifact?.name;
+    if (typeof artifactName !== 'string' || !artifactName.endsWith(extension)) {
+      throw new Error(
+        `Native ${harness} artifact must use the ${extension} extension${contextSuffix(context)}`,
+      );
+    }
+    const stem = artifactName.slice(0, -extension.length);
+    if (!NATIVE_AGENT_STEM_RE.test(stem)) {
+      throw new Error(
+        `Native ${harness} artifact has an invalid worker stem${contextSuffix(context)}`,
+      );
+    }
+    if (typeof artifact === 'object' && artifact?.declaredName !== stem) {
+      throw new Error(
+        `Native ${harness} artifact declaration does not match its filename${contextSuffix(context)}`,
+      );
+    }
+    return stem;
+  });
+  const unique = [...new Set(stems)].sort();
+  if (unique.length !== stems.length) {
+    throw new Error(`Native ${harness} artifacts must be unique${contextSuffix(context)}`);
+  }
+  return unique;
+}
+
+export function reconcileNativeAgentInventories(
+  claudeInventoryOrInput,
+  codexInventoryArg,
+  options = {},
+) {
+  let claudeInventory = claudeInventoryOrInput;
+  let codexInventory = codexInventoryArg;
+  let claudeArtifacts = options.claudeArtifacts;
+  let codexArtifacts = options.codexArtifacts;
+  let context = options.context;
+  if (
+    claudeInventoryOrInput &&
+    typeof claudeInventoryOrInput === 'object' &&
+    !Array.isArray(claudeInventoryOrInput) &&
+    Object.hasOwn(claudeInventoryOrInput, 'claudeInventory')
+  ) {
+    ({ claudeInventory, codexInventory, claudeArtifacts, codexArtifacts, context } =
+      claudeInventoryOrInput);
+  }
+
+  if (claudeInventory?.harness !== 'claude' || codexInventory?.harness !== 'codex') {
+    throw new Error(
+      `Native agent inventories must be ordered claude, codex${contextSuffix(context)}`,
+    );
+  }
+  if (JSON.stringify(claudeInventory.baseWorkers) !== JSON.stringify(codexInventory.baseWorkers)) {
+    throw new Error(`Native agent inventories disagree on baseWorkers${contextSuffix(context)}`);
+  }
+  if (claudeInventory.tierWorkers.length !== 0) {
+    throw new Error(`Claude native inventory must not list tier sidecars${contextSuffix(context)}`);
+  }
+  if (JSON.stringify(claudeInventory.fastWorkers) !== JSON.stringify(codexInventory.fastWorkers)) {
+    throw new Error(`Native agent inventories disagree on fastWorkers${contextSuffix(context)}`);
+  }
+  const base = new Set(claudeInventory.baseWorkers);
+  for (const fastWorker of claudeInventory.fastWorkers) {
+    const baseWorker = fastWorker.replace(/-fast$/, '');
+    if (baseWorker === fastWorker || !base.has(baseWorker)) {
+      throw new Error(
+        `Fast worker "${fastWorker}" has no declared base worker${contextSuffix(context)}`,
+      );
+    }
+  }
+  if (
+    JSON.stringify(claudeInventory.standardWorkers) !==
+    JSON.stringify(codexInventory.standardWorkers)
+  ) {
+    throw new Error(
+      `Native agent inventories disagree on standardWorkers${contextSuffix(context)}`,
+    );
+  }
+  const standardWorkers = codexInventory.standardWorkers;
+  const expectedTierWorkers = standardWorkers
+    .flatMap((name) => [`${name}-tier-mechanical`, `${name}-tier-deep`])
+    .sort();
+  if (JSON.stringify(codexInventory.tierWorkers) !== JSON.stringify(expectedTierWorkers)) {
+    throw new Error(
+      `Codex tierWorkers must exactly match standard role variants${contextSuffix(context)}`,
+    );
+  }
+
+  if ((claudeArtifacts === undefined) !== (codexArtifacts === undefined)) {
+    throw new Error(
+      `Native artifact inventories must be supplied as a pair${contextSuffix(context)}`,
+    );
+  }
+  if (claudeArtifacts !== undefined) {
+    const actualClaude = inventoryArtifactStems(claudeArtifacts, 'claude', context);
+    const actualCodex = inventoryArtifactStems(codexArtifacts, 'codex', context);
+    const expectedClaude = [...claudeInventory.baseWorkers, ...claudeInventory.fastWorkers].sort();
+    const expectedCodex = [
+      ...codexInventory.baseWorkers,
+      ...codexInventory.fastWorkers,
+      ...codexInventory.tierWorkers,
+    ].sort();
+    if (JSON.stringify(actualClaude) !== JSON.stringify(expectedClaude)) {
+      throw new Error(
+        `Claude native artifacts do not match the inventory${contextSuffix(context)}`,
+      );
+    }
+    if (JSON.stringify(actualCodex) !== JSON.stringify(expectedCodex)) {
+      throw new Error(`Codex native artifacts do not match the inventory${contextSuffix(context)}`);
+    }
+  }
+
+  return {
+    baseWorkers: [...claudeInventory.baseWorkers],
+    claudeFastWorkers: [...claudeInventory.fastWorkers],
+    codexFastWorkers: [...codexInventory.fastWorkers],
+    codexTierWorkers: [...codexInventory.tierWorkers],
+  };
+}
+
+// --- Native sidecar configuration comparison ---
+//
+// `scripts/compare-native-agent-baseline.mjs` proves that execution-profile rendering leaves every
+// Quality base worker's harness configuration unchanged. The pure parsing and comparison it needs
+// lives here so it is unit-testable; the script keeps only argument parsing, builds and I/O.
+//
+// The proof compares native CONFIGURATION only, never the rendered prompt body. Body prose comes
+// largely from shared include fragments, and a golden byte-for-byte comparison would make every
+// legitimate shared-fragment edit churn this unrelated proof — the native-profile-rendering plan
+// warns against exactly such fixtures. Both parsers below fail closed: a sidecar shape they do not
+// recognize is an error, never a silently skipped key.
+
+function nativeSidecarConfigError(file, message) {
+  return new Error(`Unparseable native sidecar ${file}: ${message}`);
+}
+
+function setNativeSidecarConfigKey(config, key, value, file) {
+  if (Object.hasOwn(config, key)) throw nativeSidecarConfigError(file, `duplicate key "${key}"`);
+  config[key] = value;
+}
+
+// Claude sidecar: `---` frontmatter of `key: value` lines; the body after the closing `---`
+// is excluded from the comparison.
+export function parseClaudeSidecarConfig(content, file) {
+  const match = /^---\n([\s\S]*?)\n---\n/.exec(content);
+  if (!match) throw nativeSidecarConfigError(file, 'missing or unterminated frontmatter');
+  const config = Object.create(null);
+  for (const line of match[1].split('\n')) {
+    const entry = /^([A-Za-z_][\w-]*):(?: (.*))?$/.exec(line);
+    if (!entry) {
+      throw nativeSidecarConfigError(file, `unrecognized frontmatter line ${JSON.stringify(line)}`);
+    }
+    let value = entry[2] ?? '';
+    if (value.startsWith('"')) {
+      if (value.length < 2 || !value.endsWith('"')) {
+        throw nativeSidecarConfigError(file, `unterminated quoted value for "${entry[1]}"`);
+      }
+      value = value.slice(1, -1).replace(/\\"/g, '"');
+    }
+    setNativeSidecarConfigKey(config, entry[1], value, file);
+  }
+  if (Object.keys(config).length === 0) throw nativeSidecarConfigError(file, 'empty frontmatter');
+  return config;
+}
+
+export const NATIVE_SIDECAR_PROMPT_BODY_KEY = 'developer_instructions';
+
+// Codex sidecar: the minimal TOML subset build.mjs emits — top-level `key = value` lines with a
+// basic string (JSON-compatible, as `tomlString` writes it), a literal string, a boolean, or a
+// number, plus the `developer_instructions = '''…'''` multiline literal prompt body. Only the
+// presence of that body is compared, never its text.
+export function parseCodexSidecarConfig(content, file) {
+  const config = Object.create(null);
+  const lines = content.split('\n');
+  if (lines.at(-1) === '') lines.pop();
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trim() === '') continue;
+    const entry = /^([A-Za-z_][\w-]*) = (.*)$/.exec(line);
+    if (!entry) throw nativeSidecarConfigError(file, `unrecognized line ${JSON.stringify(line)}`);
+    const [, key, raw] = entry;
+    let value;
+    if (raw.startsWith("'''")) {
+      const rest = [raw.slice(3), ...lines.slice(index + 1)].join('\n');
+      const end = rest.indexOf("'''");
+      if (end === -1) {
+        throw nativeSidecarConfigError(file, `unterminated multiline string for "${key}"`);
+      }
+      const consumed = rest.slice(0, end + 3).split('\n').length - 1;
+      const trailing = rest.slice(end + 3).split('\n')[0];
+      if (trailing.trim() !== '') {
+        throw nativeSidecarConfigError(file, `unexpected text after multiline string for "${key}"`);
+      }
+      value = rest.slice(0, end).replace(/^\n/, '');
+      index += consumed;
+    } else if (raw.startsWith('"')) {
+      try {
+        value = JSON.parse(raw);
+      } catch {
+        throw nativeSidecarConfigError(file, `invalid basic string for "${key}"`);
+      }
+    } else if (/^'[^'\n]*'$/.test(raw)) {
+      value = raw.slice(1, -1);
+    } else if (/^(?:true|false|[+-]?\d+(?:\.\d+)?)$/.test(raw)) {
+      value = raw;
+    } else {
+      throw nativeSidecarConfigError(file, `unrecognized value for "${key}"`);
+    }
+    setNativeSidecarConfigKey(config, key, value, file);
+  }
+  if (!Object.hasOwn(config, NATIVE_SIDECAR_PROMPT_BODY_KEY)) {
+    throw nativeSidecarConfigError(file, `missing "${NATIVE_SIDECAR_PROMPT_BODY_KEY}"`);
+  }
+  config[NATIVE_SIDECAR_PROMPT_BODY_KEY] = '<prompt body excluded>';
+  return config;
+}
+
+export const NATIVE_SIDECAR_CONFIG_PARSERS = Object.freeze({
+  claude: parseClaudeSidecarConfig,
+  codex: parseCodexSidecarConfig,
+});
+
+// The baseline build must ship exactly one `<worker>.<extension>` sidecar per base worker the
+// working inventory declares. Inputs are copied before sorting and never mutated.
+export function assertBaselineWorkerMembership(harness, baselineFiles, baseWorkers, extension) {
+  const actual = [...baselineFiles].sort();
+  const expected = baseWorkers.map((worker) => `${worker}.${extension}`).sort();
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(`${harness} baseline worker membership differs from the working inventory`);
+  }
+}
+
+// --- Central-skill ownership contract (#168) ---
+//
+// Effective Flow validates only relationships it declares itself. The central
+// skills repository remains an independently released project: normal builds
+// never enumerate it or compare its revision. Build-time I/O stays in
+// build.mjs; these parsers and reconciliation checks are pure for focused tests.
+
+export const SKILL_OWNERSHIP_TABLE_START = '<!-- skill-ownership-table:start -->';
+export const SKILL_OWNERSHIP_TABLE_END = '<!-- skill-ownership-table:end -->';
+export const SKILL_OWNERSHIP_RELEVANCE_MARKER = 'skill-ownership:relevance-gate-owners';
+export const SKILL_OWNERSHIP_CLASSIFICATIONS = Object.freeze([
+  'delegate',
+  'route-when-relevant',
+  'no-overlap',
+]);
+
+const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function assertPlainObject(value, label, context) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} must be an object${contextSuffix(context)}`);
+  }
+}
+
+function assertOnlyKeys(value, allowedKeys, label, context) {
+  const unknownKeys = Object.keys(value).filter((key) => !allowedKeys.includes(key));
+  if (unknownKeys.length > 0) {
+    throw new Error(
+      `${label} has unsupported field(s): ${unknownKeys.sort().join(', ')}${contextSuffix(context)}`,
+    );
+  }
+}
+
+function assertSkillName(value, label, context) {
+  if (typeof value !== 'string' || !SKILL_NAME_RE.test(value)) {
+    throw new Error(`${label} must be a kebab-case skill name${contextSuffix(context)}`);
+  }
+}
+
+function parseUniqueSkillNames(value, label, context) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array${contextSuffix(context)}`);
+  }
+  const seen = new Set();
+  return value.map((skill) => {
+    assertSkillName(skill, `${label} entry`, context);
+    if (seen.has(skill)) {
+      throw new Error(`Duplicate skill "${skill}" in ${label}${contextSuffix(context)}`);
+    }
+    seen.add(skill);
+    return skill;
+  });
+}
+
+export function parseSkillOwnershipManifest(json, { context } = {}) {
+  let manifest;
+  try {
+    manifest = JSON.parse(json);
+  } catch (error) {
+    throw new Error(`Invalid skill-ownership JSON: ${error.message}${contextSuffix(context)}`);
+  }
+  assertPlainObject(manifest, 'Skill-ownership manifest', context);
+  assertOnlyKeys(
+    manifest,
+    [
+      'schemaVersion',
+      'provenance',
+      'relationships',
+      'relevanceGateOwners',
+      'externalRecommendationAllowlist',
+    ],
+    'Skill-ownership manifest',
+    context,
+  );
+
+  if (manifest.schemaVersion !== 1) {
+    throw new Error(`Skill-ownership manifest schemaVersion must be 1${contextSuffix(context)}`);
+  }
+  if (!Array.isArray(manifest.relationships) || manifest.relationships.length === 0) {
+    throw new Error(
+      `Skill-ownership manifest relationships must be a non-empty array${contextSuffix(context)}`,
+    );
+  }
+
+  if (manifest.provenance !== undefined) {
+    assertPlainObject(manifest.provenance, 'Skill-ownership provenance', context);
+    assertOnlyKeys(
+      manifest.provenance,
+      ['lastReviewedAt', 'observedRevision'],
+      'Skill-ownership provenance',
+      context,
+    );
+    if (
+      manifest.provenance.lastReviewedAt !== undefined &&
+      !/^\d{4}-\d{2}-\d{2}$/.test(manifest.provenance.lastReviewedAt)
+    ) {
+      throw new Error(
+        `Skill-ownership provenance lastReviewedAt must use YYYY-MM-DD${contextSuffix(context)}`,
+      );
+    }
+    if (
+      manifest.provenance.observedRevision !== undefined &&
+      (typeof manifest.provenance.observedRevision !== 'string' ||
+        manifest.provenance.observedRevision.trim() === '')
+    ) {
+      throw new Error(
+        `Skill-ownership provenance observedRevision must be a non-empty string${contextSuffix(context)}`,
+      );
+    }
+  }
+
+  const relationshipSkills = new Set();
+  const relationships = manifest.relationships.map((relationship, relationshipIndex) => {
+    assertPlainObject(
+      relationship,
+      `Skill-ownership relationship ${relationshipIndex + 1}`,
+      context,
+    );
+    assertOnlyKeys(
+      relationship,
+      ['skill', 'consumers'],
+      `Skill-ownership relationship ${relationshipIndex + 1}`,
+      context,
+    );
+    assertSkillName(
+      relationship.skill,
+      `Skill-ownership relationship ${relationshipIndex + 1}.skill`,
+      context,
+    );
+    if (relationshipSkills.has(relationship.skill)) {
+      throw new Error(
+        `Duplicate skill-ownership relationship for "${relationship.skill}"${contextSuffix(context)}`,
+      );
+    }
+    relationshipSkills.add(relationship.skill);
+
+    if (!Array.isArray(relationship.consumers) || relationship.consumers.length === 0) {
+      throw new Error(
+        `Skill-ownership relationship "${relationship.skill}" must declare consumers${contextSuffix(context)}`,
+      );
+    }
+    const consumers = new Set();
+    const normalizedConsumers = relationship.consumers.map((consumer, consumerIndex) => {
+      assertPlainObject(
+        consumer,
+        `Consumer ${consumerIndex + 1} for skill "${relationship.skill}"`,
+        context,
+      );
+      assertOnlyKeys(
+        consumer,
+        ['consumer', 'classification'],
+        `Consumer ${consumerIndex + 1} for skill "${relationship.skill}"`,
+        context,
+      );
+      assertSkillName(
+        consumer.consumer,
+        `Consumer ${consumerIndex + 1} for skill "${relationship.skill}"`,
+        context,
+      );
+      if (consumers.has(consumer.consumer)) {
+        throw new Error(
+          `Duplicate consumer "${consumer.consumer}" for skill "${relationship.skill}"${contextSuffix(context)}`,
+        );
+      }
+      consumers.add(consumer.consumer);
+      if (!SKILL_OWNERSHIP_CLASSIFICATIONS.includes(consumer.classification)) {
+        throw new Error(
+          `Skill-ownership relationship "${relationship.skill}" / "${consumer.consumer}" has invalid or missing classification "${consumer.classification ?? ''}"; expected one of ${SKILL_OWNERSHIP_CLASSIFICATIONS.join(', ')}${contextSuffix(context)}`,
+        );
+      }
+      return {
+        consumer: consumer.consumer,
+        classification: consumer.classification,
+      };
+    });
+
+    return { skill: relationship.skill, consumers: normalizedConsumers };
+  });
+
+  const relevanceGateOwners = parseUniqueSkillNames(
+    manifest.relevanceGateOwners,
+    'Skill-ownership relevanceGateOwners',
+    context,
+  );
+  const externalRecommendationAllowlist = parseUniqueSkillNames(
+    manifest.externalRecommendationAllowlist,
+    'Skill-ownership externalRecommendationAllowlist',
+    context,
+  );
+  for (const skill of externalRecommendationAllowlist) {
+    if (relationshipSkills.has(skill)) {
+      throw new Error(
+        `Skill "${skill}" cannot be both a declared relationship and an external recommendation${contextSuffix(context)}`,
+      );
+    }
+  }
+
+  return {
+    schemaVersion: manifest.schemaVersion,
+    provenance: manifest.provenance,
+    relationships,
+    relevanceGateOwners,
+    externalRecommendationAllowlist,
+  };
+}
+
+function countOccurrences(text, value) {
+  return text.split(value).length - 1;
+}
+
+function ownershipTableCells(line) {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim());
+}
+
+export function parseSkillOwnershipTable(markdown, { context } = {}) {
+  const normalized = normalizeLineEndings(markdown);
+  if (
+    countOccurrences(normalized, SKILL_OWNERSHIP_TABLE_START) !== 1 ||
+    countOccurrences(normalized, SKILL_OWNERSHIP_TABLE_END) !== 1
+  ) {
+    throw new Error(
+      `Skill-ownership guide requires exactly one dedicated table marker pair${contextSuffix(context)}`,
+    );
+  }
+  const start =
+    normalized.indexOf(SKILL_OWNERSHIP_TABLE_START) + SKILL_OWNERSHIP_TABLE_START.length;
+  const end = normalized.indexOf(SKILL_OWNERSHIP_TABLE_END);
+  if (end <= start) {
+    throw new Error(`Skill-ownership table markers are out of order${contextSuffix(context)}`);
+  }
+
+  const lines = normalized
+    .slice(start, end)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 3) {
+    throw new Error(`Skill-ownership table has no relationship rows${contextSuffix(context)}`);
+  }
+  const headers = ownershipTableCells(lines[0]);
+  const expectedHeaders = [
+    'Central skill',
+    'Effective-Flow consumer(s)',
+    'Classification',
+    'Domain coverage',
+  ];
+  if (
+    headers.length !== expectedHeaders.length ||
+    headers.some((header, index) => header !== expectedHeaders[index])
+  ) {
+    throw new Error(
+      `Skill-ownership table headers must be: ${expectedHeaders.join(', ')}${contextSuffix(context)}`,
+    );
+  }
+  const separator = ownershipTableCells(lines[1]);
+  if (
+    separator.length !== expectedHeaders.length ||
+    separator.some((cell) => !/^:?-{3,}:?$/.test(cell))
+  ) {
+    throw new Error(`Skill-ownership table has an invalid separator row${contextSuffix(context)}`);
+  }
+
+  const seen = new Set();
+  return lines.slice(2).map((line) => {
+    const cells = ownershipTableCells(line);
+    if (cells.length !== expectedHeaders.length) {
+      throw new Error(
+        `Skill-ownership table row has ${cells.length} cells; expected ${expectedHeaders.length}${contextSuffix(context)}`,
+      );
+    }
+    const match = cells[0].match(/^`([a-z0-9]+(?:-[a-z0-9]+)*)`$/);
+    if (!match) {
+      throw new Error(
+        `Skill-ownership table has an invalid central skill cell "${cells[0]}"${contextSuffix(context)}`,
+      );
+    }
+    const skill = match[1];
+    if (seen.has(skill)) {
+      throw new Error(
+        `Duplicate skill "${skill}" in Markdown ownership table${contextSuffix(context)}`,
+      );
+    }
+    seen.add(skill);
+    return {
+      skill,
+      consumers: cells[1],
+      classification: cells[2],
+      coverage: cells[3],
+    };
+  });
+}
+
+// The chain collector and the section-presence collector must recognise exactly
+// the same heading: a source whose section produces no bullet still *declares*
+// one, and the roster guard has to tell that apart from having no section at
+// all. A fresh instance per use keeps the global flag's `lastIndex` private.
+const RECOMMENDED_SKILLS_HEADING = String.raw`^## (?:Recommended skills|Empfohlene Skills)\s*$`;
+
+function recommendedSkillsHeadingRe() {
+  return new RegExp(RECOMMENDED_SKILLS_HEADING, 'gm');
+}
+
+function assertRecommendedSkillSource(source, context) {
+  assertPlainObject(source, 'Recommended-skill source', context);
+  if (typeof source.consumer !== 'string' || source.consumer.trim() === '') {
+    throw new Error(`Recommended-skill source requires a consumer${contextSuffix(context)}`);
+  }
+  if (typeof source.text !== 'string') {
+    throw new Error(
+      `Recommended-skill source "${source.consumer}" requires text${contextSuffix(context)}`,
+    );
+  }
+}
+
+// Every consumer whose source carries at least one `## Recommended skills`
+// heading, regardless of what the section contains. The roster guard needs this
+// separately from the chains: a heading with no parseable bullet declares a
+// section that names no skill, which is neither "no section" nor a fulfilled
+// obligation.
+export function collectRecommendedSkillSections(sources, { context } = {}) {
+  if (!Array.isArray(sources)) {
+    throw new Error(`Recommended-skill sources must be an array${contextSuffix(context)}`);
+  }
+  const declared = new Set();
+  for (const source of sources) {
+    assertRecommendedSkillSource(source, context);
+    if (recommendedSkillsHeadingRe().test(normalizeLineEndings(source.text))) {
+      declared.add(source.consumer);
+    }
+  }
+  return declared;
+}
+
+export function collectRecommendedSkillChains(sources, { context } = {}) {
+  if (!Array.isArray(sources)) {
+    throw new Error(`Recommended-skill sources must be an array${contextSuffix(context)}`);
+  }
+  const chains = [];
+  for (const source of sources) {
+    assertRecommendedSkillSource(source, context);
+    const normalized = normalizeLineEndings(source.text);
+    const headingRe = recommendedSkillsHeadingRe();
+    for (const heading of normalized.matchAll(headingRe)) {
+      const sectionStart = heading.index + heading[0].length;
+      const followingHeading = normalized.slice(sectionStart).search(/^##\s+/m);
+      const section = normalized.slice(
+        sectionStart,
+        followingHeading === -1 ? normalized.length : sectionStart + followingHeading,
+      );
+      for (const bullet of section.matchAll(/^\s*-\s+(.+)$/gm)) {
+        const chain = bullet[1].match(/^`([^`]+)`(.*)$/);
+        if (!chain || chain[2].includes('`') || chain[2].includes('›')) {
+          throw new Error(
+            `Recommended-skill bullet for "${source.consumer}" must start with exactly one backticked skill or fallback chain${contextSuffix(source.context ?? context)}`,
+          );
+        }
+        const tokens = chain[1].split('›').map((part) => part.trim());
+        for (const token of tokens) {
+          assertSkillName(
+            token,
+            `Recommended skill for "${source.consumer}"`,
+            source.context ?? context,
+          );
+        }
+        chains.push({
+          consumer: source.consumer,
+          skills: tokens,
+          context: source.context,
+        });
+      }
+    }
+  }
+  return chains;
+}
+
+export function parseSkillOwnershipRelevanceGateOwners(markdown, { context } = {}) {
+  const normalized = normalizeLineEndings(markdown);
+  const markerRe = new RegExp(
+    `<!--\\s*${escapeRegex(SKILL_OWNERSHIP_RELEVANCE_MARKER)}\\s+(\\[[^\\n]*\\])\\s*-->`,
+    'g',
+  );
+  const matches = [...normalized.matchAll(markerRe)];
+  if (matches.length !== 1) {
+    throw new Error(
+      `Relevance-gate source requires exactly one structured ${SKILL_OWNERSHIP_RELEVANCE_MARKER} marker${contextSuffix(context)}`,
+    );
+  }
+  let owners;
+  try {
+    owners = JSON.parse(matches[0][1]);
+  } catch (error) {
+    throw new Error(
+      `Invalid relevance-gate owner marker: ${error.message}${contextSuffix(context)}`,
+    );
+  }
+  return parseUniqueSkillNames(owners, 'Relevance-gate owner marker', context);
+}
+
+function setDifference(left, right) {
+  return [...left].filter((value) => !right.has(value)).sort();
+}
+
+// --- Consumer-name disjointness guard ---
+//
+// `docs/developer-guide/skill-ownership.json` names a consumer by bare name
+// (`docs`, `code-documenter`) with no discriminator for whether that name
+// belongs to a tool or to an agent, and `assertSkillOwnershipContract` keys its
+// recommendation pairs the same way (`${skill} ${consumer}`). Both are sound
+// only while `src/tools/*.md` and `src/agents/*.md` share no basename. With a
+// collision the two kinds would cross-satisfy each other: a tool's
+// `## Recommended skills` bullet would fill the pair a same-named agent's
+// `delegate` classification demands, so the agent could stop naming its owner —
+// lose its domain guidance outright — and still pass guard (b).
+//
+// Keying the pair on kind is not available as a local fix, because the manifest
+// side has no kind to key on; closing the hole that way means declaring a kind
+// per manifest consumer and migrating the manifest, the Markdown inventory and
+// the parser with it. So the assumption the bare key rests on is enforced here
+// instead of merely written down: the build fails on the collision that would
+// weaken the check, and whoever needs that collision is told what the manifest
+// has to grow first.
+//
+// Shared fragments join the same namespace: the setup-status ownership projection derives each
+// manifest consumer's `consumerKind` (tool, agent, shared) from its bare name, so a fragment named
+// like a tool or an agent would make that kind, and the config scope derived from it, ambiguous.
+export function assertDisjointConsumerNames(
+  { toolNames, agentNames, sharedNames = [] },
+  { context } = {},
+) {
+  const agents = new Set(agentNames);
+  const collisions = [...new Set(toolNames)].filter((name) => agents.has(name)).sort();
+  if (collisions.length > 0) {
+    throw new Error(
+      `Tool and agent share the basename(s) ${collisions.join(', ')}: the skill-ownership manifest ` +
+        `identifies a consumer by bare name, so a colliding pair would cross-satisfy its "delegate" ` +
+        `obligation. Give the manifest a per-consumer kind and key the pair on it before introducing ` +
+        `this name${contextSuffix(context)}`,
+    );
+  }
+  const toolsAndAgents = new Set([...toolNames, ...agentNames]);
+  const sharedCollisions = [...new Set(sharedNames)]
+    .filter((name) => toolsAndAgents.has(name))
+    .sort();
+  if (sharedCollisions.length === 0) return;
+  throw new Error(
+    `Shared fragment and tool or agent share the basename(s) ${sharedCollisions.join(', ')}: the ` +
+      `setup-status ownership projection derives a consumer's kind from its bare name, so the ` +
+      `consumerKind and the skills scope derived from it would be ambiguous. Rename the ` +
+      `fragment${contextSuffix(context)}`,
+  );
+}
+
+// --- Setup-status ownership projection ---
+//
+// `setup status` reports, per exposed tool, which declared central domain owner the project's
+// `skills` configuration disables. The shipped script cannot read sources, so the build projects the
+// manifest's `delegate` rows onto the exposed tools that reach each consumer, with the skills config
+// scope (`tools.<name>` or `agents.<name>`) each reach goes through.
+//
+// Reachability is deliberately explicit: an exposed tool reaches itself, its eager and lazy include
+// closure, the named worker roles of marked spawn sites in that source or closure
+// with their own include closures, and every tool behind a declared workflow edge, transitively. A
+// `{{SKILL:X}}` mention alone is no edge: most name a neighbouring workflow for the user rather than
+// running it. The forward and reverse edge guards below keep the declared list honest.
+
+export const SETUP_STATUS_PROJECTION_SCHEMA_VERSION = 1;
+
+const TOOL_REFERENCE_PATTERNS = Object.freeze([
+  Object.freeze({ form: 'skill', pattern: /\{\{SKILL:([a-z0-9]+(?:-[a-z0-9]+)*)\}\}/g }),
+  Object.freeze({ form: 'lazy-include', pattern: /```lazy-include\n([^\n]+)\n/g }),
+  Object.freeze({ form: 'path', pattern: /\btools\/([a-z0-9]+(?:-[a-z0-9]+)*)\.md\b/g }),
+]);
+
+// Every name a tool source refers to as a tool, with the forms it uses: `{{SKILL:<name>}}`, a
+// ```lazy-include fence naming it, or a literal `tools/<name>.md` path.
+export function collectToolReferences(text) {
+  const references = new Map();
+  const normalized = normalizeLineEndings(text);
+  for (const { form, pattern } of TOOL_REFERENCE_PATTERNS) {
+    for (const match of normalized.matchAll(pattern)) {
+      const name = match[1].trim();
+      if (!references.has(name)) references.set(name, new Set());
+      references.get(name).add(form);
+    }
+  }
+  return references;
+}
+
+function edgeKey(edge) {
+  return `${edge.from} -> ${edge.to}`;
+}
+
+function edgeLabel(edge) {
+  return edge.mode ? `${edgeKey(edge)} (mode ${edge.mode})` : edgeKey(edge);
+}
+
+// Guards the declared tool-to-tool lists against tool sources and their shared include closures.
+//   forward: every declared workflow edge and pointer reference matches a reference in its `from`
+//            source or its eager/lazy shared include closure, so a removed hand-off cannot leave
+//            a stale edge behind;
+//   reverse: every reference from a tool source to an internal tool (neither exposed nor a
+//            deprecated alias) is declared, either as a workflow edge the projection follows or as
+//            a pointer reference it deliberately does not follow. References to exposed tools are
+//            not checked in reverse: most name a neighbouring workflow for the user.
+//   modes:   an edge's optional `mode` (the target runs only in that mode) is one of the target's
+//            resolver modes in `toolModes`; one (from, to) pair carries either one mode-less edge or
+//            edges with distinct modes, and is never both an edge and a pointer reference.
+export function assertWorkflowEdgeContract(
+  {
+    toolSources,
+    sharedSources = new Map(),
+    exposedTools,
+    aliases = [],
+    workflowEdges,
+    pointerReferences = [],
+    toolModes = {},
+  },
+  { context } = {},
+) {
+  const knownTools = new Set(toolSources.keys());
+  const exposed = new Set(exposedTools);
+  const aliasSet = new Set(aliases);
+  const references = new Map(
+    [...toolSources].map(([name, text]) => [
+      name,
+      new Set(
+        [
+          text,
+          ...[...includeClosure(text, sharedSources)].map((shared) => sharedSources.get(shared)),
+        ].flatMap((source) => [...collectToolReferences(source).keys()]),
+      ),
+    ]),
+  );
+  const problems = [];
+  const declared = new Map(); // pair key -> { kind, modes: Set<mode|null> }
+  for (const [list, kind] of [
+    [workflowEdges, 'workflow edge'],
+    [pointerReferences, 'pointer reference'],
+  ]) {
+    for (const edge of list) {
+      const key = edgeKey(edge);
+      const mode = edge.mode ?? null;
+      const previous = declared.get(key);
+      if (previous && (previous.kind !== kind || previous.modes.has(mode))) {
+        problems.push(`${key} is declared more than once`);
+      } else if (previous && (mode === null || previous.modes.has(null))) {
+        problems.push(`${key} mixes a mode-less edge with mode-specific edges`);
+      }
+      if (previous) previous.modes.add(mode);
+      else declared.set(key, { kind, modes: new Set([mode]) });
+      if (mode !== null && kind === 'pointer reference') {
+        problems.push(`pointer reference ${key} carries a mode; only workflow edges do`);
+      } else if (mode !== null && !(toolModes[edge.to] ?? []).includes(mode)) {
+        problems.push(
+          `workflow edge ${edgeLabel(edge)}: "${mode}" is no resolver mode of ${edge.to} (${(toolModes[edge.to] ?? []).join(', ') || 'none'})`,
+        );
+      }
+      if (!knownTools.has(edge.from)) problems.push(`${kind} ${key}: no src/tools/${edge.from}.md`);
+      if (!knownTools.has(edge.to)) problems.push(`${kind} ${key}: no src/tools/${edge.to}.md`);
+      if (aliasSet.has(edge.to) || aliasSet.has(edge.from)) {
+        problems.push(`${kind} ${key} names a deprecated alias`);
+      }
+      if (edge.from === edge.to) problems.push(`${kind} ${key} is a self-reference`);
+      if (knownTools.has(edge.from) && !references.get(edge.from).has(edge.to)) {
+        problems.push(
+          `${kind} ${key} has no matching reference ({{SKILL:${edge.to}}}, a lazy-include fence or tools/${edge.to}.md) in src/tools/${edge.from}.md or its shared include closure`,
+        );
+      }
+    }
+  }
+  for (const [from, targets] of references) {
+    for (const to of targets) {
+      if (to === from || !knownTools.has(to) || exposed.has(to) || aliasSet.has(to)) continue;
+      if (!declared.has(edgeKey({ from, to }))) {
+        problems.push(
+          `src/tools/${from}.md references the internal tool "${to}" without a declared workflow edge or pointer reference (including its shared include closure)`,
+        );
+      }
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error(`Workflow edge guard${contextSuffix(context)}:\n  ${problems.join('\n  ')}`);
+  }
+}
+
+function includeClosure(text, sharedSources) {
+  const closure = new Set();
+  const pending = [text];
+  while (pending.length > 0) {
+    const { eager, lazy } = collectIncludeNames(normalizeLineEndings(pending.pop()));
+    for (const name of [...eager, ...lazy]) {
+      if (closure.has(name) || !sharedSources.has(name)) continue;
+      closure.add(name);
+      pending.push(sharedSources.get(name));
+    }
+  }
+  return closure;
+}
+
+function executedAgentRoles(text, spawnSites) {
+  const roles = new Set();
+  for (const { id } of collectSpawnSiteMarkers(text)) {
+    const site = spawnSites.get(id);
+    if (!site) throw new Error(`Unknown spawn-site "${id}" in setup-status ownership projection`);
+    // Literal-tier sites run generic analysis or another workflow, not a named worker role.
+    for (const { role } of site.clauses) if (role !== null) roles.add(role);
+  }
+  return roles;
+}
+
+// Every (consumer kind, consumer) one exposed tool reaches, each with the skills scopes it is
+// reached through. Returns Map<`${kind}:${name}`, Set<scope>>. Edges are followed whatever their
+// `mode`: a domain owner is loaded in every mode of the tool that consumes it.
+function reachOfExposedTool(
+  tool,
+  { toolSources, agentSources, sharedSources, workflowEdges, spawnSites },
+) {
+  const reach = new Map();
+  const add = (kind, name, scope) => {
+    const key = `${kind}:${name}`;
+    if (!reach.has(key)) reach.set(key, new Set());
+    reach.get(key).add(scope);
+  };
+  const tools = [];
+  const pending = [tool];
+  while (pending.length > 0) {
+    const current = pending.shift();
+    if (tools.includes(current)) continue;
+    tools.push(current);
+    for (const edge of workflowEdges) if (edge.from === current) pending.push(edge.to);
+  }
+  const agents = new Set();
+  for (const current of tools) {
+    const text = toolSources.get(current) ?? '';
+    add('tool', current, `tools.${current}`);
+    const closure = includeClosure(text, sharedSources);
+    for (const name of closure) add('shared', name, `tools.${current}`);
+    for (const source of [text, ...[...closure].map((name) => sharedSources.get(name))]) {
+      for (const agent of executedAgentRoles(source, spawnSites)) {
+        if (!agentSources.has(agent)) {
+          throw new Error(`Unknown worker role "${agent}" in setup-status ownership projection`);
+        }
+        agents.add(agent);
+      }
+    }
+  }
+  for (const agent of agents) {
+    add('agent', agent, `agents.${agent}`);
+    for (const name of includeClosure(agentSources.get(agent), sharedSources)) {
+      add('shared', name, `agents.${agent}`);
+    }
+  }
+  return reach;
+}
+
+// Projects the manifest's `delegate` rows onto the exposed tools. Sources are raw texts keyed by
+// basename; `workflowEdges` is the declared tool-to-tool list; `spawnSites` are validated, resolved
+// rows of the model-tier execution table; `version` the installed SemVer. Agent mentions alone are
+// no execution: only a reached site's named role clauses contribute worker dependencies.
+export function deriveSetupStatusProjection(
+  {
+    manifest,
+    toolSources,
+    agentSources,
+    sharedSources,
+    exposedTools,
+    workflowEdges,
+    spawnSites = [],
+    version,
+  },
+  { context } = {},
+) {
+  const kindOf = (name) => {
+    if (toolSources.has(name)) return 'tool';
+    if (agentSources.has(name)) return 'agent';
+    if (sharedSources.has(name)) return 'shared';
+    throw new Error(
+      `Setup-status projection: manifest consumer "${name}" is no tool, agent or shared source${contextSuffix(context)}`,
+    );
+  };
+  const sites = new Map(spawnSites.map((site) => [site.id, site]));
+  const reachByTool = new Map(
+    exposedTools.map((tool) => [
+      tool,
+      reachOfExposedTool(tool, {
+        toolSources,
+        agentSources,
+        sharedSources,
+        workflowEdges,
+        spawnSites: sites,
+      }),
+    ]),
+  );
+  const owners = [];
+  for (const relationship of manifest.relationships) {
+    for (const { consumer, classification } of relationship.consumers) {
+      if (classification !== 'delegate') continue;
+      const consumerKind = kindOf(consumer);
+      const reach = [];
+      for (const tool of [...exposedTools].sort()) {
+        const scopes = reachByTool.get(tool).get(`${consumerKind}:${consumer}`);
+        for (const scope of [...(scopes ?? [])].sort()) reach.push({ tool, scope });
+      }
+      owners.push({
+        skill: relationship.skill,
+        consumer,
+        consumerKind,
+        classification,
+        tools: [...new Set(reach.map((entry) => entry.tool))].sort(),
+        reach,
+      });
+    }
+  }
+  const projection = {
+    schemaVersion: SETUP_STATUS_PROJECTION_SCHEMA_VERSION,
+    version,
+    exposedTools: [...exposedTools],
+    workflowEdges: workflowEdges.map(({ from, to, mode }) => ({ from, to, mode: mode ?? null })),
+    owners,
+  };
+  assertSetupStatusProjection(projection, manifest, { context });
+  return projection;
+}
+
+// Guards (a) and (b): the projection's delegate rows equal the manifest's, and every delegate
+// consumer reaches at least one exposed tool, so no declared owner silently drops out of the report.
+// Guard (a) holds by construction today, because the derivation iterates the manifest's own
+// relationships; it is a regression tripwire for a future derivation that filters, merges or
+// re-keys rows.
+export function assertSetupStatusProjection(projection, manifest, { context } = {}) {
+  const rowKey = (row) => `${row.skill} / ${row.consumer} / ${row.classification}`;
+  const expected = new Set(
+    manifest.relationships.flatMap((relationship) =>
+      relationship.consumers
+        .filter((consumer) => consumer.classification === 'delegate')
+        .map((consumer) => rowKey({ skill: relationship.skill, ...consumer })),
+    ),
+  );
+  const actual = new Set(projection.owners.map(rowKey));
+  const problems = [
+    ...setDifference(expected, actual).map((key) => `missing delegate row ${key}`),
+    ...setDifference(actual, expected).map((key) => `delegate row ${key} is not in the manifest`),
+  ];
+  if (actual.size !== projection.owners.length) problems.push('duplicate delegate rows');
+  for (const row of projection.owners) {
+    if (row.tools.length === 0) {
+      problems.push(
+        `delegate consumer "${row.consumer}" (${row.skill}) maps to no exposed tool: declare the workflow edge or spawn reference that reaches it`,
+      );
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error(
+      `Setup-status ownership projection guard${contextSuffix(context)}:\n  ${problems.join('\n  ')}`,
+    );
+  }
+}
+
+// Every resolver successor-set entry except the exempt tools (`setup`) must be run by at least one
+// exposed tool in its mode, through the declared workflow edges: otherwise `setup status` could
+// name no exposed tool that stops on a retired row. `reaching(tool, { exposedTools, workflowEdges },
+// mode)` is the shipped status script's own mapping, so build and runtime cannot disagree.
+export function assertSuccessorSetsReachExposedTools(
+  { successorSets, exemptTools = [], exposedTools, workflowEdges, reaching },
+  { context } = {},
+) {
+  const exempt = new Set(exemptTools);
+  const problems = successorSets
+    .filter((entry) => !exempt.has(entry.tool))
+    .filter(
+      (entry) => reaching(entry.tool, { exposedTools, workflowEdges }, entry.mode).length === 0,
+    )
+    .map(
+      (entry) =>
+        `${entry.tool}${entry.mode ? ` (mode ${entry.mode})` : ''} is run by no exposed tool: declare the workflow edge that runs it`,
+    );
+  if (problems.length > 0) {
+    throw new Error(
+      `Setup-status successor-set reach guard${contextSuffix(context)}:\n  ${problems.join('\n  ')}`,
+    );
+  }
+}
+
+export function assertSkillOwnershipContract(
+  {
+    manifest,
+    inventoryRows,
+    recommendationChains,
+    relevanceGateOwners,
+    knownConsumers,
+    recommendationCapableConsumers,
+  },
+  { context } = {},
+) {
+  const relationshipBySkill = new Map(
+    manifest.relationships.map((relationship) => [relationship.skill, relationship]),
+  );
+  const relationshipSkills = new Set(relationshipBySkill.keys());
+  if (knownConsumers !== undefined) {
+    if (!(knownConsumers instanceof Set)) {
+      throw new Error(`Skill-ownership knownConsumers must be a Set${contextSuffix(context)}`);
+    }
+    for (const relationship of manifest.relationships) {
+      for (const { consumer } of relationship.consumers) {
+        if (!knownConsumers.has(consumer)) {
+          throw new Error(
+            `Unknown Effective Flow consumer "${consumer}" for skill "${relationship.skill}"${contextSuffix(context)}`,
+          );
+        }
+      }
+    }
+  }
+  const inventorySkills = new Set(inventoryRows.map((row) => row.skill));
+  const missingRows = setDifference(relationshipSkills, inventorySkills);
+  const extraRows = setDifference(inventorySkills, relationshipSkills);
+  if (missingRows.length > 0 || extraRows.length > 0) {
+    const details = [];
+    if (missingRows.length > 0) {
+      details.push(`missing Markdown row(s): ${missingRows.join(', ')}`);
+    }
+    if (extraRows.length > 0) {
+      details.push(`stale or extra Markdown row(s): ${extraRows.join(', ')}`);
+    }
+    throw new Error(
+      `Skill-ownership inventory mismatch: ${details.join('; ')}${contextSuffix(context)}`,
+    );
+  }
+
+  const manifestOwners = new Set(manifest.relevanceGateOwners);
+  const sourceOwners = new Set(relevanceGateOwners);
+  const staleManifestOwners = setDifference(manifestOwners, sourceOwners);
+  const undeclaredSourceOwners = setDifference(sourceOwners, manifestOwners);
+  if (staleManifestOwners.length > 0 || undeclaredSourceOwners.length > 0) {
+    const details = [];
+    if (staleManifestOwners.length > 0) {
+      details.push(`stale manifest owner(s): ${staleManifestOwners.join(', ')}`);
+    }
+    if (undeclaredSourceOwners.length > 0) {
+      details.push(`undeclared source owner(s): ${undeclaredSourceOwners.join(', ')}`);
+    }
+    throw new Error(
+      `Skill-ownership relevance-gate mismatch: ${details.join('; ')}${contextSuffix(context)}`,
+    );
+  }
+  for (const owner of manifestOwners) {
+    if (!relationshipSkills.has(owner)) {
+      throw new Error(
+        `Relevance-gate owner "${owner}" has no declared relationship${contextSuffix(context)}`,
+      );
+    }
+  }
+
+  const externalRecommendations = new Set(manifest.externalRecommendationAllowlist);
+  for (const chain of recommendationChains) {
+    for (const [index, skill] of chain.skills.entries()) {
+      if (relationshipSkills.has(skill)) {
+        const consumers = new Set(
+          relationshipBySkill.get(skill).consumers.map((entry) => entry.consumer),
+        );
+        if (!consumers.has(chain.consumer)) {
+          throw new Error(
+            `Unowned recommendation "${skill}" for consumer "${chain.consumer}"${contextSuffix(chain.context ?? context)}`,
+          );
+        }
+      } else if (!externalRecommendations.has(skill)) {
+        const label = index === 0 ? 'Unowned recommended skill' : 'Unknown external fallback skill';
+        throw new Error(
+          `${label} "${skill}" for consumer "${chain.consumer}"${contextSuffix(chain.context ?? context)}`,
+        );
+      }
+    }
+  }
+
+  // Reverse check: a declared relationship has to be reachable at runtime. The
+  // four checks above all start from something that exists — a row, an owner
+  // marker, a recommendation bullet — so a relationship that no source ever
+  // recommends is declared, documented, and dead. Skill discovery honours only
+  // `## Recommended skills` sections, so such a relationship promises an
+  // authority transfer that never happens.
+  //
+  // `recommendationCapableConsumers` names the consumers that can produce a
+  // recommendation at all, which is exactly the tool and agent sources build.mjs
+  // scans. The manifest also lists shared-fragment consumers (`language-rules`,
+  // `chat-language`, `adr-convention`, `commit-message-rules`,
+  // `dependency-version-policy`, `documentation-sync-contract`,
+  // `durable-follow-up-gate`, `investigation-method`, `project-adr-convention`,
+  // `worktree-integration`); a fragment expresses its ownership as prose inside
+  // the tool that embeds it and can never carry a section of its own, so it is
+  // exempt by kind rather than left as a silent hole.
+  //
+  // The strictness differs by classification, and deliberately so:
+  //
+  // - `delegate` is checked **per consumer**, and only against the **leading**
+  //   member of a chain. That pair is the whole layered contract — the source
+  //   carries no second copy of the playbook — so a delegating consumer that
+  //   stops recommending its owner has silently lost its domain guidance. A
+  //   per-relationship check would miss exactly that: a sibling consumer keeps
+  //   the relationship alive while the drifted one passes both guards. Position
+  //   matters for the same reason: `src/shared/skill-discovery.md` selects the
+  //   first available, non-excluded member of `A › B`, never both, so an owner
+  //   written behind an available non-owner is not the guidance that gets
+  //   applied.
+  // - `route-when-relevant` is checked **per relationship**, because a
+  //   relevance-gate consumer (`plan`, `plan-review`, `concept`,
+  //   `concept-review`) reaches its owner through the structured marker in
+  //   `central-reasoning-delegation.md` rather than through a section of its
+  //   own. Requiring a bullet there would fail ten legitimate pairs.
+  if (!(recommendationCapableConsumers instanceof Set)) {
+    throw new Error(
+      `Skill-ownership recommendationCapableConsumers must be a Set${contextSuffix(context)}`,
+    );
+  }
+  // Two sets, because the two branches ask different questions. Authority for
+  // one consumer requires the owner to be the member ordered selection actually
+  // takes, so the delegate branch reads `leadingRecommendedPairs`. Reachability
+  // of a relationship by *some* consumer is the weaker claim the
+  // per-relationship branch makes, and a fallback member is legitimately
+  // reached whenever the members ahead of it are unavailable, so that branch
+  // keeps the full set.
+  //
+  // Both keys are `${skill} ${consumer}` with no discriminator for the
+  // consumer's kind, which holds only because no tool and agent share a
+  // basename. `assertDisjointConsumerNames` enforces that assumption at build
+  // time rather than leaving it as a comment a future collision could quietly
+  // invalidate; see its note for why the kind cannot be added here alone.
+  const recommendedPairs = new Set();
+  const leadingRecommendedPairs = new Set();
+  for (const chain of recommendationChains) {
+    for (const skill of chain.skills) {
+      recommendedPairs.add(`${skill} ${chain.consumer}`);
+    }
+    leadingRecommendedPairs.add(`${chain.skills[0]} ${chain.consumer}`);
+  }
+  for (const relationship of manifest.relationships) {
+    const checkable = relationship.consumers.filter((entry) =>
+      recommendationCapableConsumers.has(entry.consumer),
+    );
+    if (checkable.length === 0) continue;
+    for (const entry of checkable) {
+      if (entry.classification !== 'delegate') continue;
+      if (leadingRecommendedPairs.has(`${relationship.skill} ${entry.consumer}`)) continue;
+      throw new Error(
+        `Unrecommended delegate consumer "${entry.consumer}" for skill "${relationship.skill}": a delegating consumer must name its owner in a "## Recommended skills" section, as the first member of its fallback chain${contextSuffix(context)}`,
+      );
+    }
+    if (
+      checkable.some((entry) => recommendedPairs.has(`${relationship.skill} ${entry.consumer}`))
+    ) {
+      continue;
+    }
+    throw new Error(
+      `Unrecommended relationship for skill "${relationship.skill}": none of its tool or agent consumers (${checkable.map((entry) => entry.consumer).join(', ')}) names it in a "## Recommended skills" section${contextSuffix(context)}`,
+    );
+  }
+}
+
+// --- Agent skill-recommendation roster guard (#168) ---
+//
+// `collectRecommendedSkillChains` is recommendation-driven: a source without a
+// `## Recommended skills` heading yields an empty iterator, pushes no chain, and
+// creates no obligation, so absence of a recommendation is absence of a check.
+// This roster check closes that hole for `src/agents/*.md`, where every consumer
+// that carries a domain playbook actually lives. It is deliberately not extended
+// to tools: `src/shared/skill-discovery.md` states that a missing section is
+// legitimate "(e.g. for tools)", and a tool such as `version` or `cleanup` has no
+// domain owner to recommend.
+//
+// The check is two-sided, like the next-steps exemption set it mirrors: a
+// non-exempt agent must carry a section that names a skill, an exempt one must
+// carry no section at all, and an exemption for an agent that does not exist is
+// stale. Section presence (`sectionAgents`) and fulfilled obligation
+// (`recommendationChains`) are separate inputs on purpose: a heading with no
+// parseable bullet satisfies neither side and gets its own diagnosis instead of
+// being reported as a missing section or passed as an honoured exemption.
+//
+// What fulfils the obligation is manifest-driven, which is why `ownedSkills`
+// (the manifest's declared relationship skills) is a required input. A bullet
+// may legitimately name an allowlisted external skill — `context7-mcp`,
+// `humanizer`, `impeccable` — but such a skill owns no Effective Flow domain, so
+// a section naming only external tokens names no owner at all and would pass the
+// guard while leaving exactly the hole it exists to close.
+export function assertAgentSkillRecommendationRoster(
+  { agents, sectionAgents, recommendationChains, exemptAgents, ownedSkills },
+  { context } = {},
+) {
+  if (!Array.isArray(agents) || agents.length === 0) {
+    // A roster check that iterates an empty list passes for the wrong reason.
+    throw new Error(
+      `Agent skill-recommendation roster must be a non-empty array${contextSuffix(context)}`,
+    );
+  }
+  if (!(sectionAgents instanceof Set)) {
+    throw new Error(`Agent skill-recommendation sections must be a Set${contextSuffix(context)}`);
+  }
+  if (!(exemptAgents instanceof Set)) {
+    throw new Error(`Agent skill-recommendation exemptions must be a Set${contextSuffix(context)}`);
+  }
+  if (!(ownedSkills instanceof Set) || ownedSkills.size === 0) {
+    // An empty owned set would fail every agent for the wrong reason, so it is
+    // a misconfiguration of the guard rather than a finding about a source.
+    throw new Error(
+      `Agent skill-recommendation ownedSkills must be a non-empty Set${contextSuffix(context)}`,
+    );
+  }
+  const roster = new Set(agents);
+  for (const name of exemptAgents) {
+    if (!roster.has(name)) {
+      throw new Error(
+        `stale skill-recommendation exemption: SKILL_RECOMMENDATION_EXEMPT_AGENTS lists "${name}", but src/agents/${name}.md does not exist${contextSuffix(context)}`,
+      );
+    }
+  }
+  const recommending = new Set(recommendationChains.map((chain) => chain.consumer));
+  const recommendingOwner = new Set(
+    recommendationChains
+      .filter((chain) => chain.skills.some((skill) => ownedSkills.has(skill)))
+      .map((chain) => chain.consumer),
+  );
+  for (const name of agents) {
+    const hasSection = sectionAgents.has(name);
+    if (exemptAgents.has(name)) {
+      if (hasSection) {
+        throw new Error(
+          `src/agents/${name}.md carries a "## Recommended skills" section but is listed in SKILL_RECOMMENDATION_EXEMPT_AGENTS; remove the exemption or the section${contextSuffix(context)}`,
+        );
+      }
+      continue;
+    }
+    if (!hasSection) {
+      throw new Error(
+        `src/agents/${name}.md carries no "## Recommended skills" section; add the central skill it delegates to, or add "${name}" to SKILL_RECOMMENDATION_EXEMPT_AGENTS in build.mjs with a one-line reason${contextSuffix(context)}`,
+      );
+    }
+    if (!recommending.has(name)) {
+      throw new Error(
+        `src/agents/${name}.md carries a "## Recommended skills" section that names no skill; add the central skill it delegates to as a backticked bullet, or drop the section and add "${name}" to SKILL_RECOMMENDATION_EXEMPT_AGENTS in build.mjs with a one-line reason${contextSuffix(context)}`,
+      );
+    }
+    if (!recommendingOwner.has(name)) {
+      // A parsed bullet naming only allowlisted external skills gets its own
+      // diagnosis: the section exists and names something, but nothing it names
+      // owns a domain the agent could have delegated.
+      throw new Error(
+        `src/agents/${name}.md recommends no skill declared in the ownership manifest; an allowlisted external skill alone does not satisfy the roster, so name the central skill that owns its domain, or add "${name}" to SKILL_RECOMMENDATION_EXEMPT_AGENTS in build.mjs with a one-line reason${contextSuffix(context)}`,
+      );
+    }
+  }
+}
+
+// --- Shared project-routing contract (#164) ---
+//
+// The runtime instructions and the fixture regression tests intentionally read
+// the same ordered Markdown table. These helpers stay pure: build.mjs owns file
+// I/O, while tests can supply synthetic contracts and project scopes directly.
+
+export const PROJECT_ROUTING_TABLE_START = '<!-- project-routing-table:start -->';
+export const PROJECT_ROUTING_TABLE_END = '<!-- project-routing-table:end -->';
+
+const PROJECT_ROUTING_HEADERS = [
+  'Priority',
+  'Route',
+  'Matcher',
+  'Implementer',
+  'Reviewer',
+  'Decision',
+];
+
+export const PROJECT_ROUTING_REQUIRED_ROUTES = Object.freeze([
+  Object.freeze({
+    route: 'excluded-generated-vendored',
+    matcher: 'excluded',
+    decision: 'exclude',
+  }),
+  Object.freeze({ route: 'documentation', matcher: 'documentation', decision: 'route' }),
+  Object.freeze({
+    route: 'tooling',
+    matcher: 'tooling',
+    implementer: '{{AGENT:generic-implementer}}',
+    decision: 'route',
+  }),
+  Object.freeze({
+    route: 'frontend-js-ts',
+    matcher: 'frontend-js-ts',
+    implementer: '{{AGENT:ui-implementer}}',
+    reviewer: '{{AGENT:frontend-reviewer}}',
+    decision: 'route',
+  }),
+  Object.freeze({
+    route: 'node-backend-cli',
+    matcher: 'node-backend-cli',
+    implementer: '{{AGENT:nodejs-implementer}}',
+    reviewer: '{{AGENT:nodejs-reviewer}}',
+    decision: 'route',
+  }),
+  Object.freeze({
+    route: 'rust',
+    matcher: 'rust-product',
+    implementer: '{{AGENT:rust-implementer}}',
+    reviewer: '{{AGENT:rust-reviewer}}',
+    decision: 'route',
+  }),
+  Object.freeze({
+    route: 'generic-product',
+    matcher: 'generic-product',
+    implementer: '{{AGENT:generic-product-implementer}}',
+    reviewer: '{{AGENT:generic-product-reviewer}}',
+    decision: 'route-degraded',
+  }),
+  Object.freeze({ route: 'ambiguous', matcher: 'otherwise', decision: 'clarify' }),
+]);
+
+function projectRoutingCell(value) {
+  const trimmed = value.trim();
+  if (trimmed === '—' || trimmed === '-') return '';
+  return trimmed.replace(/^`([^`]*)`$/, '$1');
+}
+
+function parseProjectRoutingRow(line, expectedCells, context) {
+  const cells = line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map(projectRoutingCell);
+  if (cells.length !== expectedCells) {
+    throw new Error(
+      `Project-routing row has ${cells.length} cells; expected ${expectedCells}${contextSuffix(context)}`,
+    );
+  }
+  return cells;
+}
+
+export function parseProjectRoutingTable(markdown, { context } = {}) {
+  const normalized = normalizeLineEndings(markdown);
+  const starts = normalized.split(PROJECT_ROUTING_TABLE_START).length - 1;
+  const ends = normalized.split(PROJECT_ROUTING_TABLE_END).length - 1;
+  if (starts !== 1 || ends !== 1) {
+    throw new Error(
+      `Project-routing contract requires exactly one start and end marker${contextSuffix(context)}`,
+    );
+  }
+
+  const start =
+    normalized.indexOf(PROJECT_ROUTING_TABLE_START) + PROJECT_ROUTING_TABLE_START.length;
+  const end = normalized.indexOf(PROJECT_ROUTING_TABLE_END);
+  if (end <= start) {
+    throw new Error(`Project-routing table markers are out of order${contextSuffix(context)}`);
+  }
+
+  const lines = normalized
+    .slice(start, end)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 3) {
+    throw new Error(`Project-routing table has no data rows${contextSuffix(context)}`);
+  }
+
+  const headers = parseProjectRoutingRow(lines[0], PROJECT_ROUTING_HEADERS.length, context);
+  if (headers.some((header, index) => header !== PROJECT_ROUTING_HEADERS[index])) {
+    throw new Error(
+      `Project-routing table headers must be: ${PROJECT_ROUTING_HEADERS.join(', ')}${contextSuffix(context)}`,
+    );
+  }
+  const separator = parseProjectRoutingRow(lines[1], PROJECT_ROUTING_HEADERS.length, context);
+  if (separator.some((cell) => !/^:?-{3,}:?$/.test(cell))) {
+    throw new Error(`Project-routing table has an invalid separator row${contextSuffix(context)}`);
+  }
+
+  const routes = lines.slice(2).map((line) => {
+    const [rawPriority, route, matcher, implementer, reviewer, decision] = parseProjectRoutingRow(
+      line,
+      PROJECT_ROUTING_HEADERS.length,
+      context,
+    );
+    const priority = Number(rawPriority);
+    if (!Number.isSafeInteger(priority) || priority < 0) {
+      throw new Error(
+        `Project-routing priority "${rawPriority}" must be a non-negative integer${contextSuffix(context)}`,
+      );
+    }
+    if (!route || !matcher || !decision) {
+      throw new Error(
+        `Project-routing rows require route, matcher, and decision${contextSuffix(context)}`,
+      );
+    }
+    return { priority, route, matcher, implementer, reviewer, decision };
+  });
+
+  const routeNames = new Set();
+  for (const [index, route] of routes.entries()) {
+    if (routeNames.has(route.route)) {
+      throw new Error(`Duplicate project route "${route.route}"${contextSuffix(context)}`);
+    }
+    routeNames.add(route.route);
+    if (index > 0 && route.priority <= routes[index - 1].priority) {
+      throw new Error(
+        `Project-routing priorities must be strictly ascending${contextSuffix(context)}`,
+      );
+    }
+  }
+  return routes;
+}
+
+export function assertProjectRoutingContract(routes, { context } = {}) {
+  if (routes.length !== PROJECT_ROUTING_REQUIRED_ROUTES.length) {
+    throw new Error(
+      `Project-routing contract must contain exactly ${PROJECT_ROUTING_REQUIRED_ROUTES.length} required routes${contextSuffix(context)}`,
+    );
+  }
+  for (const [index, required] of PROJECT_ROUTING_REQUIRED_ROUTES.entries()) {
+    const actual = routes[index];
+    for (const field of ['route', 'matcher', 'implementer', 'reviewer', 'decision']) {
+      if (required[field] !== undefined && actual[field] !== required[field]) {
+        throw new Error(
+          `Project-routing row ${index + 1} must use ${field} "${required[field]}"${contextSuffix(context)}`,
+        );
+      }
+    }
+  }
+}
+
+// --- Shared execution-profile contract ---
+//
+// `src/shared/execution-profiles.md` is deliberately validated before any
+// workflow consumes it. The marked tables are the executable policy surface;
+// prose explains the policy, while these pure helpers pin its closed
+// vocabularies, order, state algebra, and handoff interface for focused tests.
+
+export const EXECUTION_PROFILE_GATE_REASONS = Object.freeze([
+  'profile-unavailable',
+  'trust-boundary',
+  'destructive-data',
+  'migration',
+  'concurrency',
+  'unsafe-code',
+  'public-compatibility',
+  'merge-conflict',
+  'unclear-ownership',
+  'cross-domain-dependency',
+  'unknown-evidence',
+]);
+
+export const EXECUTION_PROFILE_FALLBACKS = Object.freeze([
+  'none',
+  'spawn-rejected',
+  'worker-abort',
+  'missing-context',
+  'scope-growth',
+  'new-decision',
+  'requirements-mismatch',
+  'keywordless-exhausted',
+  'scope-incident',
+]);
+
+export const EXECUTION_PROFILE_PILOT_CONTROL_OUTCOMES = Object.freeze([
+  'none',
+  'finalization-failed',
+  'critical-safety-incident',
+  'critical-data-integrity-incident',
+  'critical-authorization-incident',
+  'critical-scope-incident',
+  'evidence-gap',
+  'incomplete-record',
+  'capacity-exhausted',
+  'control-state-unpersistable',
+]);
+
+export const EXECUTION_PROFILE_TRANSFER_FIELDS = Object.freeze([
+  'packetOrBucket',
+  'originalObjective',
+  'allowedScope',
+  'changedPaths',
+  'completedRequirements',
+  'incompleteRequirements',
+  'checksAndOutcomes',
+  'dirtyStateSummary',
+  'escalationReason',
+  'executionLocationReceipt',
+  'fastAttemptConsumed',
+]);
+
+const EXECUTION_PROFILE_CONFIG_STATES = Object.freeze(['disabled', 'invalid', 'enabled']);
+const EXECUTION_PROFILE_GENERATION_STATES = Object.freeze([
+  'none',
+  'baseline',
+  'active',
+  'suspended',
+  'review',
+]);
+const EXECUTION_PROFILE_ELIGIBILITY_STATES = Object.freeze([
+  'not-evaluated',
+  'eligible',
+  'excluded(reason)',
+]);
+const EXECUTION_PROFILE_SELECTED_PROFILES = Object.freeze(['quality', 'fast']);
+
+const EXECUTION_PROFILE_TABLES = Object.freeze({
+  profiles: Object.freeze({
+    marker: 'profile',
+    headers: Object.freeze(['Profile', 'Intent']),
+    fields: Object.freeze(['profile', 'intent']),
+  }),
+  configCases: Object.freeze({
+    marker: 'config',
+    headers: Object.freeze(['Input', 'Config state', 'Measurement', 'Selection']),
+    fields: Object.freeze(['input', 'configState', 'measurement', 'selection']),
+  }),
+  gate: Object.freeze({
+    marker: 'gate',
+    headers: Object.freeze(['Priority', 'Decision', 'Positive evidence required to continue']),
+    fields: Object.freeze(['priority', 'decision', 'evidence']),
+  }),
+  states: Object.freeze({
+    marker: 'state',
+    headers: Object.freeze([
+      'Precedence',
+      'Config state',
+      'Generation state',
+      'Eligibility',
+      'Selected profile',
+      'Decision',
+    ]),
+    fields: Object.freeze([
+      'precedence',
+      'configState',
+      'generationState',
+      'eligibility',
+      'selectedProfile',
+      'decision',
+    ]),
+    integerFields: Object.freeze(['precedence']),
+  }),
+  decisionMappings: Object.freeze({
+    marker: 'decision-map',
+    headers: Object.freeze([
+      'Event',
+      'Gate decision',
+      'Selected profile',
+      'Fallback',
+      'Fast attempt consumed',
+    ]),
+    fields: Object.freeze([
+      'event',
+      'gateDecision',
+      'selectedProfile',
+      'fallback',
+      'fastAttemptConsumed',
+    ]),
+  }),
+  transitions: Object.freeze({
+    marker: 'transition',
+    headers: Object.freeze(['Operation', 'From', 'To', 'Owner', 'Guard']),
+    fields: Object.freeze(['operation', 'from', 'to', 'owner', 'guard']),
+  }),
+  rules: Object.freeze({
+    marker: 'rule',
+    headers: Object.freeze(['Rule', 'Value']),
+    fields: Object.freeze(['rule', 'value']),
+  }),
+  fallbacks: Object.freeze({
+    marker: 'fallback',
+    headers: Object.freeze(['Value']),
+    fields: Object.freeze(['value']),
+  }),
+  controls: Object.freeze({
+    marker: 'control',
+    headers: Object.freeze([
+      'Outcome',
+      'Suspension reason',
+      'Incomplete inventory',
+      'Alert',
+      'Implementation fallback',
+      'Product diff',
+    ]),
+    fields: Object.freeze([
+      'outcome',
+      'suspensionReason',
+      'incompleteInventory',
+      'alert',
+      'implementationFallback',
+      'productDiff',
+    ]),
+  }),
+  transferFields: Object.freeze({
+    marker: 'transfer',
+    headers: Object.freeze(['Position', 'Field', 'Authority']),
+    fields: Object.freeze(['position', 'field', 'authority']),
+    integerFields: Object.freeze(['position']),
+  }),
+});
+
+const EXECUTION_PROFILE_EXPECTED = Object.freeze({
+  profiles: Object.freeze([
+    Object.freeze({
+      profile: 'quality',
+      intent: 'strongest-available-configured-implementation-capability',
+    }),
+    Object.freeze({
+      profile: 'fast',
+      intent: 'distinct-native-lower-cost-lower-latency-capability',
+    }),
+  ]),
+  configCases: Object.freeze([
+    Object.freeze({
+      input: 'missing',
+      configState: 'disabled',
+      measurement: 'stopped',
+      selection: 'quality',
+    }),
+    Object.freeze({
+      input: 'false',
+      configState: 'disabled',
+      measurement: 'stopped',
+      selection: 'quality',
+    }),
+    Object.freeze({
+      input: 'true',
+      configState: 'enabled',
+      measurement: 'lifecycle-gated',
+      selection: 'quality-until-active-gate',
+    }),
+    Object.freeze({
+      input: 'malformed',
+      configState: 'invalid',
+      measurement: 'stopped',
+      selection: 'quality',
+    }),
+    Object.freeze({
+      input: 'ambiguous',
+      configState: 'invalid',
+      measurement: 'stopped',
+      selection: 'quality',
+    }),
+    Object.freeze({
+      input: 'unreadable',
+      configState: 'invalid',
+      measurement: 'stopped',
+      selection: 'quality',
+    }),
+  ]),
+  gate: Object.freeze([
+    Object.freeze({
+      priority: '1',
+      decision: 'profile-unavailable',
+      evidence:
+        'Native target, complete profile mapping, available spawn mechanism, and no host override that erases the distinction',
+    }),
+    Object.freeze({
+      priority: '2',
+      decision: 'trust-boundary',
+      evidence:
+        'Approved affected-domain evidence shows no authentication, authorization, or trust-boundary change',
+    }),
+    Object.freeze({
+      priority: '3',
+      decision: 'destructive-data',
+      evidence: 'Approved scope contains no destructive data operation',
+    }),
+    Object.freeze({
+      priority: '4',
+      decision: 'migration',
+      evidence: 'Approved scope contains no data, schema, or compatibility migration',
+    }),
+    Object.freeze({
+      priority: '5',
+      decision: 'concurrency',
+      evidence: 'Affected paths and approved source show no concurrency or shared-ownership change',
+    }),
+    Object.freeze({
+      priority: '6',
+      decision: 'unsafe-code',
+      evidence:
+        'Affected paths and approved source show no unsafe-language or unsafe-runtime surface',
+    }),
+    Object.freeze({
+      priority: '7',
+      decision: 'public-compatibility',
+      evidence: 'No public compatibility contract changes',
+    }),
+    Object.freeze({
+      priority: '8',
+      decision: 'merge-conflict',
+      evidence: 'No unresolved merge conflict',
+    }),
+    Object.freeze({
+      priority: '9',
+      decision: 'unclear-ownership',
+      evidence: 'Exact allowed paths and one owner per path',
+    }),
+    Object.freeze({
+      priority: '10',
+      decision: 'cross-domain-dependency',
+      evidence: 'Cross-packet and cross-domain dependencies are resolved',
+    }),
+    Object.freeze({
+      priority: '11',
+      decision: 'unknown-evidence',
+      evidence:
+        'The source passed the owning workflow approval gate; completion and repository-native validation are measurable; required decisions are closed',
+    }),
+    Object.freeze({
+      priority: 'Terminal',
+      decision: 'eligible',
+      evidence: 'Every preceding row passed',
+    }),
+  ]),
+  states: Object.freeze([
+    Object.freeze({
+      precedence: 1,
+      configState: 'disabled',
+      generationState: '*',
+      eligibility: 'not-evaluated',
+      selectedProfile: 'quality',
+      decision: 'fail-closed',
+    }),
+    Object.freeze({
+      precedence: 2,
+      configState: 'invalid',
+      generationState: '*',
+      eligibility: 'not-evaluated',
+      selectedProfile: 'quality',
+      decision: 'fail-closed',
+    }),
+    Object.freeze({
+      precedence: 3,
+      configState: 'enabled',
+      generationState: 'none',
+      eligibility: 'not-evaluated',
+      selectedProfile: 'quality',
+      decision: 'no-generation',
+    }),
+    Object.freeze({
+      precedence: 4,
+      configState: 'enabled',
+      generationState: 'suspended',
+      eligibility: 'not-evaluated',
+      selectedProfile: 'quality',
+      decision: 'admission-frozen',
+    }),
+    Object.freeze({
+      precedence: 5,
+      configState: 'enabled',
+      generationState: 'review',
+      eligibility: 'not-evaluated',
+      selectedProfile: 'quality',
+      decision: 'admission-frozen',
+    }),
+    Object.freeze({
+      precedence: 6,
+      configState: 'enabled',
+      generationState: 'baseline',
+      eligibility: 'excluded(reason)',
+      selectedProfile: 'quality',
+      decision: 'gate-excluded',
+    }),
+    Object.freeze({
+      precedence: 7,
+      configState: 'enabled',
+      generationState: 'baseline',
+      eligibility: 'eligible',
+      selectedProfile: 'quality',
+      decision: 'baseline-comparator',
+    }),
+    Object.freeze({
+      precedence: 8,
+      configState: 'enabled',
+      generationState: 'active',
+      eligibility: 'excluded(reason)',
+      selectedProfile: 'quality',
+      decision: 'gate-excluded',
+    }),
+    Object.freeze({
+      precedence: 9,
+      configState: 'enabled',
+      generationState: 'active',
+      eligibility: 'eligible',
+      selectedProfile: 'fast',
+      decision: 'fast-admission',
+    }),
+  ]),
+  decisionMappings: Object.freeze([
+    Object.freeze({
+      event: 'gate-selected-quality',
+      gateDecision: 'first-exclusion',
+      selectedProfile: 'quality',
+      fallback: 'none',
+      fastAttemptConsumed: 'false',
+    }),
+    Object.freeze({
+      event: 'profile-unavailable-before-spawn',
+      gateDecision: 'profile-unavailable',
+      selectedProfile: 'quality',
+      fallback: 'none',
+      fastAttemptConsumed: 'false',
+    }),
+    Object.freeze({
+      event: 'fast-spawn-rejected-after-attempt',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'spawn-rejected',
+      fastAttemptConsumed: 'true',
+    }),
+    Object.freeze({
+      event: 'fast-worker-abort-after-attempt',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'worker-abort',
+      fastAttemptConsumed: 'true',
+    }),
+    Object.freeze({
+      event: 'fast-missing-context-escalation',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'missing-context',
+      fastAttemptConsumed: 'true',
+    }),
+    Object.freeze({
+      event: 'fast-scope-growth-escalation',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'scope-growth',
+      fastAttemptConsumed: 'true',
+    }),
+    Object.freeze({
+      event: 'fast-new-decision-escalation',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'new-decision',
+      fastAttemptConsumed: 'true',
+    }),
+    Object.freeze({
+      event: 'fast-requirements-mismatch-escalation',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'requirements-mismatch',
+      fastAttemptConsumed: 'true',
+    }),
+    Object.freeze({
+      event: 'fast-keywordless-resume-exhausted',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'keywordless-exhausted',
+      fastAttemptConsumed: 'true',
+    }),
+    Object.freeze({
+      event: 'fast-scope-incident-escalation',
+      gateDecision: 'eligible',
+      selectedProfile: 'quality',
+      fallback: 'scope-incident',
+      fastAttemptConsumed: 'true',
+    }),
+  ]),
+  transitions: Object.freeze([
+    Object.freeze({
+      operation: 'begin-baseline',
+      from: 'none',
+      to: 'baseline',
+      owner: 'work-package-3',
+      guard:
+        'Valid opt-in, protocol digest displayed, local-data disclosure, and explicit confirmation',
+    }),
+    Object.freeze({
+      operation: 'activate',
+      from: 'baseline',
+      to: 'active',
+      owner: 'work-package-3',
+      guard: 'Preregistered sample and window conditions passed',
+    }),
+    Object.freeze({
+      operation: 'suspend',
+      from: 'baseline; active',
+      to: 'suspended',
+      owner: 'work-package-3',
+      guard: 'Matching pilot-control outcome persisted; store resumeTo as the exact prior state',
+    }),
+    Object.freeze({
+      operation: 'resume',
+      from: 'suspended',
+      to: 'resumeTo',
+      owner: 'work-package-3',
+      guard: 'Explicit confirmation and digest-bound clear; target comes only from stored resumeTo',
+    }),
+    Object.freeze({
+      operation: 'begin-review',
+      from: 'baseline; active; suspended',
+      to: 'review',
+      owner: 'work-package-3',
+      guard:
+        'Under lifecycle lock; reject reservations and preserve suspension and incomplete inventory',
+    }),
+    Object.freeze({
+      operation: 'reconcile-review',
+      from: 'review',
+      to: 'review',
+      owner: 'work-package-3',
+      guard: 'Drain or reconcile captured records; never reopen admission',
+    }),
+  ]),
+  rules: Object.freeze([
+    Object.freeze({ rule: 'fast-request', value: 'first-implementation-spawn' }),
+    Object.freeze({ rule: 'keywordless-resume', value: 'same-attempt' }),
+    Object.freeze({ rule: 'newly-spawned-retry', value: 'quality-only' }),
+    Object.freeze({ rule: 'correction', value: 'quality-only' }),
+    Object.freeze({ rule: 'validation-repair', value: 'quality-only' }),
+    Object.freeze({ rule: 'review-incorporation', value: 'quality-only' }),
+    Object.freeze({ rule: 'conflict-resolution', value: 'quality-only' }),
+    Object.freeze({ rule: 'scope-growth-continuation', value: 'quality-only' }),
+    Object.freeze({ rule: 'portable', value: 'quality-only' }),
+    Object.freeze({ rule: 'missing-native-capability', value: 'profile-unavailable' }),
+    Object.freeze({ rule: 'force-override-detection', value: 'presence-only' }),
+    Object.freeze({ rule: 'rejected-fast-spawn', value: 'spawn-rejected' }),
+    Object.freeze({ rule: 'escalation-checkout', value: 'same-verified-checkout' }),
+    Object.freeze({ rule: 'second-fast-attempt', value: 'forbidden' }),
+  ]),
+  controls: Object.freeze([
+    Object.freeze({
+      outcome: 'none',
+      suspensionReason: 'none',
+      incompleteInventory: 'false',
+      alert: 'none',
+      implementationFallback: 'none',
+      productDiff: 'unchanged',
+    }),
+    Object.freeze({
+      outcome: 'finalization-failed',
+      suspensionReason: 'finalization-failed',
+      incompleteInventory: 'true',
+      alert: 'none',
+      implementationFallback: 'none',
+      productDiff: 'unchanged',
+    }),
+    ...[
+      'critical-safety-incident',
+      'critical-data-integrity-incident',
+      'critical-authorization-incident',
+      'critical-scope-incident',
+    ].map((outcome) =>
+      Object.freeze({
+        outcome,
+        suspensionReason: outcome,
+        incompleteInventory: 'false',
+        alert: 'none',
+        implementationFallback: 'none',
+        productDiff: 'unchanged',
+      }),
+    ),
+    Object.freeze({
+      outcome: 'evidence-gap',
+      suspensionReason: 'evidence-gap',
+      incompleteInventory: 'true',
+      alert: 'none',
+      implementationFallback: 'none',
+      productDiff: 'unchanged',
+    }),
+    Object.freeze({
+      outcome: 'incomplete-record',
+      suspensionReason: 'none',
+      incompleteInventory: 'true',
+      alert: 'none',
+      implementationFallback: 'none',
+      productDiff: 'unchanged',
+    }),
+    Object.freeze({
+      outcome: 'capacity-exhausted',
+      suspensionReason: 'capacity-exhausted',
+      incompleteInventory: 'false',
+      alert: 'none',
+      implementationFallback: 'none',
+      productDiff: 'unchanged',
+    }),
+    Object.freeze({
+      outcome: 'control-state-unpersistable',
+      suspensionReason: 'none',
+      incompleteInventory: 'false',
+      alert: 'value-free',
+      implementationFallback: 'none',
+      productDiff: 'unchanged',
+    }),
+  ]),
+  transferFields: Object.freeze(
+    [
+      ['packetOrBucket', 'approved-routing-or-plan'],
+      ['originalObjective', 'orchestrator'],
+      ['allowedScope', 'orchestrator'],
+      ['changedPaths', 'orchestrator-fresh-git'],
+      ['completedRequirements', 'worker-claim-until-verified'],
+      ['incompleteRequirements', 'worker-claim-until-verified'],
+      ['checksAndOutcomes', 'worker-claim-until-verified'],
+      ['dirtyStateSummary', 'orchestrator-fresh-git'],
+      ['escalationReason', 'orchestrator'],
+      ['executionLocationReceipt', 'orchestrator-revalidated'],
+      ['fastAttemptConsumed', 'orchestrator'],
+    ].map(([field, authority], index) => Object.freeze({ position: index + 1, field, authority })),
+  ),
+});
+
+function executionProfileCell(value) {
+  // A backslash protects a table delimiter only when its run length is odd.
+  // Remove exactly that protecting slash after the row structure is known;
+  // preserve even slash runs and every other Markdown content verbatim.
+  return value
+    .trim()
+    .replace(/(\\+)\|/g, (match, slashes) =>
+      slashes.length % 2 === 1 ? `${slashes.slice(1)}|` : match,
+    );
+}
+
+function executionProfileCharacterIsEscaped(source, index) {
+  let slashCount = 0;
+  for (let cursor = index - 1; cursor >= 0 && source[cursor] === '\\'; cursor -= 1) {
+    slashCount += 1;
+  }
+  return slashCount % 2 === 1;
+}
+
+function splitExecutionProfileRow(line) {
+  const source = line.trim();
+  const cells = [];
+  let cell = '';
+  let lastTokenWasDelimiter = false;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    // GFM tables split at every unescaped pipe. Backticks do not suppress a
+    // delimiter; they remain ordinary cell content and may be unmatched.
+    if (character === '|' && !executionProfileCharacterIsEscaped(source, index)) {
+      cells.push(cell);
+      cell = '';
+      lastTokenWasDelimiter = true;
+      continue;
+    }
+    cell += character;
+    lastTokenWasDelimiter = false;
+  }
+
+  cells.push(cell);
+
+  // Leading and trailing table delimiters produce empty edge cells. Only
+  // remove those structural cells; an explicitly empty interior cell remains
+  // visible to the row-level validation below.
+  if (source.startsWith('|')) cells.shift();
+  if (lastTokenWasDelimiter) cells.pop();
+  return cells.map(executionProfileCell);
+}
+
+function parseExecutionProfileTable(markdown, definition, context) {
+  const startMarker = `<!-- execution-profile-${definition.marker}:start -->`;
+  const endMarker = `<!-- execution-profile-${definition.marker}:end -->`;
+  const starts = markdown.split(startMarker).length - 1;
+  const ends = markdown.split(endMarker).length - 1;
+  if (starts !== 1 || ends !== 1) {
+    throw new Error(
+      `Execution-profile ${definition.marker} table requires exactly one start and end marker${contextSuffix(context)}`,
+    );
+  }
+  const start = markdown.indexOf(startMarker) + startMarker.length;
+  const end = markdown.indexOf(endMarker);
+  if (end <= start) {
+    throw new Error(
+      `Execution-profile ${definition.marker} table markers are out of order${contextSuffix(context)}`,
+    );
+  }
+  const lines = markdown
+    .slice(start, end)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 3) {
+    throw new Error(
+      `Execution-profile ${definition.marker} table has no data rows${contextSuffix(context)}`,
+    );
+  }
+
+  const parseRow = (line) => {
+    const cells = splitExecutionProfileRow(line);
+    if (cells.length !== definition.headers.length) {
+      throw new Error(
+        `Execution-profile ${definition.marker} row has ${cells.length} cells; expected ${definition.headers.length}${contextSuffix(context)}: "${line}"`,
+      );
+    }
+    return cells;
+  };
+
+  const headers = parseRow(lines[0]);
+  if (headers.some((header, index) => header !== definition.headers[index])) {
+    throw new Error(
+      `Execution-profile ${definition.marker} table headers must be: ${definition.headers.join(', ')}${contextSuffix(context)}`,
+    );
+  }
+  const separator = parseRow(lines[1]);
+  if (separator.some((cell) => !/^:?-{3,}:?$/.test(cell))) {
+    throw new Error(
+      `Execution-profile ${definition.marker} table has an invalid separator row${contextSuffix(context)}`,
+    );
+  }
+
+  return lines.slice(2).map((line) => {
+    const cells = parseRow(line);
+    if (cells.some((cell) => cell === '')) {
+      throw new Error(
+        `Execution-profile ${definition.marker} rows cannot contain empty cells${contextSuffix(context)}: "${line}"`,
+      );
+    }
+    return Object.fromEntries(
+      definition.fields.map((field, index) => {
+        const value = cells[index];
+        if (!definition.integerFields?.includes(field)) return [field, value];
+        const integer = Number(value);
+        if (!Number.isSafeInteger(integer) || integer < 1) {
+          throw new Error(
+            `Execution-profile ${definition.marker} field "${field}" must be a positive integer${contextSuffix(context)}: "${value}"`,
+          );
+        }
+        return [field, integer];
+      }),
+    );
+  });
+}
+
+export function parseExecutionProfileContract(markdown, { context } = {}) {
+  const normalized = normalizeLineEndings(markdown);
+  return Object.fromEntries(
+    Object.entries(EXECUTION_PROFILE_TABLES).map(([name, definition]) => [
+      name,
+      parseExecutionProfileTable(normalized, definition, context),
+    ]),
+  );
+}
+
+function assertExecutionProfileUnique(rows, field, label, context) {
+  const seen = new Set();
+  for (const row of rows) {
+    const value = row[field];
+    if (seen.has(value)) {
+      throw new Error(`Duplicate execution-profile ${label} "${value}"${contextSuffix(context)}`);
+    }
+    seen.add(value);
+  }
+}
+
+function assertExecutionProfileRows(actual, expected, fields, label, context) {
+  if (actual.length !== expected.length) {
+    throw new Error(
+      `Execution-profile ${label} must contain exactly ${expected.length} rows${contextSuffix(context)}`,
+    );
+  }
+  for (const [index, expectedRow] of expected.entries()) {
+    const actualRow = actual[index];
+    for (const field of fields) {
+      if (actualRow[field] !== expectedRow[field]) {
+        throw new Error(
+          `Execution-profile ${label} row ${index + 1} must use ${field} "${expectedRow[field]}"; found "${actualRow[field]}"${contextSuffix(context)}`,
+        );
+      }
+    }
+  }
+}
+
+export function assertExecutionProfileContract(contract, { context } = {}) {
+  if (contract === null || typeof contract !== 'object' || Array.isArray(contract)) {
+    throw new Error(`Execution-profile contract must be an object${contextSuffix(context)}`);
+  }
+  const missingTables = Object.keys(EXECUTION_PROFILE_TABLES).filter(
+    (name) => !Array.isArray(contract[name]),
+  );
+  if (missingTables.length > 0) {
+    throw new Error(
+      `Execution-profile contract is missing parsed tables: ${missingTables.join(', ')}${contextSuffix(context)}`,
+    );
+  }
+
+  assertExecutionProfileRows(
+    contract.profiles,
+    EXECUTION_PROFILE_EXPECTED.profiles,
+    EXECUTION_PROFILE_TABLES.profiles.fields,
+    'profile vocabulary',
+    context,
+  );
+  assertExecutionProfileRows(
+    contract.configCases,
+    EXECUTION_PROFILE_EXPECTED.configCases,
+    EXECUTION_PROFILE_TABLES.configCases.fields,
+    'configuration fail-closed mapping',
+    context,
+  );
+
+  if (contract.gate.length !== EXECUTION_PROFILE_GATE_REASONS.length + 1) {
+    throw new Error(
+      `Execution-profile gate must contain ${EXECUTION_PROFILE_GATE_REASONS.length} exclusions and one terminal decision${contextSuffix(context)}`,
+    );
+  }
+  assertExecutionProfileUnique(contract.gate, 'priority', 'gate priority', context);
+  assertExecutionProfileUnique(contract.gate, 'decision', 'gate decision', context);
+  for (const [index, reason] of EXECUTION_PROFILE_GATE_REASONS.entries()) {
+    const row = contract.gate[index];
+    if (row.priority !== String(index + 1) || row.decision !== reason || !row.evidence) {
+      throw new Error(
+        `Execution-profile gate row ${index + 1} must be priority ${index + 1}, decision "${reason}", and carry positive evidence${contextSuffix(context)}`,
+      );
+    }
+  }
+  const terminal = contract.gate.at(-1);
+  if (terminal.priority !== 'Terminal' || terminal.decision !== 'eligible' || !terminal.evidence) {
+    throw new Error(
+      `Execution-profile gate must end with the distinct terminal eligible decision${contextSuffix(context)}`,
+    );
+  }
+  assertExecutionProfileRows(
+    contract.gate,
+    EXECUTION_PROFILE_EXPECTED.gate,
+    EXECUTION_PROFILE_TABLES.gate.fields,
+    'ordered gate evidence',
+    context,
+  );
+
+  assertExecutionProfileUnique(contract.states, 'precedence', 'state precedence', context);
+  for (const row of contract.states) {
+    if (!EXECUTION_PROFILE_CONFIG_STATES.includes(row.configState)) {
+      throw new Error(
+        `Unknown execution-profile config state "${row.configState}"${contextSuffix(context)}`,
+      );
+    }
+    if (
+      row.generationState !== '*' &&
+      !EXECUTION_PROFILE_GENERATION_STATES.includes(row.generationState)
+    ) {
+      throw new Error(
+        `Unknown execution-profile generation state "${row.generationState}"${contextSuffix(context)}`,
+      );
+    }
+    if (!EXECUTION_PROFILE_ELIGIBILITY_STATES.includes(row.eligibility)) {
+      throw new Error(
+        `Unknown execution-profile eligibility "${row.eligibility}"${contextSuffix(context)}`,
+      );
+    }
+    if (!EXECUTION_PROFILE_SELECTED_PROFILES.includes(row.selectedProfile)) {
+      throw new Error(
+        `Unknown execution profile "${row.selectedProfile}"${contextSuffix(context)}`,
+      );
+    }
+    if (
+      row.selectedProfile === 'fast' &&
+      !(
+        row.configState === 'enabled' &&
+        row.generationState === 'active' &&
+        row.eligibility === 'eligible'
+      )
+    ) {
+      throw new Error(`Fast requires enabled + active + eligible${contextSuffix(context)}`);
+    }
+  }
+  assertExecutionProfileRows(
+    contract.states,
+    EXECUTION_PROFILE_EXPECTED.states,
+    EXECUTION_PROFILE_TABLES.states.fields,
+    'state precedence table',
+    context,
+  );
+  assertExecutionProfileUnique(contract.decisionMappings, 'event', 'decision event', context);
+  assertExecutionProfileRows(
+    contract.decisionMappings,
+    EXECUTION_PROFILE_EXPECTED.decisionMappings,
+    EXECUTION_PROFILE_TABLES.decisionMappings.fields,
+    'decision mapping',
+    context,
+  );
+  for (const fallback of EXECUTION_PROFILE_FALLBACKS) {
+    const count = contract.decisionMappings.filter((row) => row.fallback === fallback).length;
+    const expectedCount = fallback === 'none' ? 2 : 1;
+    if (count !== expectedCount) {
+      throw new Error(
+        `Execution-profile decision mapping must map fallback "${fallback}" exactly ${expectedCount} time${expectedCount === 1 ? '' : 's'}; found ${count}${contextSuffix(context)}`,
+      );
+    }
+  }
+  assertExecutionProfileRows(
+    contract.transitions,
+    EXECUTION_PROFILE_EXPECTED.transitions,
+    EXECUTION_PROFILE_TABLES.transitions.fields,
+    'lifecycle transition interface',
+    context,
+  );
+  assertExecutionProfileRows(
+    contract.rules,
+    EXECUTION_PROFILE_EXPECTED.rules,
+    EXECUTION_PROFILE_TABLES.rules.fields,
+    'attempt and capability rules',
+    context,
+  );
+
+  assertExecutionProfileUnique(contract.fallbacks, 'value', 'fallback', context);
+  assertExecutionProfileRows(
+    contract.fallbacks,
+    EXECUTION_PROFILE_FALLBACKS.map((value) => ({ value })),
+    EXECUTION_PROFILE_TABLES.fallbacks.fields,
+    'fallback vocabulary',
+    context,
+  );
+
+  assertExecutionProfileUnique(contract.controls, 'outcome', 'pilot-control outcome', context);
+  assertExecutionProfileRows(
+    contract.controls,
+    EXECUTION_PROFILE_EXPECTED.controls,
+    EXECUTION_PROFILE_TABLES.controls.fields,
+    'pilot-control mapping',
+    context,
+  );
+  if (
+    contract.controls.some(
+      (row, index) => row.outcome !== EXECUTION_PROFILE_PILOT_CONTROL_OUTCOMES[index],
+    )
+  ) {
+    throw new Error(
+      `Execution-profile pilot-control outcomes do not match the closed vocabulary${contextSuffix(context)}`,
+    );
+  }
+
+  assertExecutionProfileUnique(contract.transferFields, 'position', 'transfer position', context);
+  assertExecutionProfileUnique(contract.transferFields, 'field', 'transfer field', context);
+  assertExecutionProfileRows(
+    contract.transferFields,
+    EXECUTION_PROFILE_EXPECTED.transferFields,
+    EXECUTION_PROFILE_TABLES.transferFields.fields,
+    'transfer interface',
+    context,
+  );
+  if (
+    contract.transferFields.some(
+      (row, index) => row.field !== EXECUTION_PROFILE_TRANSFER_FIELDS[index],
+    )
+  ) {
+    throw new Error(
+      `Execution-profile transfer fields do not match the required field set${contextSuffix(context)}`,
+    );
+  }
+}
+
+export function executionProfilePolicyProjection(contract) {
+  return {
+    schema: 1,
+    profiles: contract.profiles.map(({ profile, intent }) => ({ profile, intent })),
+    configStates: [...EXECUTION_PROFILE_CONFIG_STATES],
+    generationStates: [...EXECUTION_PROFILE_GENERATION_STATES],
+    eligibilityStates: [...EXECUTION_PROFILE_ELIGIBILITY_STATES],
+    selectedProfiles: [...EXECUTION_PROFILE_SELECTED_PROFILES],
+    gateReasons: [...EXECUTION_PROFILE_GATE_REASONS],
+    statePrecedence: contract.states.map(
+      ({ precedence, configState, generationState, eligibility, selectedProfile, decision }) => ({
+        precedence,
+        configState,
+        generationState,
+        eligibility,
+        selectedProfile,
+        decision,
+      }),
+    ),
+    fallbackMappings: contract.decisionMappings.map(
+      ({ event, gateDecision, selectedProfile, fallback, fastAttemptConsumed }) => ({
+        event,
+        gateDecision,
+        selectedProfile,
+        fallback,
+        fastAttemptConsumed: fastAttemptConsumed === 'true',
+      }),
+    ),
+    fallbacks: contract.fallbacks.map(({ value }) => value),
+    pilotControlMappings: contract.controls.map(
+      ({
+        outcome,
+        suspensionReason,
+        incompleteInventory,
+        alert,
+        implementationFallback,
+        productDiff,
+      }) => ({
+        outcome,
+        suspensionReason,
+        incompleteInventory: incompleteInventory === 'true',
+        alert,
+        implementationFallback,
+        productDiff,
+      }),
+    ),
+    pilotControlOutcomes: contract.controls.map(({ outcome }) => outcome),
+  };
+}
+
+function policyProjectionMismatch(expected, actual, path = 'policyProjection') {
+  if (Object.is(expected, actual)) return null;
+  if (Array.isArray(expected)) {
+    if (!Array.isArray(actual)) return `${path} must be an array`;
+    if (actual.length !== expected.length) {
+      return `${path} must contain exactly ${expected.length} entries; found ${actual.length}`;
+    }
+    for (let index = 0; index < expected.length; index += 1) {
+      const mismatch = policyProjectionMismatch(
+        expected[index],
+        actual[index],
+        `${path}[${index}]`,
+      );
+      if (mismatch) return mismatch;
+    }
+    return null;
+  }
+  if (expected !== null && typeof expected === 'object') {
+    if (actual === null || typeof actual !== 'object' || Array.isArray(actual)) {
+      return `${path} must be an object`;
+    }
+    const expectedKeys = Object.keys(expected).sort();
+    const actualKeys = Object.keys(actual).sort();
+    if (JSON.stringify(actualKeys) !== JSON.stringify(expectedKeys)) {
+      return `${path} keys must be ${expectedKeys.join(', ')}; found ${actualKeys.join(', ')}`;
+    }
+    for (const key of expectedKeys) {
+      const mismatch = policyProjectionMismatch(expected[key], actual[key], `${path}.${key}`);
+      if (mismatch) return mismatch;
+    }
+    return null;
+  }
+  return `${path} must be ${JSON.stringify(expected)}; found ${JSON.stringify(actual)}`;
+}
+
+export function assertPilotMeasurementPolicyProjection(
+  contract,
+  { projection = PILOT_MEASUREMENT_POLICY_PROJECTION, context } = {},
+) {
+  assertExecutionProfileContract(contract, { context });
+  const expected = executionProfilePolicyProjection(contract);
+  const mismatch = policyProjectionMismatch(expected, projection);
+  if (mismatch) {
+    throw new Error(
+      `Pilot-measurement runtime policy projection diverges from the canonical execution-profile contract${contextSuffix(context)}: ${mismatch}`,
+    );
+  }
+}
+
+export const PILOT_MEASUREMENT_DOCUMENTATION_START = '<!-- pilot-measurement-protocol:start -->';
+export const PILOT_MEASUREMENT_DOCUMENTATION_END = '<!-- pilot-measurement-protocol:end -->';
+
+export function parsePilotMeasurementDocumentationProjection(markdown, { context } = {}) {
+  const normalized = normalizeLineEndings(markdown);
+  const starts = normalized.split(PILOT_MEASUREMENT_DOCUMENTATION_START).length - 1;
+  const ends = normalized.split(PILOT_MEASUREMENT_DOCUMENTATION_END).length - 1;
+  if (starts !== 1 || ends !== 1) {
+    throw new Error(
+      `Pilot-measurement documentation requires exactly one protocol start and end marker${contextSuffix(context)}`,
+    );
+  }
+  const start = normalized.indexOf(PILOT_MEASUREMENT_DOCUMENTATION_START);
+  const end = normalized.indexOf(PILOT_MEASUREMENT_DOCUMENTATION_END);
+  if (end <= start) {
+    throw new Error(
+      `Pilot-measurement documentation protocol markers are out of order${contextSuffix(context)}`,
+    );
+  }
+  const block = normalized.slice(start + PILOT_MEASUREMENT_DOCUMENTATION_START.length, end).trim();
+  const fence = block.match(/^```json\n([^\n]+)\n```$/);
+  if (!fence) {
+    throw new Error(
+      `Pilot-measurement documentation protocol mirror must be one fenced canonical-JSON line${contextSuffix(context)}`,
+    );
+  }
+  let projection;
+  try {
+    projection = JSON.parse(fence[1]);
+  } catch {
+    throw new Error(
+      `Pilot-measurement documentation protocol mirror is not valid JSON${contextSuffix(context)}`,
+    );
+  }
+  if (fence[1] !== canonicalizeJson(projection)) {
+    throw new Error(
+      `Pilot-measurement documentation protocol mirror is not canonical JSON${contextSuffix(context)}`,
+    );
+  }
+  return projection;
+}
+
+export function assertPilotMeasurementDocumentationProjection(
+  projection,
+  { expected = PILOT_MEASUREMENT_DOCUMENTATION_PROJECTION, context } = {},
+) {
+  const mismatch = policyProjectionMismatch(expected, projection, 'documentationProjection');
+  if (mismatch) {
+    throw new Error(
+      `Pilot-measurement documentation projection diverges from the shipped protocol${contextSuffix(context)}: ${mismatch}`,
+    );
+  }
+}
+
+// --- Plan-lint contract projection ---
+//
+// `scripts/plan-lint-core.mjs` owns the bilingual plan contract mapping and the template
+// placeholder list as frozen constants. `shared/plan-contract.md` carries both as marked tables
+// for readers; these guards fail the build on any drift between the two, and on a bracketed
+// token of the English `plan` Phase 3 template that the placeholder table does not cover.
+
+export const PLAN_CONTRACT_MAPPING_START = '<!-- plan-contract-mapping:start -->';
+export const PLAN_CONTRACT_MAPPING_END = '<!-- plan-contract-mapping:end -->';
+export const PLAN_CONTRACT_PLACEHOLDERS_START = '<!-- plan-contract-placeholders:start -->';
+export const PLAN_CONTRACT_PLACEHOLDERS_END = '<!-- plan-contract-placeholders:end -->';
+
+const PLAN_CONTRACT_MAPPING_HEADERS = ['Meaning', 'German', 'English'];
+const PLAN_CONTRACT_PLACEHOLDER_HEADERS = ['Placeholder', 'German', 'English'];
+
+function planLintProjectionError(message, context) {
+  return new Error(`plan-lint projection: ${message}${contextSuffix(context)}`);
+}
+
+// Returns every row of the one table between the markers, header row first, as arrays of
+// unescaped cell strings. The separator row is validated and dropped.
+export function parsePlanContractMarkedTable(markdown, { startMarker, endMarker, context } = {}) {
+  const normalized = normalizeLineEndings(markdown);
+  const starts = normalized.split(startMarker).length - 1;
+  const ends = normalized.split(endMarker).length - 1;
+  if (starts !== 1 || ends !== 1) {
+    throw planLintProjectionError(
+      `table requires exactly one ${startMarker} and one ${endMarker}`,
+      context,
+    );
+  }
+  const start = normalized.indexOf(startMarker) + startMarker.length;
+  const end = normalized.indexOf(endMarker);
+  if (end <= start)
+    throw planLintProjectionError(`${startMarker} markers are out of order`, context);
+  const lines = normalized
+    .slice(start, end)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 3)
+    throw planLintProjectionError(`${startMarker} table has no data rows`, context);
+  const nonRow = lines.find((line) => !line.startsWith('|'));
+  if (nonRow) {
+    throw planLintProjectionError(
+      `${startMarker} holds a line outside the table: "${nonRow}"`,
+      context,
+    );
+  }
+  const rows = lines.map(splitExecutionProfileRow);
+  if (rows[1].some((cell) => !/^:?-{3,}:?$/.test(cell))) {
+    throw planLintProjectionError(`${startMarker} table has an invalid separator row`, context);
+  }
+  const width = rows[0].length;
+  const ragged = lines.find((line, index) => rows[index].length !== width);
+  if (ragged) {
+    throw planLintProjectionError(
+      `${startMarker} row does not have ${width} cells: "${ragged}"`,
+      context,
+    );
+  }
+  return [rows[0], ...rows.slice(2)];
+}
+
+// A contract cell is one or more code spans separated by ` / `; returns their contents.
+function planContractCodeSpans(cell, label, context) {
+  if (!/^`[^`]+`(?: \/ `[^`]+`)*$/.test(cell)) {
+    throw planLintProjectionError(`${label} is not a code-span cell: "${cell}"`, context);
+  }
+  return cell.slice(1, -1).split('` / `');
+}
+
+function assertPlanTableHeaders(rows, expected, label, context) {
+  const header = rows[0] ?? [];
+  if (header.length !== expected.length || header.some((cell, index) => cell !== expected[index])) {
+    throw planLintProjectionError(
+      `${label} table headers must be ${expected.join(', ')}; found ${header.join(', ')}`,
+      context,
+    );
+  }
+}
+
+function planProjectionRowCount(label, expected, actual, context) {
+  if (actual.length === expected.length) return;
+  const missing = expected.slice(actual.length);
+  const extra = actual.slice(expected.length);
+  const detail =
+    missing.length > 0 ? `missing row "${missing[0]}"` : `unexpected row "${extra[0]}"`;
+  throw planLintProjectionError(
+    `${label} table has ${actual.length} rows; expected ${expected.length} (${detail})`,
+    context,
+  );
+}
+
+export function assertPlanContractProjection(
+  rows,
+  { mapping = PLAN_CONTRACT_MAPPING, context } = {},
+) {
+  assertPlanTableHeaders(rows, PLAN_CONTRACT_MAPPING_HEADERS, 'mapping', context);
+  const data = rows.slice(1);
+  planProjectionRowCount(
+    'mapping',
+    mapping.map(({ meaning }) => meaning),
+    data.map(([meaning]) => meaning),
+    context,
+  );
+  data.forEach(([meaning, deCell, enCell], index) => {
+    const expected = mapping[index];
+    if (meaning !== expected.meaning) {
+      throw planLintProjectionError(
+        `mapping row ${index + 1} must be "${expected.meaning}"; found "${meaning}"`,
+        context,
+      );
+    }
+    for (const [language, column, cell] of [
+      ['de', 'German', deCell],
+      ['en', 'English', enCell],
+    ]) {
+      const actual = planContractCodeSpans(
+        cell,
+        `mapping row "${meaning}" ${column} cell`,
+        context,
+      );
+      if (JSON.stringify(actual) !== JSON.stringify(expected[language])) {
+        throw planLintProjectionError(
+          `mapping row "${meaning}" ${column} cell must be ${JSON.stringify(expected[language])}; found ${JSON.stringify(actual)}`,
+          context,
+        );
+      }
+    }
+  });
+}
+
+// The body lines of the one English template fence between `### Phase 3` and `### Phase 4`. A
+// second ```markdown fence in that region would leave the guard checking only one of them.
+function planTemplateFenceLines(planSource, context) {
+  const lines = normalizeLineEndings(planSource).split('\n');
+  const phase3 = lines.findIndex((line) => line.startsWith('### Phase 3'));
+  const phase4 = lines.findIndex((line, index) => index > phase3 && line.startsWith('### Phase 4'));
+  if (phase3 === -1 || phase4 === -1) {
+    throw planLintProjectionError(
+      'plan template requires ### Phase 3 and ### Phase 4 headings',
+      context,
+    );
+  }
+  const opens = lines
+    .map((line, index) => (index > phase3 && index < phase4 && line === '```markdown' ? index : -1))
+    .filter((index) => index !== -1);
+  if (opens.length > 1) {
+    throw planLintProjectionError(
+      `plan Phase 3 holds ${opens.length} \`\`\`markdown fences; expected exactly one template fence`,
+      context,
+    );
+  }
+  const [open = -1] = opens;
+  const close = lines.findIndex((line, index) => index > open && index < phase4 && line === '```');
+  if (open === -1 || close === -1) {
+    throw planLintProjectionError('plan Phase 3 has no closed ```markdown template fence', context);
+  }
+  return lines.slice(open + 1, close);
+}
+
+// Every bracketed token of the English template fence between `### Phase 3` and `### Phase 4`,
+// excluding task-list checkboxes, in order of first appearance.
+export function extractPlanTemplateTokens(planSource, { context } = {}) {
+  const tokens = [];
+  for (const line of planTemplateFenceLines(planSource, context)) {
+    for (const [token] of line.matchAll(/\[[^[\]\n]+\]/g)) {
+      if (/^\[[ xX]\]$/.test(token) || tokens.includes(token)) continue;
+      tokens.push(token);
+    }
+  }
+  return tokens;
+}
+
+export function assertPlanPlaceholderProjection(
+  rows,
+  { placeholders = PLAN_PLACEHOLDERS, context, planTemplateSource, planTemplateContext } = {},
+) {
+  assertPlanTableHeaders(rows, PLAN_CONTRACT_PLACEHOLDER_HEADERS, 'placeholder', context);
+  const data = rows.slice(1);
+  planProjectionRowCount(
+    'placeholder',
+    placeholders.map(({ placeholder }) => placeholder),
+    data.map(([placeholder]) => placeholder),
+    context,
+  );
+  const english = new Set();
+  data.forEach(([placeholder, deCell, enCell], index) => {
+    const expected = placeholders[index];
+    if (placeholder !== expected.placeholder) {
+      throw planLintProjectionError(
+        `placeholder row ${index + 1} must be "${expected.placeholder}"; found "${placeholder}"`,
+        context,
+      );
+    }
+    for (const [language, column, cell] of [
+      ['de', 'German', deCell],
+      ['en', 'English', enCell],
+    ]) {
+      const spans = planContractCodeSpans(
+        cell,
+        `placeholder row "${placeholder}" ${column} cell`,
+        context,
+      );
+      if (spans.length !== 1 || spans[0] !== expected[language]) {
+        throw planLintProjectionError(
+          `placeholder row "${placeholder}" ${column} cell must be ${JSON.stringify(expected[language])}; found ${JSON.stringify(spans.join(' / '))}`,
+          context,
+        );
+      }
+      if (language === 'en') english.add(spans[0]);
+    }
+  });
+  if (planTemplateSource === undefined) return;
+  const pairContext = planTemplateContext
+    ? `${planTemplateContext} ↔ ${context ?? 'placeholder table'}`
+    : context;
+  const templateTokens = extractPlanTemplateTokens(planTemplateSource, {
+    context: planTemplateContext,
+  });
+  for (const token of templateTokens) {
+    if (!english.has(token)) {
+      throw planLintProjectionError(
+        `plan template token "${token}" is missing from the placeholder table`,
+        pairContext,
+      );
+    }
+  }
+  for (const token of english) {
+    if (token.startsWith('[') && token.endsWith(']') && !templateTokens.includes(token)) {
+      throw planLintProjectionError(
+        `placeholder table token "${token}" does not occur in the plan template`,
+        pairContext,
+      );
+    }
+  }
+  // The one unbracketed placeholder is the review-result alternatives value; the template's
+  // review-result line must carry exactly that value.
+  const resultLabel = PLAN_CONTRACT_MAPPING.find(
+    ({ meaning }) => meaning === 'Review result',
+  ).en[0].match(/^\*\*[^*]+:\*\*/)[0];
+  const resultValue = placeholders.find(({ en }) => !(en.startsWith('[') && en.endsWith(']'))).en;
+  const resultLines = planTemplateFenceLines(planTemplateSource, planTemplateContext).filter(
+    (line) => line.startsWith(resultLabel),
+  );
+  const templateValue =
+    resultLines.length === 1 ? resultLines[0].slice(resultLabel.length).trim() : null;
+  if (templateValue !== resultValue) {
+    throw planLintProjectionError(
+      `plan template ${resultLabel} value must be "${resultValue}"; found ${
+        resultLines.length === 1
+          ? `"${templateValue}"`
+          : `${resultLines.length} ${resultLabel} lines`
+      }`,
+      pairContext,
+    );
+  }
+}
+
+// --- Shared next-steps contract ---
+//
+// `src/shared/next-steps.md` carries the one machine-readable map of the
+// workflow graph: which follow-up invocations a completed run may recommend,
+// per emitting tool and end state. The build parses that table, cross-checks it
+// against the set of tools that actually emit the block, and reconciles the
+// mirrored user-guide table against it. These helpers stay pure — build.mjs owns
+// the file I/O, so unit tests can drive synthetic tables and doc pages.
+
+export const NEXT_STEPS_TABLE_START = '<!-- next-steps-table:start -->';
+export const NEXT_STEPS_TABLE_END = '<!-- next-steps-table:end -->';
+
+const NEXT_STEPS_HEADERS = ['Tool', 'Condition', 'Then', 'Or'];
+
+// One edge cell: exactly one `{{SKILL:x}}` reference, optionally followed by the
+// argument the recommended invocation takes (`{{SKILL:apply}} <plan-file>`).
+// The reference form is what keeps validateRefs and the rendering path applying
+// to every edge; a hand-written invocation would bypass both.
+const NEXT_STEPS_EDGE_RE = /^\{\{SKILL:([a-z0-9]+(?:-[a-z0-9]+)*)\}\}(?: +\S.*)?$/;
+const NEXT_STEPS_SKILL_REF_RE = /\{\{SKILL:([^}]+)\}\}/g;
+
+// One Markdown alignment cell (`---`, `:---`, `---:`). The fragment parser and
+// the documentation-mirror scan share this rule, so a separator row that is
+// acceptable in one place cannot be silently skipped in the other.
+const NEXT_STEPS_SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
+
+// The documentation mirror pins the Claude rendering of an edge cell, matching
+// the invocation form the rest of the user guide shows.
+const NEXT_STEPS_DOC_COMMAND = '/effective-flow';
+
+// Trim every cell (oxfmt pads the columns), map the "no second edge" em dash to
+// an empty cell, and strip a single wrapping backtick pair so the fragment and
+// the mirrored documentation compare on the same normalized text.
+function nextStepsCell(value) {
+  const trimmed = value.trim();
+  if (trimmed === '—' || trimmed === '-') return '';
+  return trimmed.replace(/^`([^`]*)`$/, '$1');
+}
+
+function splitNextStepsRow(line) {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(nextStepsCell);
+}
+
+function parseNextStepsRow(line, context) {
+  const cells = splitNextStepsRow(line);
+  if (cells.length !== NEXT_STEPS_HEADERS.length) {
+    // Name the offending row: a cell-count message alone is unusable against a
+    // table of dozens of rows.
+    throw new Error(
+      `Next-steps row has ${cells.length} cells; expected ${NEXT_STEPS_HEADERS.length}${contextSuffix(context)}: "${line}"`,
+    );
+  }
+  return cells;
+}
+
+export function parseNextStepsTable(markdown, { context } = {}) {
+  const normalized = normalizeLineEndings(markdown);
+  const starts = normalized.split(NEXT_STEPS_TABLE_START).length - 1;
+  const ends = normalized.split(NEXT_STEPS_TABLE_END).length - 1;
+  if (starts !== 1 || ends !== 1) {
+    throw new Error(
+      `Next-steps contract requires exactly one start and end marker${contextSuffix(context)}`,
+    );
+  }
+
+  const start = normalized.indexOf(NEXT_STEPS_TABLE_START) + NEXT_STEPS_TABLE_START.length;
+  const end = normalized.indexOf(NEXT_STEPS_TABLE_END);
+  if (end <= start) {
+    throw new Error(`Next-steps table markers are out of order${contextSuffix(context)}`);
+  }
+
+  const lines = normalized
+    .slice(start, end)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 3) {
+    throw new Error(`Next-steps table has no data rows${contextSuffix(context)}`);
+  }
+
+  const headers = parseNextStepsRow(lines[0], context);
+  if (headers.some((header, index) => header !== NEXT_STEPS_HEADERS[index])) {
+    throw new Error(
+      `Next-steps table headers must be: ${NEXT_STEPS_HEADERS.join(', ')}${contextSuffix(context)}`,
+    );
+  }
+  const separator = parseNextStepsRow(lines[1], context);
+  if (separator.some((cell) => !NEXT_STEPS_SEPARATOR_CELL_RE.test(cell))) {
+    throw new Error(`Next-steps table has an invalid separator row${contextSuffix(context)}`);
+  }
+
+  const edges = lines.slice(2).map((line) => {
+    const [tool, condition, then, or] = parseNextStepsRow(line, context);
+    // The condition is what an emitting run matches its end state against, so an
+    // empty one would make the row unaddressable — and, next to a second row for
+    // the same tool, indistinguishable from it.
+    if (!tool || !condition || !then) {
+      throw new Error(
+        `Next-steps rows require a tool, a condition, and a first edge${contextSuffix(context)}: "${line}"`,
+      );
+    }
+    return { tool, condition, then, or };
+  });
+
+  const seen = new Set();
+  for (const edge of edges) {
+    // Both parts are free text that may contain any separator character, so
+    // the key is encoded rather than concatenated: `("a b", "c")` and
+    // `("a", "b c")` must not collapse into the same key. The encoded form
+    // also keeps this source free of an invisible control character.
+    const key = JSON.stringify([edge.tool, edge.condition]);
+    if (seen.has(key)) {
+      throw new Error(
+        `Duplicate next-steps row "${edge.tool} | ${edge.condition}"${contextSuffix(context)}`,
+      );
+    }
+    seen.add(key);
+  }
+  return edges;
+}
+
+// `invocableTools` is the set the renderer treats as invocable (build.mjs passes
+// EXPOSED_TOOLS). It is checked separately from `emittingTools` because the two
+// answer different questions: emitting decides whether the target has a row of
+// its own, invocable decides whether transformRefs renders the edge as
+// `/effective-flow <name>` rather than as a raw `tools/<name>.md` path. That the
+// two sets coincide today is an accident of the exemption list, so an omitted
+// argument falls back to the emitting set rather than skipping the check.
+export function assertNextStepsContract(edges, { emittingTools, invocableTools, context } = {}) {
+  const emitting = emittingTools instanceof Set ? emittingTools : new Set(emittingTools ?? []);
+  if (emitting.size === 0) {
+    throw new Error(
+      `Next-steps contract requires a non-empty emitting tool set${contextSuffix(context)}`,
+    );
+  }
+  const invocable =
+    invocableTools === undefined
+      ? emitting
+      : invocableTools instanceof Set
+        ? invocableTools
+        : new Set(invocableTools);
+  if (invocable.size === 0) {
+    throw new Error(
+      `Next-steps contract requires a non-empty invocable tool set${contextSuffix(context)}`,
+    );
+  }
+
+  const rowTools = new Set();
+  for (const edge of edges) {
+    const where = `row "${edge.tool} | ${edge.condition}"`;
+    const cells = [
+      { column: 'Then', value: edge.then },
+      { column: 'Or', value: edge.or },
+    ].filter(({ value }) => value !== '');
+    if (cells.length === 0) {
+      throw new Error(`Next-steps ${where} carries no edge${contextSuffix(context)}`);
+    }
+    // A recommendation the user has to read and act on stays at two options; a
+    // cell holding a second reference would smuggle in a third. Counted across
+    // the row before the per-cell shape check, so the surplus edge is named as
+    // one rather than as a malformed cell.
+    const references = cells.reduce(
+      (total, { value }) => total + [...value.matchAll(NEXT_STEPS_SKILL_REF_RE)].length,
+      0,
+    );
+    if (references > 2) {
+      throw new Error(
+        `Next-steps ${where} carries ${references} edges; at most two are allowed${contextSuffix(context)}`,
+      );
+    }
+    for (const { column, value } of cells) {
+      const match = NEXT_STEPS_EDGE_RE.exec(value);
+      if (!match) {
+        throw new Error(
+          `Next-steps ${where} has an invalid ${column} cell "${value}"; expected {{SKILL:<tool>}} optionally followed by one argument${contextSuffix(context)}`,
+        );
+      }
+      // The argument tail is deliberately permissive (`<plan-file>`, `<report>`),
+      // so it also swallows a second reference: `{{SKILL:apply}} <p>
+      // {{SKILL:apply-plan}}` matches with `match[1] === "apply"` and the second
+      // target would never reach the checks below. The row-level count above
+      // misses it whenever the other cell is empty, so count per cell too.
+      const cellReferences = [...value.matchAll(NEXT_STEPS_SKILL_REF_RE)].length;
+      if (cellReferences !== 1) {
+        throw new Error(
+          `Next-steps ${where} has a ${column} cell with ${cellReferences} references "${value}"; expected exactly one${contextSuffix(context)}`,
+        );
+      }
+      // An edge is a copy-paste-ready invocation, so its target has to be a tool
+      // that closes a run of its own — which is exactly the emitting set.
+      if (!emitting.has(match[1])) {
+        throw new Error(
+          `Next-steps ${where} recommends "${match[1]}", which is not an emitting tool${contextSuffix(context)}`,
+        );
+      }
+      // …and one the user can actually invoke, because the rendered block shows
+      // the invocation. A target outside the invocable set renders as a raw
+      // `tools/<name>.md` path, which nobody can type.
+      if (!invocable.has(match[1])) {
+        throw new Error(
+          `Next-steps ${where} recommends "${match[1]}", which is not a user-invocable tool${contextSuffix(context)}`,
+        );
+      }
+    }
+    rowTools.add(edge.tool);
+  }
+
+  const withoutRow = setDifference(emitting, rowTools);
+  const notEmitting = setDifference(rowTools, emitting);
+  if (withoutRow.length > 0 || notEmitting.length > 0) {
+    const details = [];
+    if (withoutRow.length > 0) {
+      details.push(`emitting tool(s) without a row: ${withoutRow.join(', ')}`);
+    }
+    if (notEmitting.length > 0) {
+      details.push(`row(s) for a non-emitting tool: ${notEmitting.join(', ')}`);
+    }
+    throw new Error(`Next-steps coverage mismatch: ${details.join('; ')}${contextSuffix(context)}`);
+  }
+}
+
+function renderNextStepsInvocation(cell) {
+  return cell.replace(NEXT_STEPS_SKILL_REF_RE, (_, name) => `${NEXT_STEPS_DOC_COMMAND} ${name}`);
+}
+
+// Locate the mirrored table in a hand-written documentation page: the first
+// Markdown table whose header row carries exactly the contract's four columns.
+// Returns `null` when no such table exists, `{ separator }` when the line after
+// the header is not a separator row, and `{ rows }` otherwise.
+function findNextStepsDocRows(markdown) {
+  const lines = normalizeLineEndings(markdown).split('\n');
+  for (const [index, line] of lines.entries()) {
+    if (!line.trim().startsWith('|')) continue;
+    const cells = splitNextStepsRow(line);
+    if (
+      cells.length !== NEXT_STEPS_HEADERS.length ||
+      cells.some((cell, position) => cell !== NEXT_STEPS_HEADERS[position])
+    ) {
+      continue;
+    }
+    // The row after the header has to be the alignment row. Skipping it blindly
+    // would consume the first data row of a page that lost its separator and
+    // report every following row as shifted, hiding the one real defect behind a
+    // cascade.
+    const separatorLine = (lines[index + 1] ?? '').trim();
+    const separator = separatorLine.startsWith('|') ? splitNextStepsRow(separatorLine) : null;
+    if (
+      !separator ||
+      separator.length !== NEXT_STEPS_HEADERS.length ||
+      separator.some((cell) => !NEXT_STEPS_SEPARATOR_CELL_RE.test(cell))
+    ) {
+      return { separator: separatorLine };
+    }
+    const rows = [];
+    for (let cursor = index + 2; cursor < lines.length; cursor += 1) {
+      if (!lines[cursor].trim().startsWith('|')) break;
+      rows.push(splitNextStepsRow(lines[cursor]));
+    }
+    return { rows };
+  }
+  return null;
+}
+
+// Compare the mirrored user-guide table against the parsed fragment edges. The
+// caller decides how to fail; returning the structured mismatches keeps this
+// checker pure and lets the build name every offending cell at once.
+export function findNextStepsDocViolations(docMarkdown, edges, { context } = {}) {
+  const found = findNextStepsDocRows(docMarkdown);
+  if (!found) {
+    return [
+      {
+        row: 0,
+        column: 'table',
+        expected: NEXT_STEPS_HEADERS.join(' | '),
+        actual: 'missing',
+        context,
+      },
+    ];
+  }
+  if (!found.rows) {
+    return [
+      {
+        row: 0,
+        column: 'separator',
+        expected: NEXT_STEPS_HEADERS.map(() => '---').join(' | '),
+        actual: found.separator === '' ? 'missing' : found.separator,
+        context,
+      },
+    ];
+  }
+  const rows = found.rows;
+
+  const violations = [];
+  for (const [index, edge] of edges.entries()) {
+    const expected = [
+      edge.tool,
+      edge.condition,
+      renderNextStepsInvocation(edge.then),
+      renderNextStepsInvocation(edge.or),
+    ];
+    const actual = rows[index];
+    if (!actual || actual.length !== NEXT_STEPS_HEADERS.length) {
+      violations.push({
+        row: index + 1,
+        column: 'row',
+        expected: expected.join(' | '),
+        actual: actual ? actual.join(' | ') : 'missing',
+        context,
+      });
+      continue;
+    }
+    for (const [position, column] of NEXT_STEPS_HEADERS.entries()) {
+      if (actual[position] !== expected[position]) {
+        violations.push({
+          row: index + 1,
+          column,
+          expected: expected[position],
+          actual: actual[position],
+          context,
+        });
+      }
+    }
+  }
+  for (let index = edges.length; index < rows.length; index += 1) {
+    violations.push({
+      row: index + 1,
+      column: 'row',
+      expected: 'no further row',
+      actual: rows[index].join(' | '),
+      context,
+    });
+  }
+  return violations;
+}
+
+const FRONTEND_EXTENSIONS = new Set(['.jsx', '.tsx', '.vue', '.svelte']);
+const JAVASCRIPT_EXTENSIONS = new Set([
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.ts',
+  '.tsx',
+  '.mts',
+  '.cts',
+]);
+const GENERIC_PRODUCT_EXTENSIONS = new Set([
+  '.py',
+  '.pyx',
+  '.go',
+  '.java',
+  '.kt',
+  '.kts',
+  '.scala',
+  '.cs',
+  '.fs',
+  '.fsx',
+  '.rb',
+  '.php',
+  '.swift',
+  '.ex',
+  '.exs',
+  '.erl',
+  '.hrl',
+  '.c',
+  '.h',
+  '.cc',
+  '.cpp',
+  '.cxx',
+  '.hpp',
+]);
+const DOCUMENTATION_EXTENSIONS = new Set(['.md', '.mdx', '.rst', '.adoc']);
+const TOOLING_BASENAMES = new Set([
+  '.editorconfig',
+  '.gitattributes',
+  '.gitignore',
+  'cargo.lock',
+  'compose.yml',
+  'compose.yaml',
+  'dockerfile',
+  'go.mod',
+  'go.sum',
+  'makefile',
+  'package.json',
+  'pnpm-lock.yaml',
+  'poetry.lock',
+  'pyproject.toml',
+  'requirements.txt',
+  'tsconfig.json',
+  'yarn.lock',
+]);
+
+function projectFileFacts(file) {
+  if (!file || typeof file.path !== 'string' || file.path.trim() === '') {
+    throw new Error('Project-routing scope entries require a non-empty path');
+  }
+  const path = file.path.replaceAll('\\', '/').replace(/^\.\//, '').toLowerCase();
+  const basename = path.slice(path.lastIndexOf('/') + 1);
+  const dot = basename.lastIndexOf('.');
+  const extension = dot > 0 ? basename.slice(dot) : '';
+  const role = typeof file.role === 'string' ? file.role.trim().toLowerCase() : '';
+  return { path, basename, extension, role };
+}
+
+function hasPathDomain(path, domains) {
+  const segments = path.split('/');
+  return segments.some((segment) => domains.includes(segment));
+}
+
+function isGenericProductRole(role) {
+  return ['product', 'application', 'library'].includes(role);
+}
+
+function matchesProjectRoute(matcher, facts) {
+  const { path, basename, extension, role } = facts;
+  const explicit = role !== '';
+
+  switch (matcher) {
+    case 'excluded':
+      return (
+        ['generated', 'vendored', 'vendor', 'excluded'].includes(role) ||
+        hasPathDomain(path, [
+          'node_modules',
+          'vendor',
+          'vendored',
+          'third_party',
+          'dist',
+          'coverage',
+          '.cache',
+          'target',
+          'generated',
+        ]) ||
+        /(?:^|[._-])generated(?:[._-]|$)/.test(basename)
+      );
+    case 'documentation':
+      if (explicit) return ['documentation', 'docs'].includes(role);
+      return DOCUMENTATION_EXTENSIONS.has(extension) || hasPathDomain(path, ['docs', 'doc']);
+    case 'tooling':
+      if (explicit) return ['tooling', 'configuration', 'config', 'metadata'].includes(role);
+      return (
+        path.startsWith('.github/') ||
+        path.startsWith('.gitlab/') ||
+        hasPathDomain(path, ['ci', 'scripts']) ||
+        TOOLING_BASENAMES.has(basename) ||
+        /(?:^|\.)(?:config|conf)\.(?:js|mjs|cjs|ts|json|ya?ml|toml)$/.test(basename) ||
+        /^(?:dockerfile|compose)(?:\.|$)/.test(basename)
+      );
+    case 'frontend-js-ts':
+      if (explicit && ['frontend', 'ui', 'browser'].includes(role)) return true;
+      if (explicit && !isGenericProductRole(role)) return false;
+      return (
+        FRONTEND_EXTENSIONS.has(extension) ||
+        (JAVASCRIPT_EXTENSIONS.has(extension) &&
+          hasPathDomain(path, ['frontend', 'client', 'components', 'pages', 'views', 'ui']))
+      );
+    case 'node-backend-cli':
+      if (explicit && ['node', 'nodejs', 'backend', 'server', 'api', 'cli'].includes(role)) {
+        return true;
+      }
+      if (explicit && !isGenericProductRole(role)) return false;
+      return (
+        JAVASCRIPT_EXTENSIONS.has(extension) &&
+        (hasPathDomain(path, [
+          'backend',
+          'server',
+          'api',
+          'routes',
+          'controllers',
+          'services',
+          'workers',
+          'cli',
+          'bin',
+        ]) ||
+          /^(?:server|cli)(?:\.|$)/.test(basename))
+      );
+    case 'rust-product':
+      if (explicit && role === 'rust') return true;
+      if (explicit && !isGenericProductRole(role)) return false;
+      return extension === '.rs';
+    case 'generic-product':
+      if (explicit) return isGenericProductRole(role);
+      return GENERIC_PRODUCT_EXTENSIONS.has(extension);
+    case 'otherwise':
+      return true;
+    default:
+      throw new Error(`Unknown project-routing matcher "${matcher}"`);
+  }
+}
+
+export function classifyProjectRoutingScope(routes, scope, { context } = {}) {
+  if (!Array.isArray(routes) || routes.length === 0) {
+    throw new Error(`Project-routing classification requires routes${contextSuffix(context)}`);
+  }
+  if (!Array.isArray(scope)) {
+    throw new Error(
+      `Project-routing classification requires a scope array${contextSuffix(context)}`,
+    );
+  }
+
+  const files = scope.map((file) => {
+    const facts = projectFileFacts(file);
+    const route = routes.find((candidate) => matchesProjectRoute(candidate.matcher, facts));
+    if (!route) {
+      throw new Error(`No project route matched "${file.path}"${contextSuffix(context)}`);
+    }
+    return {
+      path: file.path,
+      route: route.route,
+      matcher: route.matcher,
+      implementer: route.implementer,
+      reviewer: route.reviewer,
+      decision: route.decision,
+    };
+  });
+
+  const buckets = routes
+    .map((route) => ({
+      route: route.route,
+      files: files.filter((file) => file.route === route.route).map((file) => file.path),
+    }))
+    .filter((bucket) => bucket.files.length > 0);
+
+  return {
+    files,
+    buckets,
+    clarificationRequired: files.some((file) => file.decision === 'clarify'),
+  };
+}
+
+// Enforce the invariant AGENTS.md documents: every source description is a
+// single strictly double-quoted line.
+export function assertQuotedDescription(frontmatter, { context } = {}) {
+  const line = frontmatter.split('\n').find((l) => /^description:/.test(l));
+  if (line === undefined) {
+    throw new Error(`Missing description field${contextSuffix(context)}`);
+  }
+  if (!/^description:\s*".*"\s*$/.test(line)) {
+    throw new Error(`Description must be strictly double-quoted${contextSuffix(context)}`);
+  }
+}
+
+// The three rendered consumer targets, in build order.
+export const RENDERED_TARGETS = Object.freeze(['claude', 'codex', 'portable']);
+
+// --- Reference transforms ---
+//
+// {{SKILL:X}} -> harness-specific exposed tool invocation, or
+//                `` `tools/<name>.md` `` for internal tools (loaded on demand
+//                by `apply`).
+// {{AGENT:X}} -> a namespaced worker reference. Native Claude/Codex installs
+// register that exact custom-agent name; the portable manager build maps the
+// same identifier to a bundled worker contract and the built-in/general
+// subagent mechanism.
+// {{AGENT_PROFILE:X:fast}} -> the native Fast representation for the target,
+// or an explicit Quality-only notice on portable managers.
+// {{BUILD_TARGET}} -> the rendered target itself (`claude`, `codex`, or
+// `portable`), so a shared fragment can tell a portable installation from a
+// native one deterministically even when a portable skill runs on a native host.
+//
+// The command name (`/<skillName>` on Claude, `$<skillName>` on Codex) and the
+// agent prefix are passed in from the single source of truth in build.mjs, so a
+// rebrand only touches those constants.
+export function transformRefs(
+  body,
+  harness,
+  {
+    exposedTools,
+    agentPrefix,
+    skillName = 'effective-flow',
+    knownTools,
+    knownAgents,
+    profileMappings,
+    fastProfileAgents,
+    context,
+  } = {},
+) {
+  // Rendering always runs the same guard as validation: a placeholder that
+  // validateRefs would reject (legacy `sf-` name or a dead reference) must never
+  // be rendered into the output. The known-name sets are therefore required.
+  if (!knownTools || !knownAgents) {
+    throw new Error(
+      `transformRefs requires knownTools and knownAgents to guard references${contextSuffix(context)}`,
+    );
+  }
+  validateRefs(body, { knownTools, knownAgents, context });
+  const agentName = (raw) => `${agentPrefix}${raw}`;
+  const profileRefs = [...body.matchAll(AGENT_PROFILE_REF_RE)];
+  if (profileRefs.length > 0) {
+    validateAgentProfileMappings(profileMappings, { context });
+    if (!(fastProfileAgents instanceof Set)) {
+      throw new Error(
+        `transformRefs requires fastProfileAgents to guard Fast-profile references${contextSuffix(context)}`,
+      );
+    }
+    for (const [, raw] of profileRefs) {
+      if (!fastProfileAgents.has(raw)) {
+        throw new Error(
+          `Agent "${raw}" is not eligible for the Fast profile${contextSuffix(context)}`,
+        );
+      }
+    }
+  }
+  const command =
+    harness === 'codex' ? `$${skillName}` : harness === 'portable' ? skillName : `/${skillName}`;
+  const skillInvocation = (raw) => `${command} ${raw}`;
+  if (/\{\{BUILD_TARGET\}\}/.test(body) && !RENDERED_TARGETS.includes(harness)) {
+    throw new Error(`Unknown rendered target "${harness}"${contextSuffix(context)}`);
+  }
+  return body
+    .replace(/\{\{FLOW\}\}/g, command)
+    .replace(/\{\{BUILD_TARGET\}\}/g, harness)
+    .replace(/\{\{SKILL:([^}]+)\}\}/g, (_, raw) =>
+      exposedTools.includes(raw) ? skillInvocation(raw) : `\`tools/${raw}.md\``,
+    )
+    .replace(AGENT_PROFILE_REF_RE, (_, raw) => {
+      const name = agentName(raw);
+      if (harness === 'claude') return `\`${name}-fast\``;
+      if (harness === 'codex') return `\`${name}-fast\``;
+      if (harness === 'portable') {
+        return `\`${name}\` (portable build: Fast unavailable, Quality only)`;
+      }
+      throw new Error(`Unknown rendered target "${harness}"${contextSuffix(context)}`);
+    })
+    .replace(/\{\{AGENT:([^}]+)\}\}/g, (_, raw) => `\`${agentName(raw)}\``);
+}
+
+export const PORTABLE_WORKER_DELEGATION = [
+  '## Portable worker delegation',
+  '',
+  "Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If the host offers no built-in subagent delegation, stop with a clear explanation; a single spawn the host refuses at run time is a declined delegation and follows the delegation mandate's inline fallback. Never claim that an undiscoverable worker ran.",
+].join('\n');
+
+// Enumerate exact rendered worker identifiers. Build-time completeness guards
+// use this on every rendered router/tool/shared/worker file, so a missing native
+// sidecar or portable contract cannot hide behind source-level validation.
+export function collectRenderedWorkerRefs(text, agentPrefix = 'effective-flow-', knownWorkers) {
+  const refs = new Set();
+  const re = new RegExp(`\\\`(${escapeRegex(agentPrefix)}[a-z0-9]+(?:-[a-z0-9]+)*)\\\``, 'g');
+  for (const match of text.matchAll(re)) {
+    if (!knownWorkers || knownWorkers.has(match[1])) refs.add(match[1]);
+  }
+  return [...refs].sort();
+}
+
+// Native command tools expose different invocation parameters. Shared and
+// portable instructions must not leak one harness's parameter contract into
+// another target. Keep this registry explicit so adding a parameter or target
+// is a data change rather than another ad-hoc guard.
+export const HARNESS_TOOL_PARAMETER_OWNERSHIP = Object.freeze({
+  run_in_background: Object.freeze(['claude']),
+  'yield-time_ms': Object.freeze(['codex']),
+  sandbox_permissions: Object.freeze(['codex']),
+});
+
+const TOOL_PARAMETER_TARGETS = Object.freeze(['claude', 'codex', 'portable']);
+
+export function findForeignHarnessToolParameters(text, target) {
+  if (!TOOL_PARAMETER_TARGETS.includes(target)) {
+    throw new Error(`Unknown rendered target "${target}"`);
+  }
+
+  const findings = [];
+  const identifierCharacter = /[A-Za-z0-9_-]/;
+  const lines = normalizeLineEndings(text).split('\n');
+
+  for (const [parameter, owners] of Object.entries(HARNESS_TOOL_PARAMETER_OWNERSHIP)) {
+    if (owners.includes(target)) continue;
+
+    for (const [lineIndex, line] of lines.entries()) {
+      let searchFrom = 0;
+      while (searchFrom < line.length) {
+        const column = line.indexOf(parameter, searchFrom);
+        if (column === -1) break;
+
+        const before = column === 0 ? '' : line[column - 1];
+        const afterIndex = column + parameter.length;
+        const after = afterIndex >= line.length ? '' : line[afterIndex];
+        if (!identifierCharacter.test(before) && !identifierCharacter.test(after)) {
+          findings.push({ line: lineIndex + 1, parameter, owners: [...owners] });
+        }
+        searchFrom = column + parameter.length;
+      }
+    }
+  }
+
+  return findings.sort((a, b) => a.line - b.line || a.parameter.localeCompare(b.parameter));
+}
+
+// --- Repository-only reference guard (#497) ---
+//
+// Shipped text must not name a file that exists only in this source repository:
+// no build target carries `docs/developer-guide/`, `test/` or `build.mjs`, so a
+// relative link or an inline code span naming one is dead for every consumer.
+// The guard has two halves, both run over each rendered file of each target:
+//
+// - links: an inline link, image or reference definition whose relative target
+//   does not resolve to a file of the same target's payload (or escapes it), and
+//   every root-absolute target. Native agent sidecars (`agents/*`) are installed
+//   apart from the skill directory, so every relative link in one is a finding.
+// - code spans: a span whose normalized content is exactly a repository-only
+//   file. Payload resolution takes precedence, so a shipped runtime script such
+//   as `scripts/remote-tracker.mjs` never counts as repository-only.
+//
+// Fenced code blocks are skipped by both halves: they carry commands and
+// examples, not references the reader is asked to follow. The set of
+// repository-only files is collected by a read-only filesystem walk; Git is
+// never consulted, so the guard behaves the same in an archive or a worktree.
+export const REPOSITORY_ONLY_SKIP_DIRS = Object.freeze([
+  'node_modules',
+  'dist',
+  'dist.tmp',
+  '.git',
+]);
+
+export function collectRepositoryOnlyFiles(repoRoot, { roots = [], rootFiles = [] } = {}) {
+  const files = new Set();
+  const isFile = (absolute) => {
+    try {
+      return statSync(absolute).isFile();
+    } catch {
+      return false;
+    }
+  };
+  const visit = (absolute, relativePath) => {
+    let entries;
+    try {
+      entries = readdirSync(absolute, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (REPOSITORY_ONLY_SKIP_DIRS.includes(entry.name)) continue;
+      const childRelative = `${relativePath}/${entry.name}`;
+      if (entry.isDirectory()) visit(join(absolute, entry.name), childRelative);
+      else if (entry.isFile()) files.add(childRelative);
+    }
+  };
+
+  for (const root of roots) {
+    const relativeRoot = posix.normalize(root).replace(/\/+$/, '');
+    visit(join(repoRoot, ...relativeRoot.split('/')), relativeRoot);
+  }
+  for (const rootFile of rootFiles) {
+    const relativeFile = posix.normalize(rootFile);
+    if (isFile(join(repoRoot, ...relativeFile.split('/')))) files.add(relativeFile);
+  }
+  return files;
+}
+
+export function applyRepositoryOnlyAllowlist(repositoryOnlyFiles, allowlist, { context } = {}) {
+  const entries = [...allowlist];
+  const stale = entries.filter((entry) => !repositoryOnlyFiles.has(entry));
+  if (stale.length > 0) {
+    const where = context ? ` in ${context}` : '';
+    throw new Error(
+      stale
+        .map(
+          (entry) =>
+            `stale repository-only reference allowlist entry${where}: "${entry}" names no file under the repository-only roots`,
+        )
+        .join('\n'),
+    );
+  }
+  const allowed = new Set(entries);
+  return new Set([...repositoryOnlyFiles].filter((file) => !allowed.has(file)));
+}
+
+// Split a line into its inline code spans (CommonMark delimiter matching). A
+// delimiter is a backtick run of any length N; the span closes at the next run
+// of exactly N backticks on the same line. An unmatched opener stays literal
+// text and scanning continues with the next run.
+function inlineCodeSpans(line) {
+  const runs = [...line.matchAll(/`+/g)].map((match) => ({
+    start: match.index,
+    length: match[0].length,
+  }));
+  const spans = [];
+  for (let index = 0; index < runs.length; index += 1) {
+    const opener = runs[index];
+    const closerIndex = runs.findIndex(
+      (run, candidate) => candidate > index && run.length === opener.length,
+    );
+    if (closerIndex === -1) continue;
+    const closer = runs[closerIndex];
+    spans.push({
+      start: opener.start,
+      end: closer.start + closer.length,
+      content: line.slice(opener.start + opener.length, closer.start),
+    });
+    index = closerIndex;
+  }
+  return spans;
+}
+
+const URL_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/;
+// CommonMark reference definition: the label may hold backslash escapes but no
+// unescaped bracket, and it must contain at least one non-whitespace character.
+const REFERENCE_DEFINITION = /^ {0,3}\[((?:\\.|[^\\[\]])+)\]:\s*(\S+)/;
+// The optional title is `"…"`, `'…'`, or `(…)`; all three accept backslash
+// escapes, so a title holds its own delimiter only when it is escaped.
+const INLINE_LINK_DESTINATION =
+  /\(\s*(<[^>]*>|[^\s)]+)(?:\s+(?:"(?:\\.|[^\\"])*"|'(?:\\.|[^\\'])*'|\((?:\\.|[^\\()])*\)))?\s*\)/y;
+
+// CommonMark inline link or image text: an unescaped `[` (optionally preceded
+// by `!`) opens it, a backslash escapes the next character, unescaped brackets
+// nest, and the text closes at the matching unescaped `]`, which must be
+// followed directly by the `(destination "title")` part. Every unescaped `[` is
+// tried as an opener, so a link inside another link's text is checked as well.
+function inlineLinkTargets(text) {
+  const brackets = [];
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '\\') index += 1;
+    else if (char === '[' || char === ']') brackets.push({ index, char });
+  }
+  const targets = [];
+  for (let opener = 0; opener < brackets.length; opener += 1) {
+    if (brackets[opener].char !== '[') continue;
+    let depth = 0;
+    for (let next = opener; next < brackets.length; next += 1) {
+      depth += brackets[next].char === '[' ? 1 : -1;
+      if (depth > 0) continue;
+      INLINE_LINK_DESTINATION.lastIndex = brackets[next].index + 1;
+      const match = INLINE_LINK_DESTINATION.exec(text);
+      if (match) targets.push(match[1]);
+      break;
+    }
+  }
+  return targets;
+}
+
+function unwrapAngleBrackets(target) {
+  return target.startsWith('<') && target.endsWith('>') ? target.slice(1, -1) : target;
+}
+
+export function findRepositoryOnlyReferences(
+  content,
+  { filePath, payloadFiles, repositoryOnlyFiles, sidecar = false },
+) {
+  const findings = [];
+  const directory = posix.dirname(filePath);
+  const payloadList = [...payloadFiles];
+  const resolvesInPayload = (normalized) =>
+    payloadFiles.has(normalized) ||
+    payloadFiles.has(posix.normalize(posix.join(directory, normalized))) ||
+    payloadList.some((file) => file.endsWith(`/${normalized}`));
+
+  const checkLink = (lineNumber, rawTarget) => {
+    const reference = unwrapAngleBrackets(rawTarget);
+    if (URL_SCHEME.test(reference)) return;
+    const target = reference.replace(/[#?].*$/, '');
+    if (target === '') return;
+    let dead;
+    if (target.startsWith('/') || sidecar) {
+      dead = true;
+    } else {
+      const resolved = posix.normalize(posix.join(directory, target));
+      dead = resolved === '..' || resolved.startsWith('../') || !payloadFiles.has(resolved);
+    }
+    if (dead) findings.push({ line: lineNumber, kind: 'link', reference });
+  };
+
+  // The guard is line-based: a link or code span that spans a line break is
+  // deliberately out of scope and is not recognized.
+  let fence = null;
+  for (const [lineIndex, line] of normalizeLineEndings(content).split('\n').entries()) {
+    const lineNumber = lineIndex + 1;
+    // Only a line indented by 0-3 spaces may open or close a CommonMark fence.
+    // A backtick opener's info string must not contain a backtick, and a
+    // closer may be followed only by spaces or tabs.
+    const fenceMatch = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (fence) {
+      if (
+        fenceMatch &&
+        fenceMatch[1][0] === fence.char &&
+        fenceMatch[1].length >= fence.length &&
+        /^[ \t]*$/.test(fenceMatch[2])
+      ) {
+        fence = null;
+      }
+      continue;
+    }
+    if (fenceMatch && (fenceMatch[1][0] === '~' || !fenceMatch[2].includes('`'))) {
+      fence = { char: fenceMatch[1][0], length: fenceMatch[1].length };
+      continue;
+    }
+
+    const spans = inlineCodeSpans(line);
+    for (const span of spans) {
+      const normalized = span.content
+        .trim()
+        .replace(/^\.\//, '')
+        .replace(/:\d+(?::\d+)?$/, '');
+      if (repositoryOnlyFiles.has(normalized) && !resolvesInPayload(normalized)) {
+        findings.push({ line: lineNumber, kind: 'code-span', reference: span.content });
+      }
+    }
+
+    let text = line;
+    for (const span of [...spans].reverse()) {
+      text = `${text.slice(0, span.start)} ${text.slice(span.end)}`;
+    }
+    const definition = REFERENCE_DEFINITION.exec(text);
+    if (definition && /\S/.test(definition[1])) checkLink(lineNumber, definition[2]);
+    for (const target of inlineLinkTargets(text)) checkLink(lineNumber, target);
+  }
+
+  const order = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  return findings.sort(
+    (a, b) => a.line - b.line || order(a.kind, b.kind) || order(a.reference, b.reference),
+  );
+}
+
+export function findVerbatimSourceLocations(reference, sources) {
+  const entries = sources instanceof Map ? [...sources] : Object.entries(sources);
+  const locations = [];
+  for (const [path, text] of entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    for (const [lineIndex, line] of normalizeLineEndings(text).split('\n').entries()) {
+      if (line.includes(reference)) locations.push(`${path}:${lineIndex + 1}`);
+    }
+  }
+  return locations;
+}
+
+// --- Router dispatch clause for deprecated tool aliases ---
+//
+// A deprecated alias is built as a tool file but deliberately kept out of the
+// router catalog, so the dispatch rule's "no or unknown tool -> print the
+// catalog" branch would swallow it instead of routing it. This rendered clause
+// is what makes the retired name reachable at all, and it is also the only
+// place that licenses the alias to read a second tool file.
+//
+// The three harnesses spell an invocation differently, so the caller passes its
+// own `skillInvocation(name)`; nothing about the harness is decided here and no
+// target can drift out of sync with another.
+export function renderDeprecatedAliasClause(aliases, skillInvocation) {
+  if (!Array.isArray(aliases)) {
+    throw new Error('Deprecated alias list must be an array');
+  }
+  if (typeof skillInvocation !== 'function') {
+    throw new Error('renderDeprecatedAliasClause requires a skillInvocation(name) function');
+  }
+  if (aliases.length === 0) return '';
+
+  const bullets = aliases.map(({ alias, replacement }) => {
+    if (typeof alias !== 'string' || alias.trim() === '') {
+      throw new Error('Deprecated alias entry requires an alias name');
+    }
+    if (typeof replacement !== 'string' || replacement.trim() === '') {
+      throw new Error(`Deprecated alias "${alias}" requires a replacement tool name`);
+    }
+    return (
+      `- \`${skillInvocation(alias)}\` is the deprecated former name of ` +
+      `\`${skillInvocation(replacement)}\`. Read \`tools/${alias}.md\`, which reports the ` +
+      `deprecation and then follows \`tools/${replacement}.md\` with the arguments unchanged.`
+    );
+  });
+
+  return [
+    'Some retired tool names stay invocable as **deprecated aliases**. They are deliberately absent from the catalog below, so rule 1 does not apply to them, and the tool file of an alias is the one case in which rule 2 allows a second tool file to be read:',
+    '',
+    ...bullets,
+  ].join('\n');
+}
+
+// --- ASK block transforms ---
+
+// Keys an ```ask``` block may carry before its `options:` line. Each is matched
+// anchored at the start of a line, at most once, so a description that merely
+// contains `type: approval` can no longer change the question type.
+const ASK_KEYS = ['header', 'question', 'type', 'when', 'language', 'unscored'];
+const ASK_KEY_LINE = new RegExp(`^(${ASK_KEYS.join('|')}):[ \\t]*(.*)$`);
+const ASK_OPTIONS_LINE = /^options:[ \t]*$/;
+const ASK_LABEL_LINE = /^\s+-\s+label:[ \t]*(.*)$/;
+const ASK_DESCRIPTION_LINE = /^\s+description:[ \t]*(.*)$/;
+// Separator between the exact option labels an `unscored:` key exempts. A pipe,
+// not a comma, because labels may contain commas.
+const ASK_UNSCORED_SEPARATOR = '|';
+
+// Strict line grammar: every non-blank line of the block is a key line, the
+// `options:` line, an option `- label:` line, or the `description:` line
+// directly after a label line. Anything else fails the build instead of being
+// silently dropped. Duplicate keys fail at once; every other structural error
+// is deferred (the first one wins) and reported by `parseAskBlock` only after
+// its header, question, type, language, empty-`when` and approval-with-options
+// checks, so the long-standing precedence of those checks, which tests pin, is
+// kept and an approval fence with stray option lines gets its own message.
+function scanAskBlockLines(block, context) {
+  const keys = new Map();
+  const options = [];
+  let optionsLine = false;
+  let optionLineOutsideOptions = false;
+  let pendingLabel = null;
+  let structuralError = null;
+  const defer = (message) => {
+    if (structuralError === null) structuralError = message;
+  };
+
+  for (const rawLine of block.split('\n')) {
+    if (rawLine.trim() === '') continue;
+    const line = rawLine.trimEnd();
+    const keyMatch = line.match(ASK_KEY_LINE);
+    const labelMatch = line.match(ASK_LABEL_LINE);
+    const descriptionMatch = line.match(ASK_DESCRIPTION_LINE);
+
+    if (keyMatch || ASK_OPTIONS_LINE.test(line)) {
+      const key = keyMatch ? keyMatch[1] : 'options';
+      if (keys.has(key) || (key === 'options' && optionsLine)) {
+        throw new Error(`ASK block has duplicate ${key} fields${contextSuffix(context)}`);
+      }
+      if (optionsLine) {
+        defer(`has line "${line.trim()}" after the options block; every key must precede options:`);
+        continue;
+      }
+      if (keyMatch) keys.set(key, keyMatch[2].trim());
+      else optionsLine = true;
+      continue;
+    }
+
+    if (labelMatch) {
+      if (!optionsLine) {
+        optionLineOutsideOptions = true;
+        defer(`has option line "${line.trim()}" outside an options: block`);
+        continue;
+      }
+      if (pendingLabel !== null) {
+        defer(`has option "${pendingLabel}" without a description line`);
+      }
+      const label = labelMatch[1].trim();
+      if (label === '') defer(`has option line "${line.trim()}" with an empty label`);
+      pendingLabel = label;
+      continue;
+    }
+
+    if (descriptionMatch && pendingLabel !== null) {
+      const description = descriptionMatch[1].trim();
+      if (description === '') defer(`has option "${pendingLabel}" with an empty description`);
+      options.push({ label: pendingLabel, description });
+      pendingLabel = null;
+      continue;
+    }
+
+    if (descriptionMatch) {
+      if (!optionsLine) optionLineOutsideOptions = true;
+      defer(`has description line "${line.trim()}" that does not directly follow an option label`);
+      continue;
+    }
+
+    defer(`has an unconsumed line "${line.trim()}"`);
+  }
+
+  if (pendingLabel !== null) defer(`has option "${pendingLabel}" without a description line`);
+
+  return { keys, options, optionsLine, optionLineOutsideOptions, structuralError };
+}
+
+function parseUnscoredLabels(value, header, context) {
+  const labels = value.split(ASK_UNSCORED_SEPARATOR).map((label) => label.trim());
+  if (labels.some((label) => label === '')) {
+    throw new Error(
+      `ASK block "${header}" has an empty label in unscored: "${value}"${contextSuffix(context)}`,
+    );
+  }
+  const seen = new Set();
+  for (const label of labels) {
+    // The rendered except clause quotes each exempt label, so a quotation mark inside one
+    // would break that quoting in English or German.
+    if (/["„“]/.test(label)) {
+      throw new Error(
+        `ASK block "${header}" has a quotation mark in unscored: label "${label}"${contextSuffix(context)}`,
+      );
+    }
+    if (seen.has(label)) {
+      throw new Error(
+        `ASK block "${header}" lists "${label}" twice in unscored:${contextSuffix(context)}`,
+      );
+    }
+    seen.add(label);
+  }
+  return labels;
+}
+
+export function parseAskBlock(block, { context } = {}) {
+  block = block.replace(/\r/g, '');
+  const { keys, options, optionsLine, optionLineOutsideOptions, structuralError } =
+    scanAskBlockLines(block, context);
+
+  const header = keys.get('header') || null;
+  const question = keys.get('question') || null;
+  const type = keys.has('type') ? keys.get('type') : null;
+  const when = keys.has('when') ? keys.get('when') : null;
+  const language = keys.has('language') ? keys.get('language') : 'en';
+  const unscoredValue = keys.has('unscored') ? keys.get('unscored') : null;
+
+  // A missing header or question is often caused by a misplaced key line, which the scan
+  // recorded as a structural error; naming that line points at the actual mistake.
+  const pending = structuralError === null ? '' : `; the block ${structuralError}`;
+  if (!header) {
+    throw new Error(`ASK block missing header field${pending}${contextSuffix(context)}`);
+  }
+  if (!question) {
+    throw new Error(`ASK block missing question field${pending}${contextSuffix(context)}`);
+  }
+  if (header.length > ASK_MAX_HEADER_LENGTH) {
+    throw new Error(
+      `ASK block header "${header}" exceeds ${ASK_MAX_HEADER_LENGTH} characters${contextSuffix(context)}`,
+    );
+  }
+  if (type !== null && !ASK_ALLOWED_TYPES.includes(type)) {
+    throw new Error(
+      `ASK block has unknown type "${type}" (allowed: ${ASK_ALLOWED_TYPES.join(', ')})${contextSuffix(context)}`,
+    );
+  }
+  if (!ASK_ALLOWED_LANGUAGES.includes(language)) {
+    throw new Error(
+      `ASK block has unknown language "${language}" (allowed: ${ASK_ALLOWED_LANGUAGES.join(', ')})${contextSuffix(context)}`,
+    );
+  }
+
+  if (when === '') {
+    throw new Error(`ASK block "${header}" has an empty when field${contextSuffix(context)}`);
+  }
+  if (type === 'approval' && (optionsLine || optionLineOutsideOptions || options.length > 0)) {
+    throw new Error(
+      `ASK block "${header}" of type approval must not declare options${contextSuffix(context)}`,
+    );
+  }
+  if (structuralError !== null) {
+    throw new Error(`ASK block "${header}" ${structuralError}${contextSuffix(context)}`);
+  }
+  if (unscoredValue !== null && type !== 'scored') {
+    throw new Error(
+      `ASK block "${header}" declares unscored: but is not of type scored${contextSuffix(context)}`,
+    );
+  }
+  if (type !== 'approval' && (!optionsLine || options.length === 0)) {
+    throw new Error(`ASK block missing options${contextSuffix(context)}`);
+  }
+
+  let unscored = [];
+  if (type === 'scored') {
+    unscored = unscoredValue === null ? [] : parseUnscoredLabels(unscoredValue, header, context);
+    const labels = options.map((option) => option.label);
+    const seenLabels = new Set();
+    for (const label of labels) {
+      if (seenLabels.has(label)) {
+        throw new Error(
+          `ASK block "${header}" of type scored has duplicate option label "${label}"${contextSuffix(context)}`,
+        );
+      }
+      seenLabels.add(label);
+    }
+    for (const label of unscored) {
+      if (!labels.includes(label)) {
+        throw new Error(
+          `ASK block "${header}" exempts unknown option "${label}" in unscored:${contextSuffix(context)}`,
+        );
+      }
+    }
+    const scorable = options.filter((option) => !unscored.includes(option.label)).length;
+    if (scorable < 2) {
+      throw new Error(
+        `ASK block "${header}" of type scored needs at least two scorable options, found ${scorable}${contextSuffix(context)}`,
+      );
+    }
+  }
+
+  return { header, question, type, when, language, options, unscored };
+}
+
+// Single source of the fit-score calibration a `type: scored` fence renders.
+// The rendered instruction line is built from these strings per language, and
+// the handwritten Phase 3 prose of `plan-review` and `concept-review` is bound
+// to the `en` strings by contract tests, so the copies cannot drift. Scores
+// are dialog-only: they are computed at ask time and never persisted.
+export const ASK_SCORING = Object.freeze({
+  en: Object.freeze({
+    prefix: 'n/10 – <short reason>; ',
+    bands:
+      '1–2 not recommended, 3–4 weak, 5–6 viable with trade-offs, 7–8 good fit, 9–10 clearly right',
+    topScore: 'a 9–10 names its edge over the next-best option unless the two are tied',
+    tie: 'equal fit gets equal scores',
+    order:
+      'keep the listed options in order, leave labels unchanged except for chat-language translation, and add neither a "(Recommended)" marker nor a translated equivalent',
+  }),
+  de: Object.freeze({
+    prefix: 'n/10 – <kurze Begründung>; ',
+    bands:
+      '1–2 nicht empfohlen, 3–4 schwach, 5–6 tragfähig mit Abwägungen, 7–8 passt gut, 9–10 eindeutig richtig',
+    topScore: 'eine 9–10 nennt ihren Vorsprung vor der nächstbesten Option, außer bei Gleichstand',
+    tie: 'gleiche Eignung erhält gleiche Werte',
+    order:
+      'behalte die Reihenfolge der Optionen bei, ändere Labels nur für die Übersetzung in die Chat-Sprache und füge weder eine Markierung „(Recommended)“ noch eine übersetzte Entsprechung hinzu',
+  }),
+});
+
+function quoteLabels(labels, open, close, conjunction) {
+  const quoted = labels.map((label) => `${open}${label}${close}`);
+  if (quoted.length <= 1) return quoted.join('');
+  return `${quoted.slice(0, -1).join(', ')} ${conjunction} ${quoted.at(-1)}`;
+}
+
+// The one rendered scoring instruction line of a `type: scored` fence. The
+// exempt labels (from `unscored:`) are named in the "except" clause, which is
+// omitted when no label is exempt.
+export function renderScoringInstruction(language, unscored = []) {
+  const scoring = ASK_SCORING[language];
+  if (!scoring) {
+    throw new Error(
+      `No scoring instruction for language "${language}" (allowed: ${ASK_ALLOWED_LANGUAGES.join(', ')})`,
+    );
+  }
+  if (language === 'de') {
+    const except = unscored.length > 0 ? ` außer ${quoteLabels(unscored, '„', '“', 'und')}` : '';
+    return (
+      `Bewerte vor dem Fragen jede Option${except} für diesen Kontext: ` +
+      `Beginne ihre Beschreibung vor dem ursprünglichen Text mit „${scoring.prefix}“ ` +
+      `(${scoring.bands}; ${scoring.topScore}; ${scoring.tie}); ${scoring.order}.`
+    );
+  }
+  const except = unscored.length > 0 ? ` except ${quoteLabels(unscored, '"', '"', 'and')}` : '';
+  return (
+    `Before asking, score each option${except} for this context: ` +
+    `start its description with "${scoring.prefix}" before the original text ` +
+    `(${scoring.bands}; ${scoring.topScore}; ${scoring.tie}); ${scoring.order}.`
+  );
+}
+
+const ASK_SCAFFOLDING = Object.freeze({
+  en: Object.freeze({
+    condition: 'If',
+    claudeIntro: 'Use the `AskUserQuestion` tool with the following parameters:',
+    approvalLabel: 'Yes',
+    approvalDescription: 'Approval granted',
+    adjustLabel: 'Adjust',
+    adjustDescription: 'Enter feedback as free text',
+    codexQuestion: 'Ask the user',
+    codexApproval: 'Answer with "Yes" or enter feedback as free text.',
+  }),
+  de: Object.freeze({
+    condition: 'Wenn',
+    claudeIntro: 'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:',
+    approvalLabel: 'Ja',
+    approvalDescription: 'Freigabe erteilt',
+    adjustLabel: 'Anpassen',
+    adjustDescription: 'Feedback als Freitext eingeben',
+    codexQuestion: 'Frage den User',
+    codexApproval: 'Antworte mit "Ja" oder gib Feedback als Freitext.',
+  }),
+});
+
+// Both renderers add the scoring instruction line for `type: scored` only, so
+// `options` and `approval` fences render byte-identically to the pre-scoring
+// output. That keeps the digest of the `merge-gate` eval load set stable (the
+// eval hashes the built load set, not this file), which is why that load set
+// must never contain a scored fence; `test/merge-gate-eval.test.mjs` enforces
+// it. Claude puts the line first, before the intro, so a `when:` condition
+// wraps it with the block; Codex (and portable, which reuses it) puts it right
+// after the question line, so the inline `when:` prefix stays on the first line.
+export function transformAskClaude(body, { context } = {}) {
+  return body.replace(/```ask\n([\s\S]*?)```/g, (_, block) => {
+    const { header, question, type, when, language, options, unscored } = parseAskBlock(block, {
+      context,
+    });
+    const copy = ASK_SCAFFOLDING[language];
+    let out = type === 'scored' ? `${renderScoringInstruction(language, unscored)}\n` : '';
+    out += `${copy.claudeIntro}\n`;
+    out += `- header: "${header}"\n`;
+    out += `- question: "${question}"\n`;
+    out += '- multiSelect: false\n';
+    out += '- options:\n';
+    if (type === 'approval') {
+      out += `  - label: "${copy.approvalLabel}", description: "${copy.approvalDescription}"\n`;
+      out += `  - label: "${copy.adjustLabel}", description: "${copy.adjustDescription}"`;
+    } else {
+      out += options
+        .map((o) => `  - label: "${o.label}", description: "${o.description}"`)
+        .join('\n');
+    }
+    return when ? `${copy.condition} ${when}:\n\n${out}` : out;
+  });
+}
+
+export function transformAskCodex(body, { context } = {}) {
+  return body.replace(/```ask\n([\s\S]*?)```/g, (_, block) => {
+    const { question, type, when, language, options, unscored } = parseAskBlock(block, {
+      context,
+    });
+    const copy = ASK_SCAFFOLDING[language];
+    const prefix = when ? `${copy.condition} ${when}: ` : '';
+    if (type === 'approval') {
+      return `${prefix}${copy.codexQuestion}: **${question}** ${copy.codexApproval}`;
+    }
+    let out = `${copy.codexQuestion}: **${question}**\n`;
+    if (type === 'scored') out += `${renderScoringInstruction(language, unscored)}\n`;
+    out += options.map((o) => `- ${o.label} -- ${o.description}`).join('\n');
+    return prefix ? `${prefix}${out}` : out;
+  });
+}
+
+// Full body pipeline per harness: ask blocks, then references.
+export function renderBody(resolvedBody, harness, config = {}) {
+  const withAsk =
+    harness === 'codex' || harness === 'portable'
+      ? transformAskCodex(resolvedBody, { context: config.context })
+      : transformAskClaude(resolvedBody, { context: config.context });
+  const withWorkerResolution =
+    harness === 'portable' && /\{\{AGENT(?:_PROFILE)?:[^}]+\}\}/.test(withAsk)
+      ? `${PORTABLE_WORKER_DELEGATION}\n\n${withAsk.replace(/^\n/, '')}`
+      : withAsk;
+  return transformRefs(withWorkerResolution, harness, config);
+}
+
+// Documentation categories whose curated README.md landing page is mandatory
+// once the category holds at least one document (see src/shared/doc-categories.md).
+export const README_MANDATORY_CATEGORIES = ['user-guide', 'developer-guide'];
+
+// Given a map of category -> file names present in docs/<category>/, return the
+// mandatory categories that hold at least one .md document but lack README.md.
+// The build guard uses this so a required landing page cannot silently disappear.
+export function missingCategoryReadmes(entriesByCategory) {
+  return README_MANDATORY_CATEGORIES.filter((category) => {
+    const entries = entriesByCategory[category] ?? [];
+    const hasDoc = entries.some((f) => f.endsWith('.md') && f !== 'README.md');
+    return hasDoc && !entries.includes('README.md');
+  });
+}
+
+// --- Self-contained agent-contract guard (#100) ---
+//
+// An agent (description + body) is routing metadata plus the only instructions
+// its subagent ever receives at runtime. It must therefore stand on its own: it
+// may not defer its meaning to a *historical* "original" agent that is not part
+// of the delivered context, to a *sibling* agent by relative comparison, or to
+// another agent's instructions via a "Wie bei {{AGENT:…}}" shorthand that names
+// the rule without loading it. These phrases make the contract untestable or
+// runtime-incomplete, so the build rejects them.
+//
+// Each pattern's `label` explains why it is blocked; matching is case-insensitive
+// and global so every occurrence is reported.
+export const SELF_CONTAINED_CONTRACT_PATTERNS = [
+  {
+    label: 'historical comparison to an "ursprüngliche(r) Agent"',
+    re: /urspr(?:ü|ue)nglich(?:e|er|en|es|em)\s+Agent/gi,
+  },
+  {
+    label: 'historical comparison to an "original agent"',
+    re: /\boriginal\s+agent\b/gi,
+  },
+  {
+    label: 'historical "same depth as the …" comparison',
+    re: /\bsame\s+depth\s+as\s+the\b/gi,
+  },
+  {
+    label: 'relative-to-sibling scope ("wie der/beim/vom <X>-Reviewer/-Implementer/…")',
+    re: /\bwie\s+(?:der|dem|des|beim|vom|im|zum)\s+[A-Za-zÄÖÜäöüß0-9.]+-(?:Reviewer|Implementer|Documenter|Validator|Writer|Tester|Agent)(?:s|en|n)?\b/gi,
+  },
+  {
+    label: 'cross-agent shorthand as a contract substitute ("Wie bei {{AGENT:…}}")',
+    re: /\bWie\s+bei\s+`?\{\{AGENT:[^}]+\}\}/gi,
+  },
+];
+
+// Return every self-referential contract phrase in `text` (an agent's
+// frontmatter + body), as { label, match } records. A legitimate delegation
+// reference such as "an {{AGENT:code-validator}} delegieren" is deliberately not
+// matched — only the "Wie bei {{AGENT:…}}" contract-substitute shape is. Returns
+// an empty array when the text is self-contained; build.mjs fails on any hit.
+export function findSelfReferentialContractPhrases(text) {
+  const hits = [];
+  for (const { label, re } of SELF_CONTAINED_CONTRACT_PATTERNS) {
+    for (const m of text.matchAll(re)) {
+      hits.push({ label, match: m[0].trim() });
+    }
+  }
+  return hits;
+}
+
+// --- Unresolved placeholder guard ---
+//
+// Deliberately inverted: this matches the placeholder *shape*, not a list of the
+// names the build knows how to resolve. An allowlist only ever catches the names
+// it still carries, so retiring a feature and dropping its entry turns its token
+// from "unresolved" into merely "unknown" — every transform leaves an unknown
+// token alone and an allowlist guard ignores it, so a reintroduced `{{GOAL_START}}`
+// would ship verbatim into the delivered skill. Matching the shape instead makes
+// every stray placeholder self-detecting, including typos such as `{{SKIL:fix}}`,
+// and costs no allowlist entry per retired feature.
+//
+// The shape is `{{NAME}}` or `{{NAME:argument}}` with an UPPER_SNAKE name, which
+// is the vocabulary every placeholder in `src/` uses. Rendered output carries no
+// other `{{…}}` token today; a future syntax that legitimately needs one must
+// resolve it before the artifact is written rather than widen this pattern.
+export const UNRESOLVED_PLACEHOLDER_RE = /\{\{([A-Z][A-Z0-9_]*)(?::([^}\n]*))?\}\}/g;
+
+export function findUnresolvedPlaceholders(text) {
+  const findings = [];
+  const lines = normalizeLineEndings(text).split('\n');
+  for (let index = 0; index < lines.length; index += 1) {
+    for (const match of lines[index].matchAll(UNRESOLVED_PLACEHOLDER_RE)) {
+      findings.push({ line: index + 1, placeholder: match[0], name: match[1] });
+    }
+  }
+  return findings;
+}
+
+export function assertNoUnresolvedPlaceholders(text, { context } = {}) {
+  const findings = findUnresolvedPlaceholders(text);
+  if (findings.length === 0) return;
+  const details = findings
+    .map(({ line, placeholder }) => `line ${line} (${placeholder})`)
+    .join(', ');
+  throw new Error(`unresolved placeholder${contextSuffix(context)}: ${details}`);
+}
+
+// --- Lazy-include directive (#99) — progressive disclosure inside a tool ---
+//
+// Eager shared fragments are expanded recursively before any harness-specific
+// rendering. Keep this transform pure so nested includes, missing targets, and
+// cycles have deterministic regression coverage independent of filesystem I/O.
+export const EAGER_INCLUDE_RE = /^```include[ \t]*\n([^\n]*)\n```[ \t]*$/gm;
+
+export function findUnresolvedEagerIncludes(body) {
+  const findings = [];
+  const lines = normalizeLineEndings(body).split('\n');
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index].trim() !== '```include') continue;
+    findings.push({ line: index + 1, name: (lines[index + 1] ?? '').trim() });
+  }
+  return findings;
+}
+
+export function assertNoUnresolvedEagerIncludes(body, { context } = {}) {
+  const findings = findUnresolvedEagerIncludes(body);
+  if (findings.length === 0) return;
+  const details = findings
+    .map(({ line, name }) => `line ${line}${name ? ` (${name})` : ' (missing fragment name)'}`)
+    .join(', ');
+  throw new Error(`unresolved eager include fence${contextSuffix(context)}: ${details}`);
+}
+
+export function resolveEagerIncludes(body, { context, readFragment } = {}) {
+  if (typeof readFragment !== 'function') {
+    throw new Error(`resolveEagerIncludes requires readFragment${contextSuffix(context)}`);
+  }
+
+  const expand = (input, chain) =>
+    normalizeLineEndings(input).replace(EAGER_INCLUDE_RE, (_, rawName) => {
+      const name = rawName.trim();
+      if (!name) {
+        throw new Error(`eager include fence is missing a fragment name${contextSuffix(context)}`);
+      }
+      const sharedContext = `shared/${name}.md`;
+      if (chain.includes(sharedContext)) {
+        throw new Error(
+          `eager include cycle${contextSuffix(context)}: ${[...chain, sharedContext].join(' -> ')}`,
+        );
+      }
+
+      let fragment;
+      try {
+        fragment = readFragment(name);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `cannot resolve eager include "${name}"${contextSuffix(context)} via ${[
+            ...chain,
+            sharedContext,
+          ].join(' -> ')}: ${detail}`,
+        );
+      }
+      if (typeof fragment !== 'string') {
+        throw new Error(
+          `cannot resolve eager include "${name}"${contextSuffix(context)} via ${[
+            ...chain,
+            sharedContext,
+          ].join(' -> ')}: fragment reader returned no text`,
+        );
+      }
+      return expand(fragment.replace(/\n+$/, ''), [...chain, sharedContext]);
+    });
+
+  const resolved = expand(body, context ? [context] : []);
+  assertNoUnresolvedEagerIncludes(resolved, { context });
+  return resolved;
+}
+
+// A ```lazy-include fence defers a mode-gated shared fragment. Instead of
+// inlining `src/shared/<name>.md` eagerly (```include), the build ships the
+// fragment once per harness as a loadable `shared/<name>.md` and replaces the
+// directive with a conditional load pointer at the decision point, so a routine
+// invocation that never reaches the mode never loads the fragment. See
+// docs/developer-guide/build-system.md ("Progressive disclosure beyond the
+// router").
+//
+// Fence shape (the interior is kept verbatim by oxfmt):
+//   ```lazy-include
+//   <name>
+//   when: <trigger clause>
+//   ```
+// `name` is the shared fragment; `when` is the trigger clause rendered after
+// "when " in the pointer (optional but expected — it is the load trigger).
+export const LAZY_INCLUDE_RE = /```lazy-include\n([^\n]+)\n(?:when:[ \t]*([^\n]*)\n)?```/g;
+
+// The harness-neutral load pointer emitted in place of one lazy fence. It names
+// the shipped `shared/<name>.md` and, when a trigger is given, the exact
+// condition under which the agent should read it.
+export function renderLazyPointer(name, when) {
+  const trigger = when && when.trim() ? `, when ${when.trim()}` : '';
+  return `**Load on demand:** Read \`shared/${name}.md\`${trigger}.`;
+}
+
+// Replace every ```lazy-include fence in `body` with its load pointer. Returns
+// { body, names } where `names` is the ordered, de-duplicated list of referenced
+// fragments (so build.mjs knows which fragment files to ship). A fence without a
+// name throws with context.
+export function resolveLazyIncludes(body, { context } = {}) {
+  const names = [];
+  const out = body.replace(LAZY_INCLUDE_RE, (_, rawName, when) => {
+    const name = rawName.trim();
+    if (!name) {
+      throw new Error(`lazy-include fence is missing a fragment name${contextSuffix(context)}`);
+    }
+    if (!names.includes(name)) names.push(name);
+    return renderLazyPointer(name, when);
+  });
+  return { body: out, names };
+}
+
+export function findUnresolvedLazyIncludes(body) {
+  const findings = [];
+  const lines = normalizeLineEndings(body).split('\n');
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index].trim() !== '```lazy-include') continue;
+    findings.push({ line: index + 1, name: (lines[index + 1] ?? '').trim() });
+  }
+  return findings;
+}
+
+// The lazy counterpart to assertNoUnresolvedEagerIncludes. A raw fence that
+// survives into a generated artifact ships as literal markdown a worker cannot
+// act on: nothing in the delivered skill explains what a ```lazy-include fence
+// means, so the deferred fragment is silently never loaded.
+export function assertNoUnresolvedLazyIncludes(body, { context } = {}) {
+  const findings = findUnresolvedLazyIncludes(body);
+  if (findings.length === 0) return;
+  const details = findings
+    .map(({ line, name }) => `line ${line}${name ? ` (${name})` : ' (missing fragment name)'}`)
+    .join(', ');
+  throw new Error(`unresolved lazy include fence${contextSuffix(context)}: ${details}`);
+}
+
+// Collect the shared-fragment names a raw body references eagerly (```include)
+// and lazily (```lazy-include). Run this on the raw source body, before either
+// resolver rewrites it.
+export function collectIncludeNames(body) {
+  const eager = new Set();
+  for (const m of body.matchAll(/```include\n([^\n]+)\n```/g)) eager.add(m[1].trim());
+  const lazy = new Set();
+  for (const m of body.matchAll(LAZY_INCLUDE_RE)) lazy.add(m[1].trim());
+  return { eager, lazy };
+}
+
+// Guard: a fragment must not be both eager- and lazy-included in the same file.
+// Doing both would defer the block in prose yet still inline its full content,
+// doubling it and defeating the budget. Throws listing every overlapping name.
+export function assertNoEagerLazyOverlap(eager, lazy, { context } = {}) {
+  const overlap = [...lazy].filter((name) => eager.has(name));
+  if (overlap.length > 0) {
+    throw new Error(
+      `fragment(s) both eager- and lazy-included${contextSuffix(context)}: ${overlap.join(', ')}`,
+    );
+  }
+}
+
+// --- Documentation-sync consumer guard ---
+//
+// Keeping documentation in sync is a fixed part of every implementation tool,
+// not an optional phase. These consumers must embed the gate's eager core: a
+// lazy pointer carries a `when:` condition a model may judge inapplicable,
+// which is exactly the skip this gate removes. The detail contract behind the
+// core stays lazy and is deliberately not required here.
+export const DOCUMENTATION_SYNC_CONSUMERS = Object.freeze([
+  'shared/build-delegated-run.md',
+  'tools/fix.md',
+  'tools/refactor.md',
+  'tools/maintain.md',
+]);
+
+const DOCUMENTATION_SYNC_FRAGMENT = 'documentation-sync';
+
+// Takes a Map of context -> collectIncludeNames() result and returns one
+// violation per consumer that does not embed the fragment eagerly. A consumer
+// missing from the map has not been read at all and violates just the same.
+export function findDocumentationSyncViolations(includesByContext) {
+  const violations = [];
+  for (const context of DOCUMENTATION_SYNC_CONSUMERS) {
+    const includes = includesByContext.get(context);
+    if (!includes) {
+      violations.push({ context, reason: `${context} was not read for the eager gate include` });
+      continue;
+    }
+    if (includes.eager.has(DOCUMENTATION_SYNC_FRAGMENT)) continue;
+    const lazily = includes.lazy.has(DOCUMENTATION_SYNC_FRAGMENT);
+    violations.push({
+      context,
+      reason: lazily
+        ? `${context} defers \`${DOCUMENTATION_SYNC_FRAGMENT}\` lazily; the gate must be eager`
+        : `${context} must include \`${DOCUMENTATION_SYNC_FRAGMENT}\` eagerly`,
+    });
+  }
+  return violations;
+}
+
+export function assertDocumentationSyncConsumers(includesByContext, { context } = {}) {
+  const violations = findDocumentationSyncViolations(includesByContext);
+  if (violations.length > 0) {
+    throw new Error(
+      `documentation-sync consumer guard${contextSuffix(context)}: the documentation phase is ` +
+        'mandatory in every implementation tool:\n  ' +
+        violations.map((violation) => violation.reason).join('\n  '),
+    );
+  }
+}
+
+// --- Runtime-state write-safety coverage guard (#165) ---
+//
+// Runtime workflow sources are executable natural-language contracts. This
+// checker walks each root source in order, follows eager and lazy shared
+// includes, and verifies that an operational `.effective-flow/` mutation is
+// preceded by the canonical safety fragment. It deliberately derives writers
+// from their source instructions instead of maintaining a second writer
+// allowlist. Read-only runtime lookup is not a mutation.
+
+const RUNTIME_STATE_PATH_RE = /\.effective-flow\/(?:[A-Za-z0-9._<>/{-]+)?/g;
+const RUNTIME_MUTATION_RE =
+  /\b(?:mkdir|write|writes|wrote|written|writing|create|creates|created|creating|update|updates|updated|updating|delete|deletes|deleted|deleting|remove|removes|removed|removing|copy|copies|copied|copying|rename|renames|renamed|renaming|migrate|migrates|migrated|migrating|mark|marks|marked|marking|acquire|acquires|acquired|acquiring|persist|persists|persisted|persisting|save|saves|saved|saving|append|appends|appended|appending|edit|edits|edited|editing|touch|touches|touched|touching|move|moves|moved|moving|unlink|unlinks|unlinked|unlinking|symlink|symlinks|symlinked|symlinking|store|stores|stored|storing|record|records|recorded|recording|emit|emits|emitted|emitting|replace|replaces|replaced|replacing|lock acquisition)\b|\bgit\s+worktree\s+add\b/i;
+const RUNTIME_PASSIVE_MUTATION_RE =
+  /\b(?:is|are|was|were)\s+(?:(?:not|never|only)\s+)?(?:written|created|updated|deleted|removed|copied|renamed|migrated|marked|acquired|persisted|saved|appended|edited|touched|moved|unlinked|symlinked|stored|recorded|emitted|replaced)\b/gi;
+const RUNTIME_NEGATED_MUTATION_RE =
+  /\b(?:(?:do|does|did|must|should|may|can)\s+not|never)\s+(?:write|create|update|delete|remove|copy|rename|migrate|mark|acquire|persist|save|append|edit|touch|move|unlink|symlink|store|record|emit|replace)|\bwithout\s+(?:writing|creating|updating|deleting|removing|copying|renaming|migrating|marking|acquiring|persisting|saving|appending|editing|touching|moving|unlinking|symlinking|storing|recording|emitting|replacing)\b/gi;
+const RUNTIME_DESCRIPTIVE_NON_MUTATION_RE =
+  /\b(?:read-only|non-mutating|creates? nothing|touches? no git)\b/gi;
+const RUNTIME_READ_ONLY_GIT_COMMAND_RE = /\bgit\s+(?:check-ignore|ls-files)\b/i;
+const INCLUDE_FENCE_START_RE = /^```(lazy-)?include\s*$/;
+const SETUP_REPAIR_SCOPE_START = '<!-- runtime-state-safety: setup-repair-only:start -->';
+const SETUP_REPAIR_SCOPE_END = '<!-- runtime-state-safety: setup-repair-only:end -->';
+const SETUP_CONTEXT = 'tools/setup.md';
+const SETUP_RUNTIME_MARKER = '.effective-flow/memory.json';
+
+function sourceEntries(sources) {
+  if (sources instanceof Map) return [...sources.entries()];
+  return Object.entries(sources ?? {});
+}
+
+function runtimeMutationOnLine(line) {
+  RUNTIME_STATE_PATH_RE.lastIndex = 0;
+  const paths = [...line.matchAll(RUNTIME_STATE_PATH_RE)].map((match) => match[0]);
+  const withoutNonOperationalCode = line.replace(/`([^`]+)`/g, (match, code) =>
+    /\.effective-flow\/|\bgit\s+worktree\s+add\b|\bmkdir\b|\b(?:cp|mv|rm|touch|unlink)\b/i.test(
+      code,
+    )
+      ? match
+      : '',
+  );
+  const operationalText = withoutNonOperationalCode
+    .replace(RUNTIME_PASSIVE_MUTATION_RE, '')
+    .replace(RUNTIME_NEGATED_MUTATION_RE, '')
+    .replace(RUNTIME_DESCRIPTIVE_NON_MUTATION_RE, '');
+  if (paths.length === 0 || !RUNTIME_MUTATION_RE.test(operationalText)) return null;
+  return paths[0];
+}
+
+function walkRuntimeStateMutations(
+  sources,
+  { rootContexts, initialState, onLine, onInclude, onMutation } = {},
+) {
+  const entries = sourceEntries(sources).sort(([a], [b]) => a.localeCompare(b));
+  const sourceMap = new Map(entries);
+  const roots = (
+    rootContexts ??
+    entries.map(([context]) => context).filter((context) => !context.startsWith('shared/'))
+  )
+    .filter((context) => sourceMap.has(context))
+    .sort();
+
+  const visit = (context, state, includeChain, includePath = []) => {
+    const body = normalizeLineEndings(sourceMap.get(context) ?? '');
+    const lines = body.split('\n');
+    const active = { ...state };
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      onLine?.({ context, line, lineNumber: index + 1, active, includeChain });
+
+      const includeStart = INCLUDE_FENCE_START_RE.exec(line);
+      if (includeStart) {
+        const lazy = Boolean(includeStart[1]);
+        const name = (lines[index + 1] ?? '').trim();
+        let fenceEnd = index + 2;
+        while (fenceEnd < lines.length && lines[fenceEnd].trim() !== '```') fenceEnd += 1;
+        const when = lazy
+          ? (lines
+              .slice(index + 2, fenceEnd)
+              .find((candidate) => candidate.trim().startsWith('when:'))
+              ?.replace(/^\s*when:\s*/, '') ?? '')
+          : '';
+        const traverseInclude =
+          onInclude?.({
+            context,
+            name,
+            lineNumber: index + 1,
+            active,
+            includeChain,
+            includePath,
+            lazy,
+            when,
+          }) !== false;
+        const sharedContext = `shared/${name}.md`;
+        if (
+          traverseInclude &&
+          name &&
+          sourceMap.has(sharedContext) &&
+          !includeChain.includes(sharedContext)
+        ) {
+          Object.assign(
+            active,
+            visit(
+              sharedContext,
+              active,
+              [...includeChain, sharedContext],
+              [...includePath, { name, lazy, when }],
+            ),
+          );
+        }
+        index = Math.min(fenceEnd, lines.length - 1);
+        continue;
+      }
+
+      // Markdown commonly wraps an operation immediately before its target.
+      // Join only the preceding physical line, preserving source order without
+      // turning an entire paragraph into a broad prose heuristic.
+      const target =
+        runtimeMutationOnLine(line) ??
+        (line.includes('.effective-flow/') && !RUNTIME_READ_ONLY_GIT_COMMAND_RE.test(line)
+          ? runtimeMutationOnLine(`${lines[index - 1] ?? ''} ${line}`)
+          : null);
+      if (!target) continue;
+      onMutation?.({
+        context,
+        line,
+        lineNumber: index + 1,
+        target,
+        active,
+        includeChain,
+        includePath,
+      });
+    }
+
+    return active;
+  };
+
+  for (const context of roots) {
+    visit(context, initialState?.(context) ?? {}, [context]);
+  }
+}
+
+function runtimeSafetyTriggerCoversMutation(when, { context, line, target, includeChain }) {
+  const trigger = when.toLowerCase();
+  if (/\b(?:any|other|every) runtime-state mutation\b/.test(trigger)) return true;
+
+  const inDirectoryMigration =
+    context === 'shared/effective-flow-dir-migration.md' ||
+    includeChain.includes('shared/effective-flow-dir-migration.md');
+  if (inDirectoryMigration) {
+    return /runtime (?:directory )?migration|\bmemory\b|runtime marker/.test(trigger);
+  }
+
+  const inIssueTracker =
+    context === 'shared/issue-tracker.md' || includeChain.includes('shared/issue-tracker.md');
+  if (inIssueTracker) {
+    return /tracker-marker|tracker marker|migration marker|\bmemory\b/.test(trigger);
+  }
+
+  if (target.startsWith('.effective-flow/memory.json')) {
+    return /\bmemory\b|runtime marker|migration marker|tracker-marker|tracker marker/.test(trigger);
+  }
+  if (target.includes('.worktrees/')) return /worktree/.test(trigger);
+  if (target.includes('wisdom')) return /wisdom/.test(trigger);
+  if (target.includes('cache.json')) return /cache/.test(trigger);
+  if (target.includes('/review/') || /\breport\b/i.test(line)) return /report/.test(trigger);
+  if (target.includes('/investigation/')) return /investigation/.test(trigger);
+  if (target.includes('lock')) return /\block\b/.test(trigger);
+  if (/\b(?:copy|copied|remove|removed|delete|deleted)\b/i.test(line)) {
+    return /copied|copy|removed|remove|delet/.test(trigger);
+  }
+  return trigger.includes(target.toLowerCase());
+}
+
+// Return deterministic { context, line, reason, target, includeChain } records.
+// `sources` is a Map/object from source context (`tools/x.md`, `shared/y.md`, …)
+// to raw source body. By default tools and agents are execution roots; shared
+// fragments are reached through their owning include position.
+export function findRuntimeStateSafetyViolations(
+  sources,
+  { rootContexts, guardFragment = 'runtime-state-safety', setupContext = SETUP_CONTEXT } = {},
+) {
+  const violations = [];
+  walkRuntimeStateMutations(sources, {
+    rootContexts,
+    initialState: () => ({
+      guardSeen: false,
+      guardLazy: false,
+      guardWhen: '',
+      setupSentinelValidated: false,
+      setupTargetValidated: false,
+      setupTrackedStateValidated: false,
+      setupRepairOnly: false,
+    }),
+    onLine: ({ context, line, active }) => {
+      if (line.trim() === SETUP_REPAIR_SCOPE_START) active.setupRepairOnly = true;
+      if (line.trim() === SETUP_REPAIR_SCOPE_END) active.setupRepairOnly = false;
+      if (context !== setupContext) return;
+      if (line.includes('git check-ignore --no-index -- .effective-flow/config.json')) {
+        active.setupSentinelValidated = true;
+      }
+      if (line.includes(`git check-ignore --no-index -- ${SETUP_RUNTIME_MARKER}`)) {
+        active.setupTargetValidated = true;
+      }
+      if (line.includes('git ls-files -- .effective-flow/')) {
+        active.setupTrackedStateValidated = true;
+      }
+    },
+    onInclude: ({ name, active, lazy, when }) => {
+      if (name !== guardFragment) return true;
+      active.guardSeen = true;
+      active.guardLazy = lazy;
+      active.guardWhen = when;
+      return false;
+    },
+    onMutation: ({ context, line, lineNumber, target, active, includeChain, includePath }) => {
+      if (active.setupRepairOnly && includeChain[0] !== setupContext) return;
+      if (!active.guardSeen) {
+        violations.push({
+          context,
+          line: lineNumber,
+          reason: 'runtime mutation is not preceded by the canonical safety guard',
+          target,
+          includeChain: [...includeChain],
+        });
+        return;
+      }
+      const mutationHasOwnLazyTrigger = includePath.some(
+        ({ name, lazy }) => lazy && name !== guardFragment,
+      );
+      const eagerApplicabilityOwner = includePath.find(
+        ({ name, lazy }) =>
+          !lazy && (name === 'effective-flow-dir-migration' || name === 'issue-tracker'),
+      );
+      if (
+        active.guardLazy &&
+        active.guardWhen &&
+        eagerApplicabilityOwner &&
+        !mutationHasOwnLazyTrigger &&
+        !runtimeSafetyTriggerCoversMutation(active.guardWhen, {
+          context,
+          line,
+          target,
+          includeChain,
+        })
+      ) {
+        violations.push({
+          context,
+          line: lineNumber,
+          reason: `runtime-state-safety trigger does not cover this mutation: "${active.guardWhen}"`,
+          target,
+          includeChain: [...includeChain],
+        });
+        return;
+      }
+      if (
+        context === setupContext &&
+        target.startsWith(SETUP_RUNTIME_MARKER) &&
+        !(
+          active.setupSentinelValidated &&
+          active.setupTargetValidated &&
+          active.setupTrackedStateValidated
+        )
+      ) {
+        violations.push({
+          context,
+          line: lineNumber,
+          reason: 'setup runtime marker write is not preceded by complete target-state validation',
+          target,
+          includeChain: [...includeChain],
+        });
+      }
+    },
+  });
+
+  return violations.sort(
+    (a, b) =>
+      a.context.localeCompare(b.context) ||
+      a.line - b.line ||
+      a.reason.localeCompare(b.reason) ||
+      a.target.localeCompare(b.target),
+  );
+}
+
+// --- Runtime-directory migration prerequisite coverage guard (#174) ---
+//
+// Uses the same ordered mutation traversal as the write-safety guard. Every
+// operational runtime-state mutation must encounter the canonical migration
+// fragment first, including mutations reached through nested shared writers.
+
+export function findRuntimeDirMigrationViolations(
+  sources,
+  { rootContexts, migrationFragment = 'effective-flow-dir-migration' } = {},
+) {
+  const migrationContext = `shared/${migrationFragment}.md`;
+  const violations = [];
+
+  walkRuntimeStateMutations(sources, {
+    rootContexts,
+    initialState: () => ({ migrationSeen: false, setupRepairOnly: false }),
+    onLine: ({ line, active }) => {
+      if (line.trim() === SETUP_REPAIR_SCOPE_START) active.setupRepairOnly = true;
+      if (line.trim() === SETUP_REPAIR_SCOPE_END) active.setupRepairOnly = false;
+    },
+    onInclude: ({ name, active }) => {
+      if (name === migrationFragment) active.migrationSeen = true;
+      return name !== 'runtime-state-safety';
+    },
+    onMutation: ({ context, lineNumber, target, active, includeChain }) => {
+      if (active.setupRepairOnly && includeChain[0] !== SETUP_CONTEXT) return;
+      if (context === migrationContext || active.migrationSeen) return;
+      violations.push({
+        context,
+        line: lineNumber,
+        reason: 'runtime mutation is not preceded by the runtime-directory migration prerequisite',
+        target,
+        includeChain: [...includeChain],
+      });
+    },
+  });
+
+  return violations.sort(
+    (a, b) =>
+      a.context.localeCompare(b.context) ||
+      a.line - b.line ||
+      a.reason.localeCompare(b.reason) ||
+      a.target.localeCompare(b.target),
+  );
+}
+
+// --- Shared memory-state mutation coverage guard (#176) ---
+//
+// Every operational write to the repository-global memory object must pass
+// through the single lock/merge/atomic-replacement contract. Ordered traversal
+// catches a writer that includes the contract only after its first mutation.
+
+export function findMemoryStateContractViolations(
+  sources,
+  { rootContexts, contractFragment = 'memory-state', delivered = false } = {},
+) {
+  const contractContext = `shared/${contractFragment}.md`;
+  const violations = [];
+
+  walkRuntimeStateMutations(sources, {
+    rootContexts,
+    initialState: () => ({ memoryContractSeen: false }),
+    onLine: ({ line, active }) => {
+      if (delivered && line.trim() === '## Shared memory-state mutation') {
+        active.memoryContractSeen = true;
+      }
+    },
+    onInclude: ({ name, active, lazy }) => {
+      if (delivered) return lazy;
+      if (name === contractFragment) active.memoryContractSeen = true;
+      return name !== contractFragment;
+    },
+    onMutation: ({ context, lineNumber, target, active, includeChain }) => {
+      if (context === contractContext || !target.startsWith('.effective-flow/memory.json')) return;
+      if (active.memoryContractSeen) return;
+      violations.push({
+        context,
+        line: lineNumber,
+        reason: 'memory mutation is not preceded by the shared memory-state contract',
+        target,
+        includeChain: [...includeChain],
+      });
+    },
+  });
+
+  return violations.sort(
+    (a, b) =>
+      a.context.localeCompare(b.context) ||
+      a.line - b.line ||
+      a.reason.localeCompare(b.reason) ||
+      a.target.localeCompare(b.target),
+  );
+}
+
+// --- Consumer-document command guard (#160) ---
+//
+// These scripts operate on a source checkout or release-maintenance payload;
+// they are not supported end-user installation interfaces. Consumer docs may
+// still name the files in explanatory prose, but must not present an executable
+// local command. Keep this detector pure so the build-time filesystem scan can
+// be covered with focused unit tests.
+
+const DEVELOPER_ONLY_SCRIPTS = '(?:install-skill|local-link|local-common)\\.sh';
+const LOCAL_SCRIPT_COMMAND_RE = new RegExp(
+  `(?:\\.\\/${DEVELOPER_ONLY_SCRIPTS}\\b|\\b(?:bash|sh|zsh|source)[ \\t]+(?:\\.\\/)?${DEVELOPER_ONLY_SCRIPTS}\\b)`,
+  'g',
+);
+
+export function findProhibitedConsumerScriptCommands(markdown) {
+  const hits = [];
+  for (const [index, line] of normalizeLineEndings(markdown).split('\n').entries()) {
+    LOCAL_SCRIPT_COMMAND_RE.lastIndex = 0;
+    for (const match of line.matchAll(LOCAL_SCRIPT_COMMAND_RE)) {
+      hits.push({ line: index + 1, command: match[0] });
+    }
+  }
+  return hits;
+}
+
+// Runtime prompts must delegate provider transport mechanics to the shipped
+// remote-tracker helper. Return line-oriented diagnostics for raw CLI/API recipes
+// that would make the model rediscover flags, parse remotes, or assemble GraphQL.
+export function findRemoteTrackerRecipeViolations(markdown) {
+  const patterns = [
+    ['direct-gh-command', /\bgh\s+(?:api|auth|issue|pr|label)\b/i],
+    ['direct-tea-command', /\btea\s+(?:issue|issues|pr|pulls|comment|labels|logins)\b/i],
+    ['manual-origin-parse', /git\s+remote\s+get-url\s+origin/i],
+    ['manual-graphql', /(?:query|mutation)\s*\([^\n]*\)\s*\{|resolveReviewThread\s*\(/i],
+    ['runtime-flag-discovery', /(?:check|determine)\s+(?:the\s+)?exact\s+flag(?:s| names)?/i],
+  ];
+  const hits = [];
+  for (const [index, line] of normalizeLineEndings(markdown).split('\n').entries()) {
+    for (const [kind, pattern] of patterns) {
+      if (pattern.test(line)) hits.push({ line: index + 1, kind, text: line.trim() });
+    }
+  }
+  return hits;
+}
+
+// --- Retired consumer-configuration reference guard (#166) ---
+//
+// `.effective-flow/config.json` is migration input, not the current
+// configuration interface. Consumer documentation may name it only inside the
+// deliberately narrow migration section below. The former `.gitignore`
+// negation is invalid even there because `.effective-flow/` is now wholly
+// ignored. Keep the detector pure so both the source build and the mechanically
+// transformed delivery payload can use exactly the same policy.
+
+const RETIRED_CONFIG_PATH = '.effective-flow/config.json';
+const RETIRED_CONFIG_MIGRATION_SECTIONS = new Map([
+  ['docs/user-guide/configuration.md', new Set(['Migrating a legacy JSON configuration'])],
+]);
+
+function normalizeDocumentationPath(file) {
+  return file.replaceAll('\\', '/').replace(/^\.\//, '');
+}
+
+// Return every prohibited retired-config reference as
+// { file, line, kind, reference }. `kind` is `retired-negation` for the former
+// `!.effective-flow/config.json` ignore exception and
+// `retired-config-outside-migration` for a path mention outside an explicitly
+// allowlisted migration section. Lines are reported 1-based.
+export function findRetiredConfigDocViolations(file, markdown) {
+  const normalizedFile = normalizeDocumentationPath(file);
+  const allowedHeadings = RETIRED_CONFIG_MIGRATION_SECTIONS.get(normalizedFile) ?? new Set();
+  const headingStack = [];
+  const hits = [];
+
+  for (const [index, line] of normalizeLineEndings(markdown).split('\n').entries()) {
+    const heading = /^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/.exec(line);
+    if (heading) {
+      const level = heading[1].length;
+      headingStack.length = level - 1;
+      headingStack[level - 1] = heading[2].trim();
+    }
+    const inAllowedMigrationSection = headingStack.some((title) => allowedHeadings.has(title));
+
+    for (const match of line.matchAll(/!?\.effective-flow\/config\.json/g)) {
+      const reference = match[0];
+      if (reference.startsWith('!')) {
+        hits.push({
+          file: normalizedFile,
+          line: index + 1,
+          kind: 'retired-negation',
+          reference,
+        });
+      } else if (!inAllowedMigrationSection) {
+        hits.push({
+          file: normalizedFile,
+          line: index + 1,
+          kind: 'retired-config-outside-migration',
+          reference: RETIRED_CONFIG_PATH,
+        });
+      }
+    }
+  }
+
+  return hits;
+}
+
+// --- Stale brand guard ---
+//
+// The `firmo` -> `effective-flow` rename migrated identifiers but left the
+// capitalized brand behind in prose, and nothing separated a deliberately
+// frozen legacy literal from an accidental leftover. Case is what separates
+// them: the lowercase spellings are live read-compatibility surfaces -- the
+// `firmo-` issue-label prefix and the legacy `.firmo/` directory -- and stay
+// legal everywhere, while every capitalized spelling, whether in prose or in
+// an all-caps build token, is a leftover. The one exception is the frozen
+// backcompat marker below, which target projects still carry in their
+// `AGENTS.md` and which `setup` reads for one compatibility generation. Keep
+// the detector pure so the build-time source scan can be covered by focused
+// unit tests.
+
+export const FROZEN_LEGACY_SETUP_MARKER = '**Firmo project setup:**';
+const FROZEN_LEGACY_SETUP_MARKER_RE = new RegExp(escapeRegex(FROZEN_LEGACY_SETUP_MARKER), 'g');
+
+// Return every stale capitalized brand occurrence as { line, reference }.
+// An occurrence inside the frozen marker literal is permitted, an all-lowercase
+// `firmo` is never a hit, and lines are reported 1-based.
+export function findStaleBrandReferences(markdown) {
+  const hits = [];
+  for (const [index, line] of normalizeLineEndings(markdown).split('\n').entries()) {
+    const frozenSpans = [...line.matchAll(FROZEN_LEGACY_SETUP_MARKER_RE)].map((match) => [
+      match.index,
+      match.index + match[0].length,
+    ]);
+    for (const match of line.matchAll(/firmo/gi)) {
+      if (match[0] === 'firmo') continue;
+      const inFrozenMarker = frozenSpans.some(
+        ([start, end]) => match.index >= start && match.index < end,
+      );
+      if (inFrozenMarker) continue;
+      hits.push({ line: index + 1, reference: match[0] });
+    }
+  }
+  return hits;
+}
+
+// --- ADR ownership-contract guard (#167) ---
+//
+// Effective Flow's living, mutable, numberless ADR model is a repository
+// convention that the central `effective-product` skill discovers and follows.
+// Older guidance described that relationship as a deliberate divergence from
+// an immutable/numbered skill contract. Current contributor guidance must not
+// restore that obsolete premise, while an explicitly corrected historical
+// explanation may retain it. Keep this detector pure so the build-time file
+// scan can be covered with focused unit tests.
+
+const STALE_ADR_DIVERGENCE_RE =
+  /\b(?:(?:deliberate|intentional)\s+(?:conflict|divergence|deviation)|(?:deliberately|intentionally)\s+(?:conflicts?|diverges?|deviates?)|(?:conflicts?|diverges?|deviates?)\s+(?:deliberately|intentionally))\b/gi;
+const STALE_ADR_DESCRIPTOR_RE = /\b(?:immutable|numbered)\b/gi;
+
+const ADR_CONTRACT_HISTORY_RE = /\b(?:earlier|previous|former|historical|old|pre-#85)\b/i;
+const ADR_CONTRACT_CORRECTION_RE =
+  /\b(?:outdated|no longer (?:a )?(?:conflict|divergence)|conflict is gone|now supports)\b/i;
+
+function markdownParagraphs(markdown) {
+  const paragraphs = [];
+  let startLine = 1;
+  let lines = [];
+
+  const flush = () => {
+    if (lines.length > 0) paragraphs.push({ line: startLine, text: lines.join('\n') });
+    lines = [];
+  };
+
+  for (const [index, line] of normalizeLineEndings(markdown).split('\n').entries()) {
+    if (line.trim() === '') {
+      flush();
+      startLine = index + 2;
+    } else {
+      if (lines.length === 0) startLine = index + 1;
+      lines.push(line);
+    }
+  }
+  flush();
+  return paragraphs;
+}
+
+function markdownSentences(text) {
+  const sentences = [];
+  let start = 0;
+
+  for (const boundary of text.matchAll(/[.!?](?=\s|$)/g)) {
+    const end = boundary.index + 1;
+    if (text.slice(start, end).trim()) sentences.push({ start, text: text.slice(start, end) });
+    start = end;
+  }
+  if (text.slice(start).trim()) sentences.push({ start, text: text.slice(start) });
+  return sentences;
+}
+
+function continuesPreviousSkillClaim(sentence) {
+  const prose = sentence.trimStart().replace(/^(?:[#>*+-]+\s*)+/, '');
+  return /^(?:It|The skill|This skill|That skill)\b/i.test(prose);
+}
+
+function isLocallyNegated(sentence, claimIndex) {
+  const prefix = sentence.slice(0, claimIndex);
+  const negations = [
+    ...prefix.matchAll(
+      /\b(?:no longer|not|does not|do not|did not|is not|are not|was not|were not)\b/gi,
+    ),
+  ];
+  const negation = negations.at(-1);
+  if (!negation) return false;
+  const scope = prefix.slice(negation.index + negation[0].length);
+  return scope.length <= 80 && !/(?:[;:.!?]|\b(?:but|however|yet)\b)/i.test(scope);
+}
+
+function isAssociatedCorrectionSentence(sentence) {
+  const prose = sentence.trimStart().replace(/^(?:[#>*+-]+\s*)+/, '');
+  return /^(?:(?:That|This)\s+(?:assumption|claim|conflict|contract|description|divergence|model|premise)|It)\b/i.test(
+    prose,
+  );
+}
+
+function isCorrectedHistoricalClaim(sentences, sentenceIndex, claimIndex) {
+  const sentence = sentences[sentenceIndex].text;
+  const history = ADR_CONTRACT_HISTORY_RE.exec(sentence);
+  if (!history || history.index > claimIndex) return false;
+
+  const correction = ADR_CONTRACT_CORRECTION_RE.exec(sentence);
+  if (correction && correction.index > claimIndex) return true;
+
+  const nextSentence = sentences[sentenceIndex + 1]?.text;
+  return Boolean(
+    nextSentence &&
+    isAssociatedCorrectionSentence(nextSentence) &&
+    ADR_CONTRACT_CORRECTION_RE.test(nextSentence),
+  );
+}
+
+// Return stale ADR ownership claims as { line, kind, claim } records. Historical
+// wording is allowed only when the same paragraph both identifies the old
+// context and explicitly corrects it as outdated or no longer a conflict.
+export function findStaleAdrContractClaims(markdown) {
+  const hits = [];
+
+  for (const paragraph of markdownParagraphs(markdown)) {
+    if (!/\beffective-product\b/i.test(paragraph.text)) continue;
+    const sentences = markdownSentences(paragraph.text);
+    const candidates = [];
+
+    for (const [sentenceIndex, sentence] of sentences.entries()) {
+      const namesAdrOwner = /\beffective-product\b/i.test(sentence.text);
+      if (namesAdrOwner) {
+        for (const match of sentence.text.matchAll(STALE_ADR_DIVERGENCE_RE)) {
+          candidates.push({
+            kind: 'stale-divergence',
+            index: sentence.start + match.index,
+            sentenceIndex,
+            sentenceClaimIndex: match.index,
+            claim: match[0],
+          });
+        }
+      }
+
+      const previousNamesAdrOwner =
+        sentenceIndex > 0 && /\beffective-product\b/i.test(sentences[sentenceIndex - 1].text);
+      const inheritsAdrOwner = previousNamesAdrOwner && continuesPreviousSkillClaim(sentence.text);
+      const isLegacyCompatibility =
+        /\blegacy\b/i.test(sentence.text) &&
+        /\b(?:compatib\w*|readable|resolvable)\b/i.test(sentence.text);
+      if ((namesAdrOwner || inheritsAdrOwner) && !isLegacyCompatibility) {
+        for (const match of sentence.text.matchAll(STALE_ADR_DESCRIPTOR_RE)) {
+          candidates.push({
+            kind: 'immutable-numbered-skill-contract',
+            index: sentence.start + match.index,
+            sentenceIndex,
+            sentenceClaimIndex: match.index,
+            claim: match[0],
+          });
+        }
+      }
+    }
+
+    candidates.sort((a, b) => a.index - b.index || a.kind.localeCompare(b.kind));
+
+    for (const { kind, index, sentenceIndex, sentenceClaimIndex, claim } of candidates) {
+      if (isLocallyNegated(sentences[sentenceIndex].text, sentenceClaimIndex)) continue;
+      if (isCorrectedHistoricalClaim(sentences, sentenceIndex, sentenceClaimIndex)) continue;
+      const precedingLines = paragraph.text.slice(0, index).split('\n').length - 1;
+      hits.push({
+        line: paragraph.line + precedingLines,
+        kind,
+        claim: claim.replace(/\s+/g, ' ').trim(),
+      });
+    }
+  }
+
+  return hits;
+}
+
+// --- Delivery-branch documentation transforms ---
+//
+// The delivery branch `main` carries the consumer-facing docs (root README.md +
+// docs/user-guide/) beside the built skill payload, but NOT docs/developer-guide/
+// (develop-only). Relative links into the developer guide would therefore dangle
+// on `main`, so the deliver step rewrites them to absolute URLs on the source
+// branch. Two entry shapes exist: the root README uses the `docs/developer-guide/`
+// prefix, every docs/user-guide/*.md uses `../developer-guide/`. Both map to
+// `https://github.com/<repo>/blob/<sourceBranch>/docs/developer-guide/<subpath>`.
+//
+// The pure transforms live here (unit-tested); scripts/deliver-docs.mjs does the
+// file I/O in CI. See docs/developer-guide/release-and-installation.md.
+
+const GITHUB_BASE = 'https://github.com';
+
+// Absolute base URL for a file inside docs/developer-guide/ on the source branch.
+export function developerGuideBaseUrl(repo, sourceBranch) {
+  return `${GITHUB_BASE}/${repo}/blob/${sourceBranch}/docs/developer-guide`;
+}
+
+// Rewrite every Markdown link whose target points into docs/developer-guide/ to
+// its absolute source-branch URL. `fromRoot` selects the relative prefix: the
+// root README uses `docs/developer-guide/`, user-guide files use
+// `../developer-guide/`. Only real link targets `](…)` match, so plain-text
+// mentions of the path are left alone. Idempotent: an already-absolute
+// `](https://…)` target does not start with the relative prefix and is skipped.
+export function rewriteDeveloperGuideLinks(markdown, { repo, sourceBranch, fromRoot } = {}) {
+  if (!repo || !sourceBranch) {
+    throw new Error('rewriteDeveloperGuideLinks requires repo and sourceBranch');
+  }
+  const base = developerGuideBaseUrl(repo, sourceBranch);
+  // The root README reaches the guide as `docs/developer-guide/`; a user-guide
+  // file reaches it by walking up one level per directory of nesting
+  // (`../developer-guide/`, `../../developer-guide/`, …). Both resolve to the same
+  // developer-guide directory, so any depth maps to the same absolute base. Only
+  // real link targets `](…)` match; the subpath capture stops at the first `)`, so
+  // a literal `)` inside a target (none exist under docs/developer-guide/) is out
+  // of scope by design.
+  const prefix = fromRoot ? 'docs/developer-guide/' : '(?:\\.\\./)+developer-guide/';
+  const re = new RegExp(`\\]\\(${prefix}([^)]*)\\)`, 'g');
+  return markdown.replace(re, (_, subpath) => `](${base}/${subpath})`);
+}
+
+// Marker comment that makes appendDeliveryFooter idempotent across re-deliveries.
+export const DELIVERY_FOOTER_MARKER = '<!-- effective-flow:delivery-footer -->';
+
+// The discreet footer appended only to the delivered `main` README: it names the
+// source branch as the place for the developer guide and contributions, so a
+// visitor of the machine-owned default branch does not edit the overwritten copy.
+export function deliveryFooter(repo, sourceBranch) {
+  const url = `${GITHUB_BASE}/${repo}/tree/${sourceBranch}`;
+  return [
+    DELIVERY_FOOTER_MARKER,
+    '',
+    '---',
+    '',
+    `_This is the machine-managed delivery branch. Source, developer documentation, and contributions live on [\`${sourceBranch}\`](${url})._`,
+  ].join('\n');
+}
+
+// Append the delivery footer once. Returns the input unchanged if the marker is
+// already present (idempotent), otherwise trims trailing whitespace and appends
+// the footer with a blank-line gap.
+export function appendDeliveryFooter(markdown, { repo, sourceBranch } = {}) {
+  if (!repo || !sourceBranch) {
+    throw new Error('appendDeliveryFooter requires repo and sourceBranch');
+  }
+  if (markdown.includes(DELIVERY_FOOTER_MARKER)) return markdown;
+  return `${markdown.replace(/\s+$/, '')}\n\n${deliveryFooter(repo, sourceBranch)}\n`;
+}
+
+// Provenance marker on the generated AGENTS.md, so a reader on the delivery branch can
+// tell a generated file from an authored one. Unlike DELIVERY_FOOTER_MARKER it carries no
+// idempotency role: this file is written whole every delivery rather than appended to.
+export const DELIVERY_GUIDANCE_MARKER = '<!-- effective-flow:delivery-guidance -->';
+
+// The delivered README footer states the branch model, but a targeted file edit
+// never reads a README — it reads CLAUDE.md, and the delivery branch had none. So
+// the deliver step also writes a minimal AGENTS.md plus a CLAUDE.md importing it:
+// the one carrier a worktree cut from the delivery branch loads unconditionally.
+// Deliberately free of YAML frontmatter (scripts/distribution-smoke.mjs enumerates
+// skill candidates by `name: effective-flow` frontmatter) and free of any bare
+// `@token` outside a code span, which Claude Code would read as a further import.
+export function deliveryGuidance(repo, sourceBranch) {
+  if (!repo || !sourceBranch) {
+    throw new Error('deliveryGuidance requires repo and sourceBranch');
+  }
+  const url = `${GITHUB_BASE}/${repo}/tree/${sourceBranch}`;
+  const agents = [
+    DELIVERY_GUIDANCE_MARKER,
+    '',
+    '# Delivery branch',
+    '',
+    'This is the machine-managed delivery branch. It carries the published skill, its user documentation, and the automation that maintains them — no source tree, no build, and no tests.',
+    '',
+    `Source, developer documentation, and contributions live on [\`${sourceBranch}\`](${url}).`,
+    '',
+    `Every file here is generated by the delivery step, so any edit made on this branch is overwritten by the next delivery. Do not implement here and do not open a pull request against this branch. Make the change on \`${sourceBranch}\` instead.`,
+    '',
+    'Guidance loaded from a surrounding checkout describes the source branch and does not apply to this one.',
+    '',
+  ].join('\n');
+  return { agents, claude: '@AGENTS.md\n' };
+}

@@ -1,0 +1,385 @@
+# Getting started
+
+## Installation
+
+Effective Flow's supported installation paths consume the built skill published on the
+repository's default branch. The repository is currently private, so your local Git client must
+already be authenticated and authorized to read it. The decision about public availability is
+tracked separately in [issue #143](https://github.com/sebastian-software/effective-flow/issues/143).
+
+### Preferred: DALO
+
+Install [DALO](https://github.com/sebastian-software/dalo), then initialize its store, link the
+Claude Code and Codex targets you use, add the Effective Flow catalog, select the skill, and sync:
+
+```sh
+dalo init
+dalo target link claude
+dalo target link codex
+dalo source add-catalog effective-flow https://github.com/sebastian-software/effective-flow.git
+dalo source select effective-flow effective-flow
+dalo approve skill effective-flow:effective-flow --accept-risk "Effective Flow intentionally manages project configuration and automation."
+dalo sync
+```
+
+`dalo source select` runs DALO's security audit. Review its findings before granting the
+content-hash-scoped approval; the recorded reason acknowledges that Effective Flow intentionally
+manages persistent project configuration and automation. Changed skill content requires a new
+review and approval.
+
+If you use only one harness, run only its `dalo target link` command. `dalo sync` materializes the
+selected skill into every linked target.
+
+#### Updating to a new release
+
+A catalog source is pinned, so `dalo sync` alone never moves it to a newer release. Advance the pin
+explicitly, accept the new candidate's audit, then sync:
+
+```sh
+dalo source refresh effective-flow --advance
+dalo audit '<staged-path>' --accept-risk "<reason>"
+dalo source refresh effective-flow --advance
+dalo sync
+```
+
+The first `source refresh --advance` fails while the staged candidate's audit is unaccepted and
+names the staged path in its own error; paste that path into the `dalo audit` command and write the
+reason yourself. Every release needs a fresh content-hash acceptance, because the previous one is
+scoped to the content it was granted for. The `dalo approve skill` record from the installation
+above keeps standing across releases and does not have to be repeated.
+
+### Alternative: Skills CLI
+
+[Skills CLI](https://skills.sh/) is the supported alternative. Run the command for each harness
+you use:
+
+```sh
+npx skills@^1 add sebastian-software/effective-flow --agent claude-code --skill effective-flow --global --yes --copy
+npx skills@^1 add sebastian-software/effective-flow --agent codex --skill effective-flow --global --yes --copy
+```
+
+`--global` installs outside the current project, and `--copy` creates a manager-owned copy rather
+than a target symlink. DALO and Skills CLI install the same `effective-flow/` bytes from the
+default branch. The portable skill bundles each worker under
+`workers/effective-flow-<worker>.md`, loads only the selected contract, and delegates through the
+harness's built-in general-purpose subagent mechanism. Neither manager needs native custom-agent
+sidecars or a release archive.
+
+## Recommended calling model
+
+Effective Flow's caller primarily orchestrates: it selects the workflow, delegates specialized
+work, and integrates the results. A balanced default is therefore preferable to running every
+workflow with the most expensive model and maximum reasoning.
+
+For Codex, add this profile to your Codex configuration:
+
+```toml
+model = "gpt-5.6"
+model_reasoning_effort = "medium"
+```
+
+For Claude Code, use the corresponding settings:
+
+```json
+{
+  "model": "sonnet",
+  "effortLevel": "high"
+}
+```
+
+These are caller recommendations, not settings written or enforced by Effective Flow. The caller
+still owns interpretation, orchestration, risk classification, and escalation. Native Effective
+Flow workers use separate role-specific assignments: implementers and reviewers favor the
+strongest configured capability, while documentation, testing, validation, and other support
+roles use a more economical assignment.
+
+These assignments are three provider-neutral **model tiers**: `mechanical`, `standard` and `deep`.
+Every subagent the workflows start, workers as well as read-only exploration and analysis
+fan-outs, runs on one of them in every installation type, so none silently inherits your caller
+model. `deep` is the strongest assignment (implementers, reviewers, merge-conflict resolution) and
+`standard` the economical one; a `standard` spawn may move one tier up or down for a stated reason,
+while a `deep` spawn never moves down. Native Claude Code and Codex installations take the values
+from the generated worker definitions and the spawn instruction; the portable installation names
+both harnesses' values at each spawn and uses the pair that belongs to the host. A host with
+neither mechanism inherits the caller model and says so once. When `effective-flow pr` has to draft
+the PR body, it does so on the `mechanical` tier.
+
+To keep your own session small, the orchestrator also sends substantive work to a sub-agent. The
+judgment of `plan`, `plan-review`, `plan-issue`, `concept` and `concept-review` runs in one
+read-only `deep` sub-agent after the artifact is written, and `merge-gate` runs as one delegated
+run. If that judgment sub-agent cannot run, the artifact records it, and a skipped judgment leaves
+a blocking open point that names the command to rerun it. Questions of a delegated run reach you
+through your session as usual.
+
+**Quality** and **Fast** are a separate, provider-neutral implementation policy. Quality means the
+strongest available configured implementation capability and is always the safe default. Fast
+means a distinct native lower-cost, lower-latency implementation capability for a bounded packet
+that passes a fail-closed gate. Neither intent names a provider model, changes the caller setting,
+or weakens later validation and review.
+
+Native builds now contain the enforcement representation for that policy. Claude Code and Codex
+receive five generated Fast implementer sidecars; Codex also receives generated mechanical and
+deep tier variants for its standard roles. Codex role-file model and reasoning settings take
+precedence over spawn parameters, so direct invocation of a base role remains safe. Native
+inventories let the local installer reject missing, extra, malformed, or cross-target-inconsistent
+generated roles before it changes an installation. Those artifacts establish build and installation
+consistency, not runtime discovery or activation.
+
+`build` and `refactor` are the two workflows that request that representation, and only inside
+their opt-in field pilot: the project sets `executionProfiles.fast.enabled` in Guided setup and
+starts a Quality-only baseline through a confirmed setup action; a later `build` or `refactor` run
+activates the generation automatically once the preregistered baseline conditions are met. In an active
+generation, Fast may be requested only for the first implementation attempt of an eligible native
+packet. Any retry, correction, validation repair, review incorporation, conflict resolution, or
+scope-growth continuation uses Quality; coupled packets also share Quality. A project without the opt-in
+stays Quality-only. Portable installations remain Quality-only in V1 and contain no native sidecar
+inventory, Fast sidecar, or native profile artifact; their spawn-site tier text still carries the
+provider values generated for the executing harness. See the
+[configuration reference](./configuration.md#block-executionprofiles) for the default-off key.
+
+Claude skills can request a different caller model or effort for their current turn, but that
+selection does not persist across the next user prompt. Effective Flow deliberately leaves this
+turn-local override out of its router so it neither creates a temporary guarantee nor downgrades
+an intentionally stronger session. The role-specific native subagent profiles remain separate.
+
+Escalate the caller when the orchestration itself is difficult—for example, an ambiguous plan,
+a broad architectural decision, or a synthesis that repeatedly misses cross-cutting
+constraints. Increase reasoning effort first; for the hardest runs, select the quality-focused
+model as well. This is a per-run judgment and does not require changing the worker profiles.
+
+A per-spawn tier takes precedence over Claude Code's `CLAUDE_CODE_SUBAGENT_MODEL` environment
+variable and over an agent's own model declaration. To force one model for every subagent
+regardless, set `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`: Claude Code then offers no `model` parameter for
+subagents, Effective Flow passes only the tier's effort, and tells you once that the host sets the
+subagent model. `CLAUDE_CODE_EFFORT_LEVEL` overrides the reasoning effort of
+the tiers and is not detected. If a host rejects a tier parameter (for example, because of
+`availableModels`), the spawn is retried once without it and the omission is reported once. Other
+user, project, or invocation-level harness overrides may likewise affect the effective caller or
+worker model. The mapping and rules are in
+[Per-spawn model tiers](../adr/per-spawn-model-tiers.md).
+
+The runtime execution-profile gate treats the presence of
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE` as loss of the native Quality/Fast distinction. When a
+profile-aware workflow reaches selection, Effective Flow checks presence only—it never reads,
+displays, relays, or stores the variable's value—records `profile-unavailable`, and selects Quality
+without attempting Fast. This is distinct from a Fast spawn that the host actually rejects: that
+attempted spawn records `spawn-rejected`, consumes the one Fast attempt, and then continues once
+with Quality. Only a native `build` or `refactor` run with the opt-in enabled and a baseline or
+active pilot generation reaches this selection path.
+
+## First invocation
+
+In Claude Code:
+
+```text
+/effective-flow
+```
+
+In Codex:
+
+```text
+$effective-flow
+```
+
+Without a `<tool>` or with an unknown one, the router only prints the grouped tool list and
+does nothing else – it's the fastest way to get an overview. As soon as you name a
+concrete tool (`/effective-flow plan`, `/effective-flow build`, …), Effective Flow loads its
+full instruction and works from there.
+
+### Keeping sessions tellable apart
+
+If your host lists sessions by title, it derives that title from your **first** message. A session
+opened with a bare `/effective-flow plan 42` is therefore filed as "Effective-flow plan 42", which
+says nothing once several runs are open at the same time. Two things help:
+
+- **Open with one descriptive sentence** before the command. The host then has something to work
+  with from the start, and this is the only thing that fixes the title from the very beginning.
+- **Take the suggestion, or let it apply itself.** A run fixes its subject the moment it knows it –
+  the plan title, the issue title, the review scope – but prints the finished line with its
+  completion report. That later moment is what lets the title lead with the work reference:
+  `**Suggested session title:** SEB-123 · Harden test-server configuration · plan`, or
+  `#368 · Bind merge gate return consumption · iterate` for a pull request the run only opened
+  along the way. The reference – a tracker issue, a forge issue or PR number – is what lets you
+  find the session again beside the work it belongs to. A run with nothing to reference keeps the
+  shorter `Harden test-server configuration · plan`.
+
+  - In the **Codex tab embedded in the ChatGPT Desktop app**, Effective Flow applies the title to
+    the current task through the app's native capability. It needs no installation or hook. A
+    successful rename stays silent; if the capability is absent, denied, or fails, the run prints
+    the suggestion once and continues. Because it applies the title early, a reference that only
+    turns up later in the run – a pull request the run itself opened – buys exactly one further
+    rename, and nothing after that. `/effective-flow setup` can run a consented visible probe
+    titled `Effective Flow setup check`, but ordinary Desktop runs need no setup. The app does not
+    expose a reliable manual-title ownership check, so a later Effective Flow run may replace a
+    title you set manually.
+  - On **Claude Code**, a run renames its own session directly, through the host's own
+    session-management tool. It needs no second session, no hook and no setup step. The rename
+    happens as soon as the title is fixed, so even a run you interrupt leaves the session renamed;
+    a reference that only turns up later – a pull request the run itself opened – buys exactly
+    one further rename, so the listed title still ends up carrying it. A successful rename stays
+    silent, in the first run of a session as much as in a later one. If the host declines or the
+    rename fails – an older app, a session without the session-management tools, or a title you
+    set yourself and chose not to have replaced – the run prints the suggestion once and
+    continues. If you still keep a separate session from the earlier helper-session arrangement,
+    nothing contacts it any more and you can close it.
+  - **Codex CLI has no automatic title path in this scope.** It keeps printing the suggestion – in
+    the completion report, reference included – when its host carries titles. Other hosts without
+    an established rename path behave the same; hosts without titled sessions stay silent.
+
+  If you previously installed the retired Codex hook, remove only the `Stop` handler whose command
+  invokes `session-title.mjs apply`. Preserve unrelated handlers and the containing personal or
+  repository-local Codex configuration file. Old title request and receipt files are inert and may
+  remain; Effective Flow does not delete them or edit your Codex configuration.
+
+## Choose a workflow topology
+
+Run `/effective-flow setup` in Claude Code or `$effective-flow setup` in Codex to choose one of
+three common topologies. The standard Profile flow asks only **Chat** and then **Profile** before
+its normal confirmation and any conditional safety questions:
+
+- **Fully local** keeps issue-shaped work in local Markdown, develops on local Git branches, and
+  completes by local merge. It neither creates GitHub/Forgejo issues nor opens pull requests.
+- **Forge issues and development** uses GitHub or Forgejo for issue-backed planning and tracking,
+  and delivers development through a pull request on that forge.
+- **External issues and forge development** uses an external project-management tool such as
+  Linear for issue-backed planning and tracking, while branches and pull requests stay on GitHub or
+  Forgejo.
+  This profile can ask additional questions for the configured external connection, its exact
+  workspace/team/project context, and valid started/done states.
+
+The selected profile is not stored as a preset. Setup writes the resulting tracker, completion,
+and base-branch settings only after showing their exact before/after changes. The forge-backed
+profiles require a verifiable GitHub or Forgejo `origin`; setup never guesses the provider or
+downgrades silently. Use `/effective-flow setup guided` when you need provider overrides or other
+per-setting control, and `/effective-flow setup express` when you deliberately want the
+safe-default path without the profile questions. Later, `/effective-flow setup <free text>` changes
+single settings or answers questions about them, for example
+`/effective-flow setup switch the review profile to fast`; see
+[Targeted changes and questions](tools-setup.md#targeted-changes-and-questions).
+
+After the profile, setup asks **Visibility**. Keep `Standard` for a project that adopts Effective
+Flow: its configuration then lives in a tracked ADR. Choose `Hidden`, or run
+`/effective-flow setup hidden`, when you use Effective Flow alone in a repository whose team has not
+adopted it. Configuration, plans, and concepts then stay in the untracked `.effective-flow/`
+directory, which is ignored through Git's `info/exclude`. Branch names, commits, pull requests, and
+forge comments do not mention Effective Flow. See
+[Hidden mode](configuration.md#hidden-mode) for what changes.
+
+The tracker choice governs work that already has an issue reference. A natural-language
+`/effective-flow plan "…"` call still writes a local plan under `plan.dir`; choosing a forge or
+external profile does not automatically create a remote issue for it. See
+[Setup & info](tools-setup.md#effective-flow-setup), [Configuration](configuration.md), and
+[Remote tracker](remote-tracker.md) for the detailed contracts.
+
+## The typical flow: Plan → Build → Pull Request
+
+For new functionality or a larger change, this is the usual three-step process:
+
+1. **`/effective-flow plan "<description of the task>"`** clarifies the requirement, asks
+   follow-up questions if needed, and writes an implementable plan to `docs/plan/` – still without
+   any code change. At the end, `plan` names the exact path of the generated plan file
+   (e.g. `docs/plan/2026-07-17-user-login.md`) and recommends the appropriate
+   follow-up workflow (usually `build`). With `delivery.completion` set to `pr` or `null`, `plan`
+   also offers once to publish the plan as a draft pull request; `build` then continues on that
+   pull request and marks it ready at completion.
+2. **`/effective-flow build docs/plan/2026-07-17-user-login.md`** hands over exactly that
+   plan file and implements it: implementation, tests, docs, validation, and review in
+   one run. Pass the path reported in step 1 explicitly – `build`
+   processes only the handed-over handle and does **not** guess the newest plan file.
+   By default (`worktree.enabled: true`) this runs in its own Git worktree on
+   its own delivery branch, so your current checkout stays untouched.
+3. **Completion** follows `delivery.completion`: merge locally onto the base branch
+   (default), leave the branch standing, or – with `completion: "pr"` – open a pull request
+   directly. One unambiguous affirmative request for `pr`, `merge`, or `branch` in the current
+   invocation overrides that setting for the run and is reported as an override. A left-standing
+   clean branch whose intended changes are already committed can be published afterwards with
+   **`/effective-flow pr`** on GitHub (`gh`) or Forgejo (`tea`), including a title and description
+   derived from the commits.
+
+In Codex the syntax is identical – only the prefix changes from `/effective-flow` to
+`$effective-flow`. The handoff there is thus `$effective-flow plan "<description of the task>"`
+followed by `$effective-flow build docs/plan/2026-07-17-user-login.md`.
+
+Details on worktree, delivery branch, and the three completion types are in
+[Worktree and delivery](worktree-and-delivery.md); the complete tool reference for
+`plan`, `build`, and `pr` in [Understand the tools](tools-understand.md),
+[Implement the tools](tools-implement.md), and [Deliver the tools](tools-deliver.md). Each
+completed run may close with up to two ready-to-paste follow-up invocations for its verified state.
+The associated plan normally guides the next step after accounting for completed work, unfinished
+delivery, dependencies, and approvals. A stale plan can lead back to preparation; a run with no
+valid remaining action stays silent. See [Tool flow](tool-flow.md) for the selection rules and
+generic fallback map.
+
+## From current local changes to a pull request
+
+When the implementation is already present as local changes, use:
+
+```text
+/effective-flow deliver
+```
+
+You do not need to prepare a structured path list. First, `deliver` compares your branch with its
+upstream. If the branch is behind, it offers to fast-forward it; if the branch has diverged or
+local changes are in the way, it asks whether to continue without an update; otherwise it only
+notes the state. It then derives a candidate from concrete file changes made in the current
+session, shows the complete ordered file/state selection, and asks you to confirm it. You can identify unstaged or untracked files in normal conversation. If a file is
+partially staged, choose either its staged state or its complete working-tree state. If session and
+Git evidence do not identify one exact scope, the tool asks for clarification and aborts without
+mutation if the scope remains ambiguous.
+
+That manifest confirmation is the only routine approval; the upstream questions are the only ones
+that can come before it, and they come up only when your branch is behind its upstream, either
+cleanly or with its own commits or local changes in the way. `deliver` then derives and displays the
+ordered commit groups, validates their exact partition, and continues automatically without a
+commit-group confirmation. If grouping is ambiguous, it aborts before staging; if the manifest
+drifts, it displays the changed selection and asks you to confirm it again. It transfers only the
+confirmed states to a fresh branch and worktree based on the refreshed configured base, commits
+each coherent group in order, and opens a pull request only after every commit and the final clean
+branch are verified. Apart from that optional fast-forward, which runs only if you confirm it,
+your source checkout and its unrelated changes remain untouched. If a later commit group fails, the
+delivery branch and worktree remain available with earlier commits and the uncommitted groups;
+nothing is pushed and no PR is opened.
+
+Use `/effective-flow commit` instead when the exact intended diff is already staged. Use
+`/effective-flow pr` only when all intended content is already committed on a clean, attached,
+non-base branch.
+
+## Short recipes
+
+### A concrete bug
+
+For an already clearly outlined defect, the full planning phase usually isn't worth it:
+
+```text
+/effective-flow fix "Login-Formular zeigt keine Fehlermeldung bei falschem Passwort"
+```
+
+`fix` investigates, reproduces, fixes minimally, and secures the change with
+regression tests – without a separate plan file.
+
+### A bug with an unclear cause
+
+If it's unclear what's actually causing a bug, the analysis gets its own phase first:
+
+```text
+/effective-flow investigate "Orders occasionally disappear from the overview"
+```
+
+`investigate` delivers a pure diagnostic report without changing anything. With the
+cause found, `/effective-flow fix` follows.
+
+### Update documentation
+
+```text
+/effective-flow docs "Add the new CLI flag to the README"
+```
+
+`docs` creates or updates documentation without changing product or code behavior
+(exception: documentation-adjacent changes such as CLI help texts or JSDoc/TSDoc in
+existing files).
+
+## Where to go from here
+
+The complete tool reference, guides on configuration, worktree/delivery,
+remote tracker, and skill discovery, as well as troubleshooting and the glossary are in the
+[User Guide index](README.md).

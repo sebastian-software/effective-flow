@@ -1,0 +1,101 @@
+{
+  "name": "Independent new work gets no write or late packet and is captured as a new plan without an issue tracker",
+  "harness": "codex",
+  "config": "true",
+  "inventory": "active",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"],
+      "initialOutcome": "scope-growth",
+      "scopeGrowth": "independent"
+    }
+  ],
+  "refactor": {
+    "baseline": {
+      "requiredComparator": "available",
+      "optionalEvidence": "available",
+      "preExistingFailure": false
+    },
+    "rounds": [
+      {
+        "incorporation": false,
+        "phase5": "unchanged"
+      }
+    ],
+    "captureAnswer": "new-plan"
+  },
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": null,
+    "operations": ["inventory", "start", "start-packet", "finish-packet", "finalize"],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast", "quality"],
+        "fallback": "scope-growth",
+        "fastAttemptConsumed": true,
+        "attempt": "started"
+      }
+    ],
+    "incidents": [],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "scope-growth",
+          "escalated": true
+        }
+      ]
+    },
+    "events": [
+      {
+        "kind": "ask",
+        "topic": "capture-independent-new-work"
+      },
+      {
+        "kind": "capture",
+        "artifact": "plan"
+      }
+    ],
+    "refactor": {
+      "comparator": "available",
+      "rounds": [
+        {
+          "phase3": "initial",
+          "incorporation": "none",
+          "comparison": "no-regression"
+        }
+      ],
+      "validation": {
+        "status": "passed",
+        "requiredCount": 2,
+        "totalCount": 3,
+        "satisfiedCount": 2
+      },
+      "review": {
+        "status": "completed",
+        "severityCounts": {
+          "critical": 0,
+          "important": 0,
+          "note": 0
+        }
+      },
+      "externalReview": "finalized",
+      "completionStatus": "completed"
+    }
+  }
+}

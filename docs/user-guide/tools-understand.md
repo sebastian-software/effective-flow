@@ -1,0 +1,373 @@
+# Tool reference: Understand what needs doing
+
+This group covers analysis and planning – **before** any code is written. The five tools either
+read only or keep their writes within the designated planning surfaces
+(`.effective-flow/investigation/`, `<concept.dir>/`, `<plan.dir>/`, issue comments and labels, or
+approved native sub-issues); none changes source code, tests, or configuration. The one write
+beyond those surfaces is `plan`'s optional
+[publication as a draft pull request](#publishing-the-plan-as-a-draft-pull-request), which commits
+the plan file alone onto a new branch from a temporary worktree and never touches your checkout.
+
+`<plan.dir>` is the `plan.dir` value and `<concept.dir>` the `concept.dir` value from the
+Effective Flow project-setup ADR (defaults `docs/plan` and `docs/concept`; see
+[block `plan`](configuration.md#block-plan) and [block `concept`](configuration.md#block-concept)).
+
+## `/effective-flow concept`
+
+**Purpose:** Creates the concept for a **new application or program** – one step before an
+implementation plan. The result is complete but deliberately shallow: problem, target users, the
+central use cases, what the first version contains, what is explicitly excluded, and a coarse
+technical direction. No work breakdown, no code, no plan file.
+
+**When to use:** When it is not yet settled _what_ should be built at all. For a change to an
+existing application, start with `/effective-flow plan` instead. The tool works in an empty
+repository; existing code is read as context when it is there.
+
+**Typical call:** `/effective-flow concept A scheduling app for volunteer fire brigades`
+
+**Input/output:** Input is the product idea in free text. Output is
+`<concept.dir>/YYYY-MM-DD-<slug>.md` with the status line `**Concept status:** Draft` (German:
+`**Konzeptstatus:** Entwurf`), the sections problem, target users and use cases, solution sketch,
+scope with non-goals, technical direction, risks, plus the still-empty roadmap, concept review and
+open-points sections. A concept uses `language.workflow` throughout; an existing concept keeps its
+recognizable language.
+
+**Deep concept review:** Once you are satisfied with the concept, the deep review elaborates it:
+it clarifies decision-requiring points one by one, deepens the sections, marks durable decisions as
+ADR candidates, and records the first planning steps as ordered work packages – each with a
+ready-to-paste `/effective-flow plan` call. Only then does the status become
+`**Concept status:** Elaborated`. `concept` offers this review right at the end of its run; you can
+also catch it up later with `/effective-flow review <concept file>`. Each solution option the review
+offers for a decision carries a [fit score](glossary.md#fit-score) for your context, shown as
+`n/10 – <reason>`, while "Decide later" stays unscored; the scores appear only in the dialog and
+are never written into the concept.
+
+**Interplay:** concept → deep concept review → `/effective-flow plan` per work package →
+`/effective-flow build`. The concept workflows never write a plan file themselves; the handoff is
+the ready-to-paste call in the roadmap.
+
+## `/effective-flow investigate`
+
+**Purpose:** Encapsulates a pure diagnostic phase for defects and surprising behavior. Clarifies
+_why_ something behaves the way it does or where the root cause lies, and produces a diagnostic report
+– without changing a single line of code. Unlike `plan` and `fix`, `investigate` may legitimately end
+with "no defect, intended behavior" or "product decision required".
+
+**When to use:** When it's unclear whether there's even a defect, or when the cause of
+a symptom must first be understood before deciding which implementation workflow
+fits.
+
+**Typical call:** `/effective-flow investigate <symptom description>`
+
+**Input/output:** Input is the description of the observed behavior. Output is
+`.effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md` with symptom, reproduction,
+root-cause hypotheses including confidence and discarded hypotheses. Those points are the report's
+output contract; how deep the diagnosis behind them goes follows the authoritative guidance of the
+central `effective-delivery` skill, which governs how the run reasons — over competing hypotheses,
+a discriminating reproduction, epistemic labels, outcome classes and an intervention level —
+before it fills the report's fields. Effective Flow retains the report path, the transient wisdom
+file, the routing, and the scope of the run; without the skill a deliberately minimal baseline
+applies. The diagnosis report is the requested primary artifact; it contains an executable
+follow-up only when the derived recommendation is admitted by the durable-work gate. Investigation
+reports are always local: they are never committed and never tracked as an issue, on no tracker
+target. Their prose follows `language.workflow`; the internal runtime/wisdom schema remains
+language-stable.
+
+Before the report is finalized, one independent read-only reviewer in a fresh context tries to
+refute the draft diagnosis. The report records the outcome in its section "Independent challenge"
+(German: "Unabhängige Gegenprüfung"); a refuted or skipped challenge downgrades the result to
+`unclear` with the follow-up "further investigation needed".
+
+**Interplay:** An admitted recommendation routes to `/effective-flow fix` (defect with a clear cause),
+`/effective-flow refactor` (structural problem without behavior change), `/effective-flow build` (missing
+functionality or intentional behavior change), or `/effective-flow docs` (pure
+documentation gap) – including a copy-paste-ready follow-up call that references the report path.
+Current-scope refers back to the already authorized source; closed emits no invocation; unresolved
+credible risk gets one bounded evidence/containment check and otherwise stops.
+
+## `/effective-flow plan`
+
+**Purpose:** Acts as the planning gateway. Explicit issue references are handed to
+`/effective-flow plan-issue` unchanged; every other input creates an implementable, validated
+implementation plan in `<plan.dir>/`, without generating code or changing existing implementation
+files. The local path clarifies open questions interactively with the user until a solid basis
+exists, and recommends the appropriate implementation workflow (feature, bugfix, refactoring, or
+documentation).
+
+**When to use:** Before a larger change is implemented while the requirement, its
+acceptance criteria, or architecture decisions are not yet settled.
+
+**Typical calls:**
+
+```text
+/effective-flow plan Add an export function to the dashboard
+/effective-flow plan #123
+/effective-flow plan https://github.com/acme/product/issues/123
+```
+
+The first call starts local planning. The other two calls hand the original reference to
+`plan-issue`; `plan` does not inspect or change tracker state itself. Natural-language requirements
+remain local planning input. A bare four-digit value such as `1234` retains precedence as a legacy
+plan reference; use `#1234` or an issue URL for a four-digit issue.
+
+**Input/output:** Natural-language input produces
+`<plan.dir>/YYYY-MM-DD-<slug>.md` with a status line (`**Planungsstatus:** Nicht umgesetzt` or
+`**Plan status:** Not implemented`), recommended workflow, architecture decisions,
+affected files, acceptance criteria, validation plan, and its own
+plan review section. For documentation plans, the header adds `**Doc category:**` and
+`**Target path:**` per the doc category convention. A new plan uses `language.workflow`
+throughout—header fields, sections, plan review, open points, and status marker are all German or
+all English. An existing plan retains its recognizable language when edited or completed. Explicit
+issue input instead produces the canonical issue-planning comment described under `plan-issue`.
+
+**Interplay:** A finished local plan is implemented later with `/effective-flow apply <plan file>`,
+which reads the plan's own `**Recommended workflow:**` field and routes to the matching
+implementation tool, so the routing decision is made once, at invocation time. Optionally,
+`plan` offers a deeper interactive plan review directly afterwards; if it is
+skipped, it can be caught up later via `/effective-flow review <plan file>`. That review gives
+each option of a decision it asks about a [fit score](glossary.md#fit-score) from 1 to 10 for
+your context, shown as `n/10 – <reason>`, instead of marking one option as recommended; "Decide
+later" stays unscored, and the scores stay in the dialog and are never written into the plan.
+
+**Revising an existing plan:** `/effective-flow plan <plan-file>` on a plan file it already
+wrote does not start a new dated file — it revises that file in place. The earlier plan review
+stays intact as a dated subsection; a new one is appended, not overwritten. On an implemented or
+archived plan, `plan` asks once whether to revise it in place (which moves an archived file back
+to `<plan.dir>/` and resets its status), start a new plan instead, or abort. If the revision
+would change the `**Recommended workflow:**` value, `plan` reports the new classification and asks
+for explicit confirmation before rewriting the field — never a silent flip, since `apply` and
+`open-plans` both route on it.
+
+### Publishing the plan as a draft pull request
+
+When `delivery.completion` is `pr` or `null`, `plan` can publish the finished plan as a **draft pull
+request** that carries only the plan. The implementing run later continues on that same branch and
+pull request, so the plan, the implementation, and the archived plan end up in one pull request
+(see [Worktree and delivery](worktree-and-delivery.md#continuing-on-a-published-plans-pull-request)).
+With `merge`, `branch`, or no `completion` row, the plan stays local as before and nothing is asked.
+Publication is never offered in [hidden mode](configuration.md#hidden-mode), and a run delegated
+non-interactively reports it as not attempted.
+
+The offer comes at the end of the run, after the deep plan review ended ready or you declined it.
+A review that returned `Revision required` or blocking open points skips it: close those points
+first. Publication is also unavailable, with the reason named, when the base branch is not
+resolved through the remote-configured arm on `origin`, when the forge CLI cannot create a draft,
+retitle a pull request, and mark it ready, or when the forge cannot be reached. A first publication
+is unavailable, too, when the base branch already tracks a plan at the same path, for example one
+that reached the base after this plan was named: `plan` names the path and never writes over that
+plan. `plan` looks for an existing plan pull request first. It matches only on a marker the helper
+parses, never on the branch name, and it reads no pull-request body itself. A marker-carrying pull request whose head
+branch is not in this repository, such as a fork's, or whose repository the forge does not state,
+is ignored and reported, never blocking.
+
+You get exactly **one question**. It names the remote, the base branch, the branch, that the pull
+request is a draft, and its audience, which is always "possibly public: everyone who can read
+`<remote>`", with the `origin` host and repository path as `<remote>`. It also lists the findings of a
+content check run by the shipped `plan-publication.mjs scan` helper, which holds the binding class
+table. It scans the plan and, on a first publication only, the pull-request title and body.
+High-confidence findings — private keys, provider tokens, credentials in URLs or authorization
+headers, and generation attribution — make publication unavailable before the question, also when
+an implementing run republishes after its own question; public certificates are not findings.
+Lower-confidence findings — credential assignments and absolute local paths — go into the question.
+A scan that fails to run or to answer also makes publication unavailable. Each finding is named by
+its class, field and line, never by the matched value, and "no findings" is stated explicitly.
+Answering **Publish** acknowledges every listed lower-confidence finding; **Keep local**, or no
+answer, publishes nothing.
+
+On **Publish**, `plan` commits the plan file alone in a temporary Effective Flow worktree (a sibling
+worktree in a Claude Code or Codex worktree session), pushes the branch
+`<delivery.branchPrefix>/<workflow>/<slug>`, and opens the draft through `/effective-flow pr`. It
+then reads the new pull request back and claims a draft only when the forge states one: Forgejo can
+ignore the work-in-progress prefix a draft rests on, and a pull request that is not confirmed as a
+draft is reported as a failure at `pr`, because the implementing run accepts only a draft. Before
+the commit, `plan` checks that only the plan is staged, comparing Git's NUL-separated path list
+literally, so a plan path with non-ASCII letters or quotes publishes like any other. The commit type
+is `docs`, and hooks run. The title is `docs: plan <plan title>`, and the body names
+the plan path and its requirement summary. Once the commit is verified, the temporary worktree is
+removed after the push and pull-request step, whatever its outcome; a stop before that keeps the
+worktree and its branch for inspection. Your checkout keeps the plan untracked, exactly as `plan`
+wrote it.
+
+Running `plan` again on a revised plan that already has an open plan pull request **republishes**
+it as a new commit on that pull request instead of opening a second one; existing approvals may
+then no longer apply. An unchanged plan has nothing to republish. Several matching pull requests
+from this repository, or one that is no longer a draft, whose branch changes a path other than the
+plan, whose head could not be fetched, or whose branch name fails `git check-ref-format --branch`,
+make publication unavailable, and the report lists each with its URL and the failed check. The head
+branch name reaches every command as one single-quoted argument.
+
+The report carries one publication line: published (with URL, branch, and audience), updated,
+declined, unavailable, not attempted, or failed at a named step. Each ignored foreign pull request
+is reported alongside that line. Do not run
+`/effective-flow merge-gate` or `/effective-flow iterate` on the plan pull request before
+`/effective-flow apply`: a commit they push that changes a path other than the plan makes the
+implementing run's verification fail, and neither of them archives the plan or finishes the draft.
+A pure merge of the base into the head passes. If the implementing run's plan pull-request discovery
+fails while its effective completion is `pr` or `null`, it cannot rule out a published plan, so an
+interactive run asks once whether to **Continue** on a new branch or **Stop** (see
+[Discovery unavailable](worktree-and-delivery.md#discovery-unavailable)).
+
+## `/effective-flow open-plans`
+
+**Purpose:** Lists all not-yet-implemented plan files from `<plan.dir>/` with a short
+summary and checks the canonical plan-status marker in the process. Changes no files
+and runs no tests, builds, or validations.
+
+**When to use:** When resuming after a break, to see which plans are still open,
+or as an overview before prioritizing.
+
+**Typical call:** `/effective-flow open-plans`
+
+**Input/output:** No input needed. Output is a table (plan, title, workflow,
+doc category, path, short version) of the open plans, supplemented by a list of the plans with
+unclear status (missing, multiple, or invalid status line).
+
+**Interplay:** Pure read access as a springboard to `/effective-flow build`, `/effective-flow fix`,
+`/effective-flow refactor`, `/effective-flow docs` (depending on the recommended workflow of the listed plans), or
+`/effective-flow review <plan file>`.
+
+## `/effective-flow plan-issue`
+
+**Purpose:** Collects issues that `/effective-flow apply` (more precisely: the internal
+issue implementation workflow) skipped due to missing information and marked with the label
+`effective-flow-needs-planning`. Completes the planning per issue interactively following
+the same clarification methodology as `/effective-flow plan` and writes the result as a structured
+comment back to the issue. It then runs the full automatic baseline—gap analysis, validation, and
+internal plan review—before offering the same optional deep interactive review as local planning.
+Routine technical decomposition and independently implementable outcomes stay in the parent
+planning comment. Only an independently admitted material-harm or irreversible-commitment root
+cause can be proposed as a native child. The tool produces neither code nor a plan file – the
+parent issue and its planning comment remain the source for the overall scope.
+
+**When to use:** When your issues live in a tracker – the Git forge or an external tool – and
+some of them still contain too little information for an autonomous implementation.
+
+**Typical calls:**
+
+```text
+/effective-flow plan-issue #123
+/effective-flow plan-issue #123 #456
+/effective-flow plan-issue https://github.com/acme/product/issues/123
+```
+
+**Input/output:** Without an argument, all open `effective-flow-needs-planning` issues are listed for
+selection; with an argument, the handed-over issue references (number, `#123`, URL)
+are used. Output is one canonical comment per issue with the completed requirement, acceptance
+criteria, affected areas, assumptions, baseline review result, and open points. The comment follows
+`language.forge`; its marker, label, and other machine-facing tokens remain stable. Multiple issues
+are processed separately and completely, so one blocked issue does not prevent the others from
+being planned.
+
+**Splitting a broad issue:** routine technical decomposition stays inside the parent planning
+comment. `plan-issue` proposes a child only for an independently admitted material-harm or
+irreversible-commitment root cause; being broad or independently implementable is insufficient.
+The canonical planning comment shows the exact title, workflow, admission fields, and
+self-contained body for every proposed child before anything is created. The tracker helper builds
+this as one canonical v2 section bound to the exact target and parent; the workflow inserts
+that complete section without assembling its markers or visible entries itself. Each proposal also
+gets a stable parent-scoped key and a draft hash that binds that key to its exact title, workflow,
+and body. The child body's admission fields are included before the draft hash is built, so they
+are bound without extending the record schema. Keys must be unique within the parent, as must the issue identities of created children.
+A record has exactly one valid status—`proposed`, `approved`, `created`, `missing`, or `declined`—and
+only `created` may carry a child issue reference. Any change to the bound records or their visible
+rendering fails validation instead of being accepted as a partial manual edit.
+
+Creation requires your explicit approval of that exact child set for that parent. Approval for a
+different parent or an earlier draft does not carry over. The tool creates each approved item only
+as a native child of the active parent; it never substitutes a standalone issue, a create-then-link
+sequence, a sibling issue, or a checklist. GitHub must support native child listing and
+create-under-parent; an external tracker must additionally support native sub-item completion so
+the downstream container can converge. If the applicable guarantees are unavailable, ordinary
+single-issue planning remains available but the split is not.
+
+Before the proposal can be persisted, every child body must already contain exactly one
+language-appropriate workflow field matching its canonical record. That field must be top-level;
+examples inside block quotes or fenced code blocks do not count. Every Markdown fence in the child
+body must also be closed, because an unclosed fence would hide the final machine-readable child
+marker. Proposed titles and bodies pass through the tracker helper's publication safety boundary.
+Recognizable assigned values such as AWS access keys, refresh tokens, Authorization credentials,
+private keys, client or session credentials, and prefixed environment variables such as `GH_TOKEN`
+or `DATABASE_PASSWORD` are redacted. Sentence-like, punctuated security guidance such as
+`Token: support refresh-token rotation.` remains unchanged. An empty, unterminated, residual, or
+otherwise ambiguous credential form that cannot be transformed safely blocks persistence or
+creation. This is a fail-closed safety boundary, not a promise to detect every possible secret.
+Labels containing secret material are rejected rather than rewritten.
+
+For a GitHub decomposition, the complete canonical planning comment—not only its child section—must
+fit within 65,536 UTF-8 bytes. The helper validates the section while building it and validates the
+assembled comment again before persistence; it reports size contributions instead of truncating a
+child. This decomposition-specific guard does not change ordinary planning comments that contain no
+decomposition.
+
+The stable keys make interrupted runs resumable. For every approved child, `plan-issue` reads the
+parent's native children immediately before it previews creation and reads them again immediately
+before it applies that unchanged preview. A unique child that appears between those reads is
+recovered instead of duplicated. If a create outcome is unknown, another fresh read replaces the
+local state before any decision; it is never retried blindly. A missing or ambiguous match, or a
+later child failure, keeps already created children, records the unresolved proposals in the
+planning comment, retains `effective-flow-needs-planning`, and points back to `plan-issue` for a
+fresh run. After a reported success or recovery, a third child read must show exactly one valid
+same-parent match before the planning comment records it as created.
+
+These checks reduce duplicate creation during sequential and resumed runs, but they are not a
+cross-process lock. A provider may not offer an atomic conditional write for this mutation, so two
+simultaneous runs can still race after the last read. A duplicate that becomes visible is detected
+and fails closed for reconciliation; Effective Flow does not claim globally unique creation under
+concurrent writers.
+
+After the automatic baseline, answer **Yes** to continue with the shared plan-review method as a
+deep interactive review or **No** to release the ready baseline. A skipped review can be resumed later with
+`/effective-flow plan-issue #123`. The label `effective-flow-needs-planning` is removed only when
+the issue plan is ready and every approved child is accounted for. Unresolved
+implementation-blocking points or an incomplete decomposition keep the label, and the canonical
+comment records the re-entry state.
+
+**Interplay:** This tool is inherently tracker-bound: it always works against the resolved tracker
+target – the issue tracker of the `origin` remote, or the external tool named in the project setup
+(see [Native sub-issues](remote-tracker.md#native-sub-issues-created-during-planning)). The
+local/remote distinction does not apply here. Once complete, `/effective-flow apply` implements a
+normal planned issue directly; for an approved decomposition, it treats the parent as a container
+and expands its open native children without implementing the parent a second time. The workflow
+stored in each canonical parent record is authoritative and must match exactly one
+language-appropriate workflow field in the child body. `apply` does not reclassify it: `Feature`
+routes to `build`, `Bugfix` to `fix`, `Refactoring` to `refactor`, and `Documentation` to `docs`.
+
+## `/effective-flow issue-buddy`
+
+**Purpose:** Reviews a bounded set of trusted GitHub issues and turns eligible issues into
+implementation plans. The default mode is a local dry run: it records readiness and planning
+decisions without creating plan files, branches, commits, or pull requests. Add `--publish` to
+publish draft, plan-only pull requests for ready issues.
+
+**Typical calls:**
+
+```text
+/effective-flow issue-buddy
+/effective-flow issue-buddy --max-judgments 5 --max-plans 2
+/effective-flow issue-buddy --publish --max-plans 1
+```
+
+The pass runs in the primary checkout and requires the configured remote tracker to be GitHub.
+Publication is allowed only for a public repository. Private and unknown repositories remain
+dry-run-only. The pass stops when configuration, the repository root, the whole-pass lock, the
+visibility read, the Git state, or the required built-in subagent mechanism cannot be verified.
+It never asks a question during the pass and never implements code, changes configuration, closes
+issues, writes issue comments or labels, or creates a worktree.
+
+Issue-derived text stays inside the delegated planning context. The publication title, commit
+message, and body use fixed templates; the body reports only the issue number, review result, and
+open-point count. A published plan pull request is a draft and must be continued through
+`/effective-flow build <plan-file>` after restoring the plan file from its pull-request branch.
+The report names preserved plan leftovers and the operator action required before a retry. A
+completed dry run recommends `--publish` only when the repository is public.
+
+**Arguments:** `--publish`, `--max-judgments <n>`, and `--max-plans <n>`. Each flag is accepted once;
+numeric limits are positive decimal integers without leading zeroes.
+
+## Further reading
+
+- [Configuration](configuration.md) – `language.workflow`, `language.forge`, `plan.dir`, and
+  other defaults
+- [Remote tracker](remote-tracker.md) – issue mode, labels, and the three tracker targets
+- [Skill discovery](skill-discovery.md) – how these tools draw on host skills for analysis
+- [Tools: Implement](tools-implement.md) – how plans, reports, and issues are implemented

@@ -1,0 +1,46 @@
+{
+  "name": "active-local-next-ready-slice",
+  "description": "Completed-run recommendation semantics; no work is executed.",
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "repository": "flow",
+    "provider": "github"
+  },
+  "pullRequest": 42,
+  "operations": {},
+  "snapshot": {
+    "completed": true,
+    "emitter": "build",
+    "languageChat": "de",
+    "sourceAssociation": {
+      "kind": "local-plan",
+      "path": "docs/plan/2026-10-08-packages.md",
+      "verifiedNextPackagePlan": "docs/plan/2026-10-08-parser-docs.md"
+    },
+    "outcome": {
+      "completedWork": ["A parser implemented and merged"],
+      "delivery": "merged",
+      "pullRequest": 42
+    },
+    "retainedPlanningBasis": null,
+    "readContext": "No optional source context has been read. Use only the explicitly associated handles.",
+    "reportFacts": ["Package A finished successfully."],
+    "availableExposedTools": [
+      "plan",
+      "plan-issue",
+      "docs",
+      "apply",
+      "merge-gate",
+      "iterate",
+      "pr",
+      "review",
+      "open-plans",
+      "build"
+    ]
+  },
+  "artifacts": {
+    "docs/plan/2026-10-08-packages.md": "# Package plan\n\n**Plan status:** Not implemented\n**Recommended workflow:** Feature\n\n## Requirement\n\nDeliver package A then B.\n\n## Implementation sequence\n\n- [x] A: implement parser.\n- [ ] B: document the parser; workflow Documentation. B uses the approved active source plan docs/plan/2026-10-08-parser-docs.md. B depends only on A. B is approved and ready.\n\n## Plan review\n\n**Result:** Approved\n\n## Open points\n\n- No open points.\n",
+    "docs/plan/2026-10-08-parser-docs.md": "# Parser documentation\n\n**Plan status:** Not implemented\n**Recommended workflow:** Documentation\n\n## Requirement\n\nDocument the delivered parser (package B). Package A is complete and outside this plan.\n\n## Implementation sequence\n\n- [ ] B: document the parser usage and validation examples.\n\n## Plan review\n\n**Result:** Approved\n\n## Open points\n\n- No open points.\n"
+  }
+}

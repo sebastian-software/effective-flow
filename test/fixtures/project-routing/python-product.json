@@ -1,0 +1,6 @@
+{
+  "name": "Python product code",
+  "scope": [{ "path": "src/effective_flow/service.py" }],
+  "expectedRoutes": ["generic-product"],
+  "clarificationRequired": false
+}

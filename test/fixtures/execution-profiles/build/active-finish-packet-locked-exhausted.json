@@ -1,0 +1,81 @@
+{
+  "name": "A finish-packet that stays LOCKED leaves the record unfinalizable, blocks later Fast, and a confirmed same-run reconciliation records every packet unknown",
+  "harness": "codex",
+  "config": "true",
+  "inventory": "active",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/a.mjs"],
+      "finishPacketLocked": 3
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/b.mjs"]
+    }
+  ],
+  "completion": "completed",
+  "reconcileAnswer": "Reconcile",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": null,
+    "operations": [
+      "inventory",
+      "start",
+      "start-packet",
+      "finish-packet",
+      "finish-packet",
+      "finish-packet",
+      "inventory",
+      "reconcile-record"
+    ],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast"],
+        "fallback": "none",
+        "fastAttemptConsumed": true,
+        "attempt": "unknown"
+      },
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "unknown"
+      }
+    ],
+    "incidents": [],
+    "finalize": null,
+    "events": [
+      {
+        "kind": "control",
+        "operation": "finish-packet",
+        "pilotControlOutcome": "none",
+        "report": "none"
+      }
+    ]
+  }
+}

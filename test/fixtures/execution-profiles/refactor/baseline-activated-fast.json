@@ -1,0 +1,98 @@
+{
+  "name": "A ready baseline is activated after Phase 2 and before start, so the first Phase 3 spawn is Fast",
+  "harness": "claude",
+  "config": "true",
+  "inventory": "baseline",
+  "baselineEvidence": "ready",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "refactor": {
+    "baseline": {
+      "requiredComparator": "available",
+      "optionalEvidence": "available",
+      "preExistingFailure": false
+    },
+    "rounds": [
+      {
+        "incorporation": false,
+        "phase5": "unchanged"
+      }
+    ]
+  },
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": "activated",
+    "operations": [
+      "inventory",
+      "protocol",
+      "activate",
+      "start",
+      "start-packet",
+      "finish-packet",
+      "finalize"
+    ],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["fast"],
+        "fallback": "none",
+        "fastAttemptConsumed": true,
+        "attempt": "started"
+      }
+    ],
+    "incidents": [],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
+    "events": [],
+    "refactor": {
+      "comparator": "available",
+      "rounds": [
+        {
+          "phase3": "initial",
+          "incorporation": "none",
+          "comparison": "no-regression"
+        }
+      ],
+      "validation": {
+        "status": "passed",
+        "requiredCount": 2,
+        "totalCount": 3,
+        "satisfiedCount": 2
+      },
+      "review": {
+        "status": "completed",
+        "severityCounts": {
+          "critical": 0,
+          "important": 0,
+          "note": 0
+        }
+      },
+      "externalReview": "finalized",
+      "completionStatus": "completed"
+    }
+  }
+}

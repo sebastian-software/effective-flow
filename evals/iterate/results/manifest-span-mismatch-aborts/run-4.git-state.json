@@ -1,0 +1,11 @@
+{
+  "schema": "effective-flow.iterate-eval.git-state/1",
+  "remoteRefs": {
+    "refs/heads/develop": "85bc1599eab85341d70319d5a062474cd38d7644",
+    "refs/heads/effective-flow/build/iterate-eval-change": "9dfaf7db83dc2f727a28e44d78153a75a5231532"
+  },
+  "branch": "refs/heads/effective-flow/build/iterate-eval-change",
+  "head": "9dfaf7db83dc2f727a28e44d78153a75a5231532",
+  "status": [],
+  "errors": []
+}

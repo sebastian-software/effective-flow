@@ -1,0 +1,647 @@
+# Release and installation
+
+This document describes how Effective Flow is versioned, published, and distributed. It is
+canonical for the **mechanics** — release-please wiring, manager delivery, maintainer scripts, the
+version stamp, and how a `Release-As:` footer is resolved. [`AGENTS.md`](../../AGENTS.md), section
+"Versioning", keeps the short form and stays canonical for the **rules**: never bump a version by
+hand, a deprecated alias carries no `!` and no `BREAKING CHANGE:`, and a mistakenly breaking
+published commit is pinned forward with `Release-As:` rather than rewritten.
+
+## Versioning with release-please
+
+Release versioning is handled by [release-please](https://github.com/googleapis/release-please).
+The single source of truth for the currently published version is
+`.release-please-manifest.json` (field `"."`); versions are **not** bumped by hand in feature or
+fix commits. Conventional-commit messages drive the next release PR, changelog entries, tags,
+GitHub releases, and the upload of the release archive.
+
+release-please authenticates with a short-lived installation token of the
+`ssoft-generic-release-bot` App rather than the default `GITHUB_TOKEN`, minted by the
+`Create release token` step from the `RELEASE_APP_CLIENT_ID` repository variable and the
+`RELEASE_APP_PRIVATE_KEY` secret. That is deliberate and must not be simplified back to the
+default: the action defaults its `token` input to `${{ github.token }}`, and GitHub restricts what
+events raised by the default token may start, as a guard against automation loops. With the
+default, the release pull request is authored by `github-actions[bot]` and its CI run parks in
+`action_required` forever, so the release commit is never validated before it is merged
+(issue #279). Contract assertions in `test/workflow-contracts.test.mjs` keep the explicit token,
+its minting step, and their order in place.
+
+Release pull requests and the release commits they carry are therefore attributed to
+`ssoft-generic-release-bot[bot]`. The same App already authors the release pull requests of
+`sebastian-software/terminaro`, so this is the organization's established release identity rather
+than a local invention.
+
+The token expires after an hour and belongs to no person, which is the point: nothing on the
+release path needs rotating, and no account's departure can break a release. The token is scoped
+down further than the installation itself, to this repository with `contents: write` and
+`pull-requests: write` — release-please needs both, to push the release branch and to open the
+pull request.
+
+The release workflow (`.github/workflows/release.yml`) runs on every push to the source branch
+`develop`:
+
+1. `pnpm agent:check` (format check) and `pnpm test` (unit tests).
+2. `node build.mjs` builds the distribution into `dist/`.
+3. `release-please-action` creates or updates the release PR and, once merged, the Git tag and
+   a **draft** GitHub release. `release-please-config.json` sets `draft: true` together with
+   `force-tag-creation: true`, so the tag exists while the release is still a draft.
+4. The isolated distribution smoke verifies native/portable layouts, the staged delivery tree,
+   and the release archive layout.
+5. On an actually created release, all three targets in `dist/` are packed as
+   `effective-flow-<tag>.tar.gz`, uploaded to the draft, downloaded again, and verified. Only then
+   does `Publish the verified release` publish it with `gh release edit <tag> --draft=false`, and
+   publication comes before delivery in step 6. Immutable releases are enabled on the repository,
+   and a published immutable release accepts no asset.
+6. Also only on a created release, `scripts/stage-delivery.mjs` pushes the portable
+   `effective-flow/` skill, `README.md`, `docs/user-guide/`, and the two trusted issue-closing
+   automation files as a fresh commit to `main` (no force push). The push
+   authenticates with a dedicated delivery GitHub App installation token (the
+   `DELIVERY_APP_CLIENT_ID` repository variable plus the `DELIVERY_APP_PRIVATE_KEY` secret) rather
+   than the default `GITHUB_TOKEN`, so the delivery app is the identity that updates `main`. The
+   workflow fetches that exact commit and verifies its layout. Every network operation on that
+   path — the fetch before staging, the push itself, and the fetch-and-compare of the
+   verification — runs through a bounded retry of three attempts, sleeping 5 s and then 15 s.
+7. After the delivered commit is verified, a separate catalog job updates the `effective-flow`
+   entry in the team catalog repository through Dalo. **This job is currently disabled** — see
+   below. While it is enabled, a failure in this downstream job marks the release workflow as
+   failed, but does not roll back the already published release, archive, or delivery commit.
+
+### The release pull request gates the behavioural eval evidence
+
+The behavioural eval suites under `evals/<tool>/` — `merge-gate`, `iterate`, `next-steps` and `build-context` — archive evidence
+about a build, and the build that matters is the one that ships, so the release pull request is
+where that evidence has to be current. The last step of the required `Format, test and build` job,
+`Behavioural eval evidence`, runs `pnpm eval <tool> verify` once for each suite: a read-only command
+that rebuilds the skill into a throwaway root and compares it against that suite's archived stamps,
+writing nothing and launching no model. Every suite is verified even after an earlier one failed,
+each verdict gets its own section of the job summary, and the step fails if any suite did. On an
+ordinary pull request it reports — the verdicts go to the job summary and the check stays green
+even when a corpus is stale, because a round costs five fresh agent sessions per scenario of each
+suite and the claim it supports is about the delivered build rather than about every merge on the
+way there. When the head ref starts with `release-please--` — the prefix of release-please's own
+`release-please--branches--develop--components--effective-flow`, matched rather than the full name
+so the component suffix may change — the same step runs `--mode strict`, and a stale, short, or
+absent corpus in either suite fails the check. There is no waiver: without a current round of every
+suite there is no release.
+
+A re-record therefore lands as its own ordinary pull request into `develop`, never as a commit on
+the release branch, which release-please owns and force-pushes. Merging that pull request into
+`develop` does not by itself re-run the release pull request's CI: a re-record lands as a commit
+type release-please ignores, such as `test:`, and release-please does not refresh its pull request
+for it. The release pull request then needs a fresh `pull_request` event — close and reopen it.
+The first such event can still test a stale merge commit, so before trusting the strict verdict,
+check that the merge ref the run checked out already contains the re-record, and close and reopen
+once more if it does not. Closing without a merge leaves no blocking check behind: the
+`Close referenced issues` workflow guards each of its steps rather than its job, so an unmerged
+close concludes `SUCCESS` instead of leaving a `SKIPPED` run. `merge-gate` would pass a `SKIPPED`
+run, but a `SUCCESS` keeps the check list clean without depending on that handling.
+That holds once a release has delivered the workflow to `main`, because `pull_request_target` runs
+the default branch's copy (see "Trusted default-branch automation" below). Start the round when
+`verify` first reports stale rather than when the release pull request turns red; see
+[`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for what invalidates a round and how
+one is recorded.
+
+The gate is deliberately not in `release.yml`. That workflow runs on every push to `develop` and its
+`pnpm test` sits ahead of the `Release Please` step, so a strict check there would block ordinary
+development pushes and stall the release pull request's own updates — and once release-please has
+run, the tag exists and it is too late to gate anything.
+
+### A mistakenly breaking commit is pinned forward
+
+A tool rename that ships as a deprecated forwarding alias is additive, not a break, so its commit
+carries no `!` and no `BREAKING CHANGE:` footer. When an already-published commit on the release
+branch was nevertheless marked breaking for a change that is not one, the correction pins the
+version forward rather than rewriting that commit: the correcting change carries a
+`Release-As: <version>` footer in its commit body. release-please resolves that footer **before**
+it counts breaking commits, so the footer decides the next version outright, and it cleans itself
+up once that release is cut — it is a one-shot override bound to a single commit.
+
+The `release-as` key in the release-please configuration is the wrong instrument for the same job.
+It is not one-shot: it stays in effect until someone removes it, so it would silently freeze every
+later version at the pinned number instead of correcting one. Use the commit footer, never the
+configuration key, and never both.
+
+### Automatic team-catalog update
+
+> **Currently disabled.** The catalog side does not resolve `effective-flow` as a Dalo source, so
+> the dry run exits with `unknown source` and the job failed every created release — most recently
+> release 1.52.2 — turning an otherwise successful release run red. `update-team-catalog` is
+> therefore statically disabled with `if: false` in `.github/workflows/release.yml`. The job body
+> is unchanged, including its scoped app tokens and the checksum-pinned Dalo binary, so re-enabling
+> means restoring the created-release gate on the `release` job — nothing more. The prerequisite is
+> the reviewed `dalo.toml` declaration described at the end of this section; until it exists, the
+> catalog pin is advanced manually in the target repository.
+
+The catalog job installs the `x86_64-unknown-linux-musl` archive of Dalo 0.9.2 and verifies its
+pinned SHA-256 digest before running it. It first executes
+`dalo --dry-run --json team catalog update effective-flow --from main`. The dry-run candidate must
+equal the delivery commit verified by the release job; a mismatch fails closed before the
+catalog manifest is changed. The real update may change only `dalo.toml`.
+
+Catalog delivery is handled by `scripts/update-team-catalog.mjs`. A changed pin is committed to a
+deterministic release branch and proposed in exactly one pull request against `main`. Re-running
+the same release is idempotent: an unchanged pin and an already matching open pull request are
+successful no-ops. Dalo errors, blocking audit results, unexpected files, and contradictory
+branch or pull-request state fail the job.
+
+Authentication uses one GitHub App installed only on `effective-flow` and
+`skills.sebastian-software.com`. The release repository must define the
+`DALO_CATALOG_APP_CLIENT_ID` repository variable and the `DALO_CATALOG_APP_PRIVATE_KEY` secret.
+The workflow creates two short-lived installation tokens:
+
+- a source token restricted to `effective-flow` with `Contents: read`, used only for Dalo's
+  private source clone;
+- a target token restricted to `skills.sebastian-software.com` with `Contents: write` and
+  `Pull requests: write`, used for checkout, branch push, and pull-request reconciliation.
+
+Checkout does not persist either token, and Dalo receives source authentication through
+process-local Git configuration rather than a credential-bearing URL. The target repository must
+already contain a reviewed `dalo.toml` declaration whose catalog ID is `effective-flow`; this
+workflow deliberately does not create or restructure that declaration.
+
+## Source and delivery branch
+
+Effective Flow separates source and built delivery across two branches:
+
+- **`develop`** is the **source/working branch** (only `src/`, `build.mjs`, `docs/`, tests —
+  `dist/` stays gitignored). PRs, CI, and release-please run here.
+- **`main`** is the **delivery/default branch**: it carries exactly one portable
+  `effective-flow/` skill candidate **and the consumer-facing documentation**, written
+  mechanically by the release workflow. It also carries the narrowly scoped
+  `.github/workflows/close-develop-issues.yml` workflow and its
+  `.github/scripts/close-develop-issues.mjs` helper. It contains no `claude/`, `codex/`, or
+  `portable/` wrapper and therefore no competing same-name candidate.
+
+The delivered branch additionally carries a generated `AGENTS.md` and a one-line `CLAUDE.md`
+importing it, both written by `scripts/deliver-docs.mjs` and reset by `scripts/stage-delivery.mjs`.
+They exist for a narrow reason: a coding agent working in a checkout of `main` loads `CLAUDE.md`
+unconditionally and reads nothing else on its own, so it is the only place a "this is the delivery
+branch, source lives on `develop`" statement actually reaches it. The `README.md` delivery footer
+says the same thing, but nothing makes an agent read a README before it starts editing — which is
+how a session once began editing `build.mjs` in a worktree cut from `main`, where that file does
+not exist.
+
+This establishes one supported end-user interface: DALO and Skills CLI consume the same portable
+bytes from the default branch and use bundled worker contracts with built-in/general subagents.
+The release archive preserves all build targets for verification and release maintenance, but it
+is not a supported end-user installation interface.
+
+`main` is protected by a branch ruleset so its built payload can change only through the verified
+release delivery. Only the dedicated delivery GitHub App may update the branch (through the
+short-lived token minted from the `DELIVERY_APP_CLIENT_ID` variable and the
+`DELIVERY_APP_PRIVATE_KEY` secret, and that app is the ruleset's sole bypass actor); force-pushes
+and deletions are blocked, and direct pushes by any other actor —
+including human maintainers — are rejected. Consumer commit pins therefore stay valid, and the
+"only CI delivers to `main`" rule is enforced rather than merely conventional.
+
+Because the App is the sole bypass actor, the delivery push must actually _run_ as that App. The
+release job's checkout therefore sets `persist-credentials: false`, and the delivery step clears
+`http.https://github.com/.extraheader` before pushing. Without either, `actions/checkout` leaves
+the default `GITHUB_TOKEN` in the repository git config as an authorization header that outranks
+the credentials in the push URL and is inherited by `git worktree` — the push then runs as
+`github-actions[bot]`, which is not a bypass actor, and the ruleset rejects it. That is exactly how
+`v1.53.0` and `v1.54.0` failed to reach `main` (issue #274). Keep both mechanisms: the delivery
+identity is only observable on a real release, so there is no pre-merge check that would catch a
+regression here. Should the repository ever become private, clear the header rather than restoring
+credential persistence — `git fetch` would then need credentials, but persisting them reintroduces
+the defect.
+
+`develop` carries its own ruleset, with a deliberately different shape. `main` blocks `update`
+outright and grants a single bypass, because the delivery App pushes to it directly; `develop` must
+keep accepting merges, so it requires a **pull request** instead and exempts nobody. Its rules are
+`pull_request`, `required_status_checks`, `deletion`, and `non_fast_forward`, and its
+`bypass_actors` list is **empty** — including for administrators, since repository rulesets have no
+"do not enforce for administrators" toggle. A direct `git push origin develop` is therefore rejected
+for every actor, which is the point: `.github/workflows/release.yml` triggers on `push` to
+`develop`, so an unreviewed direct push could otherwise cut a release and deliver arbitrary content
+to `main` without ever touching the `main` ruleset (issue #282).
+
+No bypass actor is needed for release-please. It pushes only to its own
+`release-please--branches--develop--components--effective-flow` branch and reaches `develop` through
+its pull request, which a ruleset scoped to `refs/heads/develop` never sees. The release commit
+lands when that pull request is merged, exactly as before.
+
+The `pull_request` rule requires **zero** approving reviews. What closes the accident path is that a
+pull request exists at all, not that someone signed it off; with a single maintainer a required
+review would only mean self-approval. Required status checks are `Format, test and build` and
+`Shellcheck`, without the strict up-to-date policy, which would make every merge invalidate the
+other open pull requests. The managers job is deliberately **not** required: it exercises externally
+published DALO and Skills CLI releases, so requiring it would let an unrelated upstream release
+block every merge, the release pull request included.
+
+Two constraints follow from that and are easy to trip over later. First, those two required contexts
+are `name:` values of jobs in `.github/workflows/ci.yml`; renaming a job stops the check from
+reporting and blocks every pull request permanently, so `test/workflow-contracts.test.mjs` asserts
+both strings. Second, `ci.yml` currently runs on every `pull_request` with no `paths:` filter, which
+is what lets a docs-only pull request satisfy the requirement — adding a path filter would deadlock
+every filtered pull request.
+
+The behavioural eval freshness gate sits inside that same required job for exactly those reasons. It
+has to be strict on the release pull request and merely reporting everywhere else, and a job that an
+`if:` skips never reports at all — so it is a step of `Format, test and build` rather than a job of
+its own, carries no `if:` at either level, and selects its mode from inside the step. See
+[The release pull request gates the behavioural eval evidence](#the-release-pull-request-gates-the-behavioural-eval-evidence).
+`test/workflow-contracts.test.mjs` pins the step, its placement as the job's last, the absent
+condition, and the literal `release-please--` prefix it matches. Each of those is a literal, and
+without those assertions a rename of any one would turn the gate off while every CI run stayed green
+about it — the same silent-green failure mode the two constraints above describe.
+
+Inspect either ruleset with `gh api repos/sebastian-software/effective-flow/rulesets`, and check
+what actually applies to a branch for the calling user with
+`gh api repos/sebastian-software/effective-flow/rules/branches/develop`. Prefer that read over
+testing the rule with a real push: if the rule were misconfigured, the push would land on `develop`
+and start the release workflow — the exact accident the ruleset exists to prevent.
+
+Delivery runs only on a created release, so a delivery that fails for good waits for the next one.
+That is deliberate, and it is the reason the run must be impossible to miss.
+
+A transient failure no longer gets that far. Each network operation on the delivery path — the
+`git fetch origin main` before staging, the `git push … HEAD:main` itself, and the fetch-and-compare
+in `Verify delivered commit` — runs through a bounded retry of three attempts that sleeps 5 s after
+the first failure and 15 s after the second. It exists because a single transient HTTP 403 on the
+push stranded `effective-flow-v1.60.1` permanently on 2026-08-19: every persistent precondition —
+the App installation, its `contents: write` grant, the ruleset bypass, the credentials, the
+repository state, the CI sources — was verified unchanged since before the successful 1.60.0
+delivery, so the denial was GitHub-side and momentary. Both fetches additionally run **anonymously**,
+because `persist-credentials: false` and the cleared `extraheader` leave `origin` without a
+credential and the repository is public; that is the class of call most exposed to the rate-limit
+load of whoever else shares a runner address. The retry deliberately does not match on GitHub's
+error wording, which is not a contract, so a permanently broken delivery simply fails about twenty
+seconds later than before.
+
+The retry is a plain `bash` helper rather than a marketplace action: this job holds the delivery and
+release App private keys, and any action in it can reach them, so it gains no third-party
+dependency for twenty lines of shell. Each `run:` block is its own shell, so the delivery step and
+`Verify delivered commit` each define their own copy, and both counters are `local` to `retry`: the
+verification retries a named unit, and a unit that itself retried something would otherwise reset
+the outer loop's shared attempt counter.
+
+Nothing in this repository currently executes or lints a workflow `run:` block — `ci.yml`
+shellchecks exactly `install-skill.sh`, `local-common.sh`, and `local-link.sh`, and the contract
+tests read `release.yml` as text — so both copies are held in place by step-scoped assertions in
+`test/workflow-contracts.test.mjs`. Those assertions go well past checking that the expected
+literals are present, because a helper can carry every literal the retry needs and still retry
+nothing: they pin the bound as the literal `3` exactly once per block, that the helper loops at all,
+that the loop tests its counter against `$attempts` rather than against a literal, that the counter
+advances, and that the backoff sleeps 5 s before 15 s — the last as one order-aware match, because a
+reversed pair satisfies two separate existence checks. They further pin that the retried command
+runs in an `if` test position, that exhausted attempts return nonzero so `Report a failed delivery`
+still fires, that git's own stderr is never discarded, that the helper never echoes the retried
+command, and that no step turns on shell tracing; the last two guard the same thing, since the push
+URL carries the delivery App installation token and Actions masking must not be the only barrier
+keeping it out of the run log. Both retried call sites are matched verbatim, no unguarded copy of
+either may survive beside them, and the retried argument in `Verify delivered commit` must be a
+named unit containing both the fetch and the equality comparison.
+
+Text matching is what this change used, not the only mechanism available. A `run:` block can be
+extracted and executed under `bash -e` with stubs standing in for the retried command — `false` for
+the exhaustion path, `true` for the success path, a counter for a recovery on the third attempt, and
+a stub `git` earlier on `PATH` to establish that the retried command really does sit inside the
+loop. That verifies in a handful of lines what the assertions above can only approximate from the
+outside. It was a real option here and was deliberately not taken; what is described above is what
+the repository asserts today, not the limit of what it could assert.
+
+A follow-up would remove the duplication rather than assert around it. Both `run:` blocks execute
+inside the checkout, so the helper could live once as a shell file under `.github/scripts/`, be
+`source`d by both steps, join the `shellcheck` invocation in `ci.yml` — the first linter ever to
+read it — and be covered by a `node:test` that runs it against a stub command. That would collapse
+the verbatim copy in two steps into one file, bring the helper under a linter for the first time,
+and make it executable in CI. `scripts/stage-delivery.mjs` stages only two allowlisted `.github`
+paths, `close-develop-issues.yml` and `close-develop-issues.mjs`, so such a file would stay on
+`develop` and never reach the delivered `main`. That is more than a focused bugfix should carry,
+and it is left for a later change rather than promised by this one.
+
+Detection is already hard: `Verify delivered commit` asserts that `origin/main` equals the delivery
+commit and re-runs the delivery smoke test against it, so a payload that does not land fails the
+job. What was missing is visibility — `v1.53.0` and `v1.54.0` stayed undelivered for two releases
+because nobody was watching red release runs (issue #274). The `Report a failed delivery` step
+therefore opens an issue labelled `delivery-failed`, assigns it to the actor whose push produced the
+release, and records the released tag, the version currently on `main`, and the failed run. It is
+gated on `failure() && release_created == 'true'`, so an ordinary red run creates no alarm: without a
+release there is no drift, and an alarm that fires for unrelated failures gets ignored. Cancellation
+is excluded for the same reason. Consecutive failures comment on the open issue instead of opening a
+second one, and `Close a resolved delivery alarm` closes it once a later release delivers
+successfully — an open alarm therefore always means real, current drift. The verification's fetch
+and its equality check are retried as **one unit** precisely so that premise survives a healthy
+delivery: retrying the fetch alone would leave a read-after-write lag on `origin/main` failing the
+comparison for a delivery that actually landed, and a `delivery-failed` issue against a release that
+did land is a worse outcome than a slow one. That closing step is `continue-on-error`: a stale open
+alarm is recoverable, a red run on a good delivery would erode trust in the signal.
+
+The assignee is `github.actor`, never `github.repository_owner`: the owner here is the
+`sebastian-software` organization, and GitHub accepts only user accounts with repository access as
+assignees. Assignment is best effort — the issue is created first and assigned afterwards, so a bot
+actor or one without access costs the assignment rather than the alarm.
+
+Both steps use `github.token` and need only the workflow-level `issues: write` permission; they must
+never touch the delivery App credentials. Note that narrowing that permission block would break them
+without failing any test — the contract assertions check the workflow text, not the granted scopes.
+
+**Re-delivery was considered and rejected** (issue #278). `workflow_dispatch` cannot provide it:
+it requires the workflow file on the default branch, and `main` deliberately carries no release
+workflow. Neither can a scheduled check, which has the same default-branch requirement. More
+fundamentally, a workflow reaches `main` only through a _successful_ delivery, so a re-delivery
+workflow would first need the very thing whose absence it was meant to repair. Repairing a failed
+delivery means cutting the next release deliberately. The in-run retry described above is **not**
+that rejected re-delivery: #278 rejects a _separate workflow reachable from `main`_, which cannot
+exist for the reason just given, whereas a retry inside the already running release job needs
+nothing on `main` at all and leaves that reasoning intact.
+
+A run that fails after `Release Please` but before `Publish the verified release` leaves the
+release a draft. The `delivery-failed` alarm still fires, because its gate is `release_created`,
+not publication. Re-running the workflow does not finish the job: release-please reports no new
+release, so every created-release step is skipped. Recover by hand. First confirm that the draft
+carries `effective-flow-<tag>.tar.gz` and that it passes
+`node scripts/distribution-smoke.mjs archive`; if it does not, upload and verify it the way the
+workflow does. Then publish the draft with `gh release edit <tag> --draft=false`, and only after
+that verification, because the published release accepts no further asset. Finally repair the
+delivery as described above, by cutting the next release deliberately.
+
+### Trusted default-branch automation
+
+GitHub evaluates native closing keywords only when a pull request targets the default branch.
+Effective Flow keeps `main` as the default because consumers install its built payload, while
+source pull requests target `develop`. The delivered `close-develop-issues.yml` workflow bridges
+that branch split by closing same-repository issues referenced with GitHub-compatible closing
+keywords after a pull request is merged into `develop`.
+
+The workflow uses `pull_request_target`, so its workflow definition and executable helper must be
+trusted default-branch content. `develop` remains their source of truth. Delivery stages only
+these two named `.github` files byte-for-byte onto `main`; source-only workflows such as CI and
+release are not delivered. The automation therefore becomes active only after the first release
+that contains a workflow or helper change has published those files to `main`.
+
+The workflow checks out the exact default-branch commit supplied as `github.sha` and never checks
+out a pull-request head or merge ref. Pull-request text is passed as data through the Actions
+JavaScript context, not interpolated into shell code. Its token permissions are limited to
+reading repository contents and writing issues.
+
+Every target's minimal skill payload includes 31 dependency-free runtime scripts. The Issue Buddy
+pair is shipped as `scripts/issue-buddy.mjs` and `scripts/issue-buddy-core.mjs`; the thin CLI
+entry point accepts one JSON object on standard input and delegates deterministic collection,
+trust filtering, fingerprinting and pass-state operations to its core. The remaining named
+families include `scripts/remote-tracker.mjs`,
+`scripts/delivery-selection.mjs`, `scripts/delegation-envelope.mjs`,
+`scripts/diff-baseline.mjs`, `scripts/plan-publication.mjs`, and `scripts/setup-status.mjs`, each
+beside its importable `-core.mjs` sibling; the build-run helpers
+`scripts/protected-validation-protocol.mjs` and `scripts/protected-validation-core.mjs`;
+the shared `scripts/process-runner.mjs` that the CLI
+entries import and inject into their cores; and the pilot
+measurement family `scripts/pilot-measurement.mjs` with its `-core.mjs` and `-protocol.mjs`
+modules, next to the router, tools, and shared resources. The build also generates the read-only
+`setup status` ownership projection `scripts/setup-status-owners.json`, which is data, not a
+script. The remote tracker ships five
+further modules below its core — `remote-tracker-shared-core.mjs`, `-decomposition-core.mjs`,
+`-github-core.mjs`, `-forgejo-core.mjs` and `-ledger-core.mjs` — which the same registration and byte-identity guards
+cover. Installed skills therefore
+require Node.js 22 or newer at runtime. None of them has third-party runtime dependencies;
+existing `gh` or `tea` installations remain the remote-tracker's credential and transport boundary.
+Issue Buddy serializes every mutating operation, including retention and cleanup, through a
+dependency-free loopback mutex in `issue-buddy-core.mjs`. Its endpoint is exclusively
+`127.0.0.1:49152 + (first32bits(SHA-256(canonical physical common Git directory)) mod 16384)`;
+all processes that share the runtime state must therefore use the same host and network namespace
+and have local listen permission. Bind failures stop before any directory creation or write, with
+no alternate port, file fallback, invented holder identity, or trusted-payload service.
+Initial `pass.lock` publication uses a fully written temporary file and create-only same-directory
+hardlink; later replacements use temporary-file-plus-rename. The runtime therefore requires
+same-directory hardlink support. The durable `pass.lock` still requires an explicit matching pass ID
+for operator release. Unknown legacy operation or per-write locks remain refusal conditions with an
+operator hint and are never broken automatically.
+The delegation-envelope pair makes no network call: it writes `merge-gate`'s outgoing `iterate`
+messages below `<RUNTIME_STATE_ROOT>/.effective-flow/merge-gate/` and validates them there. The
+diff-baseline pair makes no network call either: it runs local `git` against a private index and
+object directory below `<RUNTIME_STATE_ROOT>/.effective-flow/runs/<RUN_ID>/diff-baseline/`. The
+setup-status pair writes nothing and makes a single anonymous `GET` to the published repository's
+`releases/latest` endpoint for the version comparison; a failed lookup is reported as `could not
+check`. `plan-publication scan` makes no network call; `publish` and `complete-branch` reach the
+network only through `git` and the in-process remote tracker, and stay a dry run without `--apply`. Session titles add no shipped
+runtime helper or hook trust boundary: the ChatGPT Desktop Codex tab uses the app-native
+current-task capability, Claude Code renames its own session through the host's session-management
+tool, and Codex CLI has no automatic title path in this scope.
+
+### Documentation separated by audience
+
+The docs are split along the branch boundary into three classes:
+
+- **User docs** (`docs/user-guide/`) — **delivered to `main`** (end users).
+- **Marketing entry** (`README.md`) — **delivered to `main`** and replaces the seed README
+  there; it is the landing surface of the default branch on GitHub.
+- **Developer docs** (`docs/developer-guide/`) — stay **on `develop` only** (skill internals,
+  build system, architecture); they are **never** delivered to `main`.
+
+So the links are correct, `scripts/deliver-docs.mjs` (pure logic in `build-lib.mjs`, covered by
+`node:test`) transforms the copied files on delivery:
+
+- Relative links into the developer docs (`docs/developer-guide/…` in the README,
+  `../developer-guide/…` in the user docs) are rewritten to absolute
+  `https://github.com/<repo>/blob/develop/docs/developer-guide/…` URLs, because the target is
+  missing on `main`. User-doc-internal links stay relative and resolve on `main`.
+- The delivered `main` `README.md` gets a subtle footer that references `develop` as the source
+  and contribution target. Both transformations are idempotent; the `develop` state stays
+  unchanged.
+
+Since `release-please-config.json` carries the single package `.` under the name
+`effective-flow`, the releases carry **component tags** of the form `effective-flow-vX.Y.Z` (e.g.
+`effective-flow-v1.45.0`) instead of a bare `vX.Y.Z`.
+
+## Version stamp and drift guard
+
+The build stamps `<manifest version> (<git short hash>)` into all three routers. A drift guard
+makes the build fail unless native Claude, native Codex, and portable output agree.
+
+Because the stamp sits in `SKILL.md`, a release changes a file every behavioural eval suite
+binds its archived runs to — on the one pull request where that evidence is
+[enforced](#the-release-pull-request-gates-the-behavioural-eval-evidence). That is handled and needs
+no action: every archived round carries a version-neutral skill digest beside its exact one, and a
+bump that moves only the version token is accepted without re-recording, so an otherwise current
+corpus clears the strict check on its own. See
+[`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for the exact conditions.
+
+## Consumer installation through DALO or Skills CLI
+
+The default branch is a portable catalog with one `effective-flow` skill slot. DALO selects that
+slot and materializes it into linked Claude Code and Codex targets:
+
+```sh
+dalo init
+dalo target link claude
+dalo target link codex
+dalo source add-catalog effective-flow https://github.com/sebastian-software/effective-flow.git
+dalo source select effective-flow effective-flow
+dalo approve skill effective-flow:effective-flow --accept-risk "Effective Flow intentionally manages project configuration and automation."
+dalo sync
+```
+
+Selection runs DALO's audit. The explicit approval is scoped to the selected content hash and
+records why its persistence finding is accepted; users must review the findings before granting
+it, and changed content requires another approval.
+
+[Skills CLI](https://skills.sh/) installs the same portable directory globally for either
+harness:
+
+```sh
+npx skills@^1 add sebastian-software/effective-flow --agent claude-code --skill effective-flow --global --yes --copy
+npx skills@^1 add sebastian-software/effective-flow --agent codex --skill effective-flow --global --yes --copy
+```
+
+Both paths consume the built default-branch payload, intentionally avoid native agent-directory
+writes, and delegate through each harness's built-in general-purpose subagent mechanism. If that
+mechanism is unavailable, the portable instruction reports the limitation instead of claiming a
+worker ran.
+
+The repository is public, so these managers read `main` without any authentication — no token or
+deploy key is required for a `dalo` / `npx skills` install.
+
+Neither manager is pinned to an exact version any more. The `Manager compatibility` CI job resolves
+the newest DALO release at run time and tests `skills@latest`, so the smoke exercises what
+consumers actually install rather than reporting green about versions nobody runs — the previous
+DALO pin had drifted three minors behind before anyone noticed (issue #299). The DALO archive is
+verified against the `.sha256` sidecar published with the release, and the resolved versions are
+printed so a failure can be attributed to a concrete release.
+
+The documented command deliberately says `skills@^1` while CI tests `latest`. Today both resolve to
+the same release, so the smoke still covers the documented quick start; they diverge only on a
+Skills CLI major, and that is the point — CI meets the new major before any reader is told to
+install it. Do not "harmonise" the two back together. For the same reason the job is **not** a
+required status check: it tracks moving upstream releases, so requiring it would let an unrelated
+release block every merge (issue #282).
+
+## Checkout and release-maintenance utilities
+
+The shell scripts on `develop` are contributor and maintainer tools. They are not delivered on
+the default branch, are not included in the release archive, and must not be presented as an
+end-user installation path.
+
+### Installer syntax
+
+`install-skill.sh` accepts only these invocations:
+
+```sh
+./install-skill.sh
+./install-skill.sh local
+./install-skill.sh -h
+./install-skill.sh --help
+```
+
+With no arguments, the script drives [DALO](https://github.com/sebastian-software/dalo) to
+install and update the published portable build. The exact, case-sensitive `local` argument
+selects the current checkout instead. Either help flag prints the usage summary without starting
+an installation. Any other argument—including an empty argument—or more than one argument is
+rejected before deployment helpers are loaded or installer-managed files can change.
+
+### Build and copy the current checkout
+
+```sh
+./install-skill.sh local
+```
+
+Builds the current source checkout and copies both native targets into the local harness
+directories. This is useful for testing unpublished native output during development. Before any
+skill or agent mutation, the shared installer validates both native
+`native-agent-inventory.json` files and reconciles them with the complete Claude and Codex agent
+directories. The two schema-2 inventories must agree on base workers; each declares five Fast
+sidecars, while Codex additionally declares twelve mechanical/deep tier variants for the six
+standard roles.
+
+### Install and update through DALO
+
+```sh
+./install-skill.sh
+```
+
+Drives DALO: `dalo init`, links the Claude Code and Codex targets, registers the Effective Flow
+catalog source on first use, selects or advances it, and finishes with `dalo sync --check`. This
+installs the portable build — the same bundled `workers/effective-flow-<worker>.md` contracts a
+consumer gets from DALO or Skills CLI directly — not the native targets. A first run also migrates
+away any leftover native installation this script previously created (recorded agents, both
+`.effective-flow-agents.manifest` files, and a native skill directory or dist-symlink occupying a
+target slot), reporting every removal.
+
+**Nothing is removed before DALO can prove it will install the replacement.** The migration is
+gated on `dalo --json status` reporting the skill under `resolution.active_skills`. That gate is a
+state, not an exit code, and it exists because `dalo source select` prints
+`installation policy: blocked until risk is explicitly accepted` and still **exits 0** — an
+exit-code gate walks straight past an unapproved skill, and the run would then delete the native
+install and fail at `dalo sync --check`, leaving the harness with nothing. The status fields also
+separate a pending approval from the unmanaged slot the migration itself is about to clear, which
+`dalo sync --check` alone cannot do.
+
+When the skill is not installable yet, the script reports that nothing was removed, names
+`dalo approve skill effective-flow:effective-flow --accept-risk "<reason>"`, and exits non-zero; it
+never accepts the risk itself, since the reason is the operator's own declaration and acceptance is
+scoped to the exact content hash. On the update path `dalo source refresh --advance` does fail on a
+blocked candidate, and the script then relays DALO's own `dalo audit '<staged-path>' --accept-risk`
+line. Re-run `./install-skill.sh` after resolving whatever it reported. This path exists for
+maintainer verification of the DALO-based consumer path; see "Consumer installation through DALO or
+Skills CLI" above for the actual end-user instructions.
+
+#### Two independent acceptances
+
+DALO gates the skill behind two acceptances, and neither implies the other:
+
+| Acceptance                                                         | Gate it satisfies                                                      | Survives a new release |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------- | ---------------------- |
+| `dalo audit '<staged-path>' --accept-risk "<reason>"`              | `dalo source refresh --advance` moving a pinned catalog to a candidate | no                     |
+| `dalo approve skill effective-flow:effective-flow --accept-risk …` | `dalo sync` materializing the skill into a linked target               | yes                    |
+
+A first install never meets the advance gate — it selects the slot and reaches `dalo sync`, so it
+needs the approval record only. An update of an already-registered source meets the advance gate
+first, and an operator who has never approved the skill needs both.
+
+Measured against DALO 0.9.2 in an isolated store: after `dalo approve skill` and an advance to a new
+version, `dalo sync --check` passed without a further approval; when the next version landed
+upstream, `dalo source refresh --advance` exited 1 while `dalo --json status` still reported the
+skill as active with no pending approval. The approval record therefore persists across releases,
+while the content-hash acceptance does not and has to be granted per release.
+
+Because the two are independent, a blocked advance reports **every** step that is still open: the
+staged-audit remedy always, plus the `dalo approve skill` line when `dalo --json status` shows the
+skill pending or blocked. An operator who has already approved the skill sees the single remedy
+unchanged, and a status probe that cannot be read leaves the staged-audit remedy intact and says the
+approval state is unknown. The installer still runs neither `dalo audit` nor `dalo approve` and
+still supplies no default reason.
+
+### Development: symlink instead of copy
+
+```sh
+./local-link.sh
+```
+
+Builds the current checkout and links `dist/` via symlink into the harness directories instead
+of copying. Changes to `src/` thus take effect after another `node build.mjs` without a
+reinstall.
+
+The copy and link helpers share deployment logic in `local-common.sh`; only the installation
+strategy (`cp -R` vs. `ln -s`) and the final message differ. These utilities manage only the
+`effective-flow` skill child and manifest-recorded Effective Flow sidecars, leaving parent
+symlinks and unrelated neighboring skills or agents untouched.
+
+The inventory validation is strict rather than suffix-based: a `-fast` or tier file beside a base
+worker is not enough to authorize installation. Canonical inventory bytes, schema, harness identity,
+sorted unique membership, declared names, extensions, base parity, and exact directory membership
+must all pass through the shared dependency-free Node validator. Validation success is consistency
+evidence only; it is not a signed-provenance or runtime-discovery claim.
+
+Current installation accepts schema 2 only. Schema 1 remains readable only when a historical
+baseline utility explicitly enables its legacy-reader option; it is never generated or accepted by
+the installer as current inventory.
+
+After validation, copy and link installs record every installed base, Fast sidecar, and tier variant
+in the existing harness ownership manifest. A later valid inventory can therefore remove an owned
+stale generated role, while files not recorded or listed by Effective Flow remain outside that
+cleanup scope.
+The portable DALO and Skills CLI paths remain unchanged: they install bundled Quality worker
+contracts and do not write native agent directories.
+
+### Build only, no deployment
+
+```sh
+node build.mjs
+```
+
+## Further reading
+
+- [`build-system.md`](build-system.md) – build flow and guards, including the version stamp.
+- [`architecture.md`](architecture.md) – repo structure and two-harness split.
+- [`AGENTS.md`](../../AGENTS.md) – the versioning **rules** (no hand bumps, no breaking marker on
+  an alias rename, `Release-As:` to pin forward); the release **mechanics** are canonical here.

@@ -1,0 +1,35 @@
+{
+  "scenario": "cross-repository-context-cannot-switch",
+  "digest": "sha256:ca8c57b6d02e4d9f044aedb62bcab7e04b47814e4d705c697aa7788e7b2c5858",
+  "skill": {
+    "digest": "sha256:f779720fad4862a772d8f2d0e3f3b980fe58414228b7317752bcc669c8d9b463",
+    "versionNeutralDigest": "sha256:5c7da46eabcaa67f9c624da74c8a9edf3fe173c6b4be5381802fe0584a2df3f0",
+    "files": {
+      "SKILL.md": "sha256:5ebf26f6faabb28f091101570e5defb02be42153b9d737d7d04d3fab5dd088e9",
+      "scripts/report-channel.mjs": "sha256:6f5f96d074c3325fe277c2d6962e4f6a5c849322400966cb8a463fd92936c69f",
+      "shared/next-steps.md": "sha256:61a25fb824fe0ad8056c4d66ac3201d67bae9f9f99ca24a47a92e43cec0ab15e",
+      "shared/plan-reference-routing.md": "sha256:db70e611e3a53a83e7861ddb6ef6f4503bcd366609f2c885571c494f6a57fee6"
+    }
+  },
+  "instrument": {
+    "digest": "sha256:8e48c137dc51c3a1f1296b312b90e36f697f7de81d5608dd2661384234808015",
+    "files": {
+      "evals/next-steps/suite.config.mjs": "sha256:1021ded43145da1a254d4c4ed6778c1d6bbdd5cf259bb00f133d55c153df2edd",
+      "evals/_scaffold/remote-tracker.mjs": "sha256:b1cce8bd1148827fbecb2b4b4c6af582cece501adb531528e0739aa751f07fd8",
+      "evals/_scaffold/sandbox.mjs": "sha256:cf92e932001ba399b414a9508214d73a6af9256e05e48b88888782219d0b2b39",
+      "evals/_scaffold/scaffold.mjs": "sha256:b8890df300a29eb2fb50b51361d98e60cd27b014afff46f468c7d74b75b2986f",
+      "evals/_scaffold/prompt.mjs": "sha256:d1883022ac622d31d40e10d5cc734f038549ae4a7b71b737b5343bf06f9a2913",
+      "evals/_scaffold/suite.mjs": "sha256:2561900fd927e215edc65de50587f77d65a5e52c6a67d393671010c262bed00e",
+      "evals/next-steps/_scaffold/setup.mjs": "sha256:ac50f00a41dbfbd8c0460c31eb0b88fb9a26ceb3ec3255de687e5aec899e09e0",
+      "evals/next-steps/_scaffold/state.mjs": "sha256:78fc5c14dbcca844f594686162ff3fa94107866314c7f1322b14b51b0302368e",
+      "src/scripts/remote-tracker-shared-core.mjs": "sha256:c0c49b0f1aab3877fe4ef88766698a460cb73e7965a6c10d43a937a5277cbb06"
+    }
+  },
+  "scenario_inputs": {
+    "digest": "sha256:d9d813c2e48646b115c18fdada36276cdb54345078240a7531b26654e29f83c2",
+    "files": {
+      "evals/next-steps/fixtures/cross-repository-context-cannot-switch.json": "sha256:1aaa733af34d500a3cbece33e6e6a262836d04894dbb4be6e86bb0f1b3328892",
+      "evals/next-steps/scenarios/cross-repository-context-cannot-switch.md": "sha256:15f1823cac4b988521ed84ece8a969f33ebca2813db92c4cf668e2200eedb65b"
+    }
+  }
+}

@@ -1,0 +1,371 @@
+# Skill ownership
+
+Effective Flow uses the central [skills collection](https://github.com/sebastian-software/skills.sebastian-software.com)
+as the source for reusable domain expertise. This document describes the boundary between what
+**Effective Flow itself owns** (orchestration) and what the **central skills own** (domain
+expertise).
+
+The adjacent [`skill-ownership.json`](skill-ownership.json) manifest is the machine-readable
+source of truth. This guide is its human-readable explanation.
+
+## Loose-coupling contract
+
+The ownership inventory contains only relationships that Effective Flow actually uses or
+explicitly declares. It is not a synchronized copy of the upstream catalog:
+
+- a new, removed, or changed upstream skill creates no maintenance obligation until Effective
+  Flow recommends it, names it as a relevance-gate owner, or deliberately establishes another
+  relationship;
+- absence from the manifest means “no currently declared Effective Flow relationship,” not
+  “reviewed and excluded against an exhaustive upstream inventory”;
+- `provenance.lastReviewedAt` and `provenance.observedRevision`, when present, record the context
+  of a human review. They are informational, not compatibility pins, and normal builds never
+  compare them with an upstream repository;
+- upstream discovery is an optional maintainer audit. Candidates are reviewed manually rather
+  than copied into the manifest automatically.
+
+Update the manifest and this table together only when an actual relationship changes.
+
+## The layered contract
+
+This document is canonical for the **mechanics** of ownership: the classification, the per-skill
+inventory, the two build-enforced halves of the ownership check, and the optional upstream audit.
+[`AGENTS.md`](../../AGENTS.md), section "Skill discovery", keeps the short form of the contract
+plus the **rule** it owns — run the ownership check whenever a tool, agent, or shared include is
+added or expanded.
+
+The earlier contract read “a skill informs the how, Effective Flow’s rules always win.” It is
+replaced by a **layered** model (the operative rule lives in `src/shared/skill-discovery.md`):
+
+- **Effective Flow owns the orchestration** – the **what/when**: `/effective-flow` routing and
+  user interaction; plan/report state, finding IDs, backlinks, tracker integration,
+  resumability; agent selection, parallelization, baseline comparison, worktrees, commits,
+  delivery; Claude/Codex transformation; and Effective Flow configuration. This layer always
+  takes precedence.
+- **Central skills own reusable expertise** – the **how**: domain checklists, heuristics,
+  standards, research procedures, specialist implementation/review guidance, and reusable
+  artifact conventions where a skill declares this scope.
+
+If a central skill is the **declared domain owner** for a subject **and** covers it, its guidance
+is **authoritative** – not optional advice. The respective Effective Flow source then carries
+**no second copy** of that playbook, only scope, output, and lifecycle constraints plus a
+**minimal generic fallback** for the case that the skill is missing (`skills.enabled: false`,
+disabled via `exclude`, or not installed).
+
+## Classification
+
+Each intersection – that is, each pair of a central skill and an Effective Flow tool or agent –
+belongs in exactly one class. A skill with multiple consumers can therefore have different
+classifications per consumer:
+
+- **delegate** – the central skill is authoritative; Effective Flow is a thin adapter and
+  carries only orchestration plus a minimal fallback.
+- **route-when-relevant** – the central skill owns only a special branch; the Effective Flow
+  guidance stays leading and routes when needed.
+- **no-overlap** – the Effective Flow behavior is genuinely product-specific or deliberately
+  divergent; no domain transfer.
+
+`no-overlap` currently has no instances. The manifest’s only entry was dropped together with
+`effective-workflow`, and the nearest candidate – the merge gate – is recorded as an absent
+relationship rather than a classified one (see “Deliberate boundaries”). The class stays defined and
+the validator keeps accepting it, for the next genuinely divergent intersection.
+
+## Ownership inventory
+
+The build reads only the table between the markers below. Every row represents one skill from
+the relationship manifest; row membership is machine-reconciled exactly. Consumer,
+classification, and coverage cells deliberately remain grouped explanatory prose for readability;
+the manifest is authoritative for their structured values.
+
+<!-- skill-ownership-table:start -->
+
+| Central skill           | Effective-Flow consumer(s)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Classification                                                                                                                                                                                                                                                                                                 | Domain coverage                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `effective-delivery`    | `maintain`, `deliver`, `docs`, `review`, `refactor`, `build`, `build-delegated-run`, `fix`, `iterate`, `apply-issues`, `apply-review-remote`, `worktree-integration`, `code-validator`, `docs-writer`, `code-documenter`, `documentation-sync-contract`, `durable-follow-up-gate`, `investigate`, `investigation-method`, `commit`, `commit-message-rules`; `dependency-version-policy`, `plan`, `plan-issue`, `plan-review`, `concept-review`, `generic-product-reviewer`, `test-writer`, `e2e-tester`, `generic-implementer`, `generic-product-implementer` | delegate for the delivery, diagnosis, dependency-maintenance, documentation, validation, commit-message and durable-finding-evidence consumers; route-when-relevant for the dependency-introduction policy, planning, concept review, generic product review, the test agents and the two generic implementers | The skill owns the delivery arc on an existing repository: audit and improvement judgment, finding validity and evidence, PR-level review-item judgment through its read-only caller-owned Mode C handoff, dependency research and upgrade execution, repository-native command discovery and safe execution, technical and migration documentation, and behavior-preserving ports across languages, runtimes and frameworks. It also owns commit-message craft for `commit` and `commit-message-rules`: staged-diff derivation, choosing a recognized type from the actual change, the subject-boundary test, and when a body is owed. The durable-work gate consumes that evidence but does not delegate product admission to this skill. Effective Flow retains routing, artifact and finding contracts, scorecard gates, validation mode and phase gates, target-path approval, worktrees, commits, forge plumbing, and delivery.                                                                                                                                                                                               |
+| `effective-web`         | `frontend-reviewer`, `ui-implementer`; `test-writer`, `e2e-tester`; `plan`, `plan-review`, `concept`, `concept-review` via relevance gate                                                                                                                                                                                                                                                                                                                                                                                                                     | delegate for reviewer/UI; route-when-relevant for the test agents, planning and concepts                                                                                                                                                                                                                       | The skill owns browser experiences end to end: accessibility, CSS architecture, React, layout, typography, forms, internationalization, browser performance, frontend testing, and the web-legal disclosure and consent surfaces a plan or concept can cross into. Effective Flow retains routing, output contracts, and the test, plan and concept lifecycle with its no-code boundary.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `effective-engineering` | `test-writer`, `rust-implementer`, `nodejs-implementer`; `e2e-tester`, `nodejs-reviewer`, `rust-reviewer`; `plan`, `plan-review`, `concept`, `concept-review` via relevance gate                                                                                                                                                                                                                                                                                                                                                                              | delegate for focused non-frontend tests and for the Rust and Node.js implementers; route-when-relevant for E2E, the specialist reviewers, planning and concepts                                                                                                                                                | The skill owns system and data design together with focused non-frontend test design: service and module boundaries, quality attributes, data models and schema evolution, TypeScript and Rust contracts, fixtures, doubles, failure paths, flake diagnosis, and repository-native benchmark evidence. The two implementers delegate asymmetrically on purpose: Rust hands over its whole domain playbook, while the Node.js implementer delegates only the TypeScript language layer and retains what a reader of `route-typescript.md` cannot reach (see "Deliberate boundaries"). Browser testing stays with `effective-web`, the specialist reviewers keep their line-level checks, and Effective Flow retains assigned scenarios, artifacts, and delivery.                                                                                                                                                                                                                                                                                                                                                                     |
+| `effective-writing`     | `language-rules`, `chat-language`, `docs-writer`, `code-documenter`, `marketing-writer`; `iterate`, `pr`                                                                                                                                                                                                                                                                                                                                                                                                                                                      | delegate for the two language fragments and the writing workers; route-when-relevant for forge prose                                                                                                                                                                                                           | Effective Flow delegates two areas of the skill here: locale-specific visible punctuation, spacing, number and date forms for `language-rules`, `chat-language`, `docs-writer`, `code-documenter` and `marketing-writer`, and natural US team English for the `iterate` and `pr` forge prose. The two language fragments reach the same owner by different routes and are classified alike because the subject is the same: `language-rules` embeds `typography-rules`, while `chat-language` points at it lazily on a resolved `de`. Neither carries a second typography checklist, so on that subject the skill is authoritative in both. The boundary is explicit: durable technical documentation stays with `effective-delivery` and market claims stay with `effective-marketing`, so this row owns neither documentation nor marketing prose craft; marketing copy craft sits with `effective-marketing`, with `copywriting`, `copy-editing` and `marketing-psychology` allowlisted behind it as an ordered fallback. Effective Flow retains its language policy, workflow state, forge interaction, and document structure. |
+| `effective-product`     | `concept`, `concept-review`, `durable-follow-up-gate`, `adr-convention`, `project-adr-convention`; `apply-review` and `setup` through `adr-convention`; `plan`, `plan-review` via relevance gate                                                                                                                                                                                                                                                                                                                                                              | delegate for the concept workflows, durable-work admission judgment, ADR authoring, and the two ADR fragments with their tool hosts; route-when-relevant for planning                                                                                                                                          | The skill owns evidence-based product decisions and the records that fix them: outcomes, scope, prioritization and release judgment, design research, problem framing, information architecture and flows, and ADR merit and authoring against the repository's declared living-ADR convention. `adr-convention` is that declaration and states the five things the skill requires a repository to settle before a living record is used; `project-adr-convention` is the resolution mechanism the skill leaves to the deferring side, and Effective Flow keeps it. For `durable-follow-up-gate`, it judges the batched consequence/irreversibility boundary from supplied evidence. Effective Flow retains the four outcomes, ordering, scope authority, deduplication bounds, artifact effects, lifecycle receipts, approval, status, backlinks, summary tracking, and the plan and concept lifecycle.                                                                                                                                                                                                                            |
+| `effective-marketing`   | `marketing-writer`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | delegate for the root README's positioning copy                                                                                                                                                                                                                                                                | The skill owns positioning, messaging, claims and proof, and the commercial page copy that carries them. Effective Flow's only marketing surface is the root `README.md`, and the skill claims no README as an artifact of its own. The split is declared by `effective-delivery` instead: a root README may contain technical onboarding owned there and product positioning owned here. `marketing-writer` records that split rather than inventing a single owner. `copywriting`, `copy-editing` and `marketing-psychology` stay allowlisted behind it as an ordered fallback. Effective Flow retains the write boundary, the documentation-target resolution, the follow-up-link invariant, and language resolution.                                                                                                                                                                                                                                                                                                                                                                                                            |
+
+<!-- skill-ownership-table:end -->
+
+Recommendations that do not belong to the central collection’s ownership contract are kept in
+the manifest’s explicit `externalRecommendationAllowlist`. This includes fallback chains such as
+`effective-web › impeccable › frontend-design` and `effective-writing › humanizer`, plus other
+deliberate external recommendations. Every token still has to be declared, so a typo cannot be
+mistaken for an external skill.
+
+## Deliberate boundaries
+
+- **`effective-delivery` and the audit/planning consumers:** The central skill owns reusable
+  evidence, impact, prioritization, complexity, root-cause, scope, and risk judgment. Effective
+  Flow retains specialist line-level checks and every orchestration/artifact contract. The
+  minimal fallbacks in `central-reasoning-delegation.md`, `audit-reasoning-delegation.md` and
+  `investigation-method.md` keep the tools functional when the owner is unavailable.
+  `investigation-method.md` delegates diagnostic depth — competing hypotheses, a discriminating
+  reproduction, epistemic labels, outcome classes and the intervention level — and states in the
+  text a run reads that the skill's rules on where an investigation report lives, on when it may be
+  saved, on how it is returned in the conversation, on runtime directories, on hypothesis ledgers
+  and on mandatory report paths are overridden by the embedding workflow's report path, wisdom
+  file, routing and scope. `investigate`'s Phase 3 is declared in
+  the source as the report's output contract, not a second copy of the skill's hypothesis method;
+  Phase 4 stays Effective Flow's scorecard gate.
+- **`effective-engineering` and specialist reviewers:** Architecture and data-design reasoning
+  augments rather than replaces the Node.js and Rust line-level security, performance, and
+  error-handling checks.
+- **`effective-engineering` and the two specialist implementers — asymmetric on evidence.** A
+  coverage audit against the pinned upstream checkout put the two languages in different
+  positions, so identical treatment would be wrong in one of them. `rust-implementer` delegates
+  its domain playbook: the skill's Rust route covers ownership and borrowing, `unsafe` and its
+  safety proof, visibility and crate structure, trait and conversion design, the public-API semver
+  surface, and Cargo/workspace/MSRV discovery, each in more depth than the agent carried. Logging,
+  security and database access reach the route through
+  `rust-architecture-and-boundaries.md` and the Data route, and toolchain commands through
+  `rust-quality-and-review.md`, so those go too. **CLI contracts stay**, under the same
+  route-reachability rule applied below to Node: exit codes, stream separation and `--help` live
+  only in `cli-contracts.md`, which hangs off the testing route, and `route-rust.md` cross-links
+  that route solely for test placement, public-API coverage, doctests and smoke evidence — a
+  reader of the Rust route never reaches them. The named crate defaults (`anyhow`, `tokio`,
+  `clap`, `diesel` and their siblings) survive only inside the agent's minimal fallback, because
+  the skill deliberately names no crates and routes crate selection to `effective-delivery`.
+  `nodejs-implementer`, by contrast, delegates **only** the TypeScript language layer and stays
+  an owner of the rest. The retention rule is
+  **route reachability**: material stays in the agent while a reader of the skill's TypeScript
+  route cannot get to it, even when the skill covers it elsewhere. HTTP routing, status codes and
+  middleware, worker threads, child processes, event emitters, rate limiting, security headers,
+  and TypeScript-side database access are absent from that route entirely; environment
+  configuration, request logging and `SIGTERM`/`SIGINT` shutdown sit behind the architecture
+  route and CLI contracts behind the testing route. The rule is recorded in the agent source
+  itself, so the standing obligation is one re-testable question — is this reachable from the
+  TypeScript route now? — rather than a boundary a later reader has to re-derive. The house rule
+  `pnpm exec` over `npx` is retained deliberately: the skill stays package-manager agnostic, so
+  cutting it would be a behavior change disguised as delegation.
+- **`effective-marketing` and the root README.** The skill's copy craft is authoritative for
+  positioning, messaging, claims and proof, but it treats no README as an artifact of its own and
+  its routing boundaries are silent on them. The split is declared by `effective-delivery`, twice
+  and identically: a root README may contain technical onboarding owned there and product
+  positioning owned by `effective-marketing`. `marketing-writer` records that split rather than
+  pretending a single owner exists, and keeps `copywriting`, `copy-editing` and
+  `marketing-psychology` as an ordered fallback so a project without the central skill does not
+  lose the craft. Effective Flow retains the write boundary, documentation-target resolution, the
+  follow-up-link invariant, and language resolution.
+- **`effective-product` and `apply-review`:** ADR craft is delegated, while Effective Flow maps a
+  rejected finding into a decision candidate and retains user approval and tracking.
+- **`effective-delivery` and `commit-message-rules` — two named overrides.** The skill is
+  authoritative for commit-message craft, so the fragment keeps no second copy of it and retains
+  one labelled minimal fallback, the Conventional Commit type set, for a run where the skill is
+  absent. Where the skill classifies a change and this repository classifies it differently, this
+  repository wins on two points the skill does not state: a configuration, environment, secrets or
+  CI change with deployment or runtime effect is `fix:`/`feat:` rather than `chore:`, and the
+  squash PR title carries the same classification because it is the release signal release-please
+  reads. The unconditional `Co-Authored-By` and AI-attribution bans stay for a different reason —
+  they are scope constraints, stated here without the conditions the skill attaches to its
+  equivalents.
+- **`effective-product` and the two ADR fragments — a declaration plus the mechanism it
+  presupposes.** The skill permits a living ADR lifecycle only where the repository declares five
+  things first, so `adr-convention` states all five and is the declaration the skill then follows,
+  not a competing ADR playbook. `project-adr-convention` answers the question the skill leaves
+  open: it resolves an unknown target project's ADR file naming through declared sources, observed
+  evidence, and the Effective Flow default. Determining a convention the owner has agreed to
+  follow is the deferring side's work, and resolution is orchestration, which Effective Flow keeps
+  along with the `ask` fence, the containment and collision guards, and the completion report.
+  `setup` is declared a consumer because it carries both fragments eagerly.
+- **`effective-delivery` and `iterate`:** `iterate` uses the caller-owned
+  `pr-review-handoff/v1` analysis contract for classification. Effective Flow still gathers
+  current context, approves and implements selected work, owns Git and forge mutations, and
+  resolves or replies to threads.
+- **`effective-delivery` and `deliver`:** The central skill supplies repository-native validation
+  discovery and execution for the isolated delivery checkout. Effective Flow retains the complete
+  local-change orchestration contract: deriving and confirming the session-owned selection,
+  automatically deriving, displaying, and validating the ordered commit partition after that sole
+  routine approval, creating and tracking the fresh worktree and branch, staging each group,
+  delegating commits, verifying the exact committed handoff, and publishing it through `pr`. The
+  workflow source therefore carries no second validation playbook.
+- **`effective-delivery` and Effective Flow's own reviewer findings:** the shared
+  `pr-review-integration` fragment hands Effective Flow's own reviewer findings to the same
+  caller-owned Mode C contract, reached from `{{SKILL:review}}` when its argument resolves to a
+  pull request, from the delivery completion step in `worktree-integration`, and from the two
+  delivery paths that create pull requests without it, `apply-review-remote` and `apply-issues`.
+  The skill supplies only the PR-level judgment; Effective Flow retains scope, agent fan-out, the
+  design-decision filter, the security disclosure gate, finding IDs, publication, idempotency, and
+  freshness. The skill's autonomous Mode A is deliberately not used, because it decides and posts
+  on its own and would bypass the security disclosure gate that `src/tools/review.md` declares
+  unconditional. Because skill discovery honours only the per-tool `## Recommended skills`
+  sections, every entry point that can reach the trigger recommends `effective-delivery` itself:
+  besides `review`, `apply-issues`, and `apply-review-remote`, the delivering workflows `build`,
+  `refactor`, `maintain`, `fix`, and `docs` do, so the judgment is not silently skipped there.
+- **`effective-delivery` and the documentation workers:** The central skill owns documentation
+  craft and verification. Effective Flow keeps its optional standard categories, approved target
+  paths, language resolution, worker model profiles, plan/report state, and delivery lifecycle. Its
+  prescribed standard doc structure is a default, not a mandate: when the skill's repository
+  discovery reports an established documentation structure, that structure wins. Effective Flow
+  defines no local test for "established" — that judgment belongs to the skill, while the write
+  boundary and target-path approval stay here. The `documentation-sync-contract` fragment is the
+  same relationship inside the implementation tools: it owns when the documentation phase runs,
+  which surfaces are in scope, and what counts as a finished verdict, and delegates every judgment
+  about the documentation itself to the skill.
+- **`effective-engineering`, `effective-delivery`, and test/validation workers:** The central
+  skills own reusable evidence design and existing-command execution. Effective Flow keeps scenario
+  and bucket assignment, validation mode, phase gates, agent profiles, and delivery.
+- **`effective-delivery` and `merge-gate` — no relationship, by design.** The merge gate, exposed
+  as `/effective-flow merge-gate`, resolves a pull request, waits for checks, runs the
+  automatic-reviewer round, and merges. It performs no review-item judgment itself and is forbidden
+  from loading `effective-delivery`, which brings its own approve and request-changes submissions,
+  its own CI recovery, and its own summary conventions — all three of which the gate's workflow
+  excludes. The exclusion costs the gate the whole delivery skill rather than only its review half,
+  and that is the accepted trade. Every review-driven and CI-driven code change is delegated instead
+  to `{{SKILL:iterate}}` (the `iterate` tool), which is where the skill's caller-owned Mode C
+  handoff actually runs (see the two bullets above); the one code-affecting decision that does not go
+  there — resolving a conflict with the base — goes to the `merge-conflict-resolver` worker, which
+  declares no recommended central skill at all and therefore adds no relationship either. The gate
+  declares **no** consumer relationship with the skill, in the manifest or in the table above. Do not
+  add one, and do not record it as a `no-overlap` row either: the gate reaches the skill only
+  indirectly, through a tool that declares the relationship for itself, so there is no intersection
+  to classify — `no-overlap` describes a divergent overlap, not an absent one. Until the central
+  collection was consolidated this bullet also had to separate the skill from the identically named
+  deprecated tool `/effective-flow pr-review`; that collision is historical, because the skill is now
+  `effective-delivery` and every remaining `pr-review` token belongs to the families listed next.
+- **The surviving `pr-review` literals are not a central skill.** No skill carries that name any
+  more, so a repository-wide sweep for it finds only names that belong to other concepts and must
+  stay: the deprecated tool `src/tools/pr-review.md` with its tool token and its
+  `DEPRECATED_TOOL_ALIASES` entry; the shared fragments `src/shared/pr-review-comments.md`,
+  `src/shared/pr-review-thread-writes.md` and `src/shared/pr-review-integration.md` with their
+  include tokens; the caller-owned handoff schema id `pr-review-handoff/v1`; the helper operations
+  `pr-reviews-read` and `pr-review-comment-build`;
+  the marker `<!-- effective-flow-pr-review -->`; the comment-kind enum value `'pr-review'` in
+  `src/scripts/remote-tracker-core.mjs`; and two distinct camelCase configuration namespaces —
+  `delivery.prReview`, which decides whether a delivery publishes its own findings onto the pull
+  request it created, and the retired `prReview.*` merge-gate block, which is never read and which
+  setup rewrites in place under `mergeGate.<key>` (see `src/shared/config-merge-gate-keys.md`; the
+  retired namespace and its successor map live in `src/scripts/config-resolve-core.mjs`). Those two namespaces mean entirely different things and are never read
+  for one another. Renaming any of these crosses a concept boundary. What is frozen is each name,
+  not each file's contents: `pr-review-integration.md` names the central skill in its body and was
+  retargeted with all other ownership prose.
+- **Remote tracker adapter:** Effective Flow owns its issue/finding schemas, IDs, compatibility
+  aliases, Forgejo support, provider-neutral helper, and orchestration. `effective-delivery`
+  continues to own reusable GitHub PR review judgment; the helper centralizes deterministic
+  transport and never carries review-policy reasoning.
+
+## Retired names
+
+Upstream consolidated fourteen central skills into five: four newly merged successors, plus the
+pre-existing `effective-web`, which absorbed one entry. A fifteenth, `effective-workflow`, has no
+central successor at all. The inventory above therefore no longer shows which pre-merge skill a
+relationship came from; that assignment is recorded in the table below, the only table in this guide
+that maps a retired name to its successor. `pr-review` also appears above, under "Deliberate
+boundaries", but there it is a frozen literal rather than a skill name:
+
+| Retired skill              | Successor               |
+| -------------------------- | ----------------------- |
+| `codebase-improvement`     | `effective-delivery`    |
+| `pr-review`                | `effective-delivery`    |
+| `smart-dependency-updater` | `effective-delivery`    |
+| `tech-docs`                | `effective-delivery`    |
+| `port-codebases`           | `effective-delivery`    |
+| `software-validation`      | `effective-delivery`    |
+| `software-testing`         | `effective-engineering` |
+| `software-architecture`    | `effective-engineering` |
+| `product-management`       | `effective-product`     |
+| `product-design`           | `effective-product`     |
+| `decision-records`         | `effective-product`     |
+| `metro-english`            | `effective-writing`     |
+| `locale-typography`        | `effective-writing`     |
+| `web-legal-compliance`     | `effective-web`         |
+| `effective-workflow`       | Effective Flow itself   |
+
+`effective-workflow`'s scope is this repository, so the relationship was dropped rather than
+renamed, and the rule it carried survives as the self-recursion guard in
+`src/shared/skill-discovery.md`.
+
+## Ownership check when extending
+
+When adding or extending a tool, agent, or shared include, ask whether the change carries a
+second copy of a centrally owned playbook. If it does, delegate to the skill, retain only a
+minimal fallback, and add or update the concrete consumer relationship in both manifest and
+table. If the source recommends a non-relationship skill as an external alternative, add that
+token deliberately to the external recommendation allowlist.
+
+Two build guards now enforce what used to be convention, so neither half of the check can be
+forgotten. Every `src/agents/*.md` must carry a `## Recommended skills` section that names a skill
+declared in the manifest, or appear in `SKILL_RECOMMENDATION_EXEMPT_AGENTS` in `build.mjs` with a
+one-line reason — the set is two-sided, so an exempt agent must carry no section and an exemption
+for a deleted agent is stale. An allowlisted external skill is a legitimate bullet but owns no
+domain, so a section naming only external tokens names no owner and does not satisfy the
+roster. In the
+other direction, a declared relationship must be reachable from a recommendation. That check is
+strict where the contract is strict: a **`delegate`** consumer must name its owner itself, and as
+the **first** member of its fallback chain, because that pair is the whole layered contract, a
+sibling consumer must not be able to keep a dead relationship looking alive, and ordered selection
+applies only the first available member — an owner written behind an available alternative is
+never the guidance that runs. A `route-when-relevant` consumer is checked per relationship, since a
+relevance-gate consumer reaches its owner through the structured marker rather than a section.
+Shared-fragment consumers are exempt by kind, because a fragment expresses its ownership as prose
+inside the tool that embeds it and can never carry a section of its own. The
+roster guard covers agents only: `src/shared/skill-discovery.md` states that a missing section is
+legitimate for a tool, and tools such as `version` or `cleanup` have no domain owner to name.
+
+Run `node build.mjs` to reconcile all declared relationships, this table, every
+`## Recommended skills` fallback token, and the structured relevance-gate marker. Use
+`pnpm audit:skill-ownership -- <local-skills-directory>` only as a non-blocking review aid for a
+local upstream checkout.
+
+## Shipped ownership projection
+
+`setup status` reports which declared owner the project's `skills` configuration disables, per
+exposed tool. The shipped script cannot read sources, so `node build.mjs` writes the projection
+`scripts/setup-status-owners.json` beside the runtime scripts in every target (native Claude,
+native Codex, portable, and therefore the delivery branch). It carries the installed SemVer from
+`.release-please-manifest.json` (no Git hash), the exposed tools, the declared workflow edges (each
+`{ from, to, mode }`, `mode` null unless `from` runs `to` only in that resolver mode), and
+one row per **`delegate`** relationship of the manifest: `skill`, `consumer`, `consumerKind`
+(`tool`, `agent`, `shared`), `classification`, the sorted exposed `tools` that reach the consumer,
+and `reach`, one `{ tool, scope }` entry per exposed tool and `skills` scope it is reached through.
+`route-when-relevant` rows are optional routes and are not projected.
+
+Reachability is explicit, never inferred from every `{{SKILL:X}}` mention. An exposed tool reaches
+itself, its eager and lazy include closure, the named worker roles of the spawn-site markers in
+its source or that closure with their own include closures, and every tool behind a
+declared `WORKFLOW_EDGES` entry in `build.mjs`, transitively, whatever the edge's mode (the edges
+into exposed tools include `merge-gate → iterate`, mode `pr`; `apply-plan`, `apply-issues`,
+`apply-review` and `iterate` → `build`, `fix`, `refactor`, `docs`; and `plan → plan-issue`). The
+`commit` and `pr` handoffs are also declared for `build`, `fix`, `refactor`, `docs`, `maintain`,
+`iterate` and `deliver`, plus `plan` through its publication contract. Their shared eager/lazy
+include closures supply the matching references. Consequently, an exclusion in
+`skills.tools.commit.exclude` affects every host that can run `commit`, including `apply` and
+`merge-gate` transitively; `plan` also inherits `pr`'s stop on retired `worktree.baseBranch`.
+Worker roles come from the validated `role:<agent>[,<agent>…]` clauses of the marked site's row
+in `shared/model-tiers.md`, including every routed alternative and conditional role. A literal-tier
+site runs generic analysis or a delegated workflow and adds no named worker; workflow reach stays
+with `WORKFLOW_EDGES`. Bare `{{AGENT:X}}` or `{{AGENT_PROFILE:X:fast}}` mentions add no dependency,
+so prohibitions in `commit`, `pr` and `setup` cannot make them or `deliver` depend on validation
+workers. Unknown reached sites or named roles fail the projection.
+
+A tool consumer is reached through `tools.<consumer>`, an agent through
+`agents.<consumer>`, and a shared fragment through each host's scope: `tools.<host tool>` or
+`agents.<host agent>`. Agents are leaves, so an agent's own `{{AGENT:X}}` mentions are not followed.
+
+The build fails when the projection's `delegate` rows differ from the manifest, when a `delegate`
+consumer reaches no exposed tool, when a declared edge or pointer has no matching reference in its
+`from` source or its transitive eager/lazy shared include closure (`{{SKILL:X}}`, a lazy-include
+fence, or a literal `tools/X.md` path), or when that closure references an internal tool without a declared `WORKFLOW_EDGES` or
+`WORKFLOW_POINTER_REFERENCES` entry. A reference to an exposed tool is not checked in reverse, so an
+in-run delegation into one is declared by hand; a pointer whitelists its whole `(from, to)` pair, so
+a later real delegation between a listed pair moves to `WORKFLOW_EDGES`. The build also fails when an
+edge's `mode` is no resolver mode of its target, and when a `SUCCESSOR_SETS` entry other than `setup`
+is run by no exposed tool in its mode, so `setup status` can always name the exposed tools a retired
+row stops (at runtime such a tool would keep its own name, listed in `unmappedTools`).
+`assertDisjointConsumerNames` also keeps `src/shared/` names
+apart from tool and agent names, so `consumerKind` follows from a bare name. The derivation and the
+guards are pure functions in `build-lib.mjs`, covered in `test/build-lib.test.mjs`.
+
+## See also
+
+- `src/shared/skill-discovery.md` – the operative skill-discovery and authority contract.
+- [Architecture](architecture.md) – the overall structure of Effective Flow.
+- [`AGENTS.md`](../../AGENTS.md) – the skill-discovery contract and contributor conventions;
+  the ownership mechanics are here.
+
+## Planned-build ownership
+
+`build-delegated-run` retains the `effective-delivery` relationship previously reached directly from build: repository-native validation and documentation craft remain delegated through the existing workers and documentation-sync contract. Effective Flow owns the single dispatch boundary, phase/gate order, bounded `build-run-contract` transport, trusted question relay, same-agent identity, transient pilot lifetime, worktree ownership, delivery and durable completion evidence. The protocol fragment introduces no domain checklist and therefore no separate domain-owner relationship. `worktree-integration`, `plan-pr-continuation`, `pr-review-integration` and `model-tiers` retain their orchestration roles. Moving these contracts does not duplicate a central skill's playbook.
