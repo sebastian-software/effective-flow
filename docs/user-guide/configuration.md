@@ -1,0 +1,929 @@
+# Configuration
+
+Effective Flow works without project configuration: every tool starts from its own safe defaults.
+To keep project-specific choices in Git, use one living **Effective Flow project-setup ADR**. The
+default path is `docs/adr/effective-flow-project-setup.md`; a marker in the project convention
+file can select another path. In a repository whose team has not adopted Effective Flow,
+[hidden mode](#hidden-mode) keeps the whole configuration in a local, untracked file instead.
+
+This page is the complete reference for the ADR location, table encoding, configuration keys,
+defaults, and migration behavior. The guides [Worktree and delivery](./worktree-and-delivery.md),
+[Remote tracker](./remote-tracker.md), and [Skill discovery](./skill-discovery.md) explain how the
+corresponding settings affect everyday use.
+
+The standard `/effective-flow setup` flow asks for the chat language and one common workflow
+profile, then derives the relevant rows. A profile is only a transient setup overlay: the ADR stores
+the resulting individual settings and never a profile name.
+
+## Project-setup ADR
+
+The configuration is a mutable, numberless Markdown ADR whose current contents are the tracked
+truth. A new ADR uses the configured technical-documentation language. This English example and
+the equivalent German envelope use the same stable keys and encoded values:
+
+```md
+# Effective Flow project setup
+
+## Status
+
+Active
+
+## Context
+
+This ADR holds this project's tracked Effective Flow configuration. `.effective-flow/` is a pure
+runtime directory and completely gitignored.
+
+## Configuration
+
+| Key              | Value   |
+| ---------------- | ------- |
+| review.profile   | focused |
+| worktree.enabled | true    |
+| tracker.mode     | local   |
+| skills.exclude   | (empty) |
+```
+
+The same configuration in a German envelope starts like this:
+
+```md
+# Effective-Flow-Projektsetup
+
+## Status
+
+Aktiv
+
+## Kontext
+
+Diese ADR enthält die versionierte Effective-Flow-Konfiguration dieses Projekts.
+
+## Konfiguration
+
+| Schlüssel        | Wert    |
+| ---------------- | ------- |
+| review.profile   | focused |
+| worktree.enabled | true    |
+| tracker.mode     | local   |
+| skills.exclude   | (empty) |
+```
+
+By default the file name is a kebab-case slug without a number. Where your project declares its
+own ADR file-naming rule — in `AGENTS.md`, `CLAUDE.md`, or a decision register such as
+`DECISIONS.md` at the repository root or at `docs/DECISIONS.md`, or a `README.md`/`index.md`
+directly inside the ADR directory — setup follows that rule instead, so the file may well be
+`docs/adr/0002-effective-flow-project-setup.md`. Effective Flow updates the ADR in place when the
+configuration changes; it does not create a superseding record for each edit. An ADR that already
+exists is never renamed to match the convention and never duplicated at a second,
+convention-shaped path: it keeps its own path on that naming axis, and the divergence is reported
+once. One path change is not on that axis and still happens: an ADR found under the former
+`firmo-project-setup` slug is written under the current `effective-flow-project-setup` slug, so
+`docs/adr/firmo-project-setup.md` does become `docs/adr/effective-flow-project-setup.md`. Setup also never
+writes over a file already sitting at the name it resolved, and a symlink at that path stops the
+write outright.
+
+The canonical locator line is:
+
+```md
+**Effective Flow project setup:** docs/adr/effective-flow-project-setup.md
+```
+
+[`/effective-flow setup`](./tools-setup.md) writes or updates both the ADR and this marker. A
+person may also edit the table directly, but ordinary tools that read configuration never create
+files, rewrite the ADR, or touch Git.
+
+## Resolution order
+
+Every config-reading tool uses the following order and stops at the first valid source:
+
+0. **Local hidden configuration.** `.effective-flow/project-setup.md` in the main checkout wins
+   only when it declares `visibility | hidden`; see [Hidden mode](#hidden-mode). A local file
+   without that row is reported and skipped. It is never read from a linked worktree: a run there
+   locates the main checkout first and stops with a report when it cannot verify it.
+1. **Convention-file marker.** Read `**Effective Flow project setup:** <path>` from `AGENTS.md`,
+   otherwise `CLAUDE.md` or a comparable convention file. The former
+   `**Firmo project setup:** <path>` spelling remains readable for one compatibility generation.
+   A marker whose target no longer exists is reported and does not block the later fallbacks.
+2. **Default path and ADR scan.** Try `docs/adr/effective-flow-project-setup.md`, then scan the
+   detected ADR directory (`docs/adr/`, `docs/decisions/`, or `adr/`) for the project-setup ADR.
+   The scan also matches the ADR under a leading numeric prefix, so a project that names its ADRs
+   that way stays resolvable. The former `firmo-project-setup` slug remains readable during this
+   scan. Because that tolerance matches a family of names, several files can match here. They are
+   ranked in one order rather than by two separate preferences: the current slug wins over the
+   former one first, and only between files carrying the same slug does an unprefixed name win over
+   a prefixed one. If more than one match still ties at the top, every matching path is reported and
+   the lookup moves on to the next step rather than guessing. For a tool that only reads, that means
+   built-in defaults for the run; `/effective-flow setup` instead stops and asks which of those ADRs
+   to update, rather than treating the project as having none and writing another.
+3. **Transitional legacy input.** If no ADR exists, read a still-present legacy JSON config
+   without writing anything, and direct the user to `/effective-flow setup`. See
+   [Migrating a legacy JSON configuration](#migrating-a-legacy-json-configuration).
+4. **Built-in defaults.** If no project source exists, each tool uses its documented defaults.
+
+If a table is invalid or ambiguous, the tool uses a safe default for the affected key, reports
+the problem, and does not guess or rewrite the source.
+
+## Hidden mode
+
+Hidden mode lets you use Effective Flow in a repository without leaving anything that identifies
+it in the tracked history or on the forge surfaces your team sees. It is meant for working alone
+with Effective Flow in a repository that has not adopted it. Only
+[`/effective-flow setup hidden`](./tools-setup.md#hidden-mode), or the answer `Hidden` to setup's
+Visibility question, turns it on; no other tool activates it.
+
+In hidden mode:
+
+- The configuration lives in `.effective-flow/project-setup.md` in the main checkout. It uses the
+  same envelope and table encoding as the project-setup ADR and carries the row
+  `visibility | hidden`. Plans and concepts live under `.effective-flow/plan` and
+  `.effective-flow/concept`.
+- `.effective-flow/` is ignored through one `.effective-flow/` line in the Git common directory's
+  `info/exclude` (`git rev-parse --git-common-dir`), which every linked worktree reads.
+  `.gitignore` is not written.
+- No `AGENTS.md` or `CLAUDE.md` is written or edited, and no marker is needed, because the locator
+  finds the local file at its fixed path.
+- If a tracked project-setup ADR or marker also exists, the local file wins. The tracked source is
+  reported once as shadowed and none of its values is read.
+
+The configuration resolver enforces these values. A contradicting row in the local file is reported
+once per run as overridden and never honoured. A missing row takes the forced value silently:
+
+| Key                     | Value in hidden mode                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------ |
+| `plan.dir`              | `.effective-flow/plan`                                                               |
+| `concept.dir`           | `.effective-flow/concept`                                                            |
+| `tracker.mode`          | `local`                                                                              |
+| `delivery.prReview`     | `off`                                                                                |
+| `delivery.branchPrefix` | empty by default; a value containing `effective-flow` in any letter case is rejected |
+
+Every other key resolves from the local file exactly as it would from the ADR. The tracker target is
+pinned as well: an issue reference or a per-run signal cannot switch it to the forge or an external
+tool. The issue workflows that only work against such a target (`plan-issue`, issue-driven `apply`,
+remote `review`) stop before any tracker access and name hidden mode. You can still plan from pasted
+issue text with `/effective-flow plan "<text>"`.
+
+Hidden mode also keeps Effective Flow out of Git and forge prose. No commit message, branch name,
+pull-request title or body, or tracker-facing summary mentions a path under `.effective-flow/` or
+names Effective Flow. Pull-request comments, review replies, and reviews are posted without the
+`<!-- effective-flow-… -->` markers. See [Worktree and delivery](./worktree-and-delivery.md#hidden-mode)
+for branch names and plan archival, and [Remote tracker](./remote-tracker.md#hidden-mode) for
+marker-free forge writes.
+
+The `visibility` key has two values, `standard` (the default, written as no row at all) and
+`hidden`. A tracked ADR can never switch hidden mode on. A `visibility | hidden` row there is
+reported and ignored, because hidden configuration must never be tracked. If the local file is
+unreadable or ambiguous for a key, the safe default applies to that key and hidden mode stays
+active.
+
+## Table encoding
+
+The `## Configuration` section uses a flat, two-column Markdown table with the canonical header
+`| Key | Value |`. One row represents one setting:
+
+- **Boolean:** `true` or `false`.
+- **String:** literal and unquoted, for example `focused` or `origin/main`.
+- **Ask at run time:** the literal token `null`.
+- **Empty list:** `(empty)`.
+- **Filled list:** comma-separated names, for example `humanizer, distill`.
+- **Nested setting:** a dotted key, for example `applyReview.worktree.baseDir` or
+  `skills.tools.docs.exclude`.
+- **Empty object:** no rows for that object.
+
+A missing row and an explicit `null` have different meanings. A missing row leaves the key unset,
+so the source tool's default applies. A present row whose value is `null` explicitly means “ask at
+run time” for keys that accept it.
+
+The bootstrap reader accepts both canonical envelopes: English `## Configuration`,
+`| Key | Value |`, `Active`, and `Superseded`; and German `## Konfiguration`,
+`| Schlüssel | Wert |`, `Aktiv`, and `Abgelöst`. Config keys and encoded values—including
+`(empty)`—remain identical and English in either form. The former translated token `(leer)`
+remains readable only for backward compatibility. Setup creates a new ADR in
+`language.documentation.technical`; a normal update preserves an existing ADR's envelope and
+prose language rather than translating it as a side effect.
+
+## Complete table example
+
+The following example shows every configuration area and all current setting shapes. Values that
+are not part of the safe-defaults base are illustrative defaults from their source tools; the
+per-agent and per-tool skill rows demonstrate optional overrides.
+
+```md
+## Configuration
+
+| Key                                  | Value                      |
+| ------------------------------------ | -------------------------- |
+| review.profile                       | focused                    |
+| review.autoConfirmScope              | false                      |
+| review.designDecisionSources         | standard                   |
+| review.validation                    | full                       |
+| applyReview.defaultCommitStrategy    | null                       |
+| applyReview.finalValidation          | full                       |
+| applyReview.stashPolicy              | interactive                |
+| applyReview.worktree.baseDir         | .effective-flow/.worktrees |
+| applyReview.worktree.setup           | auto                       |
+| mergeGate.completion                 | ask                        |
+| mergeGate.conflictResolution         | auto                       |
+| mergeGate.requireAllChecks           | true                       |
+| mergeGate.checkWaitMinutes           | 20                         |
+| mergeGate.maxRounds                  | 10                         |
+| mergeGate.botWaitMinutes             | 10                         |
+| mergeGate.bots                       | (empty)                    |
+| language.project                     | en                         |
+| language.source                      | en                         |
+| language.documentation.user          | en                         |
+| language.documentation.technical     | en                         |
+| language.workflow                    | en                         |
+| language.forge                       | en                         |
+| language.git                         | en                         |
+| language.chat                        | en                         |
+| executionProfiles.fast.enabled       | false                      |
+| plan.dir                             | docs/plan                  |
+| concept.dir                          | docs/concept               |
+| delivery.baseBranch                  | origin/main                |
+| delivery.branchPrefix                | effective-flow             |
+| delivery.completion                  | merge                      |
+| delivery.returnBranch                | auto                       |
+| delivery.mergeMethod                 | squash                     |
+| worktree.enabled                     | true                       |
+| worktree.setup                       | auto                       |
+| worktree.baseDir                     | .effective-flow/.worktrees |
+| tracker.mode                         | local                      |
+| tracker.remoteToolOverride           | auto                       |
+| skills.enabled                       | true                       |
+| skills.include                       | (empty)                    |
+| skills.exclude                       | (empty)                    |
+| skills.agents.ui-implementer.include | effective-web              |
+| skills.tools.docs.exclude            | humanizer                  |
+```
+
+`delivery.baseBranch` appears here as an explicit value: omit the row and the default is derived
+from `origin/HEAD` instead. The eight explicit language rows illustrate every override. In a
+typical project, only `language.project` is needed; omit an artifact-surface override to inherit the project language,
+and omit `language.chat` to keep mirroring the language you write in. Omit optional
+skill override rows when no override is needed. `tracker.externalTool`,
+`tracker.externalToolHint`, `tracker.externalStartedState`, and `tracker.externalDoneState` are
+absent because this example pins `tracker.mode: local`; they belong to an external target only (see
+[Block `tracker`](#block-tracker)).
+
+## Block `executionProfiles`
+
+`executionProfiles.fast.enabled` is the opt-in Boolean switch for the Quality/Fast field pilot of
+`/effective-flow build`. It does not contain a provider model name. Missing or `false` means
+disabled; malformed, ambiguous, or unreadable input is invalid. Both outcomes fail closed to
+**Quality** and stop new pilot measurement. Only the literal `true` admits the project to the pilot
+lifecycle; it does not start a baseline, activate Fast, or prove that the current host can enforce
+Fast.
+
+Set the row with `/effective-flow setup guided` → **Advanced settings** → **Block 10
+(`executionProfiles`)**: **Keep** leaves the recorded value unchanged, **Enable** writes `true`, and
+**Disable** writes `false`. Profile and Express never ask this question and keep an existing value
+exactly as recorded. After the configuration write, the same block offers at most one confirmed
+generation action, depending on the stored pilot state: start the Quality-only baseline, or resume
+a suspended generation with healthy evidence. Activation needs no action: the next measured native
+`build` or `refactor` run activates a baseline generation automatically once its preregistered window and sample
+are met. See [Setup](./tools-setup.md#fast-pilot-block) for the sequence.
+
+Once a generation is active, `build` and `refactor` may use the native **Fast** implementer for
+the first implementation attempt of an eligible packet. During the baseline every packet runs
+Quality and is only measured. Portable installations remain Quality-only and unmeasured. Changing or removing the row does not rewrite a pilot generation, clear a suspension,
+or delete evidence.
+
+Project admission is also separate from detailed-trace consent. The configuration row cannot grant
+that consent. A workflow may attest `detailOptIn: true` only after an explicit request in the current
+run; the decision is not persisted as configuration and does not carry into a later run. Minimal
+records remain local and structured either way. See [Model-tiering pilot data and
+privacy](./model-tiering-pilot.md) for the evidence, retention, review, purge, discard, and
+publication boundaries. [Getting started](./getting-started.md#recommended-calling-model) explains
+the distinction between caller and implementation profiles; the
+[risk-aware pilot decision](../adr/risk-aware-model-tiering-pilot-policy.md) records the durable safety
+boundary.
+
+## Block `language`
+
+Controls the language of human-readable content created or edited by Effective Flow. Seven keys
+cover persisted artifacts; `chat` covers what a run says to you. Every value is `de` or `en`;
+`null` has no special meaning for these keys.
+
+| Key                       | Scope                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------- |
+| `project`                 | Default for every human-readable surface without an override                                |
+| `source`                  | Comments, test descriptions, and in-code documentation                                      |
+| `documentation.user`      | Root README, marketing entry points, and user documentation                                 |
+| `documentation.technical` | Developer and API documentation, operations documentation, runbooks, and ADRs               |
+| `workflow`                | Plans, plan reviews, local review reports, investigations, and other local workflow prose   |
+| `forge`                   | Issues, PR bodies, issue/PR comments, remote reviews, and review-thread replies             |
+| `git`                     | Commit descriptions, Conventional-Commit PR titles, changelog prose, and release-note prose |
+| `chat`                    | Interactive output: what a run says to you, persisted nowhere                               |
+
+For a new artifact, the surface-specific override wins, then `language.project`, then the
+built-in default `en`. An explicit user instruction for that artifact wins over configuration.
+When editing an existing artifact, its recognizable language is preserved unless translation is
+requested. Incoming third-party text and verbatim quotations are not translated automatically.
+
+A local review therefore follows `language.workflow`, while the same review published as issues
+follows `language.forge`. PR bodies and comments follow `language.forge`, but a
+Conventional-Commit PR title follows `language.git` because squash merges may turn it into the
+commit subject. Commit descriptions and generated changelog/release prose also follow
+`language.git`; Conventional-Commit types remain English.
+
+`language.chat` is the one key that does not inherit. Leave it out and Effective Flow keeps
+mirroring the language you write in, exactly as it did before the key existed; `language.project`
+is reached only when the conversation language is unclear. Set it and it wins over the language of
+your message, so `language.chat: de` answers an English prompt in German — that is the intended
+behavior, not a bug. Only an explicit request in the message itself outranks it, and an invalid
+value is reported and treated like an absent row rather than falling back to `language.project`.
+
+The key covers everything a run says itself: prose, status updates, the questions it asks, the
+completion report, the next-steps heading and each option's description, and the session-title
+label. It stops at delegated output. Reports from workers and notices from agents are passed
+through as written, so a run with `language.chat: de` can still show an English worker report. The
+tool catalog, the `version` output, and the `pr-review` deprecation notice appear before any
+configuration is read and stay on the language of the conversation.
+
+Profile setup is the sole exception to resolving this key once before a run's first question. It
+asks **Chat** in the language established at entry, immediately binds Mirror, English, or German,
+and uses that choice for the following **Profile** question and all later setup output. Mirror
+removes the `language.chat` row only in the confirmed write; English and German persist `en` or
+`de`. No other setup mode or Effective Flow tool can rebind its resolved chat language during a
+run.
+
+Stable machine-facing tokens are never localized: config keys and encoded values, labels, HTML
+idempotency markers, finding IDs, action values, paths, Conventional-Commit types, branch slugs,
+schemas, and runtime/wisdom headings. `language.source` does not rename identifiers, public API
+names, or data formats. Product UI, CLI, and error-message localization remains governed by the
+target project's i18n policy. English content uses `en-US` typography and German content uses
+`de-DE`; this feature does not add independent locale selection.
+
+## Block `review`
+
+Controls the depth and behavior of [`/effective-flow review`](./tools-quality.md).
+
+| Key                     | Values                          | Default    | Meaning                                                                                                  |
+| ----------------------- | ------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------- |
+| `profile`               | `full` / `focused` / `fast`     | `focused`  | Scope and depth of the review                                                                            |
+| `autoConfirmScope`      | `true` / `false`                | `false`    | Adopt the detected scope without a follow-up question                                                    |
+| `designDecisionSources` | `full` / `standard` / `minimal` | `standard` | How thoroughly documented design decisions are searched before a finding counts as a deliberate decision |
+| `validation`            | `full` / `quick` / `off`        | `full`     | Scope of the final technical validation                                                                  |
+
+## Block `applyReview`
+
+Controls [`/effective-flow apply`](./tools-implement.md) when it processes review findings.
+
+| Key                     | Values                                       | Default                      | Meaning                                                  |
+| ----------------------- | -------------------------------------------- | ---------------------------- | -------------------------------------------------------- |
+| `defaultCommitStrategy` | `worktrees` / `single` / `none` / `null`     | `null`                       | Ask for the findings commit strategy on every run        |
+| `finalValidation`       | `full` / `changedScope` / `off`              | `full`                       | Scope of final validation after all findings             |
+| `stashPolicy`           | `interactive` / `keep` / `discard` / `apply` | `interactive`                | Handling of uncommitted changes before processing        |
+| `worktree.baseDir`      | String                                       | `.effective-flow/.worktrees` | Base directory for findings-internal isolation worktrees |
+| `worktree.setup`        | `auto` / `none` / free-text command          | `auto`                       | Setup command for each findings-internal worktree        |
+
+`applyReview.worktree.*` is independent of the top-level `worktree.*` block: the former isolates
+parallel review findings and cherry-picks their commits, while the latter selects the execution
+location of the overall workflow. See [Worktree and delivery](./worktree-and-delivery.md).
+
+## Block `mergeGate`
+
+Controls [`/effective-flow merge-gate`](./tools-deliver.md), the merge gate that drives an
+already-open pull request to merge-readiness and, if allowed, merges it.
+
+| Key                    | Values                              | Default   | Meaning                                                                               |
+| ---------------------- | ----------------------------------- | --------- | ------------------------------------------------------------------------------------- |
+| `completion`           | `ask` / `merge` / `report` / `null` | `ask`     | May the run merge at the end, or only report merge-readiness                          |
+| `conflictResolution`   | `off` / `ask` / `auto`              | `auto`    | May the run resolve a conflict between the head branch and its base                   |
+| `requireAllChecks`     | `true` / `false`                    | `true`    | Require every check's latest run green, not only the forge-required ones              |
+| `checkWaitMinutes`     | Positive integer                    | `20`      | Timeout, in minutes, for one wait on pending checks, including Forgejo helper polling |
+| `maxRounds`            | Positive integer                    | `10`      | Upper bound on check-gate rounds for the whole run                                    |
+| `botWaitMinutes`       | Positive integer                    | `10`      | Timeout, in minutes, for one wait after triggering an automatic reviewer              |
+| `bots`                 | Comma list of logins                | `(empty)` | Automatic reviewers (e.g. Greptile) the gate waits for and answers                    |
+| `bots.<login>.trigger` | Literal trigger comment text        | `(unset)` | Comment posted when the reviewer has not started or its verdict is stale              |
+| `bots.<login>.check`   | Commit-status or check-run context  | `(unset)` | Check that proves whether that reviewer is running or has run                         |
+
+`mergeGate.completion: ask` (or an unset key) poses the entry question exactly once, at the start of
+a gated run; a non-interactive delegation cannot be asked and behaves as `report`. Telling your
+session not to merge resolves `report` whatever this key says, and nothing is asked. An empty
+`mergeGate.bots` list means no automatic reviewer is expected, so the bot round is skipped rather
+than blocking the merge forever. Under `mergeGate.requireAllChecks: true` every reported check
+counts; under `false` only the checks the forge marks as required count, so a red optional check is
+reported but does not block. A counted check passes when it completed as `SUCCESS`, `SKIPPED`, or
+`NEUTRAL`, as GitHub counts it; any other conclusion blocks. `mergeGate.bots.<login>.trigger` and `mergeGate.bots.<login>.check`
+are one dotted key each per bot; a login containing brackets (for example `greptile-apps[bot]`) is a
+valid middle segment because the encoding splits on `.` only.
+
+**`mergeGate.conflictResolution` decides what happens when the head branch conflicts with its base.**
+The gate already brings a branch that has merely fallen _behind_ its base forward with a merge
+commit; this key covers the case where that same merge does not apply cleanly.
+
+- `auto` (the default) hands the conflicted files to the gate's dedicated resolver, has the resolved
+  tree verified independently before anything is committed, and pushes one ordinary merge commit.
+  The run then continues its gate instead of ending at the conflict.
+- `off` makes **no commit and no push**: the merge is aborted, the conflict is reported with its
+  conflicted paths, and the run ends. That is exactly the outcome the gate produced **on the branch**
+  before this key existed. It is not a claim that such a run touches nothing at all — the gate
+  provisions its local checkout before it reads this key, and cleans that checkout up again on the
+  same stop path.
+- `ask` poses the question once per **conflicted round** in a gated run — once per conflict, not once
+  per run. Each round's conflict is a different conflict against a base that has moved again, so
+  consent given for one is not consent for the next, and with the default `mergeGate.maxRounds: 10`
+  a single run may therefore pose the question up to ten times. This deliberately deviates from
+  `mergeGate.completion`, whose entry question settles one fixed decision for the whole run and is
+  never asked again. A **non-interactive delegated** run has nobody to ask, so that combination
+  behaves as `off` and the report names `mergeGate.conflictResolution: auto` as the setting that
+  would authorize the resolution — that part is the same way `mergeGate.completion` degrades.
+
+**An unreadable or invalid value resolves to `off`, not to the documented default `auto`.** For every
+other key in this block the safe fallback and the documented default are the same value; for this one
+they diverge, because an unparseable line must never authorize a commit and a push. The run reports
+the affected key and continues with `off`.
+
+**The head branch is untrusted input.** The gate runs on any open pull request, including one whose
+head branch lives in a fork this repository does not control. To validate a resolution, the resolver
+discovers the repository's own validation commands from files that head branch supplies — scoped
+instructions, CI workflows, task runners, manifests, package scripts — and executes them in the
+provisioned checkout with full filesystem and network access. Under `auto`, the default, that happens
+automatically and without anyone being asked. A project that gates pull requests it does not trust
+should set `ask`, so a human authorizes every resolution, or `off`, so no untrusted branch's commands
+are executed by this gate at all.
+
+The default `auto` **changes behavior when you upgrade**: a project that never configured this key
+gets automatic conflict resolution, and `off` restores the branch behavior of an earlier generation
+exactly. Note also that completion mode `report` does not withhold it. `report` withholds exactly one
+action, the merge of the pull request itself, so a `report` run still resolves a conflict and pushes
+that one merge commit; `conflictResolution: off` is the switch for a run that makes no commit and no
+push at all. What the resolver does with a conflict, and where it refuses to guess, is described
+under [`/effective-flow merge-gate`](./tools-deliver.md#resolving-a-conflict-with-the-base).
+
+**This key is new.** No earlier generation wrote a `prReview.conflictResolution` row. One that exists
+anyway is retired like any other `prReview.*` row (see below), with `mergeGate.conflictResolution` as
+its successor, and `/effective-flow setup` carries it over. Without one, a project whose legacy block
+setup migrates gets the default `auto` here.
+
+**Either spelling of a bot login works.** GitHub shows `greptile-apps[bot]` in its interface and
+reports that form through its REST API, but reports the same account as bare `greptile-apps` through
+the GraphQL API the gate uses to read review threads. The gate matches a configured login against a
+reported one after trimming a trailing `[bot]` from each, so one entry covers both surfaces and you
+do not need to list a reviewer twice. **That trim applies only to an account the forge reports as a
+bot.** A reported login the forge does not type as a bot has to match your configured spelling
+exactly, so an ordinary user or organization named `greptile-apps` is never taken for the reviewer
+`greptile-apps[bot]`. On a forge that states no account type at all (Forgejo), only the exact
+spelling matches: a bare login configured as `greptile-apps[bot]` then counts as a reviewer that has
+not run, which the gate reports rather than merges past. **Spell a Forgejo entry as the bare login**
+for that reason — since a Forgejo gate can merge, a suffixed entry there blocks the merge on that
+reviewer permanently rather than only making the report noisier. If a project already lists both spellings, they now count as
+one reviewer — one round, one mention, one wait — and the gate reports the collapse so the redundant
+row can be removed. The first of the two rows in `mergeGate.bots` order is the one whose `.trigger`
+and `.check` the gate then uses, and a value set on only one of the rows is simply adopted. Two rows
+that set the same key to different values are a configuration conflict: the gate names the key and
+both values, posts no trigger for that reviewer, and blocks the merge on it rather than guessing
+which of the two you meant.
+
+`bots.<login>.check` names a commit status or check run that reviewer publishes, for example
+`recensor/review` or `Greptile Review`. With it, the gate can tell a reviewer that is **still
+running** from one that has **not started**: it waits for the former and triggers only the latter.
+One exception applies to a reviewer with `.check` configured that has already run: when its latest
+verdict at the unchanged head requests changes, and another check run (never a commit status) was
+re-run after that verdict and came back green, the verdict is stale, so the gate posts the trigger
+once more for that verdict and waits once. A re-run here means a run that replaced an earlier run
+of the same check; a check whose first run merely started after the verdict, such as a queued or
+dependency-gated job, does not count. A job re-run inside the same workflow run cannot be told apart
+from a first run, so it does not count either: the verdict is then not treated as stale, is not
+re-triggered, and keeps blocking like any changes-requested verdict. A reviewer that does not answer with a new review, or a
+stale verdict the gate cannot re-trigger – no trigger configured, no `.check` configured, a
+timestamp or author it cannot prove, or the re-trigger already posted – is reported as a stale
+verdict with a recommendation to re-trigger by hand; the verdict still blocks as before.
+Leave it unset only for a reviewer that publishes no such check; Greptile publishes the `Greptile
+Review` check and should use that exact context. Without `.check`, the gate keeps its previous
+two-state behavior for that reviewer and never re-triggers a stale verdict, because the reviewer's
+own status could otherwise pass for a re-run; it reports such a verdict as stale and recommends
+configuring `.check`. See
+[Three reviewer states, not two](./tools-deliver.md#three-reviewer-states-not-two).
+
+When the gate conservatively observes a bot-typed submitted review or review thread whose login is
+missing from the effective `mergeGate.bots` configuration, or whose configured entry has no
+effective `.check`, its final chat summary lists those reviewers and then gives one
+copy-paste-ready [targeted setup request](./tools-setup.md#targeted-changes-and-questions) that
+covers all of them, with the reviewer's login filled in (the observed login for a missing reviewer,
+the configured spelling when only `.check` is missing):
+
+```text
+/effective-flow setup add <login> to mergeGate.bots and ask me for mergeGate.bots.<login>.trigger and mergeGate.bots.<login>.check
+/effective-flow setup ask me for mergeGate.bots.<login>.check
+```
+
+The first shape is for a missing login, the second for a login whose `.check` is missing; several
+reviewers are joined with "and" in one request. The request carries no check name: setup asks for
+`.check` itself, and `.check` is left unset only by answering "not set" there, for a reviewer
+without its own check context. The Guided route follows as the fallback:
+`/effective-flow setup guided` → **Advanced settings** → **Block 9 (`mergeGate`)**. Either way,
+copy only an exact `.check` context confirmed in a pull request that tool reviewed. A normal check
+name or top-level bot comment alone does not qualify. The hint is informational: setup remains the
+only ADR writer, and the current gate result does not change. See the
+[unconfigured-reviewer hint](./tools-deliver.md#three-reviewer-states-not-two) for the full behavior.
+
+**Do not confuse `mergeGate.*` with the pre-existing `delivery.prReview`.** `delivery.prReview`
+controls whether a delivery workflow (`build`, `fix`, `refactor`, and comparable tools) publishes
+**its own review findings** onto the pull request it just created. `mergeGate.*` configures the
+**separate merge-gate tool**: whether that tool may merge, how long it waits, and which automatic
+reviewers it expects. They control unrelated things – one is about publishing your own findings,
+the other is about driving somebody else's pull request to merge.
+
+**Retired `prReview.*` keys.** The gate's keys were called `prReview.*` before the tool was renamed
+to `merge-gate`. Those rows are retired: no run reads a `prReview.*` row as a value any more.
+`merge-gate`, and `iterate` in PR mode for `mergeGate.bots`, `mergeGate.bots.<login>.trigger`,
+`mergeGate.bots.<login>.check`, and `mergeGate.botWaitMinutes`, look for such a row at the first
+configuration read, before fetching, committing, pushing, or merging anything:
+
+- **The matching `mergeGate.*` row is absent:** the run stops, names the retired row, its
+  `mergeGate.*` successor, and `/effective-flow setup`, and does nothing else. It never quietly
+  continues with the default instead, because that would change what the gate does without telling
+  you.
+- **The matching `mergeGate.*` row is present:** that row wins, the run reports the inert legacy row
+  once, and it continues. The two rows are never combined.
+
+A retired `prReview.bots.<login>.trigger` or `.check` row for a login that matches no reviewer the
+run knows about is only reported. The repair is one step: run
+[`/effective-flow setup`](./tools-setup.md), which rewrites resolvable rows in place. For login-keyed
+rows, setup carries and removes a retired row only when it can establish its reviewer destination
+or that destination already exists. An unmatched login is reported and retained without creating a
+reviewer. Equal values from equivalent retired login spellings are deduplicated. If unequal raw
+values collapse onto one destination and no current successor exists in the source configuration, setup reports a `Bot conflict`
+and asks you to choose the first value, the second value, or a replacement raw value. A completed
+choice establishes one current successor under the surviving configured spelling and removes all
+contributing retired rows only during the normal confirmed write. If the choice cannot complete,
+setup stops with manual-repair and rerun instructions and does not claim completion. An existing
+resolved `mergeGate.*` successor still wins without prompting; setup names the shadowed retired raw
+values before removing those source rows. No other tool writes configuration.
+`delivery.prReview` is not a `prReview.*` row and is unaffected.
+
+The merge method itself is a delivery property, not a gate property, and lives under
+[Block `delivery`](#block-delivery) as `delivery.mergeMethod`.
+
+## Block `plan`
+
+Controls [`/effective-flow plan`](./tools-understand.md) and every tool that reads or writes plan
+files.
+
+| Key   | Values | Default     | Meaning                                           |
+| ----- | ------ | ----------- | ------------------------------------------------- |
+| `dir` | String | `docs/plan` | Directory in which plan files live (`<plan.dir>`) |
+
+Plan headers, sections, review content, open points, and the status marker all use one artifact
+language. New plans follow `language.workflow`; existing German and English plans retain their
+recognizable language when read, edited, or completed.
+
+## Block `concept`
+
+Controls [`/effective-flow concept`](./tools-understand.md) and the deep concept review.
+
+| Key   | Values | Default        | Meaning                                                 |
+| ----- | ------ | -------------- | ------------------------------------------------------- |
+| `dir` | String | `docs/concept` | Directory in which concept files live (`<concept.dir>`) |
+
+`concept.dir` must differ from `plan.dir`; an identical value is rejected, because a plan
+reference and a concept reference could no longer be told apart. Concept files follow the same
+one-language rule as plans and use their own status marker
+(`**Concept status:** Draft`/`Elaborated` or `**Konzeptstatus:** Entwurf`/`Ausgearbeitet`).
+
+## Block `delivery`
+
+Describes the delivery branch, its base, its generated name, and its completion action. There is
+no `delivery.enabled` setting: delivery is implied whenever work happens in a worktree or on a
+dedicated delivery branch.
+
+| Key            | Values                             | Default          | Meaning                                                                                                                         |
+| -------------- | ---------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `baseBranch`   | Git ref as string                  | derived          | Starting point of the delivery branch                                                                                           |
+| `branchPrefix` | String, may be empty               | `effective-flow` | Prefix of generated branch names (`<branchPrefix>/<skill>/<slug>`)                                                              |
+| `completion`   | `pr` / `merge` / `branch` / `null` | `merge`          | Open a PR, merge locally, retain the branch, or ask at run time; `pr` and `null` also let `plan` publish its plan as a draft PR |
+| `returnBranch` | `auto` or a local branch name      | `auto`           | Checkout to restore after completion                                                                                            |
+| `mergeMethod`  | `squash` / `merge` / `rebase`      | `squash`         | Merge method used both by `pr` completion and by `merge-gate`                                                                   |
+
+An empty `branchPrefix` drops the prefix segment and its slash, so branches read `<skill>/<slug>`
+(for example `build/user-login`). Empty is valid in every mode and is the default in
+[hidden mode](#hidden-mode), which also rejects any prefix containing `effective-flow`.
+
+An absent `baseBranch` takes `origin/` plus the branch `origin/HEAD` names, and `origin/main` only
+where that ref does not resolve. A configured value is used as written, and a run that finds it
+naming a different branch than `origin/HEAD` reports both once — with the
+`git remote set-head origin -a` hint — and continues.
+
+`delivery.completion` is the fallback when the current invocation does not already contain one
+unambiguous affirmative directive to perform exactly one of `pr`, `merge`, or `branch`. A qualifying
+directive overrides the configured value for that run; Effective Flow reports the configured value
+and the applied override without editing the ADR. Negated, hypothetical, descriptive, and merely
+mentioned actions are not override evidence. Alternatives or simultaneous requests for several
+actions trigger a focused question and abort before delivery mutation if no single action is
+confirmed.
+
+The same row governs plan publication. With `pr` or `null`, `/effective-flow plan` offers once to
+publish a finished plan as a draft pull request; with `merge`, `branch`, or no row, the plan stays
+local and nothing is asked. Hidden mode never publishes a plan, and an invalid value makes
+publication unavailable. An implementing run that finds an open pull request for its plan decides
+on the effective completion. It completes as `pr` over a `null` or invalid row, and on an explicit
+`pr` request, which it reports as an override of a configured or missing `merge` or `branch` row.
+An effective `merge` or `branch`, including a missing row without such a request, stops the run
+rather than merge around the draft. If that run's plan pull-request discovery
+fails and the effective completion is `pr` or `null`, an interactive run asks once whether to
+**Continue** on a new branch or **Stop**. Do not run `merge-gate` or `iterate` on the plan pull
+request before `apply`: a commit they push that changes a path other than the plan makes that
+run's verification fail, while a pure merge of the base into the head passes. See
+[Publishing the plan as a draft pull request](./tools-understand.md#publishing-the-plan-as-a-draft-pull-request)
+and
+[Continuing on a published plan's pull request](./worktree-and-delivery.md#continuing-on-a-published-plans-pull-request).
+
+`/effective-flow deliver` is deliberately narrower: invoking it is itself affirmative `pr` intent.
+It always targets a pull request after its confirmed commits, ignores `delivery.completion` as an
+action default, and reports when its `pr` outcome replaces a different configured value. The other
+delivery settings still control its refreshed base, branch prefix, setup, and worktree location.
+
+**Retired `worktree.*` spellings.** `worktree.baseBranch`, `worktree.branchPrefix`, and
+`worktree.completion` are the former names of `delivery.baseBranch`, `delivery.branchPrefix`, and
+`delivery.completion`. They are retired and never read as values. A run that reads one of these
+delivery keys as its own setting, not merely to provision a pull request's checkout, looks for the
+old row at its first configuration read, before any fetch, branch,
+worktree, or commit. If the `delivery.*` row is absent, the run stops and names both keys and
+[`/effective-flow setup`](./tools-setup.md), which rewrites the row in place. If the `delivery.*`
+row is present, it wins and the inert row is reported once. `/effective-flow deliver` only reports a
+retired `worktree.completion`, because its own pull-request intent overrides the completion setting
+anyway. `worktree.enabled`, `worktree.setup`, and `worktree.baseDir` are current keys and are
+unaffected.
+
+## Block `worktree`
+
+Controls the execution location of the overall implementation, independently of
+`applyReview.worktree.*`.
+
+| Key       | Values                              | Default                      | Meaning                                              |
+| --------- | ----------------------------------- | ---------------------------- | ---------------------------------------------------- |
+| `enabled` | `true` / `false`                    | `true`                       | Run implementation in a separate Git worktree        |
+| `setup`   | `auto` / `none` / free-text command | `auto`                       | Setup command in the newly created delivery worktree |
+| `baseDir` | String                              | `.effective-flow/.worktrees` | Base directory for delivery worktrees                |
+
+## Block `tracker`
+
+Controls where issue-shaped work lives: in local Markdown reports, in GitHub/Forgejo issues, or in
+an external project-management tool. See [Remote tracker](./remote-tracker.md) for target
+selection, CLI requirements, and what an external target sends to a third party.
+
+| Key                    | Values                           | Default   | Meaning                                                                         |
+| ---------------------- | -------------------------------- | --------- | ------------------------------------------------------------------------------- |
+| `mode`                 | `local` / `remote` / `external`  | `local`   | Markdown report, forge issues, or issues in the tool named below                |
+| `remoteToolOverride`   | `auto` / `github` / `forgejo`    | `auto`    | Override host-based CLI detection; forge only, ignored for `external`           |
+| `externalTool`         | Short identifier                 | `(unset)` | Tool that holds the issues; required for `mode: external`, no whitelist         |
+| `externalToolHint`     | Free text                        | `(unset)` | How to find the connection: MCP server, workspace, key, state names             |
+| `externalStartedState` | Stable ID / exact token / `null` | `(unset)` | Writable, non-terminal native state normalized as started; external target only |
+| `externalDoneState`    | Stable ID / exact token / `null` | `(unset)` | Writable, terminal native state normalized as done; external target only        |
+
+`externalTool` and `externalToolHint` are hints for the run, not an adapter: Effective Flow ships
+no product-specific integration and establishes every capability from the connection it resolves
+at run time. Both keys are ignored for routing while the mode is `local` or `remote`, and are kept
+in the ADR. A `mode: external` without a non-empty `externalTool` is invalid configuration: the run
+aborts instead of falling back to the forge or to `local`.
+
+Choosing **External issues and forge development** in Profile setup can populate these rows in a
+fresh project. After the two common Chat and Profile questions, setup asks only for missing
+external-tool, exact connection-context, and lifecycle-state information. It resolves a configured
+MCP connection or authenticated CLI, never a connector guessed from a product name. When the tool
+identifier is not sufficient to select the same context again, `externalToolHint` includes the
+stable, non-secret workspace, team, or project identity chosen by the user. The proposed hint and
+stable state values appear in the common before/after confirmation, and setup repeats discovery
+immediately before the write. Ambiguous or changed context, missing capability, or an invalid
+started state stops without changing the tracker mode.
+
+`externalStartedState` is a nullable structured connection value, not a display-name preference.
+Missing or `null` means unset and never authorizes a guessed transition. A non-null value stores the
+state ID exposed by the selected workspace, team, or project. Only when the connection exposes no
+stable ID may it store the exact token accepted by the transition operation. Before use,
+Effective Flow lists writable states fresh in that same context and requires the configured value
+to resolve to exactly one writable, non-terminal state normalized as started. A stale,
+cross-context, read-only, terminal, missing, or display-name-only match fails before implementation.
+
+When this key is absent and the tracker exposes exactly one qualifying started candidate, an
+interactive implementation run may propose the candidate's display name and stable value for that
+run. The run does not edit configuration. Only `/effective-flow setup`, after repeating discovery
+and showing the before/after table for confirmation, persists the suggestion. Zero or several
+candidates and non-interactive runs fail closed instead of choosing a familiar state name.
+
+`externalDoneState` is the terminal counterpart and follows the same rules with one deliberate
+difference in consequence. It stores the stable ID — or, only where the connection exposes none, the
+exact accepted token — of the writable, **terminal** state normalized as done, resolved fresh in the
+same workspace, team, or project context. A display-name match is never enough. Two readers use it, both in
+[`/effective-flow merge-gate`](./tools-deliver.md) and both after a merge: the terminal transition it
+offers for an issue its completion assessment found complete, and its observation of an issue it
+finds already terminal, which needs the value to tell a completed issue from a withdrawn one. It
+closes nothing by itself, and where it cannot be resolved at the observation site the issue is
+recorded as reconciliation unavailable rather than as done. Because
+that write is optional and follows a merge that already succeeded, a missing, stale, cross-context,
+read-only, non-terminal, or not-done-category value makes that offer unavailable for the issue and
+lists the observed candidates — it never aborts the run, which is where it differs from
+`externalStartedState`. When the key is absent and exactly one writable, terminal candidate is
+normalized as done, a gated run may propose that candidate's display name and stable value for that
+run only; zero or several candidates, and every non-interactive run, leave the transition
+unavailable. As with the started state, only
+`/effective-flow setup` persists a value.
+
+The post-merge issue grace period is fixed at 30 seconds and is deliberately not configurable. It
+is separate from `mergeGate.checkWaitMinutes`, which controls pull-request checks. Use
+`/effective-flow merge-gate <PR>` again for observer-only re-entry when tracker automation needs
+longer.
+
+## Block `skills`
+
+Controls dynamic [skill discovery](./skill-discovery.md): whether and which host skills the tools
+and agents may apply in addition to their built-in instructions.
+
+| Key                     | Values              | Default   | Meaning                                                  |
+| ----------------------- | ------------------- | --------- | -------------------------------------------------------- |
+| `enabled`               | `true` / `false`    | `true`    | Turn off all dynamic skill use project-wide when `false` |
+| `include`               | List of skill names | `(empty)` | Additionally prefer these skills project-wide            |
+| `exclude`               | List of skill names | `(empty)` | Never apply these skills                                 |
+| `agents.<name>.include` | List of skill names | `(empty)` | Additionally prefer skills for one source agent          |
+| `agents.<name>.exclude` | List of skill names | `(empty)` | Never apply skills for one source agent                  |
+| `tools.<name>.include`  | List of skill names | `(empty)` | Additionally prefer skills for one source tool           |
+| `tools.<name>.exclude`  | List of skill names | `(empty)` | Never apply skills for one source tool                   |
+
+`<name>` is the source agent or tool name, such as `ui-implementer` or `plan`. An excluded member
+of an ordered recommendation (`A › B`) is skipped in favor of the next member. A named but
+uninstalled included skill is ignored.
+
+## Safe defaults at a glance
+
+`/effective-flow setup` always starts from this single conservative base. Existing differing
+values are retained unless the user explicitly confirms a change. In Profile mode, the selected
+topology and Chat answer are such a change: their narrow overlay intentionally wins for its owned
+keys, while all other known and unknown rows remain untouched.
+
+The `executionProfiles.fast.enabled` key is intentionally absent from this base. Absence is its
+default-off form and selects Quality; only Guided block 10 writes it.
+
+`visibility` is absent too: a standard setup writes no `visibility` row, and absence means
+`standard`. Only the hidden local file carries `visibility | hidden`. That file also gets the forced
+rows `plan.dir`, `concept.dir`, `tracker.mode`, and `delivery.prReview`, plus a
+`delivery.branchPrefix` row when you chose a valid non-empty prefix (see
+[Hidden mode](#hidden-mode)).
+
+| Key                                 | Value                        |
+| ----------------------------------- | ---------------------------- |
+| `review.profile`                    | `focused`                    |
+| `review.autoConfirmScope`           | `false`                      |
+| `review.designDecisionSources`      | `standard`                   |
+| `review.validation`                 | `full`                       |
+| `applyReview.defaultCommitStrategy` | `null` (ask at run time)     |
+| `applyReview.finalValidation`       | `full`                       |
+| `applyReview.stashPolicy`           | `interactive`                |
+| `applyReview.worktree.baseDir`      | `.effective-flow/.worktrees` |
+| `applyReview.worktree.setup`        | `auto`                       |
+| `mergeGate.completion`              | `ask` (ask at run time)      |
+| `mergeGate.conflictResolution`      | `auto`                       |
+| `mergeGate.requireAllChecks`        | `true`                       |
+| `mergeGate.checkWaitMinutes`        | `20`                         |
+| `mergeGate.maxRounds`               | `10`                         |
+| `mergeGate.botWaitMinutes`          | `10`                         |
+| `language.project`                  | `en`                         |
+| `worktree.enabled`                  | `true`                       |
+| `delivery.completion`               | `merge`                      |
+| `delivery.baseBranch`               | `origin/main`                |
+| `delivery.mergeMethod`              | `squash`                     |
+| `tracker.mode`                      | `local`                      |
+| `plan.dir`                          | `docs/plan`                  |
+| `concept.dir`                       | `docs/concept`               |
+
+`delivery.baseBranch` is the one row whose safe value depends on the repository: `origin/main`
+holds where a remote named `origin` is configured and `origin/HEAD` names `main` or is missing;
+where that ref names another branch the base takes it, and a repository without a remote named
+`origin` is proposed its current local branch instead.
+
+Artifact-surface language overrides are absent in the safe base and therefore inherit
+`language.project`. If the entire `language.*` block is absent, the default remains `en`.
+`language.chat` is deliberately absent too, and its absence is not inheritance: the safe base
+leaves interactive replies mirroring the language you write in. Profile setup asks for this choice
+first; Guided also exposes it among the individual language settings.
+
+There is no persisted profile key. The three transient Profile-mode overlays own only these
+topology values. Setup constructs the target as safe defaults, then existing known and unknown
+values, then this profile overlay, and finally the explicit Chat choice.
+
+| Profile                               | Profile-owned result                                                                                                                             |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Fully local                           | `tracker.mode: local`; `delivery.completion: merge`; `delivery.baseBranch` set to the current named local branch                                 |
+| Forge issues and development          | `tracker.mode: remote`; `delivery.completion: pr`; repository-derived forge base; `tracker.remoteToolOverride: auto` when classification works   |
+| External issues and forge development | Forge delivery result above; `tracker.mode: external`; freshly verified external tool, context hint, required started state, optional done state |
+
+Worktree, review, validation, branch-prefix, merge-gate, plan/concept path, skill, and artifact
+language settings are not profile-owned. Existing external/provider rows are retained when another
+profile makes them dormant. The full preview still requires confirmation before profile-dependent
+configuration, ADR, marker, or migration writes.
+
+The `mergeGate.*` rows and `delivery.mergeMethod` are listed here as the values a run uses, not as
+rows Express writes: they belong to their source tools, a missing line means exactly the value above,
+and the Express path writes no row for them. One of them is worth singling out. **`mergeGate.conflictResolution: auto` is the only default in this
+list that leads a run to write:** it authorizes a merge-gate run to resolve a conflict between the
+head branch and its base and to push the resulting merge commit. Every other default here only
+changes how a run decides or how long it waits. A project upgrading from an earlier generation
+therefore gets that one behavior change without configuring anything; see
+[Block `mergeGate`](#block-mergegate) for how to switch it off.
+
+There is no second “fast” setup preset. A faster solo flow is configured key by key, for example
+with `review.profile: fast`, `review.validation: quick`, and
+`applyReview.finalValidation: changedScope`. A
+[targeted request](./tools-setup.md#targeted-changes-and-questions) such as
+`/effective-flow setup set review.validation to quick` changes such a key without the full
+interview. Those existing workflow settings are separate from the **Fast** implementation profile
+of the `build` and `refactor` field pilot and do not activate it.
+
+## Runtime-state safety
+
+Effective Flow writes below `.effective-flow/` only when that whole directory is ignored and no
+path below it is tracked. The ignore may come from `.gitignore` or, in
+[hidden mode](#hidden-mode), from the Git common directory's `info/exclude`; the checks treat both
+sources the same way. Immediately before each runtime-state mutation, the owning Git
+worktree checks both a sentinel and the concrete target with non-verbose `git check-ignore`, and
+also checks the Git index. If Git is unavailable, the directory is not ignored, any runtime path
+is tracked, or a check fails, the workflow leaves existing state untouched and directs you to
+`/effective-flow setup`, or to `/effective-flow setup hidden` when the ignore entry must stay out of
+every tracked file. Other workflows never edit `.gitignore` or `info/exclude` themselves.
+
+## How `/effective-flow setup` maintains configuration
+
+[`/effective-flow setup`](./tools-setup.md) is the Git-touching owner of project configuration.
+In standard mode it first normalizes `.gitignore` to the single runtime-directory entry:
+
+```gitignore
+.effective-flow/
+```
+
+With no argument, or with the explicit `profile` argument, setup asks **Chat** and then
+**Profile** before it resolves later conditional gates. Fully local, Forge issues and development,
+and External issues and forge development map to the transient overlays above. The two forge-backed
+profiles require an identifiable GitHub or Forgejo `origin` and a repository-derived base. The
+external profile may then ask the additional tool, exact connection-context, and lifecycle-state
+questions needed for valid issue routing. Issue-backed planning follows the resulting tracker; a
+natural-language `/effective-flow plan "…"` request without an issue reference still creates a
+local plan under `plan.dir`.
+
+`/effective-flow setup express` enters the existing safe-base-plus-existing-values path directly,
+including `language.project: en`. `/effective-flow setup guided` enters the existing per-setting
+interview directly; it first explains the project language, then offers each optional language
+override with “inherit project language” represented by an absent row. No explicit mode asks for a
+profile. Every path shows all proposed changes and writes only after confirmation. Removing an
+existing override appears in the same before/after diff as any other change, and all unknown or
+unowned rows are preserved.
+
+On write, setup creates or updates the living ADR and writes or corrects the convention-file
+marker. As the last part of that write it also offers a one-line `CLAUDE.md` importing
+`AGENTS.md`, created only where none exists or where the existing file is a pure prose pointer;
+that step adds no configuration key. A new ADR uses `language.documentation.technical`; an
+existing ADR retains its envelope and prose language. Ordinary config readers do none of these
+operations.
+
+In [hidden mode](#hidden-mode), setup instead adds the `.effective-flow/` line to the Git common
+directory's `info/exclude`, verifies it with `git check-ignore`, and writes only the local
+`.effective-flow/project-setup.md`. It writes no ADR, marker, `.gitignore` line, or `CLAUDE.md`.
+It stops without writing when the directory is not a Git repository or when anything below
+`.effective-flow/` is already tracked, because `info/exclude` cannot hide a tracked file.
+
+`/effective-flow setup <free text>`, any argument other than the keyword forms, is a
+[targeted request](./tools-setup.md#targeted-changes-and-questions): the shorter route for changing
+a single key once a configuration exists. Setup interprets the free text, asks only the owning
+question of each key it touches, and writes in place to the existing ADR or hidden local file
+behind the same before/after confirmation; untouched and unknown rows stay byte for byte. Read-only
+questions about the current values are answered without writing. A targeted run creates no
+configuration, normalizes no `.gitignore`, writes no marker or `CLAUDE.md`, and migrates no legacy
+JSON source; without a usable configuration it stops and points to `/effective-flow setup` or
+`/effective-flow setup express`. Switching `visibility` and the
+`executionProfiles.fast.enabled` opt-in stay with the full setup.
+
+### Migrating `plan.markerLanguage`
+
+`plan.markerLanguage` is no longer an active setting or writer output. For one compatibility
+generation, readers may use a legacy value as the fallback for `language.workflow` only when
+neither a valid workflow override nor a valid project language exists, and they direct the user
+to setup. Setup may still propose the explicit migration whenever `language.workflow` is absent:
+it shows that the old marker setting now controls the complete workflow artifact language,
+proposes `language.workflow: de|en`, and removes the legacy row only in the confirmed write. An
+existing `language.workflow` always wins and is never overwritten.
+
+If neither language settings nor a legacy marker exists, a consistently German or English plan
+collection may temporarily supply the workflow fallback. Plan prose and markers must agree;
+mixed, contradictory, or empty collections provide no signal and fall back to `en` or require
+clarification. Setup reports this inference before persisting it. Existing plans, reports,
+issues, PRs, and documentation are never mass-translated.
+
+## Migrating a legacy JSON configuration
+
+If no ADR can be found, config readers may transitionally read `.effective-flow/config.json` or
+the predecessor `.firmo/config.json`. This fallback is read-only: the tool uses the values for
+the current run and directs you to `/effective-flow setup`.
+
+Setup owns the one-time migration. It converts the current legacy values into the flat ADR table,
+preserves unknown settings, writes the canonical marker, and changes `.gitignore` to the single
+`.effective-flow/` entry. If the legacy config was tracked, setup removes it from the Git index
+with `git rm --cached` but leaves its content on disk. Later deletion is deliberately separate:
+use [`/effective-flow cleanup`](./tools-setup.md) after confirming that all values were carried
+over.
+
+## See also
+
+- [Worktree and delivery](./worktree-and-delivery.md) – `delivery.*`, `worktree.*`, and
+  `applyReview.worktree.*`
+- [Remote tracker](./remote-tracker.md) – `tracker.*`
+- [Skill discovery](./skill-discovery.md) – `skills.*`
+- [Setup and info tools](./tools-setup.md) – `setup`, `cleanup`, and `version`
+- [Glossary](./glossary.md) – recurring terms

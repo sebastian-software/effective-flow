@@ -1,0 +1,25 @@
+{
+  "name": "effective-flow",
+  "private": true,
+  "description": "Effective Flow — single-source, lazy-loading /effective-flow <tool> skill set for Codex and Claude Code",
+  "license": "MIT",
+  "scripts": {
+    "build": "node build.mjs",
+    "format": "oxfmt",
+    "agent:check": "oxfmt --check",
+    "audit:skill-ownership": "node scripts/audit-skill-ownership.mjs",
+    "test": "node scripts/test-capabilities.mjs && node --test",
+    "test:distribution": "node scripts/distribution-smoke.mjs offline",
+    "test:managers": "node scripts/distribution-smoke.mjs managers",
+    "eval": "node evals/eval.mjs",
+    "prepare:eval": "node evals/prepare.mjs",
+    "test:preflight": "node scripts/test-capabilities.mjs"
+  },
+  "devDependencies": {
+    "oxfmt": "^0.70.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@12.5.1"
+}

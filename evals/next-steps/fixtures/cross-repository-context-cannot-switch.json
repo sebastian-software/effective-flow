@@ -1,0 +1,59 @@
+{
+  "name": "cross-repository-context-cannot-switch",
+  "description": "Completed-run recommendation semantics; no work is executed.",
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "repository": "flow",
+    "provider": "github"
+  },
+  "pullRequest": 42,
+  "operations": {},
+  "snapshot": {
+    "completed": true,
+    "emitter": "apply",
+    "languageChat": "de",
+    "sourceAssociation": {
+      "kind": "forge-issue",
+      "reference": "https://github.com/other/renovate-config/issues/37",
+      "repository": "other/renovate-config",
+      "validatedLifecycleReceipt": true
+    },
+    "outcome": {
+      "completedWork": ["Q2a PRs merged in other/renovate-config"],
+      "delivery": "merged",
+      "pullRequest": 42,
+      "issueState": "open",
+      "observation": "Parent intentionally open; no delivery reconciliation remains."
+    },
+    "retainedPlanningBasis": {
+      "issueBody": "Q2a fixture migration precedes Q2b planning.",
+      "comments": [
+        {
+          "id": 3700,
+          "body": "<!-- effective-flow-plan-issues -->\n\n## Completed planning\n\n**Recommended workflow:** Feature\n\n### Requirement\n\nDeliver Q2a migration fixtures before Q2b operational qualification.\n\n### Implementation sequence\n\n1. Q2a: merge the two migration PRs.\n2. Q2b: prepare the qualification plan after the Q2a merges are recorded. Qualification needs a separate approval.\n3. Q2c: release evidence, after qualification.\n4. E: activation, after a separate operator decision.\n\n### Plan review\n\n**Result:** Approved for Q2a only\n\n### Open points\n\n- Q2b has not been planned or approved.\n",
+          "standalone": true,
+          "newestCanonical": true
+        }
+      ],
+      "freshCompleteRead": true
+    },
+    "readContext": "No optional source context has been read. Use only the explicitly associated handles.",
+    "reportFacts": [
+      "Execution and configured forge target remain example/flow. No execution context for other/renovate-config has been established. A full URL preserves identity but does not authorize switching target. No current PR or delivery branch remains."
+    ],
+    "availableExposedTools": [
+      "plan",
+      "plan-issue",
+      "docs",
+      "apply",
+      "merge-gate",
+      "iterate",
+      "pr",
+      "review",
+      "open-plans",
+      "build"
+    ]
+  },
+  "artifacts": {}
+}

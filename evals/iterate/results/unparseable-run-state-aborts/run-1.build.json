@@ -1,0 +1,53 @@
+{
+  "scenario": "unparseable-run-state-aborts",
+  "digest": "sha256:0be65b1c42b2d29168c77a8c915d53db705e1a808729c8eeb517e686bd929c80",
+  "skill": {
+    "digest": "sha256:92fea3561c86c873a04651cce3b89f57ef6ba4f4895824d5fd60afdf23562f36",
+    "versionNeutralDigest": "sha256:67d3d5e579f51a49cb558bf9b953d0d48f167b5e2b5d4803d0c7b1b0040fb1c9",
+    "files": {
+      "SKILL.md": "sha256:5ebf26f6faabb28f091101570e5defb02be42153b9d737d7d04d3fab5dd088e9",
+      "scripts/config-resolve-core.mjs": "sha256:365971f5c039ea133866fc4db5f2c303c6d4acf1d8202a48c9f83fc029e8fff6",
+      "scripts/config-resolve.mjs": "sha256:eff11b9757e08804946823946ade96d2eaf56935552d401f18f3a1e7dd5f068b",
+      "scripts/report-channel.mjs": "sha256:6f5f96d074c3325fe277c2d6962e4f6a5c849322400966cb8a463fd92936c69f",
+      "shared/config-migration-edge-cases.md": "sha256:519a0cc04ad2ce0f28fabd5c4065c5796ade61eec6a2a7fb3af265bab8d4c290",
+      "shared/config-migration.md": "sha256:d5dc3a52ca75c5feb2c1518edc10a930821d3eb97ff085f0bf8f09ceb11072e9",
+      "shared/durable-follow-up-gate.md": "sha256:fc9a5485a9567890bab1462a0c46a5d204b2e26edd1a39b0a5b205c55a1bd3b0",
+      "shared/effective-flow-dir-migration.md": "sha256:138441ccb26b75dd4ea6c540b0d05ba27fa2cf73aa640489f1f1b5111edeb567",
+      "shared/issue-tracker-forge.md": "sha256:a722523ecdec21d127d50193469526121c603e1ae3c049c4f457b8fbd1e44e27",
+      "shared/language-rules.md": "sha256:5dfa8e987c9b7dc146f28962d82e9a293e267f0d71ed93fe613b3338084bc18a",
+      "shared/model-tiers.md": "sha256:6b1b5fe91e3a8a3a7d7ba18cab709186b789b452460b2b20dd8333a8630a5a78",
+      "shared/next-steps.md": "sha256:61a25fb824fe0ad8056c4d66ac3201d67bae9f9f99ca24a47a92e43cec0ab15e",
+      "shared/pr-review-integration.md": "sha256:ff89fc11c01b4beb166d984f8c9582240c1bf361bb601207698af78919e2757d",
+      "shared/pr-thread-ledger.md": "sha256:ab8a47112ea57fa532f219b2cfce3b6c38294a0fe8c2bfb0fd2493e7cc6bd04e",
+      "shared/review-bot-state-observation.md": "sha256:b92237c8e6a767c15c8074e4d86cff1aaec69ff56c4f8aa365e8c0ba406b9a8d",
+      "shared/review-bot-state.md": "sha256:7d49b56d81ef0899e3400e4a2ce98d0c1c06f2669c61c768d7a1cc00466283b7",
+      "shared/runtime-state-safety.md": "sha256:8f15d49689bd3eb7456e1bb3c1ca877a71669ae7f5f40ce966b2fccec3cb75f5",
+      "shared/session-rename.md": "sha256:bf8f8ddfd18dd8ae87d3ed1ca33c473b8eaedb20444f36b35298c96a03e5e027",
+      "shared/session-title.md": "sha256:6c6763cfdd2e80f6713413bf838493763a95fa6646b0ed0549bb212b66cbcf31",
+      "shared/typography-rules.md": "sha256:c61e1d2b20b4f390a4e8b7fcc093ec780072361f9bd981ec1315cae267e6838f",
+      "shared/worktree-integration.md": "sha256:86b249771ebaccc843381ba01b5d12d8e12be5ea7ec364c8eed8439c661aa623",
+      "tools/iterate.md": "sha256:41b3b93c134197c6d76dc2e8c744acfb8f19b38a759f676cd0545bb729917051"
+    }
+  },
+  "instrument": {
+    "digest": "sha256:415f40e9a738bc0ffba724a0a8362b41d6aad91f55a3d3892e32b90f3a52e4af",
+    "files": {
+      "evals/iterate/suite.config.mjs": "sha256:ef0385b679b483f651e1cc2bd11963a0b50c33203828223686332db94cef96d9",
+      "evals/_scaffold/remote-tracker.mjs": "sha256:b1cce8bd1148827fbecb2b4b4c6af582cece501adb531528e0739aa751f07fd8",
+      "evals/_scaffold/sandbox.mjs": "sha256:cf92e932001ba399b414a9508214d73a6af9256e05e48b88888782219d0b2b39",
+      "evals/_scaffold/scaffold.mjs": "sha256:b8890df300a29eb2fb50b51361d98e60cd27b014afff46f468c7d74b75b2986f",
+      "evals/_scaffold/prompt.mjs": "sha256:d1883022ac622d31d40e10d5cc734f038549ae4a7b71b737b5343bf06f9a2913",
+      "evals/_scaffold/suite.mjs": "sha256:2561900fd927e215edc65de50587f77d65a5e52c6a67d393671010c262bed00e",
+      "evals/iterate/_scaffold/scenario-setup.mjs": "sha256:681e225f19f4025b939bd6918f19cf1a898911de3824661afdc9c050a2188eae",
+      "evals/iterate/_scaffold/project-setup.mjs": "sha256:457cde8f263ab51d9ea6fb0e33c47fcdd723955953b2d4ed26795f140e0f0184",
+      "evals/iterate/_scaffold/checkout.mjs": "sha256:9c49ec1f828b7d230b1a6ac320fcdb5c0d74b14890ed4445889b94ade61b1181"
+    }
+  },
+  "scenario_inputs": {
+    "digest": "sha256:7715f4e54d2178a69cbd4b8d2c602e597f362a87ad8a529db2506bf123bd2a2f",
+    "files": {
+      "evals/iterate/fixtures/unparseable-run-state-aborts.json": "sha256:4443955ed4d7afcfb446d445bf60daa99ba55ef0471917d246aab2e13c20a55d",
+      "evals/iterate/scenarios/unparseable-run-state-aborts.md": "sha256:739c2b630f7e940506e9815cea6863df5b458a53a646b49906c4fa0026575f91"
+    }
+  }
+}

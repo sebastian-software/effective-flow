@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "lastReviewedAt": "2026-08-21",
+    "observedRevision": "591621a308319c393e224bab44403e64f6e8b091"
+  },
+  "relationships": [
+    {
+      "skill": "effective-delivery",
+      "consumers": [
+        { "consumer": "maintain", "classification": "delegate" },
+        { "consumer": "deliver", "classification": "delegate" },
+        {
+          "consumer": "dependency-version-policy",
+          "classification": "route-when-relevant"
+        },
+        { "consumer": "docs", "classification": "delegate" },
+        { "consumer": "docs-writer", "classification": "delegate" },
+        { "consumer": "code-documenter", "classification": "delegate" },
+        { "consumer": "documentation-sync-contract", "classification": "delegate" },
+        { "consumer": "durable-follow-up-gate", "classification": "delegate" },
+        { "consumer": "review", "classification": "delegate" },
+        { "consumer": "refactor", "classification": "delegate" },
+        { "consumer": "plan", "classification": "route-when-relevant" },
+        { "consumer": "plan-issue", "classification": "route-when-relevant" },
+        { "consumer": "plan-review", "classification": "route-when-relevant" },
+        { "consumer": "concept-review", "classification": "route-when-relevant" },
+        {
+          "consumer": "generic-product-reviewer",
+          "classification": "route-when-relevant"
+        },
+        { "consumer": "iterate", "classification": "delegate" },
+        { "consumer": "worktree-integration", "classification": "delegate" },
+        { "consumer": "apply-review-remote", "classification": "delegate" },
+        { "consumer": "apply-issues", "classification": "delegate" },
+        { "consumer": "build", "classification": "delegate" },
+        { "consumer": "build-delegated-run", "classification": "delegate" },
+        { "consumer": "fix", "classification": "delegate" },
+        { "consumer": "code-validator", "classification": "delegate" },
+        { "consumer": "test-writer", "classification": "route-when-relevant" },
+        { "consumer": "e2e-tester", "classification": "route-when-relevant" },
+        { "consumer": "generic-implementer", "classification": "route-when-relevant" },
+        {
+          "consumer": "generic-product-implementer",
+          "classification": "route-when-relevant"
+        },
+        { "consumer": "investigate", "classification": "delegate" },
+        { "consumer": "investigation-method", "classification": "delegate" },
+        { "consumer": "commit", "classification": "delegate" },
+        { "consumer": "commit-message-rules", "classification": "delegate" }
+      ]
+    },
+    {
+      "skill": "effective-web",
+      "consumers": [
+        { "consumer": "frontend-reviewer", "classification": "delegate" },
+        { "consumer": "ui-implementer", "classification": "delegate" },
+        { "consumer": "test-writer", "classification": "route-when-relevant" },
+        { "consumer": "e2e-tester", "classification": "route-when-relevant" },
+        { "consumer": "plan", "classification": "route-when-relevant" },
+        { "consumer": "plan-review", "classification": "route-when-relevant" },
+        { "consumer": "concept", "classification": "route-when-relevant" },
+        { "consumer": "concept-review", "classification": "route-when-relevant" }
+      ]
+    },
+    {
+      "skill": "effective-engineering",
+      "consumers": [
+        { "consumer": "test-writer", "classification": "delegate" },
+        { "consumer": "e2e-tester", "classification": "route-when-relevant" },
+        { "consumer": "rust-implementer", "classification": "delegate" },
+        { "consumer": "nodejs-implementer", "classification": "delegate" },
+        { "consumer": "nodejs-reviewer", "classification": "route-when-relevant" },
+        { "consumer": "rust-reviewer", "classification": "route-when-relevant" },
+        { "consumer": "plan", "classification": "route-when-relevant" },
+        { "consumer": "plan-review", "classification": "route-when-relevant" },
+        { "consumer": "concept", "classification": "route-when-relevant" },
+        { "consumer": "concept-review", "classification": "route-when-relevant" }
+      ]
+    },
+    {
+      "skill": "effective-writing",
+      "consumers": [
+        { "consumer": "language-rules", "classification": "delegate" },
+        { "consumer": "chat-language", "classification": "delegate" },
+        { "consumer": "code-documenter", "classification": "delegate" },
+        { "consumer": "docs-writer", "classification": "delegate" },
+        { "consumer": "marketing-writer", "classification": "delegate" },
+        { "consumer": "iterate", "classification": "route-when-relevant" },
+        { "consumer": "pr", "classification": "route-when-relevant" }
+      ]
+    },
+    {
+      "skill": "effective-product",
+      "consumers": [
+        { "consumer": "apply-review", "classification": "delegate" },
+        { "consumer": "concept-review", "classification": "delegate" },
+        { "consumer": "plan", "classification": "route-when-relevant" },
+        { "consumer": "plan-review", "classification": "route-when-relevant" },
+        { "consumer": "concept", "classification": "delegate" },
+        { "consumer": "durable-follow-up-gate", "classification": "delegate" },
+        { "consumer": "setup", "classification": "delegate" },
+        { "consumer": "adr-convention", "classification": "delegate" },
+        { "consumer": "project-adr-convention", "classification": "delegate" }
+      ]
+    },
+    {
+      "skill": "effective-marketing",
+      "consumers": [{ "consumer": "marketing-writer", "classification": "delegate" }]
+    }
+  ],
+  "relevanceGateOwners": ["effective-product", "effective-web", "effective-engineering"],
+  "externalRecommendationAllowlist": [
+    "humanizer",
+    "impeccable",
+    "frontend-design",
+    "context7-mcp",
+    "copywriting",
+    "copy-editing",
+    "marketing-psychology"
+  ]
+}

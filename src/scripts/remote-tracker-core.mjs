@@ -1,0 +1,5596 @@
+import { createHash } from 'node:crypto';
+import { statSync } from 'node:fs';
+import { performance } from 'node:perf_hooks';
+import {
+  FORGEJO_PAGE_LIMIT,
+  ISSUE_STATE_READ_TIMEOUT_MS,
+  MERGE_METHOD_FLAGS,
+  RemoteTrackerError,
+  assertNoIssueCloseStateOverride,
+  assertPublishable,
+  checksWaitSettings,
+  commentMarker,
+  exactObjectKeys,
+  expectedHeadSha,
+  fail,
+  forgejoIssueListEndpoint,
+  forgejoPagedEndpoint,
+  forgejoPullListEndpoint,
+  ghRepoArgs,
+  issueNumber,
+  jsonStdin,
+  lifecycleRepository,
+  lifecycleRepositoryBinding,
+  lifecycleSafeString,
+  mergeMethod,
+  mergeSubject,
+  mutationPlan,
+  normalizeExternalLifecycleReference,
+  normalizeForgeLifecycleReference,
+  normalizeHost,
+  parseReference,
+  payloadInteger,
+  prNumber,
+  publishableText,
+  redact,
+  requireNumber,
+  requireObject,
+  requireString,
+  markBody,
+  resolveVisibility,
+  stampMarker,
+  teaApiReadPlan,
+} from './remote-tracker-shared-core.mjs';
+import {
+  ACTIVE_DECOMPOSITION_STATUSES,
+  buildDecompositionKeyMarker,
+  DECOMPOSITION_RECORD_MARKER,
+  DECOMPOSITION_RECORD_PREFIX,
+  DECOMPOSITION_SECTION_MARKER,
+  DECOMPOSITION_SECTION_PREFIX,
+  DECOMPOSITION_STATUSES,
+  DECOMPOSITION_WORKFLOWS,
+  GITHUB_DECOMPOSITION_COMMENT_MAX_BYTES,
+  assertClosedMarkdownFences,
+  buildDecompositionKey,
+  childIssuePayload,
+  decodeCanonicalDecomposition,
+  decompositionKey,
+  encodeCanonicalDecomposition,
+  escapeRegExp,
+  inspectDecompositionKey,
+  markdownLineInventory,
+  normalizeCanonicalDecompositionReference,
+  parentIssueNumber,
+  parseDecompositionKey,
+  sanitizeChildText,
+  untrustedControlLines,
+} from './remote-tracker-decomposition-core.mjs';
+import { buildForgejoCommandPlan } from './remote-tracker-forgejo-core.mjs';
+import { buildGithubCommandPlan, buildReviewPayload } from './remote-tracker-github-core.mjs';
+import { lookupThreadLedgerFile, recordThreadLedgerFile } from './remote-tracker-ledger-core.mjs';
+
+// `remote-tracker-core.mjs` stays the single public entry point of the tracker helper: every
+// symbol it exported before the modules below were split out is still exported from here.
+export {
+  buildDecompositionKey,
+  buildDecompositionKeyMarker,
+  buildReviewPayload,
+  ISSUE_STATE_READ_TIMEOUT_MS,
+  parseDecompositionKey,
+  parseReference,
+  redact,
+  RemoteTrackerError,
+};
+
+export const ERROR_CODES = Object.freeze([
+  'NOT_GIT_REPOSITORY',
+  'NO_ORIGIN',
+  'AMBIGUOUS_HOST',
+  'CLI_MISSING',
+  'AUTH_FAILED',
+  'UNSUPPORTED_CAPABILITY',
+  'INVALID_REFERENCE',
+  'REFERENCE_REPOSITORY_MISMATCH',
+  'INVALID_PAYLOAD',
+  'TARGET_NOT_FOUND',
+  'AMBIGUOUS_TARGET',
+  'STALE_WRITE',
+  'COMMAND_FAILED',
+  'UNSAFE_TARGET',
+  'WRITE_FAILED',
+  'LEDGER_CORRUPT',
+  'LEDGER_LOCKED',
+]);
+
+const MUTATIONS = new Set([
+  'label-create',
+  'issue-create',
+  'issue-sub-issue-create',
+  'issue-update-body',
+  'issue-close',
+  'issue-comment',
+  'issue-comment-update',
+  'issue-labels',
+  'issue-label-add',
+  'issue-label-remove',
+  'sf-label-migrate',
+  'pr-create',
+  'pr-update-body',
+  'pr-update-title',
+  'pr-mark-ready',
+  'pr-comment',
+  'pr-merge',
+  'review-create',
+  'review-thread-reply',
+  'review-thread-resolve',
+]);
+
+const REMOTE_OPERATIONS = new Set([
+  'repository-resolve',
+  'probe',
+  'viewer-read',
+  'collaborator-permission-read',
+  'repository-visibility-read',
+  'label-create',
+  'issue-read',
+  'issue-state-wait',
+  'issue-comments-read',
+  'issue-list',
+  'issue-create',
+  'issue-sub-issues-read',
+  'issue-sub-issue-create',
+  'issue-update-body',
+  'issue-close',
+  'issue-comment',
+  'issue-comment-update',
+  'issue-labels',
+  'issue-label-add',
+  'issue-label-remove',
+  'sf-label-migrate',
+  'pr-read',
+  'pr-comments-read',
+  'pr-reviews-read',
+  'pr-list',
+  'pr-status-read',
+  'pr-checks-wait',
+  'pr-create',
+  'pr-update-body',
+  'pr-update-title',
+  'pr-mark-ready',
+  'pr-comment',
+  'pr-merge',
+  'review-create',
+  'review-threads-read',
+  'review-thread-reply',
+  'review-thread-resolve',
+]);
+
+const CAPABILITY_BY_OPERATION = Object.freeze({
+  'viewer-read': 'viewerRead',
+  'collaborator-permission-read': 'collaboratorPermissionRead',
+  'repository-visibility-read': 'repositoryVisibilityRead',
+  'label-create': 'labelCreate',
+  'issue-read': 'issueRead',
+  'issue-state-wait': 'issueRead',
+  'issue-comments-read': 'issueCommentsRead',
+  'issue-list': 'issueList',
+  'issue-create': 'issueCreate',
+  'issue-sub-issues-read': 'issueSubIssuesRead',
+  'issue-sub-issue-create': 'issueSubIssueCreate',
+  'issue-update-body': 'issueUpdate',
+  'issue-close': 'issueClose',
+  'issue-comment': 'issueComment',
+  'issue-comment-update': 'issueCommentUpdate',
+  'issue-labels': 'issueLabelAdd',
+  'issue-label-add': 'issueLabelAdd',
+  'issue-label-remove': 'issueLabelRemove',
+  'sf-label-migrate': 'labelMigration',
+  'pr-read': 'pullRequestRead',
+  'pr-comments-read': 'prCommentsRead',
+  // A named entry, never an absent one. The operation gate tests `capabilities[key] === false`, so
+  // an operation missing from this table is waved through unprobed on every provider — which for a
+  // read the merge gate treats as a merge precondition would report "no reviewer requested changes"
+  // on a forge that never answered the question.
+  'pr-reviews-read': 'prReviewsRead',
+  'pr-list': 'pullRequestList',
+  'pr-status-read': 'pullRequestStatus',
+  'pr-checks-wait': 'pullRequestChecksWait',
+  'pr-create': 'pullRequestCreate',
+  'pr-update-body': 'pullRequestUpdate',
+  'pr-update-title': 'pullRequestTitleUpdate',
+  'pr-mark-ready': 'pullRequestMarkReady',
+  'pr-comment': 'prComment',
+  'pr-merge': 'pullRequestMerge',
+  'review-create': 'reviewCreate',
+  'review-threads-read': 'reviewThreads',
+  'review-thread-reply': 'reviewThreadReplies',
+  'review-thread-resolve': 'reviewThreadResolution',
+});
+
+// The operations whose capability a tea-backed forge states only after reading its API description
+// (see `readTeaSwagger`), and whose plan the builder makes only from that probe's evidence.
+const THREAD_WRITE_OPERATIONS = new Set(['review-thread-reply', 'review-thread-resolve']);
+
+const REVIEW_BODY_LANGUAGE = Object.freeze({
+  en: Object.freeze({
+    findingFields: Object.freeze({
+      severity: 'Severity',
+      complexity: 'Complexity',
+      area: 'Area',
+      file: 'File',
+      problem: 'Problem',
+      recommendation: 'Recommendation',
+      promptSuggestion: 'Prompt suggestion',
+    }),
+    severity: Object.freeze({ Critical: 'Critical', Important: 'Important', Note: 'Note' }),
+    complexity: Object.freeze({ Low: 'Low', Medium: 'Medium', High: 'High' }),
+    epicTitle: 'Code review',
+    epicLead: (date, scope, projectType) =>
+      `Code review of ${date} · Scope: ${scope} · Project type: ${projectType}`,
+    findingsHeading: 'Findings',
+    skippedHeading: 'Skipped (design decisions)',
+    coveredBy: 'covered by',
+  }),
+  de: Object.freeze({
+    findingFields: Object.freeze({
+      severity: 'Schweregrad',
+      complexity: 'Komplexität',
+      area: 'Bereich',
+      file: 'Datei',
+      problem: 'Problem',
+      recommendation: 'Empfehlung',
+      promptSuggestion: 'Prompt-Vorschlag',
+    }),
+    severity: Object.freeze({ Critical: 'Kritisch', Important: 'Wichtig', Note: 'Hinweis' }),
+    complexity: Object.freeze({ Low: 'Niedrig', Medium: 'Mittel', High: 'Hoch' }),
+    epicTitle: 'Code-Review',
+    epicLead: (date, scope, projectType) =>
+      `Code-Review vom ${date} · Umfang: ${scope} · Projekttyp: ${projectType}`,
+    findingsHeading: 'Befunde',
+    skippedHeading: 'Übersprungen (Architekturentscheidungen)',
+    coveredBy: 'abgedeckt durch',
+  }),
+});
+
+function reviewBodyLanguage(value = 'en') {
+  if (!Object.hasOwn(REVIEW_BODY_LANGUAGE, value)) {
+    fail('INVALID_PAYLOAD', 'language must be en or de', { field: 'language', value });
+  }
+  return { language: value, strings: REVIEW_BODY_LANGUAGE[value] };
+}
+
+export function bodyHash(body) {
+  return createHash('sha256')
+    .update(requireString(body, 'body', { allowEmpty: true }))
+    .digest('hex');
+}
+
+export const ISSUE_LIFECYCLE_RECEIPT_PREFIX = 'effective-flow-issue-lifecycle';
+export const ISSUE_LIFECYCLE_RECEIPT_VERSION = 'v1';
+export const ISSUE_STATE_WAIT_MS = 30_000;
+
+const ISSUE_LIFECYCLE_TARGETS = new Set(['forge', 'external']);
+const ISSUE_LIFECYCLE_RELATIONSHIPS = new Set(['closes', 'refs']);
+const ISSUE_LIFECYCLE_CONTAINER_MECHANISMS = new Set(['native', 'checklist']);
+const ISSUE_LIFECYCLE_RECEIPT_KEYS = Object.freeze([
+  'target',
+  'repository',
+  'externalTool',
+  'items',
+]);
+const ISSUE_LIFECYCLE_ITEM_KEYS = Object.freeze([
+  'issue',
+  'relationship',
+  'container',
+  'containerMechanism',
+]);
+
+function lifecycleExternalTool(value, label) {
+  const identifier = requireString(value, label);
+  if (
+    identifier.length > 64 ||
+    !/^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u.test(identifier) ||
+    redact(identifier) !== identifier
+  ) {
+    fail('INVALID_PAYLOAD', `${label} must be a short stable external-tool identifier`, {
+      field: label,
+      maximum: 64,
+    });
+  }
+  return identifier;
+}
+
+function normalizeLifecycleItem(item, target, repository, index) {
+  const label = `receipt.items[${index}]`;
+  exactObjectKeys(item, ISSUE_LIFECYCLE_ITEM_KEYS, label);
+  const normalizeReference =
+    target === 'forge' ? normalizeForgeLifecycleReference : normalizeExternalLifecycleReference;
+  const issue = normalizeReference(item.issue, `${label}.issue`, repository);
+  const relationship = lifecycleSafeString(item.relationship, `${label}.relationship`);
+  if (!ISSUE_LIFECYCLE_RELATIONSHIPS.has(relationship)) {
+    fail('INVALID_PAYLOAD', `${label}.relationship must be closes or refs`, {
+      field: `${label}.relationship`,
+    });
+  }
+  if (target === 'external' && relationship !== 'refs') {
+    fail('INVALID_PAYLOAD', `${label}.relationship must be refs for an external target`, {
+      field: `${label}.relationship`,
+      target,
+    });
+  }
+  const container =
+    item.container === null
+      ? null
+      : normalizeReference(item.container, `${label}.container`, repository);
+  const containerMechanism =
+    item.containerMechanism === null
+      ? null
+      : lifecycleSafeString(item.containerMechanism, `${label}.containerMechanism`);
+  if (
+    containerMechanism !== null &&
+    !ISSUE_LIFECYCLE_CONTAINER_MECHANISMS.has(containerMechanism)
+  ) {
+    fail('INVALID_PAYLOAD', `${label}.containerMechanism must be native, checklist, or null`, {
+      field: `${label}.containerMechanism`,
+    });
+  }
+  if ((container === null) !== (containerMechanism === null)) {
+    fail('INVALID_PAYLOAD', `${label}.container and containerMechanism must both be null or set`, {
+      field: label,
+    });
+  }
+  return { issue, relationship, container, containerMechanism };
+}
+
+function normalizeIssueLifecycleReceipt(value, context = {}) {
+  exactObjectKeys(value, ISSUE_LIFECYCLE_RECEIPT_KEYS, 'receipt');
+  const target = lifecycleSafeString(value.target, 'receipt.target');
+  if (!ISSUE_LIFECYCLE_TARGETS.has(target)) {
+    fail('INVALID_PAYLOAD', 'receipt.target must be forge or external', {
+      field: 'receipt.target',
+    });
+  }
+  const expectedTarget = context.expectedTarget ?? context.target;
+  if (expectedTarget !== undefined && target !== expectedTarget) {
+    fail('INVALID_PAYLOAD', 'receipt target does not match the resolved tracker target', {
+      expectedTarget,
+      actualTarget: target,
+    });
+  }
+
+  let repository = null;
+  let repositoryBinding;
+  let externalTool = null;
+  if (target === 'forge') {
+    repository = lifecycleRepository(value.repository);
+    if (value.externalTool !== null) {
+      fail('INVALID_PAYLOAD', 'a forge receipt must set externalTool to null', {
+        field: 'receipt.externalTool',
+      });
+    }
+    repositoryBinding = lifecycleRepositoryBinding(context) ?? { slug: repository };
+    if (repository !== repositoryBinding.slug) {
+      fail('REFERENCE_REPOSITORY_MISMATCH', 'receipt belongs to another repository', {
+        expected: repositoryBinding.slug,
+        actual: repository,
+      });
+    }
+  } else {
+    if (value.repository !== null) {
+      fail('INVALID_PAYLOAD', 'an external receipt must set repository to null', {
+        field: 'receipt.repository',
+      });
+    }
+    externalTool = lifecycleExternalTool(value.externalTool, 'receipt.externalTool');
+    const configuredExternalTool = context.expectedExternalTool ?? context.externalTool;
+    const expectedExternalTool =
+      configuredExternalTool === undefined
+        ? undefined
+        : lifecycleExternalTool(configuredExternalTool, 'tracker.externalTool');
+    if (expectedExternalTool !== undefined && externalTool !== expectedExternalTool) {
+      fail('INVALID_PAYLOAD', 'receipt externalTool does not match tracker configuration', {
+        field: 'receipt.externalTool',
+        configuredField: 'tracker.externalTool',
+      });
+    }
+  }
+
+  if (!Array.isArray(value.items) || value.items.length === 0) {
+    fail('INVALID_PAYLOAD', 'receipt.items must be a non-empty array', {
+      field: 'receipt.items',
+    });
+  }
+  const items = [];
+  const byIssue = new Map();
+  for (const [index, rawItem] of value.items.entries()) {
+    const item = normalizeLifecycleItem(rawItem, target, repositoryBinding, index);
+    const prior = byIssue.get(item.issue);
+    if (prior !== undefined) {
+      if (JSON.stringify(prior) !== JSON.stringify(item)) {
+        fail('INVALID_PAYLOAD', 'duplicate receipt issue carries conflicting lifecycle data', {
+          issue: item.issue,
+        });
+      }
+      continue;
+    }
+    byIssue.set(item.issue, item);
+    items.push(item);
+  }
+  return { target, repository, externalTool, items };
+}
+
+function lifecycleReceiptMarker(receipt) {
+  return `<!-- ${ISSUE_LIFECYCLE_RECEIPT_PREFIX}:${ISSUE_LIFECYCLE_RECEIPT_VERSION} ${JSON.stringify(receipt)} -->`;
+}
+
+export function parseIssueLifecycleReceipt(body, context = {}) {
+  const text = requireString(body, 'body', { allowEmpty: true });
+  const prefix = `<!-- ${ISSUE_LIFECYCLE_RECEIPT_PREFIX}:`;
+  const starts = text.split(prefix).length - 1;
+  if (starts === 0) return { found: false, receipt: null };
+  if (starts !== 1) {
+    fail('INVALID_PAYLOAD', 'pull-request body contains multiple issue lifecycle receipts', {
+      count: starts,
+    });
+  }
+  const lines = text.split(/\r?\n/).filter((line) => line.includes(prefix));
+  if (lines.length !== 1 || lines[0].trim() !== lines[0]) {
+    fail('INVALID_PAYLOAD', 'issue lifecycle receipt must occupy exactly one complete line');
+  }
+  const match = lines[0].match(/^<!-- effective-flow-issue-lifecycle:([^\s]+) (\{.*\}) -->$/);
+  if (!match) fail('INVALID_PAYLOAD', 'issue lifecycle receipt is malformed');
+  if (match[1] !== ISSUE_LIFECYCLE_RECEIPT_VERSION) {
+    fail('INVALID_PAYLOAD', 'issue lifecycle receipt version is unsupported', {
+      version: match[1],
+      supported: [ISSUE_LIFECYCLE_RECEIPT_VERSION],
+    });
+  }
+  let raw;
+  try {
+    raw = JSON.parse(match[2]);
+  } catch {
+    fail('INVALID_PAYLOAD', 'issue lifecycle receipt contains malformed JSON');
+  }
+  const receipt = normalizeIssueLifecycleReceipt(raw, context);
+  return { found: true, version: ISSUE_LIFECYCLE_RECEIPT_VERSION, receipt };
+}
+
+export function buildIssueLifecycleReceipt(input, context = {}) {
+  requireObject(input, 'input');
+  const proposed = normalizeIssueLifecycleReceipt(input.receipt ?? input, context);
+  if (input.body === undefined) {
+    return { receipt: proposed, marker: lifecycleReceiptMarker(proposed) };
+  }
+
+  const body = requireString(input.body, 'body', { allowEmpty: true });
+  const existing = parseIssueLifecycleReceipt(body, context);
+  if (existing.found) {
+    for (const field of ['target', 'repository', 'externalTool']) {
+      if (existing.receipt[field] !== proposed[field]) {
+        fail(
+          'INVALID_PAYLOAD',
+          'pull-request body contains a lifecycle receipt for another target',
+          {
+            field: `receipt.${field}`,
+            existing: existing.receipt[field],
+            proposed: proposed[field],
+          },
+        );
+      }
+    }
+    const receipt = normalizeIssueLifecycleReceipt(
+      { ...proposed, items: [...existing.receipt.items, ...proposed.items] },
+      context,
+    );
+    const marker = lifecycleReceiptMarker(receipt);
+    const existingLine = body
+      .split(/\r?\n/)
+      .find((line) => line.startsWith(`<!-- ${ISSUE_LIFECYCLE_RECEIPT_PREFIX}:`));
+    const updatedBody = body.replace(existingLine, marker);
+    return { receipt, marker, body: updatedBody, changed: updatedBody !== body };
+  }
+  const receipt = proposed;
+  const marker = lifecycleReceiptMarker(receipt);
+  const newline = body.includes('\r\n') ? '\r\n' : '\n';
+  const separator = body === '' || body.endsWith('\n') ? '' : newline;
+  const updatedBody = `${body}${separator}${marker}`;
+  return { receipt, marker, body: updatedBody, changed: updatedBody !== body };
+}
+
+function normalizeProvider(provider) {
+  if (provider === 'github' || provider === 'forgejo') return provider;
+  if (provider === undefined || provider === null || provider === '' || provider === 'auto') {
+    return undefined;
+  }
+  fail('INVALID_PAYLOAD', 'provider override must be github, forgejo, or auto', { provider });
+}
+
+function teaLoginHost(login) {
+  const candidate = typeof login === 'string' ? login : (login?.url ?? login?.host ?? login?.name);
+  if (typeof candidate !== 'string' || candidate.trim() === '') return undefined;
+  try {
+    return normalizeHost(
+      new URL(candidate.includes('://') ? candidate : `https://${candidate}`).host,
+    );
+  } catch {
+    return normalizeHost(candidate);
+  }
+}
+
+function matchingTeaLogin(logins = [], host) {
+  if (!Array.isArray(logins)) fail('INVALID_PAYLOAD', 'teaLogins must be an array');
+  for (const login of logins) {
+    if (teaLoginHost(login) !== normalizeHost(host)) continue;
+    const name = typeof login === 'string' ? host : (login.name ?? login.login ?? host);
+    return {
+      host: normalizeHost(host),
+      name: requireString(name, 'tea login name'),
+      ...(typeof login?.url === 'string' ? { url: login.url } : {}),
+    };
+  }
+  return undefined;
+}
+
+function teaLoginHosts(logins = []) {
+  if (!Array.isArray(logins)) fail('INVALID_PAYLOAD', 'teaLogins must be an array');
+  return new Set(logins.map(teaLoginHost).filter(Boolean));
+}
+
+export function parseRemote(remote, options = {}) {
+  requireString(remote, 'remote');
+  let host;
+  let path;
+  try {
+    // A failure below funnels this raw string into the error envelope, where `redact` is the only
+    // thing between its userinfo and the caller. The two scheme grammars are therefore meant to
+    // stay identical — anything accepted as a URL here must be redactable there. Narrowing either
+    // one alone reopens that gap.
+    if (/^[a-z][a-z\d+.-]*:\/\//i.test(remote)) {
+      const parsed = new URL(remote);
+      host = parsed.hostname;
+      path = parsed.pathname;
+    } else {
+      const scp = remote.match(/^(?:[^@/:]+@)?([^/:]+):(.+)$/);
+      if (!scp) fail('INVALID_REFERENCE', 'origin remote is not a supported Git URL', { remote });
+      host = scp[1];
+      path = scp[2];
+    }
+  } catch (error) {
+    if (error instanceof RemoteTrackerError) throw error;
+    fail('INVALID_REFERENCE', 'origin remote is not a supported Git URL', { remote });
+  }
+
+  const segments = path
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/\.git$/i, '')
+    .split('/')
+    .map((part) => decodeURIComponent(part))
+    .filter(Boolean);
+  if (segments.length < 2) {
+    fail('INVALID_REFERENCE', 'origin remote must contain an owner and repository', { remote });
+  }
+  const repository = segments.at(-1);
+  const owner = segments.slice(0, -1).join('/');
+  const normalized = {
+    host: normalizeHost(host),
+    owner,
+    repository,
+    slug: `${owner}/${repository}`,
+  };
+
+  const override = normalizeProvider(options.provider ?? options.remoteToolOverride);
+  if (override) return { ...normalized, provider: override };
+  if (normalized.host === 'github.com') return { ...normalized, provider: 'github' };
+  const login = matchingTeaLogin(options.teaLogins, normalized.host);
+  if (login) {
+    return { ...normalized, provider: 'forgejo', login: login.name };
+  }
+  fail('AMBIGUOUS_HOST', 'remote host cannot be classified without an explicit provider', {
+    host: normalized.host,
+    supportedOverrides: ['github', 'forgejo'],
+  });
+}
+
+export function parseReferences(references, options = {}) {
+  const values = Array.isArray(references)
+    ? references
+    : typeof references === 'string'
+      ? references.split(/[\s,]+/).filter(Boolean)
+      : [references];
+  if (values.length === 0) fail('INVALID_REFERENCE', 'at least one reference is required');
+  return values.map((reference) => parseReference(reference, options));
+}
+
+export function normalizeSignature(signature) {
+  return requireString(signature, 'signature')
+    .normalize('NFKC')
+    .replace(/\s*[·•]\s*/g, ' · ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function bodyFieldValues(body, names) {
+  const wanted = new Set(names.map((name) => name.toLowerCase()));
+  const values = [];
+  for (const line of requireString(body, 'body', { allowEmpty: true }).split(/\r?\n/)) {
+    const match = line.match(/^\s*-?\s*\*\*([^*]+)\*\*\s*:\s*(.*?)\s*(?:<!--.*-->)?\s*$/);
+    if (match && wanted.has(match[1].trim().toLowerCase())) values.push(match[2].trim());
+  }
+  return values;
+}
+
+export function parseFindingSignature(body) {
+  const canonical = bodyFieldValues(body, ['Signature']);
+  const legacy = bodyFieldValues(body, ['Signatur']);
+  const values = [...canonical, ...legacy];
+  if (values.length === 0) return undefined;
+  const normalized = new Set(values.map(normalizeSignature));
+  if (normalized.size > 1) {
+    fail('INVALID_PAYLOAD', 'finding body contains conflicting Signature/Signatur fields', {
+      fields: values,
+    });
+  }
+  return { value: values[0], normalized: [...normalized][0], legacy: canonical.length === 0 };
+}
+
+function parseFindingDedupSignature(body) {
+  const rootCauses = bodyFieldValues(body, ['Root-cause signature']);
+  if (rootCauses.length > 0) {
+    const normalized = new Set(rootCauses.map(normalizeSignature));
+    if (normalized.size > 1) {
+      fail('INVALID_PAYLOAD', 'finding body contains conflicting Root-cause signature fields', {
+        fields: rootCauses,
+      });
+    }
+    return { value: rootCauses[0], normalized: [...normalized][0], legacy: false };
+  }
+  const legacy = parseFindingSignature(body);
+  return legacy ? { ...legacy, legacy: true } : undefined;
+}
+
+export const FOLLOW_UP_ADMISSION_MARKER = 'effective-flow-follow-up-admission:v1';
+export const FOLLOW_UP_ADMISSION_SUPERSEDED_MARKER =
+  'effective-flow-follow-up-admission-superseded:v1';
+export const FOLLOW_UP_ADMISSION_VERSION = 'v1';
+
+const ADMISSION_REASONS = new Set(['material-harm', 'irreversible-commitment']);
+const ADMISSION_KEYS = Object.freeze([
+  'outcome',
+  'reason',
+  'gateVersion',
+  'evidenceType',
+  'evidenceReference',
+  'evidenceDigest',
+  'reachability',
+  'reachabilityAnchor',
+  'rootCauseSignature',
+  'scopeAndContainment',
+  'whyNow',
+  'completionCondition',
+]);
+const CLOSURE_RECEIPT_KEYS = Object.freeze([
+  'outcome',
+  'reason',
+  'gateVersion',
+  'signature',
+  'evidenceDigest',
+  'reachabilityAnchor',
+  'date',
+]);
+
+function sha256Digest(value, field) {
+  const digest = requireString(value, field).trim().toLowerCase();
+  if (!/^[a-f\d]{64}$/.test(digest)) {
+    fail('INVALID_PAYLOAD', `${field} must be a lowercase SHA-256 digest`, { field });
+  }
+  return digest;
+}
+
+function admissionText(value, field) {
+  return lifecycleSafeString(assertPublishable(value, field), field);
+}
+
+function normalizeAdmission(value) {
+  exactObjectKeys(value, ADMISSION_KEYS, 'finding.admission');
+  if (value.outcome !== 'admitted') {
+    fail('INVALID_PAYLOAD', 'finding.admission.outcome must be admitted', {
+      field: 'finding.admission.outcome',
+    });
+  }
+  if (!ADMISSION_REASONS.has(value.reason)) {
+    fail('INVALID_PAYLOAD', 'finding.admission.reason is unsupported', {
+      field: 'finding.admission.reason',
+      supported: [...ADMISSION_REASONS],
+    });
+  }
+  if (value.gateVersion !== FOLLOW_UP_ADMISSION_VERSION) {
+    fail('INVALID_PAYLOAD', 'finding.admission.gateVersion is unsupported', {
+      field: 'finding.admission.gateVersion',
+      supported: [FOLLOW_UP_ADMISSION_VERSION],
+    });
+  }
+  return {
+    outcome: 'admitted',
+    reason: value.reason,
+    gateVersion: value.gateVersion,
+    evidenceType: admissionText(value.evidenceType, 'finding.admission.evidenceType'),
+    evidenceReference: admissionText(
+      value.evidenceReference,
+      'finding.admission.evidenceReference',
+    ),
+    evidenceDigest: sha256Digest(value.evidenceDigest, 'finding.admission.evidenceDigest'),
+    reachability: admissionText(value.reachability, 'finding.admission.reachability'),
+    reachabilityAnchor: admissionText(
+      value.reachabilityAnchor,
+      'finding.admission.reachabilityAnchor',
+    ),
+    rootCauseSignature: admissionText(
+      value.rootCauseSignature,
+      'finding.admission.rootCauseSignature',
+    ),
+    scopeAndContainment: admissionText(
+      value.scopeAndContainment,
+      'finding.admission.scopeAndContainment',
+    ),
+    whyNow: admissionText(value.whyNow, 'finding.admission.whyNow'),
+    completionCondition: admissionText(
+      value.completionCondition,
+      'finding.admission.completionCondition',
+    ),
+  };
+}
+
+function normalizeClosureReceipt(value) {
+  exactObjectKeys(value, CLOSURE_RECEIPT_KEYS, 'receipt');
+  if (value.outcome !== 'closed') {
+    fail('INVALID_PAYLOAD', 'receipt.outcome must be closed', { field: 'receipt.outcome' });
+  }
+  if (value.gateVersion !== FOLLOW_UP_ADMISSION_VERSION) {
+    fail('INVALID_PAYLOAD', 'receipt.gateVersion is unsupported', {
+      field: 'receipt.gateVersion',
+      supported: [FOLLOW_UP_ADMISSION_VERSION],
+    });
+  }
+  const date = requireString(value.date, 'receipt.date').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    fail('INVALID_PAYLOAD', 'receipt.date must be YYYY-MM-DD', { field: 'receipt.date' });
+  }
+  return {
+    outcome: 'closed',
+    reason: admissionText(value.reason, 'receipt.reason'),
+    gateVersion: value.gateVersion,
+    signature: normalizeSignature(value.signature),
+    evidenceDigest: sha256Digest(value.evidenceDigest, 'receipt.evidenceDigest'),
+    reachabilityAnchor: admissionText(value.reachabilityAnchor, 'receipt.reachabilityAnchor'),
+    date,
+  };
+}
+
+function closureDataMarker(receipt) {
+  return `<!-- effective-flow-follow-up-admission-data:v1 ${JSON.stringify(receipt)} -->`;
+}
+
+export function buildFollowUpAdmissionReceipt(input) {
+  requireObject(input, 'input');
+  const receipt = normalizeClosureReceipt(input.receipt ?? input);
+  const marker = `<!-- ${FOLLOW_UP_ADMISSION_MARKER} -->`;
+  return { marker, receipt, body: `${marker}\n${closureDataMarker(receipt)}` };
+}
+
+export function parseFollowUpAdmissionReceipt(body, current) {
+  const text = requireString(body, 'body', { allowEmpty: true });
+  const marker = `<!-- ${FOLLOW_UP_ADMISSION_MARKER} -->`;
+  const supersededMarker = `<!-- ${FOLLOW_UP_ADMISSION_SUPERSEDED_MARKER} -->`;
+  const state = text.startsWith(marker)
+    ? 'active'
+    : text.startsWith(supersededMarker)
+      ? 'superseded'
+      : 'absent';
+  if (state === 'absent') {
+    return { found: false, receipt: null, current: false, state };
+  }
+  const lines = text.split(/\r?\n/);
+  const openingMarker = state === 'active' ? marker : supersededMarker;
+  if (lines[0] !== openingMarker) {
+    fail('INVALID_PAYLOAD', 'follow-up admission marker must be the opening complete line');
+  }
+  const dataLines = lines.filter((line) =>
+    line.startsWith('<!-- effective-flow-follow-up-admission-data:'),
+  );
+  if (dataLines.length !== 1) {
+    fail('INVALID_PAYLOAD', 'follow-up admission receipt must contain exactly one data marker', {
+      count: dataLines.length,
+    });
+  }
+  const match = dataLines[0].match(
+    /^<!-- effective-flow-follow-up-admission-data:([^\s]+) (\{.*\}) -->$/,
+  );
+  if (!match || match[1] !== FOLLOW_UP_ADMISSION_VERSION) {
+    fail('INVALID_PAYLOAD', 'follow-up admission receipt data marker is malformed or unsupported', {
+      version: match?.[1],
+      supported: [FOLLOW_UP_ADMISSION_VERSION],
+    });
+  }
+  let raw;
+  try {
+    raw = JSON.parse(match[2]);
+  } catch {
+    fail('INVALID_PAYLOAD', 'follow-up admission receipt contains malformed JSON');
+  }
+  const receipt = normalizeClosureReceipt(raw);
+  let isCurrent = false;
+  if (current !== undefined) {
+    requireObject(current, 'current');
+    const expected = normalizeClosureReceipt({ ...receipt, ...current, date: receipt.date });
+    isCurrent = ['gateVersion', 'signature', 'evidenceDigest', 'reachabilityAnchor'].every(
+      (field) => receipt[field] === expected[field],
+    );
+  }
+  return { found: state === 'active', receipt, current: isCurrent, state };
+}
+
+export function supersedeFollowUpAdmissionReceipt(input) {
+  requireObject(input, 'input');
+  if (input.current === undefined) {
+    fail('INVALID_PAYLOAD', 'current freshness keys are required to supersede a receipt', {
+      field: 'current',
+    });
+  }
+  const text = requireString(input.body, 'body', { allowEmpty: true });
+  const parsed = parseFollowUpAdmissionReceipt(text, input.current);
+  if (parsed.state === 'absent') {
+    fail('INVALID_PAYLOAD', 'follow-up admission receipt is absent');
+  }
+  if (parsed.current) {
+    fail('INVALID_PAYLOAD', 'a current follow-up admission receipt cannot be superseded');
+  }
+  const marker = `<!-- ${FOLLOW_UP_ADMISSION_SUPERSEDED_MARKER} -->`;
+  const activeMarker = `<!-- ${FOLLOW_UP_ADMISSION_MARKER} -->`;
+  const unchanged = parsed.state === 'superseded';
+  return {
+    marker,
+    receipt: parsed.receipt,
+    body: unchanged ? text : `${marker}${text.slice(activeMarker.length)}`,
+    unchanged,
+  };
+}
+
+function validateFinding(input) {
+  requireObject(input, 'finding');
+  const allowedSeverity = new Set(['Critical', 'Important', 'Note']);
+  const allowedComplexity = new Set(['Low', 'Medium', 'High']);
+  const allowedAction = new Set([
+    'effective-flow-fix',
+    'effective-flow-refactor',
+    'effective-flow-build',
+    'effective-flow-docs',
+  ]);
+  for (const field of ['title', 'area', 'file', 'problem', 'recommendation', 'promptSuggestion']) {
+    requireString(input[field], `finding.${field}`);
+  }
+  if (!allowedSeverity.has(input.severity)) fail('INVALID_PAYLOAD', 'invalid finding severity');
+  if (!allowedComplexity.has(input.complexity))
+    fail('INVALID_PAYLOAD', 'invalid finding complexity');
+  if (!allowedAction.has(input.action)) fail('INVALID_PAYLOAD', 'invalid finding action');
+  input.admission = normalizeAdmission(input.admission);
+  return input;
+}
+
+export function buildFindingPayload(input, options = {}) {
+  const finding = validateFinding(input);
+  const { strings } = reviewBodyLanguage(options.language ?? finding.language);
+  requireString(finding.id, 'finding.id');
+  if (!/^R-\d{7}$/.test(finding.id)) fail('INVALID_PAYLOAD', 'finding.id must match R-XXXXXXX');
+  const signature = finding.signature ?? `${finding.file} · ${finding.area} · ${finding.problem}`;
+  const admission = finding.admission;
+  const lines = [
+    `- **${strings.findingFields.severity}**: ${strings.severity[finding.severity]}`,
+    `- **${strings.findingFields.complexity}**: ${strings.complexity[finding.complexity]}`,
+    `- **${strings.findingFields.area}**: ${finding.area}`,
+    `- **${strings.findingFields.file}**: ${finding.file}`,
+    `- **${strings.findingFields.problem}**: ${assertPublishable(finding.problem, 'finding.problem')}`,
+    `- **${strings.findingFields.recommendation}**: ${finding.recommendation}`,
+    `- **Action**: ${finding.action}`,
+    `- **${strings.findingFields.promptSuggestion}**: ${finding.promptSuggestion}`,
+    `- **Admission outcome**: ${admission.outcome}`,
+    `- **Admission reason**: ${admission.reason}`,
+    `- **Admission gate**: ${admission.gateVersion}`,
+    `- **Evidence**: ${admission.evidenceType} · ${admission.evidenceReference}`,
+    `- **Evidence digest**: ${admission.evidenceDigest}`,
+    `- **Current reachability**: ${admission.reachability} · ${admission.reachabilityAnchor}`,
+    `- **Root-cause signature**: ${admission.rootCauseSignature}`,
+    `- **Scope and containment**: ${admission.scopeAndContainment}`,
+    `- **Why now**: ${admission.whyNow}`,
+    `- **Completion condition**: ${admission.completionCondition}`,
+    `- **Signature**: ${signature}`,
+  ];
+  if (finding.epic !== undefined && finding.epic !== null && finding.epic !== '') {
+    lines.splice(
+      lines.length - 1,
+      0,
+      `- **Epic**: #${requireNumber(finding.epic, 'finding.epic')}`,
+    );
+  }
+  const body = lines.join('\n');
+  return {
+    title: `[${finding.id}] ${finding.title}`,
+    body,
+    labels: ['effective-flow-review-finding', finding.action, finding.severity.toLowerCase()],
+    signature,
+    normalizedSignature: normalizeSignature(signature),
+  };
+}
+
+// In hidden mode (`visibility: hidden`) only the two pull-request kinds build at all, and they build
+// without a marker: the result's `marker` is then `null` and the body is refused when it names the
+// tool. The two issue kinds fail closed instead, because their marker is the tracker's only record
+// and hidden mode pins the tracker to `local` — reaching them there is a workflow error, not a
+// request for an unmarked tracker comment.
+const HIDDEN_COMMENT_KINDS = Object.freeze(['pr', 'pr-review']);
+
+export function buildCommentPayload(kind, input, options = {}) {
+  const marker = commentMarker(kind);
+  requireObject(input, 'comment');
+  const visibility = resolveVisibility(options.visibility ?? input.visibility);
+  if (visibility === 'hidden' && !HIDDEN_COMMENT_KINDS.includes(kind)) {
+    fail('INVALID_PAYLOAD', `${kind} comments are not written in hidden mode`, {
+      kind,
+      reason: 'hidden-mode-tracker-write',
+    });
+  }
+  const content = publishableText(input.body, 'comment.body');
+  if (visibility === 'hidden') {
+    return { kind, marker: null, body: markBody(marker, content, visibility, 'comment.body') };
+  }
+  const body = stampMarker(marker, content);
+  if (kind === 'planning') {
+    const decomposition = parseDecompositionRecords(body);
+    if (decomposition.found) {
+      assertGithubDecompositionCommentSize(
+        body,
+        decomposition.context,
+        decomposition.records,
+        'comment.body',
+      );
+    }
+  }
+  return { kind, marker, body };
+}
+
+export function buildSkippedFindingEntry(input, options = {}) {
+  requireObject(input, 'skippedFinding');
+  const { strings } = reviewBodyLanguage(options.language ?? input.language);
+  const title = assertPublishable(input.title, 'skippedFinding.title');
+  const signature = assertPublishable(input.signature, 'skippedFinding.signature');
+  const decisionReference = assertPublishable(
+    input.decisionReference,
+    'skippedFinding.decisionReference',
+  );
+  if (input.id !== undefined || input.issue !== undefined) {
+    fail('INVALID_PAYLOAD', 'design-decision-skipped findings must not carry an issue or R-ID');
+  }
+  return {
+    title,
+    signature,
+    normalizedSignature: normalizeSignature(signature),
+    decisionReference,
+    line: `- ${title} — Signature: ${signature} — ${strings.coveredBy} ${decisionReference}`,
+  };
+}
+
+export function buildEpicPayload(input, options = {}) {
+  requireObject(input, 'epic');
+  const { language, strings } = reviewBodyLanguage(options.language ?? input.language);
+  const date = requireString(input.date, 'epic.date');
+  const scope = requireString(input.scope, 'epic.scope');
+  const projectType = requireString(input.projectType, 'epic.projectType');
+  const findings = Array.isArray(input.findings) ? input.findings : [];
+  const skipped = Array.isArray(input.skipped)
+    ? input.skipped.map((item) => buildSkippedFindingEntry(item, { language }))
+    : [];
+  const findingLines = findings.map((finding, index) => {
+    requireObject(finding, `epic.findings[${index}]`);
+    const number = requireNumber(finding.number, `epic.findings[${index}].number`);
+    const id = requireString(finding.id, `epic.findings[${index}].id`);
+    if (!/^R-\d{7}$/.test(id)) fail('INVALID_PAYLOAD', 'epic finding IDs must match R-XXXXXXX');
+    return `- [ ] #${number} [${id}] ${requireString(finding.title, 'finding.title')} — Action: ${requireString(finding.action, 'finding.action')}`;
+  });
+  const lines = [
+    strings.epicLead(date, scope, projectType),
+    '',
+    `## ${strings.findingsHeading}`,
+    '',
+    ...findingLines,
+  ];
+  if (skipped.length > 0)
+    lines.push('', `## ${strings.skippedHeading}`, '', ...skipped.map((item) => item.line));
+  return {
+    title: `${strings.epicTitle} ${date}${input.suffix ?? ''}`,
+    body: lines.join('\n'),
+    labels: ['effective-flow-review-epic'],
+    lastFindingNumber: input.lastFindingNumber,
+    skipped,
+  };
+}
+
+export function deduplicateFindings(existingIssues, findings) {
+  if (!Array.isArray(existingIssues) || !Array.isArray(findings)) {
+    fail('INVALID_PAYLOAD', 'existingIssues and findings must be arrays');
+  }
+  const issuesByNumber = new Map();
+  for (const issue of existingIssues) {
+    requireObject(issue, 'existing issue');
+    const number = requireNumber(issue.number, 'existing issue number');
+    if (!issuesByNumber.has(number)) issuesByNumber.set(number, issue);
+  }
+  const modernSignatures = new Map();
+  const legacySignatures = new Map();
+  for (const issue of issuesByNumber.values()) {
+    const parsed = parseFindingDedupSignature(issue.body ?? '');
+    if (!parsed) continue;
+    const index = parsed.legacy ? legacySignatures : modernSignatures;
+    if (!index.has(parsed.normalized)) index.set(parsed.normalized, issue);
+  }
+  const duplicate = [];
+  const fresh = [];
+  for (const finding of findings) {
+    requireObject(finding, 'finding');
+    const rootCause = finding.admission?.rootCauseSignature;
+    let issue;
+    if (rootCause !== undefined && rootCause !== null) {
+      issue = modernSignatures.get(normalizeSignature(rootCause));
+    }
+    if (!issue) {
+      issue = legacySignatures.get(normalizeSignature(finding.signature));
+    }
+    if (issue) duplicate.push({ finding, issueNumber: issue.number });
+    else fresh.push(finding);
+  }
+  return { existingIssues: [...issuesByNumber.values()], duplicate, fresh };
+}
+
+export function labelQueryVariants(labels) {
+  if (!Array.isArray(labels)) fail('INVALID_PAYLOAD', 'labels must be an array');
+  const variants = [];
+  for (const label of labels) {
+    requireString(label, 'label');
+    const prefixVariants = label.startsWith('effective-flow-')
+      ? [label, label.replace(/^effective-flow-/, 'firmo-')]
+      : [label];
+    const severityVariants =
+      label === 'critical'
+        ? ['critical', 'kritisch']
+        : label === 'important'
+          ? ['important', 'wichtig']
+          : label === 'note'
+            ? ['note', 'hinweis']
+            : prefixVariants;
+    for (const value of severityVariants) if (!variants.includes(value)) variants.push(value);
+  }
+  return variants.map((label) => [label]);
+}
+
+export function planSfLabelMigration(issues, marker = {}) {
+  if (marker?.done === true) return { skipped: true, steps: [], marker };
+  if (!Array.isArray(issues)) fail('INVALID_PAYLOAD', 'issues must be an array');
+  const steps = [];
+  for (const issue of issues) {
+    const number = requireNumber(issue.number, 'issue.number');
+    const labels = Array.isArray(issue.labels) ? issue.labels : [];
+    // Deduplicated per issue, because an issue can genuinely carry the same legacy label more than
+    // once: labels are attached by name, so a repository that accumulated duplicate label objects
+    // hands back one entry per copy. Each copy would otherwise emit its own add/remove pair — the
+    // add is idempotent and the remove detaches the name outright, so every pair after the first is
+    // a redundant round trip, and a failure among them reports a partial migration of work that was
+    // already complete. The same label on two different issues stays two pairs; that is not a
+    // duplicate.
+    const migrated = new Set();
+    for (const label of labels) {
+      if (
+        !/^sf-(review-finding|review-epic|fix|refactor|build|docs|issue-done|needs-planning)$/.test(
+          label,
+        )
+      )
+        continue;
+      if (migrated.has(label)) continue;
+      migrated.add(label);
+      const current = label.replace(/^sf-/, 'effective-flow-');
+      steps.push({ operation: 'add', issue: number, label: current });
+      steps.push({ operation: 'remove', issue: number, label });
+    }
+  }
+  return {
+    skipped: false,
+    steps,
+    marker: { ...marker, done: false },
+    completionMarker: { ...marker, done: true },
+  };
+}
+
+function findExactlyOne(lines, predicate, target) {
+  const matches = [];
+  lines.forEach((line, index) => {
+    if (predicate(line)) matches.push(index);
+  });
+  if (matches.length === 0)
+    fail('TARGET_NOT_FOUND', `semantic target not found: ${target}`, { target });
+  if (matches.length > 1) {
+    fail('AMBIGUOUS_TARGET', `semantic target matched more than once: ${target}`, {
+      target,
+      matches: matches.length,
+    });
+  }
+  return matches[0];
+}
+
+export function patchMarkedBlock(body, input) {
+  requireObject(input, 'patch');
+  const marker = requireString(input.marker, 'patch.marker')
+    .replace(/^<!--\s*|\s*-->$/g, '')
+    .trim();
+  const replacement = requireString(input.replacement, 'patch.replacement', { allowEmpty: true });
+  const lines = requireString(body, 'body', { allowEmpty: true }).split(/\r?\n/);
+  const start = findExactlyOne(lines, (line) => line.trim() === `<!-- ${marker} -->`, marker);
+  const explicitEnd = lines.findIndex(
+    (line, index) => index > start && line.trim() === `<!-- /${marker} -->`,
+  );
+  const nextMarker = lines.findIndex(
+    (line, index) => index > start && /^<!--\s*[^/][^>]*-->\s*$/.test(line.trim()),
+  );
+  const end = explicitEnd >= 0 ? explicitEnd + 1 : nextMarker >= 0 ? nextMarker : lines.length;
+  const replacementLines = [`<!-- ${marker} -->`, ...replacement.split(/\r?\n/)];
+  if (explicitEnd >= 0) replacementLines.push(`<!-- /${marker} -->`);
+  const updated = [...lines.slice(0, start), ...replacementLines, ...lines.slice(end)].join('\n');
+  return { body: updated, changed: updated !== body, matched: 1 };
+}
+
+export function patchChecklistEntry(body, input) {
+  requireObject(input, 'patch');
+  const reference = requireString(input.reference, 'patch.reference');
+  const checked = input.checked !== false;
+  const lines = requireString(body, 'body', { allowEmpty: true }).split(/\r?\n/);
+  const escaped = reference.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const matcher = new RegExp(`^\\s*- \\[([ xX])\\].*(?:^|\\s)${escaped}(?:\\s|$)`);
+  const index = findExactlyOne(lines, (line) => matcher.test(line), reference);
+  let next = lines[index].replace(/^(\s*- \[)[ xX](\])/, `$1${checked ? 'x' : ' '}$2`);
+  if (input.append && !next.includes(input.append)) next += ` ${input.append}`;
+  lines[index] = next;
+  const updated = lines.join('\n');
+  return { body: updated, changed: updated !== body, matched: 1 };
+}
+
+function repositoryFromInput(input) {
+  if (input.repository) {
+    const repository = requireObject(input.repository, 'repository');
+    const host = normalizeHost(repository.host);
+    const owner = requireString(repository.owner, 'repository.owner');
+    const name = requireString(repository.repository ?? repository.name, 'repository.repository');
+    const provider =
+      normalizeProvider(repository.provider ?? input.provider) ??
+      (host === 'github.com'
+        ? 'github'
+        : teaLoginHosts(input.teaLogins).has(host)
+          ? 'forgejo'
+          : undefined);
+    if (!provider)
+      fail('AMBIGUOUS_HOST', 'repository host requires an explicit provider', { host });
+    const login = repository.login ?? matchingTeaLogin(input.teaLogins, host)?.name;
+    return {
+      host,
+      owner,
+      repository: name,
+      slug: `${owner}/${name}`,
+      provider,
+      ...(login ? { login } : {}),
+    };
+  }
+  if (!input.remote) fail('NO_ORIGIN', 'remote operation requires origin remote data');
+  return parseRemote(input.remote, input);
+}
+
+async function resolveRepositoryInput(input, runner) {
+  if (input.repository || input.remote) return repositoryFromInput(input);
+  const inside = await runner({
+    executable: 'git',
+    args: ['rev-parse', '--is-inside-work-tree'],
+    cwd: input.cwd,
+  });
+  if (
+    inside?.error?.code === 'ENOENT' ||
+    inside?.status !== 0 ||
+    inside?.stdout.trim() !== 'true'
+  ) {
+    fail('NOT_GIT_REPOSITORY', 'current directory is not inside a Git repository', {
+      cwd: input.cwd,
+    });
+  }
+  const origin = await runner({
+    executable: 'git',
+    args: ['remote', 'get-url', 'origin'],
+    cwd: input.cwd,
+  });
+  if (origin?.status !== 0 || origin?.stdout.trim() === '') {
+    fail('NO_ORIGIN', 'Git repository has no origin remote', { cwd: input.cwd });
+  }
+  try {
+    return parseRemote(origin.stdout.trim(), input);
+  } catch (error) {
+    if (
+      error.code !== 'AMBIGUOUS_HOST' ||
+      normalizeProvider(input.provider ?? input.remoteToolOverride)
+    ) {
+      throw error;
+    }
+    const logins = await runner({
+      executable: 'tea',
+      args: ['logins', 'list', '--output', 'json'],
+    });
+    if (logins?.status !== 0) throw error;
+    const parsed = parseJsonOutput(logins, 'tea logins');
+    return parseRemote(origin.stdout.trim(), {
+      ...input,
+      teaLogins: Array.isArray(parsed) ? parsed : (parsed?.logins ?? []),
+    });
+  }
+}
+
+const PR_CHECK_FIELDS = 'bucket,link,name,state';
+
+// The wait's structured read carries a fixed bound of its own instead of a share of the caller's.
+// As a single bounded command the operation had a guaranteed end-to-end ceiling, and splitting it
+// into a watch plus a read must not drop that property silently: an unbounded read could hold a run
+// open long after the watch it followed was already stopped. The value bounds one JSON read, not a
+// wait — waiting is the watch's job — so it is deliberately not derived from `payload.timeoutMs`.
+const CHECKS_READ_TIMEOUT_MS = 60_000;
+
+// The structured half of the wait. `gh pr checks` rejects `--watch` together with `--json`, so the
+// blocking watch cannot also be the read; `--required` and `--json` do combine, which is why this
+// read is the only place the required-checks criterion is applied at all. The watch deliberately
+// waits on every check, so the narrowing happens here, once, on a payload rather than on the
+// blocking. It resolves that criterion through `checksWaitSettings`, the same helper the watch uses
+// for its bound, so both commands stay derived from one settings object. It stays out of
+// `buildCommandPlan` on purpose: that builder answers `pr-checks-wait` with the watch, which is the
+// plan a caller previews and the only one carrying a caller-supplied bound.
+function buildChecksReadPlan(input, repository) {
+  const { requiredOnly } = checksWaitSettings(input.payload ?? input);
+  return mutationPlan(
+    'gh',
+    [
+      'pr',
+      'checks',
+      String(prNumber(input)),
+      ...ghRepoArgs(repository),
+      ...(requiredOnly ? ['--required'] : []),
+      '--json',
+      PR_CHECK_FIELDS,
+    ],
+    undefined,
+    { timeoutMs: CHECKS_READ_TIMEOUT_MS },
+  );
+}
+
+function decompositionWorkflow(value, field = 'record.workflow') {
+  const workflow = requireString(value, field).trim();
+  if (!DECOMPOSITION_WORKFLOWS.includes(workflow)) {
+    fail('INVALID_PAYLOAD', `${field} must name a supported implementation workflow`, {
+      field,
+      supported: [...DECOMPOSITION_WORKFLOWS],
+    });
+  }
+  return workflow;
+}
+
+export function parseDecompositionChildWorkflow(input) {
+  requireObject(input, 'decomposition child workflow');
+  const body = requireString(input.body, 'decomposition child workflow body');
+  const language = requireString(input.language, 'decomposition child workflow language').trim();
+  if (!['en', 'de'].includes(language)) {
+    fail('INVALID_PAYLOAD', 'decomposition child workflow language must be en or de', {
+      field: 'language',
+      supported: ['en', 'de'],
+    });
+  }
+  const inventory = markdownLineInventory(body).inventory.filter(
+    ({ quoted, outsideFence }) => !quoted && outsideFence,
+  );
+  const collect = (pattern) =>
+    inventory.map(({ line }) => line.match(pattern)).filter((match) => match !== null);
+  const english = collect(/^\*\*Recommended workflow:\*\*\s*([^\r\n]+)\s*$/);
+  const german = collect(/^\*\*Empfohlener Workflow:\*\*\s*([^\r\n]+)\s*$/);
+  const matching = language === 'de' ? german : english;
+  const foreign = language === 'de' ? english : german;
+  if (matching.length !== 1 || foreign.length !== 0) {
+    fail(
+      'INVALID_PAYLOAD',
+      'decomposition child body must contain exactly one language-matching recommended workflow field',
+      { field: 'body', language, matches: matching.length, foreignMatches: foreign.length },
+    );
+  }
+  const workflow = decompositionWorkflow(matching[0][1], 'decomposition child workflow');
+  if (
+    input.expectedWorkflow !== undefined &&
+    workflow !== decompositionWorkflow(input.expectedWorkflow, 'expected decomposition workflow')
+  ) {
+    fail('INVALID_PAYLOAD', 'decomposition child workflow does not match its canonical record', {
+      field: 'body',
+    });
+  }
+  const implementationWorkflow = {
+    Feature: 'build',
+    Bugfix: 'fix',
+    Refactoring: 'refactor',
+    Documentation: 'docs',
+  }[workflow];
+  return { workflow, implementationWorkflow };
+}
+
+function decompositionStatus(value, field = 'record.status') {
+  const status = requireString(value, field).trim();
+  if (!DECOMPOSITION_STATUSES.includes(status)) {
+    fail('INVALID_PAYLOAD', `${field} must name a supported decomposition status`, {
+      field,
+      supported: [...DECOMPOSITION_STATUSES],
+    });
+  }
+  return status;
+}
+
+function decompositionDraftHash(record) {
+  return bodyHash(
+    JSON.stringify({
+      key: record.key,
+      title: record.title,
+      workflow: record.workflow,
+      body: record.body,
+    }),
+  );
+}
+
+function decompositionLanguage(value, field = 'decomposition.language') {
+  const language = requireString(value, field).trim();
+  if (!['en', 'de'].includes(language)) {
+    fail('INVALID_PAYLOAD', `${field} must be en or de`, { field, supported: ['en', 'de'] });
+  }
+  return language;
+}
+
+function canonicalDecompositionContext(input, field = 'decomposition') {
+  requireObject(input, field);
+  const language = decompositionLanguage(input.language, `${field}.language`);
+  const target = requireString(input.target, `${field}.target`).trim();
+  if (!['forge', 'external'].includes(target)) {
+    fail('INVALID_PAYLOAD', `${field}.target must be forge or external`, {
+      field: `${field}.target`,
+    });
+  }
+  if (target === 'forge') {
+    const repository = lifecycleRepositoryBinding({ repository: input.repository });
+    if (repository?.host === undefined) {
+      fail('INVALID_PAYLOAD', `${field}.repository must include the resolved forge host`, {
+        field: `${field}.repository`,
+      });
+    }
+    if (input.externalTool !== null) {
+      fail('INVALID_PAYLOAD', `${field}.externalTool must be null for forge`, {
+        field: `${field}.externalTool`,
+      });
+    }
+    return {
+      language,
+      target,
+      host: repository.host,
+      repository: repository.slug,
+      externalTool: null,
+      parent: normalizeForgeLifecycleReference(
+        typeof input.parent === 'number' ? String(input.parent) : input.parent,
+        `${field}.parent`,
+        repository,
+      ),
+    };
+  }
+  if (input.repository !== null) {
+    fail('INVALID_PAYLOAD', `${field}.repository must be null for external`, {
+      field: `${field}.repository`,
+    });
+  }
+  return {
+    language,
+    target,
+    host: null,
+    repository: null,
+    externalTool: lifecycleExternalTool(input.externalTool, `${field}.externalTool`),
+    parent: normalizeExternalLifecycleReference(input.parent, `${field}.parent`),
+  };
+}
+
+function canonicalDecompositionIssue(value, status, field, context) {
+  if (status !== 'created') {
+    if (value !== null) {
+      fail('INVALID_PAYLOAD', `${field} must be null unless record.status is created`, { field });
+    }
+    return null;
+  }
+  return normalizeCanonicalDecompositionReference(value, field, context);
+}
+
+function canonicalDecompositionRecordPayload(record) {
+  return {
+    key: record.key,
+    title: record.title,
+    workflow: record.workflow,
+    body: record.body,
+    status: record.status,
+    issue: record.issue,
+    draftHash: record.draftHash,
+  };
+}
+
+function canonicalDecompositionRecordMarker(record) {
+  return `<!-- ${DECOMPOSITION_RECORD_PREFIX} ${encodeCanonicalDecomposition(
+    canonicalDecompositionRecordPayload(record),
+  )} -->`;
+}
+
+function canonicalDecompositionHeader(context) {
+  return `<!-- ${DECOMPOSITION_SECTION_PREFIX}:begin ${encodeCanonicalDecomposition(context)} -->`;
+}
+
+function canonicalDecompositionEnd() {
+  return `<!-- ${DECOMPOSITION_SECTION_PREFIX}:end -->`;
+}
+
+function canonicalDecompositionBodyFence(body) {
+  const longest = Math.max(0, ...(body.match(/`+/g) ?? []).map((run) => run.length));
+  return '`'.repeat(Math.max(3, longest + 1));
+}
+
+function canonicalDecompositionStatus(record, language) {
+  const values =
+    language === 'de'
+      ? {
+          proposed: 'Vorgeschlagen',
+          approved: 'Freigegeben',
+          created: `Erstellt als ${record.issue}`,
+          missing: 'Fehlend',
+          declined: 'Abgelehnt',
+        }
+      : {
+          proposed: 'Proposed',
+          approved: 'Approved',
+          created: `Created as ${record.issue}`,
+          missing: 'Missing',
+          declined: 'Declined',
+        };
+  return values[record.status];
+}
+
+function renderCanonicalDecompositionSection(context, records) {
+  const strings =
+    context.language === 'de'
+      ? { workflow: 'Workflow', status: 'Status', body: 'Body (exaktes Markdown)' }
+      : { workflow: 'Workflow', status: 'Status', body: 'Body (exact Markdown)' };
+  const blocks = records.map((record) => {
+    const fence = canonicalDecompositionBodyFence(record.body);
+    return [
+      canonicalDecompositionRecordMarker(record),
+      `#### \`${record.key}\` — ${record.title}`,
+      '',
+      `**${strings.workflow}:** ${record.workflow}`,
+      `**${strings.status}:** ${canonicalDecompositionStatus(record, context.language)}`,
+      '',
+      `**${strings.body}:**`,
+      `${fence}markdown`,
+      record.body,
+      fence,
+    ].join('\n');
+  });
+  return [canonicalDecompositionHeader(context), ...blocks, canonicalDecompositionEnd()].join(
+    '\n\n',
+  );
+}
+
+function decompositionSizeContributions(commentBody, context, records) {
+  const sectionBytes = Buffer.byteLength(
+    renderCanonicalDecompositionSection(context, records),
+    'utf8',
+  );
+  return {
+    sectionBytes,
+    otherCommentBytes: Math.max(0, Buffer.byteLength(commentBody, 'utf8') - sectionBytes),
+    records: records.map((record) => ({
+      key: record.key,
+      titleBytes: Buffer.byteLength(record.title, 'utf8'),
+      bodyBytes: Buffer.byteLength(record.body, 'utf8'),
+      encodedRecordBytes: Buffer.byteLength(canonicalDecompositionRecordMarker(record), 'utf8'),
+    })),
+  };
+}
+
+function assertGithubDecompositionCommentSize(commentBody, context, records, field) {
+  if (context.target !== 'forge') return;
+  const actual = Buffer.byteLength(commentBody, 'utf8');
+  if (actual <= GITHUB_DECOMPOSITION_COMMENT_MAX_BYTES) return;
+  fail('INVALID_PAYLOAD', `${field} exceeds GitHub's decomposition planning comment limit`, {
+    field,
+    maximum: GITHUB_DECOMPOSITION_COMMENT_MAX_BYTES,
+    actual,
+    unit: 'utf8-bytes',
+    contributions: decompositionSizeContributions(commentBody, context, records),
+  });
+}
+
+function normalizeCanonicalDecompositionRecord(raw, index, context, persisted = false) {
+  const field = `decomposition.records[${index}]`;
+  exactObjectKeys(
+    raw,
+    persisted
+      ? ['key', 'title', 'workflow', 'body', 'status', 'issue', 'draftHash']
+      : ['key', 'title', 'workflow', 'body', 'status', 'issue'],
+    field,
+  );
+  const title = sanitizeChildText(raw.title, `${field}.title`).trim();
+  if (/\r|\n/.test(title)) {
+    fail('INVALID_PAYLOAD', `${field}.title must occupy one line`, { field: `${field}.title` });
+  }
+  const workflow = decompositionWorkflow(raw.workflow, `${field}.workflow`);
+  const body = sanitizeChildText(raw.body, `${field}.body`).trim();
+  assertClosedMarkdownFences(body, `${field}.body`);
+  parseDecompositionChildWorkflow({ body, language: context.language, expectedWorkflow: workflow });
+  const status = decompositionStatus(raw.status, `${field}.status`);
+  const record = {
+    key: decompositionKey(raw.key, `${field}.key`),
+    title,
+    workflow,
+    body,
+    status,
+    issue: canonicalDecompositionIssue(raw.issue, status, `${field}.issue`, context),
+  };
+  const draftHash = decompositionDraftHash(record);
+  if (persisted) {
+    const supplied = requireString(raw.draftHash, `${field}.draftHash`).trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(supplied) || supplied !== draftHash) {
+      fail('INVALID_PAYLOAD', `${field}.draftHash does not match the persisted draft`, {
+        field: `${field}.draftHash`,
+      });
+    }
+  }
+  return { ...record, draftHash };
+}
+
+function validateUniqueDecompositionRecords(records) {
+  const keys = new Set();
+  const issues = new Set();
+  for (const record of records) {
+    if (keys.has(record.key)) {
+      fail('AMBIGUOUS_TARGET', 'decomposition records contain a duplicate key', {
+        key: record.key,
+      });
+    }
+    keys.add(record.key);
+    if (record.issue === null) continue;
+    if (issues.has(record.issue)) {
+      fail('AMBIGUOUS_TARGET', 'decomposition records contain a duplicate created issue', {
+        issue: record.issue,
+      });
+    }
+    issues.add(record.issue);
+  }
+  return records;
+}
+
+export function buildDecompositionRecords(input) {
+  requireObject(input, 'decomposition');
+  exactObjectKeys(
+    input,
+    ['language', 'target', 'repository', 'externalTool', 'parent', 'records'],
+    'decomposition',
+  );
+  if (!Array.isArray(input.records) || input.records.length === 0) {
+    fail('INVALID_PAYLOAD', 'decomposition.records must be a non-empty array', {
+      field: 'decomposition.records',
+    });
+  }
+  const context = canonicalDecompositionContext(input);
+  const records = validateUniqueDecompositionRecords(
+    input.records.map((raw, index) => normalizeCanonicalDecompositionRecord(raw, index, context)),
+  );
+  const section = renderCanonicalDecompositionSection(context, records);
+  assertGithubDecompositionCommentSize(section, context, records, 'decomposition.section');
+  return { context, records, section };
+}
+
+export function parseDecompositionRecords(body) {
+  const text = requireString(body, 'planning comment body', { allowEmpty: true });
+  const sectionInventory = untrustedControlLines(text, `${DECOMPOSITION_SECTION_MARKER}:`);
+  const recordInventory = untrustedControlLines(text, `${DECOMPOSITION_RECORD_MARKER}:`);
+  const obsoleteInventory = untrustedControlLines(text, 'effective-flow-decomposition-child:');
+  if (obsoleteInventory.controls.length > 0) {
+    fail(
+      'INVALID_PAYLOAD',
+      'planning comment contains a noncanonical decomposition record version',
+    );
+  }
+  if (sectionInventory.controls.length === 0 && recordInventory.controls.length === 0) {
+    return { found: false, active: false, context: null, records: [] };
+  }
+  if (sectionInventory.controls.length !== 2) {
+    fail(
+      'INVALID_PAYLOAD',
+      'planning comment must contain exactly one canonical decomposition section',
+    );
+  }
+  const [begin, end] = sectionInventory.controls;
+  const beginMatch = begin.line.match(
+    new RegExp(`^<!-- ${escapeRegExp(DECOMPOSITION_SECTION_PREFIX)}:begin ([A-Za-z0-9_-]+) -->$`),
+  );
+  if (
+    !beginMatch ||
+    end.line !== canonicalDecompositionEnd() ||
+    begin.index >= end.index ||
+    recordInventory.controls.some(
+      (record) => record.index <= begin.index || record.index >= end.index,
+    )
+  ) {
+    fail('INVALID_PAYLOAD', 'planning comment contains malformed decomposition section boundaries');
+  }
+  const rawContext = decodeCanonicalDecomposition(beginMatch[1], 'decomposition section context');
+  exactObjectKeys(
+    rawContext,
+    ['language', 'target', 'host', 'repository', 'externalTool', 'parent'],
+    'decomposition section context',
+  );
+  const repositoryParts =
+    rawContext.target === 'forge' ? String(rawContext.repository).split('/') : [];
+  const context = canonicalDecompositionContext({
+    language: rawContext.language,
+    target: rawContext.target,
+    repository:
+      rawContext.target === 'forge'
+        ? {
+            host: rawContext.host,
+            owner: repositoryParts.slice(0, -1).join('/'),
+            repository: repositoryParts.at(-1),
+          }
+        : null,
+    externalTool: rawContext.externalTool,
+    parent: rawContext.parent,
+  });
+  if (JSON.stringify(context) !== JSON.stringify(rawContext)) {
+    fail('INVALID_PAYLOAD', 'decomposition section context is not canonical');
+  }
+  if (recordInventory.controls.length === 0) {
+    fail('INVALID_PAYLOAD', 'canonical decomposition section must contain at least one record');
+  }
+  const records = validateUniqueDecompositionRecords(
+    recordInventory.controls.map((record, index) => {
+      const match = record.line.match(
+        new RegExp(`^<!-- ${escapeRegExp(DECOMPOSITION_RECORD_PREFIX)} ([A-Za-z0-9_-]+) -->$`),
+      );
+      if (!match) {
+        fail('INVALID_PAYLOAD', 'planning comment contains a malformed decomposition record');
+      }
+      const raw = decodeCanonicalDecomposition(match[1], `decomposition.records[${index}]`);
+      return normalizeCanonicalDecompositionRecord(raw, index, context, true);
+    }),
+  );
+  const persistedSection = sectionInventory.lines.slice(begin.index, end.index + 1).join('\n');
+  if (persistedSection !== renderCanonicalDecompositionSection(context, records)) {
+    fail('INVALID_PAYLOAD', 'canonical decomposition section visible content was modified');
+  }
+  return {
+    found: true,
+    active: records.some((record) => ACTIVE_DECOMPOSITION_STATUSES.has(record.status)),
+    context,
+    records,
+  };
+}
+
+function decompositionChildIdentity(child, context) {
+  if (
+    context.target === 'forge' &&
+    child.repository !== undefined &&
+    child.repository !== context.repository
+  ) {
+    fail('REFERENCE_REPOSITORY_MISMATCH', 'decomposition child belongs to another repository');
+  }
+  const value =
+    context.target === 'forge'
+      ? (child.reference ?? child.issue ?? child.url ?? child.number ?? child.id)
+      : (child.reference ?? child.issue ?? child.id ?? child.url);
+  if (value === undefined || value === null) {
+    fail('INVALID_PAYLOAD', 'decomposition child must carry a stable issue identity', {
+      field: 'children',
+    });
+  }
+  return normalizeCanonicalDecompositionReference(value, 'decomposition child identity', context);
+}
+
+function decompositionParentIdentity(parent, context) {
+  if (parent === undefined || parent === null) return undefined;
+  if (typeof parent !== 'object') {
+    return normalizeCanonicalDecompositionReference(parent, 'decomposition parent', context);
+  }
+  if (
+    context.target === 'forge' &&
+    parent.repository !== undefined &&
+    parent.repository !== context.repository
+  ) {
+    return undefined;
+  }
+  const value =
+    context.target === 'forge'
+      ? (parent.reference ?? parent.issue ?? parent.url ?? parent.number ?? parent.id)
+      : (parent.reference ?? parent.issue ?? parent.id ?? parent.url);
+  return value === undefined
+    ? undefined
+    : normalizeCanonicalDecompositionReference(value, 'decomposition parent', context);
+}
+
+export function compareDecompositionContainer(input) {
+  requireObject(input, 'decomposition container');
+  const proposal = parseDecompositionRecords(input.body ?? input.commentBody ?? '');
+  if (!proposal.active) {
+    return {
+      canonical: proposal.found,
+      active: false,
+      containerOnly: false,
+      ok: true,
+      records: proposal.records,
+      discrepancies: [],
+    };
+  }
+  if (!Array.isArray(input.children)) {
+    fail('INVALID_PAYLOAD', 'decomposition container children must be an array', {
+      field: 'children',
+    });
+  }
+  const discrepancies = [];
+  const expectedParent = proposal.context.parent;
+  if (decompositionParentIdentity(input.parent, proposal.context) !== expectedParent) {
+    discrepancies.push({ code: 'PARENT_MISMATCH' });
+  }
+  const recordsByKey = new Map(proposal.records.map((record) => [record.key, record]));
+  const childrenByKey = new Map();
+  for (const child of input.children) {
+    requireObject(child, 'decomposition child');
+    let issue;
+    try {
+      issue = decompositionChildIdentity(child, proposal.context);
+    } catch (error) {
+      if (!(error instanceof RemoteTrackerError)) throw error;
+      discrepancies.push({ code: 'INVALID_CHILD_IDENTITY' });
+      continue;
+    }
+    if (child.decompositionKeyError !== undefined) {
+      discrepancies.push({ code: 'INVALID_CHILD_MARKER', issue });
+      continue;
+    }
+    if (child.decompositionKey === undefined) {
+      discrepancies.push({ code: 'DETACHED_CHILD', issue });
+      continue;
+    }
+    const key = decompositionKey(child.decompositionKey, 'decomposition child key');
+    if (!recordsByKey.has(key)) {
+      discrepancies.push({ code: 'UNEXPECTED_KEY', issue, key });
+      continue;
+    }
+    const group = childrenByKey.get(key) ?? [];
+    group.push(child);
+    childrenByKey.set(key, group);
+  }
+  for (const record of proposal.records) {
+    if (!ACTIVE_DECOMPOSITION_STATUSES.has(record.status)) continue;
+    if (record.status !== 'created') {
+      discrepancies.push({ code: 'INCOMPLETE_RECORD', key: record.key, status: record.status });
+      continue;
+    }
+    const matches = childrenByKey.get(record.key) ?? [];
+    if (matches.length === 0) {
+      discrepancies.push({ code: 'MISSING_CHILD', key: record.key, issue: record.issue });
+      continue;
+    }
+    if (matches.length > 1) {
+      discrepancies.push({ code: 'DUPLICATE_KEY', key: record.key, matches: matches.length });
+      continue;
+    }
+    const child = matches[0];
+    const childIdentity = decompositionChildIdentity(child, proposal.context);
+    if (record.issue !== childIdentity) {
+      discrepancies.push({ code: 'ISSUE_MISMATCH', key: record.key, issue: childIdentity });
+    }
+    if (decompositionParentIdentity(child.parent, proposal.context) !== expectedParent) {
+      discrepancies.push({ code: 'DETACHED_CHILD', key: record.key, issue: childIdentity });
+    }
+  }
+  return {
+    canonical: true,
+    active: true,
+    containerOnly: true,
+    ok: discrepancies.length === 0,
+    context: proposal.context,
+    records: proposal.records,
+    discrepancies,
+  };
+}
+
+const FORGEJO_MAX_PAGES = 1000;
+
+// The shape and the total, read off one `tea api --include` response. A body that is not an array is
+// never silently treated as an empty page: on this transport a 4xx body is an object, and
+// `teaApiSuccess` has already rejected those, so anything else left here is a payload nobody can
+// interpret.
+function forgejoListPage(response, label, page) {
+  if (!Array.isArray(response.body)) {
+    fail('INVALID_PAYLOAD', `${label} returned a non-list payload`, {
+      ...(page === undefined ? {} : { page }),
+    });
+  }
+  // A header that is absent, blank, or not a plain count states no total. `Number('')` is `0`, so
+  // reading it numerically without this test would turn an empty header into "the forge reported
+  // zero items" — and a guard whose whole job is failing closed would wave the first page through as
+  // complete.
+  const stated = response.headers.get('x-total-count');
+  const total =
+    typeof stated === 'string' && /^\d+$/.test(stated.trim()) ? Number(stated) : undefined;
+  return { items: response.body, total };
+}
+
+// A single unpaginated raw-API list read. Forgejo's review-comment endpoint takes no `page` or
+// `limit`, so paging it would re-request the same list until the bound ran out; it is read once and
+// guarded by the header instead.
+async function readForgejoList(repository, endpoint, runner, label) {
+  const plan = teaApiReadPlan(repository, endpoint);
+  const response = teaApiSuccess(await runChecked(runner, plan, label), label);
+  const { items, total } = forgejoListPage(response, label);
+  if (total !== undefined && total > items.length) {
+    fail('INVALID_PAYLOAD', `${label} returned a truncated list`, {
+      totalCount: total,
+      returnedCount: items.length,
+    });
+  }
+  return { items, commands: [redact(plan)] };
+}
+
+// One bounded pagination loop for every paginated Forgejo raw-API list read. It fails closed on a
+// short result rather than returning a prefix, which is what a criterion evaluated over the list
+// requires: an incomplete thread list would let `merge-gate` report every thread assessed while an
+// unassessed finding sits open, and an incomplete issue list would let a dedup pass miss a
+// duplicate.
+//
+// **`totalIsExact` decides whether `X-Total-Count` may prove truncation, and it is not uniform
+// across the endpoints this loop serves.** On the issue and pull-request listings the header is
+// counted from the same search options that produce the body, so a total above the item count means
+// items are missing. On `…/pulls/{index}/reviews` it is not: `ListPullReviews` counts the `review`
+// rows with `CountReviews`, while `convert.ToPullReviewList` then **omits** every pending review
+// belonging to another user unless the caller is an admin. The header there legitimately exceeds the
+// body, so treating it as an exact count would fail an ordinary read with `INVALID_PAYLOAD` for as
+// long as a third party keeps an unsubmitted review open — and take `merge-gate` condition 7 down
+// with it. For such an endpoint the header stays an upper bound: it may end the walk early but never
+// condemn it, and exhaustion is proved the way `tea`'s `resp.NextPage` proved it, by paging until a
+// page comes back empty. A short page is deliberately **not** the terminator: Forgejo clamps `limit`
+// to `MAX_RESPONSE_ITEMS`, so a full page is routinely shorter than the page size requested.
+async function readForgejoPaginated(repository, endpoint, runner, label, options = {}) {
+  const limit = options.limit ?? FORGEJO_PAGE_LIMIT;
+  const maxPages = options.maxPages ?? FORGEJO_MAX_PAGES;
+  const totalIsExact = options.totalIsExact ?? true;
+  const items = [];
+  const commands = [];
+  let total;
+  for (let page = 1; page <= maxPages; page += 1) {
+    const plan = teaApiReadPlan(repository, forgejoPagedEndpoint(endpoint, page, limit));
+    commands.push(redact(plan));
+    const stepLabel = `${label} page ${page}`;
+    const response = teaApiSuccess(await runChecked(runner, plan, stepLabel), stepLabel);
+    const parsed = forgejoListPage(response, label, page);
+    if (parsed.total !== undefined) total = parsed.total;
+    items.push(...parsed.items);
+    if (parsed.items.length === 0 || (total !== undefined && items.length >= total)) {
+      if (totalIsExact && total !== undefined && total > items.length) {
+        fail('INVALID_PAYLOAD', `${label} returned a truncated list`, {
+          totalCount: total,
+          returnedCount: items.length,
+        });
+      }
+      return { items, commands, pagesFetched: page };
+    }
+  }
+  fail('UNSUPPORTED_CAPABILITY', `${label} exceeded the bounded pagination limit`, {
+    maxPages,
+    itemsRead: items.length,
+  });
+}
+
+export function buildCommandPlan(operation, input, repository) {
+  requireObject(input);
+  // A provider other than `github` reaches the Forgejo adapter. That is the fallthrough the
+  // single `if (provider === 'github') { … }` this dispatcher replaced already had, and the
+  // reason this stays an `if`/`return` pair rather than a two-armed switch on the provider.
+  if (repository.provider === 'github') {
+    return buildGithubCommandPlan(operation, input, repository);
+  }
+  return buildForgejoCommandPlan(operation, input, repository);
+}
+
+function parseJsonOutput(result, label) {
+  const text = result.stdout.trim();
+  if (text === '') return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    fail('INVALID_PAYLOAD', `${label} returned malformed JSON`, {
+      stdout: redact(text.slice(0, 500)),
+    });
+  }
+}
+
+// tea prints result URLs as OSC 8 terminal hyperlinks, so its human output carries escape
+// sequences even when stdout is a pipe. Remove whole sequences rather than stripping ESC
+// characters: OSC 8 embeds its target URI inside the opening marker, so a character-level strip
+// would leave `]8;id=…;https://…` fragments behind and make the text harder to parse, not easier.
+// Both terminators are covered because tea's choice varies by build. An unterminated sequence
+// simply does not match and survives into the output, where it stays visible for diagnosis.
+const ANSI_SEQUENCE = /\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)|\u001b\[[0-9;?]*[ -/]*[@-~]/g;
+
+function stripAnsiSequences(text) {
+  return text.replace(ANSI_SEQUENCE, '');
+}
+
+function parseCommandOutput(result, plan, label) {
+  const text = result.stdout.trim();
+  // Only the human-rendered branch is sanitized. Structured output is parsed as-is, because a
+  // stripper run over JSON could corrupt legitimate string content.
+  if (plan.expectsJson === false) {
+    return { raw: { completed: true, output: stripAnsiSequences(text) } };
+  }
+  if (!plan.includesHeaders || !/^HTTP\/\S+\s+\d+/i.test(text)) {
+    return { raw: parseJsonOutput(result, label) };
+  }
+  const boundary = text.search(/\r?\n\r?\n/);
+  if (boundary === -1) {
+    fail('INVALID_PAYLOAD', `${label} returned malformed HTTP headers`);
+  }
+  const headerText = text.slice(0, boundary);
+  const body = text.slice(boundary).replace(/^\r?\n\r?\n/, '');
+  const etag = headerText.match(/^etag:\s*(.+)$/im)?.[1]?.trim();
+  return {
+    raw: parseJsonOutput({ ...result, stdout: body }, label),
+    ...(etag ? { version: etag } : {}),
+  };
+}
+
+// The response of a `tea api --include` call, split into its status, its headers and its body.
+// `parseCommandOutput`'s `includesHeaders` branch cannot serve this: tea writes the status line and
+// the header block to **stderr** where `gh --include` writes them to stdout, so that branch would
+// find plain JSON on stdout, take the early return, and hand a 403 body on as data. The last status
+// line wins, so an intermediate redirect never masks the response that actually answered.
+//
+// The body is **not** parsed here, and that ordering is the contract rather than a refactoring
+// convenience: only a 2xx body is data, and only a caller that has read the status knows which it
+// holds. Parsing eagerly made the strict JSON parse decide the outcome before the status was ever
+// inspected, so a 5xx a reverse proxy answered with an HTML error page became a plain
+// `INVALID_PAYLOAD` — losing the `mutationMayHaveSucceeded` flag on exactly the mutations whose
+// documented recovery is a state re-read. A non-JSON body is a diagnostic on that path, never a
+// reason to discard a status the forge did state.
+function readTeaApiResponse(result, label) {
+  const headerText = stripAnsiSequences(result?.stderr ?? '');
+  const statusLines = [...headerText.matchAll(/^HTTP\/\S+\s+(\d{3})\b/gim)];
+  if (statusLines.length === 0) {
+    fail('INVALID_PAYLOAD', `${label} returned no HTTP status line`, {
+      stderr: redact(headerText.slice(0, 500)),
+    });
+  }
+  const headers = new Map();
+  for (const line of headerText.split(/\r?\n/)) {
+    const match = line.match(/^([A-Za-z0-9-]+):\s*(.*)$/);
+    if (match) headers.set(match[1].toLowerCase(), match[2].trim());
+  }
+  return {
+    status: Number(statusLines.at(-1)[1]),
+    headers,
+    // Strict: a 2xx body that is not JSON is a provider payload nobody can read, and that is an
+    // `INVALID_PAYLOAD` exactly as before. Callers invoke this only after the status admitted the
+    // body as data.
+    readBody: () => parseJsonOutput(result, label),
+  };
+}
+
+// The tolerant counterpart, for a status that already decided the outcome. It reports whatever
+// object the body happens to be so `teaApiMessage` can quote the forge's own wording, and reports
+// nothing at all when the body is empty or is not JSON. It never fails: on this path the status is
+// the verdict, and an unparseable diagnostic must not be able to overrule it.
+function teaApiDiagnosticBody(result) {
+  const text = typeof result?.stdout === 'string' ? result.stdout.trim() : '';
+  if (text === '') return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+function isTeaApiIncludePlan(plan) {
+  return plan.executable === 'tea' && plan.args[0] === 'api' && plan.args.includes('--include');
+}
+
+function teaApiMessage(body) {
+  return typeof body?.message === 'string' && body.message.trim() !== ''
+    ? redact(body.message.trim())
+    : undefined;
+}
+
+// The three operations whose documented recovery is "never re-run after
+// `mutationMayHaveSucceeded: true`; re-read the state instead". Every failure path that can end one
+// of them has to agree about which three they are, so the membership lives here rather than in each
+// path: `runChecked` reads it when the CLI itself failed, and `teaApiSuccess` reads it when
+// `tea api` exited 0 and the forge answered 5xx, which on that transport is the same ambiguity
+// wearing a status line. Two copies of the rule are what let a Forgejo `issue-close` take the one
+// path neither of them covered.
+const POSSIBLY_APPLIED_MUTATIONS = new Set(['pr-merge', 'issue-sub-issue-create', 'issue-close']);
+
+function mutationMayHaveApplied(label) {
+  return POSSIBLY_APPLIED_MUTATIONS.has(label);
+}
+
+// A non-2xx status becomes a structured error rather than data. A 4xx is never retryable: an auth,
+// path or permission failure repeats identically. A 5xx is retryable for a read, which observes
+// nothing and changes nothing by being repeated — but for one of the mutations above it is the
+// ambiguous outcome this transport would otherwise hide. `tea api` exits 0 whatever the status, so
+// such a 5xx never reaches `runChecked`'s exit-code tolerance and would be reported as a plain
+// retryable refusal: the forge may have applied the request before it failed to answer, and a
+// caller that reads that as "the forge did not act" retries a write that already landed and skips
+// the re-read the operation documents. It is reported as possibly applied and non-retryable
+// instead, and its message stops claiming a refusal nobody stated.
+function teaApiSuccess(result, label) {
+  const response = readTeaApiResponse(result, label);
+  if (response.status < 200 || response.status >= 300) {
+    // Read tolerantly, because the status has already decided this. A forge behind a reverse proxy
+    // answers a 502 with that proxy's HTML error page, and a strict parse of it would raise
+    // `INVALID_PAYLOAD` and take the flag below with it.
+    const message = teaApiMessage(teaApiDiagnosticBody(result));
+    const mayHaveApplied = response.status >= 500 && mutationMayHaveApplied(label);
+    fail(
+      'COMMAND_FAILED',
+      mayHaveApplied ? `${label} left its outcome unstated` : `${label} was refused by the forge`,
+      {
+        status: response.status,
+        ...(message === undefined ? {} : { message }),
+        ...(mayHaveApplied ? { mutationMayHaveSucceeded: true } : {}),
+      },
+      response.status >= 500 && !mayHaveApplied,
+    );
+  }
+  return { status: response.status, headers: response.headers, body: response.readBody() };
+}
+
+// `gh pr checks` reports "the checks are still pending" through exit code 8 rather than through its
+// payload, and a wait that outruns the plan's timeout is killed by the process runner. Both are the
+// documented outcome of a bounded wait, not a failure, so they become a result here instead of a
+// COMMAND_FAILED. A watch killed while writing can leave a truncated payload behind; the truncation
+// is dropped so the timeout is still reported as a timeout and not as malformed provider JSON.
+const CHECKS_PENDING_EXIT_CODE = 8;
+
+function isChecksWaitTimeout(result) {
+  if (!result) return false;
+  if (result.status === CHECKS_PENDING_EXIT_CODE) return true;
+  if (result.timedOut === true || result.error?.code === 'ETIMEDOUT') return true;
+  return result.status === null && typeof result.signal === 'string' && result.signal !== '';
+}
+
+function parsableJsonOrEmpty(text) {
+  const value = typeof text === 'string' ? text : '';
+  if (value.trim() === '') return '';
+  try {
+    JSON.parse(value);
+    return value;
+  } catch {
+    return '';
+  }
+}
+
+function isJsonArrayPayload(text) {
+  const value = typeof text === 'string' ? text.trim() : '';
+  if (!value.startsWith('[')) return false;
+  try {
+    return Array.isArray(JSON.parse(value));
+  } catch {
+    return false;
+  }
+}
+
+// `gh pr checks --required` filters the rollup by a per-context `isRequired` flag, and only a
+// context that has already reported carries one. The filtered list therefore comes back empty in
+// two different situations — the forge defines no required checks, and required checks are defined
+// but none of them has reported yet — and gh answers both the same way: a non-zero exit, an empty
+// payload, and a stderr line claiming no more than that no required check was reported. This
+// predicate recognizes that response and nothing beyond it, which is why what follows from it is
+// deliberately weak. Both halves of the match carry weight: without the flag this would reach reads
+// that never asked for the criterion, and without the phrase every failed `--required` read — an
+// unresolvable reference, an expired token — would pass as satisfied, which is the exact class of
+// defect the surrounding rules were written against. The message names the head branch rather than
+// the base, so the branch name inside it proves nothing about the criterion and is deliberately not
+// part of the match.
+const NO_REQUIRED_CHECKS_STDERR = 'no required checks reported';
+
+// A create that lost a race against a concurrent run is not a failed command, but recognizing that
+// means reading the right stream. `gh api` writes the provider's error body to **stdout** on a
+// non-zero exit and puts only its own one-line summary (`gh: Validation Failed (HTTP 422)`) on
+// stderr, so a predicate over stderr — which is what this code did before — could never match, and
+// the tolerance it guarded had never once fired. The machine-readable reason lives in the body:
+// GitHub answers a duplicate label with `errors: [{ code: 'already_exists' }]`. The parse is
+// defensive because stdout is whatever the provider sent, including nothing at all; anything that
+// is not that exact shape falls through to COMMAND_FAILED, which is the honest answer for it.
+function reportsAlreadyExists(result) {
+  const text = typeof result?.stdout === 'string' ? result.stdout.trim() : '';
+  if (text === '') return false;
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  return (
+    Array.isArray(payload?.errors) &&
+    payload.errors.some((entry) => entry?.code === 'already_exists')
+  );
+}
+
+// GitHub refuses a draft pull request in a repository whose plan offers none with a 422 whose
+// body states the reason: `errors: [{ message: "Draft pull requests are not supported in this
+// repository." }]`. That is a missing capability of this repository, not a failed command, and
+// the probe cannot see it — `pullRequestDraftCreate` attests only that `pr-create` sends `draft`.
+// So a draft `pr-create` runs through this wrapper, which turns exactly that refusal into the same
+// `UNSUPPORTED_CAPABILITY` the probe gate raises, and leaves every other outcome to `runChecked`.
+// Both halves are required: the 422 (gh's `(HTTP 422)` summary or the body's `Validation Failed`)
+// and the phrase, read from the body gh writes to stdout or from its stderr.
+const DRAFT_UNSUPPORTED_PHRASE = 'draft pull requests are not supported';
+
+function reportsDraftUnsupported(result) {
+  if (!result || result.status === 0) return false;
+  const stdout = typeof result.stdout === 'string' ? result.stdout.trim() : '';
+  const stderr = typeof result.stderr === 'string' ? result.stderr : '';
+  let payload;
+  try {
+    payload = stdout === '' ? undefined : JSON.parse(stdout);
+  } catch {
+    payload = undefined;
+  }
+  const messages = [
+    payload?.message,
+    ...(Array.isArray(payload?.errors) ? payload.errors.map((entry) => entry?.message) : []),
+    stderr,
+  ].filter((message) => typeof message === 'string');
+  const unprocessable = /\(HTTP 422\)/.test(stderr) || payload?.message === 'Validation Failed';
+  return (
+    unprocessable &&
+    messages.some((message) => message.toLowerCase().includes(DRAFT_UNSUPPORTED_PHRASE))
+  );
+}
+
+function draftCreateRunner(runner) {
+  return async (call) => {
+    const result = await runner(call);
+    if (reportsDraftUnsupported(result)) {
+      fail('UNSUPPORTED_CAPABILITY', 'github does not support draft pull requests here', {
+        operation: 'pr-create',
+        capability: 'pullRequestDraftCreate',
+      });
+    }
+    return result;
+  };
+}
+
+function isNoRequiredChecksResponse(result, plan) {
+  if (!result || result.status === 0) return false;
+  if (!plan.args.includes('--required')) return false;
+  return (result.stderr ?? '').includes(NO_REQUIRED_CHECKS_STDERR);
+}
+
+async function runChecked(runner, plan, label) {
+  const result = await runner(plan);
+  if (result?.error?.code === 'ENOENT') {
+    fail('CLI_MISSING', `${plan.executable} is not installed`, { executable: plan.executable });
+  }
+  // The watch half of the wait is asked for nothing but the blocking itself. Its stdout is a TSV
+  // table it may reprint several times, and its exit status conflates a red check with a broken
+  // invocation, so both belong to the JSON read that follows rather than here. Exactly one fact
+  // survives — that the bound elapsed or the checks were still pending when gh gave up — because
+  // nothing downstream can observe it. Treating any other exit as a failure would turn a finished
+  // watch over a red check into a COMMAND_FAILED and withhold the list the caller waited for; a
+  // missing gh is already caught above and stays a CLI_MISSING.
+  if (label === 'pr-checks-watch') {
+    return isChecksWaitTimeout(result) ? { ...result, timedOut: true } : result;
+  }
+  if (label === 'pr-checks-wait') {
+    if (isChecksWaitTimeout(result)) {
+      return { ...result, status: 0, stdout: parsableJsonOrEmpty(result.stdout), timedOut: true };
+    }
+    // A red check also makes `gh pr checks` exit non-zero, although it printed exactly the check
+    // list the caller asked for. A finished watch with a failing check is the outcome the gate has
+    // to read, not a failed command, so a non-zero exit that carries a check list stays a result.
+    // An operational failure — no checks, bad reference, missing auth — prints no list and keeps
+    // falling through to COMMAND_FAILED below.
+    if (result && result.status !== 0 && isJsonArrayPayload(result.stdout)) {
+      return { ...result, status: 0 };
+    }
+    // "No required check was reported" describes an empty query result, not a broken command, so it
+    // becomes a successful envelope carrying a discriminator instead of a COMMAND_FAILED. The
+    // discriminator records what gh reported and stops there: it does not prove that the branch
+    // defines no required checks, so nothing here concludes that the wait is over. The rule sits
+    // last on purpose: the timeout and the red-check rules above still decide everything they
+    // decided before, and only what would otherwise fail reaches this point. stdout is emptied
+    // rather than filled with a synthetic list, because an empty payload is what already makes the
+    // normalizer report no rollup and an empty list; inventing one would claim checks that ran.
+    if (isNoRequiredChecksResponse(result, plan)) {
+      return { ...result, status: 0, stdout: '', requiredChecksDefined: false };
+    }
+  }
+  if (!result || result.status !== 0) {
+    if (
+      label === 'collaborator-permission-read' &&
+      /\bHTTP[ /]404\b/i.test(`${result?.stderr ?? ''}\n${result?.stdout ?? ''}`)
+    ) {
+      fail('TARGET_NOT_FOUND', 'collaborator permission was not found');
+    }
+    // The tolerance is keyed on the plan's own metadata rather than on the step label, because a
+    // label is display text: the moment a caller renames its step — which `label-create` now does,
+    // since it runs two commands — a string comparison would silently stop tolerating the race it
+    // was written for. It signals on the runner result instead of through a synthetic stdout
+    // sentinel, following the `requiredChecksDefined` idiom above: a caller that has to reshape
+    // stdout to state a fact about the run is stating it in the wrong place.
+    if (plan.tolerateAlreadyExists === true && reportsAlreadyExists(result)) {
+      return { ...result, status: 0, stdout: '', alreadyExists: true };
+    }
+    // A failed merge, a failed parent-aware issue create, or a failed issue close is not safely
+    // retryable: the forge may have accepted it before the connection dropped, so a second attempt
+    // could act on state nobody verified. The caller has to re-read instead — the same discipline
+    // the human-output create normalizers require when a successful command yields no usable result
+    // URL. `issue-close` earns its place for the re-read half rather than the retry half: repeating
+    // the PATCH would be harmless, but the flag is the only thing that tells a caller the forge may
+    // already have acted, and a caller that reads its absence as "nothing happened" leaves the
+    // in-progress label on a closed issue and its container entry open. Membership is therefore
+    // decided by the operation's documented recovery — each of these three is documented as "never
+    // re-run after `mutationMayHaveSucceeded: true`; re-read the state instead" — and not by whether
+    // a repeat would duplicate anything. The membership itself lives beside `teaApiSuccess`, which
+    // applies the same three to a 5xx the forge did state: on the `tea api` transport that failure
+    // exits 0 and never reaches this exit-code path at all.
+    const mayHaveApplied = mutationMayHaveApplied(label);
+    fail(
+      'COMMAND_FAILED',
+      `${label} failed`,
+      {
+        executable: plan.executable,
+        args: redact(plan.args),
+        status: result?.status,
+        stderr: redact(result?.stderr ?? ''),
+        ...(mayHaveApplied ? { mutationMayHaveSucceeded: true } : {}),
+      },
+      !mayHaveApplied,
+    );
+  }
+  return result;
+}
+
+function parseCliVersion(text, executable) {
+  const match = text.match(/\b(\d+)\.(\d+)\.(\d+)\b/);
+  if (!match) {
+    fail('UNSUPPORTED_CAPABILITY', `${executable} version output is not supported`, {
+      capability: 'version',
+      version: redact(text.trim()),
+    });
+  }
+  return match.slice(1).map(Number);
+}
+
+function meetsMinimumVersion(actual, minimum) {
+  for (let index = 0; index < minimum.length; index += 1) {
+    if (actual[index] > minimum[index]) return true;
+    if (actual[index] < minimum[index]) return false;
+  }
+  return true;
+}
+
+function assertMinimumVersion(actual, minimum, executable) {
+  if (meetsMinimumVersion(actual, minimum)) return;
+  fail('UNSUPPORTED_CAPABILITY', `${executable} is too old for the remote-tracker adapter`, {
+    capability: 'version',
+    installed: actual.join('.'),
+    minimum: minimum.join('.'),
+  });
+}
+
+// The pull-request gate needs four flags that all postdate the adapter's general gh floor, so it
+// gets its own floor rather than a blanket "recent enough" assumption. The binding one is
+// `gh pr checks --json`, released in gh 2.50.0 (cli/cli#9079); `--watch` (2.5), `--match-head-commit`
+// (2.14), and `--required` (2.16) are older. Below this line the three capabilities are reported as
+// unsupported, so a run degrades to report-only instead of failing mid-merge on an unknown flag.
+// Availability is not compatibility: at and above this floor `gh pr checks` still rejects `--watch`
+// together with `--json`, which is why the wait runs a watch and a read as two commands instead of
+// one. `--required` does combine with `--json`, so the criterion rides along on the read. The floor
+// stays where it is regardless — the read still needs `--json`.
+const GH_PR_GATE_MINIMUM_VERSION = Object.freeze([2, 50, 0]);
+
+async function probeTeaHelp(runner, args, required = []) {
+  const result = await runner({ executable: 'tea', args: [...args, '--help'] });
+  if (!result || result.status !== 0) return false;
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+  return required.every((token) => output.includes(token));
+}
+
+async function probeGhHelp(runner, args, required = []) {
+  const result = await runner({ executable: 'gh', args: [...args, '--help'] });
+  if (!result || result.status !== 0) return false;
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+  return required.every((token) => output.includes(token));
+}
+
+// The two review-thread write routes, exactly as a forge's `/swagger.v1.json` declares them. Gitea
+// serves both; Forgejo declares neither today, which is why the probe reads them per instance
+// instead of stating one answer for every tea-backed forge.
+const THREAD_REPLY_ROUTE = '/repos/{owner}/{repo}/pulls/{index}/comments/{id}/replies';
+const THREAD_RESOLVE_ROUTE = '/repos/{owner}/{repo}/pulls/comments/{id}/resolve';
+
+// The API description's address, built from the selected login record and nothing else: `tea api`
+// attaches that login's token to the request, so no other source — the remote URL, an input field —
+// may contribute host or path. Origin plus path keeps a sub-path installation and drops any
+// userinfo, query or fragment the record might carry. A login without a usable http(s) URL yields
+// no address, which the probe treats as a failed fetch.
+function teaSwaggerUrl(login) {
+  if (typeof login.url !== 'string') return undefined;
+  let parsed;
+  try {
+    parsed = new URL(login.url.trim());
+  } catch {
+    return undefined;
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return undefined;
+  return `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}/swagger.v1.json`;
+}
+
+// Reads the forge's API description once. An absolute `http(s)://` endpoint reaches the forge
+// unprefixed — tea's `buildURL` (`modules/api/client.go`, v0.14.2) adds `/api/v1` only to a
+// relative one and refuses an absolute URL whose host is not the login's. Every failure — no
+// transport, no address, a runner error, a non-2xx status, a body that is not JSON or carries no
+// `paths` — answers `undefined`: the description is evidence for two optional writes, never a
+// precondition of the probe.
+async function readTeaSwagger(runner, login, transport) {
+  const url = transport ? teaSwaggerUrl(login) : undefined;
+  if (url === undefined) return undefined;
+  const result = await runner({
+    executable: 'tea',
+    args: ['api', url, '--include', '--login', login.name],
+  });
+  if (!result || result.status !== 0) return undefined;
+  try {
+    const response = readTeaApiResponse(result, 'probe swagger');
+    if (response.status < 200 || response.status >= 300) return undefined;
+    const document = response.readBody();
+    const paths = document?.paths;
+    return paths && typeof paths === 'object' && !Array.isArray(paths) ? document : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Diagnostic only; the write capabilities come from the declared paths alone. Forgejo states its
+// version as `<forgejo>+gitea-<gitea>`, Gitea as a plain version.
+function teaForgeFlavor(document) {
+  const version = document?.info?.version;
+  if (typeof version !== 'string') return 'unknown';
+  return version.includes('+gitea-') ? 'forgejo' : 'gitea';
+}
+
+export async function probeProvider(repository, runner, requestedCapabilities) {
+  if (typeof runner !== 'function') {
+    fail('INVALID_PAYLOAD', 'probeProvider requires an injected process runner');
+  }
+  const executable = repository.provider === 'github' ? 'gh' : 'tea';
+  const versionResult = await runner({ executable, args: ['--version'] });
+  if (versionResult?.error?.code === 'ENOENT') {
+    fail('CLI_MISSING', `${executable} is not installed`, { executable });
+  }
+  if (!versionResult || versionResult.status !== 0) {
+    fail('COMMAND_FAILED', `could not determine ${executable} version`, {
+      executable,
+      stderr: redact(versionResult?.stderr ?? ''),
+    });
+  }
+  const version = versionResult.stdout.trim().split(/\r?\n/)[0];
+  const versionTuple = parseCliVersion(versionResult.stdout, executable);
+  assertMinimumVersion(
+    versionTuple,
+    // tea 0.14.2 is the first release whose `pulls create` accepts a `--repo` slug together with an
+    // explicit `--head`; 0.14.1 rejects that combination outright.
+    repository.provider === 'github' ? [2, 0, 0] : [0, 14, 2],
+    executable,
+  );
+  if (repository.provider === 'github') {
+    const auth = await runner({
+      executable,
+      args: ['auth', 'status', '--hostname', repository.host],
+    });
+    if (!auth || auth.status !== 0) {
+      fail('AUTH_FAILED', `gh is not authenticated for ${repository.host}`, {
+        host: repository.host,
+        stderr: redact(auth?.stderr ?? ''),
+      });
+    }
+    // Native sub-issue creation is deliberately tied to the installed porcelain surface rather
+    // than to a guessed gh version. The operation is atomic only when `issue create` itself accepts
+    // `--parent`; without that flag the adapter must fail before it can create a standalone issue.
+    const probeSubIssueCreate =
+      requestedCapabilities === undefined || requestedCapabilities.issueSubIssueCreate === true;
+    const issueSubIssueCreate = probeSubIssueCreate
+      ? await probeGhHelp(runner, ['issue', 'create'], ['--parent'])
+      : undefined;
+    // Read from the version already parsed above — the floor costs no extra spawn.
+    const gateSupported = meetsMinimumVersion(versionTuple, GH_PR_GATE_MINIMUM_VERSION);
+    return {
+      executable,
+      version,
+      authenticated: true,
+      capabilities: {
+        json: true,
+        // `gh api user` needs no flag beyond the ones every 2.x line has and no scope beyond the
+        // ones an authenticated gh already holds, so it is not tied to the gate's version floor.
+        viewerRead: true,
+        collaboratorPermissionRead: true,
+        repositoryVisibilityRead: true,
+        issues: true,
+        issueRead: true,
+        issueCommentsRead: true,
+        issueList: true,
+        issueCreate: true,
+        issueSubIssuesRead: true,
+        ...(issueSubIssueCreate === undefined ? {} : { issueSubIssueCreate }),
+        issueUpdate: true,
+        issueClose: true,
+        issueComment: true,
+        issueCommentUpdate: true,
+        issueLabelAdd: true,
+        issueLabelRemove: true,
+        labelMigration: true,
+        pullRequests: true,
+        pullRequestRead: true,
+        prCommentsRead: true,
+        prReviewsRead: true,
+        pullRequestList: true,
+        // Tied to the gate's own version floor: an older gh parses none of the flags these three
+        // operations depend on, and an unsupported capability is the honest answer there — not a
+        // command plan that dies at runtime with a retryable failure.
+        pullRequestStatus: gateSupported,
+        pullRequestChecksWait: gateSupported,
+        pullRequestMerge: gateSupported,
+        pullRequestCreate: true,
+        // What this states is the client half only: `pr-create` sends `draft` in its REST body on
+        // every gh this adapter accepts. Whether the repository accepts a draft depends on its
+        // plan, which no probe can read, so a repository that refuses one is reported by
+        // `pr-create` itself as `UNSUPPORTED_CAPABILITY` on this key (see
+        // `reportsDraftUnsupported`). The key is stated rather than left absent so a caller that
+        // requires it before publishing a draft does not read GitHub's silence as a refusal.
+        pullRequestDraftCreate: true,
+        pullRequestUpdate: true,
+        // The title PATCH is the same REST call `pullRequestUpdate` already makes with another
+        // field, and `gh pr ready` has existed with `--repo` since before this adapter's 2.0 floor.
+        pullRequestTitleUpdate: true,
+        pullRequestMarkReady: true,
+        prComment: true,
+        comments: true,
+        labels: true,
+        labelList: true,
+        labelCreate: true,
+        reviewCreate: true,
+        reviewThreads: true,
+        reviewThreadReplies: true,
+        reviewThreadResolution: true,
+        conditionalWrites: false,
+      },
+    };
+  }
+  const auth = await runner({ executable, args: ['logins', 'list', '--output', 'json'] });
+  if (!auth || auth.status !== 0) {
+    fail('AUTH_FAILED', `tea has no usable login for ${repository.host}`, {
+      host: repository.host,
+      stderr: redact(auth?.stderr ?? ''),
+    });
+  }
+  let logins;
+  try {
+    logins = parseJsonOutput(auth, 'tea logins');
+  } catch (error) {
+    if (error.code === 'INVALID_PAYLOAD') {
+      fail('UNSUPPORTED_CAPABILITY', 'tea login output does not provide usable JSON', {
+        capability: 'json',
+      });
+    }
+    throw error;
+  }
+  const loginList = Array.isArray(logins) ? logins : (logins?.logins ?? []);
+  const login = matchingTeaLogin(loginList, repository.host);
+  if (!login) {
+    fail('AUTH_FAILED', `tea has no login matching ${repository.host}`, { host: repository.host });
+  }
+  const [
+    issues,
+    issueComments,
+    issueCreate,
+    issueUpdate,
+    issueLabelAdd,
+    issueLabelRemove,
+    pulls,
+    pullComments,
+    pullCreate,
+    pullCreateDraft,
+    pullEdit,
+    comment,
+    commentUpdate,
+    labelCreate,
+    labelList,
+    apiInclude,
+    pullEditTitle,
+    pullCreateDraftWip,
+    // A bounded probe must await every sibling's termination before returning its one envelope.
+  ] = await Promise.allSettled([
+    probeTeaHelp(runner, ['issues'], ['--output']),
+    probeTeaHelp(runner, ['issues'], ['--comments']),
+    probeTeaHelp(runner, ['issues', 'create'], ['--title', '--description']),
+    probeTeaHelp(runner, ['issues', 'edit'], ['--description']),
+    probeTeaHelp(runner, ['issues', 'edit'], ['--add-labels']),
+    probeTeaHelp(runner, ['issues', 'edit'], ['--remove-labels']),
+    probeTeaHelp(runner, ['pulls'], ['--output']),
+    probeTeaHelp(runner, ['pulls'], ['--comments']),
+    probeTeaHelp(runner, ['pulls', 'create'], ['--head', '--base']),
+    probeTeaHelp(runner, ['pulls', 'create'], ['--draft']),
+    probeTeaHelp(runner, ['pulls', 'edit'], ['--description']),
+    probeTeaHelp(runner, ['comment'], ['--output']),
+    probeTeaHelp(runner, ['api'], ['--method', '--data']),
+    probeTeaHelp(runner, ['labels', 'create'], ['--output', '--name']),
+    // Label creation is idempotent only because it reads the existing labels first, so the read is
+    // part of the create's contract and every flag that read depends on is probed, not just
+    // `--output`. An older tea missing any of them would otherwise fail the pre-check with an
+    // unstructured COMMAND_FAILED on an unknown flag instead of reporting an unsupported
+    // capability.
+    probeTeaHelp(runner, ['labels', 'list'], ['--output', '--exclude-org', '--page', '--limit']),
+    // The one probe decision 7 requires. `tea api` itself landed in v0.12.0, below this adapter's
+    // 0.14.2 floor, so the transport needs no new version floor; `--include` is source-verified for
+    // `v0.15.1`/`main` only, so it is probed rather than assumed and the floor stays where it is.
+    probeTeaHelp(runner, ['api'], ['--include']),
+    // Appended rather than inserted, because the probe order is positional for every caller that
+    // scripts it. The title edit is its own flag on `pulls edit`, separate from `--description`.
+    probeTeaHelp(runner, ['pulls', 'edit'], ['--title']),
+    // Not a second `--draft` check but the evidence `pr-mark-ready` rests on: tea documents on this
+    // very flag that a draft is a `WIP: ` title prefix. See `pr-mark-ready` in
+    // `remote-tracker-forgejo-core.mjs` for why that decides the mapping.
+    probeTeaHelp(runner, ['pulls', 'create'], ['--draft', 'WIP']),
+  ]).then((results) =>
+    results.map((result) => {
+      if (result.status === 'rejected') throw result.reason;
+      return result.value;
+    }),
+  );
+  const labelCreateSupported = labelCreate && labelList;
+  // The `tea api` transport probe the three gate capabilities are gated on: the reads need
+  // `--include`, and the merge needs `--method` and `--data` on top of it. It attests transport
+  // only — a request-body field such as `head_commit_id` cannot be probed at all.
+  const teaApiTransport = commentUpdate && apiInclude;
+  // Requested by `probe` and the two thread writes only, because the description is a large
+  // download, and appended after every help probe so the call order stays positional for callers
+  // that script it. Gated on the full transport: the read itself needs `--include`, and the two
+  // writes it attests send `--method` and `--data`, so without them neither write is declared.
+  const readsSwagger = requestedCapabilities?.reviewThreadWrites === true;
+  const swagger = readsSwagger ? await readTeaSwagger(runner, login, teaApiTransport) : undefined;
+  const declaresPost = (route) => swagger !== undefined && swagger.paths[route]?.post !== undefined;
+  // The two writes are one pair, folded like `labelCreate`: a forge that can reply but not resolve,
+  // or the reverse, can never finish a thread, so one declared route alone enables neither.
+  const threadWrites = declaresPost(THREAD_REPLY_ROUTE) && declaresPost(THREAD_RESOLVE_ROUTE);
+  return {
+    executable,
+    version,
+    login: login.name,
+    // `null` when the description was not requested, `unknown` when it could not be read.
+    flavor: readsSwagger ? (swagger === undefined ? 'unknown' : teaForgeFlavor(swagger)) : null,
+    authenticated: true,
+    capabilities: {
+      json: true,
+      // `tea api user` states the account the forge attributes a write to, which is a different fact
+      // from the locally configured login `tea logins list` reports. It rides on the same transport
+      // probe as the gate reads.
+      viewerRead: teaApiTransport,
+      collaboratorPermissionRead: false,
+      repositoryVisibilityRead: false,
+      issues,
+      issueRead: issues,
+      issueCommentsRead: issues && issueComments,
+      issueList: issues,
+      issueCreate,
+      issueSubIssuesRead: false,
+      issueSubIssueCreate: false,
+      issueUpdate,
+      // The close is a raw-API write on the `tea api` transport the gate reads and the merge
+      // already ride, so it derives from that one probe and adds no `probeTeaHelp` spawn of its
+      // own — the same reasoning `prReviewsRead` and `reviewThreads` below carry. The fit is
+      // exact rather than merely safe: `teaApiTransport` attests `--method`, `--data` and
+      // `--include`, and the close plan uses all three, so the capability and the plan state one
+      // requirement rather than the capability over-gating a plan that needs less.
+      issueClose: teaApiTransport,
+      issueComment: teaApiTransport,
+      issueCommentUpdate: commentUpdate,
+      issueLabelAdd,
+      issueLabelRemove,
+      labelMigration: issueLabelAdd && issueLabelRemove,
+      pullRequests: pulls,
+      // The pull-request read, the list and the body update's stale-write guard all read the raw
+      // API object over `tea api --include` — the renderer states no head repository — so each
+      // also needs that one transport flag. The subcommand flags stay in the conjunction because
+      // they are what the capabilities attested before the move.
+      pullRequestRead: pulls && apiInclude,
+      prCommentsRead: pulls && pullComments,
+      // The review listing is a raw-API read on the same `tea api` transport the status read and the
+      // review-thread walk already ride, so it derives from that one probe exactly as `reviewThreads`
+      // does and adds no `probeTeaHelp` spawn of its own. `tea` has no review-listing subcommand
+      // whose `--help` could attest anything here, and the renderer that comes closest states no
+      // login and no timestamp — the same reason the thread walk left it.
+      prReviewsRead: teaApiTransport,
+      pullRequestList: pulls && apiInclude,
+      // The status read, bounded helper polling, and merge all ride the same `tea api` transport.
+      // The helper owns the wait because `tea` has no native checks watch; the capability means
+      // deterministic adapter support, not a provider-side watch command.
+      pullRequestStatus: teaApiTransport,
+      pullRequestChecksWait: teaApiTransport,
+      pullRequestMerge: teaApiTransport,
+      pullRequestCreate: pullCreate,
+      pullRequestDraftCreate: pullCreate && pullCreateDraft,
+      pullRequestUpdate: pullEdit && apiInclude,
+      pullRequestTitleUpdate: pullEditTitle,
+      // Forgejo has no draft flag of its own: a pull request is a draft while its title carries a
+      // work-in-progress prefix. Marking it ready is therefore one title edit, and it is offered only
+      // where the installed tea both edits titles and states that its drafts are that prefix. The
+      // edit is confirmed by one raw `pr-read`, so the transport flag that read needs is required too.
+      pullRequestMarkReady: pullEditTitle && pullCreateDraftWip && apiInclude,
+      prComment: teaApiTransport,
+      comments: teaApiTransport,
+      labels: labelCreateSupported && issueLabelAdd && issueLabelRemove,
+      labelList,
+      // `labelCreate` is the key the operation gate reads, so the read the create depends on is
+      // folded into it rather than exposed as a second per-operation entry. A tea that cannot list
+      // labels therefore reports `label-create` as unsupported and creates nothing, instead of
+      // falling back to the unconditional create whose duplicates this whole path exists to stop.
+      labelCreate: labelCreateSupported,
+      reviewCreate: false,
+      // The review-thread read rides on the same `tea api` transport as the gate reads, because that
+      // is where it now goes: `tea pulls review-comments` states no login and no timestamp, so the
+      // subcommand's presence never attested a usable read in the first place.
+      reviewThreads: teaApiTransport,
+      // Read per instance from the forge's API description, and served only when it declares both
+      // POST routes (`threadWrites` above states why one route alone enables neither).
+      // `tea pulls resolve --help` attests the client subcommand, never the route behind it: a live
+      // `15.0.3+gitea-1.22.0` Forgejo declares no `…/pulls/comments/…` path at all and rejects the
+      // resolve with a router 405, while Gitea declares both routes. Without the `reviewThreadWrites`
+      // request, when the description cannot be read, or with one route alone, neither write is
+      // served and `merge-gate` takes its provider-settled path.
+      reviewThreadReplies: threadWrites,
+      reviewThreadResolution: threadWrites,
+      conditionalWrites: false,
+    },
+  };
+}
+
+function normalizeLabel(label) {
+  return typeof label === 'string' ? label : label?.name;
+}
+
+// tea's list renderer flattens `labels` into a **whitespace**-joined string while its single-item
+// renderer returns an array, so the same field arrives in two shapes one call apart. Splitting
+// the string rather than discarding it matters: an `Array.isArray(...) ? ... : []` guard would
+// stop the crash but silently drop every label the list form actually carries.
+//
+// The separator is a space, not a comma: `modules/print` joins the names with `" "` in v0.14.2
+// and v0.15.1 alike, so splitting on `,` returned the whole joined list as one label name. That
+// makes the split lossy in the other direction — Gitea permits a space inside a label name, and
+// `good first issue` cannot be told apart from three labels on this wire format at all. Every
+// read that has somewhere better to go now takes the raw API instead, where `Labels` is a real
+// array; this split is what remains for the renderer paths that have no such alternative, and it
+// is a best effort rather than a faithful decoding.
+function normalizeLabels(value) {
+  const items = typeof value === 'string' ? value.split(/\s+/) : value;
+  if (!Array.isArray(items)) return [];
+  return items
+    .map(normalizeLabel)
+    .map((label) => (typeof label === 'string' ? label.trim() : label))
+    .filter(Boolean);
+}
+
+// The only two account classes an authorship read can prove. GitHub states the class under two
+// spellings for the same two values — `type` on the REST simple-user object, `__typename` on the
+// GraphQL actor — so one allow-list decides both. A class outside them (a GHES
+// `EnterpriseUserAccount`, a migration `Mannequin`, an `Organization`) proves nothing about
+// automation and must stay undecided: reporting `human` for it would state as a fact something the
+// provider never said, and `unknown` is precisely this record's word for "nobody decided". Matching
+// ignores case, because case is spelling rather than class — the same discipline
+// `VIEWER_ACCOUNT_TYPES` applies to the identity read.
+//
+// Forgejo and every released Gitea state no class at all — their `structs.User` carries no
+// account-type field — so `author.type` in `normalizeAuthor` and `item.type` in `normalizeViewer`
+// both read `undefined` there by design, not for want of parsing: authorship falls back to
+// `is_bot` and the `[bot]` login suffix, and the identity read states no type. Gitea `main` has
+// since added `type` with GitHub's own capitalized values (`User`, `Organization`, `Bot`), which
+// this same allow-list already decides, leaving `Organization` undecided.
+const AUTHOR_ACCOUNT_TYPES = Object.freeze(['User', 'Bot']);
+
+function declaredAccountBot(value) {
+  const declared = typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+  const type = AUTHOR_ACCOUNT_TYPES.find(
+    (candidate) => candidate.toLowerCase() === declared?.toLowerCase(),
+  );
+  return type === undefined ? undefined : type === 'Bot';
+}
+
+function normalizeAuthor(author) {
+  const login =
+    typeof author === 'string'
+      ? author
+      : (author?.login ?? author?.username ?? author?.user_name ?? author?.name);
+  const explicitBot =
+    typeof author === 'object' && author !== null
+      ? (author.is_bot ??
+        author.isBot ??
+        declaredAccountBot(author.type) ??
+        declaredAccountBot(author.__typename))
+      : undefined;
+  const inferredBot = typeof login === 'string' && /\[bot\]$/i.test(login) ? true : undefined;
+  const isBot = explicitBot ?? inferredBot;
+  return {
+    // An absent login stays absent in process as well as across JSON serialization. Consumers
+    // still read undefined, and the CLI's serialized output remains exactly the same.
+    ...(login === undefined ? {} : { login }),
+    isBot: isBot ?? null,
+    authorType: isBot === true ? 'bot' : isBot === false ? 'human' : 'unknown',
+  };
+}
+
+function normalizeIssue(item, repository, metadata = {}) {
+  if (!item || typeof item !== 'object')
+    fail('INVALID_PAYLOAD', 'provider returned an invalid issue');
+  // Truthiness, never key presence. `Issue.PullRequest` carries no `omitempty`, so **every** raw
+  // Gitea/Forgejo issue arrives with `"pull_request": null` and a key-presence guard would reject
+  // the entire result set rather than the pull requests in it. The sibling filters that drop pull
+  // requests out of an issue listing are truthiness-based for the same reason.
+  if (item.pull_request) {
+    fail('INVALID_PAYLOAD', 'provider returned a pull request where an issue was required');
+  }
+  return {
+    number: requireNumber(item.number ?? item.index, 'provider issue number'),
+    title: item.title ?? '',
+    body: item.body ?? item.description ?? '',
+    state: String(item.state ?? '').toLowerCase(),
+    // Terminal and done are two facts, and only this field separates them. GitHub states why a
+    // closed issue is closed — `completed` for delivered work, `not_planned` for withdrawn work —
+    // while Forgejo states nothing of the kind, so the field is emitted only where the provider
+    // actually spells one and is **absent** rather than guessed otherwise. A consumer therefore
+    // reads an absence as "this provider states no reason" and never as a cancellation: inferring
+    // one would make every Forgejo issue, and every GitHub issue closed before the field existed,
+    // permanently unreconcilable. The merge gate's post-merge observation phase is the consumer, and it
+    // is what keeps a cancelled issue from having its in-progress label stripped and its container
+    // entry ticked as if the work had shipped.
+    ...(typeof item.state_reason === 'string' && item.state_reason.length > 0
+      ? { stateReason: item.state_reason.toLowerCase() }
+      : {}),
+    author: normalizeAuthor(item.user ?? item.author ?? item.poster),
+    ...(normalizeTimestamp(item.created_at, item.createdAt) === undefined
+      ? {}
+      : { createdAt: normalizeTimestamp(item.created_at, item.createdAt) }),
+    ...(normalizeTimestamp(item.updated_at, item.updatedAt) === undefined
+      ? {}
+      : { updatedAt: normalizeTimestamp(item.updated_at, item.updatedAt) }),
+    labels: normalizeLabels(item.labels),
+    url: item.html_url ?? item.url ?? item.web_url,
+    repository: repository.slug,
+    ...(metadata.version ? { version: metadata.version } : {}),
+  };
+}
+
+function normalizeSubIssue(item, repository, parent, metadata = {}) {
+  const issue = normalizeIssue(item, repository, metadata);
+  const marker = inspectDecompositionKey(issue.body, parent, 'forge');
+  return {
+    ...issue,
+    parent: { number: parent, repository: repository.slug },
+    ...(marker.status === 'valid' ? { decompositionKey: marker.key } : {}),
+    ...(marker.status === 'invalid' ? { decompositionKeyError: marker.error } : {}),
+  };
+}
+
+// A pull request states its branch twice, and the two providers spell the pair the other way round.
+// Gitea's `PRBranchInfo` declares `Ref json:"ref"` and `Name json:"label"`: `services/convert` sets
+// `Ref` to the branch name only while **both** the head repository record and the head branch still
+// exist, and otherwise leaves it at `refs/pull/<index>/head` — a deleted head branch, a deleted fork
+// and an AGit-flow pull request all land there — while `Name` is unconditionally `pr.HeadBranch`.
+// GitHub states the same two keys with the opposite meaning: its `ref` is the bare branch and its
+// `label` is `owner:branch`.
+//
+// So neither key can be preferred unconditionally. `ref` wins, and `label` is consulted only when
+// `ref` is a pull ref, which GitHub never states — so the fallback is unreachable there and exact on
+// Gitea. Getting this wrong is silent in the worst way: `pr-list`'s `input.head` filter and
+// `src/tools/pr.md`'s `head === <head-branch>` match would both miss an open pull request whose
+// branch the forge has already deleted, and the caller would create a second one.
+const PULL_HEAD_REF = /^refs\/pull\/\d+\/head$/;
+
+function normalizeBranchRef(branch) {
+  if (typeof branch !== 'object' || branch === null) return undefined;
+  const ref = typeof branch.ref === 'string' && branch.ref !== '' ? branch.ref : undefined;
+  if (ref !== undefined && !PULL_HEAD_REF.test(ref)) return ref;
+  const label = typeof branch.label === 'string' && branch.label !== '' ? branch.label : undefined;
+  return label ?? ref;
+}
+
+function normalizePullRequest(item, repository, metadata = {}) {
+  const issue = normalizeIssue(item, repository, metadata);
+  return {
+    ...issue,
+    head: normalizeBranchRef(item.head) ?? item.headRefName ?? item.head_branch ?? item.head,
+    base: normalizeBranchRef(item.base) ?? item.baseRefName ?? item.base_branch ?? item.base,
+    draft: item.draft ?? item.isDraft ?? false,
+    ...(normalizeTimestamp(item.merged_at, item.mergedAt) === undefined
+      ? {}
+      : { mergedAt: normalizeTimestamp(item.merged_at, item.mergedAt) }),
+    ...(normalizeTimestamp(item.closed_at, item.closedAt) === undefined
+      ? {}
+      : { closedAt: normalizeTimestamp(item.closed_at, item.closedAt) }),
+  };
+}
+
+// The repository a pull request's head branch lives in, as the canonical `owner/repo` string. Both
+// providers state it on the same key: GitHub's REST `head.repo` and Gitea/Forgejo's
+// `PRBranchInfo.Repository` (`json:"repo"`, no `omitempty`) are the full repository object, and
+// both state `null` once the head repository is gone — GitHub for a deleted fork, Forgejo whenever
+// `services/convert` finds no head repository record. A same-named branch in a fork is therefore
+// told apart from this repository's own branch by this field and never by `head`, which on Forgejo
+// is the bare branch even for a fork.
+//
+// The slug is for reports only. Whether the head is this repository's own is `sameRepository`
+// below, which a caller decides with instead of comparing this string against one it derived from
+// a remote URL: a slug differs in case from the canonical spelling, and survives no rename.
+//
+// Three outcomes, and the difference between the last two is load-bearing:
+// - a usable repository object yields its `owner/repo`;
+// - an explicit `null` yields `null` — the provider **stated** that no head repository exists, and
+//   a caller treats that as foreign;
+// - a payload that does not state the key at all, or states an object with no usable name, yields
+//   `undefined`, so the record carries no field. That is "the provider said nothing", which a
+//   caller hydrates through `pr-read` and otherwise treats as incomplete output — never as a match
+//   and never as a proven fork. Mapping it to `null` would turn a truncated payload into a
+//   statement the forge never made.
+const REPOSITORY_SLUG = /^[^/\s]+\/[^/\s]+$/;
+
+function repositorySlug(repo) {
+  if (typeof repo !== 'object' || repo === null) return undefined;
+  if (typeof repo.full_name === 'string' && REPOSITORY_SLUG.test(repo.full_name)) {
+    return repo.full_name;
+  }
+  const owner = repo.owner?.login ?? repo.owner?.username;
+  const name = repo.name;
+  const slug = typeof owner === 'string' && typeof name === 'string' ? `${owner}/${name}` : '';
+  return REPOSITORY_SLUG.test(slug) ? slug : undefined;
+}
+
+function normalizeHeadRepository(head) {
+  if (typeof head !== 'object' || head === null || !Object.hasOwn(head, 'repo')) return undefined;
+  if (head.repo === null) return null;
+  return repositorySlug(head.repo);
+}
+
+// Whether the head branch lives in the base repository — the one fact plan discovery decides
+// ownership with. Both ends come from the same payload, so no caller-derived slug takes part:
+//
+// - both repository objects state an integer `id`: the ids decide, so a renamed or transferred
+//   repository still matches itself and a same-named fork with another id never does;
+// - otherwise both slugs decide, compared ASCII case-insensitively, because both forges treat an
+//   owner and a repository name case-insensitively while reporting whatever casing was stored.
+//
+// Three outcomes, mirroring `headRepository`: `true`; `false` for an explicit `head.repo: null` (a
+// deleted fork is never this repository) or a stated difference; and `undefined` — no field — when
+// the payload does not state `head.repo`, or states either end unusably. Absence is "the provider
+// said nothing", which a caller hydrates through `pr-read` and never reads as either answer.
+function asciiLowerCase(text) {
+  return text.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+}
+
+function normalizeSameRepository(head, base) {
+  if (typeof head !== 'object' || head === null || !Object.hasOwn(head, 'repo')) return undefined;
+  if (head.repo === null) return false;
+  if (typeof head.repo !== 'object' || typeof base !== 'object' || base === null) return undefined;
+  const headRepo = head.repo;
+  const baseRepo = base.repo;
+  if (typeof baseRepo !== 'object' || baseRepo === null) return undefined;
+  if (Number.isSafeInteger(headRepo.id) && Number.isSafeInteger(baseRepo.id)) {
+    return headRepo.id === baseRepo.id;
+  }
+  const headSlug = repositorySlug(headRepo);
+  const baseSlug = repositorySlug(baseRepo);
+  if (headSlug === undefined || baseSlug === undefined) return undefined;
+  return asciiLowerCase(headSlug) === asciiLowerCase(baseSlug);
+}
+
+// The plan pull-request marker: the discovery key a published plan's draft pull request carries in
+// its body. It is parsed here, deterministically, so a workflow reads two normalized fields and
+// never the body itself — body text is attacker-influenceable, and a fork's pull request can carry
+// any text it likes. This follows the precedent of `inspectDecompositionKey`.
+//
+// The grammar is exact and has no tolerance beyond spaces and tabs around the line:
+//
+//   <!-- effective-flow-plan-pr:v1 {"plan":"<path>"} -->
+//
+// on a body line of its own, exactly once, with the JSON in its canonical `JSON.stringify` spelling
+// and a single `plan` key, carrying a path `isSafePlanPath` admits.
+//
+// Only a **marker line** takes part: a line that, after its leading spaces and tabs, begins with
+// `<!-- effective-flow-plan-pr:`. A prose mention of the key anywhere else is ignored, so a pull
+// request that merely talks about the marker neither gains an error nor becomes a `duplicate`. The
+// trim is spaces and tabs only, never `String.prototype.trim()`: a no-break space, a zero-width
+// character or a line separator in front of the comment is not whitespace here, so such a line is
+// not a marker line at all.
+//
+// The helper does not interpret Markdown. A marker inside a fenced code block, an indented block or
+// a block quote's `> ` prefix is judged by the same line rule as anywhere else — the fence neither
+// hides a marker line nor turns a quoted one into one — because the body is attacker-influenceable
+// text, and a second parser deciding what is "really" code would be a second place to disagree.
+//
+// Every body with a marker line, or with a marker comment that has other text in front of it,
+// yields exactly one of two fields, so a caller can tell a body without a marker from one whose
+// marker was rejected. The error codes are stable and checked in this precedence:
+// - `duplicate`    — more than one marker line;
+// - `not-own-line` — the marker comment has other text on its line: text after the closing `-->` of
+//                    the one marker line, or, when there is no marker line at all, text in front
+//                    of a `<!-- effective-flow-plan-pr:` comment;
+// - `malformed`    — anything else that is not the exact form, including a JSON object that is not
+//                    exactly `{"plan":"<string>"}`;
+// - `unsafe-path`  — the exact form, carrying a path that breaks the rules of `isSafePlanPath`.
+//
+// A comment with text in front of it never counts beside a marker line: with one marker line
+// present, that line alone is judged.
+const PLAN_PR_MARKER_OPENER = '<!-- effective-flow-plan-pr:';
+// `s`, because the body is already split into lines on `\r\n`, `\n` and `\r`, and the two Unicode
+// separators `.` would otherwise stop at are the path rule's to refuse, as `unsafe-path`.
+const PLAN_PR_MARKER_LINE = /^<!-- effective-flow-plan-pr:v1 (.*) -->$/s;
+
+// The rule a plan path has to pass, as a marker's value and as `pr-list`'s `planPath` alike. It
+// is the configuration path contract and nothing narrower: `plan.dir` is free text, canonicalized
+// to a repository-relative directory before it is written, and a plan's file name is free too, so a
+// path may carry spaces, glob characters, shell-significant characters such as `&`, `;`, `$` and
+// quotes, and any script. Shell safety is the consumers' duty, not this rule's: a caller passes the
+// path as one literal, quoted argument behind `--` and as a `:(literal)` pathspec wherever Git reads
+// a pathspec, and never interpolates it unquoted. In the marker a `"` travels JSON-escaped, which the
+// canonical `JSON.stringify` comparison already requires. What this rule refuses is only what makes a
+// path structurally unsafe or ambiguous:
+// - ill-formed UTF-16 (a lone surrogate half);
+// - a control (`Cc`, the line feed included), format (`Cf` — the bidirectional overrides and the
+//   zero-width characters), line- or paragraph-separator character;
+// - a backslash, which a Windows checkout reads as a separator;
+// - an absolute path — a leading `/`, which is an empty first segment — or a drive letter (`C:/…`,
+//   `c:…`); a leading `:` is refused with it, because it is Git's pathspec magic prefix and would
+//   change what a caller's pathspec means; a `:` anywhere else is an ordinary character;
+// - an empty, `.` or `..` segment, so no traversal and no non-canonical spelling;
+// - a missing `.md` suffix.
+// A segment beginning with `-` passes: behind `--` neither Git nor a quoted argument reads it as an
+// option.
+const PLAN_PATH_FORBIDDEN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\\]/u;
+const PLAN_PATH_DRIVE_OR_MAGIC = /^(?:[A-Za-z]:|:)/;
+
+function isSafePlanPath(path) {
+  if (typeof path !== 'string' || path === '' || !path.isWellFormed()) return false;
+  if (PLAN_PATH_FORBIDDEN.test(path) || PLAN_PATH_DRIVE_OR_MAGIC.test(path)) return false;
+  const segments = path.split('/');
+  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+    return false;
+  }
+  return path.endsWith('.md');
+}
+
+function trimSpacesAndTabs(line) {
+  return line.replace(/^[ \t]+|[ \t]+$/g, '');
+}
+
+export function inspectPlanPrMarker(body) {
+  const text = typeof body === 'string' ? body : '';
+  const lines = text.split(/\r\n|\n|\r/).map(trimSpacesAndTabs);
+  const markerLines = lines.filter((line) => line.startsWith(PLAN_PR_MARKER_OPENER));
+  if (markerLines.length > 1) return { status: 'invalid', error: 'duplicate' };
+  if (markerLines.length === 0) {
+    return lines.some((line) => line.includes(PLAN_PR_MARKER_OPENER))
+      ? { status: 'invalid', error: 'not-own-line' }
+      : { status: 'absent' };
+  }
+  const line = markerLines[0];
+  const match = line.match(PLAN_PR_MARKER_LINE);
+  if (!match) {
+    // The exact form is tried first, so a `-->` inside the JSON is judged by the JSON and the path
+    // rules rather than read as the comment's end. Only a line that is not the exact form is
+    // searched for a closing `-->` with text after it.
+    const closer = line.indexOf('-->', PLAN_PR_MARKER_OPENER.length);
+    return closer !== -1 && closer + 3 < line.length
+      ? { status: 'invalid', error: 'not-own-line' }
+      : { status: 'invalid', error: 'malformed' };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(match[1]);
+  } catch {
+    return { status: 'invalid', error: 'malformed' };
+  }
+  if (
+    typeof parsed !== 'object' ||
+    parsed === null ||
+    Array.isArray(parsed) ||
+    typeof parsed.plan !== 'string' ||
+    JSON.stringify({ plan: parsed.plan }) !== match[1]
+  ) {
+    return { status: 'invalid', error: 'malformed' };
+  }
+  if (!isSafePlanPath(parsed.plan)) return { status: 'invalid', error: 'unsafe-path' };
+  return { status: 'valid', plan: parsed.plan };
+}
+
+function requirePlanPath(value) {
+  if (!isSafePlanPath(value)) {
+    fail('INVALID_PAYLOAD', 'planPath must be a safe repository-relative path ending in .md', {
+      field: 'planPath',
+    });
+  }
+  return value;
+}
+
+// The record `pr-read` and `pr-list` return: the normalized pull request plus the facts plan
+// discovery keys on. They are added only on these two reads, so every other operation that happens
+// to normalize a pull request — `pr-create`, `pr-update-body`, `pr-update-title` — keeps its
+// record exactly as it was. Each discovery field is absent, never guessed, when the payload does
+// not state what it rests on, which is also what keeps a payload without `head.repo` byte-identical
+// to the record it produced before these fields existed.
+function normalizePullRequestRecord(item, repository, metadata = {}) {
+  const pullRequest = normalizePullRequest(item, repository, metadata);
+  const headRepository = normalizeHeadRepository(item.head);
+  const sameRepository = normalizeSameRepository(item.head, item.base);
+  const marker = inspectPlanPrMarker(pullRequest.body);
+  return {
+    ...pullRequest,
+    ...(headRepository === undefined ? {} : { headRepository }),
+    ...(sameRepository === undefined ? {} : { sameRepository }),
+    ...(marker.status === 'valid' ? { planPrMarker: marker.plan } : {}),
+    ...(marker.status === 'invalid' ? { planPrMarkerError: marker.error } : {}),
+  };
+}
+
+// Provider timestamps arrive under several spellings, and a caller that has to decide whether a
+// comment is newer than the head commit must not parse three shapes to do it. The first usable
+// value wins and is re-emitted in UTC: Gitea reports a local offset while GitHub reports `Z`, so
+// without canonicalization an ordinary string comparison of two instants would order them wrongly.
+// An unusable or absent value yields no field at all — the caller reads a missing timestamp as
+// "cannot prove this is current", which blocks a merge instead of waving a stale run through.
+// Date's ISO parser rolls February 30 and 24:00 into another instant. Provider evidence
+// must name a real calendar date and clock reading before timezone conversion can occur.
+function validProviderTimestamp(value) {
+  // GitHub and Gitea/Forgejo expose RFC3339 timestamps (Go may include nanoseconds).
+  // Require the complete date, clock and explicit zone; Date's legacy human/numeric
+  // string heuristics cannot establish a provider instant.
+  const parts = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(?:[Zz]|([+-])(\d{2}):(\d{2}))$/,
+  );
+  if (!parts) return false;
+  const [
+    ,
+    yearText,
+    monthText,
+    dayText,
+    hourText,
+    minuteText,
+    secondText,
+    ,
+    offsetHour,
+    offsetMinute,
+  ] = parts;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return (
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= days[month - 1] &&
+    Number(hourText) < 24 &&
+    Number(minuteText) < 60 &&
+    Number(secondText) < 60 &&
+    (offsetHour === undefined || (Number(offsetHour) < 24 && Number(offsetMinute) < 60))
+  );
+}
+function normalizeTimestamp(...values) {
+  for (const value of values) {
+    if (typeof value !== 'string' || value.trim() === '') continue;
+    if (!validProviderTimestamp(value.trim())) continue;
+    const parsed = new Date(value.trim());
+    if (Number.isNaN(parsed.getTime())) continue;
+    return parsed.toISOString();
+  }
+  return undefined;
+}
+
+// **The Go zero instant is not a timestamp; it is the marshalled form of "never set".** Gitea
+// declares its review submission field as a plain `time.Time` with no `omitempty`, so a review that
+// was never submitted serialises `0001-01-01T00:00:00Z` instead of omitting the field.
+//
+// What counts as that instant is decided by the **instant**, never by the string: every
+// serialisation that parses to the same moment counts — the bare `Z` form, any UTC-offset variant of
+// it (`0001-01-01T00:00:00+00:00`, `0000-12-31T23:00:00-01:00`), and any sub-second form
+// (`0001-01-01T00:00:00.000Z`). Every other timestamp is left untouched, so the only thing this can
+// misread is a genuine year-1 submission time, which no forge can produce.
+const GO_ZERO_INSTANT_MS = Date.parse('0001-01-01T00:00:00Z');
+
+function isGoZeroInstant(value) {
+  if (typeof value !== 'string' || value.trim() === '') return false;
+  const parsed = Date.parse(value.trim());
+  return !Number.isNaN(parsed) && parsed === GO_ZERO_INSTANT_MS;
+}
+
+// A pending check has no conclusion yet. Every state that is not a finished one counts as pending,
+// so an unknown future provider state blocks a merge instead of being read as a green result.
+const PENDING_CHECK_STATES = new Set([
+  'PENDING',
+  'EXPECTED',
+  'QUEUED',
+  'WAITING',
+  'REQUESTED',
+  'IN_PROGRESS',
+]);
+
+function upperCaseField(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim().toUpperCase() : undefined;
+}
+
+// One check arrives in three provider shapes: the `CheckRun` and `StatusContext` members of
+// `statusCheckRollup`, and the flattened item `gh pr checks --json` prints. They are folded into one
+// record so `pr-status-read` and `pr-checks-wait` report the same list. Fields the provider does not
+// expose stay absent instead of being guessed — the discipline `authorType` already follows for an
+// undecidable bot flag. `required` is the concrete case: only the GraphQL status read states per
+// context whether branch protection marks a check as required, `gh pr checks --json` never does, and
+// Forgejo has no such flag at all — so a check from either of the latter two reports no flag rather
+// than a guessed one, which a caller reads as "requiredness unknown" instead of "not required".
+function normalizeCheck(item) {
+  if (!item || typeof item !== 'object') {
+    fail('INVALID_PAYLOAD', 'provider returned an invalid check');
+  }
+  const status = upperCaseField(item.status);
+  const state = upperCaseField(item.state);
+  const bucket = typeof item.bucket === 'string' ? item.bucket.trim().toLowerCase() : undefined;
+  const pending =
+    bucket !== undefined
+      ? bucket === 'pending'
+      : status !== undefined
+        ? status !== 'COMPLETED'
+        : PENDING_CHECK_STATES.has(state ?? '');
+  const conclusion = upperCaseField(item.conclusion) ?? (status === undefined ? state : undefined);
+  const url = item.detailsUrl ?? item.targetUrl ?? item.link ?? item.url;
+  const required =
+    typeof item.isRequired === 'boolean'
+      ? item.isRequired
+      : typeof item.required === 'boolean'
+        ? item.required
+        : undefined;
+  return {
+    name: item.name ?? item.context ?? item.workflowName,
+    status: pending ? 'PENDING' : 'COMPLETED',
+    ...(pending || conclusion === undefined ? {} : { conclusion }),
+    ...(typeof url === 'string' && url !== '' ? { url } : {}),
+    ...(required === undefined ? {} : { required }),
+  };
+}
+
+// The identity whose runs supersede one another, for a GitHub `CheckRun` only. A re-run keeps the
+// check's name, its workflow, and the workflow run's triggering event; the event belongs to the
+// identity because a `push` run and a `pull_request` run of one workflow test different trees, and
+// the workflow because two workflows may define a job of the same name — either way a green run
+// must not hide a red one of a different check. The workflow is identified by its numeric
+// `databaseId`, not its name: two workflow files may declare the same `name:`, so a name would
+// merge their runs. The run's scope id is returned beside the key: the workflow run's own
+// `databaseId`, since a check's `name` is only a job's display name: two distinct jobs of one
+// workflow run may share it, and `latestCheckRuns` must be able to tell them apart from a re-run of
+// one job. A run outside GitHub Actions, which GraphQL states as `workflowRun: null`, has no
+// workflow run, and its app slug takes that place; its scope id is its check suite's own
+// `databaseId`, because a GitHub App may create several same-named check runs in one check suite,
+// and nothing in the query orders them as re-runs. The Actions path ignores the check-suite id. A
+// status context, a Forgejo status, and a run whose identity is incomplete return nothing and are
+// never collapsed, so an incomplete payload is reported in full rather than merged on a guess: no
+// check suite, a suite without the `workflowRun` key (which states nothing, unlike `null`), a
+// workflow run without a safe-integer workflow id, without a safe-integer workflow-run id, or
+// without a string event, and a fallback run without an app slug or without a safe-integer
+// check-suite id.
+function checkRunIdentity(node) {
+  if (node?.__typename !== 'CheckRun' || typeof node.name !== 'string') return undefined;
+  const suite = node.checkSuite;
+  if (suite === null || typeof suite !== 'object' || !Object.hasOwn(suite, 'workflowRun')) {
+    return undefined;
+  }
+  const run = suite.workflowRun;
+  if (run !== null) {
+    const workflowId = run?.workflow?.databaseId;
+    const workflowRunId = run?.databaseId;
+    return Number.isSafeInteger(workflowId) &&
+      Number.isSafeInteger(workflowRunId) &&
+      typeof run?.event === 'string'
+      ? {
+          key: JSON.stringify(['workflow', node.name, workflowId, run.event]),
+          scopeId: workflowRunId,
+        }
+      : undefined;
+  }
+  const slug = suite.app?.slug;
+  const checkSuiteId = suite.databaseId;
+  return typeof slug === 'string' && Number.isSafeInteger(checkSuiteId)
+    ? { key: JSON.stringify(['app', node.name, slug]), scopeId: checkSuiteId }
+    : undefined;
+}
+
+// `pr-status-read` only: the rollup reports every run on the head commit, including runs a later run
+// of the same check superseded, so a red run that was re-run green would block the gate forever at
+// an unmoved head. Per identity only the run with the highest `databaseId` is kept — whatever its
+// state, so a latest run that is pending or failed blocks exactly as before — and the kept entries
+// stay in rollup order. The id is compared as a number: it exceeds 32 bits but is a safe integer.
+// A group fails closed to today's full report when any of its runs lacks a safe-integer id, or when
+// the highest id is not unique, because neither case says which run is the latest. It also fails
+// closed when two of its runs share one scope. For a GitHub Actions run the scope is its workflow
+// run: a re-run attempt of a job stays in its workflow run, but GitHub's rollup already lists only
+// that job's latest attempt, so two same-named runs of one workflow run are distinct jobs sharing a
+// display name, and GraphQL exposes no per-job id that could order them. For a run of the app-slug
+// fallback the scope is its check suite: an app may create several same-named runs in one suite,
+// and nothing in the query orders them as re-runs. Only runs of different workflow runs, or of
+// different check suites, supersede one another. Each kept run also carries how many runs of its
+// identity it superseded: at least 1 only for the kept run of a collapsed group, 0 everywhere else,
+// so a caller can tell a re-run from a first run that merely started late.
+// `pr-checks-wait` shares `normalizeCheck` but not this step; its output stays unchanged.
+function latestCheckRuns(rollup) {
+  const groups = new Map();
+  rollup.forEach((node, index) => {
+    const identity = checkRunIdentity(node);
+    if (identity === undefined) return;
+    const members = groups.get(identity.key);
+    const member = { index, scopeId: identity.scopeId };
+    if (members === undefined) groups.set(identity.key, [member]);
+    else members.push(member);
+  });
+  const superseded = new Set();
+  const supersededBy = new Map();
+  for (const members of groups.values()) {
+    if (members.length < 2) continue;
+    const scopeIds = members.map((member) => member.scopeId);
+    if (new Set(scopeIds).size !== scopeIds.length) continue;
+    const ids = members.map((member) => rollup[member.index].databaseId);
+    if (!ids.every((id) => Number.isSafeInteger(id))) continue;
+    const highest = Math.max(...ids);
+    if (ids.filter((id) => id === highest).length !== 1) continue;
+    members.forEach((member, position) => {
+      if (ids[position] !== highest) superseded.add(member.index);
+      else supersededBy.set(member.index, members.length - 1);
+    });
+  }
+  return {
+    runs: rollup.flatMap((node, index) =>
+      superseded.has(index) ? [] : [{ node, supersededRuns: supersededBy.get(index) ?? 0 }],
+    ),
+    supersededCount: superseded.size,
+  };
+}
+
+// One `pr-status-read` check: the shared record plus the instants the provider states, each omitted
+// when absent or unparseable, like `conclusion`. A GitHub status context has one instant, the
+// posting of its final state, which is a completion time, so it reports `completedAt` only: a start
+// time it does not have would let a slow first run pass for a re-run after a review. A Forgejo
+// record arrives with its `completedAt` already set by `forgejoCheckRecord`. Kept apart from
+// `normalizeCheck` so `pr-checks-wait` reports no timestamps.
+function statusCheck(item) {
+  const check = normalizeCheck(item);
+  const isStatusContext = item.__typename === 'StatusContext';
+  const startedAt = isStatusContext ? undefined : normalizeTimestamp(item.startedAt);
+  const completedAt = normalizeTimestamp(
+    item.completedAt,
+    isStatusContext ? item.createdAt : undefined,
+  );
+  return {
+    ...check,
+    ...(startedAt === undefined ? {} : { startedAt }),
+    ...(completedAt === undefined ? {} : { completedAt }),
+  };
+}
+
+// The head commit is identified by its object name, never by its position in the commit list.
+// GitHub returns the first page of commits, so on a pull request with more than one page the last
+// entry is not the head — and a timestamp taken from the wrong commit would silently certify stale
+// bot feedback as current. Nothing matching means no field, which the caller reads as unprovable.
+function headCommitTimestamp(item, headSha) {
+  // A directly stated value outranks the `oid` comparison below, because a value the provider
+  // states outright is its own answer rather than one this code reconstructed. Exactly one producer
+  // sets it, and that is why the precedence is safe there: `flattenForgejoPullRequestStatus` reads
+  // the head commit **by** the head SHA the pull-request read just returned, so the value cannot
+  // describe a different commit — the match this function would perform has already happened, in
+  // the request itself. The GitHub path still reaches the comparison, because `PR_STATUS_QUERY` in
+  // `remote-tracker-github-core.mjs` selects no top-level timestamp. The precedence stays the
+  // hazard: adding such a field to the query, or to a flattener that does not address the commit by
+  // its object name, switches head verification off without touching a line of this function, so
+  // anyone introducing one has to decide here whether the stated value may still skip the match.
+  //
+  // `headCommittedAt` is the only field read, and a second, Forgejo-shaped
+  // `head.commit.committer.date` fallback was removed rather than kept: no producer can set it.
+  // `structs.PRBranchInfo` declares `label`, `ref`, `sha`, `repo_id` and `repo` and no commit
+  // member, so `flattenForgejoPullRequestStatus` — which passes `pull.head` straight through —
+  // cannot carry one, and the GitHub path spreads a GraphQL node whose selection set has no `head`
+  // field at all. Reading it was not a second source but a line that could never fire.
+  const direct = normalizeTimestamp(item.headCommittedAt);
+  if (direct !== undefined) return direct;
+  if (typeof headSha !== 'string' || headSha === '') return undefined;
+  const commits = Array.isArray(item.commits) ? item.commits : [];
+  const head = commits.find(
+    (commit) =>
+      typeof commit?.oid === 'string' && commit.oid.toLowerCase() === headSha.toLowerCase(),
+  );
+  if (head === undefined) return undefined;
+  return normalizeTimestamp(head.committedDate, head.committed_date, head.authoredDate);
+}
+
+// The GraphQL envelope, restated as the flat provider record the status normalizer already reads.
+// The query nests the head commit's timestamp and its check rollup under `commits(last:1)` because
+// that is where the schema keeps them, not because the gate wants two levels of nesting; unfolding
+// them here keeps `normalizePullRequestStatus` written against one record shape instead of teaching
+// it a second one, and hands the rollup over as the plain array of contexts the previous `--json`
+// read produced. The commits stay an array so the head timestamp is still attached by matching
+// `oid` against the head SHA rather than by trusting a position in a list, and the rollup is
+// selected by that same match. GitHub materializes the `commits` connection asynchronously, so
+// shortly after a push the returned node can still be the previous commit while `headRefOid`
+// already names the new one; taking the rollup from whichever node happens to come last would then
+// report that earlier commit's green checks as the head's, and "every reported check completed
+// successfully" would be satisfied by checks belonging to a commit that is not the one about to be
+// merged. No node matching the head SHA therefore yields no rollup at all, which the caller reads
+// as `checksReported: false` and the gate blocks on — the same answer an empty `commits` selection
+// already gives.
+//
+// A truncated rollup fails the read outright. `contexts(first:100)` is a page, and a pull request
+// can carry more contexts than that; a caller that evaluated "all checks green" against a page
+// which silently dropped contexts would merge a commit whose actual check list it never saw in
+// full. A merge criterion must never be evaluated on a partial check list, so a `totalCount` ahead
+// of the returned nodes is reported as an invalid payload naming both numbers instead of being
+// passed on as a plausible-looking shorter list.
+function flattenPullRequestStatus(raw) {
+  // GraphQL answers a partial failure with both halves at once: a `data` block for the fields that
+  // resolved and an `errors` array for the ones that did not — a sub-resolver that failed, a field
+  // the token may not read, a rate limit reached mid-query. Read as a clean payload, such a response
+  // would let the merge gate decide on a check list the provider never finished assembling. Whether
+  // `gh` also exits non-zero for it is the CLI's business and nothing here pins it, so the one read
+  // that gates a merge states the failure on its own evidence instead. The provider's wording
+  // travels along redacted, like every other piece of provider text this file reports.
+  const errors = Array.isArray(raw?.errors) ? raw.errors : [];
+  if (errors.length > 0) {
+    fail('INVALID_PAYLOAD', 'provider reported GraphQL errors for the status read', {
+      messages: redact(
+        errors.map((entry) =>
+          typeof entry?.message === 'string' ? entry.message : 'provider stated no message',
+        ),
+      ),
+    });
+  }
+  const pullRequest = raw?.data?.repository?.pullRequest;
+  if (!pullRequest || typeof pullRequest !== 'object') {
+    fail('INVALID_PAYLOAD', 'provider returned no pull request for the status read');
+  }
+  const commitNodes = Array.isArray(pullRequest.commits?.nodes) ? pullRequest.commits.nodes : [];
+  const commits = commitNodes
+    .map((node) => node?.commit)
+    .filter((commit) => commit !== null && typeof commit === 'object');
+  const headRefOid = pullRequest.headRefOid;
+  const headCommit =
+    typeof headRefOid === 'string' && headRefOid !== ''
+      ? commits.find(
+          (commit) =>
+            typeof commit.oid === 'string' && commit.oid.toLowerCase() === headRefOid.toLowerCase(),
+        )
+      : undefined;
+  const contexts = headCommit?.statusCheckRollup?.contexts;
+  // `null` — the rollup itself, its contexts, or its nodes — means the provider reported nothing
+  // here, which is a different fact from an empty list and stays distinguishable by omitting the
+  // field entirely rather than substituting an empty array.
+  const rollup = Array.isArray(contexts?.nodes) ? contexts.nodes : undefined;
+  if (
+    rollup !== undefined &&
+    typeof contexts.totalCount === 'number' &&
+    contexts.totalCount > rollup.length
+  ) {
+    fail('INVALID_PAYLOAD', 'provider returned a truncated check rollup', {
+      totalCount: contexts.totalCount,
+      returnedCount: rollup.length,
+    });
+  }
+  return {
+    ...pullRequest,
+    commits,
+    ...(rollup === undefined ? {} : { statusCheckRollup: rollup }),
+  };
+}
+
+// One Gitea commit status, restated as a check record. Read the JSON tag, never the Go field name:
+// `structs.CommitStatus` declares its `State` field with the tag `status`, so a per-entry state
+// arrives on the wire as `status`, while only the enclosing `structs.CombinedStatus` declares its
+// `State` with the tag `state`. The Go field is called `State` at both levels — that is the trap,
+// and reading the field name instead of the tag is what gives the wrong key for an entry.
+//
+// The translation into a check record is not optional either: a raw `status: "success"` reaching
+// `normalizeCheck` unchanged would be read through `pending = status !== 'COMPLETED'`, and
+// `success` is not `COMPLETED`, so a finished check would report as pending. Mapping it here keeps
+// one shape for both providers, and the record deliberately carries only `name`, `status`,
+// `conclusion`, `url`, and only a `completedAt` taken from `created_at`: no raw Gitea
+// key (`context`, `target_url`, `status`, `id`, `description`, `created_at`) survives into the
+// envelope. The combined status endpoint already returns one status per context, so nothing here
+// is superseded and `latestCheckRuns` leaves every record in place. The record's own `status` key
+// is the normalized output field `normalizeCheck` reads back; despite the shared name it is
+// unrelated to the raw input key above.
+//
+// `skipped` maps to a `SKIPPED` conclusion, which satisfies the merge gate's check criterion exactly
+// as GitHub's own `SKIPPED` does. `warning` is a non-success **completed** check and blocks.
+// Anything unknown is `PENDING`, so an unrecognized future state blocks a merge rather than reading
+// as a green result — the same discipline `PENDING_CHECK_STATES` applies on the GitHub side.
+const FORGEJO_CHECK_STATES = Object.freeze({
+  pending: Object.freeze({ status: 'PENDING' }),
+  success: Object.freeze({ status: 'COMPLETED', conclusion: 'SUCCESS' }),
+  failure: Object.freeze({ status: 'COMPLETED', conclusion: 'FAILURE' }),
+  error: Object.freeze({ status: 'COMPLETED', conclusion: 'ERROR' }),
+  warning: Object.freeze({ status: 'COMPLETED', conclusion: 'WARNING' }),
+  skipped: Object.freeze({ status: 'COMPLETED', conclusion: 'SKIPPED' }),
+});
+
+function forgejoCheckRecord(item, index) {
+  if (!item || typeof item !== 'object') {
+    fail('INVALID_PAYLOAD', 'provider returned an invalid commit status');
+  }
+  // `status` is the per-entry tag; `state` is kept as a fallback for any fork or older
+  // serialization that ever spelled it the other way. The type test rather than a plain `??` on
+  // `item.status` is deliberate: a non-string `status` must not shadow a usable `state`.
+  const raw = typeof item.status === 'string' ? item.status : item.state;
+  // A key that is present but holds an unrecognized value is a state this adapter does not know
+  // yet, and falls through to `PENDING` below. A key that is absent entirely is a payload it
+  // cannot read at all, and reading that as pending is precisely what made the wrong-key bug
+  // invisible from the outside — so it fails closed here, like the truncation guard below.
+  if (typeof raw !== 'string') {
+    fail('INVALID_PAYLOAD', 'provider returned a commit status with no state', {
+      index,
+      context: item.context,
+    });
+  }
+  const state = raw.trim().toLowerCase();
+  const mapped = FORGEJO_CHECK_STATES[state] ?? FORGEJO_CHECK_STATES.pending;
+  const url = item.target_url;
+  // A commit status has one instant, the posting of its final state, which is a completion time
+  // and not a start, so it is reported as `completedAt` only, as for a GitHub status context. The
+  // Go zero instant is the marshalled "never set", so it states none.
+  const created = isGoZeroInstant(item.created_at)
+    ? undefined
+    : normalizeTimestamp(item.created_at);
+  // No `required`: Forgejo states no requiredness anywhere, so every check reports it as unstated
+  // and `mergeGate.requireAllChecks: false` fails closed on each of them — stricter than the
+  // default, never looser.
+  return {
+    name: item.context,
+    status: mapped.status,
+    ...(mapped.conclusion === undefined ? {} : { conclusion: mapped.conclusion }),
+    ...(typeof url === 'string' && url !== '' ? { url } : {}),
+    ...(created === undefined ? {} : { completedAt: created }),
+  };
+}
+
+// Forgejo clamps `limit` to its `MAX_RESPONSE_ITEMS` setting, so this value is a request rather than
+// a guarantee — the truncation guard below reads the response header instead of comparing against
+// it.
+const FORGEJO_STATUS_LIMIT = 100;
+
+function forgejoCommitStatuses(response) {
+  const statuses = Array.isArray(response.body?.statuses) ? response.body.statuses : [];
+  // A null and an empty `statuses` list mean the same thing here and are reported the same way: the
+  // endpoint answers identically for a repository with no CI at all and for one whose CI has simply
+  // not reported yet, and the two are indistinguishable. No rollup therefore reaches the normalizer,
+  // which makes it state `checksReported: false`. A caller that read emptiness as green would merge
+  // a commit whose checks never ran, and with no merge state to catch it — Forgejo reports none —
+  // nothing else would. A non-2xx status never reaches this path; `teaApiSuccess` failed first.
+  if (statuses.length === 0) return undefined;
+  // The only sound truncation guard on this endpoint. Forgejo clamps `limit` to `MAX_RESPONSE_ITEMS`
+  // (default 50, operator-configurable), so a requested 100 returns 50 and "returned equals
+  // requested" can never fire, while omitting `limit` returns 30 rather than all. The body's own
+  // `total_count` reports the returned page length, not the total. `X-Total-Count` is the
+  // response-wide total, and a merge criterion must never be evaluated on a partial check list —
+  // the same reason GitHub's rollup is compared against its `totalCount`.
+  const total = Number(response.headers.get('x-total-count'));
+  if (Number.isFinite(total) && total > statuses.length) {
+    fail('INVALID_PAYLOAD', 'provider returned a truncated check rollup', {
+      totalCount: total,
+      returnedCount: statuses.length,
+    });
+  }
+  return statuses.map((item, index) => forgejoCheckRecord(item, index));
+}
+
+// The three Forgejo reads, restated as the flat provider record `normalizePullRequestStatus` already
+// reads. The record is built field by field rather than spread from the provider object, so its
+// shape is constrained here and no raw Gitea key can leak into the envelope.
+//
+// `mergeState` is deliberately absent. Forgejo's pull-request object has no `mergeStateStatus`
+// equivalent (`modules/structs/pull.go`: `mergeable` bool, `merge_base`, `draft`, `head.sha`, and no
+// merge-state field), so the adapter states none rather than fabricating a `CLEAN` the provider
+// never reported. `BEHIND` is therefore undetectable on Forgejo; a branch-protection rule that
+// blocks an outdated branch fails the merge closed server-side instead.
+//
+// `mergeable` is emitted as the string `MERGEABLE`, never as the boolean the provider stated, and
+// `false` is emitted as **no field at all**. Forgejo returns `mergeable: false` while its conflict
+// check is still running and for any WIP-titled pull request, so mapping that to `CONFLICTING` would
+// make a caller report a conflict that does not exist — on a branch it may have just repaired. The
+// string form is what makes that irreversible: `normalizePullRequestStatus` accepts a string enum
+// only, so passing the raw boolean through as a "simplification" yields no field rather than the
+// old defect.
+function flattenForgejoPullRequestStatus(pull, statuses, headCommittedAt) {
+  if (!pull || typeof pull !== 'object' || Array.isArray(pull)) {
+    fail('INVALID_PAYLOAD', 'provider returned no pull request for the status read');
+  }
+  // The browser URL replaces the API `url` the pull-request object carries.
+  // `normalizePullRequestStatus` reads exactly `item.url` — unlike `normalizeIssue`, which falls
+  // back through `html_url` — and adding such a fallback there would silently change GitHub's
+  // behaviour too, so the substitution belongs here. The result round-trips through
+  // `parseReference`; the API address does not.
+  const browserUrl = typeof pull.html_url === 'string' ? pull.html_url.trim() : '';
+  return {
+    number: pull.number ?? pull.index,
+    title: pull.title,
+    state: pull.state,
+    draft: pull.draft,
+    head: pull.head,
+    base: pull.base,
+    ...(browserUrl === '' ? {} : { url: browserUrl }),
+    ...(pull.mergeable === true ? { mergeable: 'MERGEABLE' } : {}),
+    ...(headCommittedAt === undefined ? {} : { headCommittedAt }),
+    ...(statuses === undefined ? {} : { statusCheckRollup: statuses }),
+  };
+}
+
+// The merge state is read from the forge, never inferred from the check list: a protected branch can
+// additionally require an approval, an up-to-date branch, or linear history, so "all checks green"
+// and "mergeable" are different statements and both travel in this envelope.
+function normalizePullRequestStatus(item, repository) {
+  if (!item || typeof item !== 'object') {
+    fail('INVALID_PAYLOAD', 'provider returned an invalid pull-request status');
+  }
+  const rollup = item.statusCheckRollup ?? item.checks;
+  const headSha = item.headRefOid ?? item.head?.sha ?? item.headSha;
+  const baseRef = item.baseRefName ?? item.base?.ref ?? item.baseRef;
+  const draft = item.isDraft ?? item.draft;
+  const mergeState = upperCaseField(item.mergeStateStatus ?? item.mergeState);
+  // Read as a string enum only, and deliberately so. A provider that states mergeability as a
+  // boolean has its flattener map the true case to `MERGEABLE` and omit the field otherwise — see
+  // `flattenForgejoPullRequestStatus`, the only such producer — so no boolean ever reaches here. A
+  // boolean branch mapping `false` to `CONFLICTING` used to exist for exactly that provider and was
+  // wrong for it: Forgejo returns `false` while its conflict check is still running and for any
+  // WIP-titled pull request. Without the branch, a later "simplification" that passes the raw field
+  // through cannot restore that defect: `upperCaseField(false)` is `undefined`, which omits the
+  // field, and an unstated mergeability fails closed everywhere it is consumed.
+  const mergeable = upperCaseField(item.mergeable);
+  const { runs, supersededCount } = latestCheckRuns(Array.isArray(rollup) ? rollup : []);
+  const checks = runs.map(({ node, supersededRuns }) => ({ ...statusCheck(node), supersededRuns }));
+  const headCommittedAt = headCommitTimestamp(item, headSha);
+  return {
+    number: requireNumber(item.number ?? item.index, 'provider pull-request number'),
+    repository: repository.slug,
+    // The title rides along because the same read decides the merge: a squash merge publishes the
+    // pull-request title as the commit subject, so it is a merge precondition, not decoration.
+    title: item.title ?? '',
+    state: String(item.state ?? '').toLowerCase(),
+    // A missing draft flag is stated as missing. It is the one field whose guessed default would
+    // point toward "merge allowed", so an absent value must block the gate rather than unblock it.
+    ...(typeof draft === 'boolean' ? { draft } : {}),
+    ...(typeof headSha === 'string' && headSha !== '' ? { headSha } : {}),
+    // The head commit's instant, so a caller can decide from this one read whether a reviewer's
+    // feedback belongs to the commit it is about to merge or to an earlier one.
+    ...(headCommittedAt === undefined ? {} : { headCommittedAt }),
+    ...(typeof baseRef === 'string' && baseRef !== '' ? { baseRef } : {}),
+    ...(mergeState === undefined ? {} : { mergeState }),
+    ...(mergeable === undefined ? {} : { mergeable }),
+    ...(item.url ? { url: item.url } : {}),
+    // "The provider reported no checks" and "the provider reported an empty list" both arrive as an
+    // empty array, and directly after a push GitHub may not have attached any run to the new head
+    // yet. Both facts are stated explicitly, because a caller that reads emptiness as green would
+    // merge a commit whose CI never ran.
+    checksReported: Array.isArray(rollup),
+    checkCount: checks.length,
+    // How many superseded runs `latestCheckRuns` removed; always stated, `0` when none was. It
+    // equals the sum of the per-check `supersededRuns`.
+    supersededCheckCount: supersededCount,
+    checks,
+  };
+}
+
+// The only two account classes this read can prove. A class outside them — a GHES
+// `EnterpriseUserAccount`, a migration `Mannequin`, an `Organization` — is reported as no type at
+// all rather than passed through: a caller branching `type === 'User'` for the shared-account path
+// would read every unknown class as a dedicated bot account and skip the identity comparison
+// entirely, which is the one direction this read exists to prevent. Matching ignores case, because
+// case is spelling rather than class, and the canonical form is what a caller compares against.
+const VIEWER_ACCOUNT_TYPES = Object.freeze(['User', 'Bot']);
+
+// The identity the current authentication belongs to. A caller that has to tell its own writes from
+// a person's cannot use the comment ID its own mutation returned: that ID lives only as long as the
+// process that created it, while the forge's authorship record survives every later run and cannot
+// be forged by a commenter. Only a value the provider actually states as a string is reported, so a
+// numeric, boolean, or structured field can never be coerced into a plausible-looking identity — a
+// fabricated login would let a caller claim a stranger's comment as its own.
+// The login is not one field among many but the whole answer, so a response that states none is a
+// failure rather than an empty result: the caller must not have to tell "no login" apart from
+// "login unknown" in prose. `type` stays optional and only distinguishes an account shared with a
+// person from a dedicated bot account.
+function normalizeViewer(item) {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    fail('INVALID_PAYLOAD', 'provider returned an invalid viewer identity');
+  }
+  const stated = (value) =>
+    typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+  const login = stated(item.login);
+  if (login === undefined) {
+    fail('INVALID_PAYLOAD', 'provider stated no authenticated login');
+  }
+  const declared = stated(item.type);
+  const type = VIEWER_ACCOUNT_TYPES.find(
+    (candidate) => candidate.toLowerCase() === declared?.toLowerCase(),
+  );
+  return { login, ...(type === undefined ? {} : { type }) };
+}
+
+function normalizeComment(comment) {
+  if (!comment || typeof comment !== 'object') {
+    fail('INVALID_PAYLOAD', 'provider returned an invalid issue comment');
+  }
+  // The timestamp is what makes an automatic reviewer's feedback attributable to one head commit
+  // rather than to the pull request as a whole, so it travels with every comment that can carry it.
+  const createdAt = normalizeTimestamp(comment.created_at, comment.createdAt, comment.created);
+  // The author is normalized exactly as a review-thread author is. Passing the provider's login
+  // straight through left this surface without `isBot` and `authorType` at all, which cost more
+  // than a missing field: the merge gate's human-comment guard could establish bot authorship for a
+  // top-level comment only from a configured login, and its trigger idempotency in app mode — which
+  // recognizes its own comment by `authorType: bot` — could never be proven and re-posted the
+  // trigger every round. This read selects no fields, so the REST `user` object arrives complete and
+  // states the account class in `type` — the same `User`/`Bot` distinction the GraphQL actor spells
+  // as `__typename`. The `[bot]` login suffix REST additionally carries stays the fallback for a
+  // payload that states no class.
+  return {
+    id: requireNumber(comment.id, 'provider comment id'),
+    body: comment.body ?? comment.content ?? '',
+    author: normalizeAuthor(comment.user ?? comment.poster ?? comment.author),
+    url: comment.html_url ?? comment.url,
+    ...(createdAt === undefined ? {} : { createdAt }),
+  };
+}
+
+// The provider-neutral review verdict, and the reason it exists: the two forges spell the same five
+// outcomes differently, and a consumer keyed on either spelling is a rule that silently never fires
+// on the other provider. This is the same reconciliation `AUTHOR_ACCOUNT_TYPES` performs for the
+// account class, one level up: the mapping lives here so every workflow contract can name one token
+// set and no prompt has to know which forge answered.
+//
+// Gitea's authority is `modules/structs/pull_review.go`, read by JSON tag and never by Go field
+// name — `Reviewer` is `user`, `ReviewerTeam` is `team`, `CommitID` is `commit_id`, `Submitted` is
+// `submitted_at`, `HTMLURL` is `html_url`. Its `ReviewStateType` constants are `APPROVED`,
+// `PENDING`, `COMMENT`, `REQUEST_CHANGES`, `REQUEST_REVIEW` and the empty string; GitHub's REST
+// review object spells the middle three `COMMENTED`, `CHANGES_REQUESTED` and nothing at all.
+const REVIEW_STATES = Object.freeze({
+  APPROVED: 'APPROVED',
+  CHANGES_REQUESTED: 'CHANGES_REQUESTED',
+  REQUEST_CHANGES: 'CHANGES_REQUESTED',
+  COMMENTED: 'COMMENTED',
+  COMMENT: 'COMMENTED',
+  DISMISSED: 'DISMISSED',
+  PENDING: 'PENDING',
+  REQUEST_REVIEW: 'REVIEW_REQUESTED',
+});
+
+// **Dismissal is a state on one forge and a flag on the other.** GitHub restates a withdrawn verdict
+// as the `DISMISSED` state; Gitea leaves `state` at `REQUEST_CHANGES` and sets a separate
+// `dismissed` boolean, so a consumer reading `state` alone would keep a merge blocked on Forgejo
+// with no clearing path at all. Folding the flag in here is what gives both forges one token.
+//
+// An unrecognized value **fails closed and is never passed through**: `UNKNOWN` is this record's
+// word for "the provider stated no verdict this contract can name", exactly as `authorType:
+// 'unknown'` is for the account class. Returning the raw string instead would let a future provider
+// spelling flow into a rule that compares against the neutral tokens and quietly match none of them.
+function normalizeReviewState(state, dismissed) {
+  if (dismissed === true) return 'DISMISSED';
+  const declared = typeof state === 'string' ? state.trim().toUpperCase() : '';
+  return REVIEW_STATES[declared] ?? 'UNKNOWN';
+}
+
+// One submitted (or pending) review, normalized for both providers. The author goes through
+// `normalizeAuthor` verbatim — the same record, the same `[bot]` inference and the same `unknown`
+// fallback every other authorship surface reports — so "Matching a configured login" resolves a
+// reviewer here exactly as it does on a comment or a thread.
+//
+// `commitSha` is the head binding, and it is what makes a verdict decidable against one head rather
+// than against the pull request as a whole. `submittedAt` is absent for a **pending** review, which
+// both forges return in this listing and neither has submitted: an absent submission time is how a
+// consumer tells a draft verdict from a published one, so it is reported as absent and never
+// defaulted to the read's own instant. **The two forges state that absence differently** — GitHub
+// omits the field or nulls it, Gitea serialises the Go zero instant — and normalizing the second
+// onto the first is what makes that one sentence true on both. The `PENDING` state token is the
+// portable cross-check for a consumer that wants a second signal: both providers emit it, so the
+// state answers the same question the missing instant does.
+// A **team**-authored review carries `team` rather than `user`;
+// it is a real review and its team name is what the author record can state, so the team is read as
+// the author rather than leaving the review author-unestablished.
+function normalizeReview(review) {
+  if (!review || typeof review !== 'object') {
+    fail('INVALID_PAYLOAD', 'provider returned a review that is not an object');
+  }
+  // **Short-circuit the whole candidate chain**, not merely the candidate that states it. The chain
+  // resolves `submitted_at → submittedAt → submitted → created_at`, so skipping only the declared
+  // submission field would let `created_at` resurface as a submission time and re-break the pending
+  // discriminator one candidate later.
+  const declaredSubmission = [review.submitted_at, review.submittedAt, review.submitted];
+  const submittedAt = declaredSubmission.some(isGoZeroInstant)
+    ? undefined
+    : normalizeTimestamp(...declaredSubmission, review.created_at);
+  const commitSha = review.commit_id ?? review.commitId ?? review.commit?.sha;
+  return {
+    id: review.id,
+    url: review.html_url ?? review.url,
+    author: normalizeAuthor(review.user ?? review.reviewer ?? review.author ?? review.team),
+    ...(typeof commitSha === 'string' && commitSha.trim() !== ''
+      ? { commitSha: commitSha.trim() }
+      : {}),
+    state: normalizeReviewState(review.state, review.dismissed),
+    body: review.body ?? '',
+    ...(submittedAt === undefined ? {} : { submittedAt }),
+  };
+}
+
+function flattenPages(value) {
+  return Array.isArray(value) && value.every(Array.isArray) ? value.flat() : value;
+}
+
+const URL_CANDIDATE = /https?:\/\/[^\s<>"']+/g;
+
+// tea's create commands have no `--output json`, so the result URL has to come out of the human
+// rendering. Selecting by validity instead of by position is what keeps that safe: a docs link or
+// an error hint in the output can never be reported as the created resource, because only a
+// candidate `parseReference` accepts for this repository and this kind is eligible. That makes the
+// relaxed match stricter about what it accepts than the previous whole-line match was.
+function selectTeaResultUrl(output, expectedKind, repository) {
+  if (typeof output !== 'string') return undefined;
+  const candidates = output.match(URL_CANDIDATE) ?? [];
+  for (const candidate of candidates.reverse()) {
+    const url = candidate.replace(/[.,;:!?)\]}>'"]+$/, '');
+    try {
+      parseReference(url, { expectedKind, repository });
+      return url;
+    } catch {
+      // Not the created resource; keep looking at the earlier candidates.
+    }
+  }
+  return undefined;
+}
+
+function normalizeTeaCreate(operation, raw, repository, input) {
+  const output = raw?.output;
+  const kind = operation === 'issue-create' ? 'issue' : 'pull-request';
+  const url = selectTeaResultUrl(output, kind, repository);
+  if (!url) {
+    fail('INVALID_PAYLOAD', `${operation} succeeded without a parseable tea result URL`, {
+      mutationMayHaveSucceeded: true,
+      stdout: redact(output ?? ''),
+    });
+  }
+  const reference = parseReference(url, { expectedKind: kind, repository });
+  const payload = input.payload ?? input;
+  const normalized = {
+    number: reference.number,
+    title: payload.title,
+    body: payload.body ?? '',
+    state: 'open',
+    labels: payload.labels ?? [],
+    url,
+    repository: repository.slug,
+  };
+  if (kind === 'pull-request') {
+    return {
+      ...normalized,
+      head: payload.head,
+      base: payload.base,
+      draft: payload.draft === true,
+    };
+  }
+  return normalized;
+}
+
+function normalizeSubIssueCreate(raw, repository, input) {
+  const output = raw?.output;
+  const url = selectTeaResultUrl(output, 'issue', repository);
+  if (!url) {
+    fail('INVALID_PAYLOAD', 'issue-sub-issue-create succeeded without a parseable result URL', {
+      mutationMayHaveSucceeded: true,
+      stdout: redact(output ?? ''),
+    });
+  }
+  const reference = parseReference(url, { expectedKind: 'issue', repository });
+  const child = childIssuePayload(input, repository);
+  return {
+    number: reference.number,
+    title: child.title,
+    body: child.body,
+    state: 'open',
+    labels: child.labels,
+    url,
+    repository: repository.slug,
+    parent: { number: child.parent, repository: repository.slug },
+    decompositionKey: child.decompositionKey,
+  };
+}
+
+function normalizeRemoteData(operation, raw, repository, input = {}, metadata = {}) {
+  const flattened = flattenPages(raw);
+  // GitHub's paginated REST reads must be arrays, including an empty collection. Treat an
+  // error object or mixed/incomplete page container as a failed read rather than empty evidence.
+  if (
+    repository.provider === 'github' &&
+    ['issue-list', 'pr-list', 'issue-comments-read'].includes(operation) &&
+    (!Array.isArray(flattened) ||
+      flattened.some((item) => !item || typeof item !== 'object' || Array.isArray(item)))
+  ) {
+    fail('INVALID_PAYLOAD', 'provider returned an incomplete collection');
+  }
+  switch (operation) {
+    case 'viewer-read':
+      return normalizeViewer(flattened);
+    case 'repository-visibility-read': {
+      requireObject(flattened, 'provider repository');
+      let visibility = 'unknown';
+      if (['public', 'private'].includes(flattened.visibility)) {
+        const expectedPrivate = flattened.visibility === 'private';
+        if (flattened.private === undefined || flattened.private === expectedPrivate)
+          visibility = flattened.visibility;
+      } else if (flattened.visibility === undefined && typeof flattened.private === 'boolean')
+        visibility = flattened.private ? 'private' : 'public';
+      return { visibility };
+    }
+    case 'collaborator-permission-read': {
+      requireObject(flattened, 'provider permission');
+      const login = requireString(input.login, 'login').toLowerCase();
+      return {
+        login,
+        permission:
+          typeof flattened.permission === 'string' ? flattened.permission.toLowerCase() : null,
+        roleName: typeof flattened.role_name === 'string' ? flattened.role_name : null,
+      };
+    }
+    // Both providers answer this endpoint with the full updated issue, and `issue-close` is the
+    // same resource under a different field, so it shares the branch its sibling mutation already
+    // uses. A consumer confirming the transition then reads one normalized lowercase `state`
+    // instead of knowing that GitHub says `number`/`html_url` where Forgejo says `index`/`url`.
+    // It also fails loudly on a body that is not an issue: `normalizeIssue` requires a number.
+    case 'issue-read':
+    case 'issue-update-body':
+    case 'issue-close':
+      return flattened?.output !== undefined
+        ? { ...flattened, repository: repository.slug }
+        : normalizeIssue(flattened, repository, metadata);
+    case 'issue-create':
+      return repository.provider === 'forgejo'
+        ? normalizeTeaCreate(operation, flattened, repository, input)
+        : normalizeIssue(flattened, repository, metadata);
+    case 'issue-sub-issue-create':
+      return normalizeSubIssueCreate(flattened, repository, input);
+    case 'issue-sub-issues-read': {
+      const parent = parentIssueNumber(input, repository);
+      return (Array.isArray(flattened) ? flattened : (flattened?.issues ?? []))
+        .filter((item) => !item.pull_request)
+        .map((item) => normalizeSubIssue(item, repository, parent));
+    }
+    case 'issue-list':
+      return (Array.isArray(flattened) ? flattened : (flattened?.issues ?? []))
+        .filter((item) => !item.pull_request)
+        .map((item) => normalizeIssue(item, repository));
+    case 'issue-comments-read':
+    case 'pr-comments-read':
+      return (Array.isArray(flattened) ? flattened : (flattened?.comments ?? [])).map(
+        normalizeComment,
+      );
+    // Both providers answer with a plain array of review objects — GitHub's REST pages collapsed by
+    // `flattenPages`, Forgejo's pages concatenated by `readForgejoPaginated` — so one branch serves
+    // both and the neutral state enum is applied in exactly one place.
+    case 'pr-reviews-read':
+      return (Array.isArray(flattened) ? flattened : (flattened?.reviews ?? [])).map(
+        normalizeReview,
+      );
+    case 'issue-comment-update':
+      return normalizeComment(flattened);
+    // Forgejo's raw object states a merged pull request as `state: "closed"` beside `merged: true`,
+    // while the tea renderer this read used to go through reported `merged` as the state itself.
+    // The state is restored from that flag so the move to the raw API changes no caller's reading
+    // of a merged pull request. GitHub's read was the REST object all along and keeps `closed`.
+    case 'pr-read': {
+      if (flattened?.output !== undefined) return { ...flattened, repository: repository.slug };
+      const record = normalizePullRequestRecord(flattened, repository, metadata);
+      return repository.provider === 'forgejo' && flattened?.merged === true
+        ? { ...record, state: 'merged' }
+        : record;
+    }
+    // GitHub answers both PATCHes with the full updated pull request; tea's `pulls edit` renders for
+    // humans, so the Forgejo branch reports the completed command and its output instead.
+    case 'pr-update-body':
+    case 'pr-update-title':
+      return flattened?.output !== undefined
+        ? { ...flattened, repository: repository.slug }
+        : normalizePullRequest(flattened, repository, metadata);
+    case 'pr-create':
+      return repository.provider === 'forgejo'
+        ? normalizeTeaCreate(operation, flattened, repository, input)
+        : normalizePullRequest(flattened, repository, metadata);
+    // `planPath` narrows the list to the plan pull requests of one plan, and in that mode every item
+    // leaves its `body` behind: discovery hands the caller the helper-parsed marker, never the text
+    // a fork or a third party wrote. The filter compares the parsed marker only, so an item whose
+    // marker was rejected can never match.
+    case 'pr-list': {
+      const planPath = input.planPath === undefined ? undefined : requirePlanPath(input.planPath);
+      const items = (Array.isArray(flattened) ? flattened : (flattened?.pulls ?? []))
+        .map((item) => normalizePullRequestRecord(item, repository))
+        .filter((pullRequest) => {
+          if (!input.head) return true;
+          if (repository.provider !== 'github' || !input.head.includes(':'))
+            return pullRequest.head === input.head;
+          const [owner, ...parts] = input.head.split(':');
+          return (
+            pullRequest.head === parts.join(':') &&
+            typeof pullRequest.headRepository === 'string' &&
+            pullRequest.headRepository.split('/')[0].toLowerCase() === owner.toLowerCase()
+          );
+        });
+      if (planPath === undefined) return items;
+      return items
+        .filter((pullRequest) => pullRequest.planPrMarker === planPath)
+        .map(({ body: _body, ...pullRequest }) => pullRequest);
+    }
+    // Both providers report the transition as prose, so the record states what was asked and what
+    // the CLI said. On GitHub `ready: true` is `gh pr ready`'s success, which is GraphQL's own
+    // transition. On Forgejo it is what the read-back after the title edit states (`metadata.ready`,
+    // see the Forgejo `pr-mark-ready` branch of `executeOperation`), and the title is the redacted
+    // final title that edit set. `output` is what the CLI wrote to stdout; `gh pr ready` writes its
+    // confirmation to stderr, so an empty `output` is the normal success there.
+    case 'pr-mark-ready': {
+      const payload = input.payload ?? input;
+      return {
+        number: prNumber(input),
+        repository: repository.slug,
+        ready: metadata.ready ?? true,
+        ...(repository.provider === 'forgejo' ? { title: redact(payload.title) } : {}),
+        output: redact(flattened?.output ?? ''),
+      };
+    }
+    case 'pr-status-read':
+      return normalizePullRequestStatus(flattenPullRequestStatus(flattened), repository);
+    // The wait reports its own outcome, so "the checks finished" and "the bound elapsed" stay
+    // distinguishable for the caller: a timed-out wait is a result to report, never a green light.
+    case 'pr-checks-wait': {
+      const reported = Array.isArray(flattened) ? flattened : flattened?.checks;
+      const checks = (Array.isArray(reported) ? reported : []).map(normalizeCheck);
+      const timedOut = metadata.timedOut === true;
+      // What gh reported, not what branch protection says: the `--required` read came back empty,
+      // which happens both when no required check exists and when none has reported yet. The flag
+      // passes that observation on so a consumer can tell this empty list apart from an ordinary
+      // one, and it is set only when the read actually saw that response, never as `true` and never
+      // on any other path. It deliberately says nothing about completeness — see below.
+      const noRequiredChecks = metadata.requiredChecksDefined === false;
+      return {
+        number: prNumber(input),
+        repository: repository.slug,
+        // An empty list is never complete. `every` on an empty array is vacuously true, so a head
+        // whose checks have not been attached yet would otherwise read exactly like a green run.
+        // `requiredChecksDefined: false` is no exception: it only says gh reported no required
+        // check, which a branch whose required checks are all still pending produces just as well,
+        // so accepting it here would call an unfinished run finished. Nothing downstream loses by
+        // that — the gate takes its criterion from a fresh `pr-status-read`, and the wait matters
+        // through its blocking and its `timedOut` flag.
+        complete:
+          !timedOut && checks.length > 0 && checks.every((check) => check.status === 'COMPLETED'),
+        timedOut,
+        ...(metadata.forcedKill === true ? { forcedKill: true } : {}),
+        ...(noRequiredChecks ? { requiredChecksDefined: false } : {}),
+        checksReported: Array.isArray(reported),
+        checkCount: checks.length,
+        checks,
+      };
+    }
+    case 'pr-merge': {
+      const payload = input.payload ?? input;
+      // `headSha` names the head the merge applied, so it is reported only where a provider stated
+      // it. On GitHub the request itself is exact: `--match-head-commit` makes the server refuse
+      // any other head, so an accepted merge corroborates the requested value and the fallback
+      // below is that corroboration. Forgejo has no such guarantee — a server older than the Gitea
+      // 1.16 API surface silently ignores `head_commit_id` — so its apply path re-reads the pull
+      // request after the merge and hands the confirmed head down as `confirmedHeadSha`, or states
+      // through `headShaUnconfirmed` why it could not. The gate on the fallback lives here rather
+      // than at that call site because the generic mutation tail passes its `parsed` object as
+      // metadata for every operation, so an absent `confirmedHeadSha` alone cannot tell a Forgejo
+      // read-back that came back unusable apart from a GitHub merge that never runs one.
+      // An absent `headSha` says nothing about the merge: `merged` is decided by the HTTP status.
+      const confirmedHeadSha =
+        typeof metadata.confirmedHeadSha === 'string'
+          ? metadata.confirmedHeadSha
+          : repository.provider === 'github'
+            ? expectedHeadSha(payload)
+            : undefined;
+      return {
+        number: prNumber(input),
+        repository: repository.slug,
+        merged: true,
+        method: mergeMethod(payload),
+        ...(confirmedHeadSha === undefined ? {} : { headSha: confirmedHeadSha }),
+        ...(metadata.headShaUnconfirmed === undefined
+          ? {}
+          : { headShaUnconfirmed: metadata.headShaUnconfirmed }),
+        // The only provider prose the gate publishes into its envelope: gh echoes the merged
+        // branch, and a remote URL carrying an embedded credential is exactly what redaction is for.
+        output: redact(flattened?.output ?? ''),
+      };
+    }
+    case 'review-threads-read': {
+      const threads =
+        flattened?.data?.repository?.pullRequest?.reviewThreads?.nodes ??
+        flattened?.reviewThreads ??
+        (Array.isArray(flattened) ? flattened : []);
+      const normalized = threads.map((thread) => {
+        if (thread.comments?.nodes) {
+          const comments = thread.comments.nodes.map((comment) => {
+            const createdAt = normalizeTimestamp(
+              comment.createdAt,
+              comment.created_at,
+              comment.created,
+            );
+            const url =
+              typeof comment.url === 'string' && comment.url.trim() !== ''
+                ? comment.url.trim()
+                : undefined;
+            return {
+              id: comment.id,
+              databaseId: comment.databaseId,
+              body: comment.body ?? '',
+              author: normalizeAuthor(comment.author),
+              path: comment.path,
+              line: comment.line ?? comment.originalLine,
+              startLine: comment.startLine ?? comment.originalStartLine,
+              ...(createdAt === undefined ? {} : { createdAt }),
+              ...(url === undefined ? {} : { url }),
+            };
+          });
+          // A thread has no creation time of its own in the provider's schema; its first comment is
+          // its beginning by definition. Reading it off that comment is a restatement, not a guess,
+          // and a thread whose first comment carries no timestamp still reports none. Every reply
+          // keeps its own timestamp, because a bot that answers later must count as newer.
+          const threadCreatedAt = comments[0]?.createdAt;
+          // The thread's browser link is its first comment's, for the same reason its instant is:
+          // the provider gives a thread no address of its own, and the comment that opened it is
+          // where a reader lands. A consumer that promises somebody a link to read the finding at -
+          // `merge-gate`'s set-aside confirmation - has nowhere else to take it from, and a record
+          // carrying the thread ID alone cannot supply one at all.
+          const threadUrl = comments[0]?.url;
+          return {
+            id: thread.id,
+            isResolved: thread.isResolved === true,
+            path: thread.path ?? thread.comments.nodes[0]?.path,
+            line: thread.line ?? thread.comments.nodes[0]?.line,
+            startLine: thread.startLine ?? thread.comments.nodes[0]?.startLine,
+            ...(threadCreatedAt === undefined ? {} : { createdAt: threadCreatedAt }),
+            ...(threadUrl === undefined ? {} : { url: threadUrl }),
+            comments,
+          };
+        }
+        // Class A: raw Gitea/Forgejo API JSON. `modules/structs/pull_review.go` declares
+        // `PullReviewComment` with `ID json:"id"`, `Poster json:"user"`, `Resolver json:"resolver"`,
+        // `LineNum json:"position"` and `HTMLURL json:"html_url"`, and those tags — not the Go field
+        // names — are the authority for every key read here.
+        //
+        // **`position`, never `line`.** That pair is the same Go-field-versus-JSON-tag divergence
+        // that shipped as #354, inside this very struct: reading `line` returns `undefined` on every
+        // comment, which is a plausible-looking absence rather than an error.
+        //
+        // `id` is stringified because the pre-port renderer stringified every table cell, so a
+        // thread identifier stays byte-identical across the port and no caller holding one from an
+        // earlier read has to be told which side of the change produced it.
+        const createdAt = normalizeTimestamp(thread.created_at, thread.createdAt, thread.created);
+        const line = thread.position ?? thread.line;
+        // `HTMLURL json:"html_url"` per the struct comment above - the tag, never the Go field name.
+        const rawUrl = thread.html_url ?? thread.url;
+        const url = typeof rawUrl === 'string' && rawUrl.trim() !== '' ? rawUrl.trim() : undefined;
+        // Set by `readForgejoReviewThreads`; absent when the comments did not come from that walk.
+        const reviewId = thread[FORGEJO_REVIEW_ID];
+        return {
+          id: String(thread.id),
+          ...(reviewId === undefined ? {} : { reviewId: String(reviewId) }),
+          // `resolver` is `null` while a thread is open and an object once someone resolved it, so
+          // truthiness is the whole test. `Boolean(null)` is false and `Boolean({})` is true.
+          isResolved: Boolean(thread.resolver),
+          path: thread.path,
+          line,
+          ...(createdAt === undefined ? {} : { createdAt }),
+          ...(url === undefined ? {} : { url }),
+          comments: [
+            {
+              id: String(thread.id),
+              body: thread.body ?? '',
+              // `user`, not `reviewer`: `Poster` carries the tag `user`, and a comment whose author
+              // the forge does not state leaves the login unset. `merge-gate` counts an item with no
+              // login as human, so the guard activates — the fail-safe direction.
+              author: normalizeAuthor(thread.user ?? thread.reviewer),
+              path: thread.path,
+              line,
+              ...(createdAt === undefined ? {} : { createdAt }),
+              ...(url === undefined ? {} : { url }),
+            },
+          ],
+        };
+      });
+      return groupTeaReviewComments(threads, normalized);
+    }
+    default:
+      return flattened;
+  }
+}
+
+// A tea-backed forge lists review comments, not threads, and states no reply-to field, so a reply
+// arrives as one more comment of its review. One reviewed location is one thread: comments in the
+// same review on the same `path` and signed line (see `teaReviewCommentAnchor`) are grouped, in
+// ascending id order, under the first comment's id, location, instant, link and resolution — the
+// forge sets `resolver` on that first comment only. Keeping the first comment's id keeps every
+// thread key recorded before grouping valid. A comment without a review id or without a positive
+// line is a thread of its own, and two top-level comments of one review on the same line merge,
+// which the API cannot tell apart. GitHub threads, which the provider already groups, pass through
+// unchanged.
+function groupTeaReviewComments(rawComments, normalized) {
+  const github = [];
+  const groups = new Map();
+  normalized.forEach((thread, index) => {
+    if (rawComments[index].comments?.nodes) {
+      github.push(thread);
+      return;
+    }
+    const anchor = teaReviewCommentAnchor(rawComments[index]);
+    const key =
+      thread.reviewId === undefined || anchor === undefined
+        ? Symbol('ungrouped')
+        : JSON.stringify([thread.reviewId, thread.path, anchor]);
+    const group = groups.get(key);
+    if (group) group.push(thread);
+    else groups.set(key, [thread]);
+  });
+  const byId = (a, b) => Number(a.id) - Number(b.id);
+  const grouped = [...groups.values()].map((members) => {
+    const ordered = [...members].sort(byId);
+    return { ...ordered[0], comments: ordered.map((member) => member.comments[0]) };
+  });
+  return [...github, ...grouped.sort(byId)];
+}
+
+// The grouping line of one raw comment, signed by diff side. `PullReviewComment` serializes
+// `LineNum json:"position"` (new side) and `OldLineNum json:"original_position"` (old side) as
+// uint64 without `omitempty`, so a comment on a removed line carries `position: 0`: keyed on
+// `position` alone, every old-side comment of one review and file would collapse into one thread
+// whose first comment alone decides the resolution. New-side lines are positive, old-side lines
+// negative, a bare `line` is the fallback, and no positive line at all leaves the comment ungrouped.
+function teaReviewCommentAnchor(raw) {
+  const positive = (value) => Number.isInteger(value) && value > 0;
+  if (positive(raw.position)) return raw.position;
+  if (positive(raw.original_position)) return -raw.original_position;
+  if (positive(raw.line)) return raw.line;
+  return undefined;
+}
+
+// `options` carries no default on purpose: the merge-gate eval scaffold derives the supported
+// operation names from this function's body by locating its first `{`.
+function localOperation(operation, input, options) {
+  switch (operation) {
+    case 'remote-parse':
+      return () => parseRemote(input.remote, input);
+    case 'reference-parse':
+      return () => parseReferences(input.references ?? input.reference, input);
+    case 'signature-parse':
+      return () => parseFindingSignature(input.body);
+    case 'finding-build':
+      return () => buildFindingPayload(input.finding ?? input, { language: input.language });
+    case 'follow-up-admission-build':
+      return () => buildFollowUpAdmissionReceipt(input);
+    case 'follow-up-admission-parse':
+      return () => parseFollowUpAdmissionReceipt(input.body, input.current);
+    case 'follow-up-admission-supersede':
+      return () => supersedeFollowUpAdmissionReceipt(input);
+    case 'epic-build':
+      return () => buildEpicPayload(input.epic ?? input, { language: input.language });
+    case 'planning-comment-build':
+      return () =>
+        buildCommentPayload('planning', input.comment ?? input, { visibility: input.visibility });
+    case 'decomposition-records-build':
+      return () => buildDecompositionRecords(input.decomposition ?? input);
+    case 'decomposition-records-parse':
+      return () => parseDecompositionRecords(input.body);
+    case 'decomposition-key-build':
+      return () => buildDecompositionKey(input);
+    case 'decomposition-key-parse':
+      return () => parseDecompositionKey(input.body, input.context ?? input);
+    case 'decomposition-container-compare':
+      return () => compareDecompositionContainer(input.container ?? input);
+    case 'decomposition-child-workflow-parse':
+      return () => parseDecompositionChildWorkflow(input.workflow ?? input);
+    case 'apply-comment-build':
+      return () =>
+        buildCommentPayload('apply', input.comment ?? input, { visibility: input.visibility });
+    case 'pr-comment-build':
+      return () =>
+        buildCommentPayload('pr', input.comment ?? input, { visibility: input.visibility });
+    // The Forgejo fallback for `review-create` posts one ordinary pull-request comment. It must
+    // not use the `pr` kind: that stamps the iterate marker, which iterate reads as its own
+    // completed work, so the fallback would feed the tool its own findings back.
+    case 'pr-review-comment-build':
+      return () =>
+        buildCommentPayload('pr-review', input.comment ?? input, { visibility: input.visibility });
+    case 'finding-deduplicate':
+      return () => deduplicateFindings(input.existingIssues, input.findings);
+    case 'label-query-variants':
+      return () => labelQueryVariants(input.labels);
+    case 'sf-label-migration-plan':
+      return () => planSfLabelMigration(input.issues, input.marker);
+    case 'marker-patch':
+      return () => patchMarkedBlock(input.body, input.patch ?? input);
+    case 'checklist-patch':
+      return () => patchChecklistEntry(input.body, input.patch ?? input);
+    case 'body-hash':
+      return () => ({ hash: bodyHash(input.body) });
+    case 'issue-lifecycle-receipt-build':
+      return () => buildIssueLifecycleReceipt(input, input.context ?? input);
+    case 'issue-lifecycle-receipt-parse':
+      return () => parseIssueLifecycleReceipt(input.body, input.context ?? input);
+    // The hidden-mode processed-thread ledger. Both are local runtime-state operations, not forge
+    // mutations: they touch only `<cwd>/.effective-flow/merge-gate/`, so they run without `--apply`
+    // like every other local operation, and the caller's runtime-state write-safety guard is what
+    // authorizes the record write.
+    case 'thread-ledger-lookup':
+      return () => lookupThreadLedgerFile(input);
+    case 'thread-ledger-record':
+      return () => recordThreadLedgerFile(input, { clock: options?.clock });
+    default:
+      return undefined;
+  }
+}
+
+function requireExistingDirectory(value) {
+  const cwd = requireString(value, 'cwd');
+  try {
+    if (statSync(cwd).isDirectory()) return cwd;
+  } catch {
+    // The public failure deliberately does not expose platform-specific filesystem errors.
+  }
+  fail('INVALID_PAYLOAD', 'working directory is not an existing directory', { cwd });
+}
+
+function issueStateWaitClock(clock) {
+  const read =
+    typeof clock === 'function'
+      ? clock
+      : clock && typeof clock.now === 'function'
+        ? () => clock.now()
+        : () => Date.now();
+  return () => {
+    const value = read();
+    if (!Number.isFinite(value)) {
+      fail('INVALID_PAYLOAD', 'issue-state-wait clock returned an invalid time');
+    }
+    return value;
+  };
+}
+
+function assertFixedIssueStateWait(input) {
+  const payload = input.payload ?? input;
+  for (const field of [
+    'timeoutMs',
+    'timeoutSeconds',
+    'timeoutMinutes',
+    'waitMs',
+    'waitSeconds',
+    'waitMinutes',
+    'intervalSeconds',
+  ]) {
+    if (payload[field] !== undefined) {
+      fail('INVALID_PAYLOAD', 'issue-state-wait uses a fixed 30-second grace period', {
+        field: `payload.${field}`,
+        waitMs: ISSUE_STATE_WAIT_MS,
+      });
+    }
+  }
+}
+
+async function readIssueForStateWait(input, repository, runner) {
+  const plan = buildCommandPlan('issue-state-wait', input, repository);
+  const result = await runChecked(runner, plan, 'issue-state-wait read');
+  const parsed = isTeaApiIncludePlan(plan)
+    ? { raw: teaApiSuccess(result, 'issue-state-wait read').body }
+    : parseCommandOutput(result, plan, 'issue-state-wait read');
+  const issue = normalizeRemoteData('issue-read', parsed.raw, repository, input, parsed);
+  if (!['open', 'closed'].includes(issue.state)) {
+    fail('INVALID_PAYLOAD', 'forge returned an unsupported issue lifecycle state', {
+      number: issue.number,
+      state: issue.state,
+      supported: ['open', 'closed'],
+    });
+  }
+  return { issue, command: redact(plan) };
+}
+
+async function executeIssueStateWait(input, repository, runner, options = {}) {
+  assertFixedIssueStateWait(input);
+  const now = issueStateWaitClock(options.clock);
+  const sleeper =
+    options.sleeper ?? ((durationMs) => new Promise((resolve) => setTimeout(resolve, durationMs)));
+  if (typeof sleeper !== 'function') {
+    fail('INVALID_PAYLOAD', 'issue-state-wait requires a callable sleeper');
+  }
+
+  const first = await readIssueForStateWait(input, repository, runner);
+  if (first.issue.state === 'closed') {
+    return {
+      result: {
+        issue: first.issue,
+        outcome: 'terminal',
+        terminal: true,
+        timedOut: false,
+        waitMs: 0,
+      },
+      commands: [first.command],
+    };
+  }
+
+  const startedAt = now();
+  await sleeper(ISSUE_STATE_WAIT_MS);
+  const waitedMs = Math.min(ISSUE_STATE_WAIT_MS, Math.max(0, now() - startedAt));
+  const final = await readIssueForStateWait(input, repository, runner);
+  const terminal = final.issue.state === 'closed';
+  return {
+    result: {
+      issue: final.issue,
+      outcome: terminal ? 'terminal' : 'open',
+      terminal,
+      timedOut: !terminal,
+      waitMs: ISSUE_STATE_WAIT_MS,
+      observedWaitMs: waitedMs,
+    },
+    commands: [first.command, final.command],
+  };
+}
+
+async function staleWriteGuard(operation, input, repository, runner, conditionalWriteAvailable) {
+  if (!['issue-update-body', 'pr-update-body', 'issue-comment-update'].includes(operation)) {
+    return undefined;
+  }
+  const expected = requireString(input.expectedBodyHash, 'expectedBodyHash');
+  const desired = requireString((input.payload ?? input).body, 'payload.body', {
+    allowEmpty: true,
+  });
+  if (operation === 'issue-comment-update') {
+    const commentId = requireNumber(input.commentId, 'commentId');
+    const readPlan = buildCommandPlan('issue-comments-read', input, repository);
+    const readResult = await runChecked(runner, readPlan, 'issue-comments-read precondition');
+    const parsed = parseCommandOutput(readResult, readPlan, 'issue-comments-read');
+    const comments = normalizeRemoteData(
+      'issue-comments-read',
+      parsed.raw,
+      repository,
+      input,
+      parsed,
+    );
+    const matches = comments.filter((comment) => comment.id === commentId);
+    if (matches.length === 0) {
+      fail('TARGET_NOT_FOUND', 'issue comment no longer exists', { commentId });
+    }
+    if (matches.length > 1) {
+      fail('AMBIGUOUS_TARGET', 'issue comment ID matched more than once', {
+        commentId,
+        matches: matches.length,
+      });
+    }
+    const current = matches[0];
+    if (current.body === desired) return { unchanged: true, current };
+    const actual = bodyHash(current.body);
+    if (actual !== expected) {
+      fail('STALE_WRITE', 'issue comment changed after the caller read it', {
+        commentId,
+        expectedBodyHash: expected,
+        actualBodyHash: actual,
+        conditionalWriteAvailable: false,
+      });
+    }
+    return { unchanged: false, current };
+  }
+  const readOperation = operation === 'issue-update-body' ? 'issue-read' : 'pr-read';
+  const readPlan = buildCommandPlan(readOperation, input, repository);
+  const readResult = await runChecked(runner, readPlan, `${readOperation} precondition`);
+  // Forgejo's `pr-read` is a `tea api --include` read, whose status line tea writes to stderr, so
+  // it is read through the status-checked path every other such plan uses; a refused read must not
+  // hand its error body on as the current pull request.
+  const parsed = isTeaApiIncludePlan(readPlan)
+    ? { raw: teaApiSuccess(readResult, `${readOperation} precondition`).body }
+    : parseCommandOutput(readResult, readPlan, readOperation);
+  const current = normalizeRemoteData(readOperation, parsed.raw, repository, input, parsed);
+  if (current.body === desired) return { unchanged: true, current };
+  const actual = bodyHash(current.body);
+  const expectedVersion = input.expectedVersion;
+  const versionChanged =
+    conditionalWriteAvailable === true &&
+    requireString(expectedVersion, 'expectedVersion') !== current.version;
+  if (actual !== expected || versionChanged) {
+    fail('STALE_WRITE', 'remote body changed after the caller read it', {
+      expectedBodyHash: expected,
+      actualBodyHash: actual,
+      expectedVersion,
+      actualVersion: current.version,
+      conditionalWriteAvailable: conditionalWriteAvailable === true,
+    });
+  }
+  return { unchanged: false, current };
+}
+
+// A full object name and nothing else. Calls 2 and 3 of the Forgejo status read are addressed by
+// the head SHA call 1 returned, so a missing or malformed value skips them entirely rather than
+// falling back to a branch name: a branch resolves to whatever it points at now, which is a
+// different commit from the one this read is about.
+const FULL_OBJECT_NAME = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+
+// The Forgejo status read is three `tea api` calls where GitHub's is one GraphQL query. It has to
+// be: the pull-request object supplies the merge state, the draft flag, `mergeable` and the head
+// SHA, the combined commit status supplies the checks, and the head commit supplies the committer
+// date the automatic-reviewer fallback compares against. Only the first is knowable in advance, so
+// `buildCommandPlan` answers with that one and this reader publishes all three previews.
+async function readForgejoPullRequestStatus(input, repository, runner, options = {}) {
+  const pullPlan = buildCommandPlan('pr-status-read', input, repository);
+  const commands = [redact(pullPlan)];
+  const pull = teaApiSuccess(
+    await runChecked(runner, pullPlan, 'pr-status-read'),
+    'pr-status-read',
+  ).body;
+  const headSha = typeof pull?.head?.sha === 'string' ? pull.head.sha.trim() : '';
+  // A wait must discard the previous head as soon as the PR read observes a new one, even if
+  // the remaining status/commit reads exhaust its budget before yielding another snapshot.
+  options.onHead?.(headSha);
+  const endpoint = (suffix) => `repos/${repository.owner}/${repository.repository}/${suffix}`;
+  let statuses;
+  let headCommittedAt;
+  if (FULL_OBJECT_NAME.test(headSha)) {
+    const statusPlan = teaApiReadPlan(
+      repository,
+      `${endpoint(`commits/${headSha}/status`)}?limit=${FORGEJO_STATUS_LIMIT}`,
+    );
+    commands.push(redact(statusPlan));
+    statuses = forgejoCommitStatuses(
+      teaApiSuccess(
+        await runChecked(runner, statusPlan, 'pr-status-read checks'),
+        'pr-status-read checks',
+      ),
+    );
+    const commitPlan = teaApiReadPlan(repository, endpoint(`git/commits/${headSha}`));
+    commands.push(redact(commitPlan));
+    const commit = teaApiSuccess(
+      await runChecked(runner, commitPlan, 'pr-status-read head commit'),
+      'pr-status-read head commit',
+    ).body;
+    headCommittedAt = normalizeTimestamp(
+      commit?.commit?.committer?.date,
+      commit?.commit?.author?.date,
+      commit?.created,
+    );
+  }
+  return {
+    result: normalizePullRequestStatus(
+      flattenForgejoPullRequestStatus(pull, statuses, headCommittedAt),
+      repository,
+    ),
+    commands,
+  };
+}
+
+// The id of the review a Forgejo comment was read under. The walk addresses every comment through
+// `reviews/{id}/comments`, so it knows the parent review without trusting a payload field; the key
+// is a module-private symbol so it can never collide with, or be spoofed by, a key the forge sends.
+const FORGEJO_REVIEW_ID = Symbol('forgejoReviewId');
+
+// The two-step walk both forges force. Forgejo's router declares `GET …/pulls/{index}/reviews` and
+// `GET …/pulls/{index}/reviews/{id}/comments`; there is no flat review-comment listing at any
+// nesting level on either forge, so the reviews have to be enumerated before their comments can be
+// addressed. This adds no requests: `tea pulls review-comments` already performs the same
+// `ceil(N/50) + N` fan-out client-side, so the port relocates that cost into `data.commands` rather
+// than creating it. What the adapter newly owns is the pagination over `/reviews` and its truncation
+// guard, which tea handled through `resp.NextPage`.
+async function readForgejoReviewThreads(input, repository, runner) {
+  const number = prNumber(input);
+  const endpoint = (suffix) => `repos/${repository.owner}/${repository.repository}/${suffix}`;
+  const reviews = await readForgejoPaginated(
+    repository,
+    endpoint(`pulls/${number}/reviews`),
+    runner,
+    'review-threads-read reviews',
+    // The reviews listing counts pending reviews its body hides, so its header cannot prove
+    // truncation. See `readForgejoPaginated`.
+    { totalIsExact: false },
+  );
+  const commands = [...reviews.commands];
+  const comments = [];
+  for (const review of reviews.items) {
+    const id = review?.id;
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      fail('INVALID_PAYLOAD', 'provider returned a review without a usable id');
+    }
+    // A pull request with no reviews yields no comment read at all, and a review with no inline
+    // comments yields an empty list — neither is a failed read, exactly as `forgejoCommitStatuses`
+    // keeps an empty rollup distinct from a refused one.
+    const page = await readForgejoList(
+      repository,
+      endpoint(`pulls/${number}/reviews/${id}/comments`),
+      runner,
+      `review-threads-read review ${id} comments`,
+    );
+    commands.push(...page.commands);
+    // Pair each comment with the review it was read under, so the thread can name its parent.
+    comments.push(...page.items.map((item) => ({ ...item, [FORGEJO_REVIEW_ID]: id })));
+  }
+  return {
+    result: normalizeRemoteData('review-threads-read', comments, repository, input),
+    commands,
+  };
+}
+
+// One status reader for both providers, used by `pr-status-read` and by `mergeHeadGuard` alike, so
+// the merge precondition and the status the caller sees can never be read through two code paths
+// that drifted apart.
+async function readPullRequestStatus(input, repository, runner, options = {}) {
+  if (repository.provider === 'forgejo') {
+    return await readForgejoPullRequestStatus(input, repository, runner, options);
+  }
+  const readPlan = buildCommandPlan('pr-status-read', input, repository);
+  const readResult = await runChecked(runner, readPlan, 'pr-status-read');
+  const parsed = parseCommandOutput(readResult, readPlan, 'pr-status-read');
+  return {
+    result: normalizeRemoteData('pr-status-read', parsed.raw, repository, input, parsed),
+    commands: [redact(readPlan)],
+  };
+}
+
+function waitClock(clock) {
+  const read =
+    typeof clock === 'function'
+      ? clock
+      : clock && typeof clock.now === 'function'
+        ? () => clock.now()
+        : () => performance.now();
+  return () => {
+    const value = read();
+    if (!Number.isFinite(value))
+      fail('INVALID_PAYLOAD', 'pr-checks-wait clock returned invalid time');
+    return value;
+  };
+}
+
+function waitDeadlineError() {
+  return new RemoteTrackerError('WAIT_DEADLINE', 'pr-checks-wait deadline elapsed');
+}
+
+// One wrapper owns the probe and every later provider read. Record at launch so a partially read
+// snapshot or a timed-out subprocess remains visible without retaining any API response body.
+function boundedWaitRunner(runner, deadline, now, state) {
+  return async (plan) => {
+    const remaining = Math.floor(deadline - now());
+    if (remaining <= 0) throw waitDeadlineError();
+    const call = {
+      ...plan,
+      timeoutMs: Math.min(plan.timeoutMs ?? remaining, remaining),
+      processGroup: true,
+    };
+    state.commands.push(redact(call));
+    const result = await runner(call);
+    if (result?.forcedKill === true) state.forcedKill = true;
+    if (
+      result?.timedOut === true ||
+      result?.error?.code === 'ETIMEDOUT' ||
+      // Windows uses the runner's direct mode, whose timeout reports a terminating signal.
+      (result?.status === null &&
+        ['SIGTERM', 'SIGKILL'].includes(result?.signal) &&
+        now() >= deadline)
+    ) {
+      throw waitDeadlineError();
+    }
+    // Let the reader classify HTTP, JSON and command failures before checking the clock again.
+    // An operational error at the boundary must not be hidden by a simultaneously elapsed bound.
+    return result;
+  };
+}
+
+function forgejoChecksWaitResult(input, repository, state, snapshot, timedOut) {
+  return {
+    result: normalizeRemoteData(
+      'pr-checks-wait',
+      { checks: snapshot?.checksReported === true ? snapshot.checks : undefined },
+      repository,
+      input,
+      { timedOut, forcedKill: state.forcedKill },
+    ),
+    commands: state.commands,
+  };
+}
+
+async function readForgejoWaitHead(input, repository, runner) {
+  const plan = buildCommandPlan('pr-status-read', input, repository);
+  const response = teaApiSuccess(
+    await runChecked(runner, plan, 'pr-checks-wait head confirmation'),
+    'pr-checks-wait head confirmation',
+  );
+  return response.body?.head?.sha;
+}
+
+async function executeForgejoChecksWait(input, repository, runner, options) {
+  const { deadline, now, settings, state } = options;
+  const sleeper =
+    options.sleeper ?? ((durationMs) => new Promise((resolve) => setTimeout(resolve, durationMs)));
+  let snapshot;
+  let headSha;
+  const observeHead = (value) => {
+    const currentHead = typeof value === 'string' ? value.trim() : '';
+    if (!FULL_OBJECT_NAME.test(currentHead)) {
+      fail('INVALID_PAYLOAD', 'provider returned no usable pull-request head SHA');
+    }
+    if (headSha !== undefined && currentHead.toLowerCase() !== headSha.toLowerCase()) {
+      snapshot = undefined;
+    }
+    headSha = currentHead;
+  };
+  const timeoutResult = () => forgejoChecksWaitResult(input, repository, state, snapshot, true);
+  while (true) {
+    if (now() >= deadline) return timeoutResult();
+    try {
+      const read = await readPullRequestStatus(input, repository, runner, { onHead: observeHead });
+      if (now() >= deadline) return timeoutResult();
+      snapshot = read.result;
+      const checks = snapshot.checks;
+      const complete =
+        snapshot.checksReported === true &&
+        checks.length > 0 &&
+        checks.every((check) => check.status === 'COMPLETED');
+      if (complete) {
+        observeHead(await readForgejoWaitHead(input, repository, runner));
+        if (now() >= deadline) return timeoutResult();
+        if (snapshot !== undefined) {
+          return forgejoChecksWaitResult(input, repository, state, snapshot, false);
+        }
+      }
+    } catch (error) {
+      if (error?.code === 'WAIT_DEADLINE') return timeoutResult();
+      throw error;
+    }
+    const remaining = deadline - now();
+    if (remaining <= 0) return timeoutResult();
+    await sleeper(Math.min(settings.intervalSeconds * 1000, remaining));
+  }
+}
+
+// The merge is the most irreversible mutation of the set, so the head the caller verified is
+// re-checked against a fresh read immediately before it runs. The provider-side head guard —
+// `--match-head-commit` on GitHub, `head_commit_id` in the Forgejo merge body — guards the same
+// race, but only this local check turns a moved head into the tool's own structured error — with the
+// actual head reported and `merged: false` stated — instead of a generic command failure. It closes
+// **no** race of its own: it runs before the request, so a server that ignores `head_commit_id`
+// (older than the Gitea 1.16 API surface) leaves the window itself unguarded, and there is no local
+// substitute for that.
+async function mergeHeadGuard(input, repository, runner) {
+  const expected = expectedHeadSha(input.payload ?? input);
+  const status = (await readPullRequestStatus(input, repository, runner)).result;
+  const actual = typeof status.headSha === 'string' ? status.headSha.toLowerCase() : undefined;
+  if (actual !== expected) {
+    fail('STALE_WRITE', 'pull-request head moved after the caller verified it', {
+      number: status.number,
+      expectedHeadSha: expected,
+      actualHeadSha: actual,
+      merged: false,
+    });
+  }
+  return status;
+}
+
+async function executeSfLabelMigration(input, repository, runner, dryRun) {
+  const migration = planSfLabelMigration(input.issues, input.marker);
+  if (migration.skipped || migration.steps.length === 0) {
+    return {
+      ok: true,
+      operation: 'sf-label-migrate',
+      provider: repository.provider,
+      data: {
+        unchanged: true,
+        completedSteps: [],
+        marker: migration.skipped ? migration.marker : migration.completionMarker,
+      },
+      dryRun,
+    };
+  }
+  const planned = migration.steps.map((step) => {
+    const operation = step.operation === 'add' ? 'issue-label-add' : 'issue-label-remove';
+    const plan = buildCommandPlan(
+      operation,
+      { number: step.issue, payload: { label: step.label, labels: [step.label] } },
+      repository,
+    );
+    return { ...step, command: redact(plan) };
+  });
+  if (dryRun) {
+    return {
+      ok: true,
+      operation: 'sf-label-migrate',
+      provider: repository.provider,
+      data: {
+        steps: planned,
+        completedSteps: [],
+        marker: migration.marker,
+        completionMarker: migration.completionMarker,
+      },
+      dryRun: true,
+    };
+  }
+  const completedSteps = [];
+  for (const step of migration.steps) {
+    const operation = step.operation === 'add' ? 'issue-label-add' : 'issue-label-remove';
+    const plan = buildCommandPlan(
+      operation,
+      { number: step.issue, payload: { label: step.label, labels: [step.label] } },
+      repository,
+    );
+    try {
+      await runChecked(runner, plan, `sf-label-migrate ${step.operation}`);
+      completedSteps.push(step);
+    } catch (error) {
+      if (error instanceof RemoteTrackerError) {
+        error.details = {
+          ...error.details,
+          completedSteps,
+          failedStep: step,
+          marker: migration.marker,
+        };
+      }
+      throw error;
+    }
+  }
+  return {
+    ok: true,
+    operation: 'sf-label-migrate',
+    provider: repository.provider,
+    data: { unchanged: false, completedSteps, marker: migration.completionMarker },
+    dryRun: false,
+  };
+}
+
+// One label shape for both providers. tea names the identifier `index` and prints every value as a
+// string, while gh's REST payload names it `id` and keeps it typed, so both spellings are read and
+// the result is normalized rather than passed through. A payload that states no name is not a
+// label and is dropped, so it can never match the name being looked for.
+function normalizeRepositoryLabel(label) {
+  if (!label || typeof label !== 'object') return null;
+  const name = label.name;
+  if (typeof name !== 'string' || name === '') return null;
+  return {
+    id: label.id ?? label.index ?? null,
+    name,
+    color: label.color ?? null,
+    description: label.description ?? null,
+  };
+}
+
+// tea 0.14.2 answers a failed label read with **exit 0 and an empty list**: `cmd/labels/list.go`
+// logs the API error from `ListRepoLabels` and returns the labels it does not have, where 0.14.1
+// still returned the error. A transient forge failure is therefore byte-for-byte indistinguishable
+// from a repository that simply carries no labels — and reading it as "no labels" is exactly the
+// input that makes the pre-check conclude "absent", create, and produce the duplicate this whole
+// path exists to prevent. The warning tea writes to stderr is the only surviving signal, so an
+// **any** page whose read emits that warning invalidates the whole accumulated list and the
+// operation fails closed instead of writing. It has to be any page, not just the first: a warned
+// read yields an empty page, an empty page is what ends pagination, so the warning always marks the
+// point where enumeration stopped early — the pages already collected are a prefix that may well
+// omit the name being looked for. The coupling to tea's log text is deliberate and is the reason
+// this comment exists: if a later tea drops or rewords the message, this guard degrades to no guard
+// — an empty list is trusted again, exactly as before — rather than to a wrong answer.
+const TEA_LABEL_LIST_FAILURE = /failed to list repository labels/i;
+
+// `label` names the caller in every diagnostic this loop produces. It defaults to the operation, so
+// the two public list operations report exactly as before; an internal read passes the operation it
+// belongs to, so its failure is never attributed to a name no caller can invoke.
+async function executeTeaPaginatedList(operation, input, repository, runner, label = operation) {
+  const limit = input.limit === undefined ? 100 : requireNumber(input.limit, 'limit');
+  const maxPages = input.maxPages === undefined ? 1000 : requireNumber(input.maxPages, 'maxPages');
+  const items = [];
+  const commands = [];
+  const diagnostics = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    const plan = buildCommandPlan(operation, { ...input, page, limit }, repository);
+    commands.push(redact(plan));
+    const result = await runChecked(runner, plan, `${label} page ${page}`);
+    if (typeof result?.stderr === 'string' && result.stderr !== '') diagnostics.push(result.stderr);
+    const parsed = parseCommandOutput(result, plan, operation);
+    const pageItems = Array.isArray(parsed.raw)
+      ? parsed.raw
+      : (parsed.raw?.issues ?? parsed.raw?.pulls);
+    if (!Array.isArray(pageItems)) {
+      fail('INVALID_PAYLOAD', `${operation} returned a non-list page`, { page });
+    }
+    if (pageItems.length === 0) {
+      return { raw: items, commands, pagesFetched: page, stderr: diagnostics.join('\n') };
+    }
+    items.push(...pageItems);
+  }
+  fail('UNSUPPORTED_CAPABILITY', `${operation} exceeded the bounded tea pagination limit`, {
+    maxPages,
+    itemsRead: items.length,
+  });
+}
+
+async function readRepositoryLabels(input, repository, runner) {
+  if (repository.provider === 'forgejo') {
+    // `limit` and `maxPages` are pinned here instead of inherited from the caller's payload, which
+    // for this operation is the label to create: a stray `limit` field in it would otherwise shrink
+    // the pre-check's window until it stops seeing the label it is looking for.
+    const paginated = await executeTeaPaginatedList(
+      'label-list',
+      { ...input, limit: 100, maxPages: 100 },
+      repository,
+      runner,
+      'label-create list',
+    );
+    if (TEA_LABEL_LIST_FAILURE.test(paginated.stderr ?? '')) {
+      fail(
+        'COMMAND_FAILED',
+        'label-create could not read the repository labels',
+        { step: 'list', stderr: redact(paginated.stderr) },
+        true,
+      );
+    }
+    return {
+      labels: paginated.raw,
+      steps: paginated.commands.map((command) => ({ step: 'list', command })),
+    };
+  }
+  const plan = buildCommandPlan('label-list', input, repository);
+  const result = await runChecked(runner, plan, 'label-create list');
+  const labels = flattenPages(parseCommandOutput(result, plan, 'label-create list').raw) ?? [];
+  if (!Array.isArray(labels)) {
+    fail('INVALID_PAYLOAD', 'label-create list returned a non-list payload');
+  }
+  return { labels, steps: [{ step: 'list', command: redact(plan) }] };
+}
+
+// Creating a label is a read-then-write, because neither provider offers an idempotent create and
+// only one of them even rejects a duplicate. Forgejo happily creates a second label of the same
+// name, and `issue-label-add` resolves by name, so every repeated run added another copy and then
+// attached all of them to the issue. The pre-check is what stops that growth on both providers, and
+// it is also what lets this operation report whether it created anything instead of assuming it did.
+async function executeLabelCreate(input, repository, runner, dryRun, probe) {
+  const payload = input.payload ?? input;
+  const name = requireString(payload.name, 'name');
+  const createPlan = buildCommandPlan('label-create', input, repository);
+  const command = redact(createPlan);
+  const envelope = (data) => ({
+    ok: true,
+    operation: 'label-create',
+    provider: repository.provider,
+    data,
+    dryRun,
+  });
+  if (dryRun) {
+    // No provider call, deliberately. Every other mutation's dry run is a pure plan preview, and a
+    // read here would be the one place in this helper where previewing a mutation talks to the
+    // forge and can fail with a COMMAND_FAILED. The cost is that the preview shows a create that
+    // may not run — which is what `steps` says out loud. `data.command` keeps naming the create so
+    // the generic mutation contract, which tells a caller to inspect exactly that, stays true.
+    return envelope({
+      repository,
+      command,
+      steps: [
+        {
+          step: 'list',
+          command: redact(buildCommandPlan('label-list', { ...input, limit: 100 }, repository)),
+        },
+        { step: 'create', command },
+      ],
+      capability: probe.capabilities?.labelCreate ?? true,
+      conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
+    });
+  }
+  const { labels, steps } = await readRepositoryLabels(input, repository, runner);
+  const existing = labels.map(normalizeRepositoryLabel).find((label) => label?.name === name);
+  if (existing) {
+    return envelope({
+      result: { name, created: false, label: existing },
+      unchanged: true,
+      steps,
+      command,
+    });
+  }
+  // Both steps name themselves, following `sf-label-migrate`: a failure of either has to say which
+  // of the two commands produced it rather than reporting under the operation as a whole. That the
+  // create's label is no longer the bare operation name is exactly why the 422 tolerance had to
+  // stop keying on it.
+  const result = await runChecked(runner, createPlan, 'label-create write');
+  steps.push({ step: 'create', command });
+  // The tolerated duplicate rejection: a concurrent run created the label between this run's read
+  // and its write. GitHub's own uniqueness constraint is the only place that race can be caught, so
+  // catching it proves the label exists — the outcome this operation promises — without this run
+  // having created it and without any payload describing it, hence the null label.
+  if (result?.alreadyExists === true) {
+    return envelope({
+      result: { name, created: false, label: null },
+      unchanged: true,
+      steps,
+      command,
+    });
+  }
+  const parsed = parseCommandOutput(result, createPlan, 'label-create write');
+  // tea's create renders for humans and states no label, so the created label falls back to what
+  // was asked for. Only the provider-assigned id is genuinely unknown there, and it stays null
+  // rather than being invented.
+  const created =
+    normalizeRepositoryLabel(parsed.raw) ??
+    normalizeRepositoryLabel({
+      name,
+      color: payload.color ?? 'ededed',
+      description: payload.description ?? '',
+    });
+  return envelope({
+    result: { name, created: true, label: created },
+    unchanged: false,
+    steps,
+    command,
+  });
+}
+
+export async function executeOperation(operation, input = {}, options = {}) {
+  requireString(operation, 'operation');
+  requireObject(input);
+  const dryRun = MUTATIONS.has(operation) && options.apply !== true;
+  try {
+    if (operation === 'pr-checks-wait') checksWaitSettings(input.payload ?? input);
+    const runLocal = localOperation(operation, input, options);
+    if (runLocal !== undefined) {
+      if (input.cwd !== undefined) requireExistingDirectory(input.cwd);
+      return { ok: true, operation, provider: null, data: await runLocal(), dryRun: false };
+    }
+    if (!REMOTE_OPERATIONS.has(operation)) {
+      fail('INVALID_PAYLOAD', `unknown operation: ${operation}`, { operation });
+    }
+
+    const baseRunner =
+      options.runner ??
+      (async () => fail('INVALID_PAYLOAD', 'remote operations require an injected process runner'));
+    if (input.cwd !== undefined) requireString(input.cwd, 'cwd');
+    // Single choke point: every provider CLI resolves its repository from the working directory,
+    // so root all of them - repository resolution, probe, command plan, pagination, guards - in
+    // the caller's `cwd` rather than in whatever directory the process happens to sit in.
+    const runner = async (call) => {
+      const result = await baseRunner(
+        call?.cwd === undefined && input.cwd !== undefined ? { ...call, cwd: input.cwd } : call,
+      );
+      if (result?.error?.code === 'INVALID_CWD') {
+        fail('INVALID_PAYLOAD', 'working directory is not an existing directory', {
+          cwd: result.error.path,
+        });
+      }
+      return result;
+    };
+    // Validated before the first provider call, so a malformed filter never costs a probe or a read
+    // and never reaches the list with the filter silently dropped.
+    if (operation === 'pr-list' && input.planPath !== undefined) requirePlanPath(input.planPath);
+    const repository = await resolveRepositoryInput(input, runner);
+    if (operation === 'repository-resolve') {
+      return {
+        ok: true,
+        operation,
+        provider: repository.provider,
+        data: repository,
+        dryRun: false,
+      };
+    }
+    const forgejoWait = operation === 'pr-checks-wait' && repository.provider === 'forgejo';
+    const waitSettings = forgejoWait ? checksWaitSettings(input.payload ?? input) : undefined;
+    if (forgejoWait && options.sleeper !== undefined && typeof options.sleeper !== 'function') {
+      fail('INVALID_PAYLOAD', 'pr-checks-wait requires a callable sleeper');
+    }
+    const now = forgejoWait ? waitClock(options.clock) : undefined;
+    const deadline = forgejoWait ? now() + waitSettings.timeoutMs : undefined;
+    const waitState = { commands: [], forcedKill: false };
+    const probeRunner = forgejoWait ? boundedWaitRunner(runner, deadline, now, waitState) : runner;
+    let probe;
+    try {
+      probe =
+        options.skipProbe === true
+          ? (input.probe ?? {
+              executable: repository.provider === 'github' ? 'gh' : 'tea',
+              capabilities: {},
+            })
+          : await probeProvider(repository, probeRunner, {
+              issueSubIssueCreate: operation === 'probe' || operation === 'issue-sub-issue-create',
+              reviewThreadWrites: operation === 'probe' || THREAD_WRITE_OPERATIONS.has(operation),
+            });
+    } catch (error) {
+      if (forgejoWait && error?.code === 'WAIT_DEADLINE') {
+        return {
+          ok: true,
+          operation,
+          provider: repository.provider,
+          data: {
+            ...forgejoChecksWaitResult(input, repository, waitState, undefined, true),
+            conditionalWriteAvailable: false,
+          },
+          dryRun: false,
+        };
+      }
+      throw error;
+    }
+    if (operation === 'probe') {
+      return {
+        ok: true,
+        operation,
+        provider: repository.provider,
+        data: { repository, ...probe },
+        dryRun: false,
+      };
+    }
+    const activeRepository =
+      repository.provider === 'forgejo' && probe.login
+        ? { ...repository, login: probe.login }
+        : repository;
+    if (forgejoWait && now() >= deadline) {
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          ...forgejoChecksWaitResult(input, activeRepository, waitState, undefined, true),
+          conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
+        },
+        dryRun: false,
+      };
+    }
+    const capability = CAPABILITY_BY_OPERATION[operation];
+    if (probe.capabilities?.[capability] === false) {
+      fail('UNSUPPORTED_CAPABILITY', `${repository.provider} does not support ${operation}`, {
+        operation,
+        capability,
+      });
+    }
+    if (
+      operation === 'pr-create' &&
+      repository.provider === 'forgejo' &&
+      (input.payload ?? input).draft === true &&
+      probe.capabilities?.pullRequestDraftCreate !== true
+    ) {
+      fail('UNSUPPORTED_CAPABILITY', 'forgejo does not support draft pull-request creation', {
+        operation,
+        capability: 'pullRequestDraftCreate',
+      });
+    }
+    if (['issue-update-body', 'pr-update-body', 'issue-comment-update'].includes(operation)) {
+      requireString(input.expectedBodyHash, 'expectedBodyHash');
+      if (operation !== 'issue-comment-update' && probe.capabilities?.conditionalWrites === true) {
+        requireString(input.expectedVersion, 'expectedVersion');
+      }
+    }
+    if (operation === 'sf-label-migrate') {
+      return await executeSfLabelMigration(input, activeRepository, runner, dryRun);
+    }
+    // Both branches sit ahead of the generic dry-run return below, because both run more than one
+    // command and therefore build their own envelope.
+    if (operation === 'label-create') {
+      return await executeLabelCreate(input, activeRepository, runner, dryRun, probe);
+    }
+    if (operation === 'issue-state-wait') {
+      const observed = await executeIssueStateWait(input, activeRepository, runner, options);
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          ...observed,
+          conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
+        },
+        dryRun: false,
+      };
+    }
+    if (operation === 'pr-checks-wait' && activeRepository.provider === 'forgejo') {
+      const observed = await executeForgejoChecksWait(input, activeRepository, probeRunner, {
+        sleeper: options.sleeper,
+        deadline,
+        now,
+        settings: waitSettings,
+        state: waitState,
+      });
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: observed.result,
+          commands: observed.commands,
+          conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
+        },
+        dryRun: false,
+      };
+    }
+    // A tea-backed forge builds a thread write only on the evidence of the active probe, so the
+    // builder is handed that probe rather than whatever the input carried.
+    const plan = buildCommandPlan(
+      operation,
+      THREAD_WRITE_OPERATIONS.has(operation) ? { ...input, probe } : input,
+      activeRepository,
+    );
+    const preview = redact(plan);
+    if (dryRun) {
+      return {
+        ok: true,
+        operation,
+        provider: repository.provider,
+        data: {
+          repository: activeRepository,
+          command: preview,
+          capability: probe.capabilities?.[capability] ?? true,
+          conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
+        },
+        dryRun: true,
+      };
+    }
+    if (operation === 'pr-merge') {
+      await mergeHeadGuard(input, activeRepository, runner);
+    }
+    const guarded = await staleWriteGuard(
+      operation,
+      input,
+      activeRepository,
+      runner,
+      probe.capabilities?.conditionalWrites === true,
+    );
+    if (guarded?.unchanged) {
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: { unchanged: true, item: guarded.current, command: preview },
+        dryRun: false,
+      };
+    }
+    if (
+      activeRepository.provider === 'forgejo' &&
+      (operation === 'issue-list' || operation === 'pr-list')
+    ) {
+      const endpoint =
+        operation === 'issue-list'
+          ? forgejoIssueListEndpoint(input, activeRepository)
+          : forgejoPullListEndpoint(input, activeRepository);
+      const paginated = await readForgejoPaginated(activeRepository, endpoint, runner, operation, {
+        ...(input.limit === undefined ? {} : { limit: requireNumber(input.limit, 'limit') }),
+        ...(input.maxPages === undefined
+          ? {}
+          : { maxPages: requireNumber(input.maxPages, 'maxPages') }),
+      });
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: normalizeRemoteData(operation, paginated.items, activeRepository, input),
+          commands: paginated.commands,
+          pagesFetched: paginated.pagesFetched,
+          conditionalWriteAvailable: false,
+        },
+        dryRun: false,
+      };
+    }
+    // A **named** Forgejo branch, because the generic pagination branch above is hard-coded to
+    // `issue-list` and `pr-list` and nothing routes a third operation into it. Without this branch
+    // the read falls through to the generic mutation tail, issues exactly one request for page 1,
+    // and reports whatever `MAX_RESPONSE_ITEMS` returned as the complete list — the truncation
+    // `readForgejoPaginated` exists to prevent, and on this operation it would drop precisely the
+    // changes-requested review a merge precondition is evaluated over.
+    //
+    // `totalIsExact: false` for the same reason the thread walk keeps it: `ListPullReviews` counts
+    // the review rows with `CountReviews` while `convert.ToPullReviewList` omits every pending
+    // review belonging to another user, so the header legitimately exceeds the body and may end the
+    // walk early but never condemn it. And the envelope publishes `data.commands` **plural**, as
+    // every paginated Forgejo read does — the generic tail's singular `data.command` states one
+    // request, which this path is not.
+    if (operation === 'pr-reviews-read' && activeRepository.provider === 'forgejo') {
+      const reviewsEndpoint = `repos/${activeRepository.owner}/${activeRepository.repository}/pulls/${prNumber(input)}/reviews`;
+      const paginated = await readForgejoPaginated(
+        activeRepository,
+        reviewsEndpoint,
+        runner,
+        operation,
+        {
+          totalIsExact: false,
+          ...(input.limit === undefined ? {} : { limit: requireNumber(input.limit, 'limit') }),
+          ...(input.maxPages === undefined
+            ? {}
+            : { maxPages: requireNumber(input.maxPages, 'maxPages') }),
+        },
+      );
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: normalizeRemoteData(operation, paginated.items, activeRepository, input),
+          commands: paginated.commands,
+          pagesFetched: paginated.pagesFetched,
+          conditionalWriteAvailable: false,
+        },
+        dryRun: false,
+      };
+    }
+    // The review-thread walk publishes every call it made, for the same reason the status read does:
+    // the plan `buildCommandPlan` answered with — and therefore the preview computed above — is the
+    // review listing alone, because the per-review comment reads are addressed by the IDs it
+    // returns and are not knowable before it has run.
+    if (operation === 'review-threads-read' && activeRepository.provider === 'forgejo') {
+      const threads = await readForgejoReviewThreads(input, activeRepository, runner);
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: threads.result,
+          commands: threads.commands,
+          conditionalWriteAvailable: false,
+        },
+        dryRun: false,
+      };
+    }
+    // Both providers read the status through the same reader, so `mergeHeadGuard` and this branch
+    // can never diverge. What differs is only how many commands that took: GitHub's one GraphQL
+    // query is reported as `data.command`, Forgejo's three `tea api` calls as `data.commands`,
+    // mirroring the `pr-checks-wait` branch below. The plan `buildCommandPlan` answers with — and
+    // therefore the preview computed above — is call 1 alone, because calls 2 and 3 are addressed
+    // by the head SHA call 1 returns and are not knowable before it has run. Only the executed
+    // list below reports all three.
+    if (operation === 'pr-status-read') {
+      const status = await readPullRequestStatus(input, activeRepository, runner);
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: status.result,
+          ...(activeRepository.provider === 'forgejo'
+            ? { commands: status.commands }
+            : { command: status.commands[0] }),
+          conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
+        },
+        dryRun: false,
+      };
+    }
+    // `tea api` exits 0 on every 4xx and 5xx, so the merge result is decided by the HTTP status
+    // rather than by the exit code. A moved head is the one rejection that must stay distinguishable
+    // from every other: Forgejo answers it with 409, which becomes a `STALE_WRITE` stating
+    // `merged: false` instead of a `COMMAND_FAILED` carrying `mutationMayHaveSucceeded: true` — the
+    // caller may safely re-read after this, and must not be told the merge might have gone through.
+    // Every other rejection — 405 for a merge style the repository does not allow, 403 for a
+    // permission or branch-protection refusal — is a failure the server definitively did not act on.
+    if (operation === 'pr-merge' && activeRepository.provider === 'forgejo') {
+      const result = await runChecked(runner, plan, operation);
+      const response = readTeaApiResponse(result, operation);
+      // Tolerant on every path the status decides, for the reason `teaApiSuccess` states: a proxy's
+      // HTML 502 page must not become an `INVALID_PAYLOAD` that hides a merge the forge may have
+      // applied. The 2xx body below is read strictly, because there it is data.
+      const message = teaApiMessage(teaApiDiagnosticBody(result));
+      if (response.status === 409) {
+        fail('STALE_WRITE', 'pull-request head moved before the forge accepted the merge', {
+          number: prNumber(input),
+          expectedHeadSha: expectedHeadSha(input.payload ?? input),
+          merged: false,
+          status: response.status,
+          ...(message === undefined ? {} : { message }),
+        });
+      }
+      // The second, cheaper assertion beside the status: Forgejo answers an accepted merge with 200
+      // and an **empty** body, which `parseJsonOutput` turns into `null`, so any returned object is
+      // a rejection carrying `{"message":…}` however the status was spelled.
+      //
+      // A 5xx is the one rejection here the server did not choose, and it is exactly as
+      // unobservable as a dropped connection: Forgejo may have merged before it failed to answer.
+      // It therefore carries the possibly-applied flag rather than denying it, and the message
+      // stops calling it a refusal. Every status below 500 stays a deliberate answer — 409 was
+      // already taken above, 405 for a merge style the repository does not allow, 403 for a
+      // permission or branch-protection refusal — and a 2xx carrying a body is the forge stating a
+      // rejection it spelled as success.
+      if (
+        response.status < 200 ||
+        response.status >= 300 ||
+        // Only reached for a 2xx, where the body is data and an unreadable one is genuinely an
+        // `INVALID_PAYLOAD`. Short-circuiting keeps it out of every non-2xx decision above.
+        response.readBody() !== null
+      ) {
+        const mayHaveApplied = response.status >= 500;
+        fail(
+          'COMMAND_FAILED',
+          mayHaveApplied ? 'forgejo left the merge outcome unstated' : 'forgejo refused the merge',
+          {
+            number: prNumber(input),
+            status: response.status,
+            mutationMayHaveSucceeded: mayHaveApplied,
+            ...(message === undefined ? {} : { message }),
+          },
+          false,
+        );
+      }
+      // The merge is applied from here on; everything below only decides what the envelope may
+      // claim about the head it applied. `mergeHeadGuard` corroborated that head one call earlier,
+      // but it closes no race of its own — a server that ignores `head_commit_id` leaves exactly
+      // the window between that read and the merge unguarded — so the head is read back once
+      // afterwards. It is confirm-or-omit deliberately: a differing head has two indistinguishable
+      // causes, the ignored-`head_commit_id` race and a push that landed after a correct merge, so
+      // adopting it could replace a correct record with a wrong one.
+      const expected = expectedHeadSha(input.payload ?? input);
+      const readBackPlan = {
+        ...buildCommandPlan('pr-status-read', input, activeRepository),
+        // Bounded at the call site rather than in `buildCommandPlan`, so the builder keeps
+        // answering with an unbounded plan for every caller: only this one read bounds itself. The
+        // merge already happened, and a forge that stops answering must not leave the operation
+        // hanging on a read whose whole job is a corroboration the envelope can also do without.
+        timeoutMs: 30_000,
+      };
+      let confirmedHeadSha;
+      let headShaUnconfirmed;
+      try {
+        const readBack = teaApiSuccess(
+          await runChecked(runner, readBackPlan, 'pr-merge head read-back'),
+          'pr-merge head read-back',
+        ).body;
+        // Normalized on both sides before comparing: `expectedHeadSha` lowercases and the forge
+        // states whatever casing it stores, so a literal comparison would report a confirmed head
+        // as unconfirmed. A head the response does not state as a usable string is not a differing
+        // head — it is no statement at all.
+        const stated = typeof readBack?.head?.sha === 'string' ? readBack.head.sha.trim() : '';
+        if (stated === '') headShaUnconfirmed = 'unavailable';
+        else if (stated.toLowerCase() === expected) confirmedHeadSha = expected;
+        else headShaUnconfirmed = 'differs';
+      } catch {
+        // Every failure this read can raise is discarded here, and it can raise several: a non-zero
+        // exit is a `COMMAND_FAILED` from `runChecked`, a non-2xx status one from `teaApiSuccess`,
+        // a response without a status line an `INVALID_PAYLOAD` from `readTeaApiResponse`. None of
+        // them may reach the operation catch, where an applied merge would be reported as failed.
+        // The distinct label keeps that error out of the `pr-merge` tolerance too, so no failure
+        // here can ever be dressed up as `mutationMayHaveSucceeded`.
+        headShaUnconfirmed = 'unavailable';
+      }
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: normalizeRemoteData(operation, null, activeRepository, input, {
+            ...(confirmedHeadSha === undefined ? {} : { confirmedHeadSha }),
+            ...(headShaUnconfirmed === undefined ? {} : { headShaUnconfirmed }),
+          }),
+          // `data.command` keeps naming the merge, as `label-create` does for its own second call,
+          // so the generic mutation contract — inspect exactly that command — stays true; `steps`
+          // is what states the read-back beside it.
+          command: preview,
+          steps: [
+            { step: 'merge', command: preview },
+            { step: 'head-read-back', command: redact(readBackPlan) },
+          ],
+          conditionalWriteAvailable: false,
+        },
+        dryRun: false,
+      };
+    }
+    // Forgejo's `pr-mark-ready` is a title edit (see the adapter), and a title edit is not proof of
+    // the transition: an instance whose `WORK_IN_PROGRESS_PREFIXES` an operator extended keeps a
+    // pull request a draft under a title this adapter cannot recognize. So the edit is followed by
+    // exactly one `pr-read`, and `ready` is what that read states — the raw object's boolean
+    // `draft`, which the forge computes from the stored title. A read that does not state a boolean
+    // is no confirmation. Both failures are structured and name the step: the edit has been applied
+    // by then, so a caller reports the pull request as still a draft rather than retrying blind.
+    if (operation === 'pr-mark-ready' && activeRepository.provider === 'forgejo') {
+      // A failed edit keeps its own code and retryability, and states which step failed and that
+      // nothing was edited, so a caller can tell it from a failed confirmation below.
+      let edited;
+      try {
+        edited = parseCommandOutput(await runChecked(runner, plan, operation), plan, operation);
+      } catch (error) {
+        if (!(error instanceof RemoteTrackerError)) throw error;
+        throw new RemoteTrackerError(
+          error.code,
+          error.message,
+          { ...error.details, step: 'title-edit', titleEdited: false },
+          error.retryable,
+        );
+      }
+      const readBackPlan = buildCommandPlan('pr-read', input, activeRepository);
+      let draft;
+      try {
+        const readBack = teaApiSuccess(
+          await runChecked(runner, readBackPlan, 'pr-mark-ready read-back'),
+          'pr-mark-ready read-back',
+        ).body;
+        draft = readBack?.draft;
+      } catch (error) {
+        fail(
+          'COMMAND_FAILED',
+          'pr-mark-ready edited the title but could not confirm the ready state',
+          {
+            number: prNumber(input),
+            step: 'ready-read-back',
+            titleEdited: true,
+            cause: {
+              code: error?.code ?? 'COMMAND_FAILED',
+              message: error?.message ?? 'unexpected failure',
+            },
+          },
+          false,
+        );
+      }
+      if (typeof draft !== 'boolean') {
+        fail(
+          'INVALID_PAYLOAD',
+          'pr-mark-ready read-back states no draft flag',
+          { number: prNumber(input), step: 'ready-read-back', titleEdited: true },
+          false,
+        );
+      }
+      if (draft) {
+        fail(
+          'COMMAND_FAILED',
+          'pr-mark-ready edited the title but the pull request is still a draft',
+          { number: prNumber(input), step: 'ready-read-back', titleEdited: true, draft: true },
+          false,
+        );
+      }
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: normalizeRemoteData(operation, edited.raw, activeRepository, input, {
+            ready: draft === false,
+          }),
+          // `data.command` keeps naming the edit, as `pr-merge` does for its read-back.
+          command: preview,
+          steps: [
+            { step: 'title-edit', command: preview },
+            { step: 'ready-read-back', command: redact(readBackPlan) },
+          ],
+          conditionalWriteAvailable: false,
+        },
+        dryRun: false,
+      };
+    }
+    // The wait is two gh invocations because one cannot exist: `gh pr checks` rejects `--watch`
+    // together with `--json`, so the blocking watch and the structured read never share an argument
+    // vector. It stays a single blocking wait for the caller, not a prompt-driven poll loop — the
+    // watch does all the waiting under the caller's bound, and the read that follows is the sole
+    // authority for the payload and for any operational error. The read runs in every case,
+    // including after a timeout, because a timed-out wait that reported no checks would withhold
+    // exactly the pending list the caller has to act on.
+    if (operation === 'pr-checks-wait') {
+      const watch = await runChecked(runner, plan, 'pr-checks-watch');
+      const readPlan = buildChecksReadPlan(input, activeRepository);
+      const readResult = await runChecked(runner, readPlan, operation);
+      const parsed = parseCommandOutput(readResult, readPlan, operation);
+      // Either step can report that the checks were not finished, and both statements count. The
+      // watch says so by running out of its bound; the read says so independently through exit code
+      // 8, which is the provider's own "still pending" and the only such signal when the watch
+      // returned cleanly. Dropping either would call a wait clean that the provider called pending,
+      // and a timeout keeps `complete` false even when the read comes back all green — the wait was
+      // cut short, so nothing about it is proven done. `forcedKill` stays the watch's alone: it
+      // describes a child that had to be killed, which says nothing about the read.
+      if (watch?.timedOut === true || readResult?.timedOut === true) parsed.timedOut = true;
+      if (watch?.forcedKill === true) parsed.forcedKill = true;
+      // The read is also the only step that can observe gh reporting no required check for this
+      // branch — the watch never applies `--required` at all, and its exit status is discarded
+      // regardless. The fact rides the same metadata channel because the payload it explains is
+      // empty by definition, and the normalizer needs it to tell an empty `--required` response
+      // apart from a read that returned a rollup. It stays a record of what gh reported rather than
+      // a statement about branch protection, which is why it never makes the wait complete.
+      if (readResult?.requiredChecksDefined === false) parsed.requiredChecksDefined = false;
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: normalizeRemoteData(operation, parsed.raw, activeRepository, input, parsed),
+          commands: [preview, redact(readPlan)],
+          conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
+        },
+        dryRun: false,
+      };
+    }
+    const result = await runChecked(
+      operation === 'pr-create' &&
+        activeRepository.provider === 'github' &&
+        (input.payload ?? input).draft === true
+        ? draftCreateRunner(runner)
+        : runner,
+      plan,
+      operation,
+    );
+    // Every `tea api --include` plan reads its HTTP status before its body is trusted, whichever
+    // operation built it. `parseCommandOutput` cannot do that: tea prints the header block to
+    // stderr where `gh --include` prints it to stdout, so its `includesHeaders` branch would find
+    // plain JSON on stdout and hand a 401 body on as data — and `tea api` exits 0 for it.
+    const parsed = isTeaApiIncludePlan(plan)
+      ? { raw: teaApiSuccess(result, operation).body }
+      : parseCommandOutput(result, plan, operation);
+    // A bounded wait reports its outcome through the exit status, not through its payload, so the
+    // wait result travels next to the parsed output into the normalizer. A forced stop is reported
+    // separately from a clean one: it means the provider ignored SIGTERM, which is worth seeing.
+    if (result.timedOut === true) parsed.timedOut = true;
+    if (result.forcedKill === true) parsed.forcedKill = true;
+    return {
+      ok: true,
+      operation,
+      provider: activeRepository.provider,
+      data: {
+        result: normalizeRemoteData(operation, parsed.raw, activeRepository, input, parsed),
+        command: preview,
+        conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
+      },
+      dryRun: false,
+    };
+  } catch (error) {
+    return errorEnvelope(
+      operation,
+      operation === 'pr-list' && input?.planPath !== undefined
+        ? withoutOutputExcerpts(error)
+        : error,
+      dryRun,
+    );
+  }
+}
+
+// A `planPath` discovery hands the caller the parsed marker and never a body (see `pr-list` in
+// `normalizeRemoteData`), and its failures keep that promise: a malformed listing's stdout excerpt
+// or a failed command's stderr is exactly the pull-request text discovery withholds. Every such
+// excerpt, at any depth of the details, is replaced by its length, which is still enough to tell
+// an empty stream from a populated one.
+function withoutOutputExcerpts(error) {
+  if (!(error instanceof RemoteTrackerError)) return error;
+  const scrub = (value) => {
+    if (Array.isArray(value)) return value.map(scrub);
+    if (typeof value !== 'object' || value === null) return value;
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) =>
+        (key === 'stdout' || key === 'stderr') && typeof entry === 'string'
+          ? [`${key}Length`, entry.length]
+          : [key, scrub(entry)],
+      ),
+    );
+  };
+  return new RemoteTrackerError(error.code, error.message, scrub(error.details), error.retryable);
+}
+
+export function errorEnvelope(operation, error, dryRun = false) {
+  const normalized =
+    error instanceof RemoteTrackerError
+      ? error
+      : new RemoteTrackerError('COMMAND_FAILED', error?.message ?? 'unexpected failure', {}, false);
+  return {
+    ok: false,
+    operation,
+    provider: null,
+    data: null,
+    dryRun,
+    error: {
+      code: normalized.code,
+      message: normalized.message,
+      details: redact(normalized.details),
+      retryable: normalized.retryable,
+    },
+  };
+}

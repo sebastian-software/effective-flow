@@ -1,0 +1,63 @@
+{
+  "name": "An activate that stays LOCKED after its retries keeps the baseline and the run records Quality",
+  "harness": "claude",
+  "config": "true",
+  "inventory": "baseline",
+  "baselineEvidence": "ready",
+  "activation": "locked",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "baseline",
+    "persistedGenerationState": "baseline",
+    "activation": "locked",
+    "operations": [
+      "inventory",
+      "protocol",
+      "activate",
+      "activate",
+      "activate",
+      "start",
+      "start-packet",
+      "finish-packet",
+      "finalize"
+    ],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      }
+    ],
+    "incidents": [],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
+    "events": []
+  }
+}

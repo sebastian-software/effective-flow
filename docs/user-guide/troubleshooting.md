@@ -1,0 +1,376 @@
+# Troubleshooting and FAQ
+
+Common questions and error patterns around Effective Flow – sorted by topic. If a message leads you
+here, check the matching section first before you retry a run.
+
+## "gh: command not found" or "tea: command not found"
+
+The [remote tracker](./remote-tracker.md) and `/effective-flow pr` require, in remote mode, an
+installed and authenticated CLI:
+
+- **GitHub** (host `github.com`): install [`gh`](https://cli.github.com/), then
+  `gh auth login` or `gh auth status` to check.
+- **Forgejo/Gitea** (any other host): install `tea` and configure it with the respective
+  login.
+
+If the CLI is missing or not authenticated, Effective Flow deliberately aborts **clearly** instead of
+silently falling back to local mode – so you are never left in the dark about whether a
+finding was actually created as an issue. Effective Flow offers a fallback to `local` only
+if you explicitly agree to it. Afterwards, check with `git remote get-url origin` whether the
+right host is detected; for ambiguous hosts (e.g. GitHub Enterprise),
+`tracker.remoteToolOverride` in the [Configuration](./configuration.md#block-tracker) helps.
+
+## "gh is too old" or "tea is too old for the remote-tracker adapter"
+
+The CLI is installed, but below the supported minimum – `gh` 2.0.0 or `tea` 0.14.2. The message
+names the `installed` and `minimum` versions. Update the CLI (for example `brew upgrade gh` or
+`brew upgrade tea`) and start the run again.
+
+`tea` before 0.14.2 cannot create a pull request from a repository slug together with an explicit
+head branch, which is exactly the form Effective Flow uses. The check runs at the start of a remote
+run, so you find out before implementation instead of at the delivery point.
+
+The Forgejo merge-gate operations do **not** raise that floor. They ride on `tea api`, which landed
+in v0.12.0, and the flag they need on top of it (`--include`) is probed rather than versioned: a
+`tea` without it reports `pr-status-read`, `pr-reviews-read`, `pr-merge`, `viewer-read` and
+`issue-close` as
+`UNSUPPORTED_CAPABILITY` instead of failing the version check, so `tea` 0.14.2 stays the minimum for
+every run. Comment creation (`issue-comment` and `pr-comment`) uses the same status-aware API
+transport and requires all three flags: `--method`, `--data`, and `--include`. If any is missing,
+creation reports `UNSUPPORTED_CAPABILITY` before writing, even if `tea comment` is available.
+The gate's post-merge read of a
+linked issue's canonical planning comment is deliberately **not** on that list: `issue-comments-read`
+is gated on `tea`'s issue and issue-comment support rather than on the `tea api` transport, so a
+`tea` built without `--include` still reports the open points recorded for an issue even where the
+issue close is unavailable. Without `pr-reviews-read` the merge
+gate cannot establish a reviewer's changes-requested
+verdict, so it reports that and asks once instead of merging – and never merges at all in a
+non-interactive run. Without `issue-close` nothing about the merge changes: only the gate's offered
+post-merge terminal transition becomes unavailable for forge issues, which it reports by name and
+then continues.
+
+## The external tracker connection could not be resolved
+
+With `tracker.mode: external` (see [Remote tracker](./remote-tracker.md#external-target)), a run
+resolves exactly one connection to the tool named in `tracker.externalTool` before its first read.
+If that fails, the run aborts before any write and leaves your workflow state intact – it never
+falls back to the forge or to a local report, because that would either scatter your issues across
+two systems or hide work you asked to publish. Four causes, four remedies:
+
+| Message                 | Cause                                                                     | What helps                                                                                                                     |
+| ----------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Missing tool identifier | `tracker.mode: external` without a non-empty `tracker.externalTool`       | Run `/effective-flow setup` and record the identifier, or set the mode back to `local` or `remote`.                            |
+| No connection           | Neither an MCP connection nor an authenticated CLI for that tool is there | Set up the tool's MCP server in your harness, or install and log in to its CLI, then retry.                                    |
+| Ambiguous connection    | Several plausible connections and no decisive hint                        | Sharpen `tracker.externalToolHint`: name the MCP server, the workspace, or the team/project key that identifies the right one. |
+| Missing capability      | The connection cannot do what a flow needs                                | The message names the capability. Grant the connection the missing permission or scope, or use a connection that covers it.    |
+
+Typical missing capabilities are updating an existing comment – without it the canonical planning
+comment cannot stay a single comment – searching issue descriptions, which the finding
+deduplication needs, and any way to classify an issue, without which severity, action, and the
+lifecycle states cannot be stored. Once the connection is fixed, simply start the run again; it
+had not written anything.
+
+## The external started state could not be resolved
+
+Issue-backed implementation needs one writable native state that the selected tracker context
+normalizes as started. Effective Flow lists the states fresh immediately before implementation and
+fails before code changes when `tracker.externalStartedState` is missing, stale, belongs to another
+workspace or team, is terminal or read-only, or no longer resolves by stable ID or exact accepted
+token. It never falls back to matching a display name such as “In Progress.”
+
+If the run reports exactly one qualifying candidate, check its displayed name and stable value,
+then run `/effective-flow setup` to discover and persist it through the confirmed before/after
+change. An interactive implementation run can use that one value for its current run after asking,
+but does not save it. If zero or several candidates are listed, refine
+`tracker.externalToolHint` so the connection resolves the intended workspace, team, or project, or
+adjust the tracker workflow. Do not copy an arbitrary display name into the ADR.
+
+An issue already marked started without a PR link is handled as an interrupted delivery. Effective
+Flow reads its comments and searches the forge once by the exact issue reference. If that does not
+produce exactly one verifiable pull request, it keeps the issue state, branch, and existing pull
+requests unchanged and starts no replacement implementation. Identify the correct delivery or
+retire the interrupted one manually, then rerun `apply`.
+
+## A linked issue remains open after merge
+
+`/effective-flow merge-gate` waits for tracker automation for one fixed 30-second grace period after
+a confirmed merge. A still-open issue does not make the merge fail, and Effective Flow never closes
+it forcibly. Read the issue row in the report: it names the first observed next action—an
+intentional non-closing `Refs` relationship, open sub-items or checklist entries, the
+`effective-flow-needs-planning` path, a still-started external state, or only the terminal tracker
+transition when no remaining implementation work is visible.
+
+That last case is the one the gate offers to perform for you, so the row says why it did not. Expect
+one of four reasons. The completion verdict was `incomplete` – the report names which criterion by
+its position in the criteria section, and which sub-item, checklist entry, or
+`effective-flow-needs-planning` classification is still unmet. It quotes no criterion text; you read
+the wording at the issue URL.
+The verdict was `undetermined` – most often because the issue states no acceptance criteria under an
+`Acceptance criteria`, `Akzeptanzkriterien`, or `Done criteria` heading, which is never enough for a
+`complete` verdict; add such a section to the issue before the next run, or transition it yourself.
+The offer was posed and you declined, or the run was non-interactive and therefore posed nothing. Or
+the offer was **unavailable**, which is not the same as an incomplete issue: on the forge the
+`issueClose` capability was missing (see the `tea --include` note above), and on an external tracker
+either a native lifecycle capability or `tracker.externalDoneState` could not be resolved. For that
+last one the report lists the observed terminal candidates; check the displayed name and stable value
+and persist it with `/effective-flow setup`, exactly as for the started state. An unresolvable
+`externalDoneState` never fails a run – the merge already succeeded – it only leaves the issue open.
+
+The row also gives you what the issue's canonical planning comment recorded as **open points** – the
+implementation-blocking decisions `/effective-flow plan-issue` left standing there rather than in the
+issue body. You get them for every issue the run assessed, whichever next action it named, and their
+text is quoted, which no other issue text in this report is: they are report-only, so no verdict, no
+offered transition, and no write depends on a word of them, and reading them is the shortest route to
+what the issue still needs from you. Three results read differently. Entries are listed, cut at a
+fixed cap with the comment URL given for anything longer. A recorded absence says which of three
+reasons it is: the comment states its empty section, the comment predates the section and carries
+none, or the issue carries no canonical comment at all. Open points reported as unobserved mean the
+comment could not be read – because the read is unsupported, on the forge for a missing
+`issueCommentsRead` capability and on an external tracker for a connection that exposes no way to
+read comments, or because a supported read failed – and that costs nothing but the observation: the
+verdict, the offer, and everything the run wrote are exactly what they would have been. An issue already terminal when the grace period
+ended is not assessed at all and carries no such line.
+
+If automation simply needs longer, run `/effective-flow merge-gate <PR>` again. For an already
+merged pull request, this is observer-only: it repeats receipt validation, tracker observation, the
+completion assessment with its offered terminal transition, terminal forge-label cleanup, and
+eligible container completion, but not checks, review work,
+branch writes, or merge. That makes it the way to pose an offer a non-interactive run could only
+recommend. An issue that is already terminal by then is skipped entirely, so the re-entry retries
+only the reconciliation the previous run left open.
+
+A parent issue may intentionally remain open for later packages. That alone does not call for
+observer-only re-entry. The final recommendation compares the associated canonical planning record
+with the completed work: a stale record may lead to `/effective-flow plan-issue <known-issue>` to
+record completion and prepare the next package. Remaining approvals and dependencies still apply;
+the recommendation neither updates the issue nor authorizes the next package. If the associated
+context cannot be read or resolved, the report names the limitation and offers only a valid generic
+fallback, or no option. See [Tool flow](tool-flow.md).
+
+If the report says the issue is unobservable, fix the named external connection or read capability
+and use the same re-entry command. If it says the lifecycle receipt is missing, duplicated,
+malformed, or mismatched, the pull request still remains merged, but Effective Flow will not infer
+issue identities from its prose. Restore the single valid receipt through the issue-owning workflow
+or verify and close the issue manually. A native sub-item or checklist entry remains open until its
+linked issue is freshly observed terminal.
+
+## Worktree conflicts and uncommitted changes
+
+By default, Effective Flow works in a separate [worktree](./worktree-and-delivery.md) and does not
+touch your current checkout in the process. The one file it may remove there is the redundant,
+still untracked copy of a plan file it has archived, and only once the archived state is safely in
+the delivery branch and that copy has not changed in the meantime. Two situations still lead to a
+follow-up question instead of an automatic continuation:
+
+- **Uncommitted changes in the main checkout**, when delivery is to happen without a worktree
+  as an exception (`worktree.enabled: false`): Effective Flow never stages, stashes or overwrites
+  these changes silently. Commit or stash them manually, or let the implementation run
+  regularly in the default worktree.
+- **Removing the worktree fails**, because uncommitted remnants still lie within it: the
+  worktree then deliberately stays in place, and Effective Flow reports the path. Check the remnants
+  manually (`git -C <worktree-path> status`) and commit or discard them before you retry
+  `git worktree remove <path>`.
+
+A merge conflict on completion (`delivery.completion: merge`) is likewise never
+resolved automatically: Effective Flow stops, leaves the delivery branch in place and informs you, so you
+can resolve the conflict deliberately. The one place that does resolve conflicts is
+[`/effective-flow merge-gate`](./tools-deliver.md#resolving-a-conflict-with-the-base), and only for a
+conflict between an open pull request's head branch and its base, in a delegated worker whose result
+is verified before anything is committed. `mergeGate.conflictResolution: off` switches that off.
+
+## Cleanup keeps a linked worktree
+
+[`/effective-flow cleanup`](./tools-setup.md#effective-flow-cleanup) always reports every remaining
+linked worktree except the repository's main worktree. The report gives the checkout identity,
+inspection or lifecycle status, the specific reason for retaining it, and a safe next step.
+Retention is intentional whenever Effective Flow cannot prove that normal removal is safe.
+
+| Reported state or reason                        | What it means                                                                                     | Safe next step                                                                                                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `active`                                        | Work may still be running, or the owning run may have ended unexpectedly, for example in a crash. | Check whether the owning workflow is still running and inspect the worktree before changing anything. Age alone is not evidence that it is finished. |
+| `aborted` or `failed`                           | The run stopped before it could mark the worktree safe for cleanup.                               | Inspect `git -C <worktree-path> status`; recover or commit wanted changes, or discard them deliberately outside the automatic cleanup path.          |
+| Dirty checkout                                  | Tracked, untracked, or submodule state would make ordinary removal unsafe.                        | Inspect the status and secure or intentionally discard the remaining work. Then run cleanup again.                                                   |
+| Locked worktree                                 | Git or another workflow has marked the worktree as unavailable for removal.                       | Identify who owns the lock. Unlock it only after you have verified that no workflow or external process still depends on it.                         |
+| `cleanup-in-progress` or lifecycle lock         | Another cleanup actor claimed the record, or a previous attempt stopped after claiming it.        | Inspect the recorded owner and timestamp. Do not break the lock or claim merely because it looks old.                                                |
+| Prunable or missing worktree path               | Git registration and the filesystem no longer agree.                                              | Inspect `git worktree list --porcelain` and reconcile the Git metadata manually. Cleanup never runs a broad `git worktree prune`.                    |
+| Missing or unknown lifecycle record             | Effective Flow cannot prove ownership or a safe completed run.                                    | Treat the worktree as user-managed. Inspect and resolve it manually; cleanup does not adopt legacy worktrees from a path or branch pattern.          |
+| Receipt, branch, commit, or repository mismatch | Current Git state no longer matches the record that created the worktree.                         | Verify the repository and checkout history manually. Preserve the worktree until you understand the mismatch.                                        |
+| Harness-managed or user-created                 | Effective Flow does not own cleanup for this checkout.                                            | Use the owning harness or your normal Git workflow to manage it.                                                                                     |
+| Cleanup is running in this worktree             | The current execution worktree cannot safely remove itself.                                       | Let cleanup finish, then run it from the main checkout or another safe execution location if this worktree should be reconsidered.                   |
+
+An `aborted` or `failed` worktree that a run on a
+[published plan's pull request](./worktree-and-delivery.md#continuing-on-a-published-plans-pull-request)
+left behind can be resumed instead of recovered by hand: run the implementing tool on the same plan
+again, and it adopts that worktree when exactly one lifecycle record matches and every fresh check
+passes. Otherwise it stops and names the retained worktree.
+
+If normal `git worktree remove <path>` fails, the lifecycle remains `cleanup-failed` with the
+reported error. Fix the concrete cause and rerun cleanup; it rechecks ownership, the receipt, Git
+registration, branch, status, lock, and lifecycle before retrying. If the worktree was removed but
+its lifecycle record or temporary component branch remains, the report calls this partial cleanup.
+Delivery branches are intentionally retained. A temporary `apply-review` branch is removed only
+when integration is proven and ordinary `git branch -d` accepts it.
+
+Cleanup does not use a timeout, heartbeat, or stale-after rule, so it never reclassifies `active`
+or `cleanup-in-progress` state based on age. It also never uses `--force`, `git branch -D`, or a
+broad prune operation. These limits preserve recoverable work after a crash or interrupted run.
+
+## "The clarification gate was not passed"
+
+Before an implementing tool (`build`, `fix`, `refactor`, `docs`, `apply`) actually implements a
+plan file, an issue or a review finding, it checks whether the basis is **fully
+clarified**. The gate fails in particular when:
+
+- the plan file still contains an "Open points" section with real entries (the former spelling
+  "Open Points" remains readable),
+- measurable acceptance criteria are missing or are formulated without a concrete check,
+- points marked as assumptions substantially affect the behavior, the scope or the risk of
+  the implementation,
+- an issue or finding does not describe the desired implementation independently enough to
+  work through it without a follow-up question.
+
+This is **not an error**, but a deliberate safeguard against implementation on the basis of
+assumptions. In this case, Effective Flow does not abort mid-implementation, but points
+back to the clarification:
+
+- a plan file goes to [`/effective-flow plan`](./tools-understand.md) or its deeper review
+  (`/effective-flow review <plan file>`),
+- an issue or finding goes to [`/effective-flow plan-issue`](./tools-understand.md).
+
+Add the missing information there and then call the implementing tool again.
+
+## Wrong or mixed language in Effective Flow artifacts
+
+A new plan—including its header fields, sections, review, open points, and status marker—uses
+`language.workflow` from the [project-setup ADR](./configuration.md#block-language). Local review
+and investigation reports use the same setting. Existing artifacts retain their recognizable
+language unless you explicitly request a translation, so changing the project configuration does
+not rewrite earlier files.
+
+Other surfaces intentionally may differ: remote issues and comments and PR bodies use
+`language.forge`; commit descriptions and Conventional-Commit PR titles use `language.git`.
+Each missing artifact-surface override inherits `language.project`, which itself defaults to `en`.
+An invalid `de`/`en` value is reported and ignored in favor of the next fallback rather than
+guessed. The reply language is a separate question with a separate key; see the next section.
+
+Use [`/effective-flow setup`](./tools-setup.md) to inspect and change these values. If only a
+legacy `plan.markerLanguage` row exists, Effective Flow can still read it as a temporary workflow
+fallback and setup offers a confirmed migration; writers never create the old row. A repository
+without language settings may temporarily infer the workflow language from existing plans only
+when plan prose and markers are consistently German or English. Mixed or contradictory plans are
+not a valid signal. If one existing artifact is itself mixed or unclear, clarify its intended
+language before asking Effective Flow to edit it.
+
+## Effective Flow answers in the wrong language
+
+The language a run speaks to you in is `language.chat`, not `language.project` and not any
+artifact surface. Three results surprise people, and none of them is a bug:
+
+- **It answers German although you wrote English** (or the reverse). A configured `language.chat`
+  outranks the language of your message; that is what the key is for. Only an explicit request in
+  the message itself beats it. Change or remove the row with
+  [`/effective-flow setup`](./tools-setup.md).
+- **One run mixes both languages.** The key covers what the run says itself, including the
+  next-steps block and the session-title label. Reports from delegated workers and notices from
+  agents are relayed word for word, so they arrive in the language they were written in. The tool
+  catalog, `/effective-flow version`, and the `pr-review` deprecation notice appear before any
+  configuration is read and stay on the language of the conversation.
+- **Setting the key seems to do nothing.** Check the spelling of the value: only `de` and `en` are
+  valid, and an invalid value is reported and then treated as if the row were absent — which means
+  mirroring the language you write in, not falling back to `language.project`.
+
+Leaving `language.chat` out is the default and is not inheritance: replies mirror whatever
+language you write in, and `language.project` is reached only when that language is unclear.
+
+## Checking whether the setup is healthy
+
+Run [`/effective-flow setup status`](./tools-setup.md#status). It reports, without changing
+anything, where the configuration comes from and what is wrong with it, whether `.effective-flow/`
+is ignored correctly, which central domain skills are missing or disabled and which tools fall back
+because of it, and whether a newer Effective Flow release is published. Each problem names the
+setup form or manual step that fixes it.
+
+## There is no project-setup ADR
+
+This is not an error. Without an ADR or transitional legacy source, every tool uses the safe
+defaults in [Configuration](./configuration.md#safe-defaults-at-a-glance): worktree enabled,
+completion via merge, local tracker as the safe base, and English as the project language.
+Review still asks for local or remote mode on first use when no source pins `tracker.mode`.
+Running an ordinary tool never creates configuration or touches Git. To persist different settings, run
+[`/effective-flow setup`](./tools-setup.md) and choose one of the three common profiles after the
+Chat question. Use `/effective-flow setup express` explicitly when you intentionally want the
+safe-base-plus-existing-values path after one before/after confirmation. Use
+`/effective-flow setup guided` when you need per-key configuration, including an explicit
+GitHub/Forgejo provider override or base that Profile mode cannot verify without guessing.
+
+If a convention-file marker exists but points to a missing ADR, Effective Flow reports the stale
+marker and continues through the default-path scan and other fallbacks. Run setup to correct the
+marker once you have chosen the intended ADR location.
+
+## Getting rid of old `.firmo/`/`.sf-plugin/` directories or `firmo-` labels
+
+Effective Flow migrates project-local legacy data (`.firmo/`, `.sf-plugin/`, `firmo-` labels)
+**non-destructively**: it copies when needed and reads the old data as a fallback, but never
+deletes it on its own. So if legacy directories, an untracked `.firmo/config.json` or
+`firmo-` labels remain after a migration, that is **not an error**, but intentional.
+
+For the final cleanup, use [`/effective-flow cleanup`](./tools-setup.md): it first shows an
+inventory and a dry-run preview, asks before each deletion, removes tracked files via `git rm`
+(recoverable through Git history), and removes untracked directories only after explicit
+confirmation. The same run also inventories linked worktrees and ends with the mandatory
+remaining-worktree report described above. It does not commit and does not create a backup – you
+bring the staged changes in afterwards with [`/effective-flow commit`](./tools-deliver.md).
+
+## The tool did everything itself instead of delegating
+
+Symptom: a tool that names a worker role (for example the implementer inside `build` or `fix`)
+reads the codebase, writes the change, and reports completion without ever mentioning that worker
+in the transcript – the orchestrator did the work inline instead of delegating it.
+
+Effective Flow's delegation mandate makes invoking a tool your standing request for internal
+delegation, so a host default that discourages unrequested sub-agents does not apply inside a
+run. Delegating to a named worker role is mandatory, and delegating an analysis or exploration
+step is the default. If the orchestrator still does everything inline without saying so, that is
+exactly the defect the mandate exists to remove and is worth a bug report with the transcript.
+
+A legitimate, disclosed inline fallback looks different: the tool states in one visible line that
+no sub-agent mechanism was available, or that a delegation was declined at runtime, before it
+continues inline. A single trivial step – one known file, one lookup – also stays inline by
+design and needs no disclosure. See also the next entry, "A workflow cannot resolve a worker",
+for the related but distinct case where delegation fails because the worker contract itself is
+missing rather than skipped.
+
+## A workflow cannot resolve a worker
+
+First identify the installation path:
+
+- **DALO:** confirm that the source and skill are selected as shown in
+  [Getting started](getting-started.md#preferred-dalo), then run `dalo sync` again.
+- **Skills CLI:** repeat the command for your harness from
+  [Getting started](getting-started.md#alternative-skills-cli-1519).
+
+For either manager, no native agent sidecars are expected. The installed skill must contain
+`workers/effective-flow-*.md`. Effective Flow loads only the selected contract and delegates it
+through the harness's built-in general-purpose subagent mechanism. A host without that mechanism
+is unsupported for worker-dependent portable workflows; the tool should state this clearly
+rather than silently continuing.
+
+## DALO reports an ambiguous `effective-flow` slot
+
+Current releases publish exactly one portable candidate at `effective-flow/SKILL.md`. If an
+inspection also shows `claude/effective-flow` or `codex/effective-flow`, the source points at an
+older delivery commit or at the release archive instead of the default branch. Refresh the DALO
+catalog source with `dalo sync` and verify its commit. Release archives intentionally contain all
+three build targets for release maintenance and are not a supported end-user installation source
+or manager catalog.
+
+Skills CLI users should likewise select `--skill effective-flow` from the repository/default
+branch, not from an extracted archive. Claude Code and Codex receive the same portable files;
+only their destination directories differ.
+
+## See also
+
+- [Configuration](./configuration.md) – full field reference
+- [Worktree and delivery](./worktree-and-delivery.md)
+- [Remote tracker](./remote-tracker.md)
+- [Glossary](./glossary.md)

@@ -1,0 +1,55 @@
+{
+  "name": "A required comparator Phase 2 cannot establish blocks before Phase 3, the preflight, and any spawn",
+  "harness": "codex",
+  "config": "true",
+  "inventory": "active",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "refactor": {
+    "baseline": {
+      "requiredComparator": "missing",
+      "optionalEvidence": "available",
+      "preExistingFailure": false
+    }
+  },
+  "expected": {
+    "configState": "enabled",
+    "generationState": null,
+    "persistedGenerationState": null,
+    "activation": null,
+    "operations": [],
+    "packets": [],
+    "incidents": [],
+    "finalize": null,
+    "events": [
+      {
+        "kind": "stop",
+        "topic": "missing-required-comparator"
+      }
+    ],
+    "refactor": {
+      "comparator": "missing",
+      "rounds": [],
+      "validation": {
+        "status": "unavailable",
+        "requiredCount": 0,
+        "totalCount": 0,
+        "satisfiedCount": 0
+      },
+      "review": {
+        "status": "unavailable",
+        "severityCounts": {
+          "critical": 0,
+          "important": 0,
+          "note": 0
+        }
+      },
+      "externalReview": "not-finalized",
+      "completionStatus": null
+    }
+  }
+}

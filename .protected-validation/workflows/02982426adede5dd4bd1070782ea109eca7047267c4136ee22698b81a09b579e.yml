@@ -1,0 +1,175 @@
+name: CI
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Format, test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # build.mjs stamps the git short hash into the router; fetch full
+          # history so `git rev-parse --short HEAD` resolves instead of "nogit".
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Format check
+        run: pnpm agent:check
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build distribution
+        run: node build.mjs
+
+      - name: Distribution and installation smoke tests
+        run: pnpm test:distribution
+
+      # The job's last step, deliberately. A strict failure aborts the job at the point it
+      # happens, so placing this next to `Unit tests` would skip `Build distribution` and
+      # `pnpm test:distribution` on exactly the pull request that ships — hiding a real build
+      # failure behind an owed eval round, which is the cheaper of the two problems.
+      #
+      # No condition guards this step, and none may guard the job. `Format, test and build` is a
+      # required status check on `develop` with an empty bypass-actor list, and a required check
+      # that never reports blocks the pull request forever: no timeout, and no override short of
+      # editing the ruleset outside this repository. That deadlock is already documented for path
+      # filters beside the required-check list in
+      # docs/developer-guide/release-and-installation.md. The step therefore always runs and
+      # always reports; only whether a stale verdict is fatal varies.
+      #
+      # It never runs a model. `verify` rebuilds the skill into a throwaway root and compares each
+      # behavioural eval suite's archived evidence against the working tree. On an ordinary pull request
+      # that verdict is a report — printed to the step summary, green even when stale, because
+      # re-recording a round on every merge is the cost this gate exists to remove. On the
+      # release pull request it is strict: that is the one point where the evidence has to
+      # describe the build that actually ships, and a stale, absent or short corpus fails.
+      - name: Behavioural eval evidence
+        env:
+          # Read through the environment rather than expanded into the script with `${{ }}`: a
+          # head-ref is attacker-controlled text on a fork pull request, and a direct expansion
+          # would splice it into the command line before bash ever parses it.
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          # release-please opens its pull request from
+          # release-please--branches--develop--components--effective-flow. The prefix is matched
+          # rather than the full name, so the component suffix may change with the manifest.
+          # test/workflow-contracts.test.mjs pins this literal: a renamed prefix would otherwise
+          # turn the gate off while every CI run stayed green about it.
+          mode=report
+          case "$EVENT_NAME:$HEAD_REF" in
+            pull_request:release-please--*) mode=strict ;;
+          esac
+
+          # One verdict per suite, every suite verified and reported even when an earlier one
+          # failed, so one stale corpus never hides another's verdict; the step fails if any did.
+          # test/workflow-contracts.test.mjs pins this list to the suites under evals/, so a new
+          # suite cannot be left out of the release gate unnoticed.
+          status=0
+          for suite in merge-gate iterate next-steps build-context; do
+            verdict="$RUNNER_TEMP/$suite-eval-verify.txt"
+            # The exit status is captured rather than inherited: the verdict belongs in the step
+            # summary whether the command passed or failed, and piping into `tee` would report
+            # tee's status instead — the default shell here is `bash -e`, without `pipefail`.
+            suite_status=0
+            pnpm eval "$suite" verify --mode "$mode" > "$verdict" 2>&1 || suite_status=$?
+            cat "$verdict"
+            {
+              echo "### $suite eval evidence (\`--mode $mode\`)"
+              echo
+              echo '```'
+              cat "$verdict"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            if [ "$suite_status" -ne 0 ]; then status=$suite_status; fi
+          done
+          exit "$status"
+
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Shellcheck helper scripts
+        # Gate at error severity: the scripts use the deliberate `CDPATH= cd`
+        # idiom and literal backticks that trip lower-severity style warnings.
+        run: shellcheck --severity=error install-skill.sh local-common.sh local-link.sh
+
+  managers:
+    # No version in the name, and none in the job below either. This exercises the manager
+    # releases consumers actually install; pinning them meant reporting green about versions
+    # nobody runs — DALO drifted three minors behind before anyone noticed (issue #299).
+    #
+    # Deliberately NOT a required status check. It tracks moving upstream releases, so making
+    # it required would let an unrelated DALO or Skills CLI release block every merge, the
+    # release pull request included (issue #282).
+    name: Manager compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: node build.mjs
+
+      - name: Install the current DALO release
+        env:
+          # Reading a public release of another repository in this organization. Authenticated
+          # rather than a bare curl: unauthenticated API calls are limited to 60 per hour and
+          # counted per IP, which shared runners share.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          download_dir="$RUNNER_TEMP/dalo-download"
+          install_dir="$RUNNER_TEMP/dalo"
+          mkdir -p "$download_dir" "$install_dir"
+          # No tag argument: `gh release download` then resolves the newest release itself, and
+          # the glob patterns match the version-bearing asset names. Nothing has to parse a
+          # version out of a tag, so there is no second place where a version format can drift.
+          gh release download --repo sebastian-software/dalo \
+            --pattern '*-x86_64-unknown-linux-musl.tar.gz' \
+            --pattern '*-x86_64-unknown-linux-musl.tar.gz.sha256' \
+            --dir "$download_dir"
+          # Drop the token before anything downloaded is executed. `env:` covers the whole step,
+          # so without this the freshly downloaded DALO would run with the repository token in
+          # its environment — and this job deliberately made that binary a moving upstream
+          # target. Read-only or not, an unpinned executable has no business seeing it.
+          unset GH_TOKEN
+          # The sidecar names a bare filename, so the check must run in the download directory.
+          # A missing sidecar makes this fail rather than silently skip verification: the glob
+          # would expand to a literal that `--check` cannot open.
+          (cd "$download_dir" && sha256sum --check ./*.tar.gz.sha256)
+          tar -xzf "$download_dir"/*.tar.gz -C "$install_dir" --strip-components=1
+          printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
+          # Record what was actually resolved. With a moving target, a red run is only
+          # actionable if the log says which version produced it.
+          "$install_dir/dalo" --version
+
+      - name: Stage the default-branch payload
+        run: node scripts/stage-delivery.mjs "$RUNNER_TEMP/delivery" "$GITHUB_REPOSITORY" develop
+
+      - name: Manager compatibility smoke tests
+        run: pnpm test:managers "$RUNNER_TEMP/delivery"

@@ -1,0 +1,38 @@
+name: Close develop issues
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [develop]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  close-issues:
+    name: Close referenced issues
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out trusted default-branch code
+        if: ${{ github.event.pull_request.merged == true }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Close referenced issues
+        if: ${{ github.event.pull_request.merged == true }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const { closeReferencedIssues } = await import(
+              `${process.env.GITHUB_WORKSPACE}/.github/scripts/close-develop-issues.mjs`
+            );
+            await closeReferencedIssues({
+              octokit: github,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: context.payload.pull_request.body,
+              core,
+            });

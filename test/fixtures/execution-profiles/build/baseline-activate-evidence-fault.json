@@ -1,0 +1,37 @@
+{
+  "name": "A genuine evidence fault from activate makes the run unmeasured, and an incident still targets the proven baseline",
+  "harness": "codex",
+  "config": "true",
+  "inventory": "baseline",
+  "activation": "evidence-fault",
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"],
+      "incident": "safety"
+    }
+  ],
+  "completion": "failed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "none",
+    "persistedGenerationState": "baseline",
+    "activation": "fault",
+    "operations": ["inventory", "protocol", "activate", "record-incident"],
+    "packets": [
+      {
+        "eligibility": "not-evaluated",
+        "selectedProfile": "quality",
+        "recorded": false,
+        "wire": null,
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": null
+      }
+    ],
+    "incidents": ["safety"],
+    "finalize": null,
+    "events": []
+  }
+}

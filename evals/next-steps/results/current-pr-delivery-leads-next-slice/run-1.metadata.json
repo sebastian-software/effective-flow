@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "roundId": "mvfuj720-2abb8628-cc2d-4195-82c8-2f3227f484ef",
+  "scenario": "current-pr-delivery-leads-next-slice",
+  "slot": 1,
+  "attempt": 1,
+  "sourceRevision": "de23f9b2ab7a93b747aa22a4d985824899d2c916",
+  "projectRoot": "/tmp/effective-flow-next-steps-eval/rounds/mvfuj720-2abb8628-cc2d-4195-82c8-2f3227f484ef/slots/current-pr-delivery-leads-next-slice/slot-1/attempt-1/project",
+  "profile": {
+    "harness": "codex-cli",
+    "model": "gpt-6.1-sol",
+    "reasoningEffort": "high",
+    "reportedVersion": "0.159.3",
+    "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;ephemeral"
+  },
+  "promptDigest": "sha256:b1a705895c91a08ea27b883dfefb895c43e05c4c86becc453c938905956796bc",
+  "fixtureDigest": "sha256:02c856e3f5c38134eeca6650837136d37f7201641ed2316c162a1d8d42070d68",
+  "buildDigest": "sha256:4d44de17b40b78b3119877cc1271d12eea2e298d7c89fe96846e84d647a61737",
+  "hostAttestation": {
+    "schemaVersion": 1,
+    "nonForked": true,
+    "initialWorkingRoot": "/tmp/effective-flow-next-steps-eval/rounds/mvfuj720-2abb8628-cc2d-4195-82c8-2f3227f484ef/slots/current-pr-delivery-leads-next-slice/slot-1/attempt-1/project",
+    "taskInput": "rendered-prompt-only",
+    "completed": true,
+    "profile": {
+      "harness": "codex-cli",
+      "model": "gpt-6.1-sol",
+      "reasoningEffort": "high",
+      "reportedVersion": "0.159.3",
+      "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;ephemeral"
+    }
+  }
+}

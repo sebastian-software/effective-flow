@@ -1,0 +1,112 @@
+{
+  "name": "An aborted run records a never-spawned packet as not-started and an interrupted one as started",
+  "harness": "codex",
+  "config": "true",
+  "inventory": "baseline",
+  "packets": [
+    {
+      "bucket": "tooling",
+      "paths": [".github/workflows/ci.yml"]
+    },
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/routes.mjs"],
+      "interrupted": true
+    },
+    {
+      "bucket": "rust",
+      "paths": ["crates/cli/src/main.rs"],
+      "initialOutcome": "never-spawned"
+    }
+  ],
+  "completion": "aborted",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "baseline",
+    "persistedGenerationState": "baseline",
+    "activation": "not-ready:window,sample",
+    "operations": [
+      "inventory",
+      "protocol",
+      "activate",
+      "start",
+      "start-packet",
+      "finish-packet",
+      "start-packet",
+      "finalize"
+    ],
+    "packets": [
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      },
+      {
+        "eligibility": "eligible",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
+        "attempts": [],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "not-started"
+      }
+    ],
+    "incidents": [],
+    "finalize": {
+      "completionStatus": "aborted",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        },
+        {
+          "fallback": "none",
+          "escalated": false
+        },
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
+    "events": []
+  }
+}

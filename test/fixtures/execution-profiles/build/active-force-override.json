@@ -1,0 +1,54 @@
+{
+  "name": "A present force override is pre-spawn profile unavailability, not a fallback",
+  "harness": "claude",
+  "config": "true",
+  "inventory": "active",
+  "capability": {
+    "forceOverridePresent": true
+  },
+  "packets": [
+    {
+      "bucket": "node-backend-cli",
+      "paths": ["src/server/handler.mjs"]
+    }
+  ],
+  "completion": "completed",
+  "expected": {
+    "configState": "enabled",
+    "generationState": "active",
+    "persistedGenerationState": "active",
+    "activation": null,
+    "operations": ["inventory", "start", "start-packet", "finish-packet", "finalize"],
+    "packets": [
+      {
+        "eligibility": "excluded(profile-unavailable)",
+        "selectedProfile": "quality",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "profile-unavailable"
+          }
+        },
+        "attempts": ["quality"],
+        "fallback": "none",
+        "fastAttemptConsumed": false,
+        "attempt": "started"
+      }
+    ],
+    "incidents": [],
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
+    "events": []
+  }
+}

@@ -1,0 +1,1431 @@
+# Build system
+
+`build.mjs` transforms the Markdown sources under `src/` into native Claude and Codex targets
+plus one portable manager target under `dist/`. This document describes invocation,
+placeholder syntax, and build guards, and it is canonical for the **mechanics** of three things
+[`AGENTS.md`](../../AGENTS.md) only summarizes: the full placeholder and directive syntax, the
+step-by-step procedure for adding a tool or agent, and how each point of the prompt-writing rule
+maps onto the build. `AGENTS.md` stays canonical for the three **rules** it owns — renaming an
+exposed tool ships a deprecated forwarding alias, every `src/tools/*.md` needs a
+`CONTEXT_BUDGET_LINES` entry measured from the build report, and prompt text follows the
+prompt-writing rule.
+
+## Invocation
+
+```sh
+node build.mjs          # builds native + portable targets into dist/ (alias: pnpm build)
+pnpm test:preflight     # verifies required capabilities in the test environment
+pnpm test               # runs the unit test suite (node:test)
+pnpm format             # formats with oxfmt (Markdown + JS)
+pnpm agent:check        # oxfmt --check, CI mode without write access
+pnpm audit:skill-ownership -- <local-skills-directory> # optional, advisory upstream audit
+pnpm test:distribution  # build/archive/delivery smoke suite
+```
+
+The package manager is **pnpm**; the root `package.json` `packageManager` field is the source of
+truth for the pinned version. Node.js 22 or newer is required by both the build and the shipped
+runtime helper. Correctness rests on three
+complementary layers: the `node:test` suite (`pnpm test`) covers pure transforms and isolated
+installer behavior, including `install-skill.sh`'s dispatch and the DALO driver in
+`local-common.sh`; the build guards (see "Guards") enforce source and rendered-output
+completeness during `node build.mjs`; and `pnpm test:distribution` smoke-tests the built native
+and portable layouts, archive, and staged delivery tree. `pnpm test:managers` separately
+exercises the documented DALO and Skills CLI consumer paths against externally published
+releases of those managers. After every source or installer change, use the same order as CI:
+`pnpm agent:check`, `pnpm test`, `node build.mjs`, then `pnpm test:distribution`.
+
+The build first writes into a temporary directory (`dist.tmp/`) and swaps it atomically against
+`dist/` only after a fully successful run. If the build fails, the previous `dist/` stays
+untouched.
+
+`pnpm test:preflight` probes the actual execution environment before the full test suite: it must
+create and clean a temporary fixture, bind an ephemeral loopback TCP listener, and, on macOS,
+apply a distinct nested Seatbelt policy that proves a real write is denied. `pnpm test` runs this
+guard first, but a passing guard is prerequisite evidence only, not proof that the full suite is
+correct. Before pilot readiness, attempt allocation or product writes, qualify the selected executor
+lane under [the protected-validation contract](../../src/shared/protected-validation.md#executor-lanes-and-launch-qualification).
+The local lane runs this preflight in the exact native worker sandbox and environment; failure blocks
+that lane. The equally strong protected lane instead proves the real local bridge boundary and frozen
+host/observer capabilities plus the unchanged full preflight, all checks and five native cases in its
+actual remote executor for a fresh immutable full-source qualification snapshot. Preserve failed local
+capability probes as failures. Do not skip, xfail, relax or substitute a check, or treat an unprotected
+host as native-worker proof. On macOS, the nested policy remains a legitimate full-suite requirement
+because the suite must exercise a different native sandbox policy.
+
+## Placeholder and directive syntax
+
+The sources use two kinds of placeholders that the build resolves – their expansion is never
+written by hand.
+
+**Inline references** sit in the middle of the text (including in the frontmatter `description:`
+string) and use the Mustache syntax `{{…}}`:
+
+| Placeholder                     | Meaning                          | Replacement                                                                                                                                                                                                                                                       |
+| ------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{{FLOW}}`                      | Bare skill invocation            | `/effective-flow` (Claude), `$effective-flow` (Codex), `effective-flow` (portable)                                                                                                                                                                                |
+| `{{SKILL:X}}`                   | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                                                                                                                                                                                                    |
+| `{{AGENT:X}}`                   | Base worker reference            | `` `effective-flow-X` `` in all targets; native role or portable contract identifier                                                                                                                                                                              |
+| `{{AGENT_PROFILE:X:fast}}`      | Fast implementation reference    | Claude and Codex `` `effective-flow-X-fast` ``; portable `` `effective-flow-X` (portable build: Fast unavailable, Quality only) ``                                                                                                                                |
+| `{{BUILD_TARGET}}`              | Rendered consumer target         | `claude`, `codex`, or `portable`; lets a shared fragment tell a portable installation from a native one                                                                                                                                                           |
+| `{{VERSION}}`                   | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                                                                                                                                                                                                                   |
+| `{{TOOL_LIST}}`                 | Router tool list                 | The `EXPOSED_TOOLS` names joined with `, ` in catalog order                                                                                                                                                                                                       |
+| `{{MODEL_TIER_ROLE_DEFAULTS}}`  | Role default tiers               | A Role / Tier table built from every `src/agents/*.md` `tier:`; allowed once, in `src/shared/model-tiers.md` only                                                                                                                                                 |
+| `{{MODEL_TIER_TABLE}}`          | Harness values per tier          | The marked table between `<!-- model-tier-table:start -->` and `<!-- model-tier-table:end -->`: Claude column in `dist/claude`, Codex column in `dist/codex`, both keyed by spawn mechanism in `dist/portable`; allowed once, in `src/shared/model-tiers.md` only |
+| `{{MODEL_TIER_ROLE_SELECTION}}` | Native role selection            | Codex's generated base, mechanical/deep tier, retry, and built-in/default selection contract; Claude's direct Harness-values instruction; allowed once, in `src/shared/model-tiers.md` only                                                                       |
+
+A third form is the **spawn-site marker**, a line of its own inside the paragraph or list item of a
+spawn instruction in `src/tools` or `src/shared`:
+
+```md
+<!-- spawn-site:<tool>/<id> -->
+```
+
+`<tool>` is the owning source's name (for a shared fragment, the fragment name) and `<id>` is
+kebab-case. The build replaces the whole line, keeping its indentation, with the site's resolved
+tier line in the target's own form, for example ``Tier `standard`: pass `model: sonnet` and
+`effort: medium` on the Agent tool (rules: `model-tiers`).`` Codex renders `model` and
+`reasoning_effort` on the spawn; portable renders both harnesses' values. Never hand-write that
+line. See [Model tiers](#model-tiers) for the site table and its guards.
+
+For a resolved source body, `renderGeneratedBody` first expands the model-tier directives (spawn-site
+markers and the two `{{MODEL_TIER_*}}` placeholders, so a multi-role line's `{{AGENT:X}}` references
+still receive their target syntax), then `renderBody` applies the harness-specific transforms in this order:
+`ask` blocks, portable worker-delegation preparation when required, then `{{FLOW}}`,
+`{{BUILD_TARGET}}`, `{{SKILL:X}}`, `{{AGENT:X}}`, and `{{AGENT_PROFILE:X:fast}}` references. Eager includes,
+lazy-include pointers, and `{{VERSION}}` are resolved before that body enters `renderBody`. This ordering ensures the
+interaction syntax is target-specific before worker and tool references receive their final
+target syntax.
+
+`{{TOOL_LIST}}` is not a body placeholder: it appears only in the router's frontmatter
+`description` and is resolved once from `EXPOSED_TOOLS` before the per-harness description
+transform rewrites the invocation prefix. The frontmatter description is the only catalog a
+harness sees before it loads anything, so a hand-written list there silently drifts from the
+exposed set and a missing name becomes a tool nobody can discover.
+
+**No legacy aliases.** Names from before the rename – that is, `{{SKILL:sf-…}}` or
+`{{AGENT:sf-…}}` with the old `sf-` prefix – are **not** mapped onto their current names. The
+reference guard rejects them with a migration message ("drop the `sf-` prefix") instead of
+silently rendering a dead `tools/sf-….md` or `sf-…` reference. Always use the current,
+prefix-less name in the sources.
+
+**Block directives** sit on their own lines as a code fence with an info string. The fence
+interior is preserved verbatim against the Markdown formatter (oxfmt)
+(`embeddedLanguageFormatting: off`).
+
+An `include` fence embeds the shared file `src/shared/<name>.md`:
+
+```include
+task-tracking
+```
+
+An `ask` fence produces a conditional user question (Claude Code: `AskUserQuestion` block,
+Codex: free-text question):
+
+```ask
+header: Approval
+question: Plan approved?
+type: approval
+```
+
+The optional `language` field accepts `en` or `de` and defaults to `en`. It controls only the
+wrapper text generated by the build and the synthesized choices for an `approval` question.
+The build preserves `header`, `question`, `when`, and source-provided option labels and
+descriptions verbatim; it does not infer a language from that text or from a target project's
+runtime `language.*` settings. German generated wrapper text therefore requires an explicit
+`language: de` in the individual `ask` block.
+
+`type` accepts `options` (the default), `approval`, or `scored`. A **scored** fence is an options
+question whose choices the agent rates before asking: it parses like an options fence and renders
+exactly one extra line, a localized scoring instruction built by `renderScoringInstruction` from
+the exported `ASK_SCORING` constant in `build-lib.mjs`, the single source of the calibration
+bands. That line tells the agent to start each scorable option's description with
+`n/10 – <short reason>; ` ahead of the original text, to calibrate against fixed bands (1–2 not
+recommended up to 9–10 clearly right), to let a 9–10 name its edge over the next-best option unless the two are tied, to
+give equal fit equal scores, to keep the options in order, to change labels only for
+chat-language translation, and to add neither a "(Recommended)" marker nor a translated equivalent. Scores
+are absolute fit for the current context rather than a ranking, are computed at ask time,
+appear only in the dialog, and are never persisted. The prose decision phases of `plan-review` and
+`concept-review`, which ask outside an `ask` fence, apply the same bands. The Claude renderer
+emits the line first, before the `AskUserQuestion` intro, so a `when:` condition still wraps the
+whole block; the Codex renderer, which the portable target reuses, emits it directly after the
+`Ask the user: **…**` line and before the option bullets. `options` and `approval` fences render byte-identically to their
+rendering before `scored` existed.
+
+The optional `unscored:` key, valid only with `type: scored`, exempts escape options such as
+"Abort" from scoring. It lists one or more exact option labels separated by `|`, because labels may
+contain commas. The instruction line names the exempted labels in quotation marks. Because `|`
+separates the list and the quotes delimit each label, an exempted label may contain neither `|`
+nor one of the quote characters `"`, `„`, or `“`; the build rejects such a label instead of
+rendering a broken instruction. Every listed label must match an option,
+and at least two options that are not exempted must stay scorable. Option labels in a scored fence
+must be unique, because both the scores and `unscored:` address an option by its label; the build
+rejects a duplicate label there.
+
+```ask
+header: Revision
+question: Revise the resolved plan file in place, start a new plan, or stop?
+type: scored
+unscored: Abort
+options:
+  - label: Revise in place
+    description: Reuse the reported file and reset its status to the canonical open value
+  - label: New plan
+    description: Leave the resolved plan untouched and write a new dated plan file
+  - label: Abort
+    description: End the run without changing any plan file
+```
+
+Every non-blank line of an `ask` fence must be an anchored key line (`header`, `question`, `type`,
+`when`, `language`, `unscored`), the `options:` line, an option `- label:` line, or the
+`description:` line that follows a label as its next non-blank line (blank lines in between are
+accepted). The build fails on a duplicate key, any other line, a key after `options:`, an option or
+description line outside the options block, a label without a description, an empty label,
+description, or `when:`, and an `approval` fence that declares options. The error names the
+rendered file and, where known, the fence header; for a fence in a shared fragment that file is the
+tool that includes it. A fence that lacks its `header` or `question` reports that first and also
+names the first structural error found in the same fence, if there is one. Anchoring every key at the line start means a description
+that merely contains `type: approval` cannot change the question type. Only one ordering rule is
+enforced — nothing but option lines follows `options:`. By convention `type:` and `unscored:`
+follow `question:` directly, while `when:` and `language:` keep the position the fence already
+gives them.
+
+Not every choice may be scored. Keep a fence unscored when it is:
+
+- part of the `merge-gate` eval load set, permanently, so the recorded eval evidence does not
+  drift;
+- a choice with an irreversible option, such as discarding stashed work or deleting state, so no
+  score nudges towards data loss;
+- a question whose options would be judged from untrusted input, such as the ADR naming question
+  in `src/shared/project-adr-convention.md`, where a score reason would open a prompt-injection path
+  and push away from the deliberately neutral answer.
+
+A `lazy-include` fence **defers** a mode-gated shared fragment (progressive disclosure, see
+below). Instead of inlining it eagerly, the build delivers `src/shared/<name>.md` once per
+harness as a loadable file `shared/<name>.md` and replaces the directive with a conditional load
+pointer at the decision point. The `when:` line is the load trigger and is rendered in the
+pointer as a trailing `, when …` clause:
+
+```lazy-include
+worktree-integration
+when: the delivery/worktree mode is determined
+```
+
+→ becomes: "**Load on demand:** Read `shared/worktree-integration.md`, when the
+delivery/worktree mode is determined." A routine run that never reaches the mode never loads the
+fragment.
+
+Shared fragments may contain eager includes. The lazy `worktree-integration` fragment carries
+three of them: `execution-location`, the single source for execution receipts, rooted operations
+and ownership-safe cleanup; `worktree-lifecycle`, the ownership evidence an Effective Flow-created
+worktree is removed against; and `base-branch-resolution`, the single rule that turns
+`delivery.baseBranch` into a resolved base ref and a resolved local base branch. The internal
+`apply-review-commit-mechanics` tool includes `execution-location` as well, and the `pr` tool
+includes `base-branch-resolution`, which is why that rule is a fragment rather than prose in one
+host: `pr` does not include `worktree-integration`, so a bare cross-reference would point at text
+absent from its built output. Rendering each of those direct eager includes places the same
+contract in all native and portable targets. Because `worktree-integration` itself is lazy, every
+tool that can create a worktree through it also eagerly carries `worktree-record-obligation`, which
+keeps the load, the lifecycle-record write and the exit self-check in the always-loaded core
+without pulling in either of the larger fragments.
+
+A shared fragment may equally contain a `lazy-include` fence, and a deferred fragment is not a
+leaf: `worktree-integration` defers `pr-review-integration` at its own decision point. Nested
+fences resolve to load pointers exactly like top-level ones, so a fragment reached through a
+pointer can defer further work rather than paying for it. Because resolving one fragment can
+name a fragment no tool references directly, the build walks the fragment set as a worklist —
+every newly discovered name is queued, shipped, and revisited, with a `seen` set closing the
+cycle the walk would otherwise not terminate on.
+
+`merge-gate-configured-reviewer` is a single-consumer, presence-gated example. `merge-gate`
+resolves whether the project setup contains the `mergeGate.bots` row before it parses the value. A
+present row therefore loads the fragment even when its value is empty or unreadable; only the
+absence of that row leaves it deferred. Extracting that route reduced the measured always-loaded
+`merge-gate` core for Claude from 2,892 to 2,263 lines, for Codex from 2,880 to 2,257, and for the
+portable target from 2,883 to 2,260. The configured-reviewer
+contract remains in one source fragment while the default, row-absent route no longer pays its
+context cost.
+
+`merge-gate-delegated-run` is the larger split of the same tool: the eager core keeps Phase 0, the
+run states, the closed question-id table, dispatch and the caller loop (1943 to 873 lines), and
+the fragment holds the whole gate after Phase 0. It is single-consumer and loads when the run is
+the delegated run or the caller runs the gate inline. The other single-consumer `merge-gate`
+fragments are now lazily included from inside it, at their own decision points, so none of them
+reaches the caller's core.
+
+`judgment-draft-snapshot` holds the issue-mode draft snapshot of the judgment handoff in
+`central-reasoning-delegation`, so `plan`, `concept` and `concept-review`, which judge only local
+files, no longer pay for it; `plan-issue` and `plan-review` load it in issue mode. The snapshot appends
+the issue body and comments, minus the canonical planning comment, as a separately quoted
+third-party section and lives until the step's last attempt ends. `judgment-inline-fallback`
+holds the inline, skip and reduced-scope records (EN/DE) and their location and lifetime for that
+handoff and for the `investigate` skeptic step (`investigate/skeptic`). Both load it when their
+spawn is unavailable, declined, aborted or escalated past Retry 1; the handoff also loads it when
+the judged artifact already holds a `Record (`/`Vermerk (` line or a `not performed`/`nicht
+durchgeführt` open point.
+
+`durable-follow-up-gate` is the single semantic source for admission of work derived from a review,
+implementation, investigation, planning, or decomposition run. Common implementation workflows
+reach it through `unresolved-review-report`; `apply-review`, `iterate`, and `plan-issue` embed it
+because re-entry or mutation always needs the conservative default; `review`, `investigate`, and
+PR-review integration load it at their admission decision. Keep admission before ID reservation and
+artifact writes, and do not duplicate its materiality or irreversibility tests in consumers.
+
+One consequence is worth knowing before you write the fence. Each behavioural eval suite under
+`evals/<tool>/` — `merge-gate`, `iterate`, `next-steps`, and `build-context` — derives the content identity each archived
+round is stamped with by following exactly these rendered pointers through the built tree from its
+own seeds, so adding a `lazy-include` to a fragment a suite's tool can reach widens that identity,
+invalidates every archived round of that suite, and owes a re-record of the affected scenario
+evidence by hand through fresh agent sessions. `iterate` is inside the `merge-gate` load set, so a
+fragment `iterate` reaches stales both suites; changing shared `next-steps` affects its suite and any
+suite whose seeds reach it. The `build-context` suite owns native/portable continuation and host-policy
+evidence for the planned-build boundary; its README owns its scenario inventory and recording protocol.
+That debt comes due before the next release rather than before the next merge: `pnpm test`
+asserts only that the archived evidence is structurally
+sound, while `pnpm eval <tool> verify` reports the staleness on every pull request and fails the
+required check on the release one. A conditional pointer widens it whether or not any
+scenario takes its branch. The one build change that does **not** cost a re-record is the release
+version stamp: each round additionally carries a version-neutral skill
+digest, so a release-please bump of `.release-please-manifest.json` leaves the standing evidence
+valid as long as the built router is the only moved file and nothing but the version token moved in
+it. See
+[`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for what invalidates a round,
+[`evals/iterate/README.md`](../../evals/iterate/README.md) for how the `iterate` seeds differ,
+[`evals/next-steps/README.md`](../../evals/next-steps/README.md) for the bounded final-report suite,
+[`evals/build-context/README.md`](../../evals/build-context/README.md) for planned-build host evidence,
+and `evals/_scaffold/build-identity.mjs` for the derivation itself. CI reports all four suites on
+every PR and requires current evidence on release PRs. Each suite's README owns its scenario count
+and recording requirements.
+
+## Guards
+
+The build aborts with an error message if any of these guards is violated:
+
+- **Frontmatter/quoting guard:** `description` (and, for exposed tools, additionally
+  `catalogHint`) must be strictly double-quoted.
+- **Claude effort guard:** The Claude `effort` of every tier in `MODEL_TIER_MAPPINGS` must be
+  exactly `low`, `medium`, `high`, `xhigh`, or `max`; a missing, differently cased, or unknown
+  value aborts the build. The native Claude sidecar renders it deterministically next to `model`,
+  both derived from the agent's `tier:` (see "Model tiers").
+- **Reference guard:** Every `{{SKILL:X}}` must point to an existing `src/tools/X.md`, every
+  `{{AGENT:X}}` and `{{AGENT_PROFILE:X:fast}}` to an existing `src/agents/X.md`. The profile form
+  accepts only `fast`, only for an implementation worker selected by the validated routing table,
+  and only inside the initial implementation phase of `src/tools/build.md` (between
+  `### Phase 2: Implementation` and `### Phase 3: Documentation`) or `src/tools/refactor.md`
+  (between `### Phase 3: Refactoring` and `### Phase 3.5: Documentation sync`). A legacy `sf-`
+  prefix (see "No legacy aliases" above) is deliberately rejected with a migration message. The
+  same guard also runs during rendering (`transformRefs`), so no accepted placeholder can produce a
+  non-existent target. `build` uses the profile form on its five Phase 2 implementer selector
+  lines and `refactor` on its five Phase 3 implementer selector lines.
+- **Native profile-mapping guard:** Every registered base worker resolves a native model and
+  effort from its `tier:` (the guards below). The centralized Fast mapping is complete for Claude
+  and Codex, Claude effort uses the supported vocabulary, and each Codex model/reasoning
+  combination is validated. The
+  route classification covers every verified project-routing row exactly once and resolves the
+  five Fast-capable route IDs to five unique implementation workers. Missing, extra, duplicate,
+  unsupported, or colliding entries abort before the atomic swap.
+- **Model-tier guards:** `MODEL_TIER_MAPPINGS` must have exactly the tiers `mechanical`,
+  `standard` and `deep`, each with a Claude and a Codex entry; a Claude model must be `haiku`,
+  `sonnet` or `opus`, a Claude effort must pass the effort guard, and each Codex model and
+  reasoning-effort pair must be a supported combination. Each agent source needs exactly one
+  top-level `tier:` with a known value, and any of the removed per-agent fields `claude.model`,
+  `claude.effort`, `codex.model` and `codex.model_reasoning_effort` aborts the build. The
+  spawn-site checks (marker syntax, table, reconciliation, surviving marker), the native
+  cross-provider guard, the portable provider-name guard and the pilot Quality-identity guard are
+  described under "Model tiers".
+- **Native-agent inventory guard:** The build emits canonical schema-version-2
+  `native-agent-inventory.json` files inside the Claude and Codex skill targets. Both inventories
+  must use the exact key order `schemaVersion`, `harness`, `baseWorkers`, `fastWorkers`,
+  `tierWorkers`, `standardWorkers`, sorted unique worker stems, and identical base membership. Each
+  inventory has `baseWorkers`, `fastWorkers`, `standardWorkers`, and `tierWorkers`; `standardWorkers`
+  lists the six standard roles on both targets. Claude has five Fast stems and an empty tier list,
+  while Codex has five Fast stems and twelve tier variants for those six roles. The shared parser
+  and reconciler require each inventory to match its agent directory
+  exactly, while portable output must contain no inventory. The inventory proves build/install
+  consistency, not signed provenance or runtime discovery.
+- **Central-skill ownership guard (#168):** The dependency-free guard reconciles
+  `docs/developer-guide/skill-ownership.json` with the dedicated table in
+  `skill-ownership.md`, every token in source `## Recommended skills` fallback chains, and the
+  structured relevance-gate owner marker in `src/shared/central-reasoning-delegation.md`.
+  Recommended central skills require a relationship for the concrete tool or agent consumer;
+  external alternatives require an explicit allowlist entry. Duplicate relationships, invalid
+  or missing classifications, unknown schema fields or consumers, stale or extra Markdown rows,
+  stale relevance owners, malformed recommendation bullets, and unknown recommendation tokens
+  fail with the offending name. The guard performs no network
+  request, does not enumerate the upstream catalog, and never compares the optional
+  `provenance.observedRevision` value with another repository.
+  The Markdown guard reconciles exact skill-row membership. Its grouped consumer,
+  classification, and coverage prose remains a human explanation; the JSON manifest is the
+  authoritative structured relationship contract.
+- **Agent skill-recommendation roster guard (#168):** `assertAgentSkillRecommendationRoster`
+  closes the hole that the recommendation-driven checks above leave open: a source without a
+  `## Recommended skills` heading produces no chain and therefore no obligation. Every
+  `src/agents/*.md` must carry that section or appear in `SKILL_RECOMMENDATION_EXEMPT_AGENTS` in
+  `build.mjs` with a one-line reason, so the obligated set is
+  `count(src/agents/*.md) − |exemptions|`. The set is two-sided like the next-steps exemptions: an
+  exempt agent must carry **no** section, a non-exempt one must, and an exemption naming an agent
+  that does not exist fails as stale. An empty roster is rejected rather than passed vacuously.
+  The guard deliberately covers agents only — `src/shared/skill-discovery.md` states that a
+  missing section is legitimate for a tool, and tools such as `version` or `cleanup` have no
+  domain owner to name. `merge-conflict-resolver` is the only current exemption.
+- **Unrecommended-relationship guard (#168):** The reverse direction of the ownership check,
+  enforced inside `assertSkillOwnershipContract` itself. A declared relationship must be reachable
+  from a recommendation; otherwise it is declared, documented, and dead, because skill discovery
+  honours only `## Recommended skills` sections. The strictness follows the classification. A
+  **`delegate`** consumer is checked **per consumer**: that pair is the whole layered contract, so
+  a delegating source that swaps its owner has lost its domain guidance even while a sibling
+  consumer keeps the relationship alive — the exact drift a per-relationship check cannot see. A
+  **`route-when-relevant`** consumer is checked **per relationship**, because a relevance-gate
+  consumer such as `plan` reaches its owner through the structured marker in
+  `central-reasoning-delegation.md` instead of a section of its own. Shared-fragment consumers
+  (`language-rules`, `chat-language`, `adr-convention`, `commit-message-rules`,
+  `dependency-version-policy`, `documentation-sync-contract`, `durable-follow-up-gate`,
+  `investigation-method`, `project-adr-convention`, `worktree-integration`) are exempt **by kind**
+  in both cases: a fragment expresses its ownership as prose inside the tool that embeds it and
+  can never produce a chain. The `recommendationCapableConsumers` argument that carries that
+  filter is required, so dropping it fails the build instead of silently disabling the check.
+- **Rendered worker-resolution guard (#159):** Every rendered router, tool, shared fragment and
+  worker contract is scanned after transformation. Native references must resolve to exact
+  namespaced sidecars under `dist/{claude,codex}/agents/`; portable references must resolve to
+  exact contracts under `dist/portable/effective-flow/workers/`. All worker artifacts carry
+  matching metadata, and no source placeholder may remain.
+- **Foreign harness tool-parameter guard (#163):** Every rendered Markdown and TOML file is
+  scanned before the atomic `dist/` swap. A native target may contain only parameters owned by
+  that harness, while the portable target may contain no native-only parameters. Violations
+  report the target, relative file, line, and parameter. The extensible ownership registry and
+  pure checker live as `HARNESS_TOOL_PARAMETER_OWNERSHIP` and
+  `findForeignHarnessToolParameters` in `build-lib.mjs` and are covered in
+  `test/build-lib.test.mjs`.
+
+  | Parameter             | Owning target |
+  | --------------------- | ------------- |
+  | `run_in_background`   | Claude        |
+  | `yield_time_ms`       | Codex         |
+  | `sandbox_permissions` | Codex         |
+
+- **Repository-only reference guard (#497):** `docs/developer-guide/` and the other maintainer
+  sources never ship, so shipped text must be self-sufficient. Before the atomic `dist/` swap,
+  every rendered Markdown and TOML file of all three targets is scanned outside fenced code blocks.
+  A relative link, image, or reference definition must resolve inside the same target's payload
+  (URL schemes and `#fragment`-only links are ignored); a root-absolute `/…` link, and any relative
+  link in a native `agents/` sidecar, which installs apart from the skill, always fails. An inline
+  code span (trimmed, one leading `./` and a trailing `:line[:col]` removed) fails when it names a
+  repository-only file that does not also resolve inside the payload. That set is a read-only
+  filesystem walk, never Git, of `REPOSITORY_ONLY_ROOTS` (`docs/developer-guide/`, `test/`,
+  `evals/`, `src/`, `scripts/`, `site/`) and `REPOSITORY_ONLY_ROOT_FILES` (`build.mjs`,
+  `build-lib.mjs`, `README.md.src`), skipping `node_modules`, `dist`, `dist.tmp`, and `.git` at any
+  depth. Each diagnostic names target, rendered file, line, kind, the verbatim reference, and every
+  `src/` file:line carrying it verbatim, or `no verbatim source match` for placeholder output. The
+  commented `REPOSITORY_ONLY_REFERENCE_ALLOWLIST` in `build.mjs` exempts deliberate names (today
+  `docs/developer-guide/README.md`, a target-project path); an entry naming no repository-only file
+  fails as stale. The helpers live in `build-lib.mjs` and are covered in `test/build-lib.test.mjs`.
+
+- **Dependency-free runtime guard (#169):** every script named in the `RUNTIME_SCRIPT_FILES`
+  allowlist must exist, import only Node.js built-ins or local siblings, and be copied
+  byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
+  recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
+  `import()`, each anchored to the start of a statement so prose in a comment cannot be
+  misread as one. Eleven subsystems and 31 runtime scripts carry this today: the pairs
+  `build-run.mjs`/`build-run-core.mjs` with `protected-validation-protocol.mjs` and
+  `protected-validation-core.mjs`, `config-resolve.mjs`/
+  `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
+  `diff-baseline.mjs`/`diff-baseline-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
+  `plan-publication.mjs`/`plan-publication-core.mjs` and
+  `setup-status.mjs`/`setup-status-core.mjs`; the
+  Issue Buddy pair `issue-buddy.mjs`/`issue-buddy-core.mjs`; the
+  remote tracker, a seven-file family whose thin entry point `remote-tracker.mjs` sits over
+  `remote-tracker-core.mjs` and its five siblings `remote-tracker-shared-core.mjs`,
+  `remote-tracker-decomposition-core.mjs`, `remote-tracker-github-core.mjs`,
+  `remote-tracker-forgejo-core.mjs` and `remote-tracker-ledger-core.mjs` (the hidden-mode
+  processed-thread ledger); and the pilot measurement family `pilot-measurement.mjs`, `pilot-measurement-core.mjs` and
+  `pilot-measurement-protocol.mjs`. The shared `process-runner.mjs`, the remote tracker's
+  `createProcessRunner`, belongs to no subsystem and carries the same guard. That only CLI entries
+  (`remote-tracker.mjs`, `plan-publication.mjs`) import it and inject the runner into their cores is
+  no build guard: the unit test "no core imports the shared process runner" in
+  `test/plan-publication.test.mjs` enforces it. The remote-tracker's runtime prompts are
+  additionally scanned with the unit-tested `findRemoteTrackerRecipeViolations` detector so direct `gh`/`tea` recipes, manual origin
+  parsing, GraphQL assembly, and runtime flag discovery cannot return.
+
+- **Setup-status ownership projection (#485):** the build derives
+  `scripts/setup-status-owners.json` from `docs/developer-guide/skill-ownership.json` and the tool,
+  agent and shared sources, writes it beside the runtime scripts in all three targets, and checks
+  each shipped copy. `assertWorkflowEdgeContract` checks the declared `WORKFLOW_EDGES` and
+  `WORKFLOW_POINTER_REFERENCES` in `build.mjs` forward (each matches a `{{SKILL:X}}`, lazy-include or
+  `tools/X.md` reference in its `from` source or transitive eager/lazy shared include closure) and
+  in reverse (every internal-tool reference in that closure is declared), and accepts an edge's optional `mode` only when it is a resolver
+  mode of the target (`MODE_TOOLS`); `assertSuccessorSetsReachExposedTools` fails when a
+  `SUCCESSOR_SETS` entry other than `setup` is run by no exposed tool in its mode;
+  `deriveSetupStatusProjection` fails when the projected `delegate` rows differ from the manifest or
+  a `delegate` consumer reaches no exposed tool. The projection runs after spawn-site validation
+  and resolves named workers from reached markers and the table's `role:` clauses, including
+  shared, conditional and routed sites. Literal-tier sites add no named worker; incidental agent
+  tokens, including prohibitions, add no dependency. Unknown reached sites or roles fail closed.
+  Reachability and
+  the row shape, including shared delivery and plan-publication handoffs, are described in [skill ownership](skill-ownership.md#shipped-ownership-projection).
+
+- **Retired consumer-config guard (#166):** The hand-maintained root `README.md` and every
+  Markdown file under `docs/user-guide/` are scanned for the retired
+  `.effective-flow/config.json` interface. The path is accepted only in an explicitly allowlisted
+  migration section, while the former negation pattern is rejected everywhere. Diagnostics name
+  the file, 1-based line, and violation kind. The same pure detector,
+  `findRetiredConfigDocViolations`, runs again in `stage-delivery.mjs` after documentation
+  transforms, so the exact mechanically staged default-branch payload is checked rather than
+  inferred from source files. Unit tests cover allowlist boundaries and diagnostics;
+  `pnpm test:distribution` verifies the staged-payload rejection path.
+- **ADR ownership-contract guard (#167):** `AGENTS.md`,
+  `docs/developer-guide/configuration.md`, `docs/developer-guide/skill-ownership.md`,
+  `src/shared/adr-convention.md`, and `src/shared/project-adr-convention.md` are scanned for stale current claims that Effective Flow
+  deliberately or intentionally diverges, deviates, or conflicts with `effective-product` – the
+  central skill that owns ADR craft – or that this skill requires immutable, numbered ADRs. An
+  explicitly historical paragraph is accepted only when it also marks that premise as outdated or
+  no longer a conflict. The guard intentionally excludes `docs/plan/archive/` and other
+  historical records. The pure detector,
+  `findStaleAdrContractClaims`, lives in `build-lib.mjs` and is covered in
+  `test/build-lib.test.mjs`.
+
+- **Include-target guard:** Every ` ```include ` fence must point to an existing
+  `src/shared/<name>.md`.
+- **Runtime-state writer guard (#165):** The pure `findRuntimeStateSafetyViolations` source
+  analyzer walks tools and agents in source order, follows eager and lazy shared includes, and
+  rejects an operational mutation below `.effective-flow/` unless the canonical
+  `runtime-state-safety` fragment was loaded earlier. Read-only lookup is excluded. A marked
+  setup-repair-only scope is evaluated only through setup, whose runtime marker additionally
+  requires the sentinel, concrete-target, and tracked-state validations to precede the write.
+  The analyzer recognizes both filesystem commands and operational prose such as write, persist,
+  append, move, store, record, emit, and replace, while stripping clearly descriptive passive
+  forms before matching; it does not rely on a writer allowlist.
+- **Runtime-directory migration guard (#174):** The pure
+  `findRuntimeDirMigrationViolations` analyzer reuses the ordered runtime-mutation traversal and
+  rejects any operational mutation below `.effective-flow/` that can be reached before the
+  `effective-flow-dir-migration` prerequisite. It follows nested shared writers, so loading the
+  fragment late in a parent tool does not hide an earlier indirect write. The migration fragment
+  is exempt from requiring itself, while the separate runtime-state writer guard still requires
+  its concrete copies and marker write to follow `runtime-state-safety`.
+- **Lazy-include guards (#99):** (a) No fragment may be embedded in the same file both eagerly
+  (` ```include `) **and** lazily (` ```lazy-include `) (otherwise the block would be loaded
+  twice). (b) Every lazily referenced fragment must be delivered as `shared/<name>.md` for
+  **all three** targets so that the load pointer resolves in both native and portable installs. The
+  fragment set is the transitive closure, so a fragment named only from inside another deferred
+  fragment is delivered and checked just the same. (c) No generated artifact may still contain a
+  raw ` ```include ` or ` ```lazy-include ` fence. Nothing in a delivered skill explains either
+  directive, so a surviving fence reads as inert prose and the deferred fragment is silently never
+  loaded — `assertNoUnresolvedEagerIncludes` and `assertNoUnresolvedLazyIncludes` run on every
+  rendered body, tool, agent, router, and shipped fragment alike. The pure check logic
+  (`resolveLazyIncludes`, `collectIncludeNames`, `assertNoEagerLazyOverlap`,
+  `findUnresolvedLazyIncludes`) lives in `build-lib.mjs` and is covered in
+  `test/build-lib.test.mjs`.
+- **Documentation-sync consumer guard:** `tools/build.md`, `tools/fix.md`, `tools/refactor.md`, and
+  `tools/maintain.md` must each embed the `documentation-sync` fragment **eagerly**. A lazy pointer
+  does not satisfy the guard: its `when:` condition could be judged inapplicable, which is exactly
+  the skippable documentation phase this gate replaces. Only the eager core is required; its
+  `documentation-sync-contract` detail fragment stays lazy and keeps the core out of the context
+  budget. The pure `findDocumentationSyncViolations` checker and its
+  `assertDocumentationSyncConsumers` wrapper live in `build-lib.mjs` and are covered in
+  `test/build-lib.test.mjs`. The core fragment deliberately opens at heading level four: it is
+  always embedded inside a consuming tool's `###` phase heading, so an `##` heading would make the
+  following phases read as its subsections.
+- **Execution-profile policy guard:** `build.mjs` loads `src/shared/execution-profiles.md` as a
+  marked policy source and runs the pure `parseExecutionProfileContract` and
+  `assertExecutionProfileContract` helpers before rendering. The guard requires exactly one pair
+  of start/end markers for each of the ten policy tables and pins their headers, row order, closed
+  vocabularies, legal state combinations, first-reason gate, terminal eligibility row, lifecycle
+  transitions, fallback/control separation, correction rules, and transfer fields. A missing
+  source, missing or duplicate marker, malformed row, duplicate or reordered decision, unknown
+  value, or illegal combination aborts the build before any rendered output reaches the atomic
+  `dist/` swap. Focused positive and mutation/error coverage lives in
+  `test/execution-profile-contract.test.mjs` and `test/build-lib.test.mjs`. The policy remains
+  separate from the rendered native capability: the build emits the sanctioned Claude sidecars
+  and native inventories, `build` Phase 2 and `refactor` Phase 3 are the only phases that lazy-load
+  the policy fragment and request Fast, and portable output contains no native profile artifact.
+- **Pilot-measurement projection guards:** The execution-profile contract is projected into
+  `src/scripts/pilot-measurement-protocol.mjs`; `assertPilotMeasurementPolicyProjection` rejects
+  drift in that closed policy subset. The same module exports a measurement-only documentation
+  projection that deliberately excludes the execution-profile policy projection. The marked block
+  in `docs/developer-guide/model-tiering-pilot-protocol.md` must contain exactly one fenced,
+  one-line canonical JSON value between the two protocol markers.
+  `parsePilotMeasurementDocumentationProjection` and
+  `assertPilotMeasurementDocumentationProjection` reject missing or repeated markers, malformed
+  fences or JSON, noncanonical serialization, key/order drift, and any value mismatch before
+  rendering.
+- **Plan-lint projection guards:** `src/scripts/plan-lint-core.mjs` owns the bilingual plan
+  mapping and the template placeholders, and `src/shared/plan-contract.md` mirrors both as marked
+  tables. `parsePlanContractMarkedTable` requires exactly one start and one end marker per table,
+  a valid separator row, and no ragged row or line outside the table.
+  `assertPlanContractProjection` compares the mapping table with `PLAN_CONTRACT_MAPPING` row by
+  row and cell by cell. `assertPlanPlaceholderProjection` compares the placeholder table with
+  `PLAN_PLACEHOLDERS` the same way, then checks it against the English template in `plan.md`
+  Phase 3: that phase holds exactly one ` ```markdown ` fence, every bracketed template token
+  is in the table and every table token is in the template, and the template's `**Result:**`
+  value equals the table's review-result value. Every failure message starts with
+  `plan-lint projection:`.
+- **Next-steps contract guard:** The pure `parseNextStepsTable`/`assertNextStepsContract` pair
+  validates the marker-delimited edge table in `src/shared/next-steps.md`: exactly one start and
+  end marker, the fixed `Tool | Condition | Then | Or` headers, a valid separator row, at most two
+  edges per row, every edge cell a resolvable `{{SKILL:X}}` reference, and two-way coverage
+  between the table's `Tool` column and the derived emitting-tool set
+  (`count(src/tools/*.md) − |exemptions|`). The per-file fence check in `readSource` enforces the
+  other half: a non-exempt `src/tools/*.md` lazily includes `next-steps` exactly once, an exempt
+  one zero times. `findNextStepsDocViolations` then reconciles the same parsed edges against the
+  table in `docs/user-guide/tool-flow.md`, row by row and column by column, after normalizing each
+  side (`{{SKILL:X}}` resolved to its rendered Claude form, surrounding backticks stripped, `—`
+  read as empty, cells trimmed) — so the shipped documentation page can never silently drift from
+  the runtime contract it mirrors.
+- **Context-budget guard (#99):** The always-loaded core of **every** tool – the built tool file
+  without the lazy fragments – stays under its own **individual ratchet**: the measured size plus
+  **up to** ten lines of headroom. No tools share an allowance; current figures are in "Context
+  budget" below. The build prints each measured size next to its budget and aborts if a tool
+  exceeds that limit, naming the tool, its size, and the limit. That printed size is the number to
+  measure a new entry against — the guard counts `split('\n').length`, one line more than `wc -l`
+  on a newline-terminated file. Every entry is a measured backlog rather than a target: it records
+  what a tool costs today, so each later deferral lowers the entries it touches and a large number
+  reads as work outstanding, never as room to fill. The map and the built tool set are reconciled
+  two-sidedly: a tool with no entry fails the build, and so does an entry naming no tool, so a newly
+  added tool cannot ship unmeasured.
+- **Router tool-list placeholder guard:** The `description` in `src/SKILL.md` must carry exactly
+  one `{{TOOL_LIST}}` placeholder; any other count aborts the build and reports the number found.
+  The list itself is generated from `EXPOSED_TOOLS`, and this guard is what keeps it generated:
+  without it the placeholder can be deleted and the names written out by hand again, which is how
+  the description had already drifted to advertise 19 of the 20 exposed tools.
+- **`catalogHint` guard:** Every tool listed in `TOOL_GROUPS` (exposed) needs a non-empty,
+  strictly quoted `catalogHint` field – the line the router catalog shows per tool.
+- **`TOOL_GROUPS` completeness guard:** Every exposed tool is in exactly one group; duplicates
+  or a tool without a matching source file make the build fail.
+- **Deprecated-alias guards:** Every entry in `DEPRECATED_TOOL_ALIASES` must not appear in
+  `TOOL_GROUPS`/`EXPOSED_TOOLS` (an alias stays out of the catalog, the `catalogHint` guard, and
+  `argument-hint`), its replacement must itself be an exposed tool, and its alias name must have a
+  matching `src/tools/<alias>.md` source, since the rendered `{{DEPRECATED_ALIASES}}` router clause
+  routes the retired name to that file.
+- **Codex sandbox guard:** A value given in `codex.sandbox_mode` must be among the modes
+  supported by Codex.
+- **Version-drift guard:** The version string stamped into all three router outputs
+  (`<manifest version> (<git short hash>)`) must be identical.
+- **Stale-brand guard:** The retired product brand must not return. `findStaleBrandReferences` in
+  `build-lib.mjs` reports every occurrence that is neither all-lowercase — the `firmo-` label
+  prefix and slugs stay legal — nor inside the frozen `**Firmo project setup:**` marker, which is
+  the one permitted spelling. Scanned are `build.mjs`, `build-lib.mjs`, every `src/` source, and
+  the normative documentation enumerated in the guard: `AGENTS.md`, `README.md.src`, `README.md`,
+  `docs/readme-theme.md`, `docs/adr/`, `docs/developer-guide/` and `docs/user-guide/`. A file's
+  **name** is scanned beside its content, so a brand-carrying file name fails the build on clean
+  content alone. Enumerating the documentation rather than walking `docs/` is what keeps the
+  deliberate exclusions excluded: `docs/plan/` including its archive and `docs/review/` are
+  historical records that legitimately carry the old brand, and shell scripts read the frozen
+  capitalized repository environment alias.
+  The guard's own block in `build.mjs` states each exclusion with its reason.
+- **Doc landing-page guard:** If a README-required doc category
+  (`docs/user-guide/`, `docs/developer-guide/`) contains at least one document, a `README.md`
+  must be present there as a curated landing page (rule from `src/shared/doc-categories.md`);
+  otherwise the build aborts. This way the mandatory technical entry point cannot vanish
+  unnoticed. The pure check logic lives as `missingCategoryReadmes` in `build-lib.mjs` and is
+  covered in `test/build-lib.test.mjs`.
+- **Self-contained-agent-contract guard (#100):** Every agent description and every agent body
+  is the complete runtime metadata and instruction basis of the subagent. Workers are launched
+  with zero inherited turns when supported, otherwise the smallest supported history, so their
+  contract and compact handoff cannot depend on sibling or ambient conversation context. The
+  guard therefore aborts the build if an agent source
+  (frontmatter **and** body) offloads its meaning onto another agent: history comparisons
+  ("original agent", "same depth as the …"), relative-to-sibling scope ("… like the `<X>`
+  reviewer/implementer/…"), or a cross-agent shorthand as a contract substitute ("As with
+  `{{AGENT:…}}`"). A legitimate downstream handoff reference such as "tell
+  `{{AGENT:code-validator}}` what to validate" stays allowed – only the "As with
+  `{{AGENT:…}}`" form is blocked.
+  The pure check logic lives as `findSelfReferentialContractPhrases` (with the blocklist
+  `SELF_CONTAINED_CONTRACT_PATTERNS`) in `build-lib.mjs` and is covered in
+  `test/build-lib.test.mjs`.
+
+## Adding a tool or agent
+
+This is the canonical procedure. [`AGENTS.md`](../../AGENTS.md), section "Adding a tool or agent",
+keeps a short form of it and stays canonical for the two rules named there — the deprecated
+forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool needs.
+
+1. Create a new source file under `src/tools/<name>.md` or `src/agents/<name>.md`. For an agent,
+   declare one top-level `tier:` in its frontmatter: implementers, reviewers and the
+   merge-conflict resolver use `deep`, support roles `standard`. Its native model and effort
+   derive from `MODEL_TIER_MAPPINGS`, so do not add a `claude.model`, `claude.effort`,
+   `codex.model` or `codex.model_reasoning_effort` field. The agent source is the canonical
+   assignment — do not duplicate an exhaustive per-agent matrix in documentation.
+2. To expose a tool via `/effective-flow`, add the name to exactly one intent group of
+   `TOOL_GROUPS` in `build.mjs`; `EXPOSED_TOOLS` is derived from it, and the array/group order
+   determines the catalog order in the router. An exposed tool also needs a `catalogHint`
+   frontmatter field — strictly double-quoted, a single usage-oriented line.
+3. Renaming an exposed tool is not a rename but a deprecated forwarding alias; that rule is
+   canonical in [`AGENTS.md`](../../AGENTS.md). Mechanically it means an entry in
+   `DEPRECATED_TOOL_ALIASES` in `build.mjs` (old name → new name) plus a matching
+   `src/tools/<old-name>.md` source. The alias stays out of `TOOL_GROUPS`, and the generated
+   `{{DEPRECATED_ALIASES}}` router clause is what still routes the retired name instead of
+   printing the catalog. The deprecated-alias guards above enforce all three halves.
+4. Add the tool's entry to `CONTEXT_BUDGET_LINES` in `build.mjs`. How that number is arrived at —
+   the built line count plus up to ten lines of headroom, read off the
+   `Always-loaded core (lines/budget)` report rather than from `wc -l` — is canonical in
+   [`AGENTS.md`](../../AGENTS.md); the guard itself and its two-sided reconciliation are described
+   under "Guards" above. Every `src/tools/*.md` is measured, internal ones included.
+5. A new user-invocable tool opts into the next-steps contract deliberately, either way: add a
+   ` ```lazy-include ` fence for `next-steps` plus at least one row for the tool's name in
+   `src/shared/next-steps.md`'s edge table, or add the tool to the exemption set in `build.mjs`
+   with a one-line reason. The build derives the emitting set as
+   `count(src/tools/*.md) − |exemptions|` and fails on a non-exempt tool with no fence, a fence
+   with no row, or a row for a tool without a fence — there is no silent third option that
+   inherits "no recommendation". Any delegation site whose result returns to its caller, rather
+   than handing the rest of the run to the receiving tool, carries the literal payload line
+   `Next steps: suppressed`, so the caller emits the block once at the end instead of twice.
+6. If the new tool delegates to a worker or performs its own analysis or exploration, embed the
+   eager `delegation-mandate` include; every new agent embeds it as well. Only workflow/tool
+   orchestrators start workers or analysis fan-out. Every agent is a leaf, and its Claude tool
+   list must omit `Agent` and `Task` regardless of read/write authority. The parenthesised form
+   cannot narrow that grant. Worker launches use zero inherited turns when supported, otherwise
+   the smallest supported history, plus the compact, self-contained handoff defined in
+   [`src/shared/delegation-mandate.md`](../../src/shared/delegation-mandate.md). Every spawn
+   instruction the tool writes carries a spawn-site marker and a row in the spawn-site table of
+   `src/shared/model-tiers.md` (see "Model tiers"); a new worker role needs no row of its own,
+   because a `role:` entry resolves to its `tier:`.
+7. If the tool writes into the repository or onto the forge, decide how it behaves in hidden mode
+   (`visibility: hidden`, see [`configuration.md`](configuration.md#hidden-mode)). Its artifacts
+   must stay under the forced local directories and out of every staged path. Its commit messages,
+   branch names, pull-request text, and forge comments must not reference `.effective-flow/` or
+   name Effective Flow. Forge comments go through the remote helper with `visibility` passed, so no
+   marker is stamped. A step that can only work against a forge or external tracker stops before its
+   first tracker access and names hidden mode instead of writing labels or markers.
+8. Run `node build.mjs`. The guards described above cover missing sources, missing include
+   targets, an agent without a valid `tier:`, a spawn site without its table row, unsupported Codex sandbox modes, a missing or
+   unquoted `catalogHint`, missing or duplicate `TOOL_GROUPS` entries, and a tool with no budget
+   entry.
+
+## Runtime scripts
+
+### Protected native macOS validation
+
+The protected validation bridge is an internal transport for native Codex on a supported macOS host.
+Its [owning contract](../../src/shared/protected-validation.md) defines the equally strong executor
+alternatives, pre-write qualification and later feature acceptance. The immutable `remoteValidation`
+descriptor `{protocol,requiredGates,policyDigest}` must be in the original `create` control before child
+spawn. Commands, native requirements and closure policy are bound indirectly through `policyDigest`.
+The closed operations are one read-only `validation-await-admission` poll returning
+`{state,bootstrapRef,diagnostic}`, append-only `validation-request`, and read-only `validation-result`.
+The admitted native handle is already host-observed, not returned by the admission poll; `bootstrapRef`
+references policy/guard evidence. The same validator waits for the exact result and submits the
+ordinary receipt. A result does not itself grant the gate.
+
+Before pilot readiness, allocation or product writes, the protected lane proves actual local
+worker/descendant write, `chmod`, replace, unlink, create and private-read denials for the physical
+mailbox, private host areas and actual sessions/transcript root, with frozen host/observer capabilities.
+It also proves the unchanged full preflight, every check and all five native cases in the actual remote
+executor for a fresh immutable full-source qualification snapshot. A failed local capability probe
+remains failed; it does not block this alternative when both its local boundary and remote executor
+proofs succeed. The normal local lane still requires its exact worker’s successful full preflight.
+
+After implementation, each required gate needs fresh full-candidate GitHub attempt/jobs/raw-log proof
+for all unchanged checks and five native cases. Before sealing completion or accepting the run, host
+postcheck consumes successful canonical helper calls request → verified poll → ordinary receipt in the
+same admitted native validator session, with identical run/gate/request/result identities. This later
+helper chain is not a pre-write prerequisite. Initial model-free qualification does not establish future
+model-role adherence or full pilot acceptance; transport never authorizes activation.
+
+Only the validation workflow is active in the pushed transport tree. Every other original workflow is
+an inert payload there. The already-started job restores all original workflows at their original
+paths, exact bytes and modes in one separate Git execution repository used locally by that job and
+never pushed. The closure and source snapshot are immutable; stale or incomplete proof fails closed.
+
+Eleven dependency-free script subsystems ship as consumer runtime code in the skill payload. The
+allowlist contains 31 files: nine two-file subsystems, the remote tracker's seven-file family,
+the pilot measurement three-file family, the two protected-validation helper modules, and the shared
+`process-runner.mjs`. Each entry
+point is an I/O boundary over testable core or protocol modules:
+
+- **Config-resolve.** Invoke it as `node <skill-root>/scripts/config-resolve.mjs resolve` with one
+  JSON object on standard input: `cwd` (an absolute path in the checkout the calling tool runs
+  in), the required `tool` (the calling tool's own name), and `mode`, required only where a
+  tool's successor set depends on it (`local` or `pr` for `iterate`, `local` or `remote` for
+  `apply-review`); setup may pass `mode: "standard"` to skip locator step 0 when it
+  resolves the tracked source of a hidden-to-standard switch. Every tool's first configuration read runs it through the shared
+  `config-migration` fragment, and so do `pr` and setup's read path. It executes the config
+  locator (steps 0–4, with steps 1 and 2 contained below the checkout root of `cwd` and steps 0
+  and 3 below the verified `RUNTIME_STATE_ROOT`), decodes the table encoding, applies the
+  hidden-mode forced values, and classifies every retired row as `stop`, `report` or `none` for
+  the calling tool; [configuration](configuration.md#resolution-order-and-ownership) describes
+  that behavior. It emits one `{ ok, operation, data }` envelope whose `data` carries
+  `runtimeStateRoot`, `checkoutRoot`, `visibility`, `source`, `values`, `retired` and
+  `diagnostics`, or `{ ok: false, operation, error: { code, message, details, retryable } }`
+  with a `CODE: message` line on standard error. Exit 2 is invalid input (`INVALID_INPUT`), exit 3
+  an unverifiable runtime-state root or an unsafe step-0 or step-3 file
+  (`RUNTIME_ROOT_UNVERIFIED`, `RUNTIME_STATE_UNSAFE`), and exit 1 everything else, a failing Git
+  query or a broken gitfile included (`GIT_FAILED`). It runs only read-only Git queries through an
+  injected runner without a shell, writes nothing, and makes no network call. A `tool` that no
+  successor set names resolves no successor and is reported as `unknown-tool`, while the deprecated
+  alias `pr-review` resolves as `merge-gate`, so a forwarded run gets its target's successor set.
+  Consumers fail
+  closed: a nonzero exit, an unparseable envelope or an unknown envelope shape stops the tool
+  before its first configuration-dependent step, and no consumer falls back to reading the
+  configuration through prose. The core is the single source of the root verification, the stem
+  ranking, `HIDDEN_FORCED_VALUES`, `RETIRED_KEYS`, `SUCCESSOR_SETS` and `DIAGNOSTIC_CODES`; a
+  build guard fails when a tool named in `SUCCESSOR_SETS` or the setup exemption has no
+  `src/tools/<name>.md`, so a renamed tool cannot silently lose its retired-row stop. Both the
+  `merge-gate` and `iterate` eval suites list the pair in their `LOAD_SET_SEEDS`, because their
+  runs execute it at the first configuration read and no load pointer names it.
+- **Setup-status.** Invoke it as `node <skill-root>/scripts/setup-status.mjs status` with one JSON
+  object `{ "cwd": "<directory>" }` on standard input; `setup status` runs it. It imports
+  `config-resolve-core.mjs` as a module: one `resolveConfiguration` call with `tool: "setup"` supplies
+  the source and diagnostics, and one further call per `SUCCESSOR_SETS` entry classifies the
+  retired rows, all through one process runner with the lock-free `gitBaseEnv`. It adds read-only
+  ignore predicates per visibility, applies the `skills` scopes to the generated
+  `setup-status-owners.json` it locates through `import.meta.url`, and compares the installed SemVer
+  from that projection with one anonymous `GET` to the published repository's
+  `releases/latest` (fixed `User-Agent`, short timeout, capped body). It emits one
+  `{ ok, operation, data }` envelope with the sections `configuration`, `retired`, `ignore`,
+  `domainOwners` and `version` plus a top-level `setupFixable` and `setupForms` (the distinct
+  `setupForm` of every setup-fixable finding: `setup`, `setup guided`, `setup hidden` or
+  `targeted`); an invalid source (setup Step 2 item 5) and a key a Targeted request refuses never
+  name `targeted`; the field schema is the header comment of
+  `setup-status-core.mjs`. Retired-row stops map per `(tool, mode)` onto the exposed tools through
+  the projection's mode-aware workflow edges; a resolver tool no exposed tool reaches keeps its own
+  name and is listed in `unmappedTools`. A resolver failure is a finding inside `data.configuration`,
+  not an envelope failure; only invalid input (exit 2) and an internal failure (exit 1) fail the
+  envelope. It writes nothing, and its frozen `REMEDIATIONS` map names a setup invocation form or a
+  manual step for every `DIAGNOSTIC_CODES`, `CONFIG_RESOLVE_ERROR_CODES`, `ROOT_CHECKS` and
+  `UNSAFE_REASONS` value; `test/setup-status-core.test.mjs` fails when the map and those exports
+  diverge and proves byte-identical repositories, `.git/` included, after a run.
+- **Delegation-envelope.** Invoke it as `node <skill-root>/scripts/delegation-envelope.mjs
+<build|validate>` with one JSON object on standard input whose `cwd` is the verified
+  `RUNTIME_STATE_ROOT`; input never travels as command-line arguments. `merge-gate` uses it for
+  every delegation to `iterate`. `build` takes the control values, the ordered thread and body
+  items, and an optional CI-repair instruction; `reviewId` and `threadId` may be JSON integers or
+  strings and are normalized to strings. It mints the item identifiers and the boundary token,
+  derives the item filter, and refuses a body carrying the delimiter, a body item whose review
+  `url` or `author` is absent (`missing-provenance`, never a synthesized value), an empty body, or
+  a protocol-shaped instruction. A present value the manifest cannot carry safely is not a refusal
+  but an `UNSAFE_MANIFEST_VALUE` error, and malformed Unicode is `INVALID_PAYLOAD`. It serializes the six control lines, the manifest, the delimiter,
+  and the body spans in one canonical order, checks its own output, and writes the message plus a
+  manifest snapshot exclusively under `<RUNTIME_STATE_ROOT>/.effective-flow/merge-gate/`. It
+  returns the path, a `sha256:` digest, and the identifier → durable-key map. `validate` recomputes
+  that digest before re-checking the structure against the snapshot, so text added to the file
+  after `build` fails. It never scans the region below the delimiter for keywords. Failures come
+  back as stable error codes with a nonzero exit code. The canonical envelope shapes, and the
+  rationale for the minting order, the absence-check scope, the token and the helper itself, live
+  in the lazily loaded `delegation-envelope-examples` fragment.
+- **Delivery-selection.** `deliver` uses it to bind the selected staged or working-tree states to
+  source `HEAD`, apply them to the refreshed base with conflict detection, and reconcile the exact
+  resulting diff without emitting file content.
+- **Diff-baseline.** Invoke it as `node <skill-root>/scripts/diff-baseline.mjs
+<capture|render|discard>` with one JSON object on standard input; it emits one JSON envelope and
+  uses nonzero exit codes for structured failures. `build`, `fix` and `refactor` load its contract
+  through the lazily loaded `diff-baseline` fragment. `capture` exclusively allocates
+  `<RUNTIME_STATE_ROOT>/.effective-flow/runs/<RUN_ID>/diff-baseline/` (a same-second `SESSION_ID`
+  collision gets a `-2`, `-3`, … suffix) and snapshots every non-ignored working-tree path into a
+  tree object. `render` repeats that snapshot with the identical procedure, optionally limited to a
+  literal path scope, and atomically replaces `diff.patch` and `paths.json` with the tree-to-tree
+  delta; `discard` removes `diff-baseline/` and its `runs/<RUN_ID>/` parent only when that is left
+  empty. Every snapshot uses a private temporary index and a private object directory inside
+  `diff-baseline/`, with the real object store attached read-only as an alternate. Every git call
+  carries `GIT_OPTIONAL_LOCKS=0`, so the real index, stash, refs, `HEAD` and object store stay
+  untouched and no call takes the real `index.lock`. Snapshots also pin `core.splitIndex=false`
+  and an empty private `core.hooksPath`, so no split-index write and no hook reaches the real
+  `.git/`. They pin `core.safecrlf=false`, so a line-ending round trip cannot abort the snapshot,
+  and every helper git call runs with `LC_ALL=C`, so git's messages stay parseable. Both snapshots
+  use the identical procedure, so filter, line-ending and sparse-checkout effects cancel out. The
+  skipped-path check ignores only the literal macOS Git shim diagnostics for `DARWIN_USER_TEMP_DIR`
+  and an anchored `/tmp/xcrun_db-` cache path with eight alphanumeric characters and `Operation not
+permitted`, when Git exits successfully; a true unreadable file or directory still makes
+  `capture` or `render` fail closed with its path, and any nonzero status remains a failure. `render` verifies `executionRoot` and
+  `baselineTree` against the recorded `baseline.json` and fails closed when its baseline is
+  missing instead of capturing again. The helper refuses before any write when `.effective-flow/`
+  is tracked, not ignored, or reached through a symlink; directories are created with mode `0700`
+  and files with `0600`. Three effects remain outside that boundary. Git may freshen the
+  modification time of objects it finds in the real store through the alternate. A
+  repository-configured clean or process filter writes to its own store; Git LFS, for example,
+  copies snapshot content into the shared LFS store, an accepted side effect that `discard` does
+  not remove. A same-user race that swaps a parent directory for a symlink between the chain check and
+  a mutation is not excluded.
+- **Remote-tracker.** Invoke it as `node <skill-root>/scripts/remote-tracker.mjs <operation>
+[--apply]` with one JSON object on standard input. It emits one stable JSON envelope on
+  standard output and uses nonzero exit codes for structured failures. Mutations are dry runs
+  unless `--apply` is present; reads execute as reads whether or not a caller redundantly supplies
+  that flag. The core module is pure except for an injected process runner;
+  provider CLIs are always executed as an executable plus argument array, never through a shell.
+- **Pilot-measurement.** Invoke it as `node <skill-root>/scripts/pilot-measurement.mjs <operation>`
+  with one closed-schema JSON object on standard input. The entry point emits one stable JSON
+  envelope and uses nonzero exit codes for structured failures. The core owns guarded local
+  lifecycle, record, detailed-trace, anonymous gate-observation, incident (`record-incident`),
+  reconciliation, aggregation, evaluation, purge, and discard operations under
+  `<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`; the protocol module owns the
+  immutable version, digest, limits, timing, metrics, gates, and enum registries. Reads never
+  authenticate through an identity-bearing field; workflow, packet, and observation mutations use
+  operation-scoped capabilities. `begin-baseline`, `begin-review`, `resume`, the reconciliation
+  operations, `purge`, and `discard-generation` require explicit digest-bound confirmation;
+  `activate` needs none, because the confirmed baseline is the consent, and returns `activated` or
+  `not-ready` from its baseline checks. Detailed traces require explicit current-run consent. Besides the
+  `merge-gate` observation, `build` and `refactor` record their measured runs, call `activate`
+  automatically in an enabled baseline generation's preflight, and record incidents through
+  `record-incident`, all through `src/shared/pilot-measurement-workflow.md`; Guided setup block 10
+  runs the confirmed `begin-baseline` and `resume` actions through
+  `src/shared/setup-execution-profiles.md`. No workflow run calls `begin-baseline` or `resume`. The
+  exact developer contract and build-validated projection are in the
+  [model-tiering pilot protocol guide](model-tiering-pilot-protocol.md).
+- **Build-run.** Invoke it as `node <skill-root>/scripts/build-run.mjs <operation>` with one
+  JSON object on standard input. The supported operations are `create`, `validate`, `bind-agent`,
+  `authorize-execution`, `transition-execution`, `prepare-completion`, `seal-delivery`, `handoff`,
+  `record-return`, `retain-evidence`, `checkpoint`, `question`, `reply`, `resume`, `receipt`, `terminal`,
+  `verify-terminal`, `continuation`, and `verify-continuation`; the operation name is the only argv
+  value. The
+  dependency-free core owns the versioned schemas, immutable source and request digests,
+  execution-root and repository-identity checks, one-operation lock, bounded question/reply
+  binding, active execution authorization/transition, completion transformation proof, delivery
+  sealing, post-commit handoff, checkout-return proof, gate receipts, terminal verification, and
+  the next-workflow projection. It writes only
+  under `<RUNTIME_STATE_ROOT>/.effective-flow/build-runs/<run-id>/`, uses 8 KiB UTF-8 for the
+  dispatch projection and 16 KiB UTF-8 for each control record, and fails closed on unknown fields,
+  unsafe paths, content drift, foreign evidence, stale replies, or incomplete terminal gates.
+  The build caller remains the authority for user-channel provenance, approval and gate judgments;
+  `build-run-core.mjs` proves identity and evidence but never grants consent or replaces the
+  phases-2–7 workflow. `build-run-contract.md` is the caller/runner lifecycle contract and
+  `build-delegated-run.md` owns the delegated phases and complete inline fallback. The helper is
+  shipped to all three targets through `RUNTIME_SCRIPT_FILES`; it is not a scheduler or a
+  persistent capability store.
+
+  `retain-evidence` is the bounded runtime-only evidence handoff. Its payload carries the common
+  run controls, an exact `evidenceId`, and exactly one of `content` or
+  `source:{root,path,digest}`. `content` must be nonempty, well-formed UTF-8 text without NUL;
+  both forms are limited to 1 MiB of actual bytes. A source is checked against the caller's
+  allowed single-file roots and copied byte-for-byte. The helper exclusively creates
+  `evidence-<evidenceId>.txt` below the verified runtime run and returns the standard file
+  reference, so callers never choose a write path. For example:
+
+  ```json
+  {"runtimeStateRoot":"/repo","repositoryIdentity":"/repo/.git","runId":"run-1","requestDigest":"sha256:<digest>","evidenceId":"final-plan","source":{"root":"/repo","path":"docs/plan/current.md","digest":"sha256:<digest>"}}
+  ```
+
+  Caller-supplied text is retained as text only: the returned digest identifies the retained bytes,
+  not native execution, a gate judgment, or delivery success. Retention is allowed after verified
+  handoff only as runtime-only retention and is refused after terminal completion. Before
+  `terminal`, a non-Git final plan must be retained from its source and the returned reference
+  must be used; a caller attestation cannot replace the plan bytes. The normal nonzero/`ok:false`
+  failure contract, runtime guard, operation lock, and exclusive-create collision rules apply.
+
+  Before a caller reads bound artifacts or mutates project state, it follows the helper invocation
+  and failure contract in [`build-run-contract.md`](../../src/shared/build-run-contract.md): the
+  operation is the sole argv value, the JSON payload is the only stdin content, and a JSON
+  `operation` field cannot replace the argv value. A nonzero exit, `ok:false`, missing or malformed
+  envelope, including `INVALID_OPERATION`, stops the run without an implicit retry or inline
+  fallback. `ABORT` is recorded only when the bound controls are valid.
+
+  `authorize-execution` records an already resolved delivery mode and owning agent before setup;
+  `transition-execution` binds the fresh receipt and lifecycle proof before baseline capture or
+  worker writes. `prepare-completion` binds the existing independent-review and final-validation
+  receipts before the approved plan receives its deterministic completion section and status/archive
+  transformation. `seal-delivery` proves that staged paths and modes match that basis; changed
+  product bytes require the independent marked `code-validator` formatting-only proof or renewed
+  affected gates. `handoff` ends product authority after the verified commit, leaving only the
+  existing runtime-only delivery/cleanup/pilot/completion outcomes; `record-return` proves an actual
+  in-place checkout restore. The original agent handle is retained for the one allowed pilot
+  finalization and is never persisted as a transferable capability.
+
+- **Plan-lint.** Invoke it as `node <skill-root>/scripts/plan-lint.mjs lint` with one
+  closed-schema JSON object on standard input: `cwd` (the verified absolute root, which is
+  `RUNTIME_STATE_ROOT` for a hidden-mode plan directory), `planDir` relative to it, and optional
+  `files`. It emits one `{ok, operation, data: {files: [...]}}` envelope whose entries carry the
+  mechanical plan-file facts — status and its reason, language, open-point count, acceptance-criteria
+  presence, leftover placeholders, same-name duplicates between `<plan.dir>/` and its `archive/`,
+  and the header values — and uses exit 2 for `INVALID_PAYLOAD`/`INVALID_CWD`, 3 for `UNSAFE_PATH`,
+  and 1 otherwise; a `\0` in any path is `INVALID_PAYLOAD`, a file swapped after the containment
+  check is `UNSAFE_PATH`, and a dangling-symlink or non-directory `planDir` is `NOT_FOUND`. Every
+  path is contained by realpath inside `cwd` and directly inside `<plan.dir>/` or
+  `<plan.dir>/archive/`. Its callers — the clarification gate, `open-plans`, and `plan`, whose
+  Phase 5 check reruns after Phase 7 formatting — fail closed: a nonzero exit, an unparseable
+  envelope, `ok: false`, or a missing file entry never reads as a pass. The prose contracts stay normative, and the lazily loaded
+  `plan-lint` fragment carries the caller contract. The core owns `PLAN_CONTRACT_MAPPING` and
+  `PLAN_PLACEHOLDERS`; the build guards `assertPlanContractProjection` and
+  `assertPlanPlaceholderProjection` fail on any drift against the marked mapping and placeholder
+  tables in `src/shared/plan-contract.md`, and against the bracketed tokens of the English template
+  in `plan.md` Phase 3.
+- **Plan-publication.** Invoke it as `node <skill-root>/scripts/plan-publication.mjs <operation>`
+  with one closed-schema JSON object on standard input; the operations are `scan`, `branch-name`,
+  `assert-changeset`, `publish` and `complete-branch`. Every operation takes an absolute `cwd`;
+  `scan` and `branch-name` accept any directory, and the Git operations require the repository
+  root. An unknown key is `INVALID_INPUT` before any Git or forge call. It emits
+  one JSON envelope and exits nonzero with `ok: false` on failure. `publish` and `complete-branch`
+  are the unattended draft-pull-request core: they require `runState: unattended` and a GitHub
+  remote, refuse hidden mode, and stay a dry run unless `--apply` is passed. A passing `publish` builds
+  the single-file commit in a temporary index, pushes it without force to
+  `<branchPrefix>/plan/issue-<N>` so the remote branch is the lock, and opens a draft pull request
+  whose body ends with the shipped plan marker line and the non-closing `Refs #<N>`; it then
+  reads the pull request back to confirm draft and marker. `complete-branch` instead adopts an
+  existing pushed plan branch: it asserts its changeset, scans the plan blob read back from Git, and
+  opens the draft pull request. `scan` is read-only and also serves the
+  interactive content check in `src/shared/plan-publication.md`: it reports findings by class,
+  field and line, never by value, in two confidence levels. A high-confidence finding is always
+  `blocking`; a lower one is `blocking` on an unattended run and `acknowledgeable` on an
+  interactive one. The core also exports the pure `planBranchName` and `parsePlanBranch`.
+  `process-runner.mjs` supplies the injected runner; the core spawns nothing itself. The runner
+  has two additive options, both off by default, so remote-tracker behavior is unchanged: `stdoutBuffer`
+  returns Git blob bytes unchanged, and `processGroup` bounds a call's whole process group (hooks,
+  transport helpers, forge CLI calls).
+
+- **Issue Buddy.** Invoke it as `node <skill-root>/scripts/issue-buddy.mjs <operation>` with one
+  closed-schema JSON object on standard input. The entry point exposes the pass lock, collection,
+  verdict, report, and fingerprint operations; it emits one stable JSON envelope and fails closed
+  on invalid input, unsafe runtime state, lock conflicts, visibility mismatches, or inconsistent
+  publication records. The core keeps report v1 compatible and accepts opt-in report v2 metadata
+  for repository visibility and preserved plan leftovers. Leftover metadata is filtered before
+  judgment limits and recovery. The issue-buddy source tool owns unattended orchestration;
+  plan-publication owns inspection and publication of the single plan file.
+
+Unit tests exercise remote-tracker parsing, payloads, provider plans, redaction, capabilities,
+compatibility, and stale writes with fake runners and fixtures. Forgejo capabilities are derived
+once per run from authenticated login JSON plus documented `tea ... --help` command/flag surfaces;
+the two review-thread writes additionally require both of their `POST` routes in the instance's
+`/swagger.v1.json`, read through `tea api` from the selected login's URL, and one route alone enables
+neither. Absent commands or routes become `UNSUPPORTED_CAPABILITY` before mutation. GitHub reads
+retain ETags for diagnostics, but body writes are reported as non-atomic because GitHub does not
+support conditional requests for these unsafe endpoints. Forgejo list reads page until an empty
+page, and create results are normalized from the final URL that supported `tea` versions print
+after a successful issue or pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
+checks prove that all three installed payloads contain all 29 identical, usable scripts,
+that the pilot helper reports its protocol from an isolated distribution, that
+`plan-lint lint` and `plan-publication scan` run against a fixture plan in every target, and that
+`config-resolve resolve` resolves a fixture project-setup ADR in every target
+(`assertConfigResolveSmoke` in `scripts/distribution-smoke.mjs`), and that `setup-status status`
+reads its generated projection in every target with the release lookup stubbed offline
+(`assertSetupStatusSmoke`); the delivery layout check requires both scripts and the projection
+under `effective-flow/scripts/`.
+
+Session titles have no shipped runtime helper. The ChatGPT Desktop Codex tab calls the app-native
+current-task capability directly, and Claude Code renames its own session through the host's
+session-management tool; both follow the instruction-level contract in
+[`src/shared/session-rename.md`](../../src/shared/session-rename.md). Codex CLI has no automatic
+title path in this scope.
+
+## Progressive disclosure beyond the router
+
+The top-level router (`SKILL.md`) loads only the tool catalog and the dispatch rule; the full
+instruction of a tool arrives only on the call from `tools/<tool>.md`. This progressive
+disclosure continues **within** a tool: a large tool no longer inlines every shared fragment
+eagerly but moves the **mode-gated** blocks behind a `lazy-include` pointer (see "Placeholder
+and directive syntax").
+
+- **Core flow stays inline** – blocks that (almost) every run needs, or that must not be missed:
+  `task-tracking`, `skill-discovery`, `completion-protocol`, `pre-commit-gate`, `goal-completion`,
+  `apply-clarity-gate`, `delegation-mandate`, `chat-language`, `remote-helper-contract`, and the
+  status markers in `plan-status`. `goal-completion` governs every remaining phase rather than one
+  decision point, and `apply-clarity-gate` is a safety gate whose failure mode — silently not
+  running — is the one nobody notices. Neither is deferred, however tempting their size, except the explicit planned-build execution boundary below.
+  `delegation-mandate` is eager for the same reason: a lazy pointer at the delegation decision point
+  would let the very host default this fragment corrects skip the pointer's own trigger, so the
+  mandate must be present before the model plans the run. `base-branch-resolution` is eager in both
+  of its hosts for a narrower reason: `pr` resolves a base on every run, in steps 1, 2 and 4, so
+  there is no single decision point at which a pointer could sit. `chat-language` is eager in every
+  tool that speaks for both of those reasons at once: every emitted line is its decision point, so no pointer has
+  anywhere to sit, and its failure mode is silently not running — a run that never loads it simply
+  keeps mirroring the user and nothing reports the configured value was ignored. It carries its
+  own lazy pointer to `typography-rules`, which is a genuine branch (only a resolved `de` reaches
+  it) and would otherwise triple the eager cost across every host for a rule most runs never need.
+  `typography-rules` is eager in all sixteen agents for a third reason: it states how a resolved
+  `de`/`en` value is rendered, not how it is resolved, so deferring it behind `language-rules`
+  would hide it from exactly the orchestrated agents that are handed a value and never resolve
+  one. The fragment is split out of `language-rules` — which still embeds it, so every consumer of
+  the resolver keeps the rule — precisely so the locale rule travels with the writer rather than
+  with the resolver. `worktree-record-obligation` is eager in every worktree-creating tool because
+  its failure mode is silently not running: a skipped lazy pointer leaves a worktree without a
+  lifecycle record, which `cleanup` can never remove. `apply-issues` creates its worktrees without
+  `worktree-integration`, so it points at `worktree-lifecycle` directly and lazily at Phase 4, while
+  its core keeps every record write and transition and makes reading the fragment mandatory before
+  such a worktree is created.
+- **Planned-build execution has one explicit boundary.** The current built `build` caller reports 208
+  split-newline lines against a 214-line budget. Its intent/source classification, canonical status,
+  clarification, configuration/retired-key preflight and approval basis stay eager. Only after those
+  guards pass does it read `build-run-contract` and select one fresh `deep` built-in runner or the
+  complete inline fallback. The runner loads `build-delegated-run` once; that fragment eagerly owns
+  `skill-discovery`, `completion-protocol`, `goal-completion`, `worktree-record-obligation`,
+  `delegation-mandate` and `pre-commit-gate` for phases 2–7. Their execution gates move together
+  with their owning phases; none is hidden behind its own decision. Existing
+  implementation/profile/review/validation markers move with those phases unchanged. The caller,
+  probe and completion-transform markers reconcile against `model-tiers`; the probe is `standard`,
+  never down, and the completion transform is an independent `code-validator` check. `build-run.mjs`
+  and `build-run-core.mjs` are explicitly shipped runtime files. The helper's 8 KiB dispatch and
+  16 KiB control bounds measure UTF-8 bytes, while the build reports caller lines; neither is a token
+  measurement. The inline fallback reads the exact same complete phases, so it preserves every
+  quality gate while recording isolation unavailable.
+- **Mode-gated blocks are lazy** – needed only when the branch is reached: `language-rules`,
+  `project-routing`, `commit-message-rules`, `doc-categories`, `plan-contract`,
+  `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
+  `config-migration-edge-cases`, `worktree-integration`, `worktree-lifecycle`, `issue-tracker`, `issue-tracker-forge`,
+  `review-report-backlinks`, `unresolved-review-report`, `plan-numbering`,
+  `plan-reference-routing`, `plan-lint`, `plan-archival`,
+  `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
+  `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
+  `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
+  `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `judgment-draft-snapshot`, `judgment-inline-fallback`, `review-bot-state`, `review-bot-state-observation`,
+  `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`,
+  `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
+  `setup-targeted-change`, `setup-status`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
+  `plan-pr-continuation`.
+  The load trigger (`when:`) sits
+  at the decision point where the mode/branch is determined.
+  `setup-profiles` is a single-consumer fragment whose decision point is setup's already-loaded
+  argument classification: only an absent argument or the explicit `profile` token loads it.
+  The fragment owns the Profile-mode Chat/Profile questions, transient topology overlays, and the
+  external-only connection/context/state interview. Express and Guided runs never pay that context
+  cost. `setup-targeted-change` sits at the same decision point with the complementary trigger: a
+  non-empty argument that is not exactly one of the six keyword forms. `setup-status` is the third
+  pointer there, loaded only for the exact `status` argument: the read-only diagnosis renders the
+  `setup-status.mjs` envelope, carries no `ask` fence and no write instruction, and ends after its
+  report. Keeping the argument router
+  in `tools/setup.md` classifies keyword modes versus Targeted before any fragment or mutating setup
+  step can run; a Targeted request that names no configuration key then stops in the fragment's
+  interpretation, still before any mutation. The Targeted fragment holds the whole Targeted
+  contract and itself lazily loads the owning fragments per touched key group:
+  `setup-guided-core-switches` for core-switch keys, `setup-advanced-settings` for block keys, and
+  only the "Writing the hidden local configuration" section of `setup-hidden-mode` for a hidden
+  write. Those three are therefore loaded only from `tools/setup.md` and
+  `shared/setup-targeted-change.md`, never eagerly.
+  `plan-archival` is pointed at from the four tool sources that keep a plan file rather than from
+  inside `worktree-integration`: its decision point is the delivery point of the handback, and
+  in-place execution without delivery reaches that point while performing no other step of that
+  fragment. `plan-pr-continuation` sits beside it in the same four tools, with a two-armed trigger:
+  `worktree-integration`'s resolved base, because it supersedes that fragment's mode, branch-name,
+  and `-b` steps before step 3 runs, or the selection of in-place mode without delivery, before any
+  archival, where it runs discovery only and stops on a verified plan pull request. `plan-publication` is lazy from `plan`'s Phase 7 and nested in
+  `plan-pr-continuation` for a republication. Five of these names are deferred **halves** of a split: `issue-post-merge-observation`
+  was separated from `issue-lifecycle`, `pr-merge-completion` from `pr-review-comments`,
+  `issue-tracker-forge` from `issue-tracker`, `config-migration-edge-cases` from
+  `config-migration`, and `review-bot-state-observation` from `review-bot-state`; the first three
+  remaining halves stay eager because their consumers read them on every run, and the
+  `config-migration` and `review-bot-state` cores are exceptions the paragraph below records rather
+  than further instances of that rule. Cutting a fragment
+  along the seam between an always-read part and a one-decision-point part is what lets the second
+  half qualify for deferral at all. `merge-gate-checkout-boundary` is the third single-consumer
+  `merge-gate` fragment beside `issue-post-merge-observation` and `pr-merge-completion`, and the
+  first that is **not** a split half: it holds tool-local text – the parts of
+  `worktree-integration` that stay off in the gate, and the lifecycle close of the one checkout it
+  provisions. It is deliberately not folded into `worktree-integration`, whose other consumers
+  would then each carry one tool's inapplicability list. Its pointer reuses that fragment's
+  existing trigger instead of inventing one, which is legitimate because both are meaningful only
+  once Phase 2 step 1 provisions a checkout: reusing a trigger decides **when** a pointer fires,
+  never **where** the text lives. `merge-gate-conflict-resolution` is the fourth, holding the
+  worker-role delegation contract for a conflicted base-into-head merge together with the Phase-2
+  step that issues it. It is the first single-consumer fragment assembled from **two**
+  non-adjacent regions of one tool, which is legitimate because both are reached from the same
+  decision point. That trigger is the conflict itself, observed from `git` in the provisioned
+  checkout, and deliberately **not** the resolved `mergeGate.conflictResolution` mode: a pointer
+  firing on the mode would have to resolve the mode in order to load the text that resolves it. The
+  mode table, the unreadable-value-resolves-to-`off` rule, the `pre-commit-gate` stand-in, and the
+  untrusted-head-branch threat model therefore stay in the always-loaded core – the last of those
+  because an exposure that is only readable from inside the branch creating it is a discovery
+  rather than a configuration decision. `merge-gate-issue-observation` is the fifth, holding the
+  body of Phase 5.5 – its seven steps and the transition gate they end in – together with the
+  per-issue items Phase 6 reports for what those steps observed, under its closing
+  `### Observation report items` heading, for a phase that runs after an already-successful merge
+  and is explicitly allowed to degrade. Like
+  `merge-gate-checkout-boundary` it reuses an existing trigger, `issue-post-merge-observation`'s,
+  because the two load at the same moment. What separates it from the four above is **where the
+  cut runs**: the section's heading, its entry condition and its missing-receipt rule stay in the
+  always-loaded core, because the entry condition is stated a third time inside the moved region –
+  defer all of it and the run would decide whether it may enter the phase from text it has not
+  loaded. A fragment that holds a phase body therefore keeps that phase's entry gate outside it,
+  which is the general form of the rule the conflict pointer states for a mode. Phase 6's report of
+  the lifecycle receipt result stays in the core for the same reason: a merge without a valid
+  receipt ends Phase 5.5 before the fragment loads, and still owes that report.
+  `merge-gate-check-list-waiver` is the sixth, holding the rule bullets and the `ask` fence of Phase
+  4's no-check-list waiver, and it takes the fifth's cut: the section heading with an entry gate
+  stating when the question can arise stays in the always-loaded core, together with condition 2's
+  clause naming the waiver, Phase 2's unreported-list rule, the wisdom record, and the Phase-6 report
+  of a merge on a waived check list. Its trigger – a Phase-4 evaluation's fresh read stating
+  `checksReported: false` – is deliberately broader than the `ask` fence's own `when:`, because
+  every branch that poses **no** question is decided inside the moved text as well; a pointer firing
+  only where the question is posed would leave those runs deciding from text they have not loaded.
+  `merge-gate-provider-settled-threads` is the seventh, holding the rule for a forge that can
+  neither reply to nor resolve review threads: when a configured bot's thread counts as settled by
+  that reviewer's later approval, which read it is evaluated on, its fail-closed cases, and the
+  report wording for settled and still-blocking threads. Its trigger is the Phase 0 forge preflight
+  reporting **both** `reviewThreadReplies` and `reviewThreadResolution` unsupported, and its pointer
+  sits at column 0 after the Phase 0 list. Phase 3 step 5, conditions 6 and 7, and Phase 6 keep
+  only a short reference to it in the always-loaded core, so a GitHub run, or any forge that
+  supports either thread write, never loads it.
+  `source-upstream-sync` is the single-consumer `deliver` fragment for step 1.1's upstream decision
+  flow, and it takes the same cut: the `upstream-status` call and the notice for every state that
+  poses no question stay in the always-loaded core, and the pointer fires on all three question
+  states (`behind`, `behind-overlap`, `diverged`) rather than only on the one that offers a
+  fast-forward. Because `deliver` is not reachable from `merge-gate`, the pointer does not widen
+  the merge-gate eval identity.
+  `config-migration` is the live proof that a fragment may be eager in one file and lazy in another:
+  twelve tools that read configuration on every run inline its always-read core, while seven others
+  defer the whole fragment behind their own first configuration read. `worktree-lifecycle`,
+  `adr-convention` and `review-bot-state` follow the same pattern with one lazy host each:
+  `apply-issues`, `apply-review` and `iterate`.
+
+  `remote-helper-contract` is eager in both `issue-tracker-forge` and `pr-review-comments`. A lazy
+  pointer beside the first PR helper invocation proved nondeterministic: a run could invoke the
+  helper before loading the pointer and omit the required `cwd`. The invocation, envelope, error and
+  working-directory rules therefore stay inline wherever forge helper operations are available.
+  PR review publication still retains its later `issue-tracker-forge` pointer because that distinct
+  decision point needs the canonical finding `Signature`; PR plumbing does not carry the rest of
+  the forge fragment merely to learn how to invoke the helper.
+
+A fragment qualifies for deferral only when it serves **one nameable decision point** and the
+pointer states that trigger. Where a fragment is read in nearly every run anyway — review's
+configuration schema, for instance — deferring it would move the measured number without saving
+anything real, so it stays inline.
+
+Splitting also pays off without any deferral, when the halves have **different consumers**:
+`config-migration` kept the config locator and the table encoding every reader needs, while the
+`mergeGate.*` key table moved to `config-merge-gate-keys` (included by `setup` and `iterate`,
+while `merge-gate` states the keys in its own `## Configuration` section) and the setup-only
+language and legacy-`config.json` contracts moved to `config-setup-migration` (included by `setup`
+alone). `pr-review-thread-writes` is the same cut on the write side of `pr-review-comments`,
+included by `iterate` and `pr-review-integration`. Each half is still eagerly included where it is
+needed; the saving is that a consumer no longer inlines the part it never reads.
+
+The fragment is delivered **once per consumer target**, deduplicated, to that skill's `shared/`
+directory and rendered there through the same pipeline as a tool body (nested eager includes,
+nested load pointers, `{{VERSION}}`, `ask`, portable worker preparation, then references). A
+worker reads the file at runtime the same way the router loads `tools/<tool>.md` on demand or
+`apply` loads its `apply-*.md` siblings.
+
+Execution-location behavior intentionally remains instruction-level and harness-neutral: Git
+metadata verifies the absolute root and checkout identity, while Claude- or Codex-managed
+worktree lifecycle stays outside Effective Flow ownership. No runtime helper or configuration
+schema is required for the receipt.
+
+## Writing prompt text
+
+The rule for writing prompt text, including its scope, is canonical in
+[`AGENTS.md`](../../AGENTS.md), section "Writing prompt text"; this section maps each point onto
+the build.
+
+- **Length is paid on every run.** The context-budget guard (see "Guards") measures every tool's
+  always-loaded core, and the "**Context budget.**" paragraph below makes each entry a ratchet,
+  not room to fill. An eager `src/shared` fragment is charged to every host that includes it, so
+  one line added there raises several measurements at once. `AGENTS.md` is paid in every session
+  but has no guard, so the rule is all that holds it.
+- **State a contract once, in its owning fragment.** Every other source reaches it through an
+  ` ```include ` or ` ```lazy-include ` fence (see "Placeholder and directive syntax") or a
+  pointer that names the owning file, never through a restated copy. For a playbook a central
+  skill owns, the ownership contract in [`skill-ownership.md`](skill-ownership.md), section "The
+  layered contract", decides what the source still carries.
+- **Keep rare edge cases out of eager text.** Deferral follows "Progressive disclosure beyond the
+  router" unchanged: only a mode-gated block that serves one nameable decision point qualifies,
+  and its pointer states that trigger as the load trigger (`when:`). A fragment on the "Core flow
+  stays inline" list itself stays eager; a genuine branch inside it may move behind a nested
+  pointer only under the same one-nameable-decision-point rule, as `chat-language` does with
+  `typography-rules`. "Rare" alone never qualifies text for deferral.
+- **Prefer one precise sentence to an explanation of its history.** Keep the reason that
+  constrains the next edit, such as why a gate runs in its order. Move how the text came to be –
+  an earlier issue, an older wording, a migration – to the plan archive, the commit message or an
+  ADR.
+- **A test that reads source prose must name the invariant it protects.** State the invariant in
+  a comment block above the test and name the property in the assertion message; the test "every
+  merge-gate lazy pointer names the decision point that loads it" in
+  `test/workflow-contracts.test.mjs` and its comment are the model. Anchor the assertion on the
+  smallest stable phrase or marker, so rewording stays free while losing the invariant fails. When
+  tightening an assertion, mutate the source deliberately and confirm the test fails.
+
+## Native and portable worker rendering
+
+Each `src/agents/<name>.md` body remains the only worker contract. The native renderers combine
+it with harness-specific frontmatter to produce registered `effective-flow-<name>` sidecars.
+The portable renderer writes the same body to `workers/effective-flow-<name>.md`; instructions
+that reference a worker receive a short delegation protocol telling the harness to load only
+the selected contract and pass it to a built-in general-purpose subagent with zero inherited
+turns when supported, otherwise the smallest supported history. The protocol adds a compact,
+self-contained handoff and reserves worker starts and analysis fan-out for the workflow/tool
+orchestrator; the selected worker is always a leaf. This is orchestration metadata, not a
+duplicate domain playbook: centrally discovered skills remain authoritative for their declared
+domains.
+
+Every native Claude worker tool list omits `Agent` and `Task`. That withholding is the
+enforceable Claude boundary because a granted sub-agent tool can start a child whose capabilities
+prose and `Agent(<type>)` cannot restrict. Native Codex and portable worker metadata do not expose
+an equivalent per-role tool list, so their rendered instructions carry the same leaf-worker
+contract explicitly.
+
+The native frontmatter also owns role-based model selection, derived from each agent's `tier:`:
+implementers, reviewers and the merge-conflict resolver (`deep`) use Claude `opus`/`high` and
+Codex `gpt-6.1-sol`/`high`; support roles (`standard`) use Claude `sonnet`/`medium` and Codex
+`gpt-5.6-luna`/`medium`. The source agent files are the canonical per-role assignments. Portable
+workers carry no native frontmatter, so a portable manager cannot enforce a worker profile
+natively; instead each portable spawn site passes the tier's values for the harness that runs it
+(see "Model tiers").
+
+Fast-capable routes are classified centrally after the project-routing table is parsed. The five
+current routes—tooling, frontend JavaScript/TypeScript, Node.js, Rust, and generic product
+implementation—resolve to five unique base workers. For each one, both native renderers generate an
+`effective-flow-<name>-fast` sidecar from the base contract, changing only its name, description,
+model, and effort. The current generated stems are
+`effective-flow-generic-implementer-fast`, `effective-flow-ui-implementer-fast`,
+`effective-flow-nodejs-implementer-fast`, `effective-flow-rust-implementer-fast`, and
+`effective-flow-generic-product-implementer-fast`. No `src/agents/*-fast.md` source exists. Codex
+also generates `-tier-mechanical` and `-tier-deep` TOML variants for the six standard roles. A
+Codex role file's model and reasoning settings take precedence over matching spawn parameters,
+which keeps direct base-role invocation safe. The provider mappings live only in `build.mjs` and
+are validated before rendering. The current operational mapping is Claude `sonnet`/`medium` and Codex
+`gpt-5.6-luna`/`medium`; these aliases are replaceable build metadata, not part of project
+configuration or the durable representation decision.
+
+The same token renders an explicit Quality-only notice for portable managers, which still receive
+the normal worker-delegation bootstrap. A portable build records no gate reason: the pilot
+fragments read the rendered `{{BUILD_TARGET}}` and treat a `portable` build as unmeasured, whatever
+host runs it. Build guards reject native metadata,
+Fast sidecar identifiers, inventories, and unresolved profile tokens in portable output, and
+provider model names there outside build-generated tier text (see "Model tiers"). The token is authorized only in the initial implementation phase of `build` and
+`refactor`. `build` Phase 2 and `refactor` Phase 3 each use it for their five Fast-capable
+implementers.
+
+Native builds also write `native-agent-inventory.json` beside each skill. Its `baseWorkers` list is
+identical across harnesses. Claude's `fastWorkers` and Codex's `fastWorkers` each list the five
+generated sidecars; Claude's `tierWorkers` is empty and Codex's lists twelve generated variants.
+`standardWorkers` lists the six standard base roles on both targets.
+`scripts/native-agent-inventory.mjs validate <claude-inventory> <claude-agents-dir>
+<codex-inventory> <codex-agents-dir>` exposes the shared strict validation for the local installer.
+Success is silent; usage, read, schema, canonical-byte, or reconciliation failures produce one
+stable diagnostic on standard error and exit with status 1.
+
+New builds emit schema 2. The historical baseline utility may opt into schema-1 read compatibility
+explicitly; current installation and inventory validation remain schema-2 strict. Legacy reads do
+not authorize schema-1 generation or omit `standardWorkers` or `tierWorkers` from a current
+inventory.
+
+Portable tool references use the harness-neutral notation `effective-flow <tool>`. Its router
+also states the executable `/effective-flow` (Claude Code) and `$effective-flow` (Codex) forms,
+so both managers install the same bytes instead of selecting by traversal order.
+
+**Context budget.** The always-loaded core of every tool is measured and enforced during the
+build (see "Guards"), each against its own per-tool budget. No tool now shares a broad allowance
+with a group. The build prints the measured size and budget in map order; that order is a reading
+aid and deliberately unenforced, so growth or a successful deferral may leave it temporarily
+non-descending until maintainers reorder the map.
+
+Each budget is the tool's measured size plus at most ten lines. The limit is a ratchet and backlog,
+not a target: moving a mode-gated block behind a `lazy-include` lowers the affected entry rather
+than creating reusable room. Headroom is a flat count instead of a percentage, because a percentage
+would give the largest tools the most unchecked growth. Ten is the ceiling, not a fixed offset, and
+most entries carry less.
+
+The current report makes that policy visible without a separate budget class:
+`iterate` is 1572/1572, `setup` 1563/1564, `apply-review` 1025/1025, `apply-issues` 937/937,
+`merge-gate` 873/873 (the gate moved into the lazy `merge-gate-delegated-run`), and `cleanup`
+833/833. The four tools that formerly shared a 700-line allowance now carry individual ratchets:
+`plan` 713/713, `docs` 634/637, `build` 640/640, and `fix` 521/521. Read every
+other tool's current measurement and exact headroom from the build report rather than from a
+category-wide assumption. The conditional Profile contract remains in the lazy
+`setup-profiles` fragment and therefore does not count toward `setup`'s always-loaded core.
+
+## Model tiers
+
+Every spawn runs on a provider-neutral model tier: `mechanical`, `standard` or `deep`. Rationale
+and decisions: [Per-spawn model tiers](../adr/per-spawn-model-tiers.md). The mechanics are:
+
+- **One mapping.** `MODEL_TIER_MAPPINGS` in `build.mjs` maps each tier to Claude Code
+  `model`/`effort` and Codex `model`/`reasoning_effort` (frozen, next to `AGENT_PROFILE_MAPPINGS`,
+  which keeps the Fast values). It is validated against the supported vocabularies before any
+  rendering (see "Guards"). The current values are `mechanical` Claude `haiku`/`low` and Codex
+  `gpt-5.6-luna`/`low`, `standard` `sonnet`/`medium` and `gpt-5.6-luna`/`medium`, `deep`
+  `opus`/`high` and `gpt-6.1-sol`/`high`.
+- **Role default.** An agent's `tier:` is the single source of its native Claude and Codex model
+  and effort. `{{MODEL_TIER_ROLE_DEFAULTS}}` renders the role table into `model-tiers` from the same
+  field. `{{MODEL_TIER_ROLE_SELECTION}}` then renders the target-specific selection rule: Codex
+  chooses a generated mechanical/deep variant only for an allowed one-step move of a standard
+  role, returns to the base role for standard, and uses the base role for retries and corrections.
+  A mechanical variant is never a new retry default; deep roles have no tier variants. Named Codex
+  roles must not be overridden with spawn model or effort parameters because the role file wins.
+- **Spawn sites.** `src/shared/model-tiers.md` holds the `## Spawn sites` table with the columns
+  `Site | Spawn | Tier | Down`. `Site` is `` `<tool>/<id>` ``, `Spawn` a short description without
+  placeholders, `Tier` one of `` `mechanical` ``, `` `standard` ``, `` `deep` `` or
+  `` `role:<agent>[,<agent>…]` `` (worker spawns resolve to the agents' `tier:`), and `Down`
+  `` `yes` `` or `` `no` ``. `no` marks a site whose one-step margin may not move down; a site
+  resolving only to `deep` must say `no`. A `standard` site with `Down: no` renders "no downward
+  move". Differing role tiers at one site render one clause per role. At the two Fast-adopting
+  initial-implementation sites the marker follows a sentence binding the rendered line to the
+  Quality selectors; a Fast spawn's own values are owned by `execution-profiles`.
+- **Reconciliation.** Each marker id must be `<owner>/<id>` with the owner equal to the
+  containing source, unique across all sources and present in the table, and every table row needs
+  its marker. Markers in the router or an agent source fail, as does a marker line with any other
+  shape or inside any fenced block. Workers spawn nothing: a marked fragment among an agent's eager
+  includes, direct or nested, and a tier line in any target's rendered worker body fail. No
+  `<!-- spawn-site:` marker may survive in a built file, and `model-tiers.md` is the only
+  source that may contain the two generated placeholders (once each) or the table markers.
+- **Provider names.** A native target may name only its own provider's models, so a Codex model
+  name in `dist/claude` or a Claude one in `dist/codex` fails. Portable output may name provider
+  models only inside build-generated tier text: an exact rendered line of the marked table and an
+  exact two-harness values phrase rendered from `MODEL_TIER_MAPPINGS` inside a spawn-site line. Line-start `model:`/`effort:` keys, Fast stems and native inventories
+  stay forbidden there.
+- **Pilot identity.** The pilot protocol module is copied byte for byte and cannot import
+  `build.mjs`, so it carries the SHA-256 digest of the canonical `MODEL_TIER_MAPPINGS.deep`
+  (`PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY`). The build fails when it differs from the
+  digest it computes, so a change of the `deep` values needs a new protocol version and migration
+  ([protocol guide](model-tiering-pilot-protocol.md#quality-mapping-identity)). Every Fast-capable
+  implementer must declare `tier: deep`, the tier that identity binds.
+- **Baseline proof.** `scripts/compare-native-agent-baseline.mjs --base <commit>` no longer skips
+  a changed worker: `EXPECTED_NATIVE_DELTAS` allows only, in the ten `deep` workers, the Claude
+  `effort` change `xhigh` to `high` (`claude-deep-tier-effort`) and the Codex `model` change
+  `gpt-5.6-sol` to `gpt-6.1-sol` (`codex-deep-tier-model`), plus the delegation-mandate delta (the
+  tier sentence closing the worker-start bullet, plus the `model-tiers` pointer); any other byte
+  difference fails. Once this change
+  ships in a release, move the test's pinned `--base` to that release commit and empty
+  `EXPECTED_NATIVE_DELTAS`; until then, any further edit to a worker-included fragment needs its
+  own exact allowlist entry.
+- **Context budget.** The mandate's tier sentence and lazy pointer add lines to every tool that
+  includes it; the spawn-site lines render in place of the marker and count in the built core.
+- **`mechanical` eligibility.** A site is `mechanical` only when all five conditions hold. The
+  criteria are maintainer-facing: no runtime decision reads them, so `model-tiers` carries only the
+  table row.
+  - (a) The spawn is read-only and returns a draft or facts only.
+  - (b) Its inputs are bounded and named in the brief.
+  - (c) The orchestrator checks the output before any effect.
+  - (d) The spawn makes no safety, classification, judgment or approval decision and asks the user
+    nothing.
+  - (e) The orchestrator does not itself read the bulk input the spawn reads, so work actually
+    moves. For `pr/body-draft` that bulk is the full diff and the plan content; `--stat`,
+    `--name-only` and commit messages stay allowed.
+
+  `pr/body-draft` (the PR body draft in `pr` step 9) is the first real `mechanical` site; the
+  no-op `merge-gate-delegated-run/nested-spawn-probe` is the only other one.
+
+### Manual native compatibility acceptance
+
+Build and inventory checks are static acceptance: they prove that the generated files and
+references agree. They do not prove that a host applies the intended model and reasoning settings.
+Before accepting native Codex
+profile changes for issue #581, record a real host probe that invokes each generated Fast and tier
+role and verifies the effective model and reasoning values. The probe must also verify the
+precedence contract from [Codex agent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents):
+the role file wins over conflicting spawn parameters. Treat the probe as compatibility evidence,
+not as a reason to activate the pilot.
+
+Before launching that probe or writing product files, satisfy the selected lane’s
+[launch qualification](../../src/shared/protected-validation.md#executor-lanes-and-launch-qualification).
+The local lane requires a separate successful `pnpm test:preflight` in the exact worker sandbox; the
+protected lane requires actual local bridge-boundary qualification and the unchanged full remote
+executor proof. An honest local capability failure is not relabeled. This process qualification proves
+observable capabilities only; the later feature helper chain and model-role observations remain owed.
+
+The acceptance checklist remains open until all of these are available: accessible original
+assignment and role evidence and complete actual helper observations; actual Claude model,
+reasoning and workload evidence after capacity becomes available; six behavioral scenarios with
+five independently recorded valid runs each, twenty portable paired workloads, and two native
+compatibility lanes. Metadata and inventory tests cannot substitute for those runtime
+observations. Do not fabricate evidence, relax the gates, or activate the pilot automatically
+while any item is open.
+
+## Optional upstream ownership audit
+
+Maintainers can inspect a supplied local checkout, its `skills/` directory, or a newline-delimited
+listing file without changing normal CI:
+
+```sh
+pnpm audit:skill-ownership -- /path/to/skills.sebastian-software.com
+```
+
+The audit reports upstream skills without declared Effective Flow relationships as review
+candidates and also notes declared relationship skills absent from the supplied input. Candidate
+findings are advisory: they do not produce a failing status, mutate the manifest, assign a
+classification, or run during `build`, `test`, or `agent:check`. A candidate may remain unrelated
+indefinitely. Update the relationship manifest only after a human review establishes a concrete
+Effective Flow consumer; refresh the informational provenance only when that relationship review
+actually occurs.
+
+## Further reading
+
+- [`architecture.md`](architecture.md) – source-to-dist model and repo structure.
+- [`plan-conventions.md`](plan-conventions.md) – plan-file schema.
+- [`release-and-installation.md`](release-and-installation.md) – version stamp and release.
+- [`AGENTS.md`](../../AGENTS.md) – the always-loaded behavior **rules** (the tool-rename alias,
+  the context-budget entry, writing prompt text, the Claude leaf boundary of agent tool lists, no
+  AI attribution); the build **mechanics** those rules refer to are canonical here. Language,
+  delegation, commit, and plan contracts are the shipped fragments under
+  [`src/shared/`](../../src/shared/).
