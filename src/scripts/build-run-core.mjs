@@ -1,10 +1,26 @@
 // Build-owned artifact transport. The caller remains the authority for gate judgments and user
 // channel provenance; byte digests establish identity, never consent or substantive correctness.
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, readdir, readlink, realpath, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { resolveConfiguration } from './config-resolve-core.mjs';
+import {
+  PROTECTED_VALIDATION_PROTOCOL,
+  ProtectedValidationError,
+  equalValidation,
+  validateBootstrap,
+  validateExportManifest,
+  validateRemoteRequirement,
+} from './protected-validation-protocol.mjs';
+import {
+  verifyProtectedBootstrap,
+  verifyProtectedResult,
+  projectSource,
+  protectedValidationRoot,
+  parseValidationJSON,
+  safeValidationRead,
+} from './protected-validation-core.mjs';
 
 export const BUILD_RUN_VERSION = 1;
 export const MAX_DISPATCH_BYTES = 8 * 1024;
@@ -21,6 +37,9 @@ export const BUILD_RUN_OPERATIONS = Object.freeze([
   'handoff',
   'record-return',
   'retain-evidence',
+  'validation-await-admission',
+  'validation-request',
+  'validation-result',
   'checkpoint',
   'question',
   'reply',
@@ -544,22 +563,27 @@ async function load(input, deps, mutation = false) {
   return context;
 }
 function validateRequest(value) {
-  exact(value, [
-    'protocol',
-    'runId',
-    'runtimeStateRoot',
-    'repositoryIdentity',
-    'execution',
-    'plan',
-    'source',
-    'runMode',
-    'languages',
-    'completionCondition',
-    'deliveryRestrictions',
-    'sourceAssociation',
-    'allowedRoots',
-    'policy',
-  ]);
+  exact(
+    value,
+    [
+      'protocol',
+      'runId',
+      'runtimeStateRoot',
+      'repositoryIdentity',
+      'execution',
+      'plan',
+      'source',
+      'runMode',
+      'languages',
+      'completionCondition',
+      'deliveryRestrictions',
+      'sourceAssociation',
+      'allowedRoots',
+      'policy',
+    ],
+    ['remoteValidation'],
+  );
+  if (value.remoteValidation !== undefined) validateRemoteRequirement(value.remoteValidation);
   if (value.protocol !== BUILD_RUN_VERSION) fail('INVALID_STATE', 'unsupported build protocol');
   identifier(value.runId);
   absolute(value.runtimeStateRoot);
@@ -889,7 +913,7 @@ async function dataRead(context, ref) {
 }
 async function gateReceipt(context, ref) {
   const value = await readRecord(context, ref);
-  exact(value, RECEIPT_FIELDS);
+  exact(value, RECEIPT_FIELDS, ['remoteValidation']);
   one(value.gate, REQUIRED_GATES);
   one(value.outcome, ['passed', 'not-applicable']);
   text(value.reason);
@@ -904,6 +928,47 @@ async function gateReceipt(context, ref) {
   for (const item of value.evidence)
     await evidence(item, context.request, context, context.deps, true);
   await dataRead(context, value.manifest);
+  if (
+    context.request.remoteValidation?.requiredGates.includes(value.gate) &&
+    value.remoteValidation === undefined
+  )
+    fail('REMOTE_VALIDATION_REQUIRED', 'required remote receipt is missing');
+  if (value.remoteValidation !== undefined) {
+    const remote = value.remoteValidation;
+    exact(remote, ['requestRef', 'resultRef', 'validatorHandle', 'consumed']);
+    const request = await remoteRequest(context, remote.requestRef, remote.validatorHandle);
+    if (request.gate !== value.gate || !same(request.snapshot, value.snapshot))
+      fail('FOREIGN_RECORD', 'remote receipt judges another gate/content');
+    const used = await readRecord(context, remote.consumed);
+    exact(used, [
+      'protocol',
+      'runId',
+      'requestDigest',
+      'requestRef',
+      'resultRef',
+      'validatorHandle',
+      'gate',
+      'snapshot',
+    ]);
+    if (
+      !same(used.requestRef, remote.requestRef) ||
+      !same(used.resultRef, remote.resultRef) ||
+      used.validatorHandle !== remote.validatorHandle ||
+      used.gate !== value.gate ||
+      !same(used.snapshot, value.snapshot) ||
+      path.basename(remote.consumed.path) !== `validation-consumed-${request.validationId}.json`
+    )
+      fail('FOREIGN_RECORD', 'remote result was not consumed by this gate');
+    const bootstrap = await remoteAdmission(context, request);
+    const verified = await verifyProtectedResult({
+      request,
+      requestRef: remote.requestRef,
+      bootstrap,
+      bootstrapRef: request.bootstrapRef,
+    });
+    if (verified.state !== 'verified' || !same(verified.resultRef, remote.resultRef))
+      fail('INCOMPLETE_GATES', 'retained remote backend evidence no longer verifies');
+  }
   return value;
 }
 async function assertCompleted(context, completed, refs, current) {
@@ -1048,20 +1113,25 @@ async function questionRecord(context, ref) {
   return value;
 }
 async function create(input, deps) {
-  exact(input, [
-    'runtimeStateRoot',
-    'repositoryIdentity',
-    'runId',
-    'execution',
-    'plan',
-    'source',
-    'runMode',
-    'languages',
-    'completionCondition',
-    'deliveryRestrictions',
-    'sourceAssociation',
-    'allowedRoots',
-  ]);
+  exact(
+    input,
+    [
+      'runtimeStateRoot',
+      'repositoryIdentity',
+      'runId',
+      'execution',
+      'plan',
+      'source',
+      'runMode',
+      'languages',
+      'completionCondition',
+      'deliveryRestrictions',
+      'sourceAssociation',
+      'allowedRoots',
+    ],
+    ['remoteValidation'],
+  );
+  if (input.remoteValidation !== undefined) validateRemoteRequirement(input.remoteValidation);
   identifier(input.runId);
   exact(input.source, ['instruction', 'restrictions']);
   text(input.source.instruction);
@@ -1094,6 +1164,9 @@ async function create(input, deps) {
     executionRoot: request.execution.executionRoot,
     runMode: request.runMode,
     completionCondition: request.completionCondition,
+    ...(request.remoteValidation === undefined
+      ? {}
+      : { remoteValidation: request.remoteValidation }),
   };
   encodeControl(dispatch, MAX_DISPATCH_BYTES);
   await runtimeGuard(input, deps, true, context.namespace);
@@ -2360,6 +2433,316 @@ async function validateTerminalValue(context, value) {
   return value;
 }
 
+// Remote validation remains execution evidence. The admitted original validator judges the gate.
+async function remoteAdmission(context, input) {
+  if (input.validatorHandle === (await agentHandle(context)))
+    fail('AGENT_MISMATCH', 'the build runner cannot admit itself as its independent validator');
+  return verifyProtectedBootstrap({
+    runtimeStateRoot: context.root,
+    repositoryIdentity: context.identity,
+    runId: context.request.runId,
+    requestDigest: context.requestDigest,
+    validatorHandle: input.validatorHandle,
+    gate: input.gate,
+    bootstrapRef: input.bootstrapRef,
+  });
+}
+
+async function validationAwaitAdmission(context, input) {
+  text(input.validatorHandle);
+  one(input.gate, ['validation', 'final-validation']);
+  await noLifecycleLock(context);
+  if (!context.request.remoteValidation?.requiredGates.includes(input.gate))
+    fail('REMOTE_VALIDATION_REQUIRED', 'the original request must require this remote gate');
+  if (input.validatorHandle === (await agentHandle(context)))
+    fail('AGENT_MISMATCH', 'the build runner cannot be its independent validator');
+  const root = protectedValidationRoot(context.root),
+    matches = [];
+  let entries;
+  try {
+    entries = await readdir(path.join(root, 'bootstraps'));
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    return {
+      state: 'pending',
+      bootstrapRef: null,
+      diagnostic: 'Waiting for the trusted host to admit this actual validator',
+    };
+  }
+  for (const name of entries) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}\.json$/.test(name))
+      fail('INVALID_STATE', 'unexpected protected bootstrap entry');
+    const bytes = await safeValidationRead(path.join(root, 'bootstraps', name), MAX_CONTROL_BYTES);
+    const bootstrap = validateBootstrap(parseValidationJSON(bytes)),
+      admission = bootstrap.admission;
+    if (
+      admission.runtimeStateRoot !== context.root ||
+      admission.repositoryIdentity !== context.identity ||
+      admission.runId !== context.request.runId ||
+      admission.requestDigest !== context.requestDigest ||
+      admission.validatorHandle !== input.validatorHandle ||
+      admission.gate !== input.gate
+    )
+      continue;
+    if (bootstrap.policyDigest !== context.request.remoteValidation.policyDigest)
+      fail('DIGEST_MISMATCH', 'host admission policy differs from original remote requirement');
+    const bootstrapRef = { root, path: 'bootstraps/' + name, digest: contentDigest(bytes) };
+    await remoteAdmission(context, { ...input, bootstrapRef });
+    matches.push(bootstrapRef);
+  }
+  if (matches.length > 1)
+    fail('INVALID_STATE', 'multiple host admissions for one validator and gate');
+  return matches.length
+    ? {
+        state: 'admitted',
+        bootstrapRef: matches[0],
+        diagnostic: 'Protected host admission is available',
+      }
+    : {
+        state: 'pending',
+        bootstrapRef: null,
+        diagnostic: 'Waiting for the trusted host to admit this actual validator',
+      };
+}
+
+async function validationRequest(context, input) {
+  if (!context.transition || context.handoff)
+    fail('INVALID_STATE', 'remote validation requires active verified execution');
+  identifier(input.validationId);
+  text(input.validatorHandle);
+  one(input.gate, ['validation', 'final-validation']);
+  await noLifecycleLock(context);
+  if (!context.request.remoteValidation?.requiredGates.includes(input.gate))
+    fail(
+      'REMOTE_VALIDATION_REQUIRED',
+      'remote gate must be required by the original immutable request',
+    );
+  const bootstrap = await remoteAdmission(context, input);
+  if (context.request.remoteValidation.policyDigest !== bootstrap.policyDigest)
+    fail('DIGEST_MISMATCH', 'host policy differs from original remote requirement');
+  const current = await inspect(context);
+  for (const name of await readdir(context.run)) {
+    if (!/^validation-request-[A-Za-z0-9_-]+\.json$/.test(name)) continue;
+    const previous = await localRecord(context, name);
+    if (previous.gate === input.gate && same(previous.snapshot, current.snapshot))
+      fail('COLLISION', 'this validator gate/content already has an immutable remote request');
+  }
+  const trackedPaths = (
+    await git(context.deps, context.request.execution.executionRoot, ['ls-files', '-z'], [0], true)
+  )
+    .toString('utf8')
+    .split('\0')
+    .filter(Boolean);
+  const exported = await projectSource({
+    executionRoot: context.request.execution.executionRoot,
+    manifest: [
+      ...current.manifest,
+      ...trackedPaths
+        .filter((name) => !current.manifest.some((entry) => entry[0] === name))
+        .map((name) => [name, 'missing']),
+    ],
+    trackedPaths,
+    snapshot: current.snapshot,
+  });
+  if (!same((await inspect(context)).snapshot, current.snapshot))
+    fail('CONTENT_DRIFT', 'source changed while preparing validation request');
+  const exportManifestRef = await data(
+    context,
+    `validation-export-${input.validationId}.txt`,
+    exported,
+  );
+  return record(context, `validation-request-${input.validationId}.json`, {
+    ...base(context),
+    validationProtocol: PROTECTED_VALIDATION_PROTOCOL,
+    validationId: input.validationId,
+    execution: context.request.execution,
+    validatorHandle: input.validatorHandle,
+    gate: input.gate,
+    bootstrapRef: input.bootstrapRef,
+    snapshot: current.snapshot,
+    exportManifestRef,
+    policyDigest: bootstrap.policyDigest,
+    commands: bootstrap.policy.commands,
+    nativeCases: bootstrap.policy.nativeCases,
+    environment: bootstrap.policy.environment,
+    nonce: randomBytes(24).toString('hex'),
+    requestedAt: new Date().toISOString(),
+  });
+}
+async function remoteRequest(context, ref, handle) {
+  const request = await readRecord(context, ref);
+  exact(request, [
+    'protocol',
+    'runId',
+    'requestDigest',
+    'validationProtocol',
+    'validationId',
+    'execution',
+    'validatorHandle',
+    'gate',
+    'bootstrapRef',
+    'snapshot',
+    'exportManifestRef',
+    'policyDigest',
+    'commands',
+    'nativeCases',
+    'environment',
+    'nonce',
+    'requestedAt',
+  ]);
+  if (
+    request.validationProtocol !== PROTECTED_VALIDATION_PROTOCOL ||
+    path.basename(ref.path) !== `validation-request-${identifier(request.validationId)}.json`
+  )
+    fail('FOREIGN_RECORD', 'invalid validation request reference');
+  if (request.validatorHandle !== handle)
+    fail('AGENT_MISMATCH', 'only the original admitted validator may poll');
+  executionShape(request.execution);
+  if (!same(request.execution, context.request.execution))
+    fail('REPOSITORY_MISMATCH', 'validation request execution changed');
+  one(request.gate, ['validation', 'final-validation']);
+  snapshotShape(request.snapshot);
+  digest(request.policyDigest);
+  if (!/^[a-f0-9]{48}$/.test(request.nonce) || !Number.isFinite(Date.parse(request.requestedAt)))
+    fail('INVALID_STATE', 'invalid remote request identity');
+  validateExportManifest(await dataRead(context, request.exportManifestRef));
+  return request;
+}
+async function validationResult(context, input) {
+  await noLifecycleLock(context);
+  const request = await remoteRequest(context, input.requestRef, input.validatorHandle);
+  const bootstrap = await remoteAdmission(context, request);
+  if (!same(request.snapshot, (await inspect(context)).snapshot))
+    fail(
+      'CONTENT_DRIFT',
+      'remote result no longer judges current HEAD/index/tracked/untracked content',
+    );
+  if (
+    request.policyDigest !== bootstrap.policyDigest ||
+    !equalValidation(request.commands, bootstrap.policy.commands) ||
+    !equalValidation(request.nativeCases, bootstrap.policy.nativeCases) ||
+    !equalValidation(request.environment, bootstrap.policy.environment)
+  )
+    fail('DIGEST_MISMATCH', 'request policy differs from host admission');
+  const result = await verifyProtectedResult({
+    request,
+    requestRef: input.requestRef,
+    bootstrap,
+    bootstrapRef: request.bootstrapRef,
+  });
+  if (!same(request.snapshot, (await inspect(context)).snapshot))
+    fail('CONTENT_DRIFT', 'source changed while reading remote result');
+  return result;
+}
+
+async function admittedRemoteGate(context, gate) {
+  const root = protectedValidationRoot(context.root);
+  let names;
+  try {
+    names = await readdir(path.join(root, 'bootstraps'));
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+  for (const name of names) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}\.json$/.test(name))
+      fail('INVALID_STATE', 'unexpected protected bootstrap entry');
+    const bytes = await safeValidationRead(path.join(root, 'bootstraps', name), MAX_CONTROL_BYTES);
+    const bootstrap = validateBootstrap(parseValidationJSON(bytes)),
+      admission = bootstrap.admission;
+    if (
+      admission.runtimeStateRoot === context.root &&
+      admission.repositoryIdentity === context.identity &&
+      admission.runId === context.request.runId &&
+      admission.requestDigest === context.requestDigest &&
+      admission.gate === gate
+    ) {
+      await remoteAdmission(context, {
+        ...admission,
+        bootstrapRef: { root, path: 'bootstraps/' + name, digest: contentDigest(bytes) },
+      });
+      return true;
+    }
+  }
+  return false;
+}
+
+async function remoteGate(context, input, current) {
+  if (!['validation', 'final-validation'].includes(input.gate)) {
+    if (
+      input.validationRequest !== undefined ||
+      input.validationResult !== undefined ||
+      input.validatorHandle !== undefined
+    )
+      fail('INVALID_PAYLOAD', 'remote validation fields require a validation gate');
+    return null;
+  }
+  const requests = [];
+  for (const name of await readdir(context.run))
+    if (/^validation-request-[A-Za-z0-9_-]+\.json$/.test(name)) {
+      const request = await localRecord(context, name);
+      if (request.gate === input.gate) requests.push({ request, name });
+    }
+  const admitted =
+    context.request.remoteValidation?.requiredGates.includes(input.gate) ||
+    (await admittedRemoteGate(context, input.gate));
+  if (!requests.length && admitted)
+    fail(
+      'REMOTE_VALIDATION_REQUIRED',
+      'a protected host admission requires its original matching remote request',
+    );
+  if (!requests.length) {
+    if (
+      input.validationRequest !== undefined ||
+      input.validationResult !== undefined ||
+      input.validatorHandle !== undefined
+    )
+      fail('FOREIGN_RECORD', 'remote request does not exist');
+    return null;
+  }
+  const matching = requests.filter(({ request }) => same(request.snapshot, current));
+  if (matching.length !== 1)
+    fail('CONTENT_DRIFT', 'remote validation gate needs exactly one request for current content');
+  if (
+    input.validationRequest === undefined ||
+    input.validationResult === undefined ||
+    input.validatorHandle === undefined
+  )
+    fail(
+      'REMOTE_VALIDATION_REQUIRED',
+      'retained text or a user reply cannot discharge a required remote gate',
+    );
+  const selected = matching[0];
+  if (path.basename(input.validationRequest.path) !== selected.name)
+    fail('FOREIGN_RECORD', 'wrong remote request for gate');
+  const result = await validationResult(context, {
+    requestRef: input.validationRequest,
+    validatorHandle: input.validatorHandle,
+  });
+  if (result.state !== 'verified')
+    fail('REMOTE_VALIDATION_PENDING', 'remote backend evidence is not verified');
+  if (!same(result.resultRef, input.validationResult))
+    fail('FOREIGN_RECORD', 'wrong remote result for gate');
+  const consumed = await record(
+    context,
+    `validation-consumed-${selected.request.validationId}.json`,
+    {
+      ...base(context),
+      requestRef: input.validationRequest,
+      resultRef: result.resultRef,
+      validatorHandle: input.validatorHandle,
+      gate: input.gate,
+      snapshot: current,
+    },
+  );
+  return {
+    requestRef: input.validationRequest,
+    resultRef: result.resultRef,
+    validatorHandle: input.validatorHandle,
+    consumed,
+  };
+}
+
 const SCHEMAS = {
   validate: [],
   'bind-agent': ['agentHandle'],
@@ -2377,6 +2760,9 @@ const SCHEMAS = {
   handoff: ['agentHandle', 'seal', 'head', 'finalPlan'],
   'record-return': ['agentHandle', 'delivery'],
   'retain-evidence': ['evidenceId'],
+  'validation-await-admission': ['validatorHandle', 'gate'],
+  'validation-request': ['validationId', 'validatorHandle', 'gate', 'bootstrapRef'],
+  'validation-result': ['requestRef', 'validatorHandle'],
   checkpoint: ['checkpointId', 'agentHandle', 'completed', 'pending', 'evidence'],
   question: [
     'questionId',
@@ -2531,6 +2917,9 @@ async function operate(operation, input, context) {
     } else if (!['seal-delivery', 'handoff', 'retain-evidence'].includes(operation))
       await planUnchanged(context);
   }
+  if (operation === 'validation-await-admission') return validationAwaitAdmission(context, input);
+  if (operation === 'validation-request') return validationRequest(context, input);
+  if (operation === 'validation-result') return validationResult(context, input);
   if (operation === 'retain-evidence') {
     if (!context.handoff) await policyUnchanged(context);
     return retainEvidence(context, input);
@@ -2709,6 +3098,7 @@ async function operate(operation, input, context) {
       await removedExecution(context);
     const observed = context.handoff ? null : await inspect(context);
     const basis = context.handoff ? context.handoff.snapshot : observed.snapshot;
+    const remoteValidation = await remoteGate(context, input, basis);
     const name = context.handoff
       ? `gate-${input.gate}-handoff.json`
       : `gate-${input.gate}-${contentDigest(JSON.stringify(basis)).slice(7)}.json`;
@@ -2724,11 +3114,14 @@ async function operate(operation, input, context) {
       snapshot: basis,
       evidence: input.evidence,
       manifest,
+      ...(remoteValidation === null ? {} : { remoteValidation }),
     });
   }
   fail('INVALID_OPERATION', 'unsupported build-run operation');
 }
 export async function executeOperation(operation, input, deps = {}) {
+  if (['validation-await-admission', 'validation-request', 'validation-result'].includes(operation))
+    encodeControl(input);
   if (!BUILD_RUN_OPERATIONS.includes(operation))
     fail('INVALID_OPERATION', 'unsupported build-run operation');
   if (operation === 'create') {
@@ -2740,7 +3133,14 @@ export async function executeOperation(operation, input, deps = {}) {
     input,
     [...COMMON, ...SCHEMAS[operation]],
     operation === 'receipt'
-      ? ['agentHandle', 'completionBasis', 'currentPlan']
+      ? [
+          'agentHandle',
+          'completionBasis',
+          'currentPlan',
+          'validationRequest',
+          'validationResult',
+          'validatorHandle',
+        ]
       : operation === 'seal-delivery'
         ? ['renewedGates']
         : operation === 'authorize-execution'
@@ -2749,7 +3149,13 @@ export async function executeOperation(operation, input, deps = {}) {
             ? ['content', 'source']
             : [],
   );
-  const mutation = !['validate', 'verify-terminal', 'verify-continuation'].includes(operation);
+  const mutation = ![
+    'validate',
+    'verify-terminal',
+    'verify-continuation',
+    'validation-result',
+    'validation-await-admission',
+  ].includes(operation);
   const context = await load(input, deps, mutation);
   let lock;
   const lockPath = path.join(context.run, '.operation.lock');
@@ -2782,22 +3188,38 @@ export async function executeOperation(operation, input, deps = {}) {
   }
 }
 export function errorEnvelope(operation, error) {
+  const supportedValidationError =
+    error instanceof ProtectedValidationError &&
+    [
+      'AMBIGUOUS_PROJECTION',
+      'CONTENT_DRIFT',
+      'DIGEST_MISMATCH',
+      'FOREIGN_VALIDATION',
+      'INCOMPLETE_VALIDATION',
+      'INVALID_VALIDATION',
+      'UNPROTECTED_VALIDATION',
+      'UNSAFE_PATH',
+      'UNSUPPORTED_VALIDATION',
+      'VALIDATION_POLICY_MISMATCH',
+    ].includes(error.code);
+  const knownError = error instanceof BuildRunError || supportedValidationError;
   return {
     ok: false,
     operation: BUILD_RUN_OPERATIONS.includes(operation) ? operation : null,
     error: {
-      code: error instanceof BuildRunError ? error.code : 'IO_ERROR',
-      message:
-        error instanceof BuildRunError
-          ? error.message
-          : 'build-run I/O failed; retain artifacts for reconciliation',
+      code: knownError ? error.code : 'IO_ERROR',
+      message: knownError
+        ? error.message
+        : 'build-run I/O failed; retain artifacts for reconciliation',
     },
   };
 }
 export function exitCodeFor(envelope) {
   return envelope.ok
     ? 0
-    : ['INVALID_OPERATION', 'INVALID_PAYLOAD', 'TOO_LARGE'].includes(envelope.error.code)
+    : ['INVALID_OPERATION', 'INVALID_PAYLOAD', 'INVALID_VALIDATION', 'TOO_LARGE'].includes(
+          envelope.error.code,
+        )
       ? 2
       : 1;
 }

@@ -42,6 +42,13 @@ const suite = {
     // Native inventory admission executes the canonical parser and its local dependencies.
     ...[
       'build-lib.mjs',
+      'scripts/protected-validation-operator.mjs',
+      'scripts/protected-validation-projection.mjs',
+      'scripts/protected-validation-backend.mjs',
+      'scripts/protected-macos-validation.mjs',
+      '.github/workflows/protected-macos-validation.yml',
+      'src/scripts/protected-validation-protocol.mjs',
+      'src/scripts/protected-validation-core.mjs',
       'src/scripts/pilot-measurement-protocol.mjs',
       'src/scripts/plan-lint-core.mjs',
     ].map((name) => resolve(root, '../..', name)),

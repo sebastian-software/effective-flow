@@ -35,6 +35,8 @@ const RUNTIME_SCRIPT_FILES = [
   'delegation-envelope-core.mjs',
   'build-run-core.mjs',
   'build-run.mjs',
+  'protected-validation-protocol.mjs',
+  'protected-validation-core.mjs',
   'diff-baseline.mjs',
   'diff-baseline-core.mjs',
   'delivery-selection.mjs',

@@ -124,6 +124,17 @@ export function observedHelperEvent(
     sourceDigest,
     line: tool.resultLine,
     at: tool.at,
+    callAt: tool.callAt,
+    nativeExecution: tool.nativeExecution === true,
+    helperPathDigest: digest(call.script),
+    runtimeStateRootDigest:
+      typeof input.runtimeStateRoot === 'string' ? digest(input.runtimeStateRoot) : null,
+    repositoryIdentityDigest:
+      typeof input.repositoryIdentity === 'string' ? digest(input.repositoryIdentity) : null,
+    gate: input.gate ?? null,
+    validatorHandleDigest:
+      typeof input.validatorHandle === 'string' ? alias(input.validatorHandle) : null,
+    bootstrapDigest: input.bootstrapRef?.digest ?? result.bootstrapRef?.digest ?? null,
     family: call.family,
     operation: call.operation,
     apply: call.apply,
@@ -145,7 +156,15 @@ export function observedHelperEvent(
     recordDigest: result.digest ?? null,
     questionDigest: input.question?.digest ?? null,
     replyDigest: input.reply?.digest ?? null,
-    agentSession: agentSession(input.agentHandle ?? result.agentHandle),
+    agentSession: agentSession(input.validatorHandle ?? input.agentHandle ?? result.agentHandle),
+    validationState: ['pending', 'admitted', 'failed', 'verified'].includes(result.state)
+      ? result.state
+      : null,
+    validationRequestDigest:
+      call.operation === 'validation-request'
+        ? (result.digest ?? null)
+        : (input.requestRef?.digest ?? input.validationRequest?.digest ?? null),
+    validationResultDigest: result.resultRef?.digest ?? input.validationResult?.digest ?? null,
     status: result.status ?? null,
     generationState: result.generationState ?? null,
     packetAliases: Array.isArray(result.packets)

@@ -42,10 +42,15 @@ untouched.
 create and clean a temporary fixture, bind an ephemeral loopback TCP listener, and, on macOS,
 apply a distinct nested Seatbelt policy that proves a real write is denied. `pnpm test` runs this
 guard first, but a passing guard is prerequisite evidence only, not proof that the full suite is
-correct. Run the preflight in the exact native worker sandbox and environment before a pilot
-launch; failure blocks activation and product writes. Do not skip, xfail, or relax a check, or use
-results from an unprotected host as native-worker proof. On macOS, the nested policy is a
-legitimate requirement because the suite must exercise a different native sandbox policy.
+correct. Before pilot readiness, attempt allocation or product writes, qualify the selected executor
+lane under [the protected-validation contract](../../src/shared/protected-validation.md#executor-lanes-and-launch-qualification).
+The local lane runs this preflight in the exact native worker sandbox and environment; failure blocks
+that lane. The equally strong protected lane instead proves the real local bridge boundary and frozen
+host/observer capabilities plus the unchanged full preflight, all checks and five native cases in its
+actual remote executor for a fresh immutable full-source qualification snapshot. Preserve failed local
+capability probes as failures. Do not skip, xfail, relax or substitute a check, or treat an unprotected
+host as native-worker proof. On macOS, the nested policy remains a legitimate full-suite requirement
+because the suite must exercise a different native sandbox policy.
 
 ## Placeholder and directive syntax
 
@@ -419,8 +424,9 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Eleven subsystems and 29 runtime scripts carry this today: the pairs
-  `build-run.mjs`/`build-run-core.mjs`, `config-resolve.mjs`/
+  misread as one. Eleven subsystems and 31 runtime scripts carry this today: the pairs
+  `build-run.mjs`/`build-run-core.mjs` with `protected-validation-protocol.mjs` and
+  `protected-validation-core.mjs`, `config-resolve.mjs`/
   `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
   `diff-baseline.mjs`/`diff-baseline-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
   `plan-publication.mjs`/`plan-publication-core.mjs` and
@@ -685,9 +691,46 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 
 ## Runtime scripts
 
+### Protected native macOS validation
+
+The protected validation bridge is an internal transport for native Codex on a supported macOS host.
+Its [owning contract](../../src/shared/protected-validation.md) defines the equally strong executor
+alternatives, pre-write qualification and later feature acceptance. The immutable `remoteValidation`
+descriptor `{protocol,requiredGates,policyDigest}` must be in the original `create` control before child
+spawn. Commands, native requirements and closure policy are bound indirectly through `policyDigest`.
+The closed operations are one read-only `validation-await-admission` poll returning
+`{state,bootstrapRef,diagnostic}`, append-only `validation-request`, and read-only `validation-result`.
+The admitted native handle is already host-observed, not returned by the admission poll; `bootstrapRef`
+references policy/guard evidence. The same validator waits for the exact result and submits the
+ordinary receipt. A result does not itself grant the gate.
+
+Before pilot readiness, allocation or product writes, the protected lane proves actual local
+worker/descendant write, `chmod`, replace, unlink, create and private-read denials for the physical
+mailbox, private host areas and actual sessions/transcript root, with frozen host/observer capabilities.
+It also proves the unchanged full preflight, every check and all five native cases in the actual remote
+executor for a fresh immutable full-source qualification snapshot. A failed local capability probe
+remains failed; it does not block this alternative when both its local boundary and remote executor
+proofs succeed. The normal local lane still requires its exact worker’s successful full preflight.
+
+After implementation, each required gate needs fresh full-candidate GitHub attempt/jobs/raw-log proof
+for all unchanged checks and five native cases. Before sealing completion or accepting the run, host
+postcheck consumes successful canonical helper calls request → verified poll → ordinary receipt in the
+same admitted native validator session, with identical run/gate/request/result identities. This later
+helper chain is not a pre-write prerequisite. Initial model-free qualification does not establish future
+model-role adherence or full pilot acceptance; transport never authorizes activation.
+
+Only the validation workflow is active in the pushed transport tree. Every other original workflow is
+an inert payload there. The already-started job restores all original workflows at their original
+paths, exact bytes and modes in one separate Git execution repository used locally by that job and
+never pushed. The closure and source snapshot are immutable; stale or incomplete proof fails closed.
+The owning contract also requires bounded complete history reachable from the exact source HEAD,
+snapshot and execution commits parented directly to that source HEAD, and immutable checkout/runner
+identity through completion; changed history or closure requires a fresh attempt.
+
 Eleven dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains 29 files: nine two-file subsystems, the remote tracker's seven-file family,
-the pilot measurement three-file family, and the shared `process-runner.mjs`. Each entry
+allowlist contains 31 files: nine two-file subsystems, the remote tracker's seven-file family,
+the pilot measurement three-file family, the two protected-validation helper modules, and the shared
+`process-runner.mjs`. Each entry
 point is an I/O boundary over testable core or protocol modules:
 
 - **Config-resolve.** Invoke it as `node <skill-root>/scripts/config-resolve.mjs resolve` with one
@@ -1347,9 +1390,12 @@ precedence contract from [Codex agent configuration](https://learn.chatgpt.com/d
 the role file wins over conflicting spawn parameters. Treat the probe as compatibility evidence,
 not as a reason to activate the pilot.
 
-Run `pnpm test:preflight` separately in the exact worker sandbox before launching that probe. A
-failed preflight blocks native pilot activation and product writes; a passing preflight only
-establishes that the required environment capabilities were observable.
+Before launching that probe or writing product files, satisfy the selected lane’s
+[launch qualification](../../src/shared/protected-validation.md#executor-lanes-and-launch-qualification).
+The local lane requires a separate successful `pnpm test:preflight` in the exact worker sandbox; the
+protected lane requires actual local bridge-boundary qualification and the unchanged full remote
+executor proof. An honest local capability failure is not relabeled. This process qualification proves
+observable capabilities only; the later feature helper chain and model-role observations remain owed.
 
 The acceptance checklist remains open until all of these are available: accessible original
 assignment and role evidence and complete actual helper observations; actual Claude model,
