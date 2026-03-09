@@ -3,15 +3,15 @@
   "name": "sf-claude-plugin",
   "metadata": {
     "description": "Orchestrierte Frontend-Workflows fuer Claude Code",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "owner": {
-    "name": "bs5"
+    "name": "Sebastian Fastner"
   },
   "plugins": [
     {
       "name": "sf-frontend-workflows",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "source": "./sf-frontend-workflows",
       "description": "Orchestrierte Workflows (build-feature, fix, refactor) mit spezialisierten Agents",
       "category": "development",

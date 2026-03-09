@@ -2,6 +2,6 @@
   "name": "sf-frontend-workflows",
   "description": "Orchestrierte Frontend-Workflows (build-feature, fix, refactor) mit spezialisierten Agents fuer Implementierung, Review, Tests und Validierung",
   "author": {
-    "name": "bs5"
+    "name": "Sebastian Fastner"
   }
 }
