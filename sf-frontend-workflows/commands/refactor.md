@@ -30,17 +30,20 @@ Wenn ein Agent ohne `ERLEDIGT` oder `ABBRUCH` endet:
 
 Erkenntnisse aus frueheren Phasen muessen an spaetere Agents weitergegeben werden.
 
+### Session-Isolation
+Generiere zu Beginn des Workflows eine einmalige Session-ID (z.B. Timestamp via `date +%s` im Terminal). Verwende diese ID im Dateinamen der Wisdom-Datei: `.wisdom-accumulation-<SESSION_ID>.tmp.md`. So koennen mehrere Workflows parallel laufen ohne sich gegenseitig zu ueberschreiben.
+
 ### Protokoll
-1. **Datei:** Schreibe nach jeder abgeschlossenen Phase ein kurzes Summary (3-5 Bullet Points) in die Datei `.wisdom-accumulation.tmp.md` im Projekt-Root. Verwende das Format:
+1. **Datei:** Schreibe nach jeder abgeschlossenen Phase ein kurzes Summary (3-5 Bullet Points) in die Datei `.wisdom-accumulation-<SESSION_ID>.tmp.md` im Projekt-Root. Verwende das Format:
    ```
    ## Phase X: [Name]
    - **Entscheidung:** [Was wurde entschieden und warum]
    - **Problem:** [Was ist aufgefallen oder schiefgelaufen]
    - **Kontext:** [Was muessen nachfolgende Agents wissen]
    ```
-2. **Weitergabe:** Bevor du einen Subagenten startest, lies `.wisdom-accumulation.tmp.md` und fuege den Inhalt als zusaetzlichen Kontext in den Auftrag ein:
+2. **Weitergabe:** Bevor du einen Subagenten startest, lies `.wisdom-accumulation-<SESSION_ID>.tmp.md` und fuege den Inhalt als zusaetzlichen Kontext in den Auftrag ein:
    > "Bisherige Erkenntnisse aus vorherigen Phasen: [Inhalt der Datei]"
-3. **Cleanup:** Am Ende des Workflows (Phase 6) loesche die Datei `.wisdom-accumulation.tmp.md`
+3. **Cleanup:** Am Ende des Workflows (Phase 6) loesche die Datei `.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
 ### Was festgehalten wird
 - Baseline-Werte und deren Bedeutung fuer den Vergleich
@@ -142,7 +145,7 @@ Pruefe bei beiden Agenten auf Fertig-Stichwort. Starte einzelne Agenten bei Beda
    - Gehe zurueck zu Phase 3 und behebe die Regressionen
    - Wiederhole Phase 5 und 6
 3. Falls keine Regressionen:
-   - Loesche die Datei `.wisdom-accumulation.tmp.md` (Cleanup)
+   - Loesche die Datei `.wisdom-accumulation-<SESSION_ID>.tmp.md` (Cleanup)
    - Fasse zusammen: Was wurde refactored, welche Dateien betroffen, vorher/nachher-Vergleich
    - Bestaetige: "Refactoring abgeschlossen. Verhalten unveraendert."
 
@@ -154,5 +157,5 @@ Pruefe bei beiden Agenten auf Fertig-Stichwort. Starte einzelne Agenten bei Beda
 - KEINE Dokumentations-Phase — Refactoring aendert kein oeffentliches Verhalten
 - Verwende TodoWrite um den Fortschritt fuer den User sichtbar zu machen
 - Gib jedem Subagenten in seinem Auftrag den Hinweis: "Formuliere zuerst in 2-3 Saetzen, was du als Aufgabe verstanden hast, bevor du mit der Umsetzung beginnst. Beende deine Antwort mit ERLEDIGT wenn die Aufgabe vollstaendig abgeschlossen ist, oder mit ABBRUCH: [Grund] wenn du die Aufgabe nicht erledigen kannst."
-- Schreibe nach JEDER abgeschlossenen Phase ein Wisdom-Summary in `.wisdom-accumulation.tmp.md` (append, nicht ueberschreiben)
-- Gib JEDEM Subagenten die bisherigen Erkenntnisse aus `.wisdom-accumulation.tmp.md` als Kontext mit
+- Schreibe nach JEDER abgeschlossenen Phase ein Wisdom-Summary in `.wisdom-accumulation-<SESSION_ID>.tmp.md` (append, nicht ueberschreiben)
+- Gib JEDEM Subagenten die bisherigen Erkenntnisse aus `.wisdom-accumulation-<SESSION_ID>.tmp.md` als Kontext mit

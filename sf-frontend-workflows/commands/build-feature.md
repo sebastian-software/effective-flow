@@ -54,17 +54,20 @@ Wenn ein Agent ohne `ERLEDIGT` oder `ABBRUCH` endet:
 
 Erkenntnisse aus frueheren Phasen muessen an spaetere Agents weitergegeben werden.
 
+### Session-Isolation
+Generiere zu Beginn des Workflows eine einmalige Session-ID (z.B. Timestamp via `date +%s` im Terminal). Verwende diese ID im Dateinamen der Wisdom-Datei: `.wisdom-accumulation-<SESSION_ID>.tmp.md`. So koennen mehrere Workflows parallel laufen ohne sich gegenseitig zu ueberschreiben.
+
 ### Protokoll
-1. **Datei:** Schreibe nach jeder abgeschlossenen Phase ein kurzes Summary (3-5 Bullet Points) in die Datei `.wisdom-accumulation.tmp.md` im Projekt-Root. Verwende das Format:
+1. **Datei:** Schreibe nach jeder abgeschlossenen Phase ein kurzes Summary (3-5 Bullet Points) in die Datei `.wisdom-accumulation-<SESSION_ID>.tmp.md` im Projekt-Root. Verwende das Format:
    ```
    ## Phase X: [Name]
    - **Entscheidung:** [Was wurde entschieden und warum]
    - **Problem:** [Was ist aufgefallen oder schiefgelaufen]
    - **Kontext:** [Was muessen nachfolgende Agents wissen]
    ```
-2. **Weitergabe:** Bevor du einen Subagenten startest, lies `.wisdom-accumulation.tmp.md` und fuege den Inhalt als zusaetzlichen Kontext in den Auftrag ein:
+2. **Weitergabe:** Bevor du einen Subagenten startest, lies `.wisdom-accumulation-<SESSION_ID>.tmp.md` und fuege den Inhalt als zusaetzlichen Kontext in den Auftrag ein:
    > "Bisherige Erkenntnisse aus vorherigen Phasen: [Inhalt der Datei]"
-3. **Cleanup:** Am Ende des Workflows (Phase 7) loesche die Datei `.wisdom-accumulation.tmp.md`
+3. **Cleanup:** Am Ende des Workflows (Phase 7) loesche die Datei `.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
 ### Was festgehalten wird
 - Architektur- und Designentscheidungen mit Begruendung
@@ -161,7 +164,7 @@ Pruefe bei beiden Agenten auf Fertig-Stichwort. Starte einzelne Agenten bei Beda
    - Falls nein: erstelle `docs/plan/` und beginne mit `0001-feature-name.md`
    - Der Dateiname folgt dem Schema `NNNN-feature-name.md` wobei NNNN die naechste freie Nummer ist (0001, 0002, 0003, ...)
    - Der Plan soll enthalten: Anforderung, Architekturentscheidungen, betroffene Dateien, Implementierungsdetails, Testergebnisse, Review-Findings und deren Behebung
-4. Loesche die Datei `.wisdom-accumulation.tmp.md` (Cleanup)
+4. Loesche die Datei `.wisdom-accumulation-<SESSION_ID>.tmp.md` (Cleanup)
 5. Pruefe ob ein Formatting-Tool (z.B. Prettier, Biome, dprint) im Projekt konfiguriert ist (package.json scripts, Config-Dateien wie `.prettierrc`, `biome.json` etc.). Falls ja: fuehre es einmal auf alle geaenderten und neu erstellten Dateien aus (inkl. der Plan-Datei aus Schritt 3), damit alles einheitlich formatiert ist.
 6. Fasse zusammen: Was wurde implementiert, getestet und dokumentiert
 
@@ -172,5 +175,5 @@ Pruefe bei beiden Agenten auf Fertig-Stichwort. Starte einzelne Agenten bei Beda
 - Ueberspringe optionale Schritte nur mit kurzer Begruendung
 - Verwende TodoWrite um den Fortschritt fuer den User sichtbar zu machen
 - Gib jedem Subagenten in seinem Auftrag den Hinweis: "Formuliere zuerst in 2-3 Saetzen, was du als Aufgabe verstanden hast, bevor du mit der Umsetzung beginnst. Beende deine Antwort mit ERLEDIGT wenn die Aufgabe vollstaendig abgeschlossen ist, oder mit ABBRUCH: [Grund] wenn du die Aufgabe nicht erledigen kannst."
-- Schreibe nach JEDER abgeschlossenen Phase ein Wisdom-Summary in `.wisdom-accumulation.tmp.md` (append, nicht ueberschreiben)
-- Gib JEDEM Subagenten die bisherigen Erkenntnisse aus `.wisdom-accumulation.tmp.md` als Kontext mit
+- Schreibe nach JEDER abgeschlossenen Phase ein Wisdom-Summary in `.wisdom-accumulation-<SESSION_ID>.tmp.md` (append, nicht ueberschreiben)
+- Gib JEDEM Subagenten die bisherigen Erkenntnisse aus `.wisdom-accumulation-<SESSION_ID>.tmp.md` als Kontext mit
