@@ -52,6 +52,27 @@ Generiere zu Beginn des Workflows eine einmalige Session-ID (z.B. Timestamp via 
 - Probleme bei der Umstrukturierung und deren Loesung
 - Annahmen die sich als falsch herausgestellt haben
 
+## Projekt-Typ-Erkennung
+
+Der Explore-Agent in Phase 1 bestimmt den Projekt-Typ anhand folgender Signale:
+
+| Signal | Projekt-Typ |
+|---|---|
+| React/Vue/Angular/Svelte Dependencies, src/components/, pages/, app/ mit JSX/TSX | Frontend |
+| Express/Fastify/Hono/Koa Dependencies, src/routes/, src/controllers/, src/services/, server.ts | Backend API |
+| bin/-Verzeichnis, CLI-Einstiegspunkt, commander/yargs/meow/clipanion Dependencies | CLI |
+| Kombination aus Frontend + Backend/CLI Signalen | Fullstack |
+
+### Agent-Routing nach Projekt-Typ
+
+| Projekt-Typ | Implementer | Reviewer |
+|---|---|---|
+| Frontend | ui-implementer | frontend-reviewer |
+| Backend / CLI / Node.js | nodejs-implementer | nodejs-reviewer |
+| Fullstack | beide (ui-implementer UND nodejs-implementer) | beide (frontend-reviewer UND nodejs-reviewer) |
+
+Bei Fullstack-Projekten: Starte beide Implementer/Reviewer parallel sofern die Aufgabe beide Bereiche betrifft. Wenn die Aufgabe nur einen Bereich betrifft, verwende nur den passenden Agent.
+
 ## Model-Routing
 
 Starte jeden Subagenten mit dem passenden `model`-Parameter um Kosten und Latenz zu optimieren:
@@ -61,8 +82,10 @@ Starte jeden Subagenten mit dem passenden `model`-Parameter um Kosten und Latenz
 | Explore | sonnet | Recherche — suchen, lesen, zusammenfassen |
 | code-validator | sonnet | Mechanisch — Commands ausfuehren, Output parsen |
 | test-writer | sonnet | Moderat — Tests ausfuehren und dokumentieren |
-| ui-implementer | opus | Komplex — Produktions-Code umstrukturieren |
-| frontend-reviewer | opus | Komplex — nuanciertes Qualitaetsurteil |
+| ui-implementer | opus | Komplex — Frontend-Code umstrukturieren |
+| nodejs-implementer | opus | Komplex — Backend/CLI-Code umstrukturieren |
+| frontend-reviewer | opus | Komplex — nuanciertes Frontend-Qualitaetsurteil |
+| nodejs-reviewer | opus | Komplex — nuanciertes API/Backend-Qualitaetsurteil |
 
 ## Workflow
 
@@ -116,14 +139,14 @@ Starte jeden Subagenten mit dem passenden `model`-Parameter um Kosten und Latenz
    > **Baseline:** X Tests bestanden, Y fehlgeschlagen, Z TypeScript-Fehler, W Lint-Fehler
 
 ### Phase 3: Refactoring
-1. Starte den **ui-implementer** Agent (model: opus) mit dem abgestimmten Plan:
+1. Starte den passenden **Implementer-Agent** (siehe Projekt-Typ-Erkennung): ui-implementer fuer Frontend, nodejs-implementer fuer Backend/CLI/Node.js, oder beide bei Fullstack (model: opus) mit dem abgestimmten Plan:
    - Klarer Auftrag was geaendert wird
    - Hinweis: Nur Struktur aendern, KEIN neues Verhalten einfuehren
    - Hinweis: Keine neuen Features, keine Bugfixes nebenbei
 2. Pruefe auf Fertig-Stichwort. Bei Fehlen: erneut starten
 
 ### Phase 4: Review
-1. Starte den **frontend-reviewer** Agent (model: opus) fuer die geaenderten Dateien
+1. Starte den passenden **Reviewer-Agent** (siehe Projekt-Typ-Erkennung): frontend-reviewer fuer Frontend, nodejs-reviewer fuer Backend/CLI/Node.js, oder beide bei Fullstack (model: opus) fuer die geaenderten Dateien
 2. Pruefe auf Fertig-Stichwort. Bei Fehlen: erneut starten
 3. Bei kritischen Findings: gehe zurueck zu Phase 3 und behebe sie
 

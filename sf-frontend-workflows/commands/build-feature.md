@@ -1,5 +1,5 @@
 ---
-description: Orchestriert den kompletten Frontend-Workflow von Implementierung bis Review
+description: Orchestriert den kompletten Entwicklungs-Workflow von Implementierung bis Review
 ---
 
 Du bist der Orchestrator fuer den kompletten Frontend-Entwicklungs-Workflow fuer **neue Features**.
@@ -76,6 +76,27 @@ Generiere zu Beginn des Workflows eine einmalige Session-ID (z.B. Timestamp via 
 - Annahmen die sich als falsch herausgestellt haben
 - Technische Constraints die entdeckt wurden (z.B. API-Limitierungen, Browser-Kompatibilitaet)
 
+## Projekt-Typ-Erkennung
+
+Der Explore-Agent in Phase 1 bestimmt den Projekt-Typ anhand folgender Signale:
+
+| Signal | Projekt-Typ |
+|---|---|
+| React/Vue/Angular/Svelte Dependencies, src/components/, pages/, app/ mit JSX/TSX | Frontend |
+| Express/Fastify/Hono/Koa Dependencies, src/routes/, src/controllers/, src/services/, server.ts | Backend API |
+| bin/-Verzeichnis, CLI-Einstiegspunkt, commander/yargs/meow/clipanion Dependencies | CLI |
+| Kombination aus Frontend + Backend/CLI Signalen | Fullstack |
+
+### Agent-Routing nach Projekt-Typ
+
+| Projekt-Typ | Implementer | Reviewer |
+|---|---|---|
+| Frontend | ui-implementer | frontend-reviewer |
+| Backend / CLI / Node.js | nodejs-implementer | nodejs-reviewer |
+| Fullstack | beide (ui-implementer UND nodejs-implementer) | beide (frontend-reviewer UND nodejs-reviewer) |
+
+Bei Fullstack-Projekten: Starte beide Implementer/Reviewer parallel sofern die Aufgabe beide Bereiche betrifft. Wenn die Aufgabe nur einen Bereich betrifft, verwende nur den passenden Agent.
+
 ## Model-Routing
 
 Starte jeden Subagenten mit dem passenden `model`-Parameter um Kosten und Latenz zu optimieren:
@@ -88,8 +109,10 @@ Starte jeden Subagenten mit dem passenden `model`-Parameter um Kosten und Latenz
 | docs-writer | sonnet | Strukturiert — Dokumentation nach Patterns |
 | test-writer | sonnet | Moderat — Tests nach Patterns schreiben |
 | e2e-tester | sonnet | Moderat — E2E-Tests nach Patterns schreiben |
-| ui-implementer | opus | Komplex — Produktions-Code schreiben |
-| frontend-reviewer | opus | Komplex — nuanciertes Qualitaetsurteil |
+| ui-implementer | opus | Komplex — Frontend-Produktionscode |
+| nodejs-implementer | opus | Komplex — Backend/CLI-Produktionscode |
+| frontend-reviewer | opus | Komplex — nuanciertes Frontend-Qualitaetsurteil |
+| nodejs-reviewer | opus | Komplex — nuanciertes API/Backend-Qualitaetsurteil |
 
 ## Workflow
 
@@ -124,7 +147,7 @@ Starte jeden Subagenten mit dem passenden `model`-Parameter um Kosten und Latenz
 10. WICHTIG: Starte Phase 2 ERST nach expliziter Bestaetigung durch den User
 
 ### Phase 2: Implementierung
-1. Starte den **ui-implementer** Agent (model: opus) mit dem abgestimmten Plan
+1. Starte den passenden **Implementer-Agent** (siehe Projekt-Typ-Erkennung): ui-implementer fuer Frontend, nodejs-implementer fuer Backend/CLI/Node.js, oder beide bei Fullstack (model: opus) mit dem abgestimmten Plan
 2. Pruefe auf Fertig-Stichwort. Bei Fehlen: erneut starten
 3. Pruefe das Ergebnis: Wurden alle Anforderungen umgesetzt?
 
@@ -150,7 +173,7 @@ Pruefe bei beiden Agenten auf Fertig-Stichwort. Starte einzelne Agenten bei Beda
 5. Wiederhole bis der Validator BESTANDEN meldet
 
 ### Phase 6: Review
-1. Starte den **frontend-reviewer** Agent (model: opus) fuer die geaenderten Dateien
+1. Starte den passenden **Reviewer-Agent** (siehe Projekt-Typ-Erkennung): frontend-reviewer fuer Frontend, nodejs-reviewer fuer Backend/CLI/Node.js, oder beide bei Fullstack (model: opus) fuer die geaenderten Dateien
 2. Pruefe auf Fertig-Stichwort. Bei Fehlen: erneut starten
 3. Praesentiere die Review-Ergebnisse dem User
 4. Wenn kritische Findings: gehe zurueck zu Phase 2 und behebe sie

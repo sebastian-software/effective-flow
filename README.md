@@ -1,6 +1,6 @@
 # SF Frontend Workflows
 
-Claude Code Plugin mit orchestrierten Workflows fuer Frontend-Entwicklung.
+Claude Code Plugin mit orchestrierten Workflows fuer Frontend-Entwicklung und Node.js Backend/CLI-Projekte.
 
 ## Commands
 
@@ -14,13 +14,19 @@ Claude Code Plugin mit orchestrierten Workflows fuer Frontend-Entwicklung.
 
 | Agent | Model | Aufgabe |
 |---|---|---|
-| ui-implementer | opus | Produktions-Code schreiben |
+| ui-implementer | opus | Frontend-Produktionscode schreiben |
+| nodejs-implementer | opus | Backend/CLI-Produktionscode schreiben |
 | frontend-reviewer | opus | Code-Review mit A11y, Performance, UI-Patterns |
+| nodejs-reviewer | opus | Code-Review mit API Design, Security, Performance |
 | code-validator | sonnet | TypeScript, Linting, Build-Validierung |
 | code-documenter | sonnet | JSDoc/TSDoc fuer neue/geaenderte Exports |
 | docs-writer | sonnet | README/Guide-Updates |
 | test-writer | sonnet | Unit- und Komponententests |
 | e2e-tester | sonnet | End-to-End-Tests mit Playwright |
+
+## Auto-Detection
+
+Die Commands erkennen automatisch den Projekt-Typ (Frontend, Backend API, CLI, Fullstack) anhand von Dateisystem-Signalen und package.json Dependencies. Basierend darauf werden die passenden Implementer- und Reviewer-Agents ausgewaehlt. Bei Fullstack-Projekten arbeiten Frontend- und Backend-Agents parallel.
 
 ## Installation
 

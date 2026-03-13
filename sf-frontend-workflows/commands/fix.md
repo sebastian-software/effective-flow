@@ -51,6 +51,27 @@ Generiere zu Beginn des Workflows eine einmalige Session-ID (z.B. Timestamp via 
 - Abhaengigkeiten und Seiteneffekte die entdeckt wurden
 - Annahmen die sich als falsch herausgestellt haben
 
+## Projekt-Typ-Erkennung
+
+Der Explore-Agent in Phase 1 bestimmt den Projekt-Typ anhand folgender Signale:
+
+| Signal | Projekt-Typ |
+|---|---|
+| React/Vue/Angular/Svelte Dependencies, src/components/, pages/, app/ mit JSX/TSX | Frontend |
+| Express/Fastify/Hono/Koa Dependencies, src/routes/, src/controllers/, src/services/, server.ts | Backend API |
+| bin/-Verzeichnis, CLI-Einstiegspunkt, commander/yargs/meow/clipanion Dependencies | CLI |
+| Kombination aus Frontend + Backend/CLI Signalen | Fullstack |
+
+### Agent-Routing nach Projekt-Typ
+
+| Projekt-Typ | Implementer | Reviewer |
+|---|---|---|
+| Frontend | ui-implementer | frontend-reviewer |
+| Backend / CLI / Node.js | nodejs-implementer | nodejs-reviewer |
+| Fullstack | beide (ui-implementer UND nodejs-implementer) | beide (frontend-reviewer UND nodejs-reviewer) |
+
+Bei Fullstack-Projekten: Starte beide Implementer/Reviewer parallel sofern die Aufgabe beide Bereiche betrifft. Wenn die Aufgabe nur einen Bereich betrifft, verwende nur den passenden Agent.
+
 ## Model-Routing
 
 Starte jeden Subagenten mit dem passenden `model`-Parameter um Kosten und Latenz zu optimieren:
@@ -60,7 +81,8 @@ Starte jeden Subagenten mit dem passenden `model`-Parameter um Kosten und Latenz
 | Explore | sonnet | Recherche — suchen, lesen, zusammenfassen |
 | code-validator | sonnet | Mechanisch — Commands ausfuehren, Output parsen |
 | test-writer | sonnet | Moderat — Tests nach Patterns schreiben |
-| ui-implementer | opus | Komplex — Produktions-Code schreiben |
+| ui-implementer | opus | Komplex — Frontend-Produktionscode |
+| nodejs-implementer | opus | Komplex — Backend/CLI-Produktionscode |
 
 ## Workflow
 
@@ -103,7 +125,7 @@ Starte jeden Subagenten mit dem passenden `model`-Parameter um Kosten und Latenz
 6. Bei "Nein": Klaere die korrekte Ursache und wiederhole ab Schritt 1
 
 ### Phase 3: Fix
-1. Starte den **ui-implementer** Agent (model: opus) mit einem praezisen Auftrag:
+1. Starte den passenden **Implementer-Agent** (siehe Projekt-Typ-Erkennung): ui-implementer fuer Frontend, nodejs-implementer fuer Backend/CLI/Node.js, oder beide bei Fullstack (model: opus) mit einem praezisen Auftrag:
    - Root Cause und betroffene Dateien
    - Gewuenschtes Verhalten nach dem Fix
    - Hinweis: Minimale Aenderung, nur den Bug beheben, kein Refactoring
