@@ -9,6 +9,7 @@ Claude Code Plugin mit orchestrierten Workflows fuer Frontend-Entwicklung und No
 | `/build-feature` | Kompletter Feature-Workflow: Planung, Implementierung, Docs, Tests, Review |
 | `/fix` | Bugfix-Workflow: Investigation, Reproduktion, Fix, Verifikation |
 | `/refactor` | Refactoring mit vorher/nachher-Validierung und Verhaltens-Invarianz |
+| `/review` | Umfassendes Code-Review mit strukturiertem Bericht und actionable Findings |
 
 ## Agents
 
@@ -47,7 +48,7 @@ Die Commands erkennen automatisch den Projekt-Typ (Frontend, Backend API, CLI, F
 Alle Workflows nutzen:
 - **Fertig-Protokoll**: Agents enden mit `ERLEDIGT` oder `ABBRUCH: [Grund]`
 - **Retry-Eskalation**: 3 Versuche mit zunehmendem Scope-Reduktion
-- **Wisdom Accumulation**: Erkenntnisse werden phasenuebergreifend weitergegeben
+- **Wisdom Accumulation**: Erkenntnisse werden phasenuebergreifend weitergegeben (nicht genutzt von `/review`, da rein analytisch)
 - **Model-Routing**: Kostenoptimierte Modellwahl pro Agent
 - **Gap Analysis (Metis-Pattern)**: Adversariale Pruefung auf blinde Flecken
 - **Plan-Validierung (Momus-Pattern)**: Messbare Qualitaetscheckliste

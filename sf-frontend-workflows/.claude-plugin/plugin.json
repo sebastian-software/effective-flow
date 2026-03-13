@@ -1,6 +1,6 @@
 {
   "name": "sf-frontend-workflows",
-  "description": "Orchestrierte Workflows (build-feature, fix, refactor) mit spezialisierten Agents fuer Implementierung, Review, Tests und Validierung — Frontend und Node.js Backend/CLI",
+  "description": "Orchestrierte Workflows (build-feature, fix, refactor, review) mit spezialisierten Agents fuer Implementierung, Review, Tests und Validierung — Frontend und Node.js Backend/CLI",
   "author": {
     "name": "Sebastian Fastner"
   }
