@@ -164,6 +164,11 @@ Starte jeden Subagenten mit dem passenden `model`-Parameter um Kosten und Latenz
    | Wichtig | X | X | X |
    | Hinweis | X | X | X |
 
+   Falls Findings mit Status "Nicht umgesetzt" vorhanden sind, liste sie direkt in der Zusammenfassung mit Prompt-Vorschlaegen fuer spaetere Umsetzung auf:
+
+   **Nicht umgesetzte Verbesserungsvorschlaege:**
+   - **[R-XXX] [Titel]**: `[/fix|/refactor|/build-feature]` — "[Fertiger Prompt-Vorschlag fuer den jeweiligen Command]"
+
    Dann fuer JEDES Finding (nicht nur kritische) im Detail:
 
    **[R-001] [Titel]**
@@ -177,11 +182,7 @@ Starte jeden Subagenten mit dem passenden `model`-Parameter um Kosten und Latenz
 
    ---
 
-   Abschliessend eine separate Sektion fuer nicht umgesetzte Vorschlaege:
-
-   **Nicht umgesetzte Verbesserungsvorschlaege**
-   Falls Findings mit Status "Nicht umgesetzt" vorhanden sind, liste sie hier nochmal mit Prompt-Vorschlaegen fuer spaetere Umsetzung auf:
-   - **[R-XXX] [Titel]**: `[/fix|/refactor|/build-feature]` — "[Fertiger Prompt-Vorschlag fuer den jeweiligen Command]"
+   WICHTIG: Alle nicht umgesetzten Vorschlaege muessen in der Zusammenfassung oben sichtbar sein — nicht erst am Ende des Detail-Berichts.
 
 ### Phase 5: Nachher-Validierung (parallel)
 Starte gleichzeitig:

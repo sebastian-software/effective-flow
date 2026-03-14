@@ -191,6 +191,11 @@ Pruefe bei beiden Agenten auf Fertig-Stichwort. Starte einzelne Agenten bei Beda
    | Wichtig | X | X | X |
    | Hinweis | X | X | X |
 
+   Falls Findings mit Status "Nicht umgesetzt" vorhanden sind, liste sie direkt in der Zusammenfassung mit Prompt-Vorschlaegen fuer spaetere Umsetzung auf:
+
+   **Nicht umgesetzte Verbesserungsvorschlaege:**
+   - **[R-XXX] [Titel]**: `[/fix|/refactor|/build-feature]` — "[Fertiger Prompt-Vorschlag fuer den jeweiligen Command]"
+
    Dann fuer JEDES Finding (nicht nur kritische) im Detail:
 
    **[R-001] [Titel]**
@@ -204,11 +209,7 @@ Pruefe bei beiden Agenten auf Fertig-Stichwort. Starte einzelne Agenten bei Beda
 
    ---
 
-   Abschliessend eine separate Sektion fuer nicht umgesetzte Vorschlaege:
-
-   **Nicht umgesetzte Verbesserungsvorschlaege**
-   Falls Findings mit Status "Nicht umgesetzt" vorhanden sind, liste sie hier nochmal mit Prompt-Vorschlaegen fuer spaetere Umsetzung auf:
-   - **[R-XXX] [Titel]**: `[/fix|/refactor|/build-feature]` — "[Fertiger Prompt-Vorschlag fuer den jeweiligen Command]"
+   WICHTIG: Alle nicht umgesetzten Vorschlaege muessen in der Zusammenfassung oben sichtbar sein — nicht erst am Ende des Detail-Berichts.
 
 ### Phase 7: Abschluss
 1. Starte den **code-validator** (model: sonnet) ein letztes Mal als Final-Check
