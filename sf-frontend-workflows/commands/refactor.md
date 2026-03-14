@@ -148,7 +148,40 @@ Starte jeden Subagenten mit dem passenden `model`-Parameter um Kosten und Latenz
 ### Phase 4: Review
 1. Starte den passenden **Reviewer-Agent** (siehe Projekt-Typ-Erkennung): frontend-reviewer fuer Frontend, nodejs-reviewer fuer Backend/CLI/Node.js, oder beide bei Fullstack (model: opus) fuer die geaenderten Dateien
 2. Pruefe auf Fertig-Stichwort. Bei Fehlen: erneut starten
-3. Bei kritischen Findings: gehe zurueck zu Phase 3 und behebe sie
+3. Aggregiere alle Review-Findings und klassifiziere sie:
+   - **Kritisch:** Muss vor Abschluss behoben werden → gehe zurueck zu Phase 3
+   - **Wichtig:** Sollte behoben werden, kann aber als Follow-up behandelt werden
+   - **Hinweis:** Verbesserungsvorschlag, optional
+4. Behebe alle kritischen Findings (zurueck zu Phase 3) bevor du fortfaehrst
+5. Praesentiere die Review-Ergebnisse dem User im folgenden ausfuehrlichen Format:
+
+   **Review-Ergebnisse**
+
+   Zusammenfassung:
+   | Schweregrad | Anzahl | Behoben | Offen |
+   |---|---|---|---|
+   | Kritisch | X | X | 0 |
+   | Wichtig | X | X | X |
+   | Hinweis | X | X | X |
+
+   Dann fuer JEDES Finding (nicht nur kritische) im Detail:
+
+   **[R-001] [Titel]**
+   - **Schweregrad**: Kritisch / Wichtig / Hinweis
+   - **Bereich**: [z.B. A11y / Performance / Security / Code-Qualitaet]
+   - **Datei**: [pfad/zur/datei.ts:42-58]
+   - **Problem**: [Was ist falsch und warum ist es wichtig]
+   - **Empfehlung**: [Konkreter Verbesserungsvorschlag]
+   - **Status**: ✅ Behoben / ⏳ Nicht umgesetzt
+   - **Begruendung** (nur bei "Nicht umgesetzt"): [Warum der Vorschlag nicht umgesetzt wurde]
+
+   ---
+
+   Abschliessend eine separate Sektion fuer nicht umgesetzte Vorschlaege:
+
+   **Nicht umgesetzte Verbesserungsvorschlaege**
+   Falls Findings mit Status "Nicht umgesetzt" vorhanden sind, liste sie hier nochmal mit Prompt-Vorschlaegen fuer spaetere Umsetzung auf:
+   - **[R-XXX] [Titel]**: `[/fix|/refactor|/build-feature]` — "[Fertiger Prompt-Vorschlag fuer den jeweiligen Command]"
 
 ### Phase 5: Nachher-Validierung (parallel)
 Starte gleichzeitig:
