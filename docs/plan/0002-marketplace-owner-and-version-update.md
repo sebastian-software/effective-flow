@@ -1,34 +1,34 @@
-# 0002: Marketplace Owner Name and Version Update
+# 0002: Marketplace Owner-Name und Versions-Update
 
-## Requirement
+## Anforderung
 
-- Set marketplace owner name to "Sebastian Fastner"
-- Bump version to the next minor version (1.0.0 → 1.1.0)
+- Marketplace Owner-Name auf "Sebastian Fastner" setzen
+- Version auf die naechste Minor-Version erhoehen (1.0.0 → 1.1.0)
 
-## Architecture Decisions
+## Architekturentscheidungen
 
-- **Consistency:** Owner/author name is set uniformly to "Sebastian Fastner" in all three locations (marketplace.json owner, marketplace.json plugin author, plugin.json author)
-- **Version Schema:** Both version fields in marketplace.json (metadata.version and plugins[0].version) are bumped to 1.1.0 in sync
-- **Scope:** plugin.json has no version field of its own — the version is managed centrally in marketplace.json
+- **Konsistenz:** Owner/Author-Name wird einheitlich auf "Sebastian Fastner" gesetzt — an allen drei Stellen (marketplace.json owner, marketplace.json plugin author, plugin.json author)
+- **Versions-Schema:** Beide Versions-Felder in marketplace.json (metadata.version und plugins[0].version) werden synchron auf 1.1.0 angehoben
+- **Scope:** plugin.json hat kein eigenes Versions-Feld — die Version wird zentral in marketplace.json verwaltet
 
-## Affected Files
+## Betroffene Dateien
 
-| File                                               | Field                | Old     | New                 |
-| -------------------------------------------------- | -------------------- | ------- | ------------------- |
-| `.claude-plugin/marketplace.json`                  | `owner.name`         | `bs5`   | `Sebastian Fastner` |
-| `.claude-plugin/marketplace.json`                  | `metadata.version`   | `1.0.0` | `1.1.0`             |
-| `.claude-plugin/marketplace.json`                  | `plugins[0].version` | `1.0.0` | `1.1.0`             |
-| `sf-frontend-workflows/.claude-plugin/plugin.json` | `author.name`        | `bs5`   | `Sebastian Fastner` |
+| Datei | Feld | Vorher | Nachher |
+|---|---|---|---|
+| `.claude-plugin/marketplace.json` | `owner.name` | `bs5` | `Sebastian Fastner` |
+| `.claude-plugin/marketplace.json` | `metadata.version` | `1.0.0` | `1.1.0` |
+| `.claude-plugin/marketplace.json` | `plugins[0].version` | `1.0.0` | `1.1.0` |
+| `sf-frontend-workflows/.claude-plugin/plugin.json` | `author.name` | `bs5` | `Sebastian Fastner` |
 
-## Implementation Details
+## Implementierungsdetails
 
-Direct JSON edits in two configuration files. No code changes, no new dependencies.
+Direkte JSON-Bearbeitungen in zwei Konfigurationsdateien. Keine Code-Aenderungen, keine neuen Abhaengigkeiten.
 
-## Test Results
+## Testergebnisse
 
-- JSON validation: Both files syntactically correct (python3 json.tool)
-- Grep check: Old value "bs5" no longer present anywhere
+- JSON-Validierung: Beide Dateien syntaktisch korrekt (python3 json.tool)
+- Grep-Pruefung: Alter Wert "bs5" ist nirgendwo mehr vorhanden
 
-## Review Findings
+## Review-Findings und Behebung
 
-No issues. All name and version fields are consistent.
+Keine Auffaelligkeiten. Alle Name- und Versions-Felder sind konsistent.

@@ -26,7 +26,50 @@ Bevor du den Workflow startest, klassifiziere die Anforderung des Users:
 
    Beende den Workflow hier sofort. Fuehre NICHT den Feature-Workflow aus.
 
-4. Bei **Feature**: Fahre mit Phase 1 fort.
+4. Bei **Feature**: Fuehre den Abschnitt "Initiale Zustandsdokumentation" aus (der Abschnitt enthaelt eigene Prueflogik ob er anwendbar ist), dann weiter mit Phase 1.
+
+## Initiale Zustandsdokumentation
+
+Bevor der eigentliche Workflow startet, pruefe ob das Projekt bereits dokumentierte Plaene hat:
+
+1. Pruefe ob das Verzeichnis `docs/plan/` existiert UND mindestens eine `.md`-Datei enthaelt.
+2. Falls **keine Plan-Dateien vorhanden** (Verzeichnis fehlt, ist leer, oder enthaelt keine `.md`-Dateien):
+   - Erstelle das Verzeichnis `docs/plan/` falls es nicht existiert
+   - Starte einen **Explore-Agent** (model: sonnet) mit Fertig-Protokoll-Hinweis um den aktuellen Projektzustand zu erfassen: Projektstruktur, vorhandene Dateien, verwendete Technologien, bestehende Architekturentscheidungen
+   - Schreibe den Ausgangszustand als `docs/plan/0001-initial-state.md` im Format der bestehenden Plan-Dateien:
+     ```markdown
+     # 0001: Ausgangszustand — [Projektname]
+
+     ## Anforderung
+
+     Dokumentation des Projektzustands vor dem ersten Feature-Workflow.
+
+     ## Architekturentscheidungen
+
+     [Bestehende Architektur und Designentscheidungen]
+
+     ## Betroffene Dateien
+
+     | Datei | Beschreibung |
+     |---|---|
+     | [alle relevanten Dateien] | [Beschreibung] |
+
+     ## Implementierungsdetails
+
+     [Aktuelle Projektstruktur, Technologien, Abhaengigkeiten]
+     ```
+   - Gib dem User eine kurze Statusmeldung:
+     > **Initiale Plan-Datei erstellt:** `docs/plan/0001-initial-state.md` dokumentiert den Ausgangszustand des Projekts.
+3. Falls **Plan-Dateien vorhanden**: Ueberspringe diesen Schritt ohne Meldung.
+
+WICHTIG: Die Plan-Datei in Phase 7 verwendet dann die naechste freie Nummer (z.B. `0002` wenn die initiale Datei als `0001` erstellt wurde).
+
+Falls die initiale Plan-Datei erstellt wurde, schreibe ein Wisdom-Summary in `.wisdom-accumulation-<SESSION_ID>.tmp.md`:
+```
+## Initiale Zustandsdokumentation
+- **Entscheidung:** Initiale Plan-Datei 0001-initial-state.md erstellt (Projekt hatte keine bestehenden Plaene)
+- **Kontext:** [Zusammenfassung der wichtigsten Erkenntnisse des Explore-Agents ueber die Projektstruktur]
+```
 
 ## Fertig-Protokoll
 
