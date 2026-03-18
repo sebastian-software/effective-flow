@@ -145,6 +145,40 @@ Starte jeden Subagenten mit dem passenden `model`-Parameter um Kosten und Latenz
    - Dateiname: `review-report-YYYY-MM-DD.md` im Projekt-Root
    - Falls bereits vorhanden: haenge `-N` an (z.B. `review-report-2024-01-15-2.md`)
 6. Praesentiere dem User die wichtigsten Findings als Zusammenfassung und weise auf die gespeicherte Report-Datei hin
+7. **Findings-Ablehnung:** Frage den User mit AskUserQuestion: "Moechtest du bestimmte Findings bewusst nicht umsetzen und als Designentscheidung dokumentieren?" (Optionen: "Ja, Findings ablehnen" / "Nein, alle Findings sind relevant"). Bei "Ja": Klaere welche Findings abgelehnt werden sollen und erfrage jeweils eine kurze Begruendung.
+8. **ADR-Generierung fuer nicht umgesetzte Findings:**
+   - Falls Findings im vorherigen Schritt abgelehnt wurden: Frage den User mit AskUserQuestion: "Sollen fuer die [N] nicht umgesetzten Findings ADR-Dokumente in docs/adr/ angelegt werden? ADRs verhindern dass diese Findings in zukuenftigen Reviews erneut gemeldet werden." (Optionen: "Ja, ADRs anlegen" / "Nein, keine ADRs")
+   - Bei "Ja": Erstelle fuer jedes nicht umgesetzte Finding ein ADR-Dokument im ADR-Format (siehe unten)
+
+### ADR-Format
+
+Wenn ein nicht umgesetztes Finding als ADR dokumentiert werden soll, erstelle eine Datei in `docs/adr/`. Erstelle das Verzeichnis `docs/adr/` falls es noch nicht existiert. Schema: `NNNN-kebab-case-titel.md` (NNNN ist die naechste freie Nummer, beginne mit 0001):
+
+```markdown
+# ADR-NNNN: [Titel des Findings]
+
+**Status:** Abgelehnt
+**Datum:** YYYY-MM-DD
+**Kontext:** /review
+
+## Kontext
+
+[Was wurde vorgeschlagen und in welchem Review-Kontext]
+
+## Entscheidung
+
+[Was wurde entschieden — dass der Vorschlag nicht umgesetzt wird]
+
+## Begruendung
+
+[Warum wurde der Vorschlag abgelehnt — Begruendung des Users oder des Orchestrators]
+
+## Quelle
+
+- **Finding:** [R-XXX] [Titel]
+- **Schweregrad:** [Kritisch / Wichtig / Hinweis]
+- **Datei:** [Betroffene Datei:Zeile]
+```
 
 ### Bericht-Format
 
@@ -204,7 +238,7 @@ Die folgenden Findings wurden nicht in den Bericht aufgenommen, weil sie dokumen
 ## Regeln
 - Starte unabhaengige Reviewer-Agents IMMER parallel (Phase 3 bei Fullstack)
 - Gib dem User nach jeder Phase eine kurze Statusmeldung
-- Dieser Command LIEST nur — er veraendert keinen Code (ausser die Report-Datei)
+- Dieser Command LIEST nur — er veraendert keinen Code (ausser die Report-Datei und optionale ADR-Dateien in docs/adr/)
 - Verwende TodoWrite um den Fortschritt fuer den User sichtbar zu machen
 - Gib jedem Subagenten in seinem Auftrag den Hinweis: "Formuliere zuerst in 2-3 Saetzen, was du als Aufgabe verstanden hast, bevor du mit der Umsetzung beginnst. Beende deine Antwort mit ERLEDIGT wenn die Aufgabe vollstaendig abgeschlossen ist, oder mit ABBRUCH: [Grund] wenn du die Aufgabe nicht erledigen kannst."
 - KEIN Wisdom Accumulation — nicht noetig fuer rein analytischen Workflow

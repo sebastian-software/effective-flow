@@ -184,6 +184,39 @@ Starte jeden Subagenten mit dem passenden `model`-Parameter um Kosten und Latenz
 
    WICHTIG: Alle nicht umgesetzten Vorschlaege muessen in der Zusammenfassung oben sichtbar sein — nicht erst am Ende des Detail-Berichts.
 
+6. **ADR-Generierung fuer nicht umgesetzte Findings:**
+   - Falls Findings mit Status "Nicht umgesetzt" vorhanden sind: Frage den User mit AskUserQuestion: "Sollen fuer die [N] nicht umgesetzten Findings ADR-Dokumente in docs/adr/ angelegt werden? ADRs verhindern dass diese Findings in zukuenftigen Reviews erneut gemeldet werden." (Optionen: "Ja, ADRs anlegen" / "Nein, keine ADRs")
+   - Bei "Ja": Erstelle fuer jedes nicht umgesetzte Finding ein ADR-Dokument:
+     - Verzeichnis: `docs/adr/`
+     - Erstelle das Verzeichnis `docs/adr/` falls es noch nicht existiert
+     - Schema: `NNNN-kebab-case-titel.md` (NNNN ist die naechste freie Nummer, beginne mit 0001)
+     - Format:
+       ```markdown
+       # ADR-NNNN: [Titel des Findings]
+
+       **Status:** Abgelehnt
+       **Datum:** YYYY-MM-DD
+       **Kontext:** /refactor
+
+       ## Kontext
+
+       [Was wurde vorgeschlagen und in welchem Review-Kontext]
+
+       ## Entscheidung
+
+       [Was wurde entschieden — dass der Vorschlag nicht umgesetzt wird]
+
+       ## Begruendung
+
+       [Begruendung aus dem "Nicht umgesetzt"-Feld des Findings]
+
+       ## Quelle
+
+       - **Finding:** [R-XXX] [Titel]
+       - **Schweregrad:** [Kritisch / Wichtig / Hinweis]
+       - **Datei:** [Betroffene Datei:Zeile]
+       ```
+
 ### Phase 5: Nachher-Validierung (parallel)
 Starte gleichzeitig:
 1. **code-validator** (model: sonnet) — TypeScript, Lint und Build pruefen

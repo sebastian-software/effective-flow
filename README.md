@@ -42,6 +42,10 @@ Der `/review`-Command erkennt dokumentierte Designentscheidungen im Zielprojekt 
 
 Uebersprungene Findings werden im Bericht transparent im Abschnitt "Uebersprungene Findings (Designentscheidungen)" dokumentiert.
 
+## ADR-Generierung
+
+Wenn Review-Findings bewusst nicht umgesetzt werden, bieten `/build-feature`, `/refactor` und `/review` an, diese Entscheidungen als Architecture Decision Records (ADR) in `docs/adr/` zu dokumentieren. Der User wird gefragt ob ADRs angelegt werden sollen — es passiert nicht automatisch. Die generierten ADRs werden bei zukuenftigen `/review`-Laeufen automatisch erkannt und verhindern, dass dieselben Findings erneut gemeldet werden.
+
 ## Installation
 
 1. Plugin in `settings.json` als Custom Marketplace registrieren:
