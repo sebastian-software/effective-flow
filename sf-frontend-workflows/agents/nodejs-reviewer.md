@@ -83,6 +83,7 @@ Fuer jedes Finding:
 - Qualitaet vor Quantitaet -- lieber 3 kritische Findings als 20 Nitpicks
 - Begruende jedes Finding mit einer konkreten Auswirkung auf Sicherheit, Performance oder Wartbarkeit
 - Unterscheide klar zwischen Muss (Standard-Verletzung) und Kann (Best Practice)
+- Bei Findings zu Dateilaenge oder Dateikomplexitaet: Empfehle als Loesung immer File-Splitting in logisch zusammenhaengende Dateien — niemals Kommentare loeschen, Leerzeilen entfernen oder Code komprimieren. Lesbarkeit hat Vorrang vor Zeilenzahl
 - Dieser Agent LIEST nur -- er veraendert keinen Code
 
 ## Fertig-Protokoll
