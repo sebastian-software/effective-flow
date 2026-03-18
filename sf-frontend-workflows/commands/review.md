@@ -31,6 +31,35 @@ Wenn ein Agent ohne `ERLEDIGT` oder `ABBRUCH` endet:
    > "Agent [Name] konnte die Aufgabe nach 3 Versuchen nicht abschliessen. Moegliche Ursachen: [kurze Analyse]. Wie soll ich vorgehen?"
    Frage mit AskUserQuestion (Optionen: "Aufgabe manuell erledigen" / "Mit naechster Phase fortfahren" / "Workflow abbrechen")
 
+## Designentscheidungs-Erkennung
+
+Der Review-Workflow erkennt dokumentierte Designentscheidungen im Zielprojekt, damit Findings die gegen bewusste Entscheidungen verstoessen nicht faelschlich als Probleme gemeldet werden.
+
+### Quellen fuer Designentscheidungen
+
+Der Explore-Agent in Phase 1 durchsucht das Projekt nach folgenden Quellen:
+
+| Quelle | Typische Pfade / Muster |
+|---|---|
+| Architecture Decision Records (ADR) | `docs/decisions/`, `docs/adr/`, `adr/`, `*.adr.md` |
+| Planungs-Dateien | `docs/plan/`, `plans/` |
+| CLAUDE.md-Sections | Abschnitte wie "Design Decisions", "Designentscheidungen", "Conventions", "Konventionen" in CLAUDE.md-Dateien |
+| Code-Kommentare | `// @design-decision:`, `// DELIBERATE:`, `/* DESIGN: ... */`, `// INTENTIONAL:` |
+| Lint-Suppressions mit Begruendung | `// eslint-disable ... -- [Begruendung]`, `// @ts-expect-error [Begruendung]` |
+| Vorherige Review-Reports | `review-report-*.md` im Projekt-Root — insbesondere Findings die als bewusste Designentscheidung markiert oder abgelehnt wurden |
+
+### Format der gesammelten Designentscheidungen
+
+Der Explore-Agent fasst alle gefundenen Designentscheidungen in einer strukturierten Liste zusammen:
+
+```
+DESIGNENTSCHEIDUNGEN:
+- [DD-001] [Quelle: ADR/CLAUDE.md/Kommentar/...] [Betroffener Bereich/Datei]: [Zusammenfassung der Entscheidung und Begruendung]
+- [DD-002] ...
+```
+
+Falls keine Designentscheidungen gefunden werden, gibt der Agent explizit aus: `DESIGNENTSCHEIDUNGEN: Keine gefunden.`
+
 ## Projekt-Typ-Erkennung
 
 Der Explore-Agent in Phase 1 bestimmt den Projekt-Typ anhand folgender Signale:
@@ -68,13 +97,15 @@ Starte jeden Subagenten mit dem passenden `model`-Parameter um Kosten und Latenz
 ### Phase 1: Scope & Analyse
 1. Lies die ARGUMENTS. Mit Argumenten: scope eingrenzen auf den beschriebenen Bereich.
 2. Ohne Argumente: Pruefe ob es uncommitted Changes gibt (`git diff --name-only` und `git diff --cached --name-only`). Falls ja, reviewe nur diese geaenderten Dateien. Falls nein, reviewe den gesamten Code.
-3. Starte einen **Explore-Agent** (model: sonnet) um Projektstruktur und Projekt-Typ zu bestimmen
+3. Starte einen **Explore-Agent** (model: sonnet) mit dem erweiterten Auftrag:
+   - Projektstruktur und Projekt-Typ bestimmen
+   - **Designentscheidungen sammeln:** Durchsuche alle Quellen aus der Tabelle "Quellen fuer Designentscheidungen" (ADR-Dateien, docs/plan/, CLAUDE.md-Sections, Code-Kommentare, Lint-Suppressions, vorherige Review-Reports). Fasse die Ergebnisse im Format "DESIGNENTSCHEIDUNGEN:" zusammen.
 4. Bestimme den Review-Scope:
    - Bei geaenderten Dateien: liste die betroffenen Dateien auf
    - Bei gesamtem Code: identifiziere alle relevanten Source-Verzeichnisse
    - Bei eingeschraenktem Scope: identifiziere die betroffenen Dateien
 5. Pruefe auf Fertig-Stichwort
-6. Frage den User mit AskUserQuestion: "Review starten mit Scope [X], Projekt-Typ [Y], Reviewer [Z]?" (Optionen: "Ja, Review starten" / "Nein, Scope anpassen")
+6. Frage den User mit AskUserQuestion: "Review starten mit Scope [X], Projekt-Typ [Y], Reviewer [Z], [N] Designentscheidungen erkannt?" (Optionen: "Ja, Review starten" / "Nein, Scope anpassen")
 7. Bei "Nein": Klaere den gewuenschten Scope und wiederhole ab Schritt 3
 
 ### Phase 2: Technische Validierung
@@ -88,7 +119,7 @@ Starte jeden Subagenten mit dem passenden `model`-Parameter um Kosten und Latenz
    - Frontend → frontend-reviewer
    - Backend/CLI → nodejs-reviewer
    - Fullstack → beide parallel
-2. Auftrag an Reviewer: "Reviewe den folgenden Code-Bereich umfassend: [Scope]. Pruefe alle Kernbereiche deiner Expertise. Gib fuer jedes Finding an: Schweregrad (Kritisch/Wichtig/Hinweis), Bereich, Datei+Zeile, Problem, Loesung, Konfidenz, und eine Komplexitaetsabschaetzung (Leicht/Mittel/Schwer) fuer die Behebung."
+2. Auftrag an Reviewer: "Reviewe den folgenden Code-Bereich umfassend: [Scope]. Pruefe alle Kernbereiche deiner Expertise. Gib fuer jedes Finding an: Schweregrad (Kritisch/Wichtig/Hinweis), Bereich, Datei+Zeile, Problem, Loesung, Konfidenz, und eine Komplexitaetsabschaetzung (Leicht/Mittel/Schwer) fuer die Behebung. Beachte die folgenden dokumentierten Designentscheidungen: [DESIGNENTSCHEIDUNGEN aus Phase 1]. Wenn ein Finding einer dokumentierten Designentscheidung widerspricht, setze die Konfidenz auf 0 und markiere es mit 'Designentscheidung: [DD-XXX]'."
 3. Pruefe auf Fertig-Stichwort bei allen Agents
 4. Gib dem User eine kurze Statusmeldung: Anzahl Findings pro Reviewer
 
@@ -98,7 +129,10 @@ Starte jeden Subagenten mit dem passenden `model`-Parameter um Kosten und Latenz
    - Filtere Findings mit Konfidenz < 80 heraus
    - Entferne Duplikate (gleiche Datei+Stelle, gleicher Kern des Problems)
    - Pruefe Schweregrad-Konsistenz: Sind aehnliche Probleme gleich eingestuft?
-   - Identifiziere offensichtliche False Positives (z.B. bewusste Designentscheidungen die als Problem markiert wurden)
+   - **Designentscheidungs-Abgleich:** Pruefe jedes Finding gegen die gesammelten Designentscheidungen aus Phase 1:
+     - Findings die von Reviewern bereits mit `Designentscheidung: [DD-XXX]` markiert wurden: verschiebe sie in den Abschnitt "Uebersprungene Findings (Designentscheidungen)" im Bericht
+     - Findings die NICHT markiert sind, aber inhaltlich einer Designentscheidung widersprechen koennten: pruefe manuell und verschiebe bei Match ebenfalls
+     - Findings ohne Bezug zu Designentscheidungen: behalte sie im Bericht
 3. Fuer jedes verbleibende Finding: bestimme die passende Aktion:
    - Fehler, Bugs, kaputte Funktionalitaet → `/fix`
    - Strukturelle Probleme, Code-Smells, technische Schulden → `/refactor`
@@ -157,6 +191,14 @@ Der Bericht MUSS exakt dieses Format verwenden:
 
 ---
 [Naechstes Finding...]
+
+## Uebersprungene Findings (Designentscheidungen)
+
+Die folgenden Findings wurden nicht in den Bericht aufgenommen, weil sie dokumentierten Designentscheidungen widersprechen:
+
+| Finding | Designentscheidung | Quelle |
+|---|---|---|
+| [Kurzbeschreibung des Findings] | [DD-XXX]: [Zusammenfassung] | [ADR/CLAUDE.md/Kommentar/...] |
 ```
 
 ## Regeln

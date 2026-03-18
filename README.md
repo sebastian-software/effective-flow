@@ -9,7 +9,7 @@ Claude Code Plugin mit orchestrierten Workflows fuer Frontend-Entwicklung und No
 | `/build-feature` | Kompletter Feature-Workflow: Planung, Implementierung, Docs, Tests, Review |
 | `/fix` | Bugfix-Workflow: Investigation, Reproduktion, Fix, Verifikation |
 | `/refactor` | Refactoring mit vorher/nachher-Validierung und Verhaltens-Invarianz |
-| `/review` | Umfassendes Code-Review mit strukturiertem Bericht und actionable Findings |
+| `/review` | Umfassendes Code-Review mit strukturiertem Bericht, Designentscheidungs-Erkennung und actionable Findings |
 
 ## Agents
 
@@ -28,6 +28,19 @@ Claude Code Plugin mit orchestrierten Workflows fuer Frontend-Entwicklung und No
 ## Auto-Detection
 
 Die Commands erkennen automatisch den Projekt-Typ (Frontend, Backend API, CLI, Fullstack) anhand von Dateisystem-Signalen und package.json Dependencies. Basierend darauf werden die passenden Implementer- und Reviewer-Agents ausgewaehlt. Bei Fullstack-Projekten arbeiten Frontend- und Backend-Agents parallel.
+
+## Designentscheidungs-Erkennung
+
+Der `/review`-Command erkennt dokumentierte Designentscheidungen im Zielprojekt und filtert Findings heraus, die bewussten Entscheidungen widersprechen. Erkannte Quellen:
+
+- Architecture Decision Records (ADR) in `docs/decisions/`, `docs/adr/`
+- Planungs-Dateien in `docs/plan/`
+- CLAUDE.md-Sections (z.B. "Design Decisions", "Konventionen")
+- Code-Kommentare (`// @design-decision:`, `// DELIBERATE:`, `// INTENTIONAL:`)
+- Lint-Suppressions mit Begruendung (`// eslint-disable ... -- [Grund]`)
+- Vorherige Review-Reports (`review-report-*.md`)
+
+Uebersprungene Findings werden im Bericht transparent im Abschnitt "Uebersprungene Findings (Designentscheidungen)" dokumentiert.
 
 ## Installation
 
