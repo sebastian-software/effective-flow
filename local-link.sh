@@ -8,11 +8,16 @@ TARGET_DIR="${CODEX_HOME:-$HOME/.codex}/skills"
 
 mkdir -p "$TARGET_DIR"
 
-for skill_dir in "$SOURCE_DIR"/*; do
+for skill_dir in "$SOURCE_DIR"/sf-*; do
   [ -d "$skill_dir" ] || continue
   skill_name="$(basename "$skill_dir")"
-  rm -rf "$TARGET_DIR/$skill_name"
-  cp -R "$skill_dir" "$TARGET_DIR/$skill_name"
+  target_path="$TARGET_DIR/$skill_name"
+
+  if [ -L "$target_path" ] || [ -e "$target_path" ]; then
+    rm -rf "$target_path"
+  fi
+
+  ln -s "$skill_dir" "$target_path"
 done
 
-printf 'Skills synced to %s\n' "$TARGET_DIR"
+printf 'Skills linked into %s\n' "$TARGET_DIR"

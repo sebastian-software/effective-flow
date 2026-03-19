@@ -1,71 +1,115 @@
-# SF Frontend Workflows
+# SF Codex Skills
 
-Claude Code Plugin mit orchestrierten Workflows fuer Frontend-Entwicklung und Node.js Backend/CLI-Projekte.
+Dieses Repository ist jetzt ein reines Skill-System fuer Codex. Die alte Claude-Code-Plugin-Struktur wurde entfernt.
 
-## Commands
+## Nutzung
 
-| Command | Beschreibung |
+Die frueheren Slash-Commands sind jetzt Skills:
+
+| Vorher | Jetzt |
 |---|---|
-| `/build-feature` | Kompletter Feature-Workflow: Planung, Implementierung, Docs, Tests, Review |
-| `/fix` | Bugfix-Workflow: Investigation, Reproduktion, Fix, Verifikation |
-| `/refactor` | Refactoring mit vorher/nachher-Validierung und Verhaltens-Invarianz |
-| `/review` | Umfassendes Code-Review mit strukturiertem Bericht, Designentscheidungs-Erkennung und actionable Findings |
+| `/build-feature` | `$sf-build-feature` |
+| `/fix` | `$sf-fix` |
+| `/refactor` | `$sf-refactor` |
+| `/review` | `$sf-review` |
 
-## Agents
+Die frueheren Agents sind ebenfalls Skills:
 
-| Agent | Model | Aufgabe |
-|---|---|---|
-| ui-implementer | opus | Frontend-Produktionscode schreiben |
-| nodejs-implementer | opus | Backend/CLI-Produktionscode schreiben |
-| frontend-reviewer | opus | Code-Review mit A11y, Performance, UI-Patterns |
-| nodejs-reviewer | opus | Code-Review mit API Design, Security, Performance |
-| code-validator | sonnet | TypeScript, Linting, Build-Validierung |
-| code-documenter | sonnet | JSDoc/TSDoc fuer neue/geaenderte Exports |
-| docs-writer | sonnet | README/Guide-Updates |
-| test-writer | sonnet | Unit- und Komponententests |
-| e2e-tester | sonnet | End-to-End-Tests mit Playwright |
-
-## Auto-Detection
-
-Die Commands erkennen automatisch den Projekt-Typ (Frontend, Backend API, CLI, Fullstack) anhand von Dateisystem-Signalen und package.json Dependencies. Basierend darauf werden die passenden Implementer- und Reviewer-Agents ausgewaehlt. Bei Fullstack-Projekten arbeiten Frontend- und Backend-Agents parallel.
-
-## Designentscheidungs-Erkennung
-
-Der `/review`-Command erkennt dokumentierte Designentscheidungen im Zielprojekt und filtert Findings heraus, die bewussten Entscheidungen widersprechen. Erkannte Quellen:
-
-- Architecture Decision Records (ADR) in `docs/decisions/`, `docs/adr/`
-- Planungs-Dateien in `docs/plan/`
-- CLAUDE.md-Sections (z.B. "Design Decisions", "Konventionen")
-- Code-Kommentare (`// @design-decision:`, `// DELIBERATE:`, `// INTENTIONAL:`)
-- Lint-Suppressions mit Begruendung (`// eslint-disable ... -- [Grund]`)
-- Vorherige Review-Reports (`review-report-*.md`)
-
-Uebersprungene Findings werden im Bericht transparent im Abschnitt "Uebersprungene Findings (Designentscheidungen)" dokumentiert.
-
-## ADR-Generierung
-
-Wenn Review-Findings bewusst nicht umgesetzt werden, bieten `/build-feature`, `/refactor` und `/review` an, diese Entscheidungen als Architecture Decision Records (ADR) in `docs/adr/` zu dokumentieren. Der User wird gefragt ob ADRs angelegt werden sollen — es passiert nicht automatisch. Die generierten ADRs werden bei zukuenftigen `/review`-Laeufen automatisch erkannt und verhindern, dass dieselben Findings erneut gemeldet werden.
+| Vorher | Jetzt |
+|---|---|
+| `ui-implementer` | `$sf-ui-implementer` |
+| `nodejs-implementer` | `$sf-nodejs-implementer` |
+| `frontend-reviewer` | `$sf-frontend-reviewer` |
+| `nodejs-reviewer` | `$sf-nodejs-reviewer` |
+| `code-validator` | `$sf-code-validator` |
+| `code-documenter` | `$sf-code-documenter` |
+| `docs-writer` | `$sf-docs-writer` |
+| `test-writer` | `$sf-test-writer` |
+| `e2e-tester` | `$sf-e2e-tester` |
+| `commit` | `$sf-commit` |
 
 ## Installation
 
-1. Plugin in `settings.json` als Custom Marketplace registrieren:
+Zum lokalen Sync nach Codex:
 
-```json
-{
-  "enabledPlugins": {
-    "sf-frontend-workflows@sf-claude-plugin": true
-  }
-}
+```sh
+./local-update.sh
 ```
 
-2. Falls noetig, den Marketplace-Pfad in der Claude Code Config hinterlegen (siehe unten).
+Das Script kopiert alle Skill-Ordner aus `skills/` nach `${CODEX_HOME:-$HOME/.codex}/skills`.
 
-## Gemeinsame Patterns
+## Struktur
 
-Alle Workflows nutzen:
-- **Fertig-Protokoll**: Agents enden mit `ERLEDIGT` oder `ABBRUCH: [Grund]`
-- **Retry-Eskalation**: 3 Versuche mit zunehmendem Scope-Reduktion
-- **Wisdom Accumulation**: Erkenntnisse werden phasenuebergreifend weitergegeben (nicht genutzt von `/review`, da rein analytisch)
-- **Model-Routing**: Kostenoptimierte Modellwahl pro Agent
-- **Gap Analysis (Metis-Pattern)**: Adversariale Pruefung auf blinde Flecken
-- **Plan-Validierung (Momus-Pattern)**: Messbare Qualitaetscheckliste
+```text
+skills/
+  sf-build-feature/
+    SKILL.md
+  sf-fix/
+    SKILL.md
+  sf-refactor/
+    SKILL.md
+  sf-review/
+    SKILL.md
+  sf-ui-implementer/
+    SKILL.md
+  sf-nodejs-implementer/
+    SKILL.md
+  sf-frontend-reviewer/
+    SKILL.md
+  sf-nodejs-reviewer/
+    SKILL.md
+  sf-code-validator/
+    SKILL.md
+  sf-code-documenter/
+    SKILL.md
+  sf-docs-writer/
+    SKILL.md
+  sf-test-writer/
+    SKILL.md
+  sf-e2e-tester/
+    SKILL.md
+  sf-commit/
+    SKILL.md
+```
+
+## Orchestrierung
+
+Die Workflow-Skills bleiben Orchestratoren, rufen Spezialphasen aber nicht mehr ueber Claude-Agent-Calls auf. Stattdessen verwenden sie explizite Rollenwechsel im Prompt, zum Beispiel:
+
+```text
+Verwende den Skill $sf-ui-implementer fuer diese Phase.
+```
+
+Wenn Aufgaben sauber getrennt und parallelisierbar sind, ist das interne Sub-Agent-Pattern vorgesehen. Wenn der naechste Schritt direkt vom Ergebnis abhaengt, bleibt die Arbeit lokal auf dem kritischen Pfad.
+
+## Sprachregeln
+
+Sofern der User nichts anderes verlangt, gilt fuer alle Skills:
+
+- Code, Bezeichner, Tests und Commit-Messages sind auf Englisch.
+- Dokumentation ist auf Deutsch.
+- Wenn bereits Dokumentation vorhanden ist, wird deren bestehende Sprache fortgefuehrt.
+
+## Inhalte
+
+- Workflow-Skills fuer Feature, Fix, Refactor und Review
+- Rollen-Skills fuer Implementierung, Review, Validierung, Doku und Tests
+- Designentscheidungs-respektierende Reviews
+- Routing fuer Frontend, Backend, CLI und Fullstack
+
+## Migration
+
+Entfernt wurden:
+
+- Claude-Plugin-Manifeste
+- `commands/`
+- `agents/`
+- Claude-spezifische Aufrufmuster wie `AskUserQuestion`
+
+Ersetzt wurden sie durch:
+
+- `skills/<name>/SKILL.md`
+- Skill-Namen mit `$`-Aufrufkonvention
+- Codex-kompatible Orchestrierung ueber Rollenwechsel im Prompt
+
+Details zu bewusst nicht 1:1 portierbaren Claude-Mechaniken stehen in [docs/skill-migration-notes.md](/Users/bs5/Developer/sf-claude-plugin/docs/skill-migration-notes.md).
