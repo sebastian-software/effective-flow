@@ -53,6 +53,15 @@ Wie bei `$sf-build-feature`.
 - Backend / CLI / Node.js: `$sf-nodejs-implementer`
 - Fullstack: beide, nur bei klarer Trennung parallel
 
+## Review-Report-Rückverweise
+
+Wenn dieser Bugfix ein Finding aus einer bestehenden `review-report-*.md` Datei löst:
+
+- identifiziere die betroffene Report-Datei früh im Workflow
+- ergänze am betroffenen Finding einen kurzen Hinweis zum Umsetzungsstatus
+- halte den Hinweis knapp, zum Beispiel mit Datum und Workflow wie `Umgesetzt am YYYY-MM-DD via $sf-fix`
+- aktualisiere nur die Findings, die durch diesen Fix tatsächlich gelöst wurden
+
 ## Workflow
 
 ### Phase 1: Investigation
@@ -111,8 +120,11 @@ Starte parallel, wenn möglich:
 ### Phase 5: Abschluss
 
 1. Falls Fehler in Phase 4 gefunden wurden: behebe sie und wiederhole Phase 4.
-2. Lösche die Wisdom-Datei.
-3. Fasse zusammen:
+2. Wenn dieser Fix ein Finding aus einer bestehenden `review-report-*.md` Datei gelöst hat:
+   - ergänze direkt im betroffenen Finding einen kurzen Umsetzungs-Hinweis
+   - nenne mindestens Datum und Workflow
+3. Lösche die Wisdom-Datei.
+4. Fasse zusammen:
    - Root Cause
    - Änderungen
    - neu oder angepasste Tests

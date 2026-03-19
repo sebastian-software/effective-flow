@@ -186,6 +186,8 @@ Reviewer-Routing:
 | [...] | [DD-XXX] | [...] |
 ```
 
+Wenn ein Finding später über `$sf-fix`, `$sf-refactor` oder `$sf-build-feature` umgesetzt wird, darf die bestehende Report-Datei am betroffenen Finding um einen kurzen Statushinweis ergänzt werden, zum Beispiel `Umgesetzt am YYYY-MM-DD via $sf-fix`.
+
 6. Präsentiere dem User die wichtigsten Findings und weise auf die gespeicherte Report-Datei hin.
 
 Wenn der User nur kritische und wichtige Findings angefordert hat:

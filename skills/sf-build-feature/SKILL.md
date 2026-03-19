@@ -178,6 +178,15 @@ Nutze für Spezialphasen explizite Skill-Wechsel:
 
 Bei gut trennbaren Teilaufgaben ist das interne Sub-Agent-Pattern erlaubt und für parallele Phasen bevorzugt.
 
+## Review-Report-Rückverweise
+
+Wenn dieses Feature ein Finding aus einer bestehenden `review-report-*.md` Datei umsetzt:
+
+- identifiziere die betroffene Report-Datei früh im Workflow
+- ergänze am betroffenen Finding einen kurzen Hinweis zum Umsetzungsstatus
+- halte den Hinweis knapp, zum Beispiel mit Datum und Workflow wie `Umgesetzt am YYYY-MM-DD via $sf-build-feature`
+- aktualisiere nur die Findings, die durch diese Änderung tatsächlich adressiert wurden
+
 ## Workflow
 
 ### Phase 1: Planung
@@ -280,6 +289,9 @@ Zusammenfassung:
 7. Falls Findings bewusst nicht umgesetzt werden:
    - frage den User, ob ADRs in `docs/adr/` erzeugt werden sollen
    - bei Zustimmung: erzeuge für jedes nicht umgesetzte Finding ein ADR-Dokument mit laufender Nummer, Kebab-Case-Titel, Kontext `/build-feature` und Quelle des Findings
+8. Wenn diese Phase ein Finding aus einer bestehenden `review-report-*.md` Datei umgesetzt hat:
+   - ergänze direkt im betroffenen Finding einen kurzen Umsetzungs-Hinweis
+   - nenne mindestens Datum und Workflow
 
 ### Phase 7: Abschluss
 

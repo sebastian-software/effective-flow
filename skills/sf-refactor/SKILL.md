@@ -39,6 +39,15 @@ Nutze `.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
 
 Wie bei `$sf-build-feature`.
 
+## Review-Report-Rückverweise
+
+Wenn dieses Refactoring ein Finding aus einer bestehenden `review-report-*.md` Datei umsetzt:
+
+- identifiziere die betroffene Report-Datei früh im Workflow
+- ergänze am betroffenen Finding einen kurzen Hinweis zum Umsetzungsstatus
+- halte den Hinweis knapp, zum Beispiel mit Datum und Workflow wie `Umgesetzt am YYYY-MM-DD via $sf-refactor`
+- aktualisiere nur die Findings, die durch dieses Refactoring tatsächlich adressiert wurden
+
 ## Workflow
 
 ### Phase 1: Analyse
@@ -105,6 +114,9 @@ Dokumentiere die Baseline für den späteren Vergleich.
 4. Falls Findings bewusst nicht umgesetzt werden:
    - frage nach ADR-Erstellung
    - erzeuge bei Zustimmung ADRs in `docs/adr/` mit Kontext `/refactor`
+5. Wenn diese Phase ein Finding aus einer bestehenden `review-report-*.md` Datei umgesetzt hat:
+   - ergänze direkt im betroffenen Finding einen kurzen Umsetzungs-Hinweis
+   - nenne mindestens Datum und Workflow
 
 ### Phase 5: Nachher-Validierung
 
