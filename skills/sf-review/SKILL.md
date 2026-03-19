@@ -25,6 +25,15 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Review und beha
 - Ohne Argumente: prüfe auf uncommitted Changes; falls vorhanden, reviewe nur diese, sonst den gesamten Code
 - Mit Argumenten: nur der beschriebene Bereich
 
+## Finding-Scope
+
+Frage zu Beginn des Reviews explizit nach dem gewünschten Finding-Scope:
+
+- nur kritische und wichtige Findings
+- alle Findings, also kritisch, wichtig und Hinweise
+
+Wenn der User nichts anderes festlegt, frage nach, bevor du das eigentliche Review startest. Verwende die Entscheidung als Filter für Reviewer-Auftrag, Aggregation, Bericht und Zusammenfassung.
+
 ## Fertig-Protokoll
 
 Wenn interne Sub-Agenten verwendet werden, gilt `ERLEDIGT` / `ABBRUCH: [Grund]` mit Retry-Eskalation wie in den anderen Workflows.
@@ -76,7 +85,10 @@ Reviewer-Routing:
 3. Untersuche Projektstruktur und Projekt-Typ.
 4. Sammle Designentscheidungen aus allen Quellen.
 5. Bestimme den finalen Review-Scope.
-6. Hole User-Bestätigung ein, wenn Scope oder Review-Ziel unklar ist.
+6. Frage den User explizit nach dem gewünschten Finding-Scope:
+   - nur kritische und wichtige Findings
+   - alle Findings
+7. Hole User-Bestätigung ein, wenn Scope oder Review-Ziel unklar ist.
 
 ### Phase 2: Technische Validierung
 
@@ -93,6 +105,7 @@ Reviewer-Routing:
 1. Starte den oder die passenden Reviewer-Skills.
 2. Auftrag an Reviewer:
    - umfassendes Review des Scopes
+   - beachte den gewählten Finding-Scope
    - für jedes Finding:
      - Schweregrad
      - Bereich
@@ -113,6 +126,7 @@ Reviewer-Routing:
    - Duplikate entfernen
    - Schweregrad-Konsistenz prüfen
    - Designentscheidungs-Abgleich durchführen
+   - Findings ausserhalb des gewählten Finding-Scopes aus dem Hauptbericht herausfiltern
 3. Bestimme für jedes verbleibende Finding die Folgeaktion:
    - Defekt -> `$sf-fix`
    - strukturelles Problem -> `$sf-refactor`
@@ -174,9 +188,15 @@ Reviewer-Routing:
 
 6. Präsentiere dem User die wichtigsten Findings und weise auf die gespeicherte Report-Datei hin.
 
+Wenn der User nur kritische und wichtige Findings angefordert hat:
+
+- nimm Hinweise nicht in den Hauptbericht auf
+- erwähne kurz, dass Hinweise bewusst ausgefiltert wurden
+
 ## Regeln
 
 - Starte unabhängige Reviewer bei Fullstack parallel
 - dieser Skill liest nur und schreibt nur den Review-Bericht
 - kein Wisdom Accumulation nötig
 - Prompt-Vorschläge müssen ohne Anführungszeichen und ohne Escape-Sequenzen direkt kopierbar sein
+- der gewählte Finding-Scope muss vor dem Review geklärt und im Bericht respektiert werden
