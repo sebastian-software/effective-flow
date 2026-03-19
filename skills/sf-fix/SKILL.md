@@ -58,8 +58,8 @@ Wie bei `$sf-build-feature`.
 Wenn dieser Bugfix ein Finding aus einer bestehenden `review-report-*.md` Datei löst:
 
 - identifiziere die betroffene Report-Datei früh im Workflow
-- ergänze am betroffenen Finding einen kurzen Hinweis zum Umsetzungsstatus
-- halte den Hinweis knapp, zum Beispiel mit Datum und Workflow wie `Umgesetzt am YYYY-MM-DD via $sf-fix`
+- ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
+- beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via $sf-fix`
 - aktualisiere nur die Findings, die durch diesen Fix tatsächlich gelöst wurden
 
 ## Workflow
@@ -121,8 +121,8 @@ Starte parallel, wenn möglich:
 
 1. Falls Fehler in Phase 4 gefunden wurden: behebe sie und wiederhole Phase 4.
 2. Wenn dieser Fix ein Finding aus einer bestehenden `review-report-*.md` Datei gelöst hat:
-   - ergänze direkt im betroffenen Finding einen kurzen Umsetzungs-Hinweis
-   - nenne mindestens Datum und Workflow
+   - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
+   - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
 3. Lösche die Wisdom-Datei.
 4. Fasse zusammen:
    - Root Cause

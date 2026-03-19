@@ -44,8 +44,8 @@ Wie bei `$sf-build-feature`.
 Wenn dieses Refactoring ein Finding aus einer bestehenden `review-report-*.md` Datei umsetzt:
 
 - identifiziere die betroffene Report-Datei früh im Workflow
-- ergänze am betroffenen Finding einen kurzen Hinweis zum Umsetzungsstatus
-- halte den Hinweis knapp, zum Beispiel mit Datum und Workflow wie `Umgesetzt am YYYY-MM-DD via $sf-refactor`
+- ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
+- beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via $sf-refactor`
 - aktualisiere nur die Findings, die durch dieses Refactoring tatsächlich adressiert wurden
 
 ## Workflow
@@ -115,8 +115,8 @@ Dokumentiere die Baseline für den späteren Vergleich.
    - frage nach ADR-Erstellung
    - erzeuge bei Zustimmung ADRs in `docs/adr/` mit Kontext `/refactor`
 5. Wenn diese Phase ein Finding aus einer bestehenden `review-report-*.md` Datei umgesetzt hat:
-   - ergänze direkt im betroffenen Finding einen kurzen Umsetzungs-Hinweis
-   - nenne mindestens Datum und Workflow
+   - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
+   - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
 
 ### Phase 5: Nachher-Validierung
 
