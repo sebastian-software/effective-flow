@@ -2,7 +2,7 @@
 
 ## Anforderung
 
-Ein Claude Code Plugin fuer orchestrierte Frontend-Entwicklungs-Workflows mit spezialisierten Agents und Commands erstellen.
+Ein Claude Code Plugin für orchestrierte Frontend-Entwicklungs-Workflows mit spezialisierten Agents und Commands erstellen.
 
 ## Architekturentscheidungen
 
@@ -18,13 +18,13 @@ Ein Claude Code Plugin fuer orchestrierte Frontend-Entwicklungs-Workflows mit sp
 | `.claude-plugin/marketplace.json` | Marketplace-Manifest mit Plugin-Metadaten (v1.0.0) |
 | `README.md` | Projektbeschreibung und Installationsanleitung |
 | `sf-frontend-workflows/.claude-plugin/plugin.json` | Plugin-Definition mit Agent- und Command-Registrierung |
-| `sf-frontend-workflows/agents/ui-implementer.md` | Agent fuer UI-Komponenten und Frontend-Code |
-| `sf-frontend-workflows/agents/code-validator.md` | Agent fuer Linting, Type-Checking, Build-Validierung |
-| `sf-frontend-workflows/agents/frontend-reviewer.md` | Agent fuer Frontend-spezifisches Code-Review |
-| `sf-frontend-workflows/agents/code-documenter.md` | Agent fuer In-Code-Dokumentation (JSDoc, TSDoc) |
-| `sf-frontend-workflows/agents/test-writer.md` | Agent fuer Unit-/Integrationstests |
-| `sf-frontend-workflows/agents/e2e-tester.md` | Agent fuer Playwright E2E-Tests |
-| `sf-frontend-workflows/agents/docs-writer.md` | Agent fuer End-User-Dokumentation |
+| `sf-frontend-workflows/agents/ui-implementer.md` | Agent für UI-Komponenten und Frontend-Code |
+| `sf-frontend-workflows/agents/code-validator.md` | Agent für Linting, Type-Checking, Build-Validierung |
+| `sf-frontend-workflows/agents/frontend-reviewer.md` | Agent für Frontend-spezifisches Code-Review |
+| `sf-frontend-workflows/agents/code-documenter.md` | Agent für In-Code-Dokumentation (JSDoc, TSDoc) |
+| `sf-frontend-workflows/agents/test-writer.md` | Agent für Unit-/Integrationstests |
+| `sf-frontend-workflows/agents/e2e-tester.md` | Agent für Playwright E2E-Tests |
+| `sf-frontend-workflows/agents/docs-writer.md` | Agent für End-User-Dokumentation |
 | `sf-frontend-workflows/commands/build-feature.md` | Workflow: Feature-Implementierung bis Review |
 | `sf-frontend-workflows/commands/fix.md` | Workflow: Bugfix von Diagnose bis Validierung |
 | `sf-frontend-workflows/commands/refactor.md` | Workflow: Refactoring mit vorher/nachher-Validierung |
@@ -32,7 +32,7 @@ Ein Claude Code Plugin fuer orchestrierte Frontend-Entwicklungs-Workflows mit sp
 ## Implementierungsdetails
 
 - Commands orchestrieren Agents in einer definierten Reihenfolge mit Zwischenergebnissen
-- Jeder Command sammelt Erkenntnisse in einer session-isolierten Wisdom-Datei (`SESSION_ID` als Praefix)
+- Jeder Command sammelt Erkenntnisse in einer session-isolierten Wisdom-Datei (`SESSION_ID` als Präfix)
 - Agents laufen teilweise parallel (z.B. Validator + Reviewer), teilweise sequenziell (Implementierung vor Review)
 
 ## Commits

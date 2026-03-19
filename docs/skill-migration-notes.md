@@ -1,14 +1,14 @@
 # Skill Migration Notes
 
-Dieses Dokument beschreibt exakt, welche Mechaniken aus den urspruenglichen Claude-Commands und Claude-Agents nicht 1:1 in das Codex-Skill-System uebernommen werden koennen.
+Dieses Dokument beschreibt exakt, welche Mechaniken aus den ursprünglichen Claude-Commands und Claude-Agents nicht 1:1 in das Codex-Skill-System übernommen werden können.
 
-Hinweis: `$sf-commit` ist ein neuer Skill ohne direkten Claude-Vorgaenger und ist daher nicht Teil der Paritaetsbetrachtung gegen die alten Plugin-Dateien.
+Hinweis: `$sf-commit` ist ein neuer Skill ohne direkten Claude-Vorgänger und ist daher nicht Teil der Paritätsbetrachtung gegen die alten Plugin-Dateien.
 
 ## Ziel
 
 Die fachliche Workflow-Logik soll erhalten bleiben. Nicht voll portierbar sind nur die Mechaniken, die direkt an Claude-Code-spezifische APIs oder Agent-Metadaten gebunden waren.
 
-## Nicht 1:1 uebernehmbare Claude-Mechaniken
+## Nicht 1:1 übernehmbare Claude-Mechaniken
 
 ### 1. `AskUserQuestion`
 
@@ -18,7 +18,7 @@ Original:
 
 Codex-Ersatz:
 
-- direkte Rueckfrage an den User im Chat
+- direkte Rückfrage an den User im Chat
 
 Verlust:
 
@@ -38,7 +38,7 @@ Original:
 Codex-Ersatz:
 
 - explizite Skill-Wechsel wie `$sf-ui-implementer`
-- internes Sub-Agent-Pattern fuer parallele oder getrennte Teilaufgaben
+- internes Sub-Agent-Pattern für parallele oder getrennte Teilaufgaben
 
 Verlust:
 
@@ -60,7 +60,7 @@ Codex-Ersatz:
 
 Verlust:
 
-- keine 1:1-Garantie fuer exakt dieselbe Modellwahl pro Phase
+- keine 1:1-Garantie für exakt dieselbe Modellwahl pro Phase
 
 Erhalten bleibt:
 
@@ -88,11 +88,11 @@ Erhalten bleibt:
 
 Original:
 
-- expliziter Fortschritt ueber eine Claude-spezifische Todo-API
+- expliziter Fortschritt über eine Claude-spezifische Todo-API
 
 Codex-Ersatz:
 
-- Fortschritt wird ueber normale Statusupdates und Arbeitsstruktur kommuniziert
+- Fortschritt wird über normale Statusupdates und Arbeitsstruktur kommuniziert
 
 Verlust:
 
@@ -100,7 +100,7 @@ Verlust:
 
 Erhalten bleibt:
 
-- der Workflow liefert weiterhin Phasenstatus und Zwischenstaende
+- der Workflow liefert weiterhin Phasenstatus und Zwischenstände
 
 ### 6. Read-only- oder Tool-Grenzen aus Claude-Agenten
 
@@ -110,15 +110,15 @@ Original:
 
 Codex-Ersatz:
 
-- Skill-Regeln verbieten weiterhin unpassende Aenderungen
+- Skill-Regeln verbieten weiterhin unpassende Änderungen
 
 Verlust:
 
-- keine identische technische Durchsetzung ueber Claude-Agent-Tool-Whitelists
+- keine identische technische Durchsetzung über Claude-Agent-Tool-Whitelists
 
 Erhalten bleibt:
 
-- dieselbe Verhaltensregel, etwa dass Review-Skills keinen Produktivcode aendern sollen
+- dieselbe Verhaltensregel, etwa dass Review-Skills keinen Produktivcode ändern sollen
 
 ### 7. Fertig-Protokoll als Agent-Kontrakt
 
@@ -132,7 +132,7 @@ Codex-Ersatz:
 
 Verlust:
 
-- keine Claude-interne Agent-Laufzeit, die dieses Muster natuerlich kapselt
+- keine Claude-interne Agent-Laufzeit, die dieses Muster natürlich kapselt
 
 Erhalten bleibt:
 
@@ -140,7 +140,7 @@ Erhalten bleibt:
 
 ## Fachliche Logik, die erhalten bleiben soll
 
-Diese Punkte sind ausdruecklich nicht als verloren zu betrachten und wurden in die Skills zurueckgezogen:
+Diese Punkte sind ausdrücklich nicht als verloren zu betrachten und wurden in die Skills zurückgezogen:
 
 - Intent Gate
 - initiale Zustandsdokumentation

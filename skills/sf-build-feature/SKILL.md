@@ -5,12 +5,12 @@ description: "Orchestriert den kompletten Feature-Workflow als Codex-Skill: Inte
 
 # SF Build Feature
 
-Du bist der Orchestrator fuer den kompletten Entwicklungs-Workflow fuer neue Features.
+Du bist der Orchestrator für den kompletten Entwicklungs-Workflow für neue Features.
 
 ## Codex-Migration
 
 - `/build-feature` wird zu `$sf-build-feature`
-- fruehere Agent-Calls werden durch explizite Skill-Wechsel oder das interne Sub-Agent-Pattern ersetzt
+- frühere Agent-Calls werden durch explizite Skill-Wechsel oder das interne Sub-Agent-Pattern ersetzt
 - Claude-spezifische APIs werden nicht verwendet; gleichwertige Schritte bleiben als Workflow-Regel erhalten
 
 ## Standard-Sprachregel
@@ -19,35 +19,35 @@ Sofern der User nichts anderes verlangt:
 
 - Code, Bezeichner, Tests und Commits auf Englisch
 - Dokumentation auf Deutsch
-- bestehende Dokumentationssprache fortfuehren, wenn bereits Doku vorhanden ist
+- bestehende Dokumentationssprache fortführen, wenn bereits Doku vorhanden ist
 
 ## Projektkonventionen
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie frueh im Workflow und beachte ihre Vorgaben fuer Planung, Implementierung, Review, Tests, Doku und Commits.
+Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben für Planung, Implementierung, Review, Tests, Doku und Commits.
 
 ## Phase 0: Intent Gate
 
 Bevor du den Workflow startest, klassifiziere die Anforderung des Users:
 
 1. Bestimme den Intent:
-   - Feature: neue Funktionalitaet, neues UI-Element, neue Seite, neue Integration
+   - Feature: neue Funktionalität, neues UI-Element, neue Seite, neue Integration
    - Bugfix: Fehler beheben, etwas funktioniert nicht, unerwartetes Verhalten
-   - Refactoring: Code umstrukturieren, Performance verbessern, technische Schulden abbauen, ohne Verhalten zu aendern
+   - Refactoring: Code umstrukturieren, Performance verbessern, technische Schulden abbauen, ohne Verhalten zu ändern
 2. Falls der Intent eindeutig ein Feature ist: weiter.
-3. Falls der Intent nicht eindeutig ist: frage den User direkt und knapp, bevor du fortfaehrst.
+3. Falls der Intent nicht eindeutig ist: frage den User direkt und knapp, bevor du fortfährst.
 4. Bei Bugfix oder Refactoring:
    - gib eine deutlich sichtbare Meldung aus, dass kein Feature erkannt wurde
    - verweise an `$sf-fix` bzw. `$sf-refactor`
    - beende den Workflow sofort
-5. Bei Feature: fuehre zuerst die initiale Zustandsdokumentation aus.
+5. Bei Feature: führe zuerst die initiale Zustandsdokumentation aus.
 
 ## Initiale Zustandsdokumentation
 
-Bevor der eigentliche Workflow startet, pruefe ob das Projekt bereits dokumentierte Plaene hat:
+Bevor der eigentliche Workflow startet, prüfe ob das Projekt bereits dokumentierte Pläne hat:
 
-1. Pruefe ob `docs/plan/` existiert und mindestens eine `.md`-Datei enthaelt.
+1. Prüfe ob `docs/plan/` existiert und mindestens eine `.md`-Datei enthält.
 2. Falls keine Plan-Dateien vorhanden sind:
-   - erstelle `docs/plan/` falls noetig
+   - erstelle `docs/plan/` falls nötig
    - untersuche den aktuellen Projektzustand lokal oder mit einem internen Sub-Agenten:
      - Projektstruktur
      - vorhandene Dateien
@@ -75,22 +75,22 @@ Dokumentation des Projektzustands vor dem ersten Feature-Workflow.
 
 ## Implementierungsdetails
 
-[Aktuelle Projektstruktur, Technologien, Abhaengigkeiten]
+[Aktuelle Projektstruktur, Technologien, Abhängigkeiten]
 ```
 
-3. Falls Plan-Dateien vorhanden sind: ueberspringe diesen Schritt ohne Meldung.
+3. Falls Plan-Dateien vorhanden sind: überspringe diesen Schritt ohne Meldung.
 4. Falls eine initiale Plan-Datei erstellt wurde, halte das in der Wisdom-Datei fest.
 
-Wichtig: Die Plan-Datei in der Abschlussphase verwendet dann die naechste freie Nummer.
+Wichtig: Die Plan-Datei in der Abschlussphase verwendet dann die nächste freie Nummer.
 
 ## Fertig-Protokoll
 
 Wenn du interne Sub-Agenten einsetzt, gib ihnen das folgende Antwortprotokoll vor:
 
-- `ERLEDIGT` fuer vollstaendig abgeschlossen
-- `ABBRUCH: [Grund]` fuer nicht erledigbar
+- `ERLEDIGT` für vollständig abgeschlossen
+- `ABBRUCH: [Grund]` für nicht erledigbar
 
-Pruefung durch den Orchestrator:
+Prüfung durch den Orchestrator:
 
 1. `ERLEDIGT`: Phase abgeschlossen.
 2. `ABBRUCH: [Grund]`: User informieren, Plan anpassen, erneut versuchen.
@@ -102,14 +102,14 @@ Wenn ein interner Sub-Agent ohne `ERLEDIGT` oder `ABBRUCH` endet:
 
 1. Retry 1: gleicher Auftrag mit Fortsetzungs-Hinweis
 2. Retry 2: vereinfachter Auftrag mit reduziertem Scope
-3. Retry 3: minimaler Auftrag nur fuer die kritischste Teilaufgabe
+3. Retry 3: minimaler Auftrag nur für die kritischste Teilaufgabe
 4. Nach 3 Fehlversuchen:
    - User informieren
-   - Optionen als Freitext klaeren: manuell erledigen, mit naechster Phase fortfahren, Workflow abbrechen
+   - Optionen als Freitext klären: manuell erledigen, mit nächster Phase fortfahren, Workflow abbrechen
 
 ## Wisdom Accumulation
 
-Erkenntnisse aus frueheren Phasen muessen an spaetere Phasen weitergegeben werden.
+Erkenntnisse aus früheren Phasen müssen an spätere Phasen weitergegeben werden.
 
 ### Session-Isolation
 
@@ -125,17 +125,17 @@ Erzeuge zu Beginn eine Session-ID, zum Beispiel via Timestamp. Verwende sie in:
 ## Phase X: [Name]
 - **Entscheidung:** [Was wurde entschieden und warum]
 - **Problem:** [Was ist aufgefallen oder schiefgelaufen]
-- **Kontext:** [Was muessen nachfolgende Phasen wissen]
+- **Kontext:** [Was müssen nachfolgende Phasen wissen]
 ```
 
 2. Lies die Datei vor jeder delegierten Fachphase und gib ihren Inhalt als Kontext weiter.
-3. Loesche die Datei am Ende des Workflows.
+3. Lösche die Datei am Ende des Workflows.
 
 ### Was festgehalten wird
 
-- Architektur- und Designentscheidungen mit Begruendung
-- Probleme und deren Loesung
-- Abweichungen vom urspruenglichen Plan
+- Architektur- und Designentscheidungen mit Begründung
+- Probleme und deren Lösung
+- Abweichungen vom ursprünglichen Plan
 - falsche Annahmen
 - technische Constraints
 
@@ -165,7 +165,7 @@ Bei Fullstack:
 
 ## Delegationsregeln
 
-Nutze fuer Spezialphasen explizite Skill-Wechsel:
+Nutze für Spezialphasen explizite Skill-Wechsel:
 
 - Frontend: `$sf-ui-implementer`
 - Backend/CLI: `$sf-nodejs-implementer`
@@ -176,22 +176,22 @@ Nutze fuer Spezialphasen explizite Skill-Wechsel:
 - Validierung: `$sf-code-validator`
 - Review: `$sf-frontend-reviewer`, `$sf-nodejs-reviewer`
 
-Bei gut trennbaren Teilaufgaben ist das interne Sub-Agent-Pattern erlaubt und fuer parallele Phasen bevorzugt.
+Bei gut trennbaren Teilaufgaben ist das interne Sub-Agent-Pattern erlaubt und für parallele Phasen bevorzugt.
 
 ## Workflow
 
 ### Phase 1: Planung
 
-1. Analysiere die Anforderung gruendlich.
+1. Analysiere die Anforderung gründlich.
 2. Untersuche die relevanten Bereiche der Codebase lokal oder mit internem Sub-Agenten.
 3. Identifiziere alle Unklarheiten, offenen Fragen und Unsicherheiten:
-   - gewuenschtes Verhalten
+   - gewünschtes Verhalten
    - Designentscheidungen
    - technische Vorgaben
-   - Abhaengigkeiten
+   - Abhängigkeiten
    - Edge Cases
 4. Frage den User nach jeder wirklich relevanten Unklarheit. Wiederhole das, bis keine offenen Punkte mehr bestehen.
-5. Erstelle einen ausfuehrlichen Implementierungsplan, der mindestens abdeckt:
+5. Erstelle einen ausführlichen Implementierungsplan, der mindestens abdeckt:
    - Architektur
    - betroffene Dateien
    - Komponenten-Struktur
@@ -200,62 +200,62 @@ Bei gut trennbaren Teilaufgaben ist das interne Sub-Agent-Pattern erlaubt und fu
    - Styling-Ansatz
    - Barrierefreiheit
    - Edge Cases
-6. Fuehre eine Gap Analysis durch:
+6. Führe eine Gap Analysis durch:
    - Over-Engineering
    - Scope Creep
    - unausgesprochene Annahmen
    - fehlende Akzeptanzkriterien
    - Edge Cases
    - versteckte Intentionen
-7. Fuehre eine Plan-Validierung durch:
+7. Führe eine Plan-Validierung durch:
    - Clarity: konkrete Datei-Referenzen, Ziel >= 80%
    - Verification: messbare Akzeptanzkriterien pro Anforderung
    - Context: verifizierter Code vs. Annahmen, Ziel <= 10% Raten
    - Big Picture: Zweck und Workflow explizit beschrieben
-8. Praesentiere dem User den bereinigten Plan mit Validierungs-Scorecard.
+8. Präsentiere dem User den bereinigten Plan mit Validierungs-Scorecard.
 9. Hole explizite Freigabe ein. Starte Phase 2 nicht ohne diese Freigabe.
 
 ### Phase 2: Implementierung
 
 1. Starte den passenden Implementer-Skill mit dem abgestimmten Plan:
-   - Frontend: `Verwende den Skill $sf-ui-implementer fuer diese Phase.`
-   - Backend/CLI: `Verwende den Skill $sf-nodejs-implementer fuer diese Phase.`
+   - Frontend: `Verwende den Skill $sf-ui-implementer für diese Phase.`
+   - Backend/CLI: `Verwende den Skill $sf-nodejs-implementer für diese Phase.`
    - Fullstack: beide parallel oder in klar getrennten Teilphasen
-2. Pruefe auf Fertig-Protokoll, wenn intern delegiert wurde.
-3. Pruefe das Ergebnis gegen die Anforderungen.
+2. Prüfe auf Fertig-Protokoll, wenn intern delegiert wurde.
+3. Prüfe das Ergebnis gegen die Anforderungen.
 
 ### Phase 3: Dokumentation
 
-Starte wenn moeglich parallel:
+Starte wenn möglich parallel:
 
-1. `$sf-code-documenter` fuer JSDoc/TSDoc und In-Code-Dokumentation aller neuen oder geaenderten Exports
-2. `$sf-docs-writer` fuer README/Guide-Updates, falls die Aenderung nutzerrelevant ist
+1. `$sf-code-documenter` für JSDoc/TSDoc und In-Code-Dokumentation aller neuen oder geänderten Exports
+2. `$sf-docs-writer` für README/Guide-Updates, falls die Änderung nutzerrelevant ist
 
-Ueberspringe User-Doku nur mit kurzer Begruendung.
+Überspringe User-Doku nur mit kurzer Begründung.
 
 ### Phase 4: Tests
 
-Starte wenn moeglich parallel:
+Starte wenn möglich parallel:
 
-1. `$sf-test-writer` fuer Unit-Tests und Komponententests
-2. `$sf-e2e-tester` fuer neue User-Flows, falls ein echter Flow dazugekommen ist
+1. `$sf-test-writer` für Unit-Tests und Komponententests
+2. `$sf-e2e-tester` für neue User-Flows, falls ein echter Flow dazugekommen ist
 
 ### Phase 5: Validierung
 
 1. Starte `$sf-code-validator`.
-2. Gib dem User die vollstaendige Liste aller gefundenen Fehler und Warnungen aus.
+2. Gib dem User die vollständige Liste aller gefundenen Fehler und Warnungen aus.
 3. Wenn Fehler gefunden werden: behebe sie direkt oder delegiere erneut an den passenden Implementer.
 4. Wiederhole bis der Validator bestanden meldet.
 
 ### Phase 6: Review
 
-1. Starte den passenden Reviewer-Skill fuer die geaenderten Dateien.
+1. Starte den passenden Reviewer-Skill für die geänderten Dateien.
 2. Aggregiere alle Review-Findings und klassifiziere sie:
    - Kritisch: muss vor Abschluss behoben werden
    - Wichtig: sollte behoben werden, kann als Follow-up behandelt werden
    - Hinweis: optional
 3. Behebe alle kritischen Findings vor dem Abschluss.
-4. Praesentiere die Review-Ergebnisse in diesem Format:
+4. Präsentiere die Review-Ergebnisse in diesem Format:
 
 ```markdown
 **Review-Ergebnisse**
@@ -268,7 +268,7 @@ Zusammenfassung:
 | Hinweis | X | X | X |
 ```
 
-5. Falls Findings nicht umgesetzt wurden, liste sie direkt in der Zusammenfassung mit Prompt-Vorschlaegen fuer spaetere Umsetzung auf.
+5. Falls Findings nicht umgesetzt wurden, liste sie direkt in der Zusammenfassung mit Prompt-Vorschlägen für spätere Umsetzung auf.
 6. Dokumentiere jedes Finding mit:
    - Schweregrad
    - Bereich
@@ -276,18 +276,18 @@ Zusammenfassung:
    - Problem
    - Empfehlung
    - Status
-   - Begruendung bei Nicht-Umsetzung
+   - Begründung bei Nicht-Umsetzung
 7. Falls Findings bewusst nicht umgesetzt werden:
    - frage den User, ob ADRs in `docs/adr/` erzeugt werden sollen
-   - bei Zustimmung: erzeuge fuer jedes nicht umgesetzte Finding ein ADR-Dokument mit laufender Nummer, Kebab-Case-Titel, Kontext `/build-feature` und Quelle des Findings
+   - bei Zustimmung: erzeuge für jedes nicht umgesetzte Finding ein ADR-Dokument mit laufender Nummer, Kebab-Case-Titel, Kontext `/build-feature` und Quelle des Findings
 
 ### Phase 7: Abschluss
 
-1. Fuehre `$sf-code-validator` ein letztes Mal als Final-Check aus.
-2. Schreibe den vollstaendigen Implementierungsplan in eine Markdown-Datei:
+1. Führe `$sf-code-validator` ein letztes Mal als Final-Check aus.
+2. Schreibe den vollständigen Implementierungsplan in eine Markdown-Datei:
    - verwende bestehende Plan-Struktur, falls vorhanden
    - sonst erstelle `docs/plan/`
-   - verwende das naechste freie Nummernschema
+   - verwende das nächste freie Nummernschema
    - Inhalt:
      - Anforderung
      - Architekturentscheidungen
@@ -295,18 +295,18 @@ Zusammenfassung:
      - Implementierungsdetails
      - Testergebnisse
      - Review-Findings und deren Behebung
-3. Loesche die Wisdom-Datei.
-4. Pruefe ob ein Formatter konfiguriert ist und formatiere alle geaenderten Dateien inklusive Plan-Datei einmal einheitlich.
+3. Lösche die Wisdom-Datei.
+4. Prüfe ob ein Formatter konfiguriert ist und formatiere alle geänderten Dateien inklusive Plan-Datei einmal einheitlich.
 5. Fasse zusammen, was implementiert, getestet und dokumentiert wurde.
 
 ## Regeln
 
-- Starte unabhaengige Fachphasen immer parallel, wenn sie wirklich unabhaengig sind
+- Starte unabhängige Fachphasen immer parallel, wenn sie wirklich unabhängig sind
 - Gib dem User nach jeder Phase eine kurze Statusmeldung
 - Wenn eine Phase Fehler meldet, behebe sie vor dem Fortfahren
-- Ueberspringe optionale Schritte nur mit kurzer Begruendung
+- Überspringe optionale Schritte nur mit kurzer Begründung
 - Gib internen Sub-Agenten den Hinweis:
-  - Aufgabe zuerst in 2-3 Saetzen zusammenfassen
+  - Aufgabe zuerst in 2-3 Sätzen zusammenfassen
   - mit `ERLEDIGT` oder `ABBRUCH: [Grund]` beenden
 - Schreibe nach jeder abgeschlossenen Phase ein Wisdom-Summary
 - Gib jeder delegierten Phase die bisherigen Erkenntnisse aus der Wisdom-Datei mit

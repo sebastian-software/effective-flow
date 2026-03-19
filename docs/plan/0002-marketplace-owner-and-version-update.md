@@ -3,7 +3,7 @@
 ## Anforderung
 
 - Marketplace Owner-Name auf "Sebastian Fastner" setzen
-- Version auf die naechste Minor-Version erhoehen (1.0.0 → 1.1.0)
+- Version auf die nächste Minor-Version erhöhen (1.0.0 → 1.1.0)
 
 ## Architekturentscheidungen
 
@@ -22,13 +22,13 @@
 
 ## Implementierungsdetails
 
-Direkte JSON-Bearbeitungen in zwei Konfigurationsdateien. Keine Code-Aenderungen, keine neuen Abhaengigkeiten.
+Direkte JSON-Bearbeitungen in zwei Konfigurationsdateien. Keine Code-Änderungen, keine neuen Abhängigkeiten.
 
 ## Testergebnisse
 
 - JSON-Validierung: Beide Dateien syntaktisch korrekt (python3 json.tool)
-- Grep-Pruefung: Alter Wert "bs5" ist nirgendwo mehr vorhanden
+- Grep-Prüfung: Alter Wert "bs5" ist nirgendwo mehr vorhanden
 
 ## Review-Findings und Behebung
 
-Keine Auffaelligkeiten. Alle Name- und Versions-Felder sind konsistent.
+Keine Auffälligkeiten. Alle Name- und Versions-Felder sind konsistent.

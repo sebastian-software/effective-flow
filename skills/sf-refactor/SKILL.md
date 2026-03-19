@@ -5,33 +5,33 @@ description: "Orchestriert den Refactoring-Workflow als Codex-Skill mit Analyse,
 
 # SF Refactor
 
-Du bist der Orchestrator fuer den Refactoring-Workflow.
+Du bist der Orchestrator für den Refactoring-Workflow.
 
 ## Ziel
 
-Code wird umstrukturiert, ohne bestehendes Verhalten zu aendern, mit vorher/nachher-Validierung als Sicherheitsnetz.
+Code wird umstrukturiert, ohne bestehendes Verhalten zu ändern, mit vorher/nachher-Validierung als Sicherheitsnetz.
 
 ## Standard-Sprachregel
 
 - Code, Bezeichner, Tests und Commits auf Englisch
 - Dokumentation auf Deutsch
-- bestehende Dokumentationssprache fortfuehren
+- bestehende Dokumentationssprache fortführen
 
 ## Projektkonventionen
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Analyse und Refactoring und beachte ihre Vorgaben fuer Struktur, Grenzen, Tests, Review und Commits.
+Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Analyse und Refactoring und beachte ihre Vorgaben für Struktur, Grenzen, Tests, Review und Commits.
 
 ## Fertig-Protokoll
 
-Wie bei `$sf-build-feature`: `ERLEDIGT` / `ABBRUCH: [Grund]` mit Retry-Eskalation ueber drei Stufen.
+Wie bei `$sf-build-feature`: `ERLEDIGT` / `ABBRUCH: [Grund]` mit Retry-Eskalation über drei Stufen.
 
 ## Wisdom Accumulation
 
-Nutze `.wisdom-accumulation-<SESSION_ID>.tmp.md` fuer:
+Nutze `.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
 
 - Baseline-Werte und deren Bedeutung
-- Strukturentscheidungen und Begruendung
-- entdeckte Abhaengigkeiten
+- Strukturentscheidungen und Begründung
+- entdeckte Abhängigkeiten
 - Probleme bei der Umstrukturierung
 - falsche Annahmen
 
@@ -43,32 +43,32 @@ Wie bei `$sf-build-feature`.
 
 ### Phase 1: Analyse
 
-1. Analysiere die Refactoring-Anforderung gruendlich.
+1. Analysiere die Refactoring-Anforderung gründlich.
 2. Untersuche den betroffenen Code:
-   - aktuelle Struktur und Abhaengigkeiten
+   - aktuelle Struktur und Abhängigkeiten
    - bestehende Tests
    - betroffene Stellen
-3. Klaere offene Fragen direkt mit dem User:
+3. Kläre offene Fragen direkt mit dem User:
    - was genau soll refactored werden
    - welche Constraints gelten
 4. Erstelle einen kompakten Refactoring-Plan:
    - vorher -> nachher
-   - betroffene Dateien und Abhaengigkeiten
+   - betroffene Dateien und Abhängigkeiten
    - Risiken und Seiteneffekte
-5. Fuehre Gap Analysis durch:
+5. Führe Gap Analysis durch:
    - Over-Engineering
    - Scope Creep
    - unausgesprochene Annahmen
    - fehlende Akzeptanzkriterien
    - Edge Cases
-   - moegliche Verhaltensaenderungen
-6. Fuehre Plan-Validierung durch:
+   - mögliche Verhaltensänderungen
+6. Führe Plan-Validierung durch:
    - Clarity: Datei-Referenzen, Ziel >= 80%
    - Verification: messbare Akzeptanzkriterien jenseits von "Tests laufen"
    - Context: <= 10% Raten
    - Big Picture: Nutzen klar
-   - Verhaltens-Invarianz: jede Aenderung begruendet
-7. Praesentiere den Plan mit Scorecard.
+   - Verhaltens-Invarianz: jede Änderung begründet
+7. Präsentiere den Plan mit Scorecard.
 8. Hole Freigabe ein.
 
 ### Phase 2: Baseline
@@ -80,28 +80,28 @@ Starte parallel:
    - Lint-Fehler
    - Build-Status
 2. `$sf-test-writer`
-   - fuehre alle bestehenden Tests aus und dokumentiere das Ergebnis
+   - führe alle bestehenden Tests aus und dokumentiere das Ergebnis
    - schreibe in dieser Phase keine neuen Tests
 
-Dokumentiere die Baseline fuer den spaeteren Vergleich.
+Dokumentiere die Baseline für den späteren Vergleich.
 
 ### Phase 3: Refactoring
 
 1. Starte den passenden Implementer-Skill.
 2. Auftrag:
-   - nur Struktur aendern
+   - nur Struktur ändern
    - kein neues Verhalten
    - keine neuen Features
    - keine ungeplanten Bugfixes
 
 ### Phase 4: Review
 
-1. Starte den passenden Reviewer-Skill fuer die geaenderten Dateien.
+1. Starte den passenden Reviewer-Skill für die geänderten Dateien.
 2. Aggregiere Findings:
    - Kritisch: vor Abschluss beheben
    - Wichtig: sollte behoben werden
    - Hinweis: optional
-3. Praesentiere die Review-Ergebnisse detailliert, einschliesslich Status je Finding.
+3. Präsentiere die Review-Ergebnisse detailliert, einschliesslich Status je Finding.
 4. Falls Findings bewusst nicht umgesetzt werden:
    - frage nach ADR-Erstellung
    - erzeuge bei Zustimmung ADRs in `docs/adr/` mit Kontext `/refactor`
@@ -112,7 +112,7 @@ Starte parallel:
 
 1. `$sf-code-validator`
 2. `$sf-test-writer`
-   - fuehrt alle bestehenden Tests erneut aus
+   - führt alle bestehenden Tests erneut aus
    - schreibt keine neuen Tests
 
 ### Phase 6: Vorher/Nachher-Vergleich und Abschluss
@@ -124,16 +124,16 @@ Starte parallel:
    - Build
 2. Falls Regressionen gefunden werden:
    - User informieren
-   - zurueck zu Phase 3
+   - zurück zu Phase 3
    - Phase 5 und 6 wiederholen
 3. Falls keine Regressionen:
-   - Wisdom-Datei loeschen
+   - Wisdom-Datei löschen
    - zusammenfassen, was refactored wurde
-   - bestaetigen, dass das Verhalten unveraendert blieb
+   - bestätigen, dass das Verhalten unverändert blieb
 
 ## Regeln
 
-- Starte unabhaengige Fachphasen parallel
+- Starte unabhängige Fachphasen parallel
 - gib nach jeder Phase eine Statusmeldung
-- fuehre keine Dokumentations-Phase ein, wenn das Refactoring kein oeffentliches Verhalten aendert
-- keine neuen Features oder Bugfixes waehrend des Refactorings
+- führe keine Dokumentations-Phase ein, wenn das Refactoring kein öffentliches Verhalten ändert
+- keine neuen Features oder Bugfixes während des Refactorings

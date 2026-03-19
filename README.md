@@ -1,10 +1,10 @@
 # SF Codex Skills
 
-Dieses Repository ist jetzt ein reines Skill-System fuer Codex. Die alte Claude-Code-Plugin-Struktur wurde entfernt.
+Dieses Repository ist jetzt ein reines Skill-System für Codex. Die alte Claude-Code-Plugin-Struktur wurde entfernt.
 
 ## Nutzung
 
-Die frueheren Slash-Commands sind jetzt Skills:
+Die früheren Slash-Commands sind jetzt Skills:
 
 | Vorher | Jetzt |
 |---|---|
@@ -13,7 +13,7 @@ Die frueheren Slash-Commands sind jetzt Skills:
 | `/refactor` | `$sf-refactor` |
 | `/review` | `$sf-review` |
 
-Die frueheren Agents sind ebenfalls Skills:
+Die früheren Agents sind ebenfalls Skills:
 
 | Vorher | Jetzt |
 |---|---|
@@ -74,28 +74,28 @@ skills/
 
 ## Orchestrierung
 
-Die Workflow-Skills bleiben Orchestratoren, rufen Spezialphasen aber nicht mehr ueber Claude-Agent-Calls auf. Stattdessen verwenden sie explizite Rollenwechsel im Prompt, zum Beispiel:
+Die Workflow-Skills bleiben Orchestratoren, rufen Spezialphasen aber nicht mehr über Claude-Agent-Calls auf. Stattdessen verwenden sie explizite Rollenwechsel im Prompt, zum Beispiel:
 
 ```text
-Verwende den Skill $sf-ui-implementer fuer diese Phase.
+Verwende den Skill $sf-ui-implementer für diese Phase.
 ```
 
-Wenn Aufgaben sauber getrennt und parallelisierbar sind, ist das interne Sub-Agent-Pattern vorgesehen. Wenn der naechste Schritt direkt vom Ergebnis abhaengt, bleibt die Arbeit lokal auf dem kritischen Pfad.
+Wenn Aufgaben sauber getrennt und parallelisierbar sind, ist das interne Sub-Agent-Pattern vorgesehen. Wenn der nächste Schritt direkt vom Ergebnis abhängt, bleibt die Arbeit lokal auf dem kritischen Pfad.
 
 ## Sprachregeln
 
-Sofern der User nichts anderes verlangt, gilt fuer alle Skills:
+Sofern der User nichts anderes verlangt, gilt für alle Skills:
 
 - Code, Bezeichner, Tests und Commit-Messages sind auf Englisch.
 - Dokumentation ist auf Deutsch.
-- Wenn bereits Dokumentation vorhanden ist, wird deren bestehende Sprache fortgefuehrt.
+- Wenn bereits Dokumentation vorhanden ist, wird deren bestehende Sprache fortgeführt.
 
 ## Inhalte
 
-- Workflow-Skills fuer Feature, Fix, Refactor und Review
-- Rollen-Skills fuer Implementierung, Review, Validierung, Doku und Tests
+- Workflow-Skills für Feature, Fix, Refactor und Review
+- Rollen-Skills für Implementierung, Review, Validierung, Doku und Tests
 - Designentscheidungs-respektierende Reviews
-- Routing fuer Frontend, Backend, CLI und Fullstack
+- Routing für Frontend, Backend, CLI und Fullstack
 
 ## Migration
 
@@ -110,6 +110,6 @@ Ersetzt wurden sie durch:
 
 - `skills/<name>/SKILL.md`
 - Skill-Namen mit `$`-Aufrufkonvention
-- Codex-kompatible Orchestrierung ueber Rollenwechsel im Prompt
+- Codex-kompatible Orchestrierung über Rollenwechsel im Prompt
 
 Details zu bewusst nicht 1:1 portierbaren Claude-Mechaniken stehen in [docs/skill-migration-notes.md](/Users/bs5/Developer/sf-claude-plugin/docs/skill-migration-notes.md).
