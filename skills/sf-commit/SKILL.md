@@ -13,6 +13,7 @@ Du erstellst eine Commit-Message für die aktuell gestagten Änderungen und füh
 - eine klare, beschreibende Conventional-Commit-Message wählen
 - keine `Co-Authored-By`-Zeilen erzeugen
 - Commit-Message auf Englisch formulieren
+- keine Projektvalidation wie Linting, Tests oder Build-Checks ausführen
 
 ## Projektkonventionen
 
@@ -29,13 +30,15 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Commit und beac
    - `refactor:` für Strukturverbesserungen ohne Verhaltensänderung
    - `test:` für Teständerungen
 3. Formuliere eine kurze, konkrete Summary-Zeile, die den inhaltlichen Kern der staged changes beschreibt.
-4. Führe `git commit` für genau diese staged changes aus.
+4. Führe keine eigenständige Projektvalidation aus; Linting, Tests und andere Qualitätsprüfungen sind Aufgabe anderer Skills wie `$sf-code-validator` und `$sf-test-writer`.
+5. Führe `git commit` für genau diese staged changes aus.
 
 ## Regeln
 
 - Verwende keine generischen Messages wie `update files` oder `misc changes`.
 - Erfinde keine Änderungen, die nicht im staged Diff stehen.
 - Füge keine `Co-Authored-By`-Trailer hinzu.
+- Starte keine Projektvalidation wie Linting, Tests oder Build-Checks; diese Verantwortung liegt bei anderen Skills.
 - Respektiere bestehende Husky-Hooks; commitlint, prettier und lint dürfen den Commit blockieren.
-- Wenn Hooks fehlschlagen, gib die relevante Ursache knapp wieder statt die Hooks zu umgehen.
+- Wenn Hooks fehlschlagen, gib die relevante Ursache knapp wieder statt die Hooks zu umgehen oder selbst zusätzliche Validierung zu starten.
 - Wenn die staged changes mehrere unverbundene Themen enthalten, weise auf den gemischten Scope hin und schlage Splitten vor, bevor committed wird.
