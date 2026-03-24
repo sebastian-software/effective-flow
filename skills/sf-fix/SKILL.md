@@ -1,6 +1,7 @@
 ---
 name: sf-fix
-description: "Orchestriert den Bugfix-Workflow: Investigation, Reproduktion, Gap Analysis, Diagnose-Validierung, minimaler Fix, Regressionstests, Validierung und Abschluss. Verwendet Skill-Wechsel wie {{SKILL:sf-ui-implementer}}, {{SKILL:sf-nodejs-implementer}}, {{SKILL:sf-test-writer}} und {{SKILL:sf-code-validator}}."
+description: "Orchestriert den Bugfix-Workflow: Investigation, Reproduktion, Gap Analysis, Diagnose-Validierung, minimaler Fix, Regressionstests, Validierung und Abschluss. Verwendet Skill-Wechsel wie {{AGENT:sf-ui-implementer}}, {{AGENT:sf-nodejs-implementer}}, {{AGENT:sf-test-writer}} und {{AGENT:sf-code-validator}}."
+type: orchestrator
 ---
 
 # SF Fix
@@ -49,8 +50,8 @@ Wie bei `{{SKILL:sf-build-feature}}`.
 
 ## Routing
 
-- Frontend: `{{SKILL:sf-ui-implementer}}`
-- Backend / CLI / Node.js: `{{SKILL:sf-nodejs-implementer}}`
+- Frontend: `{{AGENT:sf-ui-implementer}}`
+- Backend / CLI / Node.js: `{{AGENT:sf-nodejs-implementer}}`
 - Fullstack: beide, nur bei klarer Trennung parallel
 
 ## Review-Report-Rückverweise
@@ -77,8 +78,8 @@ Wenn dieser Bugfix ein Finding aus einer bestehenden `review-report-*.md` Datei 
 ### Phase 2: Reproduktion
 
 1. Versuche den Bug zu reproduzieren:
-   - `{{SKILL:sf-code-validator}}` für aktuellen technischen Zustand
-   - falls möglich: `{{SKILL:sf-test-writer}}` für einen fehlschlagenden Test, der das Verhalten dokumentiert
+   - `{{AGENT:sf-code-validator}}` für aktuellen technischen Zustand
+   - falls möglich: `{{AGENT:sf-test-writer}}` für einen fehlschlagenden Test, der das Verhalten dokumentiert
 2. Führe eine Gap Analysis für Diagnose und Fix-Strategie durch:
    - Over-Engineering
    - unausgesprochene Annahmen
@@ -101,7 +102,7 @@ Wenn dieser Bugfix ein Finding aus einer bestehenden `review-report-*.md` Datei 
 ### Phase 3: Fix
 
 1. Starte den passenden Implementer-Skill:
-   - `{{SKILL:sf-ui-implementer}}` oder `{{SKILL:sf-nodejs-implementer}}`
+   - `{{AGENT:sf-ui-implementer}}` oder `{{AGENT:sf-nodejs-implementer}}`
 2. Gib einen präzisen Auftrag:
    - Root Cause
    - betroffene Dateien
@@ -112,9 +113,9 @@ Wenn dieser Bugfix ein Finding aus einer bestehenden `review-report-*.md` Datei 
 
 Starte parallel, wenn möglich:
 
-1. `{{SKILL:sf-test-writer}}`
+1. `{{AGENT:sf-test-writer}}`
    - bestätigt den fehlschlagenden Test aus Phase 2 oder schreibt einen Regressionstest
-2. `{{SKILL:sf-code-validator}}`
+2. `{{AGENT:sf-code-validator}}`
    - TypeScript, Lint und Build
 
 ### Phase 5: Abschluss

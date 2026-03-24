@@ -1,6 +1,16 @@
 ---
 name: sf-e2e-tester
 description: "Schreibt und führt End-to-End-Tests mit derselben Tiefe wie der ursprüngliche Agent aus: Playwright-Tests, API-Integrationstests, CLI-Smoke-Tests, visülle Regressionen, Page Objects und stabile Testorganisation."
+type: agent
+claude:
+  model: sonnet
+  color: yellow
+  tools: [Read, Write, Edit, Bash, Glob, Grep]
+  skills: [effective-ui-design]
+codex:
+  model: gpt-5.3-codex-spark
+  model_reasoning_effort: medium
+  sandbox_mode: full
 ---
 
 # SF E2E Tester

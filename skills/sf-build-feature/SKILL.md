@@ -1,6 +1,7 @@
 ---
 name: sf-build-feature
-description: "Orchestriert den kompletten Feature-Workflow: Intent-Gate, initiale Zustandsdokumentation, Planung, Implementierung, Dokumentation, Tests, Validierung, Review, ADR-Optionen und Abschluss. Verwendet explizite Skill-Wechsel wie {{SKILL:sf-ui-implementer}}, {{SKILL:sf-nodejs-implementer}}, {{SKILL:sf-code-validator}}, {{SKILL:sf-test-writer}}, {{SKILL:sf-docs-writer}} und {{SKILL:sf-frontend-reviewer}}."
+description: "Orchestriert den kompletten Feature-Workflow: Intent-Gate, initiale Zustandsdokumentation, Planung, Implementierung, Dokumentation, Tests, Validierung, Review, ADR-Optionen und Abschluss. Verwendet explizite Skill-Wechsel wie {{AGENT:sf-ui-implementer}}, {{AGENT:sf-nodejs-implementer}}, {{AGENT:sf-code-validator}}, {{AGENT:sf-test-writer}}, {{AGENT:sf-docs-writer}} und {{AGENT:sf-frontend-reviewer}}."
+type: orchestrator
 ---
 
 # SF Build Feature
@@ -148,8 +149,8 @@ Bestimme den Projekt-Typ anhand folgender Signale:
 
 | Projekt-Typ | Implementer | Reviewer |
 |---|---|---|
-| Frontend | `{{SKILL:sf-ui-implementer}}` | `{{SKILL:sf-frontend-reviewer}}` |
-| Backend / CLI / Node.js | `{{SKILL:sf-nodejs-implementer}}` | `{{SKILL:sf-nodejs-reviewer}}` |
+| Frontend | `{{AGENT:sf-ui-implementer}}` | `{{AGENT:sf-frontend-reviewer}}` |
+| Backend / CLI / Node.js | `{{AGENT:sf-nodejs-implementer}}` | `{{AGENT:sf-nodejs-reviewer}}` |
 | Fullstack | beide | beide |
 
 Bei Fullstack:
@@ -161,14 +162,14 @@ Bei Fullstack:
 
 Nutze für Spezialphasen explizite Skill-Wechsel:
 
-- Frontend: `{{SKILL:sf-ui-implementer}}`
-- Backend/CLI: `{{SKILL:sf-nodejs-implementer}}`
-- Code-Doku: `{{SKILL:sf-code-documenter}}`
-- User-Doku: `{{SKILL:sf-docs-writer}}`
-- Tests: `{{SKILL:sf-test-writer}}`
-- E2E: `{{SKILL:sf-e2e-tester}}`
-- Validierung: `{{SKILL:sf-code-validator}}`
-- Review: `{{SKILL:sf-frontend-reviewer}}`, `{{SKILL:sf-nodejs-reviewer}}`
+- Frontend: `{{AGENT:sf-ui-implementer}}`
+- Backend/CLI: `{{AGENT:sf-nodejs-implementer}}`
+- Code-Doku: `{{AGENT:sf-code-documenter}}`
+- User-Doku: `{{AGENT:sf-docs-writer}}`
+- Tests: `{{AGENT:sf-test-writer}}`
+- E2E: `{{AGENT:sf-e2e-tester}}`
+- Validierung: `{{AGENT:sf-code-validator}}`
+- Review: `{{AGENT:sf-frontend-reviewer}}`, `{{AGENT:sf-nodejs-reviewer}}`
 
 Bei gut trennbaren Teilaufgaben ist das interne Sub-Agent-Pattern erlaubt und für parallele Phasen bevorzugt.
 
@@ -221,8 +222,8 @@ Wenn dieses Feature ein Finding aus einer bestehenden `review-report-*.md` Datei
 ### Phase 2: Implementierung
 
 1. Starte den passenden Implementer-Skill mit dem abgestimmten Plan:
-   - Frontend: `Verwende den Skill {{SKILL:sf-ui-implementer}} für diese Phase.`
-   - Backend/CLI: `Verwende den Skill {{SKILL:sf-nodejs-implementer}} für diese Phase.`
+   - Frontend: `Verwende den Skill {{AGENT:sf-ui-implementer}} für diese Phase.`
+   - Backend/CLI: `Verwende den Skill {{AGENT:sf-nodejs-implementer}} für diese Phase.`
    - Fullstack: beide parallel oder in klar getrennten Teilphasen
 2. Prüfe auf Fertig-Protokoll, wenn intern delegiert wurde.
 3. Prüfe das Ergebnis gegen die Anforderungen.
@@ -231,8 +232,8 @@ Wenn dieses Feature ein Finding aus einer bestehenden `review-report-*.md` Datei
 
 Starte wenn möglich parallel:
 
-1. `{{SKILL:sf-code-documenter}}` für JSDoc/TSDoc und In-Code-Dokumentation aller neuen oder geänderten Exports
-2. `{{SKILL:sf-docs-writer}}` für README/Guide-Updates, falls die Änderung nutzerrelevant ist
+1. `{{AGENT:sf-code-documenter}}` für JSDoc/TSDoc und In-Code-Dokumentation aller neuen oder geänderten Exports
+2. `{{AGENT:sf-docs-writer}}` für README/Guide-Updates, falls die Änderung nutzerrelevant ist
 
 Überspringe User-Doku nur mit kurzer Begründung.
 
@@ -240,12 +241,12 @@ Starte wenn möglich parallel:
 
 Starte wenn möglich parallel:
 
-1. `{{SKILL:sf-test-writer}}` für Unit-Tests und Komponententests
-2. `{{SKILL:sf-e2e-tester}}` für neue User-Flows, falls ein echter Flow dazugekommen ist
+1. `{{AGENT:sf-test-writer}}` für Unit-Tests und Komponententests
+2. `{{AGENT:sf-e2e-tester}}` für neue User-Flows, falls ein echter Flow dazugekommen ist
 
 ### Phase 5: Validierung
 
-1. Starte `{{SKILL:sf-code-validator}}`.
+1. Starte `{{AGENT:sf-code-validator}}`.
 2. Gib dem User die vollständige Liste aller gefundenen Fehler und Warnungen aus.
 3. Wenn Fehler gefunden werden: behebe sie direkt oder delegiere erneut an den passenden Implementer.
 4. Wiederhole bis der Validator bestanden meldet.
@@ -289,7 +290,7 @@ Zusammenfassung:
 
 ### Phase 7: Abschluss
 
-1. Führe `{{SKILL:sf-code-validator}}` ein letztes Mal als Final-Check aus.
+1. Führe `{{AGENT:sf-code-validator}}` ein letztes Mal als Final-Check aus.
 2. Schreibe den vollständigen Implementierungsplan in eine Markdown-Datei:
    - verwende bestehende Plan-Struktur, falls vorhanden
    - sonst erstelle `docs/plan/`

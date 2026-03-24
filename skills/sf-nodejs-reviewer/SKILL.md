@@ -1,6 +1,15 @@
 ---
 name: sf-nodejs-reviewer
 description: "Führt spezialisiertes Backend- und CLI-Review mit derselben Tiefe wie der ursprüngliche Agent durch: API Design, Security, Performance, Error Handling, CLI Quality, Config, Logging und designentscheidungsbewusste Findings."
+type: agent
+claude:
+  model: opus
+  color: red
+  tools: [Read, Glob, Grep]
+codex:
+  model: gpt-5.4
+  model_reasoning_effort: high
+  sandbox_mode: read_only
 ---
 
 # SF Node.js Reviewer

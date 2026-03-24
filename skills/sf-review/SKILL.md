@@ -1,6 +1,7 @@
 ---
 name: sf-review
 description: "Orchestriert ein umfassendes Code-Review: Scope-Bestimmung, Designentscheidungs-Erkennung, technische Validierung, fachliches Review, Findings-Qualitätsprüfung und Berichtserstellung mit Prompt-Vorschlägen für {{SKILL:sf-fix}}, {{SKILL:sf-refactor}} oder {{SKILL:sf-build-feature}}."
+type: orchestrator
 ---
 
 # SF Review
@@ -68,8 +69,8 @@ Wie bei `{{SKILL:sf-build-feature}}`.
 
 Reviewer-Routing:
 
-- Frontend -> `{{SKILL:sf-frontend-reviewer}}`
-- Backend / CLI / Node.js -> `{{SKILL:sf-nodejs-reviewer}}`
+- Frontend -> `{{AGENT:sf-frontend-reviewer}}`
+- Backend / CLI / Node.js -> `{{AGENT:sf-nodejs-reviewer}}`
 - Fullstack -> beide parallel
 
 ## Workflow
@@ -92,7 +93,7 @@ Reviewer-Routing:
 
 ### Phase 2: Technische Validierung
 
-1. Starte `{{SKILL:sf-code-validator}}` im Check-Modus:
+1. Starte `{{AGENT:sf-code-validator}}` im Check-Modus:
    - TypeScript
    - Lint
    - Build

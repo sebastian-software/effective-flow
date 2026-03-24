@@ -1,6 +1,16 @@
 ---
 name: sf-code-documenter
 description: "Erstellt und verbessert In-Code-Dokumentation mit derselben Tiefe wie der ursprüngliche Agent: JSDoc, TSDoc, Inline-Kommentare, Type-Annotationen, React-Props, REST-Handler und CLI-Hilfetexte."
+type: agent
+claude:
+  model: sonnet
+  color: cyan
+  tools: [Read, Write, Edit, Glob, Grep]
+  skills: [copy-editing]
+codex:
+  model: gpt-5.3-codex-spark
+  model_reasoning_effort: medium
+  sandbox_mode: full
 ---
 
 # SF Code Documenter

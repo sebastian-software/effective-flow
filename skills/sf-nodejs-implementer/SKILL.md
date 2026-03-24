@@ -1,6 +1,15 @@
 ---
 name: sf-nodejs-implementer
 description: "Implementiert Node.js Backend-Code, CLI-Tools und serverseitige Anwendungen mit derselben fachlichen Tiefe wie der ursprüngliche Agent: APIs, Middleware, Security, DB, Error Handling, Logging, Dateisplitting und Package-Manager-Regeln."
+type: agent
+claude:
+  model: opus
+  color: cyan
+  tools: [Read, Write, Edit, Bash, Glob, Grep]
+codex:
+  model: gpt-5.4
+  model_reasoning_effort: high
+  sandbox_mode: full
 ---
 
 # SF Node.js Implementer

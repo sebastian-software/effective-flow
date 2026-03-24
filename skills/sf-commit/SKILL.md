@@ -1,6 +1,7 @@
 ---
 name: sf-commit
 description: "Erzeugt eine beschreibende Commit-Message für bereits gestagte Änderungen und führt den Commit per git aus. Verwende diesen Skill, wenn nur die staged changes committed werden sollen, mit Conventional Commits wie feat:, fix:, chore:, docs:, refactor: oder test:, ohne Co-Authored-By-Zeilen."
+type: utility
 ---
 
 # SF Commit

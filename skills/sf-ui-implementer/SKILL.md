@@ -1,6 +1,16 @@
 ---
 name: sf-ui-implementer
 description: "Implementiert UI-Komponenten und Frontend-Code mit derselben fachlichen Tiefe wie der ursprüngliche UI-Agent: HTML, CSS, JavaScript, TypeScript, React und andere UI-Technologien, inklusive Lesbarkeit, Dateisplitting und Projektkonventionen."
+type: agent
+claude:
+  model: sonnet
+  color: cyan
+  tools: [Read, Write, Edit, Bash, Glob, Grep]
+  skills: [frontend-design, effective-ui-design]
+codex:
+  model: gpt-5.4
+  model_reasoning_effort: high
+  sandbox_mode: full
 ---
 
 # SF UI Implementer

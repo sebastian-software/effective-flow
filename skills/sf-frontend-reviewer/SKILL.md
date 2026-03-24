@@ -1,6 +1,16 @@
 ---
 name: sf-frontend-reviewer
 description: "Führt spezialisiertes Frontend-Review mit derselben Tiefe wie der ursprüngliche Agent durch: WCAG 2.1 AA, Performance, UI-Patterns, Design-System, CSS-Architektur, State-Management und designentscheidungsbewusste Findings."
+type: agent
+claude:
+  model: opus
+  color: red
+  tools: [Read, Glob, Grep]
+  skills: [frontend-design, effective-ui-design]
+codex:
+  model: gpt-5.4
+  model_reasoning_effort: high
+  sandbox_mode: read_only
 ---
 
 # SF Frontend Reviewer

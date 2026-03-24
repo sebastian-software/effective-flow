@@ -1,6 +1,7 @@
 ---
 name: sf-refactor
-description: "Orchestriert den Refactoring-Workflow: Analyse, Gap Analysis, Plan-Validierung, Baseline, Refactoring, Review, ADR-Optionen, Nachvalidierung und Vorher/Nachher-Vergleich. Verwendet {{SKILL:sf-ui-implementer}}, {{SKILL:sf-nodejs-implementer}}, {{SKILL:sf-code-validator}}, {{SKILL:sf-test-writer}} und die passenden Reviewer-Skills."
+description: "Orchestriert den Refactoring-Workflow: Analyse, Gap Analysis, Plan-Validierung, Baseline, Refactoring, Review, ADR-Optionen, Nachvalidierung und Vorher/Nachher-Vergleich. Verwendet {{AGENT:sf-ui-implementer}}, {{AGENT:sf-nodejs-implementer}}, {{AGENT:sf-code-validator}}, {{AGENT:sf-test-writer}} und die passenden Reviewer-Skills."
+type: orchestrator
 ---
 
 # SF Refactor
@@ -84,11 +85,11 @@ Wenn dieses Refactoring ein Finding aus einer bestehenden `review-report-*.md` D
 
 Starte parallel:
 
-1. `{{SKILL:sf-code-validator}}`
+1. `{{AGENT:sf-code-validator}}`
    - TypeScript-Fehler
    - Lint-Fehler
    - Build-Status
-2. `{{SKILL:sf-test-writer}}`
+2. `{{AGENT:sf-test-writer}}`
    - führe alle bestehenden Tests aus und dokumentiere das Ergebnis
    - schreibe in dieser Phase keine neuen Tests
 
@@ -122,8 +123,8 @@ Dokumentiere die Baseline für den späteren Vergleich.
 
 Starte parallel:
 
-1. `{{SKILL:sf-code-validator}}`
-2. `{{SKILL:sf-test-writer}}`
+1. `{{AGENT:sf-code-validator}}`
+2. `{{AGENT:sf-test-writer}}`
    - führt alle bestehenden Tests erneut aus
    - schreibt keine neuen Tests
 

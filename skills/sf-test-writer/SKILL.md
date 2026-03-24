@@ -1,6 +1,16 @@
 ---
 name: sf-test-writer
 description: "Schreibt und verbessert Unit-, Integrations- und Komponententests mit derselben Tiefe wie der ursprüngliche Agent: Frontend-, Backend-, API-, CLI- und DB-Tests mit projektkonformen Patterns und stabiler Testorganisation."
+type: agent
+claude:
+  model: sonnet
+  color: green
+  tools: [Read, Write, Edit, Bash, Glob, Grep]
+  skills: [frontend-design]
+codex:
+  model: gpt-5.3-codex-spark
+  model_reasoning_effort: medium
+  sandbox_mode: full
 ---
 
 # SF Test Writer

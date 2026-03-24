@@ -1,6 +1,15 @@
 ---
 name: sf-code-validator
 description: "Prüft Codequalität durch Linting, Type-Checking und Build-Validierung mit derselben Tiefe wie der ursprüngliche Agent. Verwendet vorhandene package.json-Scripts, kategorisiert Fehler und liefert konkrete Lösungshinweise."
+type: agent
+claude:
+  model: haiku
+  color: magenta
+  tools: [Read, Bash, Glob, Grep]
+codex:
+  model: gpt-5.3-codex-spark
+  model_reasoning_effort: medium
+  sandbox_mode: full
 ---
 
 # SF Code Validator
