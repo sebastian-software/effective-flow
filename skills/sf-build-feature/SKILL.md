@@ -1,6 +1,6 @@
 ---
 name: sf-build-feature
-description: "Orchestriert den kompletten Feature-Workflow als Codex-Skill: Intent-Gate, initiale Zustandsdokumentation, Planung, Implementierung, Dokumentation, Tests, Validierung, Review, ADR-Optionen und Abschluss. Verwendet explizite Skill-Wechsel wie $sf-ui-implementer, $sf-nodejs-implementer, $sf-code-validator, $sf-test-writer, $sf-docs-writer und $sf-frontend-reviewer."
+description: "Orchestriert den kompletten Feature-Workflow als Codex-Skill: Intent-Gate, initiale Zustandsdokumentation, Planung, Implementierung, Dokumentation, Tests, Validierung, Review, ADR-Optionen und Abschluss. Verwendet explizite Skill-Wechsel wie {{SKILL:sf-ui-implementer}}, {{SKILL:sf-nodejs-implementer}}, {{SKILL:sf-code-validator}}, {{SKILL:sf-test-writer}}, {{SKILL:sf-docs-writer}} und {{SKILL:sf-frontend-reviewer}}."
 ---
 
 # SF Build Feature
@@ -9,7 +9,7 @@ Du bist der Orchestrator für den kompletten Entwicklungs-Workflow für neue Fea
 
 ## Codex-Migration
 
-- `/build-feature` wird zu `$sf-build-feature`
+- `/build-feature` wird zu `{{SKILL:sf-build-feature}}`
 - frühere Agent-Calls werden durch explizite Skill-Wechsel oder das interne Sub-Agent-Pattern ersetzt
 - Claude-spezifische APIs werden nicht verwendet; gleichwertige Schritte bleiben als Workflow-Regel erhalten
 
@@ -37,7 +37,7 @@ Bevor du den Workflow startest, klassifiziere die Anforderung des Users:
 3. Falls der Intent nicht eindeutig ist: frage den User direkt und knapp, bevor du fortfährst.
 4. Bei Bugfix oder Refactoring:
    - gib eine deutlich sichtbare Meldung aus, dass kein Feature erkannt wurde
-   - verweise an `$sf-fix` bzw. `$sf-refactor`
+   - verweise an `{{SKILL:sf-fix}}` bzw. `{{SKILL:sf-refactor}}`
    - beende den Workflow sofort
 5. Bei Feature: führe zuerst die initiale Zustandsdokumentation aus.
 
@@ -154,8 +154,8 @@ Bestimme den Projekt-Typ anhand folgender Signale:
 
 | Projekt-Typ | Implementer | Reviewer |
 |---|---|---|
-| Frontend | `$sf-ui-implementer` | `$sf-frontend-reviewer` |
-| Backend / CLI / Node.js | `$sf-nodejs-implementer` | `$sf-nodejs-reviewer` |
+| Frontend | `{{SKILL:sf-ui-implementer}}` | `{{SKILL:sf-frontend-reviewer}}` |
+| Backend / CLI / Node.js | `{{SKILL:sf-nodejs-implementer}}` | `{{SKILL:sf-nodejs-reviewer}}` |
 | Fullstack | beide | beide |
 
 Bei Fullstack:
@@ -167,14 +167,14 @@ Bei Fullstack:
 
 Nutze für Spezialphasen explizite Skill-Wechsel:
 
-- Frontend: `$sf-ui-implementer`
-- Backend/CLI: `$sf-nodejs-implementer`
-- Code-Doku: `$sf-code-documenter`
-- User-Doku: `$sf-docs-writer`
-- Tests: `$sf-test-writer`
-- E2E: `$sf-e2e-tester`
-- Validierung: `$sf-code-validator`
-- Review: `$sf-frontend-reviewer`, `$sf-nodejs-reviewer`
+- Frontend: `{{SKILL:sf-ui-implementer}}`
+- Backend/CLI: `{{SKILL:sf-nodejs-implementer}}`
+- Code-Doku: `{{SKILL:sf-code-documenter}}`
+- User-Doku: `{{SKILL:sf-docs-writer}}`
+- Tests: `{{SKILL:sf-test-writer}}`
+- E2E: `{{SKILL:sf-e2e-tester}}`
+- Validierung: `{{SKILL:sf-code-validator}}`
+- Review: `{{SKILL:sf-frontend-reviewer}}`, `{{SKILL:sf-nodejs-reviewer}}`
 
 Bei gut trennbaren Teilaufgaben ist das interne Sub-Agent-Pattern erlaubt und für parallele Phasen bevorzugt.
 
@@ -184,7 +184,7 @@ Wenn dieses Feature ein Finding aus einer bestehenden `review-report-*.md` Datei
 
 - identifiziere die betroffene Report-Datei früh im Workflow
 - ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
-- beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via $sf-build-feature`
+- beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via {{SKILL:sf-build-feature}}`
 - aktualisiere nur die Findings, die durch diese Änderung tatsächlich adressiert wurden
 
 ## Workflow
@@ -227,8 +227,8 @@ Wenn dieses Feature ein Finding aus einer bestehenden `review-report-*.md` Datei
 ### Phase 2: Implementierung
 
 1. Starte den passenden Implementer-Skill mit dem abgestimmten Plan:
-   - Frontend: `Verwende den Skill $sf-ui-implementer für diese Phase.`
-   - Backend/CLI: `Verwende den Skill $sf-nodejs-implementer für diese Phase.`
+   - Frontend: `Verwende den Skill {{SKILL:sf-ui-implementer}} für diese Phase.`
+   - Backend/CLI: `Verwende den Skill {{SKILL:sf-nodejs-implementer}} für diese Phase.`
    - Fullstack: beide parallel oder in klar getrennten Teilphasen
 2. Prüfe auf Fertig-Protokoll, wenn intern delegiert wurde.
 3. Prüfe das Ergebnis gegen die Anforderungen.
@@ -237,8 +237,8 @@ Wenn dieses Feature ein Finding aus einer bestehenden `review-report-*.md` Datei
 
 Starte wenn möglich parallel:
 
-1. `$sf-code-documenter` für JSDoc/TSDoc und In-Code-Dokumentation aller neuen oder geänderten Exports
-2. `$sf-docs-writer` für README/Guide-Updates, falls die Änderung nutzerrelevant ist
+1. `{{SKILL:sf-code-documenter}}` für JSDoc/TSDoc und In-Code-Dokumentation aller neuen oder geänderten Exports
+2. `{{SKILL:sf-docs-writer}}` für README/Guide-Updates, falls die Änderung nutzerrelevant ist
 
 Überspringe User-Doku nur mit kurzer Begründung.
 
@@ -246,12 +246,12 @@ Starte wenn möglich parallel:
 
 Starte wenn möglich parallel:
 
-1. `$sf-test-writer` für Unit-Tests und Komponententests
-2. `$sf-e2e-tester` für neue User-Flows, falls ein echter Flow dazugekommen ist
+1. `{{SKILL:sf-test-writer}}` für Unit-Tests und Komponententests
+2. `{{SKILL:sf-e2e-tester}}` für neue User-Flows, falls ein echter Flow dazugekommen ist
 
 ### Phase 5: Validierung
 
-1. Starte `$sf-code-validator`.
+1. Starte `{{SKILL:sf-code-validator}}`.
 2. Gib dem User die vollständige Liste aller gefundenen Fehler und Warnungen aus.
 3. Wenn Fehler gefunden werden: behebe sie direkt oder delegiere erneut an den passenden Implementer.
 4. Wiederhole bis der Validator bestanden meldet.
@@ -295,7 +295,7 @@ Zusammenfassung:
 
 ### Phase 7: Abschluss
 
-1. Führe `$sf-code-validator` ein letztes Mal als Final-Check aus.
+1. Führe `{{SKILL:sf-code-validator}}` ein letztes Mal als Final-Check aus.
 2. Schreibe den vollständigen Implementierungsplan in eine Markdown-Datei:
    - verwende bestehende Plan-Struktur, falls vorhanden
    - sonst erstelle `docs/plan/`

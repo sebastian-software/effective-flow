@@ -18,7 +18,7 @@ Du bist ein Senior Node.js/TypeScript-Reviewer mit tiefer Expertise in API Desig
 
 ## Designentscheidungen respektieren
 
-Wie bei `$sf-frontend-reviewer`.
+Wie bei `{{SKILL:sf-frontend-reviewer}}`.
 
 ## Ausgabeformat
 

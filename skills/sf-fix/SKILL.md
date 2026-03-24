@@ -1,6 +1,6 @@
 ---
 name: sf-fix
-description: "Orchestriert den Bugfix-Workflow als Codex-Skill: Investigation, Reproduktion, Gap Analysis, Diagnose-Validierung, minimaler Fix, Regressionstests, Validierung und Abschluss. Verwendet Skill-Wechsel wie $sf-ui-implementer, $sf-nodejs-implementer, $sf-test-writer und $sf-code-validator."
+description: "Orchestriert den Bugfix-Workflow als Codex-Skill: Investigation, Reproduktion, Gap Analysis, Diagnose-Validierung, minimaler Fix, Regressionstests, Validierung und Abschluss. Verwendet Skill-Wechsel wie {{SKILL:sf-ui-implementer}}, {{SKILL:sf-nodejs-implementer}}, {{SKILL:sf-test-writer}} und {{SKILL:sf-code-validator}}."
 ---
 
 # SF Fix
@@ -45,12 +45,12 @@ Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lös
 
 ## Projekt-Typ-Erkennung
 
-Wie bei `$sf-build-feature`.
+Wie bei `{{SKILL:sf-build-feature}}`.
 
 ## Routing
 
-- Frontend: `$sf-ui-implementer`
-- Backend / CLI / Node.js: `$sf-nodejs-implementer`
+- Frontend: `{{SKILL:sf-ui-implementer}}`
+- Backend / CLI / Node.js: `{{SKILL:sf-nodejs-implementer}}`
 - Fullstack: beide, nur bei klarer Trennung parallel
 
 ## Review-Report-Rückverweise
@@ -59,7 +59,7 @@ Wenn dieser Bugfix ein Finding aus einer bestehenden `review-report-*.md` Datei 
 
 - identifiziere die betroffene Report-Datei früh im Workflow
 - ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
-- beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via $sf-fix`
+- beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via {{SKILL:sf-fix}}`
 - aktualisiere nur die Findings, die durch diesen Fix tatsächlich gelöst wurden
 
 ## Workflow
@@ -77,8 +77,8 @@ Wenn dieser Bugfix ein Finding aus einer bestehenden `review-report-*.md` Datei 
 ### Phase 2: Reproduktion
 
 1. Versuche den Bug zu reproduzieren:
-   - `$sf-code-validator` für aktuellen technischen Zustand
-   - falls möglich: `$sf-test-writer` für einen fehlschlagenden Test, der das Verhalten dokumentiert
+   - `{{SKILL:sf-code-validator}}` für aktuellen technischen Zustand
+   - falls möglich: `{{SKILL:sf-test-writer}}` für einen fehlschlagenden Test, der das Verhalten dokumentiert
 2. Führe eine Gap Analysis für Diagnose und Fix-Strategie durch:
    - Over-Engineering
    - unausgesprochene Annahmen
@@ -101,7 +101,7 @@ Wenn dieser Bugfix ein Finding aus einer bestehenden `review-report-*.md` Datei 
 ### Phase 3: Fix
 
 1. Starte den passenden Implementer-Skill:
-   - `$sf-ui-implementer` oder `$sf-nodejs-implementer`
+   - `{{SKILL:sf-ui-implementer}}` oder `{{SKILL:sf-nodejs-implementer}}`
 2. Gib einen präzisen Auftrag:
    - Root Cause
    - betroffene Dateien
@@ -112,9 +112,9 @@ Wenn dieser Bugfix ein Finding aus einer bestehenden `review-report-*.md` Datei 
 
 Starte parallel, wenn möglich:
 
-1. `$sf-test-writer`
+1. `{{SKILL:sf-test-writer}}`
    - bestätigt den fehlschlagenden Test aus Phase 2 oder schreibt einen Regressionstest
-2. `$sf-code-validator`
+2. `{{SKILL:sf-code-validator}}`
    - TypeScript, Lint und Build
 
 ### Phase 5: Abschluss

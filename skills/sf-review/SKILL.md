@@ -1,6 +1,6 @@
 ---
 name: sf-review
-description: "Orchestriert ein umfassendes Code-Review als Codex-Skill: Scope-Bestimmung, Designentscheidungs-Erkennung, technische Validierung, fachliches Review, Findings-Qualitätsprüfung und Berichtserstellung mit Prompt-Vorschlägen für $sf-fix, $sf-refactor oder $sf-build-feature."
+description: "Orchestriert ein umfassendes Code-Review als Codex-Skill: Scope-Bestimmung, Designentscheidungs-Erkennung, technische Validierung, fachliches Review, Findings-Qualitätsprüfung und Berichtserstellung mit Prompt-Vorschlägen für {{SKILL:sf-fix}}, {{SKILL:sf-refactor}} oder {{SKILL:sf-build-feature}}."
 ---
 
 # SF Review
@@ -9,7 +9,7 @@ Du bist der Orchestrator für umfassende Code-Reviews.
 
 ## Ziel
 
-Dieser Workflow analysiert Code-Qualität und erstellt einen strukturierten Bericht, dessen Findings direkt als Input für `$sf-fix`, `$sf-refactor` und `$sf-build-feature` dienen können.
+Dieser Workflow analysiert Code-Qualität und erstellt einen strukturierten Bericht, dessen Findings direkt als Input für `{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}` und `{{SKILL:sf-build-feature}}` dienen können.
 
 ## Standard-Sprachregel
 
@@ -64,12 +64,12 @@ Falls keine gefunden werden: `DESIGNENTSCHEIDUNGEN: Keine gefunden.`
 
 ## Projekt-Typ-Erkennung und Routing
 
-Wie bei `$sf-build-feature`.
+Wie bei `{{SKILL:sf-build-feature}}`.
 
 Reviewer-Routing:
 
-- Frontend -> `$sf-frontend-reviewer`
-- Backend / CLI / Node.js -> `$sf-nodejs-reviewer`
+- Frontend -> `{{SKILL:sf-frontend-reviewer}}`
+- Backend / CLI / Node.js -> `{{SKILL:sf-nodejs-reviewer}}`
 - Fullstack -> beide parallel
 
 ## Workflow
@@ -92,7 +92,7 @@ Reviewer-Routing:
 
 ### Phase 2: Technische Validierung
 
-1. Starte `$sf-code-validator` im Check-Modus:
+1. Starte `{{SKILL:sf-code-validator}}` im Check-Modus:
    - TypeScript
    - Lint
    - Build
@@ -128,9 +128,9 @@ Reviewer-Routing:
    - Designentscheidungs-Abgleich durchführen
    - Findings ausserhalb des gewählten Finding-Scopes aus dem Hauptbericht herausfiltern
 3. Bestimme für jedes verbleibende Finding die Folgeaktion:
-   - Defekt -> `$sf-fix`
-   - strukturelles Problem -> `$sf-refactor`
-   - fehlende Funktionalität / Schutzmechanismus -> `$sf-build-feature`
+   - Defekt -> `{{SKILL:sf-fix}}`
+   - strukturelles Problem -> `{{SKILL:sf-refactor}}`
+   - fehlende Funktionalität / Schutzmechanismus -> `{{SKILL:sf-build-feature}}`
 4. Formuliere Prompt-Vorschläge.
    - schreibe sie als direkt kopierbaren Klartext
    - verwende keine umschliessenden Anführungszeichen
@@ -163,9 +163,9 @@ Reviewer-Routing:
 
 | Aktion | Anzahl |
 |---|---|
-| $sf-fix | X |
-| $sf-refactor | Y |
-| $sf-build-feature | Z |
+| {{SKILL:sf-fix}} | X |
+| {{SKILL:sf-refactor}} | Y |
+| {{SKILL:sf-build-feature}} | Z |
 
 ## Findings
 
@@ -176,7 +176,7 @@ Reviewer-Routing:
 - **Datei**: [pfad:zeile]
 - **Problem**: [...]
 - **Empfehlung**: [...]
-- **Aktion**: `$sf-fix` | `$sf-refactor` | `$sf-build-feature`
+- **Aktion**: `{{SKILL:sf-fix}}` | `{{SKILL:sf-refactor}}` | `{{SKILL:sf-build-feature}}`
 - **Prompt-Vorschlag**: [...]
 
 ## Übersprungene Findings (Designentscheidungen)
@@ -186,7 +186,7 @@ Reviewer-Routing:
 | [...] | [DD-XXX] | [...] |
 ```
 
-Wenn ein Finding später über `$sf-fix`, `$sf-refactor` oder `$sf-build-feature` umgesetzt wird, darf die bestehende Report-Datei am betroffenen Finding um einen kurzen Statushinweis ergänzt werden, zum Beispiel `Umgesetzt am YYYY-MM-DD via $sf-fix`.
+Wenn ein Finding später über `{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}` oder `{{SKILL:sf-build-feature}}` umgesetzt wird, darf die bestehende Report-Datei am betroffenen Finding um einen kurzen Statushinweis ergänzt werden, zum Beispiel `Umgesetzt am YYYY-MM-DD via {{SKILL:sf-fix}}`.
 
 6. Präsentiere dem User die wichtigsten Findings und weise auf die gespeicherte Report-Datei hin.
 

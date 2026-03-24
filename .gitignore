@@ -1,3 +1,4 @@
 .claude/settings.local.json
 .wisdom-accumulation-*.tmp.md
 .DS_Store
+dist/

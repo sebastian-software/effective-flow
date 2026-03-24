@@ -1,115 +1,98 @@
-# SF Codex Skills
+# SF Skills
 
-Dieses Repository ist jetzt ein reines Skill-System für Codex. Die alte Claude-Code-Plugin-Struktur wurde entfernt.
+Dual-Platform Skills für Codex und Claude Code.
 
-## Nutzung
+## Plattformen
 
-Die früheren Slash-Commands sind jetzt Skills:
+| Plattform | Aufruf | Zielverzeichnis |
+|---|---|---|
+| Codex | `$sf-<name>` | `~/.codex/skills/` |
+| Claude Code | `/sf-<name>` | `~/.claude/skills/` |
 
-| Vorher | Jetzt |
+## Skills
+
+| Skill | Beschreibung |
 |---|---|
-| `/build-feature` | `$sf-build-feature` |
-| `/fix` | `$sf-fix` |
-| `/refactor` | `$sf-refactor` |
-| `/review` | `$sf-review` |
-
-Die früheren Agents sind ebenfalls Skills:
-
-| Vorher | Jetzt |
-|---|---|
-| `ui-implementer` | `$sf-ui-implementer` |
-| `nodejs-implementer` | `$sf-nodejs-implementer` |
-| `frontend-reviewer` | `$sf-frontend-reviewer` |
-| `nodejs-reviewer` | `$sf-nodejs-reviewer` |
-| `code-validator` | `$sf-code-validator` |
-| `code-documenter` | `$sf-code-documenter` |
-| `docs-writer` | `$sf-docs-writer` |
-| `test-writer` | `$sf-test-writer` |
-| `e2e-tester` | `$sf-e2e-tester` |
-| `commit` | `$sf-commit` |
+| `sf-build-feature` | Orchestriert den kompletten Feature-Workflow |
+| `sf-fix` | Bugfix-Workflow |
+| `sf-refactor` | Refactoring-Workflow |
+| `sf-review` | Umfassendes Code-Review |
+| `sf-commit` | Commit-Message für gestagte Änderungen |
+| `sf-ui-implementer` | Frontend-Implementierung |
+| `sf-nodejs-implementer` | Backend/CLI-Implementierung |
+| `sf-frontend-reviewer` | Frontend-Review |
+| `sf-nodejs-reviewer` | Backend/CLI-Review |
+| `sf-code-validator` | TypeScript, Lint, Build-Validierung |
+| `sf-code-documenter` | In-Code-Dokumentation |
+| `sf-docs-writer` | User-Dokumentation |
+| `sf-test-writer` | Unit-Tests |
+| `sf-e2e-tester` | E2E-Tests |
 
 ## Installation
-
-Zum lokalen Sync nach Codex:
 
 ```sh
 ./local-update.sh
 ```
 
-Das Script kopiert alle Skill-Ordner aus `skills/` nach `${CODEX_HOME:-$HOME/.codex}/skills`.
+Das Script:
+1. Baut die Skills für beide Plattformen (`dist/codex/`, `dist/claude/`)
+2. Kopiert sie nach `~/.codex/skills/` und `~/.claude/skills/`
+
+Für Symlinks statt Kopien:
+
+```sh
+./local-link.sh
+```
+
+## Build
+
+Die Source-Dateien in `skills/` verwenden Platzhalter-Syntax:
+
+```
+{{SKILL:sf-commit}}
+```
+
+Zur Build-Zeit wird transformiert:
+- Codex: `$sf-commit`
+- Claude Code: `/sf-commit`
+
+Nur Build ausführen (ohne Deployment):
+
+```sh
+./build.sh
+```
 
 ## Struktur
 
 ```text
-skills/
-  sf-build-feature/
-    SKILL.md
-  sf-fix/
-    SKILL.md
-  sf-refactor/
-    SKILL.md
-  sf-review/
-    SKILL.md
-  sf-ui-implementer/
-    SKILL.md
-  sf-nodejs-implementer/
-    SKILL.md
-  sf-frontend-reviewer/
-    SKILL.md
-  sf-nodejs-reviewer/
-    SKILL.md
-  sf-code-validator/
-    SKILL.md
-  sf-code-documenter/
-    SKILL.md
-  sf-docs-writer/
-    SKILL.md
-  sf-test-writer/
-    SKILL.md
-  sf-e2e-tester/
-    SKILL.md
-  sf-commit/
-    SKILL.md
+sf-claude-plugin/
+├── skills/                    # Source (Platzhalter-Syntax)
+│   ├── sf-build-feature/SKILL.md
+│   └── ...
+├── dist/                      # Generiert (gitignored)
+│   ├── codex/                 # $sf-* Syntax
+│   └── claude/                # /sf-* Syntax
+├── build.sh
+├── local-update.sh
+└── local-link.sh
 ```
 
 ## Orchestrierung
 
-Die Workflow-Skills bleiben Orchestratoren, rufen Spezialphasen aber nicht mehr über Claude-Agent-Calls auf. Stattdessen verwenden sie explizite Rollenwechsel im Prompt, zum Beispiel:
+Die Workflow-Skills verwenden explizite Skill-Wechsel im Prompt:
 
 ```text
-Verwende den Skill $sf-ui-implementer für diese Phase.
+Verwende den Skill {{SKILL:sf-ui-implementer}} für diese Phase.
 ```
-
-Wenn Aufgaben sauber getrennt und parallelisierbar sind, ist das interne Sub-Agent-Pattern vorgesehen. Wenn der nächste Schritt direkt vom Ergebnis abhängt, bleibt die Arbeit lokal auf dem kritischen Pfad.
 
 ## Sprachregeln
 
-Sofern der User nichts anderes verlangt, gilt für alle Skills:
+Sofern der User nichts anderes verlangt:
 
-- Code, Bezeichner, Tests und Commit-Messages sind auf Englisch.
-- Dokumentation ist auf Deutsch.
-- Wenn bereits Dokumentation vorhanden ist, wird deren bestehende Sprache fortgeführt.
-
-## Inhalte
-
-- Workflow-Skills für Feature, Fix, Refactor und Review
-- Rollen-Skills für Implementierung, Review, Validierung, Doku und Tests
-- Designentscheidungs-respektierende Reviews
-- Routing für Frontend, Backend, CLI und Fullstack
+- Code, Bezeichner, Tests und Commit-Messages sind auf Englisch
+- Dokumentation ist auf Deutsch
+- Bestehende Dokumentationssprache wird fortgeführt
 
 ## Migration
-
-Entfernt wurden:
-
-- Claude-Plugin-Manifeste
-- `commands/`
-- `agents/`
-- Claude-spezifische Aufrufmuster wie `AskUserQuestion`
-
-Ersetzt wurden sie durch:
-
-- `skills/<name>/SKILL.md`
-- Skill-Namen mit `$`-Aufrufkonvention
-- Codex-kompatible Orchestrierung über Rollenwechsel im Prompt
 
 Details zu bewusst nicht 1:1 portierbaren Claude-Mechaniken stehen in [docs/skill-migration-notes.md](/Users/bs5/Developer/sf-claude-plugin/docs/skill-migration-notes.md).

@@ -30,7 +30,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Commit und beac
    - `refactor:` für Strukturverbesserungen ohne Verhaltensänderung
    - `test:` für Teständerungen
 3. Formuliere eine kurze, konkrete Summary-Zeile, die den inhaltlichen Kern der staged changes beschreibt.
-4. Führe keine eigenständige Projektvalidation aus; Linting, Tests und andere Qualitätsprüfungen sind Aufgabe anderer Skills wie `$sf-code-validator` und `$sf-test-writer`.
+4. Führe keine eigenständige Projektvalidation aus; Linting, Tests und andere Qualitätsprüfungen sind Aufgabe anderer Skills wie `{{SKILL:sf-code-validator}}` und `{{SKILL:sf-test-writer}}`.
 5. Führe `git commit` für genau diese staged changes aus.
 
 ## Regeln

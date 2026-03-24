@@ -1,6 +1,6 @@
 ---
 name: sf-refactor
-description: "Orchestriert den Refactoring-Workflow als Codex-Skill mit Analyse, Gap Analysis, Plan-Validierung, Baseline, Refactoring, Review, ADR-Optionen, Nachvalidierung und Vorher/Nachher-Vergleich. Verwendet $sf-ui-implementer, $sf-nodejs-implementer, $sf-code-validator, $sf-test-writer und die passenden Reviewer-Skills."
+description: "Orchestriert den Refactoring-Workflow als Codex-Skill mit Analyse, Gap Analysis, Plan-Validierung, Baseline, Refactoring, Review, ADR-Optionen, Nachvalidierung und Vorher/Nachher-Vergleich. Verwendet {{SKILL:sf-ui-implementer}}, {{SKILL:sf-nodejs-implementer}}, {{SKILL:sf-code-validator}}, {{SKILL:sf-test-writer}} und die passenden Reviewer-Skills."
 ---
 
 # SF Refactor
@@ -23,7 +23,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Analyse und Refacto
 
 ## Fertig-Protokoll
 
-Wie bei `$sf-build-feature`: `ERLEDIGT` / `ABBRUCH: [Grund]` mit Retry-Eskalation über drei Stufen.
+Wie bei `{{SKILL:sf-build-feature}}`: `ERLEDIGT` / `ABBRUCH: [Grund]` mit Retry-Eskalation über drei Stufen.
 
 ## Wisdom Accumulation
 
@@ -37,7 +37,7 @@ Nutze `.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
 
 ## Projekt-Typ-Erkennung und Routing
 
-Wie bei `$sf-build-feature`.
+Wie bei `{{SKILL:sf-build-feature}}`.
 
 ## Review-Report-Rückverweise
 
@@ -45,7 +45,7 @@ Wenn dieses Refactoring ein Finding aus einer bestehenden `review-report-*.md` D
 
 - identifiziere die betroffene Report-Datei früh im Workflow
 - ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
-- beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via $sf-refactor`
+- beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via {{SKILL:sf-refactor}}`
 - aktualisiere nur die Findings, die durch dieses Refactoring tatsächlich adressiert wurden
 
 ## Workflow
@@ -84,11 +84,11 @@ Wenn dieses Refactoring ein Finding aus einer bestehenden `review-report-*.md` D
 
 Starte parallel:
 
-1. `$sf-code-validator`
+1. `{{SKILL:sf-code-validator}}`
    - TypeScript-Fehler
    - Lint-Fehler
    - Build-Status
-2. `$sf-test-writer`
+2. `{{SKILL:sf-test-writer}}`
    - führe alle bestehenden Tests aus und dokumentiere das Ergebnis
    - schreibe in dieser Phase keine neuen Tests
 
@@ -122,8 +122,8 @@ Dokumentiere die Baseline für den späteren Vergleich.
 
 Starte parallel:
 
-1. `$sf-code-validator`
-2. `$sf-test-writer`
+1. `{{SKILL:sf-code-validator}}`
+2. `{{SKILL:sf-test-writer}}`
    - führt alle bestehenden Tests erneut aus
    - schreibt keine neuen Tests
 
