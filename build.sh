@@ -8,6 +8,7 @@ DIST_CLAUDE="$ROOT_DIR/dist/claude"
 
 CLAUDE_PLUGIN_NAME="sf-frontend-workflows"
 CLAUDE_PLUGIN_DIR="$DIST_CLAUDE/$CLAUDE_PLUGIN_NAME"
+VERSION="$(cat "$ROOT_DIR/version.txt")"
 
 rm -rf "$DIST_CODEX" "$DIST_CLAUDE"
 mkdir -p "$DIST_CODEX/skills" "$DIST_CODEX/agents"
@@ -222,6 +223,34 @@ for skill_dir in "$SOURCE_DIR"/sf-*; do
       ;;
   esac
 done
+
+# --- marketplace.json for Claude Code ---
+cat > "$CLAUDE_PLUGIN_DIR/.claude-plugin/marketplace.json" <<MJSON
+{
+  "\$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "sf-claude-plugin",
+  "metadata": {
+    "description": "Orchestrierte Frontend- und Backend-Workflows fuer Claude Code",
+    "version": "$VERSION"
+  },
+  "owner": {
+    "name": "Sebastian Fastner"
+  },
+  "plugins": [
+    {
+      "name": "$CLAUDE_PLUGIN_NAME",
+      "version": "$VERSION",
+      "source": ".",
+      "description": "Orchestrierte Workflows (build-feature, fix, refactor, review) mit spezialisierten Agents fuer Frontend, Backend, CLI und Node.js",
+      "category": "development",
+      "tags": ["frontend", "backend", "nodejs", "cli", "workflow", "orchestration", "review", "testing"],
+      "author": {
+        "name": "Sebastian Fastner"
+      }
+    }
+  ]
+}
+MJSON
 
 # --- Summary ---
 codex_skills=$(ls -1 "$DIST_CODEX/skills/" 2>/dev/null | wc -l | tr -d ' ')
