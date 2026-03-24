@@ -1,6 +1,6 @@
 ---
 name: sf-review
-description: "Orchestriert ein umfassendes Code-Review als Codex-Skill: Scope-Bestimmung, Designentscheidungs-Erkennung, technische Validierung, fachliches Review, Findings-Qualitätsprüfung und Berichtserstellung mit Prompt-Vorschlägen für {{SKILL:sf-fix}}, {{SKILL:sf-refactor}} oder {{SKILL:sf-build-feature}}."
+description: "Orchestriert ein umfassendes Code-Review: Scope-Bestimmung, Designentscheidungs-Erkennung, technische Validierung, fachliches Review, Findings-Qualitätsprüfung und Berichtserstellung mit Prompt-Vorschlägen für {{SKILL:sf-fix}}, {{SKILL:sf-refactor}} oder {{SKILL:sf-build-feature}}."
 ---
 
 # SF Review
@@ -135,7 +135,7 @@ Reviewer-Routing:
    - schreibe sie als direkt kopierbaren Klartext
    - verwende keine umschliessenden Anführungszeichen
    - verwende keine Escape-Sequenzen wie `\"`
-   - formuliere sie so, dass sie direkt per Copy-und-Paste in Codex verwendet werden können
+   - formuliere sie so, dass sie direkt per Copy-und-Paste verwendet werden können
 5. Erstelle einen Bericht als `review-report-YYYY-MM-DD[-N].md`.
 
 ### Bericht-Format

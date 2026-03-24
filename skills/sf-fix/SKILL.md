@@ -1,6 +1,6 @@
 ---
 name: sf-fix
-description: "Orchestriert den Bugfix-Workflow als Codex-Skill: Investigation, Reproduktion, Gap Analysis, Diagnose-Validierung, minimaler Fix, Regressionstests, Validierung und Abschluss. Verwendet Skill-Wechsel wie {{SKILL:sf-ui-implementer}}, {{SKILL:sf-nodejs-implementer}}, {{SKILL:sf-test-writer}} und {{SKILL:sf-code-validator}}."
+description: "Orchestriert den Bugfix-Workflow: Investigation, Reproduktion, Gap Analysis, Diagnose-Validierung, minimaler Fix, Regressionstests, Validierung und Abschluss. Verwendet Skill-Wechsel wie {{SKILL:sf-ui-implementer}}, {{SKILL:sf-nodejs-implementer}}, {{SKILL:sf-test-writer}} und {{SKILL:sf-code-validator}}."
 ---
 
 # SF Fix

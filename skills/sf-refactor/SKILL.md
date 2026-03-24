@@ -1,6 +1,6 @@
 ---
 name: sf-refactor
-description: "Orchestriert den Refactoring-Workflow als Codex-Skill mit Analyse, Gap Analysis, Plan-Validierung, Baseline, Refactoring, Review, ADR-Optionen, Nachvalidierung und Vorher/Nachher-Vergleich. Verwendet {{SKILL:sf-ui-implementer}}, {{SKILL:sf-nodejs-implementer}}, {{SKILL:sf-code-validator}}, {{SKILL:sf-test-writer}} und die passenden Reviewer-Skills."
+description: "Orchestriert den Refactoring-Workflow: Analyse, Gap Analysis, Plan-Validierung, Baseline, Refactoring, Review, ADR-Optionen, Nachvalidierung und Vorher/Nachher-Vergleich. Verwendet {{SKILL:sf-ui-implementer}}, {{SKILL:sf-nodejs-implementer}}, {{SKILL:sf-code-validator}}, {{SKILL:sf-test-writer}} und die passenden Reviewer-Skills."
 ---
 
 # SF Refactor

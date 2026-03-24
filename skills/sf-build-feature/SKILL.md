@@ -1,17 +1,11 @@
 ---
 name: sf-build-feature
-description: "Orchestriert den kompletten Feature-Workflow als Codex-Skill: Intent-Gate, initiale Zustandsdokumentation, Planung, Implementierung, Dokumentation, Tests, Validierung, Review, ADR-Optionen und Abschluss. Verwendet explizite Skill-Wechsel wie {{SKILL:sf-ui-implementer}}, {{SKILL:sf-nodejs-implementer}}, {{SKILL:sf-code-validator}}, {{SKILL:sf-test-writer}}, {{SKILL:sf-docs-writer}} und {{SKILL:sf-frontend-reviewer}}."
+description: "Orchestriert den kompletten Feature-Workflow: Intent-Gate, initiale Zustandsdokumentation, Planung, Implementierung, Dokumentation, Tests, Validierung, Review, ADR-Optionen und Abschluss. Verwendet explizite Skill-Wechsel wie {{SKILL:sf-ui-implementer}}, {{SKILL:sf-nodejs-implementer}}, {{SKILL:sf-code-validator}}, {{SKILL:sf-test-writer}}, {{SKILL:sf-docs-writer}} und {{SKILL:sf-frontend-reviewer}}."
 ---
 
 # SF Build Feature
 
 Du bist der Orchestrator für den kompletten Entwicklungs-Workflow für neue Features.
-
-## Codex-Migration
-
-- `/build-feature` wird zu `{{SKILL:sf-build-feature}}`
-- frühere Agent-Calls werden durch explizite Skill-Wechsel oder das interne Sub-Agent-Pattern ersetzt
-- Claude-spezifische APIs werden nicht verwendet; gleichwertige Schritte bleiben als Workflow-Regel erhalten
 
 ## Standard-Sprachregel
 
