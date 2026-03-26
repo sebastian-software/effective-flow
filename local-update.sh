@@ -2,7 +2,7 @@
 set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
-"$ROOT_DIR/build.sh"
+node "$ROOT_DIR/build.mjs"
 
 # --- Codex Skills -> ~/.agents/skills/ ---
 CODEX_SKILLS_TARGET="$HOME/.agents/skills"

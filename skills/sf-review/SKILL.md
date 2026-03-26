@@ -30,8 +30,15 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Review und beha
 
 Frage zu Beginn des Reviews explizit nach dem gewünschten Finding-Scope:
 
-- `1` nur kritische und wichtige Findings
-- `2` alle Findings, also kritisch, wichtig und Hinweise
+{{ASK}}
+header: Scope
+question: Welchen Finding-Scope möchtest du für das Review?
+options:
+  - label: Nur kritisch+wichtig
+    description: Filtert Hinweise heraus, zeigt nur kritische und wichtige Findings
+  - label: Alle Findings
+    description: Zeigt alle Schweregrade — kritisch, wichtig und Hinweise
+{{/ASK}}
 
 Wenn der User nichts anderes festlegt, frage nach, bevor du das eigentliche Review startest. Verwende die Entscheidung als Filter für Reviewer-Auftrag, Aggregation, Bericht und Zusammenfassung.
 
@@ -86,10 +93,14 @@ Reviewer-Routing:
 3. Untersuche Projektstruktur und Projekt-Typ.
 4. Sammle Designentscheidungen aus allen Quellen.
 5. Bestimme den finalen Review-Scope.
-6. Frage den User explizit nach dem gewünschten Finding-Scope:
-   - `1` nur kritische und wichtige Findings
-   - `2` alle Findings
+6. Frage den User nach dem Finding-Scope (siehe oben).
 7. Hole User-Bestätigung ein, wenn Scope oder Review-Ziel unklar ist.
+
+{{ASK}}
+header: Review-Scope
+question: Review-Scope und Finding-Scope bestätigt?
+type: approval
+{{/ASK}}
 
 ### Phase 2: Technische Validierung
 

@@ -99,6 +99,12 @@ Wenn dieser Bugfix ein Finding aus einer bestehenden `review-report-*.md` Datei 
    - Validierungs-Scorecard
 5. Hole Freigabe ein, wenn Ursache oder Fix-Strategie nicht eindeutig sind.
 
+{{ASK}}
+header: Fix-Strategie
+question: Diagnose und Fix-Strategie freigegeben?
+type: approval
+{{/ASK}}
+
 ### Phase 3: Fix
 
 1. Starte den passenden Implementer-Skill:

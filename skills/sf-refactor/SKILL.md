@@ -81,6 +81,12 @@ Wenn dieses Refactoring ein Finding aus einer bestehenden `review-report-*.md` D
 7. Präsentiere den Plan mit Scorecard.
 8. Hole Freigabe ein.
 
+{{ASK}}
+header: Freigabe
+question: Refactoring-Plan freigegeben?
+type: approval
+{{/ASK}}
+
 ### Phase 2: Baseline
 
 Starte parallel:
@@ -113,7 +119,13 @@ Dokumentiere die Baseline für den späteren Vergleich.
    - Hinweis: optional
 3. Präsentiere die Review-Ergebnisse detailliert, einschliesslich Status je Finding.
 4. Falls Findings bewusst nicht umgesetzt werden:
-   - frage nach ADR-Erstellung
+
+{{ASK}}
+header: ADR
+question: Sollen ADRs in docs/adr/ für nicht umgesetzte Findings erzeugt werden?
+type: approval
+{{/ASK}}
+
    - erzeuge bei Zustimmung ADRs in `docs/adr/` mit Kontext `/refactor`
 5. Wenn diese Phase ein Finding aus einer bestehenden `review-report-*.md` Datei umgesetzt hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis

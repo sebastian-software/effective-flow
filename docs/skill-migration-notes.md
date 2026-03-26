@@ -16,18 +16,19 @@ Original:
 
 - strukturierte Mehrfachauswahl mit festen Optionen in der Claude-UI
 
-Codex-Ersatz:
+Lösung:
 
-- direkte Rückfrage an den User im Chat
-
-Verlust:
-
-- keine erzwungene Auswahl-UI
-- keine garantierte Optionsstruktur
+- `{{ASK}}...{{/ASK}}` Block-Syntax in den Source-Skills
+- Build transformiert plattformspezifisch:
+  - Claude Code: Anweisung, das `AskUserQuestion`-Tool mit strukturierten Optionen zu verwenden
+  - Codex: Freitext-Frage mit formatierten Optionen im Chat
+- Sonderfall `type: approval`: nur "Ja" als explizite Option, Freitext-Feedback über "Other" (Claude) bzw. direkten Text (Codex)
 
 Erhalten bleibt:
 
 - der Workflow stoppt weiterhin an denselben Entscheidungsstellen und fordert User-Input an
+- Claude Code nutzt jetzt die native strukturierte UI
+- Codex behält die bewährte Chat-basierte Interaktion
 
 ### 2. Explizite Agent-Calls mit festem Agent-Namen
 

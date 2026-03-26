@@ -2,7 +2,7 @@
 set -eu
 
 ROOT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
-"$ROOT_DIR/build.sh"
+node "$ROOT_DIR/build.mjs"
 
 # Helper: remove and symlink
 link_target() {
@@ -33,9 +33,9 @@ for toml_file in "$ROOT_DIR/dist/codex/agents"/sf-*.toml; do
 done
 
 # --- Claude Code Plugin -> ~/.claude/plugins/ ---
-CLAUDE_TARGET="${CLAUDE_HOME:-$HOME/.claude}/plugins/sf-frontend-workflows"
+CLAUDE_TARGET="${CLAUDE_HOME:-$HOME/.claude}/plugins/marketplaces/sf-claude-plugin"
 mkdir -p "$(dirname "$CLAUDE_TARGET")"
-link_target "$CLAUDE_TARGET" "$ROOT_DIR/dist/claude/sf-frontend-workflows"
+link_target "$CLAUDE_TARGET" "$ROOT_DIR/dist/claude/sf-claude-plugin"
 
 # --- Cleanup old locations ---
 OLD_CODEX_SKILLS="${CODEX_HOME:-$HOME/.codex}/skills"

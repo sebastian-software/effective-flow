@@ -29,7 +29,19 @@ Bevor du den Workflow startest, klassifiziere die Anforderung des Users:
    - Bugfix: Fehler beheben, etwas funktioniert nicht, unerwartetes Verhalten
    - Refactoring: Code umstrukturieren, Performance verbessern, technische Schulden abbauen, ohne Verhalten zu ändern
 2. Falls der Intent eindeutig ein Feature ist: weiter.
-3. Falls der Intent nicht eindeutig ist: frage den User direkt und knapp, bevor du fortfährst.
+3. Falls der Intent nicht eindeutig ist, frage den User:
+
+{{ASK}}
+header: Intent
+question: Welchen Typ hat diese Anforderung?
+options:
+  - label: Feature
+    description: Neue Funktionalität, neues UI-Element, neue Seite oder Integration
+  - label: Bugfix
+    description: Fehler beheben, unerwartetes Verhalten korrigieren
+  - label: Refactoring
+    description: Code umstrukturieren ohne Verhaltensänderung
+{{/ASK}}
 4. Bei Bugfix oder Refactoring:
    - gib eine deutlich sichtbare Meldung aus, dass kein Feature erkannt wurde
    - verweise an `{{SKILL:sf-fix}}` bzw. `{{SKILL:sf-refactor}}`
@@ -219,6 +231,12 @@ Wenn dieses Feature ein Finding aus einer bestehenden `review-report-*.md` Datei
 8. Präsentiere dem User den bereinigten Plan mit Validierungs-Scorecard.
 9. Hole explizite Freigabe ein. Starte Phase 2 nicht ohne diese Freigabe.
 
+{{ASK}}
+header: Freigabe
+question: Implementierungsplan freigegeben?
+type: approval
+{{/ASK}}
+
 ### Phase 2: Implementierung
 
 1. Starte den passenden Implementer-Skill mit dem abgestimmten Plan:
@@ -282,7 +300,13 @@ Zusammenfassung:
    - Status
    - Begründung bei Nicht-Umsetzung
 7. Falls Findings bewusst nicht umgesetzt werden:
-   - frage den User, ob ADRs in `docs/adr/` erzeugt werden sollen
+
+{{ASK}}
+header: ADR
+question: Sollen ADRs in docs/adr/ für nicht umgesetzte Findings erzeugt werden?
+type: approval
+{{/ASK}}
+
    - bei Zustimmung: erzeuge für jedes nicht umgesetzte Finding ein ADR-Dokument mit laufender Nummer, Kebab-Case-Titel, Kontext `/build-feature` und Quelle des Findings
 8. Wenn diese Phase ein Finding aus einer bestehenden `review-report-*.md` Datei umgesetzt hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis

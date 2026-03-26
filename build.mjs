@@ -1,0 +1,331 @@
+#!/usr/bin/env node
+
+import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, statSync } from 'node:fs';
+import { join, basename, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
+const SOURCE_DIR = join(ROOT_DIR, 'skills');
+const DIST_CODEX = join(ROOT_DIR, 'dist', 'codex');
+const DIST_CLAUDE = join(ROOT_DIR, 'dist', 'claude');
+
+const CLAUDE_PLUGIN_NAME = 'sf-frontend-workflows';
+const CLAUDE_MARKETPLACE_NAME = 'sf-claude-plugin';
+const CLAUDE_MARKETPLACE_DIR = join(DIST_CLAUDE, CLAUDE_MARKETPLACE_NAME);
+const CLAUDE_PLUGIN_DIR = join(CLAUDE_MARKETPLACE_DIR, 'plugins', CLAUDE_PLUGIN_NAME);
+const VERSION = readFileSync(join(ROOT_DIR, 'version.txt'), 'utf8').trim();
+
+// --- Clean and create output directories ---
+
+rmSync(DIST_CODEX, { recursive: true, force: true });
+rmSync(DIST_CLAUDE, { recursive: true, force: true });
+mkdirSync(join(DIST_CODEX, 'skills'), { recursive: true });
+mkdirSync(join(DIST_CODEX, 'agents'), { recursive: true });
+mkdirSync(join(CLAUDE_MARKETPLACE_DIR, '.claude-plugin'), { recursive: true });
+mkdirSync(join(CLAUDE_PLUGIN_DIR, 'commands'), { recursive: true });
+mkdirSync(join(CLAUDE_PLUGIN_DIR, 'agents'), { recursive: true });
+
+// --- Helper functions ---
+
+function extractFrontmatter(content) {
+  const match = content.match(/^---\n([\s\S]*?)\n---\n/);
+  return match ? match[1] : '';
+}
+
+function extractBody(content) {
+  const match = content.match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
+  return match ? match[1].replace(/\n+$/, '\n') : '';
+}
+
+function getField(frontmatter, key) {
+  const re = new RegExp(`^${key}:\\s*"?(.+?)"?$`, 'm');
+  const match = frontmatter.match(re);
+  return match ? match[1] : '';
+}
+
+function getNested(frontmatter, section, key) {
+  const sectionRe = new RegExp(`^${section}:\\s*$`, 'm');
+  const sectionMatch = sectionRe.exec(frontmatter);
+  if (!sectionMatch) return '';
+
+  const afterSection = frontmatter.slice(sectionMatch.index + sectionMatch[0].length);
+  const sectionEnd = afterSection.search(/^\S/m);
+  const sectionBlock = sectionEnd === -1 ? afterSection : afterSection.slice(0, sectionEnd);
+
+  const keyRe = new RegExp(`^\\s+${key}:\\s*"?(.+?)"?$`, 'm');
+  const keyMatch = sectionBlock.match(keyRe);
+  return keyMatch ? keyMatch[1] : '';
+}
+
+function getNestedArray(frontmatter, section, key) {
+  const sectionRe = new RegExp(`^${section}:\\s*$`, 'm');
+  const sectionMatch = sectionRe.exec(frontmatter);
+  if (!sectionMatch) return '';
+
+  const afterSection = frontmatter.slice(sectionMatch.index + sectionMatch[0].length);
+  const sectionEnd = afterSection.search(/^\S/m);
+  const sectionBlock = sectionEnd === -1 ? afterSection : afterSection.slice(0, sectionEnd);
+
+  const keyRe = new RegExp(`^\\s+${key}:\\s*\\[(.+?)\\]`, 'm');
+  const keyMatch = sectionBlock.match(keyRe);
+  if (!keyMatch) return '';
+
+  return keyMatch[1].replace(/\s/g, '');
+}
+
+function getNestedList(frontmatter, section, key) {
+  const sectionRe = new RegExp(`^${section}:\\s*$`, 'm');
+  const sectionMatch = sectionRe.exec(frontmatter);
+  if (!sectionMatch) return '';
+
+  const afterSection = frontmatter.slice(sectionMatch.index + sectionMatch[0].length);
+  const sectionEnd = afterSection.search(/^\S/m);
+  const sectionBlock = sectionEnd === -1 ? afterSection : afterSection.slice(0, sectionEnd);
+
+  const keyRe = new RegExp(`^\\s+${key}:\\s*(.*)$`, 'm');
+  const keyMatch = sectionBlock.match(keyRe);
+  if (!keyMatch) return '';
+
+  const rest = keyMatch[1].trim();
+
+  // Inline array [a, b, c]
+  if (rest.startsWith('[')) {
+    const items = rest.slice(1, -1).split(',').map(s => s.trim()).filter(Boolean);
+    return items.map(item => `  - ${item}`).join('\n');
+  }
+
+  // Multi-line list (- items after key line)
+  const afterKey = sectionBlock.slice(keyMatch.index + keyMatch[0].length);
+  const lines = afterKey.split('\n');
+  const items = [];
+  for (const line of lines) {
+    const itemMatch = line.match(/^\s+-\s+(.+)/);
+    if (itemMatch) {
+      items.push(`  - ${itemMatch[1]}`);
+    } else if (line.trim() && !line.match(/^\s+-/)) {
+      break;
+    }
+  }
+  return items.join('\n');
+}
+
+function stripPrefix(name) {
+  return name.replace(/^sf-/, '');
+}
+
+function cleanDescription(desc) {
+  return desc
+    .replace(/\{\{SKILL:([^}]+)\}\}/g, '$1')
+    .replace(/\{\{AGENT:([^}]+)\}\}/g, '$1');
+}
+
+// --- Placeholder transforms ---
+
+function transformClaude(body) {
+  return body
+    .replace(/\{\{SKILL:sf-([^}]+)\}\}/g, '/$1')
+    .replace(/\{\{AGENT:sf-([^}]+)\}\}/g, '/$1');
+}
+
+function transformCodexSkill(body) {
+  return body
+    .replace(/\{\{SKILL:([^}]+)\}\}/g, '$$$1')
+    .replace(/\{\{AGENT:([^}]+)\}\}/g, '$1');
+}
+
+function transformCodexAgent(body) {
+  return body
+    .replace(/\{\{SKILL:([^}]+)\}\}/g, '$1')
+    .replace(/\{\{AGENT:([^}]+)\}\}/g, '$1');
+}
+
+// --- ASK block transforms ---
+
+function parseAskBlock(block) {
+  block = block.replace(/\r/g, '');
+  const headerMatch = block.match(/header:\s*(.+)/);
+  const questionMatch = block.match(/question:\s*(.+)/);
+  const typeMatch = block.match(/type:\s*(\S+)/);
+
+  const header = headerMatch ? headerMatch[1].trim() : null;
+  const question = questionMatch ? questionMatch[1].trim() : null;
+  const type = typeMatch ? typeMatch[1].trim() : null;
+
+  if (!header) throw new Error('ASK block missing header field');
+  if (!question) throw new Error('ASK block missing question field');
+
+  let options = [];
+  if (type !== 'approval') {
+    const optsMatch = block.match(/options:\s*\n((?:\s+-\s+label:.*\n\s+description:.*\n?)*)/);
+    if (!optsMatch) throw new Error('ASK block missing options');
+    const optsBlock = optsMatch[1];
+    const optRe = /-\s+label:\s*(.+?)\n\s*description:\s*(.+)/g;
+    let m;
+    while ((m = optRe.exec(optsBlock)) !== null) {
+      options.push({ label: m[1].trim(), description: m[2].trim() });
+    }
+  }
+
+  return { header, question, type, options };
+}
+
+function transformAskClaude(body) {
+  return body.replace(/\{\{ASK\}\}\s*\n([\s\S]*?)\{\{\/ASK\}\}/g, (_, block) => {
+    const { header, question, type, options } = parseAskBlock(block);
+    let out = 'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:\n';
+    out += `- header: "${header}"\n`;
+    out += `- question: "${question}"\n`;
+    out += '- multiSelect: false\n';
+    out += '- options:\n';
+    if (type === 'approval') {
+      out += '  - label: "Ja", description: "Freigabe erteilt"\n';
+      out += '  - label: "Anpassen", description: "Feedback als Freitext eingeben"';
+    } else {
+      out += options.map(o => `  - label: "${o.label}", description: "${o.description}"`).join('\n');
+    }
+    return out;
+  });
+}
+
+function transformAskCodex(body) {
+  return body.replace(/\{\{ASK\}\}\s*\n([\s\S]*?)\{\{\/ASK\}\}/g, (_, block) => {
+    const { question, type, options } = parseAskBlock(block);
+    if (type === 'approval') {
+      return `Frage den User: **${question}** Antworte mit "Ja" oder gib Feedback als Freitext.`;
+    }
+    let out = `Frage den User: **${question}**\n`;
+    out += options.map(o => `- ${o.label} -- ${o.description}`).join('\n');
+    return out;
+  });
+}
+
+// --- Build loop ---
+
+const skillDirs = readdirSync(SOURCE_DIR)
+  .filter(name => name.startsWith('sf-'))
+  .map(name => join(SOURCE_DIR, name))
+  .filter(path => statSync(path).isDirectory());
+
+for (const skillDir of skillDirs) {
+  const skillName = basename(skillDir);
+  const shortName = stripPrefix(skillName);
+  const src = join(skillDir, 'SKILL.md');
+
+  const content = readFileSync(src, 'utf8');
+  const fm = extractFrontmatter(content);
+  const body = extractBody(content);
+
+  const skillType = getField(fm, 'type');
+  const description = getField(fm, 'description');
+
+  if (skillType === 'orchestrator' || skillType === 'utility') {
+    // --- Codex: Skill (SKILL.md) ---
+    const codexDir = join(DIST_CODEX, 'skills', skillName);
+    mkdirSync(codexDir, { recursive: true });
+    const codexBody = transformCodexSkill(transformAskCodex(body));
+    const codexContent = [
+      '---',
+      `name: ${skillName}`,
+      `description: "${cleanDescription(description)}"`,
+      '---',
+      codexBody,
+    ].join('\n');
+    writeFileSync(join(codexDir, 'SKILL.md'), codexContent);
+
+    // --- Claude Code: Command ---
+    const claudeDesc = cleanDescription(description);
+    const claudeBody = transformClaude(transformAskClaude(body));
+    const claudeContent = [
+      '---',
+      `description: ${claudeDesc}`,
+      '---',
+      claudeBody,
+    ].join('\n');
+    writeFileSync(join(CLAUDE_PLUGIN_DIR, 'commands', `${shortName}.md`), claudeContent);
+
+  } else if (skillType === 'agent') {
+    // --- Codex: Custom Agent (TOML) ---
+    const codexModel = getNested(fm, 'codex', 'model');
+    const codexEffort = getNested(fm, 'codex', 'model_reasoning_effort');
+    const codexSandbox = getNested(fm, 'codex', 'sandbox_mode');
+    const tomlDesc = cleanDescription(description);
+    const tomlBody = transformCodexAgent(transformAskCodex(body));
+
+    let toml = `name = "${skillName}"\n`;
+    toml += `description = "${tomlDesc}"\n`;
+    if (codexModel) toml += `model = "${codexModel}"\n`;
+    if (codexEffort) toml += `model_reasoning_effort = "${codexEffort}"\n`;
+    if (codexSandbox) toml += `sandbox_mode = "${codexSandbox}"\n`;
+    toml += `developer_instructions = '''\n${tomlBody.replace(/\n+$/, '')}\n'''\n`;
+    writeFileSync(join(DIST_CODEX, 'agents', `${skillName}.toml`), toml);
+
+    // --- Claude Code: Agent ---
+    const claudeModel = getNested(fm, 'claude', 'model');
+    const claudeColor = getNested(fm, 'claude', 'color');
+    const claudeTools = getNestedArray(fm, 'claude', 'tools');
+    const claudeSkills = getNestedList(fm, 'claude', 'skills');
+
+    let agentFm = '---\n';
+    agentFm += `name: ${shortName}\n`;
+    agentFm += `description: ${cleanDescription(description)}\n`;
+    if (claudeModel) agentFm += `model: ${claudeModel}\n`;
+    if (claudeColor) agentFm += `color: ${claudeColor}\n`;
+    if (claudeTools) {
+      const toolList = claudeTools.split(',').map(t => t.trim()).filter(Boolean).join(', ');
+      agentFm += `tools: ${toolList}\n`;
+    }
+    if (claudeSkills) agentFm += `skills:\n${claudeSkills}\n`;
+    agentFm += '---\n';
+
+    const agentBody = transformClaude(transformAskClaude(body));
+    writeFileSync(join(CLAUDE_PLUGIN_DIR, 'agents', `${shortName}.md`), agentFm + agentBody);
+
+  } else {
+    process.stderr.write(`WARNING: Unknown type "${skillType}" for ${skillName}, skipping\n`);
+  }
+}
+
+// --- marketplace.json for Claude Code ---
+
+const marketplace = {
+  $schema: 'https://anthropic.com/claude-code/marketplace.schema.json',
+  name: CLAUDE_MARKETPLACE_NAME,
+  description: 'Orchestrierte Frontend- und Backend-Workflows fuer Claude Code',
+  owner: { name: 'Sebastian Fastner' },
+  plugins: [
+    {
+      name: CLAUDE_PLUGIN_NAME,
+      version: VERSION,
+      source: `./plugins/${CLAUDE_PLUGIN_NAME}`,
+      description: 'Orchestrierte Workflows (build-feature, fix, refactor, review) mit spezialisierten Agents fuer Frontend, Backend, CLI und Node.js',
+      category: 'development',
+      tags: ['frontend', 'backend', 'nodejs', 'cli', 'workflow', 'orchestration', 'review', 'testing'],
+      author: { name: 'Sebastian Fastner' },
+    },
+  ],
+};
+// Format with compact arrays to match original shell output
+let marketplaceJson = JSON.stringify(marketplace, null, 2);
+// Collapse arrays that were expanded across multiple lines into single-line
+marketplaceJson = marketplaceJson.replace(
+  /\[\n\s+("(?:[^"]*)",?\n\s*)+\]/g,
+  (match) => {
+    const items = [...match.matchAll(/"([^"]*)"/g)].map(m => `"${m[1]}"`);
+    return `[${items.join(', ')}]`;
+  },
+);
+writeFileSync(
+  join(CLAUDE_MARKETPLACE_DIR, '.claude-plugin', 'marketplace.json'),
+  marketplaceJson + '\n',
+);
+
+// --- Summary ---
+
+const codexSkills = readdirSync(join(DIST_CODEX, 'skills')).length;
+const codexAgents = readdirSync(join(DIST_CODEX, 'agents')).filter(f => f.endsWith('.toml')).length;
+const claudeCommands = readdirSync(join(CLAUDE_PLUGIN_DIR, 'commands')).filter(f => f.endsWith('.md')).length;
+const claudeAgents = readdirSync(join(CLAUDE_PLUGIN_DIR, 'agents')).filter(f => f.endsWith('.md')).length;
+
+process.stdout.write('Built:\n');
+process.stdout.write(`  Codex:      ${codexSkills} skills, ${codexAgents} agents  -> dist/codex/\n`);
+process.stdout.write(`  Claude Code: ${claudeCommands} commands, ${claudeAgents} agents -> dist/claude/${CLAUDE_MARKETPLACE_NAME}/\n`);
