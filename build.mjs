@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,7 +13,13 @@ const CLAUDE_PLUGIN_NAME = 'sf-frontend-workflows';
 const CLAUDE_MARKETPLACE_NAME = 'sf-claude-plugin';
 const CLAUDE_MARKETPLACE_DIR = join(DIST_CLAUDE, CLAUDE_MARKETPLACE_NAME);
 const CLAUDE_PLUGIN_DIR = join(CLAUDE_MARKETPLACE_DIR, 'plugins', CLAUDE_PLUGIN_NAME);
-const VERSION = readFileSync(join(ROOT_DIR, 'version.txt'), 'utf8').trim();
+
+const versionPath = join(ROOT_DIR, 'version.txt');
+if (!existsSync(versionPath)) {
+  process.stderr.write('ERROR: version.txt not found in project root\n');
+  process.exit(1);
+}
+const VERSION = readFileSync(versionPath, 'utf8').trim();
 
 // --- Clean and create output directories ---
 
@@ -27,6 +33,14 @@ mkdirSync(join(CLAUDE_PLUGIN_DIR, 'agents'), { recursive: true });
 
 // --- Helper functions ---
 
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeLineEndings(content) {
+  return content.replace(/\r\n/g, '\n');
+}
+
 function extractFrontmatter(content) {
   const match = content.match(/^---\n([\s\S]*?)\n---\n/);
   return match ? match[1] : '';
@@ -38,13 +52,13 @@ function extractBody(content) {
 }
 
 function getField(frontmatter, key) {
-  const re = new RegExp(`^${key}:\\s*"?(.+?)"?$`, 'm');
+  const re = new RegExp(`^${escapeRegex(key)}:\\s*"?(.+?)"?$`, 'm');
   const match = frontmatter.match(re);
   return match ? match[1] : '';
 }
 
 function getNested(frontmatter, section, key) {
-  const sectionRe = new RegExp(`^${section}:\\s*$`, 'm');
+  const sectionRe = new RegExp(`^${escapeRegex(section)}:\\s*$`, 'm');
   const sectionMatch = sectionRe.exec(frontmatter);
   if (!sectionMatch) return '';
 
@@ -52,13 +66,13 @@ function getNested(frontmatter, section, key) {
   const sectionEnd = afterSection.search(/^\S/m);
   const sectionBlock = sectionEnd === -1 ? afterSection : afterSection.slice(0, sectionEnd);
 
-  const keyRe = new RegExp(`^\\s+${key}:\\s*"?(.+?)"?$`, 'm');
+  const keyRe = new RegExp(`^\\s+${escapeRegex(key)}:\\s*"?(.+?)"?$`, 'm');
   const keyMatch = sectionBlock.match(keyRe);
   return keyMatch ? keyMatch[1] : '';
 }
 
 function getNestedArray(frontmatter, section, key) {
-  const sectionRe = new RegExp(`^${section}:\\s*$`, 'm');
+  const sectionRe = new RegExp(`^${escapeRegex(section)}:\\s*$`, 'm');
   const sectionMatch = sectionRe.exec(frontmatter);
   if (!sectionMatch) return '';
 
@@ -66,7 +80,7 @@ function getNestedArray(frontmatter, section, key) {
   const sectionEnd = afterSection.search(/^\S/m);
   const sectionBlock = sectionEnd === -1 ? afterSection : afterSection.slice(0, sectionEnd);
 
-  const keyRe = new RegExp(`^\\s+${key}:\\s*\\[(.+?)\\]`, 'm');
+  const keyRe = new RegExp(`^\\s+${escapeRegex(key)}:\\s*\\[(.+?)\\]`, 'm');
   const keyMatch = sectionBlock.match(keyRe);
   if (!keyMatch) return '';
 
@@ -74,7 +88,7 @@ function getNestedArray(frontmatter, section, key) {
 }
 
 function getNestedList(frontmatter, section, key) {
-  const sectionRe = new RegExp(`^${section}:\\s*$`, 'm');
+  const sectionRe = new RegExp(`^${escapeRegex(section)}:\\s*$`, 'm');
   const sectionMatch = sectionRe.exec(frontmatter);
   if (!sectionMatch) return '';
 
@@ -82,7 +96,7 @@ function getNestedList(frontmatter, section, key) {
   const sectionEnd = afterSection.search(/^\S/m);
   const sectionBlock = sectionEnd === -1 ? afterSection : afterSection.slice(0, sectionEnd);
 
-  const keyRe = new RegExp(`^\\s+${key}:\\s*(.*)$`, 'm');
+  const keyRe = new RegExp(`^\\s+${escapeRegex(key)}:\\s*(.*)$`, 'm');
   const keyMatch = sectionBlock.match(keyRe);
   if (!keyMatch) return '';
 
@@ -206,83 +220,97 @@ const skillDirs = readdirSync(SOURCE_DIR)
   .map(name => join(SOURCE_DIR, name))
   .filter(path => statSync(path).isDirectory());
 
-for (const skillDir of skillDirs) {
-  const skillName = basename(skillDir);
-  const shortName = stripPrefix(skillName);
-  const src = join(skillDir, 'SKILL.md');
+if (skillDirs.length === 0) {
+  process.stderr.write(`WARNING: No sf-* skill directories found in ${SOURCE_DIR}\n`);
+}
 
-  const content = readFileSync(src, 'utf8');
-  const fm = extractFrontmatter(content);
-  const body = extractBody(content);
+try {
+  for (const skillDir of skillDirs) {
+    const skillName = basename(skillDir);
+    const shortName = stripPrefix(skillName);
+    const src = join(skillDir, 'SKILL.md');
 
-  const skillType = getField(fm, 'type');
-  const description = getField(fm, 'description');
-
-  if (skillType === 'orchestrator' || skillType === 'utility') {
-    // --- Codex: Skill (SKILL.md) ---
-    const codexDir = join(DIST_CODEX, 'skills', skillName);
-    mkdirSync(codexDir, { recursive: true });
-    const codexBody = transformCodexSkill(transformAskCodex(body));
-    const codexContent = [
-      '---',
-      `name: ${skillName}`,
-      `description: "${cleanDescription(description)}"`,
-      '---',
-      codexBody,
-    ].join('\n');
-    writeFileSync(join(codexDir, 'SKILL.md'), codexContent);
-
-    // --- Claude Code: Command ---
-    const claudeDesc = cleanDescription(description);
-    const claudeBody = transformClaude(transformAskClaude(body));
-    const claudeContent = [
-      '---',
-      `description: ${claudeDesc}`,
-      '---',
-      claudeBody,
-    ].join('\n');
-    writeFileSync(join(CLAUDE_PLUGIN_DIR, 'commands', `${shortName}.md`), claudeContent);
-
-  } else if (skillType === 'agent') {
-    // --- Codex: Custom Agent (TOML) ---
-    const codexModel = getNested(fm, 'codex', 'model');
-    const codexEffort = getNested(fm, 'codex', 'model_reasoning_effort');
-    const codexSandbox = getNested(fm, 'codex', 'sandbox_mode');
-    const tomlDesc = cleanDescription(description);
-    const tomlBody = transformCodexAgent(transformAskCodex(body));
-
-    let toml = `name = "${skillName}"\n`;
-    toml += `description = "${tomlDesc}"\n`;
-    if (codexModel) toml += `model = "${codexModel}"\n`;
-    if (codexEffort) toml += `model_reasoning_effort = "${codexEffort}"\n`;
-    if (codexSandbox) toml += `sandbox_mode = "${codexSandbox}"\n`;
-    toml += `developer_instructions = '''\n${tomlBody.replace(/\n+$/, '')}\n'''\n`;
-    writeFileSync(join(DIST_CODEX, 'agents', `${skillName}.toml`), toml);
-
-    // --- Claude Code: Agent ---
-    const claudeModel = getNested(fm, 'claude', 'model');
-    const claudeColor = getNested(fm, 'claude', 'color');
-    const claudeTools = getNestedArray(fm, 'claude', 'tools');
-    const claudeSkills = getNestedList(fm, 'claude', 'skills');
-
-    let agentFm = '---\n';
-    agentFm += `name: ${shortName}\n`;
-    agentFm += `description: ${cleanDescription(description)}\n`;
-    if (claudeModel) agentFm += `model: ${claudeModel}\n`;
-    if (claudeColor) agentFm += `color: ${claudeColor}\n`;
-    if (claudeTools) {
-      const toolList = claudeTools.split(',').map(t => t.trim()).filter(Boolean).join(', ');
-      agentFm += `tools: ${toolList}\n`;
+    if (!existsSync(src)) {
+      process.stderr.write(`ERROR: ${src} not found, skipping ${skillName}\n`);
+      continue;
     }
-    if (claudeSkills) agentFm += `skills:\n${claudeSkills}\n`;
-    agentFm += '---\n';
 
-    const agentBody = transformClaude(transformAskClaude(body));
-    writeFileSync(join(CLAUDE_PLUGIN_DIR, 'agents', `${shortName}.md`), agentFm + agentBody);
+    const content = normalizeLineEndings(readFileSync(src, 'utf8'));
+    const fm = extractFrontmatter(content);
+    const body = extractBody(content);
 
-  } else {
-    process.stderr.write(`WARNING: Unknown type "${skillType}" for ${skillName}, skipping\n`);
+    const skillType = getField(fm, 'type');
+    const description = getField(fm, 'description');
+
+    if (skillType === 'orchestrator' || skillType === 'utility') {
+      // --- Codex: Skill (SKILL.md) ---
+      const codexDir = join(DIST_CODEX, 'skills', skillName);
+      mkdirSync(codexDir, { recursive: true });
+      const codexBody = transformCodexSkill(transformAskCodex(body));
+      const codexContent = [
+        '---',
+        `name: ${skillName}`,
+        `description: "${cleanDescription(description)}"`,
+        '---',
+        codexBody,
+      ].join('\n');
+      writeFileSync(join(codexDir, 'SKILL.md'), codexContent);
+
+      // --- Claude Code: Command ---
+      const claudeDesc = cleanDescription(description);
+      const claudeBody = transformClaude(transformAskClaude(body));
+      const claudeContent = [
+        '---',
+        `description: ${claudeDesc}`,
+        '---',
+        claudeBody,
+      ].join('\n');
+      writeFileSync(join(CLAUDE_PLUGIN_DIR, 'commands', `${shortName}.md`), claudeContent);
+
+    } else if (skillType === 'agent') {
+      // --- Codex: Custom Agent (TOML) ---
+      const codexModel = getNested(fm, 'codex', 'model');
+      const codexEffort = getNested(fm, 'codex', 'model_reasoning_effort');
+      const codexSandbox = getNested(fm, 'codex', 'sandbox_mode');
+      const tomlDesc = cleanDescription(description);
+      const tomlBody = transformCodexAgent(transformAskCodex(body));
+
+      let toml = `name = "${skillName}"\n`;
+      toml += `description = "${tomlDesc}"\n`;
+      if (codexModel) toml += `model = "${codexModel}"\n`;
+      if (codexEffort) toml += `model_reasoning_effort = "${codexEffort}"\n`;
+      if (codexSandbox) toml += `sandbox_mode = "${codexSandbox}"\n`;
+      toml += `developer_instructions = '''\n${tomlBody.replace(/\n+$/, '')}\n'''\n`;
+      writeFileSync(join(DIST_CODEX, 'agents', `${skillName}.toml`), toml);
+
+      // --- Claude Code: Agent ---
+      const claudeModel = getNested(fm, 'claude', 'model');
+      const claudeColor = getNested(fm, 'claude', 'color');
+      const claudeTools = getNestedArray(fm, 'claude', 'tools');
+      const claudeSkills = getNestedList(fm, 'claude', 'skills');
+
+      let agentFm = '---\n';
+      agentFm += `name: ${shortName}\n`;
+      agentFm += `description: ${cleanDescription(description)}\n`;
+      if (claudeModel) agentFm += `model: ${claudeModel}\n`;
+      if (claudeColor) agentFm += `color: ${claudeColor}\n`;
+      if (claudeTools) {
+        const toolList = claudeTools.split(',').map(t => t.trim()).filter(Boolean).join(', ');
+        agentFm += `tools: ${toolList}\n`;
+      }
+      if (claudeSkills) agentFm += `skills:\n${claudeSkills}\n`;
+      agentFm += '---\n';
+
+      const agentBody = transformClaude(transformAskClaude(body));
+      writeFileSync(join(CLAUDE_PLUGIN_DIR, 'agents', `${shortName}.md`), agentFm + agentBody);
+
+    } else {
+      process.stderr.write(`WARNING: Unknown type "${skillType}" for ${skillName}, skipping\n`);
+    }
   }
+} catch (err) {
+  process.stderr.write(`ERROR: Build failed: ${err.message}\n`);
+  process.exit(1);
 }
 
 // --- marketplace.json for Claude Code ---
@@ -304,9 +332,8 @@ const marketplace = {
     },
   ],
 };
-// Format with compact arrays to match original shell output
+// Format with compact arrays to match original output
 let marketplaceJson = JSON.stringify(marketplace, null, 2);
-// Collapse arrays that were expanded across multiple lines into single-line
 marketplaceJson = marketplaceJson.replace(
   /\[\n\s+("(?:[^"]*)",?\n\s*)+\]/g,
   (match) => {
