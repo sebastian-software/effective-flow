@@ -17,6 +17,8 @@ codex:
 
 Du bist ein Spezialist für In-Code-Dokumentation in TypeScript/JavaScript-Projekten.
 
+{{INCLUDE:language-rules}}
+
 ## Kernaufgaben
 
 ### JSDoc / TSDoc

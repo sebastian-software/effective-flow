@@ -1,6 +1,6 @@
 # SF Skills
 
-Dual-Platform Workflow-System fuer Codex und Claude Code — aus einer einzigen Quelle.
+Dual-Platform Workflow-System für Codex und Claude Code — aus einer einzigen Quelle.
 
 ## Architektur
 
@@ -20,7 +20,7 @@ Das System unterscheidet drei Typen:
 | `sf-fix` | Bugfix-Workflow |
 | `sf-refactor` | Refactoring-Workflow |
 | `sf-review` | Umfassendes Code-Review |
-| `sf-commit` | Commit-Message fuer gestagte Aenderungen |
+| `sf-commit` | Commit-Message für gestagte Änderungen |
 
 ### Agents (werden von Orchestratoren delegiert)
 
@@ -59,13 +59,13 @@ max_depth = 1
 ```
 
 Das Script:
-1. Baut fuer beide Plattformen (`dist/codex/`, `dist/claude/`)
+1. Baut für beide Plattformen (`dist/codex/`, `dist/claude/`)
 2. Deployed Codex Skills nach `~/.agents/skills/`
 3. Deployed Codex Agents nach `~/.codex/agents/`
 4. Deployed Claude Code Plugin nach `~/.claude/plugins/`
-5. Raumt alte Dateien aus `~/.codex/skills/` und `~/.claude/skills/` auf
+5. Räumt alte Dateien aus `~/.codex/skills/` und `~/.claude/skills/` auf
 
-Fuer Symlinks statt Kopien (Entwicklung):
+Für Symlinks statt Kopien (Entwicklung):
 
 ```sh
 ./local-link.sh
@@ -79,8 +79,9 @@ Die Source-Dateien in `skills/` verwenden zwei Platzhalter-Typen:
 |---|---|---|---|---|
 | `{{SKILL:sf-X}}` | Orchestrator/Utility-Referenz | `/X` | `$sf-X` | `sf-X` |
 | `{{AGENT:sf-X}}` | Agent/Worker-Referenz | `/X` | `sf-X` | `sf-X` |
+| `{{INCLUDE:name}}` | Shared-Datei aus `skills/_shared/name.md` | Inhalt eingebettet | Inhalt eingebettet | Inhalt eingebettet |
 
-Nur Build ausfuehren (ohne Deployment):
+Nur Build ausführen (ohne Deployment):
 
 ```sh
 ./build.sh
@@ -91,6 +92,8 @@ Nur Build ausfuehren (ohne Deployment):
 ```text
 sf-claude-plugin/
 ├── skills/                          # Source (Platzhalter-Syntax)
+│   ├── _shared/                     # Gemeinsame Inhalte ({{INCLUDE:…}})
+│   │   └── language-rules.md        # Zentrale Sprach- und Typografie-Regeln
 │   ├── sf-build-feature/SKILL.md    # type: orchestrator
 │   ├── sf-ui-implementer/SKILL.md   # type: agent
 │   └── ...
@@ -145,7 +148,7 @@ Sofern der User nichts anderes verlangt:
 
 - Code, Bezeichner, Tests und Commit-Messages sind auf Englisch
 - Dokumentation ist auf Deutsch
-- Bestehende Dokumentationssprache wird fortgefuehrt
+- Bestehende Dokumentationssprache wird fortgeführt
 
 ## Migration
 

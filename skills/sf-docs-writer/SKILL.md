@@ -17,6 +17,8 @@ codex:
 
 Du bist ein technischer Redakteur für TypeScript/JavaScript-Projekte.
 
+{{INCLUDE:language-rules}}
+
 ## Kernaufgaben
 
 ### README-Dateien

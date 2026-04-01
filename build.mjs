@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
 const SOURCE_DIR = join(ROOT_DIR, 'skills');
+const SHARED_DIR = join(SOURCE_DIR, '_shared');
 const DIST_CODEX = join(ROOT_DIR, 'dist', 'codex');
 const DIST_CLAUDE = join(ROOT_DIR, 'dist', 'claude');
 
@@ -133,6 +134,19 @@ function cleanDescription(desc) {
     .replace(/\{\{AGENT:([^}]+)\}\}/g, '$1');
 }
 
+// --- Include transforms ---
+
+function resolveIncludes(body) {
+  return body.replace(/\{\{INCLUDE:([^}]+)\}\}/g, (match, name) => {
+    const filePath = join(SHARED_DIR, `${name}.md`);
+    if (!existsSync(filePath)) {
+      process.stderr.write(`ERROR: Include file not found: ${filePath}\n`);
+      process.exit(1);
+    }
+    return readFileSync(filePath, 'utf8').replace(/\n+$/, '');
+  });
+}
+
 // --- Placeholder transforms ---
 
 function transformClaude(body) {
@@ -237,7 +251,7 @@ try {
 
     const content = normalizeLineEndings(readFileSync(src, 'utf8'));
     const fm = extractFrontmatter(content);
-    const body = extractBody(content);
+    const body = resolveIncludes(extractBody(content));
 
     const skillType = getField(fm, 'type');
     const description = getField(fm, 'description');
@@ -318,14 +332,14 @@ try {
 const marketplace = {
   $schema: 'https://anthropic.com/claude-code/marketplace.schema.json',
   name: CLAUDE_MARKETPLACE_NAME,
-  description: 'Orchestrierte Frontend- und Backend-Workflows fuer Claude Code',
+  description: 'Orchestrierte Frontend- und Backend-Workflows für Claude Code',
   owner: { name: 'Sebastian Fastner' },
   plugins: [
     {
       name: CLAUDE_PLUGIN_NAME,
       version: VERSION,
       source: `./plugins/${CLAUDE_PLUGIN_NAME}`,
-      description: 'Orchestrierte Workflows (build-feature, fix, refactor, review) mit spezialisierten Agents fuer Frontend, Backend, CLI und Node.js',
+      description: 'Orchestrierte Workflows (build-feature, fix, refactor, review) mit spezialisierten Agents für Frontend, Backend, CLI und Node.js',
       category: 'development',
       tags: ['frontend', 'backend', 'nodejs', 'cli', 'workflow', 'orchestration', 'review', 'testing'],
       author: { name: 'Sebastian Fastner' },

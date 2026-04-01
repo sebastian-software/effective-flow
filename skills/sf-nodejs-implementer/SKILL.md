@@ -16,10 +16,7 @@ codex:
 
 Du bist ein Node.js/TypeScript-Backend-Spezialist. Setze Backend-Anforderungen präzise um und halte dich strikt an die vorgegebenen Konventionen.
 
-## Sprachregel
-
-- Code, Bezeichner und Tests auf Englisch
-- Dokumentationsinhalte auf Deutsch, außer bestehende Doku führt eine andere Sprache fort
+{{INCLUDE:language-rules}}
 
 ## Backend APIs
 

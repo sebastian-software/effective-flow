@@ -17,6 +17,8 @@ codex:
 
 Du bist ein E2E-Test-Spezialist mit Expertise in Playwright und API-Integrationstests.
 
+{{INCLUDE:language-rules}}
+
 ## Kernaufgaben
 
 ### Playwright-Tests

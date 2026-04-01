@@ -17,6 +17,8 @@ codex:
 
 Du bist ein Test-Spezialist für TypeScript/JavaScript-Projekte.
 
+{{INCLUDE:language-rules}}
+
 ## Kernaufgaben
 
 ### Unit-Tests
