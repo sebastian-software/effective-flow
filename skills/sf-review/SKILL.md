@@ -28,19 +28,11 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Review und beha
 
 ## Finding-Scope
 
-Frage zu Beginn des Reviews explizit nach dem gewünschten Finding-Scope:
+Der Standard-Finding-Scope ist **nur kritische und wichtige Findings**. Hinweise werden nur dann in den Bericht aufgenommen, wenn der User explizit ein umfassendes oder vollständiges Review verlangt (z. B. „umfassendes Review", „alle Findings", „inklusive Hinweise").
 
-{{ASK}}
-header: Scope
-question: Welchen Finding-Scope möchtest du für das Review?
-options:
-  - label: Nur kritisch+wichtig
-    description: Filtert Hinweise heraus, zeigt nur kritische und wichtige Findings
-  - label: Alle Findings
-    description: Zeigt alle Schweregrade — kritisch, wichtig und Hinweise
-{{/ASK}}
+Weise den User zu Beginn kurz darauf hin, dass standardmässig nur kritische und wichtige Findings berichtet werden und ein umfassendes Review auf Wunsch möglich ist.
 
-Wenn der User nichts anderes festlegt, frage nach, bevor du das eigentliche Review startest. Verwende die Entscheidung als Filter für Reviewer-Auftrag, Aggregation, Bericht und Zusammenfassung.
+Verwende den aktiven Finding-Scope als Filter für Reviewer-Auftrag, Aggregation, Bericht und Zusammenfassung.
 
 ## Fertig-Protokoll
 
@@ -93,12 +85,12 @@ Reviewer-Routing:
 3. Untersuche Projektstruktur und Projekt-Typ.
 4. Sammle Designentscheidungen aus allen Quellen.
 5. Bestimme den finalen Review-Scope.
-6. Frage den User nach dem Finding-Scope (siehe oben).
+6. Bestimme den aktiven Finding-Scope: Standard ist nur kritisch+wichtig, es sei denn, der User hat explizit ein umfassendes Review verlangt.
 7. Hole User-Bestätigung ein, wenn Scope oder Review-Ziel unklar ist.
 
 {{ASK}}
 header: Review-Scope
-question: Review-Scope und Finding-Scope bestätigt?
+question: Review-Scope bestätigt?
 type: approval
 {{/ASK}}
 
@@ -117,7 +109,7 @@ type: approval
 1. Starte den oder die passenden Reviewer-Skills.
 2. Auftrag an Reviewer:
    - umfassendes Review des Scopes
-   - beachte den gewählten Finding-Scope
+   - beachte den aktiven Finding-Scope
    - für jedes Finding:
      - Schweregrad
      - Bereich
@@ -138,7 +130,7 @@ type: approval
    - Duplikate entfernen
    - Schweregrad-Konsistenz prüfen
    - Designentscheidungs-Abgleich durchführen
-   - Findings ausserhalb des gewählten Finding-Scopes aus dem Hauptbericht herausfiltern
+   - Findings ausserhalb des aktiven Finding-Scopes aus dem Hauptbericht herausfiltern
 3. Bestimme für jedes verbleibende Finding die Folgeaktion:
    - Defekt -> `{{SKILL:sf-fix}}`
    - strukturelles Problem -> `{{SKILL:sf-refactor}}`
@@ -202,10 +194,10 @@ Wenn ein Finding später über `{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}` oder 
 
 6. Präsentiere dem User die wichtigsten Findings und weise auf die gespeicherte Report-Datei hin.
 
-Wenn der User nur kritische und wichtige Findings angefordert hat:
+Wenn der aktive Finding-Scope nur kritische und wichtige Findings umfasst (Standard):
 
 - nimm Hinweise nicht in den Hauptbericht auf
-- erwähne kurz, dass Hinweise bewusst ausgefiltert wurden
+- erwähne kurz, dass Hinweise ausgefiltert wurden und ein umfassendes Review auf Wunsch möglich ist
 
 ## Regeln
 
@@ -213,4 +205,4 @@ Wenn der User nur kritische und wichtige Findings angefordert hat:
 - dieser Skill liest nur und schreibt nur den Review-Bericht
 - kein Wisdom Accumulation nötig
 - Prompt-Vorschläge müssen ohne Anführungszeichen und ohne Escape-Sequenzen direkt kopierbar sein
-- der gewählte Finding-Scope muss vor dem Review geklärt und im Bericht respektiert werden
+- der aktive Finding-Scope (Standard: nur kritisch+wichtig) muss im Bericht respektiert werden
