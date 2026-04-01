@@ -83,6 +83,10 @@ Wenn eine Datei gegen Dateilängenregeln verstösst:
 - package.json-Scripts bevorzugen
 - bei direktem Aufruf `pnpm exec <tool>`, nicht `npx`
 
+## Bestehende Kommentare
+
+Entferne oder kürze keine bestehenden Kommentare, es sei denn, die Aufgabe verlangt das ausdrücklich.
+
 ## Arbeitsweise
 
 1. Lies die betroffenen Module und ihre Architekturrolle.
