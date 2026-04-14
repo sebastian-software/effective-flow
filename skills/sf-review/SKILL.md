@@ -131,16 +131,21 @@ type: approval
    - Schweregrad-Konsistenz prüfen
    - Designentscheidungs-Abgleich durchführen
    - Findings ausserhalb des aktiven Finding-Scopes aus dem Hauptbericht herausfiltern
-3. Bestimme für jedes verbleibende Finding die Folgeaktion:
+3. Dokumentations- und ADR-Gegenprüfung:
+   - lies alle in Phase 1 gesammelten Designentscheidungen sowie die Quellen aus der Tabelle unter „Designentscheidungs-Erkennung" (ADRs, Planungs-Dateien, Konventions-Dateien, Code-Kommentare, Lint-Suppressions, vorherige Review-Reports) noch einmal gezielt
+   - prüfe jedes nach Schritt 2 verbliebene Finding einzeln, ob es durch eine dokumentierte Designentscheidung, eine ADR, eine Konvention oder einen begründeten Code-Kommentar bereits als bewusste Entscheidung abgedeckt ist
+   - bei Treffer: Finding aus dem Hauptbericht entfernen und in die Tabelle „Übersprungene Findings (Designentscheidungen)" verschieben mit Quellenangabe
+   - bei Unsicherheit (teilweise Überlappung): Finding im Bericht belassen, aber mit Hinweis auf die möglicherweise relevante Designentscheidung versehen
+4. Bestimme für jedes verbleibende Finding die Folgeaktion:
    - Defekt -> `{{SKILL:sf-fix}}`
    - strukturelles Problem -> `{{SKILL:sf-refactor}}`
    - fehlende Funktionalität / Schutzmechanismus -> `{{SKILL:sf-build-feature}}`
-4. Formuliere Prompt-Vorschläge.
+5. Formuliere Prompt-Vorschläge.
    - schreibe sie als direkt kopierbaren Klartext
    - verwende keine umschliessenden Anführungszeichen
    - verwende keine Escape-Sequenzen wie `\"`
    - formuliere sie so, dass sie direkt per Copy-und-Paste verwendet werden können
-5. Erstelle einen Bericht als `review-report-YYYY-MM-DD[-N].md`.
+6. Erstelle einen Bericht als `review-report-YYYY-MM-DD[-N].md`.
 
 ### Bericht-Format
 
@@ -192,7 +197,7 @@ type: approval
 
 Wenn ein Finding später über `{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}` oder `{{SKILL:sf-build-feature}}` umgesetzt wird, darf die bestehende Report-Datei am betroffenen Finding um einen kurzen Statushinweis ergänzt werden, zum Beispiel `Umgesetzt am YYYY-MM-DD via {{SKILL:sf-fix}}`.
 
-6. Präsentiere dem User die wichtigsten Findings und weise auf die gespeicherte Report-Datei hin.
+7. Präsentiere dem User die wichtigsten Findings und weise auf die gespeicherte Report-Datei hin.
 
 Wenn der aktive Finding-Scope nur kritische und wichtige Findings umfasst (Standard):
 
