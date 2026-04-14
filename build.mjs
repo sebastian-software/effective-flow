@@ -2,6 +2,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
+import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -21,6 +22,8 @@ if (!existsSync(versionPath)) {
   process.exit(1);
 }
 const VERSION = readFileSync(versionPath, 'utf8').trim();
+const GIT_SHORT_HASH = execSync('git rev-parse --short HEAD', { cwd: ROOT_DIR, encoding: 'utf8' }).trim();
+const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
 
 // --- Clean and create output directories ---
 
@@ -251,7 +254,7 @@ try {
 
     const content = normalizeLineEndings(readFileSync(src, 'utf8'));
     const fm = extractFrontmatter(content);
-    const body = resolveIncludes(extractBody(content));
+    const body = resolveIncludes(extractBody(content)).replace(/\{\{VERSION\}\}/g, VERSION_STRING);
 
     const skillType = getField(fm, 'type');
     const description = getField(fm, 'description');
