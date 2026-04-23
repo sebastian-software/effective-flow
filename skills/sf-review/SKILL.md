@@ -48,7 +48,7 @@ Der Review-Workflow erkennt dokumentierte Designentscheidungen, damit Findings g
 | Konventions-Dateien | `CLAUDE.md`, `AGENTS.md`, vergleichbare Konventionsdateien |
 | Code-Kommentare | `@design-decision`, `DELIBERATE`, `INTENTIONAL`, `DESIGN:` |
 | Lint-Suppressions mit Begründung | `eslint-disable ... -- [Grund]`, `@ts-expect-error [Grund]` |
-| Vorherige Review-Reports | `review-report-*.md` |
+| Vorherige Review-Reports | `docs/review/review-report-*.md` |
 
 ### Ausgabeformat für Designentscheidungen
 
@@ -68,6 +68,28 @@ Reviewer-Routing:
 - Frontend -> `{{AGENT:sf-frontend-reviewer}}`
 - Backend / CLI / Node.js -> `{{AGENT:sf-nodejs-reviewer}}`
 - Fullstack -> beide parallel
+
+## Memory-Datei
+
+Die Datei `.sf-memory.json` im Projekt-Root speichert persistente Zustände über Sessions hinweg. Im Gegensatz zur Wisdom-Datei wird sie nie gelöscht.
+
+### Inhalt
+
+```json
+{
+  "lastFindingNumber": 42
+}
+```
+
+### Git-Tracking
+
+Ob `.sf-memory.json` eingecheckt oder ignoriert wird, entscheidet das jeweilige Projekt selbst. Der Skill ändert keine `.gitignore`-Dateien.
+
+### Verwendung
+
+1. Lies `.sf-memory.json` beim Start des Review-Workflows. Falls die Datei nicht existiert, starte mit `lastFindingNumber: 0`.
+2. Nummeriere neue Findings fortlaufend ab `lastFindingNumber + 1` mit 7-stelliger Formatierung: `R-0000001`, `R-0000002`, ...
+3. Schreibe nach Erstellung des Berichts die höchste vergebene Finding-Nummer zurück in `.sf-memory.json`. Die Memory-Datei muss geschrieben werden, bevor der Workflow mit `ERLEDIGT` abgeschlossen wird. Falls der Schreibvorgang fehlschlägt, weise den User darauf hin.
 
 ## Workflow
 
@@ -142,7 +164,7 @@ type: approval
    - verwende keine umschliessenden Anführungszeichen
    - verwende keine Escape-Sequenzen wie `\"`
    - formuliere sie so, dass sie direkt per Copy-und-Paste verwendet werden können
-6. Erstelle einen Bericht als `review-report-YYYY-MM-DD[-N].md`.
+6. Erstelle einen Bericht als `docs/review/review-report-YYYY-MM-DD[-N].md`. Erstelle `docs/review/` falls nicht vorhanden.
 
 ### Bericht-Format
 
@@ -175,7 +197,7 @@ type: approval
 
 ## Findings
 
-### [R-001] [Titel]
+### [R-0000001] [Titel]
 - **Schweregrad**: Kritisch / Wichtig / Hinweis
 - **Komplexität**: Leicht / Mittel / Schwer
 - **Bereich**: [...]

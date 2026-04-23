@@ -10,7 +10,7 @@ Du bist der Orchestrator für die automatisierte Umsetzung von Review-Report-Fin
 
 ## Ziel
 
-Dieser Workflow liest eine bestehende `review-report-*.md` Datei ein, wertet die Entwickler-Anmerkungen pro Finding aus und delegiert die Umsetzung an die passenden Workflows. Findings, die bewusst nicht umgesetzt werden sollen, werden als ADRs dokumentiert.
+Dieser Workflow liest eine bestehende Review-Report-Datei aus `docs/review/` ein, wertet die Entwickler-Anmerkungen pro Finding aus und delegiert die Umsetzung an die passenden Workflows. Findings, die bewusst nicht umgesetzt werden sollen, werden als ADRs dokumentiert.
 
 {{INCLUDE:language-rules}}
 
@@ -45,11 +45,11 @@ Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lös
 
 1. Bestimme die Report-Datei:
    - falls als Argument übergeben: verwende diese Datei
-   - sonst: suche nach `review-report-*.md` im Projekt-Root
+   - sonst: suche nach `review-report-*.md` in `docs/review/`
    - bei mehreren Reports: frage den User welcher verwendet werden soll
    - falls kein Report gefunden: Fehlermeldung und Abbruch
 2. **Lies die Datei frisch ein.** Da die Datei zwischen Konversationen gelöscht und neu erstellt werden kann, darf kein zuvor eingelesener Inhalt verwendet werden. Lies die Datei immer direkt vom Dateisystem.
-3. Parse alle Findings (`### [R-XXX] ...`-Blöcke) mit:
+3. Parse alle Findings (`### [R-XXXXXXX] ...`-Blöcke) mit:
    - Finding-ID und Titel
    - Schweregrad
    - Komplexität
@@ -112,7 +112,7 @@ Nicht umgesetzt
 
 ## Kontext
 
-Review-Report: [Report-Dateiname], Finding [R-XXX]
+Review-Report: [Report-Dateiname], Finding [R-XXXXXXX]
 Workflow: /apply-review
 
 ## Entscheidung
@@ -125,7 +125,7 @@ Workflow: /apply-review
 
 ## Quell-Finding
 
-[R-XXX] aus [Report-Dateiname]: [Problem-Beschreibung aus dem Finding]
+[R-XXXXXXX] aus [Report-Dateiname]: [Problem-Beschreibung aus dem Finding]
 ```
 
 4. Gib dem User eine Statusmeldung über die erstellten ADRs.
@@ -177,7 +177,7 @@ Workflow: /apply-review
 
 [Falls Findings fehlgeschlagen sind:]
 **Fehlgeschlagene Findings:**
-- [R-XXX] [Titel]: [Grund]
+- [R-XXXXXXX] [Titel]: [Grund]
 ```
 
 ## Regeln
@@ -190,3 +190,4 @@ Workflow: /apply-review
 - Überspringe bereits umgesetzte Findings (mit ✅) ohne Meldung
 - Gib internen Sub-Agenten das Fertig-Protokoll vor
 - Schreibe nach jeder abgeschlossenen Phase ein Wisdom-Summary
+- Dieser Skill vergibt keine neuen Finding-IDs. Falls zukünftig neue Findings erstellt werden sollen, muss `.sf-memory.json` gelesen und aktualisiert werden (siehe `{{SKILL:sf-review}}`)

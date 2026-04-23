@@ -187,7 +187,7 @@ Bei gut trennbaren Teilaufgaben ist das interne Sub-Agent-Pattern erlaubt und f�
 
 ## Review-Report-Rückverweise
 
-Wenn dieses Feature ein Finding aus einer bestehenden `review-report-*.md` Datei umsetzt:
+Wenn dieses Feature ein Finding aus einer bestehenden Review-Report-Datei in `docs/review/` umsetzt:
 
 - identifiziere die betroffene Report-Datei früh im Workflow
 - ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
@@ -308,7 +308,7 @@ type: approval
 {{/ASK}}
 
    - bei Zustimmung: erzeuge für jedes nicht umgesetzte Finding ein ADR-Dokument mit laufender Nummer, Kebab-Case-Titel, Kontext `/build-feature` und Quelle des Findings
-8. Wenn diese Phase ein Finding aus einer bestehenden `review-report-*.md` Datei umgesetzt hat:
+8. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `docs/review/` umgesetzt hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
 

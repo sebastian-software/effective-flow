@@ -42,7 +42,7 @@ Wie bei `{{SKILL:sf-build-feature}}`.
 
 ## Review-Report-Rückverweise
 
-Wenn dieses Refactoring ein Finding aus einer bestehenden `review-report-*.md` Datei umsetzt:
+Wenn dieses Refactoring ein Finding aus einer bestehenden Review-Report-Datei in `docs/review/` umsetzt:
 
 - identifiziere die betroffene Report-Datei früh im Workflow
 - ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
@@ -127,7 +127,7 @@ type: approval
 {{/ASK}}
 
    - erzeuge bei Zustimmung ADRs in `docs/adr/` mit Kontext `/refactor`
-5. Wenn diese Phase ein Finding aus einer bestehenden `review-report-*.md` Datei umgesetzt hat:
+5. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `docs/review/` umgesetzt hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
 
