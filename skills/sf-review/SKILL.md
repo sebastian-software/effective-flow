@@ -187,6 +187,7 @@ type: approval
 - **Empfehlung**: [...]
 - **Aktion**: `{{SKILL:sf-fix}}` | `{{SKILL:sf-refactor}}` | `{{SKILL:sf-build-feature}}`
 - **Prompt-Vorschlag**: [...]
+- **Entwickler-Anmerkung**: <!-- leer lassen, Freitext, oder „Nicht umsetzen: [Grund]" -->
 
 ## Übersprungene Findings (Designentscheidungen)
 
