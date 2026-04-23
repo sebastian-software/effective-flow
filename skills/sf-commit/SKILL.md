@@ -16,6 +16,8 @@ Du erstellst eine Commit-Message für die aktuell gestagten Änderungen und füh
 - Commit-Message auf Englisch formulieren
 - keine Projektvalidation wie Linting, Tests oder Build-Checks ausführen
 
+{{INCLUDE:task-tracking}}
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Commit und beachte ihre Vorgaben für Commit-Stil, Scope, Arbeitsweise und projektweite Konventionen.

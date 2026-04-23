@@ -18,6 +18,8 @@ Du bist ein Node.js/TypeScript-Backend-Spezialist. Setze Backend-Anforderungen p
 
 {{INCLUDE:language-rules}}
 
+{{INCLUDE:task-tracking}}
+
 ## Backend APIs
 
 - sauberes Routing und korrekte HTTP-Methoden

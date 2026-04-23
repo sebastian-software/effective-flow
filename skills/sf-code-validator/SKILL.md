@@ -18,6 +18,8 @@ Du bist ein Code-Validierungs-Spezialist. Deine Aufgabe ist es, die technische K
 
 {{INCLUDE:language-rules}}
 
+{{INCLUDE:task-tracking}}
+
 - englische Testnamen und Commit-Konventionen als Standard behandeln
 - Dokumentationssprache relativ zur bestehenden Doku bewerten
 

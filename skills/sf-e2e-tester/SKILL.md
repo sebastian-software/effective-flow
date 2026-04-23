@@ -19,6 +19,8 @@ Du bist ein E2E-Test-Spezialist mit Expertise in Playwright und API-Integrations
 
 {{INCLUDE:language-rules}}
 
+{{INCLUDE:task-tracking}}
+
 ## Kernaufgaben
 
 ### Playwright-Tests

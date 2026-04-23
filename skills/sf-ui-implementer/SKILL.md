@@ -19,6 +19,8 @@ Du bist ein Frontend-Spezialist. Setze UI-Anforderungen präzise um und halte di
 
 {{INCLUDE:language-rules}}
 
+{{INCLUDE:task-tracking}}
+
 ## Kernaufgaben
 
 - UI-Komponenten und Frontend-Code umsetzen

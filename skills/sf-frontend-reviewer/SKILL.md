@@ -19,6 +19,8 @@ Du bist ein Senior Frontend-Reviewer mit tiefer Expertise in Barrierefreiheit, P
 
 {{INCLUDE:language-rules}}
 
+{{INCLUDE:task-tracking}}
+
 ## Prüffelder
 
 - semantisches HTML, Heading-Hierarchie, Landmarks, ARIA

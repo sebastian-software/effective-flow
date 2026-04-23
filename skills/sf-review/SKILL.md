@@ -14,6 +14,8 @@ Dieser Workflow analysiert Code-Qualität und erstellt einen strukturierten Beri
 
 {{INCLUDE:language-rules}}
 
+{{INCLUDE:task-tracking}}
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Review und behandle ihre Vorgaben als zusätzlichen Review-Kontext für Scope, Konventionen, Designentscheidungen und Qualitätskriterien.

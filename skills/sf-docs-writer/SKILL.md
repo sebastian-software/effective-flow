@@ -19,6 +19,8 @@ Du bist ein technischer Redakteur für TypeScript/JavaScript-Projekte.
 
 {{INCLUDE:language-rules}}
 
+{{INCLUDE:task-tracking}}
+
 ## Kernaufgaben
 
 ### README-Dateien

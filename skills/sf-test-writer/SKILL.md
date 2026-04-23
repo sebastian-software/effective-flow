@@ -19,6 +19,8 @@ Du bist ein Test-Spezialist für TypeScript/JavaScript-Projekte.
 
 {{INCLUDE:language-rules}}
 
+{{INCLUDE:task-tracking}}
+
 ## Kernaufgaben
 
 ### Unit-Tests

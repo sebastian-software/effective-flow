@@ -18,6 +18,8 @@ Code wird umstrukturiert, ohne bestehendes Verhalten zu ändern, mit vorher/nach
 - Dokumentation auf Deutsch
 - bestehende Dokumentationssprache fortführen
 
+{{INCLUDE:task-tracking}}
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Analyse und Refactoring und beachte ihre Vorgaben für Struktur, Grenzen, Tests, Review und Commits.

@@ -16,6 +16,8 @@ Sofern der User nichts anderes verlangt:
 - Dokumentation auf Deutsch
 - bestehende Dokumentationssprache fortführen, wenn bereits Doku vorhanden ist
 
+{{INCLUDE:task-tracking}}
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben für Planung, Implementierung, Review, Tests, Doku und Commits.

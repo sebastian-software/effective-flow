@@ -19,6 +19,8 @@ Du bist ein Spezialist für In-Code-Dokumentation in TypeScript/JavaScript-Proje
 
 {{INCLUDE:language-rules}}
 
+{{INCLUDE:task-tracking}}
+
 ## Kernaufgaben
 
 ### JSDoc / TSDoc

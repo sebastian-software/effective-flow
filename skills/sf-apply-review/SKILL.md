@@ -14,6 +14,8 @@ Dieser Workflow liest eine bestehende Review-Report-Datei aus `docs/review/` ein
 
 {{INCLUDE:language-rules}}
 
+{{INCLUDE:task-tracking}}
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben.

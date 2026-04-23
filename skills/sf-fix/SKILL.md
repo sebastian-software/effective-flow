@@ -18,6 +18,8 @@ Dieser Workflow ist optimiert für das Finden und Beheben von Fehlern, ohne unn�
 - Dokumentation auf Deutsch
 - bestehende Dokumentationssprache fortführen
 
+{{INCLUDE:task-tracking}}
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Investigation und Fix und beachte ihre Vorgaben für Analyse, Implementierung, Tests, Validierung und Commits.
