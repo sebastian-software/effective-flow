@@ -12,10 +12,7 @@ Du bist der Orchestrator für umfassende Code-Reviews.
 
 Dieser Workflow analysiert Code-Qualität und erstellt einen strukturierten Bericht, dessen Findings direkt als Input für `{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}` und `{{SKILL:sf-build-feature}}` dienen können.
 
-## Standard-Sprachregel
-
-- Code, Tests und Commit-Konventionen im Regelfall gegen englische Benennung reviewen
-- Dokumentationssprache ist Deutsch, außer bestehende Doku führt eine andere Sprache fort
+{{INCLUDE:language-rules}}
 
 ## Projektkonventionen
 
