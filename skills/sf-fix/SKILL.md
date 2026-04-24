@@ -139,6 +139,8 @@ Starte parallel, wenn möglich:
    - neu oder angepasste Tests
    - Restrisiken
 
+{{INCLUDE:pre-commit-gate}}
+
 ## Regeln
 
 - Starte unabhängige Fachphasen parallel

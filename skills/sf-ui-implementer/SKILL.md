@@ -53,3 +53,5 @@ Entferne oder kürze keine bestehenden Kommentare, es sei denn, die Aufgabe verl
 2. Implementiere nur den abgestimmten Scope.
 3. Nenne klar, was `{{SKILL:sf-test-writer}}` und `{{SKILL:sf-code-validator}}` danach absichern sollen.
 4. Führe keine ungefragten Neben-Refactorings ein.
+
+{{INCLUDE:pre-commit-gate}}

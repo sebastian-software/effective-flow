@@ -95,3 +95,5 @@ Entferne oder kürze keine bestehenden Kommentare, es sei denn, die Aufgabe verl
 2. Implementiere präzise im Stil des Projekts.
 3. Achte auf Security, Status Codes, Fehlergrenzen und Config-Muster.
 4. Gib klaren Kontext für nachfolgende Test-, Doku- und Validierungsphasen.
+
+{{INCLUDE:pre-commit-gate}}

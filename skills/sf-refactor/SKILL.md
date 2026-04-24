@@ -158,6 +158,8 @@ Starte parallel:
    - zusammenfassen, was refactored wurde
    - bestätigen, dass das Verhalten unverändert blieb
 
+{{INCLUDE:pre-commit-gate}}
+
 ## Regeln
 
 - Starte unabhängige Fachphasen parallel

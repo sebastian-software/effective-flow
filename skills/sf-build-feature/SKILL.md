@@ -334,6 +334,8 @@ type: approval
 
 ## Regeln
 
+{{INCLUDE:pre-commit-gate}}
+
 - Starte unabhängige Fachphasen immer parallel, wenn sie wirklich unabhängig sind
 - Gib dem User nach jeder Phase eine kurze Statusmeldung
 - Wenn eine Phase Fehler meldet, behebe sie vor dem Fortfahren
