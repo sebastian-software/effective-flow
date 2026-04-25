@@ -162,7 +162,19 @@ Workflow: /apply-review
    `📋 ADR erstellt am YYYY-MM-DD: [ADR-Dateiname]`
 4. Speichere die aktualisierte Report-Datei.
 
-### Phase 6: Zusammenfassung
+### Phase 6: Finale Validierung
+
+1. Prüfe ob im Projekt ein Validierungs-Script konfiguriert ist (z. B. `agent:check`, `typecheck`, `lint` in `package.json`).
+2. Falls vorhanden: führe die verfügbaren Prüfungen aus (z. B. `pnpm agent:check`, `pnpm typecheck`, `pnpm lint`).
+3. Falls Errors oder Warnings gefunden werden:
+   - behebe alle Errors und Warnings
+   - führe die Prüfungen erneut aus
+   - wiederhole bis alle Prüfungen fehlerfrei durchlaufen
+4. Falls in Phase 2 die Commit-Strategie „Einzeln" gewählt wurde und Fixes nötig waren: committe die Fixes mit einer Commit-Message wie `fix: resolve validation errors from final check`.
+5. Falls kein Validierungs-Script vorhanden ist: überspringe diese Phase mit kurzer Meldung.
+6. Gib dem User eine kurze Statusmeldung über das Ergebnis.
+
+### Phase 7: Zusammenfassung
 
 1. Lösche die Wisdom-Datei.
 2. Gib dem User eine Zusammenfassung:
