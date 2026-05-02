@@ -273,13 +273,14 @@ Starte wenn möglich parallel:
 
 ### Phase 6: Review
 
-1. Starte den passenden Reviewer-Skill für die geänderten Dateien.
+1. Starte den passenden Reviewer-Skill für die geänderten Dateien. Weise den Reviewer ausdrücklich an, **alle Schweregrade** zu liefern (Kritisch + Wichtig + Hinweis), damit der spätere Plan-Datei-Bericht als vollständiger Audit-Trail dient — abweichend vom `{{SKILL:sf-review}}`-Standard, der nur Kritisch + Wichtig liefert.
 2. Aggregiere alle Review-Findings und klassifiziere sie:
    - Kritisch: muss vor Abschluss behoben werden
    - Wichtig: sollte behoben werden, kann als Follow-up behandelt werden
    - Hinweis: optional
-3. Behebe alle kritischen Findings vor dem Abschluss.
-4. Präsentiere die Review-Ergebnisse in diesem Format:
+3. Vergib jedem Finding eine lokale ID in der Reihenfolge der Aggregation: `F1`, `F2`, `F3`, ... Diese IDs gelten nur innerhalb dieses Workflow-Laufs und werden später in der Plan-Datei wiederverwendet.
+4. Behebe alle kritischen Findings vor dem Abschluss.
+5. Präsentiere die Review-Ergebnisse in diesem Format. Aggregiere zusätzlich die Komplexität-Zähler, damit Phase 7 sie ohne erneute Ableitung übernehmen kann:
 
 ```markdown
 **Review-Ergebnisse**
@@ -287,21 +288,32 @@ Starte wenn möglich parallel:
 Zusammenfassung:
 | Schweregrad | Anzahl | Behoben | Offen |
 |---|---|---|---|
-| Kritisch | X | X | 0 |
+| Kritisch | X | X | X |
 | Wichtig | X | X | X |
 | Hinweis | X | X | X |
+
+| Komplexität | Anzahl |
+|---|---|
+| Leicht | X |
+| Mittel | Y |
+| Schwer | Z |
 ```
 
-5. Falls Findings nicht umgesetzt wurden, liste sie direkt in der Zusammenfassung mit Prompt-Vorschlägen für spätere Umsetzung auf.
-6. Dokumentiere jedes Finding mit:
-   - Schweregrad
+Hinweis: Vor Abschluss muss die Spalte „Offen" für „Kritisch" 0 sein.
+
+6. Falls Findings nicht umgesetzt wurden, liste sie direkt in der Zusammenfassung mit Prompt-Vorschlägen für spätere Umsetzung auf.
+7. Dokumentiere jedes Finding strukturiert, damit es unverändert in die Plan-Datei (Phase 7) übernommen werden kann:
+   - lokale ID (`F1`, `F2`, ...)
+   - Titel
+   - Schweregrad (Kritisch / Wichtig / Hinweis)
+   - Komplexität (Leicht / Mittel / Schwer)
    - Bereich
-   - Datei
+   - Datei + Zeile
    - Problem
    - Empfehlung
-   - Status
-   - Begründung bei Nicht-Umsetzung
-7. Falls Findings bewusst nicht umgesetzt werden:
+   - Status (Behoben / Offen / Nicht umgesetzt)
+   - Begründung bei Nicht-Umsetzung (inkl. ADR-Referenz, falls vorhanden)
+8. Falls Findings bewusst nicht umgesetzt werden:
 
 {{ASK}}
 header: ADR
@@ -310,7 +322,7 @@ type: approval
 {{/ASK}}
 
    - bei Zustimmung: erzeuge für jedes nicht umgesetzte Finding ein ADR-Dokument mit laufender Nummer, Kebab-Case-Titel, Kontext `/build-feature` und Quelle des Findings
-8. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `docs/review/` umgesetzt hat:
+9. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `docs/review/` umgesetzt hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
 
@@ -327,10 +339,65 @@ type: approval
      - betroffene Dateien
      - Implementierungsdetails
      - Testergebnisse
-     - Review-Findings und deren Behebung
-3. Lösche die Wisdom-Datei.
-4. Prüfe ob ein Formatter konfiguriert ist und formatiere alle geänderten Dateien inklusive Plan-Datei einmal einheitlich.
-5. Fasse zusammen, was implementiert, getestet und dokumentiert wurde.
+     - Review-Findings (Format gemäß Schritt 3 unten)
+3. **Plan-Datei-Findings-Bericht:** Übernimm die in Phase 6 strukturierten Findings unverändert in einen Abschnitt `## Review-Findings` der Plan-Datei. Das Format ist im Stil des `{{SKILL:sf-review}}`-Berichts gehalten, sodass Entwickler an dieser Stelle die Findings direkt prüfen und ggf. nachträglich beheben können.
+
+   Verwende dieses Template:
+
+```markdown
+## Review-Findings
+
+**Datum:** YYYY-MM-DD
+**Reviewer:** [sf-frontend-reviewer / sf-nodejs-reviewer / beide / keiner]
+
+### Zusammenfassung
+
+| Schweregrad | Anzahl | Behoben | Offen |
+|---|---|---|---|
+| Kritisch | X | X | 0 |
+| Wichtig | X | X | X |
+| Hinweis | X | X | X |
+
+| Komplexität | Anzahl |
+|---|---|
+| Leicht | X |
+| Mittel | Y |
+| Schwer | Z |
+
+### Findings
+
+#### [F1] [Titel]
+- **Schweregrad**: Kritisch / Wichtig / Hinweis
+- **Komplexität**: Leicht / Mittel / Schwer
+- **Bereich**: [...]
+- **Datei**: [pfad:zeile]
+- **Problem**: [...]
+- **Empfehlung**: [...]
+- **Status**: Behoben / Offen / Nicht umgesetzt (ADR XXX)
+- **Begründung bei Nicht-Umsetzung**: [...] <!-- Zeile nur ausgeben, wenn Status „Nicht umgesetzt" ist -->
+
+#### [F2] [Titel]
+...
+
+<!-- Folgenden Abschnitt nur ausgeben, wenn übersprungene Findings durch Designentscheidungen vorhanden sind -->
+### Übersprungene Findings (Designentscheidungen)
+
+| Finding | Designentscheidung | Quelle |
+|---|---|---|
+| [...] | [DD-XXX] | [...] |
+```
+
+   Regeln für den Findings-Bericht:
+   - Übernimm **alle** Findings (behobene und offene, alle Schweregrade Kritisch + Wichtig + Hinweis), damit der Bericht als Audit-Trail dient.
+   - Nutze die in Phase 6 vergebenen lokalen IDs (`F1`, `F2`, ...).
+   - Übernimm die Komplexität-Zähler aus der Phase-6-Aggregation. Falls dort nicht aggregiert wurde: leite sie aus der Findings-Liste ab.
+   - Die Zeile `Begründung bei Nicht-Umsetzung` wird pro Finding nur ausgegeben, wenn der Status `Nicht umgesetzt` ist. Bei Status `Behoben` oder `Offen` weglassen.
+   - Falls keine Findings aufgekommen sind: schreibe in die Sektion „Keine Findings gefunden." statt der Tabellen.
+   - Falls in Phase 6 keine Reviewer gestartet wurden (z. B. weil die Änderung kein Review erforderte): schreibe stattdessen einen kurzen Hinweis mit Begründung in die Sektion und lass Tabellen sowie Findings-Liste weg.
+   - Die Sektion „Übersprungene Findings (Designentscheidungen)" nur ausgeben, wenn es solche gibt.
+4. Lösche die Wisdom-Datei.
+5. Prüfe ob ein Formatter konfiguriert ist und formatiere alle geänderten Dateien inklusive Plan-Datei einmal einheitlich.
+6. Fasse zusammen, was implementiert, getestet und dokumentiert wurde.
 
 ## Regeln
 
