@@ -16,6 +16,41 @@ Dieser Workflow liest eine bestehende Review-Report-Datei aus `docs/review/` ein
 
 {{INCLUDE:task-tracking}}
 
+## Aufgabenverfolgung im Detail
+
+Zusätzlich zur generischen Regel im obigen Include verlangt dieser Skill **per-Finding-Granularität**, damit der User während des Workflows live sieht, wie viele Findings noch offen sind.
+
+### Task-Struktur
+
+Lege gleich zu Beginn von Phase 1 (nach erfolgreicher Report-Klassifikation) folgende Tasks an:
+
+1. **Phase-Level-Tasks** für jede Workflow-Phase, in der Reihenfolge:
+   - „Phase 1: Report einlesen und validieren"
+   - „Phase 2: Commit-Strategie festlegen"
+   - „Phase 3: ADR-Erstellung"
+   - „Phase 4: Vorabanalyse und parallele Delegation"
+   - „Phase 5: Report aktualisieren"
+   - „Phase 6: Stash-Bereinigung"
+   - „Phase 7: Finale Validierung"
+   - „Phase 8: Zusammenfassung"
+2. **Per-Finding-Tasks** für jedes umsetzbare Finding aus der Klassifikation in Phase 1 (nicht für „Bereits umgesetzt" oder „Nicht umsetzen"-Findings):
+   - Subject: `Finding R-XXXXXXX umsetzen` (mit konkreter Finding-ID)
+   - Status initial: `pending`
+
+### Lifecycle der Tasks
+
+- **Phase-Level-Tasks:** vor Phase-Start auf `in_progress`, nach Abschluss auf `completed`. Phase 1 ist beim Anlegen der Tasks bereits aktiv → setze sie direkt nach dem Anlegen auf `in_progress` und nach Abschluss von Phase 1 auf `completed`.
+- **Per-Finding-Tasks:**
+  - `in_progress`: sobald die Vorabanalyse für dieses Finding in Phase 4.1 startet.
+  - `completed`: sobald die Delegation in Phase 4.3 für dieses Finding `ERLEDIGT` meldet.
+  - **Bei `ABBRUCH` in Phase 4.1 oder 4.3:** trotzdem auf `completed` setzen (eine offene Task-Zeile würde die Liste blockieren), aber das Subject um `[fehlgeschlagen]` ergänzen, damit der User den Status erkennt.
+- **Bei vorzeitigem Gesamt-Abbruch** (z. B. keine umsetzbaren Findings in Phase 1, Report nicht gefunden): alle noch offenen `pending`- und `in_progress`-Tasks auf `completed` setzen und ihre Subjects mit `[abgebrochen]` ergänzen, bevor der Skill mit `ERLEDIGT` endet.
+
+### Wichtig
+
+- Lege **alle** Tasks (Phase-Level und Per-Finding) am Ende von Phase 1, direkt nach erfolgreicher Klassifikation, an. Damit sieht der User die volle Liste, bevor irgendwelche parallelen Sub-Agenten starten.
+- Aktualisiere Tasks zeitnah: jeder Lifecycle-Wechsel direkt nach dem Ereignis (nicht gebatched am Phasen-Ende).
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben.

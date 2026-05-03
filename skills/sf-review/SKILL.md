@@ -16,6 +16,53 @@ Dieser Workflow analysiert Code-Qualität und erstellt einen strukturierten Beri
 
 {{INCLUDE:task-tracking}}
 
+## Aufgabenverfolgung im Detail
+
+Zusätzlich zur generischen Regel im obigen Include verlangt dieser Skill **per-Quelle- und per-Sub-Reviewer-Granularität**, damit der User während des Workflows live sieht, welche Streams und Sub-Agenten noch laufen.
+
+### Task-Struktur
+
+Tasks werden an **zwei** Zeitpunkten angelegt, weil der Verzeichnis-Split in Phase 2c die Anzahl der Sub-Reviewer erst zur Laufzeit bestimmt:
+
+**Zeitpunkt A — direkt nach Scope-Bestätigung am Ende von Phase 1:**
+
+1. **Phase-Level-Tasks:**
+   - „Phase 1: Scope"
+   - „Phase 2: Parallele Datensammlung"
+   - „Phase 3: Aggregation und Designentscheidungs-Filter"
+   - „Phase 4: Bericht"
+2. **Per-Quelle-Tasks für Phase 2a** (eine pro Designentscheidungs-Quelle):
+   - „2a: ADR-Quelle durchsuchen"
+   - „2a: Plan-Quelle durchsuchen"
+   - „2a: Konventionen-Quelle durchsuchen"
+   - „2a: Code-Kommentar-Quelle durchsuchen"
+   - „2a: Lint-Suppressions durchsuchen"
+   - „2a: Vorherige Reviews durchsuchen"
+3. **Ein Task für Phase 2b:**
+   - „2b: Technische Validierung"
+
+**Zeitpunkt B — zu Beginn von Phase 2c, nachdem die Verzeichnis-Split-Heuristik die Sub-Reviewer-Aufteilung bestimmt hat, aber **bevor** der erste Sub-Reviewer gestartet wird:**
+
+4. **Per-Sub-Reviewer-Tasks für Phase 2c** (1 bis N je nach Verzeichnis-Split):
+   - Bei einzelnem Reviewer pro Project-Type-Bucket: z. B. „2c: Frontend-Review" oder „2c: Backend-Review"
+   - Bei Verzeichnis-Split: pro Sub-Reviewer ein eigener Task mit dem Verzeichnis im Subject, z. B. „2c: Frontend-Review src/components", „2c: Backend-Review src/routes"
+   - Bei rekursivem Split: pro Sub-Sub-Reviewer ein Task mit dem tieferen Pfad im Subject, z. B. „2c: Frontend-Review src/components/forms".
+
+### Lifecycle der Tasks
+
+- **Phase-Level-Tasks:** vor Phase-Start auf `in_progress`, nach Abschluss auf `completed`. Phase 1 ist beim Anlegen der Tasks bereits aktiv → setze sie direkt auf `in_progress` und nach Abschluss von Phase 1 auf `completed`.
+- **Per-Quelle-/Per-Sub-Reviewer-Tasks:**
+  - `in_progress`: beim Start des jeweiligen Sub-Agenten in Phase 2.
+  - `completed`: bei `ERLEDIGT` des Sub-Agenten.
+  - **Bei `ABBRUCH`:** trotzdem auf `completed` setzen, Subject um `[fehlgeschlagen]` ergänzen.
+- **Phase-2-Aggregat-Lifecycle:** Der Phase-Level-Task „Phase 2" gilt erst als `completed`, wenn alle drei Streams (2a, 2b, 2c) `ERLEDIGT` oder `ABBRUCH` gemeldet haben — analog zur Phase-3-Startbedingung.
+- **Bei vorzeitigem Gesamt-Abbruch** (z. B. Skill wird unterbrochen, mehrere kritische Sub-Agenten brechen ab und der Workflow kann nicht in Phase 3 fortgesetzt werden): alle noch offenen `pending`- und `in_progress`-Tasks auf `completed` setzen und ihre Subjects mit `[abgebrochen]` ergänzen, bevor der Skill mit `ERLEDIGT` oder `ABBRUCH` endet.
+
+### Wichtig
+
+- Tasks gemäß Zeitpunkt A und B oben anlegen, damit der User vor jedem Start der relevanten Sub-Agenten die volle Liste sieht.
+- Aktualisiere Tasks zeitnah, sobald ein Sub-Agent meldet — nicht gebatched.
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Review und behandle ihre Vorgaben als zusätzlichen Review-Kontext für Scope, Konventionen, Designentscheidungen und Qualitätskriterien.
