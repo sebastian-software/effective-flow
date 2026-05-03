@@ -36,6 +36,8 @@ Retry-Eskalation:
 Verwende `.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
 
 - Stash-Baseline aus Phase 1 (Liste der bereits vorhandenen Stash-Referenzen mit Beschreibungen und Commit-Hashes)
+- Vorabanalyse pro Finding aus Phase 4.1 (betroffene Dateien, Root Cause / Anforderung, Implementierungsskizze, Risiken, Konfidenz)
+- berechnete Sub-Gruppen aus Phase 4.2
 - umgesetzte Findings und deren Ergebnis
 - fehlgeschlagene Delegationen
 - erzeugte ADRs
@@ -134,26 +136,78 @@ Workflow: /apply-review
 
 4. Gib dem User eine Statusmeldung über die erstellten ADRs.
 
-### Phase 4: Delegation
+### Phase 4: Vorabanalyse und parallele Delegation
 
-1. Gruppiere die umsetzbaren Findings nach Aktion:
-   - `{{SKILL:sf-fix}}`: alle Findings mit Aktion fix
-   - `{{SKILL:sf-refactor}}`: alle Findings mit Aktion refactor
-   - `{{SKILL:sf-build-feature}}`: alle Findings mit Aktion build-feature
-2. Starte für jede Aktionsgruppe einen internen Sub-Agenten, der die Findings dieser Gruppe **sequenziell** abarbeitet. Verschiedene Aktionsgruppen dürfen **parallel** laufen.
-3. Jeder Sub-Agent erhält:
+Diese Phase besteht aus drei Teilschritten. Ziel: Maximierung der Parallelität, ohne den 1-Commit-pro-Finding-Vertrag zu brechen.
+
+#### Phase 4.1: Vorabanalyse (parallel pro Finding)
+
+Starte für **jedes umsetzbare Finding** einen Vorabanalyse-Sub-Agenten parallel. Diese Sub-Agenten implementieren nichts und ändern keine Dateien — sie analysieren nur.
+
+Jeder Vorabanalyse-Sub-Agent erhält:
+- die Finding-Details aus dem Report (ID, Problem, Empfehlung, Datei, Aktion)
+- die Entwickler-Anmerkung (falls vorhanden)
+- den Auftrag, den Code zu untersuchen und ein strukturiertes Analyse-Ergebnis zu liefern:
+  - **Betroffene Dateien:** vollständige Liste aller Dateien, die wahrscheinlich angefasst werden (mehr als nur die im Report genannte primäre Datei).
+  - **Root Cause / aktuelles Verhalten** (für `{{SKILL:sf-fix}}` und `{{SKILL:sf-refactor}}`) bzw. **Anforderung** (für `{{SKILL:sf-build-feature}}`).
+  - **Implementierungsskizze:** kurzer Plan in 2-5 Bullet-Points.
+  - **Risiken und Datei-Abhängigkeiten:** mögliche Nebenwirkungen, Kollisionen mit anderen Findings.
+  - **Konfidenz:** `Hoch` (Datei-Liste sicher), `Mittel` (Datei-Liste plausibel), `Niedrig` (File-Scope unsicher, z. B. großes Refactoring oder unklare Dependency).
+- das Fertig-Protokoll
+
+Schreibe das Ergebnis pro Finding in die Wisdom-Datei unter `## Vorabanalyse [R-XXXXXXX]`. Bei `ABBRUCH` markiere das Finding mit dem Status `fehlgeschlagen (Vorabanalyse)` in der Wisdom-Datei und überspringe es bei den folgenden Schritten. Diese Kennzeichnung erlaubt Phase 6 (Stash-Bereinigung), zwischen Vorabanalyse-Abbrüchen (kein Stash möglich, da nichts implementiert wurde) und Delegations-Abbrüchen (Stash kann existieren) zu unterscheiden.
+
+#### Phase 4.2: Sub-Gruppen-Bildung (lokal im Orchestrator)
+
+Für jede Aktionsgruppe (`{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:sf-build-feature}}`) bilde Sub-Gruppen anhand der Datei-Listen aus Phase 4.1. Vorgehen explizit zweistufig:
+
+1. **Partitioniere** die Findings der Aktionsgruppe in zwei Mengen:
+   - **Konfidenz-Niedrig-Menge:** Findings mit Konfidenz `Niedrig` (File-Scope unsicher).
+   - **Rest-Menge:** Findings mit Konfidenz `Hoch` oder `Mittel`.
+2. Wende **Union-Find ausschließlich auf die Rest-Menge** an:
+   - Initialisiere jedes Finding der Rest-Menge als eigene Sub-Gruppe.
+   - Für jeden Datei-Pfad, der von mehr als einem Finding der Rest-Menge genannt wird: vereinige die Sub-Gruppen der beteiligten Findings.
+   - Ergebnis: zwei Findings sind genau dann in derselben Sub-Gruppe, wenn sie über eine Kette von Datei-Überlappungen verbunden sind (auch transitiv: teilen A–B und B–C je eine Datei, ohne dass A–C direkt überlappen, landen A, B, C in derselben Sub-Gruppe; auch sternförmig: teilt A je eine Datei mit B und mit C, ohne dass B–C überlappen, landen ebenfalls alle drei in derselben Sub-Gruppe).
+3. Füge **jedes Finding aus der Konfidenz-Niedrig-Menge als eigene Sub-Gruppe (Singleton)** zum Ergebnis hinzu — kein Risiko für Datei-Konflikte mit anderen.
+4. Reihenfolge innerhalb einer Sub-Gruppe: Reihenfolge wie im Report (deterministisch). Keine Schweregrad-Sortierung — Schweregrade können Abhängigkeiten implizieren.
+5. Ergebnis pro Aktionsgruppe: Liste von Sub-Gruppen, jede mit 1-N Findings.
+
+Edge Cases:
+- Sind alle Findings einer Aktionsgruppe Konfidenz `Niedrig`, entsteht pro Finding eine Singleton-Sub-Gruppe; der Union-Find-Schritt entfällt.
+- Hat eine Aktionsgruppe genau ein Finding, ist das Ergebnis immer eine einzelne Sub-Gruppe (mit oder ohne Union-Find).
+- Hat eine Aktionsgruppe keine Findings, entsteht keine Sub-Gruppe — der entsprechende Stream in Phase 4.3 entfällt.
+
+Beispiel: Aktionsgruppe `{{SKILL:sf-fix}}` mit fünf Findings:
+- F1, F2 betreffen `src/auth.ts` → Sub-Gruppe A (sequenziell)
+- F3 betrifft `src/billing.ts` → Sub-Gruppe B (parallel zu A)
+- F4, F5 betreffen `src/ui.tsx` → Sub-Gruppe C (parallel zu A und B, intern sequenziell)
+Damit drei parallele Streams in dieser Aktionsgruppe statt einem.
+
+#### Phase 4.3: Parallele Delegation
+
+1. Starte für jede `(Aktionsgruppe × Sub-Gruppe)`-Kombination einen Delegations-Sub-Agenten. Alle laufen parallel; innerhalb eines Sub-Agenten werden seine Findings sequenziell abgearbeitet.
+2. Jeder Delegations-Sub-Agent erhält im Prompt direkt eingebettet:
    - die Finding-Details (ID, Problem, Empfehlung, Prompt-Vorschlag, Datei)
-   - die Entwickler-Anmerkung als zusätzlichen Kontext (falls vorhanden)
+   - die zugehörige Vorabanalyse aus Phase 4.1 als **inline-Kontext-Block** im Prompt — nicht als Verweis auf die Wisdom-Datei. Die Sub-Skills lesen die Wisdom-Datei nicht; sie verarbeiten nur den Prompt-Inhalt. Bette die Vorabanalyse vollständig ein, etwa unter der Überschrift `Vorabanalyse für dieses Finding:`.
+   - die Entwickler-Anmerkung (falls vorhanden)
    - die Commit-Strategie aus Phase 2
    - den Auftrag, den passenden Skill aufzurufen:
-     - Findings mit Aktion fix: `Verwende den Skill {{SKILL:sf-fix}} für dieses Finding.`
-     - Findings mit Aktion refactor: `Verwende den Skill {{SKILL:sf-refactor}} für dieses Finding.`
-     - Findings mit Aktion build-feature: `Verwende den Skill {{SKILL:sf-build-feature}} für dieses Finding.`
+     - Aktion fix: `Verwende den Skill {{SKILL:sf-fix}} für dieses Finding.`
+     - Aktion refactor: `Verwende den Skill {{SKILL:sf-refactor}} für dieses Finding.`
+     - Aktion build-feature: `Verwende den Skill {{SKILL:sf-build-feature}} für dieses Finding.`
    - den Prompt-Vorschlag aus dem Report als Aufgabenbeschreibung
    - das Fertig-Protokoll
-4. Prüfe jeden Sub-Agenten auf `ERLEDIGT` oder `ABBRUCH`.
-5. Bei `ABBRUCH`: User informieren, Finding als fehlgeschlagen markieren, mit dem nächsten Finding fortfahren.
-6. Gib dem User nach jeder abgeschlossenen Aktionsgruppe eine Statusmeldung.
+3. Prüfe jeden Sub-Agenten auf `ERLEDIGT` oder `ABBRUCH`.
+4. Bei `ABBRUCH`:
+   - User informieren, Finding als `fehlgeschlagen (Delegation)` in der Wisdom-Datei markieren.
+   - **Vor dem nächsten Finding derselben Sub-Gruppe:** prüfe via `git status`, ob der Arbeitsbaum sauber ist. Falls uncommittete Änderungen vorhanden sind (halbfertige Datei vom abgebrochenen Finding), frage den User, ob diese Änderungen gestasht (`git stash push -m "apply-review abort R-XXXXXXX"`) oder verworfen werden sollen, bevor das nächste Finding startet. Andernfalls würde das nächste Finding auf einem inkonsistenten Zustand arbeiten.
+   - Mit dem nächsten Finding innerhalb derselben Sub-Gruppe fortfahren. Andere Sub-Gruppen laufen unabhängig weiter.
+5. Gib dem User nach jeder abgeschlossenen Sub-Gruppe eine Statusmeldung mit dem Ergebnis pro Finding.
+
+#### Bekannte Einschränkungen
+
+- **Cross-Action-Datei-Konflikte** werden nicht erkannt: ein `{{SKILL:sf-fix}}`-Finding und ein `{{SKILL:sf-refactor}}`-Finding können dieselbe Datei betreffen und parallel laufen. Diese Situation war auch im sequenziellen Vorgängermodell möglich und ist in der Praxis selten. Bei einem Konflikt fängt die Stash-Bereinigung in Phase 6 die hinterlassenen Stashes auf.
+- **Konfidenz-Niedrig-Findings** verzichten bewusst auf Parallelität, um Konflikte zu vermeiden — dafür bleiben sie zuverlässig isoliert.
 
 ### Phase 5: Report aktualisieren
 
@@ -252,8 +306,8 @@ options:
 
 ## Regeln
 
-- Starte verschiedene Aktionsgruppen parallel als Sub-Agenten
-- Innerhalb einer Aktionsgruppe: sequenziell abarbeiten
+- Vorabanalyse (Phase 4.1) immer parallel pro Finding
+- Delegation (Phase 4.3) parallel pro `(Aktionsgruppe × Sub-Gruppe)`; innerhalb einer Sub-Gruppe sequenziell, damit Datei-Konflikte und Commit-Reihenfolge sauber bleiben
 - Die Report-Datei muss beim Start des Skills frisch vom Dateisystem gelesen werden
 - Gib dem User nach jeder Phase eine kurze Statusmeldung
 - Wenn ein delegierter Skill fehlschlägt: User informieren, nächstes Finding fortsetzen
