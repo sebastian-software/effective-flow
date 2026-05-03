@@ -126,7 +126,7 @@ question: Sollen ADRs in docs/adr/ für nicht umgesetzte Findings erzeugt werden
 type: approval
 {{/ASK}}
 
-   - erzeuge bei Zustimmung ADRs in `docs/adr/` mit Kontext `/refactor`
+   - erzeuge bei Zustimmung ADRs in `docs/adr/` mit Kontext `{{SKILL:sf-refactor}}`
 5. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `docs/review/` umgesetzt hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow

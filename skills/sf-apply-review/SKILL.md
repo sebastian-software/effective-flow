@@ -156,7 +156,7 @@ Nicht umgesetzt
 ## Kontext
 
 Review-Report: [Report-Dateiname], Finding [R-XXXXXXX]
-Workflow: /apply-review
+Workflow: {{SKILL:sf-apply-review}}
 
 ## Entscheidung
 
