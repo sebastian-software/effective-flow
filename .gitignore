@@ -3,3 +3,5 @@
 .DS_Store
 dist/
 TODO.md
+.sf-memory.json
+docs/review/review-report-*.md
