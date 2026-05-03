@@ -55,3 +55,5 @@ Entferne oder kürze keine bestehenden Kommentare, es sei denn, die Aufgabe verl
 4. Führe keine ungefragten Neben-Refactorings ein.
 
 {{INCLUDE:pre-commit-gate}}
+
+{{INCLUDE:commit-message-rules}}

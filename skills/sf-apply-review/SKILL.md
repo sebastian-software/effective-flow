@@ -16,6 +16,8 @@ Dieser Workflow liest eine bestehende Review-Report-Datei aus `docs/review/` ein
 
 {{INCLUDE:task-tracking}}
 
+{{INCLUDE:commit-message-rules}}
+
 ## Aufgabenverfolgung im Detail
 
 Zusätzlich zur generischen Regel im obigen Include verlangt dieser Skill **per-Finding-Granularität**, damit der User während des Workflows live sieht, wie viele Findings noch offen sind.
@@ -133,7 +135,7 @@ options:
 
 Halte die Antwort fest und gib sie an jeden delegierten Skill als Anweisung weiter:
 
-- **Einzeln:** Nach jedem abgeschlossenen Finding die Änderungen committen. Verwende als Commit-Message das Format: `fix/refactor/feat: [Finding-ID] [Kurzbeschreibung]`
+- **Einzeln:** Nach jedem abgeschlossenen Finding die Änderungen committen. Verwende als Commit-Message das Format: `fix/refactor/feat: [Finding-ID] [Kurzbeschreibung]`. Setze **niemals** `Co-Authored-By`-Trailer (auch nicht für LLMs); das gilt für jeden Commit, der durch diesen Workflow oder einen delegierten Sub-Agenten erzeugt wird.
 - **Keine Commits:** Keine automatischen Commits, der User committet selbst.
 
 ### Phase 3: ADR-Erstellung

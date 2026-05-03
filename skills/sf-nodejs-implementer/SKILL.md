@@ -97,3 +97,5 @@ Entferne oder kürze keine bestehenden Kommentare, es sei denn, die Aufgabe verl
 4. Gib klaren Kontext für nachfolgende Test-, Doku- und Validierungsphasen.
 
 {{INCLUDE:pre-commit-gate}}
+
+{{INCLUDE:commit-message-rules}}

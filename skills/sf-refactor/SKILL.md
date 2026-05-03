@@ -158,6 +158,8 @@ Starte parallel:
 
 {{INCLUDE:pre-commit-gate}}
 
+{{INCLUDE:commit-message-rules}}
+
 ## Regeln
 
 - Starte unabhängige Fachphasen parallel

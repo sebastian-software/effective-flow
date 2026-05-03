@@ -12,11 +12,12 @@ Du erstellst eine Commit-Message für die aktuell gestagten Änderungen und füh
 
 - nur bereits gestagte Dateien committen
 - eine klare, beschreibende Conventional-Commit-Message wählen
-- keine `Co-Authored-By`-Zeilen erzeugen
 - Commit-Message auf Englisch formulieren
 - keine Projektvalidation wie Linting, Tests oder Build-Checks ausführen
 
 {{INCLUDE:task-tracking}}
+
+{{INCLUDE:commit-message-rules}}
 
 ## Projektkonventionen
 
@@ -25,22 +26,14 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Commit und beac
 ## Vorgehen
 
 1. Prüfe, ob es gestagte Änderungen gibt.
-2. Lies nur die staged Diff und leite daraus den passenden Commit-Typ ab:
-   - `feat:` für neue Funktionalität
-   - `fix:` für Fehlerbehebungen
-   - `chore:` für Wartung, Tooling, Repo-Aufräumen
-   - `docs:` für Dokumentation
-   - `refactor:` für Strukturverbesserungen ohne Verhaltensänderung
-   - `test:` für Teständerungen
+2. Lies nur die staged Diff und leite daraus den passenden Conventional-Commit-Typ gemäß den Commit-Message-Regeln oben ab. Kurzbedeutung der Präfixe: `feat:` (neue Funktionalität), `fix:` (Fehlerbehebung), `chore:` (Wartung), `docs:` (Dokumentation), `refactor:` (Strukturverbesserung ohne Verhaltensänderung), `test:` (Teständerung).
 3. Formuliere eine kurze, konkrete Summary-Zeile, die den inhaltlichen Kern der staged changes beschreibt.
 4. Führe keine eigenständige Projektvalidation aus; Linting, Tests und andere Qualitätsprüfungen sind Aufgabe anderer Skills wie `{{AGENT:sf-code-validator}}` und `{{AGENT:sf-test-writer}}`.
 5. Führe `git commit` für genau diese staged changes aus.
 
 ## Regeln
 
-- Verwende keine generischen Messages wie `update files` oder `misc changes`.
 - Erfinde keine Änderungen, die nicht im staged Diff stehen.
-- Füge keine `Co-Authored-By`-Trailer hinzu.
 - Starte keine Projektvalidation wie Linting, Tests oder Build-Checks; diese Verantwortung liegt bei anderen Skills.
 - Respektiere bestehende Husky-Hooks; commitlint, prettier und lint dürfen den Commit blockieren.
 - Wenn Hooks fehlschlagen, gib die relevante Ursache knapp wieder statt die Hooks zu umgehen oder selbst zusätzliche Validierung zu starten.
