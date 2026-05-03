@@ -241,6 +241,8 @@ Damit drei parallele Streams in dieser Aktionsgruppe statt einem.
    - **Vor dem nächsten Finding derselben Sub-Gruppe:** prüfe via `git status`, ob der Arbeitsbaum sauber ist. Falls uncommittete Änderungen vorhanden sind (halbfertige Datei vom abgebrochenen Finding), frage den User, ob diese Änderungen gestasht (`git stash push -m "apply-review abort R-XXXXXXX"`) oder verworfen werden sollen, bevor das nächste Finding startet. Andernfalls würde das nächste Finding auf einem inkonsistenten Zustand arbeiten.
    - Mit dem nächsten Finding innerhalb derselben Sub-Gruppe fortfahren. Andere Sub-Gruppen laufen unabhängig weiter.
 5. Gib dem User nach jeder abgeschlossenen Sub-Gruppe eine Statusmeldung mit dem Ergebnis pro Finding.
+6. **Synchronisationsbarriere vor Phase 5:** Starte Phase 5 erst, wenn **alle** in Phase 4.3 gestarteten Delegations-Sub-Agenten einen Endstatus geliefert haben (`ERLEDIGT` oder `ABBRUCH`).
+7. Eine Statusmeldung nach einer abgeschlossenen Sub-Gruppe ist **keine** Abschlussmeldung des Gesamt-Workflows und **kein** Halt. Nach jeder Statusmeldung prüfst du aktiv, welche Delegations-Sub-Gruppen noch laufen, wartest auf deren Endstatus und setzt Phase 4.3 fort, bis keine Sub-Gruppe mehr offen ist.
 
 #### Bekannte Einschränkungen
 
@@ -248,6 +250,8 @@ Damit drei parallele Streams in dieser Aktionsgruppe statt einem.
 - **Konfidenz-Niedrig-Findings** verzichten bewusst auf Parallelität, um Konflikte zu vermeiden — dafür bleiben sie zuverlässig isoliert.
 
 ### Phase 5: Report aktualisieren
+
+**Vorbedingung:** Phase 5 darf erst starten, wenn die Synchronisationsbarriere aus Phase 4.3 erfüllt ist, also keine Delegations-Sub-Gruppe mehr offen ist.
 
 1. Lies die Report-Datei erneut frisch vom Dateisystem ein. Die Datei könnte sich während der Umsetzung geändert haben.
 2. Ergänze an jedem erfolgreich umgesetzten Finding als letzten Eintrag:
@@ -339,6 +343,8 @@ options:
 
 ### Phase 8: Zusammenfassung
 
+**Vorbedingung:** Phase 8 darf erst starten, wenn Phase 5 bis 7 vollständig abgeschlossen wurden. Eine frühere Zwischenmeldung beendet den Workflow nicht.
+
 1. Lösche die Wisdom-Datei.
 2. Gib dem User eine Zusammenfassung:
 
@@ -361,6 +367,7 @@ options:
 
 - Vorabanalyse (Phase 4.1) immer parallel pro Finding
 - Delegation (Phase 4.3) parallel pro `(Aktionsgruppe × Sub-Gruppe)`; innerhalb einer Sub-Gruppe sequenziell, damit Datei-Konflikte und Commit-Reihenfolge sauber bleiben
+- Nach dem Start der Delegation in Phase 4.3 aktiv auf **alle** Sub-Gruppen-Endstatus warten, bevor Phase 5 beginnt oder der Workflow endet
 - Die Report-Datei muss beim Start des Skills frisch vom Dateisystem gelesen werden
 - Gib dem User nach jeder Phase eine kurze Statusmeldung
 - Wenn ein delegierter Skill fehlschlägt: User informieren, nächstes Finding fortsetzen
