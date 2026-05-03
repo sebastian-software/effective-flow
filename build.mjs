@@ -274,11 +274,11 @@ try {
       writeFileSync(join(codexDir, 'SKILL.md'), codexContent);
 
       // --- Claude Code: Command ---
-      const claudeDesc = cleanDescription(description);
+      const claudeDesc = cleanDescription(description).replace(/"/g, '\\"');
       const claudeBody = transformClaude(transformAskClaude(body));
       const claudeContent = [
         '---',
-        `description: ${claudeDesc}`,
+        `description: "${claudeDesc}"`,
         '---',
         claudeBody,
       ].join('\n');
@@ -306,9 +306,10 @@ try {
       const claudeTools = getNestedArray(fm, 'claude', 'tools');
       const claudeSkills = getNestedList(fm, 'claude', 'skills');
 
+      const agentDesc = cleanDescription(description).replace(/"/g, '\\"');
       let agentFm = '---\n';
       agentFm += `name: ${shortName}\n`;
-      agentFm += `description: ${cleanDescription(description)}\n`;
+      agentFm += `description: "${agentDesc}"\n`;
       if (claudeModel) agentFm += `model: ${claudeModel}\n`;
       if (claudeColor) agentFm += `color: ${claudeColor}\n`;
       if (claudeTools) {
