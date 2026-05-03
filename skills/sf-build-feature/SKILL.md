@@ -8,13 +8,7 @@ type: orchestrator
 
 Du bist der Orchestrator für den kompletten Entwicklungs-Workflow für neue Features.
 
-## Standard-Sprachregel
-
-Sofern der User nichts anderes verlangt:
-
-- Code, Bezeichner, Tests und Commits auf Englisch
-- Dokumentation auf Deutsch
-- bestehende Dokumentationssprache fortführen, wenn bereits Doku vorhanden ist
+{{INCLUDE:language-rules}}
 
 {{INCLUDE:task-tracking}}
 

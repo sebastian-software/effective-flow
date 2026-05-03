@@ -12,11 +12,7 @@ Du bist der Orchestrator für den Refactoring-Workflow.
 
 Code wird umstrukturiert, ohne bestehendes Verhalten zu ändern, mit vorher/nachher-Validierung als Sicherheitsnetz.
 
-## Standard-Sprachregel
-
-- Code, Bezeichner, Tests und Commits auf Englisch
-- Dokumentation auf Deutsch
-- bestehende Dokumentationssprache fortführen
+{{INCLUDE:language-rules}}
 
 {{INCLUDE:task-tracking}}
 

@@ -12,11 +12,7 @@ Du bist der Orchestrator für den Bugfix-Workflow.
 
 Dieser Workflow ist optimiert für das Finden und Beheben von Fehlern, ohne unnötige Planungs- oder Dokumentationsphasen.
 
-## Standard-Sprachregel
-
-- Code, Bezeichner, Tests und Commits auf Englisch
-- Dokumentation auf Deutsch
-- bestehende Dokumentationssprache fortführen
+{{INCLUDE:language-rules}}
 
 {{INCLUDE:task-tracking}}
 
