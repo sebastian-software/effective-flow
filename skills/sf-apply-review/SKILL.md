@@ -35,6 +35,7 @@ Retry-Eskalation:
 
 Verwende `.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
 
+- Stash-Baseline aus Phase 1 (Liste der bereits vorhandenen Stash-Referenzen mit Beschreibungen und Commit-Hashes)
 - umgesetzte Findings und deren Ergebnis
 - fehlgeschlagene Delegationen
 - erzeugte ADRs
@@ -45,13 +46,14 @@ Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lös
 
 ### Phase 1: Report einlesen und validieren
 
-1. Bestimme die Report-Datei:
+1. **Stash-Baseline erfassen:** Führe `git stash list` aus und merke dir die vollständige Liste der bereits vorhandenen Stash-Referenzen (z. B. `stash@{0}`, `stash@{1}`, ... mit ihren Beschreibungen). Halte die Baseline in der Wisdom-Datei fest, damit Phase 6 (Stash-Bereinigung) später neue, durch diesen Workflow entstandene Stashes davon abgrenzen kann. Falls `git stash list` leer ist: notiere „keine Baseline-Stashes".
+2. Bestimme die Report-Datei:
    - falls als Argument übergeben: verwende diese Datei
    - sonst: suche nach `review-report-*.md` in `docs/review/`
    - bei mehreren Reports: frage den User welcher verwendet werden soll
    - falls kein Report gefunden: Fehlermeldung und Abbruch
-2. **Lies die Datei frisch ein.** Da die Datei zwischen Konversationen gelöscht und neu erstellt werden kann, darf kein zuvor eingelesener Inhalt verwendet werden. Lies die Datei immer direkt vom Dateisystem.
-3. Parse alle Findings (`### [R-XXXXXXX] ...`-Blöcke) mit:
+3. **Lies die Datei frisch ein.** Da die Datei zwischen Konversationen gelöscht und neu erstellt werden kann, darf kein zuvor eingelesener Inhalt verwendet werden. Lies die Datei immer direkt vom Dateisystem.
+4. Parse alle Findings (`### [R-XXXXXXX] ...`-Blöcke) mit:
    - Finding-ID und Titel
    - Schweregrad
    - Komplexität
@@ -59,12 +61,12 @@ Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lös
    - Prompt-Vorschlag
    - Entwickler-Anmerkung (falls vorhanden)
    - Bereits vorhandene Umsetzungshinweise (✅)
-4. Klassifiziere jedes Finding:
+5. Klassifiziere jedes Finding:
    - **Bereits umgesetzt:** Finding hat bereits einen ✅-Hinweis → überspringen
    - **Nicht umsetzen:** Entwickler-Anmerkung beginnt mit „Nicht umsetzen" → ADR erstellen
    - **Umsetzen:** Kein ✅-Hinweis und keine ablehnende Anmerkung → an Skill delegieren
    - **Umsetzen mit Kontext:** Entwickler-Anmerkung vorhanden, die nicht mit „Nicht umsetzen" beginnt → an Skill delegieren, Anmerkung als zusätzlichen Kontext mitgeben
-5. Gib dem User eine Übersicht:
+6. Gib dem User eine Übersicht:
 
 ```markdown
 **Report:** [Dateiname]
@@ -78,7 +80,7 @@ Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lös
 | Gesamt | N |
 ```
 
-6. Falls keine umsetzbaren Findings vorhanden sind und keine ADRs zu erstellen sind: Kurzmeldung und Abbruch.
+7. Falls keine umsetzbaren Findings vorhanden sind und keine ADRs zu erstellen sind: Kurzmeldung und Abbruch.
 
 ### Phase 2: Commit-Strategie
 
@@ -162,7 +164,61 @@ Workflow: /apply-review
    `📋 ADR erstellt am YYYY-MM-DD: [ADR-Dateiname]`
 4. Speichere die aktualisierte Report-Datei.
 
-### Phase 6: Finale Validierung
+### Phase 6: Stash-Bereinigung
+
+Während der Delegation in Phase 4 können die aufgerufenen Sub-Skills oder Pre-Commit-Hooks neue Stashes anlegen, die ohne Bereinigung zurückbleiben. Diese Phase findet und behandelt sie.
+
+1. Führe `git stash list` aus und vergleiche das Ergebnis mit der in Phase 1 erfassten Baseline.
+2. Bestimme die **neuen Stashes** als alle Einträge, die in der aktuellen Liste, aber nicht in der Baseline vorhanden sind. Vergleiche dabei nicht über `stash@{N}`-Indizes (verschieben sich), sondern über die vollständige Beschreibung (Branch + Commit-Hash + Subject) und idealerweise zusätzlich über die Stash-Commit-Hashes (`git stash list --format='%H %gs'`).
+3. Falls keine neuen Stashes gefunden werden: gib kurz „Keine offenen Stashes aus diesem Lauf." aus und gehe zur nächsten Phase.
+4. Klassifiziere jeden neuen Stash anhand zweier Prüfungen:
+
+   **Prüfung A — Ist der Stash-Inhalt bereits im Branch?**
+   - Versuche den Stash-Patch revers gegen die aktuelle Arbeitskopie anzuwenden:
+     `git stash show -p stash@{N} | git apply --check --reverse`
+   - Bei Erfolg (Exit-Code 0) ist der Stash-Inhalt bereits in HEAD enthalten → **redundant**.
+
+   **Prüfung B — Bezieht sich der Stash auf ein in Phase 4 bearbeitetes Finding?**
+   - Lies die Liste der in Phase 4 bearbeiteten Findings (umgesetzte und fehlgeschlagene) aus der Wisdom-Datei.
+   - Vergleiche die Datei-Pfade und den inhaltlichen Diff des Stashes (`git stash show -p stash@{N}`) mit den im Finding genannten Dateien und der beabsichtigten Änderung.
+   - Bei Überlappung (gleiche Dateien, ähnlicher Inhalt) gilt der Stash als **finding-relevant**.
+
+5. Behandle jeden Stash anhand seiner Klassifikation:
+
+   - **Redundant (Prüfung A erfolgreich):** Drop ohne Nachfrage.
+     - `git stash drop stash@{N}`
+     - Logge dem User: „Stash X verworfen (Inhalt bereits im Branch)."
+
+   - **Finding-relevant (Prüfung B trifft zu):** User informieren und nachfragen.
+     - Zeige Stash-Beschreibung, betroffene Dateien und das/die zugeordneten Findings.
+     - Stelle die untenstehende Stash-Frage. Begründe in der Frage, warum der Stash potenziell wichtig ist (Bezug zu Finding [R-XXXXXXX]).
+
+   - **Sonst (weder redundant noch finding-relevant):** User fragen.
+     - Zeige Beschreibung und Inhalt (`git stash show -p stash@{N}`).
+     - Stelle die untenstehende Stash-Frage ohne Finding-Bezug.
+
+   Stash-Frage (für die letzten beiden Fälle):
+
+{{ASK}}
+header: Stash
+question: Wie soll dieser Stash behandelt werden?
+options:
+  - label: Anwenden und löschen
+    description: `git stash pop` ausführen und Inhalt in den Branch übernehmen
+  - label: Verwerfen
+    description: `git stash drop` ausführen, Inhalt geht verloren
+  - label: Behalten
+    description: Stash unverändert lassen
+{{/ASK}}
+
+6. Führe die User-Entscheidung aus:
+   - **Anwenden und löschen:** `git stash pop stash@{N}`. Bei Konflikten: User informieren, manuelle Auflösung anbieten, Stash nicht automatisch droppen, bis der Konflikt aufgelöst ist.
+   - **Verwerfen:** `git stash drop stash@{N}`.
+   - **Behalten:** keine Aktion.
+7. Wichtig: nach jeder `pop`/`drop`-Aktion verschieben sich die `stash@{N}`-Indizes. Lies die Liste daher nach jeder Aktion neu und matche über die in Schritt 2 erfasste Beschreibung/den Commit-Hash, nicht über alte Indizes.
+8. Gib dem User eine kurze Statusmeldung über alle behandelten Stashes (automatisch verworfen, manuell behandelt, behalten).
+
+### Phase 7: Finale Validierung
 
 1. Prüfe ob im Projekt ein Validierungs-Script konfiguriert ist (z. B. `agent:check`, `typecheck`, `lint` in `package.json`).
 2. Falls vorhanden: führe die verfügbaren Prüfungen aus (z. B. `pnpm agent:check`, `pnpm typecheck`, `pnpm lint`).
@@ -174,7 +230,7 @@ Workflow: /apply-review
 5. Falls kein Validierungs-Script vorhanden ist: überspringe diese Phase mit kurzer Meldung.
 6. Gib dem User eine kurze Statusmeldung über das Ergebnis.
 
-### Phase 7: Zusammenfassung
+### Phase 8: Zusammenfassung
 
 1. Lösche die Wisdom-Datei.
 2. Gib dem User eine Zusammenfassung:
