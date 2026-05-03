@@ -42,7 +42,7 @@ Das System unterscheidet drei Typen:
 |---|---|
 | Codex Skills | `~/.agents/skills/sf-*/SKILL.md` |
 | Codex Agents | `~/.codex/agents/sf-*.toml` |
-| Claude Code Plugin | `~/.claude/plugins/sf-frontend-workflows/` |
+| Claude Code Plugin | `~/.claude/plugins/marketplaces/sf-claude-plugin/` |
 
 Empfohlene Codex-Konfiguration (`~/.codex/config.toml`):
 
@@ -62,7 +62,7 @@ Das Script:
 1. Baut für beide Plattformen (`dist/codex/`, `dist/claude/`)
 2. Deployed Codex Skills nach `~/.agents/skills/`
 3. Deployed Codex Agents nach `~/.codex/agents/`
-4. Deployed Claude Code Plugin nach `~/.claude/plugins/`
+4. Deployed Claude Code Plugin nach `~/.claude/plugins/marketplaces/sf-claude-plugin/`
 5. Räumt alte Dateien aus `~/.codex/skills/` und `~/.claude/skills/` auf
 
 Für Symlinks statt Kopien (Entwicklung):
