@@ -9,7 +9,7 @@ claude:
 codex:
   model: gpt-5.4
   model_reasoning_effort: high
-  sandbox_mode: full
+  sandbox_mode: danger-full-access
 ---
 
 # SF Node.js Implementer

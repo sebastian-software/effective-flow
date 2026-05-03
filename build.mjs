@@ -137,6 +137,24 @@ function cleanDescription(desc) {
     .replace(/\{\{AGENT:([^}]+)\}\}/g, '$1');
 }
 
+function normalizeCodexSandboxMode(mode, skillName) {
+  const normalized = {
+    full: 'danger-full-access',
+    read_only: 'read-only',
+    'read-only': 'read-only',
+    'workspace-write': 'workspace-write',
+    'danger-full-access': 'danger-full-access',
+  }[mode];
+
+  if (!mode) return '';
+
+  if (!normalized) {
+    throw new Error(`Unsupported codex sandbox_mode "${mode}" for ${skillName}`);
+  }
+
+  return normalized;
+}
+
 // --- Include transforms ---
 
 function resolveIncludes(body) {
@@ -288,7 +306,7 @@ try {
       // --- Codex: Custom Agent (TOML) ---
       const codexModel = getNested(fm, 'codex', 'model');
       const codexEffort = getNested(fm, 'codex', 'model_reasoning_effort');
-      const codexSandbox = getNested(fm, 'codex', 'sandbox_mode');
+      const codexSandbox = normalizeCodexSandboxMode(getNested(fm, 'codex', 'sandbox_mode'), skillName);
       const tomlDesc = cleanDescription(description);
       const tomlBody = transformCodexAgent(transformAskCodex(body));
 

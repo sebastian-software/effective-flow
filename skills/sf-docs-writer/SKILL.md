@@ -10,7 +10,7 @@ claude:
 codex:
   model: gpt-5.3-codex-spark
   model_reasoning_effort: medium
-  sandbox_mode: full
+  sandbox_mode: danger-full-access
 ---
 
 # SF Docs Writer

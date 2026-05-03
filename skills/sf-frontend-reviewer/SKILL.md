@@ -10,7 +10,7 @@ claude:
 codex:
   model: gpt-5.4
   model_reasoning_effort: high
-  sandbox_mode: read_only
+  sandbox_mode: read-only
 ---
 
 # SF Frontend Reviewer
