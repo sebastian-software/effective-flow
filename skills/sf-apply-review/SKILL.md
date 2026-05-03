@@ -233,6 +233,7 @@ Damit drei parallele Streams in dieser Aktionsgruppe statt einem.
      - Aktion refactor: `Verwende den Skill {{SKILL:sf-refactor}} für dieses Finding.`
      - Aktion build-feature: `Verwende den Skill {{SKILL:sf-build-feature}} für dieses Finding.`
    - den Prompt-Vorschlag aus dem Report als Aufgabenbeschreibung
+   - **Stash-Konvention:** Falls während der Umsetzung dieses Findings irgendein Stash entsteht (durch einen Pre-Commit-Hook, einen manuellen `git stash` im Sub-Skill oder einen Tool-getriggerten Stash), **muss die Stash-Message die Finding-ID enthalten**, z. B. `apply-review R-XXXXXXX <kurze Beschreibung>`. Das ermöglicht der Stash-Bereinigung in Phase 6, den Stash zuverlässig dem Finding zuzuordnen.
    - das Fertig-Protokoll
 3. Prüfe jeden Sub-Agenten auf `ERLEDIGT` oder `ABBRUCH`.
 4. Bei `ABBRUCH`:
@@ -262,33 +263,48 @@ Während der Delegation in Phase 4 können die aufgerufenen Sub-Skills oder Pre-
 1. Führe `git stash list` aus und vergleiche das Ergebnis mit der in Phase 1 erfassten Baseline.
 2. Bestimme die **neuen Stashes** als alle Einträge, die in der aktuellen Liste, aber nicht in der Baseline vorhanden sind. Vergleiche dabei nicht über `stash@{N}`-Indizes (verschieben sich), sondern über die vollständige Beschreibung (Branch + Commit-Hash + Subject) und idealerweise zusätzlich über die Stash-Commit-Hashes (`git stash list --format='%H %gs'`).
 3. Falls keine neuen Stashes gefunden werden: gib kurz „Keine offenen Stashes aus diesem Lauf." aus und gehe zur nächsten Phase.
-4. Klassifiziere jeden neuen Stash anhand zweier Prüfungen:
+4. **Stash-Finding-Zuordnung:** Bestimme für jeden neuen Stash das zugehörige Finding über die folgenden Heuristiken — in dieser Priorität:
 
-   **Prüfung A — Ist der Stash-Inhalt bereits im Branch?**
-   - Versuche den Stash-Patch revers gegen die aktuelle Arbeitskopie anzuwenden:
-     `git stash show -p stash@{N} | git apply --check --reverse`
-   - Bei Erfolg (Exit-Code 0) ist der Stash-Inhalt bereits in HEAD enthalten → **redundant**.
+   1. **Stash-Message-Match (primär):** suche per Regex `R-\d{7}` in der Stash-Message. Bei Treffer ist die Zuordnung eindeutig.
+   2. **Datei-Überlappung (Fallback):** falls keine ID in der Message: vergleiche die geänderten Dateien des Stashes (`git stash show --name-only stash@{N}`) mit den in der Wisdom-Datei je Finding protokollierten Dateien. Eine signifikante Überlappung gilt als Zuordnung.
+   3. **Keine Zuordnung:** falls weder Message-Match noch klare Datei-Überlappung → der Stash gehört zu keinem Finding aus diesem Lauf (z. B. aus einem externen Pre-Commit-Hook).
 
-   **Prüfung B — Bezieht sich der Stash auf ein in Phase 4 bearbeitetes Finding?**
-   - Lies die Liste der in Phase 4 bearbeiteten Findings (umgesetzte und fehlgeschlagene) aus der Wisdom-Datei.
-   - Vergleiche die Datei-Pfade und den inhaltlichen Diff des Stashes (`git stash show -p stash@{N}`) mit den im Finding genannten Dateien und der beabsichtigten Änderung.
-   - Bei Überlappung (gleiche Dateien, ähnlicher Inhalt) gilt der Stash als **finding-relevant**.
+5. **Klassifiziere jeden Stash:**
 
-5. Behandle jeden Stash anhand seiner Klassifikation:
+   **A. Finding komplett umgesetzt UND Stash-Inhalt vollständig im Commit für das Finding enthalten:**
+   - Lies aus der Wisdom-Datei den Status des zugeordneten Findings. „Komplett umgesetzt" bedeutet: Status `ERLEDIGT` aus Phase 4.3.
+   - Hole die Commits, die zu diesem Finding gehören (über die Commit-Strategie „Einzeln" exakt der Commit mit `[R-XXXXXXX]` in der Message; bei „Keine Commits" entfällt dieser Pfad — siehe Klassifikation D unten).
+   - Vergleiche `git stash show -p stash@{N}` mit `git show <commit>` für die geänderten Dateien. Wenn der Stash-Diff inhaltlich vollständig im Finding-Commit aufgegangen ist (Stash-Inhalt ist eine Teilmenge der Commit-Änderungen) → **Stash ist Zwischenstand, nicht mehr benötigt**.
 
-   - **Redundant (Prüfung A erfolgreich):** Drop ohne Nachfrage.
+   **B. Finding komplett umgesetzt, aber Stash enthält Änderungen, die NICHT im Finding-Commit sind:**
+   - Stash könnte vergessenen Teilfix oder ungenutzten Zwischenstand enthalten — User-Entscheidung erforderlich.
+
+   **C. Finding fehlgeschlagen (Status `fehlgeschlagen (Delegation)` oder `fehlgeschlagen (Vorabanalyse)`):**
+   - Stash ist potenziell die einzige Spur der Teilarbeit — User-Entscheidung erforderlich.
+
+   **D. Kein Finding zugeordnet ODER Commit-Strategie „Keine Commits":**
+   - Bei „Keine Commits" gibt es keinen Commit zum Vergleich → kein Auto-Drop möglich.
+   - User-Entscheidung erforderlich.
+
+6. **Behandle jeden Stash anhand seiner Klassifikation:**
+
+   - **Klasse A:** Drop ohne Nachfrage.
      - `git stash drop stash@{N}`
-     - Logge dem User: „Stash X verworfen (Inhalt bereits im Branch)."
+     - Logge dem User: „Stash für `[R-XXXXXXX]` verworfen — Finding vollständig umgesetzt, Zwischenstand nicht mehr benötigt."
 
-   - **Finding-relevant (Prüfung B trifft zu):** User informieren und nachfragen.
-     - Zeige Stash-Beschreibung, betroffene Dateien und das/die zugeordneten Findings.
-     - Stelle die untenstehende Stash-Frage. Begründe in der Frage, warum der Stash potenziell wichtig ist (Bezug zu Finding [R-XXXXXXX]).
+   - **Klasse B:** User informieren und nachfragen.
+     - Zeige Stash-Beschreibung, betroffene Dateien und Hinweis: „Finding `[R-XXXXXXX]` wurde umgesetzt, der Stash enthält jedoch Änderungen, die nicht in den Commit eingeflossen sind — möglicherweise ein vergessener Teilfix."
+     - Stelle die untenstehende Stash-Frage.
 
-   - **Sonst (weder redundant noch finding-relevant):** User fragen.
+   - **Klasse C:** User informieren und nachfragen.
+     - Zeige Stash-Beschreibung, betroffene Dateien und Hinweis: „Finding `[R-XXXXXXX]` ist fehlgeschlagen, der Stash könnte ein unvollständiger Versuch sein."
+     - Stelle die untenstehende Stash-Frage.
+
+   - **Klasse D:** User informieren und nachfragen.
      - Zeige Beschreibung und Inhalt (`git stash show -p stash@{N}`).
      - Stelle die untenstehende Stash-Frage ohne Finding-Bezug.
 
-   Stash-Frage (für die letzten beiden Fälle):
+   Stash-Frage (für die Klassen B, C und D):
 
 {{ASK}}
 header: Stash
@@ -302,12 +318,12 @@ options:
     description: Stash unverändert lassen
 {{/ASK}}
 
-6. Führe die User-Entscheidung aus:
+7. Führe die User-Entscheidung aus:
    - **Anwenden und löschen:** `git stash pop stash@{N}`. Bei Konflikten: User informieren, manuelle Auflösung anbieten, Stash nicht automatisch droppen, bis der Konflikt aufgelöst ist.
    - **Verwerfen:** `git stash drop stash@{N}`.
    - **Behalten:** keine Aktion.
-7. Wichtig: nach jeder `pop`/`drop`-Aktion verschieben sich die `stash@{N}`-Indizes. Lies die Liste daher nach jeder Aktion neu und matche über die in Schritt 2 erfasste Beschreibung/den Commit-Hash, nicht über alte Indizes.
-8. Gib dem User eine kurze Statusmeldung über alle behandelten Stashes (automatisch verworfen, manuell behandelt, behalten).
+8. Wichtig: nach jeder `pop`/`drop`-Aktion verschieben sich die `stash@{N}`-Indizes. Lies die Liste daher nach jeder Aktion neu und matche über die in Schritt 2 erfasste Beschreibung/den Commit-Hash, nicht über alte Indizes.
+9. Gib dem User eine kurze Statusmeldung über alle behandelten Stashes (automatisch verworfen, manuell behandelt, behalten).
 
 ### Phase 7: Finale Validierung
 
