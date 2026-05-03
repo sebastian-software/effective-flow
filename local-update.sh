@@ -23,11 +23,11 @@ for toml_file in "$ROOT_DIR/dist/codex/agents"/sf-*.toml; do
   cp "$toml_file" "$CODEX_AGENTS_TARGET/$toml_name"
 done
 
-# --- Claude Code Plugin -> ~/.claude/plugins/ ---
-CLAUDE_TARGET="${CLAUDE_HOME:-$HOME/.claude}/plugins/sf-frontend-workflows"
+# --- Claude Code Plugin -> ~/.claude/plugins/marketplaces/ ---
+CLAUDE_TARGET="${CLAUDE_HOME:-$HOME/.claude}/plugins/marketplaces/sf-claude-plugin"
 rm -rf "$CLAUDE_TARGET"
 mkdir -p "$(dirname "$CLAUDE_TARGET")"
-cp -R "$ROOT_DIR/dist/claude/sf-frontend-workflows" "$CLAUDE_TARGET"
+cp -R "$ROOT_DIR/dist/claude/sf-claude-plugin" "$CLAUDE_TARGET"
 
 # --- Cleanup old locations ---
 OLD_CODEX_SKILLS="${CODEX_HOME:-$HOME/.codex}/skills"
