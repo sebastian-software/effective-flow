@@ -84,7 +84,7 @@ Die Source-Dateien in `skills/` verwenden zwei Platzhalter-Typen:
 Nur Build ausführen (ohne Deployment):
 
 ```sh
-./build.sh
+node build.mjs
 ```
 
 ## Struktur
@@ -102,11 +102,12 @@ sf-claude-plugin/
 │   │   ├── skills/sf-*/SKILL.md     # Orchestratoren + Utilities
 │   │   └── agents/sf-*.toml         # Worker als Custom Agents
 │   └── claude/
-│       └── sf-frontend-workflows/
-│           ├── .claude-plugin/plugin.json
-│           ├── commands/*.md         # Orchestratoren + Utilities
-│           └── agents/*.md           # Worker als Agents
-├── build.sh
+│       └── sf-claude-plugin/
+│           ├── .claude-plugin/marketplace.json
+│           └── plugins/sf-frontend-workflows/
+│               ├── commands/*.md     # Orchestratoren + Utilities
+│               └── agents/*.md       # Worker als Agents
+├── build.mjs
 ├── local-update.sh
 └── local-link.sh
 ```
