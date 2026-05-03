@@ -26,7 +26,9 @@ Wie bei `{{SKILL:sf-build-feature}}`: `ERLEDIGT` / `ABBRUCH: [Grund]` mit Retry-
 
 ## Wisdom Accumulation
 
-Nutze `.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
+Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
+
+Inhalte:
 
 - Baseline-Werte und deren Bedeutung
 - Strukturentscheidungen und Begründung

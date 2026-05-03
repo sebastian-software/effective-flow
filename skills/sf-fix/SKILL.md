@@ -33,7 +33,9 @@ Retry-Eskalation:
 
 ## Wisdom Accumulation
 
-Verwende `.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
+Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
+
+Inhalte:
 
 - verworfene Root-Cause-Hypothesen
 - Reproduktionsschritte und Ergebnisse
