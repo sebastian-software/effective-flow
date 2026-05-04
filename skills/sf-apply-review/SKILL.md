@@ -138,6 +138,32 @@ Halte die Antwort fest und gib sie an jeden delegierten Skill als Anweisung weit
 - **Einzeln:** Nach jedem abgeschlossenen Finding die Änderungen committen. Verwende als Commit-Message das Format: `fix/refactor/feat: [Finding-ID] [Kurzbeschreibung]`. Setze **niemals** `Co-Authored-By`-Trailer (auch nicht für LLMs); das gilt für jeden Commit, der durch diesen Workflow oder einen delegierten Sub-Agenten erzeugt wird.
 - **Keine Commits:** Keine automatischen Commits, der User committet selbst.
 
+#### Git-Commit-Mutex für „Einzeln"
+
+Wenn die Commit-Strategie **Einzeln** gewählt wurde, gilt für alle Delegations-Sub-Agenten ein globaler Commit-Mutex. Der Mutex schützt die gesamte kritische Git-Sektion, nicht nur den finalen `git commit`.
+
+Ziel: Parallele Sub-Agenten dürfen gleichzeitig Dateien bearbeiten, aber niemals gleichzeitig Staging oder Commit durchführen. Dadurch darf ein Finding-Commit nur Änderungen dieses Findings enthalten.
+
+Mutex-Konvention:
+
+- Lock-Pfad: `.git/sf-apply-review-commit.lock`
+- Lock-Erwerb: atomar per `mkdir .git/sf-apply-review-commit.lock`
+- Lock-Inhalt: schreibe nach erfolgreichem Erwerb eine kurze Owner-Datei, z. B. `owner`, mit Finding-ID, Sub-Gruppe und Timestamp.
+- Lock-Freigabe: lösche nur den Lock, den du selbst erworben hast, nach Commit-Erfolg, Commit-Abbruch oder Fehlerbehandlung.
+- Wenn der Lock bereits existiert: warten und erneut versuchen. Falls der Lock offensichtlich verwaist wirkt, den User fragen, bevor er entfernt wird.
+
+Kritische Sektion unter dem Lock:
+
+1. Führe `git status --porcelain` aus.
+2. Wenn bereits staged changes vorhanden sind, die nicht eindeutig zu diesem Finding gehören: **nicht committen**, User informieren und mit `ABBRUCH` für dieses Finding enden. Fremde staged changes dürfen nicht übernommen oder bereinigt werden.
+3. Stage ausschließlich die Dateien, die aus der Vorabanalyse und der tatsächlichen Umsetzung dieses Findings bekannt sind. Verwende keine pauschalen Befehle wie `git add .`, `git add -A` oder `git commit -a`.
+4. Prüfe `git diff --cached --name-only`. Die Liste darf nur Dateien dieses Findings enthalten.
+5. Prüfe `git diff --cached`, ob der staged Diff inhaltlich zum aktuellen Finding gehört.
+6. Führe den Commit mit der in Phase 2 festgelegten Message aus.
+7. Führe direkt danach `git status --porcelain` aus und protokolliere in der Wisdom-Datei, ob noch uncommittete Änderungen anderer paralleler Findings im Arbeitsbaum liegen. Diese Reständerungen sind erlaubt, solange sie nicht staged und nicht Teil des aktuellen Commits sind.
+
+Falls eine Prüfung in der kritischen Sektion fehlschlägt, muss der Sub-Agent seine eigenen staged changes soweit eindeutig möglich wieder unstagen, den Lock freigeben und `ABBRUCH: [Grund]` melden.
+
 ### Phase 3: ADR-Erstellung
 
 Für jedes Finding mit „Nicht umsetzen"-Anmerkung:
@@ -228,6 +254,7 @@ Damit drei parallele Streams in dieser Aktionsgruppe statt einem.
    - die zugehörige Vorabanalyse aus Phase 4.1 als **inline-Kontext-Block** im Prompt — nicht als Verweis auf die Wisdom-Datei. Die Sub-Skills lesen die Wisdom-Datei nicht; sie verarbeiten nur den Prompt-Inhalt. Bette die Vorabanalyse vollständig ein, etwa unter der Überschrift `Vorabanalyse für dieses Finding:`.
    - die Entwickler-Anmerkung (falls vorhanden)
    - die Commit-Strategie aus Phase 2
+   - **Bei Commit-Strategie „Einzeln":** die vollständige Git-Commit-Mutex-Regel aus Phase 2. Der Sub-Agent muss jeden Finding-Commit unter `.git/sf-apply-review-commit.lock` ausführen, darf nur Finding-eigene Dateien stage-en und darf niemals `git add .`, `git add -A` oder `git commit -a` verwenden.
    - den Auftrag, den passenden Skill aufzurufen:
      - Aktion fix: `Verwende den Skill {{SKILL:sf-fix}} für dieses Finding.`
      - Aktion refactor: `Verwende den Skill {{SKILL:sf-refactor}} für dieses Finding.`
@@ -248,6 +275,7 @@ Damit drei parallele Streams in dieser Aktionsgruppe statt einem.
 
 - **Cross-Action-Datei-Konflikte** werden nicht erkannt: ein `{{SKILL:sf-fix}}`-Finding und ein `{{SKILL:sf-refactor}}`-Finding können dieselbe Datei betreffen und parallel laufen. Diese Situation war auch im sequenziellen Vorgängermodell möglich und ist in der Praxis selten. Bei einem Konflikt fängt die Stash-Bereinigung in Phase 6 die hinterlassenen Stashes auf.
 - **Konfidenz-Niedrig-Findings** verzichten bewusst auf Parallelität, um Konflikte zu vermeiden — dafür bleiben sie zuverlässig isoliert.
+- Der Git-Commit-Mutex isoliert nur Staging und Commit. Er ersetzt keine Datei-Konflikt-Erkennung während der Implementierung. Wenn zwei parallele Findings dieselbe Datei ändern, muss die Sub-Gruppen-Bildung oder die spätere Konfliktbehandlung greifen.
 
 ### Phase 5: Report aktualisieren
 
