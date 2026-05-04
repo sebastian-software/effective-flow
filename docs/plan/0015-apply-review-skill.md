@@ -71,4 +71,4 @@ Build erfolgreich mit 7 Skills und 9 Agents. Placeholder-Transformation korrekt.
 |---|---|---|
 | `Entwickler-Anmerkung`-Feld ohne Formathinweis | Wichtig | Behoben — HTML-Kommentar als Platzhalter ergänzt |
 | ASK-Block mit Ja/Nein statt beschreibenden Labels | Wichtig | Behoben — auf Einzeln/Keine Commits umgestellt |
-| `sf-review` nutzt nicht `{{INCLUDE:language-rules}}` | Kritisch | Offen — vorbestehendes Problem, nicht in Scope |
+| `sf-review` nutzt nicht `{{INCLUDE:language-rules}}` | Kritisch | Behoben — zentrale Sprachregeln mit `docs/plan/0013-central-language-rules.md` eingeführt; `skills/sf-review/SKILL.md` nutzt den Include |
