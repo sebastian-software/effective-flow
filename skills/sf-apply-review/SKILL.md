@@ -95,7 +95,7 @@ Plugin-interne Dateien liegen unter `.sf-plugin/` im Projekt-Root.
 {
   "applyReview": {
     "worktree": {
-      "baseDir": "../.sf-worktrees",
+      "baseDir": ".sf-plugin/.worktrees",
       "setup": "auto"
     }
   }
@@ -104,7 +104,7 @@ Plugin-interne Dateien liegen unter `.sf-plugin/` im Projekt-Root.
 
 Fehlende Werte haben diese Defaults:
 
-- `applyReview.worktree.baseDir`: `../.sf-worktrees`
+- `applyReview.worktree.baseDir`: `.sf-plugin/.worktrees`
 - `applyReview.worktree.setup`: `auto`
 
 ## Workflow
@@ -207,10 +207,12 @@ Vorbedingungen:
 Worktree-Pfade:
 
 1. Bestimme den Repo-Namen aus `basename "$(git rev-parse --show-toplevel)"`.
-2. Verwende als BaseDir `applyReview.worktree.baseDir` aus `.sf-plugin/config.json` oder den Default `../.sf-worktrees`.
+2. Verwende als BaseDir `applyReview.worktree.baseDir` aus `.sf-plugin/config.json` oder den Default `.sf-plugin/.worktrees`.
 3. Erstelle Worktrees unter:
    `BASE_DIR/REPO_NAME/SESSION_ID/GROUP_NAME`
 4. `GROUP_NAME` muss deterministisch, kurz und dateisystemtauglich sein, z. B. `fix-1`, `refactor-2`, `build-feature-1` oder eine slugifizierte Sub-Gruppen-Beschreibung.
+
+Der Default liegt bewusst innerhalb des Projekt-Roots. Dadurch bleiben Worktree-Erstellung, Dateiänderungen und Setup-Kommandos in der üblichen Workspace-Sandbox. Externe BaseDirs sind nur zu verwenden, wenn sie explizit in `.sf-plugin/config.json` konfiguriert sind und die Umgebung Schreib- und Ausführungsrechte dafür erlaubt.
 
 Branch-Konvention:
 

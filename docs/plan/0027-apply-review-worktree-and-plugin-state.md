@@ -8,8 +8,8 @@
 
 - **Commit-Strategie statt globaler Aktivierung:** Worktrees sind eine auswählbare Commit-Strategie in `apply-review` (`Einzeln mit Worktrees`). Eine separate Aktivierung in der Config ist nicht notwendig.
 - **Konfigurationsort:** Plugin-Konfiguration liegt unter `.sf-plugin/config.json`.
-- **Worktree-BaseDir:** Default ist `../.sf-worktrees`.
-- **Projektgeteiltes BaseDir:** Worktrees liegen unter `BASE_DIR/REPO_NAME/SESSION_ID/GROUP_NAME`, damit mehrere Repositories denselben BaseDir nutzen können.
+- **Worktree-BaseDir:** Default ist `.sf-plugin/.worktrees`, damit temporäre Worktrees innerhalb der üblichen Projekt-Sandbox liegen.
+- **Optional projektgeteiltes BaseDir:** Worktrees liegen unter `BASE_DIR/REPO_NAME/SESSION_ID/GROUP_NAME`, damit mehrere Repositories denselben BaseDir nutzen können, wenn ein externer BaseDir explizit konfiguriert wird.
 - **Explizites Setup:** Das Worktree-Setup wird durch `apply-review` ausgeführt, nicht durch Git Hooks. Standard ist automatische Erkennung bekannter Projektdateien; `setup: "none"` deaktiviert Setup, ein String definiert ein explizites Kommando.
 - **Plugin-State:** Persistente Memory liegt künftig unter `.sf-plugin/memory.json`; alte `.sf-memory.json` wird beim Review-Start migriert.
 
