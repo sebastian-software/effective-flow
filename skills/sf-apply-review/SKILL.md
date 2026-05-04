@@ -135,7 +135,7 @@ options:
 
 Halte die Antwort fest und gib sie an jeden delegierten Skill als Anweisung weiter:
 
-- **Einzeln:** Nach jedem abgeschlossenen Finding die Änderungen committen. Verwende als Commit-Message das Format: `fix/refactor/feat: [Finding-ID] [Kurzbeschreibung]`. Setze **niemals** `Co-Authored-By`-Trailer (auch nicht für LLMs); das gilt für jeden Commit, der durch diesen Workflow oder einen delegierten Sub-Agenten erzeugt wird.
+- **Einzeln:** Nach jedem abgeschlossenen Finding die Änderungen committen. Verwende eine konkrete Conventional-Commit-Message ohne interne Finding-ID, z. B. `fix: clarify review decision filtering`. Setze **niemals** `Co-Authored-By`-Trailer (auch nicht für LLMs); das gilt für jeden Commit, der durch diesen Workflow oder einen delegierten Sub-Agenten erzeugt wird. Protokolliere die Zuordnung von Finding-ID zu Commit-Hash direkt nach jedem erfolgreichen Commit in der Wisdom-Datei.
 - **Keine Commits:** Keine automatischen Commits, der User committet selbst.
 
 #### Git-Commit-Mutex für „Einzeln"
@@ -160,7 +160,8 @@ Kritische Sektion unter dem Lock:
 4. Prüfe `git diff --cached --name-only`. Die Liste darf nur Dateien dieses Findings enthalten.
 5. Prüfe `git diff --cached`, ob der staged Diff inhaltlich zum aktuellen Finding gehört.
 6. Führe den Commit mit der in Phase 2 festgelegten Message aus.
-7. Führe direkt danach `git status --porcelain` aus und protokolliere in der Wisdom-Datei, ob noch uncommittete Änderungen anderer paralleler Findings im Arbeitsbaum liegen. Diese Reständerungen sind erlaubt, solange sie nicht staged und nicht Teil des aktuellen Commits sind.
+7. Ermittle direkt danach den Commit-Hash mit `git rev-parse HEAD` und protokolliere in der Wisdom-Datei die Zuordnung `Finding-ID -> Commit-Hash`.
+8. Führe direkt danach `git status --porcelain` aus und protokolliere in der Wisdom-Datei, ob noch uncommittete Änderungen anderer paralleler Findings im Arbeitsbaum liegen. Diese Reständerungen sind erlaubt, solange sie nicht staged und nicht Teil des aktuellen Commits sind.
 
 Falls eine Prüfung in der kritischen Sektion fehlschlägt, muss der Sub-Agent seine eigenen staged changes soweit eindeutig möglich wieder unstagen, den Lock freigeben und `ABBRUCH: [Grund]` melden.
 
@@ -305,7 +306,7 @@ Während der Delegation in Phase 4 können die aufgerufenen Sub-Skills oder Pre-
 
    **A. Finding komplett umgesetzt UND Stash-Inhalt vollständig im Commit für das Finding enthalten:**
    - Lies aus der Wisdom-Datei den Status des zugeordneten Findings. „Komplett umgesetzt" bedeutet: Status `ERLEDIGT` aus Phase 4.3.
-   - Hole die Commits, die zu diesem Finding gehören (über die Commit-Strategie „Einzeln" exakt der Commit mit `[R-XXXXXXX]` in der Message; bei „Keine Commits" entfällt dieser Pfad — siehe Klassifikation D unten).
+   - Hole die Commits, die zu diesem Finding gehören, aus der in Phase 4.3 protokollierten Wisdom-Zuordnung `Finding-ID -> Commit-Hash`; bei „Keine Commits" entfällt dieser Pfad — siehe Klassifikation D unten.
    - Vergleiche `git stash show -p stash@{N}` mit `git show <commit>` für die geänderten Dateien. Wenn der Stash-Diff inhaltlich vollständig im Finding-Commit aufgegangen ist (Stash-Inhalt ist eine Teilmenge der Commit-Änderungen) → **Stash ist Zwischenstand, nicht mehr benötigt**.
 
    **B. Finding komplett umgesetzt, aber Stash enthält Änderungen, die NICHT im Finding-Commit sind:**
