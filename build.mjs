@@ -256,7 +256,8 @@ const skillDirs = readdirSync(SOURCE_DIR)
   .filter(path => statSync(path).isDirectory());
 
 if (skillDirs.length === 0) {
-  process.stderr.write(`WARNING: No sf-* skill directories found in ${SOURCE_DIR}\n`);
+  process.stderr.write(`ERROR: No sf-* skill directories found in ${SOURCE_DIR}\n`);
+  process.exit(1);
 }
 
 try {
@@ -266,8 +267,7 @@ try {
     const src = join(skillDir, 'SKILL.md');
 
     if (!existsSync(src)) {
-      process.stderr.write(`ERROR: ${src} not found, skipping ${skillName}\n`);
-      continue;
+      throw new Error(`${src} not found for ${skillName}`);
     }
 
     const content = normalizeLineEndings(readFileSync(src, 'utf8'));
@@ -341,7 +341,7 @@ try {
       writeFileSync(join(CLAUDE_PLUGIN_DIR, 'agents', `${shortName}.md`), agentFm + agentBody);
 
     } else {
-      process.stderr.write(`WARNING: Unknown type "${skillType}" for ${skillName}, skipping\n`);
+      throw new Error(`Unknown type "${skillType}" for ${skillName}`);
     }
   }
 } catch (err) {
