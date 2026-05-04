@@ -7,6 +7,10 @@ node "$ROOT_DIR/build.mjs"
 # --- Codex Skills -> ~/.agents/skills/ ---
 CODEX_SKILLS_TARGET="$HOME/.agents/skills"
 mkdir -p "$CODEX_SKILLS_TARGET"
+for old_skill in "$CODEX_SKILLS_TARGET"/sf-*; do
+  [ -d "$old_skill" ] || [ -L "$old_skill" ] || continue
+  rm -rf "$old_skill"
+done
 for skill_dir in "$ROOT_DIR/dist/codex/skills"/sf-*; do
   [ -d "$skill_dir" ] || continue
   skill_name="$(basename "$skill_dir")"
@@ -17,6 +21,10 @@ done
 # --- Codex Agents -> ~/.codex/agents/ ---
 CODEX_AGENTS_TARGET="${CODEX_HOME:-$HOME/.codex}/agents"
 mkdir -p "$CODEX_AGENTS_TARGET"
+for old_agent in "$CODEX_AGENTS_TARGET"/sf-*.toml; do
+  [ -f "$old_agent" ] || [ -L "$old_agent" ] || continue
+  rm -f "$old_agent"
+done
 for toml_file in "$ROOT_DIR/dist/codex/agents"/sf-*.toml; do
   [ -f "$toml_file" ] || continue
   toml_name="$(basename "$toml_file")"
