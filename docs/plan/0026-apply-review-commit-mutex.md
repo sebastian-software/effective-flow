@@ -1,4 +1,4 @@
-# 0025: Git-Commit-Mutex in apply-review
+# 0026: Git-Commit-Mutex in apply-review
 
 ## Problem
 
@@ -33,4 +33,3 @@ Der Mutex erlaubt weiterhin parallele Implementierung, serialisiert aber Staging
 - Der Mutex verhindert keine parallelen Schreibkonflikte in derselben Datei während der Implementierung. Dafür bleibt die Sub-Gruppen-Bildung zuständig.
 - Externe Prozesse oder User-Kommandos, die den Mutex nicht beachten, können weiterhin staged changes erzeugen. Der Skill bricht in diesem Fall vor dem Commit ab, statt fremde Änderungen zu übernehmen.
 - Ein verwaister Lock muss vom User freigegeben werden; automatische Entfernung wäre riskant.
-
