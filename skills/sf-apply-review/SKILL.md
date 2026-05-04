@@ -362,10 +362,16 @@ options:
 1. Prüfe ob im Projekt ein Validierungs-Script konfiguriert ist (z. B. `agent:check`, `typecheck`, `lint` in `package.json`).
 2. Falls vorhanden: führe die verfügbaren Prüfungen aus (z. B. `pnpm agent:check`, `pnpm typecheck`, `pnpm lint`).
 3. Falls Errors oder Warnings gefunden werden:
-   - behebe alle Errors und Warnings
+   - behebe alle Errors und Warnings, auch wenn sie nicht direkt aus den Findings dieses Laufs stammen. Die finale Validierung ist ein projektweiter Qualitäts-Gate, keine reine Finding-Scope-Prüfung.
+   - protokolliere in der Wisdom-Datei, welche Dateien durch finale Validierungsfixes geändert wurden und ob sie direkt zu Findings gehören oder unrelated Validation-Fixes sind.
    - führe die Prüfungen erneut aus
    - wiederhole bis alle Prüfungen fehlerfrei durchlaufen
-4. Falls in Phase 2 die Commit-Strategie „Einzeln" gewählt wurde und Fixes nötig waren: committe die Fixes mit einer Commit-Message wie `fix: resolve validation errors from final check`.
+4. Falls in Phase 2 die Commit-Strategie „Einzeln" gewählt wurde und Fixes nötig waren:
+   - verwende den Git-Commit-Mutex aus Phase 2 für die gesamte finale Staging-/Commit-Sektion.
+   - führe vor dem Staging `git status --porcelain` aus und unterscheide finale Validierungsfixes von bereits vorhandenen User-Änderungen.
+   - stage ausschließlich Dateien, die durch die finale Validierungsfix-Schleife geändert wurden. Verwende keine pauschalen Befehle wie `git add .`, `git add -A` oder `git commit -a`.
+   - prüfe `git diff --cached --name-only` und `git diff --cached`.
+   - committe die Fixes mit einer Commit-Message wie `fix: resolve validation errors from final check`. Wenn unrelated Validation-Fixes enthalten sind, erwähne das konkret in der Commit-Message, z. B. `fix: resolve final validation errors including unrelated warnings`.
 5. Falls kein Validierungs-Script vorhanden ist: überspringe diese Phase mit kurzer Meldung.
 6. Gib dem User eine kurze Statusmeldung über das Ergebnis.
 
