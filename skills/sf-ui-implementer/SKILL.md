@@ -8,7 +8,7 @@ claude:
   tools: [Read, Write, Edit, Bash, Glob, Grep]
   skills: [frontend-design, effective-ui-design]
 codex:
-  model: gpt-5.4
+  model: gpt-5.5
   model_reasoning_effort: high
   sandbox_mode: danger-full-access
 ---

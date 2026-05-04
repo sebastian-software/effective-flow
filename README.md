@@ -26,15 +26,15 @@ Das System unterscheidet drei Typen:
 
 | Name | Beschreibung | Codex Model | Claude Model |
 |---|---|---|---|
-| `sf-ui-implementer` | Frontend-Implementierung | gpt-5.4 | sonnet |
-| `sf-nodejs-implementer` | Backend/CLI-Implementierung | gpt-5.4 | opus |
-| `sf-frontend-reviewer` | Frontend-Review | gpt-5.4 | opus |
-| `sf-nodejs-reviewer` | Backend/CLI-Review | gpt-5.4 | opus |
-| `sf-code-validator` | TypeScript, Lint, Build-Validierung | gpt-5.3-codex-spark | haiku |
-| `sf-code-documenter` | In-Code-Dokumentation | gpt-5.3-codex-spark | sonnet |
-| `sf-docs-writer` | User-Dokumentation | gpt-5.3-codex-spark | sonnet |
-| `sf-test-writer` | Unit-Tests | gpt-5.3-codex-spark | sonnet |
-| `sf-e2e-tester` | E2E-Tests | gpt-5.3-codex-spark | sonnet |
+| `sf-ui-implementer` | Frontend-Implementierung | gpt-5.5 | sonnet |
+| `sf-nodejs-implementer` | Backend/CLI-Implementierung | gpt-5.5 | opus |
+| `sf-frontend-reviewer` | Frontend-Review | gpt-5.5 | opus |
+| `sf-nodejs-reviewer` | Backend/CLI-Review | gpt-5.5 | opus |
+| `sf-code-validator` | TypeScript, Lint, Build-Validierung | gpt-5.4-mini | haiku |
+| `sf-code-documenter` | In-Code-Dokumentation | gpt-5.4-mini | sonnet |
+| `sf-docs-writer` | User-Dokumentation | gpt-5.4-mini | sonnet |
+| `sf-test-writer` | Unit-Tests | gpt-5.4-mini | sonnet |
+| `sf-e2e-tester` | E2E-Tests | gpt-5.4-mini | sonnet |
 
 ## Plattform-Deployment
 
@@ -137,7 +137,7 @@ claude:
   tools: [Read, Write, Edit, Bash, Glob, Grep]
   skills: [frontend-design, effective-ui-design]
 codex:
-  model: gpt-5.4
+  model: gpt-5.5
   model_reasoning_effort: high
   sandbox_mode: danger-full-access
 ---

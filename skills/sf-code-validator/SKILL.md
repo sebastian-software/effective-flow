@@ -7,7 +7,7 @@ claude:
   color: magenta
   tools: [Read, Bash, Glob, Grep]
 codex:
-  model: gpt-5.3-codex-spark
+  model: gpt-5.4-mini
   model_reasoning_effort: medium
   sandbox_mode: danger-full-access
 ---
