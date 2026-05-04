@@ -92,9 +92,16 @@ Der Review-Workflow erkennt dokumentierte Designentscheidungen, damit Findings g
 
 Projekt-Typ-Erkennung wie bei `{{SKILL:sf-build-feature}}`. Das Reviewer-Routing samt Verzeichnis-Split-Heuristik ist in Phase 2c definiert.
 
-## Memory-Datei
+## Plugin-Konfiguration und Memory
 
-Die Datei `.sf-memory.json` im Projekt-Root speichert persistente Zustände über Sessions hinweg. Im Gegensatz zur Wisdom-Datei wird sie nie gelöscht.
+Plugin-interne Dateien liegen unter `.sf-plugin/` im Projekt-Root.
+
+- Konfiguration: `.sf-plugin/config.json`
+- Memory-Datei: `.sf-plugin/memory.json`
+- Review-Reports: `.sf-plugin/review/`
+- Temporäre Wisdom-Dateien: `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`
+
+Die Datei `.sf-plugin/memory.json` speichert persistente Zustände über Sessions hinweg. Im Gegensatz zur Wisdom-Datei wird sie nie gelöscht.
 
 ### Inhalt
 
@@ -106,17 +113,20 @@ Die Datei `.sf-memory.json` im Projekt-Root speichert persistente Zustände übe
 
 ### Git-Tracking
 
-Ob `.sf-memory.json` eingecheckt oder ignoriert wird, entscheidet das jeweilige Projekt selbst. Der Skill ändert keine `.gitignore`-Dateien.
+Ob `.sf-plugin/` eingecheckt oder ignoriert wird, entscheidet das jeweilige Projekt selbst. Der Skill ändert keine `.gitignore`-Dateien in Zielprojekten.
 
 ### Verwendung
 
-1. Lies `.sf-memory.json` beim Start des Review-Workflows. Falls die Datei nicht existiert, starte mit `lastFindingNumber: 0`.
-2. Nummeriere neue Findings fortlaufend ab `lastFindingNumber + 1` mit 7-stelliger Formatierung: `R-0000001`, `R-0000002`, ...
-3. Schreibe nach Erstellung des Berichts die höchste vergebene Finding-Nummer zurück in `.sf-memory.json`. Die Memory-Datei muss geschrieben werden, bevor der Workflow mit `ERLEDIGT` abgeschlossen wird. Falls der Schreibvorgang fehlschlägt, weise den User darauf hin.
+1. Erstelle `.sf-plugin/` bei Bedarf.
+2. Lies `.sf-plugin/memory.json` beim Start des Review-Workflows.
+3. Falls `.sf-plugin/memory.json` nicht existiert, aber die alte Datei `.sf-memory.json` vorhanden ist: migriere deren Inhalt nach `.sf-plugin/memory.json`, entferne `.sf-memory.json` erst nach erfolgreichem Schreiben und weise den User darauf hin.
+4. Falls keine Memory-Datei existiert, starte mit `lastFindingNumber: 0`.
+5. Nummeriere neue Findings fortlaufend ab `lastFindingNumber + 1` mit 7-stelliger Formatierung: `R-0000001`, `R-0000002`, ...
+6. Schreibe nach Erstellung des Berichts die höchste vergebene Finding-Nummer zurück in `.sf-plugin/memory.json`. Die Memory-Datei muss geschrieben werden, bevor der Workflow mit `ERLEDIGT` abgeschlossen wird. Falls der Schreibvorgang fehlschlägt, weise den User darauf hin.
 
 ## Wisdom Accumulation
 
-Erzeuge zu Beginn von Phase 1 eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen, falls mehrere Review-Runs parallel laufen.
+Erzeuge zu Beginn von Phase 1 eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen, falls mehrere Review-Runs parallel laufen.
 
 Die Wisdom-Datei transportiert die Outputs der parallelen Phase-2-Streams zwischen den Phasen:
 
@@ -160,7 +170,7 @@ Starte für jede der folgenden Quellen einen eigenen Sub-Agenten **parallel**. J
 - Konventions-Dateien — `CLAUDE.md`, `AGENTS.md`, vergleichbare Konventionsdateien
 - Code-Kommentare — `@design-decision`, `DELIBERATE`, `INTENTIONAL`, `DESIGN:`
 - Lint-Suppressions mit Begründung — `eslint-disable ... -- [Grund]`, `@ts-expect-error [Grund]`
-- Vorherige Review-Reports — `docs/review/review-report-*.md`
+- Vorherige Review-Reports — `.sf-plugin/review/review-report-*.md`
 
 Jeder Sub-Agent liefert eine Liste von Designentscheidungen im Format:
 
@@ -229,7 +239,7 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 
 ### Phase 4: Bericht
 
-1. Erstelle einen Bericht als `docs/review/review-report-YYYY-MM-DD[-N].md`. Erstelle `docs/review/` falls nicht vorhanden. Verwende das untenstehende Bericht-Format.
+1. Erstelle einen Bericht als `.sf-plugin/review/review-report-YYYY-MM-DD[-N].md`. Erstelle `.sf-plugin/review/` falls nicht vorhanden. Verwende das untenstehende Bericht-Format.
 2. Wenn der aktive Finding-Scope nur kritische und wichtige Findings umfasst (Standard):
    - nimm Hinweise nicht in den Hauptbericht auf
    - erwähne kurz, dass Hinweise ausgefiltert wurden und ein umfassendes Review auf Wunsch möglich ist

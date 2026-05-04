@@ -26,7 +26,7 @@ Wie bei `{{SKILL:sf-build-feature}}`: `ERLEDIGT` / `ABBRUCH: [Grund]` mit Retry-
 
 ## Wisdom Accumulation
 
-Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
+Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
 
 Inhalte:
 
@@ -42,7 +42,7 @@ Wie bei `{{SKILL:sf-build-feature}}`.
 
 ## Review-Report-Rückverweise
 
-Wenn dieses Refactoring ein Finding aus einer bestehenden Review-Report-Datei in `docs/review/` umsetzt:
+Wenn dieses Refactoring ein Finding aus einer bestehenden Review-Report-Datei in `.sf-plugin/review/` umsetzt:
 
 - identifiziere die betroffene Report-Datei früh im Workflow
 - ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
@@ -127,7 +127,7 @@ type: approval
 {{/ASK}}
 
    - erzeuge bei Zustimmung ADRs in `docs/adr/` mit Kontext `{{SKILL:sf-refactor}}`
-5. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `docs/review/` umgesetzt hat:
+5. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.sf-plugin/review/` umgesetzt hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
 

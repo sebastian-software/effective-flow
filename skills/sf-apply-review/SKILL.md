@@ -10,7 +10,7 @@ Du bist der Orchestrator für die automatisierte Umsetzung von Review-Report-Fin
 
 ## Ziel
 
-Dieser Workflow liest eine bestehende Review-Report-Datei aus `docs/review/` ein, wertet die Entwickler-Anmerkungen pro Finding aus und delegiert die Umsetzung an die passenden Workflows. Findings, die bewusst nicht umgesetzt werden sollen, werden als ADRs dokumentiert.
+Dieser Workflow liest eine bestehende Review-Report-Datei aus `.sf-plugin/review/` ein, wertet die Entwickler-Anmerkungen pro Finding aus und delegiert die Umsetzung an die passenden Workflows. Findings, die bewusst nicht umgesetzt werden sollen, werden als ADRs dokumentiert.
 
 {{INCLUDE:language-rules}}
 
@@ -70,7 +70,7 @@ Retry-Eskalation:
 
 ## Wisdom Accumulation
 
-Verwende `.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
+Verwende `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
 
 - Stash-Baseline aus Phase 1 (Liste der bereits vorhandenen Stash-Referenzen mit Beschreibungen und Commit-Hashes)
 - Vorabanalyse pro Finding aus Phase 4.1 (betroffene Dateien, Root Cause / Anforderung, Implementierungsskizze, Risiken, Konfidenz)
@@ -81,6 +81,32 @@ Verwende `.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
 
 Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lösche die Datei am Ende.
 
+## Plugin-Konfiguration
+
+Plugin-interne Dateien liegen unter `.sf-plugin/` im Projekt-Root.
+
+- Konfiguration: `.sf-plugin/config.json`
+- Review-Reports: `.sf-plugin/review/`
+- Temporäre Wisdom-Dateien: `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`
+
+`apply-review` funktioniert ohne Konfigurationsdatei. Falls `.sf-plugin/config.json` vorhanden ist, darf sie Worktree-Defaults überschreiben:
+
+```json
+{
+  "applyReview": {
+    "worktree": {
+      "baseDir": "../.sf-worktrees",
+      "setup": "auto"
+    }
+  }
+}
+```
+
+Fehlende Werte haben diese Defaults:
+
+- `applyReview.worktree.baseDir`: `../.sf-worktrees`
+- `applyReview.worktree.setup`: `auto`
+
 ## Workflow
 
 ### Phase 1: Report einlesen und validieren
@@ -88,7 +114,7 @@ Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lös
 1. **Stash-Baseline erfassen:** Führe `git stash list` aus und merke dir die vollständige Liste der bereits vorhandenen Stash-Referenzen (z. B. `stash@{0}`, `stash@{1}`, ... mit ihren Beschreibungen). Halte die Baseline in der Wisdom-Datei fest, damit Phase 6 (Stash-Bereinigung) später neue, durch diesen Workflow entstandene Stashes davon abgrenzen kann. Falls `git stash list` leer ist: notiere „keine Baseline-Stashes".
 2. Bestimme die Report-Datei:
    - falls als Argument übergeben: verwende diese Datei
-   - sonst: suche nach `review-report-*.md` in `docs/review/`
+   - sonst: suche nach `.sf-plugin/review/review-report-*.md` in `.sf-plugin/review/`
    - bei mehreren Reports: frage den User welcher verwendet werden soll
    - falls kein Report gefunden: Fehlermeldung und Abbruch
 3. **Lies die Datei frisch ein.** Da die Datei zwischen Konversationen gelöscht und neu erstellt werden kann, darf kein zuvor eingelesener Inhalt verwendet werden. Lies die Datei immer direkt vom Dateisystem.
@@ -129,6 +155,8 @@ question: Soll jedes Finding einen eigenen Git-Commit bekommen?
 options:
   - label: Einzeln
     description: Jedes Finding wird nach Umsetzung einzeln committet
+  - label: Einzeln mit Worktrees
+    description: Parallele Sub-Gruppen laufen in isolierten Git-Worktrees und werden anschließend zurückgeführt
   - label: Keine Commits
     description: Alle Änderungen werden ohne automatische Commits durchgeführt
 {{/ASK}}
@@ -136,6 +164,7 @@ options:
 Halte die Antwort fest und gib sie an jeden delegierten Skill als Anweisung weiter:
 
 - **Einzeln:** Nach jedem abgeschlossenen Finding die Änderungen committen. Verwende eine konkrete Conventional-Commit-Message ohne interne Finding-ID, z. B. `fix: clarify review decision filtering`. Setze **niemals** `Co-Authored-By`-Trailer (auch nicht für LLMs); das gilt für jeden Commit, der durch diesen Workflow oder einen delegierten Sub-Agenten erzeugt wird. Protokolliere die Zuordnung von Finding-ID zu Commit-Hash direkt nach jedem erfolgreichen Commit in der Wisdom-Datei.
+- **Einzeln mit Worktrees:** Jede parallele Sub-Gruppe arbeitet in einem eigenen Git-Worktree, committet dort die Findings einzeln und der Orchestrator führt die Commits danach sequenziell per `git cherry-pick` in den ursprünglichen Branch zurück. Commit-Messages folgen denselben Regeln wie bei `Einzeln`: konkrete Conventional-Commit-Message, keine internen Finding-IDs, kein `Co-Authored-By`.
 - **Keine Commits:** Keine automatischen Commits, der User committet selbst.
 
 #### Git-Commit-Mutex für „Einzeln"
@@ -164,6 +193,62 @@ Kritische Sektion unter dem Lock:
 8. Führe direkt danach `git status --porcelain` aus und protokolliere in der Wisdom-Datei, ob noch uncommittete Änderungen anderer paralleler Findings im Arbeitsbaum liegen. Diese Reständerungen sind erlaubt, solange sie nicht staged und nicht Teil des aktuellen Commits sind.
 
 Falls eine Prüfung in der kritischen Sektion fehlschlägt, muss der Sub-Agent seine eigenen staged changes soweit eindeutig möglich wieder unstagen, den Lock freigeben und `ABBRUCH: [Grund]` melden.
+
+#### Git-Worktree-Isolation für „Einzeln mit Worktrees"
+
+Wenn die Commit-Strategie **Einzeln mit Worktrees** gewählt wurde, gilt statt des Git-Commit-Mutex eine Worktree-Isolation pro Delegations-Sub-Gruppe.
+
+Vorbedingungen:
+
+- Der ursprüngliche Arbeitsbaum muss vor dem Erstellen der Worktrees sauber sein (`git status --porcelain` leer), abgesehen von ignorierten Plugin-Dateien unter `.sf-plugin/`.
+- `git worktree` muss verfügbar sein.
+- Lies `.sf-plugin/config.json`, falls vorhanden. Falls sie fehlt oder keine Worktree-Werte enthält, verwende die Defaults.
+
+Worktree-Pfade:
+
+1. Bestimme den Repo-Namen aus `basename "$(git rev-parse --show-toplevel)"`.
+2. Verwende als BaseDir `applyReview.worktree.baseDir` aus `.sf-plugin/config.json` oder den Default `../.sf-worktrees`.
+3. Erstelle Worktrees unter:
+   `BASE_DIR/REPO_NAME/SESSION_ID/GROUP_NAME`
+4. `GROUP_NAME` muss deterministisch, kurz und dateisystemtauglich sein, z. B. `fix-1`, `refactor-2`, `build-feature-1` oder eine slugifizierte Sub-Gruppen-Beschreibung.
+
+Branch-Konvention:
+
+- Pro Sub-Gruppe: `apply-review/<SESSION_ID>/<GROUP_NAME>`
+- Erstelle den Worktree mit:
+  `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> HEAD`
+
+Setup-Erkennung im Worktree:
+
+- `applyReview.worktree.setup: "auto"` oder fehlender Wert:
+  - `pnpm-lock.yaml` → `pnpm install --frozen-lockfile --prefer-offline`
+  - `package-lock.json` → `npm ci`
+  - `yarn.lock` → `yarn install --frozen-lockfile`
+  - `Cargo.toml` → `cargo fetch --locked`
+  - `go.mod` → `go mod download`
+  - `uv.lock` → `uv sync --frozen`
+  - `poetry.lock` → `poetry install --sync`
+  - keine bekannte Datei → kein Setup
+- `applyReview.worktree.setup: "none"`: kein Setup ausführen.
+- `applyReview.worktree.setup` als String: dieses explizite Setup-Kommando im Worktree ausführen.
+
+Git Hooks werden für dieses Setup nicht verwendet. Das Setup ist ein expliziter `apply-review`-Schritt, damit es sichtbar, reproduzierbar und auf den temporären Worktree begrenzt bleibt.
+
+Delegation im Worktree:
+
+- Starte den Delegations-Sub-Agenten mit Arbeitsverzeichnis `<WORKTREE_PATH>`.
+- Gib ihm die Commit-Strategie `Einzeln mit Worktrees` weiter.
+- Innerhalb des Worktrees committen Sub-Agenten nach jedem Finding einzeln, ohne interne Finding-ID in der Commit-Message.
+- Protokolliere in der Wisdom-Datei pro Finding: Worktree-Pfad, Branch, Commit-Hash, Commit-Message.
+
+Integration zurück in den ursprünglichen Branch:
+
+1. Warte auf alle Worktree-Sub-Gruppen-Endstatus.
+2. Für jede erfolgreiche Sub-Gruppe: ermittle die neuen Commits auf ihrem Branch seit `HEAD` des ursprünglichen Branches.
+3. Führe die Commits im ursprünglichen Worktree sequenziell mit `git cherry-pick <commit>` zurück.
+4. Bei Cherry-Pick-Konflikt: Integration stoppen, User informieren und keine automatische Konfliktauflösung versuchen.
+5. Nach erfolgreicher Integration und Validierung: Worktree entfernen (`git worktree remove <WORKTREE_PATH>`) und den temporären Branch löschen (`git branch -d <BRANCH_NAME>`).
+6. Bei fehlgeschlagener Sub-Gruppe: Worktree und Branch zunächst behalten, Pfade in der Zusammenfassung nennen und User-Entscheidung zum Cleanup einholen.
 
 ### Phase 3: ADR-Erstellung
 
@@ -250,12 +335,14 @@ Damit drei parallele Streams in dieser Aktionsgruppe statt einem.
 #### Phase 4.3: Parallele Delegation
 
 1. Starte für jede `(Aktionsgruppe × Sub-Gruppe)`-Kombination einen Delegations-Sub-Agenten. Alle laufen parallel; innerhalb eines Sub-Agenten werden seine Findings sequenziell abgearbeitet.
+   - Bei Commit-Strategie `Einzeln mit Worktrees`: erstelle vorher pro Sub-Gruppe den Worktree gemäß der Worktree-Regeln und starte den Sub-Agenten mit diesem Worktree als Arbeitsverzeichnis.
 2. Jeder Delegations-Sub-Agent erhält im Prompt direkt eingebettet:
    - die Finding-Details (ID, Problem, Empfehlung, Prompt-Vorschlag, Datei)
    - die zugehörige Vorabanalyse aus Phase 4.1 als **inline-Kontext-Block** im Prompt — nicht als Verweis auf die Wisdom-Datei. Die Sub-Skills lesen die Wisdom-Datei nicht; sie verarbeiten nur den Prompt-Inhalt. Bette die Vorabanalyse vollständig ein, etwa unter der Überschrift `Vorabanalyse für dieses Finding:`.
    - die Entwickler-Anmerkung (falls vorhanden)
    - die Commit-Strategie aus Phase 2
    - **Bei Commit-Strategie „Einzeln":** die vollständige Git-Commit-Mutex-Regel aus Phase 2. Der Sub-Agent muss jeden Finding-Commit unter `.git/sf-apply-review-commit.lock` ausführen, darf nur Finding-eigene Dateien stage-en und darf niemals `git add .`, `git add -A` oder `git commit -a` verwenden.
+   - **Bei Commit-Strategie „Einzeln mit Worktrees":** die vollständige Git-Worktree-Isolation-Regel aus Phase 2. Der Sub-Agent arbeitet ausschließlich im zugewiesenen Worktree, committet dort jedes Finding einzeln und protokolliert Commit-Hashes in der Wisdom-Datei. Der Sub-Agent darf nicht in den ursprünglichen Worktree wechseln.
    - den Auftrag, den passenden Skill aufzurufen:
      - Aktion fix: `Verwende den Skill {{SKILL:sf-fix}} für dieses Finding.`
      - Aktion refactor: `Verwende den Skill {{SKILL:sf-refactor}} für dieses Finding.`
@@ -270,13 +357,14 @@ Damit drei parallele Streams in dieser Aktionsgruppe statt einem.
    - Mit dem nächsten Finding innerhalb derselben Sub-Gruppe fortfahren. Andere Sub-Gruppen laufen unabhängig weiter.
 5. Gib dem User nach jeder abgeschlossenen Sub-Gruppe eine Statusmeldung mit dem Ergebnis pro Finding.
 6. **Synchronisationsbarriere vor Phase 5:** Starte Phase 5 erst, wenn **alle** in Phase 4.3 gestarteten Delegations-Sub-Agenten einen Endstatus geliefert haben (`ERLEDIGT` oder `ABBRUCH`).
-7. Eine Statusmeldung nach einer abgeschlossenen Sub-Gruppe ist **keine** Abschlussmeldung des Gesamt-Workflows und **kein** Halt. Nach jeder Statusmeldung prüfst du aktiv, welche Delegations-Sub-Gruppen noch laufen, wartest auf deren Endstatus und setzt Phase 4.3 fort, bis keine Sub-Gruppe mehr offen ist.
+7. Bei Commit-Strategie `Einzeln mit Worktrees`: integriere nach der Synchronisationsbarriere alle erfolgreichen Worktree-Branches sequenziell per `git cherry-pick` in den ursprünglichen Branch. Phase 5 darf erst starten, wenn diese Integration abgeschlossen ist oder der Workflow wegen Konflikt/User-Entscheidung angehalten wurde.
+8. Eine Statusmeldung nach einer abgeschlossenen Sub-Gruppe ist **keine** Abschlussmeldung des Gesamt-Workflows und **kein** Halt. Nach jeder Statusmeldung prüfst du aktiv, welche Delegations-Sub-Gruppen noch laufen, wartest auf deren Endstatus und setzt Phase 4.3 fort, bis keine Sub-Gruppe mehr offen ist.
 
 #### Bekannte Einschränkungen
 
 - **Cross-Action-Datei-Konflikte** werden nicht erkannt: ein `{{SKILL:sf-fix}}`-Finding und ein `{{SKILL:sf-refactor}}`-Finding können dieselbe Datei betreffen und parallel laufen. Diese Situation war auch im sequenziellen Vorgängermodell möglich und ist in der Praxis selten. Bei einem Konflikt fängt die Stash-Bereinigung in Phase 6 die hinterlassenen Stashes auf.
 - **Konfidenz-Niedrig-Findings** laufen pro Aktionsgruppe in einer gemeinsamen Safety-Sub-Gruppe sequenziell, weil ihr File-Scope unsicher ist.
-- Der Git-Commit-Mutex isoliert nur Staging und Commit. Er ersetzt keine Datei-Konflikt-Erkennung während der Implementierung. Wenn zwei parallele Findings dieselbe Datei ändern, muss die Sub-Gruppen-Bildung oder die spätere Konfliktbehandlung greifen.
+- Der Git-Commit-Mutex isoliert nur Staging und Commit im ursprünglichen Worktree. Der Worktree-Modus isoliert zusätzlich Arbeitsbaum und Git-Index, verschiebt mögliche Konflikte aber in die sequenzielle Cherry-Pick-Integration.
 
 ### Phase 5: Report aktualisieren
 
@@ -409,4 +497,4 @@ options:
 - Überspringe bereits umgesetzte Findings (mit ✅) ohne Meldung
 - Gib internen Sub-Agenten das Fertig-Protokoll vor
 - Schreibe nach jeder abgeschlossenen Phase ein Wisdom-Summary
-- Dieser Skill vergibt keine neuen Finding-IDs. Falls zukünftig neue Findings erstellt werden sollen, muss `.sf-memory.json` gelesen und aktualisiert werden (siehe `{{SKILL:sf-review}}`)
+- Dieser Skill vergibt keine neuen Finding-IDs. Falls zukünftig neue Findings erstellt werden sollen, muss `.sf-plugin/memory.json` gelesen und aktualisiert werden (siehe `{{SKILL:sf-review}}`)

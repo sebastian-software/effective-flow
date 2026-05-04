@@ -118,7 +118,7 @@ Erkenntnisse aus früheren Phasen müssen an spätere Phasen weitergegeben werde
 
 Erzeuge zu Beginn eine Session-ID, zum Beispiel via Timestamp. Verwende sie in:
 
-- `.wisdom-accumulation-<SESSION_ID>.tmp.md`
+- `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
 ### Protokoll
 
@@ -183,7 +183,7 @@ Bei gut trennbaren Teilaufgaben ist das interne Sub-Agent-Pattern erlaubt und f�
 
 ## Review-Report-Rückverweise
 
-Wenn dieses Feature ein Finding aus einer bestehenden Review-Report-Datei in `docs/review/` umsetzt:
+Wenn dieses Feature ein Finding aus einer bestehenden Review-Report-Datei in `.sf-plugin/review/` umsetzt:
 
 - identifiziere die betroffene Report-Datei früh im Workflow
 - ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
@@ -316,7 +316,7 @@ type: approval
 {{/ASK}}
 
    - bei Zustimmung: erzeuge für jedes nicht umgesetzte Finding ein ADR-Dokument mit laufender Nummer, Kebab-Case-Titel, Kontext `{{SKILL:sf-build-feature}}` und Quelle des Findings
-9. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `docs/review/` umgesetzt hat:
+9. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.sf-plugin/review/` umgesetzt hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
 

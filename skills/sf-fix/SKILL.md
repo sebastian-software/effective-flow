@@ -33,7 +33,7 @@ Retry-Eskalation:
 
 ## Wisdom Accumulation
 
-Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
+Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
 
 Inhalte:
 
@@ -56,7 +56,7 @@ Wie bei `{{SKILL:sf-build-feature}}`.
 
 ## Review-Report-Rückverweise
 
-Wenn dieser Bugfix ein Finding aus einer bestehenden Review-Report-Datei in `docs/review/` löst:
+Wenn dieser Bugfix ein Finding aus einer bestehenden Review-Report-Datei in `.sf-plugin/review/` löst:
 
 - identifiziere die betroffene Report-Datei früh im Workflow
 - ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
@@ -127,7 +127,7 @@ Starte parallel, wenn möglich:
 ### Phase 5: Abschluss
 
 1. Falls Fehler in Phase 4 gefunden wurden: behebe sie und wiederhole Phase 4.
-2. Wenn dieser Fix ein Finding aus einer bestehenden Review-Report-Datei in `docs/review/` gelöst hat:
+2. Wenn dieser Fix ein Finding aus einer bestehenden Review-Report-Datei in `.sf-plugin/review/` gelöst hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
 3. Lösche die Wisdom-Datei.
