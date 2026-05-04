@@ -191,7 +191,7 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 3. **Auftrag an jeden Reviewer-Sub-Agenten:**
    - umfassendes Review der zugewiesenen Dateien
    - beachte den aktiven Finding-Scope
-   - **keine Designentscheidungs-Prüfung im Reviewer** — die Designentscheidungen werden zentral in Phase 3 abgeglichen, das hält den Reviewer-Auftrag schlank
+   - **keine Designentscheidungs-Prüfung im Reviewer** — die Designentscheidungen werden zentral in Phase 3 abgeglichen, das hält den Reviewer-Auftrag schlank. Diese Anweisung überschreibt gegenteilige Standardregeln in `{{AGENT:sf-frontend-reviewer}}` oder `{{AGENT:sf-nodejs-reviewer}}`: Reviewer dürfen in Phase 2c Designentscheidungen nicht suchen, nicht filtern und nicht in die Konfidenz einrechnen.
    - für jedes Finding:
      - Schweregrad
      - Bereich
