@@ -93,15 +93,17 @@ Original:
 
 Codex-Ersatz:
 
-- Fortschritt wird über normale Statusupdates und Arbeitsstruktur kommuniziert
+- Aufgabenverfolgung ist als Skill-Regel in den Source-Skills verankert.
+- Wenn ein TODO- oder Task-Tracking-Tool verfügbar ist, verwenden die Workflows dieses Tool mit expliziten Statuswechseln (`pending`, `in_progress`, `completed` oder äquivalent).
+- Falls kein Task-Tool verfügbar ist, fällt der Workflow auf normale Statusupdates und eine klare Arbeitsstruktur im Chat zurück.
 
 Verlust:
 
-- keine dedizierte Todo-UI
+- keine Garantie auf dieselbe Claude-spezifische `TodoWrite`-UI oder exakt identische UI-Darstellung in jeder Codex-Umgebung
 
 Erhalten bleibt:
 
-- der Workflow liefert weiterhin Phasenstatus und Zwischenstände
+- der Workflow liefert weiterhin Phasenstatus, Zwischenstände und bei komplexen Workflows eine sichtbare Aufgabenliste, sofern die Laufzeit ein Task-Tool bereitstellt
 
 ### 6. Read-only- oder Tool-Grenzen aus Claude-Agenten
 
