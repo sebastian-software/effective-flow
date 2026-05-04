@@ -231,12 +231,12 @@ Für jede Aktionsgruppe (`{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:s
    - Initialisiere jedes Finding der Rest-Menge als eigene Sub-Gruppe.
    - Für jeden Datei-Pfad, der von mehr als einem Finding der Rest-Menge genannt wird: vereinige die Sub-Gruppen der beteiligten Findings.
    - Ergebnis: zwei Findings sind genau dann in derselben Sub-Gruppe, wenn sie über eine Kette von Datei-Überlappungen verbunden sind (auch transitiv: teilen A–B und B–C je eine Datei, ohne dass A–C direkt überlappen, landen A, B, C in derselben Sub-Gruppe; auch sternförmig: teilt A je eine Datei mit B und mit C, ohne dass B–C überlappen, landen ebenfalls alle drei in derselben Sub-Gruppe).
-3. Füge **jedes Finding aus der Konfidenz-Niedrig-Menge als eigene Sub-Gruppe (Singleton)** zum Ergebnis hinzu — kein Risiko für Datei-Konflikte mit anderen.
+3. Füge die **Konfidenz-Niedrig-Menge als eine gemeinsame Safety-Sub-Gruppe** zum Ergebnis hinzu. Diese Gruppe läuft intern sequenziell, weil der File-Scope unsicher ist und parallele Singleton-Streams sonst dieselbe Datei verändern könnten, ohne dass Union-Find den Konflikt erkennt.
 4. Reihenfolge innerhalb einer Sub-Gruppe: Reihenfolge wie im Report (deterministisch). Keine Schweregrad-Sortierung — Schweregrade können Abhängigkeiten implizieren.
 5. Ergebnis pro Aktionsgruppe: Liste von Sub-Gruppen, jede mit 1-N Findings.
 
 Edge Cases:
-- Sind alle Findings einer Aktionsgruppe Konfidenz `Niedrig`, entsteht pro Finding eine Singleton-Sub-Gruppe; der Union-Find-Schritt entfällt.
+- Sind alle Findings einer Aktionsgruppe Konfidenz `Niedrig`, entsteht eine einzelne Safety-Sub-Gruppe mit allen Findings; der Union-Find-Schritt entfällt.
 - Hat eine Aktionsgruppe genau ein Finding, ist das Ergebnis immer eine einzelne Sub-Gruppe (mit oder ohne Union-Find).
 - Hat eine Aktionsgruppe keine Findings, entsteht keine Sub-Gruppe — der entsprechende Stream in Phase 4.3 entfällt.
 
@@ -274,7 +274,7 @@ Damit drei parallele Streams in dieser Aktionsgruppe statt einem.
 #### Bekannte Einschränkungen
 
 - **Cross-Action-Datei-Konflikte** werden nicht erkannt: ein `{{SKILL:sf-fix}}`-Finding und ein `{{SKILL:sf-refactor}}`-Finding können dieselbe Datei betreffen und parallel laufen. Diese Situation war auch im sequenziellen Vorgängermodell möglich und ist in der Praxis selten. Bei einem Konflikt fängt die Stash-Bereinigung in Phase 6 die hinterlassenen Stashes auf.
-- **Konfidenz-Niedrig-Findings** verzichten bewusst auf Parallelität, um Konflikte zu vermeiden — dafür bleiben sie zuverlässig isoliert.
+- **Konfidenz-Niedrig-Findings** laufen pro Aktionsgruppe in einer gemeinsamen Safety-Sub-Gruppe sequenziell, weil ihr File-Scope unsicher ist.
 - Der Git-Commit-Mutex isoliert nur Staging und Commit. Er ersetzt keine Datei-Konflikt-Erkennung während der Implementierung. Wenn zwei parallele Findings dieselbe Datei ändern, muss die Sub-Gruppen-Bildung oder die spätere Konfliktbehandlung greifen.
 
 ### Phase 5: Report aktualisieren
