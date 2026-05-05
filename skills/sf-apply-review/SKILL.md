@@ -248,9 +248,70 @@ Integration zurück in den ursprünglichen Branch:
 1. Warte auf alle Worktree-Sub-Gruppen-Endstatus.
 2. Für jede erfolgreiche Sub-Gruppe: ermittle die neuen Commits auf ihrem Branch seit `HEAD` des ursprünglichen Branches.
 3. Führe die Commits im ursprünglichen Worktree sequenziell mit `git cherry-pick <commit>` zurück.
-4. Bei Cherry-Pick-Konflikt: Integration stoppen, User informieren und keine automatische Konfliktauflösung versuchen.
+4. Bei Cherry-Pick-Konflikt: führe zuerst die Cherry-Pick-Konfliktbewertung aus. Löse risikoarme Konflikte direkt; frage den User nur bei risikoreichen oder unklaren Konflikten.
 5. Nach erfolgreicher Integration und Validierung: Worktree entfernen (`git worktree remove <WORKTREE_PATH>`) und den temporären Branch löschen (`git branch -d <BRANCH_NAME>`).
 6. Bei fehlgeschlagener Sub-Gruppe: Worktree und Branch zunächst behalten, Pfade in der Zusammenfassung nennen und User-Entscheidung zum Cleanup einholen.
+
+Cherry-Pick-Konfliktbewertung:
+
+1. Erfasse den Konfliktzustand:
+   - `git status --porcelain`
+   - betroffene Konfliktdateien
+   - aktueller Commit, Worktree-Branch und Finding-Zuordnung aus der Wisdom-Datei
+   - Konfliktmarker und betroffene Abschnitte pro Datei
+2. Bewerte das Risiko pro Datei und für den gesamten Konflikt.
+
+Ein Konflikt gilt nur dann als **risikoarm**, wenn alle Bedingungen erfüllt sind:
+
+- Der Konflikt ist klein, lokal begrenzt und eindeutig verständlich.
+- Die betroffenen Änderungen sind additiv oder mechanisch kombinierbar.
+- Es gibt keine widersprüchlichen fachlichen Aussagen.
+- Es sind keine Codepfade mit nicht offensichtlicher Laufzeitlogik betroffen.
+- Die Auflösung erfordert keine neue Architektur- oder Produktentscheidung.
+
+Typische risikoarme Fälle:
+
+- identische Änderungen auf beiden Seiten
+- additive Markdown- oder Dokumentationsabschnitte, die beide erhalten bleiben können
+- unabhängige Einträge in Listen, Tabellen oder Changelogs
+- triviale Reihenfolge-Konflikte ohne semantische Bedeutung
+- Formatierungs- oder Kommentar-Konflikte ohne Einfluss auf Verhalten
+
+Ein Konflikt gilt als **risikoreich**, sobald mindestens eine Bedingung zutrifft:
+
+- Produktionscode, Tests mit Verhaltensaussage, öffentliche APIs, Schemas, Migrationen, Lockfiles oder Build-/Runtime-Konfigurationen sind betroffen.
+- Beide Seiten ändern dieselbe Logik, denselben Kontrollfluss, dieselbe Datenstruktur oder dieselbe Fehlermeldung mit unterschiedlicher Bedeutung.
+- Die Auflösung könnte Verhalten entfernen, verdecken oder neu kombinieren.
+- Der Konfliktbereich ist groß, verteilt oder ohne vollständigen Kontext nicht sicher bewertbar.
+- Eine automatische Auflösung würde Annahmen über Produktverhalten, Architektur oder Priorität zwischen Findings treffen.
+
+Bei Unsicherheit ist der Konflikt als risikoreich zu behandeln.
+
+Automatische Auflösung risikoarmer Konflikte:
+
+1. Bearbeite ausschließlich die konfliktbetroffenen Dateien.
+2. Erhalte beide Seiten, wenn sie unabhängig und additiv sind.
+3. Entferne Konfliktmarker vollständig.
+4. Stage nur die aufgelösten Konfliktdateien mit expliziten Pfaden.
+5. Führe `git cherry-pick --continue` aus.
+6. Protokolliere in der Wisdom-Datei: Commit, Worktree-Branch, betroffene Dateien, Risiko-Level, Auflösungsstrategie und Begründung.
+
+User-Abfrage bei risikoreichen oder unklaren Konflikten:
+
+Stoppe die Integration und gib dem User eine kompakte Konfliktbewertung:
+
+- Commit und Worktree-Branch
+- betroffene Dateien
+- Konflikttyp pro Datei
+- vermutete Ursache
+- Risiko-Level mit Begründung
+- vorgeschlagene Optionen:
+  - manuell lösen
+  - konkrete Auflösungsstrategie vorgeben
+  - Commit überspringen
+  - Workflow abbrechen
+
+Führe keine automatische Konfliktauflösung durch, solange der User keine Richtung vorgegeben hat.
 
 ### Phase 3: ADR-Erstellung
 
