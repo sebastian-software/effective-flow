@@ -151,20 +151,20 @@ Fehlende Werte haben diese Defaults:
 
 {{ASK}}
 header: Commits
-question: Soll jedes Finding einen eigenen Git-Commit bekommen?
+question: Welche Commit-Strategie soll für die Findings verwendet werden?
 options:
+  - label: Einzeln mit Worktrees
+    description: Parallele Sub-Gruppen laufen in isolierten Git-Worktrees und werden anschließend zurückgeführt (häufigste Wahl)
   - label: Einzeln
     description: Jedes Finding wird nach Umsetzung einzeln committet
-  - label: Einzeln mit Worktrees
-    description: Parallele Sub-Gruppen laufen in isolierten Git-Worktrees und werden anschließend zurückgeführt
   - label: Keine Commits
     description: Alle Änderungen werden ohne automatische Commits durchgeführt
 {{/ASK}}
 
 Halte die Antwort fest und gib sie an jeden delegierten Skill als Anweisung weiter:
 
-- **Einzeln:** Nach jedem abgeschlossenen Finding die Änderungen committen. Verwende eine konkrete Conventional-Commit-Message ohne interne Finding-ID, z. B. `fix: clarify review decision filtering`. Setze **niemals** `Co-Authored-By`-Trailer (auch nicht für LLMs); das gilt für jeden Commit, der durch diesen Workflow oder einen delegierten Sub-Agenten erzeugt wird. Protokolliere die Zuordnung von Finding-ID zu Commit-Hash direkt nach jedem erfolgreichen Commit in der Wisdom-Datei.
 - **Einzeln mit Worktrees:** Jede parallele Sub-Gruppe arbeitet in einem eigenen Git-Worktree, committet dort die Findings einzeln und der Orchestrator führt die Commits danach sequenziell per `git cherry-pick` in den ursprünglichen Branch zurück. Commit-Messages folgen denselben Regeln wie bei `Einzeln`: konkrete Conventional-Commit-Message, keine internen Finding-IDs, kein `Co-Authored-By`.
+- **Einzeln:** Nach jedem abgeschlossenen Finding die Änderungen committen. Verwende eine konkrete Conventional-Commit-Message ohne interne Finding-ID, z. B. `fix: clarify review decision filtering`. Setze **niemals** `Co-Authored-By`-Trailer (auch nicht für LLMs); das gilt für jeden Commit, der durch diesen Workflow oder einen delegierten Sub-Agenten erzeugt wird. Protokolliere die Zuordnung von Finding-ID zu Commit-Hash direkt nach jedem erfolgreichen Commit in der Wisdom-Datei.
 - **Keine Commits:** Keine automatischen Commits, der User committet selbst.
 
 #### Git-Commit-Mutex für „Einzeln"
