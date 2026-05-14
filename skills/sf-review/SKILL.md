@@ -98,6 +98,7 @@ Plugin-interne Dateien liegen unter `.sf-plugin/` im Projekt-Root.
 
 - Konfiguration: `.sf-plugin/config.json`
 - Memory-Datei: `.sf-plugin/memory.json`
+- Cache-Datei: `.sf-plugin/cache.json`
 - Review-Reports: `.sf-plugin/review/`
 - Temporäre Wisdom-Dateien: `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
@@ -107,9 +108,88 @@ Die Datei `.sf-plugin/memory.json` speichert persistente Zustände über Session
 
 ```json
 {
-  "lastFindingNumber": 42
+  "lastFindingNumber": 42,
+  "configMigration": {
+    "version": "review-speed-profiles-v1",
+    "appliedAt": "YYYY-MM-DDTHH:mm:ssZ",
+    "addedKeys": ["review.profile"]
+  }
 }
 ```
+
+### Konfigurationsschema
+
+`sf-review` funktioniert ohne Konfigurationsdatei. Wenn `.sf-plugin/config.json` fehlt, verwende interne Defaults und lege keine Datei automatisch an.
+
+Unterstützte Review-Konfiguration:
+
+```json
+{
+  "review": {
+    "profile": "focused",
+    "autoConfirmScope": false,
+    "designDecisionSources": "standard",
+    "validation": "full"
+  }
+}
+```
+
+Defaults:
+
+| Schlüssel | Default | Werte |
+|---|---|---|
+| `review.profile` | `focused` | `full`, `focused`, `fast` |
+| `review.autoConfirmScope` | `false` | Boolean |
+| `review.designDecisionSources` | `standard` | `full`, `standard`, `minimal` |
+| `review.validation` | `full` | `full`, `quick`, `off` |
+
+Profil-Bedeutung:
+
+- `full`: aktuelles tiefes Verhalten mit allen Designentscheidungs-Quellen und vollständiger technischer Validierung.
+- `focused`: kritische und wichtige Findings, Standard-DD-Quellen und vollständige Validierung als sicherer Default.
+- `fast`: kritische und wichtige Findings, reduzierte DD-Quellen und schnelle oder deaktivierte Validierung, sofern nicht explizit anders konfiguriert.
+
+Wenn `review.profile` gesetzt ist und einzelne Detailwerte fehlen, leite fehlende Detailwerte aus dem Profil ab:
+
+| Profil | DD-Quellen | Validierung |
+|---|---|---|
+| `full` | `full` | `full` |
+| `focused` | `standard` | `full` |
+| `fast` | `minimal` | `off` |
+
+Explizit gesetzte Detailwerte haben Vorrang vor Profil-Ableitungen.
+
+### Config-Migration
+
+Wenn `.sf-plugin/config.json` existiert, prüfe sie beim Start auf fehlende unterstützte Review-Schlüssel.
+
+- Ergänze fehlende Schlüssel mit den Defaults oben.
+- Erhalte vorhandene gültige Werte und unbekannte Schlüssel unverändert.
+- Lies die Datei direkt vor dem Schreiben erneut frisch ein, damit zwischenzeitliche Änderungen nicht überschrieben werden.
+- Wenn die Datei ungültiges JSON enthält: nicht schreiben, sichere Defaults für diesen Lauf verwenden und den User mit Pfad und Fehler informieren.
+- Wenn ein bekannter Schlüssel einen ungültigen Wert enthält: nicht überschreiben, sicheren Default für diesen Lauf verwenden und den User über den Schlüssel informieren.
+- Wenn die Migration Schlüssel ergänzt hat: teile dem User einmal in diesem Workflow-Lauf mit, dass `.sf-plugin/config.json` migriert wurde, nenne die ergänzten Schlüssel und weise darauf hin, dass die Defaults das bisherige sichere Verhalten erhalten.
+- Speichere nach erfolgreicher Migration den Status in `.sf-plugin/memory.json` unter `configMigration`, ohne vorhandene Felder wie `lastFindingNumber` zu verlieren.
+
+### Cache-Datei
+
+Persistente Cache-Daten liegen ausschließlich in `.sf-plugin/cache.json`, nicht in `.sf-plugin/memory.json` und nicht dauerhaft in Wisdom-Dateien.
+
+`sf-review` darf diese Cache-Bereiche verwenden:
+
+| Bereich | Inhalt | Invalidierung |
+|---|---|---|
+| `designDecisions` | Extrahierte Designentscheidungen pro Quelle | Hash oder mtime der Quelldateien, Cache-Schema-Version |
+| `scopeIndex` | Dateiliste, Project-Type-Buckets und Reviewer-Split für Whole-Code-Reviews | Git-HEAD, Dirty-State und relevante Dateiänderungen |
+| `validatorScripts` | Erkannte Check-Skripte und zuletzt brauchbares Validierungsprofil | Änderung an Package-/Build-Konfigurationsdateien |
+
+Regeln:
+
+- Jeder Cache-Eintrag braucht `version`, `createdAt` und `sourceHash` oder gleichwertige Invalidierungsdaten.
+- Bei Unsicherheit, fehlender Datei, ungültigem JSON, Versionswechsel oder nicht eindeutig prüfbarer Invalidierung: Cache ignorieren und normal neu berechnen.
+- Ungültige Cache-Dateien nicht überschreiben; User kurz informieren und ohne Cache fortfahren.
+- Finale Review-Findings niemals aus dem Cache übernehmen oder durch Cache-Ergebnisse ersetzen.
+- Wisdom-Dateien bleiben temporäre In-Run-Speicher und werden am Ende gelöscht.
 
 ### Git-Tracking
 
@@ -121,8 +201,10 @@ Ob `.sf-plugin/` eingecheckt oder ignoriert wird, entscheidet das jeweilige Proj
 2. Lies `.sf-plugin/memory.json` beim Start des Review-Workflows.
 3. Falls `.sf-plugin/memory.json` nicht existiert, aber die alte Datei `.sf-memory.json` vorhanden ist: migriere deren Inhalt nach `.sf-plugin/memory.json`, entferne `.sf-memory.json` erst nach erfolgreichem Schreiben und weise den User darauf hin.
 4. Falls keine Memory-Datei existiert, starte mit `lastFindingNumber: 0`.
-5. Nummeriere neue Findings fortlaufend ab `lastFindingNumber + 1` mit 7-stelliger Formatierung: `R-0000001`, `R-0000002`, ...
-6. Schreibe nach Erstellung des Berichts die höchste vergebene Finding-Nummer zurück in `.sf-plugin/memory.json`. Die Memory-Datei muss geschrieben werden, bevor der Workflow mit `ERLEDIGT` abgeschlossen wird. Falls der Schreibvorgang fehlschlägt, weise den User darauf hin.
+5. Lies und migriere `.sf-plugin/config.json`, falls vorhanden.
+6. Lies `.sf-plugin/cache.json`, falls vorhanden und gültig; verwende nur valide, nicht veraltete Cache-Einträge.
+7. Nummeriere neue Findings fortlaufend ab `lastFindingNumber + 1` mit 7-stelliger Formatierung: `R-0000001`, `R-0000002`, ...
+8. Schreibe nach Erstellung des Berichts die höchste vergebene Finding-Nummer zurück in `.sf-plugin/memory.json`. Erhalte dabei `configMigration` und andere vorhandene Memory-Felder. Die Memory-Datei muss geschrieben werden, bevor der Workflow mit `ERLEDIGT` abgeschlossen wird. Falls der Schreibvorgang fehlschlägt, weise den User darauf hin.
 
 ## Wisdom Accumulation
 
@@ -141,17 +223,20 @@ Lösche die Datei am Ende des Workflows, vor `ERLEDIGT`.
 ### Phase 1: Scope
 
 1. Lies die Argumente.
-2. Ohne Argumente:
+2. Lade Plugin-Konfiguration, migriere sie falls nötig und bestimme Review-Profil, DD-Quellenprofil und Validierungsmodus.
+3. Ohne Argumente:
    - prüfe `git diff --name-only`
    - prüfe `git diff --cached --name-only`
    - falls Änderungen vorhanden: reviewe nur diese Dateien
    - sonst den gesamten Code
-3. Untersuche Projektstruktur und Projekt-Typ.
-4. Bestimme den finalen Review-Scope (konkrete Datei-Liste oder Verzeichnis-Beschreibung).
-5. Bestimme den aktiven Finding-Scope: Standard ist nur kritisch+wichtig, es sei denn, der User hat explizit ein umfassendes Review verlangt.
-6. Hole User-Bestätigung ein, wenn Scope oder Review-Ziel unklar ist.
+4. Untersuche Projektstruktur und Projekt-Typ. Nutze einen validen `scopeIndex`-Cache nur, wenn Git-HEAD, Dirty-State und relevante Dateiänderungen zur aktuellen Situation passen.
+5. Bestimme den finalen Review-Scope (konkrete Datei-Liste oder Verzeichnis-Beschreibung).
+6. Bestimme den aktiven Finding-Scope: Standard ist nur kritisch+wichtig, es sei denn, der User hat explizit ein umfassendes Review verlangt.
+7. Hole User-Bestätigung nur ein, wenn Scope oder Review-Ziel unklar ist.
+8. Überspringe die Scope-Bestätigung, wenn der User den Scope explizit angegeben hat oder `review.autoConfirmScope: true` gesetzt ist und die Scope-Ermittlung eindeutig ist. Frage trotzdem, wenn uncommitted Changes vorhanden sind und der gewünschte Scope nicht eindeutig ist.
 
 {{ASK}}
+when: nach den Regeln oben eine Scope-Bestätigung nötig ist
 header: Review-Scope
 question: Review-Scope bestätigt?
 type: approval
@@ -163,7 +248,13 @@ Diese Phase besteht aus drei unabhängigen Streams, die alle gleichzeitig gestar
 
 #### Phase 2a: Designentscheidungs-Sammlung (parallel pro Quelle)
 
-Starte für jede der folgenden Quellen einen eigenen Sub-Agenten **parallel**. Jeder Sub-Agent durchsucht nur seine Quelle:
+Bestimme die aktiven Designentscheidungs-Quellen aus `review.designDecisionSources`:
+
+- `full`: alle unten genannten Quellen.
+- `standard`: ADR, Planungs-Dateien und Konventions-Dateien.
+- `minimal`: ADR und Konventions-Dateien.
+
+Starte für jede aktive Quelle einen eigenen Sub-Agenten **parallel**. Jeder Sub-Agent durchsucht nur seine Quelle:
 
 - ADR — `docs/decisions/`, `docs/adr/`, `adr/`, `*.adr.md`
 - Planungs-Dateien — `docs/plan/`, `plans/`
@@ -171,6 +262,8 @@ Starte für jede der folgenden Quellen einen eigenen Sub-Agenten **parallel**. J
 - Code-Kommentare — `@design-decision`, `DELIBERATE`, `INTENTIONAL`, `DESIGN:`
 - Lint-Suppressions mit Begründung — `eslint-disable ... -- [Grund]`, `@ts-expect-error [Grund]`
 - Vorherige Review-Reports — `.sf-plugin/review/review-report-*.md`
+
+Nicht aktive Quellen werden nicht durchsucht und im Wisdom-Abschnitt mit „übersprungen durch Profil" dokumentiert. Verwende valide `designDecisions`-Cache-Einträge pro Quelle, wenn ihre Invalidierungsdaten noch passen; andernfalls berechne die Quelle neu und aktualisiere den Cache nach erfolgreicher Extraktion.
 
 Jeder Sub-Agent liefert eine Liste von Designentscheidungen im Format:
 
@@ -184,8 +277,12 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 
 #### Phase 2b: Technische Validierung
 
-1. Starte `{{AGENT:sf-code-validator}}` im Check-Modus (TypeScript, Lint, Build, keine Fixes).
+1. Beachte `review.validation`:
+   - `full`: Starte `{{AGENT:sf-code-validator}}` im Check-Modus `full` (TypeScript, Lint, Build, keine Fixes).
+   - `quick`: Starte `{{AGENT:sf-code-validator}}` im Check-Modus `quick` (schnelles kombiniertes Check-Skript bevorzugen; sonst TypeScript und Lint, Build überspringen).
+   - `off`: Starte keinen Validator. Dokumentiere in der Wisdom-Datei und im Bericht, dass technische Validierung durch Profil deaktiviert wurde.
 2. Sammle technische Probleme in der Wisdom-Datei unter `## Technische Befunde`.
+3. Nutze valide `validatorScripts`-Cache-Einträge nur für die Skript-Erkennung und Profilwahl. Verwende keine gecachten Fehlerlisten als aktuelles Validierungsergebnis.
 
 #### Phase 2c: Qualitäts-Review
 
@@ -198,6 +295,7 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
    - **≤ 30 Dateien:** ein Reviewer-Sub-Agent für den ganzen Bucket.
    - **> 30 Dateien:** Splitte den Scope nach Top-Level-Verzeichnis (z. B. `src/components/`, `src/pages/`, `src/lib/` für Frontend; `src/routes/`, `src/services/`, `src/middleware/` für Backend). Pro Top-Level-Verzeichnis ein eigener Reviewer-Sub-Agent. Falls ein Top-Level-Verzeichnis weiterhin > 30 Dateien hat: rekursiv eine Ebene tiefer splitten — maximal **3 Rekursionsebenen** ab dem ersten Split.
    - **Fallback bei Flat-Repos:** Falls keine Sub-Verzeichnisse existieren, alle Dateien direkt im Root-Scope liegen oder die maximale Rekursionsebene erreicht ist und ein Bucket weiterhin > 30 Dateien enthält: teile die Datei-Liste in alphabetische Blöcke von je ≤ 30 Dateien auf und weise jedem Block einen eigenen Reviewer-Sub-Agenten zu.
+   - Ein valider `scopeIndex`-Cache darf die Dateiliste, Project-Type-Buckets und Split-Berechnung liefern. Wenn die Invalidierung nicht eindeutig passt, berechne den Split neu.
 3. **Auftrag an jeden Reviewer-Sub-Agenten:**
    - umfassendes Review der zugewiesenen Dateien
    - beachte den aktiven Finding-Scope
@@ -243,8 +341,10 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 2. Wenn der aktive Finding-Scope nur kritische und wichtige Findings umfasst (Standard):
    - nimm Hinweise nicht in den Hauptbericht auf
    - erwähne kurz, dass Hinweise ausgefiltert wurden und ein umfassendes Review auf Wunsch möglich ist
-3. Präsentiere dem User die wichtigsten Findings und weise auf die gespeicherte Report-Datei hin.
-4. Lösche die Wisdom-Datei.
+3. Wenn `review.validation: off` aktiv war, erwähne im Bericht, dass technische Validierung übersprungen wurde.
+4. Aktualisiere valide Cache-Bereiche (`designDecisions`, `scopeIndex`, `validatorScripts`) nur nach erfolgreicher Neuberechnung. Schreibe keine Review-Findings in den Cache.
+5. Präsentiere dem User die wichtigsten Findings und weise auf die gespeicherte Report-Datei hin.
+6. Lösche die Wisdom-Datei.
 
 ### Bericht-Format
 

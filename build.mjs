@@ -195,10 +195,12 @@ function parseAskBlock(block) {
   const headerMatch = block.match(/header:\s*(.+)/);
   const questionMatch = block.match(/question:\s*(.+)/);
   const typeMatch = block.match(/type:\s*(\S+)/);
+  const whenMatch = block.match(/when:\s*(.+)/);
 
   const header = headerMatch ? headerMatch[1].trim() : null;
   const question = questionMatch ? questionMatch[1].trim() : null;
   const type = typeMatch ? typeMatch[1].trim() : null;
+  const when = whenMatch ? whenMatch[1].trim() : null;
 
   if (!header) throw new Error('ASK block missing header field');
   if (!question) throw new Error('ASK block missing question field');
@@ -215,12 +217,12 @@ function parseAskBlock(block) {
     }
   }
 
-  return { header, question, type, options };
+  return { header, question, type, when, options };
 }
 
 function transformAskClaude(body) {
   return body.replace(/\{\{ASK\}\}\s*\n([\s\S]*?)\{\{\/ASK\}\}/g, (_, block) => {
-    const { header, question, type, options } = parseAskBlock(block);
+    const { header, question, type, when, options } = parseAskBlock(block);
     let out = 'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:\n';
     out += `- header: "${header}"\n`;
     out += `- question: "${question}"\n`;
@@ -232,19 +234,20 @@ function transformAskClaude(body) {
     } else {
       out += options.map(o => `  - label: "${o.label}", description: "${o.description}"`).join('\n');
     }
-    return out;
+    return when ? `Wenn ${when}:\n\n${out}` : out;
   });
 }
 
 function transformAskCodex(body) {
   return body.replace(/\{\{ASK\}\}\s*\n([\s\S]*?)\{\{\/ASK\}\}/g, (_, block) => {
-    const { question, type, options } = parseAskBlock(block);
+    const { question, type, when, options } = parseAskBlock(block);
+    const prefix = when ? `Wenn ${when}: ` : '';
     if (type === 'approval') {
-      return `Frage den User: **${question}** Antworte mit "Ja" oder gib Feedback als Freitext.`;
+      return `${prefix}Frage den User: **${question}** Antworte mit "Ja" oder gib Feedback als Freitext.`;
     }
     let out = `Frage den User: **${question}**\n`;
     out += options.map(o => `- ${o.label} -- ${o.description}`).join('\n');
-    return out;
+    return prefix ? `${prefix}${out}` : out;
   });
 }
 

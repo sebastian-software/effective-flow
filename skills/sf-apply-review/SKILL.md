@@ -86,14 +86,18 @@ Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lös
 Plugin-interne Dateien liegen unter `.sf-plugin/` im Projekt-Root.
 
 - Konfiguration: `.sf-plugin/config.json`
+- Memory-Datei: `.sf-plugin/memory.json`
+- Cache-Datei: `.sf-plugin/cache.json`
 - Review-Reports: `.sf-plugin/review/`
 - Temporäre Wisdom-Dateien: `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
-`apply-review` funktioniert ohne Konfigurationsdatei. Falls `.sf-plugin/config.json` vorhanden ist, darf sie Worktree-Defaults überschreiben:
+`apply-review` funktioniert ohne Konfigurationsdatei. Falls `.sf-plugin/config.json` vorhanden ist, darf sie Apply-Review-Defaults überschreiben:
 
 ```json
 {
   "applyReview": {
+    "defaultCommitStrategy": null,
+    "finalValidation": "full",
     "worktree": {
       "baseDir": ".sf-plugin/.worktrees",
       "setup": "auto"
@@ -104,21 +108,74 @@ Plugin-interne Dateien liegen unter `.sf-plugin/` im Projekt-Root.
 
 Fehlende Werte haben diese Defaults:
 
+- `applyReview.defaultCommitStrategy`: nicht gesetzt (Commit-Strategie wird gefragt)
+- `applyReview.finalValidation`: `full`
 - `applyReview.worktree.baseDir`: `.sf-plugin/.worktrees`
 - `applyReview.worktree.setup`: `auto`
+
+Gültige Werte:
+
+- `applyReview.defaultCommitStrategy`: `worktrees`, `single`, `none`
+- `applyReview.finalValidation`: `full`, `changedScope`, `off`
+- `applyReview.worktree.setup`: `auto`, `none` oder ein expliziter Setup-Befehl als String
+
+### Config-Migration
+
+Wenn `.sf-plugin/config.json` existiert, prüfe sie beim Start auf fehlende unterstützte Apply-Review-Schlüssel.
+
+- Ergänze fehlende Schlüssel mit den Defaults oben.
+- Erhalte vorhandene gültige Werte und unbekannte Schlüssel unverändert.
+- Lies die Datei direkt vor dem Schreiben erneut frisch ein, damit zwischenzeitliche Änderungen nicht überschrieben werden.
+- Wenn die Datei ungültiges JSON enthält: nicht schreiben, sichere Defaults für diesen Lauf verwenden und den User mit Pfad und Fehler informieren.
+- Wenn ein bekannter Schlüssel einen ungültigen Wert enthält: nicht überschreiben, sicheren Default für diesen Lauf verwenden und den User über den Schlüssel informieren.
+- Wenn die Migration Schlüssel ergänzt hat: teile dem User einmal in diesem Workflow-Lauf mit, dass `.sf-plugin/config.json` migriert wurde, nenne die ergänzten Schlüssel und weise darauf hin, dass die Defaults das bisherige sichere Verhalten erhalten.
+- Speichere nach erfolgreicher Migration den Status in `.sf-plugin/memory.json` unter `configMigration`, ohne vorhandene Felder wie `lastFindingNumber` zu verlieren.
+
+Geplanter Memory-Eintrag:
+
+```json
+{
+  "configMigration": {
+    "version": "review-speed-profiles-v1",
+    "appliedAt": "YYYY-MM-DDTHH:mm:ssZ",
+    "addedKeys": ["applyReview.finalValidation"]
+  }
+}
+```
+
+### Cache-Datei
+
+Persistente Cache-Daten liegen ausschließlich in `.sf-plugin/cache.json`, nicht in `.sf-plugin/memory.json` und nicht dauerhaft in Wisdom-Dateien.
+
+`sf-apply-review` darf diesen Cache-Bereich verwenden:
+
+| Bereich | Inhalt | Invalidierung |
+|---|---|---|
+| `applyReviewAnalysis` | Vorabanalyse-Ergebnisse pro Report-Finding für unterbrochene oder wiederholte Apply-Review-Läufe | Report-Datei-Hash, Finding-ID, relevante Code-Datei-Hashes |
+
+Regeln:
+
+- Jeder Cache-Eintrag braucht `version`, `createdAt` und `sourceHash` oder gleichwertige Invalidierungsdaten.
+- Bei Unsicherheit, fehlender Datei, ungültigem JSON, Versionswechsel oder nicht eindeutig prüfbarer Invalidierung: Cache ignorieren und normal neu berechnen.
+- Ungültige Cache-Dateien nicht überschreiben; User kurz informieren und ohne Cache fortfahren.
+- User-Entscheidungen zu Konflikten, Stashes oder ADR-Ablehnungen nicht cachen.
+- Outputs fehlgeschlagener Delegationen nicht als Grundlage für spätere erfolgreiche Läufe verwenden.
+- Wisdom-Dateien bleiben temporäre In-Run-Speicher und werden am Ende gelöscht.
 
 ## Workflow
 
 ### Phase 1: Report einlesen und validieren
 
-1. **Stash-Baseline erfassen:** Führe `git stash list` aus und merke dir die vollständige Liste der bereits vorhandenen Stash-Referenzen (z. B. `stash@{0}`, `stash@{1}`, ... mit ihren Beschreibungen). Halte die Baseline in der Wisdom-Datei fest, damit Phase 6 (Stash-Bereinigung) später neue, durch diesen Workflow entstandene Stashes davon abgrenzen kann. Falls `git stash list` leer ist: notiere „keine Baseline-Stashes".
-2. Bestimme die Report-Datei:
+1. Lade Plugin-Konfiguration, migriere sie falls nötig und bestimme Commit-Strategie-Default, Worktree-Defaults und finales Validierungsprofil.
+2. Lies `.sf-plugin/cache.json`, falls vorhanden und gültig. Verwende nur valide `applyReviewAnalysis`-Einträge.
+3. **Stash-Baseline erfassen:** Führe `git stash list` aus und merke dir die vollständige Liste der bereits vorhandenen Stash-Referenzen (z. B. `stash@{0}`, `stash@{1}`, ... mit ihren Beschreibungen). Halte die Baseline in der Wisdom-Datei fest, damit Phase 6 (Stash-Bereinigung) später neue, durch diesen Workflow entstandene Stashes davon abgrenzen kann. Falls `git stash list` leer ist: notiere „keine Baseline-Stashes".
+4. Bestimme die Report-Datei:
    - falls als Argument übergeben: verwende diese Datei
    - sonst: suche nach `.sf-plugin/review/review-report-*.md` in `.sf-plugin/review/`
    - bei mehreren Reports: frage den User welcher verwendet werden soll
    - falls kein Report gefunden: Fehlermeldung und Abbruch
-3. **Lies die Datei frisch ein.** Da die Datei zwischen Konversationen gelöscht und neu erstellt werden kann, darf kein zuvor eingelesener Inhalt verwendet werden. Lies die Datei immer direkt vom Dateisystem.
-4. Parse alle Findings (`### [R-XXXXXXX] ...`-Blöcke) mit:
+5. **Lies die Datei frisch ein.** Da die Datei zwischen Konversationen gelöscht und neu erstellt werden kann, darf kein zuvor eingelesener Inhalt verwendet werden. Lies die Datei immer direkt vom Dateisystem.
+6. Parse alle Findings (`### [R-XXXXXXX] ...`-Blöcke) mit:
    - Finding-ID und Titel
    - Schweregrad
    - Komplexität
@@ -126,12 +183,12 @@ Fehlende Werte haben diese Defaults:
    - Prompt-Vorschlag
    - Entwickler-Anmerkung (falls vorhanden)
    - Bereits vorhandene Umsetzungshinweise (✅)
-5. Klassifiziere jedes Finding:
+7. Klassifiziere jedes Finding:
    - **Bereits umgesetzt:** Finding hat bereits einen ✅-Hinweis → überspringen
    - **Nicht umsetzen:** Entwickler-Anmerkung beginnt mit „Nicht umsetzen" → ADR erstellen
    - **Umsetzen:** Kein ✅-Hinweis und keine ablehnende Anmerkung → an Skill delegieren
    - **Umsetzen mit Kontext:** Entwickler-Anmerkung vorhanden, die nicht mit „Nicht umsetzen" beginnt → an Skill delegieren, Anmerkung als zusätzlichen Kontext mitgeben
-6. Gib dem User eine Übersicht:
+8. Gib dem User eine Übersicht:
 
 ```markdown
 **Report:** [Dateiname]
@@ -145,11 +202,20 @@ Fehlende Werte haben diese Defaults:
 | Gesamt | N |
 ```
 
-7. Falls keine umsetzbaren Findings vorhanden sind und keine ADRs zu erstellen sind: Kurzmeldung und Abbruch.
+9. Falls keine umsetzbaren Findings vorhanden sind und keine ADRs zu erstellen sind: Kurzmeldung und Abbruch.
 
 ### Phase 2: Commit-Strategie
 
+Wenn `applyReview.defaultCommitStrategy` gültig gesetzt ist, überspringe die ASK-Frage und verwende die konfigurierte Strategie:
+
+- `worktrees` → **Einzeln mit Worktrees**
+- `single` → **Einzeln**
+- `none` → **Keine Commits**
+
+Melde kurz, dass die Commit-Strategie aus `.sf-plugin/config.json` übernommen wurde. Wenn kein gültiger Wert gesetzt ist, frage wie bisher:
+
 {{ASK}}
+when: kein gültiger Wert für `applyReview.defaultCommitStrategy` gesetzt ist
 header: Commits
 question: Welche Commit-Strategie soll für die Findings verwendet werden?
 options:
@@ -235,6 +301,8 @@ Setup-Erkennung im Worktree:
 - `applyReview.worktree.setup` als String: dieses explizite Setup-Kommando im Worktree ausführen.
 
 Git Hooks werden für dieses Setup nicht verwendet. Das Setup ist ein expliziter `apply-review`-Schritt, damit es sichtbar, reproduzierbar und auf den temporären Worktree begrenzt bleibt.
+
+Zeige vor dem Ausführen des Worktree-Setups kurz an, welcher Setup-Modus aktiv ist und welches Kommando geplant ist. Bei `setup: "none"` wird kein Install-/Fetch-Kommando ausgeführt; wenn ein Sub-Agent später wegen fehlender Dependencies scheitert, nenne das Setup-Profil in der Zusammenfassung als mögliche Ursache.
 
 Delegation im Worktree:
 
@@ -368,6 +436,8 @@ Jeder Vorabanalyse-Sub-Agent erhält:
 - das Fertig-Protokoll
 
 Schreibe das Ergebnis pro Finding in die Wisdom-Datei unter `## Vorabanalyse [R-XXXXXXX]`. Bei `ABBRUCH` markiere das Finding mit dem Status `fehlgeschlagen (Vorabanalyse)` in der Wisdom-Datei und überspringe es bei den folgenden Schritten. Diese Kennzeichnung erlaubt Phase 6 (Stash-Bereinigung), zwischen Vorabanalyse-Abbrüchen (kein Stash möglich, da nichts implementiert wurde) und Delegations-Abbrüchen (Stash kann existieren) zu unterscheiden.
+
+Verwende einen validen `applyReviewAnalysis`-Cache-Eintrag nur dann, wenn Report-Datei-Hash, Finding-ID und relevante Code-Datei-Hashes zur aktuellen Situation passen. Wenn der Cache nicht eindeutig valide ist, führe die Vorabanalyse neu aus. Aktualisiere den Cache nur nach erfolgreicher Vorabanalyse; schreibe keine User-Entscheidungen oder fehlgeschlagenen Delegationsoutputs in den Cache.
 
 #### Phase 4.2: Sub-Gruppen-Bildung (lokal im Orchestrator)
 
@@ -511,21 +581,28 @@ options:
 
 ### Phase 7: Finale Validierung
 
-1. Prüfe ob im Projekt ein Validierungs-Script konfiguriert ist (z. B. `agent:check`, `typecheck`, `lint` in `package.json`).
-2. Falls vorhanden: führe die verfügbaren Prüfungen aus (z. B. `pnpm agent:check`, `pnpm typecheck`, `pnpm lint`).
-3. Falls Errors oder Warnings gefunden werden:
+1. Beachte `applyReview.finalValidation`:
+   - `full`: aktuelles projektweites Qualitäts-Gate.
+   - `changedScope`: verwende nur vorhandene schnelle oder scope-bewusste Checks, wenn das Projekt sie anbietet; erfinde keine eigenen Tool-Argumente. Falls kein solcher Check existiert, führe einen einmaligen Standard-Check aus und starte keine globale Fix-Schleife.
+   - `off`: überspringe finale Validierung ausdrücklich, erstelle keinen Validierungsfix-Commit und nenne das Restrisiko in der Zusammenfassung.
+2. Falls `off` aktiv ist: gehe nach kurzer Meldung zu Phase 8.
+3. Prüfe ob im Projekt ein Validierungs-Script konfiguriert ist (z. B. `agent:check`, `typecheck`, `lint` in `package.json`).
+4. Falls vorhanden: führe die verfügbaren Prüfungen gemäß Validierungsprofil aus (z. B. `pnpm agent:check`, `pnpm typecheck`, `pnpm lint`).
+5. Falls Errors oder Warnings gefunden werden:
    - behebe alle Errors und Warnings, auch wenn sie nicht direkt aus den Findings dieses Laufs stammen. Die finale Validierung ist ein projektweiter Qualitäts-Gate, keine reine Finding-Scope-Prüfung.
+   - Bei `changedScope`: behebe nur Fehler, die im geänderten Scope oder im einmaligen Standard-Check eindeutig durch diesen Lauf entstanden sind; wenn die Zuordnung unklar ist, informiere den User statt unrelated Fixes breit umzusetzen.
    - protokolliere in der Wisdom-Datei, welche Dateien durch finale Validierungsfixes geändert wurden und ob sie direkt zu Findings gehören oder unrelated Validation-Fixes sind.
    - führe die Prüfungen erneut aus
-   - wiederhole bis alle Prüfungen fehlerfrei durchlaufen
-4. Falls in Phase 2 die Commit-Strategie „Einzeln" gewählt wurde und Fixes nötig waren:
+   - bei `full`: wiederhole bis alle Prüfungen fehlerfrei durchlaufen
+   - bei `changedScope`: wiederhole nur, wenn die betroffene Prüfung scope-bewusst oder schnell genug ist; andernfalls dokumentiere das Ergebnis und frage bei unklaren Restfehlern den User
+6. Falls in Phase 2 die Commit-Strategie „Einzeln" gewählt wurde und Fixes nötig waren:
    - verwende den Git-Commit-Mutex aus Phase 2 für die gesamte finale Staging-/Commit-Sektion.
    - führe vor dem Staging `git status --porcelain` aus und unterscheide finale Validierungsfixes von bereits vorhandenen User-Änderungen.
    - stage ausschließlich Dateien, die durch die finale Validierungsfix-Schleife geändert wurden. Verwende keine pauschalen Befehle wie `git add .`, `git add -A` oder `git commit -a`.
    - prüfe `git diff --cached --name-only` und `git diff --cached`.
    - committe die Fixes mit einer Commit-Message wie `fix: resolve validation errors from final check`. Wenn unrelated Validation-Fixes enthalten sind, erwähne das konkret in der Commit-Message, z. B. `fix: resolve final validation errors including unrelated warnings`.
-5. Falls kein Validierungs-Script vorhanden ist: überspringe diese Phase mit kurzer Meldung.
-6. Gib dem User eine kurze Statusmeldung über das Ergebnis.
+7. Falls kein Validierungs-Script vorhanden ist: überspringe diese Phase mit kurzer Meldung.
+8. Gib dem User eine kurze Statusmeldung über das Ergebnis.
 
 ### Phase 8: Zusammenfassung
 

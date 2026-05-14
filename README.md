@@ -74,7 +74,7 @@ Für Symlinks statt Kopien (Entwicklung):
 
 ## Build
 
-Die Source-Dateien in `skills/` verwenden zwei Platzhalter-Typen:
+Die Source-Dateien in `skills/` verwenden drei Platzhalter-Typen:
 
 | Platzhalter | Bedeutung | Claude Code | Codex Skill | Codex TOML |
 |---|---|---|---|---|
@@ -87,6 +87,63 @@ Nur Build ausführen (ohne Deployment):
 ```sh
 node build.mjs
 ```
+
+## Plugin-Konfiguration
+
+Projektlokale Laufzeitdaten liegen unter `.sf-plugin/` im Zielprojekt:
+
+| Datei | Zweck |
+|---|---|
+| `.sf-plugin/config.json` | Optionale Workflow-Defaults für Review und Apply-Review |
+| `.sf-plugin/memory.json` | Persistente Workflow-Zähler und Config-Migrationsstatus |
+| `.sf-plugin/cache.json` | Invalidierbare Cache-Daten für wiederholte Reviews und Apply-Review-Läufe |
+| `.sf-plugin/review/` | Review-Reports |
+
+Die Skills funktionieren ohne `config.json`. Wenn eine bestehende Config neue Schlüssel noch nicht enthält, migrieren `sf-review` und `sf-apply-review` fehlende Defaults nicht-destruktiv und melden die ergänzten Schlüssel. Der Migrationsstatus wird in `memory.json` gespeichert; wiederverwendbare Cache-Daten liegen separat in `cache.json`.
+
+Sicheres Default-Verhalten:
+
+```json
+{
+  "review": {
+    "profile": "focused",
+    "autoConfirmScope": false,
+    "designDecisionSources": "standard",
+    "validation": "full"
+  },
+  "applyReview": {
+    "defaultCommitStrategy": null,
+    "finalValidation": "full",
+    "worktree": {
+      "baseDir": ".sf-plugin/.worktrees",
+      "setup": "auto"
+    }
+  }
+}
+```
+
+Schneller persönlicher Review-/Apply-Review-Workflow:
+
+```json
+{
+  "review": {
+    "profile": "fast",
+    "autoConfirmScope": true,
+    "designDecisionSources": "standard",
+    "validation": "quick"
+  },
+  "applyReview": {
+    "defaultCommitStrategy": "worktrees",
+    "finalValidation": "changedScope",
+    "worktree": {
+      "baseDir": ".sf-plugin/.worktrees",
+      "setup": "none"
+    }
+  }
+}
+```
+
+`cache.json` darf nur invalidierbare Vorarbeiten enthalten, z. B. extrahierte Designentscheidungen, Scope-Indizes, erkannte Validator-Skripte oder Apply-Review-Voranalysen. Finale Review-Findings, Konfliktentscheidungen und Stash-Entscheidungen werden nicht gecacht.
 
 ## Struktur
 
