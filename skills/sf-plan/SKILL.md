@@ -125,6 +125,26 @@ Der Plan muss mindestens diese Struktur verwenden:
 ## Annahmen und offene Punkte
 
 - [Annahme oder bewusst dokumentierter Restpunkt]
+
+## Plan-Review
+
+**Ergebnis:** Freigegeben / Überarbeiten
+
+### Zusammenfassung
+
+| Bereich | Kritisch | Wichtig | Hinweis |
+|---|---:|---:|---:|
+| Architektur | 0 | 0 | 0 |
+| Security | 0 | 0 | 0 |
+| Datenschutz | 0 | 0 | 0 |
+| Fehlerfälle | 0 | 0 | 0 |
+| Testbarkeit | 0 | 0 | 0 |
+| Scope | 0 | 0 | 0 |
+| Wartbarkeit | 0 | 0 | 0 |
+
+### Befunde
+
+- Keine Befunde. / [Befund mit Bereich, Schweregrad, Problem und Anpassung]
 ```
 
 Regeln:
@@ -134,6 +154,7 @@ Regeln:
 - Schreibe den Plan als Umsetzungsanleitung, nicht als Vorab-Implementierung.
 - Vermeide Codeblöcke im Plan. Nutze sie nur, wenn eine kurze Codeformulierung klarer und kürzer ist als eine prose Beschreibung.
 - Wenn ein Codebeispiel nötig ist, begrenze es auf das kleinste aussagekräftige Fragment und dokumentiere, dass es ein Beispiel oder eine Schnittstellenskizze ist.
+- Ergänze einen Abschnitt `## Plan-Review` gemäß Template. Er enthält ausschließlich Befunde auf Plan-Ebene, keine Code-Review-Findings.
 - Schreibe keine `## Testergebnisse` und keine `## Review-Findings`, weil noch nichts implementiert wurde.
 - Setze `**Planungsstatus:** Nicht umgesetzt`; `{{SKILL:sf-build}}` nutzt diesen Status später, um den Planungsteil zu überspringen.
 
@@ -166,7 +187,42 @@ Bewerte den Plan mit einer Scorecard:
 
 Wenn ein Kriterium nicht erfüllt ist, überarbeite den Plan oder frage den User nach der fehlenden Information.
 
-### Phase 6: Abschluss
+### Phase 6: Plan-Review
+
+Führe vor dem Abschluss einen Review des Plans selbst durch. Dieser Review prüft die geplanten Änderungen auf Plan-Ebene und ist **kein Code-Review**.
+
+Regeln:
+
+- Starte keine normalen Reviewer-Skills, Implementer, Test-Writer oder Validatoren.
+- Ändere weiterhin nur die Plan-Datei unter `docs/plan/`.
+- Prüfe die geplanten Änderungen gegen den verifizierten Code-Kontext aus Phase 1.
+- Gib keine vollständigen Codevorschläge aus; halte dich an die Code-Sparsamkeitsregel.
+
+Prüfe mindestens diese Bereiche:
+
+- **Architektur:** Passt der Plan zu bestehenden Patterns, Modulgrenzen, Zuständigkeiten und Abstraktionsebenen?
+- **Security:** Führt der Plan neue Eingaben, Auth-/Permission-Pfade, Secrets, Netzwerkzugriffe, Dateizugriffe, externe Prozesse oder Persistenz ein?
+- **Datenschutz:** Werden sensible Daten verarbeitet, geloggt, gespeichert, exportiert oder länger aufbewahrt?
+- **Fehlerfälle:** Sind Failure Modes, Recovery, idempotentes Verhalten, Race Conditions und Edge Cases ausreichend abgedeckt?
+- **Testbarkeit:** Sind Akzeptanzkriterien und Validierungsplan konkret genug, um die spätere Umsetzung zu prüfen?
+- **Scope:** Enthält der Plan Scope Creep, versteckte Nebenfeatures oder zu vage Teilaufgaben?
+- **Wartbarkeit:** Erzeugt der Plan unnötige Kopplung, neue Abhängigkeiten, Migrationslast oder schwer erweiterbare Strukturen?
+
+Klassifiziere Befunde:
+
+- **Kritisch:** Plan darf nicht abgeschlossen werden, bevor der Befund eingearbeitet ist.
+- **Wichtig:** Befund soll eingearbeitet werden; wenn bewusst nicht, dokumentiere die Begründung im Plan.
+- **Hinweis:** Optionaler Verbesserungs- oder Prüfpunkt.
+
+Vorgehen:
+
+1. Prüfe den Plan anhand der Bereiche oben.
+2. Arbeite alle kritischen Befunde direkt in den Plan ein.
+3. Arbeite wichtige Befunde ein oder dokumentiere im `## Plan-Review`, warum sie bewusst nicht umgesetzt werden.
+4. Aktualisiere den Abschnitt `## Plan-Review` mit Ergebnis, Zusammenfassung und Befunden.
+5. Wenn nach der Überarbeitung weiterhin kritische Befunde bestehen, frage den User nach der fehlenden Entscheidung und schließe den Plan nicht ab.
+
+### Phase 7: Abschluss
 
 1. Schreibe die Plan-Datei.
 2. Formatiere nur die neue Plan-Datei, falls ein Formatter für Markdown klar konfiguriert ist.
