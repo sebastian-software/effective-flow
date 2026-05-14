@@ -1,6 +1,6 @@
 ---
 name: sf-apply-review
-description: "Liest eine Review-Report-Datei ein, wertet Entwickler-Anmerkungen aus, erstellt ADRs für abgelehnte Findings und delegiert umsetzbare Findings parallel an {{SKILL:sf-fix}}, {{SKILL:sf-refactor}} oder {{SKILL:sf-build-feature}}."
+description: "Liest eine Review-Report-Datei ein, wertet Entwickler-Anmerkungen aus, erstellt ADRs für abgelehnte Findings und delegiert umsetzbare Findings parallel an {{SKILL:sf-fix}}, {{SKILL:sf-refactor}} oder {{SKILL:sf-build}}."
 type: orchestrator
 ---
 
@@ -122,7 +122,7 @@ Fehlende Werte haben diese Defaults:
    - Finding-ID und Titel
    - Schweregrad
    - Komplexität
-   - Aktion (`{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:sf-build-feature}}`)
+   - Aktion (`{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:sf-build}}`)
    - Prompt-Vorschlag
    - Entwickler-Anmerkung (falls vorhanden)
    - Bereits vorhandene Umsetzungshinweise (✅)
@@ -210,7 +210,7 @@ Worktree-Pfade:
 2. Verwende als BaseDir `applyReview.worktree.baseDir` aus `.sf-plugin/config.json` oder den Default `.sf-plugin/.worktrees`.
 3. Erstelle Worktrees unter:
    `BASE_DIR/REPO_NAME/SESSION_ID/GROUP_NAME`
-4. `GROUP_NAME` muss deterministisch, kurz und dateisystemtauglich sein, z. B. `fix-1`, `refactor-2`, `build-feature-1` oder eine slugifizierte Sub-Gruppen-Beschreibung.
+4. `GROUP_NAME` muss deterministisch, kurz und dateisystemtauglich sein, z. B. `fix-1`, `refactor-2`, `build-1` oder eine slugifizierte Sub-Gruppen-Beschreibung.
 
 Der Default liegt bewusst innerhalb des Projekt-Roots. Dadurch bleiben Worktree-Erstellung, Dateiänderungen und Setup-Kommandos in der üblichen Workspace-Sandbox. Externe BaseDirs sind nur zu verwenden, wenn sie explizit in `.sf-plugin/config.json` konfiguriert sind und die Umgebung Schreib- und Ausführungsrechte dafür erlaubt.
 
@@ -361,7 +361,7 @@ Jeder Vorabanalyse-Sub-Agent erhält:
 - die Entwickler-Anmerkung (falls vorhanden)
 - den Auftrag, den Code zu untersuchen und ein strukturiertes Analyse-Ergebnis zu liefern:
   - **Betroffene Dateien:** vollständige Liste aller Dateien, die wahrscheinlich angefasst werden (mehr als nur die im Report genannte primäre Datei).
-  - **Root Cause / aktuelles Verhalten** (für `{{SKILL:sf-fix}}` und `{{SKILL:sf-refactor}}`) bzw. **Anforderung** (für `{{SKILL:sf-build-feature}}`).
+  - **Root Cause / aktuelles Verhalten** (für `{{SKILL:sf-fix}}` und `{{SKILL:sf-refactor}}`) bzw. **Anforderung** (für `{{SKILL:sf-build}}`).
   - **Implementierungsskizze:** kurzer Plan in 2-5 Bullet-Points.
   - **Risiken und Datei-Abhängigkeiten:** mögliche Nebenwirkungen, Kollisionen mit anderen Findings.
   - **Konfidenz:** `Hoch` (Datei-Liste sicher), `Mittel` (Datei-Liste plausibel), `Niedrig` (File-Scope unsicher, z. B. großes Refactoring oder unklare Dependency).
@@ -371,7 +371,7 @@ Schreibe das Ergebnis pro Finding in die Wisdom-Datei unter `## Vorabanalyse [R-
 
 #### Phase 4.2: Sub-Gruppen-Bildung (lokal im Orchestrator)
 
-Für jede Aktionsgruppe (`{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:sf-build-feature}}`) bilde Sub-Gruppen anhand der Datei-Listen aus Phase 4.1. Vorgehen explizit zweistufig:
+Für jede Aktionsgruppe (`{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:sf-build}}`) bilde Sub-Gruppen anhand der Datei-Listen aus Phase 4.1. Vorgehen explizit zweistufig:
 
 1. **Partitioniere** die Findings der Aktionsgruppe in zwei Mengen:
    - **Konfidenz-Niedrig-Menge:** Findings mit Konfidenz `Niedrig` (File-Scope unsicher).
@@ -409,7 +409,7 @@ Damit drei parallele Streams in dieser Aktionsgruppe statt einem.
    - den Auftrag, den passenden Skill aufzurufen:
      - Aktion fix: `Verwende den Skill {{SKILL:sf-fix}} für dieses Finding.`
      - Aktion refactor: `Verwende den Skill {{SKILL:sf-refactor}} für dieses Finding.`
-     - Aktion build-feature: `Verwende den Skill {{SKILL:sf-build-feature}} für dieses Finding.`
+     - Aktion build: `Verwende den Skill {{SKILL:sf-build}} für dieses Finding.`
    - den Prompt-Vorschlag aus dem Report als Aufgabenbeschreibung
    - **Stash-Konvention:** Falls während der Umsetzung dieses Findings irgendein Stash entsteht (durch einen Pre-Commit-Hook, einen manuellen `git stash` im Sub-Skill oder einen Tool-getriggerten Stash), **muss die Stash-Message die Finding-ID enthalten**, z. B. `apply-review R-XXXXXXX <kurze Beschreibung>`. Das ermöglicht der Stash-Bereinigung in Phase 6, den Stash zuverlässig dem Finding zuzuordnen.
    - das Fertig-Protokoll

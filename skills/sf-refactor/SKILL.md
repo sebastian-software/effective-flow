@@ -22,7 +22,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Analyse und Refacto
 
 ## Fertig-Protokoll
 
-Wie bei `{{SKILL:sf-build-feature}}`: `ERLEDIGT` / `ABBRUCH: [Grund]` mit Retry-Eskalation über drei Stufen.
+Wie bei `{{SKILL:sf-build}}`: `ERLEDIGT` / `ABBRUCH: [Grund]` mit Retry-Eskalation über drei Stufen.
 
 ## Wisdom Accumulation
 
@@ -38,7 +38,7 @@ Inhalte:
 
 ## Projekt-Typ-Erkennung und Routing
 
-Wie bei `{{SKILL:sf-build-feature}}`.
+Wie bei `{{SKILL:sf-build}}`.
 
 ## Review-Report-Rückverweise
 

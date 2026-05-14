@@ -16,7 +16,8 @@ Das System unterscheidet drei Typen:
 
 | Name | Beschreibung |
 |---|---|
-| `sf-build-feature` | Kompletter Feature-Workflow |
+| `sf-build` | Kompletter Feature-Workflow |
+| `sf-plan` | Reine Feature-Planung ohne Code-Änderungen |
 | `sf-fix` | Bugfix-Workflow |
 | `sf-refactor` | Refactoring-Workflow |
 | `sf-review` | Umfassendes Code-Review |
@@ -94,7 +95,8 @@ sf-claude-plugin/
 ├── skills/                          # Source (Platzhalter-Syntax)
 │   ├── _shared/                     # Gemeinsame Inhalte ({{INCLUDE:…}})
 │   │   └── language-rules.md        # Zentrale Sprach- und Typografie-Regeln
-│   ├── sf-build-feature/SKILL.md    # type: orchestrator
+│   ├── sf-build/SKILL.md            # type: orchestrator
+│   ├── sf-plan/SKILL.md             # type: orchestrator
 │   ├── sf-ui-implementer/SKILL.md   # type: agent
 │   └── ...
 ├── dist/                            # Generiert (gitignored)
@@ -118,7 +120,7 @@ sf-claude-plugin/
 
 ```yaml
 ---
-name: sf-build-feature
+name: sf-build
 description: "..."
 type: orchestrator
 ---

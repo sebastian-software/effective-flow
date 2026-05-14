@@ -1,10 +1,10 @@
 ---
-name: sf-build-feature
-description: "Orchestriert den kompletten Feature-Workflow: Intent-Gate, initiale Zustandsdokumentation, Planung, Implementierung, Dokumentation, Tests, Validierung, Review, ADR-Optionen und Abschluss. Verwendet explizite Skill-Wechsel wie {{AGENT:sf-ui-implementer}}, {{AGENT:sf-nodejs-implementer}}, {{AGENT:sf-code-validator}}, {{AGENT:sf-test-writer}}, {{AGENT:sf-docs-writer}} und {{AGENT:sf-frontend-reviewer}}."
+name: sf-build
+description: "Orchestriert den kompletten Feature-Workflow: Intent-Gate, Plan-Referenz-Erkennung, Planung via {{SKILL:sf-plan}}, Implementierung, Dokumentation, Tests, Validierung, Review, ADR-Optionen und Abschluss. Verwendet explizite Skill-Wechsel wie {{AGENT:sf-ui-implementer}}, {{AGENT:sf-nodejs-implementer}}, {{AGENT:sf-code-validator}}, {{AGENT:sf-test-writer}}, {{AGENT:sf-docs-writer}} und {{AGENT:sf-frontend-reviewer}}."
 type: orchestrator
 ---
 
-# SF Build Feature
+# SF Build
 
 Du bist der Orchestrator für den kompletten Entwicklungs-Workflow für neue Features.
 
@@ -170,6 +170,7 @@ Bei Fullstack:
 
 Nutze für Spezialphasen explizite Skill-Wechsel:
 
+- Planung: `{{SKILL:sf-plan}}`
 - Frontend: `{{AGENT:sf-ui-implementer}}`
 - Backend/CLI: `{{AGENT:sf-nodejs-implementer}}`
 - Code-Doku: `{{AGENT:sf-code-documenter}}`
@@ -187,45 +188,49 @@ Wenn dieses Feature ein Finding aus einer bestehenden Review-Report-Datei in `.s
 
 - identifiziere die betroffene Report-Datei früh im Workflow
 - ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
-- beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via {{SKILL:sf-build-feature}}`
+- beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via {{SKILL:sf-build}}`
 - aktualisiere nur die Findings, die durch diese Änderung tatsächlich adressiert wurden
+
+## Plan-Referenzen
+
+Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel `docs/plan/0030-feature.md`, `0030-feature.md` oder `0030`, prüfe den Plan vor Phase 1:
+
+1. Löse die Referenz auf genau eine Datei unter `docs/plan/` auf.
+2. Prüfe den Umsetzungsstatus:
+   - `**Planungsstatus:** Nicht umgesetzt` → der Plan ist umsetzbar.
+   - `**Planungsstatus:** Umgesetzt` → frage den User, ob der Plan erneut umgesetzt, nur geprüft oder der Workflow abgebrochen werden soll.
+   - fehlender oder widersprüchlicher Status → prüfe, ob `## Testergebnisse` oder `## Review-Findings` vorhanden sind. Wenn ja, behandle den Plan als wahrscheinlich umgesetzt und frage nach. Wenn nein, frage nach, ob der Plan als ungebaute Vorgabe verwendet werden soll.
+3. Wenn der Plan als ungebaute Vorgabe bestätigt ist:
+   - überspringe Phase 1 vollständig.
+   - verwende die Inhalte der Plan-Datei als abgestimmten Implementierungsplan.
+   - starte direkt mit Phase 2.
+   - halte in der Wisdom-Datei fest, welche Plan-Datei die Quelle ist.
+4. Wenn mehrere Plan-Dateien zur Referenz passen, frage den User nach der konkreten Datei.
+
+Ein referenzierter ungebauter Plan ersetzt nur die Planungsphase. Initiale Zustandsdokumentation, Review-Report-Rückverweise, Implementierung, Dokumentation, Tests, Validierung, Review und Abschluss laufen weiterhin normal.
 
 ## Workflow
 
 ### Phase 1: Planung
 
-1. Analysiere die Anforderung gründlich.
-2. Untersuche die relevanten Bereiche der Codebase lokal oder mit internem Sub-Agenten.
-3. Identifiziere alle Unklarheiten, offenen Fragen und Unsicherheiten:
-   - gewünschtes Verhalten
-   - Designentscheidungen
-   - technische Vorgaben
-   - Abhängigkeiten
-   - Edge Cases
-4. Frage den User nach jeder wirklich relevanten Unklarheit. Wiederhole das, bis keine offenen Punkte mehr bestehen.
-5. Erstelle einen ausführlichen Implementierungsplan, der mindestens abdeckt:
-   - Architektur
-   - betroffene Dateien
-   - Komponenten-Struktur
-   - State-Management
-   - API-Anbindung
-   - Styling-Ansatz
-   - Barrierefreiheit
-   - Edge Cases
-6. Führe eine Gap Analysis durch:
-   - Over-Engineering
-   - Scope Creep
-   - unausgesprochene Annahmen
-   - fehlende Akzeptanzkriterien
-   - Edge Cases
-   - versteckte Intentionen
-7. Führe eine Plan-Validierung durch:
-   - Clarity: konkrete Datei-Referenzen, Ziel >= 80%
-   - Verification: messbare Akzeptanzkriterien pro Anforderung
-   - Context: verifizierter Code vs. Annahmen, Ziel <= 10% Raten
-   - Big Picture: Zweck und Workflow explizit beschrieben
-8. Präsentiere dem User den bereinigten Plan mit Validierungs-Scorecard.
-9. Hole explizite Freigabe ein. Starte Phase 2 nicht ohne diese Freigabe.
+Wenn keine ungebaute Plan-Datei referenziert wurde:
+
+1. Starte `{{SKILL:sf-plan}}` mit der Feature-Anforderung.
+2. Weise den Planungs-Skill ausdrücklich an:
+   - nur `docs/plan/` zu ändern
+   - keinen Code zu erzeugen
+   - keine Implementierungs-, Test-, Validator- oder Reviewer-Skills zu starten
+   - offene Fragen zu klären, bevor der Plan geschrieben wird
+3. Übernimm die erzeugte Plan-Datei als abgestimmten Implementierungsplan.
+4. Lies die Plan-Datei vollständig und prüfe:
+   - `**Planungsstatus:** Nicht umgesetzt` ist vorhanden
+   - Akzeptanzkriterien sind messbar
+   - Validierungsplan ist vorhanden
+   - betroffene Dateien sind konkret genug für Phase 2
+5. Präsentiere dem User die Plan-Datei mit kurzer Validierungs-Scorecard.
+6. Hole explizite Freigabe ein. Starte Phase 2 nicht ohne diese Freigabe.
+
+Wenn `{{SKILL:sf-plan}}` wegen fehlender Informationen abbricht, frage den User nach den offenen Punkten und starte die Planung danach erneut.
 
 {{ASK}}
 header: Freigabe
@@ -315,7 +320,7 @@ question: Sollen ADRs in docs/adr/ für nicht umgesetzte Findings erzeugt werden
 type: approval
 {{/ASK}}
 
-   - bei Zustimmung: erzeuge für jedes nicht umgesetzte Finding ein ADR-Dokument mit laufender Nummer, Kebab-Case-Titel, Kontext `{{SKILL:sf-build-feature}}` und Quelle des Findings
+   - bei Zustimmung: erzeuge für jedes nicht umgesetzte Finding ein ADR-Dokument mit laufender Nummer, Kebab-Case-Titel, Kontext `{{SKILL:sf-build}}` und Quelle des Findings
 9. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.sf-plugin/review/` umgesetzt hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
@@ -323,10 +328,11 @@ type: approval
 ### Phase 7: Abschluss
 
 1. Führe `{{AGENT:sf-code-validator}}` ein letztes Mal als Final-Check aus.
-2. Schreibe den vollständigen Implementierungsplan in eine Markdown-Datei:
-   - verwende bestehende Plan-Struktur, falls vorhanden
-   - sonst erstelle `docs/plan/`
-   - verwende das nächste freie Nummernschema
+2. Dokumentiere den abgeschlossenen Workflow in der Plan-Datei:
+   - wenn Phase 1 eine neue Plan-Datei via `{{SKILL:sf-plan}}` erzeugt hat: aktualisiere diese Datei.
+   - wenn der User eine ungebaute Plan-Datei referenziert hat: aktualisiere die referenzierte Datei.
+   - wenn ausnahmsweise keine Plan-Datei existiert: erstelle `docs/plan/` und verwende das nächste freie Nummernschema.
+   - setze `**Planungsstatus:** Umgesetzt`.
    - Inhalt:
      - Anforderung
      - Architekturentscheidungen

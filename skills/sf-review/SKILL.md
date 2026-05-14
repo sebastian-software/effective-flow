@@ -1,6 +1,6 @@
 ---
 name: sf-review
-description: "Orchestriert ein umfassendes Code-Review: Scope-Bestimmung, Designentscheidungs-Erkennung, technische Validierung, fachliches Review, Findings-Qualitätsprüfung und Berichtserstellung mit Prompt-Vorschlägen für {{SKILL:sf-fix}}, {{SKILL:sf-refactor}} oder {{SKILL:sf-build-feature}}."
+description: "Orchestriert ein umfassendes Code-Review: Scope-Bestimmung, Designentscheidungs-Erkennung, technische Validierung, fachliches Review, Findings-Qualitätsprüfung und Berichtserstellung mit Prompt-Vorschlägen für {{SKILL:sf-fix}}, {{SKILL:sf-refactor}} oder {{SKILL:sf-build}}."
 type: orchestrator
 ---
 
@@ -10,7 +10,7 @@ Du bist der Orchestrator für umfassende Code-Reviews.
 
 ## Ziel
 
-Dieser Workflow analysiert Code-Qualität und erstellt einen strukturierten Bericht, dessen Findings direkt als Input für `{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}` und `{{SKILL:sf-build-feature}}` dienen können.
+Dieser Workflow analysiert Code-Qualität und erstellt einen strukturierten Bericht, dessen Findings direkt als Input für `{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}` und `{{SKILL:sf-build}}` dienen können.
 
 {{INCLUDE:language-rules}}
 
@@ -90,7 +90,7 @@ Der Review-Workflow erkennt dokumentierte Designentscheidungen, damit Findings g
 
 ## Projekt-Typ-Erkennung und Routing
 
-Projekt-Typ-Erkennung wie bei `{{SKILL:sf-build-feature}}`. Das Reviewer-Routing samt Verzeichnis-Split-Heuristik ist in Phase 2c definiert.
+Projekt-Typ-Erkennung wie bei `{{SKILL:sf-build}}`. Das Reviewer-Routing samt Verzeichnis-Split-Heuristik ist in Phase 2c definiert.
 
 ## Plugin-Konfiguration und Memory
 
@@ -231,7 +231,7 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 4. Bestimme für jedes verbleibende Finding die Folgeaktion:
    - Defekt → `{{SKILL:sf-fix}}`
    - strukturelles Problem → `{{SKILL:sf-refactor}}`
-   - fehlende Funktionalität / Schutzmechanismus → `{{SKILL:sf-build-feature}}`
+   - fehlende Funktionalität / Schutzmechanismus → `{{SKILL:sf-build}}`
 5. Formuliere Prompt-Vorschläge:
    - direkt kopierbarer Klartext
    - keine umschliessenden Anführungszeichen
@@ -273,7 +273,7 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 |---|---|
 | {{SKILL:sf-fix}} | X |
 | {{SKILL:sf-refactor}} | Y |
-| {{SKILL:sf-build-feature}} | Z |
+| {{SKILL:sf-build}} | Z |
 
 ## Findings
 
@@ -284,7 +284,7 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 - **Datei**: [pfad:zeile]
 - **Problem**: [...]
 - **Empfehlung**: [...]
-- **Aktion**: `{{SKILL:sf-fix}}` | `{{SKILL:sf-refactor}}` | `{{SKILL:sf-build-feature}}`
+- **Aktion**: `{{SKILL:sf-fix}}` | `{{SKILL:sf-refactor}}` | `{{SKILL:sf-build}}`
 - **Prompt-Vorschlag**: [...]
 - **Entwickler-Anmerkung**: <!-- leer lassen, Freitext, oder „Nicht umsetzen: [Grund]" -->
 
@@ -295,7 +295,7 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 | [...] | [DD-XXX] | [...] |
 ```
 
-Wenn ein Finding später über `{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}` oder `{{SKILL:sf-build-feature}}` umgesetzt wird, darf die bestehende Report-Datei am betroffenen Finding um einen kurzen Statushinweis ergänzt werden, zum Beispiel `Umgesetzt am YYYY-MM-DD via {{SKILL:sf-fix}}`.
+Wenn ein Finding später über `{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}` oder `{{SKILL:sf-build}}` umgesetzt wird, darf die bestehende Report-Datei am betroffenen Finding um einen kurzen Statushinweis ergänzt werden, zum Beispiel `Umgesetzt am YYYY-MM-DD via {{SKILL:sf-fix}}`.
 
 ## Bekannte Einschränkungen
 

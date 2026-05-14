@@ -46,7 +46,7 @@ Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lös
 
 ## Projekt-Typ-Erkennung
 
-Wie bei `{{SKILL:sf-build-feature}}`.
+Wie bei `{{SKILL:sf-build}}`.
 
 ## Routing
 
