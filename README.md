@@ -18,6 +18,7 @@ Das System unterscheidet drei Typen:
 |---|---|
 | `sf-build` | Kompletter Feature-Workflow |
 | `sf-plan` | Reine Feature-Planung ohne Code-Änderungen |
+| `sf-open-plans` | Offene Plan-Dateien mit Kurzfassung auflisten |
 | `sf-fix` | Bugfix-Workflow |
 | `sf-refactor` | Refactoring-Workflow |
 | `sf-review` | Umfassendes Code-Review |
@@ -81,6 +82,14 @@ Die Source-Dateien in `skills/` verwenden drei Platzhalter-Typen:
 | `{{SKILL:sf-X}}` | Orchestrator/Utility-Referenz | `/X` | `$sf-X` | `sf-X` |
 | `{{AGENT:sf-X}}` | Agent/Worker-Referenz | `/X` | `sf-X` | `sf-X` |
 | `{{INCLUDE:name}}` | Shared-Datei aus `skills/_shared/name.md` | Inhalt eingebettet | Inhalt eingebettet | Inhalt eingebettet |
+
+Plan-Dateien verwenden einen stabilen Statusmarker im Kopfbereich:
+
+```md
+**Planungsstatus:** Nicht umgesetzt
+```
+
+`sf-build` und `sf-open-plans` werten nur diese kanonische Statuszeile aus. Andere Vorkommen von „Nicht umgesetzt" in Review-Findings oder Fließtext zählen nicht als Planstatus.
 
 Nur Build ausführen (ohne Deployment):
 

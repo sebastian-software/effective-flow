@@ -16,6 +16,8 @@ Du bist der Orchestrator für den kompletten Entwicklungs-Workflow für neue Fea
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben für Planung, Implementierung, Review, Tests, Doku und Commits.
 
+{{INCLUDE:plan-status}}
+
 ## Phase 0: Intent Gate
 
 Bevor du den Workflow startest, klassifiziere die Anforderung des Users:
@@ -197,8 +199,8 @@ Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel 
 
 1. Löse die Referenz auf genau eine Datei unter `docs/plan/` auf.
 2. Prüfe den Umsetzungsstatus:
-   - `**Planungsstatus:** Nicht umgesetzt` → der Plan ist umsetzbar.
-   - `**Planungsstatus:** Umgesetzt` → frage den User, ob der Plan erneut umgesetzt, nur geprüft oder der Workflow abgebrochen werden soll.
+   - genau eine Statuszeile `**Planungsstatus:** Nicht umgesetzt` → der Plan ist umsetzbar.
+   - genau eine Statuszeile `**Planungsstatus:** Umgesetzt` → frage den User, ob der Plan erneut umgesetzt, nur geprüft oder der Workflow abgebrochen werden soll.
    - fehlender oder widersprüchlicher Status → prüfe, ob `## Testergebnisse` oder `## Review-Findings` vorhanden sind. Wenn ja, behandle den Plan als wahrscheinlich umgesetzt und frage nach. Wenn nein, frage nach, ob der Plan als ungebaute Vorgabe verwendet werden soll.
 3. Wenn der Plan als ungebaute Vorgabe bestätigt ist:
    - überspringe Phase 1 vollständig.
@@ -223,7 +225,7 @@ Wenn keine ungebaute Plan-Datei referenziert wurde:
    - offene Fragen zu klären, bevor der Plan geschrieben wird
 3. Übernimm die erzeugte Plan-Datei als abgestimmten Implementierungsplan.
 4. Lies die Plan-Datei vollständig und prüfe:
-   - `**Planungsstatus:** Nicht umgesetzt` ist vorhanden
+   - genau eine kanonische Statuszeile `**Planungsstatus:** Nicht umgesetzt` ist vorhanden
    - Akzeptanzkriterien sind messbar
    - Validierungsplan ist vorhanden
    - betroffene Dateien sind konkret genug für Phase 2
@@ -332,7 +334,7 @@ type: approval
    - wenn Phase 1 eine neue Plan-Datei via `{{SKILL:sf-plan}}` erzeugt hat: aktualisiere diese Datei.
    - wenn der User eine ungebaute Plan-Datei referenziert hat: aktualisiere die referenzierte Datei.
    - wenn ausnahmsweise keine Plan-Datei existiert: erstelle `docs/plan/` und verwende das nächste freie Nummernschema.
-   - setze `**Planungsstatus:** Umgesetzt`.
+   - ersetze die kanonische Statuszeile `**Planungsstatus:** Nicht umgesetzt` durch `**Planungsstatus:** Umgesetzt`. Erzeuge keine zweite `**Planungsstatus:**`-Zeile.
    - Inhalt:
      - Anforderung
      - Architekturentscheidungen

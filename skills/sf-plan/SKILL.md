@@ -16,6 +16,8 @@ Dieser Skill erstellt einen umsetzbaren, validierten Implementierungsplan in `do
 
 {{INCLUDE:task-tracking}}
 
+{{INCLUDE:plan-status}}
+
 ## Harte Abgrenzung
 
 - Erlaubt sind ausschließlich Analyse, Rückfragen und Dokumentationsänderungen unter `docs/plan/`.
@@ -156,7 +158,7 @@ Regeln:
 - Wenn ein Codebeispiel nötig ist, begrenze es auf das kleinste aussagekräftige Fragment und dokumentiere, dass es ein Beispiel oder eine Schnittstellenskizze ist.
 - Ergänze einen Abschnitt `## Plan-Review` gemäß Template. Er enthält ausschließlich Befunde auf Plan-Ebene, keine Code-Review-Findings.
 - Schreibe keine `## Testergebnisse` und keine `## Review-Findings`, weil noch nichts implementiert wurde.
-- Setze `**Planungsstatus:** Nicht umgesetzt`; `{{SKILL:sf-build}}` nutzt diesen Status später, um den Planungsteil zu überspringen.
+- Setze den kanonischen offenen Planstatus exakt auf `**Planungsstatus:** Nicht umgesetzt`; `{{SKILL:sf-build}}` nutzt diesen Status später, um den Planungsteil zu überspringen.
 
 ### Phase 4: Gap Analysis
 
