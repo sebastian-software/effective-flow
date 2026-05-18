@@ -241,8 +241,8 @@ Ziel: Parallele Sub-Agenten dürfen gleichzeitig Dateien bearbeiten, aber niemal
 
 Mutex-Konvention:
 
-- Lock-Pfad: `.git/sf-apply-review-commit.lock`
-- Lock-Erwerb: atomar per `mkdir .git/sf-apply-review-commit.lock`
+- Lock-Pfad: `.sf-plugin/sf-apply-review-commit.lock`
+- Lock-Erwerb: atomar per `mkdir .sf-plugin/sf-apply-review-commit.lock`
 - Lock-Inhalt: schreibe nach erfolgreichem Erwerb eine kurze Owner-Datei, z. B. `owner`, mit Finding-ID, Sub-Gruppe und Timestamp.
 - Lock-Freigabe: lösche nur den Lock, den du selbst erworben hast, nach Commit-Erfolg, Commit-Abbruch oder Fehlerbehandlung.
 - Wenn der Lock bereits existiert: warten und erneut versuchen. Falls der Lock offensichtlich verwaist wirkt, den User fragen, bevor er entfernt wird.
@@ -474,7 +474,7 @@ Damit drei parallele Streams in dieser Aktionsgruppe statt einem.
    - die zugehörige Vorabanalyse aus Phase 4.1 als **inline-Kontext-Block** im Prompt — nicht als Verweis auf die Wisdom-Datei. Die Sub-Skills lesen die Wisdom-Datei nicht; sie verarbeiten nur den Prompt-Inhalt. Bette die Vorabanalyse vollständig ein, etwa unter der Überschrift `Vorabanalyse für dieses Finding:`.
    - die Entwickler-Anmerkung (falls vorhanden)
    - die Commit-Strategie aus Phase 2
-   - **Bei Commit-Strategie „Einzeln":** die vollständige Git-Commit-Mutex-Regel aus Phase 2. Der Sub-Agent muss jeden Finding-Commit unter `.git/sf-apply-review-commit.lock` ausführen, darf nur Finding-eigene Dateien stage-en und darf niemals `git add .`, `git add -A` oder `git commit -a` verwenden.
+   - **Bei Commit-Strategie „Einzeln":** die vollständige Git-Commit-Mutex-Regel aus Phase 2. Der Sub-Agent muss jeden Finding-Commit unter `.sf-plugin/sf-apply-review-commit.lock` ausführen, darf nur Finding-eigene Dateien stage-en und darf niemals `git add .`, `git add -A` oder `git commit -a` verwenden.
    - **Bei Commit-Strategie „Einzeln mit Worktrees":** die vollständige Git-Worktree-Isolation-Regel aus Phase 2. Der Sub-Agent arbeitet ausschließlich im zugewiesenen Worktree, committet dort jedes Finding einzeln und protokolliert Commit-Hashes in der Wisdom-Datei. Der Sub-Agent darf nicht in den ursprünglichen Worktree wechseln.
    - den Auftrag, den passenden Skill aufzurufen:
      - Aktion fix: `Verwende den Skill {{SKILL:sf-fix}} für dieses Finding.`

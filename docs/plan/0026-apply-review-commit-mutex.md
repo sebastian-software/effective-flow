@@ -14,7 +14,7 @@ Ein Mutex nur um `git commit` reicht nicht aus, weil fremde Änderungen bereits 
 
 Für Commit-Strategie „Einzeln" führt `sf-apply-review` einen globalen Git-Commit-Mutex ein:
 
-- Lock-Pfad: `.git/sf-apply-review-commit.lock`
+- Lock-Pfad: `.sf-plugin/sf-apply-review-commit.lock`
 - Lock-Erwerb: atomar per `mkdir`
 - Gültigkeitsbereich: `git status`, gezieltes `git add`, `git diff --cached`, `git commit`, Nachprüfung
 - Verboten: `git add .`, `git add -A`, `git commit -a`
