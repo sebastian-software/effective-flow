@@ -1,6 +1,6 @@
 ---
 name: sf-apply-review
-description: "Liest eine Review-Report-Datei ein, wertet Entwickler-Anmerkungen aus, erstellt ADRs für abgelehnte Findings und delegiert umsetzbare Findings parallel an {{SKILL:sf-fix}}, {{SKILL:sf-refactor}} oder {{SKILL:sf-build}}."
+description: "Liest eine Review-Report-Datei ein, wertet Entwickler-Anmerkungen aus, erstellt ADRs für abgelehnte Findings und delegiert umsetzbare Findings parallel an {{SKILL:sf-fix}}, {{SKILL:sf-refactor}}, {{SKILL:sf-build}} oder {{SKILL:sf-docs}}."
 type: orchestrator
 ---
 
@@ -179,7 +179,7 @@ Regeln:
    - Finding-ID und Titel
    - Schweregrad
    - Komplexität
-   - Aktion (`{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:sf-build}}`)
+   - Aktion (`{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:sf-build}}`, `{{SKILL:sf-docs}}`)
    - Prompt-Vorschlag
    - Entwickler-Anmerkung (falls vorhanden)
    - Bereits vorhandene Umsetzungshinweise (✅)
@@ -429,7 +429,7 @@ Jeder Vorabanalyse-Sub-Agent erhält:
 - die Entwickler-Anmerkung (falls vorhanden)
 - den Auftrag, den Code zu untersuchen und ein strukturiertes Analyse-Ergebnis zu liefern:
   - **Betroffene Dateien:** vollständige Liste aller Dateien, die wahrscheinlich angefasst werden (mehr als nur die im Report genannte primäre Datei).
-  - **Root Cause / aktuelles Verhalten** (für `{{SKILL:sf-fix}}` und `{{SKILL:sf-refactor}}`) bzw. **Anforderung** (für `{{SKILL:sf-build}}`).
+  - **Root Cause / aktuelles Verhalten** (für `{{SKILL:sf-fix}}` und `{{SKILL:sf-refactor}}`), **Anforderung** (für `{{SKILL:sf-build}}`) bzw. **Dokumentationslücke und Zielgruppe** (für `{{SKILL:sf-docs}}`).
   - **Implementierungsskizze:** kurzer Plan in 2-5 Bullet-Points.
   - **Risiken und Datei-Abhängigkeiten:** mögliche Nebenwirkungen, Kollisionen mit anderen Findings.
   - **Konfidenz:** `Hoch` (Datei-Liste sicher), `Mittel` (Datei-Liste plausibel), `Niedrig` (File-Scope unsicher, z. B. großes Refactoring oder unklare Dependency).
@@ -441,7 +441,7 @@ Verwende einen validen `applyReviewAnalysis`-Cache-Eintrag nur dann, wenn Report
 
 #### Phase 4.2: Sub-Gruppen-Bildung (lokal im Orchestrator)
 
-Für jede Aktionsgruppe (`{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:sf-build}}`) bilde Sub-Gruppen anhand der Datei-Listen aus Phase 4.1. Vorgehen explizit zweistufig:
+Für jede Aktionsgruppe (`{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:sf-build}}`, `{{SKILL:sf-docs}}`) bilde Sub-Gruppen anhand der Datei-Listen aus Phase 4.1. Vorgehen explizit zweistufig:
 
 1. **Partitioniere** die Findings der Aktionsgruppe in zwei Mengen:
    - **Konfidenz-Niedrig-Menge:** Findings mit Konfidenz `Niedrig` (File-Scope unsicher).
@@ -480,6 +480,7 @@ Damit drei parallele Streams in dieser Aktionsgruppe statt einem.
      - Aktion fix: `Verwende den Skill {{SKILL:sf-fix}} für dieses Finding.`
      - Aktion refactor: `Verwende den Skill {{SKILL:sf-refactor}} für dieses Finding.`
      - Aktion build: `Verwende den Skill {{SKILL:sf-build}} für dieses Finding.`
+     - Aktion docs: `Verwende den Skill {{SKILL:sf-docs}} für dieses Finding.`
    - den Prompt-Vorschlag aus dem Report als Aufgabenbeschreibung
    - **Stash-Konvention:** Falls während der Umsetzung dieses Findings irgendein Stash entsteht (durch einen Pre-Commit-Hook, einen manuellen `git stash` im Sub-Skill oder einen Tool-getriggerten Stash), **muss die Stash-Message die Finding-ID enthalten**, z. B. `apply-review R-XXXXXXX <kurze Beschreibung>`. Das ermöglicht der Stash-Bereinigung in Phase 6, den Stash zuverlässig dem Finding zuzuordnen.
    - das Fertig-Protokoll
@@ -495,7 +496,7 @@ Damit drei parallele Streams in dieser Aktionsgruppe statt einem.
 
 #### Bekannte Einschränkungen
 
-- **Cross-Action-Datei-Konflikte** werden nicht erkannt: ein `{{SKILL:sf-fix}}`-Finding und ein `{{SKILL:sf-refactor}}`-Finding können dieselbe Datei betreffen und parallel laufen. Diese Situation war auch im sequenziellen Vorgängermodell möglich und ist in der Praxis selten. Bei einem Konflikt fängt die Stash-Bereinigung in Phase 6 die hinterlassenen Stashes auf.
+- **Cross-Action-Datei-Konflikte** werden nicht erkannt: Findings aus unterschiedlichen Aktionsgruppen wie `{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:sf-build}}` oder `{{SKILL:sf-docs}}` können dieselbe Datei betreffen und parallel laufen. Diese Situation war auch im sequenziellen Vorgängermodell möglich und ist in der Praxis selten. Bei einem Konflikt fängt die Stash-Bereinigung in Phase 6 die hinterlassenen Stashes auf.
 - **Konfidenz-Niedrig-Findings** laufen pro Aktionsgruppe in einer gemeinsamen Safety-Sub-Gruppe sequenziell, weil ihr File-Scope unsicher ist.
 - Der Git-Commit-Mutex isoliert nur Staging und Commit im ursprünglichen Worktree. Der Worktree-Modus isoliert zusätzlich Arbeitsbaum und Git-Index, verschiebt mögliche Konflikte aber in die sequenzielle Cherry-Pick-Integration.
 

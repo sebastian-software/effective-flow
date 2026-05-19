@@ -62,7 +62,8 @@ Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel 
    - fehlender oder widersprüchlicher Status → prüfe, ob `## Testergebnisse` oder `## Review-Findings` vorhanden sind. Wenn ja, behandle den Plan als wahrscheinlich umgesetzt und frage nach. Wenn nein, frage nach, ob der Plan als ungebaute Refactoring-Vorgabe verwendet werden soll.
 3. Prüfe, ob im Kopfbereich eine Zeile `**Empfohlener Workflow:** ...` vorhanden ist:
    - Refactoring → der Plan passt zu `{{SKILL:sf-refactor}}`.
-   - Feature oder Dokumentation → gib eine deutlich sichtbare Meldung aus, dass der Plan eher für `{{SKILL:sf-build}}` empfohlen ist. Frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit `{{SKILL:sf-refactor}}` verwenden will.
+   - Feature → gib eine deutlich sichtbare Meldung aus, dass der Plan eher für `{{SKILL:sf-build}}` empfohlen ist. Frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit `{{SKILL:sf-refactor}}` verwenden will.
+   - Dokumentation → gib eine deutlich sichtbare Meldung aus, dass der Plan eher für `{{SKILL:sf-docs}}` empfohlen ist. Frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit `{{SKILL:sf-refactor}}` verwenden will.
    - Bugfix → gib eine deutlich sichtbare Meldung aus, dass der Plan eher für `{{SKILL:sf-fix}}` empfohlen ist. Frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit `{{SKILL:sf-refactor}}` verwenden will.
    - fehlende oder unklare Empfehlung → fahre nach Statusprüfung fort, weise aber auf die fehlende Empfehlung hin.
 4. Wenn der Plan als ungebaute Refactoring-Vorgabe bestätigt ist:

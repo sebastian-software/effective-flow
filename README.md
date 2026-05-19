@@ -19,6 +19,7 @@ Das System unterscheidet drei Typen:
 | `sf-build` | Kompletter Feature-Workflow |
 | `sf-plan` | Reine Implementierungsplanung ohne Code-Änderungen |
 | `sf-open-plans` | Offene Plan-Dateien mit Kurzfassung auflisten |
+| `sf-docs` | Dokumentations-Workflow |
 | `sf-fix` | Bugfix-Workflow |
 | `sf-refactor` | Refactoring-Workflow |
 | `sf-review` | Umfassendes Code-Review |
@@ -90,9 +91,9 @@ Plan-Dateien verwenden einen stabilen Statusmarker im Kopfbereich:
 **Empfohlener Workflow:** Feature (`$sf-build`)
 ```
 
-`sf-build`, `sf-fix`, `sf-refactor` und `sf-open-plans` werten nur diese kanonische Statuszeile aus. Andere Vorkommen von „Nicht umgesetzt" in Review-Findings oder Fließtext zählen nicht als Planstatus.
+`sf-build`, `sf-fix`, `sf-refactor`, `sf-docs` und `sf-open-plans` werten nur diese kanonische Statuszeile aus. Andere Vorkommen von „Nicht umgesetzt" in Review-Findings oder Fließtext zählen nicht als Planstatus.
 
-Neue Pläne enthalten zusätzlich eine Workflow-Empfehlung: Feature, Bugfix, Refactoring oder Dokumentation. Offene Pläne können mit `sf-build`, `sf-fix` oder `sf-refactor` als Grundlage verwendet werden; der jeweilige Skill prüft die Empfehlung und weist auf einen passenderen Workflow hin, wenn sie nicht zum Aufruf passt.
+Neue Pläne enthalten zusätzlich eine Workflow-Empfehlung: Feature, Bugfix, Refactoring oder Dokumentation. Offene Pläne können mit `sf-build`, `sf-fix`, `sf-refactor` oder `sf-docs` als Grundlage verwendet werden; der jeweilige Skill prüft die Empfehlung und weist auf einen passenderen Workflow hin, wenn sie nicht zum Aufruf passt.
 
 Nur Build ausführen (ohne Deployment):
 
@@ -165,6 +166,7 @@ sf-claude-plugin/
 │   ├── _shared/                     # Gemeinsame Inhalte ({{INCLUDE:…}})
 │   │   └── language-rules.md        # Zentrale Sprach- und Typografie-Regeln
 │   ├── sf-build/SKILL.md            # type: orchestrator
+│   ├── sf-docs/SKILL.md             # type: orchestrator
 │   ├── sf-plan/SKILL.md             # type: orchestrator
 │   ├── sf-ui-implementer/SKILL.md   # type: agent
 │   └── ...
