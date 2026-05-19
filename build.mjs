@@ -137,6 +137,10 @@ function cleanDescription(desc) {
     .replace(/\{\{AGENT:([^}]+)\}\}/g, '$1');
 }
 
+function tomlString(value) {
+  return JSON.stringify(value);
+}
+
 function normalizeCodexSandboxMode(mode, skillName) {
   const normalized = {
     full: 'danger-full-access',
@@ -313,11 +317,11 @@ try {
       const tomlDesc = cleanDescription(description);
       const tomlBody = transformCodexAgent(transformAskCodex(body));
 
-      let toml = `name = "${skillName}"\n`;
-      toml += `description = "${tomlDesc}"\n`;
-      if (codexModel) toml += `model = "${codexModel}"\n`;
-      if (codexEffort) toml += `model_reasoning_effort = "${codexEffort}"\n`;
-      if (codexSandbox) toml += `sandbox_mode = "${codexSandbox}"\n`;
+      let toml = `name = ${tomlString(skillName)}\n`;
+      toml += `description = ${tomlString(tomlDesc)}\n`;
+      if (codexModel) toml += `model = ${tomlString(codexModel)}\n`;
+      if (codexEffort) toml += `model_reasoning_effort = ${tomlString(codexEffort)}\n`;
+      if (codexSandbox) toml += `sandbox_mode = ${tomlString(codexSandbox)}\n`;
       toml += `developer_instructions = '''\n${tomlBody.replace(/\n+$/, '')}\n'''\n`;
       writeFileSync(join(DIST_CODEX, 'agents', `${skillName}.toml`), toml);
 
