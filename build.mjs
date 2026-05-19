@@ -368,7 +368,7 @@ const marketplace = {
       name: CLAUDE_PLUGIN_NAME,
       version: VERSION,
       source: `./plugins/${CLAUDE_PLUGIN_NAME}`,
-      description: 'Orchestrierte Workflows (build, docs, plan, open-plans, fix, refactor, review) mit spezialisierten Agents für Frontend, Backend, CLI und Node.js',
+      description: 'Orchestrierte Workflows (build, apply-plan, docs, plan, open-plans, fix, refactor, review) mit spezialisierten Agents für Frontend, Backend, CLI und Node.js',
       category: 'development',
       tags: ['frontend', 'backend', 'nodejs', 'cli', 'workflow', 'orchestration', 'review', 'testing'],
       author: { name: 'Sebastian Fastner' },

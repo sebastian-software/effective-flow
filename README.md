@@ -17,6 +17,7 @@ Das System unterscheidet drei Typen:
 | Name | Beschreibung |
 |---|---|
 | `sf-build` | Kompletter Feature-Workflow |
+| `sf-apply-plan` | Offene Plan-Datei an passenden Workflow übergeben |
 | `sf-plan` | Reine Implementierungsplanung ohne Code-Änderungen |
 | `sf-open-plans` | Offene Plan-Dateien mit Kurzfassung auflisten |
 | `sf-docs` | Dokumentations-Workflow |
@@ -92,9 +93,9 @@ Plan-Dateien verwenden einen stabilen Statusmarker im Kopfbereich:
 **Empfohlener Workflow:** Feature (`$sf-build`)
 ```
 
-`sf-build`, `sf-fix`, `sf-refactor`, `sf-docs` und `sf-open-plans` werten nur diese kanonische Statuszeile aus. Andere Vorkommen von „Nicht umgesetzt" in Review-Findings oder Fließtext zählen nicht als Planstatus.
+`sf-build`, `sf-fix`, `sf-refactor`, `sf-docs`, `sf-apply-plan` und `sf-open-plans` werten nur diese kanonische Statuszeile aus. Andere Vorkommen von „Nicht umgesetzt" in Review-Findings oder Fließtext zählen nicht als Planstatus.
 
-Neue Pläne enthalten zusätzlich eine Workflow-Empfehlung: Feature, Bugfix, Refactoring oder Dokumentation. Offene Pläne können mit `sf-build`, `sf-fix`, `sf-refactor` oder `sf-docs` als Grundlage verwendet werden; der jeweilige Skill prüft die Empfehlung und weist auf einen passenderen Workflow hin, wenn sie nicht zum Aufruf passt.
+Neue Pläne enthalten zusätzlich eine Workflow-Empfehlung: Feature, Bugfix, Refactoring oder Dokumentation. Offene Pläne können direkt mit `sf-build`, `sf-fix`, `sf-refactor` oder `sf-docs` als Grundlage verwendet werden; alternativ liest `sf-apply-plan` die Empfehlung aus und übergibt den Plan an den passenden Workflow.
 
 Nur Build ausführen (ohne Deployment):
 
@@ -166,6 +167,7 @@ sf-claude-plugin/
 ├── skills/                          # Source (Platzhalter-Syntax)
 │   ├── _shared/                     # Gemeinsame Inhalte ({{INCLUDE:…}})
 │   │   └── language-rules.md        # Zentrale Sprach- und Typografie-Regeln
+│   ├── sf-apply-plan/SKILL.md       # type: orchestrator
 │   ├── sf-build/SKILL.md            # type: orchestrator
 │   ├── sf-docs/SKILL.md             # type: orchestrator
 │   ├── sf-plan/SKILL.md             # type: orchestrator
