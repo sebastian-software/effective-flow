@@ -76,13 +76,14 @@ Für Symlinks statt Kopien (Entwicklung):
 
 ## Build
 
-Die Source-Dateien in `skills/` verwenden drei Platzhalter-Typen:
+Die Source-Dateien in `skills/` verwenden diese Platzhalter:
 
 | Platzhalter | Bedeutung | Claude Code | Codex Skill | Codex TOML |
 |---|---|---|---|---|
 | `{{SKILL:sf-X}}` | Orchestrator/Utility-Referenz | `/X` | `$sf-X` | `sf-X` |
 | `{{AGENT:sf-X}}` | Agent/Worker-Referenz | `/X` | `sf-X` | `sf-X` |
 | `{{INCLUDE:name}}` | Shared-Datei aus `skills/_shared/name.md` | Inhalt eingebettet | Inhalt eingebettet | Inhalt eingebettet |
+| `{{ASK}}...{{/ASK}}` | Bedingte User-Frage | `AskUserQuestion`-Block | Freitextfrage | Freitextfrage |
 
 Plan-Dateien verwenden einen stabilen Statusmarker im Kopfbereich:
 
