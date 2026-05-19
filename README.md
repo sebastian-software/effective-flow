@@ -17,7 +17,7 @@ Das System unterscheidet drei Typen:
 | Name | Beschreibung |
 |---|---|
 | `sf-build` | Kompletter Feature-Workflow |
-| `sf-plan` | Reine Feature-Planung ohne Code-Änderungen |
+| `sf-plan` | Reine Implementierungsplanung ohne Code-Änderungen |
 | `sf-open-plans` | Offene Plan-Dateien mit Kurzfassung auflisten |
 | `sf-fix` | Bugfix-Workflow |
 | `sf-refactor` | Refactoring-Workflow |
@@ -87,9 +87,12 @@ Plan-Dateien verwenden einen stabilen Statusmarker im Kopfbereich:
 
 ```md
 **Planungsstatus:** Nicht umgesetzt
+**Empfohlener Workflow:** Feature (`$sf-build`)
 ```
 
-`sf-build` und `sf-open-plans` werten nur diese kanonische Statuszeile aus. Andere Vorkommen von „Nicht umgesetzt" in Review-Findings oder Fließtext zählen nicht als Planstatus.
+`sf-build`, `sf-fix`, `sf-refactor` und `sf-open-plans` werten nur diese kanonische Statuszeile aus. Andere Vorkommen von „Nicht umgesetzt" in Review-Findings oder Fließtext zählen nicht als Planstatus.
+
+Neue Pläne enthalten zusätzlich eine Workflow-Empfehlung: Feature, Bugfix, Refactoring oder Dokumentation. Offene Pläne können mit `sf-build`, `sf-fix` oder `sf-refactor` als Grundlage verwendet werden; der jeweilige Skill prüft die Empfehlung und weist auf einen passenderen Workflow hin, wenn sie nicht zum Aufruf passt.
 
 Nur Build ausführen (ohne Deployment):
 

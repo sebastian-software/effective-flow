@@ -1,16 +1,16 @@
 ---
 name: sf-plan
-description: "Erstellt reine Feature-Implementierungspläne in docs/plan/, ohne Code zu erzeugen oder bestehende Implementierungsdateien zu ändern. Klärt offene Fragen, analysiert die Codebase und schreibt einen validierten Plan, der später von {{SKILL:sf-build}} umgesetzt werden kann."
+description: "Erstellt reine Implementierungspläne in docs/plan/, ohne Code zu erzeugen oder bestehende Implementierungsdateien zu ändern. Empfiehlt, ob die Umsetzung als Feature, Bugfix, Refactoring oder Dokumentation über {{SKILL:sf-build}}, {{SKILL:sf-fix}} oder {{SKILL:sf-refactor}} erfolgen soll."
 type: orchestrator
 ---
 
 # SF Plan
 
-Du bist der Orchestrator für reine Feature-Planung.
+Du bist der Orchestrator für reine Implementierungsplanung.
 
 ## Ziel
 
-Dieser Skill erstellt einen umsetzbaren, validierten Implementierungsplan in `docs/plan/`. Er erzeugt **keinen Code**, startet **keine Implementierung** und ändert **keine bestehenden Implementierungsdateien**.
+Dieser Skill erstellt einen umsetzbaren, validierten Implementierungsplan in `docs/plan/`. Er empfiehlt den passenden nachfolgenden Workflow, erzeugt **keinen Code**, startet **keine Implementierung** und ändert **keine bestehenden Implementierungsdateien**.
 
 {{INCLUDE:language-rules}}
 
@@ -27,7 +27,7 @@ Dieser Skill erstellt einen umsetzbaren, validierten Implementierungsplan in `do
 - Der Plan selbst soll möglichst wenig oder keinen Code enthalten. Beschreibe gewünschte Änderungen in natürlicher Sprache, mit Datei-Referenzen, Schnittstellen-Namen, Datenformen und Akzeptanzkriterien statt mit vollständigen Codeblöcken.
 - Code im Plan ist nur erlaubt, wenn er die kürzeste klare Form ist, um einen Punkt eindeutig zu machen, zum Beispiel ein einzelnes Literal, ein kurzer Signatur-Entwurf oder ein minimales Datenbeispiel.
 - Wenn Code verwendet wird, halte ihn minimal: keine vollständigen Funktionen, Komponenten, Klassen, Tests oder größeren Snippets vorwegnehmen.
-- Wenn der User während dieses Skills Implementierung verlangt, verweise auf `{{SKILL:sf-build}}` und beende diesen Skill nach dem Plan.
+- Wenn der User während dieses Skills Implementierung verlangt, verweise je nach empfohlener Umsetzung auf `{{SKILL:sf-build}}`, `{{SKILL:sf-fix}}` oder `{{SKILL:sf-refactor}}` und beende diesen Skill nach dem Plan.
 
 ## Projektkonventionen
 
@@ -37,7 +37,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 
 ### Phase 1: Scope und Kontext
 
-1. Analysiere die Feature-Anforderung gründlich.
+1. Analysiere die Anforderung gründlich.
 2. Prüfe vorhandene Plan-Dateien in `docs/plan/`, um Nummernschema, Struktur und vorhandene Architekturentscheidungen zu übernehmen.
 3. Untersuche die relevanten Bereiche der Codebase lokal oder mit internem Sub-Agenten:
    - Projektstruktur
@@ -45,7 +45,12 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
    - bestehende Architekturentscheidungen
    - verwendete Technologien
    - relevante Tests und Validierungspfade
-4. Halte explizit fest, welche Aussagen verifizierter Code-Kontext sind und welche Aussagen Annahmen sind.
+4. Klassifiziere die empfohlene Umsetzung:
+   - **Feature:** neue Funktionalität, neues UI-Element, neue Seite, neue Integration oder verändertes Nutzerverhalten.
+   - **Bugfix:** Fehler beheben, unerwartetes Verhalten korrigieren oder Regression beseitigen.
+   - **Refactoring:** Struktur, Wartbarkeit oder Performance verbessern, ohne beabsichtigte Verhaltensänderung.
+   - **Dokumentation:** README, Guides, API-Dokumentation, Kommentare oder sonstige Dokumentation ändern, ohne Produkt- oder Codeverhalten zu ändern.
+5. Halte explizit fest, welche Aussagen verifizierter Code-Kontext sind und welche Aussagen Annahmen sind.
 
 ### Phase 2: Klärung
 
@@ -71,10 +76,11 @@ Der Plan muss mindestens diese Struktur verwenden:
 
 **Planungsstatus:** Nicht umgesetzt
 **Quelle:** {{SKILL:sf-plan}}
+**Empfohlener Workflow:** Feature (`{{SKILL:sf-build}}`) / Bugfix (`{{SKILL:sf-fix}}`) / Refactoring (`{{SKILL:sf-refactor}}`) / Dokumentation (`{{SKILL:sf-build}}`, docs-only)
 
 ## Anforderung
 
-[Feature-Anforderung und Ziel]
+[Anforderung, Ziel und Begründung der Workflow-Empfehlung]
 
 ## Architekturentscheidungen
 
@@ -158,7 +164,8 @@ Regeln:
 - Wenn ein Codebeispiel nötig ist, begrenze es auf das kleinste aussagekräftige Fragment und dokumentiere, dass es ein Beispiel oder eine Schnittstellenskizze ist.
 - Ergänze einen Abschnitt `## Plan-Review` gemäß Template. Er enthält ausschließlich Befunde auf Plan-Ebene, keine Code-Review-Findings.
 - Schreibe keine `## Testergebnisse` und keine `## Review-Findings`, weil noch nichts implementiert wurde.
-- Setze den kanonischen offenen Planstatus exakt auf `**Planungsstatus:** Nicht umgesetzt`; `{{SKILL:sf-build}}` nutzt diesen Status später, um den Planungsteil zu überspringen.
+- Setze den kanonischen offenen Planstatus exakt auf `**Planungsstatus:** Nicht umgesetzt`; `{{SKILL:sf-build}}`, `{{SKILL:sf-fix}}` und `{{SKILL:sf-refactor}}` nutzen diesen Status später, um die Planungs- bzw. Analysegrundlage zu erkennen.
+- Setze genau eine Zeile `**Empfohlener Workflow:** ...` im Kopfbereich. Wähle eine der vier Kategorien Feature, Bugfix, Refactoring oder Dokumentation und nenne den passenden Skill in Klammern.
 
 ### Phase 4: Gap Analysis
 
@@ -186,6 +193,7 @@ Bewerte den Plan mit einer Scorecard:
 | Big Picture | Zweck und Workflow explizit beschrieben |
 | No-Code-Grenze | keine Änderungen außerhalb `docs/plan/` |
 | Code-Sparsamkeit | kein Code im Plan, außer ein minimales Fragment ist die kürzeste klare Erklärung |
+| Workflow-Empfehlung | Feature, Bugfix, Refactoring oder Dokumentation ist begründet und zum Scope passend |
 
 Wenn ein Kriterium nicht erfüllt ist, überarbeite den Plan oder frage den User nach der fehlenden Information.
 
@@ -231,9 +239,10 @@ Vorgehen:
 3. Melde dem User:
    - Pfad der erzeugten Plan-Datei
    - kurze Zusammenfassung des geplanten Vorgehens
+   - empfohlener Workflow mit Begründung
    - Scorecard-Ergebnis
    - Hinweis, dass keine Code-Änderungen vorgenommen wurden
-   - Hinweis, dass `{{SKILL:sf-build}} docs/plan/NNNN-...md` den Plan später umsetzt
+   - Hinweis, welcher Skill-Aufruf den Plan später umsetzt, zum Beispiel `{{SKILL:sf-build}} docs/plan/NNNN-...md`, `{{SKILL:sf-fix}} docs/plan/NNNN-...md` oder `{{SKILL:sf-refactor}} docs/plan/NNNN-...md`
 
 ## Regeln
 

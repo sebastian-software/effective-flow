@@ -16,6 +16,8 @@ Dieser Workflow ist optimiert für das Finden und Beheben von Fehlern, ohne unn�
 
 {{INCLUDE:task-tracking}}
 
+{{INCLUDE:plan-status}}
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Investigation und Fix und beachte ihre Vorgaben für Analyse, Implementierung, Tests, Validierung und Commits.
@@ -62,6 +64,26 @@ Wenn dieser Bugfix ein Finding aus einer bestehenden Review-Report-Datei in `.sf
 - ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
 - beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via {{SKILL:sf-fix}}`
 - aktualisiere nur die Findings, die durch diesen Fix tatsächlich gelöst wurden
+
+## Plan-Referenzen
+
+Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel `docs/plan/0030-fix.md`, `0030-fix.md` oder `0030`, prüfe den Plan vor Phase 1:
+
+1. Löse die Referenz auf genau eine Datei unter `docs/plan/` auf.
+2. Prüfe den Umsetzungsstatus:
+   - genau eine Statuszeile `**Planungsstatus:** Nicht umgesetzt` → der Plan kann als Bugfix-Grundlage verwendet werden.
+   - genau eine Statuszeile `**Planungsstatus:** Umgesetzt` → frage den User, ob der Plan erneut umgesetzt, nur geprüft oder der Workflow abgebrochen werden soll.
+   - fehlender oder widersprüchlicher Status → prüfe, ob `## Testergebnisse` oder `## Review-Findings` vorhanden sind. Wenn ja, behandle den Plan als wahrscheinlich umgesetzt und frage nach. Wenn nein, frage nach, ob der Plan als ungebaute Bugfix-Vorgabe verwendet werden soll.
+3. Prüfe, ob im Kopfbereich eine Zeile `**Empfohlener Workflow:** ...` vorhanden ist:
+   - Bugfix → der Plan passt zu `{{SKILL:sf-fix}}`.
+   - Feature oder Dokumentation → gib eine deutlich sichtbare Meldung aus, dass der Plan eher für `{{SKILL:sf-build}}` empfohlen ist. Frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit `{{SKILL:sf-fix}}` verwenden will.
+   - Refactoring → gib eine deutlich sichtbare Meldung aus, dass der Plan eher für `{{SKILL:sf-refactor}}` empfohlen ist. Frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit `{{SKILL:sf-fix}}` verwenden will.
+   - fehlende oder unklare Empfehlung → fahre nach Statusprüfung fort, weise aber auf die fehlende Empfehlung hin.
+4. Wenn der Plan als ungebaute Bugfix-Vorgabe bestätigt ist:
+   - verwende die Inhalte der Plan-Datei als Diagnose- und Fix-Grundlage.
+   - überspringe keine Reproduktion automatisch; wenn der Plan bereits Reproduktionshinweise enthält, validiere sie in Phase 2.
+   - halte in der Wisdom-Datei fest, welche Plan-Datei die Quelle ist und welche Workflow-Empfehlung sie enthält.
+5. Wenn mehrere Plan-Dateien zur Referenz passen, frage den User nach der konkreten Datei.
 
 ## Workflow
 

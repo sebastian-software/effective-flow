@@ -16,6 +16,8 @@ Code wird umstrukturiert, ohne bestehendes Verhalten zu ändern, mit vorher/nach
 
 {{INCLUDE:task-tracking}}
 
+{{INCLUDE:plan-status}}
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Analyse und Refactoring und beachte ihre Vorgaben für Struktur, Grenzen, Tests, Review und Commits.
@@ -48,6 +50,26 @@ Wenn dieses Refactoring ein Finding aus einer bestehenden Review-Report-Datei in
 - ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
 - beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via {{SKILL:sf-refactor}}`
 - aktualisiere nur die Findings, die durch dieses Refactoring tatsächlich adressiert wurden
+
+## Plan-Referenzen
+
+Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel `docs/plan/0030-refactor.md`, `0030-refactor.md` oder `0030`, prüfe den Plan vor Phase 1:
+
+1. Löse die Referenz auf genau eine Datei unter `docs/plan/` auf.
+2. Prüfe den Umsetzungsstatus:
+   - genau eine Statuszeile `**Planungsstatus:** Nicht umgesetzt` → der Plan kann als Refactoring-Grundlage verwendet werden.
+   - genau eine Statuszeile `**Planungsstatus:** Umgesetzt` → frage den User, ob der Plan erneut umgesetzt, nur geprüft oder der Workflow abgebrochen werden soll.
+   - fehlender oder widersprüchlicher Status → prüfe, ob `## Testergebnisse` oder `## Review-Findings` vorhanden sind. Wenn ja, behandle den Plan als wahrscheinlich umgesetzt und frage nach. Wenn nein, frage nach, ob der Plan als ungebaute Refactoring-Vorgabe verwendet werden soll.
+3. Prüfe, ob im Kopfbereich eine Zeile `**Empfohlener Workflow:** ...` vorhanden ist:
+   - Refactoring → der Plan passt zu `{{SKILL:sf-refactor}}`.
+   - Feature oder Dokumentation → gib eine deutlich sichtbare Meldung aus, dass der Plan eher für `{{SKILL:sf-build}}` empfohlen ist. Frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit `{{SKILL:sf-refactor}}` verwenden will.
+   - Bugfix → gib eine deutlich sichtbare Meldung aus, dass der Plan eher für `{{SKILL:sf-fix}}` empfohlen ist. Frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit `{{SKILL:sf-refactor}}` verwenden will.
+   - fehlende oder unklare Empfehlung → fahre nach Statusprüfung fort, weise aber auf die fehlende Empfehlung hin.
+4. Wenn der Plan als ungebaute Refactoring-Vorgabe bestätigt ist:
+   - verwende die Inhalte der Plan-Datei als Refactoring-Plan.
+   - validiere weiterhin in Phase 1, dass keine beabsichtigte Verhaltensänderung enthalten ist.
+   - halte in der Wisdom-Datei fest, welche Plan-Datei die Quelle ist und welche Workflow-Empfehlung sie enthält.
+5. Wenn mehrere Plan-Dateien zur Referenz passen, frage den User nach der konkreten Datei.
 
 ## Workflow
 

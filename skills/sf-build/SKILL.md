@@ -26,7 +26,8 @@ Bevor du den Workflow startest, klassifiziere die Anforderung des Users:
    - Feature: neue Funktionalität, neues UI-Element, neue Seite, neue Integration
    - Bugfix: Fehler beheben, etwas funktioniert nicht, unerwartetes Verhalten
    - Refactoring: Code umstrukturieren, Performance verbessern, technische Schulden abbauen, ohne Verhalten zu ändern
-2. Falls der Intent eindeutig ein Feature ist: weiter.
+   - Dokumentation: README, Guides, API-Dokumentation oder andere Dokumente ändern, ohne Produkt- oder Codeverhalten zu ändern
+2. Falls der Intent eindeutig ein Feature oder eine Dokumentationsänderung ist: weiter.
 3. Falls der Intent nicht eindeutig ist, frage den User:
 
 {{ASK}}
@@ -39,12 +40,14 @@ options:
     description: Fehler beheben, unerwartetes Verhalten korrigieren
   - label: Refactoring
     description: Code umstrukturieren ohne Verhaltensänderung
+  - label: Dokumentation
+    description: Dokumentation ändern ohne Produkt- oder Codeverhalten
 {{/ASK}}
 4. Bei Bugfix oder Refactoring:
    - gib eine deutlich sichtbare Meldung aus, dass kein Feature erkannt wurde
    - verweise an `{{SKILL:sf-fix}}` bzw. `{{SKILL:sf-refactor}}`
    - beende den Workflow sofort
-5. Bei Feature: führe zuerst die initiale Zustandsdokumentation aus.
+5. Bei Feature oder Dokumentation: führe zuerst die initiale Zustandsdokumentation aus.
 
 ## Initiale Zustandsdokumentation
 
@@ -202,12 +205,18 @@ Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel 
    - genau eine Statuszeile `**Planungsstatus:** Nicht umgesetzt` → der Plan ist umsetzbar.
    - genau eine Statuszeile `**Planungsstatus:** Umgesetzt` → frage den User, ob der Plan erneut umgesetzt, nur geprüft oder der Workflow abgebrochen werden soll.
    - fehlender oder widersprüchlicher Status → prüfe, ob `## Testergebnisse` oder `## Review-Findings` vorhanden sind. Wenn ja, behandle den Plan als wahrscheinlich umgesetzt und frage nach. Wenn nein, frage nach, ob der Plan als ungebaute Vorgabe verwendet werden soll.
-3. Wenn der Plan als ungebaute Vorgabe bestätigt ist:
+3. Prüfe, ob im Kopfbereich eine Zeile `**Empfohlener Workflow:** ...` vorhanden ist:
+   - Feature oder Dokumentation → der Plan passt zu `{{SKILL:sf-build}}`.
+   - Bugfix → gib eine deutlich sichtbare Meldung aus, dass der Plan für `{{SKILL:sf-fix}}` empfohlen ist. Frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit `{{SKILL:sf-build}}` umsetzen will.
+   - Refactoring → gib eine deutlich sichtbare Meldung aus, dass der Plan für `{{SKILL:sf-refactor}}` empfohlen ist. Frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit `{{SKILL:sf-build}}` umsetzen will.
+   - fehlende oder unklare Empfehlung → fahre nach Statusprüfung fort, weise aber auf die fehlende Empfehlung hin.
+4. Wenn der Plan als ungebaute Vorgabe bestätigt ist:
    - überspringe Phase 1 vollständig.
    - verwende die Inhalte der Plan-Datei als abgestimmten Implementierungsplan.
    - starte direkt mit Phase 2.
-   - halte in der Wisdom-Datei fest, welche Plan-Datei die Quelle ist.
-4. Wenn mehrere Plan-Dateien zur Referenz passen, frage den User nach der konkreten Datei.
+   - bei Dokumentations-Empfehlung: behandle den Workflow als docs-only Scope und überspringe Implementer-, Test- oder Review-Phasen nur dann mit kurzer Begründung, wenn keine Codeänderungen betroffen sind.
+   - halte in der Wisdom-Datei fest, welche Plan-Datei die Quelle ist und welche Workflow-Empfehlung sie enthält.
+5. Wenn mehrere Plan-Dateien zur Referenz passen, frage den User nach der konkreten Datei.
 
 Ein referenzierter ungebauter Plan ersetzt nur die Planungsphase. Initiale Zustandsdokumentation, Review-Report-Rückverweise, Implementierung, Dokumentation, Tests, Validierung, Review und Abschluss laufen weiterhin normal.
 
