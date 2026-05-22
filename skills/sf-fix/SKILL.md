@@ -65,6 +65,8 @@ Wenn dieser Bugfix ein Finding aus einer bestehenden Review-Report-Datei in `.sf
 - beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via {{SKILL:sf-fix}}`
 - aktualisiere nur die Findings, die durch diesen Fix tatsächlich gelöst wurden
 
+{{INCLUDE:unresolved-review-report}}
+
 ## Plan-Referenzen
 
 Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel `docs/plan/0030-fix.md`, `0030-fix.md` oder `0030`, prüfe den Plan vor Phase 1:
@@ -147,14 +149,32 @@ Starte parallel, wenn möglich:
 2. `{{AGENT:sf-code-validator}}`
    - TypeScript, Lint und Build
 
+Wenn dabei offene Findings oder Restrisiken entstehen, dokumentiere sie strukturiert, damit Phase 5 sie als Review-Report schreiben kann:
+
+- Titel
+- Schweregrad (Kritisch / Wichtig / Hinweis)
+- Komplexität (Leicht / Mittel / Schwer)
+- Bereich
+- Datei + Zeile
+- Problem
+- Empfehlung
+- Aktion (`{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:sf-build}}` oder `{{SKILL:sf-docs}}`)
+- Prompt-Vorschlag
+- Status (Behoben / Offen / Nicht umgesetzt)
+- Begründung bei Nicht-Umsetzung oder ADR-Referenz, falls vorhanden
+
 ### Phase 5: Abschluss
 
 1. Falls Fehler in Phase 4 gefunden wurden: behebe sie und wiederhole Phase 4.
-2. Wenn dieser Fix ein Finding aus einer bestehenden Review-Report-Datei in `.sf-plugin/review/` gelöst hat:
+2. Wenn aus Verifikation, Regressionstest oder Review-ähnlicher Prüfung Findings oder Restrisiken mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
+   - schreibe sie gemäß „Offene Review-Finding-Reports" in eine neue Datei unter `.sf-plugin/review/`
+   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-NNNN.md`
+   - nenne den erzeugten Reportpfad in der Abschlusszusammenfassung
+3. Wenn dieser Fix ein Finding aus einer bestehenden Review-Report-Datei in `.sf-plugin/review/` gelöst hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
-3. Lösche die Wisdom-Datei.
-4. Fasse zusammen:
+4. Lösche die Wisdom-Datei.
+5. Fasse zusammen:
    - Root Cause
    - Änderungen
    - neu oder angepasste Tests

@@ -200,6 +200,8 @@ Wenn dieses Feature ein Finding aus einer bestehenden Review-Report-Datei in `.s
 - beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via {{SKILL:sf-build}}`
 - aktualisiere nur die Findings, die durch diese Änderung tatsächlich adressiert wurden
 
+{{INCLUDE:unresolved-review-report}}
+
 ## Plan-Referenzen
 
 Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel `docs/plan/0030-feature.md`, `0030-feature.md` oder `0030`, prüfe den Plan vor Phase 1:
@@ -316,7 +318,7 @@ Zusammenfassung:
 Hinweis: Vor Abschluss muss die Spalte „Offen" für „Kritisch" 0 sein.
 
 6. Falls Findings nicht umgesetzt wurden, liste sie direkt in der Zusammenfassung mit Prompt-Vorschlägen für spätere Umsetzung auf.
-7. Dokumentiere jedes Finding strukturiert, damit es unverändert in die Plan-Datei (Phase 7) übernommen werden kann:
+7. Dokumentiere jedes Finding strukturiert, damit offene oder nicht umgesetzte Findings in einen externen Review-Report übernommen werden können:
    - lokale ID (`F1`, `F2`, ...)
    - Titel
    - Schweregrad (Kritisch / Wichtig / Hinweis)
@@ -336,7 +338,11 @@ type: approval
 {{/ASK}}
 
    - bei Zustimmung: erzeuge für jedes nicht umgesetzte Finding ein ADR-Dokument mit laufender Nummer, Kebab-Case-Titel, Kontext `{{SKILL:sf-build}}` und Quelle des Findings
-9. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.sf-plugin/review/` umgesetzt hat:
+9. Wenn nach Review und ADR-Entscheidung Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
+   - schreibe sie gemäß „Offene Review-Finding-Reports" in eine neue Datei unter `.sf-plugin/review/`
+   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-NNNN.md`
+   - halte den erzeugten Reportpfad für Phase 7 fest
+10. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.sf-plugin/review/` umgesetzt hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
 
@@ -354,8 +360,8 @@ type: approval
      - betroffene Dateien
      - Implementierungsdetails
      - Testergebnisse
-     - Review-Findings (Format gemäß Schritt 3 unten)
-3. **Plan-Datei-Findings-Bericht:** Übernimm die in Phase 6 strukturierten Findings unverändert in einen Abschnitt `## Review-Findings` der Plan-Datei. Das Format ist im Stil des `{{SKILL:sf-review}}`-Berichts gehalten, sodass Entwickler an dieser Stelle die Findings direkt prüfen und ggf. nachträglich beheben können.
+     - Review-Ergebnis und Verweis auf externe Review-Reports, falls offene Findings ausgelagert wurden
+3. **Plan-Datei-Findings-Zusammenfassung:** Schreibe in der Plan-Datei nur eine kompakte Zusammenfassung. Offene oder nicht umgesetzte Findings werden nicht vollständig in die Plan-Datei kopiert, sondern in den externen Review-Report aus Phase 6 geschrieben.
 
    Verwende dieses Template:
 
@@ -367,49 +373,22 @@ type: approval
 
 ### Zusammenfassung
 
-| Schweregrad | Anzahl | Behoben | Offen |
-|---|---|---|---|
-| Kritisch | X | X | 0 |
-| Wichtig | X | X | X |
-| Hinweis | X | X | X |
+| Status | Anzahl |
+|---|---:|
+| Behoben | X |
+| Offen / Nicht umgesetzt | Y |
 
-| Komplexität | Anzahl |
-|---|---|
-| Leicht | X |
-| Mittel | Y |
-| Schwer | Z |
+**Externer Review-Report:** `.sf-plugin/review/review-report-YYYY-MM-DD-plan-NNNN.md` <!-- nur ausgeben, wenn offene Findings ausgelagert wurden -->
 
-### Findings
-
-#### [F1] [Titel]
-- **Schweregrad**: Kritisch / Wichtig / Hinweis
-- **Komplexität**: Leicht / Mittel / Schwer
-- **Bereich**: [...]
-- **Datei**: [pfad:zeile]
-- **Problem**: [...]
-- **Empfehlung**: [...]
-- **Status**: Behoben / Offen / Nicht umgesetzt (ADR XXX)
-- **Begründung bei Nicht-Umsetzung**: [...] <!-- Zeile nur ausgeben, wenn Status „Nicht umgesetzt" ist -->
-
-#### [F2] [Titel]
-...
-
-<!-- Folgenden Abschnitt nur ausgeben, wenn übersprungene Findings durch Designentscheidungen vorhanden sind -->
-### Übersprungene Findings (Designentscheidungen)
-
-| Finding | Designentscheidung | Quelle |
-|---|---|---|
-| [...] | [DD-XXX] | [...] |
+Keine Findings gefunden. <!-- nur ausgeben, wenn keine Findings aufgekommen sind -->
 ```
 
    Regeln für den Findings-Bericht:
-   - Übernimm **alle** Findings (behobene und offene, alle Schweregrade Kritisch + Wichtig + Hinweis), damit der Bericht als Audit-Trail dient.
-   - Nutze die in Phase 6 vergebenen lokalen IDs (`F1`, `F2`, ...).
-   - Übernimm die Komplexität-Zähler aus der Phase-6-Aggregation. Falls dort nicht aggregiert wurde: leite sie aus der Findings-Liste ab.
-   - Die Zeile `Begründung bei Nicht-Umsetzung` wird pro Finding nur ausgegeben, wenn der Status `Nicht umgesetzt` ist. Bei Status `Behoben` oder `Offen` weglassen.
+   - Kopiere offene oder nicht umgesetzte Findings nicht vollständig in die Plan-Datei.
+   - Wenn offene oder nicht umgesetzte Findings existieren, nenne den externen Review-Report aus Phase 6.
+   - Behobene Findings dürfen knapp gezählt werden; vollständige behobene Finding-Details sind in der Plan-Datei nicht erforderlich.
    - Falls keine Findings aufgekommen sind: schreibe in die Sektion „Keine Findings gefunden." statt der Tabellen.
-   - Falls in Phase 6 keine Reviewer gestartet wurden (z. B. weil die Änderung kein Review erforderte): schreibe stattdessen einen kurzen Hinweis mit Begründung in die Sektion und lass Tabellen sowie Findings-Liste weg.
-   - Die Sektion „Übersprungene Findings (Designentscheidungen)" nur ausgeben, wenn es solche gibt.
+   - Falls in Phase 6 keine Reviewer gestartet wurden (z. B. weil die Änderung kein Review erforderte): schreibe stattdessen einen kurzen Hinweis mit Begründung in die Sektion.
 4. Lösche die Wisdom-Datei.
 5. Prüfe ob ein Formatter konfiguriert ist und formatiere alle geänderten Dateien inklusive Plan-Datei einmal einheitlich.
 6. Fasse zusammen, was implementiert, getestet und dokumentiert wurde.

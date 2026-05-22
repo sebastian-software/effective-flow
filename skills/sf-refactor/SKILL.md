@@ -51,6 +51,8 @@ Wenn dieses Refactoring ein Finding aus einer bestehenden Review-Report-Datei in
 - beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via {{SKILL:sf-refactor}}`
 - aktualisiere nur die Findings, die durch dieses Refactoring tatsächlich adressiert wurden
 
+{{INCLUDE:unresolved-review-report}}
+
 ## Plan-Referenzen
 
 Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel `docs/plan/0030-refactor.md`, `0030-refactor.md` oder `0030`, prüfe den Plan vor Phase 1:
@@ -141,7 +143,19 @@ Dokumentiere die Baseline für den späteren Vergleich.
    - Wichtig: sollte behoben werden
    - Hinweis: optional
 3. Präsentiere die Review-Ergebnisse detailliert, einschliesslich Status je Finding.
-4. Falls Findings bewusst nicht umgesetzt werden:
+4. Dokumentiere jedes Finding strukturiert, damit offene oder nicht umgesetzte Findings als Review-Report geschrieben werden können:
+   - Titel
+   - Schweregrad (Kritisch / Wichtig / Hinweis)
+   - Komplexität (Leicht / Mittel / Schwer)
+   - Bereich
+   - Datei + Zeile
+   - Problem
+   - Empfehlung
+   - Aktion (`{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:sf-build}}` oder `{{SKILL:sf-docs}}`)
+   - Prompt-Vorschlag
+   - Status (Behoben / Offen / Nicht umgesetzt)
+   - Begründung bei Nicht-Umsetzung oder ADR-Referenz, falls vorhanden
+5. Falls Findings bewusst nicht umgesetzt werden:
 
 {{ASK}}
 header: ADR
@@ -150,7 +164,11 @@ type: approval
 {{/ASK}}
 
    - erzeuge bei Zustimmung ADRs in `docs/adr/` mit Kontext `{{SKILL:sf-refactor}}`
-5. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.sf-plugin/review/` umgesetzt hat:
+6. Wenn nach Review und ADR-Entscheidung Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
+   - schreibe sie gemäß „Offene Review-Finding-Reports" in eine neue Datei unter `.sf-plugin/review/`
+   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-NNNN.md`
+   - nenne den erzeugten Reportpfad in der Abschlusszusammenfassung
+7. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.sf-plugin/review/` umgesetzt hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
 
