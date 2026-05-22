@@ -95,29 +95,7 @@ Dokumentation des Projektzustands vor dem ersten Feature-Workflow.
 
 Wichtig: Die Plan-Datei in der Abschlussphase verwendet dann die nächste freie Nummer.
 
-## Fertig-Protokoll
-
-Wenn du interne Sub-Agenten einsetzt, gib ihnen das folgende Antwortprotokoll vor:
-
-- `ERLEDIGT` für vollständig abgeschlossen
-- `ABBRUCH: [Grund]` für nicht erledigbar
-
-Prüfung durch den Orchestrator:
-
-1. `ERLEDIGT`: Phase abgeschlossen.
-2. `ABBRUCH: [Grund]`: User informieren, Plan anpassen, erneut versuchen.
-3. Kein Stichwort: Retry mit Eskalation.
-
-### Retry-Eskalation
-
-Wenn ein interner Sub-Agent ohne `ERLEDIGT` oder `ABBRUCH` endet:
-
-1. Retry 1: gleicher Auftrag mit Fortsetzungs-Hinweis
-2. Retry 2: vereinfachter Auftrag mit reduziertem Scope
-3. Retry 3: minimaler Auftrag nur für die kritischste Teilaufgabe
-4. Nach 3 Fehlversuchen:
-   - User informieren
-   - Optionen als Freitext klären: manuell erledigen, mit nächster Phase fortfahren, Workflow abbrechen
+{{INCLUDE:completion-protocol}}
 
 ## Wisdom Accumulation
 
@@ -191,38 +169,21 @@ Nutze für Spezialphasen explizite Skill-Wechsel:
 
 Bei gut trennbaren Teilaufgaben ist das interne Sub-Agent-Pattern erlaubt und für parallele Phasen bevorzugt.
 
-## Review-Report-Rückverweise
+Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:sf-build}}`.
 
-Wenn dieses Feature ein Finding aus einer bestehenden Review-Report-Datei in `.sf-plugin/review/` umsetzt:
-
-- identifiziere die betroffene Report-Datei früh im Workflow
-- ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
-- beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via {{SKILL:sf-build}}`
-- aktualisiere nur die Findings, die durch diese Änderung tatsächlich adressiert wurden
+{{INCLUDE:review-report-backlinks}}
 
 {{INCLUDE:unresolved-review-report}}
 
-## Plan-Referenzen
+Aktueller Workflow für Plan-Referenzen: Feature (`{{SKILL:sf-build}}`).
 
-Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel `docs/plan/0030-feature.md`, `0030-feature.md` oder `0030`, prüfe den Plan vor Phase 1:
+{{INCLUDE:plan-reference-routing}}
 
-1. Löse die Referenz auf genau eine Datei unter `docs/plan/` auf.
-2. Prüfe den Umsetzungsstatus:
-   - genau eine Statuszeile `**Planungsstatus:** Nicht umgesetzt` → der Plan ist umsetzbar.
-   - genau eine Statuszeile `**Planungsstatus:** Umgesetzt` → frage den User, ob der Plan erneut umgesetzt, nur geprüft oder der Workflow abgebrochen werden soll.
-   - fehlender oder widersprüchlicher Status → prüfe, ob `## Testergebnisse` oder `## Review-Findings` vorhanden sind. Wenn ja, behandle den Plan als wahrscheinlich umgesetzt und frage nach. Wenn nein, frage nach, ob der Plan als ungebaute Vorgabe verwendet werden soll.
-3. Prüfe, ob im Kopfbereich eine Zeile `**Empfohlener Workflow:** ...` vorhanden ist:
-   - Feature → der Plan passt zu `{{SKILL:sf-build}}`.
-   - Dokumentation → gib eine deutlich sichtbare Meldung aus, dass der Plan für `{{SKILL:sf-docs}}` empfohlen ist. Frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit `{{SKILL:sf-build}}` umsetzen will.
-   - Bugfix → gib eine deutlich sichtbare Meldung aus, dass der Plan für `{{SKILL:sf-fix}}` empfohlen ist. Frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit `{{SKILL:sf-build}}` umsetzen will.
-   - Refactoring → gib eine deutlich sichtbare Meldung aus, dass der Plan für `{{SKILL:sf-refactor}}` empfohlen ist. Frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit `{{SKILL:sf-build}}` umsetzen will.
-   - fehlende oder unklare Empfehlung → fahre nach Statusprüfung fort, weise aber auf die fehlende Empfehlung hin.
-4. Wenn der Plan als ungebaute Vorgabe bestätigt ist:
-   - überspringe Phase 1 vollständig.
-   - verwende die Inhalte der Plan-Datei als abgestimmten Implementierungsplan.
-   - starte direkt mit Phase 2.
-   - halte in der Wisdom-Datei fest, welche Plan-Datei die Quelle ist und welche Workflow-Empfehlung sie enthält.
-5. Wenn mehrere Plan-Dateien zur Referenz passen, frage den User nach der konkreten Datei.
+Wenn ein offener Plan für `{{SKILL:sf-build}}` bestätigt ist:
+
+- überspringe Phase 1 vollständig
+- verwende die Inhalte der Plan-Datei als abgestimmten Implementierungsplan
+- starte direkt mit Phase 2
 
 Ein referenzierter ungebauter Plan ersetzt nur die Planungsphase. Initiale Zustandsdokumentation, Review-Report-Rückverweise, Implementierung, Dokumentation, Tests, Validierung, Review und Abschluss laufen weiterhin normal.
 

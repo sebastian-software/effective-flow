@@ -22,16 +22,7 @@ Dieser Workflow ist spezialisiert auf README-Dateien, Entwickler-Guides, API-/CL
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Analyse und Umsetzung und beachte ihre Vorgaben für Dokumentationsstil, Dateiformate, Beispiele, Tests, Validierung und Commits.
 
-## Fertig-Protokoll
-
-Wenn du interne Sub-Agenten einsetzt, müssen sie mit `ERLEDIGT` oder `ABBRUCH: [Grund]` enden.
-
-Retry-Eskalation:
-
-1. gleicher Auftrag mit Fortsetzungs-Hinweis
-2. vereinfachter Auftrag
-3. minimaler Auftrag
-4. danach User fragen, wie weiter vorzugehen ist
+{{INCLUDE:completion-protocol}}
 
 ## Wisdom Accumulation
 
@@ -52,34 +43,17 @@ Lösche die Wisdom-Datei am Ende.
 - In-Code-Dokumentation, JSDoc/TSDoc, CLI-Help-Texte: `{{AGENT:sf-code-documenter}}`
 - Technische Prüfung bei generierten Artefakten, CLI-Help, Build-Dateien oder Code-Dateien: `{{AGENT:sf-code-validator}}`
 
-## Review-Report-Rückverweise
+Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:sf-docs}}`.
 
-Wenn diese Dokumentationsänderung ein Finding aus einer bestehenden Review-Report-Datei in `.sf-plugin/review/` löst:
+{{INCLUDE:review-report-backlinks}}
 
-- identifiziere die betroffene Report-Datei früh im Workflow
-- ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
-- beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via {{SKILL:sf-docs}}`
-- aktualisiere nur die Findings, die durch diese Änderung tatsächlich adressiert wurden
+Aktueller Workflow für Plan-Referenzen: Dokumentation (`{{SKILL:sf-docs}}`).
 
-## Plan-Referenzen
+{{INCLUDE:plan-reference-routing}}
 
-Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel `docs/plan/0030-docs.md`, `0030-docs.md` oder `0030`, prüfe den Plan vor Phase 1:
+Wenn ein offener Plan für `{{SKILL:sf-docs}}` bestätigt ist:
 
-1. Löse die Referenz auf genau eine Datei unter `docs/plan/` auf.
-2. Prüfe den Umsetzungsstatus:
-   - genau eine Statuszeile `**Planungsstatus:** Nicht umgesetzt` → der Plan kann als Dokumentationsgrundlage verwendet werden.
-   - genau eine Statuszeile `**Planungsstatus:** Umgesetzt` → frage den User, ob der Plan erneut umgesetzt, nur geprüft oder der Workflow abgebrochen werden soll.
-   - fehlender oder widersprüchlicher Status → prüfe, ob `## Testergebnisse` oder `## Review-Findings` vorhanden sind. Wenn ja, behandle den Plan als wahrscheinlich umgesetzt und frage nach. Wenn nein, frage nach, ob der Plan als ungebaute Dokumentationsvorgabe verwendet werden soll.
-3. Prüfe, ob im Kopfbereich eine Zeile `**Empfohlener Workflow:** ...` vorhanden ist:
-   - Dokumentation → der Plan passt zu `{{SKILL:sf-docs}}`.
-   - Feature → gib eine deutlich sichtbare Meldung aus, dass der Plan eher für `{{SKILL:sf-build}}` empfohlen ist. Frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit `{{SKILL:sf-docs}}` verwenden will.
-   - Bugfix → gib eine deutlich sichtbare Meldung aus, dass der Plan eher für `{{SKILL:sf-fix}}` empfohlen ist. Frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit `{{SKILL:sf-docs}}` verwenden will.
-   - Refactoring → gib eine deutlich sichtbare Meldung aus, dass der Plan eher für `{{SKILL:sf-refactor}}` empfohlen ist. Frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit `{{SKILL:sf-docs}}` verwenden will.
-   - fehlende oder unklare Empfehlung → fahre nach Statusprüfung fort, weise aber auf die fehlende Empfehlung hin.
-4. Wenn der Plan als ungebaute Dokumentationsvorgabe bestätigt ist:
-   - verwende die Inhalte der Plan-Datei als abgestimmte Dokumentationsgrundlage.
-   - halte in der Wisdom-Datei fest, welche Plan-Datei die Quelle ist und welche Workflow-Empfehlung sie enthält.
-5. Wenn mehrere Plan-Dateien zur Referenz passen, frage den User nach der konkreten Datei.
+- verwende die Inhalte der Plan-Datei als abgestimmte Dokumentationsgrundlage
 
 ## Workflow
 

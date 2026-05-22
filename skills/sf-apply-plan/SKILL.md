@@ -31,7 +31,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der Plan-Auswertung
 
 ## Workflow
 
-### Phase 1: Plan-Referenz auflösen
+### Phase 1: Plan-Referenz auflösen und validieren
 
 1. Lies das User-Argument.
 2. Wenn kein Argument vorhanden ist:
@@ -39,30 +39,15 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der Plan-Auswertung
    - gib eine kurze Liste der offenen Pläne mit Nummer, Titel und Pfad aus
    - frage den User nach der konkreten Plan-Datei
    - starte keine Umsetzung, bevor eine konkrete Datei ausgewählt ist
-3. Wenn ein Argument vorhanden ist, löse es auf genau eine Datei unter `docs/plan/` auf. Erlaubte Formen:
-   - vollständiger Pfad, z. B. `docs/plan/0033-gemini-cli-platform-target.md`
-   - Dateiname, z. B. `0033-gemini-cli-platform-target.md`
-   - Nummer, z. B. `0033`
-4. Wenn keine Datei passt: melde den Fehler und nenne, dass `{{SKILL:sf-open-plans}}` offene Pläne auflisten kann.
-5. Wenn mehrere Dateien passen: frage den User nach der konkreten Datei.
+3. Wenn ein Argument vorhanden ist, verwende die gemeinsame Plan-Referenz-Regel im Routing-Modus.
 
-### Phase 2: Plan validieren
+Aktueller Workflow für Plan-Referenzen: `{{SKILL:sf-apply-plan}}` Routing.
 
-1. Lies die Plan-Datei frisch vom Dateisystem.
-2. Prüfe den Planstatus ausschließlich über die erste Zeile mit Präfix `**Planungsstatus:**`.
-3. Status-Regeln:
-   - `**Planungsstatus:** Nicht umgesetzt` → Plan ist grundsätzlich umsetzbar.
-   - `**Planungsstatus:** Umgesetzt` → frage den User, ob der Plan erneut umgesetzt, nur geprüft oder der Workflow abgebrochen werden soll.
-   - fehlender, mehrfacher oder anderer Status → melde den unklaren Status und frage, ob der Plan trotzdem als ungebaute Vorgabe verwendet werden soll.
-4. Prüfe, ob eine Zeile `**Empfohlener Workflow:** ...` im Kopfbereich vorhanden ist.
-5. Bestimme den Ziel-Workflow:
-   - enthält die Zeile `Feature` oder `{{SKILL:sf-build}}` → `{{SKILL:sf-build}}`
-   - enthält die Zeile `Bugfix` oder `{{SKILL:sf-fix}}` → `{{SKILL:sf-fix}}`
-   - enthält die Zeile `Refactoring` oder `{{SKILL:sf-refactor}}` → `{{SKILL:sf-refactor}}`
-   - enthält die Zeile `Dokumentation` oder `{{SKILL:sf-docs}}` → `{{SKILL:sf-docs}}`
-6. Wenn kein Ziel-Workflow eindeutig bestimmbar ist: frage den User nach dem Ziel-Workflow und nenne die vier erlaubten Optionen.
+{{INCLUDE:plan-reference-routing}}
 
-### Phase 3: Übergabe an Ziel-Workflow
+4. Wenn kein Ziel-Workflow eindeutig bestimmbar ist: frage den User nach dem Ziel-Workflow und nenne die vier erlaubten Optionen.
+
+### Phase 2: Übergabe an Ziel-Workflow
 
 1. Gib dem User kurz aus:
    - Plan-Datei
