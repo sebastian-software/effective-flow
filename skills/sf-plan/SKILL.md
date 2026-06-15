@@ -18,6 +18,8 @@ Dieser Skill erstellt einen umsetzbaren, validierten Implementierungsplan in `do
 
 {{INCLUDE:plan-status}}
 
+{{INCLUDE:doc-categories}}
+
 ## Harte Abgrenzung
 
 - Erlaubt sind ausschließlich Analyse, Rückfragen und Dokumentationsänderungen unter `docs/plan/`.
@@ -50,7 +52,11 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
    - **Bugfix:** Fehler beheben, unerwartetes Verhalten korrigieren oder Regression beseitigen.
    - **Refactoring:** Struktur, Wartbarkeit oder Performance verbessern, ohne beabsichtigte Verhaltensänderung.
    - **Dokumentation:** README, Guides, API-Dokumentation, Kommentare oder sonstige Dokumentation ändern, ohne Produkt- oder Codeverhalten zu ändern.
-5. Halte explizit fest, welche Aussagen verifizierter Code-Kontext sind und welche Aussagen Annahmen sind.
+5. Wenn die Klassifikation `Dokumentation` ist:
+   - bestimme zusätzlich die Doku-Kategorie gemäß `Doku-Kategorien` (user-guide, developer-guide, operations, runbooks).
+   - schlage einen topic-basierten Datei-Slug für das Zieldokument vor, der innerhalb der Kategorie eindeutig ist.
+   - prüfe, ob der vorgeschlagene Ziel-Pfad unter `docs/<kategorie>/` bereits existiert. Bei Kollision schlage einen alternativen Slug vor oder kläre die Überschreibung später in Phase 2.
+6. Halte explizit fest, welche Aussagen verifizierter Code-Kontext sind und welche Aussagen Annahmen sind.
 
 ### Phase 2: Klärung
 
@@ -61,6 +67,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
    - Abhängigkeiten
    - Edge Cases
    - Akzeptanzkriterien
+   - bei Doku-Plänen zusätzlich: Doku-Kategorie und Ziel-Pfad, falls in Phase 1 nicht eindeutig bestimmbar
 2. Frage den User nach jeder relevanten Unklarheit.
 3. Wiederhole die Klärung, bis keine offenen Punkte mehr bestehen, die eine belastbare Planung verhindern.
 4. Wenn eine Unsicherheit unwichtig für die Umsetzung ist, dokumentiere sie als Annahme statt den Workflow zu blockieren.
@@ -77,6 +84,9 @@ Der Plan muss mindestens diese Struktur verwenden:
 **Planungsstatus:** Nicht umgesetzt
 **Quelle:** {{SKILL:sf-plan}}
 **Empfohlener Workflow:** Feature (`{{SKILL:sf-build}}`) / Bugfix (`{{SKILL:sf-fix}}`) / Refactoring (`{{SKILL:sf-refactor}}`) / Dokumentation (`{{SKILL:sf-docs}}`)
+<!-- Nur bei Empfohlenem Workflow: Dokumentation: -->
+**Doku-Kategorie:** user-guide | developer-guide | operations | runbooks
+**Ziel-Pfad:** docs/<kategorie>/<topic-slug>.md
 
 ## Anforderung
 
@@ -166,6 +176,7 @@ Regeln:
 - Schreibe keine `## Testergebnisse` und keine `## Review-Findings`, weil noch nichts implementiert wurde.
 - Setze den kanonischen offenen Planstatus exakt auf `**Planungsstatus:** Nicht umgesetzt`; `{{SKILL:sf-build}}`, `{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}` und `{{SKILL:sf-docs}}` nutzen diesen Status später, um die Planungs- bzw. Analysegrundlage zu erkennen.
 - Setze genau eine Zeile `**Empfohlener Workflow:** ...` im Kopfbereich. Wähle eine der vier Kategorien Feature, Bugfix, Refactoring oder Dokumentation und nenne den passenden Skill in Klammern.
+- Bei `**Empfohlener Workflow:** Dokumentation (`{{SKILL:sf-docs}}`)` setze direkt darunter die beiden zusätzlichen Zeilen `**Doku-Kategorie:** ...` und `**Ziel-Pfad:** ...` gemäß `Doku-Kategorien`. Lasse den HTML-Kommentar `<!-- Nur bei ... -->` und die beiden Zeilen für die anderen drei Workflows aus dem Kopfbereich weg.
 
 ### Phase 4: Gap Analysis
 
@@ -194,6 +205,7 @@ Bewerte den Plan mit einer Scorecard:
 | No-Code-Grenze | keine Änderungen außerhalb `docs/plan/` |
 | Code-Sparsamkeit | kein Code im Plan, außer ein minimales Fragment ist die kürzeste klare Erklärung |
 | Workflow-Empfehlung | Feature, Bugfix, Refactoring oder Dokumentation ist begründet und zum Scope passend |
+| Doku-Ziel | bei Doku-Plänen sind `**Doku-Kategorie:**` und `**Ziel-Pfad:**` gesetzt, gültig und konsistent zueinander |
 
 Wenn ein Kriterium nicht erfüllt ist, überarbeite den Plan oder frage den User nach der fehlenden Information.
 

@@ -18,6 +18,8 @@ Dieser Workflow ist spezialisiert auf README-Dateien, Entwickler-Guides, API-/CL
 
 {{INCLUDE:plan-status}}
 
+{{INCLUDE:doc-categories}}
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Analyse und Umsetzung und beachte ihre Vorgaben für Dokumentationsstil, Dateiformate, Beispiele, Tests, Validierung und Commits.
@@ -54,6 +56,9 @@ Aktueller Workflow für Plan-Referenzen: Dokumentation (`{{SKILL:sf-docs}}`).
 Wenn ein offener Plan für `{{SKILL:sf-docs}}` bestätigt ist:
 
 - verwende die Inhalte der Plan-Datei als abgestimmte Dokumentationsgrundlage
+- lies aus dem Kopfbereich `**Doku-Kategorie:**` und `**Ziel-Pfad:**`
+- wenn beide Zeilen fehlen oder inkonsistent sind: frage den User nach Kategorie und Ziel-Pfad gemäß `Doku-Kategorien` und ergänze die Zeilen vor der Umsetzung in der Plan-Datei
+- wenn der Ziel-Pfad auf eine bestehende Datei zeigt: kläre mit dem User Ersatz oder neuen Slug, bevor `{{AGENT:sf-docs-writer}}` startet
 
 ## Workflow
 
@@ -66,13 +71,21 @@ Wenn ein offener Plan für `{{SKILL:sf-docs}}` bestätigt ist:
    - Skill-/Workflow-Dokumentation
    - Migrationshinweis / Changelog
    - In-Code-Dokumentation
-3. Prüfe die relevanten Quellen:
+3. Bestimme die Doku-Kategorie gemäß `Doku-Kategorien`:
+   - User-Guide, Developer-Guide, Operations oder Runbooks
+   - bei In-Code-Dokumentation oder bei einer im Plan ausdrücklich genannten Bestands-Datei außerhalb der Kategorie-Verzeichnisse darf die Kategorie entfallen; halte das explizit im Doku-Plan fest
+4. Lege den Ziel-Pfad für das finale Dokument fest:
+   - bei Kategorie-Doku: `docs/<kategorie>/<topic-slug>.md`
+   - prüfe Eindeutigkeit des Slugs innerhalb der Kategorie
+   - bei Kollision: kläre Ersatz, Erweiterung oder alternativen Slug mit dem User
+5. Prüfe die relevanten Quellen:
    - bestehende Dokumentation
    - Code, Exports, CLI-Optionen, API-Routen oder Konfiguration, auf die sich die Doku bezieht
    - vorhandene Beispiele, Scripts und Validierungspfade
-4. Kläre offene Fragen direkt mit dem User, wenn Zielgruppe, Umfang oder fachliche Aussagen nicht belastbar ableitbar sind.
-5. Erstelle einen kurzen Dokumentationsplan:
+6. Kläre offene Fragen direkt mit dem User, wenn Zielgruppe, Umfang oder fachliche Aussagen nicht belastbar ableitbar sind.
+7. Erstelle einen kurzen Dokumentationsplan:
    - Zielgruppe
+   - Doku-Kategorie und Ziel-Pfad
    - betroffene Dateien
    - geplante inhaltliche Änderungen
    - Validierungsstrategie
@@ -85,15 +98,19 @@ type: approval
 
 ### Phase 2: Umsetzung
 
-1. Starte den passenden Agent:
+1. Stelle sicher, dass das Zielverzeichnis existiert:
+   - bei Ziel-Pfaden unterhalb von `docs/user-guide/`, `docs/developer-guide/`, `docs/operations/` oder `docs/runbooks/` lege fehlende Verzeichnisse vor dem Schreiben an
+   - lege keine leeren Kategorie-Verzeichnisse an, wenn keine Datei darin geschrieben wird
+2. Starte den passenden Agent:
    - `{{AGENT:sf-docs-writer}}` für README, Guides, API-/CLI-Doku, Migration, Changelog und Skill-Dokumentation
    - `{{AGENT:sf-code-documenter}}` für JSDoc/TSDoc, Inline-Kommentare und CLI-Help-Texte in Code-Dateien
-2. Bei klar getrennten Datei- und Doku-Bereichen dürfen beide Agenten parallel laufen.
-3. Gib den Agenten:
-   - den freigegebenen Dokumentationsplan
+3. Bei klar getrennten Datei- und Doku-Bereichen dürfen beide Agenten parallel laufen.
+4. Gib den Agenten:
+   - den freigegebenen Dokumentationsplan inklusive Doku-Kategorie und Ziel-Pfad
    - relevante Code-/Doku-Kontexte
    - bisherige Wisdom-Erkenntnisse
    - den Hinweis, keine Produktlogik zu ändern
+   - die Schreibgrenze gemäß `Doku-Kategorien`
 
 ### Phase 3: Validierung
 
@@ -102,8 +119,12 @@ type: approval
    - CLI-Optionen und Defaults stimmen
    - Links und Pfade sind plausibel
    - Migrationshinweise haben klare Vorher/Nachher-Aussagen
-2. Starte `{{AGENT:sf-code-validator}}`, wenn Doku-Änderungen technische Artefakte betreffen oder der Projekt-Build die Änderung plausibel prüfen kann.
-3. Wenn Fehler gefunden werden: behebe sie oder delegiere erneut an den passenden Doku-Agenten.
+2. Prüfe die Schreibpfade:
+   - alle neu erstellten oder geänderten finalen Dokumente liegen innerhalb der Kategorie-Verzeichnisse aus `Doku-Kategorien` oder sind eine im Plan explizit genannte Bestands-Datei
+   - Slugs entsprechen der Konvention (Kebab-Case, kein NNNN-Prefix)
+   - bei User-Guide-Änderungen ist `docs/user-guide/README.md` vorhanden, sobald Inhalte unter `docs/user-guide/` existieren
+3. Starte `{{AGENT:sf-code-validator}}`, wenn Doku-Änderungen technische Artefakte betreffen oder der Projekt-Build die Änderung plausibel prüfen kann.
+4. Wenn Fehler gefunden werden: behebe sie oder delegiere erneut an den passenden Doku-Agenten.
 
 ### Phase 4: Abschluss
 

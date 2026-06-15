@@ -97,6 +97,16 @@ Plan-Dateien verwenden einen stabilen Statusmarker im Kopfbereich:
 
 Neue Pläne enthalten zusätzlich eine Workflow-Empfehlung: Feature, Bugfix, Refactoring oder Dokumentation. Offene Pläne können direkt mit `sf-build`, `sf-fix`, `sf-refactor` oder `sf-docs` als Grundlage verwendet werden; alternativ liest `sf-apply-plan` die Empfehlung aus und übergibt den Plan an den passenden Workflow.
 
+Doku-Pläne enthalten im Kopf zwei zusätzliche Zeilen, die das Ziel des finalen Dokuments festlegen:
+
+```md
+**Empfohlener Workflow:** Dokumentation (`$sf-docs`)
+**Doku-Kategorie:** user-guide
+**Ziel-Pfad:** docs/user-guide/installation.md
+```
+
+Die vier Doku-Kategorien `user-guide`, `developer-guide`, `operations` und `runbooks` sind in `skills/_shared/doc-categories.md` definiert und werden von `sf-plan`, `sf-docs`, `sf-docs-writer`, `sf-apply-plan` und `sf-open-plans` gemeinsam verwendet.
+
 Nur Build ausführen (ohne Deployment):
 
 ```sh
@@ -166,6 +176,7 @@ Schneller persönlicher Review-/Apply-Review-Workflow:
 sf-claude-plugin/
 ├── skills/                          # Source (Platzhalter-Syntax)
 │   ├── _shared/                     # Gemeinsame Inhalte ({{INCLUDE:…}})
+│   │   ├── doc-categories.md        # Verzeichnis-Konvention für finale Dokumente
 │   │   └── language-rules.md        # Zentrale Sprach- und Typografie-Regeln
 │   ├── sf-apply-plan/SKILL.md       # type: orchestrator
 │   ├── sf-build/SKILL.md            # type: orchestrator
@@ -173,6 +184,12 @@ sf-claude-plugin/
 │   ├── sf-plan/SKILL.md             # type: orchestrator
 │   ├── sf-ui-implementer/SKILL.md   # type: agent
 │   └── ...
+├── docs/                            # Projekt-Dokumentation (im Zielprojekt)
+│   ├── plan/                        # Implementierungspläne mit NNNN-Schema
+│   ├── user-guide/                  # End-User-Dokumentation, README.md als Einstieg
+│   ├── developer-guide/             # Entwickler-Dokumentation, Architektur, Contribution
+│   ├── operations/                  # Betrieb, Deployment, Monitoring, Infrastruktur
+│   └── runbooks/                    # Step-by-Step-Prozeduren, optionale Sub-Topics
 ├── dist/                            # Generiert (gitignored)
 │   ├── codex/
 │   │   ├── skills/sf-*/SKILL.md     # Orchestratoren + Utilities

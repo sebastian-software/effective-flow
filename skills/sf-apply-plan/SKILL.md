@@ -53,6 +53,7 @@ Aktueller Workflow für Plan-Referenzen: `{{SKILL:sf-apply-plan}}` Routing.
    - Plan-Datei
    - Planstatus
    - erkannter Ziel-Workflow
+   - bei Doku-Plänen zusätzlich Doku-Kategorie und Ziel-Pfad aus dem Plan-Kopf
 2. Starte den erkannten Skill mit der Plan-Datei als Argument:
    - `{{SKILL:sf-build}} docs/plan/NNNN-...md`
    - `{{SKILL:sf-fix}} docs/plan/NNNN-...md`
@@ -62,6 +63,7 @@ Aktueller Workflow für Plan-Referenzen: `{{SKILL:sf-apply-plan}}` Routing.
    - dass `{{SKILL:sf-apply-plan}}` den Planstatus und die Workflow-Empfehlung bereits geprüft hat
    - den vollständigen Planpfad
    - den erkannten Workflow
+   - bei Doku-Plänen zusätzlich die im Plan-Kopf gefundenen Werte für `**Doku-Kategorie:**` und `**Ziel-Pfad:**`, oder den Hinweis, dass eine oder beide Zeilen fehlen
 4. Danach liegt die Verantwortung für Umsetzung, Validierung, Review, Planstatus-Aktualisierung und Commit-Vorbereitung beim Ziel-Workflow.
 
 ## Regeln

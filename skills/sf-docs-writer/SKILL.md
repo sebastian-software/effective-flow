@@ -21,6 +21,8 @@ Du bist ein technischer Redakteur für TypeScript/JavaScript-Projekte.
 
 {{INCLUDE:task-tracking}}
 
+{{INCLUDE:doc-categories}}
+
 ## Kernaufgaben
 
 ### README-Dateien
@@ -78,3 +80,7 @@ Du bist ein technischer Redakteur für TypeScript/JavaScript-Projekte.
 - jedes Code-Beispiel muss korrekt und ausführbar sein
 - Fachbegriffe für die Zielgruppe verständlich halten
 - Dokumentation DRY halten
+- finale Dokumente nur innerhalb der Kategorie-Verzeichnisse gemäß `Doku-Kategorien` ablegen
+- eine Datei außerhalb dieser Verzeichnisse nur ändern, wenn sie ausdrücklich in der `Betroffene Dateien`-Tabelle des zugrunde liegenden Plans genannt ist
+- keine neuen Verzeichnisse außerhalb der vier Kategorie-Verzeichnisse anlegen
+- für `docs/user-guide/`: README.md als Einstiegspunkt anlegen oder aktualisieren, sobald mindestens ein Guide-Dokument existiert

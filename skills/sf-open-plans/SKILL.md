@@ -34,10 +34,14 @@ Du listest offene Implementierungspläne aus `docs/plan/`.
 5. Ermittle für offene Pläne:
    - Plan-Nummer und Titel aus der ersten H1-Zeile
    - Pfad
+   - empfohlener Workflow aus `**Empfohlener Workflow:** ...`
+   - bei Doku-Plänen zusätzlich die Doku-Kategorie aus `**Doku-Kategorie:** ...`, falls vorhanden
    - kurze Zusammenfassung aus `## Anforderung`
    - optional wichtigste betroffene Dateien aus `## Betroffene Dateien`, falls kurz genug
 6. Ausgabe:
-   - Wenn offene Pläne existieren: Tabelle mit `Plan`, `Titel`, `Pfad`, `Kurzfassung`
+   - Wenn offene Pläne existieren: Tabelle mit `Plan`, `Titel`, `Workflow`, `Kategorie`, `Pfad`, `Kurzfassung`
+     - bei nicht-Doku-Plänen zeige in der Spalte `Kategorie` einen Bindestrich
+     - bei Doku-Plänen ohne `**Doku-Kategorie:**`-Zeile zeige `unbekannt`
    - Danach eine kurze Liste mit Status-unklaren Plänen, falls vorhanden
    - Wenn keine offenen Pläne existieren: klare Meldung „Keine offenen Pläne gefunden."
 
