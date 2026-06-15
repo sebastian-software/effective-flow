@@ -35,7 +35,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der Plan-Auswertung
 
 1. Lies das User-Argument.
 2. Wenn kein Argument vorhanden ist:
-   - prüfe `docs/plan/` auf offene Pläne mit Status `**Planungsstatus:** Nicht umgesetzt`
+   - prüfe `docs/plan/` auf offene Pläne mit Status `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented`
    - gib eine kurze Liste der offenen Pläne mit Nummer, Titel und Pfad aus
    - frage den User nach der konkreten Plan-Datei
    - starte keine Umsetzung, bevor eine konkrete Datei ausgewählt ist

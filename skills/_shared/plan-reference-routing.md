@@ -15,10 +15,10 @@ Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel 
 ### Status prüfen
 
 1. Lies die Plan-Datei frisch vom Dateisystem.
-2. Prüfe den Umsetzungsstatus ausschließlich über die erste Zeile mit Präfix `**Planungsstatus:**`.
-3. Status-Regeln:
-   - genau eine Statuszeile `**Planungsstatus:** Nicht umgesetzt` → der Plan kann als Grundlage verwendet werden.
-   - genau eine Statuszeile `**Planungsstatus:** Umgesetzt` → frage den User, ob der Plan erneut umgesetzt, nur geprüft oder der Workflow abgebrochen werden soll.
+2. Prüfe den Umsetzungsstatus ausschließlich über die erste Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**`.
+3. Status-Regeln (beide Markersprachen sind gleichwertig):
+   - genau eine Statuszeile `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented` → der Plan kann als Grundlage verwendet werden.
+   - genau eine Statuszeile `**Planungsstatus:** Umgesetzt` oder `**Plan status:** Implemented` → frage den User, ob der Plan erneut umgesetzt, nur geprüft oder der Workflow abgebrochen werden soll.
    - fehlender oder widersprüchlicher Status → prüfe, ob `## Testergebnisse` oder `## Review-Findings` vorhanden sind. Wenn ja, behandle den Plan als wahrscheinlich umgesetzt und frage nach. Wenn nein, frage nach, ob der Plan als ungebaute Vorgabe verwendet werden soll.
 
 ### Workflow-Empfehlung prüfen
@@ -40,4 +40,4 @@ Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel 
 
 - Verwende die Inhalte der Plan-Datei als abgestimmte Grundlage für den aktuellen Workflow.
 - Halte in der Wisdom-Datei fest, welche Plan-Datei die Quelle ist und welche Workflow-Empfehlung sie enthält.
-- Die Status-Aktualisierung zu `**Planungsstatus:** Umgesetzt` erfolgt erst im Abschluss des umsetzenden Workflows.
+- Die Status-Aktualisierung auf abgeschlossen erfolgt erst im Abschluss des umsetzenden Workflows und bewahrt die Markersprache: ein deutscher Marker wird zu `**Planungsstatus:** Umgesetzt`, ein englischer Marker zu `**Plan status:** Implemented`.

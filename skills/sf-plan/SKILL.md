@@ -76,7 +76,35 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 
 Erstelle eine neue Markdown-Datei in `docs/plan/` mit der nächsten freien Nummer im bestehenden vierstelligen Schema, zum Beispiel `0030-feature-name.md`.
 
-Der Plan muss mindestens diese Struktur verwenden:
+Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers fest:
+
+{{ASK}}
+header: Marker
+question: In welcher Sprache soll der Statusmarker im Plan-Kopf stehen?
+options:
+  - label: Deutsch
+    description: Statuszeile **Planungsstatus:** Nicht umgesetzt — Default-Variante
+  - label: Englisch
+    description: Statuszeile **Plan status:** Not implemented
+{{/ASK}}
+
+Verwende die gewählte Sprache konsistent: deutscher Marker mit deutschen Werten, englischer Marker mit englischen Werten. Mische Marker-Schlüssel und Wert nicht. Übernimm keine Sprach-Erklärungen oder HTML-Kommentare aus den Beispielblöcken unten in die finale Plan-Datei.
+
+Der Plan muss mindestens diese Struktur verwenden. Verwende je nach gewählter Markersprache eine der beiden Statuszeilen, nicht beide:
+
+Statuszeile Deutsch:
+
+```markdown
+**Planungsstatus:** Nicht umgesetzt
+```
+
+Statuszeile Englisch:
+
+```markdown
+**Plan status:** Not implemented
+```
+
+Vollständiges Plan-Template (Statuszeile gemäß gewählter Markersprache einsetzen):
 
 ```markdown
 # NNNN: [Titel]
@@ -174,7 +202,7 @@ Regeln:
 - Wenn ein Codebeispiel nötig ist, begrenze es auf das kleinste aussagekräftige Fragment und dokumentiere, dass es ein Beispiel oder eine Schnittstellenskizze ist.
 - Ergänze einen Abschnitt `## Plan-Review` gemäß Template. Er enthält ausschließlich Befunde auf Plan-Ebene, keine Code-Review-Findings.
 - Schreibe keine `## Testergebnisse` und keine `## Review-Findings`, weil noch nichts implementiert wurde.
-- Setze den kanonischen offenen Planstatus exakt auf `**Planungsstatus:** Nicht umgesetzt`; `{{SKILL:sf-build}}`, `{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}` und `{{SKILL:sf-docs}}` nutzen diesen Status später, um die Planungs- bzw. Analysegrundlage zu erkennen.
+- Setze den kanonischen offenen Planstatus exakt entsprechend der in Phase 3 gewählten Markersprache: deutsch auf `**Planungsstatus:** Nicht umgesetzt` oder englisch auf `**Plan status:** Not implemented`; `{{SKILL:sf-build}}`, `{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}` und `{{SKILL:sf-docs}}` nutzen diesen Status später, um die Planungs- bzw. Analysegrundlage zu erkennen.
 - Setze genau eine Zeile `**Empfohlener Workflow:** ...` im Kopfbereich. Wähle eine der vier Kategorien Feature, Bugfix, Refactoring oder Dokumentation und nenne den passenden Skill in Klammern.
 - Bei `**Empfohlener Workflow:** Dokumentation (`{{SKILL:sf-docs}}`)` setze direkt darunter die beiden zusätzlichen Zeilen `**Doku-Kategorie:** ...` und `**Ziel-Pfad:** ...` gemäß `Doku-Kategorien`. Lasse den HTML-Kommentar `<!-- Nur bei ... -->` und die beiden Zeilen für die anderen drei Workflows aus dem Kopfbereich weg.
 

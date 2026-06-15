@@ -10,7 +10,7 @@ Du listest offene Implementierungspläne aus `docs/plan/`.
 
 ## Ziel
 
-- alle Plan-Dateien mit kanonischem Status `**Planungsstatus:** Nicht umgesetzt` finden
+- alle Plan-Dateien mit kanonischem offenem Status finden — sowohl `**Planungsstatus:** Nicht umgesetzt` als auch `**Plan status:** Not implemented`
 - pro offenem Plan eine kurze, hilfreiche Zusammenfassung ausgeben
 - Pläne mit fehlendem oder unklarem Status nicht als offen ausgeben, sondern separat als „Status unklar" melden
 - keine Dateien ändern
@@ -26,10 +26,10 @@ Du listest offene Implementierungspläne aus `docs/plan/`.
 
 1. Prüfe, ob `docs/plan/` existiert.
 2. Lies alle Markdown-Dateien unter `docs/plan/` in numerisch-lexikografischer Reihenfolge.
-3. Bestimme pro Datei den Planstatus ausschließlich über die erste Zeile mit Präfix `**Planungsstatus:**`.
-4. Klassifiziere:
-   - **Offen:** genau `**Planungsstatus:** Nicht umgesetzt`
-   - **Abgeschlossen:** genau `**Planungsstatus:** Umgesetzt`
+3. Bestimme pro Datei den Planstatus ausschließlich über die erste Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**`.
+4. Klassifiziere (beide Markersprachen sind gleichwertig):
+   - **Offen:** genau `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented`
+   - **Abgeschlossen:** genau `**Planungsstatus:** Umgesetzt` oder `**Plan status:** Implemented`
    - **Status unklar:** keine Statuszeile, mehrere Statuszeilen oder anderer Wert
 5. Ermittle für offene Pläne:
    - Plan-Nummer und Titel aus der ersten H1-Zeile
@@ -58,6 +58,6 @@ Du listest offene Implementierungspläne aus `docs/plan/`.
 
 - Ändere keine Dateien.
 - Starte keine Implementierung und keine Validierung.
-- Zähle Review-Finding-Status wie `Nicht umgesetzt` nicht als Planstatus.
+- Zähle Review-Finding-Status wie `Nicht umgesetzt` oder `Not implemented` nicht als Planstatus.
 - Gib Pfade relativ zum Projekt-Root aus.
 - Wenn `docs/plan/` fehlt oder keine Markdown-Dateien enthält, melde das knapp.

@@ -201,7 +201,7 @@ Wenn keine ungebaute Plan-Datei referenziert wurde:
    - offene Fragen zu klären, bevor der Plan geschrieben wird
 3. Übernimm die erzeugte Plan-Datei als abgestimmten Implementierungsplan.
 4. Lies die Plan-Datei vollständig und prüfe:
-   - genau eine kanonische Statuszeile `**Planungsstatus:** Nicht umgesetzt` ist vorhanden
+   - genau eine kanonische Statuszeile `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented` ist vorhanden
    - Akzeptanzkriterien sind messbar
    - Validierungsplan ist vorhanden
    - betroffene Dateien sind konkret genug für Phase 2
@@ -313,8 +313,11 @@ type: approval
 2. Dokumentiere den abgeschlossenen Workflow in der Plan-Datei:
    - wenn Phase 1 eine neue Plan-Datei via `{{SKILL:sf-plan}}` erzeugt hat: aktualisiere diese Datei.
    - wenn der User eine ungebaute Plan-Datei referenziert hat: aktualisiere die referenzierte Datei.
-   - wenn ausnahmsweise keine Plan-Datei existiert: erstelle `docs/plan/` und verwende das nächste freie Nummernschema.
-   - ersetze die kanonische Statuszeile `**Planungsstatus:** Nicht umgesetzt` durch `**Planungsstatus:** Umgesetzt`. Erzeuge keine zweite `**Planungsstatus:**`-Zeile.
+   - wenn ausnahmsweise keine Plan-Datei existiert: erstelle `docs/plan/` und verwende das nächste freie Nummernschema; nutze für die neue Plan-Datei den deutschen Marker (`**Planungsstatus:** Umgesetzt`) als Default — eine explizite Sprachwahl ist in diesem Fall nicht vorgesehen.
+   - ersetze die kanonische Statuszeile durch die jeweilige abgeschlossene Form derselben Markersprache:
+     - deutscher Marker: `**Planungsstatus:** Nicht umgesetzt` → `**Planungsstatus:** Umgesetzt`
+     - englischer Marker: `**Plan status:** Not implemented` → `**Plan status:** Implemented`
+     - wechsle die Markersprache nicht und erzeuge keine zweite Statuszeile.
    - Inhalt:
      - Anforderung
      - Architekturentscheidungen

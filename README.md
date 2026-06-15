@@ -86,14 +86,21 @@ Die Source-Dateien in `skills/` verwenden diese Platzhalter:
 | `{{INCLUDE:name}}` | Shared-Datei aus `skills/_shared/name.md` | Inhalt eingebettet | Inhalt eingebettet | Inhalt eingebettet |
 | `{{ASK}}...{{/ASK}}` | Bedingte User-Frage | `AskUserQuestion`-Block | Freitextfrage | Freitextfrage |
 
-Plan-Dateien verwenden einen stabilen Statusmarker im Kopfbereich:
+Plan-Dateien verwenden einen stabilen Statusmarker im Kopfbereich. Der Marker darf wahlweise auf Deutsch oder auf Englisch geschrieben werden:
 
 ```md
 **Planungsstatus:** Nicht umgesetzt
 **Empfohlener Workflow:** Feature (`$sf-build`)
 ```
 
-`sf-build`, `sf-fix`, `sf-refactor`, `sf-docs`, `sf-apply-plan` und `sf-open-plans` werten nur diese kanonische Statuszeile aus. Andere Vorkommen von „Nicht umgesetzt" in Review-Findings oder Fließtext zählen nicht als Planstatus.
+```md
+**Plan status:** Not implemented
+**Empfohlener Workflow:** Feature (`$sf-build`)
+```
+
+Akzeptierte Werte sind `Nicht umgesetzt`/`Umgesetzt` (Deutsch) und `Not implemented`/`Implemented` (Englisch). Pro Plan-Datei wird nur eine Sprache verwendet; beim Statuswechsel auf abgeschlossen bleibt die ursprüngliche Markersprache erhalten. Die Workflow-Empfehlung `**Empfohlener Workflow:**` bleibt in beiden Markersprachen auf Deutsch.
+
+`sf-build`, `sf-fix`, `sf-refactor`, `sf-docs`, `sf-apply-plan` und `sf-open-plans` werten nur diese kanonische Statuszeile aus. Andere Vorkommen von „Nicht umgesetzt", „Umgesetzt", „Not implemented" oder „Implemented" in Review-Findings oder Fließtext zählen nicht als Planstatus.
 
 Neue Pläne enthalten zusätzlich eine Workflow-Empfehlung: Feature, Bugfix, Refactoring oder Dokumentation. Offene Pläne können direkt mit `sf-build`, `sf-fix`, `sf-refactor` oder `sf-docs` als Grundlage verwendet werden; alternativ liest `sf-apply-plan` die Empfehlung aus und übergibt den Plan an den passenden Workflow.
 

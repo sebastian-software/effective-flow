@@ -132,7 +132,10 @@ type: approval
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
 2. Wenn eine Plan-Datei als Grundlage verwendet wurde:
-   - ersetze die kanonische Statuszeile `**Planungsstatus:** Nicht umgesetzt` durch `**Planungsstatus:** Umgesetzt`
+   - ersetze die kanonische Statuszeile durch die jeweilige abgeschlossene Form derselben Markersprache:
+     - deutscher Marker: `**Planungsstatus:** Nicht umgesetzt` → `**Planungsstatus:** Umgesetzt`
+     - englischer Marker: `**Plan status:** Not implemented` → `**Plan status:** Implemented`
+     - wechsle die Markersprache nicht und erzeuge keine zweite Statuszeile.
    - ergänze `## Testergebnisse` mit den ausgeführten Prüfungen
    - ergänze `## Review-Findings` oder schreibe „Keine Findings gefunden.", wenn kein Review nötig war
 3. Lösche die Wisdom-Datei.
