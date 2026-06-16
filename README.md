@@ -126,12 +126,14 @@ Projektlokale Laufzeitdaten liegen unter `.sf-plugin/` im Zielprojekt:
 
 | Datei | Zweck |
 |---|---|
-| `.sf-plugin/config.json` | Optionale Workflow-Defaults für Review und Apply-Review |
+| `.sf-plugin/config.json` | Optionale Workflow-Defaults für Review, Apply-Review und Plan-Erstellung (z. B. `plan.markerLanguage`) |
 | `.sf-plugin/memory.json` | Persistente Workflow-Zähler und Config-Migrationsstatus |
 | `.sf-plugin/cache.json` | Invalidierbare Cache-Daten für wiederholte Reviews und Apply-Review-Läufe |
 | `.sf-plugin/review/` | Review-Reports |
 
-Die Skills funktionieren ohne `config.json`. Wenn eine bestehende Config neue Schlüssel noch nicht enthält, migrieren `sf-review` und `sf-apply-review` fehlende Defaults nicht-destruktiv und melden die ergänzten Schlüssel. Der Migrationsstatus wird in `memory.json` gespeichert; wiederverwendbare Cache-Daten liegen separat in `cache.json`.
+Die Skills funktionieren ohne `config.json`. Wenn eine bestehende Config neue Schlüssel noch nicht enthält, migrieren `sf-review`, `sf-apply-review` und `sf-plan` fehlende Defaults nicht-destruktiv und melden die ergänzten Schlüssel. Der Migrationsstatus wird in `memory.json` gespeichert; wiederverwendbare Cache-Daten liegen separat in `cache.json`.
+
+`sf-plan` nutzt `plan.markerLanguage` (`"de"` oder `"en"`), um die Sprache des kanonischen Statusmarkers neuer Plan-Dateien zu bestimmen. Reihenfolge: Config-Eintrag gewinnt; sonst leitet `sf-plan` die Sprache aus den vorhandenen Plan-Dateien ab; sonst fragt es per `AskUserQuestion` und bietet an, die Wahl zu persistieren. Bei eindeutiger Detection und existierender Config ohne den Schlüssel wird er nicht-destruktiv ergänzt.
 
 Sicheres Default-Verhalten:
 
@@ -150,6 +152,9 @@ Sicheres Default-Verhalten:
       "baseDir": ".sf-plugin/.worktrees",
       "setup": "auto"
     }
+  },
+  "plan": {
+    "markerLanguage": "de"
   }
 }
 ```

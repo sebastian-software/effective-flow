@@ -76,19 +76,94 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 
 Erstelle eine neue Markdown-Datei in `docs/plan/` mit der nächsten freien Nummer im bestehenden vierstelligen Schema, zum Beispiel `0030-feature-name.md`.
 
-Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers fest:
+Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers in dieser Reihenfolge fest. Die erste Quelle, die einen gültigen Wert liefert, gewinnt.
+
+#### Schritt 1: Konfiguration konsultieren
+
+1. Prüfe, ob `.sf-plugin/config.json` existiert und syntaktisch valides JSON enthält.
+2. Lies den Pfad `plan.markerLanguage`:
+   - `"de"` → Markersprache Deutsch, gib eine Statuszeile aus wie „Markersprache aus `.sf-plugin/config.json` übernommen: Deutsch." und überspringe Schritte 2 bis 6.
+   - `"en"` → analog Englisch.
+   - anderer Wert (z. B. `"fr"`, `null`, `true`) → ignoriere ihn, gib einen kurzen Hinweis aus und fahre mit Schritt 2 fort.
+   - Schlüssel fehlt → ohne extra Hinweis zu Schritt 2 (Detection gibt eine eigene Statuszeile aus).
+3. Wenn die Datei nicht lesbar ist (Datei kaputt, kein JSON): kurzer Hinweis an den User, dann Schritt 2.
+
+#### Schritt 2: Auto-Detection aus `docs/plan/`
+
+1. Lies alle `.md`-Dateien unter `docs/plan/`. Lege _keine_ neuen Verzeichnisse an und schreibe keine anderen Dateien.
+2. Bestimme pro Datei den Planstatus über die kanonische Regel: erste Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` und gültigem Wert.
+3. Zähle die Plan-Dateien mit deutschem Marker (`de_count`) und mit englischem Marker (`en_count`). Dateien mit Status „unklar" werden ignoriert.
+4. Bestimme das Detection-Ergebnis:
+   - `de_count > 0` und `en_count == 0` → Detection: Deutsch.
+   - `en_count > 0` und `de_count == 0` → Detection: Englisch.
+   - sonst (beide > 0 oder beide == 0) → Detection: nicht eindeutig.
+
+#### Schritt 3: Migration bei eindeutiger Detection
+
+Nur wenn alle folgenden Bedingungen zutreffen:
+
+- die Detection aus Schritt 2 ergab ein eindeutiges Ergebnis,
+- `.sf-plugin/config.json` existiert und enthält syntaktisch valides JSON,
+- der Schlüssel `plan.markerLanguage` _fehlt_ in dieser Config (nicht: ist ungültig).
+
+Wenn diese Bedingungen erfüllt sind:
+
+1. Ergänze `plan.markerLanguage` nicht-destruktiv mit dem Detection-Wert (`"de"` oder `"en"`). Behalte alle anderen Felder unverändert.
+2. Schreibe die Config-Datei zurück.
+3. Gib eine Statusmeldung aus, z. B. „Config-Migration: `plan.markerLanguage = de` aus Detection ergänzt."
+
+Wenn `.sf-plugin/config.json` nicht existiert, lege sie _nicht_ nur für die Migration an.
+
+#### Schritt 4: Detection-Ergebnis übernehmen
+
+Bei eindeutigem Detection-Ergebnis:
+
+- Verwende die erkannte Sprache als Markersprache der neuen Plan-Datei.
+- Gib eine einzeilige Statusmeldung aus, z. B. „Markersprache aus 12 vorhandenen Plänen erkannt: Deutsch."
+- Überspringe Schritte 5 und 6.
+
+#### Schritt 5: Frage an den User
+
+Nur wenn weder Schritt 1 noch Schritt 4 die Sprache bestimmen konnten:
 
 {{ASK}}
 header: Marker
 question: In welcher Sprache soll der Statusmarker im Plan-Kopf stehen?
 options:
   - label: Deutsch
-    description: Statuszeile **Planungsstatus:** Nicht umgesetzt — Default-Variante
+    description: Statuszeile **Planungsstatus:** Nicht umgesetzt
   - label: Englisch
     description: Statuszeile **Plan status:** Not implemented
 {{/ASK}}
 
-Verwende die gewählte Sprache konsistent: deutscher Marker mit deutschen Werten, englischer Marker mit englischen Werten. Mische Marker-Schlüssel und Wert nicht. Übernimm keine Sprach-Erklärungen oder HTML-Kommentare aus den Beispielblöcken unten in die finale Plan-Datei.
+Nenne in der Begleitmeldung kurz, warum gefragt wird (Mischbestand, kein erkennbarer Marker oder Config nicht gesetzt).
+
+#### Schritt 6: Persistenz nach Frage
+
+Nur wenn Schritt 5 ausgeführt wurde:
+
+{{ASK}}
+header: Persistenz
+question: Soll die gewählte Markersprache in .sf-plugin/config.json als plan.markerLanguage gespeichert werden?
+options:
+  - label: Ja
+    description: Wahl persistieren — Default, empfohlen, vermeidet künftige Rückfragen
+  - label: Nein
+    description: Wahl nur für diesen Plan verwenden
+{{/ASK}}
+
+Bei `Ja`:
+
+- Lies `.sf-plugin/config.json`, falls vorhanden, und ergänze `plan.markerLanguage` nicht-destruktiv.
+- Wenn die Datei nicht existiert: lege sie minimal mit `{ "plan": { "markerLanguage": "<wert>" } }` an.
+- Gib eine Statusmeldung aus, z. B. „Markersprache `de` in `.sf-plugin/config.json` gespeichert."
+- Wenn das Schreiben fehlschlägt, gib einen knappen Fehlerhinweis aus und fahre mit dem Plan-Lauf fort.
+
+Bei `Nein`: keine Änderung an der Config-Datei.
+
+#### Konsistenzregeln
+
+Verwende die finale Markersprache konsistent: deutscher Marker mit deutschen Werten, englischer Marker mit englischen Werten. Mische Marker-Schlüssel und Wert nicht. Übernimm keine Sprach-Erklärungen oder HTML-Kommentare aus den Beispielblöcken unten in die finale Plan-Datei.
 
 Der Plan muss mindestens diese Struktur verwenden. Verwende je nach gewählter Markersprache eine der beiden Statuszeilen, nicht beide:
 
