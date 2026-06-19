@@ -1,4 +1,4 @@
-# 0041: Auto-Detection der Marker-Sprache in sf-plan
+# 0042: Auto-Detection der Marker-Sprache in sf-plan
 
 **Planungsstatus:** Umgesetzt
 **Quelle:** `/plan`
@@ -39,7 +39,7 @@ Das ist eine neue Verhaltensänderung in der Plan-Erstellung — `sf-plan` bekom
 |---|---|
 | `skills/sf-plan/SKILL.md` | Phase 3 umstellen: Detection-Schritt, Config-Konsultation als Fallback, `AskUserQuestion` als Letztinstanz, Folgeschritt zur Persistenz, Migration bei eindeutiger Detection. |
 | `README.md` | Tabelle der `.sf-plugin/`-Dateien um den neuen Config-Schlüssel `plan.markerLanguage` ergänzen; Default-Config-Beispiel um neue Sektion erweitern. |
-| `docs/plan/0041-plan-status-marker-language-detection.md` | Diese Plan-Datei. |
+| `docs/plan/0042-plan-status-marker-language-detection.md` | Diese Plan-Datei. |
 
 Nicht angefasst (Designentscheidung):
 
@@ -47,7 +47,7 @@ Nicht angefasst (Designentscheidung):
 |---|---|
 | `skills/sf-build/SKILL.md` | Phase-7-Fallback „keine Plan-Datei vorhanden" hat keinen Detection-Pool und greift nicht auf die Plan-Erstellung von `sf-plan` zurück. Deutscher Default bleibt korrekt. |
 | `skills/_shared/plan-status.md`, `plan-reference-routing.md` | Konventionsdokumente; die Detection- und Config-Logik ist `sf-plan`-spezifisch und gehört nicht in die geteilte Konvention. |
-| `skills/sf-fix/SKILL.md`, `skills/sf-refactor/SKILL.md`, `skills/sf-docs/SKILL.md`, `skills/sf-apply-plan/SKILL.md`, `skills/sf-open-plans/SKILL.md` | Erstellen keine neuen Plan-Dateien; Markersprache spielt dort nur lesend eine Rolle, und das funktioniert seit 0040 bereits beidsprachig. |
+| `skills/sf-fix/SKILL.md`, `skills/sf-refactor/SKILL.md`, `skills/sf-docs/SKILL.md`, `skills/sf-apply-plan/SKILL.md`, `skills/sf-open-plans/SKILL.md` | Erstellen keine neuen Plan-Dateien; Markersprache spielt dort nur lesend eine Rolle, und das funktioniert seit 0041 bereits beidsprachig. |
 
 ## Implementierungsdetails
 
@@ -159,7 +159,7 @@ Nicht angefasst (Designentscheidung):
 | Offen / Nicht umgesetzt | 1 |
 | Positivbefunde | 3 |
 
-Nicht umgesetzt: F7 (Plan-Datei nutzt Claude-Notation `/build` statt Platzhalter) — bewusste Entscheidung, da Plan-Dateien Anwender-Output sind und konsistent mit Plan 0040 sowie der bisherigen Plan-Datei-Konvention bleiben sollen. Kein ADR notwendig, weil rein dokumentarische Wahl ohne Verhalten.
+Nicht umgesetzt: F7 (Plan-Datei nutzt Claude-Notation `/build` statt Platzhalter) — bewusste Entscheidung, da Plan-Dateien Anwender-Output sind und konsistent mit Plan 0041 sowie der bisherigen Plan-Datei-Konvention bleiben sollen. Kein ADR notwendig, weil rein dokumentarische Wahl ohne Verhalten.
 
 ## Plan-Review
 

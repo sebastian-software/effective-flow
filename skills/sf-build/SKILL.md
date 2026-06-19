@@ -18,6 +18,8 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 
 {{INCLUDE:plan-status}}
 
+{{INCLUDE:plan-numbering}}
+
 ## Phase 0: Intent Gate
 
 Bevor du den Workflow startest, klassifiziere die Anforderung des Users:
@@ -93,7 +95,7 @@ Dokumentation des Projektzustands vor dem ersten Feature-Workflow.
 3. Falls Plan-Dateien vorhanden sind: überspringe diesen Schritt ohne Meldung.
 4. Falls eine initiale Plan-Datei erstellt wurde, halte das in der Wisdom-Datei fest.
 
-Wichtig: Die Plan-Datei in der Abschlussphase verwendet dann die nächste freie Nummer.
+Wichtig: Die Plan-Datei in der Abschlussphase erhält ihre Nummer gemäß `Plan-Nummern-Konvention` (nächste freie Nummer, eindeutig und lückenlos).
 
 {{INCLUDE:completion-protocol}}
 
@@ -313,7 +315,7 @@ type: approval
 2. Dokumentiere den abgeschlossenen Workflow in der Plan-Datei:
    - wenn Phase 1 eine neue Plan-Datei via `{{SKILL:sf-plan}}` erzeugt hat: aktualisiere diese Datei.
    - wenn der User eine ungebaute Plan-Datei referenziert hat: aktualisiere die referenzierte Datei.
-   - wenn ausnahmsweise keine Plan-Datei existiert: erstelle `docs/plan/` und verwende das nächste freie Nummernschema; nutze für die neue Plan-Datei den deutschen Marker (`**Planungsstatus:** Umgesetzt`) als Default — eine explizite Sprachwahl ist in diesem Fall nicht vorgesehen.
+   - wenn ausnahmsweise keine Plan-Datei existiert: erstelle `docs/plan/` und vergib die Nummer gemäß `Plan-Nummern-Konvention` (nächste freie Nummer, eindeutig und lückenlos); nutze für die neue Plan-Datei den deutschen Marker (`**Planungsstatus:** Umgesetzt`) als Default — eine explizite Sprachwahl ist in diesem Fall nicht vorgesehen.
    - ersetze die kanonische Statuszeile durch die jeweilige abgeschlossene Form derselben Markersprache:
      - deutscher Marker: `**Planungsstatus:** Nicht umgesetzt` → `**Planungsstatus:** Umgesetzt`
      - englischer Marker: `**Plan status:** Not implemented` → `**Plan status:** Implemented`

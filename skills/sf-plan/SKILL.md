@@ -18,6 +18,8 @@ Dieser Skill erstellt einen umsetzbaren, validierten Implementierungsplan in `do
 
 {{INCLUDE:plan-status}}
 
+{{INCLUDE:plan-numbering}}
+
 {{INCLUDE:doc-categories}}
 
 ## Harte Abgrenzung
@@ -40,23 +42,24 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 ### Phase 1: Scope und Kontext
 
 1. Analysiere die Anforderung gründlich.
-2. Prüfe vorhandene Plan-Dateien in `docs/plan/`, um Nummernschema, Struktur und vorhandene Architekturentscheidungen zu übernehmen.
-3. Untersuche die relevanten Bereiche der Codebase lokal oder mit internem Sub-Agenten:
+2. Prüfe vorhandene Plan-Dateien in `docs/plan/`, um Struktur und vorhandene Architekturentscheidungen zu übernehmen.
+3. Reserviere die Plan-Nummer gemäß `Plan-Nummern-Konvention`, Abschnitt „Nummer reservieren", bevor die inhaltliche Klärung beginnt. Die so angelegte temporäre Datei wird in Phase 3 mit dem vollständigen Inhalt gefüllt.
+4. Untersuche die relevanten Bereiche der Codebase lokal oder mit internem Sub-Agenten:
    - Projektstruktur
    - betroffene Module und Dateien
    - bestehende Architekturentscheidungen
    - verwendete Technologien
    - relevante Tests und Validierungspfade
-4. Klassifiziere die empfohlene Umsetzung:
+5. Klassifiziere die empfohlene Umsetzung:
    - **Feature:** neue Funktionalität, neues UI-Element, neue Seite, neue Integration oder verändertes Nutzerverhalten.
    - **Bugfix:** Fehler beheben, unerwartetes Verhalten korrigieren oder Regression beseitigen.
    - **Refactoring:** Struktur, Wartbarkeit oder Performance verbessern, ohne beabsichtigte Verhaltensänderung.
    - **Dokumentation:** README, Guides, API-Dokumentation, Kommentare oder sonstige Dokumentation ändern, ohne Produkt- oder Codeverhalten zu ändern.
-5. Wenn die Klassifikation `Dokumentation` ist:
+6. Wenn die Klassifikation `Dokumentation` ist:
    - bestimme zusätzlich die Doku-Kategorie gemäß `Doku-Kategorien` (user-guide, developer-guide, operations, runbooks).
    - schlage einen topic-basierten Datei-Slug für das Zieldokument vor, der innerhalb der Kategorie eindeutig ist.
    - prüfe, ob der vorgeschlagene Ziel-Pfad unter `docs/<kategorie>/` bereits existiert. Bei Kollision schlage einen alternativen Slug vor oder kläre die Überschreibung später in Phase 2.
-6. Halte explizit fest, welche Aussagen verifizierter Code-Kontext sind und welche Aussagen Annahmen sind.
+7. Halte explizit fest, welche Aussagen verifizierter Code-Kontext sind und welche Aussagen Annahmen sind.
 
 ### Phase 2: Klärung
 
@@ -74,7 +77,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 
 ### Phase 3: Plan-Erstellung
 
-Erstelle eine neue Markdown-Datei in `docs/plan/` mit der nächsten freien Nummer im bestehenden vierstelligen Schema, zum Beispiel `0030-feature-name.md`.
+Fülle die in Phase 1 reservierte Plan-Datei `docs/plan/NNNN-<slug>.md` mit dem vollständigen Inhalt. Die Nummer wurde gemäß `Plan-Nummern-Konvention` bereits vergeben; vergib hier keine neue Nummer. Entferne den `(WIP)`-Zusatz aus der H1 und aktualisiere – falls der endgültige Titel abweicht – den `<slug>` im Dateinamen sowie den Titeltext der H1 auf den endgültigen Titel. Die H1-Nummer bleibt unverändert.
 
 Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers in dieser Reihenfolge fest. Die erste Quelle, die einen gültigen Wert liefert, gewinnt.
 

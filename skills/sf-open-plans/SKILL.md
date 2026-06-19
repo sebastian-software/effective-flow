@@ -43,6 +43,7 @@ Du listest offene Implementierungspläne aus `docs/plan/`.
      - bei nicht-Doku-Plänen zeige in der Spalte `Kategorie` einen Bindestrich
      - bei Doku-Plänen ohne `**Doku-Kategorie:**`-Zeile zeige `unbekannt`
    - Danach eine kurze Liste mit Status-unklaren Plänen, falls vorhanden
+   - Wenn mehrere Plan-Dateien dieselbe vierstellige Nummer tragen, weise gesondert darauf hin (diese Dublette verletzt die `Plan-Nummern-Konvention` und sollte über den passenden Workflow aufgelöst werden)
    - Wenn keine offenen Pläne existieren: klare Meldung „Keine offenen Pläne gefunden."
 
 ## Zusammenfassungsregeln

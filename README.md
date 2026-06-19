@@ -102,6 +102,8 @@ Akzeptierte Werte sind `Nicht umgesetzt`/`Umgesetzt` (Deutsch) und `Not implemen
 
 `sf-build`, `sf-fix`, `sf-refactor`, `sf-docs`, `sf-apply-plan` und `sf-open-plans` werten nur diese kanonische Statuszeile aus. Andere Vorkommen von „Nicht umgesetzt", „Umgesetzt", „Not implemented" oder „Implemented" in Review-Findings oder Fließtext zählen nicht als Planstatus.
 
+Plan-Dateien tragen einen vierstelligen Nummern-Prefix (`NNNN-titel-slug.md`). Jede Nummer ist genau einmal vergeben und die Folge bleibt lückenlos. `sf-plan` reserviert die Nummer zu Beginn der Planung über eine temporäre Plan-Datei, damit parallel erstellte Pläne nicht dieselbe Nummer wählen. Entsteht über getrennte Branches dennoch eine Dublette, lösen die Workflows sie beim nächsten Scan in Planungsreihenfolge auf.
+
 Neue Pläne enthalten zusätzlich eine Workflow-Empfehlung: Feature, Bugfix, Refactoring oder Dokumentation. Offene Pläne können direkt mit `sf-build`, `sf-fix`, `sf-refactor` oder `sf-docs` als Grundlage verwendet werden; alternativ liest `sf-apply-plan` die Empfehlung aus und übergibt den Plan an den passenden Workflow.
 
 Doku-Pläne enthalten im Kopf zwei zusätzliche Zeilen, die das Ziel des finalen Dokuments festlegen:

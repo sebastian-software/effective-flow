@@ -1,4 +1,4 @@
-# 0031: docs/-Verzeichnisstruktur für Doku-Kategorien
+# 0040: docs/-Verzeichnisstruktur für Doku-Kategorien
 
 **Planungsstatus:** Umgesetzt
 **Quelle:** /plan
