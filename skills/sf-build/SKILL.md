@@ -1,6 +1,6 @@
 ---
 name: sf-build
-description: "Orchestriert den kompletten Feature-Workflow: Intent-Gate, Plan-Referenz-Erkennung, Planung via {{SKILL:sf-plan}}, Implementierung, Dokumentation, Tests, Validierung, Review, ADR-Optionen und Abschluss. Verwendet explizite Skill-Wechsel wie {{AGENT:sf-ui-implementer}}, {{AGENT:sf-nodejs-implementer}}, {{AGENT:sf-code-validator}}, {{AGENT:sf-test-writer}}, {{AGENT:sf-docs-writer}} und {{AGENT:sf-frontend-reviewer}}."
+description: "Orchestriert den kompletten Feature-Workflow: Intent-Gate, Plan-Referenz-Erkennung, Planung via {{SKILL:sf-plan}}, Implementierung, Dokumentation, Tests, Validierung, Review und Abschluss. Verwendet explizite Skill-Wechsel wie {{AGENT:sf-ui-implementer}}, {{AGENT:sf-nodejs-implementer}}, {{AGENT:sf-code-validator}}, {{AGENT:sf-test-writer}}, {{AGENT:sf-docs-writer}} und {{AGENT:sf-frontend-reviewer}}."
 type: orchestrator
 ---
 
@@ -292,16 +292,8 @@ Hinweis: Vor Abschluss muss die Spalte „Offen" für „Kritisch" 0 sein.
    - Empfehlung
    - Status (Behoben / Offen / Nicht umgesetzt)
    - Begründung bei Nicht-Umsetzung (inkl. ADR-Referenz, falls vorhanden)
-8. Falls Findings bewusst nicht umgesetzt werden:
-
-{{ASK}}
-header: ADR
-question: Sollen ADRs in docs/adr/ für nicht umgesetzte Findings erzeugt werden?
-type: approval
-{{/ASK}}
-
-   - bei Zustimmung: erzeuge für jedes nicht umgesetzte Finding ein ADR-Dokument mit laufender Nummer, Kebab-Case-Titel, Kontext `{{SKILL:sf-build}}` und Quelle des Findings
-9. Wenn nach Review und ADR-Entscheidung Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
+8. Lege in diesem Workflow niemals ein ADR an und frage auch nicht danach. Bewusst nicht umgesetzte Findings werden ausschließlich im Review-Report dokumentiert. Über die spätere Umsetzung oder über ein ADR für eine bewusste Nicht-Umsetzung entscheidet der Entwickler beim Durchgehen der Findings-Datei, typischerweise via {{SKILL:sf-apply-review}}.
+9. Wenn nach Review Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
    - schreibe sie gemäß „Offene Review-Finding-Reports" in eine neue Datei unter `.sf-plugin/review/`
    - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-NNNN.md`
    - halte den erzeugten Reportpfad für Phase 7 fest

@@ -1,6 +1,6 @@
 ---
 name: sf-refactor
-description: "Orchestriert den Refactoring-Workflow: Analyse, Gap Analysis, Plan-Validierung, Baseline, Refactoring, Review, ADR-Optionen, Nachvalidierung und Vorher/Nachher-Vergleich. Verwendet {{AGENT:sf-ui-implementer}}, {{AGENT:sf-nodejs-implementer}}, {{AGENT:sf-code-validator}}, {{AGENT:sf-test-writer}} und die passenden Reviewer-Skills."
+description: "Orchestriert den Refactoring-Workflow: Analyse, Gap Analysis, Plan-Validierung, Baseline, Refactoring, Review, Nachvalidierung und Vorher/Nachher-Vergleich. Verwendet {{AGENT:sf-ui-implementer}}, {{AGENT:sf-nodejs-implementer}}, {{AGENT:sf-code-validator}}, {{AGENT:sf-test-writer}} und die passenden Reviewer-Skills."
 type: orchestrator
 ---
 
@@ -136,16 +136,8 @@ Dokumentiere die Baseline für den späteren Vergleich.
    - Prompt-Vorschlag
    - Status (Behoben / Offen / Nicht umgesetzt)
    - Begründung bei Nicht-Umsetzung oder ADR-Referenz, falls vorhanden
-5. Falls Findings bewusst nicht umgesetzt werden:
-
-{{ASK}}
-header: ADR
-question: Sollen ADRs in docs/adr/ für nicht umgesetzte Findings erzeugt werden?
-type: approval
-{{/ASK}}
-
-   - erzeuge bei Zustimmung ADRs in `docs/adr/` mit Kontext `{{SKILL:sf-refactor}}`
-6. Wenn nach Review und ADR-Entscheidung Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
+5. Lege in diesem Workflow niemals ein ADR an und frage auch nicht danach. Bewusst nicht umgesetzte Findings werden ausschließlich im Review-Report dokumentiert. Über die spätere Umsetzung oder über ein ADR für eine bewusste Nicht-Umsetzung entscheidet der Entwickler beim Durchgehen der Findings-Datei, typischerweise via {{SKILL:sf-apply-review}}.
+6. Wenn nach Review Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
    - schreibe sie gemäß „Offene Review-Finding-Reports" in eine neue Datei unter `.sf-plugin/review/`
    - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-NNNN.md`
    - nenne den erzeugten Reportpfad in der Abschlusszusammenfassung
