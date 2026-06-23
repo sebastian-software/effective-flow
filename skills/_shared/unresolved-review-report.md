@@ -62,5 +62,5 @@ Regeln:
 
 - Kritische Findings dürfen nur dann in diesem Report verbleiben, wenn der User ausdrücklich entschieden hat, den Workflow trotz offenem kritischem Finding abzuschließen.
 - Bestimme die Aktion wie bei `{{SKILL:sf-review}}`: Defekt → `{{SKILL:sf-fix}}`, Strukturproblem → `{{SKILL:sf-refactor}}`, fehlende Funktionalität oder Schutzmechanismus → `{{SKILL:sf-build}}`, reine Dokumentationslücke → `{{SKILL:sf-docs}}`.
-- Wenn ein Finding bewusst nicht umgesetzt wurde und ein ADR existiert, trage die ADR-Referenz in `Entwickler-Anmerkung` ein, z. B. `Nicht umsetzen: siehe ADR 0003`.
+- Trage niemals automatisch etwas in `Entwickler-Anmerkung` ein. Dieses Feld ist ausschließlich für manuelle Notizen des Entwicklers reserviert und bleibt in automatisch erzeugten Reports leer. Wenn ein Finding bewusst nicht umgesetzt wurde und ein ADR existiert, vermerke die ADR-Referenz im `Status`, z. B. `Nicht umgesetzt (ADR 0003)`.
 - Gib dem User nach dem Schreiben den Reportpfad aus.

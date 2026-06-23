@@ -388,7 +388,7 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 - **Empfehlung**: [...]
 - **Aktion**: `{{SKILL:sf-fix}}` | `{{SKILL:sf-refactor}}` | `{{SKILL:sf-build}}` | `{{SKILL:sf-docs}}`
 - **Prompt-Vorschlag**: [...]
-- **Entwickler-Anmerkung**: <!-- leer lassen, Freitext, oder „Nicht umsetzen: [Grund]" -->
+- **Entwickler-Anmerkung**: <!-- nur vom Entwickler manuell auszufüllen; bei der Report-Erstellung immer leer lassen, niemals automatisch befüllen. Spätere Entwicklerwerte: Freitext oder „Nicht umsetzen: [Grund]" -->
 
 ## Übersprungene Findings (Designentscheidungen)
 
