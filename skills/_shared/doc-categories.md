@@ -2,12 +2,12 @@
 
 Finale Dokumente aus dem Doku-Workflow werden ausschließlich in einer der vier festen Kategorien unter `docs/` abgelegt.
 
-| Kategorie | Verzeichnis | Zielgruppe |
-|---|---|---|
-| User-Guide | `docs/user-guide/` | End-User der Anwendung |
-| Developer-Guide | `docs/developer-guide/` | Entwickler, die am Projekt mitarbeiten |
-| Operations | `docs/operations/` | Betrieb, Deployment, Monitoring, Infrastruktur |
-| Runbooks | `docs/runbooks/` | Step-by-Step-Prozeduren für Incident-Response und Routineaufgaben |
+| Kategorie       | Verzeichnis             | Zielgruppe                                                        |
+| --------------- | ----------------------- | ----------------------------------------------------------------- |
+| User-Guide      | `docs/user-guide/`      | End-User der Anwendung                                            |
+| Developer-Guide | `docs/developer-guide/` | Entwickler, die am Projekt mitarbeiten                            |
+| Operations      | `docs/operations/`      | Betrieb, Deployment, Monitoring, Infrastruktur                    |
+| Runbooks        | `docs/runbooks/`        | Step-by-Step-Prozeduren für Incident-Response und Routineaufgaben |
 
 ### Dateinamen-Konvention
 

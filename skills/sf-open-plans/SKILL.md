@@ -16,11 +16,17 @@ Du listest offene Implementierungspläne aus `docs/plan/`.
 - keine Dateien ändern
 - keine Tests, Builds oder Validierungen ausführen
 
-{{INCLUDE:language-rules}}
+```include
+language-rules
+```
 
-{{INCLUDE:task-tracking}}
+```include
+task-tracking
+```
 
-{{INCLUDE:plan-status}}
+```include
+plan-status
+```
 
 ## Vorgehen
 

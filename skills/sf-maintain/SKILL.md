@@ -18,15 +18,21 @@ Scharfe Abgrenzung – `sf-maintain` ist bewusst schlank:
 - **Nicht im Scope:** allgemeines Refactoring oder Dead-Code (→ `{{SKILL:sf-refactor}}`), Bugfixes ohne Dependency-Bezug (→ `{{SKILL:sf-fix}}`), reine Formatting-/Config-Pflege (→ `{{AGENT:sf-code-validator}}`), neue Funktionalität (→ `{{SKILL:sf-build}}`).
 - **Kein Scheduler:** automatisches, zeitgesteuertes Bumpen übernehmen Werkzeuge wie Renovate oder Dependabot. `sf-maintain` ist der interaktive „jetzt aufräumen"-Lauf.
 
-{{INCLUDE:language-rules}}
+```include
+language-rules
+```
 
-{{INCLUDE:task-tracking}}
+```include
+task-tracking
+```
 
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Scan und beachte ihre Vorgaben für Dependencies, Tests, Review und Commits.
 
-{{INCLUDE:completion-protocol}}
+```include
+completion-protocol
+```
 
 ## Wisdom Accumulation
 
@@ -50,18 +56,22 @@ Wie bei `{{SKILL:sf-build}}`. Das bestimmt, welcher Implementer Breaking Changes
 
 Bestimme den Paketmanager über das Lockfile und leite alle Befehle daraus ab – keine Hardcodierung auf npm:
 
-| Signal | Manager |
-|---|---|
-| `pnpm-lock.yaml` | pnpm |
-| `yarn.lock` | yarn |
-| `bun.lockb` | bun |
-| `package-lock.json` oder nur `package.json` | npm |
+| Signal                                      | Manager |
+| ------------------------------------------- | ------- |
+| `pnpm-lock.yaml`                            | pnpm    |
+| `yarn.lock`                                 | yarn    |
+| `bun.lockb`                                 | bun     |
+| `package-lock.json` oder nur `package.json` | npm     |
 
 Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:sf-maintain}}`.
 
-{{INCLUDE:review-report-backlinks}}
+```include
+review-report-backlinks
+```
 
-{{INCLUDE:unresolved-review-report}}
+```include
+unresolved-review-report
+```
 
 ## Workflow
 
@@ -85,7 +95,7 @@ Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:sf-maintain}}`.
 4. Wenn nichts veraltet und keine Audit-Befunde: melde „nichts zu tun" und beende sauber.
 5. Präsentiere die Gruppenübersicht und kläre die Auswahl:
 
-{{ASK}}
+```ask
 header: Updates
 question: Welche Update-Gruppen sollen jetzt umgesetzt werden?
 options:
@@ -97,7 +107,7 @@ options:
     description: Ausschließlich Audit-/Security-Fixes anwenden
   - label: Auswahl
     description: Konkrete Gruppen als Freitext benennen
-{{/ASK}}
+```
 
 ### Phase 2: Baseline
 
@@ -116,7 +126,7 @@ Arbeite die freigegebenen Gruppen nacheinander ab. Für jede Gruppe:
 2. Bei Major-Bumps: lies Changelog/Release Notes der betroffenen Packages und passe den Code über den passenden Implementer an:
    - Frontend: `{{AGENT:sf-ui-implementer}}`
    - Backend/CLI: `{{AGENT:sf-nodejs-implementer}}`
-   Auftrag: nur an die geänderte API anpassen, kein neues Verhalten, keine ungeplanten Features.
+     Auftrag: nur an die geänderte API anpassen, kein neues Verhalten, keine ungeplanten Features.
 3. Validiere die Gruppe: `{{AGENT:sf-code-validator}}` und die bestehenden Tests erneut ausführen.
 4. Gleiche gegen die Baseline ab:
    - grün → ein sauberer Commit pro Gruppe (siehe Commit-Regeln), aussagekräftige Message, z. B. `chore(deps): …`.
@@ -145,9 +155,13 @@ Reine Dependency-Bumps ohne Code-Anpassung brauchen kein Reviewer-Pass; vermerke
 3. Bestätige, dass das Verhalten unverändert blieb (Baseline-Abgleich grün).
 4. Lösche die Wisdom-Datei.
 
-{{INCLUDE:pre-commit-gate}}
+```include
+pre-commit-gate
+```
 
-{{INCLUDE:commit-message-rules}}
+```include
+commit-message-rules
+```
 
 ## Regeln
 

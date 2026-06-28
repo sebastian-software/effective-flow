@@ -79,14 +79,31 @@ Für Symlinks statt Kopien (Entwicklung):
 
 ## Build
 
-Die Source-Dateien in `skills/` verwenden diese Platzhalter:
+Die Source-Dateien in `skills/` verwenden zwei Arten von Platzhaltern.
 
-| Platzhalter          | Bedeutung                                 | Claude Code             | Codex Skill        | Codex TOML         |
-| -------------------- | ----------------------------------------- | ----------------------- | ------------------ | ------------------ |
-| `{{SKILL:sf-X}}`     | Orchestrator/Utility-Referenz             | `/X`                    | `$sf-X`            | `sf-X`             |
-| `{{AGENT:sf-X}}`     | Agent/Worker-Referenz                     | `/X`                    | `sf-X`             | `sf-X`             |
-| `{{INCLUDE:name}}`   | Shared-Datei aus `skills/_shared/name.md` | Inhalt eingebettet      | Inhalt eingebettet | Inhalt eingebettet |
-| `{{ASK}}...{{/ASK}}` | Bedingte User-Frage                       | `AskUserQuestion`-Block | Freitextfrage      | Freitextfrage      |
+**Inline-Referenzen** stehen mitten im Text (auch im Frontmatter-`description:`-String) und nutzen die Mustache-Syntax `{{…}}`:
+
+| Platzhalter      | Bedeutung                     | Claude Code | Codex Skill | Codex TOML |
+| ---------------- | ----------------------------- | ----------- | ----------- | ---------- |
+| `{{SKILL:sf-X}}` | Orchestrator/Utility-Referenz | `/X`        | `$sf-X`     | `sf-X`     |
+| `{{AGENT:sf-X}}` | Agent/Worker-Referenz         | `/X`        | `sf-X`      | `sf-X`     |
+| `{{VERSION}}`    | Version inkl. Git-Kurzhash    | eingesetzt  | eingesetzt  | eingesetzt |
+
+**Block-Direktiven** stehen auf eigenen Zeilen und nutzen einen Code-Fence mit Info-String. Der Fence-Inhalt ist gegen Markdown-Formatter (oxfmt) robust, weil dessen Interior wortwörtlich erhalten bleibt.
+
+Ein `include`-Fence bettet die Shared-Datei `skills/_shared/<name>.md` ein:
+
+```include
+task-tracking
+```
+
+Ein `ask`-Fence erzeugt eine bedingte User-Frage (Claude Code: `AskUserQuestion`-Block, Codex: Freitextfrage):
+
+```ask
+header: Freigabe
+question: Plan freigegeben?
+type: approval
+```
 
 Plan-Dateien verwenden einen stabilen Statusmarker im Kopfbereich. Der Marker darf wahlweise auf Deutsch oder auf Englisch geschrieben werden:
 

@@ -6,7 +6,9 @@ type: utility
 
 # SF Version
 
-{{INCLUDE:task-tracking}}
+```include
+task-tracking
+```
 
 Gib die folgende Plugin-Version aus:
 

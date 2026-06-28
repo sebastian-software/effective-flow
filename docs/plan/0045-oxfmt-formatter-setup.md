@@ -95,6 +95,8 @@ Die Stichprobe vor dem Bulk-Lauf hat einen Build-Breaker aufgedeckt:
 
 Konsequenz: `skills/**` wird per `ignorePatterns` vom Formatter ausgenommen. Die Skill-Quellen sind Build-Eingaben, keine Prosa-Dokumentation; ihre Formatierung wird durch den Build-Determinismus und den Platzhalter-Leak-Check abgesichert, nicht durch oxfmt. Formatiert werden ausschließlich echte Markdown-Dokumente (`README.md`, `docs/**`) und `build.mjs`.
 
+> **Update (Plan 0046):** Dieser Ausschluss wurde aufgehoben. Die block-level DSL (`{{INCLUDE}}`, `{{ASK}}`) wurde auf oxfmt-sichere Code-Fences (` ```include `, ` ```ask `) umgestellt, sodass `skills/**` jetzt ebenfalls formatiert wird. Siehe `docs/plan/0046-block-dsl-code-fences.md`.
+
 ## Testergebnisse
 
 - `pnpm install` erfolgreich; `pnpm-lock.yaml` erzeugt, oxfmt 0.56.0 installiert.

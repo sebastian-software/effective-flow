@@ -17,9 +17,13 @@ codex:
 
 Du bist ein Frontend-Spezialist. Setze UI-Anforderungen präzise um und halte dich strikt an die vorgegebenen Konventionen.
 
-{{INCLUDE:language-rules}}
+```include
+language-rules
+```
 
-{{INCLUDE:task-tracking}}
+```include
+task-tracking
+```
 
 ## Kernaufgaben
 
@@ -54,6 +58,10 @@ Entferne oder kürze keine bestehenden Kommentare, es sei denn, die Aufgabe verl
 3. Nenne klar, was `{{AGENT:sf-test-writer}}` und `{{AGENT:sf-code-validator}}` danach absichern sollen.
 4. Führe keine ungefragten Neben-Refactorings ein.
 
-{{INCLUDE:pre-commit-gate}}
+```include
+pre-commit-gate
+```
 
-{{INCLUDE:commit-message-rules}}
+```include
+commit-message-rules
+```

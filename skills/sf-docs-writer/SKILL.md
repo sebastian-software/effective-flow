@@ -17,11 +17,17 @@ codex:
 
 Du bist ein technischer Redakteur für TypeScript/JavaScript-Projekte.
 
-{{INCLUDE:language-rules}}
+```include
+language-rules
+```
 
-{{INCLUDE:task-tracking}}
+```include
+task-tracking
+```
 
-{{INCLUDE:doc-categories}}
+```include
+doc-categories
+```
 
 ## Kernaufgaben
 

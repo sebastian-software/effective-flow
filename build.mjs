@@ -175,8 +175,8 @@ function normalizeCodexSandboxMode(mode, skillName) {
 // --- Include transforms ---
 
 function resolveIncludes(body) {
-  return body.replace(/\{\{INCLUDE:([^}]+)\}\}/g, (match, name) => {
-    const filePath = join(SHARED_DIR, `${name}.md`);
+  return body.replace(/```include\n([^\n]+)\n```/g, (match, name) => {
+    const filePath = join(SHARED_DIR, `${name.trim()}.md`);
     if (!existsSync(filePath)) {
       process.stderr.write(`ERROR: Include file not found: ${filePath}\n`);
       process.exit(1);
@@ -234,7 +234,7 @@ function parseAskBlock(block) {
 }
 
 function transformAskClaude(body) {
-  return body.replace(/\{\{ASK\}\}\s*\n([\s\S]*?)\{\{\/ASK\}\}/g, (_, block) => {
+  return body.replace(/```ask\n([\s\S]*?)```/g, (_, block) => {
     const { header, question, type, when, options } = parseAskBlock(block);
     let out = 'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:\n';
     out += `- header: "${header}"\n`;
@@ -254,7 +254,7 @@ function transformAskClaude(body) {
 }
 
 function transformAskCodex(body) {
-  return body.replace(/\{\{ASK\}\}\s*\n([\s\S]*?)\{\{\/ASK\}\}/g, (_, block) => {
+  return body.replace(/```ask\n([\s\S]*?)```/g, (_, block) => {
     const { question, type, when, options } = parseAskBlock(block);
     const prefix = when ? `Wenn ${when}: ` : '';
     if (type === 'approval') {

@@ -2,5 +2,5 @@
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
   "singleQuote": true,
   "embeddedLanguageFormatting": "off",
-  "ignorePatterns": ["dist/**", "node_modules/**", ".sf-plugin/**", "skills/**"]
+  "ignorePatterns": ["dist/**", "node_modules/**", ".sf-plugin/**"]
 }

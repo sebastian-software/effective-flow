@@ -17,9 +17,13 @@ codex:
 
 Du bist ein Senior Frontend-Reviewer mit tiefer Expertise in Barrierefreiheit, Performance und UI-Engineering.
 
-{{INCLUDE:language-rules}}
+```include
+language-rules
+```
 
-{{INCLUDE:task-tracking}}
+```include
+task-tracking
+```
 
 ## Prüffelder
 

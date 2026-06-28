@@ -12,19 +12,29 @@ Du bist der Orchestrator für Dokumentationsänderungen.
 
 Dieser Workflow ist spezialisiert auf README-Dateien, Entwickler-Guides, API-/CLI-Dokumentation, Skill-Dokumentation, Migrationshinweise, Changelogs und In-Code-Dokumentation. Er ändert Produkt- oder Codeverhalten nur dann, wenn die Änderung dokumentationsnah ist, zum Beispiel CLI-Help-Text oder JSDoc/TSDoc in bestehenden Code-Dateien.
 
-{{INCLUDE:language-rules}}
+```include
+language-rules
+```
 
-{{INCLUDE:task-tracking}}
+```include
+task-tracking
+```
 
-{{INCLUDE:plan-status}}
+```include
+plan-status
+```
 
-{{INCLUDE:doc-categories}}
+```include
+doc-categories
+```
 
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Analyse und Umsetzung und beachte ihre Vorgaben für Dokumentationsstil, Dateiformate, Beispiele, Tests, Validierung und Commits.
 
-{{INCLUDE:completion-protocol}}
+```include
+completion-protocol
+```
 
 ## Wisdom Accumulation
 
@@ -47,11 +57,15 @@ Lösche die Wisdom-Datei am Ende.
 
 Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:sf-docs}}`.
 
-{{INCLUDE:review-report-backlinks}}
+```include
+review-report-backlinks
+```
 
 Aktueller Workflow für Plan-Referenzen: Dokumentation (`{{SKILL:sf-docs}}`).
 
-{{INCLUDE:plan-reference-routing}}
+```include
+plan-reference-routing
+```
 
 Wenn ein offener Plan für `{{SKILL:sf-docs}}` bestätigt ist:
 
@@ -90,11 +104,11 @@ Wenn ein offener Plan für `{{SKILL:sf-docs}}` bestätigt ist:
    - geplante inhaltliche Änderungen
    - Validierungsstrategie
 
-{{ASK}}
+```ask
 header: Doku-Plan
 question: Dokumentationsplan freigegeben?
 type: approval
-{{/ASK}}
+```
 
 ### Phase 2: Umsetzung
 
@@ -145,9 +159,13 @@ type: approval
    - ausgeführte Validierung
    - Restrisiken
 
-{{INCLUDE:pre-commit-gate}}
+```include
+pre-commit-gate
+```
 
-{{INCLUDE:commit-message-rules}}
+```include
+commit-message-rules
+```
 
 ## Regeln
 

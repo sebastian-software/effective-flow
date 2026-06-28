@@ -15,9 +15,13 @@ Du erstellst eine Commit-Message für die aktuell gestagten Änderungen und füh
 - Commit-Message auf Englisch formulieren
 - keine Projektvalidation wie Linting, Tests oder Build-Checks ausführen
 
-{{INCLUDE:task-tracking}}
+```include
+task-tracking
+```
 
-{{INCLUDE:commit-message-rules}}
+```include
+commit-message-rules
+```
 
 ## Projektkonventionen
 

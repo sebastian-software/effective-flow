@@ -12,9 +12,13 @@ Du bist der Orchestrator für umfassende Code-Reviews.
 
 Dieser Workflow analysiert Code-Qualität und erstellt einen strukturierten Bericht, dessen Findings direkt als Input für `{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:sf-build}}` und `{{SKILL:sf-docs}}` dienen können.
 
-{{INCLUDE:language-rules}}
+```include
+language-rules
+```
 
-{{INCLUDE:task-tracking}}
+```include
+task-tracking
+```
 
 ## Aufgabenverfolgung im Detail
 
@@ -136,12 +140,12 @@ Unterstützte Review-Konfiguration:
 
 Defaults:
 
-| Schlüssel | Default | Werte |
-|---|---|---|
-| `review.profile` | `focused` | `full`, `focused`, `fast` |
-| `review.autoConfirmScope` | `false` | Boolean |
+| Schlüssel                      | Default    | Werte                         |
+| ------------------------------ | ---------- | ----------------------------- |
+| `review.profile`               | `focused`  | `full`, `focused`, `fast`     |
+| `review.autoConfirmScope`      | `false`    | Boolean                       |
 | `review.designDecisionSources` | `standard` | `full`, `standard`, `minimal` |
-| `review.validation` | `full` | `full`, `quick`, `off` |
+| `review.validation`            | `full`     | `full`, `quick`, `off`        |
 
 Profil-Bedeutung:
 
@@ -151,11 +155,11 @@ Profil-Bedeutung:
 
 Wenn `review.profile` gesetzt ist und einzelne Detailwerte fehlen, leite fehlende Detailwerte aus dem Profil ab:
 
-| Profil | DD-Quellen | Validierung |
-|---|---|---|
-| `full` | `full` | `full` |
-| `focused` | `standard` | `full` |
-| `fast` | `minimal` | `off` |
+| Profil    | DD-Quellen | Validierung |
+| --------- | ---------- | ----------- |
+| `full`    | `full`     | `full`      |
+| `focused` | `standard` | `full`      |
+| `fast`    | `minimal`  | `off`       |
 
 Explizit gesetzte Detailwerte haben Vorrang vor Profil-Ableitungen.
 
@@ -177,11 +181,11 @@ Persistente Cache-Daten liegen ausschließlich in `.sf-plugin/cache.json`, nicht
 
 `sf-review` darf diese Cache-Bereiche verwenden:
 
-| Bereich | Inhalt | Invalidierung |
-|---|---|---|
-| `designDecisions` | Extrahierte Designentscheidungen pro Quelle | Hash oder mtime der Quelldateien, Cache-Schema-Version |
-| `scopeIndex` | Dateiliste, Project-Type-Buckets und Reviewer-Split für Whole-Code-Reviews | Git-HEAD, Dirty-State und relevante Dateiänderungen |
-| `validatorScripts` | Erkannte Check-Skripte und zuletzt brauchbares Validierungsprofil | Änderung an Package-/Build-Konfigurationsdateien |
+| Bereich            | Inhalt                                                                     | Invalidierung                                          |
+| ------------------ | -------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `designDecisions`  | Extrahierte Designentscheidungen pro Quelle                                | Hash oder mtime der Quelldateien, Cache-Schema-Version |
+| `scopeIndex`       | Dateiliste, Project-Type-Buckets und Reviewer-Split für Whole-Code-Reviews | Git-HEAD, Dirty-State und relevante Dateiänderungen    |
+| `validatorScripts` | Erkannte Check-Skripte und zuletzt brauchbares Validierungsprofil          | Änderung an Package-/Build-Konfigurationsdateien       |
 
 Regeln:
 
@@ -235,12 +239,12 @@ Lösche die Datei am Ende des Workflows, vor `ERLEDIGT`.
 7. Hole User-Bestätigung nur ein, wenn Scope oder Review-Ziel unklar ist.
 8. Überspringe die Scope-Bestätigung, wenn der User den Scope explizit angegeben hat oder `review.autoConfirmScope: true` gesetzt ist und die Scope-Ermittlung eindeutig ist. Frage trotzdem, wenn uncommitted Changes vorhanden sind und der gewünschte Scope nicht eindeutig ist.
 
-{{ASK}}
+```ask
 when: nach den Regeln oben eine Scope-Bestätigung nötig ist
 header: Review-Scope
 question: Review-Scope bestätigt?
 type: approval
-{{/ASK}}
+```
 
 ### Phase 2: Parallele Datensammlung
 

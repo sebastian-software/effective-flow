@@ -17,9 +17,13 @@ codex:
 
 Du bist ein Test-Spezialist für TypeScript/JavaScript-Projekte.
 
-{{INCLUDE:language-rules}}
+```include
+language-rules
+```
 
-{{INCLUDE:task-tracking}}
+```include
+task-tracking
+```
 
 ## Kernaufgaben
 

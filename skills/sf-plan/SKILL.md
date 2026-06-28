@@ -12,15 +12,25 @@ Du bist der Orchestrator für reine Implementierungsplanung.
 
 Dieser Skill erstellt einen umsetzbaren, validierten Implementierungsplan in `docs/plan/`. Er empfiehlt den passenden nachfolgenden Workflow, erzeugt **keinen Code**, startet **keine Implementierung** und ändert **keine bestehenden Implementierungsdateien**.
 
-{{INCLUDE:language-rules}}
+```include
+language-rules
+```
 
-{{INCLUDE:task-tracking}}
+```include
+task-tracking
+```
 
-{{INCLUDE:plan-status}}
+```include
+plan-status
+```
 
-{{INCLUDE:plan-numbering}}
+```include
+plan-numbering
+```
 
-{{INCLUDE:doc-categories}}
+```include
+doc-categories
+```
 
 ## Harte Abgrenzung
 
@@ -129,7 +139,7 @@ Bei eindeutigem Detection-Ergebnis:
 
 Nur wenn weder Schritt 1 noch Schritt 4 die Sprache bestimmen konnten:
 
-{{ASK}}
+```ask
 header: Marker
 question: In welcher Sprache soll der Statusmarker im Plan-Kopf stehen?
 options:
@@ -137,7 +147,7 @@ options:
     description: Statuszeile **Planungsstatus:** Nicht umgesetzt
   - label: Englisch
     description: Statuszeile **Plan status:** Not implemented
-{{/ASK}}
+```
 
 Nenne in der Begleitmeldung kurz, warum gefragt wird (Mischbestand, kein erkennbarer Marker oder Config nicht gesetzt).
 
@@ -145,7 +155,7 @@ Nenne in der Begleitmeldung kurz, warum gefragt wird (Mischbestand, kein erkennb
 
 Nur wenn Schritt 5 ausgeführt wurde:
 
-{{ASK}}
+```ask
 header: Persistenz
 question: Soll die gewählte Markersprache in .sf-plugin/config.json als plan.markerLanguage gespeichert werden?
 options:
@@ -153,7 +163,7 @@ options:
     description: Wahl persistieren — Default, empfohlen, vermeidet künftige Rückfragen
   - label: Nein
     description: Wahl nur für diesen Plan verwenden
-{{/ASK}}
+```
 
 Bei `Ja`:
 
@@ -302,16 +312,16 @@ Bereinige den Plan, bevor du ihn als abgeschlossen meldest.
 
 Bewerte den Plan mit einer Scorecard:
 
-| Kriterium | Ziel |
-|---|---|
-| Clarity | konkrete Datei-Referenzen und klare Schritte, Ziel >= 80% |
-| Verification | messbare Akzeptanzkriterien pro Anforderung |
-| Context | verifizierter Code vs. Annahmen, Ziel <= 10% Raten |
-| Big Picture | Zweck und Workflow explizit beschrieben |
-| No-Code-Grenze | keine Änderungen außerhalb `docs/plan/` |
-| Code-Sparsamkeit | kein Code im Plan, außer ein minimales Fragment ist die kürzeste klare Erklärung |
-| Workflow-Empfehlung | Feature, Bugfix, Refactoring oder Dokumentation ist begründet und zum Scope passend |
-| Doku-Ziel | bei Doku-Plänen sind `**Doku-Kategorie:**` und `**Ziel-Pfad:**` gesetzt, gültig und konsistent zueinander |
+| Kriterium           | Ziel                                                                                                      |
+| ------------------- | --------------------------------------------------------------------------------------------------------- |
+| Clarity             | konkrete Datei-Referenzen und klare Schritte, Ziel >= 80%                                                 |
+| Verification        | messbare Akzeptanzkriterien pro Anforderung                                                               |
+| Context             | verifizierter Code vs. Annahmen, Ziel <= 10% Raten                                                        |
+| Big Picture         | Zweck und Workflow explizit beschrieben                                                                   |
+| No-Code-Grenze      | keine Änderungen außerhalb `docs/plan/`                                                                   |
+| Code-Sparsamkeit    | kein Code im Plan, außer ein minimales Fragment ist die kürzeste klare Erklärung                          |
+| Workflow-Empfehlung | Feature, Bugfix, Refactoring oder Dokumentation ist begründet und zum Scope passend                       |
+| Doku-Ziel           | bei Doku-Plänen sind `**Doku-Kategorie:**` und `**Ziel-Pfad:**` gesetzt, gültig und konsistent zueinander |
 
 Wenn ein Kriterium nicht erfüllt ist, überarbeite den Plan oder frage den User nach der fehlenden Information.
 

@@ -12,17 +12,25 @@ Du bist der Orchestrator für den Bugfix-Workflow.
 
 Dieser Workflow ist optimiert für das Finden und Beheben von Fehlern, ohne unnötige Planungs- oder Dokumentationsphasen.
 
-{{INCLUDE:language-rules}}
+```include
+language-rules
+```
 
-{{INCLUDE:task-tracking}}
+```include
+task-tracking
+```
 
-{{INCLUDE:plan-status}}
+```include
+plan-status
+```
 
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Investigation und Fix und beachte ihre Vorgaben für Analyse, Implementierung, Tests, Validierung und Commits.
 
-{{INCLUDE:completion-protocol}}
+```include
+completion-protocol
+```
 
 ## Wisdom Accumulation
 
@@ -49,13 +57,19 @@ Wie bei `{{SKILL:sf-build}}`.
 
 Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:sf-fix}}`.
 
-{{INCLUDE:review-report-backlinks}}
+```include
+review-report-backlinks
+```
 
-{{INCLUDE:unresolved-review-report}}
+```include
+unresolved-review-report
+```
 
 Aktueller Workflow für Plan-Referenzen: Bugfix (`{{SKILL:sf-fix}}`).
 
-{{INCLUDE:plan-reference-routing}}
+```include
+plan-reference-routing
+```
 
 Wenn ein offener Plan für `{{SKILL:sf-fix}}` bestätigt ist:
 
@@ -98,11 +112,11 @@ Wenn ein offener Plan für `{{SKILL:sf-fix}}` bestätigt ist:
    - Validierungs-Scorecard
 5. Hole Freigabe ein, wenn Ursache oder Fix-Strategie nicht eindeutig sind.
 
-{{ASK}}
+```ask
 header: Fix-Strategie
 question: Diagnose und Fix-Strategie freigegeben?
 type: approval
-{{/ASK}}
+```
 
 ### Phase 3: Fix
 
@@ -154,9 +168,13 @@ Wenn dabei offene Findings oder Restrisiken entstehen, dokumentiere sie struktur
    - neu oder angepasste Tests
    - Restrisiken
 
-{{INCLUDE:pre-commit-gate}}
+```include
+pre-commit-gate
+```
 
-{{INCLUDE:commit-message-rules}}
+```include
+commit-message-rules
+```
 
 ## Regeln
 

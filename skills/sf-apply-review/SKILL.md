@@ -12,11 +12,17 @@ Du bist der Orchestrator für die automatisierte Umsetzung von Review-Report-Fin
 
 Dieser Workflow liest eine bestehende Review-Report-Datei aus `.sf-plugin/review/` ein, wertet die Entwickler-Anmerkungen pro Finding aus und delegiert die Umsetzung an die passenden Workflows. Findings, die bewusst nicht umgesetzt werden sollen, werden als ADRs dokumentiert.
 
-{{INCLUDE:language-rules}}
+```include
+language-rules
+```
 
-{{INCLUDE:task-tracking}}
+```include
+task-tracking
+```
 
-{{INCLUDE:commit-message-rules}}
+```include
+commit-message-rules
+```
 
 ## Aufgabenverfolgung im Detail
 
@@ -149,8 +155,8 @@ Persistente Cache-Daten liegen ausschließlich in `.sf-plugin/cache.json`, nicht
 
 `sf-apply-review` darf diesen Cache-Bereich verwenden:
 
-| Bereich | Inhalt | Invalidierung |
-|---|---|---|
+| Bereich               | Inhalt                                                                                           | Invalidierung                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
 | `applyReviewAnalysis` | Vorabanalyse-Ergebnisse pro Report-Finding für unterbrochene oder wiederholte Apply-Review-Läufe | Report-Datei-Hash, Finding-ID, relevante Code-Datei-Hashes |
 
 Regeln:
@@ -214,7 +220,7 @@ Wenn `applyReview.defaultCommitStrategy` gültig gesetzt ist, überspringe die A
 
 Melde kurz, dass die Commit-Strategie aus `.sf-plugin/config.json` übernommen wurde. Wenn kein gültiger Wert gesetzt ist, frage wie bisher:
 
-{{ASK}}
+```ask
 when: kein gültiger Wert für `applyReview.defaultCommitStrategy` gesetzt ist
 header: Commits
 question: Welche Commit-Strategie soll für die Findings verwendet werden?
@@ -225,7 +231,7 @@ options:
     description: Jedes Finding wird nach Umsetzung einzeln committet
   - label: Keine Commits
     description: Alle Änderungen werden ohne automatische Commits durchgeführt
-{{/ASK}}
+```
 
 Halte die Antwort fest und gib sie an jeden delegierten Skill als Anweisung weiter:
 
@@ -425,6 +431,7 @@ Diese Phase besteht aus drei Teilschritten. Ziel: Maximierung der Parallelität,
 Starte für **jedes umsetzbare Finding** einen Vorabanalyse-Sub-Agenten parallel. Diese Sub-Agenten implementieren nichts und ändern keine Dateien — sie analysieren nur.
 
 Jeder Vorabanalyse-Sub-Agent erhält:
+
 - die Finding-Details aus dem Report (ID, Problem, Empfehlung, Datei, Aktion)
 - die Entwickler-Anmerkung (falls vorhanden)
 - den Auftrag, den Code zu untersuchen und ein strukturiertes Analyse-Ergebnis zu liefern:
@@ -455,15 +462,17 @@ Für jede Aktionsgruppe (`{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:s
 5. Ergebnis pro Aktionsgruppe: Liste von Sub-Gruppen, jede mit 1-N Findings.
 
 Edge Cases:
+
 - Sind alle Findings einer Aktionsgruppe Konfidenz `Niedrig`, entsteht eine einzelne Safety-Sub-Gruppe mit allen Findings; der Union-Find-Schritt entfällt.
 - Hat eine Aktionsgruppe genau ein Finding, ist das Ergebnis immer eine einzelne Sub-Gruppe (mit oder ohne Union-Find).
 - Hat eine Aktionsgruppe keine Findings, entsteht keine Sub-Gruppe — der entsprechende Stream in Phase 4.3 entfällt.
 
 Beispiel: Aktionsgruppe `{{SKILL:sf-fix}}` mit fünf Findings:
+
 - F1, F2 betreffen `src/auth.ts` → Sub-Gruppe A (sequenziell)
 - F3 betrifft `src/billing.ts` → Sub-Gruppe B (parallel zu A)
 - F4, F5 betreffen `src/ui.tsx` → Sub-Gruppe C (parallel zu A und B, intern sequenziell)
-Damit drei parallele Streams in dieser Aktionsgruppe statt einem.
+  Damit drei parallele Streams in dieser Aktionsgruppe statt einem.
 
 #### Phase 4.3: Parallele Delegation
 
@@ -561,7 +570,7 @@ Während der Delegation in Phase 4 können die aufgerufenen Sub-Skills oder Pre-
 
    Stash-Frage (für die Klassen B, C und D):
 
-{{ASK}}
+```ask
 header: Stash
 question: Wie soll dieser Stash behandelt werden?
 options:
@@ -571,7 +580,7 @@ options:
     description: `git stash drop` ausführen, Inhalt geht verloren
   - label: Behalten
     description: Stash unverändert lassen
-{{/ASK}}
+```
 
 7. Führe die User-Entscheidung aus:
    - **Anwenden und löschen:** `git stash pop stash@{N}`. Bei Konflikten: User informieren, manuelle Auflösung anbieten, Stash nicht automatisch droppen, bis der Konflikt aufgelöst ist.

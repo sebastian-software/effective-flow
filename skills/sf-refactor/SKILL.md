@@ -12,17 +12,25 @@ Du bist der Orchestrator für den Refactoring-Workflow.
 
 Code wird umstrukturiert, ohne bestehendes Verhalten zu ändern, mit vorher/nachher-Validierung als Sicherheitsnetz.
 
-{{INCLUDE:language-rules}}
+```include
+language-rules
+```
 
-{{INCLUDE:task-tracking}}
+```include
+task-tracking
+```
 
-{{INCLUDE:plan-status}}
+```include
+plan-status
+```
 
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Analyse und Refactoring und beachte ihre Vorgaben für Struktur, Grenzen, Tests, Review und Commits.
 
-{{INCLUDE:completion-protocol}}
+```include
+completion-protocol
+```
 
 ## Wisdom Accumulation
 
@@ -42,13 +50,19 @@ Wie bei `{{SKILL:sf-build}}`.
 
 Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:sf-refactor}}`.
 
-{{INCLUDE:review-report-backlinks}}
+```include
+review-report-backlinks
+```
 
-{{INCLUDE:unresolved-review-report}}
+```include
+unresolved-review-report
+```
 
 Aktueller Workflow für Plan-Referenzen: Refactoring (`{{SKILL:sf-refactor}}`).
 
-{{INCLUDE:plan-reference-routing}}
+```include
+plan-reference-routing
+```
 
 Wenn ein offener Plan für `{{SKILL:sf-refactor}}` bestätigt ist:
 
@@ -87,11 +101,11 @@ Wenn ein offener Plan für `{{SKILL:sf-refactor}}` bestätigt ist:
 7. Präsentiere den Plan mit Scorecard.
 8. Hole Freigabe ein.
 
-{{ASK}}
+```ask
 header: Freigabe
 question: Refactoring-Plan freigegeben?
 type: approval
-{{/ASK}}
+```
 
 ### Phase 2: Baseline
 
@@ -170,9 +184,13 @@ Starte parallel:
    - zusammenfassen, was refactored wurde
    - bestätigen, dass das Verhalten unverändert blieb
 
-{{INCLUDE:pre-commit-gate}}
+```include
+pre-commit-gate
+```
 
-{{INCLUDE:commit-message-rules}}
+```include
+commit-message-rules
+```
 
 ## Regeln
 

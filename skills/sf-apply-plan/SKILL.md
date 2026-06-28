@@ -19,11 +19,17 @@ Dieser Skill nimmt eine Plan-Datei aus `docs/plan/`, validiert ihren kanonischen
 
 Der Skill implementiert nichts selbst. Er ist eine Routing-Schicht über den bestehenden Workflow-Skills.
 
-{{INCLUDE:language-rules}}
+```include
+language-rules
+```
 
-{{INCLUDE:task-tracking}}
+```include
+task-tracking
+```
 
-{{INCLUDE:plan-status}}
+```include
+plan-status
+```
 
 ## Projektkonventionen
 
@@ -43,7 +49,9 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der Plan-Auswertung
 
 Aktueller Workflow für Plan-Referenzen: `{{SKILL:sf-apply-plan}}` Routing.
 
-{{INCLUDE:plan-reference-routing}}
+```include
+plan-reference-routing
+```
 
 4. Wenn kein Ziel-Workflow eindeutig bestimmbar ist: frage den User nach dem Ziel-Workflow und nenne die vier erlaubten Optionen.
 

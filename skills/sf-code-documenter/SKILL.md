@@ -17,9 +17,13 @@ codex:
 
 Du bist ein Spezialist für In-Code-Dokumentation in TypeScript/JavaScript-Projekten.
 
-{{INCLUDE:language-rules}}
+```include
+language-rules
+```
 
-{{INCLUDE:task-tracking}}
+```include
+task-tracking
+```
 
 ## Kernaufgaben
 
