@@ -35,19 +35,19 @@ Das ist eine neue Verhaltensänderung in der Plan-Erstellung — `sf-plan` bekom
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/sf-plan/SKILL.md` | Phase 3 umstellen: Detection-Schritt, Config-Konsultation als Fallback, `AskUserQuestion` als Letztinstanz, Folgeschritt zur Persistenz, Migration bei eindeutiger Detection. |
-| `README.md` | Tabelle der `.sf-plugin/`-Dateien um den neuen Config-Schlüssel `plan.markerLanguage` ergänzen; Default-Config-Beispiel um neue Sektion erweitern. |
-| `docs/plan/0042-plan-status-marker-language-detection.md` | Diese Plan-Datei. |
+| Datei                                                     | Beschreibung                                                                                                                                                                  |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skills/sf-plan/SKILL.md`                                 | Phase 3 umstellen: Detection-Schritt, Config-Konsultation als Fallback, `AskUserQuestion` als Letztinstanz, Folgeschritt zur Persistenz, Migration bei eindeutiger Detection. |
+| `README.md`                                               | Tabelle der `.sf-plugin/`-Dateien um den neuen Config-Schlüssel `plan.markerLanguage` ergänzen; Default-Config-Beispiel um neue Sektion erweitern.                            |
+| `docs/plan/0042-plan-status-marker-language-detection.md` | Diese Plan-Datei.                                                                                                                                                             |
 
 Nicht angefasst (Designentscheidung):
 
-| Datei | Grund |
-|---|---|
-| `skills/sf-build/SKILL.md` | Phase-7-Fallback „keine Plan-Datei vorhanden" hat keinen Detection-Pool und greift nicht auf die Plan-Erstellung von `sf-plan` zurück. Deutscher Default bleibt korrekt. |
-| `skills/_shared/plan-status.md`, `plan-reference-routing.md` | Konventionsdokumente; die Detection- und Config-Logik ist `sf-plan`-spezifisch und gehört nicht in die geteilte Konvention. |
-| `skills/sf-fix/SKILL.md`, `skills/sf-refactor/SKILL.md`, `skills/sf-docs/SKILL.md`, `skills/sf-apply-plan/SKILL.md`, `skills/sf-open-plans/SKILL.md` | Erstellen keine neuen Plan-Dateien; Markersprache spielt dort nur lesend eine Rolle, und das funktioniert seit 0041 bereits beidsprachig. |
+| Datei                                                                                                                                                | Grund                                                                                                                                                                    |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `skills/sf-build/SKILL.md`                                                                                                                           | Phase-7-Fallback „keine Plan-Datei vorhanden" hat keinen Detection-Pool und greift nicht auf die Plan-Erstellung von `sf-plan` zurück. Deutscher Default bleibt korrekt. |
+| `skills/_shared/plan-status.md`, `plan-reference-routing.md`                                                                                         | Konventionsdokumente; die Detection- und Config-Logik ist `sf-plan`-spezifisch und gehört nicht in die geteilte Konvention.                                              |
+| `skills/sf-fix/SKILL.md`, `skills/sf-refactor/SKILL.md`, `skills/sf-docs/SKILL.md`, `skills/sf-apply-plan/SKILL.md`, `skills/sf-open-plans/SKILL.md` | Erstellen keine neuen Plan-Dateien; Markersprache spielt dort nur lesend eine Rolle, und das funktioniert seit 0041 bereits beidsprachig.                                |
 
 ## Implementierungsdetails
 
@@ -138,13 +138,13 @@ Nicht angefasst (Designentscheidung):
 
 ## Testergebnisse
 
-| Prüfung | Status |
-|---|---|
-| `node build.mjs` (Codex + Claude) | bestanden |
+| Prüfung                                                                      | Status    |
+| ---------------------------------------------------------------------------- | --------- |
+| `node build.mjs` (Codex + Claude)                                            | bestanden |
 | Build-Output enthält Schritte 1–6 und beide ASK-Blöcke (Marker + Persistenz) | bestanden |
-| Stichprobe: „überspringe Schritte 2 bis 6" propagiert in `dist/` | bestanden |
-| Stichprobe: Schritt 3 fordert syntaktisch valides JSON | bestanden |
-| README-Tabelle, Erklärtext und Default-Beispiel ergänzt | bestanden |
+| Stichprobe: „überspringe Schritte 2 bis 6" propagiert in `dist/`             | bestanden |
+| Stichprobe: Schritt 3 fordert syntaktisch valides JSON                       | bestanden |
+| README-Tabelle, Erklärtext und Default-Beispiel ergänzt                      | bestanden |
 
 ## Review-Findings
 
@@ -153,11 +153,11 @@ Nicht angefasst (Designentscheidung):
 
 ### Zusammenfassung
 
-| Status | Anzahl |
-|---|---:|
-| Behoben | 6 |
-| Offen / Nicht umgesetzt | 1 |
-| Positivbefunde | 3 |
+| Status                  | Anzahl |
+| ----------------------- | -----: |
+| Behoben                 |      6 |
+| Offen / Nicht umgesetzt |      1 |
+| Positivbefunde          |      3 |
 
 Nicht umgesetzt: F7 (Plan-Datei nutzt Claude-Notation `/build` statt Platzhalter) — bewusste Entscheidung, da Plan-Dateien Anwender-Output sind und konsistent mit Plan 0041 sowie der bisherigen Plan-Datei-Konvention bleiben sollen. Kein ADR notwendig, weil rein dokumentarische Wahl ohne Verhalten.
 
@@ -167,15 +167,15 @@ Nicht umgesetzt: F7 (Plan-Datei nutzt Claude-Notation `/build` statt Platzhalter
 
 ### Zusammenfassung
 
-| Bereich | Kritisch | Wichtig | Hinweis |
-|---|---:|---:|---:|
-| Architektur | 0 | 0 | 0 |
-| Security | 0 | 0 | 0 |
-| Datenschutz | 0 | 0 | 0 |
-| Fehlerfälle | 0 | 0 | 1 |
-| Testbarkeit | 0 | 0 | 0 |
-| Scope | 0 | 0 | 0 |
-| Wartbarkeit | 0 | 0 | 0 |
+| Bereich     | Kritisch | Wichtig | Hinweis |
+| ----------- | -------: | ------: | ------: |
+| Architektur |        0 |       0 |       0 |
+| Security    |        0 |       0 |       0 |
+| Datenschutz |        0 |       0 |       0 |
+| Fehlerfälle |        0 |       0 |       1 |
+| Testbarkeit |        0 |       0 |       0 |
+| Scope       |        0 |       0 |       0 |
+| Wartbarkeit |        0 |       0 |       0 |
 
 ### Befunde
 

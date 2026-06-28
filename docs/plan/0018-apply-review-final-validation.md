@@ -12,8 +12,8 @@ Nach Abschluss aller Delegations-Phasen in `/apply-review` soll eine finale Code
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
+| Datei                             | Beschreibung                                           |
+| --------------------------------- | ------------------------------------------------------ |
 | `skills/sf-apply-review/SKILL.md` | Neue Phase 6 eingefügt, bisherige Phase 6 wird Phase 7 |
 
 ## Implementierungsdetails

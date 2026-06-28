@@ -16,14 +16,14 @@
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/sf-plan/SKILL.md` | Workflow-Empfehlung klassifizieren und in neue Plan-Dateien schreiben |
-| `skills/sf-build/SKILL.md` | Plan-Referenzen anhand der Empfehlung einordnen |
-| `skills/sf-fix/SKILL.md` | Offene Plan-Dateien als Bugfix-Grundlage erlauben |
-| `skills/sf-refactor/SKILL.md` | Offene Plan-Dateien als Refactoring-Grundlage erlauben |
-| `README.md` | Plan-Empfehlung und nutzende Skills dokumentieren |
-| `docs/plan/0035-plan-workflow-recommendation.md` | Audit-Trail dieser Änderung |
+| Datei                                            | Beschreibung                                                          |
+| ------------------------------------------------ | --------------------------------------------------------------------- |
+| `skills/sf-plan/SKILL.md`                        | Workflow-Empfehlung klassifizieren und in neue Plan-Dateien schreiben |
+| `skills/sf-build/SKILL.md`                       | Plan-Referenzen anhand der Empfehlung einordnen                       |
+| `skills/sf-fix/SKILL.md`                         | Offene Plan-Dateien als Bugfix-Grundlage erlauben                     |
+| `skills/sf-refactor/SKILL.md`                    | Offene Plan-Dateien als Refactoring-Grundlage erlauben                |
+| `README.md`                                      | Plan-Empfehlung und nutzende Skills dokumentieren                     |
+| `docs/plan/0035-plan-workflow-recommendation.md` | Audit-Trail dieser Änderung                                           |
 
 ## Implementierungsdetails
 
@@ -109,16 +109,16 @@ Nicht relevant.
 ### Zusammenfassung
 
 | Schweregrad | Anzahl | Behoben | Offen |
-|---|---:|---:|---:|
-| Kritisch | 0 | 0 | 0 |
-| Wichtig | 0 | 0 | 0 |
-| Hinweis | 0 | 0 | 0 |
+| ----------- | -----: | ------: | ----: |
+| Kritisch    |      0 |       0 |     0 |
+| Wichtig     |      0 |       0 |     0 |
+| Hinweis     |      0 |       0 |     0 |
 
 | Komplexität | Anzahl |
-|---|---:|
-| Leicht | 0 |
-| Mittel | 0 |
-| Schwer | 0 |
+| ----------- | -----: |
+| Leicht      |      0 |
+| Mittel      |      0 |
+| Schwer      |      0 |
 
 ### Findings
 
@@ -130,15 +130,15 @@ Keine Findings gefunden.
 
 ### Zusammenfassung
 
-| Bereich | Kritisch | Wichtig | Hinweis |
-|---|---:|---:|---:|
-| Architektur | 0 | 0 | 0 |
-| Security | 0 | 0 | 0 |
-| Datenschutz | 0 | 0 | 0 |
-| Fehlerfälle | 0 | 0 | 0 |
-| Testbarkeit | 0 | 0 | 0 |
-| Scope | 0 | 0 | 0 |
-| Wartbarkeit | 0 | 0 | 0 |
+| Bereich     | Kritisch | Wichtig | Hinweis |
+| ----------- | -------: | ------: | ------: |
+| Architektur |        0 |       0 |       0 |
+| Security    |        0 |       0 |       0 |
+| Datenschutz |        0 |       0 |       0 |
+| Fehlerfälle |        0 |       0 |       0 |
+| Testbarkeit |        0 |       0 |       0 |
+| Scope       |        0 |       0 |       0 |
+| Wartbarkeit |        0 |       0 |       0 |
 
 ### Befunde
 

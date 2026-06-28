@@ -18,13 +18,13 @@ Offene oder bewusst nicht umgesetzte Review-Findings aus `sf-build`, `sf-refacto
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/_shared/unresolved-review-report.md` | Gemeinsame Regeln für externe Reports offener Workflow-Findings |
-| `skills/sf-build/SKILL.md` | Offene Findings in externen Report auslagern, Plan-Datei nur mit Zusammenfassung/Verweis aktualisieren |
-| `skills/sf-refactor/SKILL.md` | Offene Review-Findings als externe Reports schreiben |
-| `skills/sf-fix/SKILL.md` | Offene Verifikations-/Restrisiko-Findings als externe Reports schreiben |
-| `docs/plan/0038-external-workflow-finding-reports.md` | Plan und Abschlussdokumentation |
+| Datei                                                 | Beschreibung                                                                                           |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `skills/_shared/unresolved-review-report.md`          | Gemeinsame Regeln für externe Reports offener Workflow-Findings                                        |
+| `skills/sf-build/SKILL.md`                            | Offene Findings in externen Report auslagern, Plan-Datei nur mit Zusammenfassung/Verweis aktualisieren |
+| `skills/sf-refactor/SKILL.md`                         | Offene Review-Findings als externe Reports schreiben                                                   |
+| `skills/sf-fix/SKILL.md`                              | Offene Verifikations-/Restrisiko-Findings als externe Reports schreiben                                |
+| `docs/plan/0038-external-workflow-finding-reports.md` | Plan und Abschlussdokumentation                                                                        |
 
 ## Implementierungsdetails
 
@@ -66,15 +66,15 @@ Offene oder bewusst nicht umgesetzte Review-Findings aus `sf-build`, `sf-refacto
 
 ### Zusammenfassung
 
-| Bereich | Kritisch | Wichtig | Hinweis |
-|---|---:|---:|---:|
-| Architektur | 0 | 0 | 0 |
-| Security | 0 | 0 | 0 |
-| Datenschutz | 0 | 0 | 0 |
-| Fehlerfälle | 0 | 0 | 0 |
-| Testbarkeit | 0 | 0 | 0 |
-| Scope | 0 | 0 | 0 |
-| Wartbarkeit | 0 | 0 | 0 |
+| Bereich     | Kritisch | Wichtig | Hinweis |
+| ----------- | -------: | ------: | ------: |
+| Architektur |        0 |       0 |       0 |
+| Security    |        0 |       0 |       0 |
+| Datenschutz |        0 |       0 |       0 |
+| Fehlerfälle |        0 |       0 |       0 |
+| Testbarkeit |        0 |       0 |       0 |
+| Scope       |        0 |       0 |       0 |
+| Wartbarkeit |        0 |       0 |       0 |
 
 ### Befunde
 

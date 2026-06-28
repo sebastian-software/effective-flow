@@ -22,10 +22,10 @@ Umsetzung: Kombination aus zwei orthogonalen Techniken:
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/sf-apply-review/SKILL.md` | Phase 4 in 4.1/4.2/4.3 gesplittet; Wisdom-Accumulation um Vorabanalyse und Sub-Gruppen erweitert; Regeln-Sektion an neue Parallelitätsstruktur angepasst |
-| `docs/plan/0020-apply-review-parallelism.md` | Diese Plan-Datei |
+| Datei                                        | Beschreibung                                                                                                                                             |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skills/sf-apply-review/SKILL.md`            | Phase 4 in 4.1/4.2/4.3 gesplittet; Wisdom-Accumulation um Vorabanalyse und Sub-Gruppen erweitert; Regeln-Sektion an neue Parallelitätsstruktur angepasst |
+| `docs/plan/0020-apply-review-parallelism.md` | Diese Plan-Datei                                                                                                                                         |
 
 ## Implementierungsdetails
 
@@ -64,16 +64,16 @@ Bei stark geclusterten Findings (alle dieselbe Datei): nur C wirkt → 10-20% Sp
 ### Zusammenfassung
 
 | Schweregrad | Anzahl | Behoben | Offen |
-|---|---|---|---|
-| Kritisch | 0 | 0 | 0 |
-| Wichtig | 5 | 5 | 0 |
-| Hinweis | 2 | 2 | 0 |
+| ----------- | ------ | ------- | ----- |
+| Kritisch    | 0      | 0       | 0     |
+| Wichtig     | 5      | 5       | 0     |
+| Hinweis     | 2      | 2       | 0     |
 
 | Komplexität | Anzahl |
-|---|---|
-| Leicht | 7 |
-| Mittel | 0 |
-| Schwer | 0 |
+| ----------- | ------ |
+| Leicht      | 7      |
+| Mittel      | 0      |
+| Schwer      | 0      |
 
 ### Findings
 

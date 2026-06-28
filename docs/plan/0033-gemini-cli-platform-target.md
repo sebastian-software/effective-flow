@@ -35,14 +35,14 @@ Externer Kontext aus Gemini-CLI-Dokumentation:
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `build.mjs` | Neues Gemini-Dist-Target, Manifest-Erzeugung, Command-TOML-, Skill- und Subagent-Generatoren, Placeholder-/ASK-Transforms für Gemini |
-| `README.md` | Architektur-, Build-, Struktur- und Deployment-Dokumentation um Gemini CLI erweitern |
-| `local-link.sh` | Optionales lokales Linken der Gemini Extension per `gemini extensions link` oder dokumentierter manueller Fallback |
-| `local-update.sh` | Optionales lokales Aktualisieren/Installieren der Gemini Extension oder Hinweis auf getrennten Gemini-Installationsschritt |
-| `docs/skill-migration-notes.md` | Notizen zu Gemini-spezifischen Abweichungen ergänzen |
-| `docs/plan/0033-gemini-cli-platform-target.md` | Audit-Trail dieser Planung |
+| Datei                                          | Beschreibung                                                                                                                         |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `build.mjs`                                    | Neues Gemini-Dist-Target, Manifest-Erzeugung, Command-TOML-, Skill- und Subagent-Generatoren, Placeholder-/ASK-Transforms für Gemini |
+| `README.md`                                    | Architektur-, Build-, Struktur- und Deployment-Dokumentation um Gemini CLI erweitern                                                 |
+| `local-link.sh`                                | Optionales lokales Linken der Gemini Extension per `gemini extensions link` oder dokumentierter manueller Fallback                   |
+| `local-update.sh`                              | Optionales lokales Aktualisieren/Installieren der Gemini Extension oder Hinweis auf getrennten Gemini-Installationsschritt           |
+| `docs/skill-migration-notes.md`                | Notizen zu Gemini-spezifischen Abweichungen ergänzen                                                                                 |
+| `docs/plan/0033-gemini-cli-platform-target.md` | Audit-Trail dieser Planung                                                                                                           |
 
 ## Implementierungsdetails
 
@@ -84,26 +84,30 @@ Externer Kontext aus Gemini-CLI-Dokumentation:
 9. Build-Summary erweitern:
    - Ausgabe für Gemini Commands, Skills und Agents ergänzen.
 10. README aktualisieren:
-   - „Dual-Platform" zu „Multi-Platform" ändern.
-   - Tabelle für Codex, Claude Code und Gemini CLI ergänzen.
-   - Installations-/Link-Hinweise für Gemini CLI ergänzen.
+
+- „Dual-Platform" zu „Multi-Platform" ändern.
+- Tabelle für Codex, Claude Code und Gemini CLI ergänzen.
+- Installations-/Link-Hinweise für Gemini CLI ergänzen.
+
 11. Lokale Deployment-Skripte entscheiden:
-   - Minimal: Gemini nicht automatisch deployen, aber Pfad und `gemini extensions link dist/gemini/sf-claude-plugin` im README dokumentieren.
-   - Optional: `local-link.sh` um Gemini-Link erweitern, falls `gemini` im PATH vorhanden ist; bei fehlendem CLI nur warnen.
-   - Optional: `local-update.sh` mit bewusstem Hinweis, dass Gemini Extension-Updates bei aktiver Session erst nach Neustart sichtbar sind.
+
+- Minimal: Gemini nicht automatisch deployen, aber Pfad und `gemini extensions link dist/gemini/sf-claude-plugin` im README dokumentieren.
+- Optional: `local-link.sh` um Gemini-Link erweitern, falls `gemini` im PATH vorhanden ist; bei fehlendem CLI nur warnen.
+- Optional: `local-update.sh` mit bewusstem Hinweis, dass Gemini Extension-Updates bei aktiver Session erst nach Neustart sichtbar sind.
+
 12. Keine Änderung an fachlichen Skill-Inhalten vornehmen, außer Gemini-spezifische Transformationsartefakte erfordern minimale Plattformhinweise.
 
 ### Komponenten-Struktur
 
 Geplante Gemini-Ausgabe:
 
-| Pfad | Inhalt |
-|---|---|
-| `dist/gemini/sf-claude-plugin/gemini-extension.json` | Gemini Extension Manifest |
-| `dist/gemini/sf-claude-plugin/GEMINI.md` | Optionaler Extension-Kontext |
-| `dist/gemini/sf-claude-plugin/commands/sf/*.toml` | Slash Commands wie `/sf:build` und `/sf:review` |
-| `dist/gemini/sf-claude-plugin/skills/sf-*/SKILL.md` | Agent Skills für alle Source-Skills |
-| `dist/gemini/sf-claude-plugin/agents/*.md` | Gemini Subagents für `type: agent` |
+| Pfad                                                 | Inhalt                                          |
+| ---------------------------------------------------- | ----------------------------------------------- |
+| `dist/gemini/sf-claude-plugin/gemini-extension.json` | Gemini Extension Manifest                       |
+| `dist/gemini/sf-claude-plugin/GEMINI.md`             | Optionaler Extension-Kontext                    |
+| `dist/gemini/sf-claude-plugin/commands/sf/*.toml`    | Slash Commands wie `/sf:build` und `/sf:review` |
+| `dist/gemini/sf-claude-plugin/skills/sf-*/SKILL.md`  | Agent Skills für alle Source-Skills             |
+| `dist/gemini/sf-claude-plugin/agents/*.md`           | Gemini Subagents für `type: agent`              |
 
 ### API-Anbindung
 
@@ -172,15 +176,15 @@ Nicht relevant für die Build-Pipeline. Die Markdown-/TOML-Ausgaben sollen aber 
 
 ### Zusammenfassung
 
-| Bereich | Kritisch | Wichtig | Hinweis |
-|---|---:|---:|---:|
-| Architektur | 0 | 0 | 1 |
-| Security | 0 | 0 | 1 |
-| Datenschutz | 0 | 0 | 0 |
-| Fehlerfälle | 0 | 0 | 1 |
-| Testbarkeit | 0 | 0 | 0 |
-| Scope | 0 | 0 | 0 |
-| Wartbarkeit | 0 | 0 | 0 |
+| Bereich     | Kritisch | Wichtig | Hinweis |
+| ----------- | -------: | ------: | ------: |
+| Architektur |        0 |       0 |       1 |
+| Security    |        0 |       0 |       1 |
+| Datenschutz |        0 |       0 |       0 |
+| Fehlerfälle |        0 |       0 |       1 |
+| Testbarkeit |        0 |       0 |       0 |
+| Scope       |        0 |       0 |       0 |
+| Wartbarkeit |        0 |       0 |       0 |
 
 ### Befunde
 

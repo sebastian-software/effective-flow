@@ -14,20 +14,20 @@ Zentrale Datei mit Sprach- und Typografie-Regeln erstellen. Bei deutschen Texten
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/_shared/language-rules.md` | Neue zentrale Sprachregeldatei |
-| `build.mjs` | `SHARED_DIR`, `resolveIncludes()` hinzugefügt |
-| `skills/sf-ui-implementer/SKILL.md` | Inline-Sprachregel durch Include ersetzt |
-| `skills/sf-nodejs-implementer/SKILL.md` | Inline-Sprachregel durch Include ersetzt |
-| `skills/sf-code-validator/SKILL.md` | Inline-Sprachregel durch Include ersetzt, Zusatzregeln beibehalten |
-| `skills/sf-code-documenter/SKILL.md` | Include hinzugefügt (hatte keine Sprachregel) |
-| `skills/sf-docs-writer/SKILL.md` | Include hinzugefügt (hatte keine Sprachregel) |
-| `skills/sf-test-writer/SKILL.md` | Include hinzugefügt (hatte keine Sprachregel) |
-| `skills/sf-e2e-tester/SKILL.md` | Include hinzugefügt (hatte keine Sprachregel) |
-| `skills/sf-frontend-reviewer/SKILL.md` | Include hinzugefügt (hatte keine Sprachregel) |
-| `skills/sf-nodejs-reviewer/SKILL.md` | Include hinzugefügt (hatte keine Sprachregel) |
-| `README.md` | Platzhalter-Tabelle und Strukturbaum aktualisiert, ASCII-Umlaute korrigiert |
+| Datei                                   | Beschreibung                                                                |
+| --------------------------------------- | --------------------------------------------------------------------------- |
+| `skills/_shared/language-rules.md`      | Neue zentrale Sprachregeldatei                                              |
+| `build.mjs`                             | `SHARED_DIR`, `resolveIncludes()` hinzugefügt                               |
+| `skills/sf-ui-implementer/SKILL.md`     | Inline-Sprachregel durch Include ersetzt                                    |
+| `skills/sf-nodejs-implementer/SKILL.md` | Inline-Sprachregel durch Include ersetzt                                    |
+| `skills/sf-code-validator/SKILL.md`     | Inline-Sprachregel durch Include ersetzt, Zusatzregeln beibehalten          |
+| `skills/sf-code-documenter/SKILL.md`    | Include hinzugefügt (hatte keine Sprachregel)                               |
+| `skills/sf-docs-writer/SKILL.md`        | Include hinzugefügt (hatte keine Sprachregel)                               |
+| `skills/sf-test-writer/SKILL.md`        | Include hinzugefügt (hatte keine Sprachregel)                               |
+| `skills/sf-e2e-tester/SKILL.md`         | Include hinzugefügt (hatte keine Sprachregel)                               |
+| `skills/sf-frontend-reviewer/SKILL.md`  | Include hinzugefügt (hatte keine Sprachregel)                               |
+| `skills/sf-nodejs-reviewer/SKILL.md`    | Include hinzugefügt (hatte keine Sprachregel)                               |
+| `README.md`                             | Platzhalter-Tabelle und Strukturbaum aktualisiert, ASCII-Umlaute korrigiert |
 
 ## Implementierungsdetails
 
@@ -38,6 +38,7 @@ Zentrale Datei mit Sprach- und Typografie-Regeln erstellen. Bei deutschen Texten
 ### Sprachregeln
 
 Die zentrale Datei definiert:
+
 - Code, Bezeichner und Tests auf Englisch
 - Dokumentation auf Deutsch (außer bestehende Doku führt andere Sprache fort)
 - Commit-Messages auf Englisch

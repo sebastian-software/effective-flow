@@ -13,8 +13,8 @@ Der Review-Skill soll standardmässig nur kritische und wichtige Findings im Ber
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
+| Datei                       | Beschreibung                                               |
+| --------------------------- | ---------------------------------------------------------- |
 | `skills/sf-review/SKILL.md` | Finding-Scope-Abschnitt, Phase 1, Phase 3, Phase 4, Regeln |
 
 ## Implementierungsdetails

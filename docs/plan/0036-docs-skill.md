@@ -21,16 +21,16 @@ Der Plan ist ein Feature-Plan, weil ein neuer nutzbarer Orchestrator samt Review
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/sf-docs/SKILL.md` | Neuer Dokumentations-Orchestrator |
-| `skills/sf-plan/SKILL.md` | Workflow-Empfehlung für Dokumentation auf `sf-docs` umstellen |
-| `skills/sf-build/SKILL.md` | Dokumentations-Sonderfall reduzieren oder an `sf-docs` verweisen |
-| `skills/sf-review/SKILL.md` | `sf-docs` als Finding-Aktion, Berichtsspalte und Prompt-Vorschlag ergänzen |
-| `skills/sf-apply-review/SKILL.md` | `sf-docs`-Findings als Aktionsgruppe erkennen und delegieren |
-| `README.md` | Neuen Orchestrator und Plan-Empfehlung dokumentieren |
-| `build.mjs` | Marketplace-Beschreibung um `docs` ergänzen |
-| `docs/plan/0036-docs-skill.md` | Audit-Trail dieser geplanten Änderung |
+| Datei                             | Beschreibung                                                               |
+| --------------------------------- | -------------------------------------------------------------------------- |
+| `skills/sf-docs/SKILL.md`         | Neuer Dokumentations-Orchestrator                                          |
+| `skills/sf-plan/SKILL.md`         | Workflow-Empfehlung für Dokumentation auf `sf-docs` umstellen              |
+| `skills/sf-build/SKILL.md`        | Dokumentations-Sonderfall reduzieren oder an `sf-docs` verweisen           |
+| `skills/sf-review/SKILL.md`       | `sf-docs` als Finding-Aktion, Berichtsspalte und Prompt-Vorschlag ergänzen |
+| `skills/sf-apply-review/SKILL.md` | `sf-docs`-Findings als Aktionsgruppe erkennen und delegieren               |
+| `README.md`                       | Neuen Orchestrator und Plan-Empfehlung dokumentieren                       |
+| `build.mjs`                       | Marketplace-Beschreibung um `docs` ergänzen                                |
+| `docs/plan/0036-docs-skill.md`    | Audit-Trail dieser geplanten Änderung                                      |
 
 ## Implementierungsdetails
 
@@ -79,12 +79,12 @@ Der Plan ist ein Feature-Plan, weil ein neuer nutzbarer Orchestrator samt Review
 
 Nicht relevant im UI-Sinn. Die neue Struktur ist:
 
-| Element | Rolle |
-|---|---|
-| `sf-docs` | Top-Level-Orchestrator für Dokumentationsänderungen |
-| `sf-docs-writer` | Agent für README, Guides, API-/CLI-Doku, Migration und End-User-Doku |
-| `sf-code-documenter` | Agent für JSDoc/TSDoc, Kommentare und Code-nahe Dokumentation |
-| `sf-code-validator` | Optionaler Validator, wenn Doku-Änderungen technisch prüfbare Artefakte betreffen |
+| Element              | Rolle                                                                             |
+| -------------------- | --------------------------------------------------------------------------------- |
+| `sf-docs`            | Top-Level-Orchestrator für Dokumentationsänderungen                               |
+| `sf-docs-writer`     | Agent für README, Guides, API-/CLI-Doku, Migration und End-User-Doku              |
+| `sf-code-documenter` | Agent für JSDoc/TSDoc, Kommentare und Code-nahe Dokumentation                     |
+| `sf-code-validator`  | Optionaler Validator, wenn Doku-Änderungen technisch prüfbare Artefakte betreffen |
 
 ### State-Management
 
@@ -153,16 +153,16 @@ Nur relevant, wenn Dokumentation UI-/Accessibility-Verhalten beschreibt. In dies
 ### Zusammenfassung
 
 | Schweregrad | Anzahl | Behoben | Offen |
-|---|---:|---:|---:|
-| Kritisch | 0 | 0 | 0 |
-| Wichtig | 0 | 0 | 0 |
-| Hinweis | 0 | 0 | 0 |
+| ----------- | -----: | ------: | ----: |
+| Kritisch    |      0 |       0 |     0 |
+| Wichtig     |      0 |       0 |     0 |
+| Hinweis     |      0 |       0 |     0 |
 
 | Komplexität | Anzahl |
-|---|---:|
-| Leicht | 0 |
-| Mittel | 0 |
-| Schwer | 0 |
+| ----------- | -----: |
+| Leicht      |      0 |
+| Mittel      |      0 |
+| Schwer      |      0 |
 
 ### Findings
 
@@ -174,15 +174,15 @@ Keine Findings gefunden.
 
 ### Zusammenfassung
 
-| Bereich | Kritisch | Wichtig | Hinweis |
-|---|---:|---:|---:|
-| Architektur | 0 | 0 | 0 |
-| Security | 0 | 0 | 0 |
-| Datenschutz | 0 | 0 | 0 |
-| Fehlerfälle | 0 | 0 | 0 |
-| Testbarkeit | 0 | 0 | 0 |
-| Scope | 0 | 0 | 0 |
-| Wartbarkeit | 0 | 0 | 0 |
+| Bereich     | Kritisch | Wichtig | Hinweis |
+| ----------- | -------: | ------: | ------: |
+| Architektur |        0 |       0 |       0 |
+| Security    |        0 |       0 |       0 |
+| Datenschutz |        0 |       0 |       0 |
+| Fehlerfälle |        0 |       0 |       0 |
+| Testbarkeit |        0 |       0 |       0 |
+| Scope       |        0 |       0 |       0 |
+| Wartbarkeit |        0 |       0 |       0 |
 
 ### Befunde
 

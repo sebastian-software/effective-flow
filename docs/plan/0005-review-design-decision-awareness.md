@@ -31,18 +31,18 @@ Designentscheidungen werden auf zwei Ebenen erkannt:
 
 ## Betroffene Dateien
 
-| Datei | Änderung |
-|---|---|
-| `sf-frontend-workflows/commands/review.md` | Neue Section "Designentscheidungs-Erkennung" mit Quellen-Tabelle, erweiterte Phase 1 (Explore-Agent sucht DDs), erweiterter Reviewer-Auftrag in Phase 3, strukturierter DD-Abgleich in Phase 4, neuer Bericht-Abschnitt |
-| `sf-frontend-workflows/agents/frontend-reviewer.md` | Neuer Abschnitt "Designentscheidungen respektieren", erweitertes Vorgehen, Ausgabeformat um Komplexität und Designentscheidung-Feld ergänzt |
-| `sf-frontend-workflows/agents/nodejs-reviewer.md` | Identische Erweiterungen wie frontend-reviewer |
-| `README.md` | Neue Section "Designentscheidungs-Erkennung", aktualisierte /review-Beschreibung |
+| Datei                                               | Änderung                                                                                                                                                                                                                |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sf-frontend-workflows/commands/review.md`          | Neue Section "Designentscheidungs-Erkennung" mit Quellen-Tabelle, erweiterte Phase 1 (Explore-Agent sucht DDs), erweiterter Reviewer-Auftrag in Phase 3, strukturierter DD-Abgleich in Phase 4, neuer Bericht-Abschnitt |
+| `sf-frontend-workflows/agents/frontend-reviewer.md` | Neuer Abschnitt "Designentscheidungen respektieren", erweitertes Vorgehen, Ausgabeformat um Komplexität und Designentscheidung-Feld ergänzt                                                                             |
+| `sf-frontend-workflows/agents/nodejs-reviewer.md`   | Identische Erweiterungen wie frontend-reviewer                                                                                                                                                                          |
+| `README.md`                                         | Neue Section "Designentscheidungs-Erkennung", aktualisierte /review-Beschreibung                                                                                                                                        |
 
 ## Review-Findings
 
-| Finding | Status |
-|---|---|
-| Ausgabeformat fehlte "Komplexität" (Kritisch) | Behoben — Feld in beide Reviewer ergänzt |
-| Ausgabeformat fehlte "Designentscheidung"-Feld (Wichtig) | Behoben — optionales Feld ergänzt |
-| nodejs-reviewer Vorgehen-Reihenfolge unlogisch (Wichtig) | Behoben — DD-Abgleich nach Kategorisierung verschoben |
-| README ADR-Quellen unvollständig (Hinweis) | Nicht umgesetzt — README ist Kurzübersicht, Details in review.md |
+| Finding                                                  | Status                                                           |
+| -------------------------------------------------------- | ---------------------------------------------------------------- |
+| Ausgabeformat fehlte "Komplexität" (Kritisch)            | Behoben — Feld in beide Reviewer ergänzt                         |
+| Ausgabeformat fehlte "Designentscheidung"-Feld (Wichtig) | Behoben — optionales Feld ergänzt                                |
+| nodejs-reviewer Vorgehen-Reihenfolge unlogisch (Wichtig) | Behoben — DD-Abgleich nach Kategorisierung verschoben            |
+| README ADR-Quellen unvollständig (Hinweis)               | Nicht umgesetzt — README ist Kurzübersicht, Details in review.md |

@@ -24,8 +24,8 @@ Der Mutex erlaubt weiterhin parallele Implementierung, serialisiert aber Staging
 
 ## Betroffene Dateien
 
-| Datei | Änderung |
-|---|---|
+| Datei                             | Änderung                                                                                                 |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `skills/sf-apply-review/SKILL.md` | Commit-Mutex-Regel in Phase 2 ergänzt und explizit an Delegations-Sub-Agenten in Phase 4.3 weitergegeben |
 
 ## Restrisiken

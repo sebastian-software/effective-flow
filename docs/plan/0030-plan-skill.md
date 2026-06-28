@@ -33,17 +33,17 @@ Planungsphase übersprungen und der Plan direkt umgesetzt werden.
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/sf-plan/SKILL.md` | Neuer Orchestrator für reine Feature-Planung mit No-Code-Regeln, Plan-Template, Gap Analysis und Scorecard |
-| `skills/sf-build/SKILL.md` | Planung an `sf-plan` delegiert, Plan-Referenz-Erkennung ergänzt, Abschluss aktualisiert bestehende Plan-Datei |
-| `build.mjs` | Marketplace-Beschreibung um `plan` ergänzt |
-| `README.md` | Neuen Orchestrator in Übersicht und Struktur dokumentiert |
-| `docs/plan/0030-plan-skill.md` | Audit-Trail dieser Änderung |
-| `dist/codex/skills/sf-plan/SKILL.md` | Generierter Codex-Skill nach Build |
-| `dist/codex/skills/sf-build/SKILL.md` | Generierter Codex-Skill nach Build |
-| `dist/claude/sf-claude-plugin/plugins/sf-frontend-workflows/commands/plan.md` | Generierter Claude-Command nach Build |
-| `dist/claude/sf-claude-plugin/plugins/sf-frontend-workflows/commands/build.md` | Generierter Claude-Command nach Build |
+| Datei                                                                          | Beschreibung                                                                                                  |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `skills/sf-plan/SKILL.md`                                                      | Neuer Orchestrator für reine Feature-Planung mit No-Code-Regeln, Plan-Template, Gap Analysis und Scorecard    |
+| `skills/sf-build/SKILL.md`                                                     | Planung an `sf-plan` delegiert, Plan-Referenz-Erkennung ergänzt, Abschluss aktualisiert bestehende Plan-Datei |
+| `build.mjs`                                                                    | Marketplace-Beschreibung um `plan` ergänzt                                                                    |
+| `README.md`                                                                    | Neuen Orchestrator in Übersicht und Struktur dokumentiert                                                     |
+| `docs/plan/0030-plan-skill.md`                                                 | Audit-Trail dieser Änderung                                                                                   |
+| `dist/codex/skills/sf-plan/SKILL.md`                                           | Generierter Codex-Skill nach Build                                                                            |
+| `dist/codex/skills/sf-build/SKILL.md`                                          | Generierter Codex-Skill nach Build                                                                            |
+| `dist/claude/sf-claude-plugin/plugins/sf-frontend-workflows/commands/plan.md`  | Generierter Claude-Command nach Build                                                                         |
+| `dist/claude/sf-claude-plugin/plugins/sf-frontend-workflows/commands/build.md` | Generierter Claude-Command nach Build                                                                         |
 
 ## Implementierungsdetails
 

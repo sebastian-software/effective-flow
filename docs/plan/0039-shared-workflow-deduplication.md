@@ -19,16 +19,16 @@ Die wiederholten Anweisungen für Plan-Referenz-Erkennung, Review-Report-Rückve
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/_shared/completion-protocol.md` | Gemeinsames `ERLEDIGT`-/`ABBRUCH`- und Retry-Protokoll |
+| Datei                                       | Beschreibung                                                    |
+| ------------------------------------------- | --------------------------------------------------------------- |
+| `skills/_shared/completion-protocol.md`     | Gemeinsames `ERLEDIGT`-/`ABBRUCH`- und Retry-Protokoll          |
 | `skills/_shared/review-report-backlinks.md` | Gemeinsame Regeln für Rückverweise in bestehende Review-Reports |
-| `skills/_shared/plan-reference-routing.md` | Gemeinsame Planauflösung, Statusprüfung und Workflow-Empfehlung |
-| `skills/sf-build/SKILL.md` | Duplikate durch Includes ersetzen |
-| `skills/sf-fix/SKILL.md` | Duplikate durch Includes ersetzen |
-| `skills/sf-refactor/SKILL.md` | Duplikate durch Includes ersetzen |
-| `skills/sf-docs/SKILL.md` | Duplikate durch Includes ersetzen |
-| `skills/sf-apply-plan/SKILL.md` | Plan-Routing auf Shared-Regel ausrichten |
+| `skills/_shared/plan-reference-routing.md`  | Gemeinsame Planauflösung, Statusprüfung und Workflow-Empfehlung |
+| `skills/sf-build/SKILL.md`                  | Duplikate durch Includes ersetzen                               |
+| `skills/sf-fix/SKILL.md`                    | Duplikate durch Includes ersetzen                               |
+| `skills/sf-refactor/SKILL.md`               | Duplikate durch Includes ersetzen                               |
+| `skills/sf-docs/SKILL.md`                   | Duplikate durch Includes ersetzen                               |
+| `skills/sf-apply-plan/SKILL.md`             | Plan-Routing auf Shared-Regel ausrichten                        |
 
 ## Akzeptanzkriterien
 
@@ -51,15 +51,15 @@ Die wiederholten Anweisungen für Plan-Referenz-Erkennung, Review-Report-Rückve
 
 ### Zusammenfassung
 
-| Bereich | Kritisch | Wichtig | Hinweis |
-|---|---:|---:|---:|
-| Architektur | 0 | 0 | 0 |
-| Security | 0 | 0 | 0 |
-| Datenschutz | 0 | 0 | 0 |
-| Fehlerfälle | 0 | 0 | 0 |
-| Testbarkeit | 0 | 0 | 0 |
-| Scope | 0 | 0 | 0 |
-| Wartbarkeit | 0 | 0 | 0 |
+| Bereich     | Kritisch | Wichtig | Hinweis |
+| ----------- | -------: | ------: | ------: |
+| Architektur |        0 |       0 |       0 |
+| Security    |        0 |       0 |       0 |
+| Datenschutz |        0 |       0 |       0 |
+| Fehlerfälle |        0 |       0 |       0 |
+| Testbarkeit |        0 |       0 |       0 |
+| Scope       |        0 |       0 |       0 |
+| Wartbarkeit |        0 |       0 |       0 |
 
 ### Befunde
 

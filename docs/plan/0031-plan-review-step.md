@@ -26,12 +26,12 @@ erkennen, ohne Code zu erzeugen oder einen normalen Code-Review zu starten.
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/sf-plan/SKILL.md` | Plan-Template um `## Plan-Review` erweitert; neue Phase 6 „Plan-Review" ergänzt; Abschluss auf Phase 7 verschoben |
-| `docs/plan/0031-plan-review-step.md` | Audit-Trail dieser Änderung |
-| `dist/codex/skills/sf-plan/SKILL.md` | Generierter Codex-Skill nach Build |
-| `dist/claude/sf-claude-plugin/plugins/sf-frontend-workflows/commands/plan.md` | Generierter Claude-Command nach Build |
+| Datei                                                                         | Beschreibung                                                                                                      |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `skills/sf-plan/SKILL.md`                                                     | Plan-Template um `## Plan-Review` erweitert; neue Phase 6 „Plan-Review" ergänzt; Abschluss auf Phase 7 verschoben |
+| `docs/plan/0031-plan-review-step.md`                                          | Audit-Trail dieser Änderung                                                                                       |
+| `dist/codex/skills/sf-plan/SKILL.md`                                          | Generierter Codex-Skill nach Build                                                                                |
+| `dist/claude/sf-claude-plugin/plugins/sf-frontend-workflows/commands/plan.md` | Generierter Claude-Command nach Build                                                                             |
 
 ## Implementierungsdetails
 

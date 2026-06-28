@@ -12,25 +12,25 @@ Alle Skills sollen bei mehreren Aufgaben eine TODO-Liste (`TaskCreate`/`TaskUpda
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/_shared/task-tracking.md` | Neue gemeinsame Anweisung zur TODO-Listen-Nutzung |
-| `skills/sf-apply-review/SKILL.md` | Include eingefügt |
-| `skills/sf-build-feature/SKILL.md` | Include eingefügt |
-| `skills/sf-code-documenter/SKILL.md` | Include eingefügt |
-| `skills/sf-code-validator/SKILL.md` | Include eingefügt |
-| `skills/sf-commit/SKILL.md` | Include eingefügt |
-| `skills/sf-docs-writer/SKILL.md` | Include eingefügt |
-| `skills/sf-e2e-tester/SKILL.md` | Include eingefügt |
-| `skills/sf-fix/SKILL.md` | Include eingefügt |
-| `skills/sf-frontend-reviewer/SKILL.md` | Include eingefügt |
-| `skills/sf-nodejs-implementer/SKILL.md` | Include eingefügt |
-| `skills/sf-nodejs-reviewer/SKILL.md` | Include eingefügt |
-| `skills/sf-refactor/SKILL.md` | Include eingefügt |
-| `skills/sf-review/SKILL.md` | Include eingefügt |
-| `skills/sf-test-writer/SKILL.md` | Include eingefügt |
-| `skills/sf-ui-implementer/SKILL.md` | Include eingefügt |
-| `skills/sf-version/SKILL.md` | Include eingefügt |
+| Datei                                   | Beschreibung                                      |
+| --------------------------------------- | ------------------------------------------------- |
+| `skills/_shared/task-tracking.md`       | Neue gemeinsame Anweisung zur TODO-Listen-Nutzung |
+| `skills/sf-apply-review/SKILL.md`       | Include eingefügt                                 |
+| `skills/sf-build-feature/SKILL.md`      | Include eingefügt                                 |
+| `skills/sf-code-documenter/SKILL.md`    | Include eingefügt                                 |
+| `skills/sf-code-validator/SKILL.md`     | Include eingefügt                                 |
+| `skills/sf-commit/SKILL.md`             | Include eingefügt                                 |
+| `skills/sf-docs-writer/SKILL.md`        | Include eingefügt                                 |
+| `skills/sf-e2e-tester/SKILL.md`         | Include eingefügt                                 |
+| `skills/sf-fix/SKILL.md`                | Include eingefügt                                 |
+| `skills/sf-frontend-reviewer/SKILL.md`  | Include eingefügt                                 |
+| `skills/sf-nodejs-implementer/SKILL.md` | Include eingefügt                                 |
+| `skills/sf-nodejs-reviewer/SKILL.md`    | Include eingefügt                                 |
+| `skills/sf-refactor/SKILL.md`           | Include eingefügt                                 |
+| `skills/sf-review/SKILL.md`             | Include eingefügt                                 |
+| `skills/sf-test-writer/SKILL.md`        | Include eingefügt                                 |
+| `skills/sf-ui-implementer/SKILL.md`     | Include eingefügt                                 |
+| `skills/sf-version/SKILL.md`            | Include eingefügt                                 |
 
 ## Implementierungsdetails
 

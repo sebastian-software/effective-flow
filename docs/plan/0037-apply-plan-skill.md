@@ -17,12 +17,12 @@ Es soll ein neuer Skill `sf-apply-plan` entstehen, der eine Plan-Datei aus `docs
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/sf-apply-plan/SKILL.md` | Neuer Orchestrator für Plan-Auflösung, Statusprüfung und Workflow-Routing |
-| `README.md` | Orchestratoren-Tabelle und Plan-Workflow-Dokumentation ergänzen |
-| `build.mjs` | Marketplace-Beschreibung um `apply-plan` ergänzen |
-| `docs/plan/0037-apply-plan-skill.md` | Plan nach Umsetzung abschließen |
+| Datei                                | Beschreibung                                                              |
+| ------------------------------------ | ------------------------------------------------------------------------- |
+| `skills/sf-apply-plan/SKILL.md`      | Neuer Orchestrator für Plan-Auflösung, Statusprüfung und Workflow-Routing |
+| `README.md`                          | Orchestratoren-Tabelle und Plan-Workflow-Dokumentation ergänzen           |
+| `build.mjs`                          | Marketplace-Beschreibung um `apply-plan` ergänzen                         |
+| `docs/plan/0037-apply-plan-skill.md` | Plan nach Umsetzung abschließen                                           |
 
 ## Implementierungsdetails
 
@@ -75,15 +75,15 @@ Es soll ein neuer Skill `sf-apply-plan` entstehen, der eine Plan-Datei aus `docs
 
 ### Zusammenfassung
 
-| Bereich | Kritisch | Wichtig | Hinweis |
-|---|---:|---:|---:|
-| Architektur | 0 | 0 | 0 |
-| Security | 0 | 0 | 0 |
-| Datenschutz | 0 | 0 | 0 |
-| Fehlerfälle | 0 | 0 | 0 |
-| Testbarkeit | 0 | 0 | 0 |
-| Scope | 0 | 0 | 0 |
-| Wartbarkeit | 0 | 0 | 0 |
+| Bereich     | Kritisch | Wichtig | Hinweis |
+| ----------- | -------: | ------: | ------: |
+| Architektur |        0 |       0 |       0 |
+| Security    |        0 |       0 |       0 |
+| Datenschutz |        0 |       0 |       0 |
+| Fehlerfälle |        0 |       0 |       0 |
+| Testbarkeit |        0 |       0 |       0 |
+| Scope       |        0 |       0 |       0 |
+| Wartbarkeit |        0 |       0 |       0 |
 
 ### Befunde
 

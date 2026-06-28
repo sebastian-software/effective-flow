@@ -34,10 +34,10 @@ Vor der Umsetzung wird gefragt, ob jedes Finding einen eigenen Git-Commit bekomm
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/sf-apply-review/SKILL.md` | Neuer Orchestrator-Skill |
-| `skills/sf-review/SKILL.md` | Review-Report-Format um `Entwickler-Anmerkung`-Feld erweitert |
+| Datei                             | Beschreibung                                                  |
+| --------------------------------- | ------------------------------------------------------------- |
+| `skills/sf-apply-review/SKILL.md` | Neuer Orchestrator-Skill                                      |
+| `skills/sf-review/SKILL.md`       | Review-Report-Format um `Entwickler-Anmerkung`-Feld erweitert |
 
 ## Implementierungsdetails
 
@@ -48,6 +48,7 @@ Vor der Umsetzung wird gefragt, ob jedes Finding einen eigenen Git-Commit bekomm
 ```
 
 Konvention:
+
 - Leer oder fehlend: Finding wird umgesetzt
 - Freitext: Finding wird umgesetzt, Text als Kontext weitergegeben
 - „Nicht umsetzen: [Grund]": Finding wird übersprungen, ADR wird erstellt
@@ -67,8 +68,8 @@ Build erfolgreich mit 7 Skills und 9 Agents. Placeholder-Transformation korrekt.
 
 ## Review-Findings und deren Behebung
 
-| Finding | Schweregrad | Status |
-|---|---|---|
-| `Entwickler-Anmerkung`-Feld ohne Formathinweis | Wichtig | Behoben — HTML-Kommentar als Platzhalter ergänzt |
-| ASK-Block mit Ja/Nein statt beschreibenden Labels | Wichtig | Behoben — auf Einzeln/Keine Commits umgestellt |
-| `sf-review` nutzt nicht `{{INCLUDE:language-rules}}` | Kritisch | Behoben — zentrale Sprachregeln mit `docs/plan/0013-central-language-rules.md` eingeführt; `skills/sf-review/SKILL.md` nutzt den Include |
+| Finding                                              | Schweregrad | Status                                                                                                                                   |
+| ---------------------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `Entwickler-Anmerkung`-Feld ohne Formathinweis       | Wichtig     | Behoben — HTML-Kommentar als Platzhalter ergänzt                                                                                         |
+| ASK-Block mit Ja/Nein statt beschreibenden Labels    | Wichtig     | Behoben — auf Einzeln/Keine Commits umgestellt                                                                                           |
+| `sf-review` nutzt nicht `{{INCLUDE:language-rules}}` | Kritisch    | Behoben — zentrale Sprachregeln mit `docs/plan/0013-central-language-rules.md` eingeführt; `skills/sf-review/SKILL.md` nutzt den Include |

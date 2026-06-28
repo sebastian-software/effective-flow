@@ -16,17 +16,17 @@ Sicherstellen, dass kein Skill in diesem Plugin `Co-Authored-By`-Trailer in Comm
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/_shared/commit-message-rules.md` | **Neu** — Shared-Include mit Commit-Message-Konventionen |
-| `skills/sf-commit/SKILL.md` | Inline-Regeln durch Include ersetzt; Präfix-Liste konsolidiert |
-| `skills/sf-apply-review/SKILL.md` | Include ergänzt; Phase-2-Commit-Strategie explizit erweitert |
-| `skills/sf-build-feature/SKILL.md` | Include nach pre-commit-gate ergänzt |
-| `skills/sf-fix/SKILL.md` | Include nach pre-commit-gate ergänzt |
-| `skills/sf-refactor/SKILL.md` | Include nach pre-commit-gate ergänzt |
-| `skills/sf-ui-implementer/SKILL.md` | Include nach pre-commit-gate ergänzt |
-| `skills/sf-nodejs-implementer/SKILL.md` | Include nach pre-commit-gate ergänzt |
-| `docs/plan/0024-no-coauthor-trailer.md` | Diese Plan-Datei |
+| Datei                                    | Beschreibung                                                   |
+| ---------------------------------------- | -------------------------------------------------------------- |
+| `skills/_shared/commit-message-rules.md` | **Neu** — Shared-Include mit Commit-Message-Konventionen       |
+| `skills/sf-commit/SKILL.md`              | Inline-Regeln durch Include ersetzt; Präfix-Liste konsolidiert |
+| `skills/sf-apply-review/SKILL.md`        | Include ergänzt; Phase-2-Commit-Strategie explizit erweitert   |
+| `skills/sf-build-feature/SKILL.md`       | Include nach pre-commit-gate ergänzt                           |
+| `skills/sf-fix/SKILL.md`                 | Include nach pre-commit-gate ergänzt                           |
+| `skills/sf-refactor/SKILL.md`            | Include nach pre-commit-gate ergänzt                           |
+| `skills/sf-ui-implementer/SKILL.md`      | Include nach pre-commit-gate ergänzt                           |
+| `skills/sf-nodejs-implementer/SKILL.md`  | Include nach pre-commit-gate ergänzt                           |
+| `docs/plan/0024-no-coauthor-trailer.md`  | Diese Plan-Datei                                               |
 
 ## Implementierungsdetails
 
@@ -54,16 +54,16 @@ Sicherstellen, dass kein Skill in diesem Plugin `Co-Authored-By`-Trailer in Comm
 ### Zusammenfassung
 
 | Schweregrad | Anzahl | Behoben | Offen |
-|---|---|---|---|
-| Kritisch | 0 | 0 | 0 |
-| Wichtig | 3 | 3 | 0 |
-| Hinweis | 4 | 0 | 4 |
+| ----------- | ------ | ------- | ----- |
+| Kritisch    | 0      | 0       | 0     |
+| Wichtig     | 3      | 3       | 0     |
+| Hinweis     | 4      | 0       | 4     |
 
 | Komplexität | Anzahl |
-|---|---|
-| Leicht | 6 |
-| Mittel | 1 |
-| Schwer | 0 |
+| ----------- | ------ |
+| Leicht      | 6      |
+| Mittel      | 1      |
+| Schwer      | 0      |
 
 ### Findings
 
@@ -92,7 +92,7 @@ Sicherstellen, dass kein Skill in diesem Plugin `Co-Authored-By`-Trailer in Comm
 - **Schweregrad**: Wichtig
 - **Komplexität**: Leicht
 - **Bereich**: Regelschärfe / LLM-Zuverlässigkeit
-- **Datei**: skills/_shared/commit-message-rules.md:3
+- **Datei**: skills/\_shared/commit-message-rules.md:3
 - **Problem**: „anbieten könnten" war konditionell. Außerdem fehlte die Anweisung, vorhandene Co-Authored-By-Zeilen aus Templates/Drafts aktiv zu entfernen.
 - **Empfehlung**: Auf unbedingte Formulierung verschärfen und aktiven Entfernungs-Hinweis ergänzen.
 - **Status**: Behoben

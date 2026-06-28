@@ -16,15 +16,15 @@ Ein neuer Skill soll alle noch nicht umgesetzten Plan-Dateien in `docs/plan/` mi
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/_shared/plan-status.md` | Neue zentrale Planstatus-Konvention |
-| `skills/sf-open-plans/SKILL.md` | Neuer Utility-Skill zum Auflisten offener Pläne |
-| `skills/sf-plan/SKILL.md` | Kanonischen Statusmarker als Plan-Erzeugungsvertrag eingebunden |
-| `skills/sf-build/SKILL.md` | Plan-Referenz- und Abschlusslogik auf kanonische Statuszeile präzisiert |
-| `README.md` | `sf-open-plans` und Planstatus-Konvention dokumentiert |
-| `build.mjs` | Marketplace-Beschreibung um `open-plans` ergänzt |
-| `docs/plan/0034-open-plans-skill.md` | Audit-Trail dieser Änderung |
+| Datei                                | Beschreibung                                                            |
+| ------------------------------------ | ----------------------------------------------------------------------- |
+| `skills/_shared/plan-status.md`      | Neue zentrale Planstatus-Konvention                                     |
+| `skills/sf-open-plans/SKILL.md`      | Neuer Utility-Skill zum Auflisten offener Pläne                         |
+| `skills/sf-plan/SKILL.md`            | Kanonischen Statusmarker als Plan-Erzeugungsvertrag eingebunden         |
+| `skills/sf-build/SKILL.md`           | Plan-Referenz- und Abschlusslogik auf kanonische Statuszeile präzisiert |
+| `README.md`                          | `sf-open-plans` und Planstatus-Konvention dokumentiert                  |
+| `build.mjs`                          | Marketplace-Beschreibung um `open-plans` ergänzt                        |
+| `docs/plan/0034-open-plans-skill.md` | Audit-Trail dieser Änderung                                             |
 
 ## Implementierungsdetails
 
@@ -97,15 +97,15 @@ Nicht relevant.
 
 ### Zusammenfassung
 
-| Bereich | Kritisch | Wichtig | Hinweis |
-|---|---:|---:|---:|
-| Architektur | 0 | 0 | 0 |
-| Security | 0 | 0 | 0 |
-| Datenschutz | 0 | 0 | 0 |
-| Fehlerfälle | 0 | 0 | 0 |
-| Testbarkeit | 0 | 0 | 0 |
-| Scope | 0 | 0 | 0 |
-| Wartbarkeit | 0 | 0 | 0 |
+| Bereich     | Kritisch | Wichtig | Hinweis |
+| ----------- | -------: | ------: | ------: |
+| Architektur |        0 |       0 |       0 |
+| Security    |        0 |       0 |       0 |
+| Datenschutz |        0 |       0 |       0 |
+| Fehlerfälle |        0 |       0 |       0 |
+| Testbarkeit |        0 |       0 |       0 |
+| Scope       |        0 |       0 |       0 |
+| Wartbarkeit |        0 |       0 |       0 |
 
 ### Befunde
 
@@ -128,16 +128,16 @@ Nicht relevant.
 ### Zusammenfassung
 
 | Schweregrad | Anzahl | Behoben | Offen |
-|---|---:|---:|---:|
-| Kritisch | 0 | 0 | 0 |
-| Wichtig | 0 | 0 | 0 |
-| Hinweis | 0 | 0 | 0 |
+| ----------- | -----: | ------: | ----: |
+| Kritisch    |      0 |       0 |     0 |
+| Wichtig     |      0 |       0 |     0 |
+| Hinweis     |      0 |       0 |     0 |
 
 | Komplexität | Anzahl |
-|---|---:|
-| Leicht | 0 |
-| Mittel | 0 |
-| Schwer | 0 |
+| ----------- | -----: |
+| Leicht      |      0 |
+| Mittel      |      0 |
+| Schwer      |      0 |
 
 ### Findings
 

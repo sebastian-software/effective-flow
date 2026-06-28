@@ -29,16 +29,16 @@ Workflow-Empfehlung „Feature": Dies ist eine echte Erweiterung des Plugin-Verh
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/_shared/doc-categories.md` | Neuer Shared-Include mit Kategorien, Verzeichnisnamen, Dateinamen-Konvention und README-Regel |
-| `skills/sf-plan/SKILL.md` | Bei Klassifikation „Dokumentation" zusätzlich Doku-Kategorie und Ziel-Pfad bestimmen und im Plan-Template fordern; bindet `doc-categories` ein |
-| `skills/sf-docs/SKILL.md` | Liest aus dem Plan die Doku-Kategorie und den Ziel-Pfad, legt das Verzeichnis bei Bedarf an, übergibt den Ziel-Pfad an `sf-docs-writer`; bindet `doc-categories` ein |
-| `skills/sf-docs-writer/SKILL.md` | Schreibt in den im Auftrag genannten Ziel-Pfad innerhalb der gültigen Kategorien-Verzeichnisse, kein Schreiben außerhalb erlaubt; bindet `doc-categories` ein |
-| `skills/sf-apply-plan/SKILL.md` | Erkennt Doku-Pläne weiterhin am Workflow-Marker; gibt im Hand-off-Hinweis zusätzlich die im Plan genannte Doku-Kategorie und den Ziel-Pfad mit |
-| `skills/sf-open-plans/SKILL.md` | Listet bei Doku-Plänen zusätzlich die Ziel-Kategorie als Spalte, damit offene Doku-Pläne nach Zielgruppe erkennbar sind |
-| `README.md` | Beschreibt die neue Konvention im Abschnitt „Struktur" und ggf. im Abschnitt zur Plan-Statuszeile |
-| `docs/skill-migration-notes.md` | Falls historisch relevant: kurzer Hinweis, dass die Konvention ab dieser Plugin-Version gilt |
+| Datei                              | Beschreibung                                                                                                                                                         |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skills/_shared/doc-categories.md` | Neuer Shared-Include mit Kategorien, Verzeichnisnamen, Dateinamen-Konvention und README-Regel                                                                        |
+| `skills/sf-plan/SKILL.md`          | Bei Klassifikation „Dokumentation" zusätzlich Doku-Kategorie und Ziel-Pfad bestimmen und im Plan-Template fordern; bindet `doc-categories` ein                       |
+| `skills/sf-docs/SKILL.md`          | Liest aus dem Plan die Doku-Kategorie und den Ziel-Pfad, legt das Verzeichnis bei Bedarf an, übergibt den Ziel-Pfad an `sf-docs-writer`; bindet `doc-categories` ein |
+| `skills/sf-docs-writer/SKILL.md`   | Schreibt in den im Auftrag genannten Ziel-Pfad innerhalb der gültigen Kategorien-Verzeichnisse, kein Schreiben außerhalb erlaubt; bindet `doc-categories` ein        |
+| `skills/sf-apply-plan/SKILL.md`    | Erkennt Doku-Pläne weiterhin am Workflow-Marker; gibt im Hand-off-Hinweis zusätzlich die im Plan genannte Doku-Kategorie und den Ziel-Pfad mit                       |
+| `skills/sf-open-plans/SKILL.md`    | Listet bei Doku-Plänen zusätzlich die Ziel-Kategorie als Spalte, damit offene Doku-Pläne nach Zielgruppe erkennbar sind                                              |
+| `README.md`                        | Beschreibt die neue Konvention im Abschnitt „Struktur" und ggf. im Abschnitt zur Plan-Statuszeile                                                                    |
+| `docs/skill-migration-notes.md`    | Falls historisch relevant: kurzer Hinweis, dass die Konvention ab dieser Plugin-Version gilt                                                                         |
 
 Hinweis zu generierten Artefakten: `build.mjs` selbst muss nicht angepasst werden; durch die Verwendung der bestehenden Platzhalter und des neuen Includes propagiert die Konvention automatisch in `dist/codex/` und `dist/claude/`.
 
@@ -140,15 +140,15 @@ Nicht relevant. Die Konvention betrifft Markdown-Ablagepfade, keine UI.
 
 ### Zusammenfassung
 
-| Bereich | Kritisch | Wichtig | Hinweis |
-|---|---:|---:|---:|
-| Architektur | 0 | 0 | 1 |
-| Security | 0 | 0 | 0 |
-| Datenschutz | 0 | 0 | 0 |
-| Fehlerfälle | 0 | 0 | 1 |
-| Testbarkeit | 0 | 0 | 0 |
-| Scope | 0 | 0 | 1 |
-| Wartbarkeit | 0 | 0 | 1 |
+| Bereich     | Kritisch | Wichtig | Hinweis |
+| ----------- | -------: | ------: | ------: |
+| Architektur |        0 |       0 |       1 |
+| Security    |        0 |       0 |       0 |
+| Datenschutz |        0 |       0 |       0 |
+| Fehlerfälle |        0 |       0 |       1 |
+| Testbarkeit |        0 |       0 |       0 |
+| Scope       |        0 |       0 |       1 |
+| Wartbarkeit |        0 |       0 |       1 |
 
 ### Befunde
 
@@ -174,9 +174,9 @@ Nicht relevant. Die Konvention betrifft Markdown-Ablagepfade, keine UI.
 
 ### Zusammenfassung
 
-| Status | Anzahl |
-|---|---:|
-| Behoben | 0 |
-| Offen / Nicht umgesetzt | 0 |
+| Status                  | Anzahl |
+| ----------------------- | -----: |
+| Behoben                 |      0 |
+| Offen / Nicht umgesetzt |      0 |
 
 Keine Findings gefunden. Diese Änderung betrifft ausschließlich Skill-Workflow-Dokumente (Markdown) und den generierten Build-Output. Eine separate Reviewer-Phase wurde nicht gestartet, weil weder Produktionscode noch Tests geändert wurden; die Validierung erfolgte über den erfolgreichen Build und gezielte Inspektion der generierten Outputs.

@@ -19,35 +19,35 @@ Quellen:
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/sf-ui-implementer/SKILL.md` | Codex-Modell von `gpt-5.4` auf `gpt-5.5` aktualisiert |
-| `skills/sf-nodejs-implementer/SKILL.md` | Codex-Modell von `gpt-5.4` auf `gpt-5.5` aktualisiert |
-| `skills/sf-frontend-reviewer/SKILL.md` | Codex-Modell von `gpt-5.4` auf `gpt-5.5` aktualisiert |
-| `skills/sf-nodejs-reviewer/SKILL.md` | Codex-Modell von `gpt-5.4` auf `gpt-5.5` aktualisiert |
-| `skills/sf-code-validator/SKILL.md` | Codex-Modell von `gpt-5.3-codex-spark` auf `gpt-5.4-mini` aktualisiert |
-| `skills/sf-code-documenter/SKILL.md` | Codex-Modell von `gpt-5.3-codex-spark` auf `gpt-5.4-mini` aktualisiert |
-| `skills/sf-docs-writer/SKILL.md` | Codex-Modell von `gpt-5.3-codex-spark` auf `gpt-5.4-mini` aktualisiert |
-| `skills/sf-test-writer/SKILL.md` | Codex-Modell von `gpt-5.3-codex-spark` auf `gpt-5.4-mini` aktualisiert |
-| `skills/sf-e2e-tester/SKILL.md` | Codex-Modell von `gpt-5.3-codex-spark` auf `gpt-5.4-mini` aktualisiert |
-| `README.md` | Agent-Modelltabelle und Frontmatter-Beispiel synchronisiert |
-| `docs/plan/0025-codex-model-version-update.md` | Diese Plan-Datei |
+| Datei                                          | Beschreibung                                                           |
+| ---------------------------------------------- | ---------------------------------------------------------------------- |
+| `skills/sf-ui-implementer/SKILL.md`            | Codex-Modell von `gpt-5.4` auf `gpt-5.5` aktualisiert                  |
+| `skills/sf-nodejs-implementer/SKILL.md`        | Codex-Modell von `gpt-5.4` auf `gpt-5.5` aktualisiert                  |
+| `skills/sf-frontend-reviewer/SKILL.md`         | Codex-Modell von `gpt-5.4` auf `gpt-5.5` aktualisiert                  |
+| `skills/sf-nodejs-reviewer/SKILL.md`           | Codex-Modell von `gpt-5.4` auf `gpt-5.5` aktualisiert                  |
+| `skills/sf-code-validator/SKILL.md`            | Codex-Modell von `gpt-5.3-codex-spark` auf `gpt-5.4-mini` aktualisiert |
+| `skills/sf-code-documenter/SKILL.md`           | Codex-Modell von `gpt-5.3-codex-spark` auf `gpt-5.4-mini` aktualisiert |
+| `skills/sf-docs-writer/SKILL.md`               | Codex-Modell von `gpt-5.3-codex-spark` auf `gpt-5.4-mini` aktualisiert |
+| `skills/sf-test-writer/SKILL.md`               | Codex-Modell von `gpt-5.3-codex-spark` auf `gpt-5.4-mini` aktualisiert |
+| `skills/sf-e2e-tester/SKILL.md`                | Codex-Modell von `gpt-5.3-codex-spark` auf `gpt-5.4-mini` aktualisiert |
+| `README.md`                                    | Agent-Modelltabelle und Frontmatter-Beispiel synchronisiert            |
+| `docs/plan/0025-codex-model-version-update.md` | Diese Plan-Datei                                                       |
 
 ## Implementierungsdetails
 
 ### Neue Modellmatrix
 
-| Agent | Codex Model |
-|---|---|
-| `sf-ui-implementer` | `gpt-5.5` |
-| `sf-nodejs-implementer` | `gpt-5.5` |
-| `sf-frontend-reviewer` | `gpt-5.5` |
-| `sf-nodejs-reviewer` | `gpt-5.5` |
-| `sf-code-validator` | `gpt-5.4-mini` |
-| `sf-code-documenter` | `gpt-5.4-mini` |
-| `sf-docs-writer` | `gpt-5.4-mini` |
-| `sf-test-writer` | `gpt-5.4-mini` |
-| `sf-e2e-tester` | `gpt-5.4-mini` |
+| Agent                   | Codex Model    |
+| ----------------------- | -------------- |
+| `sf-ui-implementer`     | `gpt-5.5`      |
+| `sf-nodejs-implementer` | `gpt-5.5`      |
+| `sf-frontend-reviewer`  | `gpt-5.5`      |
+| `sf-nodejs-reviewer`    | `gpt-5.5`      |
+| `sf-code-validator`     | `gpt-5.4-mini` |
+| `sf-code-documenter`    | `gpt-5.4-mini` |
+| `sf-docs-writer`        | `gpt-5.4-mini` |
+| `sf-test-writer`        | `gpt-5.4-mini` |
+| `sf-e2e-tester`         | `gpt-5.4-mini` |
 
 ### Build
 

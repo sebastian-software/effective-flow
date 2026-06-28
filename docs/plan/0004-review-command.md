@@ -16,12 +16,12 @@ Neuer `/review` Command, der ein umfassendes Code-Review durchführt und einen s
 
 ## Betroffene Dateien
 
-| Datei | Änderung |
-|---|---|
-| `sf-frontend-workflows/commands/review.md` | NEU — Command-Definition |
-| `README.md` | Commands-Tabelle ergänzt |
-| `sf-frontend-workflows/.claude-plugin/plugin.json` | Description ergänzt |
-| `.claude-plugin/marketplace.json` | Description ergänzt |
+| Datei                                              | Änderung                 |
+| -------------------------------------------------- | ------------------------ |
+| `sf-frontend-workflows/commands/review.md`         | NEU — Command-Definition |
+| `README.md`                                        | Commands-Tabelle ergänzt |
+| `sf-frontend-workflows/.claude-plugin/plugin.json` | Description ergänzt      |
+| `.claude-plugin/marketplace.json`                  | Description ergänzt      |
 
 ## Workflow-Phasen
 
@@ -33,6 +33,7 @@ Neuer `/review` Command, der ein umfassendes Code-Review durchführt und einen s
 ## Finding-Format
 
 Jedes Finding enthält:
+
 - Schweregrad (Kritisch/Wichtig/Hinweis)
 - Komplexität (Leicht/Mittel/Schwer)
 - Bereich, Datei+Zeile, Problem, Empfehlung
@@ -41,11 +42,11 @@ Jedes Finding enthält:
 
 ## Review-Findings und deren Behebung
 
-| Finding | Schweregrad | Behebung |
-|---|---|---|
-| code-validator könnte Dateien verändern | Kritisch | Read-Only-Anweisung in Phase 2 ergänzt |
-| Scope "gesamter Code" zu vage | Wichtig | Uncommitted-Changes-Heuristik ergänzt |
-| Keine User-Interaktion vor Review-Start | Wichtig | AskUserQuestion nach Phase 1 ergänzt |
-| Fehlende adversariale Findings-Prüfung | Wichtig | Qualitätsprüfung in Phase 4 ergänzt |
-| Prompt-Vorschlag-Qualität unspezifiziert | Hinweis | Muster-Templates für jeden Command-Typ ergänzt |
-| Konfidenz-Filter fehlt | Hinweis | Konfidenz < 80 wird in Phase 4 herausgefiltert |
+| Finding                                  | Schweregrad | Behebung                                       |
+| ---------------------------------------- | ----------- | ---------------------------------------------- |
+| code-validator könnte Dateien verändern  | Kritisch    | Read-Only-Anweisung in Phase 2 ergänzt         |
+| Scope "gesamter Code" zu vage            | Wichtig     | Uncommitted-Changes-Heuristik ergänzt          |
+| Keine User-Interaktion vor Review-Start  | Wichtig     | AskUserQuestion nach Phase 1 ergänzt           |
+| Fehlende adversariale Findings-Prüfung   | Wichtig     | Qualitätsprüfung in Phase 4 ergänzt            |
+| Prompt-Vorschlag-Qualität unspezifiziert | Hinweis     | Muster-Templates für jeden Command-Typ ergänzt |
+| Konfidenz-Filter fehlt                   | Hinweis     | Konfidenz < 80 wird in Phase 4 herausgefiltert |

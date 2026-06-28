@@ -34,18 +34,18 @@ Da `/review` rein analytisch ist (kein Implementierungsschritt), wurde ein zusä
 
 ## Betroffene Dateien
 
-| Datei | Änderung |
-|---|---|
-| `sf-frontend-workflows/commands/review.md` | Neuer Interaktionsschritt (Findings-Ablehnung), ADR-Generierungsschritt, ADR-Format-Section, angepasste "nur lesen"-Regel |
-| `sf-frontend-workflows/commands/build-feature.md` | ADR-Generierungsschritt als Schritt 6 in Phase 6 |
-| `sf-frontend-workflows/commands/refactor.md` | ADR-Generierungsschritt als Schritt 6 in Phase 4 |
-| `README.md` | Neue Section "ADR-Generierung" |
+| Datei                                             | Änderung                                                                                                                  |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `sf-frontend-workflows/commands/review.md`        | Neuer Interaktionsschritt (Findings-Ablehnung), ADR-Generierungsschritt, ADR-Format-Section, angepasste "nur lesen"-Regel |
+| `sf-frontend-workflows/commands/build-feature.md` | ADR-Generierungsschritt als Schritt 6 in Phase 6                                                                          |
+| `sf-frontend-workflows/commands/refactor.md`      | ADR-Generierungsschritt als Schritt 6 in Phase 4                                                                          |
+| `README.md`                                       | Neue Section "ADR-Generierung"                                                                                            |
 
 ## Review-Findings
 
-| Finding | Status |
-|---|---|
-| Kontext-Feld im review.md ADR-Format war Platzhalter statt `/review` (Kritisch) | Behoben |
-| Fehlender Interaktionsschritt für Findings-Ablehnung in review.md (Kritisch) | Behoben — neuer Schritt 7 eingefügt |
-| Inkonsistente Terminologie "abgelehnt" vs "nicht umgesetzt" (Wichtig) | Behoben — vereinheitlicht auf "nicht umgesetzt" |
-| Keine explizite Anweisung zur Verzeichniserstellung (Wichtig) | Behoben — "Erstelle docs/adr/ falls nicht vorhanden" in allen drei Dateien |
+| Finding                                                                         | Status                                                                     |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Kontext-Feld im review.md ADR-Format war Platzhalter statt `/review` (Kritisch) | Behoben                                                                    |
+| Fehlender Interaktionsschritt für Findings-Ablehnung in review.md (Kritisch)    | Behoben — neuer Schritt 7 eingefügt                                        |
+| Inkonsistente Terminologie "abgelehnt" vs "nicht umgesetzt" (Wichtig)           | Behoben — vereinheitlicht auf "nicht umgesetzt"                            |
+| Keine explizite Anweisung zur Verzeichniserstellung (Wichtig)                   | Behoben — "Erstelle docs/adr/ falls nicht vorhanden" in allen drei Dateien |

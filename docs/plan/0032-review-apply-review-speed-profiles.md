@@ -41,14 +41,14 @@ Annahme:
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/sf-review/SKILL.md` | Konfigurationslesung, Review-Speed-Profile, Scope-Autobestätigung, Designentscheidungs-Quellenprofile und Validator-Modus ergänzen |
-| `skills/sf-apply-review/SKILL.md` | Apply-Review-Defaults aus `.sf-plugin/config.json`, optionales Überspringen der Commit-Strategie-Frage, Worktree-Setup-Profil, finale Validierungsprofile und Config-Migration ergänzen |
-| `skills/sf-code-validator/SKILL.md` | Check-Modi für `full`, `quick` und `off` beschreiben, damit `sf-review` ihn gezielt steuern kann |
-| `build.mjs` | `{{ASK}}`-Transformation um optionale `when:`-Bedingung erweitert, damit Claude Code bedingte Fragen weiter als UI-Fragen anzeigen kann |
-| `README.md` | Kurze Dokumentation der empfohlenen `.sf-plugin/config.json`-Profile für schnelle Review-/Apply-Review-Läufe |
-| `docs/plan/0032-review-apply-review-speed-profiles.md` | Audit-Trail dieser Planung |
+| Datei                                                  | Beschreibung                                                                                                                                                                            |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skills/sf-review/SKILL.md`                            | Konfigurationslesung, Review-Speed-Profile, Scope-Autobestätigung, Designentscheidungs-Quellenprofile und Validator-Modus ergänzen                                                      |
+| `skills/sf-apply-review/SKILL.md`                      | Apply-Review-Defaults aus `.sf-plugin/config.json`, optionales Überspringen der Commit-Strategie-Frage, Worktree-Setup-Profil, finale Validierungsprofile und Config-Migration ergänzen |
+| `skills/sf-code-validator/SKILL.md`                    | Check-Modi für `full`, `quick` und `off` beschreiben, damit `sf-review` ihn gezielt steuern kann                                                                                        |
+| `build.mjs`                                            | `{{ASK}}`-Transformation um optionale `when:`-Bedingung erweitert, damit Claude Code bedingte Fragen weiter als UI-Fragen anzeigen kann                                                 |
+| `README.md`                                            | Kurze Dokumentation der empfohlenen `.sf-plugin/config.json`-Profile für schnelle Review-/Apply-Review-Läufe                                                                            |
+| `docs/plan/0032-review-apply-review-speed-profiles.md` | Audit-Trail dieser Planung                                                                                                                                                              |
 
 ## Implementierungsdetails
 
@@ -96,10 +96,12 @@ Annahme:
    - Nach erfolgreicher Migration den User einmal pro Workflow-Lauf darauf hinweisen, welche Defaults ergänzt wurden.
    - Den angewendeten Config-Migrationsstand in `.sf-plugin/memory.json` speichern, damit spätere Läufe erkennen können, welche Migration bereits kommuniziert wurde.
 10. Separate Cache-Datei ergänzen:
-   - Wiederverwendbare Cache-Daten nicht in `.sf-plugin/memory.json` und nicht dauerhaft in Wisdom-Dateien speichern.
-   - Neue Datei `.sf-plugin/cache.json` verwenden.
-   - Cache-Datei nur für invalidierbare Metadaten und Extrakte verwenden, nicht für finale Review-Findings.
-   - Bei ungültigem Cache oder Versionswechsel Cache ignorieren und später neu schreiben.
+
+- Wiederverwendbare Cache-Daten nicht in `.sf-plugin/memory.json` und nicht dauerhaft in Wisdom-Dateien speichern.
+- Neue Datei `.sf-plugin/cache.json` verwenden.
+- Cache-Datei nur für invalidierbare Metadaten und Extrakte verwenden, nicht für finale Review-Findings.
+- Bei ungültigem Cache oder Versionswechsel Cache ignorieren und später neu schreiben.
+
 11. `README.md` um ein knappes Beispiel für ein schnelles persönliches Profil, die Migrationsstrategie und die Cache-Datei ergänzen.
 12. Build und gezielte Inspektion der generierten Codex- und Claude-Artefakte als spätere Validierung einplanen.
 
@@ -107,30 +109,30 @@ Annahme:
 
 Die genaue JSON-Form soll minimal bleiben. Geplante Schlüssel:
 
-| Schlüssel | Werte | Wirkung |
-|---|---|---|
-| `review.profile` | `full`, `focused`, `fast` | Bündelt Review-Defaults |
-| `review.autoConfirmScope` | Boolean | Überspringt eindeutige Scope-Bestätigung |
-| `review.designDecisionSources` | `full`, `standard`, `minimal` | Steuert DD-Suchaufwand |
-| `review.validation` | `full`, `quick`, `off` | Steuert Validator-Aufwand im Review |
-| `applyReview.defaultCommitStrategy` | `worktrees`, `single`, `none` | Überspringt Commit-Strategie-Frage |
-| `applyReview.finalValidation` | `full`, `changedScope`, `off` | Steuert finale Validierung |
-| `applyReview.worktree.setup` | `auto`, `none` oder String | Bestehender Worktree-Setup-Schlüssel |
+| Schlüssel                           | Werte                         | Wirkung                                  |
+| ----------------------------------- | ----------------------------- | ---------------------------------------- |
+| `review.profile`                    | `full`, `focused`, `fast`     | Bündelt Review-Defaults                  |
+| `review.autoConfirmScope`           | Boolean                       | Überspringt eindeutige Scope-Bestätigung |
+| `review.designDecisionSources`      | `full`, `standard`, `minimal` | Steuert DD-Suchaufwand                   |
+| `review.validation`                 | `full`, `quick`, `off`        | Steuert Validator-Aufwand im Review      |
+| `applyReview.defaultCommitStrategy` | `worktrees`, `single`, `none` | Überspringt Commit-Strategie-Frage       |
+| `applyReview.finalValidation`       | `full`, `changedScope`, `off` | Steuert finale Validierung               |
+| `applyReview.worktree.setup`        | `auto`, `none` oder String    | Bestehender Worktree-Setup-Schlüssel     |
 
 ### Default-Konfiguration
 
 Wenn `.sf-plugin/config.json` fehlt oder einzelne Schlüssel fehlen, gelten diese Defaults:
 
-| Schlüssel | Default | Begründung |
-|---|---|---|
-| `review.profile` | `focused` | Entspricht dem etablierten Standard, nur kritische und wichtige Findings zu berichten, ohne ein vollständiges Audit zu erzwingen |
-| `review.autoConfirmScope` | `false` | Verhindert versehentliches Whole-Code-Review oder falschen Scope bei mehrdeutiger Lage |
-| `review.designDecisionSources` | `standard` | Hält ADRs, Pläne und Konventionsdateien abgedeckt, spart aber teure breite Scans |
-| `review.validation` | `full` | Bewahrt den bisherigen sicheren Review-Default |
-| `applyReview.defaultCommitStrategy` | nicht gesetzt | Bewahrt die bestehende explizite Commit-Strategie-Auswahl |
-| `applyReview.finalValidation` | `full` | Bewahrt das bisherige projektweite Qualitäts-Gate |
-| `applyReview.worktree.baseDir` | `.sf-plugin/.worktrees` | Entspricht dem bestehenden Worktree-Default |
-| `applyReview.worktree.setup` | `auto` | Entspricht dem bestehenden Setup-Default |
+| Schlüssel                           | Default                 | Begründung                                                                                                                       |
+| ----------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `review.profile`                    | `focused`               | Entspricht dem etablierten Standard, nur kritische und wichtige Findings zu berichten, ohne ein vollständiges Audit zu erzwingen |
+| `review.autoConfirmScope`           | `false`                 | Verhindert versehentliches Whole-Code-Review oder falschen Scope bei mehrdeutiger Lage                                           |
+| `review.designDecisionSources`      | `standard`              | Hält ADRs, Pläne und Konventionsdateien abgedeckt, spart aber teure breite Scans                                                 |
+| `review.validation`                 | `full`                  | Bewahrt den bisherigen sicheren Review-Default                                                                                   |
+| `applyReview.defaultCommitStrategy` | nicht gesetzt           | Bewahrt die bestehende explizite Commit-Strategie-Auswahl                                                                        |
+| `applyReview.finalValidation`       | `full`                  | Bewahrt das bisherige projektweite Qualitäts-Gate                                                                                |
+| `applyReview.worktree.baseDir`      | `.sf-plugin/.worktrees` | Entspricht dem bestehenden Worktree-Default                                                                                      |
+| `applyReview.worktree.setup`        | `auto`                  | Entspricht dem bestehenden Setup-Default                                                                                         |
 
 Für den persönlichen Schnellmodus kann der User diese Defaults bewusst überschreiben. Der Plan ändert also die sichere Ausgangslage nicht, macht aber häufige Entscheidungen dauerhaft konfigurierbar.
 
@@ -163,11 +165,11 @@ Die Migration soll leichtgewichtig und transparent sein:
 
 Geplante Memory-Erweiterung:
 
-| Schlüssel | Bedeutung |
-|---|---|
-| `configMigration.version` | Version des zuletzt angewendeten Config-Schemas |
-| `configMigration.appliedAt` | Zeitpunkt der letzten erfolgreichen Migration |
-| `configMigration.addedKeys` | Beim letzten Migrationslauf ergänzte Schlüssel |
+| Schlüssel                   | Bedeutung                                       |
+| --------------------------- | ----------------------------------------------- |
+| `configMigration.version`   | Version des zuletzt angewendeten Config-Schemas |
+| `configMigration.appliedAt` | Zeitpunkt der letzten erfolgreichen Migration   |
+| `configMigration.addedKeys` | Beim letzten Migrationslauf ergänzte Schlüssel  |
 
 ### Cache-Datei
 
@@ -184,11 +186,11 @@ Grundregeln:
 
 Geplante Cache-Bereiche:
 
-| Bereich | Inhalt | Invalidierung |
-|---|---|---|
-| `designDecisions` | Extrahierte Designentscheidungen pro Quelle | Hash oder mtime der Quelldateien, Cache-Schema-Version |
-| `scopeIndex` | Dateiliste, Project-Type-Buckets und Reviewer-Split für Whole-Code-Reviews | Git-HEAD, Dirty-State und relevante Dateiänderungen |
-| `validatorScripts` | Erkannte Check-Skripte und zuletzt brauchbares Validierungsprofil | Änderung an Package-/Build-Konfigurationsdateien |
+| Bereich               | Inhalt                                                                                           | Invalidierung                                              |
+| --------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `designDecisions`     | Extrahierte Designentscheidungen pro Quelle                                                      | Hash oder mtime der Quelldateien, Cache-Schema-Version     |
+| `scopeIndex`          | Dateiliste, Project-Type-Buckets und Reviewer-Split für Whole-Code-Reviews                       | Git-HEAD, Dirty-State und relevante Dateiänderungen        |
+| `validatorScripts`    | Erkannte Check-Skripte und zuletzt brauchbares Validierungsprofil                                | Änderung an Package-/Build-Konfigurationsdateien           |
 | `applyReviewAnalysis` | Vorabanalyse-Ergebnisse pro Report-Finding für unterbrochene oder wiederholte Apply-Review-Läufe | Report-Datei-Hash, Finding-ID, relevante Code-Datei-Hashes |
 
 Nicht gecacht werden:
@@ -280,15 +282,15 @@ Für den beschriebenen persönlichen Workflow ist dieses Zielprofil sinnvoll:
 
 ### Zusammenfassung
 
-| Bereich | Kritisch | Wichtig | Hinweis |
-|---|---:|---:|---:|
-| Architektur | 0 | 0 | 0 |
-| Security | 0 | 0 | 0 |
-| Datenschutz | 0 | 0 | 0 |
-| Fehlerfälle | 0 | 0 | 2 |
-| Testbarkeit | 0 | 0 | 0 |
-| Scope | 0 | 0 | 0 |
-| Wartbarkeit | 0 | 0 | 0 |
+| Bereich     | Kritisch | Wichtig | Hinweis |
+| ----------- | -------: | ------: | ------: |
+| Architektur |        0 |       0 |       0 |
+| Security    |        0 |       0 |       0 |
+| Datenschutz |        0 |       0 |       0 |
+| Fehlerfälle |        0 |       0 |       2 |
+| Testbarkeit |        0 |       0 |       0 |
+| Scope       |        0 |       0 |       0 |
+| Wartbarkeit |        0 |       0 |       0 |
 
 ### Befunde
 
@@ -311,16 +313,16 @@ Für den beschriebenen persönlichen Workflow ist dieses Zielprofil sinnvoll:
 ### Zusammenfassung
 
 | Schweregrad | Anzahl | Behoben | Offen |
-|---|---:|---:|---:|
-| Kritisch | 0 | 0 | 0 |
-| Wichtig | 2 | 2 | 0 |
-| Hinweis | 0 | 0 | 0 |
+| ----------- | -----: | ------: | ----: |
+| Kritisch    |      0 |       0 |     0 |
+| Wichtig     |      2 |       2 |     0 |
+| Hinweis     |      0 |       0 |     0 |
 
 | Komplexität | Anzahl |
-|---|---:|
-| Leicht | 2 |
-| Mittel | 0 |
-| Schwer | 0 |
+| ----------- | -----: |
+| Leicht      |      2 |
+| Mittel      |      0 |
+| Schwer      |      0 |
 
 ### Findings
 

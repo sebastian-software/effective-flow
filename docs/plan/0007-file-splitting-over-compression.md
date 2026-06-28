@@ -15,6 +15,7 @@ Die Regel wurde in alle 6 relevanten Agents eingefügt — nicht nur in die Impl
 ### Kontextspezifische Splitting-Beispiele
 
 Die Beispiele für sinnvolle Splitting-Ziele sind an den jeweiligen Agent-Kontext angepasst:
+
 - Frontend: Komponente, Hook, Utility, Types, Constants
 - Backend: Routes, Services, Validators, Types, Constants, Middleware
 - Tests: Pro Feature, pro Komponente, Unit vs. Integration
@@ -25,18 +26,18 @@ Der code-validator bekommt nur einen Hinweis für die Lösungs-Empfehlung, nicht
 
 ## Betroffene Dateien
 
-| Datei | Änderung |
-|---|---|
-| `sf-frontend-workflows/agents/ui-implementer.md` | Neue Section "Dateilänge und Lesbarkeit" |
-| `sf-frontend-workflows/agents/nodejs-implementer.md` | Gleiche Section, Backend-spezifische Beispiele |
-| `sf-frontend-workflows/agents/code-validator.md` | Neue Regel für File-Length-Finding-Empfehlungen |
-| `sf-frontend-workflows/agents/frontend-reviewer.md` | Neue Regel in Regeln-Section |
-| `sf-frontend-workflows/agents/nodejs-reviewer.md` | Neue Regel in Regeln-Section |
-| `sf-frontend-workflows/agents/test-writer.md` | Neue Regel in Regeln-Section |
+| Datei                                                | Änderung                                        |
+| ---------------------------------------------------- | ----------------------------------------------- |
+| `sf-frontend-workflows/agents/ui-implementer.md`     | Neue Section "Dateilänge und Lesbarkeit"        |
+| `sf-frontend-workflows/agents/nodejs-implementer.md` | Gleiche Section, Backend-spezifische Beispiele  |
+| `sf-frontend-workflows/agents/code-validator.md`     | Neue Regel für File-Length-Finding-Empfehlungen |
+| `sf-frontend-workflows/agents/frontend-reviewer.md`  | Neue Regel in Regeln-Section                    |
+| `sf-frontend-workflows/agents/nodejs-reviewer.md`    | Neue Regel in Regeln-Section                    |
+| `sf-frontend-workflows/agents/test-writer.md`        | Neue Regel in Regeln-Section                    |
 
 ## Review-Findings
 
-| Finding | Status |
-|---|---|
+| Finding                                                                 | Status  |
+| ----------------------------------------------------------------------- | ------- |
 | Fehlende Regel in frontend-reviewer.md und nodejs-reviewer.md (Wichtig) | Behoben |
-| Fehlende Regel in test-writer.md (Wichtig) | Behoben |
+| Fehlende Regel in test-writer.md (Wichtig)                              | Behoben |

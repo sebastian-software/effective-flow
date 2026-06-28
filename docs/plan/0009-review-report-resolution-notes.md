@@ -13,12 +13,12 @@ Wenn mit `$sf-build-feature`, `$sf-fix` oder `$sf-refactor` ein Finding aus eine
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
+| Datei                              | Beschreibung                                                                               |
+| ---------------------------------- | ------------------------------------------------------------------------------------------ |
 | `skills/sf-build-feature/SKILL.md` | Neue Regel und Review-/Abschluss-Schritte für kurze Hinweise in bestehenden Review-Reports |
-| `skills/sf-fix/SKILL.md` | Neue Regel und Abschluss-Schritt für kurze Hinweise in bestehenden Review-Reports |
-| `skills/sf-refactor/SKILL.md` | Neue Regel und Review-Schritt für kurze Hinweise in bestehenden Review-Reports |
-| `skills/sf-review/SKILL.md` | Berichtsformat um Erlaubnis für nachträgliche Statushinweise ergänzt |
+| `skills/sf-fix/SKILL.md`           | Neue Regel und Abschluss-Schritt für kurze Hinweise in bestehenden Review-Reports          |
+| `skills/sf-refactor/SKILL.md`      | Neue Regel und Review-Schritt für kurze Hinweise in bestehenden Review-Reports             |
+| `skills/sf-review/SKILL.md`        | Berichtsformat um Erlaubnis für nachträgliche Statushinweise ergänzt                       |
 
 ## Implementierungsdetails
 
@@ -32,7 +32,7 @@ Keine Laufzeit-Tests erforderlich, da nur Skill-Dokumentation und Plan-Dokumenta
 
 ## Review-Findings und deren Behebung
 
-| Finding | Schweregrad | Status |
-|---|---|---|
-| Rückschreiben in bestehende Review-Reports war in den umsetzenden Workflows nicht beschrieben | Wichtig | Behoben |
-| Berichtsformat in `$sf-review` erlaubte spätere Statushinweise nicht explizit | Wichtig | Behoben |
+| Finding                                                                                       | Schweregrad | Status  |
+| --------------------------------------------------------------------------------------------- | ----------- | ------- |
+| Rückschreiben in bestehende Review-Reports war in den umsetzenden Workflows nicht beschrieben | Wichtig     | Behoben |
+| Berichtsformat in `$sf-review` erlaubte spätere Statushinweise nicht explizit                 | Wichtig     | Behoben |

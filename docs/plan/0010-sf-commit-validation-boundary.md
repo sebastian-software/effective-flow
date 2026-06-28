@@ -12,8 +12,8 @@ Im `sf-commit`-Skill soll explizit beschrieben werden, dass keine Projektvalidat
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
+| Datei                       | Beschreibung                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------- |
 | `skills/sf-commit/SKILL.md` | Ziel, Vorgehen und Regeln um die explizite Abgrenzung zu Projektvalidierung erweitert |
 
 ## Implementierungsdetails
@@ -26,6 +26,6 @@ Keine Laufzeit-Tests ausgefuehrt, da nur Skill-Dokumentation und Plan-Dokumentat
 
 ## Review-Findings und deren Behebung
 
-| Finding | Schweregrad | Status |
-|---|---|---|
-| Die Abgrenzung zwischen Commit-Workflow und Projektvalidierung war im `sf-commit`-Skill nicht explizit genug | Wichtig | Behoben |
+| Finding                                                                                                      | Schweregrad | Status  |
+| ------------------------------------------------------------------------------------------------------------ | ----------- | ------- |
+| Die Abgrenzung zwischen Commit-Workflow und Projektvalidierung war im `sf-commit`-Skill nicht explizit genug | Wichtig     | Behoben |

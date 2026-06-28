@@ -14,8 +14,8 @@ Wenn `sf-apply-review` Worktree-Commits per `git cherry-pick` integriert und ein
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-| --- | --- |
+| Datei                             | Beschreibung                                                                                                                      |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `skills/sf-apply-review/SKILL.md` | Erweitert die Worktree-Cherry-Pick-Integration um Konfliktbewertung, risikoarme Auto-Auflösung und risikobasierte User-Eskalation |
 
 ## Implementierungsdetails

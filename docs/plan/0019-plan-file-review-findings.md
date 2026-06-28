@@ -15,10 +15,10 @@ Wenn `sf-build-feature` in Phase 7 die Plan-Datei in `docs/plan/` schreibt, soll
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/sf-build-feature/SKILL.md` | Phase 6 erweitert um lokale Finding-IDs, Komplexität-Aggregation und expliziten Reviewer-Auftrag (alle Schweregrade); Phase 7 erweitert um detailliertes `## Review-Findings`-Template plus Regeln für Edge Cases |
-| `docs/plan/0019-plan-file-review-findings.md` | Diese Plan-Datei — erste Anwendung des neuen Findings-Bericht-Formats |
+| Datei                                         | Beschreibung                                                                                                                                                                                                      |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skills/sf-build-feature/SKILL.md`            | Phase 6 erweitert um lokale Finding-IDs, Komplexität-Aggregation und expliziten Reviewer-Auftrag (alle Schweregrade); Phase 7 erweitert um detailliertes `## Review-Findings`-Template plus Regeln für Edge Cases |
+| `docs/plan/0019-plan-file-review-findings.md` | Diese Plan-Datei — erste Anwendung des neuen Findings-Bericht-Formats                                                                                                                                             |
 
 ## Implementierungsdetails
 
@@ -59,16 +59,16 @@ Wenn `sf-build-feature` in Phase 7 die Plan-Datei in `docs/plan/` schreibt, soll
 ### Zusammenfassung
 
 | Schweregrad | Anzahl | Behoben | Offen |
-|---|---|---|---|
-| Kritisch | 0 | 0 | 0 |
-| Wichtig | 5 | 5 | 0 |
-| Hinweis | 1 | 1 | 0 |
+| ----------- | ------ | ------- | ----- |
+| Kritisch    | 0      | 0       | 0     |
+| Wichtig     | 5      | 5       | 0     |
+| Hinweis     | 1      | 1       | 0     |
 
 | Komplexität | Anzahl |
-|---|---|
-| Leicht | 5 |
-| Mittel | 1 |
-| Schwer | 0 |
+| ----------- | ------ |
+| Leicht      | 5      |
+| Mittel      | 1      |
+| Schwer      | 0      |
 
 ### Findings
 

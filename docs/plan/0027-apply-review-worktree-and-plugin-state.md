@@ -15,14 +15,14 @@
 
 ## Umsetzung
 
-| Datei | Änderung |
-| --- | --- |
-| `.gitignore` | Ignoriert `.sf-plugin/` als zentralen Plugin-State-Ort |
-| `skills/sf-apply-review/SKILL.md` | Neue Commit-Strategie `Einzeln mit Worktrees`, Worktree-Pfade, Setup-Erkennung, Cherry-Pick-Integration |
-| `skills/sf-review/SKILL.md` | Memory- und Report-Pfade nach `.sf-plugin/`, Migration von `.sf-memory.json` |
-| `skills/sf-build-feature/SKILL.md` | Review-Report-Rückverweise nach `.sf-plugin/review/` |
-| `skills/sf-fix/SKILL.md` | Wisdom- und Review-Report-Pfade nach `.sf-plugin/` |
-| `skills/sf-refactor/SKILL.md` | Wisdom- und Review-Report-Pfade nach `.sf-plugin/` |
+| Datei                              | Änderung                                                                                                |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `.gitignore`                       | Ignoriert `.sf-plugin/` als zentralen Plugin-State-Ort                                                  |
+| `skills/sf-apply-review/SKILL.md`  | Neue Commit-Strategie `Einzeln mit Worktrees`, Worktree-Pfade, Setup-Erkennung, Cherry-Pick-Integration |
+| `skills/sf-review/SKILL.md`        | Memory- und Report-Pfade nach `.sf-plugin/`, Migration von `.sf-memory.json`                            |
+| `skills/sf-build-feature/SKILL.md` | Review-Report-Rückverweise nach `.sf-plugin/review/`                                                    |
+| `skills/sf-fix/SKILL.md`           | Wisdom- und Review-Report-Pfade nach `.sf-plugin/`                                                      |
+| `skills/sf-refactor/SKILL.md`      | Wisdom- und Review-Report-Pfade nach `.sf-plugin/`                                                      |
 
 ## Validierung
 

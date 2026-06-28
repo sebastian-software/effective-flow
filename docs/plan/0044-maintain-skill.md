@@ -26,13 +26,13 @@ Der Skill implementiert nichts selbst, sondern orchestriert die vorhandenen Work
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/sf-maintain/SKILL.md` | Neuer Orchestrator für Dependency-/Audit-Wartung mit Worker-Delegation |
-| `README.md` | Orchestratoren-Tabelle um `sf-maintain` ergänzen |
-| `build.mjs` | Marketplace-Plugin-Beschreibung um `maintain` ergänzen |
-| `version.txt` | Minor-Bump auf 1.35.0 (neues Feature) |
-| `docs/plan/0044-maintain-skill.md` | Plan nach Umsetzung abschließen |
+| Datei                              | Beschreibung                                                           |
+| ---------------------------------- | ---------------------------------------------------------------------- |
+| `skills/sf-maintain/SKILL.md`      | Neuer Orchestrator für Dependency-/Audit-Wartung mit Worker-Delegation |
+| `README.md`                        | Orchestratoren-Tabelle um `sf-maintain` ergänzen                       |
+| `build.mjs`                        | Marketplace-Plugin-Beschreibung um `maintain` ergänzen                 |
+| `version.txt`                      | Minor-Bump auf 1.35.0 (neues Feature)                                  |
+| `docs/plan/0044-maintain-skill.md` | Plan nach Umsetzung abschließen                                        |
 
 ## Implementierungsdetails
 

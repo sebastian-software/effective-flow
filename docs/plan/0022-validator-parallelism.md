@@ -17,6 +17,7 @@
 ## Erwarteter Speedup
 
 Beispiel-Repo: TypeCheck 30 s, Lint 15 s, Build 60 s.
+
 - **Heute (sequenziell):** 105 s.
 - **Mit Parallelisierung:** max(30, 15, 60) = 60 s → ~43% schneller.
 - **Mit Cache-Hits bei Re-Run:** ~10 s → ~90% schneller bei iterativen Fix-Zyklen.
@@ -24,10 +25,10 @@ Beispiel-Repo: TypeCheck 30 s, Lint 15 s, Build 60 s.
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/sf-code-validator/SKILL.md` | Vorgehen-Sektion auf parallele Ausführung mit `run_in_background: true` umgestellt; neue Aggregations-Sub-Sektion mit Wartelogik, Timeout, deterministischer Reihenfolge und Cross-Section-Korrelation; Cache-Awareness präzisiert mit konkreten Voraussetzungen; Monorepo-Orchestrator-Prioritätsreihenfolge; Graceful-Degradation-Regel für fehlende Skripte; Race-Condition-Erkennungssignale im Regel-Block |
-| `docs/plan/0022-validator-parallelism.md` | Diese Plan-Datei |
+| Datei                                     | Beschreibung                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skills/sf-code-validator/SKILL.md`       | Vorgehen-Sektion auf parallele Ausführung mit `run_in_background: true` umgestellt; neue Aggregations-Sub-Sektion mit Wartelogik, Timeout, deterministischer Reihenfolge und Cross-Section-Korrelation; Cache-Awareness präzisiert mit konkreten Voraussetzungen; Monorepo-Orchestrator-Prioritätsreihenfolge; Graceful-Degradation-Regel für fehlende Skripte; Race-Condition-Erkennungssignale im Regel-Block |
+| `docs/plan/0022-validator-parallelism.md` | Diese Plan-Datei                                                                                                                                                                                                                                                                                                                                                                                                |
 
 ## Implementierungsdetails
 
@@ -59,16 +60,16 @@ Beispiel-Repo: TypeCheck 30 s, Lint 15 s, Build 60 s.
 ### Zusammenfassung
 
 | Schweregrad | Anzahl | Behoben | Offen |
-|---|---|---|---|
-| Kritisch | 1 | 1 | 0 |
-| Wichtig | 4 | 4 | 0 |
-| Hinweis | 1 | 1 | 0 |
+| ----------- | ------ | ------- | ----- |
+| Kritisch    | 1      | 1       | 0     |
+| Wichtig     | 4      | 4       | 0     |
+| Hinweis     | 1      | 1       | 0     |
 
 | Komplexität | Anzahl |
-|---|---|
-| Leicht | 4 |
-| Mittel | 2 |
-| Schwer | 0 |
+| ----------- | ------ |
+| Leicht      | 4      |
+| Mittel      | 2      |
+| Schwer      | 0      |
 
 ### Findings
 

@@ -68,17 +68,17 @@ Funktionalität im Plugin-Verhalten) → Feature.
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/_shared/plan-numbering.md` | **Neu.** Zentrale Regel: frühe Reservierung, Max+1, Eindeutigkeit, lückenlose Planungsreihenfolge, Kollisionsauflösung. |
-| `skills/sf-plan/SKILL.md` | Phase 1 um frühe Reservierung ergänzen; Zeile 77 (Plan-Erstellung) auf zentrale Regel umstellen; `{{INCLUDE:plan-numbering}}` einbinden. |
-| `skills/sf-build/SKILL.md` | Zeile 96 und 316 (Abschluss-Nummernvergabe) auf zentrale Regel umstellen; `{{INCLUDE:plan-numbering}}` einbinden. |
-| `skills/sf-open-plans/SKILL.md` | Optionaler Hinweis: doppelte Nummern beim Auflisten melden. |
-| `README.md` | NNNN-Schema-Abschnitt um Eindeutigkeits- und Lückenfreiheitszusage ergänzen. |
-| `docs/plan/0031-doc-category-directories.md` → `0040-doc-category-directories.md` | Umbenennen + H1 anpassen (war Dublette). |
-| `docs/plan/0040-multilingual-plan-status-marker.md` → `0041-…` | Umbenennen + H1 anpassen. |
-| `docs/plan/0041-plan-status-marker-language-detection.md` → `0042-…` | Umbenennen + H1 anpassen. |
-| `dist/**`, `sf-frontend-workflows/**` | Generierte Artefakte: nach Änderung der Skills via `build.mjs` neu erzeugen. |
+| Datei                                                                             | Beschreibung                                                                                                                             |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `skills/_shared/plan-numbering.md`                                                | **Neu.** Zentrale Regel: frühe Reservierung, Max+1, Eindeutigkeit, lückenlose Planungsreihenfolge, Kollisionsauflösung.                  |
+| `skills/sf-plan/SKILL.md`                                                         | Phase 1 um frühe Reservierung ergänzen; Zeile 77 (Plan-Erstellung) auf zentrale Regel umstellen; `{{INCLUDE:plan-numbering}}` einbinden. |
+| `skills/sf-build/SKILL.md`                                                        | Zeile 96 und 316 (Abschluss-Nummernvergabe) auf zentrale Regel umstellen; `{{INCLUDE:plan-numbering}}` einbinden.                        |
+| `skills/sf-open-plans/SKILL.md`                                                   | Optionaler Hinweis: doppelte Nummern beim Auflisten melden.                                                                              |
+| `README.md`                                                                       | NNNN-Schema-Abschnitt um Eindeutigkeits- und Lückenfreiheitszusage ergänzen.                                                             |
+| `docs/plan/0031-doc-category-directories.md` → `0040-doc-category-directories.md` | Umbenennen + H1 anpassen (war Dublette).                                                                                                 |
+| `docs/plan/0040-multilingual-plan-status-marker.md` → `0041-…`                    | Umbenennen + H1 anpassen.                                                                                                                |
+| `docs/plan/0041-plan-status-marker-language-detection.md` → `0042-…`              | Umbenennen + H1 anpassen.                                                                                                                |
+| `dist/**`, `sf-frontend-workflows/**`                                             | Generierte Artefakte: nach Änderung der Skills via `build.mjs` neu erzeugen.                                                             |
 
 ## Implementierungsdetails
 
@@ -136,17 +136,17 @@ Funktionalität im Plugin-Verhalten) → Feature.
 ## Akzeptanzkriterien
 
 - [ ] `skills/_shared/plan-numbering.md` existiert und definiert frühe
-  Reservierung, Max+1, Eindeutigkeit, Lückenfreiheit und Auflösung in
-  Planungsreihenfolge.
+      Reservierung, Max+1, Eindeutigkeit, Lückenfreiheit und Auflösung in
+      Planungsreihenfolge.
 - [ ] `sf-plan` reserviert die Nummer zu Planungsbeginn und verweist auf die
-  zentrale Regel; `sf-build` verweist ebenfalls darauf.
+      zentrale Regel; `sf-build` verweist ebenfalls darauf.
 - [ ] In `docs/plan/` trägt jede vierstellige Nummer genau eine Datei; die Folge
-  `0001`…`0043` ist lückenlos und in Planungsreihenfolge.
+      `0001`…`0043` ist lückenlos und in Planungsreihenfolge.
 - [ ] `0031-doc-category-directories` ist `0040`, altes `0040`/`0041` sind
-  `0041`/`0042`; `0031`–`0039` unverändert.
+      `0041`/`0042`; `0031`–`0039` unverändert.
 - [ ] Jede umbenannte Datei hat eine zur neuen Nummer passende H1.
 - [ ] `dist/` und `sf-frontend-workflows/` sind neu gebaut und enthalten den
-  neuen Include.
+      neuen Include.
 
 ## Validierungsplan
 
@@ -186,10 +186,10 @@ Funktionalität im Plugin-Verhalten) → Feature.
 
 ### Zusammenfassung
 
-| Status | Anzahl |
-|---|---:|
-| Behoben | 9 |
-| Offen / Nicht umgesetzt | 0 |
+| Status                  | Anzahl |
+| ----------------------- | -----: |
+| Behoben                 |      9 |
+| Offen / Nicht umgesetzt |      0 |
 
 Alle Findings (1× Kritisch, 3× Wichtig, 5× Hinweis) wurden im Workflow behoben;
 eine Bestätigungs-Review hat die Auflösung verifiziert. Keine offenen Findings,

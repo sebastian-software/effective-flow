@@ -13,12 +13,12 @@
 
 ## Betroffene Dateien
 
-| Datei | Feld | Vorher | Nachher |
-|---|---|---|---|
-| `.claude-plugin/marketplace.json` | `owner.name` | `bs5` | `Sebastian Fastner` |
-| `.claude-plugin/marketplace.json` | `metadata.version` | `1.0.0` | `1.1.0` |
-| `.claude-plugin/marketplace.json` | `plugins[0].version` | `1.0.0` | `1.1.0` |
-| `sf-frontend-workflows/.claude-plugin/plugin.json` | `author.name` | `bs5` | `Sebastian Fastner` |
+| Datei                                              | Feld                 | Vorher  | Nachher             |
+| -------------------------------------------------- | -------------------- | ------- | ------------------- |
+| `.claude-plugin/marketplace.json`                  | `owner.name`         | `bs5`   | `Sebastian Fastner` |
+| `.claude-plugin/marketplace.json`                  | `metadata.version`   | `1.0.0` | `1.1.0`             |
+| `.claude-plugin/marketplace.json`                  | `plugins[0].version` | `1.0.0` | `1.1.0`             |
+| `sf-frontend-workflows/.claude-plugin/plugin.json` | `author.name`        | `bs5`   | `Sebastian Fastner` |
 
 ## Implementierungsdetails
 

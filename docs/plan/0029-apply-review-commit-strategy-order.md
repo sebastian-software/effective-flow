@@ -28,8 +28,8 @@ Auswahl per Default-Position ermöglicht.
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
+| Datei                             | Beschreibung                                                                                                                                                    |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `skills/sf-apply-review/SKILL.md` | Reihenfolge der ASK-Optionen und nachfolgender Erklärungs-Bullets in Phase 2 angepasst, Frage-Text von Ja/Nein-Form auf neutrale Strategie-Auswahl umformuliert |
 
 ## Implementierungsdetails

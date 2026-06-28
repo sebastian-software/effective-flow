@@ -13,11 +13,11 @@ Wenn `$sf-build-feature`, `$sf-refactor` oder `$sf-fix` ein Finding in einer bes
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/sf-build-feature/SKILL.md` | Rueckverweis-Regeln und Review-Schritt um Endposition und Checkmark erweitert |
-| `skills/sf-refactor/SKILL.md` | Rueckverweis-Regeln und Review-Schritt um Endposition und Checkmark erweitert |
-| `skills/sf-fix/SKILL.md` | Rueckverweis-Regeln und Abschluss-Schritt um Endposition und Checkmark erweitert |
+| Datei                              | Beschreibung                                                                     |
+| ---------------------------------- | -------------------------------------------------------------------------------- |
+| `skills/sf-build-feature/SKILL.md` | Rueckverweis-Regeln und Review-Schritt um Endposition und Checkmark erweitert    |
+| `skills/sf-refactor/SKILL.md`      | Rueckverweis-Regeln und Review-Schritt um Endposition und Checkmark erweitert    |
+| `skills/sf-fix/SKILL.md`           | Rueckverweis-Regeln und Abschluss-Schritt um Endposition und Checkmark erweitert |
 
 ## Implementierungsdetails
 
@@ -29,6 +29,6 @@ Keine Laufzeit-Tests ausgefuehrt, da nur Skill-Dokumentation und Plan-Dokumentat
 
 ## Review-Findings und deren Behebung
 
-| Finding | Schweregrad | Status |
-|---|---|---|
-| Umsetzungs-Hinweise in Review-Reports waren in Position und visueller Markierung nicht eindeutig definiert | Wichtig | Behoben |
+| Finding                                                                                                    | Schweregrad | Status  |
+| ---------------------------------------------------------------------------------------------------------- | ----------- | ------- |
+| Umsetzungs-Hinweise in Review-Reports waren in Position und visueller Markierung nicht eindeutig definiert | Wichtig     | Behoben |

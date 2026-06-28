@@ -14,8 +14,8 @@ Wenn `/build-feature` aufgerufen wird und es noch keinen Plan in `docs/plan/` gi
 
 ## Betroffene Dateien
 
-| Datei | Änderung |
-|---|---|
+| Datei                                             | Änderung                                                                                                                |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `sf-frontend-workflows/commands/build-feature.md` | Neuer Abschnitt "Initiale Zustandsdokumentation" (Zeilen 31-72), aktualisierter Verweis in Phase 0 Schritt 4 (Zeile 29) |
 
 ## Implementierungsdetails
@@ -32,10 +32,10 @@ Wenn `/build-feature` aufgerufen wird und es noch keinen Plan in `docs/plan/` gi
 
 ## Review-Findings und deren Behebung
 
-| Finding | Schweregrad | Status |
-|---|---|---|
-| R-001: Template-Format Deutsch/Englisch Inkonsistenz | Hinweis | Nicht umgesetzt — passt zur neueren Konvention |
-| R-002: Edge Case fremdes Projekt mit bestehendem docs/plan/ | Hinweis | Nicht umgesetzt — theoretisch, praktisch irrelevant |
-| R-003: Expliziter Fertig-Protokoll-Hinweis für Explore-Agent | Hinweis | Nicht umgesetzt — generische Regeln decken es ab |
-| R-004: Verweis in Phase 0 Schritt 4 mehrdeutig | Wichtig | Behoben — klarere Formulierung |
-| R-005: Wisdom-Accumulation-Lücke | Wichtig | Behoben — Wisdom-Summary-Block ergänzt |
+| Finding                                                      | Schweregrad | Status                                              |
+| ------------------------------------------------------------ | ----------- | --------------------------------------------------- |
+| R-001: Template-Format Deutsch/Englisch Inkonsistenz         | Hinweis     | Nicht umgesetzt — passt zur neueren Konvention      |
+| R-002: Edge Case fremdes Projekt mit bestehendem docs/plan/  | Hinweis     | Nicht umgesetzt — theoretisch, praktisch irrelevant |
+| R-003: Expliziter Fertig-Protokoll-Hinweis für Explore-Agent | Hinweis     | Nicht umgesetzt — generische Regeln decken es ab    |
+| R-004: Verweis in Phase 0 Schritt 4 mehrdeutig               | Wichtig     | Behoben — klarere Formulierung                      |
+| R-005: Wisdom-Accumulation-Lücke                             | Wichtig     | Behoben — Wisdom-Summary-Block ergänzt              |

@@ -27,10 +27,10 @@ Bei kleinen Repos (< 30 Dateien): primärer Speedup aus Phase 2a/2b/2c-Paralleli
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/sf-review/SKILL.md` | Phasen-Reorganisation: Phase 1 schlank, neue Phase 2 mit 2a/2b/2c parallel, Phase 3 mit zentralem Filter, Phase 4 Bericht; Wisdom-Sektion eingeführt; Bekannte-Einschränkungen-Block ergänzt; Header-Sections vereinfacht |
-| `docs/plan/0021-review-parallelism.md` | Diese Plan-Datei |
+| Datei                                  | Beschreibung                                                                                                                                                                                                              |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skills/sf-review/SKILL.md`            | Phasen-Reorganisation: Phase 1 schlank, neue Phase 2 mit 2a/2b/2c parallel, Phase 3 mit zentralem Filter, Phase 4 Bericht; Wisdom-Sektion eingeführt; Bekannte-Einschränkungen-Block ergänzt; Header-Sections vereinfacht |
+| `docs/plan/0021-review-parallelism.md` | Diese Plan-Datei                                                                                                                                                                                                          |
 
 ## Implementierungsdetails
 
@@ -70,16 +70,16 @@ Bei kleinen Repos (< 30 Dateien): primärer Speedup aus Phase 2a/2b/2c-Paralleli
 ### Zusammenfassung
 
 | Schweregrad | Anzahl | Behoben | Offen |
-|---|---|---|---|
-| Kritisch | 1 | 1 | 0 |
-| Wichtig | 3 | 3 | 0 |
-| Hinweis | 1 | 1 | 0 |
+| ----------- | ------ | ------- | ----- |
+| Kritisch    | 1      | 1       | 0     |
+| Wichtig     | 3      | 3       | 0     |
+| Hinweis     | 1      | 1       | 0     |
 
 | Komplexität | Anzahl |
-|---|---|
-| Leicht | 4 |
-| Mittel | 1 |
-| Schwer | 0 |
+| ----------- | ------ |
+| Leicht      | 4      |
+| Mittel      | 1      |
+| Schwer      | 0      |
 
 ### Findings
 

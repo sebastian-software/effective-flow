@@ -29,23 +29,23 @@ Es handelt sich um neue Funktionalität (Englisch-Erkennung) in der Plan-Konvent
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/_shared/plan-status.md` | Konvention um englischen Marker und Werte erweitern; Detektor-Regel auf „erste Zeile mit Präfix `**Planungsstatus:**` ODER `**Plan status:**`" umstellen. |
-| `skills/_shared/plan-reference-routing.md` | Status-Prüf-Regeln im Routing um Englisch ergänzen; Statuszeilen-Beispiele beidsprachig führen; Status-Update-Hinweis um Sprachenerhalt erweitern. |
-| `skills/sf-open-plans/SKILL.md` | Klassifikation `Offen` / `Abgeschlossen` / `Status unklar` um englische Werte ergänzen. |
-| `skills/sf-plan/SKILL.md` | Phase 3 (Plan-Erstellung) um Frage zur Markersprache erweitern; Template mit Platzhalter, der je nach Wahl deutsch oder englisch eingesetzt wird; Regelnabschnitt: Akzeptanzkriterien explizit erweitern. |
-| `skills/sf-build/SKILL.md` | Statusprüfung in Phase 1 (Plan-Validierung) und Status-Update in Phase 7 (Abschluss) so anpassen, dass beide Sprachen erkannt werden und das Update die Originalsprache erhält. |
-| `skills/sf-docs/SKILL.md` | Status-Update in Phase 4 (Abschluss) analog auf Sprachenerhalt umstellen. |
-| `skills/sf-apply-plan/SKILL.md` | Auflistung offener Pläne in Phase 1 um englische Statuszeile erweitern. |
-| `README.md` | Doku der Marker-Konvention ergänzen — beide Formen darstellen, kurz erläutern, dass der Status pro Plan-Datei einsprachig verwendet wird; Hinweis, dass `**Empfohlener Workflow:**` weiterhin Deutsch bleibt. |
+| Datei                                      | Beschreibung                                                                                                                                                                                                  |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skills/_shared/plan-status.md`            | Konvention um englischen Marker und Werte erweitern; Detektor-Regel auf „erste Zeile mit Präfix `**Planungsstatus:**` ODER `**Plan status:**`" umstellen.                                                     |
+| `skills/_shared/plan-reference-routing.md` | Status-Prüf-Regeln im Routing um Englisch ergänzen; Statuszeilen-Beispiele beidsprachig führen; Status-Update-Hinweis um Sprachenerhalt erweitern.                                                            |
+| `skills/sf-open-plans/SKILL.md`            | Klassifikation `Offen` / `Abgeschlossen` / `Status unklar` um englische Werte ergänzen.                                                                                                                       |
+| `skills/sf-plan/SKILL.md`                  | Phase 3 (Plan-Erstellung) um Frage zur Markersprache erweitern; Template mit Platzhalter, der je nach Wahl deutsch oder englisch eingesetzt wird; Regelnabschnitt: Akzeptanzkriterien explizit erweitern.     |
+| `skills/sf-build/SKILL.md`                 | Statusprüfung in Phase 1 (Plan-Validierung) und Status-Update in Phase 7 (Abschluss) so anpassen, dass beide Sprachen erkannt werden und das Update die Originalsprache erhält.                               |
+| `skills/sf-docs/SKILL.md`                  | Status-Update in Phase 4 (Abschluss) analog auf Sprachenerhalt umstellen.                                                                                                                                     |
+| `skills/sf-apply-plan/SKILL.md`            | Auflistung offener Pläne in Phase 1 um englische Statuszeile erweitern.                                                                                                                                       |
+| `README.md`                                | Doku der Marker-Konvention ergänzen — beide Formen darstellen, kurz erläutern, dass der Status pro Plan-Datei einsprachig verwendet wird; Hinweis, dass `**Empfohlener Workflow:**` weiterhin Deutsch bleibt. |
 
 Nicht angefasst (Designentscheidung):
 
-| Datei | Grund |
-|---|---|
-| `skills/sf-fix/SKILL.md` | Enthält keine direkte Status-Update-Stelle im Abschluss; verwendet `{{INCLUDE:plan-status}}` und `{{INCLUDE:plan-reference-routing}}` und übernimmt die mehrsprachige Konvention damit transitiv. Bestehende Asymmetrie (kein eigenes Status-Update) bleibt unverändert. |
-| `skills/sf-refactor/SKILL.md` | Wie `sf-fix`. |
+| Datei                         | Grund                                                                                                                                                                                                                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `skills/sf-fix/SKILL.md`      | Enthält keine direkte Status-Update-Stelle im Abschluss; verwendet `{{INCLUDE:plan-status}}` und `{{INCLUDE:plan-reference-routing}}` und übernimmt die mehrsprachige Konvention damit transitiv. Bestehende Asymmetrie (kein eigenes Status-Update) bleibt unverändert. |
+| `skills/sf-refactor/SKILL.md` | Wie `sf-fix`.                                                                                                                                                                                                                                                            |
 
 ## Implementierungsdetails
 
@@ -118,14 +118,14 @@ Nicht angefasst (Designentscheidung):
 
 ## Testergebnisse
 
-| Prüfung | Status |
-|---|---|
-| `node build.mjs` (Codex + Claude) | bestanden |
+| Prüfung                                               | Status                                                |
+| ----------------------------------------------------- | ----------------------------------------------------- |
+| `node build.mjs` (Codex + Claude)                     | bestanden                                             |
 | Markersuche in `dist/` (Plan status / Planungsstatus) | beide Marker in allen relevanten Artefakten vorhanden |
-| Stichprobe Statuszeile Deutsch | als offen erkannt |
-| Stichprobe Statuszeile Englisch | als offen erkannt |
-| Stichprobe Mixed (`**Plan status:** Umgesetzt`) | als unklar erkannt — Konvention konsistent |
-| Manuelle Sichtkontrolle Konventionsdokumente | konsistent |
+| Stichprobe Statuszeile Deutsch                        | als offen erkannt                                     |
+| Stichprobe Statuszeile Englisch                       | als offen erkannt                                     |
+| Stichprobe Mixed (`**Plan status:** Umgesetzt`)       | als unklar erkannt — Konvention konsistent            |
+| Manuelle Sichtkontrolle Konventionsdokumente          | konsistent                                            |
 
 ## Review-Findings
 
@@ -134,10 +134,10 @@ Nicht angefasst (Designentscheidung):
 
 ### Zusammenfassung
 
-| Status | Anzahl |
-|---|---:|
-| Behoben | 10 |
-| Offen / Nicht umgesetzt | 0 |
+| Status                  | Anzahl |
+| ----------------------- | -----: |
+| Behoben                 |     10 |
+| Offen / Nicht umgesetzt |      0 |
 
 ## Plan-Review
 
@@ -145,15 +145,15 @@ Nicht angefasst (Designentscheidung):
 
 ### Zusammenfassung
 
-| Bereich | Kritisch | Wichtig | Hinweis |
-|---|---:|---:|---:|
-| Architektur | 0 | 0 | 0 |
-| Security | 0 | 0 | 0 |
-| Datenschutz | 0 | 0 | 0 |
-| Fehlerfälle | 0 | 0 | 1 |
-| Testbarkeit | 0 | 0 | 0 |
-| Scope | 0 | 0 | 0 |
-| Wartbarkeit | 0 | 0 | 0 |
+| Bereich     | Kritisch | Wichtig | Hinweis |
+| ----------- | -------: | ------: | ------: |
+| Architektur |        0 |       0 |       0 |
+| Security    |        0 |       0 |       0 |
+| Datenschutz |        0 |       0 |       0 |
+| Fehlerfälle |        0 |       0 |       1 |
+| Testbarkeit |        0 |       0 |       0 |
+| Scope       |        0 |       0 |       0 |
+| Wartbarkeit |        0 |       0 |       0 |
 
 ### Befunde
 

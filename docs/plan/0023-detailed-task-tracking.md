@@ -16,11 +16,11 @@ Bei `sf-apply-review` und `sf-review` ist die TODO-Liste während der Ausführun
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/sf-apply-review/SKILL.md` | Neue Sektion „Aufgabenverfolgung im Detail" mit Phase-Level + Per-Finding-Tasks, Lifecycle-Regeln inkl. ABBRUCH und vorzeitigem Gesamt-Abbruch |
-| `skills/sf-review/SKILL.md` | Neue Sektion mit zweistufiger Anlage (Zeitpunkt A und B), Per-Quelle/Per-Sub-Reviewer-Tasks, Phase-2-Aggregat-Lifecycle und Gesamt-Abbruch-Regel |
-| `docs/plan/0023-detailed-task-tracking.md` | Diese Plan-Datei |
+| Datei                                      | Beschreibung                                                                                                                                     |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `skills/sf-apply-review/SKILL.md`          | Neue Sektion „Aufgabenverfolgung im Detail" mit Phase-Level + Per-Finding-Tasks, Lifecycle-Regeln inkl. ABBRUCH und vorzeitigem Gesamt-Abbruch   |
+| `skills/sf-review/SKILL.md`                | Neue Sektion mit zweistufiger Anlage (Zeitpunkt A und B), Per-Quelle/Per-Sub-Reviewer-Tasks, Phase-2-Aggregat-Lifecycle und Gesamt-Abbruch-Regel |
+| `docs/plan/0023-detailed-task-tracking.md` | Diese Plan-Datei                                                                                                                                 |
 
 ## Implementierungsdetails
 
@@ -69,16 +69,16 @@ Bei `sf-apply-review` und `sf-review` ist die TODO-Liste während der Ausführun
 ### Zusammenfassung
 
 | Schweregrad | Anzahl | Behoben | Offen |
-|---|---|---|---|
-| Kritisch | 0 | 0 | 0 |
-| Wichtig | 4 | 4 | 0 |
-| Hinweis | 1 | 1 | 0 |
+| ----------- | ------ | ------- | ----- |
+| Kritisch    | 0      | 0       | 0     |
+| Wichtig     | 4      | 4       | 0     |
+| Hinweis     | 1      | 1       | 0     |
 
 | Komplexität | Anzahl |
-|---|---|
-| Leicht | 4 |
-| Mittel | 1 |
-| Schwer | 0 |
+| ----------- | ------ |
+| Leicht      | 4      |
+| Mittel      | 1      |
+| Schwer      | 0      |
 
 ### Findings
 

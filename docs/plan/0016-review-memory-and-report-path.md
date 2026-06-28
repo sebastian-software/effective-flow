@@ -15,13 +15,13 @@
 
 ## Betroffene Dateien
 
-| Datei | Beschreibung |
-|---|---|
-| `skills/sf-review/SKILL.md` | Memory-Logik hinzugefügt, Nummernformat auf 7-stellig, Report-Pfad auf `docs/review/` |
-| `skills/sf-apply-review/SKILL.md` | Report-Suchpfad auf `docs/review/`, R-XXX auf R-XXXXXXX, Hinweis auf Memory-Datei |
-| `skills/sf-build-feature/SKILL.md` | Report-Referenzen auf `docs/review/` |
-| `skills/sf-fix/SKILL.md` | Report-Referenzen auf `docs/review/` |
-| `skills/sf-refactor/SKILL.md` | Report-Referenzen auf `docs/review/` |
+| Datei                              | Beschreibung                                                                          |
+| ---------------------------------- | ------------------------------------------------------------------------------------- |
+| `skills/sf-review/SKILL.md`        | Memory-Logik hinzugefügt, Nummernformat auf 7-stellig, Report-Pfad auf `docs/review/` |
+| `skills/sf-apply-review/SKILL.md`  | Report-Suchpfad auf `docs/review/`, R-XXX auf R-XXXXXXX, Hinweis auf Memory-Datei     |
+| `skills/sf-build-feature/SKILL.md` | Report-Referenzen auf `docs/review/`                                                  |
+| `skills/sf-fix/SKILL.md`           | Report-Referenzen auf `docs/review/`                                                  |
+| `skills/sf-refactor/SKILL.md`      | Report-Referenzen auf `docs/review/`                                                  |
 
 ## Implementierungsdetails
 
@@ -46,8 +46,8 @@
 
 ## Review-Findings und deren Behebung
 
-| Finding | Schweregrad | Status |
-|---|---|---|
-| Memory-Write Timing ohne Rollback-Schutz | Kritisch | Behoben: Pflicht-Schreibvorgang vor ERLEDIGT dokumentiert |
-| Git-Tracking nicht explizit dokumentiert | Wichtig | Behoben: Hinweis "Projekt entscheidet selbst" ergänzt |
-| sf-apply-review ohne Memory-Hinweis | Wichtig | Behoben: Regel ergänzt, dass keine neuen IDs vergeben werden |
+| Finding                                  | Schweregrad | Status                                                       |
+| ---------------------------------------- | ----------- | ------------------------------------------------------------ |
+| Memory-Write Timing ohne Rollback-Schutz | Kritisch    | Behoben: Pflicht-Schreibvorgang vor ERLEDIGT dokumentiert    |
+| Git-Tracking nicht explizit dokumentiert | Wichtig     | Behoben: Hinweis "Projekt entscheidet selbst" ergänzt        |
+| sf-apply-review ohne Memory-Hinweis      | Wichtig     | Behoben: Regel ergänzt, dass keine neuen IDs vergeben werden |
