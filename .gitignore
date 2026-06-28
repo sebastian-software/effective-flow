@@ -1,5 +1,6 @@
 .claude/settings.local.json
 .DS_Store
 dist/
+node_modules/
 TODO.md
 .sf-plugin/

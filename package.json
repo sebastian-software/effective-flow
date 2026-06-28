@@ -1,0 +1,14 @@
+{
+  "name": "sf-claude-plugin",
+  "private": true,
+  "description": "Dual-platform workflow skills for Codex and Claude Code, built from a single source",
+  "scripts": {
+    "build": "node build.mjs",
+    "format": "oxfmt",
+    "agent:check": "oxfmt --check"
+  },
+  "devDependencies": {
+    "oxfmt": "^0.56.0"
+  },
+  "packageManager": "pnpm@11.9.0"
+}
