@@ -24,6 +24,7 @@ Das System unterscheidet drei Typen:
 | `sf-fix` | Bugfix-Workflow |
 | `sf-refactor` | Refactoring-Workflow |
 | `sf-review` | Umfassendes Code-Review |
+| `sf-maintain` | Schlanke Wartung: Dependency-Updates, Audit-Fixes, Breaking-Change-Adaption |
 | `sf-commit` | Commit-Message für gestagte Änderungen |
 
 ### Agents (werden von Orchestratoren delegiert)
