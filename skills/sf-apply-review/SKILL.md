@@ -34,7 +34,7 @@ Lege gleich zu Beginn von Phase 1 (nach erfolgreicher Report-Klassifikation) fol
 
 1. **Phase-Level-Tasks** für jede Workflow-Phase, in der Reihenfolge:
    - „Phase 1: Report einlesen und validieren"
-   - „Phase 2: Commit-Strategie festlegen"
+   - „Phase 2: Commit- und Stash-Strategie festlegen"
    - „Phase 3: ADR-Erstellung"
    - „Phase 4: Vorabanalyse und parallele Delegation"
    - „Phase 5: Report aktualisieren"
@@ -74,6 +74,10 @@ Retry-Eskalation:
 3. minimaler Auftrag
 4. danach User fragen, wie weiter vorzugehen ist
 
+```include
+goal-completion
+```
+
 ## Wisdom Accumulation
 
 Verwende `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
@@ -104,6 +108,7 @@ Plugin-interne Dateien liegen unter `.sf-plugin/` im Projekt-Root.
   "applyReview": {
     "defaultCommitStrategy": null,
     "finalValidation": "full",
+    "stashPolicy": "interactive",
     "worktree": {
       "baseDir": ".sf-plugin/.worktrees",
       "setup": "auto"
@@ -116,6 +121,7 @@ Fehlende Werte haben diese Defaults:
 
 - `applyReview.defaultCommitStrategy`: nicht gesetzt (Commit-Strategie wird gefragt)
 - `applyReview.finalValidation`: `full`
+- `applyReview.stashPolicy`: `interactive` (heutiges interaktives Pro-Stash-Nachfragen)
 - `applyReview.worktree.baseDir`: `.sf-plugin/.worktrees`
 - `applyReview.worktree.setup`: `auto`
 
@@ -123,6 +129,7 @@ Gültige Werte:
 
 - `applyReview.defaultCommitStrategy`: `worktrees`, `single`, `none`
 - `applyReview.finalValidation`: `full`, `changedScope`, `off`
+- `applyReview.stashPolicy`: `interactive`, `keep`, `discard`, `apply`
 - `applyReview.worktree.setup`: `auto`, `none` oder ein expliziter Setup-Befehl als String
 
 ### Config-Migration
@@ -172,7 +179,7 @@ Regeln:
 
 ### Phase 1: Report einlesen und validieren
 
-1. Lade Plugin-Konfiguration, migriere sie falls nötig und bestimme Commit-Strategie-Default, Worktree-Defaults und finales Validierungsprofil.
+1. Lade Plugin-Konfiguration, migriere sie falls nötig und bestimme Commit-Strategie-Default, Stash-Policy, Worktree-Defaults und finales Validierungsprofil.
 2. Lies `.sf-plugin/cache.json`, falls vorhanden und gültig. Verwende nur valide `applyReviewAnalysis`-Einträge.
 3. **Stash-Baseline erfassen:** Führe `git stash list` aus und merke dir die vollständige Liste der bereits vorhandenen Stash-Referenzen (z. B. `stash@{0}`, `stash@{1}`, ... mit ihren Beschreibungen). Halte die Baseline in der Wisdom-Datei fest, damit Phase 6 (Stash-Bereinigung) später neue, durch diesen Workflow entstandene Stashes davon abgrenzen kann. Falls `git stash list` leer ist: notiere „keine Baseline-Stashes".
 4. Bestimme die Report-Datei:
@@ -210,7 +217,9 @@ Regeln:
 
 9. Falls keine umsetzbaren Findings vorhanden sind und keine ADRs zu erstellen sind: Kurzmeldung und Abbruch.
 
-### Phase 2: Commit-Strategie
+### Phase 2: Commit- und Stash-Strategie
+
+Diese Phase ist das einzige Up-front-Strategie-Gate des Workflows: Commit-Strategie und Stash-Policy werden hier gemeinsam festgelegt, bevor die Findings abgearbeitet werden. Danach folgt kein weiteres **reguläres** Approval-Gate; verbleibende Stopps sind ausschließlich konfliktbedingte Datenintegritäts-Eskalationen: ein `apply`-Merge-Konflikt in Phase 6, ein risikoreicher Cherry-Pick-Konflikt in Phase 4.3 bei der Strategie „Einzeln mit Worktrees" und – selten – ein verwaister Commit-Lock bei der Strategie „Einzeln". Tritt keine solche Eskalation auf, laufen die Phasen 3–8 unter nativem `/goal` autonom.
 
 Wenn `applyReview.defaultCommitStrategy` gültig gesetzt ist, überspringe die ASK-Frage und verwende die konfigurierte Strategie:
 
@@ -238,6 +247,33 @@ Halte die Antwort fest und gib sie an jeden delegierten Skill als Anweisung weit
 - **Einzeln mit Worktrees:** Jede parallele Sub-Gruppe arbeitet in einem eigenen Git-Worktree, committet dort die Findings einzeln und der Orchestrator führt die Commits danach sequenziell per `git cherry-pick` in den ursprünglichen Branch zurück. Commit-Messages folgen denselben Regeln wie bei `Einzeln`: konkrete Conventional-Commit-Message, keine internen Finding-IDs, kein `Co-Authored-By`.
 - **Einzeln:** Nach jedem abgeschlossenen Finding die Änderungen committen. Verwende eine konkrete Conventional-Commit-Message ohne interne Finding-ID, z. B. `fix: clarify review decision filtering`. Setze **niemals** `Co-Authored-By`-Trailer (auch nicht für LLMs); das gilt für jeden Commit, der durch diesen Workflow oder einen delegierten Sub-Agenten erzeugt wird. Protokolliere die Zuordnung von Finding-ID zu Commit-Hash direkt nach jedem erfolgreichen Commit in der Wisdom-Datei.
 - **Keine Commits:** Keine automatischen Commits, der User committet selbst.
+
+#### Stash-Policy
+
+Teil desselben Up-front-Gates: Die Stash-Policy legt vorab fest, wie die Stash-Bereinigung in Phase 6 (Klassen B/C/D) und das Abbruch-Aufräumen in Phase 4.3 mit hinterlassenen Stashes umgehen – ohne spätere Rückfrage. Konkrete Stashes existieren zu Beginn noch nicht; entschieden wird daher die Policy, nicht der Einzelfall.
+
+Wenn `applyReview.stashPolicy` gültig gesetzt ist, überspringe die ASK-Frage und verwende den Wert; melde kurz, dass die Stash-Policy aus `.sf-plugin/config.json` übernommen wurde. Wenn kein gültiger Wert gesetzt ist, frage am selben Gate wie die Commit-Strategie:
+
+```ask
+when: kein gültiger Wert für `applyReview.stashPolicy` gesetzt ist
+header: Stashes
+question: Wie sollen während des Laufs hinterlassene Stashes behandelt werden, wenn eine Entscheidung nötig ist?
+options:
+  - label: Interaktiv
+    description: Pro betroffenem Stash nachfragen (heutiges Verhalten, blockiert autonome Läufe)
+  - label: Behalten
+    description: Unklare Stashes unverändert behalten und am Ende berichten (sicher für autonome Läufe)
+  - label: Verwerfen
+    description: Unklare Stashes verwerfen (git stash drop) – möglicher Datenverlust
+  - label: Anwenden
+    description: Unklare Stashes anwenden (git stash pop); bei Merge-Konflikt wird trotzdem nachgefragt
+```
+
+Werte-Zuordnung: Interaktiv → `interactive`, Behalten → `keep`, Verwerfen → `discard`, Anwenden → `apply`. Halte die gewählte Policy in der Wisdom-Datei fest. Für unbeaufsichtigte `/goal`-Läufe ist `keep` der sichere Wert; `interactive` blockiert solche Läufe an Phase 6 und Phase 4.3.
+
+#### Optionaler `/goal`-String
+
+Nachdem Commit-Strategie und Stash-Policy feststehen, gib gemäß „Goal-getriebene Abschlusssteuerung" den optionalen `/goal`-String aus; er deckt die Phasen 3–8 ab. Der String referenziert die Report-Datei und weist an, die verbleibenden Phasen zu durchlaufen. Bei `stashPolicy != interactive` (empfohlen `keep`) laufen diese Phasen ohne reguläres Approval-Gate; verbleibende Stopps sind nur die konfliktbedingten Eskalationen aus der Phase-Einleitung (`apply`-Merge-Konflikt, risikoreicher Cherry-Pick-Konflikt bei Worktrees, selten ein verwaister Lock).
 
 #### Git-Commit-Mutex für „Einzeln"
 
@@ -496,8 +532,15 @@ Beispiel: Aktionsgruppe `{{SKILL:sf-fix}}` mit fünf Findings:
 3. Prüfe jeden Sub-Agenten auf `ERLEDIGT` oder `ABBRUCH`.
 4. Bei `ABBRUCH`:
    - User informieren, Finding als `fehlgeschlagen (Delegation)` in der Wisdom-Datei markieren.
-   - **Vor dem nächsten Finding derselben Sub-Gruppe:** prüfe via `git status`, ob der Arbeitsbaum sauber ist. Falls uncommittete Änderungen vorhanden sind (halbfertige Datei vom abgebrochenen Finding), frage den User, ob diese Änderungen gestasht (`git stash push -m "apply-review abort R-XXXXXXX"`) oder verworfen werden sollen, bevor das nächste Finding startet. Andernfalls würde das nächste Finding auf einem inkonsistenten Zustand arbeiten.
+   - **Vor dem nächsten Finding derselben Sub-Gruppe:** prüfe via `git status`, ob der Arbeitsbaum sauber ist. Falls uncommittete Änderungen vorhanden sind (halbfertige Datei vom abgebrochenen Finding), räume den Arbeitsbaum gemäß der in Phase 2 festgelegten `stashPolicy` auf, bevor das nächste Finding startet – sonst arbeitet es auf inkonsistentem Zustand:
+     - `interactive` → den User fragen, ob die Änderungen gestasht oder verworfen werden sollen.
+     - `keep` und `apply` → mit Finding-ID stashen (`git stash push -m "apply-review abort R-XXXXXXX"`); `apply` ist hier nicht sinnvoll, da es ums Saubermachen vor dem nächsten Finding geht, und wird daher wie `keep` behandelt.
+     - `discard` → die Änderungen verwerfen.
+
+     Stashe in jedem Fall mit der Finding-ID in der Message, damit Phase 6 den Stash zuordnen kann.
+
    - Mit dem nächsten Finding innerhalb derselben Sub-Gruppe fortfahren. Andere Sub-Gruppen laufen unabhängig weiter.
+
 5. Gib dem User nach jeder abgeschlossenen Sub-Gruppe eine Statusmeldung mit dem Ergebnis pro Finding.
 6. **Synchronisationsbarriere vor Phase 5:** Starte Phase 5 erst, wenn **alle** in Phase 4.3 gestarteten Delegations-Sub-Agenten einen Endstatus geliefert haben (`ERLEDIGT` oder `ABBRUCH`).
 7. Bei Commit-Strategie `Einzeln mit Worktrees`: integriere nach der Synchronisationsbarriere alle erfolgreichen Worktree-Branches sequenziell per `git cherry-pick` in den ursprünglichen Branch. Phase 5 darf erst starten, wenn diese Integration abgeschlossen ist oder der Workflow wegen Konflikt/User-Entscheidung angehalten wurde.
@@ -552,6 +595,8 @@ Während der Delegation in Phase 4 können die aufgerufenen Sub-Skills oder Pre-
 
 6. **Behandle jeden Stash anhand seiner Klassifikation:**
 
+   **Stash-Policy aus Phase 2 anwenden:** Klasse A bleibt in allen Policies Auto-Drop. Die Klassen B/C/D folgen der `stashPolicy`. Die untenstehenden Klassen-Schritte beschreiben den Fall `stashPolicy = interactive` (Default), der pro Stash die Stash-Frage stellt. Bei den anderen Werten entfällt die Frage und du handelst direkt: `keep` → Stash unverändert behalten und für die Phase-8-Zusammenfassung als „behalten" vermerken; `discard` → `git stash drop`; `apply` → `git stash pop` und bei Merge-Konflikt **nicht** droppen, sondern an den User eskalieren (einziger verbleibender Stopp im Autonom-Lauf).
+
    - **Klasse A:** Drop ohne Nachfrage.
      - `git stash drop stash@{N}`
      - Logge dem User: „Stash für `[R-XXXXXXX]` verworfen — Finding vollständig umgesetzt, Zwischenstand nicht mehr benötigt."
@@ -568,7 +613,7 @@ Während der Delegation in Phase 4 können die aufgerufenen Sub-Skills oder Pre-
      - Zeige Beschreibung und Inhalt (`git stash show -p stash@{N}`).
      - Stelle die untenstehende Stash-Frage ohne Finding-Bezug.
 
-   Stash-Frage (für die Klassen B, C und D):
+   Stash-Frage (für die Klassen B, C und D; nur bei `stashPolicy = interactive`):
 
 ```ask
 header: Stash
@@ -582,12 +627,12 @@ options:
     description: Stash unverändert lassen
 ```
 
-7. Führe die User-Entscheidung aus:
+7. Führe die Entscheidung aus – die interaktive Antwort bei `stashPolicy = interactive`, sonst die Policy-Aktion aus Schritt 6:
    - **Anwenden und löschen:** `git stash pop stash@{N}`. Bei Konflikten: User informieren, manuelle Auflösung anbieten, Stash nicht automatisch droppen, bis der Konflikt aufgelöst ist.
    - **Verwerfen:** `git stash drop stash@{N}`.
    - **Behalten:** keine Aktion.
 8. Wichtig: nach jeder `pop`/`drop`-Aktion verschieben sich die `stash@{N}`-Indizes. Lies die Liste daher nach jeder Aktion neu und matche über die in Schritt 2 erfasste Beschreibung/den Commit-Hash, nicht über alte Indizes.
-9. Gib dem User eine kurze Statusmeldung über alle behandelten Stashes (automatisch verworfen, manuell behandelt, behalten).
+9. Gib dem User eine kurze Statusmeldung über alle behandelten Stashes (automatisch verworfen, manuell behandelt, behalten). Halte die Liste der behaltenen Stashes (Referenz und Beschreibung) für die Phase-8-Zusammenfassung fest.
 
 ### Phase 7: Finale Validierung
 
@@ -603,7 +648,7 @@ options:
    - Bei `changedScope`: behebe nur Fehler, die im geänderten Scope oder im einmaligen Standard-Check eindeutig durch diesen Lauf entstanden sind; wenn die Zuordnung unklar ist, informiere den User statt unrelated Fixes breit umzusetzen.
    - protokolliere in der Wisdom-Datei, welche Dateien durch finale Validierungsfixes geändert wurden und ob sie direkt zu Findings gehören oder unrelated Validation-Fixes sind.
    - führe die Prüfungen erneut aus
-   - bei `full`: wiederhole bis alle Prüfungen fehlerfrei durchlaufen
+   - bei `full`: behebe und prüfe erneut gemäß „Goal-getriebene Abschlusssteuerung"; begrenze die internen Korrekturrunden und eskaliere an den User, falls die Prüfungen danach weiterhin fehlschlagen, statt unbegrenzt zu wiederholen
    - bei `changedScope`: wiederhole nur, wenn die betroffene Prüfung scope-bewusst oder schnell genug ist; andernfalls dokumentiere das Ergebnis und frage bei unklaren Restfehlern den User
 6. Falls in Phase 2 die Commit-Strategie „Einzeln" gewählt wurde und Fixes nötig waren:
    - verwende den Git-Commit-Mutex aus Phase 2 für die gesamte finale Staging-/Commit-Sektion.
@@ -634,6 +679,10 @@ options:
 [Falls Findings fehlgeschlagen sind:]
 **Fehlgeschlagene Findings:**
 - [R-XXXXXXX] [Titel]: [Grund]
+
+[Falls Stashes behalten wurden (z. B. stashPolicy keep):]
+**Behaltene Stashes:**
+- `stash@{N}` [Beschreibung] — bitte manuell prüfen
 ```
 
 ## Regeln

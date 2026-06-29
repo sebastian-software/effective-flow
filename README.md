@@ -148,6 +148,8 @@ Die Workflow-Skills `sf-build`, `sf-fix`, `sf-refactor`, `sf-docs` und `sf-maint
 
 Zusätzlich gibt jeder dieser Workflows an seiner Freigabe-Grenze einen optionalen, copy-paste-baren `/goal`-String aus. Wer ihn als neue Eingabe einfügt, lässt die verbleibenden Phasen unter dem nativen `/goal` (Codex und Claude Code) autonom laufen; andernfalls läuft der Workflow unverändert gated weiter. Die Approval-Gates bleiben in jedem Fall erhalten. `sf-review` und `sf-plan` nutzen nur die explizite, unabhängig geprüfte Abschlussbedingung ohne Autonom-Loop und ohne `/goal`-String.
 
+`sf-apply-review` bindet den Baustein ebenfalls ein: Es bündelt Commit-Strategie und die Stash-Behandlung (`applyReview.stashPolicy`) zu einem einzigen Up-front-Strategie-Gate in Phase 2, begrenzt den finalen Validierungs-Loop und gibt danach den `/goal`-String für die Phasen 3–8 aus. Mit `stashPolicy: keep` läuft die Finding-Abarbeitung ohne reguläre Rückfrage; verbleibende Stopps sind nur konfliktbedingte Eskalationen (z. B. ein `apply`-Merge-Konflikt bei der Stash-Bereinigung oder ein risikoreicher Cherry-Pick-Konflikt bei der Strategie „Einzeln mit Worktrees"). Der Default `interactive` erhält das bisherige Pro-Stash-Nachfragen.
+
 ## Worktree-Integration
 
 Die Code-ändernden Workflows `sf-build`, `sf-fix`, `sf-refactor`, `sf-docs` und `sf-maintain` binden den gemeinsamen Baustein `skills/_shared/worktree-integration.md` ein. Er verknüpft diese Workflows optional mit Git-Worktrees und Pull-Requests, damit parallel auf dem lokalen Repo gearbeitet werden kann. Der Modus ist **opt-in** über `worktree.enabled` in `.sf-plugin/config.json` und standardmäßig deaktiviert; ist er aus, verhalten sich die Workflows unverändert – keine Worktree-Erzeugung und keine erzwungenen Commits. Einziger Unterschied: existiert bereits eine `.sf-plugin/config.json`, ergänzen die Workflows den `worktree`-Block einmalig nicht-destruktiv (Migration), wie bei den übrigen Config-Blöcken.
@@ -182,6 +184,7 @@ Sicheres Default-Verhalten:
   "applyReview": {
     "defaultCommitStrategy": null,
     "finalValidation": "full",
+    "stashPolicy": "interactive",
     "worktree": {
       "baseDir": ".sf-plugin/.worktrees",
       "setup": "auto"
@@ -214,6 +217,7 @@ Schneller persönlicher Review-/Apply-Review-Workflow:
   "applyReview": {
     "defaultCommitStrategy": "worktrees",
     "finalValidation": "changedScope",
+    "stashPolicy": "keep",
     "worktree": {
       "baseDir": ".sf-plugin/.worktrees",
       "setup": "none"
