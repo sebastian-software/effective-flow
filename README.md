@@ -141,6 +141,12 @@ Nur Build ausführen (ohne Deployment):
 node build.mjs
 ```
 
+## Goal-getriebene Abschlusssteuerung
+
+Die Workflow-Skills `sf-build`, `sf-fix`, `sf-refactor`, `sf-docs` und `sf-maintain` binden den gemeinsamen Baustein `skills/_shared/goal-completion.md` ein. Er fasst die internen „wiederhole bis fertig"-Schleifen zu einem einheitlichen Muster zusammen: eine vorab deklarierte, messbare Abschlussbedingung, unabhängige Verifikation über die im jeweiligen Workflow vorgesehenen Prüfungen (`sf-code-validator` und, falls eine Review-Phase existiert, der passende Reviewer) sowie ein beschränkter Korrektur-Loop, der bei anhaltendem Fehlschlag an den User eskaliert statt unbegrenzt zu wiederholen.
+
+Zusätzlich gibt jeder dieser Workflows an seiner Freigabe-Grenze einen optionalen, copy-paste-baren `/goal`-String aus. Wer ihn als neue Eingabe einfügt, lässt die verbleibenden Phasen unter dem nativen `/goal` (Codex und Claude Code) autonom laufen; andernfalls läuft der Workflow unverändert gated weiter. Die Approval-Gates bleiben in jedem Fall erhalten. `sf-review` und `sf-plan` nutzen nur die explizite, unabhängig geprüfte Abschlussbedingung ohne Autonom-Loop und ohne `/goal`-String.
+
 ## Plugin-Konfiguration
 
 Projektlokale Laufzeitdaten liegen unter `.sf-plugin/` im Zielprojekt:
@@ -208,8 +214,9 @@ Schneller persönlicher Review-/Apply-Review-Workflow:
 ```text
 sf-claude-plugin/
 ├── skills/                          # Source (Platzhalter-Syntax)
-│   ├── _shared/                     # Gemeinsame Inhalte ({{INCLUDE:…}})
+│   ├── _shared/                     # Gemeinsame Inhalte (`include`-Fence)
 │   │   ├── doc-categories.md        # Verzeichnis-Konvention für finale Dokumente
+│   │   ├── goal-completion.md       # Goal-getriebene Abschlusssteuerung + /goal-String
 │   │   └── language-rules.md        # Zentrale Sprach- und Typografie-Regeln
 │   ├── sf-apply-plan/SKILL.md       # type: orchestrator
 │   ├── sf-build/SKILL.md            # type: orchestrator

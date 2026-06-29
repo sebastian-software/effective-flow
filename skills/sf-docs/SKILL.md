@@ -36,6 +36,10 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Analyse und Umsetzu
 completion-protocol
 ```
 
+```include
+goal-completion
+```
+
 ## Wisdom Accumulation
 
 Erzeuge zu Beginn eine Session-ID, zum Beispiel via Timestamp. Verwende sie konsistent für `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`.
@@ -103,6 +107,7 @@ Wenn ein offener Plan für `{{SKILL:sf-docs}}` bestätigt ist:
    - betroffene Dateien
    - geplante inhaltliche Änderungen
    - Validierungsstrategie
+8. Leite aus der Validierungsstrategie und den geplanten Änderungen die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung") und gib zusätzlich zur Freigabe-Frage den optionalen `/goal`-String aus; er deckt die Phasen 2–4 ab.
 
 ```ask
 header: Doku-Plan
@@ -138,7 +143,7 @@ type: approval
    - Slugs entsprechen der Konvention (Kebab-Case, kein NNNN-Prefix)
    - bei User-Guide-Änderungen ist `docs/user-guide/README.md` vorhanden, sobald Inhalte unter `docs/user-guide/` existieren
 3. Starte `{{AGENT:sf-code-validator}}`, wenn Doku-Änderungen technische Artefakte betreffen oder der Projekt-Build die Änderung plausibel prüfen kann.
-4. Wenn Fehler gefunden werden: behebe sie oder delegiere erneut an den passenden Doku-Agenten.
+4. Wenn Fehler gefunden werden: behebe sie oder delegiere erneut an den passenden Doku-Agenten – gemäß „Goal-getriebene Abschlusssteuerung": begrenze die internen Korrekturrunden und eskaliere an den User, falls die Validierung danach weiterhin Fehler meldet, statt unbegrenzt zu wiederholen.
 
 ### Phase 4: Abschluss
 

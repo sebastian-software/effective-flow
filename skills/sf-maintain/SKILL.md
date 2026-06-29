@@ -34,6 +34,10 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Scan und beacht
 completion-protocol
 ```
 
+```include
+goal-completion
+```
+
 ## Wisdom Accumulation
 
 Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
@@ -109,6 +113,8 @@ options:
     description: Konkrete Gruppen als Freitext benennen
 ```
 
+6. Leite aus der gewählten Update-Auswahl die explizite Abschlussbedingung ab (umgesetzte Gruppen, Baseline-Abgleich grün, Reviewer ohne offene kritische Findings bei Code-Anpassungen; siehe „Goal-getriebene Abschlusssteuerung") und gib zusätzlich den optionalen `/goal`-String aus; er deckt die Phasen 2–5 ab.
+
 ### Phase 2: Baseline
 
 Starte parallel:
@@ -130,7 +136,7 @@ Arbeite die freigegebenen Gruppen nacheinander ab. Für jede Gruppe:
 3. Validiere die Gruppe: `{{AGENT:sf-code-validator}}` und die bestehenden Tests erneut ausführen.
 4. Gleiche gegen die Baseline ab:
    - grün → ein sauberer Commit pro Gruppe (siehe Commit-Regeln), aussagekräftige Message, z. B. `chore(deps): …`.
-   - rot und reparabel → Anpassung über den Implementer nachziehen, erneut validieren.
+   - rot und reparabel → Anpassung über den Implementer nachziehen, erneut validieren – gemäß „Goal-getriebene Abschlusssteuerung" die internen Korrekturrunden begrenzen; bleibt die Gruppe danach rot, wie „nicht sinnvoll reparabel" behandeln statt unbegrenzt zu wiederholen.
    - rot und nicht sinnvoll reparabel → Gruppe zurückrollen (Manifest und Lockfile auf den Stand vor der Gruppe) und als „manuell" markieren.
 5. Halte Ergebnis und Begründung in der Wisdom-Datei fest.
 

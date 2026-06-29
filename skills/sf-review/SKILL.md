@@ -351,6 +351,8 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 5. Präsentiere dem User die wichtigsten Findings und weise auf die gespeicherte Report-Datei hin.
 6. Lösche die Wisdom-Datei.
 
+**Abschlussbedingung (ohne Autonom-Loop):** Das Review ist abgeschlossen, wenn die in Phase 3 qualitätsgeprüften und gegen Designentscheidungen gefilterten Findings im Bericht stehen, `.sf-plugin/memory.json` mit der höchsten vergebenen Finding-Nummer geschrieben ist und die Wisdom-Datei gelöscht wurde. Die unabhängige Prüfung leistet die Findings-Qualitätsprüfung in Phase 3 (Konfidenzfilter, Duplikat- und Schweregrad-Konsistenz). Dieser Workflow erzeugt nur einen Bericht und setzt nichts um; deshalb gibt es weder einen beschränkten Korrektur-Loop noch einen `/goal`-String.
+
 ### Bericht-Format
 
 ```markdown

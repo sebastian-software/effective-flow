@@ -32,6 +32,10 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Investigation und F
 completion-protocol
 ```
 
+```include
+goal-completion
+```
+
 ## Wisdom Accumulation
 
 Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
@@ -110,7 +114,8 @@ Wenn ein offener Plan für `{{SKILL:sf-fix}}` bestätigt ist:
    - wie er reproduzierbar ist
    - Gap-Analysis-Erkenntnisse
    - Validierungs-Scorecard
-5. Hole Freigabe ein, wenn Ursache oder Fix-Strategie nicht eindeutig sind.
+5. Leite aus Diagnose, Fix-Scope und Akzeptanzkriterien die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung") und gib zusammen mit der Diagnose-Präsentation den optionalen `/goal`-String aus; er deckt die Phasen 3–5 ab.
+6. Hole Freigabe ein, wenn Ursache oder Fix-Strategie nicht eindeutig sind.
 
 ```ask
 header: Fix-Strategie
@@ -153,7 +158,7 @@ Wenn dabei offene Findings oder Restrisiken entstehen, dokumentiere sie struktur
 
 ### Phase 5: Abschluss
 
-1. Falls Fehler in Phase 4 gefunden wurden: behebe sie und wiederhole Phase 4.
+1. Falls Fehler in Phase 4 gefunden wurden: behebe sie und verifiziere Phase 4 erneut gemäß „Goal-getriebene Abschlusssteuerung": begrenze die internen Korrekturrunden und eskaliere an den User, falls die Abschlussbedingung danach weiterhin nicht hält, statt unbegrenzt zu wiederholen.
 2. Wenn aus Verifikation, Regressionstest oder Review-ähnlicher Prüfung Findings oder Restrisiken mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
    - schreibe sie gemäß „Offene Review-Finding-Reports" in eine neue Datei unter `.sf-plugin/review/`
    - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-NNNN.md`

@@ -32,6 +32,10 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Analyse und Refacto
 completion-protocol
 ```
 
+```include
+goal-completion
+```
+
 ## Wisdom Accumulation
 
 Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
@@ -99,7 +103,8 @@ Wenn ein offener Plan für `{{SKILL:sf-refactor}}` bestätigt ist:
    - Big Picture: Nutzen klar
    - Verhaltens-Invarianz: jede Änderung begründet
 7. Präsentiere den Plan mit Scorecard.
-8. Hole Freigabe ein.
+8. Leite aus den messbaren Akzeptanzkriterien die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung") und gib zusammen mit dem präsentierten Plan den optionalen `/goal`-String aus; er deckt die Phasen 2–6 ab. Die Abschlussbedingung schließt die Verhaltens-Invarianz ein: die in Phase 2 erhobene Baseline muss unverändert bleiben.
+9. Hole Freigabe ein.
 
 ```ask
 header: Freigabe
@@ -177,8 +182,7 @@ Starte parallel:
    - Build
 2. Falls Regressionen gefunden werden:
    - User informieren
-   - zurück zu Phase 3
-   - Phase 5 und 6 wiederholen
+   - zurück zu Phase 3, dann Phase 5 und 6 erneut – gemäß „Goal-getriebene Abschlusssteuerung": begrenze die internen Korrekturrunden und eskaliere an den User, falls die Baseline danach weiterhin nicht erreicht wird, statt unbegrenzt zu wiederholen
 3. Falls keine Regressionen:
    - Wisdom-Datei löschen
    - zusammenfassen, was refactored wurde

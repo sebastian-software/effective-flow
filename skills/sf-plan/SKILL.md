@@ -285,6 +285,7 @@ Regeln:
 
 - Entferne nicht relevante optionale Unterabschnitte oder schreibe knapp „Nicht relevant" mit Begründung.
 - Nutze konkrete Datei-Referenzen, sobald sie aus der Codebase ableitbar sind.
+- Formuliere die Akzeptanzkriterien so, dass sie zusammen genau eine messbare Abschlussbedingung ergeben. Der umsetzende Workflow leitet daraus seine Goal-Bedingung und den optionalen `/goal`-String ab; vermeide vage Kriterien ohne benannte Prüfung.
 - Schreibe den Plan als Umsetzungsanleitung, nicht als Vorab-Implementierung.
 - Vermeide Codeblöcke im Plan. Nutze sie nur, wenn eine kurze Codeformulierung klarer und kürzer ist als eine prose Beschreibung.
 - Wenn ein Codebeispiel nötig ist, begrenze es auf das kleinste aussagekräftige Fragment und dokumentiere, dass es ein Beispiel oder eine Schnittstellenskizze ist.
