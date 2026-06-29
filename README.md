@@ -28,6 +28,7 @@ Das System unterscheidet drei Typen:
 | `sf-maintain`    | Schlanke Wartung: Dependency-Updates, Audit-Fixes, Breaking-Change-Adaption |
 | `sf-commit`      | Commit-Message für gestagte Änderungen                                      |
 | `sf-pr`          | Pull-Request aus einem Branch auf GitHub (`gh`) oder Forgejo (`tea`)        |
+| `sf-setup`       | `.gitignore`-Eintrag + interaktive Pflege von `.sf-plugin/config.json`      |
 
 ### Agents (werden von Orchestratoren delegiert)
 
@@ -168,7 +169,7 @@ Projektlokale Laufzeitdaten liegen unter `.sf-plugin/` im Zielprojekt:
 | `.sf-plugin/cache.json`  | Invalidierbare Cache-Daten für wiederholte Reviews und Apply-Review-Läufe                                                                        |
 | `.sf-plugin/review/`     | Review-Reports                                                                                                                                   |
 
-Die Skills funktionieren ohne `config.json`. Wenn eine bestehende Config neue Schlüssel noch nicht enthält, migrieren `sf-review`, `sf-apply-review` und `sf-plan` sowie die Code-ändernden Workflows (für den `worktree`-Block) fehlende Defaults nicht-destruktiv und melden die ergänzten Schlüssel. Da `worktree.enabled` per Default `false` ist, bleibt die Worktree-Integration auch nach automatischer Migration deaktiviert. Der Migrationsstatus wird in `memory.json` gespeichert; wiederverwendbare Cache-Daten liegen separat in `cache.json`.
+Die Skills funktionieren ohne `config.json`. Zum proaktiven Anlegen oder Anpassen der Datei dient `sf-setup` (`/setup`): Es trägt `.sf-plugin/` in die `.gitignore` ein und pflegt `config.json` interaktiv über Presets oder einen Detailmodus, nicht-destruktiv für vorhandene Werte. Wenn eine bestehende Config neue Schlüssel noch nicht enthält, migrieren `sf-review`, `sf-apply-review` und `sf-plan` sowie die Code-ändernden Workflows (für den `worktree`-Block) fehlende Defaults nicht-destruktiv und melden die ergänzten Schlüssel. Da `worktree.enabled` per Default `false` ist, bleibt die Worktree-Integration auch nach automatischer Migration deaktiviert. Der Migrationsstatus wird in `memory.json` gespeichert; wiederverwendbare Cache-Daten liegen separat in `cache.json`.
 
 `sf-plan` nutzt `plan.markerLanguage` (`"de"` oder `"en"`), um die Sprache des kanonischen Statusmarkers neuer Plan-Dateien zu bestimmen. Reihenfolge: Config-Eintrag gewinnt; sonst leitet `sf-plan` die Sprache aus den vorhandenen Plan-Dateien ab; sonst fragt es per `AskUserQuestion` und bietet an, die Wahl zu persistieren. Bei eindeutiger Detection und existierender Config ohne den Schlüssel wird er nicht-destruktiv ergänzt.
 
