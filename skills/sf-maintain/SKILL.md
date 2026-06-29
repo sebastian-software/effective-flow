@@ -117,7 +117,18 @@ options:
     description: Konkrete Gruppen als Freitext benennen
 ```
 
-6. Leite aus der gewählten Update-Auswahl die explizite Abschlussbedingung ab (umgesetzte Gruppen, Baseline-Abgleich grün, Reviewer ohne offene kritische Findings bei Code-Anpassungen; siehe „Goal-getriebene Abschlusssteuerung") und gib zusätzlich den optionalen `/goal`-String aus; er deckt die Phasen 2–5 ab.
+6. Leite aus der gewählten Update-Auswahl die explizite Abschlussbedingung ab (umgesetzte Gruppen, Baseline-Abgleich grün, Reviewer ohne offene kritische Findings bei Code-Anpassungen; siehe „Goal-getriebene Abschlusssteuerung"); sie deckt die Phasen 2–5 ab. Da das Update-Gate eine Auswahlfrage ist, stelle direkt nach der Auswahl die eigenständige Goal-Folgefrage gemäß „Explizite Goal-Abfrage für autonome Läufe". Bei Wahl „Autonom via /goal" gib den `/goal`-String für die Phasen 2–5 aus; die Folgefrage entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
+
+```ask
+when: der Workflow interaktiv läuft und nicht als nicht-interaktiver Sub-Agent (z. B. durch /apply-review) delegiert wurde
+header: Goal
+question: Verbleibende Phasen autonom unter /goal laufen lassen?
+options:
+  - label: Gated weiter
+    description: Workflow läuft mit den üblichen Stopps weiter
+  - label: Autonom via /goal
+    description: Verbleibende Phasen autonom unter nativem /goal — der Skill gibt den einzufügenden /goal-String aus
+```
 
 ### Phase 2: Baseline
 

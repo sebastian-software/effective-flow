@@ -107,13 +107,19 @@ Wenn ein offener Plan für `{{SKILL:sf-refactor}}` bestätigt ist:
    - Big Picture: Nutzen klar
    - Verhaltens-Invarianz: jede Änderung begründet
 7. Präsentiere den Plan mit Scorecard.
-8. Leite aus den messbaren Akzeptanzkriterien die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung") und gib zusammen mit dem präsentierten Plan den optionalen `/goal`-String aus; er deckt die Phasen 2–6 ab. Die Abschlussbedingung schließt die Verhaltens-Invarianz ein: die in Phase 2 erhobene Baseline muss unverändert bleiben.
-9. Hole Freigabe ein.
+8. Leite aus den messbaren Akzeptanzkriterien die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung"); sie deckt die Phasen 2–6 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten. Die Abschlussbedingung schließt die Verhaltens-Invarianz ein: die in Phase 2 erhobene Baseline muss unverändert bleiben.
+9. Hole Freigabe ein. Die Freigabe-Frage enthält die explizite Goal-Abfrage (Option „Autonom via /goal"); behandle sie gemäß „Explizite Goal-Abfrage für autonome Läufe": Bei Wahl „Autonom via /goal" gib den `/goal`-String für die Phasen 2–6 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
 
 ```ask
 header: Freigabe
 question: Refactoring-Plan freigegeben?
-type: approval
+options:
+  - label: Ja
+    description: Freigabe erteilt, Workflow läuft gated weiter
+  - label: Autonom via /goal
+    description: Verbleibende Phasen autonom unter nativem /goal — der Skill gibt den einzufügenden /goal-String aus (entfällt bei nicht-interaktiver Delegation)
+  - label: Anpassen
+    description: Feedback als Freitext eingeben
 ```
 
 ### Phase 2: Baseline

@@ -111,12 +111,18 @@ Wenn ein offener Plan für `{{SKILL:sf-docs}}` bestätigt ist:
    - betroffene Dateien
    - geplante inhaltliche Änderungen
    - Validierungsstrategie
-8. Leite aus der Validierungsstrategie und den geplanten Änderungen die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung") und gib zusätzlich zur Freigabe-Frage den optionalen `/goal`-String aus; er deckt die Phasen 2–4 ab.
+8. Leite aus der Validierungsstrategie und den geplanten Änderungen die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung"); sie deckt die Phasen 2–4 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten. Behandle die Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe": Bei Wahl „Autonom via /goal" gib den `/goal`-String für die Phasen 2–4 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
 
 ```ask
 header: Doku-Plan
 question: Dokumentationsplan freigegeben?
-type: approval
+options:
+  - label: Ja
+    description: Freigabe erteilt, Workflow läuft gated weiter
+  - label: Autonom via /goal
+    description: Verbleibende Phasen autonom unter nativem /goal — der Skill gibt den einzufügenden /goal-String aus (entfällt bei nicht-interaktiver Delegation)
+  - label: Anpassen
+    description: Feedback als Freitext eingeben
 ```
 
 ### Phase 2: Umsetzung

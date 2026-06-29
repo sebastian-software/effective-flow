@@ -104,13 +104,19 @@ Führe die read-only-Investigation gemäß „Investigation-Methode", Abschnitt 
    - wie er reproduzierbar ist
    - Gap-Analysis-Erkenntnisse
    - Validierungs-Scorecard
-5. Leite aus Diagnose, Fix-Scope und Akzeptanzkriterien die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung") und gib zusammen mit der Diagnose-Präsentation den optionalen `/goal`-String aus; er deckt die Phasen 3–5 ab.
-6. Hole Freigabe ein, wenn Ursache oder Fix-Strategie nicht eindeutig sind.
+5. Leite aus Diagnose, Fix-Scope und Akzeptanzkriterien die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung"); sie deckt die Phasen 3–5 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten.
+6. Hole Freigabe ein. Die Freigabe-Frage enthält die explizite Goal-Abfrage (Option „Autonom via /goal"); behandle sie gemäß „Explizite Goal-Abfrage für autonome Läufe": Bei Wahl „Autonom via /goal" gib den `/goal`-String für die Phasen 3–5 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
 
 ```ask
 header: Fix-Strategie
 question: Diagnose und Fix-Strategie freigegeben?
-type: approval
+options:
+  - label: Ja
+    description: Freigabe erteilt, Workflow läuft gated weiter
+  - label: Autonom via /goal
+    description: Verbleibende Phasen autonom unter nativem /goal — der Skill gibt den einzufügenden /goal-String aus (entfällt bei nicht-interaktiver Delegation)
+  - label: Anpassen
+    description: Feedback als Freitext eingeben
 ```
 
 ### Phase 3: Fix

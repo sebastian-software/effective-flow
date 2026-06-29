@@ -210,7 +210,7 @@ Wenn ein offener Plan für `{{SKILL:sf-build}}` bestätigt ist:
 
 - überspringe Phase 1 vollständig
 - verwende die Inhalte der Plan-Datei als abgestimmten Implementierungsplan
-- leite aus den Akzeptanzkriterien und dem Validierungsplan die explizite Abschlussbedingung ab und gib vor dem Start von Phase 2 den optionalen `/goal`-String gemäß „Goal-getriebene Abschlusssteuerung" aus
+- leite aus den Akzeptanzkriterien und dem Validierungsplan die explizite Abschlussbedingung ab und stelle vor dem Start von Phase 2 die explizite Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe". Da Phase 1 hier übersprungen wird und keine Ja/Nein-Freigabe an dieser Grenze steht, ist es die eigenständige Ja/Nein-Folgefrage; bei Wahl „Autonom via /goal" den `/goal`-String für die Phasen 2–7 ausgeben. Die Abfrage entfällt, wenn der Workflow nicht-interaktiv delegiert wurde (z. B. durch `/apply-review`); die Übergabe durch `/apply-plan` zählt nicht als solche Delegation.
 - starte direkt mit Phase 2
 
 Ein referenzierter ungebauter Plan ersetzt nur die Planungsphase. Initiale Zustandsdokumentation, Review-Report-Rückverweise, Implementierung, Dokumentation, Tests, Validierung, Review und Abschluss laufen weiterhin normal.
@@ -234,15 +234,21 @@ Wenn keine ungebaute Plan-Datei referenziert wurde:
    - Validierungsplan ist vorhanden
    - betroffene Dateien sind konkret genug für Phase 2
 5. Präsentiere dem User die Plan-Datei mit kurzer Validierungs-Scorecard.
-6. Leite aus den Akzeptanzkriterien und dem Validierungsplan die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung") und gib zusammen mit der Plan-Präsentation den optionalen `/goal`-String aus; er deckt die Phasen 2–7 ab, sodass der User sie bei Bedarf autonom unter nativem `/goal` fahren kann.
-7. Hole explizite Freigabe ein. Starte Phase 2 nicht ohne diese Freigabe.
+6. Leite aus den Akzeptanzkriterien und dem Validierungsplan die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung"); sie deckt die Phasen 2–7 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten.
+7. Hole explizite Freigabe ein. Die Freigabe-Frage enthält die explizite Goal-Abfrage (Option „Autonom via /goal"); behandle sie gemäß „Explizite Goal-Abfrage für autonome Läufe": Bei Wahl „Autonom via /goal" gib den `/goal`-String für die Phasen 2–7 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde. Starte Phase 2 nicht ohne diese Freigabe.
 
 Wenn `{{SKILL:sf-plan}}` wegen fehlender Informationen abbricht, frage den User nach den offenen Punkten und starte die Planung danach erneut.
 
 ```ask
 header: Freigabe
 question: Implementierungsplan freigegeben?
-type: approval
+options:
+  - label: Ja
+    description: Freigabe erteilt, Workflow läuft gated weiter
+  - label: Autonom via /goal
+    description: Verbleibende Phasen autonom unter nativem /goal — der Skill gibt den einzufügenden /goal-String aus (entfällt bei nicht-interaktiver Delegation)
+  - label: Anpassen
+    description: Feedback als Freitext eingeben
 ```
 
 ### Phase 2: Implementierung
