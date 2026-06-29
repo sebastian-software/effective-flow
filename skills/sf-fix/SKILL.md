@@ -36,6 +36,10 @@ completion-protocol
 goal-completion
 ```
 
+```include
+worktree-integration
+```
+
 ## Wisdom Accumulation
 
 Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
@@ -125,6 +129,7 @@ type: approval
 
 ### Phase 3: Fix
 
+0. Bestimme gemäß „Worktree-Integration" den effektiven Worktree-Modus und führe bei aktivem Modus zuerst das Worktree-Setup aus. Die folgenden Phasen 3–4 (Fix, Verifikation) laufen dann mit Arbeitsverzeichnis im Worktree.
 1. Starte den passenden Implementer-Skill:
    - `{{AGENT:sf-ui-implementer}}` oder `{{AGENT:sf-nodejs-implementer}}`
 2. Gib einen präzisen Auftrag:
@@ -167,11 +172,13 @@ Wenn dabei offene Findings oder Restrisiken entstehen, dokumentiere sie struktur
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
 4. Lösche die Wisdom-Datei.
-5. Fasse zusammen:
+5. Wenn der Worktree-Modus aktiv war: führe das Handback gemäß „Worktree-Integration" aus (Änderungen committen, Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`).
+6. Fasse zusammen:
    - Root Cause
    - Änderungen
    - neu oder angepasste Tests
    - Restrisiken
+   - bei aktivem Worktree-Modus: Liefer-Branch und Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch)
 
 ```include
 pre-commit-gate

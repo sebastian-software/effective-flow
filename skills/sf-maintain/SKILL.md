@@ -38,6 +38,10 @@ completion-protocol
 goal-completion
 ```
 
+```include
+worktree-integration
+```
+
 ## Wisdom Accumulation
 
 Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
@@ -117,6 +121,8 @@ options:
 
 ### Phase 2: Baseline
 
+Bestimme zuerst gemäß „Worktree-Integration" den effektiven Worktree-Modus und führe bei aktivem Modus das Worktree-Setup aus, bevor die Baseline erhoben wird. Baseline, Apply pro Gruppe und Review (Phasen 2–4) laufen dann mit Arbeitsverzeichnis im Worktree; die Commits pro Gruppe aus Phase 3 landen so direkt auf dem Liefer-Branch.
+
 Starte parallel:
 
 1. `{{AGENT:sf-code-validator}}` – Type-Checking, Lint, Build-Status.
@@ -160,6 +166,7 @@ Reine Dependency-Bumps ohne Code-Anpassung brauchen kein Reviewer-Pass; vermerke
    - Verweis auf einen ausgelagerten Review-Report, falls vorhanden.
 3. Bestätige, dass das Verhalten unverändert blieb (Baseline-Abgleich grün).
 4. Lösche die Wisdom-Datei.
+5. Wenn der Worktree-Modus aktiv war: führe das Handback gemäß „Worktree-Integration" aus. Die Commits pro Gruppe liegen bereits auf dem Liefer-Branch; das Handback zieht den Worktree zurück und führt die Abschluss-Aktion `pr`/`merge`/`branch` aus. Nenne Liefer-Branch und Ergebnis in der Zusammenfassung.
 
 ```include
 pre-commit-gate

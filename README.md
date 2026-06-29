@@ -26,6 +26,7 @@ Das System unterscheidet drei Typen:
 | `sf-review`     | Umfassendes Code-Review                                                     |
 | `sf-maintain`   | Schlanke Wartung: Dependency-Updates, Audit-Fixes, Breaking-Change-Adaption |
 | `sf-commit`     | Commit-Message für gestagte Änderungen                                      |
+| `sf-pr`         | Pull-Request aus einem Branch auf GitHub (`gh`) oder Forgejo (`tea`)        |
 
 ### Agents (werden von Orchestratoren delegiert)
 
@@ -147,18 +148,24 @@ Die Workflow-Skills `sf-build`, `sf-fix`, `sf-refactor`, `sf-docs` und `sf-maint
 
 Zusätzlich gibt jeder dieser Workflows an seiner Freigabe-Grenze einen optionalen, copy-paste-baren `/goal`-String aus. Wer ihn als neue Eingabe einfügt, lässt die verbleibenden Phasen unter dem nativen `/goal` (Codex und Claude Code) autonom laufen; andernfalls läuft der Workflow unverändert gated weiter. Die Approval-Gates bleiben in jedem Fall erhalten. `sf-review` und `sf-plan` nutzen nur die explizite, unabhängig geprüfte Abschlussbedingung ohne Autonom-Loop und ohne `/goal`-String.
 
+## Worktree-Integration
+
+Die Code-ändernden Workflows `sf-build`, `sf-fix`, `sf-refactor`, `sf-docs` und `sf-maintain` binden den gemeinsamen Baustein `skills/_shared/worktree-integration.md` ein. Er verknüpft diese Workflows optional mit Git-Worktrees und Pull-Requests, damit parallel auf dem lokalen Repo gearbeitet werden kann. Der Modus ist **opt-in** über `worktree.enabled` in `.sf-plugin/config.json` und standardmäßig deaktiviert; ist er aus, verhalten sich die Workflows unverändert – keine Worktree-Erzeugung und keine erzwungenen Commits. Einziger Unterschied: existiert bereits eine `.sf-plugin/config.json`, ergänzen die Workflows den `worktree`-Block einmalig nicht-destruktiv (Migration), wie bei den übrigen Config-Blöcken.
+
+Bei aktivem Modus erzeugt der Workflow zu Beginn einen Git-Worktree auf dem konfigurierbaren Basis-Branch (`worktree.baseBranch`, Default `origin/main`) und führt dort alle Umsetzungs-, Test-, Validierungs- und Doku-Phasen aus. In der Abschlussphase committet er die Arbeit (über die `sf-commit`-Logik), zieht den Worktree zurück (das Verzeichnis wird entfernt, der Liefer-Branch bleibt im lokalen Repo) und führt die Abschluss-Aktion aus: einen Pull-Request über `sf-pr`, einen lokalen Merge auf den Basis-Branch oder nur den belassenen Branch. Die Aktion steuert `worktree.completion`; ohne gültigen Wert wird gefragt. Dieser Mechanismus ist getrennt vom per-Finding-Worktree von `sf-apply-review` (`applyReview.worktree`).
+
 ## Plugin-Konfiguration
 
 Projektlokale Laufzeitdaten liegen unter `.sf-plugin/` im Zielprojekt:
 
-| Datei                    | Zweck                                                                                                  |
-| ------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `.sf-plugin/config.json` | Optionale Workflow-Defaults für Review, Apply-Review und Plan-Erstellung (z. B. `plan.markerLanguage`) |
-| `.sf-plugin/memory.json` | Persistente Workflow-Zähler und Config-Migrationsstatus                                                |
-| `.sf-plugin/cache.json`  | Invalidierbare Cache-Daten für wiederholte Reviews und Apply-Review-Läufe                              |
-| `.sf-plugin/review/`     | Review-Reports                                                                                         |
+| Datei                    | Zweck                                                                                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `.sf-plugin/config.json` | Optionale Workflow-Defaults für Review, Apply-Review, Plan-Erstellung und Worktree-Integration (z. B. `plan.markerLanguage`, `worktree.enabled`) |
+| `.sf-plugin/memory.json` | Persistente Workflow-Zähler und Config-Migrationsstatus                                                                                          |
+| `.sf-plugin/cache.json`  | Invalidierbare Cache-Daten für wiederholte Reviews und Apply-Review-Läufe                                                                        |
+| `.sf-plugin/review/`     | Review-Reports                                                                                                                                   |
 
-Die Skills funktionieren ohne `config.json`. Wenn eine bestehende Config neue Schlüssel noch nicht enthält, migrieren `sf-review`, `sf-apply-review` und `sf-plan` fehlende Defaults nicht-destruktiv und melden die ergänzten Schlüssel. Der Migrationsstatus wird in `memory.json` gespeichert; wiederverwendbare Cache-Daten liegen separat in `cache.json`.
+Die Skills funktionieren ohne `config.json`. Wenn eine bestehende Config neue Schlüssel noch nicht enthält, migrieren `sf-review`, `sf-apply-review` und `sf-plan` sowie die Code-ändernden Workflows (für den `worktree`-Block) fehlende Defaults nicht-destruktiv und melden die ergänzten Schlüssel. Da `worktree.enabled` per Default `false` ist, bleibt die Worktree-Integration auch nach automatischer Migration deaktiviert. Der Migrationsstatus wird in `memory.json` gespeichert; wiederverwendbare Cache-Daten liegen separat in `cache.json`.
 
 `sf-plan` nutzt `plan.markerLanguage` (`"de"` oder `"en"`), um die Sprache des kanonischen Statusmarkers neuer Plan-Dateien zu bestimmen. Reihenfolge: Config-Eintrag gewinnt; sonst leitet `sf-plan` die Sprache aus den vorhandenen Plan-Dateien ab; sonst fragt es per `AskUserQuestion` und bietet an, die Wahl zu persistieren. Bei eindeutiger Detection und existierender Config ohne den Schlüssel wird er nicht-destruktiv ergänzt.
 
@@ -182,6 +189,14 @@ Sicheres Default-Verhalten:
   },
   "plan": {
     "markerLanguage": "de"
+  },
+  "worktree": {
+    "enabled": false,
+    "baseBranch": "origin/main",
+    "branchPrefix": "sf",
+    "completion": null,
+    "setup": "auto",
+    "baseDir": ".sf-plugin/.worktrees"
   }
 }
 ```
@@ -217,7 +232,8 @@ sf-claude-plugin/
 │   ├── _shared/                     # Gemeinsame Inhalte (`include`-Fence)
 │   │   ├── doc-categories.md        # Verzeichnis-Konvention für finale Dokumente
 │   │   ├── goal-completion.md       # Goal-getriebene Abschlusssteuerung + /goal-String
-│   │   └── language-rules.md        # Zentrale Sprach- und Typografie-Regeln
+│   │   ├── language-rules.md        # Zentrale Sprach- und Typografie-Regeln
+│   │   └── worktree-integration.md  # Opt-in Worktree + PR/Merge für Code-Workflows
 │   ├── sf-apply-plan/SKILL.md       # type: orchestrator
 │   ├── sf-build/SKILL.md            # type: orchestrator
 │   ├── sf-docs/SKILL.md             # type: orchestrator

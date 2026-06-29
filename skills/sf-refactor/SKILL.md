@@ -36,6 +36,10 @@ completion-protocol
 goal-completion
 ```
 
+```include
+worktree-integration
+```
+
 ## Wisdom Accumulation
 
 Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
@@ -114,6 +118,8 @@ type: approval
 
 ### Phase 2: Baseline
 
+Bestimme zuerst gemäß „Worktree-Integration" den effektiven Worktree-Modus und führe bei aktivem Modus das Worktree-Setup aus, bevor die Baseline erhoben wird. Baseline, Refactoring und Nachher-Validierung (Phasen 2–5) laufen dann mit Arbeitsverzeichnis im Worktree.
+
 Starte parallel:
 
 1. `{{AGENT:sf-code-validator}}`
@@ -185,7 +191,8 @@ Starte parallel:
    - zurück zu Phase 3, dann Phase 5 und 6 erneut – gemäß „Goal-getriebene Abschlusssteuerung": begrenze die internen Korrekturrunden und eskaliere an den User, falls die Baseline danach weiterhin nicht erreicht wird, statt unbegrenzt zu wiederholen
 3. Falls keine Regressionen:
    - Wisdom-Datei löschen
-   - zusammenfassen, was refactored wurde
+   - wenn der Worktree-Modus aktiv war: Handback gemäß „Worktree-Integration" ausführen (Änderungen committen, Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`)
+   - zusammenfassen, was refactored wurde; bei aktivem Worktree-Modus zusätzlich Liefer-Branch und Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch) nennen
    - bestätigen, dass das Verhalten unverändert blieb
 
 ```include

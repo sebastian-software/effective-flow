@@ -114,6 +114,10 @@ completion-protocol
 goal-completion
 ```
 
+```include
+worktree-integration
+```
+
 ## Wisdom Accumulation
 
 Erkenntnisse aus früheren Phasen müssen an spätere Phasen weitergegeben werden.
@@ -243,6 +247,7 @@ type: approval
 
 ### Phase 2: Implementierung
 
+0. Bestimme gemäß „Worktree-Integration" den effektiven Worktree-Modus und führe bei aktivem Modus zuerst das Worktree-Setup aus. Alle folgenden Phasen 2–6 (Implementierung, Doku, Tests, Validierung, Review) laufen dann mit Arbeitsverzeichnis im Worktree.
 1. Starte den passenden Implementer-Skill mit dem abgestimmten Plan:
    - Frontend: `Verwende den Skill {{AGENT:sf-ui-implementer}} für diese Phase.`
    - Backend/CLI: `Verwende den Skill {{AGENT:sf-nodejs-implementer}} für diese Phase.`
@@ -375,7 +380,8 @@ Regeln für den Findings-Bericht:
 
 4. Lösche die Wisdom-Datei.
 5. Prüfe ob ein Formatter konfiguriert ist und formatiere alle geänderten Dateien inklusive Plan-Datei einmal einheitlich.
-6. Fasse zusammen, was implementiert, getestet und dokumentiert wurde.
+6. Wenn der Worktree-Modus aktiv war: führe das Handback gemäß „Worktree-Integration" aus (Änderungen committen, Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`).
+7. Fasse zusammen, was implementiert, getestet und dokumentiert wurde; nenne bei aktivem Worktree-Modus zusätzlich den Liefer-Branch und das Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch).
 
 ## Regeln
 

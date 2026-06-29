@@ -40,6 +40,10 @@ completion-protocol
 goal-completion
 ```
 
+```include
+worktree-integration
+```
+
 ## Wisdom Accumulation
 
 Erzeuge zu Beginn eine Session-ID, zum Beispiel via Timestamp. Verwende sie konsistent für `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`.
@@ -117,6 +121,7 @@ type: approval
 
 ### Phase 2: Umsetzung
 
+0. Bestimme gemäß „Worktree-Integration" den effektiven Worktree-Modus und führe bei aktivem Modus zuerst das Worktree-Setup aus. Umsetzung und Validierung (Phasen 2–3) laufen dann mit Arbeitsverzeichnis im Worktree.
 1. Stelle sicher, dass das Zielverzeichnis existiert:
    - bei Ziel-Pfaden unterhalb von `docs/user-guide/`, `docs/developer-guide/`, `docs/operations/` oder `docs/runbooks/` lege fehlende Verzeichnisse vor dem Schreiben an
    - lege keine leeren Kategorie-Verzeichnisse an, wenn keine Datei darin geschrieben wird
@@ -158,11 +163,13 @@ type: approval
    - ergänze `## Testergebnisse` mit den ausgeführten Prüfungen
    - ergänze `## Review-Findings` oder schreibe „Keine Findings gefunden.", wenn kein Review nötig war
 3. Lösche die Wisdom-Datei.
-4. Fasse zusammen:
+4. Wenn der Worktree-Modus aktiv war: führe das Handback gemäß „Worktree-Integration" aus (Änderungen committen, Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`).
+5. Fasse zusammen:
    - geänderte Dokumentationsbereiche
    - geprüfte Quellen
    - ausgeführte Validierung
    - Restrisiken
+   - bei aktivem Worktree-Modus: Liefer-Branch und Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch)
 
 ```include
 pre-commit-gate
