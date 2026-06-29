@@ -10,17 +10,28 @@ Referenz.
 ### Nummer reservieren (zu Beginn der Planung)
 
 Sobald feststeht, dass ein neuer Plan geschrieben wird, reserviere die Nummer,
-bevor die inhaltliche Klärung beginnt:
+bevor die inhaltliche Klärung beginnt.
+
+Erfasse dazu **als allererste Aktion – noch vor jeder User-Frage** einen
+sekundengenauen Reservierungs-Zeitstempel `RESERVED_AT` aus `date +%Y%m%d%H%M%S`
+(Format `YYYYMMDDHHMMSS`) und halte ihn für die folgenden Schritte fest. Er fixiert
+die Reservierungsreihenfolge schon zu Beginn – unabhängig davon, ob der Stub-Write
+später hinter einer User-Frage wartet. Anschließend:
 
 1. Lies alle Dateien in `docs/plan/`, die dem Muster `NNNN-…md` (vier Ziffern,
    Bindestrich) entsprechen, und bestimme die höchste vergebene Nummer.
 2. Neue Nummer = höchste vergebene Nummer + 1, vierstellig mit führenden Nullen.
    Existiert noch keine Plan-Datei, ist die erste Nummer `0001`.
 3. Bilde aus dem Arbeitstitel einen vorläufigen Kebab-Case-Slug (nur `a–z`, `0–9`
-   und Bindestrich). Steht noch kein Titel fest, nutze `wip`. Hänge an den
-   Stub-Slug ein lauf-eindeutiges Suffix an, zum Beispiel einen Timestamp aus
-   `date +%Y%m%d%H%M%S`. So erzeugen zwei gleichzeitig reservierende Läufe
-   **verschiedene** Stub-Dateien und überschreiben sich nicht lautlos.
+   und Bindestrich). Steht noch kein Titel fest, nutze `wip`. Hänge den oben
+   erfassten Zeitstempel `RESERVED_AT` als lauf-eindeutiges Suffix `<suffix>` an den
+   Stub-Slug an. Der sekundengenaue Zeitstempel macht den Stub lauf-eindeutig **und**
+   legt zugleich eine eindeutige Reihenfolge fest: Da nicht mehr als ein Plan pro
+   Sekunde entsteht, ist `RESERVED_AT` eindeutig, und die lexikografische Ordnung der
+   `YYYYMMDDHHMMSS`-Suffixe entspricht exakt der zeitlichen Reservierungsreihenfolge.
+   So erzeugen zwei gleichzeitig reservierende Läufe **verschiedene** Stub-Dateien,
+   überschreiben sich nicht lautlos, und ihre Reihenfolge steht bei einer Kollision
+   bereits fest.
 4. Lege sofort eine temporäre Plan-Datei `docs/plan/NNNN-<slug>-<suffix>.md` mit
    minimalem Kopf an, um die Nummer zu belegen:
 
@@ -65,7 +76,8 @@ verifiziere die Reservierung gegen das oben beschriebene Race:
 3. Mehr als eine Datei mit `NNNN`: ein konkurrierender Lauf hat dieselbe Nummer
    belegt. Wende die „Kollisionsauflösung in Planungsreihenfolge" unten an. Da
    die Stub-Dateien in der Regel noch nicht committet sind, greift der
-   deterministische Tie-Break (lexikografisch kleinerer Dateiname behält `NNNN`).
+   deterministische Tie-Break über den `RESERVED_AT`-Suffix: der Stub mit dem
+   früheren (lexikografisch kleineren) `RESERVED_AT` behält `NNNN`.
    Dadurch kommt jeder beteiligte Lauf unabhängig zum selben Ergebnis: genau ein
    Stub behält `NNNN`, jeder andere rückt auf die nächste freie Nummer (Maximum
    neu bestimmen). Weicht der **eigene** Stub, benenne ihn auf die neue Nummer um
@@ -95,9 +107,12 @@ entstehen; das wird erst nach dem Zusammenführen sichtbar. Wenn ein Skill beim
 Scannen von `docs/plan/` mehrere Dateien mit derselben Nummer findet, löse die
 Kollision auf:
 
-1. Bestimme je Datei den Planungsstart über den ersten Commit, der die Datei
-   einführt (`git log --diff-filter=A --follow --format=%aI -- <datei>`, ältester
-   Eintrag). Bei gleicher, fehlender oder nicht bestimmbarer Zeit gilt der
+1. Bestimme je Datei den Planungsstart. Trägt der Dateiname noch den
+   `RESERVED_AT`-Suffix (`YYYYMMDDHHMMSS`) – also bei noch nicht befüllten WIP-Stubs –,
+   ist dieser der maßgebliche, sekundengenaue Ordnungsschlüssel (lexikografisch =
+   chronologisch). Andernfalls (befüllte Pläne ohne Suffix) nutze den ersten Commit,
+   der die Datei einführt (`git log --diff-filter=A --follow --format=%aI -- <datei>`,
+   ältester Eintrag). Bei gleicher, fehlender oder nicht bestimmbarer Zeit gilt der
    lexikografisch kleinere Dateiname als früher.
 2. Sortiere die kollidierenden Pläne nach Planungsstart und nummeriere die Folge
    so um, dass sie wieder eindeutig, lückenlos und in dieser Reihenfolge ist. Der
