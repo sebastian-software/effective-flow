@@ -8,7 +8,7 @@
 
 Es soll ein neuer Setup-Skill `sf-setup` entstehen, der ein Zielprojekt für die Nutzung des Plugins vorbereitet:
 
-- Er trägt `.sf-plugin/` idempotent in die `.gitignore` des Zielprojekts ein (nur wenn noch nicht ignoriert) und legt die `.gitignore` an, falls sie fehlt.
+- Er trägt den Laufzeit-Status unter `.sf-plugin/` idempotent in die `.gitignore` des Zielprojekts ein und hält dabei `.sf-plugin/config.json` getrackt (Pattern `.sf-plugin/*` plus `!.sf-plugin/config.json`); er legt die `.gitignore` an, falls sie fehlt, und migriert eine bestehende pauschale `.sf-plugin/`-Zeile auf dieses Pattern.
 - Er legt `.sf-plugin/config.json` an bzw. aktualisiert sie und fragt dabei die gewünschten Werte sowie das grundsätzlich gewünschte Verhalten beim User ab.
 - Die Abfrage erfolgt hybrid: zuerst eine Preset-Auswahl („Sichere Defaults", „Schneller persönlicher Workflow", „Alles einzeln anpassen"); die zentralen Verhaltensschalter werden in jedem Modus explizit abgefragt; nur bei „Alles einzeln anpassen" geht der Skill Block für Block in die Tiefe.
 - Eine bereits vorhandene `config.json` wird nicht-destruktiv aktualisiert (vorhandene Werte als Default vorbelegt, nur Geändertes/Fehlendes geschrieben); ein vollständiges Überschreiben erfolgt nur nach ausdrücklicher Bestätigung.
@@ -18,7 +18,8 @@ Es soll ein neuer Setup-Skill `sf-setup` entstehen, der ein Zielprojekt für die
 ## Architekturentscheidungen
 
 - **Neuer Utility-Skill `sf-setup`:** Setup ist ein eigenständiges, vom User direkt aufrufbares Werkzeug (`/setup` in Claude Code, `$sf-setup` in Codex), kein Orchestrator über andere Skills. Typ `utility`, analog zu `sf-commit`.
-- **Idempotenz für die `.gitignore`:** Der Eintrag wird nur ergänzt, wenn `.sf-plugin/` nicht bereits ignoriert ist. So ist wiederholtes Ausführen unschädlich.
+- **Idempotenz für die `.gitignore`:** Der Eintrag wird nur ergänzt bzw. migriert, wenn der Soll-Zustand noch nicht hergestellt ist (Laufzeit-Status ignoriert, `config.json` getrackt). So ist wiederholtes Ausführen unschädlich.
+- **`config.json` bleibt getrackt:** `config.json` ist die geteilte Projekt-Konfiguration und gehört in die Versionskontrolle, während der übrige `.sf-plugin/`-Inhalt lokaler Laufzeit-Status ist. Wegen der Git-Eigenheit, dass eine Negation eine Datei aus einem vollständig ignorierten Verzeichnis nicht wieder einschließen kann, ignoriert der Skill mit `.sf-plugin/*` (Inhalte, nicht das Verzeichnis) und nimmt `config.json` per `!.sf-plugin/config.json` aus.
 - **Nicht-destruktive Config-Pflege:** Der Skill folgt demselben Prinzip wie die bestehende Config-Migration in `sf-review`, `sf-apply-review` und `sf-plan`: vorhandene gültige Werte und unbekannte Schlüssel bleiben erhalten; die Datei wird vor dem Schreiben frisch eingelesen. `sf-setup` ist die proaktive Erstkonfiguration, die spätere Laufzeit-Migrationen zu No-Ops macht.
 - **Single Source of Truth für das Schema:** Der Skill kennt die vier Config-Blöcke (`review`, `applyReview`, `plan`, `worktree`) mit ihren gültigen Werten und Defaults. Diese sind bereits in den jeweiligen Skills und im README dokumentiert; `sf-setup` dupliziert die Schema-Erklärung knapp, verweist aber auf die Skills als maßgebliche Quelle.
 - **Hybride Abfrage statt 15 Einzelfragen:** Presets reduzieren die Interaktionslast; die zentralen Verhaltensschalter (`worktree.enabled`, `worktree.completion`, `worktree.baseBranch`, `plan.markerLanguage`) werden immer explizit erfragt, weil sie das Kernverhalten bestimmen.
@@ -45,9 +46,9 @@ Es soll ein neuer Setup-Skill `sf-setup` entstehen, der ein Zielprojekt für die
 
 1. **Projektkonventionen:** Falls `AGENTS.md` existiert, vor dem Schreiben lesen und beachten.
 2. **`.gitignore`-Eintrag:**
-   - Prüfen, ob `.sf-plugin/` bereits ignoriert ist (bei verfügbarem Git über `git check-ignore`, sonst über einen einfachen Zeilenabgleich mit gängigen Schreibweisen wie `.sf-plugin/`, `.sf-plugin`, `/.sf-plugin/`).
-   - Falls nicht ignoriert: `.sf-plugin/` an die `.gitignore` anhängen (mit korrektem Zeilenumbruch); fehlt die Datei, sie anlegen.
-   - Falls bereits ignoriert: nichts ändern und das knapp melden.
+   - Soll-Zustand prüfen: Laufzeit-Status ignoriert, `config.json` getrackt (bei verfügbarem Git über `git check-ignore -q .sf-plugin/config.json` → Exit 1 und `git check-ignore -q .sf-plugin/memory.json` → Exit 0, sonst über einen Zeilenabgleich auf `.sf-plugin/*` plus folgende Negation `!.sf-plugin/config.json`).
+   - Falls noch nicht hergestellt: eine bestehende pauschale Ignore-Zeile (`.sf-plugin/`, `.sf-plugin`, `/.sf-plugin/`) auf `.sf-plugin/*` plus `!.sf-plugin/config.json` migrieren; fehlt jeder Eintrag, die beiden Zeilen anhängen (mit korrektem Zeilenumbruch); fehlt die Datei, sie anlegen; ist `.sf-plugin/*` vorhanden, aber die Negation fehlt, nur die Negationszeile ergänzen.
+   - Falls der Soll-Zustand bereits hergestellt ist: nichts ändern und das knapp melden.
 3. **Bestehende Config prüfen:** `.sf-plugin/config.json` lesen, falls vorhanden. Bei gültigem JSON die vorhandenen Werte als Default-Vorbelegung der folgenden Fragen verwenden. Bei ungültigem JSON nicht still überschreiben, sondern den User informieren und fragen, ob neu angelegt (Backup/Überschreiben) oder abgebrochen werden soll.
 4. **Preset-Auswahl** (siehe `ask` unten). „Sichere Defaults" und „Schneller persönlicher Workflow" entsprechen den beiden im README dokumentierten Beispiel-Konfigurationen; „Alles einzeln anpassen" startet den Detailmodus.
 5. **Zentrale Verhaltensschalter immer abfragen** (auch in beiden Preset-Modi): `worktree.enabled`, und – falls aktiviert – `worktree.completion` und `worktree.baseBranch`; außerdem `plan.markerLanguage`.
@@ -75,7 +76,8 @@ Die genaue Formulierung entsteht bei der Umsetzung. Mindestens nötig:
 ### Edge Cases
 
 - **Kein Git-Repository:** Eine `.gitignore` ohne Git ist wirkungslos. Den User darauf hinweisen und fragen, ob die `.gitignore` trotzdem geschrieben werden soll; die Config-Erstellung läuft unabhängig davon weiter.
-- **`.sf-plugin/` bereits ignoriert:** keinen Doppeleintrag erzeugen.
+- **Soll-Zustand bereits hergestellt:** keinen Doppeleintrag erzeugen.
+- **Bestehende pauschale `.sf-plugin/`-Zeile:** auf `.sf-plugin/*` plus `!.sf-plugin/config.json` migrieren, damit `config.json` getrackt wird, statt zusätzlich anzuhängen.
 - **`.gitignore` ohne abschließenden Zeilenumbruch:** vor dem Anhängen einen Zeilenumbruch sicherstellen.
 - **Ungültiges JSON in bestehender Config:** nicht still überschreiben; informieren und Entscheidung einholen.
 - **Teilweise vorhandene Config:** fehlende Blöcke/Schlüssel ergänzen, vorhandene gültige Werte und unbekannte Schlüssel erhalten.
@@ -85,7 +87,7 @@ Die genaue Formulierung entsteht bei der Umsetzung. Mindestens nötig:
 ## Akzeptanzkriterien
 
 - [ ] `skills/sf-setup/SKILL.md` existiert mit `type: utility` und wird vom Build als Codex-Skill und Claude-Command (`/setup`) erzeugt.
-- [ ] Der Skill trägt `.sf-plugin/` in die `.gitignore` ein, wenn es dort fehlt, und ändert nichts, wenn es bereits ignoriert ist; fehlt die `.gitignore`, wird sie angelegt.
+- [ ] Der Skill stellt in der `.gitignore` den Soll-Zustand her (`.sf-plugin/*` plus `!.sf-plugin/config.json`), sodass der Laufzeit-Status ignoriert wird, `.sf-plugin/config.json` aber getrackt bleibt; er migriert eine bestehende pauschale `.sf-plugin/`-Zeile auf dieses Pattern, ändert nichts, wenn der Soll-Zustand bereits hergestellt ist, und legt die `.gitignore` an, falls sie fehlt.
 - [ ] Der Skill bietet die Preset-Auswahl an und fragt die zentralen Verhaltensschalter (`worktree.enabled`, ggf. `worktree.completion`/`worktree.baseBranch`, `plan.markerLanguage`) in jedem Modus explizit ab.
 - [ ] Im Detailmodus werden alle Schlüssel der vier Blöcke `review`, `applyReview`, `plan`, `worktree` mit gültigen Werten abgefragt.
 - [ ] Eine bestehende `config.json` wird nicht-destruktiv aktualisiert (vorhandene gültige Werte und unbekannte Schlüssel bleiben erhalten); vollständiges Überschreiben passiert nur nach ausdrücklicher Bestätigung.
@@ -98,14 +100,14 @@ Die genaue Formulierung entsteht bei der Umsetzung. Mindestens nötig:
 
 - `node build.mjs` ausführen und prüfen, dass `sf-setup` als Codex-Skill und Claude-Command erzeugt wird, die `ask`-Blöcke korrekt transformiert sind und keine unaufgelösten Include-Fences oder `{{…}}`-Platzhalter im `dist/` verbleiben.
 - `pnpm agent:check` (oxfmt) grün über alle Dateien.
-- Manuelle Durchsicht des generierten Skills: Ablaufreihenfolge (`.gitignore` → Config-Check → Preset → zentrale Fragen → ggf. Detailmodus → Merge/Schreiben → Zusammenfassung) und nicht-destruktive Merge-Beschreibung konsistent zum bestehenden Migrationsmuster.
+- Manuelle Durchsicht des generierten Skills: Ablaufreihenfolge (`.gitignore` → Config-Check → Preset → zentrale Fragen → ggf. Detailmodus → Merge/Schreiben → Zusammenfassung) und nicht-destruktive Merge-Beschreibung konsistent zum bestehenden Migrationsmuster. Prüfen, dass das `.gitignore`-Pattern `config.json` getrackt lässt: in einem Wegwerf-Repo `git check-ignore -q .sf-plugin/config.json` → Exit 1 und `git check-ignore -q .sf-plugin/memory.json` → Exit 0.
 - Trockenlauf-Review des Config-Schemas gegen die maßgeblichen Skills (`sf-review`, `sf-apply-review`, `sf-plan`, Worktree-Include), damit gültige Werte und Defaults übereinstimmen.
 
 ## Annahmen und offene Punkte
 
 - **Annahme:** Skill-Name `sf-setup` (Claude-Command `/setup`, Codex `$sf-setup`). Falls `/setup` kollidiert, bei der Umsetzung umbenennen.
-- **Annahme:** Der Skill ist für Zielprojekte gedacht, die das Plugin nutzen; in diesem Plugin-Repo selbst ist `.sf-plugin/` bereits ignoriert, dort wäre der `.gitignore`-Schritt ein No-Op.
-- **Annahme:** Die `.gitignore`-Änderung betrifft ausschließlich `.sf-plugin/`; weitere Einträge (z. B. `dist/`) sind nicht Teil dieses Skills.
+- **Annahme:** Der Skill ist für Zielprojekte gedacht, die das Plugin nutzen; in diesem Plugin-Repo selbst ist `.sf-plugin/` pauschal ignoriert, dort würde der Skill auf das `config.json`-getrackt-Pattern migrieren.
+- **Annahme:** Die `.gitignore`-Änderung betrifft ausschließlich den `.sf-plugin/`-Block (`.sf-plugin/*` plus `!.sf-plugin/config.json`); weitere Einträge (z. B. `dist/`) sind nicht Teil dieses Skills.
 - **Annahme:** Die beiden Presets übernehmen die im README dokumentierten Beispiel-Konfigurationen und ergänzen den `worktree`-Block mit dessen Defaults (`enabled` wird explizit erfragt).
 - **Offen (Umsetzung):** Ob `sf-setup` zusätzlich `applyReview.defaultCommitStrategy`/`worktree.completion` bewusst auf „beim Lauf fragen" (null) belassen kann, statt einen festen Wert zu erzwingen – Default-Empfehlung: „beim Lauf fragen" zulassen.
 

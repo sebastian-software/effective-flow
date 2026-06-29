@@ -1,16 +1,16 @@
 ---
 name: sf-setup
-description: "Bereitet ein Zielprojekt für die Nutzung des Plugins vor: trägt .sf-plugin/ idempotent in die .gitignore ein und legt .sf-plugin/config.json interaktiv an bzw. aktualisiert sie. Fragt die gewünschten Werte und das grundsätzliche Verhalten ab — hybrid über Presets und einen Detailmodus — und pflegt eine bestehende Config nicht-destruktiv. Verwende diesen Skill für das einmalige Setup oder zum Anpassen der Plugin-Konfiguration."
+description: "Bereitet ein Zielprojekt für die Nutzung des Plugins vor: trägt .sf-plugin/ idempotent in die .gitignore ein und hält dabei .sf-plugin/config.json getrackt, und legt .sf-plugin/config.json interaktiv an bzw. aktualisiert sie. Fragt die gewünschten Werte und das grundsätzliche Verhalten ab — hybrid über Presets und einen Detailmodus — und pflegt eine bestehende Config nicht-destruktiv. Verwende diesen Skill für das einmalige Setup oder zum Anpassen der Plugin-Konfiguration."
 type: utility
 ---
 
 # SF Setup
 
-Du bereitest ein Zielprojekt für die Nutzung des Plugins vor: `.gitignore`-Eintrag für `.sf-plugin/` und interaktive Pflege von `.sf-plugin/config.json`.
+Du bereitest ein Zielprojekt für die Nutzung des Plugins vor: `.gitignore`-Eintrag für `.sf-plugin/` (Laufzeit-Status ignorieren, `config.json` aber getrackt lassen) und interaktive Pflege von `.sf-plugin/config.json`.
 
 ## Ziel
 
-- `.sf-plugin/` idempotent in die `.gitignore` eintragen (nur wenn noch nicht ignoriert)
+- den Laufzeit-Status unter `.sf-plugin/` idempotent in die `.gitignore` eintragen und dabei `.sf-plugin/config.json` getrackt lassen (nur wenn der Soll-Zustand noch nicht hergestellt ist)
 - `.sf-plugin/config.json` interaktiv anlegen oder nicht-destruktiv aktualisieren
 - gewünschte Werte und das grundsätzliche Verhalten beim User abfragen — hybrid über Presets und einen optionalen Detailmodus
 - keine Projektvalidation wie Linting, Tests oder Build-Checks ausführen
@@ -42,10 +42,22 @@ Die zwei Presets entsprechen den im README im Abschnitt „Plugin-Konfiguration"
 
 ### Schritt 1: .gitignore-Eintrag
 
-1. Prüfe, ob `.sf-plugin/` bereits ignoriert ist — bei verfügbarem Git über `git check-ignore .sf-plugin/`, sonst über einen Zeilenabgleich der `.gitignore` mit gängigen Schreibweisen (`.sf-plugin/`, `.sf-plugin`, `/.sf-plugin/`).
-2. Falls nicht ignoriert: hänge `.sf-plugin/` an die `.gitignore` an. Stelle vor dem Anhängen einen abschließenden Zeilenumbruch sicher. Fehlt die `.gitignore`, lege sie mit dieser einen Zeile an.
-3. Falls bereits ignoriert: nichts ändern und das knapp melden.
-4. Ist das Projekt kein Git-Repository: weise darauf hin, dass eine `.gitignore` ohne Git wirkungslos ist, und frage, ob sie trotzdem geschrieben werden soll. Die Config-Erstellung läuft unabhängig davon weiter.
+Soll-Zustand: Der Laufzeit-Status unter `.sf-plugin/` (z. B. `memory.json`, `cache.json`, `review/`, `.worktrees/`, Wisdom- und Investigation-Dateien) ist ignoriert, aber `.sf-plugin/config.json` bleibt **getrackt**. Das erreicht das zweizeilige Pattern:
+
+```gitignore
+.sf-plugin/*
+!.sf-plugin/config.json
+```
+
+Wichtige Git-Eigenheit: Ein pauschales `.sf-plugin/` ignoriert das gesamte Verzeichnis, und eine spätere Negation kann eine Datei daraus **nicht** wieder einschließen, solange das Elternverzeichnis komplett ignoriert ist. Deshalb muss mit `.sf-plugin/*` (Inhalte ignorieren, nicht das Verzeichnis selbst) plus `!.sf-plugin/config.json` gearbeitet werden.
+
+1. Prüfe, ob der Soll-Zustand bereits hergestellt ist — bei verfügbarem Git über zwei Aufrufe: `git check-ignore -q .sf-plugin/config.json` muss mit Exit-Code 1 enden (`config.json` **nicht** ignoriert) und `git check-ignore -q .sf-plugin/memory.json` mit Exit-Code 0 (Laufzeit-Status ignoriert). Ohne Git über einen Zeilenabgleich der `.gitignore`: das Pattern `.sf-plugin/*` ist vorhanden und eine Negation `!.sf-plugin/config.json` folgt darauf.
+2. Falls der Soll-Zustand noch nicht hergestellt ist:
+   - Migriere eine bestehende pauschale Ignore-Zeile: enthält die `.gitignore` eine Zeile, die `.sf-plugin/` als Ganzes ignoriert (gängige Schreibweisen `.sf-plugin/`, `.sf-plugin`, `/.sf-plugin/`), ersetze diese Zeile durch die zwei Zeilen `.sf-plugin/*` und `!.sf-plugin/config.json`, statt zusätzlich anzuhängen. Sonst würde `config.json` weiterhin ignoriert.
+   - Fehlt jeder `.sf-plugin/`-Eintrag, hänge die zwei Zeilen `.sf-plugin/*` und `!.sf-plugin/config.json` an. Stelle vor dem Anhängen einen abschließenden Zeilenumbruch sicher. Fehlt die `.gitignore`, lege sie mit diesen zwei Zeilen an.
+   - Ist bereits `.sf-plugin/*` vorhanden, aber die Negation `!.sf-plugin/config.json` fehlt, ergänze nur die fehlende Negationszeile direkt darunter.
+3. Falls der Soll-Zustand bereits hergestellt ist: nichts ändern und das knapp melden.
+4. Ist das Projekt kein Git-Repository: weise darauf hin, dass eine `.gitignore` ohne Git wirkungslos ist, und frage, ob sie trotzdem geschrieben werden soll. Verwende dann denselben Zeilenabgleich wie oben statt `git check-ignore`. Die Config-Erstellung läuft unabhängig davon weiter.
 
 ### Schritt 2: Bestehende Config prüfen
 
@@ -134,7 +146,7 @@ Freitext-Werte (z. B. `baseBranch`, `branchPrefix`, `baseDir` oder ein explizite
 
 Melde dem User:
 
-- ob `.sf-plugin/` in die `.gitignore` ergänzt wurde oder bereits ignoriert war
+- ob der `.gitignore`-Eintrag (`.sf-plugin/*` plus `!.sf-plugin/config.json`) ergänzt, eine bestehende pauschale `.sf-plugin/`-Zeile dorthin migriert wurde oder der Soll-Zustand bereits hergestellt war — und dass `.sf-plugin/config.json` dabei getrackt bleibt
 - welches Preset bzw. der Detailmodus gewählt wurde
 - die gesetzten zentralen Verhaltenswerte (`worktree.enabled`, ggf. `worktree.completion`/`worktree.baseBranch`, `plan.markerLanguage`)
 - bei einer zuvor vorhandenen Config: welche Schlüssel gegenüber dem alten Stand geändert wurden (Vorher/Nachher)
@@ -142,7 +154,7 @@ Melde dem User:
 
 ## Regeln
 
-- Ändere ausschließlich `.gitignore` (eine Zeile) und `.sf-plugin/config.json`; keine weiteren Setup-Schritte wie Deployment oder Git-Hooks.
+- Ändere ausschließlich `.gitignore` (das zweizeilige `.sf-plugin/`-Pattern bzw. dessen Migration) und `.sf-plugin/config.json`; keine weiteren Setup-Schritte wie Deployment oder Git-Hooks.
 - Überschreibe vorhandene Config-Werte und unbekannte Schlüssel niemals ungefragt.
 - Hinterlasse bei einem Abbruch während der Fragen keine halb geschriebene Config; schreibe nur einmal am Ende.
 - Starte keine Projektvalidation; Linting, Tests und Build-Checks sind Aufgabe anderer Skills wie `{{AGENT:sf-code-validator}}`.
