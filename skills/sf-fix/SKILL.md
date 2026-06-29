@@ -40,18 +40,13 @@ goal-completion
 worktree-integration
 ```
 
-## Wisdom Accumulation
+```include
+investigation-method
+```
 
-Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
-
-Inhalte:
-
-- verworfene Root-Cause-Hypothesen
-- Reproduktionsschritte und Ergebnisse
-- entdeckte Abhängigkeiten und Seiteneffekte
-- falsche Annahmen
-
-Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lösche die Datei am Ende.
+```include
+wisdom-accumulation
+```
 
 ## Projekt-Typ-Erkennung
 
@@ -88,13 +83,7 @@ Wenn ein offener Plan für `{{SKILL:sf-fix}}` bestätigt ist:
 
 ### Phase 1: Investigation
 
-1. Analysiere die Fehlerbeschreibung gründlich.
-2. Untersuche den relevanten Code lokal oder über einen internen Explore-Sub-Agenten.
-3. Kläre offene Fragen direkt mit dem User:
-   - wann tritt der Fehler auf
-   - gibt es eine Fehlermeldung oder erwartetes vs. tatsächliches Verhalten
-   - seit wann besteht das Problem
-4. Identifiziere die vermutliche Root Cause und die betroffenen Dateien.
+Führe die read-only-Investigation gemäß „Investigation-Methode", Abschnitt „Symptom und Code untersuchen", aus: Fehlerbeschreibung analysieren, den relevanten Code über einen internen Explore-Sub-Agenten untersuchen, die Standard-Rückfragen (wann tritt der Fehler auf, Fehlermeldung bzw. erwartetes gegenüber tatsächlichem Verhalten, seit wann) klären und die vermutliche Root Cause samt betroffener Dateien identifizieren.
 
 ### Phase 2: Reproduktion
 
@@ -107,10 +96,7 @@ Wenn ein offener Plan für `{{SKILL:sf-fix}}` bestätigt ist:
    - fehlende Akzeptanzkriterien
    - Edge Cases
    - Scope Creep
-3. Führe eine Diagnose-Validierung durch:
-   - Clarity: Root Cause und Datei/Zeile konkret benannt
-   - Verification: Bug reproduzierbar
-   - Context: Annahmen explizit markiert, Ziel <= 10% Raten
+3. Führe die Diagnose-Validierung gemäß „Investigation-Methode" durch (Clarity, Verification, Context) und ergänze sie um:
    - Fix-Scope: minimaler Fix klar definiert
 4. Präsentiere dem User:
    - wo der Bug liegt

@@ -380,7 +380,7 @@ const marketplace = {
       version: VERSION,
       source: `./plugins/${CLAUDE_PLUGIN_NAME}`,
       description:
-        'Orchestrierte Workflows (build, apply-plan, docs, plan, open-plans, fix, refactor, review, maintain, pr) mit spezialisierten Agents für Frontend, Backend, CLI und Node.js',
+        'Orchestrierte Workflows (build, apply-plan, docs, plan, open-plans, fix, refactor, review, maintain, pr, investigate) mit spezialisierten Agents für Frontend, Backend, CLI und Node.js',
       category: 'development',
       tags: [
         'frontend',

@@ -14,19 +14,20 @@ Das System unterscheidet drei Typen:
 
 ### Orchestratoren (ruft User auf)
 
-| Name            | Beschreibung                                                                |
-| --------------- | --------------------------------------------------------------------------- |
-| `sf-build`      | Kompletter Feature-Workflow                                                 |
-| `sf-apply-plan` | Offene Plan-Datei an passenden Workflow übergeben                           |
-| `sf-plan`       | Reine Implementierungsplanung ohne Code-Änderungen                          |
-| `sf-open-plans` | Offene Plan-Dateien mit Kurzfassung auflisten                               |
-| `sf-docs`       | Dokumentations-Workflow                                                     |
-| `sf-fix`        | Bugfix-Workflow                                                             |
-| `sf-refactor`   | Refactoring-Workflow                                                        |
-| `sf-review`     | Umfassendes Code-Review                                                     |
-| `sf-maintain`   | Schlanke Wartung: Dependency-Updates, Audit-Fixes, Breaking-Change-Adaption |
-| `sf-commit`     | Commit-Message für gestagte Änderungen                                      |
-| `sf-pr`         | Pull-Request aus einem Branch auf GitHub (`gh`) oder Forgejo (`tea`)        |
+| Name             | Beschreibung                                                                |
+| ---------------- | --------------------------------------------------------------------------- |
+| `sf-build`       | Kompletter Feature-Workflow                                                 |
+| `sf-apply-plan`  | Offene Plan-Datei an passenden Workflow übergeben                           |
+| `sf-plan`        | Reine Implementierungsplanung ohne Code-Änderungen                          |
+| `sf-open-plans`  | Offene Plan-Dateien mit Kurzfassung auflisten                               |
+| `sf-docs`        | Dokumentations-Workflow                                                     |
+| `sf-fix`         | Bugfix-Workflow                                                             |
+| `sf-refactor`    | Refactoring-Workflow                                                        |
+| `sf-investigate` | Fehler- und Verhaltensinvestigation (Analyse-only, Diagnose-Report)         |
+| `sf-review`      | Umfassendes Code-Review                                                     |
+| `sf-maintain`    | Schlanke Wartung: Dependency-Updates, Audit-Fixes, Breaking-Change-Adaption |
+| `sf-commit`      | Commit-Message für gestagte Änderungen                                      |
+| `sf-pr`          | Pull-Request aus einem Branch auf GitHub (`gh`) oder Forgejo (`tea`)        |
 
 ### Agents (werden von Orchestratoren delegiert)
 
@@ -236,7 +237,9 @@ sf-claude-plugin/
 │   ├── _shared/                     # Gemeinsame Inhalte (`include`-Fence)
 │   │   ├── doc-categories.md        # Verzeichnis-Konvention für finale Dokumente
 │   │   ├── goal-completion.md       # Goal-getriebene Abschlusssteuerung + /goal-String
+│   │   ├── investigation-method.md  # Read-only-Investigation-Kern (sf-fix, sf-investigate)
 │   │   ├── language-rules.md        # Zentrale Sprach- und Typografie-Regeln
+│   │   ├── wisdom-accumulation.md   # Wisdom-Accumulation-Baustein (sf-fix, sf-investigate)
 │   │   └── worktree-integration.md  # Opt-in Worktree + PR/Merge für Code-Workflows
 │   ├── sf-apply-plan/SKILL.md       # type: orchestrator
 │   ├── sf-build/SKILL.md            # type: orchestrator
