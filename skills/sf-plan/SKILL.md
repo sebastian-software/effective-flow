@@ -53,7 +53,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 
 1. Analysiere die Anforderung gründlich.
 2. Prüfe vorhandene Plan-Dateien in `docs/plan/`, um Struktur und vorhandene Architekturentscheidungen zu übernehmen.
-3. Reserviere die Plan-Nummer gemäß `Plan-Nummern-Konvention`, Abschnitt „Nummer reservieren", bevor die inhaltliche Klärung beginnt. Die so angelegte temporäre Datei wird in Phase 3 mit dem vollständigen Inhalt gefüllt.
+3. Reserviere die Plan-Nummer gemäß `Plan-Nummern-Konvention`, Abschnitt „Nummer reservieren", bevor die inhaltliche Klärung beginnt. Verwende dabei einen lauf-eindeutigen Stub-Namen und führe direkt nach dem Stub-Write die „Reservierung verifizieren (Read-back)"-Prüfung aus, um eine durch überlappende Schreibfreigaben entstandene Doppelvergabe sofort aufzulösen. Die so angelegte temporäre Datei wird in Phase 3 mit dem vollständigen Inhalt gefüllt.
 4. Untersuche die relevanten Bereiche der Codebase lokal oder mit internem Sub-Agenten:
    - Projektstruktur
    - betroffene Module und Dateien
@@ -87,7 +87,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 
 ### Phase 3: Plan-Erstellung
 
-Fülle die in Phase 1 reservierte Plan-Datei `docs/plan/NNNN-<slug>.md` mit dem vollständigen Inhalt. Die Nummer wurde gemäß `Plan-Nummern-Konvention` bereits vergeben; vergib hier keine neue Nummer. Entferne den `(WIP)`-Zusatz aus der H1 und aktualisiere – falls der endgültige Titel abweicht – den `<slug>` im Dateinamen sowie den Titeltext der H1 auf den endgültigen Titel. Die H1-Nummer bleibt unverändert.
+Fülle die in Phase 1 reservierte Plan-Datei `docs/plan/NNNN-<slug>-<suffix>.md` mit dem vollständigen Inhalt. Die Nummer wurde gemäß `Plan-Nummern-Konvention` bereits vergeben; vergib hier keine neue Nummer. Entferne den `(WIP)`-Zusatz aus der H1, entferne das lauf-eindeutige `<suffix>` aus dem Dateinamen und aktualisiere – falls der endgültige Titel abweicht – den `<slug>` im Dateinamen sowie den Titeltext der H1 auf den endgültigen Titel. Die H1-Nummer bleibt unverändert.
 
 Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers in dieser Reihenfolge fest. Die erste Quelle, die einen gültigen Wert liefert, gewinnt.
 

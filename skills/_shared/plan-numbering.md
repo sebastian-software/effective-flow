@@ -17,9 +17,12 @@ bevor die inhaltliche Klärung beginnt:
 2. Neue Nummer = höchste vergebene Nummer + 1, vierstellig mit führenden Nullen.
    Existiert noch keine Plan-Datei, ist die erste Nummer `0001`.
 3. Bilde aus dem Arbeitstitel einen vorläufigen Kebab-Case-Slug (nur `a–z`, `0–9`
-   und Bindestrich). Steht noch kein Titel fest, nutze `wip`.
-4. Lege sofort eine temporäre Plan-Datei `docs/plan/NNNN-<slug>.md` mit minimalem
-   Kopf an, um die Nummer zu belegen:
+   und Bindestrich). Steht noch kein Titel fest, nutze `wip`. Hänge an den
+   Stub-Slug ein lauf-eindeutiges Suffix an, zum Beispiel einen Timestamp aus
+   `date +%Y%m%d%H%M%S`. So erzeugen zwei gleichzeitig reservierende Läufe
+   **verschiedene** Stub-Dateien und überschreiben sich nicht lautlos.
+4. Lege sofort eine temporäre Plan-Datei `docs/plan/NNNN-<slug>-<suffix>.md` mit
+   minimalem Kopf an, um die Nummer zu belegen:
 
    ```markdown
    # NNNN: [Arbeitstitel] (WIP)
@@ -34,16 +37,45 @@ bevor die inhaltliche Klärung beginnt:
    nicht; die Statuszeile wird beim Befüllen ergänzt.
 
    Eine parallel laufende Planung in derselben Arbeitskopie sieht die Nummer
-   dadurch als belegt und wählt `NNNN+1`.
+   dadurch in der Regel als belegt und wählt `NNNN+1`. Weil Scan (Schritt 1) und
+   Stub-Write (Schritt 4) nicht atomar sind – insbesondere wenn der Write auf
+   eine Freigabe wartet, sodass zwei Läufe gleichzeitig zwischen Scan und Write
+   stehen –, ist das nicht garantiert. Verbleibende Kollisionen fängt die
+   Read-back-Verifikation unten ab.
 
 Beim Befüllen des Plans wird der Inhalt vollständig ergänzt, der `(WIP)`-Zusatz
 aus der H1 entfernt und – falls der endgültige Titel abweicht – der `<slug>` im
-Dateinamen sowie der Titeltext der H1 auf den endgültigen Titel aktualisiert. Die
-**Nummer bleibt dabei unverändert**.
+Dateinamen sowie der Titeltext der H1 auf den endgültigen Titel aktualisiert. Das
+lauf-eindeutige `<suffix>` aus dem Dateinamen wird dabei entfernt; die **Nummer
+bleibt unverändert**.
 
 Bricht die Planung nach der Reservierung ab, bleibt die Datei als erkennbarer
 WIP-Stub bestehen und behält ihre Nummer, damit keine Lücke entsteht; sie sollte
 später entweder fertiggestellt oder bewusst entfernt werden.
+
+### Reservierung verifizieren (Read-back)
+
+Unmittelbar nach dem Stub-Write und bevor die inhaltliche Klärung beginnt,
+verifiziere die Reservierung gegen das oben beschriebene Race:
+
+1. Lies `docs/plan/` erneut frisch ein und zähle alle Dateien, deren Nummer
+   gleich der gerade reservierten `NNNN` ist (Muster `NNNN-…md`).
+2. Genau eine Datei mit `NNNN` (der eigene Stub): Reservierung bestätigt, fahre
+   normal fort.
+3. Mehr als eine Datei mit `NNNN`: ein konkurrierender Lauf hat dieselbe Nummer
+   belegt. Wende die „Kollisionsauflösung in Planungsreihenfolge" unten an. Da
+   die Stub-Dateien in der Regel noch nicht committet sind, greift der
+   deterministische Tie-Break (lexikografisch kleinerer Dateiname behält `NNNN`).
+   Dadurch kommt jeder beteiligte Lauf unabhängig zum selben Ergebnis: genau ein
+   Stub behält `NNNN`, jeder andere rückt auf die nächste freie Nummer (Maximum
+   neu bestimmen). Weicht der **eigene** Stub, benenne ihn auf die neue Nummer um
+   und führe die Planung mit dieser Nummer fort.
+4. Wiederhole die Verifikation nach einem eigenen Aufrücken einmalig, damit ein
+   in der Zwischenzeit entstandener weiterer Stub ebenfalls erkannt wird.
+
+Diese Verifikation macht die Reservierung selbstheilend statt still kollidierend.
+Sie ersetzt keine echte Sperre; bei extrem dichter Überlappung bleibt ein
+Restrisiko, das dann beim nächsten Scan über die Kollisionsauflösung behoben wird.
 
 ### Eindeutig und lückenlos
 
