@@ -196,7 +196,7 @@ Nicht relevant.
       den Includes `language-rules`, `task-tracking`, `pre-commit-gate`,
       `commit-message-rules`.
 - [x] `skills/sf-rust-reviewer/SKILL.md` existiert mit `type: agent`, `tools:
-  [Read, Glob, Grep]`, `sandbox_mode: read-only`, dem gespiegelten
+[Read, Glob, Grep]`, `sandbox_mode: read-only`, dem gespiegelten
       Ausgabeformat und der Regel „nur Findings mit Konfidenz ≥ 80".
 - [x] `node build.mjs` läuft fehlerfrei durch und erzeugt
       `dist/claude/.../agents/rust-implementer.md`,
