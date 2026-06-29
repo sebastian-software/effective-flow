@@ -159,7 +159,10 @@ Bestimme den Projekt-Typ anhand folgender Signale:
 | React/Vue/Angular/Svelte Dependencies, `src/components/`, `pages/`, `app/` mit JSX/TSX                 | Frontend    |
 | Express/Fastify/Hono/Koa Dependencies, `src/routes/`, `src/controllers/`, `src/services/`, `server.ts` | Backend API |
 | `bin/`, CLI-Einstiegspunkt, commander/yargs/meow/clipanion                                             | CLI         |
+| `Cargo.toml`/`Cargo.lock`, `src/main.rs`/`src/lib.rs`, `crates/`, `.rs`-Dateien, Cargo-Workspace       | Rust        |
 | Kombination aus Frontend + Backend/CLI Signalen                                                        | Fullstack   |
+
+Ein Repo mit Rust **und** JS/TS-Frontend/Backend-Signalen (z. B. Tauri, WASM) gilt als Fullstack: Rust-Dateien gehen an die Rust-Agents, JS/TS-Dateien an die bestehenden Agents.
 
 ### Routing nach Projekt-Typ
 
@@ -167,6 +170,7 @@ Bestimme den Projekt-Typ anhand folgender Signale:
 | ----------------------- | --------------------------------- | -------------------------------- |
 | Frontend                | `{{AGENT:sf-ui-implementer}}`     | `{{AGENT:sf-frontend-reviewer}}` |
 | Backend / CLI / Node.js | `{{AGENT:sf-nodejs-implementer}}` | `{{AGENT:sf-nodejs-reviewer}}`   |
+| Rust                    | `{{AGENT:sf-rust-implementer}}`   | `{{AGENT:sf-rust-reviewer}}`     |
 | Fullstack               | beide                             | beide                            |
 
 Bei Fullstack:
@@ -181,12 +185,13 @@ Nutze für Spezialphasen explizite Skill-Wechsel:
 - Planung: `{{SKILL:sf-plan}}`
 - Frontend: `{{AGENT:sf-ui-implementer}}`
 - Backend/CLI: `{{AGENT:sf-nodejs-implementer}}`
+- Rust: `{{AGENT:sf-rust-implementer}}`
 - Code-Doku: `{{AGENT:sf-code-documenter}}`
 - User-Doku: `{{AGENT:sf-docs-writer}}`
 - Tests: `{{AGENT:sf-test-writer}}`
 - E2E: `{{AGENT:sf-e2e-tester}}`
 - Validierung: `{{AGENT:sf-code-validator}}`
-- Review: `{{AGENT:sf-frontend-reviewer}}`, `{{AGENT:sf-nodejs-reviewer}}`
+- Review: `{{AGENT:sf-frontend-reviewer}}`, `{{AGENT:sf-nodejs-reviewer}}`, `{{AGENT:sf-rust-reviewer}}`
 
 Bei gut trennbaren Teilaufgaben ist das interne Sub-Agent-Pattern erlaubt und für parallele Phasen bevorzugt.
 
@@ -257,6 +262,7 @@ options:
 1. Starte den passenden Implementer-Skill mit dem abgestimmten Plan:
    - Frontend: `Verwende den Skill {{AGENT:sf-ui-implementer}} für diese Phase.`
    - Backend/CLI: `Verwende den Skill {{AGENT:sf-nodejs-implementer}} für diese Phase.`
+   - Rust: `Verwende den Skill {{AGENT:sf-rust-implementer}} für diese Phase.`
    - Fullstack: beide parallel oder in klar getrennten Teilphasen
 2. Prüfe auf Fertig-Protokoll, wenn intern delegiert wurde.
 3. Prüfe das Ergebnis gegen die Anforderungen.

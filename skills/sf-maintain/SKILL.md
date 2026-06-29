@@ -149,6 +149,7 @@ Arbeite die freigegebenen Gruppen nacheinander ab. Für jede Gruppe:
 2. Bei Major-Bumps: lies Changelog/Release Notes der betroffenen Packages und passe den Code über den passenden Implementer an:
    - Frontend: `{{AGENT:sf-ui-implementer}}`
    - Backend/CLI: `{{AGENT:sf-nodejs-implementer}}`
+   - Rust: `{{AGENT:sf-rust-implementer}}`
      Auftrag: nur an die geänderte API anpassen, kein neues Verhalten, keine ungeplanten Features.
 3. Validiere die Gruppe: `{{AGENT:sf-code-validator}}` und die bestehenden Tests erneut ausführen.
 4. Gleiche gegen die Baseline ab:
@@ -161,7 +162,7 @@ Arbeite die freigegebenen Gruppen nacheinander ab. Für jede Gruppe:
 
 Nur wenn in Phase 3 Code für Breaking Changes angepasst wurde:
 
-1. Starte den passenden Reviewer für die geänderten Dateien (`{{AGENT:sf-frontend-reviewer}}` bzw. `{{AGENT:sf-nodejs-reviewer}}`).
+1. Starte den passenden Reviewer für die geänderten Dateien (`{{AGENT:sf-frontend-reviewer}}`, `{{AGENT:sf-nodejs-reviewer}}` bzw. `{{AGENT:sf-rust-reviewer}}`).
 2. Behebe kritische Findings vor dem Abschluss.
 3. Wenn Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben, schreibe sie gemäß „Offene Review-Finding-Reports" in eine neue Datei unter `.sf-plugin/review/` und nenne den Reportpfad in der Abschlusszusammenfassung.
 

@@ -1,6 +1,6 @@
 ---
 name: sf-fix
-description: "Orchestriert den Bugfix-Workflow: Investigation, Reproduktion, Gap Analysis, Diagnose-Validierung, minimaler Fix, Regressionstests, Validierung und Abschluss. Verwendet Skill-Wechsel wie {{AGENT:sf-ui-implementer}}, {{AGENT:sf-nodejs-implementer}}, {{AGENT:sf-test-writer}} und {{AGENT:sf-code-validator}}."
+description: "Orchestriert den Bugfix-Workflow: Investigation, Reproduktion, Gap Analysis, Diagnose-Validierung, minimaler Fix, Regressionstests, Validierung und Abschluss. Verwendet Skill-Wechsel wie {{AGENT:sf-ui-implementer}}, {{AGENT:sf-nodejs-implementer}}, {{AGENT:sf-rust-implementer}}, {{AGENT:sf-test-writer}} und {{AGENT:sf-code-validator}}."
 type: orchestrator
 ---
 
@@ -56,6 +56,7 @@ Wie bei `{{SKILL:sf-build}}`.
 
 - Frontend: `{{AGENT:sf-ui-implementer}}`
 - Backend / CLI / Node.js: `{{AGENT:sf-nodejs-implementer}}`
+- Rust: `{{AGENT:sf-rust-implementer}}`
 - Fullstack: beide, nur bei klarer Trennung parallel
 
 Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:sf-fix}}`.
@@ -123,7 +124,7 @@ options:
 
 0. Bestimme gemäß „Worktree-Integration" den effektiven Worktree-Modus und führe bei aktivem Modus zuerst das Worktree-Setup aus. Die folgenden Phasen 3–4 (Fix, Verifikation) laufen dann mit Arbeitsverzeichnis im Worktree.
 1. Starte den passenden Implementer-Skill:
-   - `{{AGENT:sf-ui-implementer}}` oder `{{AGENT:sf-nodejs-implementer}}`
+   - `{{AGENT:sf-ui-implementer}}`, `{{AGENT:sf-nodejs-implementer}}` oder `{{AGENT:sf-rust-implementer}}`
 2. Gib einen präzisen Auftrag:
    - Root Cause
    - betroffene Dateien

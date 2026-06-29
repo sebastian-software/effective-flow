@@ -49,6 +49,16 @@ task-tracking
 - analysiere ungewöhnliche Änderungen
 - prüfe Import-Auflösung und zirkuläre Abhängigkeiten
 
+### Rust / Cargo
+
+Additiv zur JS/TS-Logik: Wenn das Projekt eine `Cargo.toml` enthält (Cargo-Projekt oder -Workspace), prüfe Rust über die Cargo-Toolchain statt über package.json-Scripts:
+
+- Type-/Build-Check: `cargo check` bzw. `cargo build`
+- Linting: `cargo clippy --all-targets` (Warnungen als solche kennzeichnen)
+- Formatierung: `cargo fmt --check`
+
+In gemischten Repos (Rust **und** JS/TS) beide Toolchains nebeneinander ausführen und im Report getrennt ausweisen. Führe Cargo-Kommandos nur aus, wenn eine `Cargo.toml` vorhanden ist.
+
 ## Vorgehen
 
 1. Bestimme den Check-Modus aus dem Auftrag. Falls kein Modus genannt ist, verwende `full`.

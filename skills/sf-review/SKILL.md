@@ -293,17 +293,18 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 1. **Reviewer-Auswahl pro Project-Type:**
    - Frontend → `{{AGENT:sf-frontend-reviewer}}`
    - Backend / CLI / Node.js → `{{AGENT:sf-nodejs-reviewer}}`
-   - Fullstack → beide
+   - Rust → `{{AGENT:sf-rust-reviewer}}`
+   - Fullstack → die jeweils betroffenen Reviewer (Rust-Dateien an `{{AGENT:sf-rust-reviewer}}`, JS/TS an die passenden)
 2. **Verzeichnis-Split-Heuristik** (pro Project-Type-Bucket im Scope):
    - Zähle die Dateien im Scope für diesen Bucket.
    - **≤ 30 Dateien:** ein Reviewer-Sub-Agent für den ganzen Bucket.
-   - **> 30 Dateien:** Splitte den Scope nach Top-Level-Verzeichnis (z. B. `src/components/`, `src/pages/`, `src/lib/` für Frontend; `src/routes/`, `src/services/`, `src/middleware/` für Backend). Pro Top-Level-Verzeichnis ein eigener Reviewer-Sub-Agent. Falls ein Top-Level-Verzeichnis weiterhin > 30 Dateien hat: rekursiv eine Ebene tiefer splitten — maximal **3 Rekursionsebenen** ab dem ersten Split.
+   - **> 30 Dateien:** Splitte den Scope nach Top-Level-Verzeichnis (z. B. `src/components/`, `src/pages/`, `src/lib/` für Frontend; `src/routes/`, `src/services/`, `src/middleware/` für Backend; `src/`, `crates/<name>/src/` für Rust). Pro Top-Level-Verzeichnis ein eigener Reviewer-Sub-Agent. Falls ein Top-Level-Verzeichnis weiterhin > 30 Dateien hat: rekursiv eine Ebene tiefer splitten — maximal **3 Rekursionsebenen** ab dem ersten Split.
    - **Fallback bei Flat-Repos:** Falls keine Sub-Verzeichnisse existieren, alle Dateien direkt im Root-Scope liegen oder die maximale Rekursionsebene erreicht ist und ein Bucket weiterhin > 30 Dateien enthält: teile die Datei-Liste in alphabetische Blöcke von je ≤ 30 Dateien auf und weise jedem Block einen eigenen Reviewer-Sub-Agenten zu.
    - Ein valider `scopeIndex`-Cache darf die Dateiliste, Project-Type-Buckets und Split-Berechnung liefern. Wenn die Invalidierung nicht eindeutig passt, berechne den Split neu.
 3. **Auftrag an jeden Reviewer-Sub-Agenten:**
    - umfassendes Review der zugewiesenen Dateien
    - beachte den aktiven Finding-Scope
-   - **keine Designentscheidungs-Prüfung im Reviewer** — die Designentscheidungen werden zentral in Phase 3 abgeglichen, das hält den Reviewer-Auftrag schlank. Diese Anweisung überschreibt gegenteilige Standardregeln in `{{AGENT:sf-frontend-reviewer}}` oder `{{AGENT:sf-nodejs-reviewer}}`: Reviewer dürfen in Phase 2c Designentscheidungen nicht suchen, nicht filtern und nicht in die Konfidenz einrechnen.
+   - **keine Designentscheidungs-Prüfung im Reviewer** — die Designentscheidungen werden zentral in Phase 3 abgeglichen, das hält den Reviewer-Auftrag schlank. Diese Anweisung überschreibt gegenteilige Standardregeln in `{{AGENT:sf-frontend-reviewer}}`, `{{AGENT:sf-nodejs-reviewer}}` oder `{{AGENT:sf-rust-reviewer}}`: Reviewer dürfen in Phase 2c Designentscheidungen nicht suchen, nicht filtern und nicht in die Konfidenz einrechnen.
    - für jedes Finding:
      - Schweregrad
      - Bereich
@@ -360,7 +361,7 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 
 **Datum:** YYYY-MM-DD
 **Scope:** [Gesamter Code / Beschriebener Bereich]
-**Projekt-Typ:** [Frontend / Backend / CLI / Fullstack]
+**Projekt-Typ:** [Frontend / Backend / CLI / Rust / Fullstack]
 
 ## Zusammenfassung
 

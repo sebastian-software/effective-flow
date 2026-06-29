@@ -36,8 +36,10 @@ Das System unterscheidet drei Typen:
 | ----------------------- | ----------------------------------- | ------------ | ------------ |
 | `sf-ui-implementer`     | Frontend-Implementierung            | gpt-5.5      | sonnet       |
 | `sf-nodejs-implementer` | Backend/CLI-Implementierung         | gpt-5.5      | opus         |
+| `sf-rust-implementer`   | Rust-Implementierung                | gpt-5.5      | opus         |
 | `sf-frontend-reviewer`  | Frontend-Review                     | gpt-5.5      | opus         |
 | `sf-nodejs-reviewer`    | Backend/CLI-Review                  | gpt-5.5      | opus         |
+| `sf-rust-reviewer`      | Rust-Review                         | gpt-5.5      | opus         |
 | `sf-code-validator`     | TypeScript, Lint, Build-Validierung | gpt-5.4-mini | haiku        |
 | `sf-code-documenter`    | In-Code-Dokumentation               | gpt-5.4-mini | sonnet       |
 | `sf-docs-writer`        | User-Dokumentation                  | gpt-5.4-mini | sonnet       |

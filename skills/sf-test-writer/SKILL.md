@@ -54,6 +54,16 @@ task-tracking
 - CLI-Tests über child_process oder execa
 - DB-Tests mit Testdatenbank und Isolation
 
+### Rust-Tests
+
+Additiv zu den JS/TS-Test-Patterns: Wenn das Projekt eine `Cargo.toml` enthält, schreibe Rust-Tests im Cargo-Stil und führe sie über `cargo test` aus:
+
+- Unit-Tests im Modul über `#[cfg(test)] mod tests` mit `#[test]`-Funktionen
+- Integrationstests als eigene Dateien unter `tests/`
+- async-Tests mit dem projektüblichen Attribut (z. B. `#[tokio::test]`)
+- Fehlerpfade über `Result`/`#[should_panic]` abdecken
+- bestehende Test-Konventionen und genutzte Test-Crates des Projekts beibehalten
+
 ## Vorgehen
 
 1. analysiere den zu testenden Code
