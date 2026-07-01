@@ -160,6 +160,8 @@ Die Code-ändernden Workflows `sf-build`, `sf-fix`, `sf-refactor`, `sf-docs` und
 
 Bei aktivem Modus erzeugt der Workflow zu Beginn einen Git-Worktree auf dem konfigurierbaren Basis-Branch (`worktree.baseBranch`, Default `origin/main`) und führt dort alle Umsetzungs-, Test-, Validierungs- und Doku-Phasen aus. In der Abschlussphase committet er die Arbeit (über die `sf-commit`-Logik), zieht den Worktree zurück (das Verzeichnis wird entfernt, der Liefer-Branch bleibt im lokalen Repo) und führt die Abschluss-Aktion aus: einen Pull-Request über `sf-pr`, einen lokalen Merge auf den Basis-Branch oder nur den belassenen Branch. Die Aktion steuert `worktree.completion`; ohne gültigen Wert wird gefragt. Dieser Mechanismus ist getrennt vom per-Finding-Worktree von `sf-apply-review` (`applyReview.worktree`).
 
+Die Plan-Datei unter `docs/plan/` reist in ihrem finalen Zustand mit in den Liefer-Branch bzw. PR: Sie wird weiterhin im Haupt-Repo autorisiert (Nummern-Reservierung, Statusaktualisierung), ihr finaler Stand aber beim Handback in den Worktree übernommen und dort mitcommittet, damit der Plan zusammen mit dem Code eingebracht wird und nicht uncommittet im Haupt-Repo liegen bleibt. Nur die reine Plugin-Buchhaltung unter `.sf-plugin/` (`memory.json`, Review-Reports, Wisdom-Datei) bleibt außerhalb des PRs im Haupt-Repo.
+
 ## Plugin-Konfiguration
 
 Projektlokale Laufzeitdaten liegen unter `.sf-plugin/` im Zielprojekt:
