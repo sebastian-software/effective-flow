@@ -130,6 +130,43 @@ Jeder Analyse-Sub-Agent erhält den Issue-Body und den Auftrag, die Codebase zu 
 
 Schreibe jedes Ergebnis in die Wisdom-Datei. Im Zweifel gilt ein Issue als `unzureichend` — lieber sauber an `{{SKILL:sf-plan-issues}}` übergeben als auf unklarer Grundlage implementieren.
 
+### Phase 3.5: Freigabe und Goal-Abfrage
+
+Dies ist die Freigabe-Grenze dieses Workflows: Die Klassifikation steht fest, und die verbleibenden Phasen (Delegation, PRs, Kommentare, Zusammenfassung) laufen danach ohne weiteres reguläres Approval-Gate.
+
+1. Gib dem User eine Übersicht der Analyse: pro Arbeitsitem Issue-Nummer, Klassifikation, `ausreichend`/`unzureichend` und den Ziel-Skill bzw. das Fehlende.
+
+```markdown
+| Issue | Klassifikation | Ergebnis | Ziel / Fehlendes |
+|---|---|---|---|
+| #<nr> | Feature/Bugfix/Refactoring/Doku | ausreichend | {{SKILL:sf-build}} … |
+| #<nr> | … | unzureichend | fehlt: … |
+```
+
+2. Deklariere gemäß „Goal-getriebene Abschlusssteuerung" (Prinzip 1) die explizite Abschlussbedingung für die Phasen 4–5: jedes `ausreichend`-Issue ist über den passenden Umsetzungs-Skill umgesetzt und hat genau einen PR (`Closes #<Issue>`) mit PR-Kommentar, Label `sf-issue-done` und – bei Container-Herkunft – abgehaktem Epic-Eintrag; jedes `unzureichend`-Issue trägt `sf-needs-planning` samt Kommentar; die projektkonfigurierten Checks der delegierten Workflows sind grün; nichts außerhalb der gewählten Issues wird geändert.
+3. Stelle die Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe". Die Freigabe-Grenze ist hier eine Ja/Nein-Freigabe, daher als dritte Option „Autonom via `/goal`":
+
+```ask
+header: Freigabe
+question: Umsetzung der ausreichend spezifizierten Issues starten?
+options:
+  - label: Ja
+    description: Freigabe erteilt, Workflow läuft gated weiter (Statusmeldung pro Issue)
+  - label: Autonom via /goal
+    description: Verbleibende Phasen autonom unter nativem /goal — der Skill gibt den einzufügenden /goal-String aus
+  - label: Anpassen
+    description: Feedback als Freitext eingeben (z. B. Issue-Auswahl oder Ziel-Skill korrigieren)
+```
+
+4. **Entfall der Abfrage:** Läuft `{{SKILL:sf-apply-issues}}` selbst als nicht-interaktiver Sub-Agent eines übergeordneten Orchestrators (erkennbar am Aufruf-Kontext, z. B. „[Kontext von …]"), überspringe dieses Gate vollständig (keine Zusatzoption, kein `/goal`-String) und fahre direkt mit Phase 4 fort. Direktaufruf durch den User zählt **nicht** als solche Delegation.
+5. Bei Wahl „Autonom via `/goal`": gib den `/goal`-String prominent aus und fordere zum Einfügen als neue Eingabe auf. Ohne Einfügen läuft der Skill gated weiter. Form (einzeilig, ohne interne IDs):
+
+```text
+/goal Arbeite die in /apply-issues analysierten Issues (#… , #…) vollständig ab und durchlaufe die verbleibenden Phasen dieses Workflows: setze jedes ausreichend spezifizierte Issue über den passenden Umsetzungs-Skill um, erstelle je genau einen PR (Closes #<Issue>), kommentiere den PR-Link, setze sf-issue-done und hake den Epic-Eintrag ab; markiere unzureichende Issues mit sf-needs-planning und Kommentar; projektkonfigurierte Checks der delegierten Workflows grün. Nichts außerhalb der genannten Issues ändern. Stoppe, wenn alle gewählten Issues verarbeitet sind.
+```
+
+6. Bei „Ja"/gated (oder normaler Antwort): ohne `/goal`-String gated weiter. Bei „Anpassen": Feedback einarbeiten (Auswahl/Ziel korrigieren) und die Abfrage erneut stellen. Starte Phase 4 erst nach dieser Freigabe.
+
 ### Phase 4: Routing & Delegation
 
 Die Commit-/PR-Strategie ist fest **„ein PR pro Issue"** (keine Commit-Strategie-Frage). Jedes umsetzbare Issue ist eine eigene Sub-Gruppe in einem eigenen Worktree/Branch, analog zum Remote-Modus von `{{SKILL:sf-apply-review}}` (Phase 4 remote): Branch ab dem Basis-Branch aus dem `worktree`-Config-Block, ein PR über `{{SKILL:sf-pr}}`. Dateiüberlappende Issues laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden; nicht überlappende laufen parallel.
