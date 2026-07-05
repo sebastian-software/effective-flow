@@ -166,16 +166,18 @@ Die Plan-Datei unter `docs/plan/` reist in ihrem finalen Zustand mit in den Lief
 
 Projektlokale Laufzeitdaten liegen unter `.sf-plugin/` im Zielprojekt:
 
-| Datei                    | Zweck                                                                                                                                            |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `.sf-plugin/config.json` | Optionale Workflow-Defaults für Review, Apply-Review, Plan-Erstellung und Worktree-Integration (z. B. `plan.markerLanguage`, `worktree.enabled`) |
-| `.sf-plugin/memory.json` | Persistente Workflow-Zähler und Config-Migrationsstatus                                                                                          |
-| `.sf-plugin/cache.json`  | Invalidierbare Cache-Daten für wiederholte Reviews und Apply-Review-Läufe                                                                        |
-| `.sf-plugin/review/`     | Review-Reports                                                                                                                                   |
+| Datei                    | Zweck                                                                                                                                                                           |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.sf-plugin/config.json` | Optionale Workflow-Defaults für Review, Apply-Review, Plan-Erstellung, Worktree-Integration und Issue-Tracker (z. B. `plan.markerLanguage`, `worktree.enabled`, `tracker.mode`) |
+| `.sf-plugin/memory.json` | Persistente Workflow-Zähler und Config-Migrationsstatus                                                                                                                         |
+| `.sf-plugin/cache.json`  | Invalidierbare Cache-Daten für wiederholte Reviews und Apply-Review-Läufe                                                                                                       |
+| `.sf-plugin/review/`     | Review-Reports                                                                                                                                                                  |
 
-Die Skills funktionieren ohne `config.json`. Zum proaktiven Anlegen oder Anpassen der Datei dient `sf-setup` (`/setup`): Es trägt den Laufzeit-Status unter `.sf-plugin/` in die `.gitignore` ein (`.sf-plugin/*` plus `!.sf-plugin/config.json`), sodass `memory.json`, `cache.json`, Review-Reports und Worktrees ignoriert werden, `.sf-plugin/config.json` als geteilte Projekt-Konfiguration aber getrackt bleibt; eine bereits vorhandene pauschale `.sf-plugin/`-Zeile migriert es auf dieses Pattern. Die `config.json` selbst pflegt es interaktiv über Presets oder einen Detailmodus, nicht-destruktiv für vorhandene Werte. Wenn eine bestehende Config neue Schlüssel noch nicht enthält, migrieren `sf-review`, `sf-apply-review` und `sf-plan` sowie die Code-ändernden Workflows (für den `worktree`-Block) fehlende Defaults nicht-destruktiv und melden die ergänzten Schlüssel. Da `worktree.enabled` per Default `false` ist, bleibt die Worktree-Integration auch nach automatischer Migration deaktiviert. Der Migrationsstatus wird in `memory.json` gespeichert; wiederverwendbare Cache-Daten liegen separat in `cache.json`.
+Die Skills funktionieren ohne `config.json`. Zum proaktiven Anlegen oder Anpassen der Datei dient `sf-setup` (`/setup`): Es trägt den Laufzeit-Status unter `.sf-plugin/` in die `.gitignore` ein (`.sf-plugin/*` plus `!.sf-plugin/config.json`), sodass `memory.json`, `cache.json`, Review-Reports und Worktrees ignoriert werden, `.sf-plugin/config.json` als geteilte Projekt-Konfiguration aber getrackt bleibt; eine bereits vorhandene pauschale `.sf-plugin/`-Zeile migriert es auf dieses Pattern. Die `config.json` selbst pflegt es interaktiv über Presets oder einen Detailmodus, nicht-destruktiv für vorhandene Werte. Wenn eine bestehende Config neue Schlüssel noch nicht enthält, migrieren `sf-review`, `sf-apply-review` und `sf-plan` sowie die Code-ändernden Workflows (für den `worktree`-Block) fehlende Defaults nicht-destruktiv und melden die ergänzten Schlüssel. Da `worktree.enabled` per Default `false` und `tracker.mode` per Default `local` ist, bleiben Worktree-Integration und Remote-Issue-Tracker auch nach automatischer Migration deaktiviert. Der Migrationsstatus wird in `memory.json` gespeichert; wiederverwendbare Cache-Daten liegen separat in `cache.json`.
 
 `sf-plan` nutzt `plan.markerLanguage` (`"de"` oder `"en"`), um die Sprache des kanonischen Statusmarkers neuer Plan-Dateien zu bestimmen. Reihenfolge: Config-Eintrag gewinnt; sonst leitet `sf-plan` die Sprache aus den vorhandenen Plan-Dateien ab; sonst fragt es per `AskUserQuestion` und bietet an, die Wahl zu persistieren. Bei eindeutiger Detection und existierender Config ohne den Schlüssel wird er nicht-destruktiv ergänzt.
+
+`sf-review` und `sf-apply-review` binden den gemeinsamen Baustein `skills/_shared/issue-tracker.md` ein und steuern über `tracker.mode` (`"local"` oder `"remote"`, Default `local`), ob Findings lokal als Markdown-Report unter `.sf-plugin/review/` oder remote als Issues geführt werden. Der Modus ist **opt-in** und standardmäßig `local`; ist er nicht gesetzt, fragen beide Skills beim ersten Aufruf einmalig nach und persistieren die Wahl. Im Remote-Modus erkennt das Plugin das Werkzeug automatisch aus der `origin`-URL (GitHub über `gh`, sonst Forgejo über `tea`); `tracker.remoteToolOverride` (`auto`/`github`/`forgejo`) erzwingt bei mehrdeutigen Hosts wie GitHub Enterprise ein Werkzeug. `sf-review` legt dann pro neuem Finding ein Issue und je Lauf ein neues Epic mit abhakbarer Finding-Liste an (inhaltlicher Dedup gegen bestehende Finding-Issues, kein lokaler Report); `sf-apply-review` nimmt ein Epic-Issue oder eine Liste konkreter Finding-Issues entgegen, erstellt pro Finding einen Pull-Request (`Closes #…`) und hakt den Epic-Eintrag nach PR-Erstellung ab. Findings mit Label `wontfix` werden als ADR dokumentiert statt umgesetzt.
 
 Sicheres Default-Verhalten:
 
@@ -206,6 +208,10 @@ Sicheres Default-Verhalten:
     "completion": null,
     "setup": "auto",
     "baseDir": ".sf-plugin/.worktrees"
+  },
+  "tracker": {
+    "mode": "local",
+    "remoteToolOverride": "auto"
   }
 }
 ```
@@ -228,6 +234,9 @@ Schneller persönlicher Review-/Apply-Review-Workflow:
       "baseDir": ".sf-plugin/.worktrees",
       "setup": "none"
     }
+  },
+  "tracker": {
+    "mode": "local"
   }
 }
 ```
@@ -243,6 +252,7 @@ sf-claude-plugin/
 │   │   ├── doc-categories.md        # Verzeichnis-Konvention für finale Dokumente
 │   │   ├── goal-completion.md       # Goal-getriebene Abschlusssteuerung + /goal-String
 │   │   ├── investigation-method.md  # Read-only-Investigation-Kern (sf-fix, sf-investigate)
+│   │   ├── issue-tracker.md         # Opt-in Remote-Modus: Findings als Issues (sf-review, sf-apply-review)
 │   │   ├── language-rules.md        # Zentrale Sprach- und Typografie-Regeln
 │   │   ├── wisdom-accumulation.md   # Wisdom-Accumulation-Baustein (sf-fix, sf-investigate)
 │   │   └── worktree-integration.md  # Opt-in Worktree + PR/Merge für Code-Workflows

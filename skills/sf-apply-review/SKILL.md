@@ -12,6 +12,8 @@ Du bist der Orchestrator für die automatisierte Umsetzung von Review-Report-Fin
 
 Dieser Workflow liest eine bestehende Review-Report-Datei aus `.sf-plugin/review/` ein, wertet die Entwickler-Anmerkungen pro Finding aus und delegiert die Umsetzung an die passenden Workflows. Findings, die bewusst nicht umgesetzt werden sollen, werden als ADRs dokumentiert.
 
+Im **Remote-Modus** (Tracker-Modus `remote`) liest der Workflow die Findings stattdessen aus einem Issue-Tracker: übergeben wird ein Epic-Issue oder eine Liste konkreter Finding-Issues, pro Finding entsteht ein PR, und der Epic-Eintrag wird nach PR-Erstellung abgehakt. Die Abweichungen sind in „Remote-Modus (Issue-Tracker)" gebündelt; `wontfix`-Findings ersetzen dort die ablehnende Entwickler-Anmerkung.
+
 ```include
 language-rules
 ```
@@ -175,9 +177,66 @@ Regeln:
 - Outputs fehlgeschlagener Delegationen nicht als Grundlage für spätere erfolgreiche Läufe verwenden.
 - Wisdom-Dateien bleiben temporäre In-Run-Speicher und werden am Ende gelöscht.
 
+```include
+issue-tracker
+```
+
+## Remote-Modus (Issue-Tracker)
+
+Wenn der Tracker-Modus `remote` ist (siehe „Issue-Tracker-Anbindung (Remote-Modus)"), gelten die folgenden Anpassungen **zusätzlich** zum bzw. anstelle des lokalen Report-Flusses. Bestimme den Modus zu Beginn von Phase 1; der Argumenttyp hat dabei Vorrang vor der Config.
+
+### Argument-Erkennung und Modusbestimmung
+
+- **Pfad zu einer `.md`-Report-Datei** → `local` (bisheriges Verhalten, unverändert).
+- **Eine einzelne Issue-Referenz mit `sf-review-epic`-Label** → `remote`, **Epic-Modus**: alle im Epic verlinkten Finding-Issues abarbeiten.
+- **Eine Liste von Finding-Issue-Referenzen** (mehrere Nummern/`#…`/URLs) oder **ein einzelnes Finding-Issue ohne Epic-Label** → `remote`, **Issue-Listen-Modus**: nur genau diese Findings abarbeiten. Das zugehörige Epic je Finding wird für das spätere Abhaken aus dem Sub-Issue ermittelt (`Epic`-Feld/Referenz), sofern vorhanden.
+- **`remote` ohne Argument** → offene Epics auflisten und den User wählen lassen.
+
+Bei `remote` vorab Host und CLI erkennen und die CLI-Verfügbarkeit prüfen; fehlt das CLI, klar abbrechen (kein stiller Fallback auf `local`).
+
+### Phase 1 remote: Findings aus Issues lesen
+
+Ersetzt das Einlesen der Report-Datei. Bestimme die abzuarbeitenden Finding-Issues (Epic-Task-Liste parsen bzw. übergebene Liste verwenden). Lies je Finding-Issue den vollständigen Body **frisch vom Tracker** und klassifiziere:
+
+- **Label `wontfix`** → nicht umsetzen, ADR erstellen (Phase 3 remote).
+- **bereits abgehakt/geschlossen** → überspringen.
+- **Sub-Issue ohne Ziel-Aktion oder Prompt** (manuell verändert) → als nicht umsetzbar melden, nicht raten.
+- **sonst** → umsetzen.
+
+Lege die Per-Finding-Tasks wie im lokalen Modus an; die Finding-ID ist die `R-XXXXXXX`-ID aus dem Issue-Titel.
+
+### Phase 2 remote: Commit- und PR-Strategie
+
+Die Commit-Strategie ist im Remote-Modus fest **„ein PR pro Finding"** — die lokale Commit-Strategie-Frage entfällt. Jedes umsetzbare Finding ist eine **eigene Sub-Gruppe** in einem eigenen Worktree/Branch. Basis-Branch und Branch-Namensbildung stützen sich auf den bestehenden `worktree`-Config-Block: Branch `<branchPrefix>/apply-review/<R-ID-oder-slug>` ab `worktree.baseBranch`. Dateiüberlappende Findings laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden; die Union-Find-Zusammenfassung aus Phase 4.2 entfällt, weil jedes Finding einen eigenen Branch/PR braucht. Die Stash-Policy und der `/goal`-String werden wie im lokalen Modus behandelt.
+
+### Phase 3 remote: ADR referenziert Issue
+
+Für jedes `wontfix`-Finding ein ADR erstellen wie in Phase 3, jedoch mit Bezug auf Issue-Nummer und Epic statt auf ein Report-Finding (Kontext: `Issue #<nr>` und `Epic #<nr>`). Markiere das Finding im Epic später als `- [x] … — nicht umgesetzt (ADR <Nummer>)`.
+
+### Phase 4 remote: Umsetzung, PR und Epic-Abhaken
+
+Pro umsetzbarem Finding, in dessen Worktree:
+
+1. Vorabanalyse und Umsetzung wie in Phase 4.1/4.3 über den passenden Delegations-Skill (`{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:sf-build}}`, `{{SKILL:sf-docs}}`).
+2. Änderungen committen (Conventional-Commit-Message, keine internen Finding-IDs, kein `Co-Authored-By`), Branch pushen.
+3. Über `{{SKILL:sf-pr}}` genau einen PR gegen den Basis-Branch erstellen; im PR-Body `Closes #<Sub-Issue>` setzen.
+4. **Direkt nach PR-Erstellung** den zugehörigen Eintrag im Epic-Body abhaken (`- [ ]` → `- [x]`, PR-Link anhängen) und optional den PR-Link als Kommentar ans Sub-Issue schreiben. Body vor dem Ändern frisch lesen und nur die betroffene Zeile umschalten.
+5. **Schlägt die PR-Erstellung fehl** (Push abgelehnt, kein Commit): Finding als fehlgeschlagen markieren, Epic-Eintrag **nicht** abhaken, nächstes Finding fortsetzen.
+6. **Fehlt ein zugeordnetes Epic** (Issue-Listen-Modus): Finding trotzdem umsetzen und PR erstellen; das Abhaken entfällt und wird dem User gemeldet.
+
+### Phase 5 remote: Tracking-Oberfläche statt Report
+
+Es wird keine Report-Datei aktualisiert. Stelle stattdessen sicher, dass alle Epic-Checkboxen und Sub-Issue-Kommentare/Labels den Endstand widerspiegeln (umgesetzt → abgehakt mit PR-Link, `wontfix` → abgehakt mit ADR-Referenz).
+
+### Phase 7/8 remote
+
+Finale Validierung und Zusammenfassung wie im lokalen Modus; die Zusammenfassung nennt zusätzlich Epic-URL, die erstellten PRs und die abgehakten Findings.
+
 ## Workflow
 
 ### Phase 1: Report einlesen und validieren
+
+Bestimme zuerst den Tracker-Modus gemäß „Issue-Tracker-Anbindung (Remote-Modus)". Ist er `remote`, folge „Remote-Modus (Issue-Tracker)" (Phase 1 remote und folgende) statt der Report-Datei-Schritte 4–7 unten; die Config-, Stash- und Cache-Schritte gelten weiterhin.
 
 1. Lade Plugin-Konfiguration, migriere sie falls nötig und bestimme Commit-Strategie-Default, Stash-Policy, Worktree-Defaults und finales Validierungsprofil.
 2. Lies `.sf-plugin/cache.json`, falls vorhanden und gültig. Verwende nur valide `applyReviewAnalysis`-Einträge.
