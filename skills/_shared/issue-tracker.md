@@ -4,6 +4,8 @@ Dieser geteilte Baustein verbindet `{{SKILL:sf-review}}` und `{{SKILL:sf-apply-r
 
 Er kapselt die **gemeinsamen** Bausteine: das `tracker`-Config-Schema samt Migration, die Modusbestimmung, die Host- und CLI-Erkennung, die Label-Konvention, die kanonischen Issue- und Epic-Body-Formate sowie das Mapping der Tracker-Operationen auf `gh`/`tea`. Die eigentliche Orchestrierung – wann Issues **erstellt** (`{{SKILL:sf-review}}`) und wann sie **gelesen und abgearbeitet** werden (`{{SKILL:sf-apply-review}}`) – bleibt im jeweiligen Skill.
 
+Zusätzlich nutzen `{{SKILL:sf-apply-issues}}` und `{{SKILL:sf-plan-issues}}` diesen Baustein, allerdings nur für die **werkzeug-generische Plumbing**: die Host- und CLI-Erkennung (unten), die Verfügbarkeits-/Auth-Prüfung, das Mapping der Tracker-Operationen auf `gh`/`tea` und die Fehlerfälle. Diese beiden Skills verarbeiten **beliebige** Menschen-Issues statt der von `{{SKILL:sf-review}}` erzeugten Finding-Issues; sie sind **inhärent remote** und werten den `tracker.mode`-Umschalter (local/remote) **nicht** aus – sie brauchen lediglich ein Git-Repository, eine `origin`-Remote und ein authentifiziertes CLI. Die finding-/epic-spezifischen Abschnitte (Issue-Body-Format, Epic-Body-Format, `R-XXXXXXX`-Konvention) gelten nur für `{{SKILL:sf-review}}`/`{{SKILL:sf-apply-review}}`; die Checkbox-Abhak-Mechanik für Epic-Bodys nutzt `{{SKILL:sf-apply-issues}}` bei Container-Issues sinngemäß mit.
+
 ### Konfiguration
 
 Der Remote-Modus funktioniert ohne Konfigurationsdatei (dann bleibt er deaktiviert, `local`). Falls `.sf-plugin/config.json` vorhanden ist, darf sie diese Defaults überschreiben:
@@ -88,15 +90,17 @@ Bestimme im Remote-Modus das Werkzeug analog zu `{{SKILL:sf-pr}}`:
 
 Verwende im Remote-Modus diese Labels und lege fehlende Labels idempotent an (eine „already exists"-Meldung tolerieren, nicht als Fehler behandeln):
 
-| Label                                          | Bedeutung                                                |
-| ---------------------------------------------- | -------------------------------------------------------- |
-| `sf-review-finding`                            | markiert ein einzelnes Finding-Issue                     |
-| `sf-review-epic`                               | markiert das Epic-/Tracking-Issue                        |
-| `sf-fix`, `sf-refactor`, `sf-build`, `sf-docs` | Ziel-Aktion des Findings (genau eines pro Finding-Issue) |
-| `kritisch`, `wichtig`                          | Schweregrad des Findings                                 |
-| `wontfix`                                      | Finding bewusst nicht umsetzen → ADR statt Code          |
+| Label                                          | Bedeutung                                                                                  |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `sf-review-finding`                            | markiert ein einzelnes Finding-Issue                                                       |
+| `sf-review-epic`                               | markiert das Epic-/Tracking-Issue                                                          |
+| `sf-fix`, `sf-refactor`, `sf-build`, `sf-docs` | Ziel-Aktion des Findings (genau eines pro Finding-Issue)                                   |
+| `kritisch`, `wichtig`                          | Schweregrad des Findings                                                                   |
+| `wontfix`                                      | Finding bewusst nicht umsetzen → ADR statt Code                                            |
+| `sf-issue-done`                                | von `{{SKILL:sf-apply-issues}}` umgesetztes Issue (PR erstellt)                            |
+| `sf-needs-planning`                            | von `{{SKILL:sf-apply-issues}}` übersprungen; Planung via `{{SKILL:sf-plan-issues}}` nötig |
 
-`wontfix` existiert auf vielen Trackern bereits; lege es nur an, falls es fehlt.
+`wontfix` existiert auf vielen Trackern bereits; lege es nur an, falls es fehlt. `sf-issue-done` und `sf-needs-planning` gehören zum issue-getriebenen Fluss (`{{SKILL:sf-apply-issues}}`/`{{SKILL:sf-plan-issues}}`) und werden dort idempotent angelegt.
 
 ### Issue-Body-Format (Finding-Issue)
 

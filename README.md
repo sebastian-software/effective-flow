@@ -14,21 +14,23 @@ Das System unterscheidet drei Typen:
 
 ### Orchestratoren (ruft User auf)
 
-| Name             | Beschreibung                                                                |
-| ---------------- | --------------------------------------------------------------------------- |
-| `sf-build`       | Kompletter Feature-Workflow                                                 |
-| `sf-apply-plan`  | Offene Plan-Datei an passenden Workflow übergeben                           |
-| `sf-plan`        | Reine Implementierungsplanung ohne Code-Änderungen                          |
-| `sf-open-plans`  | Offene Plan-Dateien mit Kurzfassung auflisten                               |
-| `sf-docs`        | Dokumentations-Workflow                                                     |
-| `sf-fix`         | Bugfix-Workflow                                                             |
-| `sf-refactor`    | Refactoring-Workflow                                                        |
-| `sf-investigate` | Fehler- und Verhaltensinvestigation (Analyse-only, Diagnose-Report)         |
-| `sf-review`      | Umfassendes Code-Review                                                     |
-| `sf-maintain`    | Schlanke Wartung: Dependency-Updates, Audit-Fixes, Breaking-Change-Adaption |
-| `sf-commit`      | Commit-Message für gestagte Änderungen                                      |
-| `sf-pr`          | Pull-Request aus einem Branch auf GitHub (`gh`) oder Forgejo (`tea`)        |
-| `sf-setup`       | `.gitignore`-Eintrag + interaktive Pflege von `.sf-plugin/config.json`      |
+| Name              | Beschreibung                                                                |
+| ----------------- | --------------------------------------------------------------------------- |
+| `sf-build`        | Kompletter Feature-Workflow                                                 |
+| `sf-apply-plan`   | Offene Plan-Datei an passenden Workflow übergeben                           |
+| `sf-apply-issues` | Tracker-Issues analysieren und an passenden Umsetzungs-Workflow routen      |
+| `sf-plan-issues`  | Übersprungene Issues einsammeln und Planung interaktiv vervollständigen     |
+| `sf-plan`         | Reine Implementierungsplanung ohne Code-Änderungen                          |
+| `sf-open-plans`   | Offene Plan-Dateien mit Kurzfassung auflisten                               |
+| `sf-docs`         | Dokumentations-Workflow                                                     |
+| `sf-fix`          | Bugfix-Workflow                                                             |
+| `sf-refactor`     | Refactoring-Workflow                                                        |
+| `sf-investigate`  | Fehler- und Verhaltensinvestigation (Analyse-only, Diagnose-Report)         |
+| `sf-review`       | Umfassendes Code-Review                                                     |
+| `sf-maintain`     | Schlanke Wartung: Dependency-Updates, Audit-Fixes, Breaking-Change-Adaption |
+| `sf-commit`       | Commit-Message für gestagte Änderungen                                      |
+| `sf-pr`           | Pull-Request aus einem Branch auf GitHub (`gh`) oder Forgejo (`tea`)        |
+| `sf-setup`        | `.gitignore`-Eintrag + interaktive Pflege von `.sf-plugin/config.json`      |
 
 ### Agents (werden von Orchestratoren delegiert)
 
@@ -178,6 +180,8 @@ Die Skills funktionieren ohne `config.json`. Zum proaktiven Anlegen oder Anpasse
 `sf-plan` nutzt `plan.markerLanguage` (`"de"` oder `"en"`), um die Sprache des kanonischen Statusmarkers neuer Plan-Dateien zu bestimmen. Reihenfolge: Config-Eintrag gewinnt; sonst leitet `sf-plan` die Sprache aus den vorhandenen Plan-Dateien ab; sonst fragt es per `AskUserQuestion` und bietet an, die Wahl zu persistieren. Bei eindeutiger Detection und existierender Config ohne den Schlüssel wird er nicht-destruktiv ergänzt.
 
 `sf-review` und `sf-apply-review` binden den gemeinsamen Baustein `skills/_shared/issue-tracker.md` ein und steuern über `tracker.mode` (`"local"` oder `"remote"`, Default `local`), ob Findings lokal als Markdown-Report unter `.sf-plugin/review/` oder remote als Issues geführt werden. Der Modus ist **opt-in** und standardmäßig `local`; ist er nicht gesetzt, fragen beide Skills beim ersten Aufruf einmalig nach und persistieren die Wahl. Im Remote-Modus erkennt das Plugin das Werkzeug automatisch aus der `origin`-URL (GitHub über `gh`, sonst Forgejo über `tea`); `tracker.remoteToolOverride` (`auto`/`github`/`forgejo`) erzwingt bei mehrdeutigen Hosts wie GitHub Enterprise ein Werkzeug. `sf-review` legt dann pro neuem Finding ein Issue und je Lauf ein neues Epic mit abhakbarer Finding-Liste an (inhaltlicher Dedup gegen bestehende Finding-Issues, kein lokaler Report); `sf-apply-review` nimmt ein Epic-Issue oder eine Liste konkreter Finding-Issues entgegen, erstellt pro Finding einen Pull-Request (`Closes #…`) und hakt den Epic-Eintrag nach PR-Erstellung ab. Findings mit Label `wontfix` werden als ADR dokumentiert statt umgesetzt.
+
+`sf-apply-issues` und `sf-plan-issues` binden dieselbe `skills/_shared/issue-tracker.md` ein, nutzen davon aber nur die werkzeug-generische Plumbing (Host-/CLI-Erkennung, Operation-Mapping) und sind **inhärent remote** — sie werten `tracker.mode` nicht aus und verarbeiten **beliebige** Menschen-Issues statt strukturierter Finding-Issues. `sf-apply-issues` nimmt eine oder mehrere Issue-Referenzen entgegen (Container-Issues mit Sub-Issue-Checkliste werden auf die offenen `- [ ]`-Einträge expandiert), analysiert und klassifiziert jeden Issue-Inhalt (Feature/Bugfix/Refactoring/Doku) und routet ausreichend spezifizierte Issues direkt an `sf-build`, `sf-fix`, `sf-refactor` oder `sf-docs` — je ein Worktree/PR pro Issue, PR-Link als Kommentar, Label `sf-issue-done`, Epic-Checkbox abgehakt. Reicht die Information nicht für eine autonome Umsetzung, wird das Issue mit Label `sf-needs-planning` übersprungen und per Kommentar erklärt. `sf-plan-issues` sammelt diese Issues ein, vervollständigt die Planung interaktiv nach der `sf-plan`-Methodik, schreibt das Ergebnis als Kommentar zurück und entfernt das Label — ohne Code oder `docs/plan/`-Datei. Alle Status-Updates laufen als Issue-Kommentare.
 
 Sicheres Default-Verhalten:
 
