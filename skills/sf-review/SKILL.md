@@ -210,6 +210,10 @@ Ob `.sf-plugin/` eingecheckt oder ignoriert wird, entscheidet das jeweilige Proj
 7. Nummeriere neue Findings fortlaufend ab `lastFindingNumber + 1` mit 7-stelliger Formatierung: `R-0000001`, `R-0000002`, ...
 8. Schreibe nach Erstellung des Berichts die höchste vergebene Finding-Nummer zurück in `.sf-plugin/memory.json`. Erhalte dabei `configMigration` und andere vorhandene Memory-Felder. Die Memory-Datei muss geschrieben werden, bevor der Workflow mit `ERLEDIGT` abgeschlossen wird. Falls der Schreibvorgang fehlschlägt, weise den User darauf hin.
 
+```include
+issue-tracker
+```
+
 ## Wisdom Accumulation
 
 Erzeuge zu Beginn von Phase 1 eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen, falls mehrere Review-Runs parallel laufen.
@@ -227,7 +231,7 @@ Lösche die Datei am Ende des Workflows, vor `ERLEDIGT`.
 ### Phase 1: Scope
 
 1. Lies die Argumente.
-2. Lade Plugin-Konfiguration, migriere sie falls nötig und bestimme Review-Profil, DD-Quellenprofil und Validierungsmodus.
+2. Lade Plugin-Konfiguration, migriere sie falls nötig und bestimme Review-Profil, DD-Quellenprofil und Validierungsmodus. Bestimme zusätzlich den Tracker-Modus gemäß „Issue-Tracker-Anbindung (Remote-Modus)" (Config `tracker.mode`, Argument-/Per-Run-Signal, ggf. Erstaufruf-Abfrage). Bei `remote`: erkenne Host und CLI und prüfe die CLI-Verfügbarkeit sowie Authentifizierung vorab; fehlt das CLI, brich klar ab (kein stiller Fallback auf `local`).
 3. Ohne Argumente:
    - prüfe `git diff --name-only`
    - prüfe `git diff --cached --name-only`
@@ -343,6 +347,10 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 
 ### Phase 4: Bericht
 
+Phase 4 verzweigt nach dem in Phase 1 bestimmten Tracker-Modus. Im lokalen Modus wird wie bisher ein Markdown-Report geschrieben. Im Remote-Modus wird **kein** lokaler Report geschrieben; stattdessen werden Finding-Issues und ein Epic-Issue angelegt. Die Finding-Nummerierung aus `.sf-plugin/memory.json` gilt in beiden Modi.
+
+#### Lokaler Modus
+
 1. Erstelle einen Bericht als `.sf-plugin/review/review-report-YYYY-MM-DD[-N].md`. Erstelle `.sf-plugin/review/` falls nicht vorhanden. Verwende das untenstehende Bericht-Format.
 2. Wenn der aktive Finding-Scope nur kritische und wichtige Findings umfasst (Standard):
    - nimm Hinweise nicht in den Hauptbericht auf
@@ -352,7 +360,20 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 5. Präsentiere dem User die wichtigsten Findings und weise auf die gespeicherte Report-Datei hin.
 6. Lösche die Wisdom-Datei.
 
-**Abschlussbedingung (ohne Autonom-Loop):** Das Review ist abgeschlossen, wenn die in Phase 3 qualitätsgeprüften und gegen Designentscheidungen gefilterten Findings im Bericht stehen, `.sf-plugin/memory.json` mit der höchsten vergebenen Finding-Nummer geschrieben ist und die Wisdom-Datei gelöscht wurde. Die unabhängige Prüfung leistet die Findings-Qualitätsprüfung in Phase 3 (Konfidenzfilter, Duplikat- und Schweregrad-Konsistenz). Dieser Workflow erzeugt nur einen Bericht und setzt nichts um; deshalb gibt es weder einen beschränkten Korrektur-Loop noch einen `/goal`-String.
+#### Remote-Modus
+
+Verwende die Formate, Labels und Operationen aus „Issue-Tracker-Anbindung (Remote-Modus)". Es wird **kein** lokaler Report geschrieben.
+
+1. **Labels sicherstellen:** Lege die benötigten Labels idempotent an (`sf-review-finding`, `sf-review-epic`, die Aktions- und Schweregrad-Labels, `wontfix`).
+2. **Dedup zuerst:** Frage die vorhandenen Finding-Issues am Tracker ab (Label `sf-review-finding`, Status offen **und** geschlossen) und gleiche jedes qualitätsgeprüfte Finding über die inhaltliche Signatur (Datei+Zeile, Bereich, Problem) gegen deren `Signatur`-Feld ab. Entferne bereits vorhandene Findings aus der Anlageliste. Bei unsicherer Übereinstimmung (z. B. nur verschobene Zeilennummer bei gleichem Problem) im Zweifel als neues Finding behandeln und die mögliche Verwandtschaft im Issue-Body notieren.
+3. **Neue Finding-Issues anlegen:** Vergib erst für die verbleibenden **neuen** Findings je eine `R-XXXXXXX`-ID (nummeriere fortlaufend ab `lastFindingNumber + 1`, schreibe `memory.json` nur für tatsächlich angelegte Issues fort) und lege je ein Issue im kanonischen Finding-Body-Format mit vollständigem Inhalt und Labels an.
+4. **Neues Epic anlegen:** Lege ein **neues** Epic-Issue im kanonischen Epic-Body-Format an (Titel `Code-Review YYYY-MM-DD[-N]`, Label `sf-review-epic`). Die Task-Liste enthält ausschließlich die in diesem Lauf neu angelegten Finding-Issues. Übersprungene Findings (Designentscheidungen) kommen in den nicht-abhakbaren Abschnitt „Übersprungen (Designentscheidungen)"; bereits existierende (deduplizierte) Findings werden **nicht** referenziert. Ein bestehendes Epic wird nie erweitert. Trage die Epic-Nummer im `Epic`-Feld der zugehörigen Finding-Issues nach.
+5. **Leeres Epic vermeiden:** Sind nach dem Dedup keine neuen Findings übrig, lege **kein** leeres Epic an, sondern melde dem User, dass alle Findings bereits als Issues existieren.
+6. Schreibe `memory.json` mit der höchsten vergebenen Finding-Nummer (wie im lokalen Modus).
+7. Melde dem User Epic-URL, Anzahl neu angelegter und Anzahl deduplizierter Findings.
+8. Lösche die Wisdom-Datei.
+
+**Abschlussbedingung (ohne Autonom-Loop):** Das Review ist abgeschlossen, wenn die in Phase 3 qualitätsgeprüften und gegen Designentscheidungen gefilterten Findings vorliegen — im lokalen Modus im Bericht, im Remote-Modus als Finding-Issues plus Epic (bzw. mit der Meldung, dass alle Findings bereits existieren) —, `.sf-plugin/memory.json` mit der höchsten vergebenen Finding-Nummer geschrieben ist und die Wisdom-Datei gelöscht wurde. Die unabhängige Prüfung leistet die Findings-Qualitätsprüfung in Phase 3 (Konfidenzfilter, Duplikat- und Schweregrad-Konsistenz). Dieser Workflow erzeugt nur einen Bericht und setzt nichts um; deshalb gibt es weder einen beschränkten Korrektur-Loop noch einen `/goal`-String.
 
 ### Bericht-Format
 
@@ -418,6 +439,6 @@ Wenn ein Finding später über `{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{S
 - Innerhalb von Phase 2a alle Designentscheidungs-Quellen parallel.
 - Innerhalb von Phase 2c alle Reviewer-Sub-Agenten parallel (Project-Type-übergreifend und Verzeichnis-Split-übergreifend).
 - Reviewer in Phase 2c prüfen **keine** Designentscheidungen — der zentrale Filter erfolgt in Phase 3.
-- Dieser Skill liest nur und schreibt nur den Review-Bericht und die temporäre Wisdom-Datei.
-- Prompt-Vorschläge müssen ohne Anführungszeichen und ohne Escape-Sequenzen direkt kopierbar sein.
-- Der aktive Finding-Scope (Standard: nur kritisch+wichtig) muss im Bericht respektiert werden.
+- Im lokalen Modus liest und schreibt dieser Skill nur den Review-Bericht und die temporäre Wisdom-Datei. Im Remote-Modus schreibt er zusätzlich Finding- und Epic-Issues über den Tracker und schreibt **keinen** lokalen Report.
+- Prompt-Vorschläge müssen ohne Anführungszeichen und ohne Escape-Sequenzen direkt kopierbar sein (gilt für Report und Issue-Body gleichermaßen).
+- Der aktive Finding-Scope (Standard: nur kritisch+wichtig) muss im Bericht bzw. in den Finding-Issues respektiert werden.

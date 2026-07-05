@@ -35,8 +35,9 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Schreiben und b
 - **`applyReview`** (Quelle: `{{SKILL:sf-apply-review}}`): `defaultCommitStrategy` (worktrees/single/none/`null` = beim Lauf fragen), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/Befehl)
 - **`plan`** (Quelle: `{{SKILL:sf-plan}}`): `markerLanguage` (de/en)
 - **`worktree`** (Quelle: `skills/_shared/worktree-integration.md`): `enabled` (bool), `baseBranch` (Default `origin/main`), `branchPrefix` (Default `sf`), `completion` (pr/merge/branch/`null` = beim Lauf fragen), `setup` (auto/none/Befehl), `baseDir`
+- **`tracker`** (Quelle: `skills/_shared/issue-tracker.md`): `mode` (local/remote, Default `local`), `remoteToolOverride` (auto/github/forgejo, Default `auto`)
 
-Die zwei Presets entsprechen den im README im Abschnitt „Plugin-Konfiguration" dokumentierten Beispiel-Konfigurationen: „Sichere Defaults" übernimmt den Block unter der README-Überschrift „Sicheres Default-Verhalten", „Schneller persönlicher Workflow" den Block unter „Schneller persönlicher Review-/Apply-Review-Workflow". Beide ergänzen den `worktree`-Block mit dessen Defaults; `worktree.enabled` wird in jedem Modus explizit erfragt.
+Die zwei Presets entsprechen den im README im Abschnitt „Plugin-Konfiguration" dokumentierten Beispiel-Konfigurationen: „Sichere Defaults" übernimmt den Block unter der README-Überschrift „Sicheres Default-Verhalten", „Schneller persönlicher Workflow" den Block unter „Schneller persönlicher Review-/Apply-Review-Workflow". Beide ergänzen den `worktree`-Block mit dessen Defaults und den `tracker`-Block mit `mode: local`; `worktree.enabled` und `tracker.mode` werden in jedem Modus explizit erfragt.
 
 ## Workflow
 
@@ -122,6 +123,18 @@ options:
     description: plan.markerLanguage = en
 ```
 
+```ask
+header: Tracker
+question: Sollen Review-Findings lokal als Markdown-Report oder remote als Issues (GitHub/Forgejo) geführt werden?
+options:
+  - label: Lokal
+    description: tracker.mode = local (Default) — Markdown-Report unter .sf-plugin/review/
+  - label: Remote
+    description: tracker.mode = remote — Findings als Issues, Werkzeug automatisch aus origin (gh/tea)
+```
+
+Bei „Remote" den Werkzeug-Override nur bei Bedarf abfragen: Der Default `tracker.remoteToolOverride = auto` erkennt GitHub/Forgejo automatisch aus der `origin`-URL. Nur wenn der User einen mehrdeutigen Host hat (z. B. self-hosted GitHub Enterprise), als Freitext `github` oder `forgejo` erfassen; sonst `auto` belassen.
+
 ### Schritt 5: Detailmodus (nur bei „Alles einzeln anpassen")
 
 Frage Block für Block jeden Schlüssel ab, jeweils mit den gültigen Werten aus dem Config-Schema oben und der vorhandenen bzw. Default-Belegung als Vorschlag:
@@ -130,6 +143,7 @@ Frage Block für Block jeden Schlüssel ab, jeweils mit den gültigen Werten aus
 2. `applyReview`: `applyReview.defaultCommitStrategy`, `applyReview.finalValidation`, `applyReview.stashPolicy`, `applyReview.worktree.baseDir`, `applyReview.worktree.setup`
 3. `plan`: `plan.markerLanguage` (bereits in Schritt 4 erfragt — übernehmen)
 4. `worktree`: `worktree.enabled`, `worktree.baseBranch`, `worktree.branchPrefix`, `worktree.completion` (bereits in Schritt 4 erfragt — übernehmen), `worktree.setup`, `worktree.baseDir`
+5. `tracker`: `tracker.mode` (bereits in Schritt 4 erfragt — übernehmen), `tracker.remoteToolOverride` (auto/github/forgejo)
 
 Beachte: `applyReview.worktree.*` (Apply-Review-eigener Worktree-Mechanismus) und der Top-Level-`worktree.*`-Block sind getrennte, unabhängige Config-Pfade — verwechsle sie beim Abfragen und Mergen nicht.
 
@@ -148,7 +162,7 @@ Melde dem User:
 
 - ob der `.gitignore`-Eintrag (`.sf-plugin/*` plus `!.sf-plugin/config.json`) ergänzt, eine bestehende pauschale `.sf-plugin/`-Zeile dorthin migriert wurde oder der Soll-Zustand bereits hergestellt war — und dass `.sf-plugin/config.json` dabei getrackt bleibt
 - welches Preset bzw. der Detailmodus gewählt wurde
-- die gesetzten zentralen Verhaltenswerte (`worktree.enabled`, ggf. `worktree.completion`/`worktree.baseBranch`, `plan.markerLanguage`)
+- die gesetzten zentralen Verhaltenswerte (`worktree.enabled`, ggf. `worktree.completion`/`worktree.baseBranch`, `plan.markerLanguage`, `tracker.mode` und ggf. `tracker.remoteToolOverride`)
 - bei einer zuvor vorhandenen Config: welche Schlüssel gegenüber dem alten Stand geändert wurden (Vorher/Nachher)
 - den Pfad der geschriebenen Config (`.sf-plugin/config.json`)
 
