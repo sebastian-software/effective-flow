@@ -1,14 +1,14 @@
 ---
-
 description: "Führt spezialisiertes Backend- und CLI-Review mit derselben Tiefe wie der ursprüngliche Agent durch: API Design, Security, Performance, Error Handling, CLI Quality, Config, Logging und designentscheidungsbewusste Findings."
 claude:
-model: opus
-color: red
-tools: [Read, Glob, Grep]
+  model: opus
+  color: red
+  tools: [Read, Glob, Grep]
 codex:
-model: gpt-5.5
-model_reasoning_effort: high
-sandbox_mode: read-only
+  model: gpt-5.5
+  model_reasoning_effort: high
+  sandbox_mode: read-only
+---
 
 # Firmo Node.js Reviewer
 

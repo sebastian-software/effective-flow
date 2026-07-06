@@ -1,6 +1,6 @@
 ---
-
 description: "Orchestriert den kompletten Feature-Workflow: Intent-Gate, Plan-Referenz-Erkennung, Planung via {{SKILL:plan}}, Implementierung, Dokumentation, Tests, Validierung, Review und Abschluss. Verwendet explizite Skill-Wechsel wie {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:code-validator}}, {{AGENT:test-writer}}, {{AGENT:docs-writer}} und {{AGENT:frontend-reviewer}}."
+---
 
 # Firmo Build
 

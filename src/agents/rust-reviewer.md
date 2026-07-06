@@ -1,14 +1,14 @@
 ---
-
 description: "Führt spezialisiertes Rust-Review mit derselben Tiefe wie der Node.js-Reviewer durch: Memory Safety, unsafe, Fehlerbehandlung, Clippy-Idiomatik, Nebenläufigkeit, API-Design, Security und designentscheidungsbewusste Findings."
 claude:
-model: opus
-color: red
-tools: [Read, Glob, Grep]
+  model: opus
+  color: red
+  tools: [Read, Glob, Grep]
 codex:
-model: gpt-5.5
-model_reasoning_effort: high
-sandbox_mode: read-only
+  model: gpt-5.5
+  model_reasoning_effort: high
+  sandbox_mode: read-only
+---
 
 # Firmo Rust Reviewer
 

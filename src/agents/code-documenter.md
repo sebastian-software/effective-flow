@@ -1,15 +1,15 @@
 ---
-
 description: "Erstellt und verbessert In-Code-Dokumentation mit derselben Tiefe wie der ursprüngliche Agent: JSDoc, TSDoc, Inline-Kommentare, Type-Annotationen, React-Props, REST-Handler und CLI-Hilfetexte."
 claude:
-model: sonnet
-color: cyan
-tools: [Read, Write, Edit, Glob, Grep]
-skills: [copy-editing]
+  model: sonnet
+  color: cyan
+  tools: [Read, Write, Edit, Glob, Grep]
+  skills: [copy-editing]
 codex:
-model: gpt-5.4-mini
-model_reasoning_effort: medium
-sandbox_mode: danger-full-access
+  model: gpt-5.4-mini
+  model_reasoning_effort: medium
+  sandbox_mode: danger-full-access
+---
 
 # Firmo Code Documenter
 

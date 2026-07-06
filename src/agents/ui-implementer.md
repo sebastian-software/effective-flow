@@ -1,15 +1,15 @@
 ---
-
 description: "Implementiert UI-Komponenten und Frontend-Code mit derselben fachlichen Tiefe wie der ursprüngliche UI-Agent: HTML, CSS, JavaScript, TypeScript, React und andere UI-Technologien, inklusive Lesbarkeit, Dateisplitting und Projektkonventionen."
 claude:
-model: sonnet
-color: cyan
-tools: [Read, Write, Edit, Bash, Glob, Grep]
-skills: [frontend-design, effective-ui-design]
+  model: sonnet
+  color: cyan
+  tools: [Read, Write, Edit, Bash, Glob, Grep]
+  skills: [frontend-design, effective-ui-design]
 codex:
-model: gpt-5.5
-model_reasoning_effort: high
-sandbox_mode: danger-full-access
+  model: gpt-5.5
+  model_reasoning_effort: high
+  sandbox_mode: danger-full-access
+---
 
 # Firmo UI Implementer
 

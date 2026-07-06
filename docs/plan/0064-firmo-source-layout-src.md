@@ -29,12 +29,12 @@ src/
 
 ## Betroffene Dateien
 
-| Datei                | Beschreibung                                                                                              |
-| -------------------- | -------------------------------------------------------------------------------------------------------- |
-| `skills/**` → `src/**` | 29 Quellen per `git mv` in `src/tools/`, `src/agents/`, `src/shared/` + `src/SKILL.md`; Präfix weg; flache `.md`-Dateien |
-| `build.mjs`          | Discovery über `src/tools/` + `src/agents/` (Ordner statt `type`); `SOURCE_DIR`/`SHARED_DIR`/`ROUTER_SRC`; `stripPrefix`/`TOOL_NAME_OVERRIDES` entfernt; Platzhalter-Regex ohne `sf-` |
-| `src/**/*.md`        | `name`/`type`-Frontmatter entfernt; Platzhalter entpräfixt; Baustein-Pfade `skills/_shared/` → `src/shared/` |
-| `README.md`          | Abschnitte Build/Struktur/Source-Frontmatter auf `src/`-Layout                                            |
+| Datei                  | Beschreibung                                                                                                                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skills/**` → `src/**` | 29 Quellen per `git mv` in `src/tools/`, `src/agents/`, `src/shared/` + `src/SKILL.md`; Präfix weg; flache `.md`-Dateien                                                              |
+| `build.mjs`            | Discovery über `src/tools/` + `src/agents/` (Ordner statt `type`); `SOURCE_DIR`/`SHARED_DIR`/`ROUTER_SRC`; `stripPrefix`/`TOOL_NAME_OVERRIDES` entfernt; Platzhalter-Regex ohne `sf-` |
+| `src/**/*.md`          | `name`/`type`-Frontmatter entfernt; Platzhalter entpräfixt; Baustein-Pfade `skills/_shared/` → `src/shared/`                                                                          |
+| `README.md`            | Abschnitte Build/Struktur/Source-Frontmatter auf `src/`-Layout                                                                                                                        |
 
 ## Akzeptanzkriterien
 

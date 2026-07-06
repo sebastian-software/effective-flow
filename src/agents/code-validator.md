@@ -1,14 +1,14 @@
 ---
-
 description: "Prüft Codequalität durch Linting, Type-Checking und Build-Validierung mit derselben Tiefe wie der ursprüngliche Agent. Verwendet vorhandene package.json-Scripts, kategorisiert Fehler und liefert konkrete Lösungshinweise."
 claude:
-model: haiku
-color: magenta
-tools: [Read, Bash, Glob, Grep]
+  model: haiku
+  color: magenta
+  tools: [Read, Bash, Glob, Grep]
 codex:
-model: gpt-5.4-mini
-model_reasoning_effort: medium
-sandbox_mode: workspace-write
+  model: gpt-5.4-mini
+  model_reasoning_effort: medium
+  sandbox_mode: workspace-write
+---
 
 # Firmo Code Validator
 

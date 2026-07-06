@@ -1,14 +1,14 @@
 ---
-
 description: "Implementiert Rust-Code, CLI-Tools und serverseitige Anwendungen mit derselben fachlichen Tiefe wie der Node.js-Implementer: Cargo, Ownership/Borrowing, Fehlerbehandlung, async, Traits, unsafe-Disziplin, Dateisplitting und Toolchain-Regeln."
 claude:
-model: opus
-color: cyan
-tools: [Read, Write, Edit, Bash, Glob, Grep]
+  model: opus
+  color: cyan
+  tools: [Read, Write, Edit, Bash, Glob, Grep]
 codex:
-model: gpt-5.5
-model_reasoning_effort: high
-sandbox_mode: danger-full-access
+  model: gpt-5.5
+  model_reasoning_effort: high
+  sandbox_mode: danger-full-access
+---
 
 # Firmo Rust Implementer
 

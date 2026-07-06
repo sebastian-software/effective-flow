@@ -1,6 +1,6 @@
 ---
-
 description: "Orchestriert den Dokumentations-Workflow: Scope-Klärung, Plan-Referenz-Erkennung, Doku-Analyse, Umsetzung via docs-writer oder code-documenter, Validierung und Abschluss."
+---
 
 # Firmo Docs
 

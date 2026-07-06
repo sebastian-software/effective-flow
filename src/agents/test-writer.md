@@ -1,15 +1,15 @@
 ---
-
 description: "Schreibt und verbessert Unit-, Integrations- und Komponententests mit derselben Tiefe wie der ursprüngliche Agent: Frontend-, Backend-, API-, CLI- und DB-Tests mit projektkonformen Patterns und stabiler Testorganisation."
 claude:
-model: sonnet
-color: green
-tools: [Read, Write, Edit, Bash, Glob, Grep]
-skills: [frontend-design]
+  model: sonnet
+  color: green
+  tools: [Read, Write, Edit, Bash, Glob, Grep]
+  skills: [frontend-design]
 codex:
-model: gpt-5.4-mini
-model_reasoning_effort: medium
-sandbox_mode: danger-full-access
+  model: gpt-5.4-mini
+  model_reasoning_effort: medium
+  sandbox_mode: danger-full-access
+---
 
 # Firmo Test Writer
 

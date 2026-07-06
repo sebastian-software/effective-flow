@@ -1,6 +1,6 @@
 ---
-
 description: "Kapselt eine reine Analyse-Phase für Fehler- und Verhaltensinvestigation: klärt diagnostisch die Root Cause bzw. warum sich etwas so verhält, erzeugt einen Diagnose-Report unter .firmo/investigation/ und keinen Code. Endet mit genau einer Folge-Empfehlung und routet nach {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}} oder {{SKILL:docs}} – oder schließt mit „kein Fehler, gewolltes Verhalten" bzw. „Produktentscheidung nötig"."
+---
 
 # Firmo Investigate
 
