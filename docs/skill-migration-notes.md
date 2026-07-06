@@ -2,7 +2,7 @@
 
 Dieses Dokument beschreibt exakt, welche Mechaniken aus den ursprünglichen Claude-Commands und Claude-Agents nicht 1:1 in das Codex-Skill-System übernommen werden können.
 
-Hinweis: `$sf-commit` ist ein neuer Skill ohne direkten Claude-Vorgänger und ist daher nicht Teil der Paritätsbetrachtung gegen die alten Plugin-Dateien.
+Hinweis: Das `commit`-Tool (`/firmo commit`) ist neu, ohne direkten Claude-Vorgänger, und daher nicht Teil der Paritätsbetrachtung gegen die alten Plugin-Dateien.
 
 ## Ziel
 
@@ -38,7 +38,7 @@ Original:
 
 Codex-Ersatz:
 
-- explizite Skill-Wechsel wie `$sf-ui-implementer`
+- interne Subagent-Delegation an genestete Agents wie `ui-implementer` (unter `agents/` im Firmo-Skill)
 - internes Sub-Agent-Pattern für parallele oder getrennte Teilaufgaben
 
 Verlust:

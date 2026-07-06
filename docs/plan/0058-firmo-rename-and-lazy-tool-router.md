@@ -1,8 +1,10 @@
 # 0058: Firmo – Umbenennung, Skill-Auslieferung und Lazy-Tool-Router (`/firmo <tool>`)
 
-**Planungsstatus:** Nicht umgesetzt
+**Planungsstatus:** Umgesetzt
 **Quelle:** /plan
 **Empfohlener Workflow:** Feature (`/build`)
+
+**Umsetzung:** In vier Teilplänen umgesetzt — [0059](0059-firmo-config-dir-rename-and-migration.md) (`.firmo/`-Verzeichnis + Migration), [0060](0060-firmo-router-lazy-loading-and-build.md) (Router, Lazy-Loading, `build.mjs`), [0061](0061-firmo-delivery-npx-skills-dalo.md) (Auslieferung als Directory-Skill) und [0062](0062-firmo-documentation.md) (Dokumentation) — alle „Umgesetzt".
 
 ## Anforderung
 
