@@ -19,7 +19,7 @@ im jeweiligen Skill.
 | `review-report`   | Review-Report-Datei unter `.firmo/review/`                    | `{{SKILL:apply-review}}` (lokal)               |
 | `review-epic`     | Tracking-/Epic-Issue eines `{{SKILL:review}}`-Laufs           | `{{SKILL:apply-review}}` (remote, Epic)        |
 | `review-finding`  | einzelnes Finding-Issue eines `{{SKILL:review}}`-Laufs        | `{{SKILL:apply-review}}` (remote, Issue-Liste) |
-| `container-issue` | generisches Issue mit Sub-Issue-Checkliste, ohne Review-Label | `{{SKILL:apply-issues}}`                       |
+| `container-issue` | generisches Issue mit Sub-Issue-Checkliste, ohne Review-Label (`firmo-review-*`/`sf-review-*`) | `{{SKILL:apply-issues}}`      |
 | `plain-issue`     | frei geschriebenes Menschen-Issue                             | `{{SKILL:apply-issues}}`                       |
 
 Sonderergebnisse: `none` (kein/leeres Argument) und `ambiguous` (nicht eindeutig
@@ -61,8 +61,8 @@ um eine Issue-Referenz als Fremdtyp zu erkennen und weiterzuleiten.
 Lies je Issue Labels und Body **einmal frisch** vom Tracker und bestimme den Subtyp in
 dieser Präzedenz – **Label vor Body-Struktur**:
 
-1. Label `sf-review-epic` → `review-epic`.
-2. Label `sf-review-finding` → `review-finding`.
+1. Label `firmo-review-epic` (oder Alt `sf-review-epic`) → `review-epic`.
+2. Label `firmo-review-finding` (oder Alt `sf-review-finding`) → `review-finding`.
 3. kein Review-Label, aber der Body enthält eine Sub-Issue-Checkliste
    (`- [ ] #NNN …` / `- [x] #NNN …`) → `container-issue`.
 4. sonst → `plain-issue`.
@@ -72,8 +72,9 @@ Sekundärsignal bei fehlendem Label (z. B. manuell entfernt): ein Titel im Forma
 `review-finding` behandelt. Bleibt der Subtyp danach unklar → `ambiguous`.
 
 Warum Label vor Body: Ein `review-epic` trägt – wie ein generisches
-`container-issue` – eine `- [ ] #NNN`-Checkliste. Das Label `sf-review-epic` bzw.
-`sf-review-finding` ist der sichere Diskriminator und hat Vorrang vor der
+`container-issue` – eine `- [ ] #NNN`-Checkliste. Das Label `firmo-review-epic` bzw.
+`firmo-review-finding` (Alt-Präfix `sf-` gleichwertig, siehe „Label-Konvention" in
+`issue-tracker.md`) ist der sichere Diskriminator und hat Vorrang vor der
 Body-Struktur.
 
 ### Ownership und Modus

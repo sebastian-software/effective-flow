@@ -133,8 +133,8 @@ Kollision auf:
 5. **Zuständigkeit:** Skills, die nur lesen dürfen (zum Beispiel `plan` und
    `open-plans`), melden eine erkannte Dublette, lösen sie aber nicht selbst
    auf, wenn dafür Schreibzugriffe außerhalb ihres erlaubten Bereichs nötig wären.
-   Die Auflösung übernehmen die schreibenden Workflows (`sf-build`, `sf-fix`,
-   `sf-refactor`, `sf-docs`).
+   Die Auflösung übernehmen die schreibenden Workflows (`build`, `fix`,
+   `refactor`, `docs`).
 
 ### Referenzauflösung trotz Umnummerierung
 
