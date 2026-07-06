@@ -31,6 +31,10 @@ task-tracking
 plan-status
 ```
 
+```include
+apply-source-detection
+```
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der Plan-Auswertung und beachte ihre Vorgaben für Workflow-Routing, Plan-Dateien und User-Rückfragen.
@@ -45,7 +49,10 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der Plan-Auswertung
    - gib eine kurze Liste der offenen Pläne mit Nummer, Titel und Pfad aus
    - frage den User nach der konkreten Plan-Datei
    - starte keine Umsetzung, bevor eine konkrete Datei ausgewählt ist
-3. Wenn ein Argument vorhanden ist, verwende die gemeinsame Plan-Referenz-Regel im Routing-Modus.
+3. Wenn ein Argument vorhanden ist, klassifiziere es zuerst über die „Apply-Quellen-Erkennung". Für `{{SKILL:sf-apply-plan}}` genügt Stufe A (keine Tracker-I/O nötig):
+   - Quelltyp `plan` → weiter mit Schritt 4.
+   - Quelltyp `review-report`, eine Issue-Referenz (`review-epic` / `review-finding` / `container-issue` / `plain-issue`) oder `ambiguous` → dieses Argument gehört nicht zu `{{SKILL:sf-apply-plan}}`. Verweise auf den zuständigen Skill (`{{SKILL:sf-apply-review}}` für Review-Reports und Review-Issues, `{{SKILL:sf-apply-issues}}` für sonstige Issues, oder `{{SKILL:sf-apply}}` zum automatischen Routen) und beende den Skill. Läuft `{{SKILL:sf-apply-plan}}` als Delegation aus `{{SKILL:sf-apply}}`, sollte dieser Fall nicht auftreten; die Weiche bleibt als Schutz.
+4. Für ein `plan`-Argument: verwende die gemeinsame Plan-Referenz-Regel im Routing-Modus.
 
 Aktueller Workflow für Plan-Referenzen: `{{SKILL:sf-apply-plan}}` Routing.
 
@@ -53,7 +60,7 @@ Aktueller Workflow für Plan-Referenzen: `{{SKILL:sf-apply-plan}}` Routing.
 plan-reference-routing
 ```
 
-4. Wenn kein Ziel-Workflow eindeutig bestimmbar ist: frage den User nach dem Ziel-Workflow und nenne die vier erlaubten Optionen.
+5. Wenn kein Ziel-Workflow eindeutig bestimmbar ist: frage den User nach dem Ziel-Workflow und nenne die vier erlaubten Optionen.
 
 ### Phase 2: Übergabe an Ziel-Workflow
 

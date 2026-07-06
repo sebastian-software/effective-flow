@@ -181,18 +181,25 @@ Regeln:
 issue-tracker
 ```
 
+```include
+apply-source-detection
+```
+
 ## Remote-Modus (Issue-Tracker)
 
 Wenn der Tracker-Modus `remote` ist (siehe „Issue-Tracker-Anbindung (Remote-Modus)"), gelten die folgenden Anpassungen **zusätzlich** zum bzw. anstelle des lokalen Report-Flusses. Bestimme den Modus zu Beginn von Phase 1; der Argumenttyp hat dabei Vorrang vor der Config.
 
 ### Argument-Erkennung und Modusbestimmung
 
-- **Pfad zu einer `.md`-Report-Datei** → `local` (bisheriges Verhalten, unverändert).
-- **Eine einzelne Issue-Referenz mit `sf-review-epic`-Label** → `remote`, **Epic-Modus**: alle im Epic verlinkten Finding-Issues abarbeiten.
-- **Eine Liste von Finding-Issue-Referenzen** (mehrere Nummern/`#…`/URLs) oder **ein einzelnes Finding-Issue ohne Epic-Label** → `remote`, **Issue-Listen-Modus**: nur genau diese Findings abarbeiten. Das zugehörige Epic je Finding wird für das spätere Abhaken aus dem Sub-Issue ermittelt (`Epic`-Feld/Referenz), sofern vorhanden.
-- **`remote` ohne Argument** → offene Epics auflisten und den User wählen lassen.
+Klassifiziere das übergebene Argument über die „Apply-Quellen-Erkennung" (Stufe A und – für Issue-Referenzen – Stufe B) und leite Modus und Sub-Modus aus dem Quelltyp ab:
 
-Bei `remote` vorab Host und CLI erkennen und die CLI-Verfügbarkeit prüfen; fehlt das CLI, klar abbrechen (kein stiller Fallback auf `local`).
+- **`review-report`** (Report-Datei unter `.sf-plugin/review/`) → `local` (bisheriges Verhalten, unverändert).
+- **`review-epic`** (Issue mit `sf-review-epic`-Label) → `remote`, **Epic-Modus**: alle im Epic verlinkten Finding-Issues abarbeiten.
+- **`review-finding`** (ein einzelnes Finding-Issue oder eine Liste von Finding-Issue-Referenzen) → `remote`, **Issue-Listen-Modus**: nur genau diese Findings abarbeiten. Das zugehörige Epic je Finding wird für das spätere Abhaken aus dem Sub-Issue ermittelt (`Epic`-Feld/Referenz), sofern vorhanden.
+- **`remote` ohne Argument** → offene Epics auflisten und den User wählen lassen.
+- **`plan`, `container-issue` oder `plain-issue`** → gehört nicht zu `{{SKILL:sf-apply-review}}`: auf den zuständigen Skill verweisen (`{{SKILL:sf-apply-plan}}` für Plan-Dateien, `{{SKILL:sf-apply-issues}}` für sonstige Issues, oder `{{SKILL:sf-apply}}` zum automatischen Routen) und beenden. Bei Delegation aus `{{SKILL:sf-apply}}` sollte dieser Fall nicht auftreten; die Weiche bleibt als Schutz.
+
+Der Argumenttyp hat Vorrang vor der Config (siehe „Modus bestimmen" in der Tracker-Anbindung): `review-report` erzwingt `local`, `review-epic`/`review-finding` erzwingen `remote`. Bei `remote` vorab Host und CLI erkennen und die CLI-Verfügbarkeit prüfen; fehlt das CLI, klar abbrechen (kein stiller Fallback auf `local`).
 
 ### Phase 1 remote: Findings aus Issues lesen
 

@@ -72,6 +72,10 @@ Dieser Skill ist **inhärent remote**: er arbeitet immer gegen den Issue-Tracker
 issue-tracker
 ```
 
+```include
+apply-source-detection
+```
+
 ## Kommentar-Konventionen
 
 Alle Status-Updates werden als Issue-Kommentare geschrieben (Operation „Kommentar hinzufügen" aus dem Mapping oben). Verwende diese kanonischen Vorlagen und beginne jeden Plugin-Kommentar mit der Markierung `<!-- sf-apply-issues -->`, damit spätere Läufe eigene Kommentare erkennen und Doppel-Kommentare vermeiden:
@@ -87,9 +91,12 @@ Exponiere in Kommentaren keine internen Tracking-IDs oder Session-Details.
 ### Phase 1: Argument & Tracker-Setup
 
 1. Bestimme Host und CLI und prüfe die Verfügbarkeit/Authentifizierung gemäß „Host- und CLI-Erkennung" im eingebundenen Baustein. Vorbedingung: Git-Repository mit `origin`-Remote. Fehlt `origin`, das CLI oder die Authentifizierung: klar melden und ohne Seiteneffekt abbrechen (kein stiller Fallback).
-2. Lies das User-Argument als eine oder mehrere Issue-Referenzen (Nummer, `#123` oder Issue-URL, beliebig gemischt).
-   - Ist das Argument ein Pfad zu einer `docs/plan/`-Datei: weise darauf hin, dass dafür `{{SKILL:sf-apply-plan}}` zuständig ist, und beende den Skill.
-   - Ohne Argument: liste offene Issues, die weder `sf-issue-done` noch `sf-needs-planning` tragen, und frage den User, welche verarbeitet werden sollen. Verwende **keine** heuristische Auto-Auswahl.
+2. Lies das User-Argument und klassifiziere es über die „Apply-Quellen-Erkennung" (Stufe A und – für Issue-Referenzen – Stufe B):
+   - Quelltyp `container-issue` oder `plain-issue` → verarbeitet `{{SKILL:sf-apply-issues}}` selbst; fahre fort. Mehrere Issue-Referenzen (Nummer, `#123` oder Issue-URL) sind als Liste erlaubt.
+   - Quelltyp `plan` oder `review-report` → auf den zuständigen Skill verweisen (`{{SKILL:sf-apply-plan}}` bzw. `{{SKILL:sf-apply-review}}`, oder `{{SKILL:sf-apply}}` zum automatischen Routen) und den Skill beenden.
+   - Quelltyp `review-epic` oder `review-finding` → dies sind von `{{SKILL:sf-review}}` erzeugte Epic-/Finding-Issues; dafür ist `{{SKILL:sf-apply-review}}` zuständig. Darauf verweisen und beenden.
+   - `ambiguous` → nachfragen statt raten. Läuft `{{SKILL:sf-apply-issues}}` als Delegation aus `{{SKILL:sf-apply}}`, sollten Fremdtypen nicht auftreten; die Weiche bleibt als Schutz.
+   - Ohne Argument (`none`): liste offene Issues, die weder `sf-issue-done` noch `sf-needs-planning` tragen, und frage den User, welche verarbeitet werden sollen. Verwende **keine** heuristische Auto-Auswahl.
 3. Lege die benötigten Labels idempotent an (`sf-issue-done`, `sf-needs-planning`; eine „already exists"-Meldung tolerieren).
 
 ### Phase 2: Expansion & Arbeitsliste
