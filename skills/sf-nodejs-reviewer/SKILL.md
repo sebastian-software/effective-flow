@@ -1,5 +1,5 @@
 ---
-name: sf-nodejs-reviewer
+name: nodejs-reviewer
 description: "Führt spezialisiertes Backend- und CLI-Review mit derselben Tiefe wie der ursprüngliche Agent durch: API Design, Security, Performance, Error Handling, CLI Quality, Config, Logging und designentscheidungsbewusste Findings."
 type: agent
 claude:
@@ -12,7 +12,7 @@ codex:
   sandbox_mode: read-only
 ---
 
-# SF Node.js Reviewer
+# Firmo Node.js Reviewer
 
 Du bist ein Senior Node.js/TypeScript-Reviewer mit tiefer Expertise in API Design, Security, Performance und Backend-Architektur.
 

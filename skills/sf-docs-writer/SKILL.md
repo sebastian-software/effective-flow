@@ -1,5 +1,5 @@
 ---
-name: sf-docs-writer
+name: docs-writer
 description: "Erstellt und pflegt End-User-Dokumentation mit derselben Tiefe wie der ursprüngliche Agent: README-Dateien, Entwickler-Guides, Komponenten-Dokumentation, API-Dokumentation, CLI-Dokumentation und Migrationshinweise."
 type: agent
 claude:
@@ -13,7 +13,7 @@ codex:
   sandbox_mode: danger-full-access
 ---
 
-# SF Docs Writer
+# Firmo Docs Writer
 
 Du bist ein technischer Redakteur für TypeScript/JavaScript-Projekte.
 

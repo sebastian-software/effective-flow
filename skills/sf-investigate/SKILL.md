@@ -1,10 +1,10 @@
 ---
-name: sf-investigate
+name: investigate
 description: "Kapselt eine reine Analyse-Phase für Fehler- und Verhaltensinvestigation: klärt diagnostisch die Root Cause bzw. warum sich etwas so verhält, erzeugt einen Diagnose-Report unter .firmo/investigation/ und keinen Code. Endet mit genau einer Folge-Empfehlung und routet nach {{SKILL:sf-fix}}, {{SKILL:sf-refactor}}, {{SKILL:sf-build}} oder {{SKILL:sf-docs}} – oder schließt mit „kein Fehler, gewolltes Verhalten" bzw. „Produktentscheidung nötig"."
 type: orchestrator
 ---
 
-# SF Investigate
+# Firmo Investigate
 
 Du bist der Orchestrator für Fehler- und Verhaltensinvestigation. Du klärst diagnostisch, warum sich etwas so verhält bzw. wo die Root Cause liegt, erzeugst einen Diagnose-Report und änderst keinen Code.
 
@@ -20,7 +20,7 @@ Abgrenzung:
 
 - `{{SKILL:sf-plan}}` ist präskriptiv (Output ist ein Implementierungsplan).
 - `{{SKILL:sf-fix}}` ist auf einen anschließenden Fix festgelegt.
-- `sf-investigate` erzeugt nur eine Diagnose und routet am Ende in den passenden Folge-Workflow.
+- `investigate` erzeugt nur eine Diagnose und routet am Ende in den passenden Folge-Workflow.
 
 ```include
 language-rules
@@ -56,7 +56,7 @@ wisdom-accumulation
 
 ## Routing nach außen
 
-Am Ende empfiehlt `sf-investigate` genau einen Folge-Schritt:
+Am Ende empfiehlt `investigate` genau einen Folge-Schritt:
 
 - Defekt mit klarer Ursache → `{{SKILL:sf-fix}}`
 - Strukturproblem ohne Verhaltensänderung → `{{SKILL:sf-refactor}}`
@@ -96,7 +96,7 @@ Wenn die Scorecard die Diagnose nicht trägt, benenne die konkreten nächsten Di
 
 1. Lege `.firmo/investigation/` an, falls nötig.
 2. Schreibe den Diagnose-Report nach `.firmo/investigation/investigation-YYYY-MM-DD-<slug>.md` gemäß Report-Template unten.
-3. Gib genau eine Folge-Empfehlung mit Begründung aus (siehe „Routing nach außen") und dazu einen copy-paste-baren Aufruf-Vorschlag, der den Report-Pfad referenziert, z. B. `/fix .firmo/investigation/investigation-YYYY-MM-DD-<slug>.md`.
+3. Gib genau eine Folge-Empfehlung mit Begründung aus (siehe „Routing nach außen") und dazu einen copy-paste-baren Aufruf-Vorschlag, der den Report-Pfad referenziert, z. B. `/firmo fix .firmo/investigation/investigation-YYYY-MM-DD-<slug>.md`.
 4. Biete optional an, direkt in den empfohlenen Folge-Workflow zu übergeben; starte ihn nicht ungefragt.
 
 ## Report-Template
@@ -129,9 +129,9 @@ Wenn die Scorecard die Diagnose nicht trägt, benenne die konkreten nächsten Di
 
 ## Empfehlung
 
-**Folge-Workflow:** /fix | /refactor | /build | /docs | weitere Investigation nötig | Keine Aktion
+**Folge-Workflow:** /firmo fix | /firmo refactor | /firmo build | /firmo docs | weitere Investigation nötig | Keine Aktion
 **Begründung:** [kurz]
-**Aufruf-Vorschlag:** [z. B. `/fix .firmo/investigation/investigation-YYYY-MM-DD-<slug>.md`]
+**Aufruf-Vorschlag:** [z. B. `/firmo fix .firmo/investigation/investigation-YYYY-MM-DD-<slug>.md`]
 
 ## Offene Punkte / benötigte Entscheidungen
 

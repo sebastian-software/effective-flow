@@ -1,10 +1,10 @@
 ---
-name: sf-setup
+name: setup
 description: "Bereitet ein Zielprojekt für die Nutzung des Plugins vor: trägt .firmo/ idempotent in die .gitignore ein und hält dabei .firmo/config.json getrackt, und legt .firmo/config.json interaktiv an bzw. aktualisiert sie. Fragt die gewünschten Werte und das grundsätzliche Verhalten ab — hybrid über Presets und einen Detailmodus — und pflegt eine bestehende Config nicht-destruktiv. Verwende diesen Skill für das einmalige Setup oder zum Anpassen der Plugin-Konfiguration."
 type: utility
 ---
 
-# SF Setup
+# Firmo Setup
 
 Du bereitest ein Zielprojekt für die Nutzung des Plugins vor: `.gitignore`-Eintrag für `.firmo/` (Laufzeit-Status ignorieren, `config.json` aber getrackt lassen) und interaktive Pflege von `.firmo/config.json`.
 

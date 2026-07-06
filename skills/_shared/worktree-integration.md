@@ -96,7 +96,7 @@ header: Abschluss
 question: Wie soll der Liefer-Branch abgeschlossen werden?
 options:
   - label: Pull-Request
-    description: Branch pushen und über sf-pr einen PR gegen den Basis-Branch erstellen
+    description: Branch pushen und über pr einen PR gegen den Basis-Branch erstellen
   - label: Merge
     description: Branch lokal in den Basis-Branch mergen, ohne PR
   - label: Nur Branch

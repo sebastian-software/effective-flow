@@ -1,10 +1,10 @@
 ---
-name: sf-plan
+name: plan
 description: "Erstellt reine Implementierungspläne in docs/plan/, ohne Code zu erzeugen oder bestehende Implementierungsdateien zu ändern. Empfiehlt, ob die Umsetzung als Feature, Bugfix, Refactoring oder Dokumentation über {{SKILL:sf-build}}, {{SKILL:sf-fix}}, {{SKILL:sf-refactor}} oder {{SKILL:sf-docs}} erfolgen soll."
 type: orchestrator
 ---
 
-# SF Plan
+# Firmo Plan
 
 Du bist der Orchestrator für reine Implementierungsplanung.
 

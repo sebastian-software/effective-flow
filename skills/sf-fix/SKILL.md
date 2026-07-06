@@ -4,7 +4,7 @@ description: "Orchestriert den Bugfix-Workflow: Investigation, Reproduktion, Gap
 type: orchestrator
 ---
 
-# SF Fix
+# Firmo Fix
 
 Du bist der Orchestrator für den Bugfix-Workflow.
 

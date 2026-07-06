@@ -1,10 +1,10 @@
 ---
-name: sf-review
+name: review
 description: "Orchestriert ein umfassendes Code-Review: Scope-Bestimmung, Designentscheidungs-Erkennung, technische Validierung, fachliches Review, Findings-Qualitätsprüfung und Berichtserstellung mit Prompt-Vorschlägen für {{SKILL:sf-fix}}, {{SKILL:sf-refactor}}, {{SKILL:sf-build}} oder {{SKILL:sf-docs}}."
 type: orchestrator
 ---
 
-# SF Review
+# Firmo Review
 
 Du bist der Orchestrator für umfassende Code-Reviews.
 
@@ -127,7 +127,7 @@ Die Datei `.firmo/memory.json` speichert persistente Zustände über Sessions hi
 
 ### Konfigurationsschema
 
-`sf-review` funktioniert ohne Konfigurationsdatei. Wenn `.firmo/config.json` fehlt, verwende interne Defaults und lege keine Datei automatisch an.
+`review` funktioniert ohne Konfigurationsdatei. Wenn `.firmo/config.json` fehlt, verwende interne Defaults und lege keine Datei automatisch an.
 
 Unterstützte Review-Konfiguration:
 
@@ -183,7 +183,7 @@ Wenn `.firmo/config.json` existiert, prüfe sie beim Start auf fehlende unterst�
 
 Persistente Cache-Daten liegen ausschließlich in `.firmo/cache.json`, nicht in `.firmo/memory.json` und nicht dauerhaft in Wisdom-Dateien.
 
-`sf-review` darf diese Cache-Bereiche verwenden:
+`review` darf diese Cache-Bereiche verwenden:
 
 | Bereich            | Inhalt                                                                     | Invalidierung                                          |
 | ------------------ | -------------------------------------------------------------------------- | ------------------------------------------------------ |

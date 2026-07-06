@@ -1,10 +1,10 @@
 ---
-name: sf-apply-review
+name: apply-review
 description: "Liest eine Review-Report-Datei ein, wertet Entwickler-Anmerkungen aus, erstellt ADRs für abgelehnte Findings und delegiert umsetzbare Findings parallel an {{SKILL:sf-fix}}, {{SKILL:sf-refactor}}, {{SKILL:sf-build}} oder {{SKILL:sf-docs}}."
 type: orchestrator
 ---
 
-# SF Apply Review
+# Firmo Apply Review
 
 Du bist der Orchestrator für die automatisierte Umsetzung von Review-Report-Findings.
 
@@ -166,7 +166,7 @@ Geplanter Memory-Eintrag:
 
 Persistente Cache-Daten liegen ausschließlich in `.firmo/cache.json`, nicht in `.firmo/memory.json` und nicht dauerhaft in Wisdom-Dateien.
 
-`sf-apply-review` darf diesen Cache-Bereich verwenden:
+`apply-review` darf diesen Cache-Bereich verwenden:
 
 | Bereich               | Inhalt                                                                                           | Invalidierung                                              |
 | --------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
@@ -354,8 +354,8 @@ Ziel: Parallele Sub-Agenten dürfen gleichzeitig Dateien bearbeiten, aber niemal
 
 Mutex-Konvention:
 
-- Lock-Pfad: `.firmo/sf-apply-review-commit.lock`
-- Lock-Erwerb: atomar per `mkdir .firmo/sf-apply-review-commit.lock`
+- Lock-Pfad: `.firmo/apply-review-commit.lock`
+- Lock-Erwerb: atomar per `mkdir .firmo/apply-review-commit.lock`
 - Lock-Inhalt: schreibe nach erfolgreichem Erwerb eine kurze Owner-Datei, z. B. `owner`, mit Finding-ID, Sub-Gruppe und Timestamp.
 - Lock-Freigabe: lösche nur den Lock, den du selbst erworben hast, nach Commit-Erfolg, Commit-Abbruch oder Fehlerbehandlung.
 - Wenn der Lock bereits existiert: warten und erneut versuchen. Falls der Lock offensichtlich verwaist wirkt, den User fragen, bevor er entfernt wird.
@@ -590,7 +590,7 @@ Beispiel: Aktionsgruppe `{{SKILL:sf-fix}}` mit fünf Findings:
    - die zugehörige Vorabanalyse aus Phase 4.1 als **inline-Kontext-Block** im Prompt — nicht als Verweis auf die Wisdom-Datei. Die Sub-Skills lesen die Wisdom-Datei nicht; sie verarbeiten nur den Prompt-Inhalt. Bette die Vorabanalyse vollständig ein, etwa unter der Überschrift `Vorabanalyse für dieses Finding:`.
    - die Entwickler-Anmerkung (falls vorhanden)
    - die Commit-Strategie aus Phase 2
-   - **Bei Commit-Strategie „Einzeln":** die vollständige Git-Commit-Mutex-Regel aus Phase 2. Der Sub-Agent muss jeden Finding-Commit unter `.firmo/sf-apply-review-commit.lock` ausführen, darf nur Finding-eigene Dateien stage-en und darf niemals `git add .`, `git add -A` oder `git commit -a` verwenden.
+   - **Bei Commit-Strategie „Einzeln":** die vollständige Git-Commit-Mutex-Regel aus Phase 2. Der Sub-Agent muss jeden Finding-Commit unter `.firmo/apply-review-commit.lock` ausführen, darf nur Finding-eigene Dateien stage-en und darf niemals `git add .`, `git add -A` oder `git commit -a` verwenden.
    - **Bei Commit-Strategie „Einzeln mit Worktrees":** die vollständige Git-Worktree-Isolation-Regel aus Phase 2. Der Sub-Agent arbeitet ausschließlich im zugewiesenen Worktree, committet dort jedes Finding einzeln und protokolliert Commit-Hashes in der Wisdom-Datei. Der Sub-Agent darf nicht in den ursprünglichen Worktree wechseln.
    - den Auftrag, den passenden Skill aufzurufen:
      - Aktion fix: `Verwende den Skill {{SKILL:sf-fix}} für dieses Finding.`
@@ -599,7 +599,7 @@ Beispiel: Aktionsgruppe `{{SKILL:sf-fix}}` mit fünf Findings:
      - Aktion docs: `Verwende den Skill {{SKILL:sf-docs}} für dieses Finding.`
    - den Prompt-Vorschlag aus dem Report als Aufgabenbeschreibung
    - **Stash-Konvention:** Falls während der Umsetzung dieses Findings irgendein Stash entsteht (durch einen Pre-Commit-Hook, einen manuellen `git stash` im Sub-Skill oder einen Tool-getriggerten Stash), **muss die Stash-Message die Finding-ID enthalten**, z. B. `apply-review R-XXXXXXX <kurze Beschreibung>`. Das ermöglicht der Stash-Bereinigung in Phase 6, den Stash zuverlässig dem Finding zuzuordnen.
-   - den Hinweis, dass der Sub-Agent als **nicht-interaktiver** Delegations-Sub-Agent von `/apply-review` läuft und daher die explizite Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe" überspringt: keine Zusatzoption „Autonom via /goal", kein `/goal`-String. `/apply-review` steuert den autonomen Lauf an seinem eigenen Gate.
+   - den Hinweis, dass der Sub-Agent als **nicht-interaktiver** Delegations-Sub-Agent von `/firmo apply-review` läuft und daher die explizite Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe" überspringt: keine Zusatzoption „Autonom via /goal", kein `/goal`-String. `/firmo apply-review` steuert den autonomen Lauf an seinem eigenen Gate.
    - das Fertig-Protokoll
 3. Prüfe jeden Sub-Agenten auf `ERLEDIGT` oder `ABBRUCH`.
 4. Bei `ABBRUCH`:

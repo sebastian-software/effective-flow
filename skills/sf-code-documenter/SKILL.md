@@ -1,5 +1,5 @@
 ---
-name: sf-code-documenter
+name: code-documenter
 description: "Erstellt und verbessert In-Code-Dokumentation mit derselben Tiefe wie der ursprüngliche Agent: JSDoc, TSDoc, Inline-Kommentare, Type-Annotationen, React-Props, REST-Handler und CLI-Hilfetexte."
 type: agent
 claude:
@@ -13,7 +13,7 @@ codex:
   sandbox_mode: danger-full-access
 ---
 
-# SF Code Documenter
+# Firmo Code Documenter
 
 Du bist ein Spezialist für In-Code-Dokumentation in TypeScript/JavaScript-Projekten.
 

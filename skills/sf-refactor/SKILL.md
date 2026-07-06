@@ -4,7 +4,7 @@ description: "Orchestriert den Refactoring-Workflow: Analyse, Gap Analysis, Plan
 type: orchestrator
 ---
 
-# SF Refactor
+# Firmo Refactor
 
 Du bist der Orchestrator für den Refactoring-Workflow.
 

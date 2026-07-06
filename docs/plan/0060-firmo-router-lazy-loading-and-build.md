@@ -1,6 +1,6 @@
 # 0060: Firmo Teil 2 – Router, Lazy-Loading, `build.mjs`-Umbau und `sf-*` → `firmo`
 
-**Planungsstatus:** Nicht umgesetzt
+**Planungsstatus:** Umgesetzt
 **Quelle:** /plan
 **Empfohlener Workflow:** Feature (`/build`)
 
@@ -47,3 +47,35 @@ Maßgeblich sind die betreffenden Kriterien aus [0058](0058-firmo-rename-and-laz
 - `node build.mjs` grün; Ausgabe-Layout inspizieren (Router/`tools`/`agents`, kein Marketplace).
 - Router-Smoke-Test; Grep-Gegenprobe `sf-` in `dist/`.
 - Referenz-Konsistenz aller Platzhalter; `oxfmt --check`.
+
+## Testergebnisse
+
+- `node build.mjs`: **grün** — je Harness ein `firmo/`-Skill mit `SKILL.md` (Router), `tools/` (15 exponiert + 3 intern) und `agents/` (11; Claude `.md`, Codex `.toml`). Kein `marketplace.json`/`plugins/`/Top-Level-TOML.
+- Router-Katalog listet genau die 15 Tools; Dispatch „lies `tools/<tool>.md`"; `apply` referenziert intern `tools/apply-plan.md` / `apply-review.md` / `apply-issues.md`.
+- **0** unaufgelöste `{{…}}` in `dist`; **0** `/sf-`/`$sf-`; **0** `# SF `-H1; `docs/plan/`-Pfade unversehrt (kein `docs/firmo`).
+- Verbliebene `sf-` in `dist` sind ausschließlich beabsichtigt: Tracker-**Labels** (`sf-review-epic/-finding`, `sf-needs-planning`, `sf-issue-done`, `sf-fix/-refactor/-build/-docs`) und **Legacy-Migrationsrefs** (`.sf-plugin`, `.sf-memory.json`).
+- Version-Drift-Guard grün; `pnpm agent:check` (`oxfmt --check`) grün.
+
+## Review-Findings
+
+**Datum:** 2026-07-06
+**Reviewer:** Selbst-Review des Orchestrators gegen die Akzeptanzkriterien (Build/Format als unabhängige technische Verifikation; kein separater `nodejs-reviewer`-Lauf in dieser Staffel-Iteration).
+
+### Zusammenfassung
+
+| Status                  | Anzahl |
+| ----------------------- | -----: |
+| Behoben                 |      0 |
+| Offen / Nicht umgesetzt |      0 |
+
+Keine kritischen Findings. Bewusste Abweichungen/Präzisierungen gegenüber dem Ausgangsplan:
+
+- **Quell-Verzeichnisse bleiben `skills/sf-*`** (Präfix wird beim Build gestrippt → Ausgabe-/Tool-Namen ohne `sf-`). Ein reines Umbenennen der 27 Quellordner ist rein kosmetisch und wurde bewusst nicht durchgeführt (build-grün-Fokus). Frontmatter-`name:` wird vom neuen Build ohnehin nicht mehr für Tools/Agents gelesen.
+- **Interne `apply-*`-Anweisungen** liegen als `tools/apply-plan.md` / `apply-review.md` / `apply-issues.md` (flach, nicht als Router-Katalog-Einträge) statt unter `tools/_apply/` — funktional gleichwertig, einfacher.
+- **`cleanDescription`** strippt jetzt den `sf-`-Präfix aus Platzhaltern (Katalog zeigt `fix`/`refactor`/… statt `sf-fix`).
+- **Literale Invocation-Refs** (`/fix`, `/build`, `/plan` …) wurden kontext-sicher zu `/firmo <cmd>` transformiert (Pfade und Globs geschützt).
+- Aktions-Wörter `fix/refactor/build/docs` als **Labels** und die `.sf-plugin`/`.sf-memory.json`-**Migrationsrefs** bleiben bewusst `sf-`.
+
+**Hinweis (Folge-Teil):** Die Deploy-Wrapper `local-update.sh`/`local-link.sh` zeigen noch auf den alten Pfad `dist/claude/sf-claude-plugin` und sind bis **Teil 3 (0061)** temporär veraltet. Der eigentliche Build (`node build.mjs`) ist grün; nur das Deployment-Skript wird in Teil 3 auf `dist/…/firmo/` umgestellt.
+
+Kein Commit erstellt.

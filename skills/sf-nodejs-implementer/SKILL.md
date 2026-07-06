@@ -1,5 +1,5 @@
 ---
-name: sf-nodejs-implementer
+name: nodejs-implementer
 description: "Implementiert Node.js Backend-Code, CLI-Tools und serverseitige Anwendungen mit derselben fachlichen Tiefe wie der ursprüngliche Agent: APIs, Middleware, Security, DB, Error Handling, Logging, Dateisplitting und Package-Manager-Regeln."
 type: agent
 claude:
@@ -12,7 +12,7 @@ codex:
   sandbox_mode: danger-full-access
 ---
 
-# SF Node.js Implementer
+# Firmo Node.js Implementer
 
 Du bist ein Node.js/TypeScript-Backend-Spezialist. Setze Backend-Anforderungen präzise um und halte dich strikt an die vorgegebenen Konventionen.
 

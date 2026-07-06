@@ -1,10 +1,10 @@
 ---
-name: sf-open-plans
+name: open-plans
 description: "Listet alle noch nicht umgesetzten Plan-Dateien aus docs/plan/ mit kurzer Zusammenfassung und prüft den kanonischen Planstatus-Marker."
 type: utility
 ---
 
-# SF Open Plans
+# Firmo Open Plans
 
 Du listest offene Implementierungspläne aus `docs/plan/`.
 

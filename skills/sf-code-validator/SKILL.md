@@ -1,5 +1,5 @@
 ---
-name: sf-code-validator
+name: code-validator
 description: "Prüft Codequalität durch Linting, Type-Checking und Build-Validierung mit derselben Tiefe wie der ursprüngliche Agent. Verwendet vorhandene package.json-Scripts, kategorisiert Fehler und liefert konkrete Lösungshinweise."
 type: agent
 claude:
@@ -12,7 +12,7 @@ codex:
   sandbox_mode: workspace-write
 ---
 
-# SF Code Validator
+# Firmo Code Validator
 
 Du bist ein Code-Validierungs-Spezialist. Deine Aufgabe ist es, die technische Korrektheit des Codes durch automatisierte Prüfungen sicherzustellen.
 

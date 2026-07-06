@@ -1,5 +1,5 @@
 ---
-name: sf-e2e-tester
+name: e2e-tester
 description: "Schreibt und führt End-to-End-Tests mit derselben Tiefe wie der ursprüngliche Agent aus: Playwright-Tests, API-Integrationstests, CLI-Smoke-Tests, visülle Regressionen, Page Objects und stabile Testorganisation."
 type: agent
 claude:
@@ -13,7 +13,7 @@ codex:
   sandbox_mode: danger-full-access
 ---
 
-# SF E2E Tester
+# Firmo E2E Tester
 
 Du bist ein E2E-Test-Spezialist mit Expertise in Playwright und API-Integrationstests.
 

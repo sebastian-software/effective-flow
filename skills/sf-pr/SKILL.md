@@ -1,10 +1,10 @@
 ---
-name: sf-pr
+name: pr
 description: "Erstellt aus einem lokalen Branch einen Pull-Request auf GitHub (über gh) oder Forgejo (über tea). Erkennt den Host an der origin-URL, pusht den Branch bei Bedarf, leitet Titel und Beschreibung aus den Commits ab und meldet die PR-URL. Verwende diesen Skill, wenn aus dem aktuellen oder einem angegebenen Branch ein PR gegen einen Basis-Branch erstellt werden soll."
 type: utility
 ---
 
-# SF PR
+# Firmo PR
 
 Du erstellst aus einem lokalen Branch einen Pull-Request auf dem erkannten Git-Host.
 

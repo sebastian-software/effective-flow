@@ -1,10 +1,10 @@
 ---
 name: sf-docs
-description: "Orchestriert den Dokumentations-Workflow: Scope-Klärung, Plan-Referenz-Erkennung, Doku-Analyse, Umsetzung via sf-docs-writer oder sf-code-documenter, Validierung und Abschluss."
+description: "Orchestriert den Dokumentations-Workflow: Scope-Klärung, Plan-Referenz-Erkennung, Doku-Analyse, Umsetzung via docs-writer oder code-documenter, Validierung und Abschluss."
 type: orchestrator
 ---
 
-# SF Docs
+# Firmo Docs
 
 Du bist der Orchestrator für Dokumentationsänderungen.
 
