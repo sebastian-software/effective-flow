@@ -101,7 +101,7 @@ Exponiere in Kommentaren keine internen Tracking-IDs oder Session-Details.
 
 ### Phase 2: Expansion & Arbeitsliste
 
-1. Lies jedes referenzierte Issue **frisch** vom Tracker (Body, Labels, Status).
+1. Lies jedes referenzierte Issue **frisch** vom Tracker (Body, Labels, Status und **Kommentare** über die Operation „Kommentare lesen"). Die Kommentare sind Teil der Analysegrundlage: ein Planungskommentar von `{{SKILL:sf-plan-issues}}` (Markierung `<!-- sf-plan-issues -->`) enthält die vervollständigte Spezifikation, und Maintainer können Klärungen als Kommentar statt im Body nachreichen. Eigene Plugin-Kommentare (`<!-- sf-apply-issues -->`) werden hier nur für die Idempotenz-Prüfung in Phase 4 gemerkt, nicht als fachliche Anforderung gewertet.
 2. **Container-Erkennung:** Enthält der Body eine Aufgabenliste mit Issue-Referenzen (`- [ ] #NNN …` / `- [x] #NNN …`), behandle das Issue als Container:
    - expandiere auf die **offenen** (`- [ ]`) Sub-Issue-Referenzen und merke das Container-Issue als Epic für das spätere Abhaken,
    - überspringe erledigte (`- [x]`) Einträge,
@@ -127,10 +127,11 @@ Exponiere in Kommentaren keine internen Tracking-IDs oder Session-Details.
 
 Starte für **jedes Arbeitsitem** einen Analyse-Sub-Agenten parallel. Diese Sub-Agenten implementieren nichts und ändern keine Dateien — sie analysieren nur.
 
-Jeder Analyse-Sub-Agent erhält den Issue-Body und den Auftrag, die Codebase zu untersuchen und ein strukturiertes Ergebnis zu liefern:
+Jeder Analyse-Sub-Agent erhält den Issue-Body **und die Issue-Kommentare** und den Auftrag, die Codebase zu untersuchen und ein strukturiertes Ergebnis zu liefern:
 
+- **Kommentare als Quelle:** Werte Body und Kommentare gemeinsam aus. Ein `<!-- sf-plan-issues -->`-Planungskommentar liefert die von `{{SKILL:sf-plan-issues}}` vervollständigte Spezifikation (Soll-Verhalten, Akzeptanzkriterien, betroffene Bereiche) und gilt als **maßgebliche, ausreichende** Grundlage — auch wenn der ursprüngliche Body dünn ist; existieren mehrere, zählt der neueste. Weitere Maintainer-Kommentare zählen als Klärungen für die Ausreichend-Prüfung. Reine Plugin-Statuskommentare (`<!-- sf-apply-issues -->`) werden nicht als Anforderung gewertet.
 - **Klassifikation:** Feature / Bugfix / Refactoring / Dokumentation (Definitionen wie in `{{SKILL:sf-plan}}`, Phase 1) und daraus der Ziel-Skill (`{{SKILL:sf-build}}` / `{{SKILL:sf-fix}}` / `{{SKILL:sf-refactor}}` / `{{SKILL:sf-docs}}`).
-- **Ausreichend-Prüfung:** Lässt sich aus dem Issue ein klares Soll-Verhalten und mindestens ein **messbares Akzeptanzkriterium** ableiten, und gibt es genug Datei-/Bereichs-Hinweise, damit der Ziel-Workflow autonom starten kann? Ergebnis: `ausreichend` oder `unzureichend`. Bei `unzureichend`: konkrete Liste des Fehlenden (offene fachliche Fragen, fehlende Akzeptanzkriterien, unklarer Scope).
+- **Ausreichend-Prüfung:** Lässt sich aus dem Issue (Body **und Kommentaren**) ein klares Soll-Verhalten und mindestens ein **messbares Akzeptanzkriterium** ableiten, und gibt es genug Datei-/Bereichs-Hinweise, damit der Ziel-Workflow autonom starten kann? Ergebnis: `ausreichend` oder `unzureichend`. Bei `unzureichend`: konkrete Liste des Fehlenden (offene fachliche Fragen, fehlende Akzeptanzkriterien, unklarer Scope).
 - **Prompt-Vorschlag:** direkt verwendbarer Klartext-Auftrag für den Ziel-Skill.
 - **Konfidenz:** `Hoch` / `Mittel` / `Niedrig` bezüglich des Datei-Scopes (analog zur Vorabanalyse in `{{SKILL:sf-apply-review}}`).
 - **Betroffene Dateien:** beste Schätzung der berührten Dateien (für die Konfliktbetrachtung in Phase 4).
@@ -182,7 +183,7 @@ Die Commit-/PR-Strategie ist fest **„ein PR pro Issue"** (keine Commit-Strateg
 
 1. Nicht implementieren.
 2. Label `sf-needs-planning` setzen.
-3. Übersprungen-Kommentar mit der Liste des Fehlenden anhängen (Vorlage oben), sofern nicht bereits ein gleichlautender Plugin-Kommentar existiert.
+3. Übersprungen-Kommentar mit der Liste des Fehlenden anhängen (Vorlage oben), sofern die in Phase 2 gelesenen Kommentare nicht bereits einen gleichlautenden `<!-- sf-apply-issues -->`-Übersprungen-Kommentar enthalten (Idempotenz auf Basis der Operation „Kommentare lesen").
 4. Task auf `completed` mit Zusatz `[übersprungen]`.
 
 **Ausreichende Issues (`ausreichend`), je Issue in dessen Worktree:**

@@ -154,17 +154,18 @@ Regeln für die Task-Liste:
 
 Beschreibe alle Tracker-Zugriffe abstrakt als Operation und wähle das Kommando nach dem erkannten Werkzeug. Prüfe bei Forgejo die genauen Flagnamen gegen die installierte `tea`-Version, falls ein Aufruf fehlschlägt (wie in `{{SKILL:sf-pr}}` vermerkt).
 
-| Operation                               | GitHub (`gh`)                                                                  | Forgejo (`tea`)                                          |
-| --------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------- |
-| Label anlegen (idempotent)              | `gh label create <name> --force`                                               | `tea labels create --name <name>`                        |
-| Issue anlegen                           | `gh issue create --title … --body-file … --label …`                            | `tea issue create --title … --body … --labels …`         |
-| Issue lesen (Body + Labels + Status)    | `gh issue view <nr> --json title,body,labels,state`                            | `tea issue <nr>` bzw. `tea issue view <nr>`              |
-| Finding-Issues auflisten (für Dedup)    | `gh issue list --label sf-review-finding --state all --json number,title,body` | `tea issues list --labels sf-review-finding --state all` |
-| Offene Epics auflisten                  | `gh issue list --label sf-review-epic --state open`                            | `tea issues list --labels sf-review-epic --state open`   |
-| Issue-Body aktualisieren (Epic abhaken) | `gh issue edit <nr> --body-file …`                                             | `tea issue edit <nr> --body …`                           |
-| Kommentar hinzufügen (z. B. PR-Link)    | `gh issue comment <nr> --body …`                                               | `tea comment <nr> …`                                     |
-| Label setzen/entfernen                  | `gh issue edit <nr> --add-label … --remove-label …`                            | `tea issue edit <nr> --labels …`                         |
-| Pull-Request erstellen                  | über `{{SKILL:sf-pr}}`                                                         | über `{{SKILL:sf-pr}}`                                   |
+| Operation                                | GitHub (`gh`)                                                                  | Forgejo (`tea`)                                                                                      |
+| ---------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| Label anlegen (idempotent)               | `gh label create <name> --force`                                               | `tea labels create --name <name>`                                                                    |
+| Issue anlegen                            | `gh issue create --title … --body-file … --label …`                            | `tea issue create --title … --body … --labels …`                                                     |
+| Issue lesen (Body + Labels + Status)     | `gh issue view <nr> --json title,body,labels,state`                            | `tea issue <nr>` bzw. `tea issue view <nr>`                                                          |
+| Kommentare lesen (Klärungen, Idempotenz) | `gh issue view <nr> --json comments`                                           | `tea issue view <nr> --comments`, sonst Forgejo-API `GET /repos/<owner>/<repo>/issues/<nr>/comments` |
+| Finding-Issues auflisten (für Dedup)     | `gh issue list --label sf-review-finding --state all --json number,title,body` | `tea issues list --labels sf-review-finding --state all`                                             |
+| Offene Epics auflisten                   | `gh issue list --label sf-review-epic --state open`                            | `tea issues list --labels sf-review-epic --state open`                                               |
+| Issue-Body aktualisieren (Epic abhaken)  | `gh issue edit <nr> --body-file …`                                             | `tea issue edit <nr> --body …`                                                                       |
+| Kommentar hinzufügen (z. B. PR-Link)     | `gh issue comment <nr> --body …`                                               | `tea comment <nr> …`                                                                                 |
+| Label setzen/entfernen                   | `gh issue edit <nr> --add-label … --remove-label …`                            | `tea issue edit <nr> --labels …`                                                                     |
+| Pull-Request erstellen                   | über `{{SKILL:sf-pr}}`                                                         | über `{{SKILL:sf-pr}}`                                                                               |
 
 Beim Epic-Body-Update gilt: Body vor dem Ändern frisch lesen, gezielt nur die betroffene Zeile umschalten und zurückschreiben, damit parallele Änderungen nicht verloren gehen.
 

@@ -203,11 +203,12 @@ Der Argumenttyp hat Vorrang vor der Config (siehe „Modus bestimmen" in der Tra
 
 ### Phase 1 remote: Findings aus Issues lesen
 
-Ersetzt das Einlesen der Report-Datei. Bestimme die abzuarbeitenden Finding-Issues (Epic-Task-Liste parsen bzw. übergebene Liste verwenden). Lies je Finding-Issue den vollständigen Body **frisch vom Tracker** und klassifiziere:
+Ersetzt das Einlesen der Report-Datei. Bestimme die abzuarbeitenden Finding-Issues (Epic-Task-Liste parsen bzw. übergebene Liste verwenden). Lies je Finding-Issue den vollständigen Body **und die Kommentare frisch vom Tracker** (Operation „Kommentare lesen") und klassifiziere:
 
 - **Label `wontfix`** → nicht umsetzen, ADR erstellen (Phase 3 remote).
 - **bereits abgehakt/geschlossen** → überspringen.
 - **Sub-Issue ohne Ziel-Aktion oder Prompt** (manuell verändert) → als nicht umsetzbar melden, nicht raten.
+- **Entwicklerkommentar (Nicht-Plugin) vorhanden** → umsetzen **mit Kontext**: den Kommentartext als zusätzlichen Kontext an den Delegations-Skill mitgeben. Das ist das Remote-Äquivalent der lokalen „Entwickler-Anmerkung" im Fall „Umsetzen mit Kontext". Die bewusste Ablehnung läuft im Remote-Modus weiterhin **ausschließlich** über das Label `wontfix`, nicht über Kommentartext; Plugin-Kommentare (z. B. `<!-- … -->`-markierte Status- oder PR-Link-Kommentare) zählen nicht als Entwickler-Anmerkung.
 - **sonst** → umsetzen.
 
 Lege die Per-Finding-Tasks wie im lokalen Modus an; die Finding-ID ist die `R-XXXXXXX`-ID aus dem Issue-Titel.
@@ -224,7 +225,7 @@ Für jedes `wontfix`-Finding ein ADR erstellen wie in Phase 3, jedoch mit Bezug 
 
 Pro umsetzbarem Finding, in dessen Worktree:
 
-1. Vorabanalyse und Umsetzung wie in Phase 4.1/4.3 über den passenden Delegations-Skill (`{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:sf-build}}`, `{{SKILL:sf-docs}}`).
+1. Vorabanalyse und Umsetzung wie in Phase 4.1/4.3 über den passenden Delegations-Skill (`{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:sf-build}}`, `{{SKILL:sf-docs}}`). Gib einen in Phase 1 remote erkannten Entwicklerkommentar als zusätzlichen Kontext an den Delegations-Skill mit.
 2. Änderungen committen (Conventional-Commit-Message, keine internen Finding-IDs, kein `Co-Authored-By`), Branch pushen.
 3. Über `{{SKILL:sf-pr}}` genau einen PR gegen den Basis-Branch erstellen; im PR-Body `Closes #<Sub-Issue>` setzen.
 4. **Direkt nach PR-Erstellung** den zugehörigen Eintrag im Epic-Body abhaken (`- [ ]` → `- [x]`, PR-Link anhängen) und optional den PR-Link als Kommentar ans Sub-Issue schreiben. Body vor dem Ändern frisch lesen und nur die betroffene Zeile umschalten.

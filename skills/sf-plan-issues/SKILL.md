@@ -80,7 +80,7 @@ Schreibe das Planungsergebnis als Issue-Kommentar (Operation „Kommentar hinzuf
 
 Für jedes gewählte Issue nacheinander:
 
-1. Lies das Issue frisch vom Tracker und untersuche die relevante Codebase (lokal oder mit internem Analyse-Sub-Agenten).
+1. Lies das Issue frisch vom Tracker – **inklusive Kommentare** (Operation „Kommentare lesen") – und untersuche die relevante Codebase (lokal oder mit internem Analyse-Sub-Agenten). Berücksichtige Maintainer-Klärungen aus Kommentaren als Teil der Anforderung. Existiert bereits ein `<!-- sf-plan-issues -->`-Planungskommentar aus einem früheren Lauf, behandle diesen Lauf als **Aktualisierung**: knüpfe an den vorhandenen Stand an, statt eine zweite, konkurrierende Planung zu erzeugen.
 2. Wende die Klärungs-Methodik aus `{{SKILL:sf-plan}}` (Phase 1/2) an: identifiziere die wirklich relevanten Unklarheiten — Soll-Verhalten, fachliche Regeln, technische Vorgaben, Abhängigkeiten, Edge Cases, Akzeptanzkriterien — und frage den User gezielt danach.
 3. Wiederhole die Klärung, bis eine belastbare Grundlage besteht. Unwichtige Restpunkte als Annahme dokumentieren, statt den Ablauf zu blockieren.
 4. Bestimme die empfohlene Umsetzung (Feature / Bugfix / Refactoring / Dokumentation) gemäß den Klassifikationsdefinitionen aus `{{SKILL:sf-plan}}`.
@@ -89,7 +89,7 @@ Für jedes gewählte Issue nacheinander:
 
 Pro geplantem Issue:
 
-1. Schreibe die vervollständigte Spezifikation als Kommentar ans Issue (kanonische Struktur oben). Der Kommentar muss self-contained sein: eine fremde Session muss das Issue danach ohne diese Planungssession umsetzen können.
+1. Schreibe die vervollständigte Spezifikation als Kommentar ans Issue (kanonische Struktur oben). Der Kommentar muss self-contained sein: eine fremde Session muss das Issue danach ohne diese Planungssession umsetzen können. Existiert aus einem früheren Lauf bereits ein `<!-- sf-plan-issues -->`-Kommentar (aus der Kommentar-Prüfung in Phase 2 bekannt), aktualisiere bzw. ersetze dessen Inhalt, statt einen zweiten anzuhängen (Idempotenz auf Basis der Operation „Kommentare lesen").
 2. Entferne das Label `sf-needs-planning` (Planung abgeschlossen). Setze **kein** `sf-issue-done` — das Issue ist geplant, aber noch nicht umgesetzt.
 3. Task auf `completed`.
 
