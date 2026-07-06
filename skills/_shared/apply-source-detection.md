@@ -16,7 +16,7 @@ im jeweiligen Skill.
 | Typ               | Bedeutung                                                     | Zuständiger Skill                                 |
 | ----------------- | ------------------------------------------------------------- | ------------------------------------------------- |
 | `plan`            | Plan-Datei unter `docs/plan/`                                 | `{{SKILL:sf-apply-plan}}`                         |
-| `review-report`   | Review-Report-Datei unter `.sf-plugin/review/`                | `{{SKILL:sf-apply-review}}` (lokal)               |
+| `review-report`   | Review-Report-Datei unter `.firmo/review/`                    | `{{SKILL:sf-apply-review}}` (lokal)               |
 | `review-epic`     | Tracking-/Epic-Issue eines `{{SKILL:sf-review}}`-Laufs        | `{{SKILL:sf-apply-review}}` (remote, Epic)        |
 | `review-finding`  | einzelnes Finding-Issue eines `{{SKILL:sf-review}}`-Laufs     | `{{SKILL:sf-apply-review}}` (remote, Issue-Liste) |
 | `container-issue` | generisches Issue mit Sub-Issue-Checkliste, ohne Review-Label | `{{SKILL:sf-apply-issues}}`                       |
@@ -37,7 +37,7 @@ Typ in dieser Reihenfolge (erste zutreffende Regel gewinnt):
    Pfad (`docs/plan/NNNN-…md`), Dateiname (`NNNN-…md`), vierstellige Nummer (`NNNN`)
    oder – als Fallback – der Titel-Slug.
 3. **Review-Report** → `review-report`, wenn das Argument ein `*.md`-Pfad unter
-   `.sf-plugin/review/` ist (bzw. ein Dateiname, der sich dort auflöst).
+   `.firmo/review/` ist (bzw. ein Dateiname, der sich dort auflöst).
 4. **Issue-Referenz** → `issue-reference` (weiter mit Stufe B), wenn das Argument eine
    bare Issue-Nummer (`123`), ein `#123` oder eine Issue-URL ist. Mehrere solcher
    Referenzen werden als Liste behandelt und einzeln in Stufe B klassifiziert.
@@ -46,7 +46,7 @@ Typ in dieser Reihenfolge (erste zutreffende Regel gewinnt):
    fragt nach (siehe „Mehrdeutigkeit und Fallbacks").
 
 Trennschärfe Plan vs. Report: primär über das Verzeichnis (`docs/plan/` vs.
-`.sf-plugin/review/`), sekundär über den Kopf-Inhalt (Planstatus-Marker
+`.firmo/review/`), sekundär über den Kopf-Inhalt (Planstatus-Marker
 `**Planungsstatus:**` / `**Plan status:**` vs. `### [R-XXXXXXX]`-Finding-Blöcke). Eine
 vierstellige Nummer ohne Pfad ist immer eine Plan-Referenz, nie eine Issue-Referenz.
 
@@ -99,7 +99,7 @@ Argumenttyp.
 
 - **`none` (kein Argument):** nicht heuristisch das „neueste" wählen. Der Aufrufer
   listet lokale Kandidaten (offene Pläne aus `docs/plan/`, Report-Dateien unter
-  `.sf-plugin/review/`) und fragt nach der konkreten Quelle.
+  `.firmo/review/`) und fragt nach der konkreten Quelle.
 - **`ambiguous`:** die konkurrierenden Deutungen benennen und nachfragen, statt zu
   raten.
 - **Gemischte Issue-Liste** (verschiedene Subtypen in einem Aufruf, z. B. `review-finding`

@@ -56,7 +56,7 @@ issue-tracker
 3. Behandle die Sonderergebnisse:
    - **`none` (kein Argument):** liste lokale Kandidaten – offene Pläne aus
      `docs/plan/` (Status `**Planungsstatus:** Nicht umgesetzt` bzw.
-     `**Plan status:** Not implemented`) und Report-Dateien unter `.sf-plugin/review/` –
+     `**Plan status:** Not implemented`) und Report-Dateien unter `.firmo/review/` –
      und frage den User nach der konkreten Quelle. Wähle nichts heuristisch aus.
    - **`ambiguous`:** benenne die konkurrierenden Deutungen und frage nach.
    - **Gemischte Issue-Liste:** wenn die übergebenen Issue-Referenzen zu

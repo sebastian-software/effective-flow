@@ -1,6 +1,6 @@
 ---
 name: sf-investigate
-description: "Kapselt eine reine Analyse-Phase für Fehler- und Verhaltensinvestigation: klärt diagnostisch die Root Cause bzw. warum sich etwas so verhält, erzeugt einen Diagnose-Report unter .sf-plugin/investigation/ und keinen Code. Endet mit genau einer Folge-Empfehlung und routet nach {{SKILL:sf-fix}}, {{SKILL:sf-refactor}}, {{SKILL:sf-build}} oder {{SKILL:sf-docs}} – oder schließt mit „kein Fehler, gewolltes Verhalten" bzw. „Produktentscheidung nötig"."
+description: "Kapselt eine reine Analyse-Phase für Fehler- und Verhaltensinvestigation: klärt diagnostisch die Root Cause bzw. warum sich etwas so verhält, erzeugt einen Diagnose-Report unter .firmo/investigation/ und keinen Code. Endet mit genau einer Folge-Empfehlung und routet nach {{SKILL:sf-fix}}, {{SKILL:sf-refactor}}, {{SKILL:sf-build}} oder {{SKILL:sf-docs}} – oder schließt mit „kein Fehler, gewolltes Verhalten" bzw. „Produktentscheidung nötig"."
 type: orchestrator
 ---
 
@@ -12,7 +12,7 @@ Du bist der Orchestrator für Fehler- und Verhaltensinvestigation. Du klärst di
 
 Dieser Workflow ist deskriptiv und diagnostisch, nicht präskriptiv:
 
-- Er beantwortet „warum verhält sich das so" bzw. „wo liegt die Root Cause" und erzeugt einen Diagnose-Report unter `.sf-plugin/investigation/`.
+- Er beantwortet „warum verhält sich das so" bzw. „wo liegt die Root Cause" und erzeugt einen Diagnose-Report unter `.firmo/investigation/`.
 - Er darf legitim mit „kein Fehler, gewolltes Verhalten" oder „Produktentscheidung nötig" enden – ein Ausgang, den weder `{{SKILL:sf-plan}}` noch `{{SKILL:sf-fix}}` haben.
 - „Verhaltensinvestigation" ist bewusst weiter als „Bugfix": auch das Verstehen von korrektem, aber überraschendem Verhalten gehört dazu.
 
@@ -30,14 +30,18 @@ language-rules
 task-tracking
 ```
 
+```include
+firmo-dir-migration
+```
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben für Analyse, Diagnose und Berichtsformate.
 
 ## Harte Abgrenzung
 
-- Erlaubt sind ausschließlich Analyse, Rückfragen, Lesen, das Ausführen read-only prüfbarer Befehle bzw. bestehender Checks, das Schreiben des Diagnose-Reports unter `.sf-plugin/investigation/` sowie das Schreiben der transienten Wisdom-Datei `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md` (siehe „Wisdom Accumulation"), die am Ende gelöscht wird.
-- Erlaubt ist das Anlegen von `.sf-plugin/` und `.sf-plugin/investigation/`, falls die Verzeichnisse fehlen.
+- Erlaubt sind ausschließlich Analyse, Rückfragen, Lesen, das Ausführen read-only prüfbarer Befehle bzw. bestehender Checks, das Schreiben des Diagnose-Reports unter `.firmo/investigation/` sowie das Schreiben der transienten Wisdom-Datei `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md` (siehe „Wisdom Accumulation"), die am Ende gelöscht wird.
+- Erlaubt ist das Anlegen von `.firmo/` und `.firmo/investigation/`, falls die Verzeichnisse fehlen.
 - Verboten sind Änderungen an Source-Code, Tests, Konfiguration, Build-Dateien, Doku und ADRs sowie an Plan-Dateien unter `docs/plan/`.
 - Anders als in `{{SKILL:sf-fix}}` darf **kein** Reproduktionstest geschrieben werden. Reproduktion erfolgt nur durch Beobachtung (vorhandene Checks ausführen, Logs/Verhalten beschreiben) oder durch eine dokumentierte Reproduktionsanleitung.
 - Wenn der User während dieses Skills eine Umsetzung verlangt, verweise je nach Diagnose auf `{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}`, `{{SKILL:sf-build}}` oder `{{SKILL:sf-docs}}` und beende diesen Skill nach dem Report.
@@ -90,9 +94,9 @@ Wenn die Scorecard die Diagnose nicht trägt, benenne die konkreten nächsten Di
 
 ### Phase 5: Empfehlung und Report
 
-1. Lege `.sf-plugin/investigation/` an, falls nötig.
-2. Schreibe den Diagnose-Report nach `.sf-plugin/investigation/investigation-YYYY-MM-DD-<slug>.md` gemäß Report-Template unten.
-3. Gib genau eine Folge-Empfehlung mit Begründung aus (siehe „Routing nach außen") und dazu einen copy-paste-baren Aufruf-Vorschlag, der den Report-Pfad referenziert, z. B. `/fix .sf-plugin/investigation/investigation-YYYY-MM-DD-<slug>.md`.
+1. Lege `.firmo/investigation/` an, falls nötig.
+2. Schreibe den Diagnose-Report nach `.firmo/investigation/investigation-YYYY-MM-DD-<slug>.md` gemäß Report-Template unten.
+3. Gib genau eine Folge-Empfehlung mit Begründung aus (siehe „Routing nach außen") und dazu einen copy-paste-baren Aufruf-Vorschlag, der den Report-Pfad referenziert, z. B. `/fix .firmo/investigation/investigation-YYYY-MM-DD-<slug>.md`.
 4. Biete optional an, direkt in den empfohlenen Folge-Workflow zu übergeben; starte ihn nicht ungefragt.
 
 ## Report-Template
@@ -127,7 +131,7 @@ Wenn die Scorecard die Diagnose nicht trägt, benenne die konkreten nächsten Di
 
 **Folge-Workflow:** /fix | /refactor | /build | /docs | weitere Investigation nötig | Keine Aktion
 **Begründung:** [kurz]
-**Aufruf-Vorschlag:** [z. B. `/fix .sf-plugin/investigation/investigation-YYYY-MM-DD-<slug>.md`]
+**Aufruf-Vorschlag:** [z. B. `/fix .firmo/investigation/investigation-YYYY-MM-DD-<slug>.md`]
 
 ## Offene Punkte / benötigte Entscheidungen
 
@@ -139,12 +143,12 @@ Wenn die Scorecard die Diagnose nicht trägt, benenne die konkreten nächsten Di
 - **Kein Fehler gefunden / gewolltes Verhalten:** Report mit Klassifikation „beabsichtigtes Verhalten" abschließen, Empfehlung „Keine Aktion" oder Routing nach `{{SKILL:sf-docs}}` (Verhalten dokumentieren).
 - **Nicht reproduzierbar:** Reproduktion als „nicht reproduzierbar" markieren, dennoch Hypothesen mit reduzierter Konfidenz und konkrete nächste Diagnoseschritte nennen, statt zu blockieren.
 - **Mehrere plausible Root Causes:** alle mit getrennter Konfidenz auflisten; Empfehlung kann „weitere Investigation nötig" sein.
-- **`.sf-plugin/investigation/` fehlt:** Verzeichnis anlegen (einzige erlaubte Verzeichniserstellung außerhalb der Lesepfade).
+- **`.firmo/investigation/` fehlt:** Verzeichnis anlegen (einzige erlaubte Verzeichniserstellung außerhalb der Lesepfade).
 
 ## Regeln
 
 - Ändere keinen Code, keine Tests, keine Konfiguration, keine Doku und keine Plan-Dateien.
-- Schreibe als bleibende Ausgabe ausschließlich den Diagnose-Report unter `.sf-plugin/investigation/`; daneben ist nur die transiente Wisdom-Datei unter `.sf-plugin/` erlaubt, die am Ende gelöscht wird.
+- Schreibe als bleibende Ausgabe ausschließlich den Diagnose-Report unter `.firmo/investigation/`; daneben ist nur die transiente Wisdom-Datei unter `.firmo/` erlaubt, die am Ende gelöscht wird.
 - Erstelle keine Commits und führe keine Befehle aus, die Projektdateien verändern.
 - Gib dem User nach jeder Phase eine kurze Statusmeldung.
 - Wenn die Diagnose wegen fehlender Informationen nicht belastbar wäre, frage nach oder dokumentiere die Lücke, statt zu raten.

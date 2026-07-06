@@ -35,7 +35,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der PR-Erstellung u
 ## Eingaben
 
 - **Head-Branch:** der Liefer-Branch. Default: der aktuell ausgecheckte Branch.
-- **Basis-Branch:** das PR-Ziel. Default: der Branch-Anteil aus `worktree.baseBranch` in `.sf-plugin/config.json` (bei `origin/main` also `main`); fehlt die Config, `main`.
+- **Basis-Branch:** das PR-Ziel. Default: der Branch-Anteil aus `worktree.baseBranch` in `.firmo/config.json` (bei `origin/main` also `main`); fehlt die Config, `main`.
 - **Titel/Beschreibung:** optional vorgegeben. Fehlen sie, leite sie aus den Commits ab.
 
 ## Vorgehen

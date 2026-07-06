@@ -1,17 +1,17 @@
 ---
 name: sf-setup
-description: "Bereitet ein Zielprojekt für die Nutzung des Plugins vor: trägt .sf-plugin/ idempotent in die .gitignore ein und hält dabei .sf-plugin/config.json getrackt, und legt .sf-plugin/config.json interaktiv an bzw. aktualisiert sie. Fragt die gewünschten Werte und das grundsätzliche Verhalten ab — hybrid über Presets und einen Detailmodus — und pflegt eine bestehende Config nicht-destruktiv. Verwende diesen Skill für das einmalige Setup oder zum Anpassen der Plugin-Konfiguration."
+description: "Bereitet ein Zielprojekt für die Nutzung des Plugins vor: trägt .firmo/ idempotent in die .gitignore ein und hält dabei .firmo/config.json getrackt, und legt .firmo/config.json interaktiv an bzw. aktualisiert sie. Fragt die gewünschten Werte und das grundsätzliche Verhalten ab — hybrid über Presets und einen Detailmodus — und pflegt eine bestehende Config nicht-destruktiv. Verwende diesen Skill für das einmalige Setup oder zum Anpassen der Plugin-Konfiguration."
 type: utility
 ---
 
 # SF Setup
 
-Du bereitest ein Zielprojekt für die Nutzung des Plugins vor: `.gitignore`-Eintrag für `.sf-plugin/` (Laufzeit-Status ignorieren, `config.json` aber getrackt lassen) und interaktive Pflege von `.sf-plugin/config.json`.
+Du bereitest ein Zielprojekt für die Nutzung des Plugins vor: `.gitignore`-Eintrag für `.firmo/` (Laufzeit-Status ignorieren, `config.json` aber getrackt lassen) und interaktive Pflege von `.firmo/config.json`.
 
 ## Ziel
 
-- den Laufzeit-Status unter `.sf-plugin/` idempotent in die `.gitignore` eintragen und dabei `.sf-plugin/config.json` getrackt lassen (nur wenn der Soll-Zustand noch nicht hergestellt ist)
-- `.sf-plugin/config.json` interaktiv anlegen oder nicht-destruktiv aktualisieren
+- den Laufzeit-Status unter `.firmo/` idempotent in die `.gitignore` eintragen und dabei `.firmo/config.json` getrackt lassen (nur wenn der Soll-Zustand noch nicht hergestellt ist)
+- `.firmo/config.json` interaktiv anlegen oder nicht-destruktiv aktualisieren
 - gewünschte Werte und das grundsätzliche Verhalten beim User abfragen — hybrid über Presets und einen optionalen Detailmodus
 - keine Projektvalidation wie Linting, Tests oder Build-Checks ausführen
 
@@ -29,7 +29,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Schreiben und b
 
 ## Config-Schema
 
-`.sf-plugin/config.json` ist optional und steuert Defaults von vier Blöcken. Die jeweiligen Skills sind die maßgebliche Quelle für gültige Werte und Defaults; dieser Skill fasst sie nur zusammen und darf bei Schema-Erweiterungen nicht als alleinige Wahrheit gelten. Unbekannte Schlüssel einer bestehenden Config bleiben immer erhalten.
+`.firmo/config.json` ist optional und steuert Defaults von vier Blöcken. Die jeweiligen Skills sind die maßgebliche Quelle für gültige Werte und Defaults; dieser Skill fasst sie nur zusammen und darf bei Schema-Erweiterungen nicht als alleinige Wahrheit gelten. Unbekannte Schlüssel einer bestehenden Config bleiben immer erhalten.
 
 - **`review`** (Quelle: `{{SKILL:sf-review}}`): `profile` (full/focused/fast), `autoConfirmScope` (bool), `designDecisionSources` (full/standard/minimal), `validation` (full/quick/off)
 - **`applyReview`** (Quelle: `{{SKILL:sf-apply-review}}`): `defaultCommitStrategy` (worktrees/single/none/`null` = beim Lauf fragen), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/Befehl)
@@ -43,26 +43,26 @@ Die zwei Presets entsprechen den im README im Abschnitt „Plugin-Konfiguration"
 
 ### Schritt 1: .gitignore-Eintrag
 
-Soll-Zustand: Der Laufzeit-Status unter `.sf-plugin/` (z. B. `memory.json`, `cache.json`, `review/`, `.worktrees/`, Wisdom- und Investigation-Dateien) ist ignoriert, aber `.sf-plugin/config.json` bleibt **getrackt**. Das erreicht das zweizeilige Pattern:
+Soll-Zustand: Der Laufzeit-Status unter `.firmo/` (z. B. `memory.json`, `cache.json`, `review/`, `.worktrees/`, Wisdom- und Investigation-Dateien) ist ignoriert, aber `.firmo/config.json` bleibt **getrackt**. Das erreicht das zweizeilige Pattern:
 
 ```gitignore
-.sf-plugin/*
-!.sf-plugin/config.json
+.firmo/*
+!.firmo/config.json
 ```
 
-Wichtige Git-Eigenheit: Ein pauschales `.sf-plugin/` ignoriert das gesamte Verzeichnis, und eine spätere Negation kann eine Datei daraus **nicht** wieder einschließen, solange das Elternverzeichnis komplett ignoriert ist. Deshalb muss mit `.sf-plugin/*` (Inhalte ignorieren, nicht das Verzeichnis selbst) plus `!.sf-plugin/config.json` gearbeitet werden.
+Wichtige Git-Eigenheit: Ein pauschales `.firmo/` ignoriert das gesamte Verzeichnis, und eine spätere Negation kann eine Datei daraus **nicht** wieder einschließen, solange das Elternverzeichnis komplett ignoriert ist. Deshalb muss mit `.firmo/*` (Inhalte ignorieren, nicht das Verzeichnis selbst) plus `!.firmo/config.json` gearbeitet werden.
 
-1. Prüfe, ob der Soll-Zustand bereits hergestellt ist — bei verfügbarem Git über zwei Aufrufe: `git check-ignore -q .sf-plugin/config.json` muss mit Exit-Code 1 enden (`config.json` **nicht** ignoriert) und `git check-ignore -q .sf-plugin/memory.json` mit Exit-Code 0 (Laufzeit-Status ignoriert). Ohne Git über einen Zeilenabgleich der `.gitignore`: das Pattern `.sf-plugin/*` ist vorhanden und eine Negation `!.sf-plugin/config.json` folgt darauf.
+1. Prüfe, ob der Soll-Zustand bereits hergestellt ist — bei verfügbarem Git über zwei Aufrufe: `git check-ignore -q .firmo/config.json` muss mit Exit-Code 1 enden (`config.json` **nicht** ignoriert) und `git check-ignore -q .firmo/memory.json` mit Exit-Code 0 (Laufzeit-Status ignoriert). Ohne Git über einen Zeilenabgleich der `.gitignore`: das Pattern `.firmo/*` ist vorhanden und eine Negation `!.firmo/config.json` folgt darauf.
 2. Falls der Soll-Zustand noch nicht hergestellt ist:
-   - Migriere eine bestehende pauschale Ignore-Zeile: enthält die `.gitignore` eine Zeile, die `.sf-plugin/` als Ganzes ignoriert (gängige Schreibweisen `.sf-plugin/`, `.sf-plugin`, `/.sf-plugin/`), ersetze diese Zeile durch die zwei Zeilen `.sf-plugin/*` und `!.sf-plugin/config.json`, statt zusätzlich anzuhängen. Sonst würde `config.json` weiterhin ignoriert.
-   - Fehlt jeder `.sf-plugin/`-Eintrag, hänge die zwei Zeilen `.sf-plugin/*` und `!.sf-plugin/config.json` an. Stelle vor dem Anhängen einen abschließenden Zeilenumbruch sicher. Fehlt die `.gitignore`, lege sie mit diesen zwei Zeilen an.
-   - Ist bereits `.sf-plugin/*` vorhanden, aber die Negation `!.sf-plugin/config.json` fehlt, ergänze nur die fehlende Negationszeile direkt darunter.
+   - Migriere eine bestehende pauschale Ignore-Zeile: enthält die `.gitignore` eine Zeile, die `.firmo/` **oder das frühere `.sf-plugin/`** als Ganzes ignoriert (gängige Schreibweisen `.firmo/`, `.firmo`, `/.firmo/`, `.sf-plugin/`, `.sf-plugin`, `/.sf-plugin/`), ersetze diese Zeile durch die zwei Zeilen `.firmo/*` und `!.firmo/config.json`, statt zusätzlich anzuhängen. Sonst würde `config.json` weiterhin ignoriert oder ein Alt-Pattern bliebe wirkungslos zurück.
+   - Fehlt jeder `.firmo/`-Eintrag, hänge die zwei Zeilen `.firmo/*` und `!.firmo/config.json` an. Stelle vor dem Anhängen einen abschließenden Zeilenumbruch sicher. Fehlt die `.gitignore`, lege sie mit diesen zwei Zeilen an.
+   - Ist bereits `.firmo/*` vorhanden, aber die Negation `!.firmo/config.json` fehlt, ergänze nur die fehlende Negationszeile direkt darunter.
 3. Falls der Soll-Zustand bereits hergestellt ist: nichts ändern und das knapp melden.
 4. Ist das Projekt kein Git-Repository: weise darauf hin, dass eine `.gitignore` ohne Git wirkungslos ist, und frage, ob sie trotzdem geschrieben werden soll. Verwende dann denselben Zeilenabgleich wie oben statt `git check-ignore`. Die Config-Erstellung läuft unabhängig davon weiter.
 
 ### Schritt 2: Bestehende Config prüfen
 
-1. Lies `.sf-plugin/config.json`, falls vorhanden.
+1. Lies `.firmo/config.json`, falls vorhanden.
 2. Bei gültigem JSON: verwende die vorhandenen Werte als Default-Vorbelegung der folgenden Fragen.
 3. Bei ungültigem JSON: überschreibe nicht still. Informiere den User mit Pfad und Fehler und frage, ob die Datei neu angelegt (altes Backup/Überschreiben) oder der Lauf abgebrochen werden soll.
 
@@ -128,7 +128,7 @@ header: Tracker
 question: Sollen Review-Findings lokal als Markdown-Report oder remote als Issues (GitHub/Forgejo) geführt werden?
 options:
   - label: Lokal
-    description: tracker.mode = local (Default) — Markdown-Report unter .sf-plugin/review/
+    description: tracker.mode = local (Default) — Markdown-Report unter .firmo/review/
   - label: Remote
     description: tracker.mode = remote — Findings als Issues, Werkzeug automatisch aus origin (gh/tea)
 ```
@@ -154,21 +154,21 @@ Freitext-Werte (z. B. `baseBranch`, `branchPrefix`, `baseDir` oder ein explizite
 1. Baue die Zielkonfiguration nicht-destruktiv: setze die bekannten Schlüssel auf die gewählten Werte, übernimm vorhandene gültige Werte für nicht abgefragte Schlüssel und lass unbekannte Schlüssel unverändert.
 2. Das gilt auch für Preset-Werte: Ein Preset-Wert, der einen bereits vorhandenen, abweichenden Wert ersetzen würde, wird nur nach ausdrücklicher Bestätigung gesetzt. Zeige vor dem Schreiben eine Vorher/Nachher-Liste **aller** zu ändernden Schlüssel (egal ob aus Preset, Detailmodus oder zentralen Schaltern) und hole die Bestätigung ein. Ein vollständiges Überschreiben (Verwerfen vorhandener Werte) ebenfalls nur nach ausdrücklicher Bestätigung.
 3. Lies eine vorhandene `config.json` direkt vor dem Schreiben noch einmal frisch ein, damit zwischenzeitliche Änderungen nicht verloren gehen.
-4. Lege `.sf-plugin/` an, falls nötig, und schreibe `config.json` als formatiertes, syntaktisch valides JSON.
+4. Lege `.firmo/` an, falls nötig, und schreibe `config.json` als formatiertes, syntaktisch valides JSON.
 
 ### Schritt 7: Zusammenfassung
 
 Melde dem User:
 
-- ob der `.gitignore`-Eintrag (`.sf-plugin/*` plus `!.sf-plugin/config.json`) ergänzt, eine bestehende pauschale `.sf-plugin/`-Zeile dorthin migriert wurde oder der Soll-Zustand bereits hergestellt war — und dass `.sf-plugin/config.json` dabei getrackt bleibt
+- ob der `.gitignore`-Eintrag (`.firmo/*` plus `!.firmo/config.json`) ergänzt, eine bestehende pauschale `.firmo/`- oder Alt-`.sf-plugin/`-Zeile dorthin migriert wurde oder der Soll-Zustand bereits hergestellt war — und dass `.firmo/config.json` dabei getrackt bleibt
 - welches Preset bzw. der Detailmodus gewählt wurde
 - die gesetzten zentralen Verhaltenswerte (`worktree.enabled`, ggf. `worktree.completion`/`worktree.baseBranch`, `plan.markerLanguage`, `tracker.mode` und ggf. `tracker.remoteToolOverride`)
 - bei einer zuvor vorhandenen Config: welche Schlüssel gegenüber dem alten Stand geändert wurden (Vorher/Nachher)
-- den Pfad der geschriebenen Config (`.sf-plugin/config.json`)
+- den Pfad der geschriebenen Config (`.firmo/config.json`)
 
 ## Regeln
 
-- Ändere ausschließlich `.gitignore` (das zweizeilige `.sf-plugin/`-Pattern bzw. dessen Migration) und `.sf-plugin/config.json`; keine weiteren Setup-Schritte wie Deployment oder Git-Hooks.
+- Ändere ausschließlich `.gitignore` (das zweizeilige `.firmo/`-Pattern bzw. dessen Migration) und `.firmo/config.json`; keine weiteren Setup-Schritte wie Deployment oder Git-Hooks.
 - Überschreibe vorhandene Config-Werte und unbekannte Schlüssel niemals ungefragt.
 - Hinterlasse bei einem Abbruch während der Fragen keine halb geschriebene Config; schreibe nur einmal am Ende.
 - Starte keine Projektvalidation; Linting, Tests und Build-Checks sind Aufgabe anderer Skills wie `{{AGENT:sf-code-validator}}`.

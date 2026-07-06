@@ -46,7 +46,7 @@ worktree-integration
 
 ## Wisdom Accumulation
 
-Erzeuge zu Beginn eine Session-ID, zum Beispiel via Timestamp. Verwende sie konsistent für `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`.
+Erzeuge zu Beginn eine Session-ID, zum Beispiel via Timestamp. Verwende sie konsistent für `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md`.
 
 Halte nach jeder Phase fest:
 
@@ -158,7 +158,7 @@ options:
 
 ### Phase 4: Abschluss
 
-1. Wenn diese Änderung ein Finding aus einer bestehenden Review-Report-Datei in `.sf-plugin/review/` umgesetzt hat:
+1. Wenn diese Änderung ein Finding aus einer bestehenden Review-Report-Datei in `.firmo/review/` umgesetzt hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
 2. Wenn eine Plan-Datei als Grundlage verwendet wurde:
