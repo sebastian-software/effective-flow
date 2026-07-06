@@ -1,6 +1,6 @@
 ---
-
 description: "Sammelt von {{SKILL:apply-issues}} übersprungene, mit sf-needs-planning markierte GitHub-/Forgejo-Issues ein und vervollständigt die Planung interaktiv nach der Klärungs-Methodik von {{SKILL:plan}}. Das Ergebnis wird als strukturierter Kommentar ans Issue zurückgeschrieben und das Label entfernt, sodass {{SKILL:apply-issues}} das Issue anschließend umsetzen kann. Erzeugt keinen Code und keine Plan-Datei."
+---
 
 # Firmo Plan Issues
 

@@ -1,15 +1,15 @@
 ---
-
 description: "Erstellt und pflegt End-User-Dokumentation mit derselben Tiefe wie der ursprüngliche Agent: README-Dateien, Entwickler-Guides, Komponenten-Dokumentation, API-Dokumentation, CLI-Dokumentation und Migrationshinweise."
 claude:
-model: sonnet
-color: blue
-tools: [Read, Write, Edit, Bash, Glob, Grep]
-skills: [copywriting, copy-editing, humanizer]
+  model: sonnet
+  color: blue
+  tools: [Read, Write, Edit, Bash, Glob, Grep]
+  skills: [copywriting, copy-editing, humanizer]
 codex:
-model: gpt-5.4-mini
-model_reasoning_effort: medium
-sandbox_mode: danger-full-access
+  model: gpt-5.4-mini
+  model_reasoning_effort: medium
+  sandbox_mode: danger-full-access
+---
 
 # Firmo Docs Writer
 

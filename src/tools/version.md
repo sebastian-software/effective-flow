@@ -1,6 +1,6 @@
 ---
-
 description: "Zeigt die aktuelle Plugin-Version inklusive Git-Kurzhash an."
+---
 
 # Firmo Version
 

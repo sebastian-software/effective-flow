@@ -1,6 +1,6 @@
 ---
-
 description: "Erstellt reine Implementierungspläne in docs/plan/, ohne Code zu erzeugen oder bestehende Implementierungsdateien zu ändern. Empfiehlt, ob die Umsetzung als Feature, Bugfix, Refactoring oder Dokumentation über {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} oder {{SKILL:docs}} erfolgen soll."
+---
 
 # Firmo Plan
 

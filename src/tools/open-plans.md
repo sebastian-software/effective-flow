@@ -1,6 +1,6 @@
 ---
-
 description: "Listet alle noch nicht umgesetzten Plan-Dateien aus docs/plan/ mit kurzer Zusammenfassung und prüft den kanonischen Planstatus-Marker."
+---
 
 # Firmo Open Plans
 

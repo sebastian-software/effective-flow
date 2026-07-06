@@ -1,6 +1,6 @@
 ---
-
 description: "Liest eine Plan-Datei aus docs/plan/, prüft Status und Workflow-Empfehlung und startet den passenden Umsetzungs-Skill sf-build, sf-fix, sf-refactor oder sf-docs."
+---
 
 # Firmo Apply Plan
 

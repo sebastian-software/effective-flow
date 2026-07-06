@@ -1,6 +1,6 @@
 ---
-
 description: "Nimmt einen oder mehrere GitHub-/Forgejo-Issues (einzeln, als Liste oder als Container-Issue mit Sub-Issue-Checkliste) entgegen, analysiert und klassifiziert den Inhalt und routet ausreichend spezifizierte Issues an {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} oder {{SKILL:docs}} (ein PR pro Issue). Unzureichend spezifizierte Issues werden übersprungen und für {{SKILL:plan-issue}} markiert. Status-Updates laufen als Issue-Kommentare."
+---
 
 # Firmo Apply Issues
 

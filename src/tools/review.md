@@ -1,6 +1,6 @@
 ---
-
 description: "Orchestriert ein umfassendes Code-Review: Scope-Bestimmung, Designentscheidungs-Erkennung, technische Validierung, fachliches Review, Findings-Qualitätsprüfung und Berichtserstellung mit Prompt-Vorschlägen für {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}} oder {{SKILL:docs}}."
+---
 
 # Firmo Review
 
