@@ -1,22 +1,16 @@
 #!/usr/bin/env node
 
-import {
-  readFileSync,
-  writeFileSync,
-  mkdirSync,
-  rmSync,
-  readdirSync,
-  statSync,
-  existsSync,
-} from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, existsSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
-const SOURCE_DIR = join(ROOT_DIR, 'skills');
-const SHARED_DIR = join(SOURCE_DIR, '_shared');
-const ROUTER_SRC = join(SOURCE_DIR, '_router', 'SKILL.md');
+const SOURCE_DIR = join(ROOT_DIR, 'src');
+const SHARED_DIR = join(SOURCE_DIR, 'shared');
+const TOOLS_DIR = join(SOURCE_DIR, 'tools');
+const AGENTS_DIR = join(SOURCE_DIR, 'agents');
+const ROUTER_SRC = join(SOURCE_DIR, 'SKILL.md');
 const DIST_CODEX = join(ROOT_DIR, 'dist', 'codex');
 const DIST_CLAUDE = join(ROOT_DIR, 'dist', 'claude');
 
@@ -49,15 +43,6 @@ const EXPOSED_TOOLS = [
   'investigate',
   'version',
 ];
-
-// Source short name (after stripping the `sf-` prefix) -> exposed tool name.
-const TOOL_NAME_OVERRIDES = {
-  'plan-issues': 'plan-issue',
-};
-
-function toolName(shortName) {
-  return TOOL_NAME_OVERRIDES[shortName] || shortName;
-}
 
 const versionPath = join(ROOT_DIR, 'version.txt');
 if (!existsSync(versionPath)) {
@@ -178,10 +163,6 @@ function getNestedList(frontmatter, section, key) {
   return items.join('\n');
 }
 
-function stripPrefix(name) {
-  return name.replace(/^sf-/, '');
-}
-
 function cleanDescription(desc) {
   return desc
     .replace(/\{\{SKILL:sf-([^}]+)\}\}/g, '$1')
@@ -241,11 +222,10 @@ function resolveIncludes(body) {
 function transformRefs(body, harness) {
   const agentName = (raw) => (harness === 'claude' ? `${CLAUDE_AGENT_PREFIX}${raw}` : raw);
   return body
-    .replace(/\{\{SKILL:sf-([^}]+)\}\}/g, (_, raw) => {
-      const name = toolName(raw);
-      return EXPOSED_TOOLS.includes(name) ? `/firmo ${name}` : `\`tools/${name}.md\``;
-    })
-    .replace(/\{\{AGENT:sf-([^}]+)\}\}/g, (_, raw) => `\`${agentName(raw)}\``);
+    .replace(/\{\{SKILL:([^}]+)\}\}/g, (_, raw) =>
+      EXPOSED_TOOLS.includes(raw) ? `/firmo ${raw}` : `\`tools/${raw}.md\``,
+    )
+    .replace(/\{\{AGENT:([^}]+)\}\}/g, (_, raw) => `\`${agentName(raw)}\``);
 }
 
 // --- ASK block transforms ---
@@ -322,43 +302,33 @@ function renderBody(resolvedBody, harness) {
 
 // --- Collect sources ---
 
-const skillDirs = readdirSync(SOURCE_DIR)
-  .filter((name) => name.startsWith('sf-'))
-  .map((name) => join(SOURCE_DIR, name))
-  .filter((path) => statSync(path).isDirectory());
-
-if (skillDirs.length === 0) {
-  process.stderr.write(`ERROR: No sf-* skill directories found in ${SOURCE_DIR}\n`);
-  process.exit(1);
-}
-
 const tools = []; // { name, description, body }
 const agents = []; // { name, fm, body }
 
 try {
-  for (const skillDir of skillDirs) {
-    const skillName = basename(skillDir);
-    const shortName = stripPrefix(skillName);
-    const src = join(skillDir, 'SKILL.md');
-
-    if (!existsSync(src)) {
-      throw new Error(`${src} not found for ${skillName}`);
-    }
-
-    const content = normalizeLineEndings(readFileSync(src, 'utf8'));
+  const readSource = (dir, file) => {
+    const content = normalizeLineEndings(readFileSync(join(dir, file), 'utf8'));
     const fm = extractFrontmatter(content);
     const body = resolveIncludes(extractBody(content)).replace(/\{\{VERSION\}\}/g, VERSION_STRING);
+    return { fm, body };
+  };
 
-    const skillType = getField(fm, 'type');
-    const description = getField(fm, 'description');
+  for (const file of readdirSync(TOOLS_DIR)
+    .filter((f) => f.endsWith('.md'))
+    .sort()) {
+    const { fm, body } = readSource(TOOLS_DIR, file);
+    tools.push({ name: basename(file, '.md'), description: getField(fm, 'description'), body });
+  }
 
-    if (skillType === 'orchestrator' || skillType === 'utility') {
-      tools.push({ name: toolName(shortName), description, body });
-    } else if (skillType === 'agent') {
-      agents.push({ name: shortName, fm, body });
-    } else {
-      throw new Error(`Unknown type "${skillType}" for ${skillName}`);
-    }
+  for (const file of readdirSync(AGENTS_DIR)
+    .filter((f) => f.endsWith('.md'))
+    .sort()) {
+    const { fm, body } = readSource(AGENTS_DIR, file);
+    agents.push({ name: basename(file, '.md'), fm, body });
+  }
+
+  if (tools.length === 0 || agents.length === 0) {
+    throw new Error(`No tool or agent sources found under ${SOURCE_DIR}`);
   }
 
   // Sanity check: every exposed tool must exist.
