@@ -7,6 +7,7 @@ node "$ROOT_DIR/build.mjs"
 CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 CLAUDE_SKILLS="$CLAUDE_HOME/skills"
+CLAUDE_AGENTS="$CLAUDE_HOME/agents"
 CODEX_SKILLS="$HOME/.agents/skills"
 
 # Development variant of local-update.sh: symlink the built `firmo` skill into
@@ -20,6 +21,17 @@ link_skill() {
   ln -s "$built" "$dest_dir/firmo"
 }
 
+# Claude Code does not auto-discover skill-nested agents, so the firmo agents
+# are linked as registered subagents under ~/.claude/agents (namespaced firmo-*).
+link_claude_agents() {
+  mkdir -p "$CLAUDE_AGENTS"
+  rm -f "$CLAUDE_AGENTS"/firmo-*.md
+  for agent in "$ROOT_DIR/dist/claude/agents"/firmo-*.md; do
+    [ -f "$agent" ] || continue
+    ln -s "$agent" "$CLAUDE_AGENTS/$(basename "$agent")"
+  done
+}
+
 cleanup_sf() {
   dir="$1"
   [ -d "$dir" ] || return 0
@@ -31,6 +43,7 @@ cleanup_sf() {
 
 link_skill "$ROOT_DIR/dist/claude/firmo" "$CLAUDE_SKILLS"
 link_skill "$ROOT_DIR/dist/codex/firmo" "$CODEX_SKILLS"
+link_claude_agents
 
 # --- Cleanup retired sf-* installs and the old Claude marketplace ---
 cleanup_sf "$CLAUDE_SKILLS"
@@ -45,5 +58,5 @@ fi
 rm -rf "$CLAUDE_HOME/plugins/marketplaces/sf-claude-plugin"
 
 printf 'Linked firmo skill to:\n'
-printf '  Claude Code: %s/firmo -> %s\n' "$CLAUDE_SKILLS" "$ROOT_DIR/dist/claude/firmo"
+printf '  Claude Code: %s/firmo (+ agents in %s/firmo-*.md)\n' "$CLAUDE_SKILLS" "$CLAUDE_AGENTS"
 printf '  Codex:       %s/firmo -> %s\n' "$CODEX_SKILLS" "$ROOT_DIR/dist/codex/firmo"

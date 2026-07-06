@@ -23,6 +23,11 @@ const DIST_CLAUDE = join(ROOT_DIR, 'dist', 'claude');
 const FIRMO_SKILL_NAME = 'firmo';
 const CODEX_SKILL_DIR = join(DIST_CODEX, FIRMO_SKILL_NAME);
 const CLAUDE_SKILL_DIR = join(DIST_CLAUDE, FIRMO_SKILL_NAME);
+// Claude Code does not auto-discover skill-nested agents, so Claude agents ship
+// separately as registered subagents (installed into ~/.claude/agents),
+// namespaced with a `firmo-` prefix to avoid collisions with other agents.
+const CLAUDE_AGENTS_DIR = join(DIST_CLAUDE, 'agents');
+const CLAUDE_AGENT_PREFIX = 'firmo-';
 
 // The tools exposed via `/firmo <tool>` (order = catalog order in the router).
 // Orchestrator/utility skills whose mapped name is not in this list are treated
@@ -70,10 +75,12 @@ const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
 
 rmSync(DIST_CODEX, { recursive: true, force: true });
 rmSync(DIST_CLAUDE, { recursive: true, force: true });
-for (const dir of [CODEX_SKILL_DIR, CLAUDE_SKILL_DIR]) {
-  mkdirSync(join(dir, 'tools'), { recursive: true });
-  mkdirSync(join(dir, 'agents'), { recursive: true });
-}
+// Codex: one nested skill dir with tools/ and (nested) agents/.
+mkdirSync(join(CODEX_SKILL_DIR, 'tools'), { recursive: true });
+mkdirSync(join(CODEX_SKILL_DIR, 'agents'), { recursive: true });
+// Claude: skill dir with tools/ only; agents are emitted separately.
+mkdirSync(join(CLAUDE_SKILL_DIR, 'tools'), { recursive: true });
+mkdirSync(CLAUDE_AGENTS_DIR, { recursive: true });
 
 // --- Helper functions ---
 
@@ -228,14 +235,17 @@ function resolveIncludes(body) {
 //
 // {{SKILL:sf-X}} -> `/firmo <name>` for exposed tools, or `` `tools/<name>.md` ``
 //                  for internal tools (loaded on demand by `apply`).
-// {{AGENT:sf-X}} -> `` `<name>` `` (nested subagent under agents/).
-function transformRefs(body) {
+// {{AGENT:sf-X}} -> the subagent reference. Codex auto-discovers nested skill
+// agents by their bare name; Claude Code only sees agents registered under
+// ~/.claude/agents, so they are referenced namespaced as `firmo-X`.
+function transformRefs(body, harness) {
+  const agentName = (raw) => (harness === 'claude' ? `${CLAUDE_AGENT_PREFIX}${raw}` : raw);
   return body
     .replace(/\{\{SKILL:sf-([^}]+)\}\}/g, (_, raw) => {
       const name = toolName(raw);
       return EXPOSED_TOOLS.includes(name) ? `/firmo ${name}` : `\`tools/${name}.md\``;
     })
-    .replace(/\{\{AGENT:sf-([^}]+)\}\}/g, (_, raw) => `\`${raw}\``);
+    .replace(/\{\{AGENT:sf-([^}]+)\}\}/g, (_, raw) => `\`${agentName(raw)}\``);
 }
 
 // --- ASK block transforms ---
@@ -307,7 +317,7 @@ function transformAskCodex(body) {
 function renderBody(resolvedBody, harness) {
   const withAsk =
     harness === 'codex' ? transformAskCodex(resolvedBody) : transformAskClaude(resolvedBody);
-  return transformRefs(withAsk);
+  return transformRefs(withAsk, harness);
 }
 
 // --- Collect sources ---
@@ -408,8 +418,9 @@ try {
         const claudeSkills = getNestedList(a.fm, 'claude', 'skills');
         const agentDesc = cleanDescription(getField(a.fm, 'description')).replace(/"/g, '\\"');
 
+        const claudeAgentName = `${CLAUDE_AGENT_PREFIX}${a.name}`;
         let agentFm = '---\n';
-        agentFm += `name: ${a.name}\n`;
+        agentFm += `name: ${claudeAgentName}\n`;
         agentFm += `description: "${agentDesc}"\n`;
         if (claudeModel) agentFm += `model: ${claudeModel}\n`;
         if (claudeColor) agentFm += `color: ${claudeColor}\n`;
@@ -424,7 +435,7 @@ try {
         if (claudeSkills) agentFm += `skills:\n${claudeSkills}\n`;
         agentFm += '---\n';
         writeFileSync(
-          join(skillDir, 'agents', `${a.name}.md`),
+          join(CLAUDE_AGENTS_DIR, `${claudeAgentName}.md`),
           agentFm + renderBody(a.body, 'claude'),
         );
       } else {
@@ -469,7 +480,7 @@ const internalCount = tools.length - exposedCount;
 
 process.stdout.write('Built firmo skill:\n');
 process.stdout.write(
-  `  Claude Code: ${exposedCount} tools (+${internalCount} internal), ${agents.length} agents -> dist/claude/${FIRMO_SKILL_NAME}/\n`,
+  `  Claude Code: ${exposedCount} tools (+${internalCount} internal) -> dist/claude/${FIRMO_SKILL_NAME}/, ${agents.length} agents -> dist/claude/agents/${CLAUDE_AGENT_PREFIX}*.md\n`,
 );
 process.stdout.write(
   `  Codex:       ${exposedCount} tools (+${internalCount} internal), ${agents.length} agents -> dist/codex/${FIRMO_SKILL_NAME}/\n`,

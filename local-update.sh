@@ -7,6 +7,7 @@ node "$ROOT_DIR/build.mjs"
 CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 CLAUDE_SKILLS="$CLAUDE_HOME/skills"
+CLAUDE_AGENTS="$CLAUDE_HOME/agents"
 CODEX_SKILLS="$HOME/.agents/skills"
 
 # Firmo installs as a single directory skill named `firmo`. We only ever create
@@ -20,6 +21,17 @@ install_skill() {
   cp -R "$built" "$dest_dir/firmo"
 }
 
+# Claude Code does not auto-discover skill-nested agents, so the firmo agents
+# ship as registered subagents under ~/.claude/agents (namespaced firmo-*).
+install_claude_agents() {
+  mkdir -p "$CLAUDE_AGENTS"
+  rm -f "$CLAUDE_AGENTS"/firmo-*.md
+  for agent in "$ROOT_DIR/dist/claude/agents"/firmo-*.md; do
+    [ -f "$agent" ] || continue
+    cp "$agent" "$CLAUDE_AGENTS/"
+  done
+}
+
 cleanup_sf() {
   dir="$1"
   [ -d "$dir" ] || return 0
@@ -31,6 +43,7 @@ cleanup_sf() {
 
 install_skill "$ROOT_DIR/dist/claude/firmo" "$CLAUDE_SKILLS"
 install_skill "$ROOT_DIR/dist/codex/firmo" "$CODEX_SKILLS"
+install_claude_agents
 
 # --- Cleanup retired sf-* installs and the old Claude marketplace ---
 cleanup_sf "$CLAUDE_SKILLS"
@@ -45,6 +58,6 @@ fi
 rm -rf "$CLAUDE_HOME/plugins/marketplaces/sf-claude-plugin"
 
 printf 'Deployed firmo skill to:\n'
-printf '  Claude Code: %s/firmo\n' "$CLAUDE_SKILLS"
+printf '  Claude Code: %s/firmo (+ agents in %s/firmo-*.md)\n' "$CLAUDE_SKILLS" "$CLAUDE_AGENTS"
 printf '  Codex:       %s/firmo\n' "$CODEX_SKILLS"
 printf 'Alternatively install as a standard agent skill via `npx skills`, or link it with dalo.\n'
