@@ -4,57 +4,47 @@ set -eu
 ROOT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 node "$ROOT_DIR/build.mjs"
 
-# --- Codex Skills -> ~/.agents/skills/ ---
-CODEX_SKILLS_TARGET="$HOME/.agents/skills"
-mkdir -p "$CODEX_SKILLS_TARGET"
-for old_skill in "$CODEX_SKILLS_TARGET"/sf-*; do
-  [ -d "$old_skill" ] || [ -L "$old_skill" ] || continue
-  rm -rf "$old_skill"
-done
-for skill_dir in "$ROOT_DIR/dist/codex/skills"/sf-*; do
-  [ -d "$skill_dir" ] || continue
-  skill_name="$(basename "$skill_dir")"
-  rm -rf "$CODEX_SKILLS_TARGET/$skill_name"
-  cp -R "$skill_dir" "$CODEX_SKILLS_TARGET/$skill_name"
-done
+CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+CLAUDE_SKILLS="$CLAUDE_HOME/skills"
+CODEX_SKILLS="$HOME/.agents/skills"
 
-# --- Codex Agents -> ~/.codex/agents/ ---
-CODEX_AGENTS_TARGET="${CODEX_HOME:-$HOME/.codex}/agents"
-mkdir -p "$CODEX_AGENTS_TARGET"
-for old_agent in "$CODEX_AGENTS_TARGET"/sf-*.toml; do
-  [ -f "$old_agent" ] || [ -L "$old_agent" ] || continue
-  rm -f "$old_agent"
-done
-for toml_file in "$ROOT_DIR/dist/codex/agents"/sf-*.toml; do
-  [ -f "$toml_file" ] || continue
-  toml_name="$(basename "$toml_file")"
-  cp "$toml_file" "$CODEX_AGENTS_TARGET/$toml_name"
-done
+# Firmo installs as a single directory skill named `firmo`. We only ever create
+# or replace the `firmo` subdirectory. The parent skills directory (which may be
+# an external symlink shared with other skills) is never removed or replaced.
+install_skill() {
+  built="$1"
+  dest_dir="$2"
+  mkdir -p "$dest_dir"
+  rm -rf "$dest_dir/firmo"
+  cp -R "$built" "$dest_dir/firmo"
+}
 
-# --- Claude Code Plugin -> ~/.claude/plugins/marketplaces/ ---
-CLAUDE_TARGET="${CLAUDE_HOME:-$HOME/.claude}/plugins/marketplaces/sf-claude-plugin"
-rm -rf "$CLAUDE_TARGET"
-mkdir -p "$(dirname "$CLAUDE_TARGET")"
-cp -R "$ROOT_DIR/dist/claude/sf-claude-plugin" "$CLAUDE_TARGET"
+cleanup_sf() {
+  dir="$1"
+  [ -d "$dir" ] || return 0
+  for old in "$dir"/sf-*; do
+    [ -e "$old" ] || [ -L "$old" ] || continue
+    rm -rf "$old"
+  done
+}
 
-# --- Cleanup old locations ---
-OLD_CODEX_SKILLS="${CODEX_HOME:-$HOME/.codex}/skills"
-if [ -d "$OLD_CODEX_SKILLS" ]; then
-  for old_dir in "$OLD_CODEX_SKILLS"/sf-*; do
-    [ -d "$old_dir" ] || [ -L "$old_dir" ] || continue
-    rm -rf "$old_dir"
+install_skill "$ROOT_DIR/dist/claude/firmo" "$CLAUDE_SKILLS"
+install_skill "$ROOT_DIR/dist/codex/firmo" "$CODEX_SKILLS"
+
+# --- Cleanup retired sf-* installs and the old Claude marketplace ---
+cleanup_sf "$CLAUDE_SKILLS"
+cleanup_sf "$CODEX_SKILLS"
+cleanup_sf "$CODEX_HOME/skills"
+if [ -d "$CODEX_HOME/agents" ]; then
+  for old_agent in "$CODEX_HOME/agents"/sf-*.toml; do
+    [ -e "$old_agent" ] || [ -L "$old_agent" ] || continue
+    rm -f "$old_agent"
   done
 fi
+rm -rf "$CLAUDE_HOME/plugins/marketplaces/sf-claude-plugin"
 
-OLD_CLAUDE_SKILLS="${CLAUDE_HOME:-$HOME/.claude}/skills"
-if [ -d "$OLD_CLAUDE_SKILLS" ]; then
-  for old_dir in "$OLD_CLAUDE_SKILLS"/sf-*; do
-    [ -d "$old_dir" ] || [ -L "$old_dir" ] || continue
-    rm -rf "$old_dir"
-  done
-fi
-
-printf 'Deployed to:\n'
-printf '  Codex Skills:  %s\n' "$CODEX_SKILLS_TARGET"
-printf '  Codex Agents:  %s\n' "$CODEX_AGENTS_TARGET"
-printf '  Claude Plugin: %s\n' "$CLAUDE_TARGET"
+printf 'Deployed firmo skill to:\n'
+printf '  Claude Code: %s/firmo\n' "$CLAUDE_SKILLS"
+printf '  Codex:       %s/firmo\n' "$CODEX_SKILLS"
+printf 'Alternatively install as a standard agent skill via `npx skills`, or link it with dalo.\n'

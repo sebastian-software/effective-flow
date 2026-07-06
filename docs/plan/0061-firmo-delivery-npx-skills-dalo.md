@@ -1,6 +1,6 @@
 # 0061: Firmo Teil 3 – Auslieferung (npx skills / dalo) und Skripte statt Plugin
 
-**Planungsstatus:** Nicht umgesetzt
+**Planungsstatus:** Umgesetzt
 **Quelle:** /plan
 **Empfohlener Workflow:** Refactoring (`/refactor`)
 
@@ -38,3 +38,32 @@ Delivery-Details und die konkreten Learnings (npx-skills-Symlink-Fallstricke `--
 - Dry-Run der Skripte gegen ein temporäres HOME/Skills-Verzeichnis; Ergebnis-Layout prüfen.
 - Symlink-Schutz gezielt testen (vorhandener Symlink bleibt erhalten).
 - Grep-Gegenprobe: keine Marketplace-/Plugin-Pfade mehr in Skripten.
+
+## Testergebnisse
+
+- **Dry-Run gegen temporäres HOME:** `local-update.sh` installiert `firmo` nach `$HOME/.claude/skills/firmo` (18 Tool-Dateien) und `$HOME/.agents/skills/firmo` (11 Agents); Ausgabe-Layout korrekt.
+- **Symlink-Schutz:** Bei einem externen `~/.claude/skills`-Symlink bleibt der Symlink erhalten, `firmo` landet im Symlink-Ziel, und eine fremde Nachbar-Skill bleibt unangetastet.
+- **Schlanke Payload:** kein `node_modules`/`dist` in `firmo/` (nur `SKILL.md` + `tools/` + `agents/`).
+- **Varianten:** `local-update.sh` = Copy-Deploy (empfohlen, entspricht `--copy`), `local-link.sh` = Symlink-Deploy (Entwicklung).
+- `sh -n` grün für beide Skripte; `claude-link-plugin.sh` entfernt (`git rm`).
+- Grep-Gegenprobe: außerhalb `docs/` gibt es keine Marketplace-/Plugin-Pfade mehr außer den beabsichtigten Cleanup-Zeilen (`rm -rf …/marketplaces/sf-claude-plugin`). Es existieren keine `.claude-plugin/`/`marketplace.json`/`plugin.json`-Quelldateien.
+
+## Review-Findings
+
+**Datum:** 2026-07-06
+**Reviewer:** Selbst-Review des Orchestrators gegen die Akzeptanzkriterien (Dry-Runs gegen temporäres HOME als unabhängige Verifikation).
+
+### Zusammenfassung
+
+| Status                  | Anzahl |
+| ----------------------- | -----: |
+| Behoben                 |      0 |
+| Offen / Nicht umgesetzt |      0 |
+
+Keine kritischen Findings. Präzisierungen gegenüber dem Ausgangsplan:
+
+- **`build.mjs` unverändert:** Die Ausgabe-Zielpfade (`dist/claude/firmo/`, `dist/codex/firmo/`) entstanden bereits in Teil 2 als Standard-Directory-Skills; für Teil 3 war keine Build-Änderung nötig.
+- **npx skills / dalo:** Kompatibilität ist strukturell erfüllt (das gebaute `firmo/` ist ein Standard-Directory-Skill je Harness). Ein eigenständiger `npx firmo`-Installer bzw. ein aktives dalo-Release bleiben bewusst außerhalb des Scopes (optionaler Folgeplan).
+- **README** (`~/.claude/plugins/marketplaces/…`-Erwähnungen) wird in **Teil 4 (0062)** aktualisiert; danach ist das Repo dokumentarisch vollständig auf Firmo.
+
+Kein Commit erstellt.
