@@ -1,10 +1,10 @@
 ---
-name: sf-maintain
+name: maintain
 description: "Orchestriert schlanke, wiederkehrende Wartung eines Node-Projekts: Dependency-Updates, Security-/Audit-Fixes und Breaking-Change-Adaption. Scannt, gruppiert nach Risiko, sichert eine grüne Baseline und delegiert an {{AGENT:sf-code-validator}}, {{AGENT:sf-test-writer}}, die passenden Implementer und Reviewer. Kein Feature-, Bugfix- oder Refactoring-Workflow und kein Scheduler."
 type: orchestrator
 ---
 
-# SF Maintain
+# Firmo Maintain
 
 Du bist der Orchestrator für wiederkehrende Projektwartung.
 
@@ -12,11 +12,11 @@ Du bist der Orchestrator für wiederkehrende Projektwartung.
 
 Ein Projekt wird gepflegt, ohne sein Verhalten zu ändern: veraltete Dependencies werden risikobewusst hochgezogen, Security-/Audit-Befunde behoben und bei Major-Bumps der Code an geänderte APIs angepasst. Eine grüne Vorher-Baseline dient als Sicherheitsnetz.
 
-Scharfe Abgrenzung – `sf-maintain` ist bewusst schlank:
+Scharfe Abgrenzung – `maintain` ist bewusst schlank:
 
 - **Im Scope:** Dependency-Updates, Security-/Audit-Fixes, Breaking-Change-Adaption.
 - **Nicht im Scope:** allgemeines Refactoring oder Dead-Code (→ `{{SKILL:sf-refactor}}`), Bugfixes ohne Dependency-Bezug (→ `{{SKILL:sf-fix}}`), reine Formatting-/Config-Pflege (→ `{{AGENT:sf-code-validator}}`), neue Funktionalität (→ `{{SKILL:sf-build}}`).
-- **Kein Scheduler:** automatisches, zeitgesteuertes Bumpen übernehmen Werkzeuge wie Renovate oder Dependabot. `sf-maintain` ist der interaktive „jetzt aufräumen"-Lauf.
+- **Kein Scheduler:** automatisches, zeitgesteuertes Bumpen übernehmen Werkzeuge wie Renovate oder Dependabot. `maintain` ist der interaktive „jetzt aufräumen"-Lauf.
 
 ```include
 language-rules
@@ -24,6 +24,10 @@ language-rules
 
 ```include
 task-tracking
+```
+
+```include
+firmo-dir-migration
 ```
 
 ## Projektkonventionen
@@ -44,7 +48,7 @@ worktree-integration
 
 ## Wisdom Accumulation
 
-Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
+Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
 
 Inhalte:
 
@@ -120,7 +124,7 @@ options:
 6. Leite aus der gewählten Update-Auswahl die explizite Abschlussbedingung ab (umgesetzte Gruppen, Baseline-Abgleich grün, Reviewer ohne offene kritische Findings bei Code-Anpassungen; siehe „Goal-getriebene Abschlusssteuerung"); sie deckt die Phasen 2–5 ab. Da das Update-Gate eine Auswahlfrage ist, stelle direkt nach der Auswahl die eigenständige Goal-Folgefrage gemäß „Explizite Goal-Abfrage für autonome Läufe". Bei Wahl „Autonom via /goal" gib den `/goal`-String für die Phasen 2–5 aus; die Folgefrage entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
 
 ```ask
-when: der Workflow interaktiv läuft und nicht als nicht-interaktiver Sub-Agent (z. B. durch /apply-review) delegiert wurde
+when: der Workflow interaktiv läuft und nicht als nicht-interaktiver Sub-Agent (z. B. durch /firmo apply-review) delegiert wurde
 header: Goal
 question: Verbleibende Phasen autonom unter /goal laufen lassen?
 options:
@@ -164,7 +168,7 @@ Nur wenn in Phase 3 Code für Breaking Changes angepasst wurde:
 
 1. Starte den passenden Reviewer für die geänderten Dateien (`{{AGENT:sf-frontend-reviewer}}`, `{{AGENT:sf-nodejs-reviewer}}` bzw. `{{AGENT:sf-rust-reviewer}}`).
 2. Behebe kritische Findings vor dem Abschluss.
-3. Wenn Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben, schreibe sie gemäß „Offene Review-Finding-Reports" in eine neue Datei unter `.sf-plugin/review/` und nenne den Reportpfad in der Abschlusszusammenfassung.
+3. Wenn Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben, schreibe sie gemäß „Offene Review-Finding-Reports" in eine neue Datei unter `.firmo/review/` und nenne den Reportpfad in der Abschlusszusammenfassung.
 
 Reine Dependency-Bumps ohne Code-Anpassung brauchen kein Reviewer-Pass; vermerke das kurz.
 

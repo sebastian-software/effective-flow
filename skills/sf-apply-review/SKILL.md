@@ -1,16 +1,16 @@
 ---
-name: sf-apply-review
+name: apply-review
 description: "Liest eine Review-Report-Datei ein, wertet Entwickler-Anmerkungen aus, erstellt ADRs für abgelehnte Findings und delegiert umsetzbare Findings parallel an {{SKILL:sf-fix}}, {{SKILL:sf-refactor}}, {{SKILL:sf-build}} oder {{SKILL:sf-docs}}."
 type: orchestrator
 ---
 
-# SF Apply Review
+# Firmo Apply Review
 
 Du bist der Orchestrator für die automatisierte Umsetzung von Review-Report-Findings.
 
 ## Ziel
 
-Dieser Workflow liest eine bestehende Review-Report-Datei aus `.sf-plugin/review/` ein, wertet die Entwickler-Anmerkungen pro Finding aus und delegiert die Umsetzung an die passenden Workflows. Findings, die bewusst nicht umgesetzt werden sollen, werden als ADRs dokumentiert.
+Dieser Workflow liest eine bestehende Review-Report-Datei aus `.firmo/review/` ein, wertet die Entwickler-Anmerkungen pro Finding aus und delegiert die Umsetzung an die passenden Workflows. Findings, die bewusst nicht umgesetzt werden sollen, werden als ADRs dokumentiert.
 
 Im **Remote-Modus** (Tracker-Modus `remote`) liest der Workflow die Findings stattdessen aus einem Issue-Tracker: übergeben wird ein Epic-Issue oder eine Liste konkreter Finding-Issues, pro Finding entsteht ein PR, und der Epic-Eintrag wird nach PR-Erstellung abgehakt. Die Abweichungen sind in „Remote-Modus (Issue-Tracker)" gebündelt; `wontfix`-Findings ersetzen dort die ablehnende Entwickler-Anmerkung.
 
@@ -61,6 +61,10 @@ Lege gleich zu Beginn von Phase 1 (nach erfolgreicher Report-Klassifikation) fol
 - Lege **alle** Tasks (Phase-Level und Per-Finding) am Ende von Phase 1, direkt nach erfolgreicher Klassifikation, an. Damit sieht der User die volle Liste, bevor irgendwelche parallelen Sub-Agenten starten.
 - Aktualisiere Tasks zeitnah: jeder Lifecycle-Wechsel direkt nach dem Ereignis (nicht gebatched am Phasen-Ende).
 
+```include
+firmo-dir-migration
+```
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben.
@@ -82,7 +86,7 @@ goal-completion
 
 ## Wisdom Accumulation
 
-Verwende `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
+Verwende `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
 
 - Stash-Baseline aus Phase 1 (Liste der bereits vorhandenen Stash-Referenzen mit Beschreibungen und Commit-Hashes)
 - Vorabanalyse pro Finding aus Phase 4.1 (betroffene Dateien, Root Cause / Anforderung, Implementierungsskizze, Risiken, Konfidenz)
@@ -95,15 +99,15 @@ Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lös
 
 ## Plugin-Konfiguration
 
-Plugin-interne Dateien liegen unter `.sf-plugin/` im Projekt-Root.
+Plugin-interne Dateien liegen unter `.firmo/` im Projekt-Root.
 
-- Konfiguration: `.sf-plugin/config.json`
-- Memory-Datei: `.sf-plugin/memory.json`
-- Cache-Datei: `.sf-plugin/cache.json`
-- Review-Reports: `.sf-plugin/review/`
-- Temporäre Wisdom-Dateien: `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`
+- Konfiguration: `.firmo/config.json`
+- Memory-Datei: `.firmo/memory.json`
+- Cache-Datei: `.firmo/cache.json`
+- Review-Reports: `.firmo/review/`
+- Temporäre Wisdom-Dateien: `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
-`apply-review` funktioniert ohne Konfigurationsdatei. Falls `.sf-plugin/config.json` vorhanden ist, darf sie Apply-Review-Defaults überschreiben:
+`apply-review` funktioniert ohne Konfigurationsdatei. Falls `.firmo/config.json` vorhanden ist, darf sie Apply-Review-Defaults überschreiben:
 
 ```json
 {
@@ -112,7 +116,7 @@ Plugin-interne Dateien liegen unter `.sf-plugin/` im Projekt-Root.
     "finalValidation": "full",
     "stashPolicy": "interactive",
     "worktree": {
-      "baseDir": ".sf-plugin/.worktrees",
+      "baseDir": ".firmo/.worktrees",
       "setup": "auto"
     }
   }
@@ -124,7 +128,7 @@ Fehlende Werte haben diese Defaults:
 - `applyReview.defaultCommitStrategy`: nicht gesetzt (Commit-Strategie wird gefragt)
 - `applyReview.finalValidation`: `full`
 - `applyReview.stashPolicy`: `interactive` (heutiges interaktives Pro-Stash-Nachfragen)
-- `applyReview.worktree.baseDir`: `.sf-plugin/.worktrees`
+- `applyReview.worktree.baseDir`: `.firmo/.worktrees`
 - `applyReview.worktree.setup`: `auto`
 
 Gültige Werte:
@@ -136,15 +140,15 @@ Gültige Werte:
 
 ### Config-Migration
 
-Wenn `.sf-plugin/config.json` existiert, prüfe sie beim Start auf fehlende unterstützte Apply-Review-Schlüssel.
+Wenn `.firmo/config.json` existiert, prüfe sie beim Start auf fehlende unterstützte Apply-Review-Schlüssel.
 
 - Ergänze fehlende Schlüssel mit den Defaults oben.
 - Erhalte vorhandene gültige Werte und unbekannte Schlüssel unverändert.
 - Lies die Datei direkt vor dem Schreiben erneut frisch ein, damit zwischenzeitliche Änderungen nicht überschrieben werden.
 - Wenn die Datei ungültiges JSON enthält: nicht schreiben, sichere Defaults für diesen Lauf verwenden und den User mit Pfad und Fehler informieren.
 - Wenn ein bekannter Schlüssel einen ungültigen Wert enthält: nicht überschreiben, sicheren Default für diesen Lauf verwenden und den User über den Schlüssel informieren.
-- Wenn die Migration Schlüssel ergänzt hat: teile dem User einmal in diesem Workflow-Lauf mit, dass `.sf-plugin/config.json` migriert wurde, nenne die ergänzten Schlüssel und weise darauf hin, dass die Defaults das bisherige sichere Verhalten erhalten.
-- Speichere nach erfolgreicher Migration den Status in `.sf-plugin/memory.json` unter `configMigration`, ohne vorhandene Felder wie `lastFindingNumber` zu verlieren.
+- Wenn die Migration Schlüssel ergänzt hat: teile dem User einmal in diesem Workflow-Lauf mit, dass `.firmo/config.json` migriert wurde, nenne die ergänzten Schlüssel und weise darauf hin, dass die Defaults das bisherige sichere Verhalten erhalten.
+- Speichere nach erfolgreicher Migration den Status in `.firmo/memory.json` unter `configMigration`, ohne vorhandene Felder wie `lastFindingNumber` zu verlieren.
 
 Geplanter Memory-Eintrag:
 
@@ -160,9 +164,9 @@ Geplanter Memory-Eintrag:
 
 ### Cache-Datei
 
-Persistente Cache-Daten liegen ausschließlich in `.sf-plugin/cache.json`, nicht in `.sf-plugin/memory.json` und nicht dauerhaft in Wisdom-Dateien.
+Persistente Cache-Daten liegen ausschließlich in `.firmo/cache.json`, nicht in `.firmo/memory.json` und nicht dauerhaft in Wisdom-Dateien.
 
-`sf-apply-review` darf diesen Cache-Bereich verwenden:
+`apply-review` darf diesen Cache-Bereich verwenden:
 
 | Bereich               | Inhalt                                                                                           | Invalidierung                                              |
 | --------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
@@ -193,7 +197,7 @@ Wenn der Tracker-Modus `remote` ist (siehe „Issue-Tracker-Anbindung (Remote-Mo
 
 Klassifiziere das übergebene Argument über die „Apply-Quellen-Erkennung" (Stufe A und – für Issue-Referenzen – Stufe B) und leite Modus und Sub-Modus aus dem Quelltyp ab:
 
-- **`review-report`** (Report-Datei unter `.sf-plugin/review/`) → `local` (bisheriges Verhalten, unverändert).
+- **`review-report`** (Report-Datei unter `.firmo/review/`) → `local` (bisheriges Verhalten, unverändert).
 - **`review-epic`** (Issue mit `sf-review-epic`-Label) → `remote`, **Epic-Modus**: alle im Epic verlinkten Finding-Issues abarbeiten.
 - **`review-finding`** (ein einzelnes Finding-Issue oder eine Liste von Finding-Issue-Referenzen) → `remote`, **Issue-Listen-Modus**: nur genau diese Findings abarbeiten. Das zugehörige Epic je Finding wird für das spätere Abhaken aus dem Sub-Issue ermittelt (`Epic`-Feld/Referenz), sofern vorhanden.
 - **`remote` ohne Argument** → offene Epics auflisten und den User wählen lassen.
@@ -247,11 +251,11 @@ Finale Validierung und Zusammenfassung wie im lokalen Modus; die Zusammenfassung
 Bestimme zuerst den Tracker-Modus gemäß „Issue-Tracker-Anbindung (Remote-Modus)". Ist er `remote`, folge „Remote-Modus (Issue-Tracker)" (Phase 1 remote und folgende) statt der Report-Datei-Schritte 4–7 unten; die Config-, Stash- und Cache-Schritte gelten weiterhin.
 
 1. Lade Plugin-Konfiguration, migriere sie falls nötig und bestimme Commit-Strategie-Default, Stash-Policy, Worktree-Defaults und finales Validierungsprofil.
-2. Lies `.sf-plugin/cache.json`, falls vorhanden und gültig. Verwende nur valide `applyReviewAnalysis`-Einträge.
+2. Lies `.firmo/cache.json`, falls vorhanden und gültig. Verwende nur valide `applyReviewAnalysis`-Einträge.
 3. **Stash-Baseline erfassen:** Führe `git stash list` aus und merke dir die vollständige Liste der bereits vorhandenen Stash-Referenzen (z. B. `stash@{0}`, `stash@{1}`, ... mit ihren Beschreibungen). Halte die Baseline in der Wisdom-Datei fest, damit Phase 6 (Stash-Bereinigung) später neue, durch diesen Workflow entstandene Stashes davon abgrenzen kann. Falls `git stash list` leer ist: notiere „keine Baseline-Stashes".
 4. Bestimme die Report-Datei:
    - falls als Argument übergeben: verwende diese Datei
-   - sonst: suche nach `.sf-plugin/review/review-report-*.md` in `.sf-plugin/review/`
+   - sonst: suche nach `.firmo/review/review-report-*.md` in `.firmo/review/`
    - bei mehreren Reports: frage den User welcher verwendet werden soll
    - falls kein Report gefunden: Fehlermeldung und Abbruch
 5. **Lies die Datei frisch ein.** Da die Datei zwischen Konversationen gelöscht und neu erstellt werden kann, darf kein zuvor eingelesener Inhalt verwendet werden. Lies die Datei immer direkt vom Dateisystem.
@@ -294,7 +298,7 @@ Wenn `applyReview.defaultCommitStrategy` gültig gesetzt ist, überspringe die A
 - `single` → **Einzeln**
 - `none` → **Keine Commits**
 
-Melde kurz, dass die Commit-Strategie aus `.sf-plugin/config.json` übernommen wurde. Wenn kein gültiger Wert gesetzt ist, frage wie bisher:
+Melde kurz, dass die Commit-Strategie aus `.firmo/config.json` übernommen wurde. Wenn kein gültiger Wert gesetzt ist, frage wie bisher:
 
 ```ask
 when: kein gültiger Wert für `applyReview.defaultCommitStrategy` gesetzt ist
@@ -319,7 +323,7 @@ Halte die Antwort fest und gib sie an jeden delegierten Skill als Anweisung weit
 
 Teil desselben Up-front-Gates: Die Stash-Policy legt vorab fest, wie die Stash-Bereinigung in Phase 6 (Klassen B/C/D) und das Abbruch-Aufräumen in Phase 4.3 mit hinterlassenen Stashes umgehen – ohne spätere Rückfrage. Konkrete Stashes existieren zu Beginn noch nicht; entschieden wird daher die Policy, nicht der Einzelfall.
 
-Wenn `applyReview.stashPolicy` gültig gesetzt ist, überspringe die ASK-Frage und verwende den Wert; melde kurz, dass die Stash-Policy aus `.sf-plugin/config.json` übernommen wurde. Wenn kein gültiger Wert gesetzt ist, frage am selben Gate wie die Commit-Strategie:
+Wenn `applyReview.stashPolicy` gültig gesetzt ist, überspringe die ASK-Frage und verwende den Wert; melde kurz, dass die Stash-Policy aus `.firmo/config.json` übernommen wurde. Wenn kein gültiger Wert gesetzt ist, frage am selben Gate wie die Commit-Strategie:
 
 ```ask
 when: kein gültiger Wert für `applyReview.stashPolicy` gesetzt ist
@@ -350,8 +354,8 @@ Ziel: Parallele Sub-Agenten dürfen gleichzeitig Dateien bearbeiten, aber niemal
 
 Mutex-Konvention:
 
-- Lock-Pfad: `.sf-plugin/sf-apply-review-commit.lock`
-- Lock-Erwerb: atomar per `mkdir .sf-plugin/sf-apply-review-commit.lock`
+- Lock-Pfad: `.firmo/apply-review-commit.lock`
+- Lock-Erwerb: atomar per `mkdir .firmo/apply-review-commit.lock`
 - Lock-Inhalt: schreibe nach erfolgreichem Erwerb eine kurze Owner-Datei, z. B. `owner`, mit Finding-ID, Sub-Gruppe und Timestamp.
 - Lock-Freigabe: lösche nur den Lock, den du selbst erworben hast, nach Commit-Erfolg, Commit-Abbruch oder Fehlerbehandlung.
 - Wenn der Lock bereits existiert: warten und erneut versuchen. Falls der Lock offensichtlich verwaist wirkt, den User fragen, bevor er entfernt wird.
@@ -375,19 +379,19 @@ Wenn die Commit-Strategie **Einzeln mit Worktrees** gewählt wurde, gilt statt d
 
 Vorbedingungen:
 
-- Der ursprüngliche Arbeitsbaum muss vor dem Erstellen der Worktrees sauber sein (`git status --porcelain` leer), abgesehen von ignorierten Plugin-Dateien unter `.sf-plugin/`.
+- Der ursprüngliche Arbeitsbaum muss vor dem Erstellen der Worktrees sauber sein (`git status --porcelain` leer), abgesehen von ignorierten Plugin-Dateien unter `.firmo/`.
 - `git worktree` muss verfügbar sein.
-- Lies `.sf-plugin/config.json`, falls vorhanden. Falls sie fehlt oder keine Worktree-Werte enthält, verwende die Defaults.
+- Lies `.firmo/config.json`, falls vorhanden. Falls sie fehlt oder keine Worktree-Werte enthält, verwende die Defaults.
 
 Worktree-Pfade:
 
 1. Bestimme den Repo-Namen aus `basename "$(git rev-parse --show-toplevel)"`.
-2. Verwende als BaseDir `applyReview.worktree.baseDir` aus `.sf-plugin/config.json` oder den Default `.sf-plugin/.worktrees`.
+2. Verwende als BaseDir `applyReview.worktree.baseDir` aus `.firmo/config.json` oder den Default `.firmo/.worktrees`.
 3. Erstelle Worktrees unter:
    `BASE_DIR/REPO_NAME/SESSION_ID/GROUP_NAME`
 4. `GROUP_NAME` muss deterministisch, kurz und dateisystemtauglich sein, z. B. `fix-1`, `refactor-2`, `build-1` oder eine slugifizierte Sub-Gruppen-Beschreibung.
 
-Der Default liegt bewusst innerhalb des Projekt-Roots. Dadurch bleiben Worktree-Erstellung, Dateiänderungen und Setup-Kommandos in der üblichen Workspace-Sandbox. Externe BaseDirs sind nur zu verwenden, wenn sie explizit in `.sf-plugin/config.json` konfiguriert sind und die Umgebung Schreib- und Ausführungsrechte dafür erlaubt.
+Der Default liegt bewusst innerhalb des Projekt-Roots. Dadurch bleiben Worktree-Erstellung, Dateiänderungen und Setup-Kommandos in der üblichen Workspace-Sandbox. Externe BaseDirs sind nur zu verwenden, wenn sie explizit in `.firmo/config.json` konfiguriert sind und die Umgebung Schreib- und Ausführungsrechte dafür erlaubt.
 
 Branch-Konvention:
 
@@ -586,7 +590,7 @@ Beispiel: Aktionsgruppe `{{SKILL:sf-fix}}` mit fünf Findings:
    - die zugehörige Vorabanalyse aus Phase 4.1 als **inline-Kontext-Block** im Prompt — nicht als Verweis auf die Wisdom-Datei. Die Sub-Skills lesen die Wisdom-Datei nicht; sie verarbeiten nur den Prompt-Inhalt. Bette die Vorabanalyse vollständig ein, etwa unter der Überschrift `Vorabanalyse für dieses Finding:`.
    - die Entwickler-Anmerkung (falls vorhanden)
    - die Commit-Strategie aus Phase 2
-   - **Bei Commit-Strategie „Einzeln":** die vollständige Git-Commit-Mutex-Regel aus Phase 2. Der Sub-Agent muss jeden Finding-Commit unter `.sf-plugin/sf-apply-review-commit.lock` ausführen, darf nur Finding-eigene Dateien stage-en und darf niemals `git add .`, `git add -A` oder `git commit -a` verwenden.
+   - **Bei Commit-Strategie „Einzeln":** die vollständige Git-Commit-Mutex-Regel aus Phase 2. Der Sub-Agent muss jeden Finding-Commit unter `.firmo/apply-review-commit.lock` ausführen, darf nur Finding-eigene Dateien stage-en und darf niemals `git add .`, `git add -A` oder `git commit -a` verwenden.
    - **Bei Commit-Strategie „Einzeln mit Worktrees":** die vollständige Git-Worktree-Isolation-Regel aus Phase 2. Der Sub-Agent arbeitet ausschließlich im zugewiesenen Worktree, committet dort jedes Finding einzeln und protokolliert Commit-Hashes in der Wisdom-Datei. Der Sub-Agent darf nicht in den ursprünglichen Worktree wechseln.
    - den Auftrag, den passenden Skill aufzurufen:
      - Aktion fix: `Verwende den Skill {{SKILL:sf-fix}} für dieses Finding.`
@@ -595,7 +599,7 @@ Beispiel: Aktionsgruppe `{{SKILL:sf-fix}}` mit fünf Findings:
      - Aktion docs: `Verwende den Skill {{SKILL:sf-docs}} für dieses Finding.`
    - den Prompt-Vorschlag aus dem Report als Aufgabenbeschreibung
    - **Stash-Konvention:** Falls während der Umsetzung dieses Findings irgendein Stash entsteht (durch einen Pre-Commit-Hook, einen manuellen `git stash` im Sub-Skill oder einen Tool-getriggerten Stash), **muss die Stash-Message die Finding-ID enthalten**, z. B. `apply-review R-XXXXXXX <kurze Beschreibung>`. Das ermöglicht der Stash-Bereinigung in Phase 6, den Stash zuverlässig dem Finding zuzuordnen.
-   - den Hinweis, dass der Sub-Agent als **nicht-interaktiver** Delegations-Sub-Agent von `/apply-review` läuft und daher die explizite Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe" überspringt: keine Zusatzoption „Autonom via /goal", kein `/goal`-String. `/apply-review` steuert den autonomen Lauf an seinem eigenen Gate.
+   - den Hinweis, dass der Sub-Agent als **nicht-interaktiver** Delegations-Sub-Agent von `/firmo apply-review` läuft und daher die explizite Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe" überspringt: keine Zusatzoption „Autonom via /goal", kein `/goal`-String. `/firmo apply-review` steuert den autonomen Lauf an seinem eigenen Gate.
    - das Fertig-Protokoll
 3. Prüfe jeden Sub-Agenten auf `ERLEDIGT` oder `ABBRUCH`.
 4. Bei `ABBRUCH`:
@@ -764,4 +768,4 @@ options:
 - Überspringe bereits umgesetzte Findings (mit ✅) ohne Meldung
 - Gib internen Sub-Agenten das Fertig-Protokoll vor
 - Schreibe nach jeder abgeschlossenen Phase ein Wisdom-Summary
-- Dieser Skill vergibt keine neuen Finding-IDs. Falls zukünftig neue Findings erstellt werden sollen, muss `.sf-plugin/memory.json` gelesen und aktualisiert werden (siehe `{{SKILL:sf-review}}`)
+- Dieser Skill vergibt keine neuen Finding-IDs. Falls zukünftig neue Findings erstellt werden sollen, muss `.firmo/memory.json` gelesen und aktualisiert werden (siehe `{{SKILL:sf-review}}`)

@@ -1,10 +1,10 @@
 ---
-name: sf-plan
+name: plan
 description: "Erstellt reine Implementierungspläne in docs/plan/, ohne Code zu erzeugen oder bestehende Implementierungsdateien zu ändern. Empfiehlt, ob die Umsetzung als Feature, Bugfix, Refactoring oder Dokumentation über {{SKILL:sf-build}}, {{SKILL:sf-fix}}, {{SKILL:sf-refactor}} oder {{SKILL:sf-docs}} erfolgen soll."
 type: orchestrator
 ---
 
-# SF Plan
+# Firmo Plan
 
 Du bist der Orchestrator für reine Implementierungsplanung.
 
@@ -42,6 +42,10 @@ doc-categories
 - Code im Plan ist nur erlaubt, wenn er die kürzeste klare Form ist, um einen Punkt eindeutig zu machen, zum Beispiel ein einzelnes Literal, ein kurzer Signatur-Entwurf oder ein minimales Datenbeispiel.
 - Wenn Code verwendet wird, halte ihn minimal: keine vollständigen Funktionen, Komponenten, Klassen, Tests oder größeren Snippets vorwegnehmen.
 - Wenn der User während dieses Skills Implementierung verlangt, verweise je nach empfohlener Umsetzung auf `{{SKILL:sf-build}}`, `{{SKILL:sf-fix}}`, `{{SKILL:sf-refactor}}` oder `{{SKILL:sf-docs}}` und beende diesen Skill nach dem Plan.
+
+```include
+firmo-dir-migration
+```
 
 ## Projektkonventionen
 
@@ -93,9 +97,9 @@ Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers in d
 
 #### Schritt 1: Konfiguration konsultieren
 
-1. Prüfe, ob `.sf-plugin/config.json` existiert und syntaktisch valides JSON enthält.
+1. Prüfe, ob `.firmo/config.json` existiert und syntaktisch valides JSON enthält.
 2. Lies den Pfad `plan.markerLanguage`:
-   - `"de"` → Markersprache Deutsch, gib eine Statuszeile aus wie „Markersprache aus `.sf-plugin/config.json` übernommen: Deutsch." und überspringe Schritte 2 bis 6.
+   - `"de"` → Markersprache Deutsch, gib eine Statuszeile aus wie „Markersprache aus `.firmo/config.json` übernommen: Deutsch." und überspringe Schritte 2 bis 6.
    - `"en"` → analog Englisch.
    - anderer Wert (z. B. `"fr"`, `null`, `true`) → ignoriere ihn, gib einen kurzen Hinweis aus und fahre mit Schritt 2 fort.
    - Schlüssel fehlt → ohne extra Hinweis zu Schritt 2 (Detection gibt eine eigene Statuszeile aus).
@@ -116,7 +120,7 @@ Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers in d
 Nur wenn alle folgenden Bedingungen zutreffen:
 
 - die Detection aus Schritt 2 ergab ein eindeutiges Ergebnis,
-- `.sf-plugin/config.json` existiert und enthält syntaktisch valides JSON,
+- `.firmo/config.json` existiert und enthält syntaktisch valides JSON,
 - der Schlüssel `plan.markerLanguage` _fehlt_ in dieser Config (nicht: ist ungültig).
 
 Wenn diese Bedingungen erfüllt sind:
@@ -125,7 +129,7 @@ Wenn diese Bedingungen erfüllt sind:
 2. Schreibe die Config-Datei zurück.
 3. Gib eine Statusmeldung aus, z. B. „Config-Migration: `plan.markerLanguage = de` aus Detection ergänzt."
 
-Wenn `.sf-plugin/config.json` nicht existiert, lege sie _nicht_ nur für die Migration an.
+Wenn `.firmo/config.json` nicht existiert, lege sie _nicht_ nur für die Migration an.
 
 #### Schritt 4: Detection-Ergebnis übernehmen
 
@@ -157,7 +161,7 @@ Nur wenn Schritt 5 ausgeführt wurde:
 
 ```ask
 header: Persistenz
-question: Soll die gewählte Markersprache in .sf-plugin/config.json als plan.markerLanguage gespeichert werden?
+question: Soll die gewählte Markersprache in .firmo/config.json als plan.markerLanguage gespeichert werden?
 options:
   - label: Ja
     description: Wahl persistieren — Default, empfohlen, vermeidet künftige Rückfragen
@@ -167,9 +171,9 @@ options:
 
 Bei `Ja`:
 
-- Lies `.sf-plugin/config.json`, falls vorhanden, und ergänze `plan.markerLanguage` nicht-destruktiv.
+- Lies `.firmo/config.json`, falls vorhanden, und ergänze `plan.markerLanguage` nicht-destruktiv.
 - Wenn die Datei nicht existiert: lege sie minimal mit `{ "plan": { "markerLanguage": "<wert>" } }` an.
-- Gib eine Statusmeldung aus, z. B. „Markersprache `de` in `.sf-plugin/config.json` gespeichert."
+- Gib eine Statusmeldung aus, z. B. „Markersprache `de` in `.firmo/config.json` gespeichert."
 - Wenn das Schreiben fehlschlägt, gib einen knappen Fehlerhinweis aus und fahre mit dem Plan-Lauf fort.
 
 Bei `Nein`: keine Änderung an der Config-Datei.

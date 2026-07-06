@@ -1,10 +1,10 @@
 ---
-name: sf-apply-issues
+name: apply-issues
 description: "Nimmt einen oder mehrere GitHub-/Forgejo-Issues (einzeln, als Liste oder als Container-Issue mit Sub-Issue-Checkliste) entgegen, analysiert und klassifiziert den Inhalt und routet ausreichend spezifizierte Issues an {{SKILL:sf-build}}, {{SKILL:sf-fix}}, {{SKILL:sf-refactor}} oder {{SKILL:sf-docs}} (ein PR pro Issue). Unzureichend spezifizierte Issues werden übersprungen und für {{SKILL:sf-plan-issues}} markiert. Status-Updates laufen als Issue-Kommentare."
 type: orchestrator
 ---
 
-# SF Apply Issues
+# Firmo Apply Issues
 
 Du bist der Orchestrator, der beliebige Issues aus einem externen Tracker analysiert und an den passenden Umsetzungs-Workflow weitergibt.
 
@@ -54,7 +54,7 @@ goal-completion
 
 ## Wisdom Accumulation
 
-Verwende `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
+Verwende `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
 
 - die aufgelöste Arbeitsliste (Issue-Nummer, optionale Epic-Referenz)
 - die Analyse pro Issue (Klassifikation, ausreichend/unzureichend, Ziel-Skill, Prompt-Vorschlag, Konfidenz, Fehlendes)
@@ -78,10 +78,10 @@ apply-source-detection
 
 ## Kommentar-Konventionen
 
-Alle Status-Updates werden als Issue-Kommentare geschrieben (Operation „Kommentar hinzufügen" aus dem Mapping oben). Verwende diese kanonischen Vorlagen und beginne jeden Plugin-Kommentar mit der Markierung `<!-- sf-apply-issues -->`, damit spätere Läufe eigene Kommentare erkennen und Doppel-Kommentare vermeiden:
+Alle Status-Updates werden als Issue-Kommentare geschrieben (Operation „Kommentar hinzufügen" aus dem Mapping oben). Verwende diese kanonischen Vorlagen und beginne jeden Plugin-Kommentar mit der Markierung `<!-- firmo-apply-issues -->`, damit spätere Läufe eigene Kommentare erkennen und Doppel-Kommentare vermeiden:
 
-- **Umgesetzt:** `🤖 Umgesetzt via /apply-issues — PR #<nr>` (keine internen IDs, kein `Co-Authored-By`).
-- **Übersprungen:** `⏭️ Übersprungen: Für eine autonome Umsetzung fehlen noch Angaben: <Liste des Fehlenden>. Mit /plan-issues vervollständigen.`
+- **Umgesetzt:** `🤖 Umgesetzt via /firmo apply-issues — PR #<nr>` (keine internen IDs, kein `Co-Authored-By`).
+- **Übersprungen:** `⏭️ Übersprungen: Für eine autonome Umsetzung fehlen noch Angaben: <Liste des Fehlenden>. Mit /firmo plan-issues vervollständigen.`
 - **Fehlgeschlagen:** `⚠️ Umsetzung fehlgeschlagen: <kurzer Grund>. Issue bleibt offen.`
 
 Exponiere in Kommentaren keine internen Tracking-IDs oder Session-Details.
@@ -101,7 +101,7 @@ Exponiere in Kommentaren keine internen Tracking-IDs oder Session-Details.
 
 ### Phase 2: Expansion & Arbeitsliste
 
-1. Lies jedes referenzierte Issue **frisch** vom Tracker (Body, Labels, Status und **Kommentare** über die Operation „Kommentare lesen"). Die Kommentare sind Teil der Analysegrundlage: ein Planungskommentar von `{{SKILL:sf-plan-issues}}` (Markierung `<!-- sf-plan-issues -->`) enthält die vervollständigte Spezifikation, und Maintainer können Klärungen als Kommentar statt im Body nachreichen. Eigene Plugin-Kommentare (`<!-- sf-apply-issues -->`) werden hier nur für die Idempotenz-Prüfung in Phase 4 gemerkt, nicht als fachliche Anforderung gewertet.
+1. Lies jedes referenzierte Issue **frisch** vom Tracker (Body, Labels, Status und **Kommentare** über die Operation „Kommentare lesen"). Die Kommentare sind Teil der Analysegrundlage: ein Planungskommentar von `{{SKILL:sf-plan-issues}}` (Markierung `<!-- firmo-plan-issues -->`) enthält die vervollständigte Spezifikation, und Maintainer können Klärungen als Kommentar statt im Body nachreichen. Eigene Plugin-Kommentare (`<!-- firmo-apply-issues -->`) werden hier nur für die Idempotenz-Prüfung in Phase 4 gemerkt, nicht als fachliche Anforderung gewertet.
 2. **Container-Erkennung:** Enthält der Body eine Aufgabenliste mit Issue-Referenzen (`- [ ] #NNN …` / `- [x] #NNN …`), behandle das Issue als Container:
    - expandiere auf die **offenen** (`- [ ]`) Sub-Issue-Referenzen und merke das Container-Issue als Epic für das spätere Abhaken,
    - überspringe erledigte (`- [x]`) Einträge,
@@ -129,7 +129,7 @@ Starte für **jedes Arbeitsitem** einen Analyse-Sub-Agenten parallel. Diese Sub-
 
 Jeder Analyse-Sub-Agent erhält den Issue-Body **und die Issue-Kommentare** und den Auftrag, die Codebase zu untersuchen und ein strukturiertes Ergebnis zu liefern:
 
-- **Kommentare als Quelle:** Werte Body und Kommentare gemeinsam aus. Ein `<!-- sf-plan-issues -->`-Planungskommentar liefert die von `{{SKILL:sf-plan-issues}}` vervollständigte Spezifikation (Soll-Verhalten, Akzeptanzkriterien, betroffene Bereiche) und gilt als **maßgebliche, ausreichende** Grundlage — auch wenn der ursprüngliche Body dünn ist; existieren mehrere, zählt der neueste. Weitere Maintainer-Kommentare zählen als Klärungen für die Ausreichend-Prüfung. Reine Plugin-Statuskommentare (`<!-- sf-apply-issues -->`) werden nicht als Anforderung gewertet.
+- **Kommentare als Quelle:** Werte Body und Kommentare gemeinsam aus. Ein `<!-- firmo-plan-issues -->`-Planungskommentar liefert die von `{{SKILL:sf-plan-issues}}` vervollständigte Spezifikation (Soll-Verhalten, Akzeptanzkriterien, betroffene Bereiche) und gilt als **maßgebliche, ausreichende** Grundlage — auch wenn der ursprüngliche Body dünn ist; existieren mehrere, zählt der neueste. Weitere Maintainer-Kommentare zählen als Klärungen für die Ausreichend-Prüfung. Reine Plugin-Statuskommentare (`<!-- firmo-apply-issues -->`) werden nicht als Anforderung gewertet.
 - **Klassifikation:** Feature / Bugfix / Refactoring / Dokumentation (Definitionen wie in `{{SKILL:sf-plan}}`, Phase 1) und daraus der Ziel-Skill (`{{SKILL:sf-build}}` / `{{SKILL:sf-fix}}` / `{{SKILL:sf-refactor}}` / `{{SKILL:sf-docs}}`).
 - **Ausreichend-Prüfung:** Lässt sich aus dem Issue (Body **und Kommentaren**) ein klares Soll-Verhalten und mindestens ein **messbares Akzeptanzkriterium** ableiten, und gibt es genug Datei-/Bereichs-Hinweise, damit der Ziel-Workflow autonom starten kann? Ergebnis: `ausreichend` oder `unzureichend`. Bei `unzureichend`: konkrete Liste des Fehlenden (offene fachliche Fragen, fehlende Akzeptanzkriterien, unklarer Scope).
 - **Prompt-Vorschlag:** direkt verwendbarer Klartext-Auftrag für den Ziel-Skill.
@@ -170,7 +170,7 @@ options:
 5. Bei Wahl „Autonom via `/goal`": gib den `/goal`-String prominent aus und fordere zum Einfügen als neue Eingabe auf. Ohne Einfügen läuft der Skill gated weiter. Form (einzeilig, ohne interne IDs):
 
 ```text
-/goal Arbeite die in /apply-issues analysierten Issues (#… , #…) vollständig ab und durchlaufe die verbleibenden Phasen dieses Workflows: setze jedes ausreichend spezifizierte Issue über den passenden Umsetzungs-Skill um, erstelle je genau einen PR (Closes #<Issue>), kommentiere den PR-Link, setze sf-issue-done und hake den Epic-Eintrag ab; markiere unzureichende Issues mit sf-needs-planning und Kommentar; projektkonfigurierte Checks der delegierten Workflows grün. Nichts außerhalb der genannten Issues ändern. Stoppe, wenn alle gewählten Issues verarbeitet sind.
+/goal Arbeite die in /firmo apply-issues analysierten Issues (#… , #…) vollständig ab und durchlaufe die verbleibenden Phasen dieses Workflows: setze jedes ausreichend spezifizierte Issue über den passenden Umsetzungs-Skill um, erstelle je genau einen PR (Closes #<Issue>), kommentiere den PR-Link, setze sf-issue-done und hake den Epic-Eintrag ab; markiere unzureichende Issues mit sf-needs-planning und Kommentar; projektkonfigurierte Checks der delegierten Workflows grün. Nichts außerhalb der genannten Issues ändern. Stoppe, wenn alle gewählten Issues verarbeitet sind.
 ```
 
 6. Bei „Ja"/gated (oder normaler Antwort): ohne `/goal`-String gated weiter. Bei „Anpassen": Feedback einarbeiten (Auswahl/Ziel korrigieren) und die Abfrage erneut stellen. Starte Phase 4 erst nach dieser Freigabe.
@@ -183,7 +183,7 @@ Die Commit-/PR-Strategie ist fest **„ein PR pro Issue"** (keine Commit-Strateg
 
 1. Nicht implementieren.
 2. Label `sf-needs-planning` setzen.
-3. Übersprungen-Kommentar mit der Liste des Fehlenden anhängen (Vorlage oben), sofern die in Phase 2 gelesenen Kommentare nicht bereits einen gleichlautenden `<!-- sf-apply-issues -->`-Übersprungen-Kommentar enthalten (Idempotenz auf Basis der Operation „Kommentare lesen").
+3. Übersprungen-Kommentar mit der Liste des Fehlenden anhängen (Vorlage oben), sofern die in Phase 2 gelesenen Kommentare nicht bereits einen gleichlautenden `<!-- firmo-apply-issues -->`-Übersprungen-Kommentar enthalten (Idempotenz auf Basis der Operation „Kommentare lesen").
 4. Task auf `completed` mit Zusatz `[übersprungen]`.
 
 **Ausreichende Issues (`ausreichend`), je Issue in dessen Worktree:**
@@ -193,7 +193,7 @@ Die Commit-/PR-Strategie ist fest **„ein PR pro Issue"** (keine Commit-Strateg
    - Bugfix: `Verwende den Skill {{SKILL:sf-fix}} für dieses Issue.`
    - Refactoring: `Verwende den Skill {{SKILL:sf-refactor}} für dieses Issue.`
    - Dokumentation: `Verwende den Skill {{SKILL:sf-docs}} für dieses Issue.`
-     Der Delegations-Sub-Agent läuft als **nicht-interaktive** Delegation (Kontext-Hinweis „[Kontext von /apply-issues: …]"): keine explizite Goal-Abfrage, kein `/goal`-String, Fertig-Protokoll `ERLEDIGT`/`ABBRUCH`.
+     Der Delegations-Sub-Agent läuft als **nicht-interaktive** Delegation (Kontext-Hinweis „[Kontext von /firmo apply-issues: …]"): keine explizite Goal-Abfrage, kein `/goal`-String, Fertig-Protokoll `ERLEDIGT`/`ABBRUCH`.
 2. Änderungen committen (Conventional-Commit-Message, keine internen IDs, kein `Co-Authored-By`) und den Branch über `{{SKILL:sf-pr}}` als genau einen PR gegen den Basis-Branch führen; im PR-Body `Closes #<Issue>` setzen.
 3. **Direkt nach PR-Erstellung:** PR-Link als Kommentar ans Issue schreiben (Vorlage „Umgesetzt"), Label `sf-issue-done` setzen und – falls das Issue aus einem Container stammt – den zugehörigen Checklisten-Eintrag im Epic-Body abhaken (Epic-Body frisch lesen, nur die betroffene Zeile `- [ ]` → `- [x]` umschalten und den PR-Link anhängen).
 4. Task auf `completed`.

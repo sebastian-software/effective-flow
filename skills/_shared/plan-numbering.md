@@ -127,11 +127,11 @@ Kollision auf:
      zu erhalten),
    - passe die H1-Überschrift `# NNNN: …` an die neue Nummer an,
    - ziehe Referenzen auf die alte Nummer mit (andere Plan-Dateien sowie
-     Review-Reports unter `.sf-plugin/review/`).
+     Review-Reports unter `.firmo/review/`).
      Führe die Umbenennungen absteigend aus (höchste Nummer zuerst), damit keine
      Zwischenkollision entsteht.
-5. **Zuständigkeit:** Skills, die nur lesen dürfen (zum Beispiel `sf-plan` und
-   `sf-open-plans`), melden eine erkannte Dublette, lösen sie aber nicht selbst
+5. **Zuständigkeit:** Skills, die nur lesen dürfen (zum Beispiel `plan` und
+   `open-plans`), melden eine erkannte Dublette, lösen sie aber nicht selbst
    auf, wenn dafür Schreibzugriffe außerhalb ihres erlaubten Bereichs nötig wären.
    Die Auflösung übernehmen die schreibenden Workflows (`sf-build`, `sf-fix`,
    `sf-refactor`, `sf-docs`).

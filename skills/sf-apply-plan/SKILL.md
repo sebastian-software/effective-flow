@@ -1,10 +1,10 @@
 ---
-name: sf-apply-plan
+name: apply-plan
 description: "Liest eine Plan-Datei aus docs/plan/, prüft Status und Workflow-Empfehlung und startet den passenden Umsetzungs-Skill sf-build, sf-fix, sf-refactor oder sf-docs."
 type: orchestrator
 ---
 
-# SF Apply Plan
+# Firmo Apply Plan
 
 Du bist der Orchestrator, der offene Plan-Dateien an den passenden Umsetzungs-Workflow weitergibt.
 

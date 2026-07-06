@@ -1,60 +1,78 @@
-# SF Skills
+# Firmo
 
-Dual-Platform Workflow-System für Codex und Claude Code — aus einer einzigen Quelle.
+Ein Software-Engineering-Workflow-Set für **Codex** und **Claude Code** — aus einer einzigen Quelle gebaut, ausgeliefert als **ein** Skill, das seine Tools über `/firmo <tool>` aufruft.
 
-## Architektur
+## Konzept
 
-Das System unterscheidet drei Typen:
+Firmo ist ein **dünnes Router-Skill** mit **Lazy-Loading**. Es enthält nur einen Tool-Katalog und eine Dispatch-Regel; die vollständige Anweisung eines Tools wird **erst bei Bedarf** aus `tools/<tool>.md` geladen. So bleibt die Session schlank und es entsteht keine Token-Exhaustion durch das Vorladen aller Tools.
 
-| Typ              | Beschreibung          | Codex               | Claude Code       |
-| ---------------- | --------------------- | ------------------- | ----------------- |
-| **Orchestrator** | Workflow-Steuerung    | Skill (`$sf-*`)     | Command (`/name`) |
-| **Agent**        | Spezialisierte Worker | Custom Agent (TOML) | Agent (Subagent)  |
-| **Utility**      | Standalone-Tools      | Skill (`$sf-*`)     | Command (`/name`) |
+Aufruf:
 
-### Orchestratoren (ruft User auf)
+```text
+/firmo <tool> [argumente]
+```
 
-| Name              | Beschreibung                                                                |
-| ----------------- | --------------------------------------------------------------------------- |
-| `sf-build`        | Kompletter Feature-Workflow                                                 |
-| `sf-apply-plan`   | Offene Plan-Datei an passenden Workflow übergeben                           |
-| `sf-apply-issues` | Tracker-Issues analysieren und an passenden Umsetzungs-Workflow routen      |
-| `sf-plan-issues`  | Übersprungene Issues einsammeln und Planung interaktiv vervollständigen     |
-| `sf-plan`         | Reine Implementierungsplanung ohne Code-Änderungen                          |
-| `sf-open-plans`   | Offene Plan-Dateien mit Kurzfassung auflisten                               |
-| `sf-docs`         | Dokumentations-Workflow                                                     |
-| `sf-fix`          | Bugfix-Workflow                                                             |
-| `sf-refactor`     | Refactoring-Workflow                                                        |
-| `sf-investigate`  | Fehler- und Verhaltensinvestigation (Analyse-only, Diagnose-Report)         |
-| `sf-review`       | Umfassendes Code-Review                                                     |
-| `sf-maintain`     | Schlanke Wartung: Dependency-Updates, Audit-Fixes, Breaking-Change-Adaption |
-| `sf-commit`       | Commit-Message für gestagte Änderungen                                      |
-| `sf-pr`           | Pull-Request aus einem Branch auf GitHub (`gh`) oder Forgejo (`tea`)        |
-| `sf-setup`        | `.gitignore`-Eintrag + interaktive Pflege von `.sf-plugin/config.json`      |
+Auf Codex wird dasselbe Skill über den Skill-Namen aufgerufen (z. B. `$firmo <tool>`); die Dispatch-Regel ist identisch. Ohne oder mit unbekanntem `<tool>` gibt der Router die Tool-Liste aus und tut sonst nichts.
 
-### Agents (werden von Orchestratoren delegiert)
+Firmo unterscheidet zwei Bausteine:
 
-| Name                    | Beschreibung                        | Codex Model  | Claude Model |
-| ----------------------- | ----------------------------------- | ------------ | ------------ |
-| `sf-ui-implementer`     | Frontend-Implementierung            | gpt-5.5      | sonnet       |
-| `sf-nodejs-implementer` | Backend/CLI-Implementierung         | gpt-5.5      | opus         |
-| `sf-rust-implementer`   | Rust-Implementierung                | gpt-5.5      | opus         |
-| `sf-frontend-reviewer`  | Frontend-Review                     | gpt-5.5      | opus         |
-| `sf-nodejs-reviewer`    | Backend/CLI-Review                  | gpt-5.5      | opus         |
-| `sf-rust-reviewer`      | Rust-Review                         | gpt-5.5      | opus         |
-| `sf-code-validator`     | TypeScript, Lint, Build-Validierung | gpt-5.4-mini | haiku        |
-| `sf-code-documenter`    | In-Code-Dokumentation               | gpt-5.4-mini | sonnet       |
-| `sf-docs-writer`        | User-Dokumentation                  | gpt-5.4-mini | sonnet       |
-| `sf-test-writer`        | Unit-Tests                          | gpt-5.4-mini | sonnet       |
-| `sf-e2e-tester`         | E2E-Tests                           | gpt-5.4-mini | sonnet       |
+| Typ       | Beschreibung                                  | Aufruf                                          |
+| --------- | --------------------------------------------- | ----------------------------------------------- |
+| **Tool**  | Workflow- oder Utility-Anweisung              | `/firmo <tool>` (lädt `tools/<tool>.md`)        |
+| **Agent** | spezialisierter Worker (Implementer/Reviewer) | intern von Tools als Subagent (`agents/<name>`) |
 
-## Plattform-Deployment
+## Tools
 
-| Ziel               | Pfad                                               |
-| ------------------ | -------------------------------------------------- |
-| Codex Skills       | `~/.agents/skills/sf-*/SKILL.md`                   |
-| Codex Agents       | `~/.codex/agents/sf-*.toml`                        |
-| Claude Code Plugin | `~/.claude/plugins/marketplaces/sf-claude-plugin/` |
+Die 15 über `/firmo <tool>` aufrufbaren Tools:
+
+| Tool          | Beschreibung                                                                                       |
+| ------------- | -------------------------------------------------------------------------------------------------- |
+| `build`       | Kompletter Feature-Workflow                                                                        |
+| `fix`         | Bugfix-Workflow                                                                                    |
+| `plan`        | Reine Implementierungsplanung ohne Code-Änderungen                                                 |
+| `refactor`    | Refactoring-Workflow                                                                               |
+| `docs`        | Dokumentations-Workflow                                                                            |
+| `review`      | Umfassendes Code-Review                                                                            |
+| `apply`       | Beliebige Apply-Quelle (Plan-Datei, Review-Report, Issue, Review-Epic) klassifizieren und umsetzen |
+| `plan-issue`  | Übersprungene Issues einsammeln und Planung interaktiv vervollständigen                            |
+| `maintain`    | Schlanke Wartung: Dependency-Updates, Audit-Fixes, Breaking-Change-Adaption                        |
+| `commit`      | Commit-Message für gestagte Änderungen                                                             |
+| `pr`          | Pull-Request aus einem Branch auf GitHub (`gh`) oder Forgejo (`tea`)                               |
+| `setup`       | `.gitignore`-Eintrag + interaktive Pflege von `.firmo/config.json`                                 |
+| `open-plans`  | Offene Plan-Dateien mit Kurzfassung auflisten                                                      |
+| `investigate` | Fehler- und Verhaltensinvestigation (Analyse-only, Diagnose-Report)                                |
+| `version`     | Firmo-Version inklusive Git-Kurzhash anzeigen                                                      |
+
+`apply` lädt bei Bedarf eine passende **interne** Anweisung nach (`tools/apply-plan.md`, `tools/apply-review.md` oder `tools/apply-issues.md`), je nach erkannter Quelle. Diese internen Dateien sind nicht direkt über `/firmo` aufrufbar.
+
+## Agents
+
+Spezialisten, die von den Tools intern als Subagents delegiert werden (liegen unter `agents/`):
+
+| Agent                | Beschreibung                        | Codex Model  | Claude Model |
+| -------------------- | ----------------------------------- | ------------ | ------------ |
+| `ui-implementer`     | Frontend-Implementierung            | gpt-5.5      | sonnet       |
+| `nodejs-implementer` | Backend/CLI-Implementierung         | gpt-5.5      | opus         |
+| `rust-implementer`   | Rust-Implementierung                | gpt-5.5      | opus         |
+| `frontend-reviewer`  | Frontend-Review                     | gpt-5.5      | opus         |
+| `nodejs-reviewer`    | Backend/CLI-Review                  | gpt-5.5      | opus         |
+| `rust-reviewer`      | Rust-Review                         | gpt-5.5      | opus         |
+| `code-validator`     | TypeScript, Lint, Build-Validierung | gpt-5.4-mini | haiku        |
+| `code-documenter`    | In-Code-Dokumentation               | gpt-5.4-mini | sonnet       |
+| `docs-writer`        | User-Dokumentation                  | gpt-5.4-mini | sonnet       |
+| `test-writer`        | Unit-Tests                          | gpt-5.4-mini | sonnet       |
+| `e2e-tester`         | E2E-Tests                           | gpt-5.4-mini | sonnet       |
+
+## Auslieferung
+
+Firmo wird als **Standard-Directory-Skill** ausgeliefert (ein Verzeichnis mit `SKILL.md`, `tools/` und `agents/`) — nicht mehr als Claude-Code-Plugin/Marketplace. Der Build erzeugt je Harness eine Variante:
+
+| Ziel        | Pfad                                       |
+| ----------- | ------------------------------------------ |
+| Claude Code | `~/.claude/skills/firmo/` (`.md`-Agents)   |
+| Codex       | `~/.agents/skills/firmo/` (`.toml`-Agents) |
+
+Das gebaute Skill ist ein gewöhnliches Agent-Skill und lässt sich auch via [`npx skills`](https://www.npmjs.com/package/skills) installieren oder mit [dalo](https://github.com/sebastian-software/dalo) linken.
 
 Empfohlene Codex-Konfiguration (`~/.codex/config.toml`):
 
@@ -72,11 +90,11 @@ max_depth = 1
 
 Das Script:
 
-1. Baut für beide Plattformen (`dist/codex/`, `dist/claude/`)
-2. Deployed Codex Skills nach `~/.agents/skills/`
-3. Deployed Codex Agents nach `~/.codex/agents/`
-4. Deployed Claude Code Plugin nach `~/.claude/plugins/marketplaces/sf-claude-plugin/`
-5. Räumt alte Dateien aus `~/.codex/skills/` und `~/.claude/skills/` auf
+1. baut für beide Harnesses (`dist/codex/firmo/`, `dist/claude/firmo/`),
+2. kopiert das Firmo-Skill nach `~/.claude/skills/firmo` und `~/.agents/skills/firmo`,
+3. räumt alte `sf-*`-Skills, `~/.codex/agents/sf-*.toml` und den früheren Marketplace `sf-claude-plugin` auf.
+
+Nur das `firmo`-Verzeichnis wird verwaltet: ein bestehender externer `~/.claude/skills`-Symlink (z. B. von dalo) und fremde Nachbar-Skills bleiben unangetastet.
 
 Für Symlinks statt Kopien (Entwicklung):
 
@@ -84,19 +102,27 @@ Für Symlinks statt Kopien (Entwicklung):
 ./local-link.sh
 ```
 
+Nur bauen (ohne Deployment):
+
+```sh
+node build.mjs
+```
+
 ## Build
 
-Die Source-Dateien in `skills/` verwenden zwei Arten von Platzhaltern.
+Firmo wird aus den Quellen unter `skills/` gebaut. Die Quell-Verzeichnisse tragen weiterhin einen `sf-`-Präfix (`skills/sf-build/`, `skills/sf-ui-implementer/`, …); der Build **entfernt den Präfix** und fügt alle Quellen zu einem einzigen `firmo`-Skill je Harness zusammen. Kategorisiert wird über das Frontmatter-Feld `type` (`orchestrator`/`utility` → Tool, `agent` → Agent). Das Router-`SKILL.md` entsteht aus dem Template `skills/_router/SKILL.md` plus generiertem Tool-Katalog.
+
+Die Quellen verwenden zwei Arten von Platzhaltern.
 
 **Inline-Referenzen** stehen mitten im Text (auch im Frontmatter-`description:`-String) und nutzen die Mustache-Syntax `{{…}}`:
 
-| Platzhalter      | Bedeutung                     | Claude Code | Codex Skill | Codex TOML |
-| ---------------- | ----------------------------- | ----------- | ----------- | ---------- |
-| `{{SKILL:sf-X}}` | Orchestrator/Utility-Referenz | `/X`        | `$sf-X`     | `sf-X`     |
-| `{{AGENT:sf-X}}` | Agent/Worker-Referenz         | `/X`        | `sf-X`      | `sf-X`     |
-| `{{VERSION}}`    | Version inkl. Git-Kurzhash    | eingesetzt  | eingesetzt  | eingesetzt |
+| Platzhalter      | Bedeutung                  | Ersetzung                                               |
+| ---------------- | -------------------------- | ------------------------------------------------------- |
+| `{{SKILL:sf-X}}` | Tool-Referenz              | `/firmo X` (exponiert) bzw. `` `tools/X.md` `` (intern) |
+| `{{AGENT:sf-X}}` | Agent-Referenz             | `` `X` `` (Subagent unter `agents/`)                    |
+| `{{VERSION}}`    | Version inkl. Git-Kurzhash | eingesetzt                                              |
 
-**Block-Direktiven** stehen auf eigenen Zeilen und nutzen einen Code-Fence mit Info-String. Der Fence-Inhalt ist gegen Markdown-Formatter (oxfmt) robust, weil dessen Interior wortwörtlich erhalten bleibt.
+**Block-Direktiven** stehen auf eigenen Zeilen und nutzen einen Code-Fence mit Info-String. Der Fence-Interior bleibt gegen den Markdown-Formatter (oxfmt) wortwörtlich erhalten.
 
 Ein `include`-Fence bettet die Shared-Datei `skills/_shared/<name>.md` ein:
 
@@ -112,76 +138,58 @@ question: Plan freigegeben?
 type: approval
 ```
 
-Plan-Dateien verwenden einen stabilen Statusmarker im Kopfbereich. Der Marker darf wahlweise auf Deutsch oder auf Englisch geschrieben werden:
+Zwei Guards sichern den Build ab: ein Frontmatter-Validitäts-Check (Descriptions strikt gequotet) und ein Version-Drift-Guard (Claude und Codex tragen dieselbe Version).
+
+### Plan-Konventionen
+
+Plan-Dateien in `docs/plan/` verwenden einen stabilen Statusmarker im Kopfbereich, wahlweise auf Deutsch oder Englisch:
 
 ```md
 **Planungsstatus:** Nicht umgesetzt
-**Empfohlener Workflow:** Feature (`$sf-build`)
+**Empfohlener Workflow:** Feature (`/firmo build`)
 ```
 
 ```md
 **Plan status:** Not implemented
-**Empfohlener Workflow:** Feature (`$sf-build`)
+**Empfohlener Workflow:** Feature (`/firmo build`)
 ```
 
-Akzeptierte Werte sind `Nicht umgesetzt`/`Umgesetzt` (Deutsch) und `Not implemented`/`Implemented` (Englisch). Pro Plan-Datei wird nur eine Sprache verwendet; beim Statuswechsel auf abgeschlossen bleibt die ursprüngliche Markersprache erhalten. Die Workflow-Empfehlung `**Empfohlener Workflow:**` bleibt in beiden Markersprachen auf Deutsch.
+Akzeptierte Werte sind `Nicht umgesetzt`/`Umgesetzt` (Deutsch) und `Not implemented`/`Implemented` (Englisch). Pro Plan-Datei wird nur eine Sprache verwendet; beim Statuswechsel auf abgeschlossen bleibt die Markersprache erhalten. Die Zeile `**Empfohlener Workflow:**` bleibt in beiden Markersprachen auf Deutsch. Nur diese kanonische Statuszeile zählt — andere Vorkommen von „Nicht umgesetzt"/„Umgesetzt" in Fließtext oder Review-Findings nicht.
 
-`sf-build`, `sf-fix`, `sf-refactor`, `sf-docs`, `sf-apply-plan` und `sf-open-plans` werten nur diese kanonische Statuszeile aus. Andere Vorkommen von „Nicht umgesetzt", „Umgesetzt", „Not implemented" oder „Implemented" in Review-Findings oder Fließtext zählen nicht als Planstatus.
+Plan-Dateien tragen einen vierstelligen Nummern-Prefix (`NNNN-titel-slug.md`); jede Nummer ist genau einmal vergeben und die Folge bleibt lückenlos. `plan` reserviert die Nummer zu Beginn über eine temporäre Plan-Datei, damit parallele Läufe nicht dieselbe Nummer wählen; Dubletten über getrennte Branches lösen die Workflows beim nächsten Scan in Planungsreihenfolge auf.
 
-Plan-Dateien tragen einen vierstelligen Nummern-Prefix (`NNNN-titel-slug.md`). Jede Nummer ist genau einmal vergeben und die Folge bleibt lückenlos. `sf-plan` reserviert die Nummer zu Beginn der Planung über eine temporäre Plan-Datei, damit parallel erstellte Pläne nicht dieselbe Nummer wählen. Entsteht über getrennte Branches dennoch eine Dublette, lösen die Workflows sie beim nächsten Scan in Planungsreihenfolge auf.
-
-Neue Pläne enthalten zusätzlich eine Workflow-Empfehlung: Feature, Bugfix, Refactoring oder Dokumentation. Offene Pläne können direkt mit `sf-build`, `sf-fix`, `sf-refactor` oder `sf-docs` als Grundlage verwendet werden; alternativ liest `sf-apply-plan` die Empfehlung aus und übergibt den Plan an den passenden Workflow.
-
-Doku-Pläne enthalten im Kopf zwei zusätzliche Zeilen, die das Ziel des finalen Dokuments festlegen:
-
-```md
-**Empfohlener Workflow:** Dokumentation (`$sf-docs`)
-**Doku-Kategorie:** user-guide
-**Ziel-Pfad:** docs/user-guide/installation.md
-```
-
-Die vier Doku-Kategorien `user-guide`, `developer-guide`, `operations` und `runbooks` sind in `skills/_shared/doc-categories.md` definiert und werden von `sf-plan`, `sf-docs`, `sf-docs-writer`, `sf-apply-plan` und `sf-open-plans` gemeinsam verwendet.
-
-Nur Build ausführen (ohne Deployment):
-
-```sh
-node build.mjs
-```
+Neue Pläne enthalten eine Workflow-Empfehlung (Feature, Bugfix, Refactoring oder Dokumentation). Offene Pläne dienen direkt `/firmo build`, `/firmo fix`, `/firmo refactor` oder `/firmo docs` als Grundlage; alternativ liest `/firmo apply` die Empfehlung aus und übergibt an den passenden Workflow. Doku-Pläne führen im Kopf zusätzlich `**Doku-Kategorie:**` und `**Ziel-Pfad:**`. Die vier Doku-Kategorien `user-guide`, `developer-guide`, `operations` und `runbooks` sind in `skills/_shared/doc-categories.md` definiert.
 
 ## Goal-getriebene Abschlusssteuerung
 
-Die Workflow-Skills `sf-build`, `sf-fix`, `sf-refactor`, `sf-docs` und `sf-maintain` binden den gemeinsamen Baustein `skills/_shared/goal-completion.md` ein. Er fasst die internen „wiederhole bis fertig"-Schleifen zu einem einheitlichen Muster zusammen: eine vorab deklarierte, messbare Abschlussbedingung, unabhängige Verifikation über die im jeweiligen Workflow vorgesehenen Prüfungen (`sf-code-validator` und, falls eine Review-Phase existiert, der passende Reviewer) sowie ein beschränkter Korrektur-Loop, der bei anhaltendem Fehlschlag an den User eskaliert statt unbegrenzt zu wiederholen.
+Die Workflow-Tools `build`, `fix`, `refactor`, `docs` und `maintain` binden den gemeinsamen Baustein `skills/_shared/goal-completion.md` ein. Er fasst die internen „wiederhole bis fertig"-Schleifen zu einem einheitlichen Muster zusammen: eine vorab deklarierte, messbare Abschlussbedingung, unabhängige Verifikation über die im jeweiligen Workflow vorgesehenen Prüfungen (`code-validator` und, falls eine Review-Phase existiert, der passende Reviewer) sowie ein beschränkter Korrektur-Loop, der bei anhaltendem Fehlschlag an den User eskaliert statt unbegrenzt zu wiederholen.
 
-Zusätzlich stellt jeder dieser Workflows an seiner Freigabe-Grenze eine **explizite Goal-Abfrage**: Ja/Nein-Freigaben erhalten eine dritte Option „Autonom via `/goal`", Auswahl-Gates eine knappe Folgefrage. Wählt der User die autonome Option, gibt der Workflow einen copy-paste-baren `/goal`-String aus, den man als neue Eingabe einfügt, um die verbleibenden Phasen unter dem nativen `/goal` (Codex und Claude Code) autonom laufen zu lassen; andernfalls läuft der Workflow unverändert gated weiter. Die Approval-Gates bleiben in jedem Fall erhalten. Läuft ein Workflow als nicht-interaktiver Sub-Agent von `sf-apply-review`, entfällt die Goal-Abfrage – `sf-apply-review` steuert den autonomen Lauf an seinem eigenen Gate; die Übergabe durch `sf-apply-plan` zählt nicht als solche Delegation. `sf-review` und `sf-plan` nutzen nur die explizite, unabhängig geprüfte Abschlussbedingung ohne Autonom-Loop und ohne `/goal`-String.
-
-`sf-apply-review` bindet den Baustein ebenfalls ein: Es bündelt Commit-Strategie und die Stash-Behandlung (`applyReview.stashPolicy`) zu einem einzigen Up-front-Strategie-Gate in Phase 2, begrenzt den finalen Validierungs-Loop und gibt danach den `/goal`-String für die Phasen 3–8 aus. Mit `stashPolicy: keep` läuft die Finding-Abarbeitung ohne reguläre Rückfrage; verbleibende Stopps sind nur konfliktbedingte Eskalationen (z. B. ein `apply`-Merge-Konflikt bei der Stash-Bereinigung oder ein risikoreicher Cherry-Pick-Konflikt bei der Strategie „Einzeln mit Worktrees"). Der Default `interactive` erhält das bisherige Pro-Stash-Nachfragen.
+Zusätzlich stellt jeder dieser Workflows an seiner Freigabe-Grenze eine **explizite Goal-Abfrage**: Ja/Nein-Freigaben erhalten eine dritte Option „Autonom via `/goal`", Auswahl-Gates eine knappe Folgefrage. Wählt der User die autonome Option, gibt der Workflow einen copy-paste-baren `/goal`-String aus, den man als neue Eingabe einfügt, um die verbleibenden Phasen unter dem nativen `/goal` (Codex und Claude Code) autonom laufen zu lassen; andernfalls läuft der Workflow unverändert gated weiter. Die Approval-Gates bleiben in jedem Fall erhalten. Läuft ein Workflow als nicht-interaktiver Sub-Agent von `apply` (Review-Modus), entfällt die Goal-Abfrage. `review` und `plan` nutzen nur die explizite, unabhängig geprüfte Abschlussbedingung ohne Autonom-Loop.
 
 ## Worktree-Integration
 
-Die Code-ändernden Workflows `sf-build`, `sf-fix`, `sf-refactor`, `sf-docs` und `sf-maintain` binden den gemeinsamen Baustein `skills/_shared/worktree-integration.md` ein. Er verknüpft diese Workflows optional mit Git-Worktrees und Pull-Requests, damit parallel auf dem lokalen Repo gearbeitet werden kann. Der Modus ist **opt-in** über `worktree.enabled` in `.sf-plugin/config.json` und standardmäßig deaktiviert; ist er aus, verhalten sich die Workflows unverändert – keine Worktree-Erzeugung und keine erzwungenen Commits. Einziger Unterschied: existiert bereits eine `.sf-plugin/config.json`, ergänzen die Workflows den `worktree`-Block einmalig nicht-destruktiv (Migration), wie bei den übrigen Config-Blöcken.
+Die Code-ändernden Workflows `build`, `fix`, `refactor`, `docs` und `maintain` binden den gemeinsamen Baustein `skills/_shared/worktree-integration.md` ein. Er verknüpft diese Workflows optional mit Git-Worktrees und Pull-Requests, damit parallel auf dem lokalen Repo gearbeitet werden kann. Der Modus ist **opt-in** über `worktree.enabled` in `.firmo/config.json` und standardmäßig deaktiviert; ist er aus, verhalten sich die Workflows unverändert.
 
-Bei aktivem Modus erzeugt der Workflow zu Beginn einen Git-Worktree auf dem konfigurierbaren Basis-Branch (`worktree.baseBranch`, Default `origin/main`) und führt dort alle Umsetzungs-, Test-, Validierungs- und Doku-Phasen aus. In der Abschlussphase committet er die Arbeit (über die `sf-commit`-Logik), zieht den Worktree zurück (das Verzeichnis wird entfernt, der Liefer-Branch bleibt im lokalen Repo) und führt die Abschluss-Aktion aus: einen Pull-Request über `sf-pr`, einen lokalen Merge auf den Basis-Branch oder nur den belassenen Branch. Die Aktion steuert `worktree.completion`; ohne gültigen Wert wird gefragt. Dieser Mechanismus ist getrennt vom per-Finding-Worktree von `sf-apply-review` (`applyReview.worktree`).
+Bei aktivem Modus erzeugt der Workflow zu Beginn einen Git-Worktree auf dem konfigurierbaren Basis-Branch (`worktree.baseBranch`, Default `origin/main`) und führt dort alle Umsetzungs-, Test-, Validierungs- und Doku-Phasen aus. In der Abschlussphase committet er die Arbeit (über die `commit`-Logik), zieht den Worktree zurück und führt die Abschluss-Aktion aus (`worktree.completion`): einen Pull-Request über `pr`, einen lokalen Merge auf den Basis-Branch oder nur den belassenen Branch. Die Plan-Datei reist in ihrem finalen Zustand mit in den Liefer-Branch; nur die reine Firmo-Buchhaltung unter `.firmo/` (`memory.json`, Review-Reports, Wisdom-Datei) bleibt außerhalb des PRs im Haupt-Repo.
 
-Die Plan-Datei unter `docs/plan/` reist in ihrem finalen Zustand mit in den Liefer-Branch bzw. PR: Sie wird weiterhin im Haupt-Repo autorisiert (Nummern-Reservierung, Statusaktualisierung), ihr finaler Stand aber beim Handback in den Worktree übernommen und dort mitcommittet, damit der Plan zusammen mit dem Code eingebracht wird und nicht uncommittet im Haupt-Repo liegen bleibt. Nur die reine Plugin-Buchhaltung unter `.sf-plugin/` (`memory.json`, Review-Reports, Wisdom-Datei) bleibt außerhalb des PRs im Haupt-Repo.
+## Konfiguration
 
-## Plugin-Konfiguration
+Projektlokale Laufzeitdaten liegen unter `.firmo/` im Zielprojekt:
 
-Projektlokale Laufzeitdaten liegen unter `.sf-plugin/` im Zielprojekt:
+| Datei                | Zweck                                                                                                                                                                           |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.firmo/config.json` | Optionale Workflow-Defaults für Review, Apply-Review, Plan-Erstellung, Worktree-Integration und Issue-Tracker (z. B. `plan.markerLanguage`, `worktree.enabled`, `tracker.mode`) |
+| `.firmo/memory.json` | Persistente Workflow-Zähler und Config-Migrationsstatus                                                                                                                         |
+| `.firmo/cache.json`  | Invalidierbare Cache-Daten für wiederholte Reviews und Apply-Review-Läufe                                                                                                       |
+| `.firmo/review/`     | Review-Reports                                                                                                                                                                  |
 
-| Datei                    | Zweck                                                                                                                                                                           |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `.sf-plugin/config.json` | Optionale Workflow-Defaults für Review, Apply-Review, Plan-Erstellung, Worktree-Integration und Issue-Tracker (z. B. `plan.markerLanguage`, `worktree.enabled`, `tracker.mode`) |
-| `.sf-plugin/memory.json` | Persistente Workflow-Zähler und Config-Migrationsstatus                                                                                                                         |
-| `.sf-plugin/cache.json`  | Invalidierbare Cache-Daten für wiederholte Reviews und Apply-Review-Läufe                                                                                                       |
-| `.sf-plugin/review/`     | Review-Reports                                                                                                                                                                  |
+Die Tools funktionieren ohne `config.json`. Zum proaktiven Anlegen oder Anpassen dient `/firmo setup`: Es trägt den Laufzeit-Status unter `.firmo/` in die `.gitignore` ein (`.firmo/*` plus `!.firmo/config.json`), sodass `memory.json`, `cache.json`, Review-Reports und Worktrees ignoriert werden, `.firmo/config.json` als geteilte Projekt-Konfiguration aber getrackt bleibt. Eine bereits vorhandene pauschale `.firmo/`- oder Alt-`.sf-plugin/`-Zeile migriert es auf dieses Pattern. Die `config.json` pflegt es interaktiv über Presets oder einen Detailmodus, nicht-destruktiv für vorhandene Werte.
 
-Die Skills funktionieren ohne `config.json`. Zum proaktiven Anlegen oder Anpassen der Datei dient `sf-setup` (`/setup`): Es trägt den Laufzeit-Status unter `.sf-plugin/` in die `.gitignore` ein (`.sf-plugin/*` plus `!.sf-plugin/config.json`), sodass `memory.json`, `cache.json`, Review-Reports und Worktrees ignoriert werden, `.sf-plugin/config.json` als geteilte Projekt-Konfiguration aber getrackt bleibt; eine bereits vorhandene pauschale `.sf-plugin/`-Zeile migriert es auf dieses Pattern. Die `config.json` selbst pflegt es interaktiv über Presets oder einen Detailmodus, nicht-destruktiv für vorhandene Werte. Wenn eine bestehende Config neue Schlüssel noch nicht enthält, migrieren `sf-review`, `sf-apply-review` und `sf-plan` sowie die Code-ändernden Workflows (für den `worktree`-Block) fehlende Defaults nicht-destruktiv und melden die ergänzten Schlüssel. Da `worktree.enabled` per Default `false` und `tracker.mode` per Default `local` ist, bleiben Worktree-Integration und Remote-Issue-Tracker auch nach automatischer Migration deaktiviert. Der Migrationsstatus wird in `memory.json` gespeichert; wiederverwendbare Cache-Daten liegen separat in `cache.json`.
+Ein Zielprojekt, das zuvor `.sf-plugin/` genutzt hat, wird beim ersten Firmo-Lauf, der Laufzeitdaten schreibt, **einmalig und nicht-destruktiv** nach `.firmo/` migriert (Inhalt kopiert, `.sf-plugin/` bleibt erhalten); bis dahin liest Firmo das alte Verzeichnis als Fallback. Details siehe `skills/_shared/firmo-dir-migration.md`.
 
-`sf-plan` nutzt `plan.markerLanguage` (`"de"` oder `"en"`), um die Sprache des kanonischen Statusmarkers neuer Plan-Dateien zu bestimmen. Reihenfolge: Config-Eintrag gewinnt; sonst leitet `sf-plan` die Sprache aus den vorhandenen Plan-Dateien ab; sonst fragt es per `AskUserQuestion` und bietet an, die Wahl zu persistieren. Bei eindeutiger Detection und existierender Config ohne den Schlüssel wird er nicht-destruktiv ergänzt.
+`plan` nutzt `plan.markerLanguage` (`"de"` oder `"en"`), um die Markersprache neuer Plan-Dateien zu bestimmen (Config gewinnt; sonst Detection aus vorhandenen Plänen; sonst Rückfrage mit optionaler Persistenz).
 
-`sf-review` und `sf-apply-review` binden den gemeinsamen Baustein `skills/_shared/issue-tracker.md` ein und steuern über `tracker.mode` (`"local"` oder `"remote"`, Default `local`), ob Findings lokal als Markdown-Report unter `.sf-plugin/review/` oder remote als Issues geführt werden. Der Modus ist **opt-in** und standardmäßig `local`; ist er nicht gesetzt, fragen beide Skills beim ersten Aufruf einmalig nach und persistieren die Wahl. Im Remote-Modus erkennt das Plugin das Werkzeug automatisch aus der `origin`-URL (GitHub über `gh`, sonst Forgejo über `tea`); `tracker.remoteToolOverride` (`auto`/`github`/`forgejo`) erzwingt bei mehrdeutigen Hosts wie GitHub Enterprise ein Werkzeug. `sf-review` legt dann pro neuem Finding ein Issue und je Lauf ein neues Epic mit abhakbarer Finding-Liste an (inhaltlicher Dedup gegen bestehende Finding-Issues, kein lokaler Report); `sf-apply-review` nimmt ein Epic-Issue oder eine Liste konkreter Finding-Issues entgegen, erstellt pro Finding einen Pull-Request (`Closes #…`) und hakt den Epic-Eintrag nach PR-Erstellung ab. Findings mit Label `wontfix` werden als ADR dokumentiert statt umgesetzt.
-
-`sf-apply-issues` und `sf-plan-issues` binden dieselbe `skills/_shared/issue-tracker.md` ein, nutzen davon aber nur die werkzeug-generische Plumbing (Host-/CLI-Erkennung, Operation-Mapping) und sind **inhärent remote** — sie werten `tracker.mode` nicht aus und verarbeiten **beliebige** Menschen-Issues statt strukturierter Finding-Issues. `sf-apply-issues` nimmt eine oder mehrere Issue-Referenzen entgegen (Container-Issues mit Sub-Issue-Checkliste werden auf die offenen `- [ ]`-Einträge expandiert), analysiert und klassifiziert jeden Issue-Inhalt (Feature/Bugfix/Refactoring/Doku) und routet ausreichend spezifizierte Issues direkt an `sf-build`, `sf-fix`, `sf-refactor` oder `sf-docs` — je ein Worktree/PR pro Issue, PR-Link als Kommentar, Label `sf-issue-done`, Epic-Checkbox abgehakt. Reicht die Information nicht für eine autonome Umsetzung, wird das Issue mit Label `sf-needs-planning` übersprungen und per Kommentar erklärt. `sf-plan-issues` sammelt diese Issues ein, vervollständigt die Planung interaktiv nach der `sf-plan`-Methodik, schreibt das Ergebnis als Kommentar zurück und entfernt das Label — ohne Code oder `docs/plan/`-Datei. Alle Status-Updates laufen als Issue-Kommentare.
+`review` und `apply` (Review-Modus) binden den gemeinsamen Baustein `skills/_shared/issue-tracker.md` ein und steuern über `tracker.mode` (`"local"`/`"remote"`, Default `local`), ob Findings lokal als Markdown-Report unter `.firmo/review/` oder remote als Issues geführt werden. Der Modus ist **opt-in**. Im Remote-Modus erkennt Firmo das Werkzeug automatisch aus der `origin`-URL (GitHub über `gh`, sonst Forgejo über `tea`); `tracker.remoteToolOverride` (`auto`/`github`/`forgejo`) erzwingt bei mehrdeutigen Hosts ein Werkzeug. Die Tracker-Labels behalten bewusst den `sf-`-Präfix (`sf-review-finding`, `sf-review-epic`, `sf-issue-done`, `sf-needs-planning` sowie die Aktions-Labels `sf-fix`/`sf-refactor`/`sf-build`/`sf-docs`), da sie stabile Label-Bezeichner im Tracker sind.
 
 Sicheres Default-Verhalten:
 
@@ -198,7 +206,7 @@ Sicheres Default-Verhalten:
     "finalValidation": "full",
     "stashPolicy": "interactive",
     "worktree": {
-      "baseDir": ".sf-plugin/.worktrees",
+      "baseDir": ".firmo/.worktrees",
       "setup": "auto"
     }
   },
@@ -208,10 +216,10 @@ Sicheres Default-Verhalten:
   "worktree": {
     "enabled": false,
     "baseBranch": "origin/main",
-    "branchPrefix": "sf",
+    "branchPrefix": "firmo",
     "completion": null,
     "setup": "auto",
-    "baseDir": ".sf-plugin/.worktrees"
+    "baseDir": ".firmo/.worktrees"
   },
   "tracker": {
     "mode": "local",
@@ -220,68 +228,29 @@ Sicheres Default-Verhalten:
 }
 ```
 
-Schneller persönlicher Review-/Apply-Review-Workflow:
-
-```json
-{
-  "review": {
-    "profile": "fast",
-    "autoConfirmScope": true,
-    "designDecisionSources": "standard",
-    "validation": "quick"
-  },
-  "applyReview": {
-    "defaultCommitStrategy": "worktrees",
-    "finalValidation": "changedScope",
-    "stashPolicy": "keep",
-    "worktree": {
-      "baseDir": ".sf-plugin/.worktrees",
-      "setup": "none"
-    }
-  },
-  "tracker": {
-    "mode": "local"
-  }
-}
-```
-
-`cache.json` darf nur invalidierbare Vorarbeiten enthalten, z. B. extrahierte Designentscheidungen, Scope-Indizes, erkannte Validator-Skripte oder Apply-Review-Voranalysen. Finale Review-Findings, Konfliktentscheidungen und Stash-Entscheidungen werden nicht gecacht.
+`cache.json` darf nur invalidierbare Vorarbeiten enthalten (z. B. extrahierte Designentscheidungen, Scope-Indizes, erkannte Validator-Skripte). Finale Review-Findings, Konflikt- und Stash-Entscheidungen werden nicht gecacht.
 
 ## Struktur
 
 ```text
-sf-claude-plugin/
-├── skills/                          # Source (Platzhalter-Syntax)
+firmo/  (Repo)
+├── skills/                          # Source (Platzhalter-Syntax, sf-*-Präfix)
+│   ├── _router/SKILL.md             # Router-Template (Tool-Katalog + Dispatch)
 │   ├── _shared/                     # Gemeinsame Inhalte (`include`-Fence)
-│   │   ├── doc-categories.md        # Verzeichnis-Konvention für finale Dokumente
+│   │   ├── firmo-dir-migration.md   # .sf-plugin/ → .firmo/ Migration + Fallback
 │   │   ├── goal-completion.md       # Goal-getriebene Abschlusssteuerung + /goal-String
-│   │   ├── investigation-method.md  # Read-only-Investigation-Kern (sf-fix, sf-investigate)
-│   │   ├── issue-tracker.md         # Opt-in Remote-Modus: Findings als Issues (sf-review, sf-apply-review)
-│   │   ├── language-rules.md        # Zentrale Sprach- und Typografie-Regeln
-│   │   ├── wisdom-accumulation.md   # Wisdom-Accumulation-Baustein (sf-fix, sf-investigate)
-│   │   └── worktree-integration.md  # Opt-in Worktree + PR/Merge für Code-Workflows
-│   ├── sf-apply-plan/SKILL.md       # type: orchestrator
-│   ├── sf-build/SKILL.md            # type: orchestrator
-│   ├── sf-docs/SKILL.md             # type: orchestrator
-│   ├── sf-plan/SKILL.md             # type: orchestrator
-│   ├── sf-ui-implementer/SKILL.md   # type: agent
+│   │   ├── issue-tracker.md         # Opt-in Remote-Modus: Findings als Issues
+│   │   ├── worktree-integration.md  # Opt-in Worktree + PR/Merge für Code-Workflows
+│   │   └── ...
+│   ├── sf-build/SKILL.md            # type: orchestrator → Tool `build`
+│   ├── sf-ui-implementer/SKILL.md   # type: agent        → Agent `ui-implementer`
 │   └── ...
-├── docs/                            # Projekt-Dokumentation (im Zielprojekt)
+├── docs/                            # Projekt-Dokumentation
 │   ├── plan/                        # Implementierungspläne mit NNNN-Schema
-│   ├── user-guide/                  # End-User-Dokumentation, README.md als Einstieg
-│   ├── developer-guide/             # Entwickler-Dokumentation, Architektur, Contribution
-│   ├── operations/                  # Betrieb, Deployment, Monitoring, Infrastruktur
-│   └── runbooks/                    # Step-by-Step-Prozeduren, optionale Sub-Topics
+│   ├── user-guide/ developer-guide/ operations/ runbooks/
 ├── dist/                            # Generiert (gitignored)
-│   ├── codex/
-│   │   ├── skills/sf-*/SKILL.md     # Orchestratoren + Utilities
-│   │   └── agents/sf-*.toml         # Worker als Custom Agents
-│   └── claude/
-│       └── sf-claude-plugin/
-│           ├── .claude-plugin/marketplace.json
-│           └── plugins/sf-frontend-workflows/
-│               ├── commands/*.md     # Orchestratoren + Utilities
-│               └── agents/*.md       # Worker als Agents
+│   ├── claude/firmo/                # Router-SKILL.md + tools/*.md + agents/*.md
+│   └── codex/firmo/                 # Router-SKILL.md + tools/*.md + agents/*.toml
 ├── build.mjs
 ├── local-update.sh
 └── local-link.sh
@@ -289,7 +258,9 @@ sf-claude-plugin/
 
 ## Source-Frontmatter
 
-### Orchestratoren
+Die Quell-Verzeichnisse tragen weiterhin den `sf-`-Präfix und ein `name`-Feld mit Präfix; beides ist rein historisch, der Build entfernt den Präfix und leitet die Tool-/Agent-Namen aus dem Verzeichnisnamen ab.
+
+### Tools (Orchestrator/Utility)
 
 ```yaml
 ---

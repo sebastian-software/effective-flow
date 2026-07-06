@@ -1,7 +1,7 @@
 {
-  "name": "sf-claude-plugin",
+  "name": "firmo",
   "private": true,
-  "description": "Dual-platform workflow skills for Codex and Claude Code, built from a single source",
+  "description": "Firmo — single-source, lazy-loading /firmo <tool> skill set for Codex and Claude Code",
   "scripts": {
     "build": "node build.mjs",
     "format": "oxfmt",

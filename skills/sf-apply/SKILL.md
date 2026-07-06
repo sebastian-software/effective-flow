@@ -1,10 +1,10 @@
 ---
-name: sf-apply
+name: apply
 description: "Nimmt eine beliebige Apply-Quelle (Plan-Datei, Review-Report, GitHub-/Forgejo-Issue oder Review-Epic) entgegen, klassifiziert sie über die gemeinsame Apply-Quellen-Erkennung und delegiert an den zuständigen Skill {{SKILL:sf-apply-plan}}, {{SKILL:sf-apply-review}} oder {{SKILL:sf-apply-issues}}. Reine Routing-Schicht ohne eigene Umsetzung."
 type: orchestrator
 ---
 
-# SF Apply
+# Firmo Apply
 
 Du bist der Einstiegs-Router, der eine beliebige Apply-Quelle klassifiziert und an den
 passenden Umsetzungs-Skill weitergibt.
@@ -56,7 +56,7 @@ issue-tracker
 3. Behandle die Sonderergebnisse:
    - **`none` (kein Argument):** liste lokale Kandidaten – offene Pläne aus
      `docs/plan/` (Status `**Planungsstatus:** Nicht umgesetzt` bzw.
-     `**Plan status:** Not implemented`) und Report-Dateien unter `.sf-plugin/review/` –
+     `**Plan status:** Not implemented`) und Report-Dateien unter `.firmo/review/` –
      und frage den User nach der konkreten Quelle. Wähle nichts heuristisch aus.
    - **`ambiguous`:** benenne die konkurrierenden Deutungen und frage nach.
    - **Gemischte Issue-Liste:** wenn die übergebenen Issue-Referenzen zu

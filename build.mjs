@@ -16,13 +16,43 @@ import { fileURLToPath } from 'node:url';
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
 const SOURCE_DIR = join(ROOT_DIR, 'skills');
 const SHARED_DIR = join(SOURCE_DIR, '_shared');
+const ROUTER_SRC = join(SOURCE_DIR, '_router', 'SKILL.md');
 const DIST_CODEX = join(ROOT_DIR, 'dist', 'codex');
 const DIST_CLAUDE = join(ROOT_DIR, 'dist', 'claude');
 
-const CLAUDE_PLUGIN_NAME = 'sf-frontend-workflows';
-const CLAUDE_MARKETPLACE_NAME = 'sf-claude-plugin';
-const CLAUDE_MARKETPLACE_DIR = join(DIST_CLAUDE, CLAUDE_MARKETPLACE_NAME);
-const CLAUDE_PLUGIN_DIR = join(CLAUDE_MARKETPLACE_DIR, 'plugins', CLAUDE_PLUGIN_NAME);
+const FIRMO_SKILL_NAME = 'firmo';
+const CODEX_SKILL_DIR = join(DIST_CODEX, FIRMO_SKILL_NAME);
+const CLAUDE_SKILL_DIR = join(DIST_CLAUDE, FIRMO_SKILL_NAME);
+
+// The tools exposed via `/firmo <tool>` (order = catalog order in the router).
+// Orchestrator/utility skills whose mapped name is not in this list are treated
+// as internal (built as tool files, but not listed in the router catalog).
+const EXPOSED_TOOLS = [
+  'build',
+  'fix',
+  'plan',
+  'refactor',
+  'docs',
+  'review',
+  'apply',
+  'plan-issue',
+  'maintain',
+  'commit',
+  'pr',
+  'setup',
+  'open-plans',
+  'investigate',
+  'version',
+];
+
+// Source short name (after stripping the `sf-` prefix) -> exposed tool name.
+const TOOL_NAME_OVERRIDES = {
+  'plan-issues': 'plan-issue',
+};
+
+function toolName(shortName) {
+  return TOOL_NAME_OVERRIDES[shortName] || shortName;
+}
 
 const versionPath = join(ROOT_DIR, 'version.txt');
 if (!existsSync(versionPath)) {
@@ -40,11 +70,10 @@ const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
 
 rmSync(DIST_CODEX, { recursive: true, force: true });
 rmSync(DIST_CLAUDE, { recursive: true, force: true });
-mkdirSync(join(DIST_CODEX, 'skills'), { recursive: true });
-mkdirSync(join(DIST_CODEX, 'agents'), { recursive: true });
-mkdirSync(join(CLAUDE_MARKETPLACE_DIR, '.claude-plugin'), { recursive: true });
-mkdirSync(join(CLAUDE_PLUGIN_DIR, 'commands'), { recursive: true });
-mkdirSync(join(CLAUDE_PLUGIN_DIR, 'agents'), { recursive: true });
+for (const dir of [CODEX_SKILL_DIR, CLAUDE_SKILL_DIR]) {
+  mkdirSync(join(dir, 'tools'), { recursive: true });
+  mkdirSync(join(dir, 'agents'), { recursive: true });
+}
 
 // --- Helper functions ---
 
@@ -147,7 +176,17 @@ function stripPrefix(name) {
 }
 
 function cleanDescription(desc) {
-  return desc.replace(/\{\{SKILL:([^}]+)\}\}/g, '$1').replace(/\{\{AGENT:([^}]+)\}\}/g, '$1');
+  return desc
+    .replace(/\{\{SKILL:sf-([^}]+)\}\}/g, '$1')
+    .replace(/\{\{SKILL:([^}]+)\}\}/g, '$1')
+    .replace(/\{\{AGENT:sf-([^}]+)\}\}/g, '$1')
+    .replace(/\{\{AGENT:([^}]+)\}\}/g, '$1');
+}
+
+function firstSentence(text) {
+  const cleaned = cleanDescription(text).trim();
+  const match = cleaned.match(/^(.*?[.!?])(\s|$)/s);
+  return (match ? match[1] : cleaned).trim();
 }
 
 function tomlString(value) {
@@ -185,20 +224,18 @@ function resolveIncludes(body) {
   });
 }
 
-// --- Placeholder transforms ---
-
-function transformClaude(body) {
+// --- Reference transforms ---
+//
+// {{SKILL:sf-X}} -> `/firmo <name>` for exposed tools, or `` `tools/<name>.md` ``
+//                  for internal tools (loaded on demand by `apply`).
+// {{AGENT:sf-X}} -> `` `<name>` `` (nested subagent under agents/).
+function transformRefs(body) {
   return body
-    .replace(/\{\{SKILL:sf-([^}]+)\}\}/g, '/$1')
-    .replace(/\{\{AGENT:sf-([^}]+)\}\}/g, '/$1');
-}
-
-function transformCodexSkill(body) {
-  return body.replace(/\{\{SKILL:([^}]+)\}\}/g, '$$$1').replace(/\{\{AGENT:([^}]+)\}\}/g, '$1');
-}
-
-function transformCodexAgent(body) {
-  return body.replace(/\{\{SKILL:([^}]+)\}\}/g, '$1').replace(/\{\{AGENT:([^}]+)\}\}/g, '$1');
+    .replace(/\{\{SKILL:sf-([^}]+)\}\}/g, (_, raw) => {
+      const name = toolName(raw);
+      return EXPOSED_TOOLS.includes(name) ? `/firmo ${name}` : `\`tools/${name}.md\``;
+    })
+    .replace(/\{\{AGENT:sf-([^}]+)\}\}/g, (_, raw) => `\`${raw}\``);
 }
 
 // --- ASK block transforms ---
@@ -266,7 +303,14 @@ function transformAskCodex(body) {
   });
 }
 
-// --- Build loop ---
+// Full body pipeline per harness: resolve version, ask blocks, then references.
+function renderBody(resolvedBody, harness) {
+  const withAsk =
+    harness === 'codex' ? transformAskCodex(resolvedBody) : transformAskClaude(resolvedBody);
+  return transformRefs(withAsk);
+}
+
+// --- Collect sources ---
 
 const skillDirs = readdirSync(SOURCE_DIR)
   .filter((name) => name.startsWith('sf-'))
@@ -277,6 +321,9 @@ if (skillDirs.length === 0) {
   process.stderr.write(`ERROR: No sf-* skill directories found in ${SOURCE_DIR}\n`);
   process.exit(1);
 }
+
+const tools = []; // { name, description, body }
+const agents = []; // { name, fm, body }
 
 try {
   for (const skillDir of skillDirs) {
@@ -296,70 +343,107 @@ try {
     const description = getField(fm, 'description');
 
     if (skillType === 'orchestrator' || skillType === 'utility') {
-      // --- Codex: Skill (SKILL.md) ---
-      const codexDir = join(DIST_CODEX, 'skills', skillName);
-      mkdirSync(codexDir, { recursive: true });
-      const codexBody = transformCodexSkill(transformAskCodex(body));
-      const codexContent = [
-        '---',
-        `name: ${skillName}`,
-        `description: "${cleanDescription(description)}"`,
-        '---',
-        codexBody,
-      ].join('\n');
-      writeFileSync(join(codexDir, 'SKILL.md'), codexContent);
-
-      // --- Claude Code: Command ---
-      const claudeDesc = cleanDescription(description).replace(/"/g, '\\"');
-      const claudeBody = transformClaude(transformAskClaude(body));
-      const claudeContent = ['---', `description: "${claudeDesc}"`, '---', claudeBody].join('\n');
-      writeFileSync(join(CLAUDE_PLUGIN_DIR, 'commands', `${shortName}.md`), claudeContent);
+      tools.push({ name: toolName(shortName), description, body });
     } else if (skillType === 'agent') {
-      // --- Codex: Custom Agent (TOML) ---
-      const codexModel = getNested(fm, 'codex', 'model');
-      const codexEffort = getNested(fm, 'codex', 'model_reasoning_effort');
-      const codexSandbox = normalizeCodexSandboxMode(
-        getNested(fm, 'codex', 'sandbox_mode'),
-        skillName,
-      );
-      const tomlDesc = cleanDescription(description);
-      const tomlBody = transformCodexAgent(transformAskCodex(body));
-
-      let toml = `name = ${tomlString(skillName)}\n`;
-      toml += `description = ${tomlString(tomlDesc)}\n`;
-      if (codexModel) toml += `model = ${tomlString(codexModel)}\n`;
-      if (codexEffort) toml += `model_reasoning_effort = ${tomlString(codexEffort)}\n`;
-      if (codexSandbox) toml += `sandbox_mode = ${tomlString(codexSandbox)}\n`;
-      toml += `developer_instructions = '''\n${tomlBody.replace(/\n+$/, '')}\n'''\n`;
-      writeFileSync(join(DIST_CODEX, 'agents', `${skillName}.toml`), toml);
-
-      // --- Claude Code: Agent ---
-      const claudeModel = getNested(fm, 'claude', 'model');
-      const claudeColor = getNested(fm, 'claude', 'color');
-      const claudeTools = getNestedArray(fm, 'claude', 'tools');
-      const claudeSkills = getNestedList(fm, 'claude', 'skills');
-
-      const agentDesc = cleanDescription(description).replace(/"/g, '\\"');
-      let agentFm = '---\n';
-      agentFm += `name: ${shortName}\n`;
-      agentFm += `description: "${agentDesc}"\n`;
-      if (claudeModel) agentFm += `model: ${claudeModel}\n`;
-      if (claudeColor) agentFm += `color: ${claudeColor}\n`;
-      if (claudeTools) {
-        const toolList = claudeTools
-          .split(',')
-          .map((t) => t.trim())
-          .filter(Boolean)
-          .join(', ');
-        agentFm += `tools: ${toolList}\n`;
-      }
-      if (claudeSkills) agentFm += `skills:\n${claudeSkills}\n`;
-      agentFm += '---\n';
-
-      const agentBody = transformClaude(transformAskClaude(body));
-      writeFileSync(join(CLAUDE_PLUGIN_DIR, 'agents', `${shortName}.md`), agentFm + agentBody);
+      agents.push({ name: shortName, fm, body });
     } else {
       throw new Error(`Unknown type "${skillType}" for ${skillName}`);
+    }
+  }
+
+  // Sanity check: every exposed tool must exist.
+  const builtToolNames = new Set(tools.map((t) => t.name));
+  for (const name of EXPOSED_TOOLS) {
+    if (!builtToolNames.has(name)) {
+      throw new Error(`Exposed tool "${name}" has no matching skill source`);
+    }
+  }
+
+  // --- Router template ---
+
+  if (!existsSync(ROUTER_SRC)) {
+    throw new Error(`Router template not found: ${ROUTER_SRC}`);
+  }
+  const routerRaw = normalizeLineEndings(readFileSync(ROUTER_SRC, 'utf8'));
+  const routerFm = extractFrontmatter(routerRaw);
+  const routerName = getField(routerFm, 'name') || FIRMO_SKILL_NAME;
+  const routerDesc = getField(routerFm, 'description');
+  const routerBodyRaw = resolveIncludes(extractBody(routerRaw)).replace(
+    /\{\{VERSION\}\}/g,
+    VERSION_STRING,
+  );
+
+  const catalog = EXPOSED_TOOLS.map((name) => {
+    const t = tools.find((x) => x.name === name);
+    return `- \`/firmo ${name}\` — ${firstSentence(t.description)}`;
+  }).join('\n');
+
+  // --- Per-harness output ---
+
+  for (const harness of ['claude', 'codex']) {
+    const skillDir = harness === 'claude' ? CLAUDE_SKILL_DIR : CODEX_SKILL_DIR;
+
+    // Router SKILL.md
+    const routerBody = renderBody(routerBodyRaw.replace(/\{\{TOOL_CATALOG\}\}/g, catalog), harness);
+    const routerContent = [
+      '---',
+      `name: ${routerName}`,
+      `description: "${routerDesc}"`,
+      '---',
+      routerBody,
+    ].join('\n');
+    writeFileSync(join(skillDir, 'SKILL.md'), routerContent);
+
+    // Tools (exposed + internal), no frontmatter — loaded on demand by the router.
+    for (const t of tools) {
+      writeFileSync(join(skillDir, 'tools', `${t.name}.md`), renderBody(t.body, harness));
+    }
+
+    // Agents (nested subagents)
+    for (const a of agents) {
+      if (harness === 'claude') {
+        const claudeModel = getNested(a.fm, 'claude', 'model');
+        const claudeColor = getNested(a.fm, 'claude', 'color');
+        const claudeTools = getNestedArray(a.fm, 'claude', 'tools');
+        const claudeSkills = getNestedList(a.fm, 'claude', 'skills');
+        const agentDesc = cleanDescription(getField(a.fm, 'description')).replace(/"/g, '\\"');
+
+        let agentFm = '---\n';
+        agentFm += `name: ${a.name}\n`;
+        agentFm += `description: "${agentDesc}"\n`;
+        if (claudeModel) agentFm += `model: ${claudeModel}\n`;
+        if (claudeColor) agentFm += `color: ${claudeColor}\n`;
+        if (claudeTools) {
+          const toolList = claudeTools
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean)
+            .join(', ');
+          agentFm += `tools: ${toolList}\n`;
+        }
+        if (claudeSkills) agentFm += `skills:\n${claudeSkills}\n`;
+        agentFm += '---\n';
+        writeFileSync(
+          join(skillDir, 'agents', `${a.name}.md`),
+          agentFm + renderBody(a.body, 'claude'),
+        );
+      } else {
+        const codexModel = getNested(a.fm, 'codex', 'model');
+        const codexEffort = getNested(a.fm, 'codex', 'model_reasoning_effort');
+        const codexSandbox = normalizeCodexSandboxMode(
+          getNested(a.fm, 'codex', 'sandbox_mode'),
+          a.name,
+        );
+        const tomlDesc = cleanDescription(getField(a.fm, 'description'));
+
+        let toml = `name = ${tomlString(a.name)}\n`;
+        toml += `description = ${tomlString(tomlDesc)}\n`;
+        if (codexModel) toml += `model = ${tomlString(codexModel)}\n`;
+        if (codexEffort) toml += `model_reasoning_effort = ${tomlString(codexEffort)}\n`;
+        if (codexSandbox) toml += `sandbox_mode = ${tomlString(codexSandbox)}\n`;
+        toml += `developer_instructions = '''\n${renderBody(a.body, 'codex').replace(/\n+$/, '')}\n'''\n`;
+        writeFileSync(join(skillDir, 'agents', `${a.name}.toml`), toml);
+      }
     }
   }
 } catch (err) {
@@ -367,68 +451,26 @@ try {
   process.exit(1);
 }
 
-// --- marketplace.json for Claude Code ---
+// --- Version-drift guard: Claude and Codex router carry the same version ---
 
-const marketplace = {
-  $schema: 'https://anthropic.com/claude-code/marketplace.schema.json',
-  name: CLAUDE_MARKETPLACE_NAME,
-  description: 'Orchestrierte Frontend- und Backend-Workflows für Claude Code',
-  owner: { name: 'Sebastian Fastner' },
-  plugins: [
-    {
-      name: CLAUDE_PLUGIN_NAME,
-      version: VERSION,
-      source: `./plugins/${CLAUDE_PLUGIN_NAME}`,
-      description:
-        'Orchestrierte Workflows (build, apply, apply-plan, docs, plan, open-plans, fix, refactor, review, maintain, commit, pr, investigate, setup) mit spezialisierten Agents für Frontend, Backend, CLI und Node.js',
-      category: 'development',
-      tags: [
-        'frontend',
-        'backend',
-        'nodejs',
-        'cli',
-        'workflow',
-        'orchestration',
-        'review',
-        'testing',
-        'maintenance',
-        'git',
-        'pull-request',
-        'worktree',
-        'configuration',
-      ],
-      author: { name: 'Sebastian Fastner' },
-    },
-  ],
-};
-// Format with compact arrays to match original output
-let marketplaceJson = JSON.stringify(marketplace, null, 2);
-marketplaceJson = marketplaceJson.replace(/\[\n\s+("(?:[^"]*)",?\n\s*)+\]/g, (match) => {
-  const items = [...match.matchAll(/"([^"]*)"/g)].map((m) => `"${m[1]}"`);
-  return `[${items.join(', ')}]`;
-});
-writeFileSync(
-  join(CLAUDE_MARKETPLACE_DIR, '.claude-plugin', 'marketplace.json'),
-  marketplaceJson + '\n',
-);
+const claudeRouter = readFileSync(join(CLAUDE_SKILL_DIR, 'SKILL.md'), 'utf8');
+const codexRouter = readFileSync(join(CODEX_SKILL_DIR, 'SKILL.md'), 'utf8');
+if (!claudeRouter.includes(VERSION_STRING) || !codexRouter.includes(VERSION_STRING)) {
+  process.stderr.write(
+    `ERROR: version drift — expected "${VERSION_STRING}" in both router outputs\n`,
+  );
+  process.exit(1);
+}
 
 // --- Summary ---
 
-const codexSkills = readdirSync(join(DIST_CODEX, 'skills')).length;
-const codexAgents = readdirSync(join(DIST_CODEX, 'agents')).filter((f) =>
-  f.endsWith('.toml'),
-).length;
-const claudeCommands = readdirSync(join(CLAUDE_PLUGIN_DIR, 'commands')).filter((f) =>
-  f.endsWith('.md'),
-).length;
-const claudeAgents = readdirSync(join(CLAUDE_PLUGIN_DIR, 'agents')).filter((f) =>
-  f.endsWith('.md'),
-).length;
+const exposedCount = tools.filter((t) => EXPOSED_TOOLS.includes(t.name)).length;
+const internalCount = tools.length - exposedCount;
 
-process.stdout.write('Built:\n');
+process.stdout.write('Built firmo skill:\n');
 process.stdout.write(
-  `  Codex:      ${codexSkills} skills, ${codexAgents} agents  -> dist/codex/\n`,
+  `  Claude Code: ${exposedCount} tools (+${internalCount} internal), ${agents.length} agents -> dist/claude/${FIRMO_SKILL_NAME}/\n`,
 );
 process.stdout.write(
-  `  Claude Code: ${claudeCommands} commands, ${claudeAgents} agents -> dist/claude/${CLAUDE_MARKETPLACE_NAME}/\n`,
+  `  Codex:       ${exposedCount} tools (+${internalCount} internal), ${agents.length} agents -> dist/codex/${FIRMO_SKILL_NAME}/\n`,
 );

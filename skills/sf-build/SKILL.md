@@ -4,7 +4,7 @@ description: "Orchestriert den kompletten Feature-Workflow: Intent-Gate, Plan-Re
 type: orchestrator
 ---
 
-# SF Build
+# Firmo Build
 
 Du bist der Orchestrator für den kompletten Entwicklungs-Workflow für neue Features.
 
@@ -126,7 +126,7 @@ Erkenntnisse aus früheren Phasen müssen an spätere Phasen weitergegeben werde
 
 Erzeuge zu Beginn eine Session-ID, zum Beispiel via Timestamp. Verwende sie in:
 
-- `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`
+- `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
 ### Protokoll
 
@@ -215,7 +215,7 @@ Wenn ein offener Plan für `{{SKILL:sf-build}}` bestätigt ist:
 
 - überspringe Phase 1 vollständig
 - verwende die Inhalte der Plan-Datei als abgestimmten Implementierungsplan
-- leite aus den Akzeptanzkriterien und dem Validierungsplan die explizite Abschlussbedingung ab und stelle vor dem Start von Phase 2 die explizite Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe". Da Phase 1 hier übersprungen wird und keine Ja/Nein-Freigabe an dieser Grenze steht, ist es die eigenständige Ja/Nein-Folgefrage; bei Wahl „Autonom via /goal" den `/goal`-String für die Phasen 2–7 ausgeben. Die Abfrage entfällt, wenn der Workflow nicht-interaktiv delegiert wurde (z. B. durch `/apply-review`); die Übergabe durch `/apply-plan` zählt nicht als solche Delegation.
+- leite aus den Akzeptanzkriterien und dem Validierungsplan die explizite Abschlussbedingung ab und stelle vor dem Start von Phase 2 die explizite Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe". Da Phase 1 hier übersprungen wird und keine Ja/Nein-Freigabe an dieser Grenze steht, ist es die eigenständige Ja/Nein-Folgefrage; bei Wahl „Autonom via /goal" den `/goal`-String für die Phasen 2–7 ausgeben. Die Abfrage entfällt, wenn der Workflow nicht-interaktiv delegiert wurde (z. B. durch `/firmo apply-review`); die Übergabe durch `/firmo apply-plan` zählt nicht als solche Delegation.
 - starte direkt mit Phase 2
 
 Ein referenzierter ungebauter Plan ersetzt nur die Planungsphase. Initiale Zustandsdokumentation, Review-Report-Rückverweise, Implementierung, Dokumentation, Tests, Validierung, Review und Abschluss laufen weiterhin normal.
@@ -334,10 +334,10 @@ Hinweis: Vor Abschluss muss die Spalte „Offen" für „Kritisch" 0 sein.
    - Begründung bei Nicht-Umsetzung (inkl. ADR-Referenz, falls vorhanden)
 8. Lege in diesem Workflow niemals ein ADR an und frage auch nicht danach. Bewusst nicht umgesetzte Findings werden ausschließlich im Review-Report dokumentiert. Über die spätere Umsetzung oder über ein ADR für eine bewusste Nicht-Umsetzung entscheidet der Entwickler beim Durchgehen der Findings-Datei, typischerweise via {{SKILL:sf-apply-review}}.
 9. Wenn nach Review Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
-   - schreibe sie gemäß „Offene Review-Finding-Reports" in eine neue Datei unter `.sf-plugin/review/`
+   - schreibe sie gemäß „Offene Review-Finding-Reports" in eine neue Datei unter `.firmo/review/`
    - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-NNNN.md`
    - halte den erzeugten Reportpfad für Phase 7 fest
-10. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.sf-plugin/review/` umgesetzt hat:
+10. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.firmo/review/` umgesetzt hat:
 
 - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
 - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
@@ -368,7 +368,7 @@ Hinweis: Vor Abschluss muss die Spalte „Offen" für „Kritisch" 0 sein.
 ## Review-Findings
 
 **Datum:** YYYY-MM-DD
-**Reviewer:** [sf-frontend-reviewer / sf-nodejs-reviewer / beide / keiner]
+**Reviewer:** [frontend-reviewer / nodejs-reviewer / beide / keiner]
 
 ### Zusammenfassung
 
@@ -377,7 +377,7 @@ Hinweis: Vor Abschluss muss die Spalte „Offen" für „Kritisch" 0 sein.
 | Behoben | X |
 | Offen / Nicht umgesetzt | Y |
 
-**Externer Review-Report:** `.sf-plugin/review/review-report-YYYY-MM-DD-plan-NNNN.md` <!-- nur ausgeben, wenn offene Findings ausgelagert wurden -->
+**Externer Review-Report:** `.firmo/review/review-report-YYYY-MM-DD-plan-NNNN.md` <!-- nur ausgeben, wenn offene Findings ausgelagert wurden -->
 
 Keine Findings gefunden. <!-- nur ausgeben, wenn keine Findings aufgekommen sind -->
 ```

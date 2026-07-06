@@ -1,6 +1,6 @@
 ## Issue-Tracker-Anbindung (Remote-Modus)
 
-Dieser geteilte Baustein verbindet `{{SKILL:sf-review}}` und `{{SKILL:sf-apply-review}}` mit einem externen Issue-Tracker (GitHub über `gh`, Forgejo über `tea`). Er ist **opt-in** über `.sf-plugin/config.json` und standardmäßig deaktiviert (`local`). Im lokalen Modus verhalten sich beide Skills unverändert – Findings laufen über die Markdown-Report-Datei unter `.sf-plugin/review/`, es werden keine Issues erzeugt und kein CLI aufgerufen.
+Dieser geteilte Baustein verbindet `{{SKILL:sf-review}}` und `{{SKILL:sf-apply-review}}` mit einem externen Issue-Tracker (GitHub über `gh`, Forgejo über `tea`). Er ist **opt-in** über `.firmo/config.json` und standardmäßig deaktiviert (`local`). Im lokalen Modus verhalten sich beide Skills unverändert – Findings laufen über die Markdown-Report-Datei unter `.firmo/review/`, es werden keine Issues erzeugt und kein CLI aufgerufen.
 
 Er kapselt die **gemeinsamen** Bausteine: das `tracker`-Config-Schema samt Migration, die Modusbestimmung, die Host- und CLI-Erkennung, die Label-Konvention, die kanonischen Issue- und Epic-Body-Formate sowie das Mapping der Tracker-Operationen auf `gh`/`tea`. Die eigentliche Orchestrierung – wann Issues **erstellt** (`{{SKILL:sf-review}}`) und wann sie **gelesen und abgearbeitet** werden (`{{SKILL:sf-apply-review}}`) – bleibt im jeweiligen Skill.
 
@@ -8,7 +8,7 @@ Zusätzlich nutzen `{{SKILL:sf-apply-issues}}` und `{{SKILL:sf-plan-issues}}` di
 
 ### Konfiguration
 
-Der Remote-Modus funktioniert ohne Konfigurationsdatei (dann bleibt er deaktiviert, `local`). Falls `.sf-plugin/config.json` vorhanden ist, darf sie diese Defaults überschreiben:
+Der Remote-Modus funktioniert ohne Konfigurationsdatei (dann bleibt er deaktiviert, `local`). Falls `.firmo/config.json` vorhanden ist, darf sie diese Defaults überschreiben:
 
 ```json
 {
@@ -33,25 +33,25 @@ Gültige Werte:
 
 ### Config-Migration
 
-Führe diese Prüfung einmalig beim ersten Lesen der Config im Lauf aus – im selben Schritt wie die Modusbestimmung unten. Wenn `.sf-plugin/config.json` existiert, prüfe sie auf fehlende unterstützte `tracker`-Schlüssel.
+Führe diese Prüfung einmalig beim ersten Lesen der Config im Lauf aus – im selben Schritt wie die Modusbestimmung unten. Wenn `.firmo/config.json` existiert, prüfe sie auf fehlende unterstützte `tracker`-Schlüssel.
 
 - Ergänze fehlende Schlüssel mit den Defaults oben. Da `tracker.mode` per Default `local` ist, bleibt das Opt-in auch nach automatischer Migration gewahrt.
 - Erhalte vorhandene gültige Werte und unbekannte Schlüssel unverändert.
 - Lies die Datei direkt vor dem Schreiben erneut frisch ein, damit zwischenzeitliche Änderungen nicht überschrieben werden.
 - Wenn die Datei ungültiges JSON enthält: nicht schreiben, sichere Defaults für diesen Lauf verwenden und den User mit Pfad und Fehler informieren.
 - Wenn ein bekannter Schlüssel einen ungültigen Wert enthält: nicht überschreiben, sicheren Default für diesen Lauf verwenden und den User über den Schlüssel informieren.
-- Wenn die Migration Schlüssel ergänzt hat: teile dem User einmal in diesem Workflow-Lauf mit, dass `.sf-plugin/config.json` migriert wurde, und nenne die ergänzten Schlüssel.
-- Speichere nach erfolgreicher Migration den Status in `.sf-plugin/memory.json` unter `configMigration`, ohne vorhandene Felder wie `lastFindingNumber` zu verlieren.
+- Wenn die Migration Schlüssel ergänzt hat: teile dem User einmal in diesem Workflow-Lauf mit, dass `.firmo/config.json` migriert wurde, und nenne die ergänzten Schlüssel.
+- Speichere nach erfolgreicher Migration den Status in `.firmo/memory.json` unter `configMigration`, ohne vorhandene Felder wie `lastFindingNumber` zu verlieren.
 
-Wenn `.sf-plugin/config.json` nicht existiert, lege sie **nicht** nur für die Migration an.
+Wenn `.firmo/config.json` nicht existiert, lege sie **nicht** nur für die Migration an.
 
 ### Modus bestimmen
 
 Bestimme zu Beginn des Laufs den effektiven Modus in dieser Reihenfolge (die erste zutreffende Regel gewinnt):
 
-1. **Argumenttyp:** Der übergebene Argumenttyp überschreibt den Config-Modus für diesen Lauf. Eine Report-Datei (`*.md` unter `.sf-plugin/review/`) erzwingt `local`; eine Issue-Referenz (Issue-Nummer, `#123` oder eine Issue-URL) erzwingt `remote`.
+1. **Argumenttyp:** Der übergebene Argumenttyp überschreibt den Config-Modus für diesen Lauf. Eine Report-Datei (`*.md` unter `.firmo/review/`) erzwingt `local`; eine Issue-Referenz (Issue-Nummer, `#123` oder eine Issue-URL) erzwingt `remote`.
 2. **Per-Run-Wunsch des Users:** Verlangt der User ausdrücklich Issue-/Tracker-Arbeit, ist `remote` aktiv; verlangt er ausdrücklich lokale Arbeit („lokal", „ohne Issues", „nur Report"), ist `local` aktiv.
-3. **Config:** sonst gilt `tracker.mode` aus `.sf-plugin/config.json`.
+3. **Config:** sonst gilt `tracker.mode` aus `.firmo/config.json`.
 4. **Erstaufruf-Abfrage:** Ist `tracker.mode` nicht in der Config gesetzt und liefert weder Argument noch Per-Run-Wunsch ein Signal, führe die Erstaufruf-Abfrage unten aus.
 
 ### Erstaufruf-Abfrage und Persistenz
@@ -63,16 +63,16 @@ header: Tracker
 question: Sollen Review-Findings lokal als Markdown-Report oder remote als Issues (GitHub/Forgejo) geführt werden?
 options:
   - label: Lokal
-    description: tracker.mode = local — Markdown-Report unter .sf-plugin/review/ (bisheriges Verhalten)
+    description: tracker.mode = local — Markdown-Report unter .firmo/review/ (bisheriges Verhalten)
   - label: Remote
     description: tracker.mode = remote — Findings als Issues, Werkzeug automatisch aus origin (gh/tea)
 ```
 
-Persistiere die Wahl anschließend nicht-destruktiv in `.sf-plugin/config.json` unter `tracker.mode` (Muster wie `plan.markerLanguage` in `{{SKILL:sf-plan}}`):
+Persistiere die Wahl anschließend nicht-destruktiv in `.firmo/config.json` unter `tracker.mode` (Muster wie `plan.markerLanguage` in `{{SKILL:sf-plan}}`):
 
 - Lies eine vorhandene `config.json` direkt vor dem Schreiben frisch ein und ergänze nur `tracker.mode`, ohne andere Felder zu verändern.
 - Existiert die Datei nicht, lege sie minimal mit `{ "tracker": { "mode": "<wert>" } }` an.
-- Gib eine kurze Statusmeldung aus, z. B. „Tracker-Modus `remote` in `.sf-plugin/config.json` gespeichert."
+- Gib eine kurze Statusmeldung aus, z. B. „Tracker-Modus `remote` in `.firmo/config.json` gespeichert."
 - Schlägt das Schreiben fehl, gib einen knappen Hinweis aus und fahre mit dem gewählten Modus für diesen Lauf fort.
 
 ### Host- und CLI-Erkennung (nur Remote-Modus)

@@ -1,10 +1,10 @@
 ---
-name: sf-review
+name: review
 description: "Orchestriert ein umfassendes Code-Review: Scope-Bestimmung, Designentscheidungs-Erkennung, technische Validierung, fachliches Review, Findings-Qualitätsprüfung und Berichtserstellung mit Prompt-Vorschlägen für {{SKILL:sf-fix}}, {{SKILL:sf-refactor}}, {{SKILL:sf-build}} oder {{SKILL:sf-docs}}."
 type: orchestrator
 ---
 
-# SF Review
+# Firmo Review
 
 Du bist der Orchestrator für umfassende Code-Reviews.
 
@@ -67,6 +67,10 @@ Tasks werden an **zwei** Zeitpunkten angelegt, weil der Verzeichnis-Split in Pha
 - Tasks gemäß Zeitpunkt A und B oben anlegen, damit der User vor jedem Start der relevanten Sub-Agenten die volle Liste sieht.
 - Aktualisiere Tasks zeitnah, sobald ein Sub-Agent meldet — nicht gebatched.
 
+```include
+firmo-dir-migration
+```
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Review und behandle ihre Vorgaben als zusätzlichen Review-Kontext für Scope, Konventionen, Designentscheidungen und Qualitätskriterien.
@@ -98,15 +102,15 @@ Projekt-Typ-Erkennung wie bei `{{SKILL:sf-build}}`. Das Reviewer-Routing samt Ve
 
 ## Plugin-Konfiguration und Memory
 
-Plugin-interne Dateien liegen unter `.sf-plugin/` im Projekt-Root.
+Plugin-interne Dateien liegen unter `.firmo/` im Projekt-Root.
 
-- Konfiguration: `.sf-plugin/config.json`
-- Memory-Datei: `.sf-plugin/memory.json`
-- Cache-Datei: `.sf-plugin/cache.json`
-- Review-Reports: `.sf-plugin/review/`
-- Temporäre Wisdom-Dateien: `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`
+- Konfiguration: `.firmo/config.json`
+- Memory-Datei: `.firmo/memory.json`
+- Cache-Datei: `.firmo/cache.json`
+- Review-Reports: `.firmo/review/`
+- Temporäre Wisdom-Dateien: `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
-Die Datei `.sf-plugin/memory.json` speichert persistente Zustände über Sessions hinweg. Im Gegensatz zur Wisdom-Datei wird sie nie gelöscht.
+Die Datei `.firmo/memory.json` speichert persistente Zustände über Sessions hinweg. Im Gegensatz zur Wisdom-Datei wird sie nie gelöscht.
 
 ### Inhalt
 
@@ -123,7 +127,7 @@ Die Datei `.sf-plugin/memory.json` speichert persistente Zustände über Session
 
 ### Konfigurationsschema
 
-`sf-review` funktioniert ohne Konfigurationsdatei. Wenn `.sf-plugin/config.json` fehlt, verwende interne Defaults und lege keine Datei automatisch an.
+`review` funktioniert ohne Konfigurationsdatei. Wenn `.firmo/config.json` fehlt, verwende interne Defaults und lege keine Datei automatisch an.
 
 Unterstützte Review-Konfiguration:
 
@@ -165,21 +169,21 @@ Explizit gesetzte Detailwerte haben Vorrang vor Profil-Ableitungen.
 
 ### Config-Migration
 
-Wenn `.sf-plugin/config.json` existiert, prüfe sie beim Start auf fehlende unterstützte Review-Schlüssel.
+Wenn `.firmo/config.json` existiert, prüfe sie beim Start auf fehlende unterstützte Review-Schlüssel.
 
 - Ergänze fehlende Schlüssel mit den Defaults oben.
 - Erhalte vorhandene gültige Werte und unbekannte Schlüssel unverändert.
 - Lies die Datei direkt vor dem Schreiben erneut frisch ein, damit zwischenzeitliche Änderungen nicht überschrieben werden.
 - Wenn die Datei ungültiges JSON enthält: nicht schreiben, sichere Defaults für diesen Lauf verwenden und den User mit Pfad und Fehler informieren.
 - Wenn ein bekannter Schlüssel einen ungültigen Wert enthält: nicht überschreiben, sicheren Default für diesen Lauf verwenden und den User über den Schlüssel informieren.
-- Wenn die Migration Schlüssel ergänzt hat: teile dem User einmal in diesem Workflow-Lauf mit, dass `.sf-plugin/config.json` migriert wurde, nenne die ergänzten Schlüssel und weise darauf hin, dass die Defaults das bisherige sichere Verhalten erhalten.
-- Speichere nach erfolgreicher Migration den Status in `.sf-plugin/memory.json` unter `configMigration`, ohne vorhandene Felder wie `lastFindingNumber` zu verlieren.
+- Wenn die Migration Schlüssel ergänzt hat: teile dem User einmal in diesem Workflow-Lauf mit, dass `.firmo/config.json` migriert wurde, nenne die ergänzten Schlüssel und weise darauf hin, dass die Defaults das bisherige sichere Verhalten erhalten.
+- Speichere nach erfolgreicher Migration den Status in `.firmo/memory.json` unter `configMigration`, ohne vorhandene Felder wie `lastFindingNumber` zu verlieren.
 
 ### Cache-Datei
 
-Persistente Cache-Daten liegen ausschließlich in `.sf-plugin/cache.json`, nicht in `.sf-plugin/memory.json` und nicht dauerhaft in Wisdom-Dateien.
+Persistente Cache-Daten liegen ausschließlich in `.firmo/cache.json`, nicht in `.firmo/memory.json` und nicht dauerhaft in Wisdom-Dateien.
 
-`sf-review` darf diese Cache-Bereiche verwenden:
+`review` darf diese Cache-Bereiche verwenden:
 
 | Bereich            | Inhalt                                                                     | Invalidierung                                          |
 | ------------------ | -------------------------------------------------------------------------- | ------------------------------------------------------ |
@@ -197,18 +201,18 @@ Regeln:
 
 ### Git-Tracking
 
-Ob `.sf-plugin/` eingecheckt oder ignoriert wird, entscheidet das jeweilige Projekt selbst. Der Skill ändert keine `.gitignore`-Dateien in Zielprojekten.
+Ob `.firmo/` eingecheckt oder ignoriert wird, entscheidet das jeweilige Projekt selbst. Der Skill ändert keine `.gitignore`-Dateien in Zielprojekten.
 
 ### Verwendung
 
-1. Erstelle `.sf-plugin/` bei Bedarf.
-2. Lies `.sf-plugin/memory.json` beim Start des Review-Workflows.
-3. Falls `.sf-plugin/memory.json` nicht existiert, aber die alte Datei `.sf-memory.json` vorhanden ist: migriere deren Inhalt nach `.sf-plugin/memory.json`, entferne `.sf-memory.json` erst nach erfolgreichem Schreiben und weise den User darauf hin.
+1. Erstelle `.firmo/` bei Bedarf.
+2. Lies `.firmo/memory.json` beim Start des Review-Workflows.
+3. Falls `.firmo/memory.json` nicht existiert, aber die alte Datei `.sf-memory.json` vorhanden ist: migriere deren Inhalt nach `.firmo/memory.json`, entferne `.sf-memory.json` erst nach erfolgreichem Schreiben und weise den User darauf hin.
 4. Falls keine Memory-Datei existiert, starte mit `lastFindingNumber: 0`.
-5. Lies und migriere `.sf-plugin/config.json`, falls vorhanden.
-6. Lies `.sf-plugin/cache.json`, falls vorhanden und gültig; verwende nur valide, nicht veraltete Cache-Einträge.
+5. Lies und migriere `.firmo/config.json`, falls vorhanden.
+6. Lies `.firmo/cache.json`, falls vorhanden und gültig; verwende nur valide, nicht veraltete Cache-Einträge.
 7. Nummeriere neue Findings fortlaufend ab `lastFindingNumber + 1` mit 7-stelliger Formatierung: `R-0000001`, `R-0000002`, ...
-8. Schreibe nach Erstellung des Berichts die höchste vergebene Finding-Nummer zurück in `.sf-plugin/memory.json`. Erhalte dabei `configMigration` und andere vorhandene Memory-Felder. Die Memory-Datei muss geschrieben werden, bevor der Workflow mit `ERLEDIGT` abgeschlossen wird. Falls der Schreibvorgang fehlschlägt, weise den User darauf hin.
+8. Schreibe nach Erstellung des Berichts die höchste vergebene Finding-Nummer zurück in `.firmo/memory.json`. Erhalte dabei `configMigration` und andere vorhandene Memory-Felder. Die Memory-Datei muss geschrieben werden, bevor der Workflow mit `ERLEDIGT` abgeschlossen wird. Falls der Schreibvorgang fehlschlägt, weise den User darauf hin.
 
 ```include
 issue-tracker
@@ -216,7 +220,7 @@ issue-tracker
 
 ## Wisdom Accumulation
 
-Erzeuge zu Beginn von Phase 1 eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.sf-plugin/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen, falls mehrere Review-Runs parallel laufen.
+Erzeuge zu Beginn von Phase 1 eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen, falls mehrere Review-Runs parallel laufen.
 
 Die Wisdom-Datei transportiert die Outputs der parallelen Phase-2-Streams zwischen den Phasen:
 
@@ -269,7 +273,7 @@ Starte für jede aktive Quelle einen eigenen Sub-Agenten **parallel**. Jeder Sub
 - Konventions-Dateien — `CLAUDE.md`, `AGENTS.md`, vergleichbare Konventionsdateien
 - Code-Kommentare — `@design-decision`, `DELIBERATE`, `INTENTIONAL`, `DESIGN:`
 - Lint-Suppressions mit Begründung — `eslint-disable ... -- [Grund]`, `@ts-expect-error [Grund]`
-- Vorherige Review-Reports — `.sf-plugin/review/review-report-*.md`
+- Vorherige Review-Reports — `.firmo/review/review-report-*.md`
 
 Nicht aktive Quellen werden nicht durchsucht und im Wisdom-Abschnitt mit „übersprungen durch Profil" dokumentiert. Verwende valide `designDecisions`-Cache-Einträge pro Quelle, wenn ihre Invalidierungsdaten noch passen; andernfalls berechne die Quelle neu und aktualisiere den Cache nach erfolgreicher Extraktion.
 
@@ -347,11 +351,11 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 
 ### Phase 4: Bericht
 
-Phase 4 verzweigt nach dem in Phase 1 bestimmten Tracker-Modus. Im lokalen Modus wird wie bisher ein Markdown-Report geschrieben. Im Remote-Modus wird **kein** lokaler Report geschrieben; stattdessen werden Finding-Issues und ein Epic-Issue angelegt. Die Finding-Nummerierung aus `.sf-plugin/memory.json` gilt in beiden Modi.
+Phase 4 verzweigt nach dem in Phase 1 bestimmten Tracker-Modus. Im lokalen Modus wird wie bisher ein Markdown-Report geschrieben. Im Remote-Modus wird **kein** lokaler Report geschrieben; stattdessen werden Finding-Issues und ein Epic-Issue angelegt. Die Finding-Nummerierung aus `.firmo/memory.json` gilt in beiden Modi.
 
 #### Lokaler Modus
 
-1. Erstelle einen Bericht als `.sf-plugin/review/review-report-YYYY-MM-DD[-N].md`. Erstelle `.sf-plugin/review/` falls nicht vorhanden. Verwende das untenstehende Bericht-Format.
+1. Erstelle einen Bericht als `.firmo/review/review-report-YYYY-MM-DD[-N].md`. Erstelle `.firmo/review/` falls nicht vorhanden. Verwende das untenstehende Bericht-Format.
 2. Wenn der aktive Finding-Scope nur kritische und wichtige Findings umfasst (Standard):
    - nimm Hinweise nicht in den Hauptbericht auf
    - erwähne kurz, dass Hinweise ausgefiltert wurden und ein umfassendes Review auf Wunsch möglich ist
@@ -373,7 +377,7 @@ Verwende die Formate, Labels und Operationen aus „Issue-Tracker-Anbindung (Rem
 7. Melde dem User Epic-URL, Anzahl neu angelegter und Anzahl deduplizierter Findings.
 8. Lösche die Wisdom-Datei.
 
-**Abschlussbedingung (ohne Autonom-Loop):** Das Review ist abgeschlossen, wenn die in Phase 3 qualitätsgeprüften und gegen Designentscheidungen gefilterten Findings vorliegen — im lokalen Modus im Bericht, im Remote-Modus als Finding-Issues plus Epic (bzw. mit der Meldung, dass alle Findings bereits existieren) —, `.sf-plugin/memory.json` mit der höchsten vergebenen Finding-Nummer geschrieben ist und die Wisdom-Datei gelöscht wurde. Die unabhängige Prüfung leistet die Findings-Qualitätsprüfung in Phase 3 (Konfidenzfilter, Duplikat- und Schweregrad-Konsistenz). Dieser Workflow erzeugt nur einen Bericht und setzt nichts um; deshalb gibt es weder einen beschränkten Korrektur-Loop noch einen `/goal`-String.
+**Abschlussbedingung (ohne Autonom-Loop):** Das Review ist abgeschlossen, wenn die in Phase 3 qualitätsgeprüften und gegen Designentscheidungen gefilterten Findings vorliegen — im lokalen Modus im Bericht, im Remote-Modus als Finding-Issues plus Epic (bzw. mit der Meldung, dass alle Findings bereits existieren) —, `.firmo/memory.json` mit der höchsten vergebenen Finding-Nummer geschrieben ist und die Wisdom-Datei gelöscht wurde. Die unabhängige Prüfung leistet die Findings-Qualitätsprüfung in Phase 3 (Konfidenzfilter, Duplikat- und Schweregrad-Konsistenz). Dieser Workflow erzeugt nur einen Bericht und setzt nichts um; deshalb gibt es weder einen beschränkten Korrektur-Loop noch einen `/goal`-String.
 
 ### Bericht-Format
 

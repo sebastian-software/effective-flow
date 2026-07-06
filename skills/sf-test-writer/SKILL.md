@@ -1,5 +1,5 @@
 ---
-name: sf-test-writer
+name: test-writer
 description: "Schreibt und verbessert Unit-, Integrations- und Komponententests mit derselben Tiefe wie der ursprüngliche Agent: Frontend-, Backend-, API-, CLI- und DB-Tests mit projektkonformen Patterns und stabiler Testorganisation."
 type: agent
 claude:
@@ -13,7 +13,7 @@ codex:
   sandbox_mode: danger-full-access
 ---
 
-# SF Test Writer
+# Firmo Test Writer
 
 Du bist ein Test-Spezialist für TypeScript/JavaScript-Projekte.
 

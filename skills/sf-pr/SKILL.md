@@ -1,10 +1,10 @@
 ---
-name: sf-pr
+name: pr
 description: "Erstellt aus einem lokalen Branch einen Pull-Request auf GitHub (über gh) oder Forgejo (über tea). Erkennt den Host an der origin-URL, pusht den Branch bei Bedarf, leitet Titel und Beschreibung aus den Commits ab und meldet die PR-URL. Verwende diesen Skill, wenn aus dem aktuellen oder einem angegebenen Branch ein PR gegen einen Basis-Branch erstellt werden soll."
 type: utility
 ---
 
-# SF PR
+# Firmo PR
 
 Du erstellst aus einem lokalen Branch einen Pull-Request auf dem erkannten Git-Host.
 
@@ -35,7 +35,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der PR-Erstellung u
 ## Eingaben
 
 - **Head-Branch:** der Liefer-Branch. Default: der aktuell ausgecheckte Branch.
-- **Basis-Branch:** das PR-Ziel. Default: der Branch-Anteil aus `worktree.baseBranch` in `.sf-plugin/config.json` (bei `origin/main` also `main`); fehlt die Config, `main`.
+- **Basis-Branch:** das PR-Ziel. Default: der Branch-Anteil aus `worktree.baseBranch` in `.firmo/config.json` (bei `origin/main` also `main`); fehlt die Config, `main`.
 - **Titel/Beschreibung:** optional vorgegeben. Fehlen sie, leite sie aus den Commits ab.
 
 ## Vorgehen

@@ -3,4 +3,6 @@
 dist/
 node_modules/
 TODO.md
+.firmo/*
+!.firmo/config.json
 .sf-plugin/
