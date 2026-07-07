@@ -52,7 +52,7 @@ doc-categories
 ### API-Dokumentation
 
 - Endpoint-Übersicht als Tabelle
-- vollständige Reqüst/Response-Beispiele
+- vollständige Request/Response-Beispiele
 - Auth-Anforderungen
 - konsistente Error-Formate
 
