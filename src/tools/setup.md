@@ -32,8 +32,8 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Schreiben und b
 - **`review`** (Quelle: `{{SKILL:review}}`): `profile` (full/focused/fast), `autoConfirmScope` (bool), `designDecisionSources` (full/standard/minimal), `validation` (full/quick/off)
 - **`applyReview`** (Quelle: `{{SKILL:apply-review}}`): `defaultCommitStrategy` (worktrees/single/none/`null` = beim Lauf fragen), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/Befehl)
 - **`plan`** (Quelle: `{{SKILL:plan}}`): `markerLanguage` (de/en)
-- **`worktree`** (Quelle: `src/shared/worktree-integration.md`): `enabled` (bool), `baseBranch` (Default `origin/main`), `branchPrefix` (Default `sf`), `completion` (pr/merge/branch/`null` = beim Lauf fragen), `setup` (auto/none/Befehl), `baseDir`
-- **`tracker`** (Quelle: `src/shared/issue-tracker.md`): `mode` (local/remote, Default `local`), `remoteToolOverride` (auto/github/forgejo, Default `auto`)
+- **`worktree`** (Quelle: `{{SKILL:build}}`, Abschnitt „Worktree-Integration" – ebenso in den weiteren code-ändernden Workflows eingebettet): `enabled` (bool), `baseBranch` (Default `origin/main`), `branchPrefix` (Default `sf`), `completion` (pr/merge/branch/`null` = beim Lauf fragen), `setup` (auto/none/Befehl), `baseDir`
+- **`tracker`** (Quelle: `{{SKILL:review}}`, Abschnitt „Issue-Tracker-Anbindung" – ebenso in `{{SKILL:apply-review}}` und den weiteren Tracker-Workflows eingebettet): `mode` (local/remote, Default `local`), `remoteToolOverride` (auto/github/forgejo, Default `auto`)
 
 Die zwei Presets entsprechen den im README im Abschnitt „Plugin-Konfiguration" dokumentierten Beispiel-Konfigurationen: „Sichere Defaults" übernimmt den Block unter der README-Überschrift „Sicheres Default-Verhalten", „Schneller persönlicher Workflow" den Block unter „Schneller persönlicher Review-/Apply-Review-Workflow". Beide ergänzen den `worktree`-Block mit dessen Defaults und den `tracker`-Block mit `mode: local`; `worktree.enabled` und `tracker.mode` werden in jedem Modus explizit erfragt.
 
