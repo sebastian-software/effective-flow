@@ -67,16 +67,9 @@ firmo-dir-migration
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben.
 
-## Fertig-Protokoll
-
-Wenn du interne Sub-Agenten einsetzt, müssen sie mit `ERLEDIGT` oder `ABBRUCH: [Grund]` enden.
-
-Retry-Eskalation:
-
-1. gleicher Auftrag mit Fortsetzungs-Hinweis
-2. vereinfachter Auftrag
-3. minimaler Auftrag
-4. danach User fragen, wie weiter vorzugehen ist
+```include
+completion-protocol
+```
 
 ```include
 goal-completion
@@ -183,73 +176,18 @@ Regeln:
 - Wisdom-Dateien bleiben temporäre In-Run-Speicher und werden am Ende gelöscht.
 
 ```include
-issue-tracker
-```
-
-```include
 apply-source-detection
 ```
 
 ## Remote-Modus (Issue-Tracker)
 
-Wenn der Tracker-Modus `remote` ist (siehe „Issue-Tracker-Anbindung (Remote-Modus)“), gelten die folgenden Anpassungen **zusätzlich** zum bzw. anstelle des lokalen Report-Flusses. Bestimme den Modus zu Beginn von Phase 1; der Argumenttyp hat dabei Vorrang vor der Config.
-
-### Argument-Erkennung und Modusbestimmung
-
-Klassifiziere das übergebene Argument über die „Apply-Quellen-Erkennung“ (Stufe A und – für Issue-Referenzen – Stufe B) und leite Modus und Sub-Modus aus dem Quelltyp ab:
-
-- **`review-report`** (Report-Datei unter `.firmo/review/`) → `local` (bisheriges Verhalten, unverändert).
-- **`review-epic`** (Issue mit `firmo-review-epic`-Label, Alt `sf-review-epic` gleichwertig) → `remote`, **Epic-Modus**: alle im Epic verlinkten Finding-Issues abarbeiten.
-- **`review-finding`** (ein einzelnes Finding-Issue oder eine Liste von Finding-Issue-Referenzen) → `remote`, **Issue-Listen-Modus**: nur genau diese Findings abarbeiten. Das zugehörige Epic je Finding wird für das spätere Abhaken aus dem Sub-Issue ermittelt (`Epic`-Feld/Referenz), sofern vorhanden.
-- **`remote` ohne Argument** → offene Epics auflisten und den User wählen lassen.
-- **`plan`, `container-issue` oder `plain-issue`** → gehört nicht zu `{{SKILL:apply-review}}`: auf den zuständigen Skill verweisen (`{{SKILL:apply-plan}}` für Plan-Dateien, `{{SKILL:apply-issues}}` für sonstige Issues, oder `{{SKILL:apply}}` zum automatischen Routen) und beenden. Bei Delegation aus `{{SKILL:apply}}` sollte dieser Fall nicht auftreten; die Weiche bleibt als Schutz.
-
-Der Argumenttyp hat Vorrang vor der Config (siehe „Modus bestimmen“ in der Tracker-Anbindung): `review-report` erzwingt `local`, `review-epic`/`review-finding` erzwingen `remote`. Bei `remote` vorab Host und CLI erkennen und die CLI-Verfügbarkeit prüfen; fehlt das CLI, klar abbrechen (kein stiller Fallback auf `local`).
-
-### Phase 1 remote: Findings aus Issues lesen
-
-Ersetzt das Einlesen der Report-Datei. Bestimme die abzuarbeitenden Finding-Issues (Epic-Task-Liste parsen bzw. übergebene Liste verwenden). Lies je Finding-Issue den vollständigen Body **und die Kommentare frisch vom Tracker** (Operation „Kommentare lesen“) und klassifiziere:
-
-- **Label `wontfix`** → nicht umsetzen, ADR erstellen (Phase 3 remote).
-- **bereits abgehakt/geschlossen** → überspringen.
-- **Sub-Issue ohne Ziel-Aktion oder Prompt** (manuell verändert) → als nicht umsetzbar melden, nicht raten.
-- **Entwicklerkommentar (Nicht-Firmo) vorhanden** → umsetzen **mit Kontext**: den Kommentartext als zusätzlichen Kontext an den Delegations-Skill mitgeben. Das ist das Remote-Äquivalent der lokalen „Entwickler-Anmerkung“ im Fall „Umsetzen mit Kontext“. Die bewusste Ablehnung läuft im Remote-Modus weiterhin **ausschließlich** über das Label `wontfix`, nicht über Kommentartext; Firmo-Kommentare (z. B. `<!-- … -->`-markierte Status- oder PR-Link-Kommentare) zählen nicht als Entwickler-Anmerkung.
-- **sonst** → umsetzen.
-
-Lege die Per-Finding-Tasks wie im lokalen Modus an; die Finding-ID ist die `R-XXXXXXX`-ID aus dem Issue-Titel.
-
-### Phase 2 remote: Commit- und PR-Strategie
-
-Die Commit-Strategie ist im Remote-Modus fest **„ein PR pro Finding“** — die lokale Commit-Strategie-Frage entfällt. Jedes umsetzbare Finding ist eine **eigene Sub-Gruppe** in einem eigenen Worktree/Branch. Basis-Branch und Branch-Namensbildung stützen sich auf den bestehenden `worktree`-Config-Block: Branch `<branchPrefix>/apply-review/<R-ID-oder-slug>` ab `worktree.baseBranch`. Dateiüberlappende Findings laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden; die Union-Find-Zusammenfassung aus Phase 4.2 entfällt, weil jedes Finding einen eigenen Branch/PR braucht. Die Stash-Policy und der `/goal`-String werden wie im lokalen Modus behandelt.
-
-### Phase 3 remote: ADR referenziert Issue
-
-Für jedes `wontfix`-Finding ein ADR erstellen wie in Phase 3, jedoch mit Bezug auf Issue-Nummer und Epic statt auf ein Report-Finding (Kontext: `Issue #<nr>` und `Epic #<nr>`). Markiere das Finding im Epic später als `- [x] … — nicht umgesetzt (ADR <Nummer>)`.
-
-### Phase 4 remote: Umsetzung, PR und Epic-Abhaken
-
-Pro umsetzbarem Finding, in dessen Worktree:
-
-1. Vorabanalyse und Umsetzung wie in Phase 4.1/4.3 über den passenden Delegations-Skill (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}`, `{{SKILL:docs}}`). Gib einen in Phase 1 remote erkannten Entwicklerkommentar als zusätzlichen Kontext an den Delegations-Skill mit.
-2. Änderungen committen (Conventional-Commit-Message, keine internen Finding-IDs, kein `Co-Authored-By`), Branch pushen.
-3. Über `{{SKILL:pr}}` genau einen PR gegen den Basis-Branch erstellen; im PR-Body `Closes #<Sub-Issue>` setzen.
-4. **Direkt nach PR-Erstellung** den zugehörigen Eintrag im Epic-Body abhaken (`- [ ]` → `- [x]`, PR-Link anhängen) und optional den PR-Link als Kommentar ans Sub-Issue schreiben. Body vor dem Ändern frisch lesen und nur die betroffene Zeile umschalten.
-5. **Schlägt die PR-Erstellung fehl** (Push abgelehnt, kein Commit): Finding als fehlgeschlagen markieren, Epic-Eintrag **nicht** abhaken, nächstes Finding fortsetzen.
-6. **Fehlt ein zugeordnetes Epic** (Issue-Listen-Modus): Finding trotzdem umsetzen und PR erstellen; das Abhaken entfällt und wird dem User gemeldet.
-
-### Phase 5 remote: Tracking-Oberfläche statt Report
-
-Es wird keine Report-Datei aktualisiert. Stelle stattdessen sicher, dass alle Epic-Checkboxen und Sub-Issue-Kommentare/Labels den Endstand widerspiegeln (umgesetzt → abgehakt mit PR-Link, `wontfix` → abgehakt mit ADR-Referenz).
-
-### Phase 7/8 remote
-
-Finale Validierung und Zusammenfassung wie im lokalen Modus; die Zusammenfassung nennt zusätzlich Epic-URL, die erstellten PRs und die abgehakten Findings.
+Ist der Tracker-Modus `remote` (das Argument ist ein Epic- oder Finding-Issue), lies **vor** dem lokalen Report-Fluss die interne Teil-Datei `tools/apply-review-remote.md` und befolge sie. Sie enthält die Issue-Tracker-Anbindung sowie den kompletten Remote-Ablauf (Phase 1–8 remote) und ersetzt bzw. ergänzt die entsprechenden lokalen Schritte. Im lokalen Modus (Report-Datei unter `.firmo/review/`) wird sie nicht geladen.
 
 ## Workflow
 
 ### Phase 1: Report einlesen und validieren
 
-Bestimme zuerst den Tracker-Modus gemäß „Issue-Tracker-Anbindung (Remote-Modus)“. Ist er `remote`, folge „Remote-Modus (Issue-Tracker)“ (Phase 1 remote und folgende) statt der Report-Datei-Schritte 4–7 unten; die Config-, Stash- und Cache-Schritte gelten weiterhin.
+Bestimme zuerst den Tracker-Modus über die „Apply-Quellen-Erkennung“ (Report-Datei unter `.firmo/review/` → `local`; Epic-/Finding-Issue → `remote`). Ist er `remote`, lies und befolge die interne Teil-Datei `tools/apply-review-remote.md` (Phase 1 remote und folgende) statt der Report-Datei-Schritte 4–7 unten; die Config-, Stash- und Cache-Schritte gelten weiterhin.
 
 1. Lade Firmo-Konfiguration, migriere sie falls nötig und bestimme Commit-Strategie-Default, Stash-Policy, Worktree-Defaults und finales Validierungsprofil.
 2. Lies `.firmo/cache.json`, falls vorhanden und gültig. Verwende nur valide `applyReviewAnalysis`-Einträge.
@@ -347,153 +285,9 @@ Werte-Zuordnung: Interaktiv → `interactive`, Behalten → `keep`, Verwerfen �
 
 Nachdem Commit-Strategie und Stash-Policy feststehen, gib gemäß „Goal-getriebene Abschlusssteuerung“ den optionalen `/goal`-String aus; er deckt die Phasen 3–8 ab. Der String referenziert die Report-Datei und weist an, die verbleibenden Phasen zu durchlaufen. Bei `stashPolicy != interactive` (empfohlen `keep`) laufen diese Phasen ohne reguläres Approval-Gate; verbleibende Stopps sind nur die konfliktbedingten Eskalationen aus der Phase-Einleitung (`apply`-Merge-Konflikt, risikoreicher Cherry-Pick-Konflikt bei Worktrees, selten ein verwaister Lock).
 
-#### Git-Commit-Mutex für „Einzeln“
+#### Commit-Mechanik je Strategie
 
-Wenn die Commit-Strategie **Einzeln** gewählt wurde, gilt für alle Delegations-Sub-Agenten ein globaler Commit-Mutex. Der Mutex schützt die gesamte kritische Git-Sektion, nicht nur den finalen `git commit`.
-
-Ziel: Parallele Sub-Agenten dürfen gleichzeitig Dateien bearbeiten, aber niemals gleichzeitig Staging oder Commit durchführen. Dadurch darf ein Finding-Commit nur Änderungen dieses Findings enthalten.
-
-Mutex-Konvention:
-
-- Lock-Pfad: `.firmo/apply-review-commit.lock`
-- Lock-Erwerb: atomar per `mkdir .firmo/apply-review-commit.lock`
-- Lock-Inhalt: schreibe nach erfolgreichem Erwerb eine kurze Owner-Datei, z. B. `owner`, mit Finding-ID, Sub-Gruppe und Timestamp.
-- Lock-Freigabe: lösche nur den Lock, den du selbst erworben hast, nach Commit-Erfolg, Commit-Abbruch oder Fehlerbehandlung.
-- Wenn der Lock bereits existiert: warten und erneut versuchen. Falls der Lock offensichtlich verwaist wirkt, den User fragen, bevor er entfernt wird.
-
-Kritische Sektion unter dem Lock:
-
-1. Führe `git status --porcelain` aus.
-2. Wenn bereits staged changes vorhanden sind, die nicht eindeutig zu diesem Finding gehören: **nicht committen**, User informieren und mit `ABBRUCH` für dieses Finding enden. Fremde staged changes dürfen nicht übernommen oder bereinigt werden.
-3. Stage ausschließlich die Dateien, die aus der Vorabanalyse und der tatsächlichen Umsetzung dieses Findings bekannt sind. Verwende keine pauschalen Befehle wie `git add .`, `git add -A` oder `git commit -a`.
-4. Prüfe `git diff --cached --name-only`. Die Liste darf nur Dateien dieses Findings enthalten.
-5. Prüfe `git diff --cached`, ob der staged Diff inhaltlich zum aktuellen Finding gehört.
-6. Führe den Commit mit der in Phase 2 festgelegten Message aus.
-7. Ermittle direkt danach den Commit-Hash mit `git rev-parse HEAD` und protokolliere in der Wisdom-Datei die Zuordnung `Finding-ID -> Commit-Hash`.
-8. Führe direkt danach `git status --porcelain` aus und protokolliere in der Wisdom-Datei, ob noch uncommittete Änderungen anderer paralleler Findings im Arbeitsbaum liegen. Diese Reständerungen sind erlaubt, solange sie nicht staged und nicht Teil des aktuellen Commits sind.
-
-Falls eine Prüfung in der kritischen Sektion fehlschlägt, muss der Sub-Agent seine eigenen staged changes soweit eindeutig möglich wieder unstagen, den Lock freigeben und `ABBRUCH: [Grund]` melden.
-
-#### Git-Worktree-Isolation für „Einzeln mit Worktrees“
-
-Wenn die Commit-Strategie **Einzeln mit Worktrees** gewählt wurde, gilt statt des Git-Commit-Mutex eine Worktree-Isolation pro Delegations-Sub-Gruppe.
-
-Vorbedingungen:
-
-- Der ursprüngliche Arbeitsbaum muss vor dem Erstellen der Worktrees sauber sein (`git status --porcelain` leer), abgesehen von ignorierten Firmo-Dateien unter `.firmo/`.
-- `git worktree` muss verfügbar sein.
-- Lies `.firmo/config.json`, falls vorhanden. Falls sie fehlt oder keine Worktree-Werte enthält, verwende die Defaults.
-
-Worktree-Pfade:
-
-1. Bestimme den Repo-Namen aus `basename "$(git rev-parse --show-toplevel)"`.
-2. Verwende als BaseDir `applyReview.worktree.baseDir` aus `.firmo/config.json` oder den Default `.firmo/.worktrees`.
-3. Erstelle Worktrees unter:
-   `BASE_DIR/REPO_NAME/SESSION_ID/GROUP_NAME`
-4. `GROUP_NAME` muss deterministisch, kurz und dateisystemtauglich sein, z. B. `fix-1`, `refactor-2`, `build-1` oder eine slugifizierte Sub-Gruppen-Beschreibung.
-
-Der Default liegt bewusst innerhalb des Projekt-Roots. Dadurch bleiben Worktree-Erstellung, Dateiänderungen und Setup-Kommandos in der üblichen Workspace-Sandbox. Externe BaseDirs sind nur zu verwenden, wenn sie explizit in `.firmo/config.json` konfiguriert sind und die Umgebung Schreib- und Ausführungsrechte dafür erlaubt.
-
-Branch-Konvention:
-
-- Pro Sub-Gruppe: `apply-review/<SESSION_ID>/<GROUP_NAME>`
-- Erstelle den Worktree mit:
-  `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> HEAD`
-
-Setup-Erkennung im Worktree:
-
-- `applyReview.worktree.setup: "auto"` oder fehlender Wert:
-  - `pnpm-lock.yaml` → `pnpm install --frozen-lockfile --prefer-offline`
-  - `package-lock.json` → `npm ci`
-  - `yarn.lock` → `yarn install --frozen-lockfile`
-  - `Cargo.toml` → `cargo fetch --locked`
-  - `go.mod` → `go mod download`
-  - `uv.lock` → `uv sync --frozen`
-  - `poetry.lock` → `poetry install --sync`
-  - keine bekannte Datei → kein Setup
-- `applyReview.worktree.setup: "none"`: kein Setup ausführen.
-- `applyReview.worktree.setup` als String: dieses explizite Setup-Kommando im Worktree ausführen.
-
-Git Hooks werden für dieses Setup nicht verwendet. Das Setup ist ein expliziter `apply-review`-Schritt, damit es sichtbar, reproduzierbar und auf den temporären Worktree begrenzt bleibt.
-
-Zeige vor dem Ausführen des Worktree-Setups kurz an, welcher Setup-Modus aktiv ist und welches Kommando geplant ist. Bei `setup: "none"` wird kein Install-/Fetch-Kommando ausgeführt; wenn ein Sub-Agent später wegen fehlender Dependencies scheitert, nenne das Setup-Profil in der Zusammenfassung als mögliche Ursache.
-
-Delegation im Worktree:
-
-- Starte den Delegations-Sub-Agenten mit Arbeitsverzeichnis `<WORKTREE_PATH>`.
-- Gib ihm die Commit-Strategie `Einzeln mit Worktrees` weiter.
-- Innerhalb des Worktrees committen Sub-Agenten nach jedem Finding einzeln, ohne interne Finding-ID in der Commit-Message.
-- Protokolliere in der Wisdom-Datei pro Finding: Worktree-Pfad, Branch, Commit-Hash, Commit-Message.
-
-Integration zurück in den ursprünglichen Branch:
-
-1. Warte auf alle Worktree-Sub-Gruppen-Endstatus.
-2. Für jede erfolgreiche Sub-Gruppe: ermittle die neuen Commits auf ihrem Branch seit `HEAD` des ursprünglichen Branches.
-3. Führe die Commits im ursprünglichen Worktree sequenziell mit `git cherry-pick <commit>` zurück.
-4. Bei Cherry-Pick-Konflikt: führe zuerst die Cherry-Pick-Konfliktbewertung aus. Löse risikoarme Konflikte direkt; frage den User nur bei risikoreichen oder unklaren Konflikten.
-5. Nach erfolgreicher Integration und Validierung: Worktree entfernen (`git worktree remove <WORKTREE_PATH>`) und den temporären Branch löschen (`git branch -d <BRANCH_NAME>`).
-6. Bei fehlgeschlagener Sub-Gruppe: Worktree und Branch zunächst behalten, Pfade in der Zusammenfassung nennen und User-Entscheidung zum Cleanup einholen.
-
-Cherry-Pick-Konfliktbewertung:
-
-1. Erfasse den Konfliktzustand:
-   - `git status --porcelain`
-   - betroffene Konfliktdateien
-   - aktueller Commit, Worktree-Branch und Finding-Zuordnung aus der Wisdom-Datei
-   - Konfliktmarker und betroffene Abschnitte pro Datei
-2. Bewerte das Risiko pro Datei und für den gesamten Konflikt.
-
-Ein Konflikt gilt nur dann als **risikoarm**, wenn alle Bedingungen erfüllt sind:
-
-- Der Konflikt ist klein, lokal begrenzt und eindeutig verständlich.
-- Die betroffenen Änderungen sind additiv oder mechanisch kombinierbar.
-- Es gibt keine widersprüchlichen fachlichen Aussagen.
-- Es sind keine Codepfade mit nicht offensichtlicher Laufzeitlogik betroffen.
-- Die Auflösung erfordert keine neue Architektur- oder Produktentscheidung.
-
-Typische risikoarme Fälle:
-
-- identische Änderungen auf beiden Seiten
-- additive Markdown- oder Dokumentationsabschnitte, die beide erhalten bleiben können
-- unabhängige Einträge in Listen, Tabellen oder Changelogs
-- triviale Reihenfolge-Konflikte ohne semantische Bedeutung
-- Formatierungs- oder Kommentar-Konflikte ohne Einfluss auf Verhalten
-
-Ein Konflikt gilt als **risikoreich**, sobald mindestens eine Bedingung zutrifft:
-
-- Produktionscode, Tests mit Verhaltensaussage, öffentliche APIs, Schemas, Migrationen, Lockfiles oder Build-/Runtime-Konfigurationen sind betroffen.
-- Beide Seiten ändern dieselbe Logik, denselben Kontrollfluss, dieselbe Datenstruktur oder dieselbe Fehlermeldung mit unterschiedlicher Bedeutung.
-- Die Auflösung könnte Verhalten entfernen, verdecken oder neu kombinieren.
-- Der Konfliktbereich ist groß, verteilt oder ohne vollständigen Kontext nicht sicher bewertbar.
-- Eine automatische Auflösung würde Annahmen über Produktverhalten, Architektur oder Priorität zwischen Findings treffen.
-
-Bei Unsicherheit ist der Konflikt als risikoreich zu behandeln.
-
-Automatische Auflösung risikoarmer Konflikte:
-
-1. Bearbeite ausschließlich die konfliktbetroffenen Dateien.
-2. Erhalte beide Seiten, wenn sie unabhängig und additiv sind.
-3. Entferne Konfliktmarker vollständig.
-4. Stage nur die aufgelösten Konfliktdateien mit expliziten Pfaden.
-5. Führe `git cherry-pick --continue` aus.
-6. Protokolliere in der Wisdom-Datei: Commit, Worktree-Branch, betroffene Dateien, Risiko-Level, Auflösungsstrategie und Begründung.
-
-User-Abfrage bei risikoreichen oder unklaren Konflikten:
-
-Stoppe die Integration und gib dem User eine kompakte Konfliktbewertung:
-
-- Commit und Worktree-Branch
-- betroffene Dateien
-- Konflikttyp pro Datei
-- vermutete Ursache
-- Risiko-Level mit Begründung
-- vorgeschlagene Optionen:
-  - manuell lösen
-  - konkrete Auflösungsstrategie vorgeben
-  - Commit überspringen
-  - Workflow abbrechen
-
-Führe keine automatische Konfliktauflösung durch, solange der User keine Richtung vorgegeben hat.
+Die detaillierte Mechanik der committenden Strategien – **Einzeln** (Git-Commit-Mutex) und **Einzeln mit Worktrees** (Worktree-Isolation samt Cherry-Pick-Konfliktbewertung) – steht in der internen Teil-Datei `tools/apply-review-commit-mechanics.md`. Lies sie, sobald in Phase 2 die Strategie feststeht und Commits erzeugt werden; bei **Keine Commits** entfällt sie. Die späteren Phasen verweisen für die Detailregeln auf diese Teil-Datei.
 
 ### Phase 3: ADR-Erstellung
 
@@ -591,8 +385,8 @@ Beispiel: Aktionsgruppe `{{SKILL:fix}}` mit fünf Findings:
    - die zugehörige Vorabanalyse aus Phase 4.1 als **inline-Kontext-Block** im Prompt — nicht als Verweis auf die Wisdom-Datei. Die Sub-Skills lesen die Wisdom-Datei nicht; sie verarbeiten nur den Prompt-Inhalt. Bette die Vorabanalyse vollständig ein, etwa unter der Überschrift `Vorabanalyse für dieses Finding:`.
    - die Entwickler-Anmerkung (falls vorhanden)
    - die Commit-Strategie aus Phase 2
-   - **Bei Commit-Strategie „Einzeln“:** die vollständige Git-Commit-Mutex-Regel aus Phase 2. Der Sub-Agent muss jeden Finding-Commit unter `.firmo/apply-review-commit.lock` ausführen, darf nur Finding-eigene Dateien stage-en und darf niemals `git add .`, `git add -A` oder `git commit -a` verwenden.
-   - **Bei Commit-Strategie „Einzeln mit Worktrees“:** die vollständige Git-Worktree-Isolation-Regel aus Phase 2. Der Sub-Agent arbeitet ausschließlich im zugewiesenen Worktree, committet dort jedes Finding einzeln und protokolliert Commit-Hashes in der Wisdom-Datei. Der Sub-Agent darf nicht in den ursprünglichen Worktree wechseln.
+   - **Bei Commit-Strategie „Einzeln“:** die vollständige Git-Commit-Mutex-Regel aus `tools/apply-review-commit-mechanics.md`. Der Sub-Agent muss jeden Finding-Commit unter `.firmo/apply-review-commit.lock` ausführen, darf nur Finding-eigene Dateien stage-en und darf niemals `git add .`, `git add -A` oder `git commit -a` verwenden.
+   - **Bei Commit-Strategie „Einzeln mit Worktrees“:** die vollständige Git-Worktree-Isolation-Regel aus `tools/apply-review-commit-mechanics.md`. Der Sub-Agent arbeitet ausschließlich im zugewiesenen Worktree, committet dort jedes Finding einzeln und protokolliert Commit-Hashes in der Wisdom-Datei. Der Sub-Agent darf nicht in den ursprünglichen Worktree wechseln.
    - den Auftrag, den passenden Skill aufzurufen:
      - Aktion fix: `Verwende den Skill {{SKILL:fix}} für dieses Finding.`
      - Aktion refactor: `Verwende den Skill {{SKILL:refactor}} für dieses Finding.`
@@ -724,7 +518,7 @@ options:
    - bei `full`: behebe und prüfe erneut gemäß „Goal-getriebene Abschlusssteuerung“; begrenze die internen Korrekturrunden und eskaliere an den User, falls die Prüfungen danach weiterhin fehlschlagen, statt unbegrenzt zu wiederholen
    - bei `changedScope`: wiederhole nur, wenn die betroffene Prüfung scope-bewusst oder schnell genug ist; andernfalls dokumentiere das Ergebnis und frage bei unklaren Restfehlern den User
 6. Falls in Phase 2 die Commit-Strategie „Einzeln“ gewählt wurde und Fixes nötig waren:
-   - verwende den Git-Commit-Mutex aus Phase 2 für die gesamte finale Staging-/Commit-Sektion.
+   - verwende den Git-Commit-Mutex aus `tools/apply-review-commit-mechanics.md` für die gesamte finale Staging-/Commit-Sektion.
    - führe vor dem Staging `git status --porcelain` aus und unterscheide finale Validierungsfixes von bereits vorhandenen User-Änderungen.
    - stage ausschließlich Dateien, die durch die finale Validierungsfix-Schleife geändert wurden. Verwende keine pauschalen Befehle wie `git add .`, `git add -A` oder `git commit -a`.
    - prüfe `git diff --cached --name-only` und `git diff --cached`.

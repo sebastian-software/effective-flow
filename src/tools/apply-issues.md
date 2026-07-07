@@ -35,16 +35,9 @@ commit-message-rules
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben für Routing, Commits und User-Rückfragen.
 
-## Fertig-Protokoll
-
-Wenn du interne Sub-Agenten (Analyse oder Delegation) einsetzt, müssen sie mit `ERLEDIGT` oder `ABBRUCH: [Grund]` enden.
-
-Retry-Eskalation:
-
-1. gleicher Auftrag mit Fortsetzungs-Hinweis
-2. vereinfachter Auftrag
-3. minimaler Auftrag
-4. danach User fragen, wie weiter vorzugehen ist
+```include
+completion-protocol
+```
 
 ```include
 goal-completion

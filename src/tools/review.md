@@ -86,9 +86,9 @@ Weise den User zu Beginn kurz darauf hin, dass standardmässig nur kritische und
 
 Verwende den aktiven Finding-Scope als Filter für Reviewer-Auftrag, Aggregation, Bericht und Zusammenfassung.
 
-## Fertig-Protokoll
-
-Wenn interne Sub-Agenten verwendet werden, gilt `ERLEDIGT` / `ABBRUCH: [Grund]` mit Retry-Eskalation wie in den anderen Workflows.
+```include
+completion-protocol
+```
 
 ## Designentscheidungs-Erkennung
 
