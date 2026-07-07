@@ -28,5 +28,5 @@ Beim Tool `apply` kann die Anweisung ihrerseits eine passende **interne** Datei 
 
 ## Regeln
 
-- Lade nie mehrere Tool-Dateien „auf Vorrat"; immer nur das aktuell aufgerufene Tool (plus ggf. die eine interne `apply`-Quelle).
+- Lade nie mehrere Tool-Dateien „auf Vorrat“; immer nur das aktuell aufgerufene Tool (plus ggf. die eine interne `apply`-Quelle).
 - Spezialisten-Agents (Implementer, Reviewer, Validator, Test-/Docs-Writer …) sind **keine** `/firmo`-Tools; die Tools rufen sie intern als Subagents auf (auf Codex genestet unter `agents/`, auf Claude Code als registrierte `firmo-*`-Subagents).

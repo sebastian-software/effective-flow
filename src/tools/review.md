@@ -29,26 +29,26 @@ Tasks werden an **zwei** Zeitpunkten angelegt, weil der Verzeichnis-Split in Pha
 **Zeitpunkt A — direkt nach Scope-Bestätigung am Ende von Phase 1:**
 
 1. **Phase-Level-Tasks:**
-   - „Phase 1: Scope"
-   - „Phase 2: Parallele Datensammlung"
-   - „Phase 3: Aggregation und Designentscheidungs-Filter"
-   - „Phase 4: Bericht"
+   - „Phase 1: Scope“
+   - „Phase 2: Parallele Datensammlung“
+   - „Phase 3: Aggregation und Designentscheidungs-Filter“
+   - „Phase 4: Bericht“
 2. **Per-Quelle-Tasks für Phase 2a** (eine pro Designentscheidungs-Quelle):
-   - „2a: ADR-Quelle durchsuchen"
-   - „2a: Plan-Quelle durchsuchen"
-   - „2a: Konventionen-Quelle durchsuchen"
-   - „2a: Code-Kommentar-Quelle durchsuchen"
-   - „2a: Lint-Suppressions durchsuchen"
-   - „2a: Vorherige Reviews durchsuchen"
+   - „2a: ADR-Quelle durchsuchen“
+   - „2a: Plan-Quelle durchsuchen“
+   - „2a: Konventionen-Quelle durchsuchen“
+   - „2a: Code-Kommentar-Quelle durchsuchen“
+   - „2a: Lint-Suppressions durchsuchen“
+   - „2a: Vorherige Reviews durchsuchen“
 3. **Ein Task für Phase 2b:**
-   - „2b: Technische Validierung"
+   - „2b: Technische Validierung“
 
 **Zeitpunkt B — zu Beginn von Phase 2c, nachdem die Verzeichnis-Split-Heuristik die Sub-Reviewer-Aufteilung bestimmt hat, aber **bevor** der erste Sub-Reviewer gestartet wird:**
 
 4. **Per-Sub-Reviewer-Tasks für Phase 2c** (1 bis N je nach Verzeichnis-Split):
-   - Bei einzelnem Reviewer pro Project-Type-Bucket: z. B. „2c: Frontend-Review" oder „2c: Backend-Review"
-   - Bei Verzeichnis-Split: pro Sub-Reviewer ein eigener Task mit dem Verzeichnis im Subject, z. B. „2c: Frontend-Review src/components", „2c: Backend-Review src/routes"
-   - Bei rekursivem Split: pro Sub-Sub-Reviewer ein Task mit dem tieferen Pfad im Subject, z. B. „2c: Frontend-Review src/components/forms".
+   - Bei einzelnem Reviewer pro Project-Type-Bucket: z. B. „2c: Frontend-Review“ oder „2c: Backend-Review“
+   - Bei Verzeichnis-Split: pro Sub-Reviewer ein eigener Task mit dem Verzeichnis im Subject, z. B. „2c: Frontend-Review src/components“, „2c: Backend-Review src/routes“
+   - Bei rekursivem Split: pro Sub-Sub-Reviewer ein Task mit dem tieferen Pfad im Subject, z. B. „2c: Frontend-Review src/components/forms“.
 
 ### Lifecycle der Tasks
 
@@ -57,7 +57,7 @@ Tasks werden an **zwei** Zeitpunkten angelegt, weil der Verzeichnis-Split in Pha
   - `in_progress`: beim Start des jeweiligen Sub-Agenten in Phase 2.
   - `completed`: bei `ERLEDIGT` des Sub-Agenten.
   - **Bei `ABBRUCH`:** trotzdem auf `completed` setzen, Subject um `[fehlgeschlagen]` ergänzen.
-- **Phase-2-Aggregat-Lifecycle:** Der Phase-Level-Task „Phase 2" gilt erst als `completed`, wenn alle drei Streams (2a, 2b, 2c) `ERLEDIGT` oder `ABBRUCH` gemeldet haben — analog zur Phase-3-Startbedingung.
+- **Phase-2-Aggregat-Lifecycle:** Der Phase-Level-Task „Phase 2“ gilt erst als `completed`, wenn alle drei Streams (2a, 2b, 2c) `ERLEDIGT` oder `ABBRUCH` gemeldet haben — analog zur Phase-3-Startbedingung.
 - **Bei vorzeitigem Gesamt-Abbruch** (z. B. Skill wird unterbrochen, mehrere kritische Sub-Agenten brechen ab und der Workflow kann nicht in Phase 3 fortgesetzt werden): alle noch offenen `pending`- und `in_progress`-Tasks auf `completed` setzen und ihre Subjects mit `[abgebrochen]` ergänzen, bevor der Skill mit `ERLEDIGT` oder `ABBRUCH` endet.
 
 ### Wichtig
@@ -80,7 +80,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Review und beha
 
 ## Finding-Scope
 
-Der Standard-Finding-Scope ist **nur kritische und wichtige Findings**. Hinweise werden nur dann in den Bericht aufgenommen, wenn der User explizit ein umfassendes oder vollständiges Review verlangt (z. B. „umfassendes Review", „alle Findings", „inklusive Hinweise").
+Der Standard-Finding-Scope ist **nur kritische und wichtige Findings**. Hinweise werden nur dann in den Bericht aufgenommen, wenn der User explizit ein umfassendes oder vollständiges Review verlangt (z. B. „umfassendes Review“, „alle Findings“, „inklusive Hinweise“).
 
 Weise den User zu Beginn kurz darauf hin, dass standardmässig nur kritische und wichtige Findings berichtet werden und ein umfassendes Review auf Wunsch möglich ist.
 
@@ -98,9 +98,9 @@ Der Review-Workflow erkennt dokumentierte Designentscheidungen, damit Findings g
 
 Projekt-Typ-Erkennung wie bei `{{SKILL:build}}`. Das Reviewer-Routing samt Verzeichnis-Split-Heuristik ist in Phase 2c definiert.
 
-## Plugin-Konfiguration und Memory
+## Firmo-Konfiguration und Memory
 
-Plugin-interne Dateien liegen unter `.firmo/` im Projekt-Root.
+Firmo-interne Dateien liegen unter `.firmo/` im Projekt-Root.
 
 - Konfiguration: `.firmo/config.json`
 - Memory-Datei: `.firmo/memory.json`
@@ -179,7 +179,7 @@ Wenn `.firmo/config.json` existiert, prüfe sie beim Start auf fehlende unterst�
 - Wenn die Datei ungültiges JSON enthält: nicht schreiben, sichere Defaults für diesen Lauf verwenden und den User mit Pfad und Fehler informieren.
 - Wenn ein bekannter Schlüssel einen ungültigen Wert enthält: nicht überschreiben, sicheren Default für diesen Lauf verwenden und den User über den Schlüssel informieren.
 - Wenn die Migration Schlüssel ergänzt hat: teile dem User einmal in diesem Workflow-Lauf mit, dass `.firmo/config.json` migriert wurde, nenne die ergänzten Schlüssel und weise darauf hin, dass die Defaults das bisherige sichere Verhalten erhalten.
-- Speichere nach erfolgreicher Migration den Status in `.firmo/memory.json` unter `configMigration.review` (Schema siehe Abschnitt „Inhalt" oben), ohne vorhandene Felder wie `lastFindingNumber` zu verlieren. Andere Unterschlüssel von `configMigration` (`applyReview`, `tracker`, `worktree`) unverändert erhalten.
+- Speichere nach erfolgreicher Migration den Status in `.firmo/memory.json` unter `configMigration.review` (Schema siehe Abschnitt „Inhalt“ oben), ohne vorhandene Felder wie `lastFindingNumber` zu verlieren. Andere Unterschlüssel von `configMigration` (`applyReview`, `tracker`, `worktree`) unverändert erhalten.
 - Legacy: Liegt in `configMigration` noch ein alter flacher Eintrag (Felder `version`/`appliedAt`/`addedKeys` direkt unter `configMigration`), darf er beim nächsten Schreiben in die Unterschlüssel-Form überführt bzw. ersetzt werden – die Migrationen sind idempotent config-getrieben; die Zuordnung zum Bereich ist optional per `addedKeys`-Präfix möglich.
 
 ### Cache-Datei
@@ -238,7 +238,7 @@ Lösche die Datei am Ende des Workflows, vor `ERLEDIGT`.
 ### Phase 1: Scope
 
 1. Lies die Argumente.
-2. Lade Plugin-Konfiguration, migriere sie falls nötig und bestimme Review-Profil, DD-Quellenprofil und Validierungsmodus. Bestimme zusätzlich den Tracker-Modus gemäß „Issue-Tracker-Anbindung (Remote-Modus)" (Config `tracker.mode`, Argument-/Per-Run-Signal, ggf. Erstaufruf-Abfrage). Bei `remote`: erkenne Host und CLI und prüfe die CLI-Verfügbarkeit sowie Authentifizierung vorab; fehlt das CLI, brich klar ab (kein stiller Fallback auf `local`).
+2. Lade Firmo-Konfiguration, migriere sie falls nötig und bestimme Review-Profil, DD-Quellenprofil und Validierungsmodus. Bestimme zusätzlich den Tracker-Modus gemäß „Issue-Tracker-Anbindung (Remote-Modus)“ (Config `tracker.mode`, Argument-/Per-Run-Signal, ggf. Erstaufruf-Abfrage). Bei `remote`: erkenne Host und CLI und prüfe die CLI-Verfügbarkeit sowie Authentifizierung vorab; fehlt das CLI, brich klar ab (kein stiller Fallback auf `local`).
 3. Ohne Argumente:
    - prüfe `git diff --name-only`
    - prüfe `git diff --cached --name-only`
@@ -278,7 +278,7 @@ Starte für jede aktive Quelle einen eigenen Sub-Agenten **parallel**. Jeder Sub
 - Lint-Suppressions mit Begründung — `eslint-disable ... -- [Grund]`, `@ts-expect-error [Grund]`
 - Vorherige Review-Reports — `.firmo/review/review-report-*.md`
 
-Nicht aktive Quellen werden nicht durchsucht und im Wisdom-Abschnitt mit „übersprungen durch Profil" dokumentiert. Verwende valide `designDecisions`-Cache-Einträge pro Quelle, wenn ihre Invalidierungsdaten noch passen; andernfalls berechne die Quelle neu und aktualisiere den Cache nach erfolgreicher Extraktion.
+Nicht aktive Quellen werden nicht durchsucht und im Wisdom-Abschnitt mit „übersprungen durch Profil“ dokumentiert. Verwende valide `designDecisions`-Cache-Einträge pro Quelle, wenn ihre Invalidierungsdaten noch passen; andernfalls berechne die Quelle neu und aktualisiere den Cache nach erfolgreicher Extraktion.
 
 Jeder Sub-Agent liefert eine Liste von Designentscheidungen im Format:
 
@@ -286,7 +286,7 @@ Jeder Sub-Agent liefert eine Liste von Designentscheidungen im Format:
 - [DD-001] [Quelle] [Bereich/Datei]: [Zusammenfassung]
 ```
 
-Falls eine Quelle leer ist: Liste mit „keine gefunden" abschließen.
+Falls eine Quelle leer ist: Liste mit „keine gefunden“ abschließen.
 
 Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit Sub-Sektionen pro Quelle.
 
@@ -340,7 +340,7 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 3. **Zentraler Designentscheidungs-Filter** (das ist der einzige Ort, an dem Designentscheidungen gegen Findings abgeglichen werden):
    - Lies alle in `## Designentscheidungen` aus der Wisdom-Datei gesammelten Einträge.
    - Prüfe jedes verbleibende Finding einzeln, ob es durch eine dokumentierte Designentscheidung abgedeckt ist.
-   - Bei Treffer: Finding aus dem Hauptbericht entfernen und in die Tabelle „Übersprungene Findings (Designentscheidungen)" verschieben mit Quellenangabe.
+   - Bei Treffer: Finding aus dem Hauptbericht entfernen und in die Tabelle „Übersprungene Findings (Designentscheidungen)“ verschieben mit Quellenangabe.
    - Bei Unsicherheit (teilweise Überlappung): Finding im Bericht belassen, aber mit Hinweis auf die möglicherweise relevante Designentscheidung versehen.
 4. Bestimme für jedes verbleibende Finding die Folgeaktion:
    - Defekt → `{{SKILL:fix}}`
@@ -369,12 +369,12 @@ Phase 4 verzweigt nach dem in Phase 1 bestimmten Tracker-Modus. Im lokalen Modus
 
 #### Remote-Modus
 
-Verwende die Formate, Labels und Operationen aus „Issue-Tracker-Anbindung (Remote-Modus)". Es wird **kein** lokaler Report geschrieben.
+Verwende die Formate, Labels und Operationen aus „Issue-Tracker-Anbindung (Remote-Modus)“. Es wird **kein** lokaler Report geschrieben.
 
 1. **Labels sicherstellen:** Lege die benötigten Labels idempotent an (`firmo-review-finding`, `firmo-review-epic`, die Aktions- und Schweregrad-Labels, `wontfix`).
-2. **Dedup zuerst:** Frage die vorhandenen Finding-Issues am Tracker ab (Label `firmo-review-finding`, Status offen **und** geschlossen; das Alt-Label `sf-review-finding` gleichwertig mitabfragen und vereinigen, siehe „Label-Konvention") und gleiche jedes qualitätsgeprüfte Finding über die inhaltliche Signatur (Datei+Zeile, Bereich, Problem) gegen deren `Signatur`-Feld ab. Entferne bereits vorhandene Findings aus der Anlageliste. Bei unsicherer Übereinstimmung (z. B. nur verschobene Zeilennummer bei gleichem Problem) im Zweifel als neues Finding behandeln und die mögliche Verwandtschaft im Issue-Body notieren.
+2. **Dedup zuerst:** Frage die vorhandenen Finding-Issues am Tracker ab (Label `firmo-review-finding`, Status offen **und** geschlossen; das Alt-Label `sf-review-finding` gleichwertig mitabfragen und vereinigen, siehe „Label-Konvention“) und gleiche jedes qualitätsgeprüfte Finding über die inhaltliche Signatur (Datei+Zeile, Bereich, Problem) gegen deren `Signatur`-Feld ab. Entferne bereits vorhandene Findings aus der Anlageliste. Bei unsicherer Übereinstimmung (z. B. nur verschobene Zeilennummer bei gleichem Problem) im Zweifel als neues Finding behandeln und die mögliche Verwandtschaft im Issue-Body notieren.
 3. **Neue Finding-Issues anlegen:** Vergib erst für die verbleibenden **neuen** Findings je eine `R-XXXXXXX`-ID (nummeriere fortlaufend ab `lastFindingNumber + 1`, schreibe `memory.json` nur für tatsächlich angelegte Issues fort) und lege je ein Issue im kanonischen Finding-Body-Format mit vollständigem Inhalt und Labels an.
-4. **Neues Epic anlegen:** Lege ein **neues** Epic-Issue im kanonischen Epic-Body-Format an (Titel `Code-Review YYYY-MM-DD[-N]`, Label `firmo-review-epic`). Die Task-Liste enthält ausschließlich die in diesem Lauf neu angelegten Finding-Issues. Übersprungene Findings (Designentscheidungen) kommen in den nicht-abhakbaren Abschnitt „Übersprungen (Designentscheidungen)"; bereits existierende (deduplizierte) Findings werden **nicht** referenziert. Ein bestehendes Epic wird nie erweitert. Trage die Epic-Nummer im `Epic`-Feld der zugehörigen Finding-Issues nach.
+4. **Neues Epic anlegen:** Lege ein **neues** Epic-Issue im kanonischen Epic-Body-Format an (Titel `Code-Review YYYY-MM-DD[-N]`, Label `firmo-review-epic`). Die Task-Liste enthält ausschließlich die in diesem Lauf neu angelegten Finding-Issues. Übersprungene Findings (Designentscheidungen) kommen in den nicht-abhakbaren Abschnitt „Übersprungen (Designentscheidungen)“; bereits existierende (deduplizierte) Findings werden **nicht** referenziert. Ein bestehendes Epic wird nie erweitert. Trage die Epic-Nummer im `Epic`-Feld der zugehörigen Finding-Issues nach.
 5. **Leeres Epic vermeiden:** Sind nach dem Dedup keine neuen Findings übrig, lege **kein** leeres Epic an, sondern melde dem User, dass alle Findings bereits als Issues existieren.
 6. Schreibe `memory.json` mit der höchsten vergebenen Finding-Nummer (wie im lokalen Modus).
 7. Melde dem User Epic-URL, Anzahl neu angelegter und Anzahl deduplizierter Findings.

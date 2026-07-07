@@ -1,8 +1,10 @@
 # 0026: Git-Commit-Mutex in apply-review
 
+**Planungsstatus:** Umgesetzt
+
 ## Problem
 
-`sf-apply-review` kann in Phase 4.3 mehrere Delegations-Sub-Agenten parallel starten. Bei Commit-Strategie „Einzeln" soll jedes Finding einen eigenen Commit bekommen. Ohne globale Commit-Disziplin können parallele Sub-Agenten jedoch gleichzeitig `git add` oder `git commit` ausführen. Dadurch können Änderungen aus einem anderen Finding in den falschen Commit geraten.
+`sf-apply-review` kann in Phase 4.3 mehrere Delegations-Sub-Agenten parallel starten. Bei Commit-Strategie „Einzeln“ soll jedes Finding einen eigenen Commit bekommen. Ohne globale Commit-Disziplin können parallele Sub-Agenten jedoch gleichzeitig `git add` oder `git commit` ausführen. Dadurch können Änderungen aus einem anderen Finding in den falschen Commit geraten.
 
 ## Root Cause
 
@@ -12,7 +14,7 @@ Ein Mutex nur um `git commit` reicht nicht aus, weil fremde Änderungen bereits 
 
 ## Entscheidung
 
-Für Commit-Strategie „Einzeln" führt `sf-apply-review` einen globalen Git-Commit-Mutex ein:
+Für Commit-Strategie „Einzeln“ führt `sf-apply-review` einen globalen Git-Commit-Mutex ein:
 
 - Lock-Pfad: `.sf-plugin/sf-apply-review-commit.lock`
 - Lock-Erwerb: atomar per `mkdir`

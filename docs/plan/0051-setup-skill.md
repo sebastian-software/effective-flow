@@ -10,7 +10,7 @@ Es soll ein neuer Setup-Skill `sf-setup` entstehen, der ein Zielprojekt für die
 
 - Er trägt den Laufzeit-Status unter `.sf-plugin/` idempotent in die `.gitignore` des Zielprojekts ein und hält dabei `.sf-plugin/config.json` getrackt (Pattern `.sf-plugin/*` plus `!.sf-plugin/config.json`); er legt die `.gitignore` an, falls sie fehlt, und migriert eine bestehende pauschale `.sf-plugin/`-Zeile auf dieses Pattern.
 - Er legt `.sf-plugin/config.json` an bzw. aktualisiert sie und fragt dabei die gewünschten Werte sowie das grundsätzlich gewünschte Verhalten beim User ab.
-- Die Abfrage erfolgt hybrid: zuerst eine Preset-Auswahl („Sichere Defaults", „Schneller persönlicher Workflow", „Alles einzeln anpassen"); die zentralen Verhaltensschalter werden in jedem Modus explizit abgefragt; nur bei „Alles einzeln anpassen" geht der Skill Block für Block in die Tiefe.
+- Die Abfrage erfolgt hybrid: zuerst eine Preset-Auswahl („Sichere Defaults“, „Schneller persönlicher Workflow“, „Alles einzeln anpassen“); die zentralen Verhaltensschalter werden in jedem Modus explizit abgefragt; nur bei „Alles einzeln anpassen“ geht der Skill Block für Block in die Tiefe.
 - Eine bereits vorhandene `config.json` wird nicht-destruktiv aktualisiert (vorhandene Werte als Default vorbelegt, nur Geändertes/Fehlendes geschrieben); ein vollständiges Überschreiben erfolgt nur nach ausdrücklicher Bestätigung.
 
 **Begründung der Workflow-Empfehlung:** Es entsteht neue Funktionalität (ein neuer interaktiver Skill plus Anpassungen an Build-Metadaten und README). Das ist eine Feature-Erweiterung des Plugins, daher `/build`.
@@ -31,7 +31,7 @@ Es soll ein neuer Setup-Skill `sf-setup` entstehen, der ein Zielprojekt für die
 | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `skills/sf-setup/SKILL.md` | **Neu.** Utility-Skill: `.gitignore`-Eintrag idempotent setzen, `config.json` interaktiv anlegen/aktualisieren (Presets + Detailmodus), nicht-destruktive Merge-Logik, Zusammenfassung. |
 | `build.mjs`                | Marketplace-Beschreibung und Tags um den neuen Skill `setup` (bzw. Stichwort `configuration`) ergänzen.                                                                                 |
-| `README.md`                | `sf-setup` in der Skill-Tabelle ergänzen; im Abschnitt „Plugin-Konfiguration" auf `sf-setup` als empfohlenen Weg zum Anlegen der `config.json` hinweisen.                               |
+| `README.md`                | `sf-setup` in der Skill-Tabelle ergänzen; im Abschnitt „Plugin-Konfiguration“ auf `sf-setup` als empfohlenen Weg zum Anlegen der `config.json` hinweisen.                               |
 
 ## Implementierungsdetails
 
@@ -50,13 +50,13 @@ Es soll ein neuer Setup-Skill `sf-setup` entstehen, der ein Zielprojekt für die
    - Falls noch nicht hergestellt: eine bestehende pauschale Ignore-Zeile (`.sf-plugin/`, `.sf-plugin`, `/.sf-plugin/`) auf `.sf-plugin/*` plus `!.sf-plugin/config.json` migrieren; fehlt jeder Eintrag, die beiden Zeilen anhängen (mit korrektem Zeilenumbruch); fehlt die Datei, sie anlegen; ist `.sf-plugin/*` vorhanden, aber die Negation fehlt, nur die Negationszeile ergänzen.
    - Falls der Soll-Zustand bereits hergestellt ist: nichts ändern und das knapp melden.
 3. **Bestehende Config prüfen:** `.sf-plugin/config.json` lesen, falls vorhanden. Bei gültigem JSON die vorhandenen Werte als Default-Vorbelegung der folgenden Fragen verwenden. Bei ungültigem JSON nicht still überschreiben, sondern den User informieren und fragen, ob neu angelegt (Backup/Überschreiben) oder abgebrochen werden soll.
-4. **Preset-Auswahl** (siehe `ask` unten). „Sichere Defaults" und „Schneller persönlicher Workflow" entsprechen den beiden im README dokumentierten Beispiel-Konfigurationen; „Alles einzeln anpassen" startet den Detailmodus.
+4. **Preset-Auswahl** (siehe `ask` unten). „Sichere Defaults“ und „Schneller persönlicher Workflow“ entsprechen den beiden im README dokumentierten Beispiel-Konfigurationen; „Alles einzeln anpassen“ startet den Detailmodus.
 5. **Zentrale Verhaltensschalter immer abfragen** (auch in beiden Preset-Modi): `worktree.enabled`, und – falls aktiviert – `worktree.completion` und `worktree.baseBranch`; außerdem `plan.markerLanguage`.
-6. **Detailmodus** (nur bei „Alles einzeln anpassen"): Block für Block alle Schlüssel abfragen, jeweils mit gültigen Werten und Default-Vorbelegung:
+6. **Detailmodus** (nur bei „Alles einzeln anpassen“): Block für Block alle Schlüssel abfragen, jeweils mit gültigen Werten und Default-Vorbelegung:
    - `review`: `profile` (full/focused/fast), `autoConfirmScope` (bool), `designDecisionSources` (full/standard/minimal), `validation` (full/quick/off)
-   - `applyReview`: `defaultCommitStrategy` (worktrees/single/none/„fragen"), `finalValidation` (full/changedScope/off), `worktree.baseDir`, `worktree.setup` (auto/none/Befehl)
+   - `applyReview`: `defaultCommitStrategy` (worktrees/single/none/„fragen“), `finalValidation` (full/changedScope/off), `worktree.baseDir`, `worktree.setup` (auto/none/Befehl)
    - `plan`: `markerLanguage` (de/en)
-   - `worktree`: `enabled` (bool), `baseBranch`, `branchPrefix`, `completion` (pr/merge/branch/„fragen"), `setup` (auto/none/Befehl), `baseDir`
+   - `worktree`: `enabled` (bool), `baseBranch`, `branchPrefix`, `completion` (pr/merge/branch/„fragen“), `setup` (auto/none/Befehl), `baseDir`
 7. **Merge und Schreiben:**
    - Nicht-destruktiv mit dem vorhandenen Inhalt mergen: bekannte Schlüssel mit den gewählten Werten setzen, unbekannte Schlüssel unverändert lassen.
    - Vollständiges Überschreiben (vorhandene Werte verwerfen) nur nach ausdrücklicher Bestätigung.
@@ -67,7 +67,7 @@ Es soll ein neuer Setup-Skill `sf-setup` entstehen, der ein Zielprojekt für die
 
 Die genaue Formulierung entsteht bei der Umsetzung. Mindestens nötig:
 
-- Preset-Auswahl: „Sichere Defaults" / „Schneller persönlicher Workflow" / „Alles einzeln anpassen".
+- Preset-Auswahl: „Sichere Defaults“ / „Schneller persönlicher Workflow“ / „Alles einzeln anpassen“.
 - `worktree.enabled`: Worktree-Integration aktivieren ja/nein.
 - bei aktivierter Worktree-Integration: `worktree.completion` (Pull-Request / Merge / Nur Branch / beim Lauf fragen) und `worktree.baseBranch` (Default `origin/main`).
 - `plan.markerLanguage`: Deutsch / Englisch.
@@ -109,7 +109,7 @@ Die genaue Formulierung entsteht bei der Umsetzung. Mindestens nötig:
 - **Annahme:** Der Skill ist für Zielprojekte gedacht, die das Plugin nutzen; in diesem Plugin-Repo selbst ist `.sf-plugin/` pauschal ignoriert, dort würde der Skill auf das `config.json`-getrackt-Pattern migrieren.
 - **Annahme:** Die `.gitignore`-Änderung betrifft ausschließlich den `.sf-plugin/`-Block (`.sf-plugin/*` plus `!.sf-plugin/config.json`); weitere Einträge (z. B. `dist/`) sind nicht Teil dieses Skills.
 - **Annahme:** Die beiden Presets übernehmen die im README dokumentierten Beispiel-Konfigurationen und ergänzen den `worktree`-Block mit dessen Defaults (`enabled` wird explizit erfragt).
-- **Offen (Umsetzung):** Ob `sf-setup` zusätzlich `applyReview.defaultCommitStrategy`/`worktree.completion` bewusst auf „beim Lauf fragen" (null) belassen kann, statt einen festen Wert zu erzwingen – Default-Empfehlung: „beim Lauf fragen" zulassen.
+- **Offen (Umsetzung):** Ob `sf-setup` zusätzlich `applyReview.defaultCommitStrategy`/`worktree.completion` bewusst auf „beim Lauf fragen“ (null) belassen kann, statt einen festen Wert zu erzwingen – Default-Empfehlung: „beim Lauf fragen“ zulassen.
 
 ## Testergebnisse
 

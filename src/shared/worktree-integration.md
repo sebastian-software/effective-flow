@@ -18,7 +18,7 @@ Der Worktree-Modus funktioniert ohne Konfigurationsdatei (dann bleibt er deaktiv
   "worktree": {
     "enabled": false,
     "baseBranch": "origin/main",
-    "branchPrefix": "sf",
+    "branchPrefix": "firmo",
     "completion": null,
     "setup": "auto",
     "baseDir": ".firmo/.worktrees"
@@ -30,7 +30,7 @@ Fehlende Werte haben diese Defaults:
 
 - `worktree.enabled`: `false` (Feature aus)
 - `worktree.baseBranch`: `"origin/main"`
-- `worktree.branchPrefix`: `"sf"`
+- `worktree.branchPrefix`: `"firmo"`
 - `worktree.completion`: nicht gesetzt (Abschluss-Aktion wird gefragt)
 - `worktree.setup`: `"auto"`
 - `worktree.baseDir`: `.firmo/.worktrees`
@@ -73,7 +73,7 @@ Memory-Eintrag:
 Bestimme zu Beginn der Umsetzungsarbeit den effektiven Modus:
 
 - Basis ist `worktree.enabled` aus der Config.
-- Ein Per-Run-Wunsch des Users hat Vorrang: Verlangt der User ausdrücklich PR-, Branch- oder Worktree-Arbeit, ist der Worktree-Modus aktiv, auch wenn `enabled: false`. Verlangt der User ausdrücklich In-Place-Arbeit („ohne Worktree", „direkt auf dem aktuellen Branch"), bleibt der bisherige In-Place-Modus aktiv, auch wenn `enabled: true`.
+- Ein Per-Run-Wunsch des Users hat Vorrang: Verlangt der User ausdrücklich PR-, Branch- oder Worktree-Arbeit, ist der Worktree-Modus aktiv, auch wenn `enabled: false`. Verlangt der User ausdrücklich In-Place-Arbeit („ohne Worktree“, „direkt auf dem aktuellen Branch“), bleibt der bisherige In-Place-Modus aktiv, auch wenn `enabled: true`.
 - Ist der Modus inaktiv: keine weiteren Schritte aus diesem Baustein ausführen.
 
 ### Worktree-Setup
@@ -83,7 +83,7 @@ Wenn der Worktree-Modus aktiv ist:
 1. Vorbedingungen prüfen: `git worktree` ist verfügbar und der Basis-Ref ist auflösbar. Ist `worktree.baseBranch` ein Remote-Ref (z. B. `origin/main`) und es existiert kein passender Remote, oder der Ref lässt sich nicht auflösen: informiere den User und frage, ob In-Place fortgefahren oder abgebrochen werden soll. Wechsle nicht still auf einen anderen Branch. Hat der aktuelle HEAD relevante uncommittete Änderungen oder lokale Commits, die nicht in `worktree.baseBranch` enthalten sind: weise darauf hin, dass der frisch aus dem Basis-Branch erzeugte Worktree diese Arbeit nicht enthält, und hole eine Bestätigung ein.
 2. Ist `worktree.baseBranch` ein Remote-Ref: zuerst den Stand holen (`git fetch <remote> <branch>`), damit der Worktree auf dem aktuellen Remote-Stand startet.
 3. Repo-Namen bestimmen aus `basename "$(git rev-parse --show-toplevel)"` und als BaseDir `worktree.baseDir` (Default `.firmo/.worktrees`) verwenden. Worktree-Pfad: `BASE_DIR/REPO_NAME/SESSION_ID`.
-4. Liefer-Branch-Namen bilden: `<branchPrefix>/<skill>/<slug>`, z. B. `sf/build/user-login`. Den Slug aus dem Plan-Titel oder der Aufgabenbeschreibung ableiten (Kebab-Case). Existiert der Branch-Name bereits, ein numerisches Suffix anhängen und den gewählten Namen melden.
+4. Liefer-Branch-Namen bilden: `<branchPrefix>/<skill>/<slug>`, z. B. `firmo/build/user-login`. Den Slug aus dem Plan-Titel oder der Aufgabenbeschreibung ableiten (Kebab-Case). Existiert der Branch-Name bereits, ein numerisches Suffix anhängen und den gewählten Namen melden.
 5. Worktree und Liefer-Branch erzeugen: `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> <BASE_REF>`.
 6. Setup gemäß `worktree.setup` im Worktree ausführen und den Modus vorher kurz anzeigen:
    - `auto` oder fehlend: nach Lockfile entscheiden – `pnpm-lock.yaml` → `pnpm install --frozen-lockfile --prefer-offline`, `package-lock.json` → `npm ci`, `yarn.lock` → `yarn install --frozen-lockfile`, `Cargo.toml` → `cargo fetch --locked`, `go.mod` → `go mod download`, `uv.lock` → `uv sync --frozen`, `poetry.lock` → `poetry install --sync`, keine bekannte Datei → kein Setup.
@@ -94,14 +94,14 @@ Wenn der Worktree-Modus aktiv ist:
 ### Was im Worktree liegt und was im Haupt-Repo bleibt
 
 - **Im Worktree (Teil des Liefer-Branches):** die eigentlichen Code-, Test- und Doku-Deliverables des Workflows.
-- **Im Liefer-Branch, aber im Haupt-Repo autorisiert – die Plan-Datei:** Die Plan-Datei unter `docs/plan/` gehört in ihrem finalen Zustand (Statusmarker auf abgeschlossen, Findings-Zusammenfassung, Verweis auf ausgelagerte Review-Reports) mit in den PR, damit der Plan mit dem Code reist, den er beschreibt. Sie wird weiterhin im Haupt-Repo autorisiert – dort laufen Nummern-Reservierung und Statusaktualisierung, und die `.firmo/`-Buchhaltung referenziert sie –, ihr finaler Stand wird aber beim Handback in den Worktree übernommen und dort mitcommittet (siehe „Handback"). Der Worktree entsteht frisch aus dem Basis-Branch und enthält die Plan-Datei zunächst nicht; das Handback bringt sie hinein. Weil der Plan damit auf dem Liefer-Branch entsteht, greift bis zum Merge die reguläre Kollisionsauflösung der Plan-Nummern-Konvention für über Branches erzeugte Pläne; Referenzen aus den Review-Reports lösen bis dahin über Nummer bzw. Slug auf.
-- **Nur im Haupt-Repo (nicht im Liefer-Branch):** die reine Plugin-Buchhaltung und der Laufzeitstatus, also alle `.firmo/`-Artefakte (`memory.json`, Review-Reports unter `.firmo/review/`, Config-Migrationsstatus und die Wisdom-Datei). Diese Dateien werden immer im Haupt-Repo gelesen und geschrieben, nie im frisch aus dem Basis-Branch erzeugten Worktree. So bleibt der Liefer-Branch ein Deliverable-Diff aus Code, Tests, Doku und Plan-Datei, der spätere `{{SKILL:apply-review}}`-Fluss findet die Review-Reports im Haupt-Repo, und der Worktree enthält keine untrackten `.firmo/`-Reste, die `git worktree remove` blockieren würden.
+- **Im Liefer-Branch, aber im Haupt-Repo autorisiert – die Plan-Datei:** Die Plan-Datei unter `docs/plan/` gehört in ihrem finalen Zustand (Statusmarker auf abgeschlossen, Findings-Zusammenfassung, Verweis auf ausgelagerte Review-Reports) mit in den PR, damit der Plan mit dem Code reist, den er beschreibt. Sie wird weiterhin im Haupt-Repo autorisiert – dort laufen Nummern-Reservierung und Statusaktualisierung, und die `.firmo/`-Buchhaltung referenziert sie –, ihr finaler Stand wird aber beim Handback in den Worktree übernommen und dort mitcommittet (siehe „Handback“). Der Worktree entsteht frisch aus dem Basis-Branch und enthält die Plan-Datei zunächst nicht; das Handback bringt sie hinein. Weil der Plan damit auf dem Liefer-Branch entsteht, greift bis zum Merge die reguläre Kollisionsauflösung der Plan-Nummern-Konvention für über Branches erzeugte Pläne; Referenzen aus den Review-Reports lösen bis dahin über Nummer bzw. Slug auf.
+- **Nur im Haupt-Repo (nicht im Liefer-Branch):** die reine Firmo-Buchhaltung und der Laufzeitstatus, also alle `.firmo/`-Artefakte (`memory.json`, Review-Reports unter `.firmo/review/`, Config-Migrationsstatus und die Wisdom-Datei). Diese Dateien werden immer im Haupt-Repo gelesen und geschrieben, nie im frisch aus dem Basis-Branch erzeugten Worktree. So bleibt der Liefer-Branch ein Deliverable-Diff aus Code, Tests, Doku und Plan-Datei, der spätere `{{SKILL:apply-review}}`-Fluss findet die Review-Reports im Haupt-Repo, und der Worktree enthält keine untrackten `.firmo/`-Reste, die `git worktree remove` blockieren würden.
 
 ### Handback und Abschluss-Aktion (Abschlussphase)
 
 Im Anschluss an die reguläre Abschlusslogik des Workflows (inklusive Goal-Verifikation und Plan-Datei-Aktualisierung):
 
-1. **Plan-Datei in den Liefer-Branch übernehmen:** Sofern der Workflow eine Plan-Datei geführt hat, stelle ihren finalen Zustand aus dem Haupt-Repo im Worktree unter demselben Pfad `docs/plan/NNNN-…md` bereit: in den Worktree kopieren bzw. dort anlegen, falls der Basis-Branch sie noch nicht enthält, sonst die im Worktree vorhandene Datei auf den finalen Stand bringen. Diese Datei wird im nächsten Schritt mitcommittet und ist damit Teil des PRs. Entferne anschließend die dadurch redundante, untrackte Plan-Datei aus dem Arbeitsbaum des Haupt-Repos, damit sie nicht dangling liegen bleibt und ein späterer `merge`-Abschluss nicht an einer „untracked working tree file"-Kollision scheitert. Die `.firmo/`-Artefakte (`memory.json`, Review-Reports, Wisdom-Datei) bleiben unverändert im Haupt-Repo. Führte der Workflow keine Plan-Datei, entfällt dieser Schritt.
+1. **Plan-Datei in den Liefer-Branch übernehmen:** Sofern der Workflow eine Plan-Datei geführt hat, stelle ihren finalen Zustand aus dem Haupt-Repo im Worktree unter demselben Pfad `docs/plan/NNNN-…md` bereit: in den Worktree kopieren bzw. dort anlegen, falls der Basis-Branch sie noch nicht enthält, sonst die im Worktree vorhandene Datei auf den finalen Stand bringen. Diese Datei wird im nächsten Schritt mitcommittet und ist damit Teil des PRs. Entferne anschließend die dadurch redundante, untrackte Plan-Datei aus dem Arbeitsbaum des Haupt-Repos, damit sie nicht dangling liegen bleibt und ein späterer `merge`-Abschluss nicht an einer „untracked working tree file“-Kollision scheitert. Die `.firmo/`-Artefakte (`memory.json`, Review-Reports, Wisdom-Datei) bleiben unverändert im Haupt-Repo. Führte der Workflow keine Plan-Datei, entfällt dieser Schritt.
 2. **Commit sicherstellen:** Alle beabsichtigten Änderungen im Worktree committen – die Code-, Test- und Doku-Deliverables sowie die in Schritt 1 übernommene Plan-Datei – über die Commit-Logik aus `{{SKILL:commit}}` (ausschließlich die bekannten geänderten Dateien explizit stagen, eine konkrete Conventional-Commit-Message ableiten, niemals `Co-Authored-By`-Trailer setzen). Workflows, die ihre Arbeit bereits committet haben (z. B. `{{SKILL:maintain}}` mit einem Commit pro Gruppe), committen hier nur noch die in Schritt 1 übernommene Plan-Datei nach, falls sie noch nicht Teil eines Commits ist. Gibt es nichts zu committen: den User informieren, den leeren Liefer-Branch entfernen und ohne PR/Merge enden.
 3. **Abschluss-Aktion bestimmen:** Wenn `worktree.completion` einen gültigen Wert hat, diesen verwenden und kurz melden, dass die Aktion aus `.firmo/config.json` übernommen wurde. Sonst fragen:
 

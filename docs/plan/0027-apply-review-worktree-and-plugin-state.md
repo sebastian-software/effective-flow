@@ -1,5 +1,7 @@
 # Apply-Review Worktree-Isolation und Plugin-State
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 `sf-apply-review` soll optional parallele Findings in getrennten Git-Worktrees bearbeiten können, damit Änderungen paralleler Agenten nicht in falsche Commits geraten. Zusätzlich sollen vom Plugin erzeugte operative Dateien unter `.sf-plugin/` liegen. Temporäre Dateien beginnen mit einem Punkt.

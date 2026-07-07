@@ -9,21 +9,21 @@
 Die Code-ändernden Skills sollen besser mit GitHub- und Forgejo-Pull-Requests verknüpft werden und paralleles Arbeiten auf dem lokalen Repo ermöglichen. Konkret:
 
 - Für die aktiv Code verändernden Skills `sf-build`, `sf-fix`, `sf-refactor`, `sf-docs` und `sf-maintain` soll – wenn das Feature aktiv ist und nicht ausdrücklich anders verlangt – ein Git-Worktree auf einem konfigurierbaren Basis-Branch (Default `origin/main`) erzeugt werden. Die gesamte Implementierungsarbeit läuft in diesem Worktree.
-- Nach Abschluss der Arbeit wird der geänderte Code als Branch im lokalen Repo „zurückgezogen": Da der Worktree dasselbe `.git` teilt, ist der dort erzeugte Liefer-Branch bereits Teil des lokalen Repos; das Worktree-Verzeichnis wird entfernt und der Branch bleibt erhalten.
+- Nach Abschluss der Arbeit wird der geänderte Code als Branch im lokalen Repo „zurückgezogen“: Da der Worktree dasselbe `.git` teilt, ist der dort erzeugte Liefer-Branch bereits Teil des lokalen Repos; das Worktree-Verzeichnis wird entfernt und der Branch bleibt erhalten.
 - Aus diesem Branch kann ein Pull-Request erstellt werden. Die PR-Erstellung wird ein eigener neuer Skill `sf-pr`, der GitHub (über `gh`) und Forgejo (über `tea`) unterstützt.
 - Ist kein PR gewünscht, gibt es optional einen Merge zurück auf den Basis-Branch.
 - Das Gesamtpaket ist **opt-in** über `.sf-plugin/config.json`, weil nicht jedes Repo über GitHub oder Forgejo gehostet ist. Ist das Feature deaktiviert (Default), verhalten sich die fünf Skills exakt wie heute.
 - Der Basis-Branch für die Worktrees ist konfigurierbar, Default `origin/main`.
 
-**Begründung der Workflow-Empfehlung:** Es entstehen neue Funktionalität (ein neuer Skill `sf-pr`, ein neues Verhalten „Worktree + Branch + PR/Merge" in fünf Skills) und ein neues Shared-Include. Das ist eine Feature-Erweiterung des Plugins, daher `/build`.
+**Begründung der Workflow-Empfehlung:** Es entstehen neue Funktionalität (ein neuer Skill `sf-pr`, ein neues Verhalten „Worktree + Branch + PR/Merge“ in fünf Skills) und ein neues Shared-Include. Das ist eine Feature-Erweiterung des Plugins, daher `/build`.
 
 ## Architekturentscheidungen
 
 - **Zentrales Shared-Include `worktree-integration.md`:** Das gesamte Lebenszyklus-Verhalten (Config-Schema, Opt-in-Erkennung, Worktree-Setup, Handback, Abschluss-Aktion) wird einmal in `skills/_shared/worktree-integration.md` beschrieben und per ` ```include ` in alle fünf Code-ändernden Skills eingebunden. So bleibt das Verhalten konsistent und an einer Stelle wartbar – analog zu bestehenden Includes wie `pre-commit-gate` oder `goal-completion`.
 - **Eigener Top-Level-Config-Block `worktree`:** Weil das Feature mehrere Skills betrifft, bekommt es einen eigenen Top-Level-Namespace in `.sf-plugin/config.json`, getrennt vom bestehenden `applyReview.worktree`. Die Config-Migration folgt dem etablierten nicht-destruktiven Muster der anderen Skills.
-- **Opt-in mit Default „aus":** `worktree.enabled` ist standardmäßig `false`. Nur bei `true` (oder expliziter Anforderung im Lauf) wird der Worktree-Modus aktiv. Damit bleibt das bisherige In-Place-Verhalten der fünf Skills der Default.
-- **Liefer-Branch = Worktree-Branch:** Der Worktree wird direkt mit dem Liefer-Branch erzeugt (`git worktree add <PATH> -b <BRANCH> <BASE_REF>`). „Zurückziehen" bedeutet: Worktree-Verzeichnis entfernen, Branch bleibt im lokalen Repo. Es wird **kein** separater Branch via cherry-pick/rebase erzeugt (vom User bestätigt).
-- **Commit-Pflicht über `sf-commit`-Logik:** Damit Branch/PR sinnvoll sind, committen die Skills ihre Arbeit im Worktree. Die Commit-Logik aus `sf-commit` (explizites Stagen der bekannten Dateien, Conventional-Commit-Message, keine `Co-Authored-By`-Trailer) wird wiederverwendet (vom User bestätigt). `sf-maintain` behält seine bestehende „ein Commit pro Gruppe"-Logik; diese Commits entstehen dann einfach im Worktree.
+- **Opt-in mit Default „aus“:** `worktree.enabled` ist standardmäßig `false`. Nur bei `true` (oder expliziter Anforderung im Lauf) wird der Worktree-Modus aktiv. Damit bleibt das bisherige In-Place-Verhalten der fünf Skills der Default.
+- **Liefer-Branch = Worktree-Branch:** Der Worktree wird direkt mit dem Liefer-Branch erzeugt (`git worktree add <PATH> -b <BRANCH> <BASE_REF>`). „Zurückziehen“ bedeutet: Worktree-Verzeichnis entfernen, Branch bleibt im lokalen Repo. Es wird **kein** separater Branch via cherry-pick/rebase erzeugt (vom User bestätigt).
+- **Commit-Pflicht über `sf-commit`-Logik:** Damit Branch/PR sinnvoll sind, committen die Skills ihre Arbeit im Worktree. Die Commit-Logik aus `sf-commit` (explizites Stagen der bekannten Dateien, Conventional-Commit-Message, keine `Co-Authored-By`-Trailer) wird wiederverwendet (vom User bestätigt). `sf-maintain` behält seine bestehende „ein Commit pro Gruppe“-Logik; diese Commits entstehen dann einfach im Worktree.
 - **Abschluss-Aktion config-gesteuert mit Ask-Fallback:** `worktree.completion` steuert die Abschluss-Aktion (`pr` / `merge` / `branch`). Ist kein gültiger Wert gesetzt, wird gefragt – analog zu `applyReview.defaultCommitStrategy`.
 - **Neuer Skill `sf-pr` (Typ `utility`):** Die PR-Erstellung ist ein eigenständiger Skill, der sowohl von den fünf Skills (bei `completion: "pr"`) als auch direkt (`/pr`) aufrufbar ist. Host-Erkennung über die `origin`-Remote-URL: `github.com` → `gh`, sonst → Forgejo via `tea`.
 - **`sf-apply-review` bleibt unberührt:** Dessen bestehender Worktree-Mechanismus (per-Finding-Parallelisierung mit cherry-pick zurück auf den aktuellen Branch, Plan 0027) verfolgt ein anderes Ziel und ist **nicht** Teil dieses Plans.
@@ -39,7 +39,7 @@ Die Code-ändernden Skills sollen besser mit GitHub- und Forgejo-Pull-Requests v
 | `skills/sf-fix/SKILL.md`                 | Analog zu `sf-build`.                                                                                                                                                                                                      |
 | `skills/sf-refactor/SKILL.md`            | Analog zu `sf-build`.                                                                                                                                                                                                      |
 | `skills/sf-docs/SKILL.md`                | Analog zu `sf-build`.                                                                                                                                                                                                      |
-| `skills/sf-maintain/SKILL.md`            | Analog; zusätzlich Abstimmung mit der bestehenden „ein Commit pro Gruppe"-Logik (Commits entstehen im Worktree).                                                                                                           |
+| `skills/sf-maintain/SKILL.md`            | Analog; zusätzlich Abstimmung mit der bestehenden „ein Commit pro Gruppe“-Logik (Commits entstehen im Worktree).                                                                                                           |
 | `build.mjs`                              | Marketplace-Beschreibung und Tags um den neuen Skill `pr` bzw. Stichworte wie `git`, `pull-request`, `worktree` ergänzen.                                                                                                  |
 
 ## Implementierungsdetails
@@ -91,7 +91,7 @@ Gültige Werte:
 In der jeweils ersten/Setup-Phase jedes der fünf Skills wird der effektive Modus bestimmt:
 
 - Basis: `worktree.enabled` aus der Config.
-- Per-Run-Override hat Vorrang: Verlangt der User im Lauf ausdrücklich PR/Branch/Worktree-Arbeit, wird der Worktree-Modus aktiviert, auch wenn `enabled: false`. Verlangt er ausdrücklich In-Place-Arbeit („ohne Worktree", „direkt auf dem aktuellen Branch"), bleibt der heutige Modus aktiv, auch wenn `enabled: true`.
+- Per-Run-Override hat Vorrang: Verlangt der User im Lauf ausdrücklich PR/Branch/Worktree-Arbeit, wird der Worktree-Modus aktiviert, auch wenn `enabled: false`. Verlangt er ausdrücklich In-Place-Arbeit („ohne Worktree“, „direkt auf dem aktuellen Branch“), bleibt der heutige Modus aktiv, auch wenn `enabled: true`.
 - Ist der Modus inaktiv, läuft der Skill unverändert wie heute (keine Verhaltensänderung).
 
 ### Worktree-Setup (Setup-Phase)
@@ -202,7 +202,7 @@ Dieses Repo enthält kein Unit-Test-Framework; die Umsetzung besteht aus Markdow
 | Behoben                 |      8 |
 | Offen / Nicht umgesetzt |      1 |
 
-Keine kritischen Findings. Drei wichtige Findings (Plan-/State-Trennung Worktree vs. Haupt-Repo, `.sf-plugin/`-State im Haupt-Repo, Merge-Ablauf) und fünf Hinweise wurden direkt eingearbeitet. Der einzige offene Hinweis (GitHub-Enterprise-Host-Erkennung in `sf-pr`) ist bewusst nicht als Heuristik umgesetzt; er ist durch den bereits vorhandenen Per-Run-Host-Override abgedeckt und als offener Punkt unter „Annahmen und offene Punkte" dokumentiert. Da keine offenen kritischen oder wichtigen Findings verbleiben, wurde kein externer Review-Report ausgelagert.
+Keine kritischen Findings. Drei wichtige Findings (Plan-/State-Trennung Worktree vs. Haupt-Repo, `.sf-plugin/`-State im Haupt-Repo, Merge-Ablauf) und fünf Hinweise wurden direkt eingearbeitet. Der einzige offene Hinweis (GitHub-Enterprise-Host-Erkennung in `sf-pr`) ist bewusst nicht als Heuristik umgesetzt; er ist durch den bereits vorhandenen Per-Run-Host-Override abgedeckt und als offener Punkt unter „Annahmen und offene Punkte“ dokumentiert. Da keine offenen kritischen oder wichtigen Findings verbleiben, wurde kein externer Review-Report ausgelagert.
 
 ## Plan-Review
 
@@ -225,5 +225,5 @@ Keine kritischen Findings. Drei wichtige Findings (Plan-/State-Trennung Worktree
 - **Scope (Wichtig):** Die Commit-Pflicht ändert das bisher überwiegend In-Place-und-nicht-committende Verhalten von vier Skills. Eingearbeitet durch klare Bindung an den Opt-in: ohne aktiven Worktree-Modus bleibt das heutige Verhalten unverändert (eigenes Akzeptanzkriterium für Regressionsfreiheit).
 - **Architektur (Hinweis):** Zwei getrennte Worktree-Mechanismen (`applyReview.worktree` und `worktree`) existieren parallel. Bewusst akzeptiert, da unterschiedliche Ziele (cherry-pick auf aktuellen Branch vs. eigener Liefer-Branch für PR). In den Skills klar benennen, um Verwechslung zu vermeiden.
 - **Security (Hinweis):** PR-Erstellung nutzt vorhandene CLI-Authentifizierung (`gh`/`tea`); es werden keine Tokens in der Config gespeichert. Fehlende Authentifizierung führt zu sauberem Abbruch ohne Seiteneffekt.
-- **Fehlerfälle (Hinweis):** Merge-/Worktree-Remove-/Push-Fehler sind als Edge Cases mit „stoppen und informieren, Branch belassen" abgedeckt; keine automatische Konfliktauflösung.
+- **Fehlerfälle (Hinweis):** Merge-/Worktree-Remove-/Push-Fehler sind als Edge Cases mit „stoppen und informieren, Branch belassen“ abgedeckt; keine automatische Konfliktauflösung.
 - **Wartbarkeit (Hinweis):** Das Lebenszyklus-Verhalten liegt in einem einzigen Shared-Include, was Drift zwischen den fünf Skills vermeidet; die optionale Commit-Kern-Extraktion ist als zurückgestellter Punkt dokumentiert.

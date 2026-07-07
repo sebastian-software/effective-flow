@@ -80,7 +80,7 @@ Das Repository soll erstmals ein verwaltetes Dependency-Management und einen ein
 
 ## Annahmen und offene Punkte
 
-- Annahme: „Alle unterstützten Dateien" umfasst die im Repo real vorkommenden oxfmt-Sprachen, praktisch JavaScript (`build.mjs`) und Markdown; `.sh`, `.txt` und `.gitignore` werden von oxfmt nicht verarbeitet.
+- Annahme: „Alle unterstützten Dateien“ umfasst die im Repo real vorkommenden oxfmt-Sprachen, praktisch JavaScript (`build.mjs`) und Markdown; `.sh`, `.txt` und `.gitignore` werden von oxfmt nicht verarbeitet.
 - Annahme: Single-Quote-Stil ist gewünscht, um den `build.mjs`-Diff klein zu halten. Falls oxfmt-Defaults (Double Quotes) bevorzugt werden, ist das eine Ein-Zeilen-Änderung in `.oxfmtrc.json`.
 - Annahme: Kein Versions-Bump, da der distribuierte Plugin-Inhalt unverändert bleibt.
 - Offener Punkt: Eine spätere Erweiterung könnte oxfmt zusätzlich in `local-update.sh` oder einen Git-Hook einbinden; das ist nicht Teil dieser Umsetzung.
@@ -103,7 +103,7 @@ Konsequenz: `skills/**` wird per `ignorePatterns` vom Formatter ausgenommen. Die
 - Stichprobe an `docs/plan/0044-maintain-skill.md`: nur Tabellen-Spaltenausrichtung geändert; deutsche Typografie (`„…"`, `–`) und Inhalt unverändert.
 - Stichprobe an `skills/*.md`: Build-Breaker erkannt (siehe Befund), Schaden zurückgerollt, `skills/**` ausgeschlossen.
 - Bulk-Lauf `pnpm format`: 50 Dateien formatiert (`README.md`, `docs/**`, `build.mjs`, `package.json`, `.oxfmtrc.json`).
-- `pnpm agent:check` → „All matched files use the correct format", Exit 0.
+- `pnpm agent:check` → „All matched files use the correct format“, Exit 0.
 - `node --check build.mjs` → fehlerfrei.
 - `node build.mjs` → unverändert 12 Codex-Skills, 9 Codex-Agents, 12 Claude-Code-Commands, 9 Claude-Code-Agents.
 - `rg "\{\{INCLUDE:|\{\{SKILL:|\{\{AGENT:|\{\{ASK" dist/codex dist/claude` → keine Platzhalter-Leaks; `/maintain` enthält weiterhin 4 ASK-Optionen.

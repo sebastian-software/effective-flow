@@ -14,7 +14,7 @@ Scharfe Abgrenzung – `maintain` ist bewusst schlank:
 
 - **Im Scope:** Dependency-Updates, Security-/Audit-Fixes, Breaking-Change-Adaption.
 - **Nicht im Scope:** allgemeines Refactoring oder Dead-Code (→ `{{SKILL:refactor}}`), Bugfixes ohne Dependency-Bezug (→ `{{SKILL:fix}}`), reine Formatting-/Config-Pflege (→ `{{AGENT:code-validator}}`), neue Funktionalität (→ `{{SKILL:build}}`).
-- **Kein Scheduler:** automatisches, zeitgesteuertes Bumpen übernehmen Werkzeuge wie Renovate oder Dependabot. `maintain` ist der interaktive „jetzt aufräumen"-Lauf.
+- **Kein Scheduler:** automatisches, zeitgesteuertes Bumpen übernehmen Werkzeuge wie Renovate oder Dependabot. `maintain` ist der interaktive „jetzt aufräumen“-Lauf.
 
 ```include
 language-rules
@@ -53,7 +53,7 @@ Inhalte:
 - Baseline-Werte und deren Bedeutung
 - gewählte Update-Gruppen und Begründung
 - Breaking Changes mit Migrationsquelle (Changelog/Release Notes)
-- zurückgerollte oder als „manuell" markierte Updates
+- zurückgerollte oder als „manuell“ markierte Updates
 - entdeckte Abhängigkeiten zwischen Packages
 
 Lies die Datei vor jeder delegierten Fachphase und gib ihren Inhalt als Kontext weiter. Lösche sie am Ende des Workflows.
@@ -102,7 +102,7 @@ unresolved-review-report
    - **Safe-Batch:** Patch- und Minor-Bumps ohne bekannte Breaking Changes
    - **Major einzeln:** jeder Major-Bump als eigene Gruppe mit Hinweis auf Changelog/Migration
    - **Security:** Audit-Fixes, ggf. priorisiert
-4. Wenn nichts veraltet und keine Audit-Befunde: melde „nichts zu tun" und beende sauber.
+4. Wenn nichts veraltet und keine Audit-Befunde: melde „nichts zu tun“ und beende sauber.
 5. Präsentiere die Gruppenübersicht und kläre die Auswahl:
 
 ```ask
@@ -119,7 +119,7 @@ options:
     description: Konkrete Gruppen als Freitext benennen
 ```
 
-6. Leite aus der gewählten Update-Auswahl die explizite Abschlussbedingung ab (umgesetzte Gruppen, Baseline-Abgleich grün, Reviewer ohne offene kritische Findings bei Code-Anpassungen; siehe „Goal-getriebene Abschlusssteuerung"); sie deckt die Phasen 2–5 ab. Da das Update-Gate eine Auswahlfrage ist, stelle direkt nach der Auswahl die eigenständige Goal-Folgefrage gemäß „Explizite Goal-Abfrage für autonome Läufe". Bei Wahl „Autonom via /goal" gib den `/goal`-String für die Phasen 2–5 aus; die Folgefrage entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
+6. Leite aus der gewählten Update-Auswahl die explizite Abschlussbedingung ab (umgesetzte Gruppen, Baseline-Abgleich grün, Reviewer ohne offene kritische Findings bei Code-Anpassungen; siehe „Goal-getriebene Abschlusssteuerung“); sie deckt die Phasen 2–5 ab. Da das Update-Gate eine Auswahlfrage ist, stelle direkt nach der Auswahl die eigenständige Goal-Folgefrage gemäß „Explizite Goal-Abfrage für autonome Läufe“. Bei Wahl „Autonom via /goal“ gib den `/goal`-String für die Phasen 2–5 aus; die Folgefrage entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
 
 ```ask
 when: der Workflow interaktiv läuft und nicht als nicht-interaktiver Sub-Agent (z. B. durch /firmo apply-review) delegiert wurde
@@ -134,7 +134,7 @@ options:
 
 ### Phase 2: Baseline
 
-Bestimme zuerst gemäß „Worktree-Integration" den effektiven Worktree-Modus und führe bei aktivem Modus das Worktree-Setup aus, bevor die Baseline erhoben wird. Baseline, Apply pro Gruppe und Review (Phasen 2–4) laufen dann mit Arbeitsverzeichnis im Worktree; die Commits pro Gruppe aus Phase 3 landen so direkt auf dem Liefer-Branch.
+Bestimme zuerst gemäß „Worktree-Integration“ den effektiven Worktree-Modus und führe bei aktivem Modus das Worktree-Setup aus, bevor die Baseline erhoben wird. Baseline, Apply pro Gruppe und Review (Phasen 2–4) laufen dann mit Arbeitsverzeichnis im Worktree; die Commits pro Gruppe aus Phase 3 landen so direkt auf dem Liefer-Branch.
 
 Starte parallel:
 
@@ -156,8 +156,8 @@ Arbeite die freigegebenen Gruppen nacheinander ab. Für jede Gruppe:
 3. Validiere die Gruppe: `{{AGENT:code-validator}}` und die bestehenden Tests erneut ausführen.
 4. Gleiche gegen die Baseline ab:
    - grün → ein sauberer Commit pro Gruppe (siehe Commit-Regeln), aussagekräftige Message, z. B. `chore(deps): …`.
-   - rot und reparabel → Anpassung über den Implementer nachziehen, erneut validieren – gemäß „Goal-getriebene Abschlusssteuerung" die internen Korrekturrunden begrenzen; bleibt die Gruppe danach rot, wie „nicht sinnvoll reparabel" behandeln statt unbegrenzt zu wiederholen.
-   - rot und nicht sinnvoll reparabel → Gruppe zurückrollen (Manifest und Lockfile auf den Stand vor der Gruppe) und als „manuell" markieren.
+   - rot und reparabel → Anpassung über den Implementer nachziehen, erneut validieren – gemäß „Goal-getriebene Abschlusssteuerung“ die internen Korrekturrunden begrenzen; bleibt die Gruppe danach rot, wie „nicht sinnvoll reparabel“ behandeln statt unbegrenzt zu wiederholen.
+   - rot und nicht sinnvoll reparabel → Gruppe zurückrollen (Manifest und Lockfile auf den Stand vor der Gruppe) und als „manuell“ markieren.
 5. Halte Ergebnis und Begründung in der Wisdom-Datei fest.
 
 ### Phase 4: Review
@@ -166,7 +166,7 @@ Nur wenn in Phase 3 Code für Breaking Changes angepasst wurde:
 
 1. Starte den passenden Reviewer für die geänderten Dateien (`{{AGENT:frontend-reviewer}}`, `{{AGENT:nodejs-reviewer}}` bzw. `{{AGENT:rust-reviewer}}`).
 2. Behebe kritische Findings vor dem Abschluss.
-3. Wenn Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben, schreibe sie gemäß „Offene Review-Finding-Reports" in eine neue Datei unter `.firmo/review/` und nenne den Reportpfad in der Abschlusszusammenfassung.
+3. Wenn Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben, schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.firmo/review/` und nenne den Reportpfad in der Abschlusszusammenfassung.
 
 Reine Dependency-Bumps ohne Code-Anpassung brauchen kein Reviewer-Pass; vermerke das kurz.
 
@@ -176,11 +176,11 @@ Reine Dependency-Bumps ohne Code-Anpassung brauchen kein Reviewer-Pass; vermerke
 2. Fasse zusammen:
    - welche Gruppen umgesetzt und committet wurden (mit Versionssprüngen),
    - welche Audit-Befunde behoben wurden,
-   - welche Updates als „manuell" zurückgestellt wurden und warum,
+   - welche Updates als „manuell“ zurückgestellt wurden und warum,
    - Verweis auf einen ausgelagerten Review-Report, falls vorhanden.
 3. Bestätige, dass das Verhalten unverändert blieb (Baseline-Abgleich grün).
 4. Lösche die Wisdom-Datei.
-5. Wenn der Worktree-Modus aktiv war: führe das Handback gemäß „Worktree-Integration" aus. Die Commits pro Gruppe liegen bereits auf dem Liefer-Branch; das Handback zieht den Worktree zurück und führt die Abschluss-Aktion `pr`/`merge`/`branch` aus. Nenne Liefer-Branch und Ergebnis in der Zusammenfassung.
+5. Wenn der Worktree-Modus aktiv war: führe das Handback gemäß „Worktree-Integration“ aus. Die Commits pro Gruppe liegen bereits auf dem Liefer-Branch; das Handback zieht den Worktree zurück und führt die Abschluss-Aktion `pr`/`merge`/`branch` aus. Nenne Liefer-Branch und Ergebnis in der Zusammenfassung.
 
 ```include
 pre-commit-gate

@@ -7,7 +7,7 @@
 ## Anforderung
 
 Die verstreuten Ad-hoc-Schleifen der Workflow-Skills („wiederhole bis Validator
-grün", „zurück zu Phase 3", „behebe und wiederhole Phase 4") sollen durch ein
+grün", „zurück zu Phase 3“, „behebe und wiederhole Phase 4“) sollen durch ein
 einheitliches, geteiltes Goal-Konzept ersetzt werden. Das Konzept übernimmt die
 drei Prinzipien des nativen `/goal` (Codex und Claude Code), löst sich aber von
 der konkreten `/goal`-Mechanik, weil ein Skill das native `/goal` nicht von innen
@@ -27,7 +27,7 @@ Empfohlen wird **Feature (`/build`)**, nicht `/refactor`. Zwar ist der größte 
 der Arbeit refactoring-artig (verstreute Loop-Formulierungen in einen geteilten
 Baustein zusammenziehen), doch der Auftrag enthält eine **bewusste
 Verhaltensänderung** (beschränkter Loop mit Escape-Hatch statt unbeschränktem
-„wiederhole bis") und eine **neue nutzersichtbare Ausgabe** (der `/goal`-String).
+„wiederhole bis“) und eine **neue nutzersichtbare Ausgabe** (der `/goal`-String).
 Beides sprengt die Verhaltens-Invarianz-Regel von `/refactor`. Wer den
 `/goal`-String und die geänderte Loop-Terminierung als bewusst akzeptierte
 Änderung betrachtet, kann den Plan alternativ über `/refactor` umsetzen; die
@@ -54,7 +54,7 @@ restlichen Umbauten sind dafür geeignet.
   Einfügen des `/goal`-Strings → autonom.
 - **Selbsttragender String:** Der ausgegebene `/goal`-String referenziert die
   Plan-Datei und weist an, die verbleibenden Workflow-Phasen zu durchlaufen
-  (nicht „mach die Kriterien irgendwie grün").
+  (nicht „mach die Kriterien irgendwie grün“).
 - **Differenzierte Tiefe je Skill:**
   - Voll (Bedingung + unabhängige Verifikation + beschränkter Loop +
     `/goal`-String): `sf-build`, `sf-fix`, `sf-refactor`, `sf-docs`,
@@ -65,7 +65,7 @@ restlichen Umbauten sind dafür geeignet.
     Autonom-Loop, **kein** `/goal`-String): `sf-review` (produziert nur einen
     Report), `sf-plan` (erzeugt die Bedingung, läuft nicht darauf zu).
 - **Bewusst ausgeklammert:** `sf-apply-review` (späteres Stash-Gate in Phase 6
-  nach der Commit-Strategie → bräuchte eine „spätere Gates → sichere Defaults"-
+  nach der Commit-Strategie → bräuchte eine „spätere Gates → sichere Defaults“-
   Sonderregel). Als TODO in `TODO.md` vermerkt, separate spätere Umsetzung.
 - **Utilities/Router** (`sf-commit`, `sf-version`, `sf-open-plans`,
   `sf-apply-plan`) bleiben unberührt — keine Completion-Loop-Semantik.
@@ -75,8 +75,8 @@ restlichen Umbauten sind dafür geeignet.
 | Datei                               | Beschreibung                                                                                                                                                                                                                      |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `skills/_shared/goal-completion.md` | **Neu.** Definiert Abschlussbedingung, unabhängige Verifikation, beschränkten Loop (Iterationsobergrenze + Escape-Hatch) und das Format des optionalen `/goal`-Strings.                                                           |
-| `skills/sf-build/SKILL.md`          | Phase 5 Loop „Wiederhole bis der Validator bestanden meldet" (Z. 268) und Phase-6-Abschlussbedingung auf den Baustein umstellen; `/goal`-String am Freigabe-Gate (Phase 1, Z. 232) ergänzen; `include goal-completion` einbinden. |
-| `skills/sf-fix/SKILL.md`            | Phase 5 „behebe sie und wiederhole Phase 4" (Z. 156) auf den Baustein umstellen; `/goal`-String am Fix-Strategie-Gate (Z. 115) ergänzen; Baustein einbinden.                                                                      |
+| `skills/sf-build/SKILL.md`          | Phase 5 Loop „Wiederhole bis der Validator bestanden meldet“ (Z. 268) und Phase-6-Abschlussbedingung auf den Baustein umstellen; `/goal`-String am Freigabe-Gate (Phase 1, Z. 232) ergänzen; `include goal-completion` einbinden. |
+| `skills/sf-fix/SKILL.md`            | Phase 5 „behebe sie und wiederhole Phase 4“ (Z. 156) auf den Baustein umstellen; `/goal`-String am Fix-Strategie-Gate (Z. 115) ergänzen; Baustein einbinden.                                                                      |
 | `skills/sf-refactor/SKILL.md`       | Phase-6-Regressions-Loop (Z. 178–181) auf den Baustein umstellen; `/goal`-String am Plan-Freigabe-Gate (Z. 104) ergänzen; Baustein einbinden.                                                                                     |
 | `skills/sf-docs/SKILL.md`           | Phase-3-Reparatur-Loop (Z. 141) auf den Baustein umstellen; `/goal`-String am Doku-Plan-Gate (Z. 107) ergänzen; Baustein einbinden.                                                                                               |
 | `skills/sf-maintain/SKILL.md`       | Phase-3-Reparatur-Loop (Z. 131–134) auf den Baustein umstellen; `/goal`-String am Update-Auswahl-Gate (Z. 98) ergänzen; Baustein einbinden.                                                                                       |
@@ -186,7 +186,7 @@ weist die verbleibenden Phasen an. Minimal-Skizze (kein finaler Wortlaut):
 
 - `node build.mjs`: erfolgreich – 12 Skills / 9 Agents (Codex) und 12 Commands / 9 Agents (Claude Code).
 - `pnpm agent:check` (oxfmt): keine Formatierungsfehler über 86 Dateien.
-- Einbettung verifiziert: Der Baustein „Goal-getriebene Abschlusssteuerung" erscheint in genau den fünf Voll-Skills (`sf-build`, `sf-fix`, `sf-refactor`, `sf-docs`, `sf-maintain`) in beiden Plattform-Ausgaben; `sf-review` und `sf-plan` binden ihn korrekt nicht ein.
+- Einbettung verifiziert: Der Baustein „Goal-getriebene Abschlusssteuerung“ erscheint in genau den fünf Voll-Skills (`sf-build`, `sf-fix`, `sf-refactor`, `sf-docs`, `sf-maintain`) in beiden Plattform-Ausgaben; `sf-review` und `sf-plan` binden ihn korrekt nicht ein.
 - Platzhalter-Auflösung verifiziert: `{{AGENT:sf-code-validator}}` → `/code-validator` (Claude) bzw. `sf-code-validator` (Codex); keine unaufgelösten Platzhalter; der `/goal`-Beispielblock ist intakt.
 
 ## Review-Findings

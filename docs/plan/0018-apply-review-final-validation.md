@@ -1,12 +1,14 @@
 # 0018: Finale Validierung in apply-review
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Nach Abschluss aller Delegations-Phasen in `/apply-review` soll eine finale Code-Überprüfung laufen, die projektspezifische Check-Scripts ausführt und alle gefundenen Errors und Warnings behebt.
 
 ## Architekturentscheidungen
 
-- **Neue Phase 6:** „Finale Validierung" zwischen Report-Update (Phase 5) und Zusammenfassung (Phase 7)
+- **Neue Phase 6:** „Finale Validierung“ zwischen Report-Update (Phase 5) und Zusammenfassung (Phase 7)
 - **Fix-Schleife:** Errors und Warnings werden nicht nur gemeldet, sondern behoben und erneut geprüft
 - **Optionalität:** Falls kein Validierungs-Script im Projekt vorhanden ist, wird die Phase übersprungen
 

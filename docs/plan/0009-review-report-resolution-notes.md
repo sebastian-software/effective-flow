@@ -1,5 +1,7 @@
 # 0009: Review-Report-Hinweise bei umgesetzten Findings
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Wenn mit `$sf-build-feature`, `$sf-fix` oder `$sf-refactor` ein Finding aus einer `review-report-*.md` Datei gelöst wird, soll in der betroffenen Report-Datei ein kurzer Hinweis ergänzt werden. Zusätzlich soll `$sf-review` dieses Muster explizit erlauben.

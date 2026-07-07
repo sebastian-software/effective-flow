@@ -1,10 +1,10 @@
 ---
-description: "Bereitet ein Zielprojekt für die Nutzung des Plugins vor: trägt .firmo/ idempotent in die .gitignore ein und hält dabei .firmo/config.json getrackt, und legt .firmo/config.json interaktiv an bzw. aktualisiert sie. Fragt die gewünschten Werte und das grundsätzliche Verhalten ab — hybrid über Presets und einen Detailmodus — und pflegt eine bestehende Config nicht-destruktiv. Verwende diesen Skill für das einmalige Setup oder zum Anpassen der Plugin-Konfiguration."
+description: "Bereitet ein Zielprojekt für die Nutzung von Firmo vor: trägt .firmo/ idempotent in die .gitignore ein und hält dabei .firmo/config.json getrackt, und legt .firmo/config.json interaktiv an bzw. aktualisiert sie. Fragt die gewünschten Werte und das grundsätzliche Verhalten ab — hybrid über Presets und einen Detailmodus — und pflegt eine bestehende Config nicht-destruktiv. Verwende diesen Skill für das einmalige Setup oder zum Anpassen der Firmo-Konfiguration."
 ---
 
 # Firmo Setup
 
-Du bereitest ein Zielprojekt für die Nutzung des Plugins vor: `.gitignore`-Eintrag für `.firmo/` (Laufzeit-Status ignorieren, `config.json` aber getrackt lassen) und interaktive Pflege von `.firmo/config.json`.
+Du bereitest ein Zielprojekt für die Nutzung von Firmo vor: `.gitignore`-Eintrag für `.firmo/` (Laufzeit-Status ignorieren, `config.json` aber getrackt lassen) und interaktive Pflege von `.firmo/config.json`.
 
 ## Ziel
 
@@ -32,12 +32,12 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Schreiben und b
 - **`review`** (Quelle: `{{SKILL:review}}`): `profile` (full/focused/fast), `autoConfirmScope` (bool), `designDecisionSources` (full/standard/minimal), `validation` (full/quick/off)
 - **`applyReview`** (Quelle: `{{SKILL:apply-review}}`): `defaultCommitStrategy` (worktrees/single/none/`null` = beim Lauf fragen), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/Befehl)
 - **`plan`** (Quelle: `{{SKILL:plan}}`): `markerLanguage` (de/en)
-- **`worktree`** (Quelle: `{{SKILL:build}}`, Abschnitt „Worktree-Integration" – ebenso in den weiteren code-ändernden Workflows eingebettet): `enabled` (bool), `baseBranch` (Default `origin/main`), `branchPrefix` (Default `sf`), `completion` (pr/merge/branch/`null` = beim Lauf fragen), `setup` (auto/none/Befehl), `baseDir`
-- **`tracker`** (Quelle: `{{SKILL:review}}`, Abschnitt „Issue-Tracker-Anbindung" – ebenso in `{{SKILL:apply-review}}` und den weiteren Tracker-Workflows eingebettet): `mode` (local/remote, Default `local`), `remoteToolOverride` (auto/github/forgejo, Default `auto`)
+- **`worktree`** (Quelle: `{{SKILL:build}}`, Abschnitt „Worktree-Integration“ – ebenso in den weiteren code-ändernden Workflows eingebettet): `enabled` (bool), `baseBranch` (Default `origin/main`), `branchPrefix` (Default `firmo`), `completion` (pr/merge/branch/`null` = beim Lauf fragen), `setup` (auto/none/Befehl), `baseDir`
+- **`tracker`** (Quelle: `{{SKILL:review}}`, Abschnitt „Issue-Tracker-Anbindung“ – ebenso in `{{SKILL:apply-review}}` und den weiteren Tracker-Workflows eingebettet): `mode` (local/remote, Default `local`), `remoteToolOverride` (auto/github/forgejo, Default `auto`)
 
 Die zwei Presets sind vollständig hier definiert und setzen ausschließlich die Blöcke `review` und `applyReview`. Unabhängig vom Preset werden `plan.markerLanguage`, `worktree.enabled` (samt `worktree.completion` und `worktree.baseBranch`) und `tracker.mode` in Schritt 4 explizit erfragt.
 
-Preset „Sichere Defaults":
+Preset „Sichere Defaults“:
 
 | Schlüssel                           | Wert                      |
 | ----------------------------------- | ------------------------- |
@@ -51,7 +51,7 @@ Preset „Sichere Defaults":
 | `applyReview.worktree.baseDir`      | `".firmo/.worktrees"`     |
 | `applyReview.worktree.setup`        | `"auto"`                  |
 
-Preset „Schneller persönlicher Workflow":
+Preset „Schneller persönlicher Workflow“:
 
 | Schlüssel                           | Wert                  |
 | ----------------------------------- | --------------------- |
@@ -108,7 +108,7 @@ options:
     description: Detailmodus — jeden Schlüssel der vier Blöcke einzeln abfragen
 ```
 
-Bei „Sichere Defaults" oder „Schneller persönlicher Workflow": verwende die Werte der entsprechenden Preset-Tabelle aus dem Config-Schema oben als Vorschlagswerte – nicht als bedingungsloses Überschreiben. Bei einer leeren oder fehlenden Config werden die Preset-Werte direkt übernommen. Existiert bereits eine Config und weicht ein vorhandener Wert vom Preset-Wert ab, überschreibe ihn **nicht** ungefragt: zeige die betroffenen Schlüssel als Vorher/Nachher-Liste und hole eine Bestätigung ein, bevor du sie änderst (siehe Schritt 6). Bei „Alles einzeln anpassen": gehe in Schritt 5 Block für Block vor.
+Bei „Sichere Defaults“ oder „Schneller persönlicher Workflow“: verwende die Werte der entsprechenden Preset-Tabelle aus dem Config-Schema oben als Vorschlagswerte – nicht als bedingungsloses Überschreiben. Bei einer leeren oder fehlenden Config werden die Preset-Werte direkt übernommen. Existiert bereits eine Config und weicht ein vorhandener Wert vom Preset-Wert ab, überschreibe ihn **nicht** ungefragt: zeige die betroffenen Schlüssel als Vorher/Nachher-Liste und hole eine Bestätigung ein, bevor du sie änderst (siehe Schritt 6). Bei „Alles einzeln anpassen“: gehe in Schritt 5 Block für Block vor.
 
 ### Schritt 4: Zentrale Verhaltensschalter (immer abfragen)
 
@@ -161,9 +161,9 @@ options:
     description: tracker.mode = remote — Findings als Issues, Werkzeug automatisch aus origin (gh/tea)
 ```
 
-Bei „Remote" den Werkzeug-Override nur bei Bedarf abfragen: Der Default `tracker.remoteToolOverride = auto` erkennt GitHub/Forgejo automatisch aus der `origin`-URL. Nur wenn der User einen mehrdeutigen Host hat (z. B. self-hosted GitHub Enterprise), als Freitext `github` oder `forgejo` erfassen; sonst `auto` belassen.
+Bei „Remote“ den Werkzeug-Override nur bei Bedarf abfragen: Der Default `tracker.remoteToolOverride = auto` erkennt GitHub/Forgejo automatisch aus der `origin`-URL. Nur wenn der User einen mehrdeutigen Host hat (z. B. self-hosted GitHub Enterprise), als Freitext `github` oder `forgejo` erfassen; sonst `auto` belassen.
 
-### Schritt 5: Detailmodus (nur bei „Alles einzeln anpassen")
+### Schritt 5: Detailmodus (nur bei „Alles einzeln anpassen“)
 
 Frage Block für Block jeden Schlüssel ab, jeweils mit den gültigen Werten aus dem Config-Schema oben und der vorhandenen bzw. Default-Belegung als Vorschlag:
 

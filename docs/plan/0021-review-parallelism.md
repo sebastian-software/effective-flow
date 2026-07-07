@@ -1,5 +1,7 @@
 # 0021: Parallelisierung des Review-Workflows
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 `sf-review` soll deutlich schneller werden, ohne Genauigkeit zu verlieren. Da Reviews read-only sind, bietet sich aggressive Parallelisierung an. Speziell: Designentscheidungs-Erkennung pro Quelle parallel, Validator und Reviewer gleichzeitig, und bei großen Codebases zusätzlich Reviewer nach Verzeichnis aufgeteilt — Frontend-/Backend-Reviewer waren bereits parallel und bleiben es.
@@ -12,7 +14,7 @@
   - Phase 3: zentrale Aggregation und Designentscheidungs-Filter. Reviewer in 2c führen den Filter NICHT durch (bewusster Trade-off).
   - Phase 4: Bericht schreiben, präsentieren, Wisdom-Datei löschen.
 - **Verzeichnis-Split-Heuristik:** > 30 Dateien pro Project-Type-Bucket triggert Split nach Top-Level-Verzeichnis, rekursiv max. 3 Ebenen tief; Fallback für Flat-Repos: alphabetische Blöcke à 30 Dateien.
-- **Designentscheidungs-Filter zentral in Phase 3:** spart Tokens und Zeit pro Reviewer; akzeptiert leicht erhöhtes False-Positive-Risiko bei ambigen Fällen, dokumentiert in „Bekannte Einschränkungen".
+- **Designentscheidungs-Filter zentral in Phase 3:** spart Tokens und Zeit pro Reviewer; akzeptiert leicht erhöhtes False-Positive-Risiko bei ambigen Fällen, dokumentiert in „Bekannte Einschränkungen“.
 - **Wisdom-Datei** mit Session-ID als Zwischenspeicher zwischen den parallelen Phase-2-Streams und Phase 3.
 - **Explizite Synchronisations-Barriere:** Phase 3 darf erst starten, wenn alle drei Phase-2-Streams `ERLEDIGT`/`ABBRUCH` gemeldet haben.
 
@@ -109,8 +111,8 @@ Bei kleinen Repos (< 30 Dateien): primärer Speedup aus Phase 2a/2b/2c-Paralleli
 - **Komplexität**: Mittel
 - **Bereich**: Phase 2c — Reviewer-Auftrag / Phase 3 — Designentscheidungs-Filter
 - **Datei**: skills/sf-review/SKILL.md:144, :164-168
-- **Problem**: Reviewer kennen keine Designentscheidungen mehr. Bei „Unsicherheit (teilweise Überlappung)" bleibt das Finding im Bericht — ohne Reviewer-Kontext, was die False-Positive-Rate erhöhen kann.
-- **Empfehlung**: Bewusster Trade-off — als „Bekannte Einschränkung" dokumentieren, statt den Reviewer-Auftrag wieder komplexer zu machen.
+- **Problem**: Reviewer kennen keine Designentscheidungen mehr. Bei „Unsicherheit (teilweise Überlappung)“ bleibt das Finding im Bericht — ohne Reviewer-Kontext, was die False-Positive-Rate erhöhen kann.
+- **Empfehlung**: Bewusster Trade-off — als „Bekannte Einschränkung“ dokumentieren, statt den Reviewer-Auftrag wieder komplexer zu machen.
 - **Status**: Behoben
 
 #### [F5] Bekannte Einschränkungen unvollständig

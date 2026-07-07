@@ -15,7 +15,7 @@ Begründung der Workflow-Empfehlung: Es entstehen zwei neue Skill-Definitionen (
 Zwei bestätigte Beispiele als Referenz-Testfälle:
 
 - **Container-Issue** wie `terminaro#198`: Audit-Epic mit phasenweiser Checkliste aus Sub-Issue-Referenzen, teils `[x]` (erledigt), teils `[ ]` (offen).
-- **Einzel-Issue** wie `terminaro#192`: klarer „Befund" plus konkreter „Copy-Vorschlag" – direkt umsetzbar.
+- **Einzel-Issue** wie `terminaro#192`: klarer „Befund“ plus konkreter „Copy-Vorschlag“ – direkt umsetzbar.
 
 ## Architekturentscheidungen
 
@@ -32,9 +32,9 @@ Zwei bestätigte Beispiele als Referenz-Testfälle:
 
 - **Container-Erkennung über Checklisten-Heuristik.** Enthält ein Issue-Body eine Aufgabenliste mit Issue-Referenzen (`- [ ] #NNN …` / `- [x] #NNN …`), wird das Issue als Container behandelt: nur die **offenen** (`[ ]`) Sub-Issues werden einzeln eingelesen und verarbeitet, erledigte (`[x]`) übersprungen. Der Container gilt als Epic für das spätere Abhaken. Issues ohne solche Liste sind Einzel-Arbeitsitems. Begründung: deckt die beiden bestätigten Realfälle (`#198` Container, `#192` Einzel) ohne Sonderkonfiguration ab.
 
-- **Delegation & PR-Strategie werden aus `{{SKILL:sf-apply-review}}`-Remote übernommen**, nicht neu erfunden: fest „ein PR pro Issue", je eigener Worktree/Branch ab dem konfigurierten Basis-Branch, PR über `{{SKILL:sf-pr}}` mit `Closes #<Issue>`, dateiüberlappende Issues sequenziell. `sf-apply-issues` läuft die Umsetzungs-Sub-Agenten als **nicht-interaktive** Delegation (keine Goal-Abfrage im Sub-Skill), analog zu `{{SKILL:sf-apply-review}}`.
+- **Delegation & PR-Strategie werden aus `{{SKILL:sf-apply-review}}`-Remote übernommen**, nicht neu erfunden: fest „ein PR pro Issue“, je eigener Worktree/Branch ab dem konfigurierten Basis-Branch, PR über `{{SKILL:sf-pr}}` mit `Closes #<Issue>`, dateiüberlappende Issues sequenziell. `sf-apply-issues` läuft die Umsetzungs-Sub-Agenten als **nicht-interaktive** Delegation (keine Goal-Abfrage im Sub-Skill), analog zu `{{SKILL:sf-apply-review}}`.
 
-- **`sf-plan-issues` ist interaktiv und kommentar-zentriert (Variante A).** Es nutzt die Klärungs-Methodik von `{{SKILL:sf-plan}}` (Analyse + gezielte Rückfragen), schreibt aber das Ergebnis als **strukturierten Kommentar** zurück ans Issue und entfernt das „needs-planning"-Label, statt eine `docs/plan/`-Datei anzulegen. Begründung: Nutzer-Vorgabe „Updates als Kommentare"; das Issue bleibt die einzige Quelle, und `sf-apply-issues` kann es beim nächsten Lauf direkt abarbeiten.
+- **`sf-plan-issues` ist interaktiv und kommentar-zentriert (Variante A).** Es nutzt die Klärungs-Methodik von `{{SKILL:sf-plan}}` (Analyse + gezielte Rückfragen), schreibt aber das Ergebnis als **strukturierten Kommentar** zurück ans Issue und entfernt das „needs-planning“-Label, statt eine `docs/plan/`-Datei anzulegen. Begründung: Nutzer-Vorgabe „Updates als Kommentare“; das Issue bleibt die einzige Quelle, und `sf-apply-issues` kann es beim nächsten Lauf direkt abarbeiten.
 
 ## Betroffene Dateien
 
@@ -62,10 +62,10 @@ Zwei bestätigte Beispiele als Referenz-Testfälle:
 
 **Phase 1 – Argument & Tracker-Setup.**
 
-- Host-/CLI-Erkennung und Verfügbarkeits-/Auth-Prüfung gemäß `issue-tracker.md` (Abschnitt „Host- und CLI-Erkennung"). Vorbedingung: Git-Repo mit `origin`. Fehlt CLI/Auth/`origin`: klar melden und abbrechen, kein Teilzustand.
+- Host-/CLI-Erkennung und Verfügbarkeits-/Auth-Prüfung gemäß `issue-tracker.md` (Abschnitt „Host- und CLI-Erkennung“). Vorbedingung: Git-Repo mit `origin`. Fehlt CLI/Auth/`origin`: klar melden und abbrechen, kein Teilzustand.
 - Argument parsen: eine oder mehrere Issue-Referenzen (Nummer, `#123`, URL). Ist das Argument ein `docs/plan/`-Pfad: Hinweis auf `{{SKILL:sf-apply-plan}}` und Abbruch (falscher Skill).
 - Ohne Argument: offene Issues auflisten, die weder `sf-issue-done` noch `sf-needs-planning` tragen, und den User die zu verarbeitenden Issues wählen lassen. Keine heuristische Auto-Auswahl.
-- Benötigte Labels idempotent anlegen (`sf-issue-done`, `sf-needs-planning`; „already exists" tolerieren).
+- Benötigte Labels idempotent anlegen (`sf-issue-done`, `sf-needs-planning`; „already exists“ tolerieren).
 
 **Phase 2 – Expansion & Arbeitsliste.**
 
@@ -89,7 +89,7 @@ Zwei bestätigte Beispiele als Referenz-Testfälle:
   - Nach erfolgreicher PR-Erstellung: PR-Link als Kommentar ans Issue schreiben, Label `sf-issue-done` setzen, und – falls das Issue aus einem Container stammt – den zugehörigen Checklisten-Eintrag im Epic-Body abhaken (Body frisch lesen, nur die betroffene Zeile umschalten, PR-Link anhängen).
   - Schlägt die PR-Erstellung fehl: Issue als fehlgeschlagen markieren, Epic-Eintrag **nicht** abhaken, mit dem nächsten Issue fortfahren.
 - **Unzureichend:** nicht implementieren. Label `sf-needs-planning` setzen und einen erklärenden Kommentar mit der Liste des Fehlenden und dem Hinweis auf `/plan-issues` anhängen.
-- Commit-Strategie ist fest „ein PR pro Issue" (keine Commit-Strategie-Frage). Basis-Branch/Branch-Namen aus dem `worktree`-Config-Block wie in `{{SKILL:sf-apply-review}}`-Remote.
+- Commit-Strategie ist fest „ein PR pro Issue“ (keine Commit-Strategie-Frage). Basis-Branch/Branch-Namen aus dem `worktree`-Config-Block wie in `{{SKILL:sf-apply-review}}`-Remote.
 
 **Phase 5 – Zusammenfassung.**
 

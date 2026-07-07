@@ -7,7 +7,7 @@
 ## Anforderung
 
 GitHub-Issue [#2](https://github.com/fastner/sf-claude-plugin/issues/2) verlangt eine
-zusätzliche Leitplanke im „Commit-Message-Regeln"-Block: Der Commit-Typ soll **nach der
+zusätzliche Leitplanke im „Commit-Message-Regeln“-Block: Der Commit-Typ soll **nach der
 Wirkung** einer Änderung gewählt werden, nicht nach der Dateiart. Verhaltensändernde
 Änderungen – auch reine Config-/Env-/Secret-/CI-Änderungen mit Deployment- oder
 Laufzeitwirkung – müssen `fix:` (bzw. `feat:` bei neuer Funktionalität) sein, `chore:`
@@ -33,11 +33,11 @@ einzuführen. Konsistent dazu ist auch der Umsetzungs-Commit selbst nach der neu
 
 ## Architekturentscheidungen
 
-- **Single-Source-Edit statt Mehrfachpflege.** Der „Commit-Message-Regeln"-Block ist
+- **Single-Source-Edit statt Mehrfachpflege.** Der „Commit-Message-Regeln“-Block ist
   bereits zentralisiert in `skills/_shared/commit-message-rules.md` (siehe Plan
   `0039-shared-workflow-deduplication`). Der Build (`build.mjs`, Funktion `resolveIncludes`)
   inlint diesen Block über die ` ```include\ncommit-message-rules\n``` `-Direktive in
-  alle konsumierenden Skills. Die im Issue genannte „in allen Skills identisch nachziehen"-
+  alle konsumierenden Skills. Die im Issue genannte „in allen Skills identisch nachziehen“-
   Anweisung ist damit überholt: Es wird **nur die eine geteilte Datei** geändert; die
   Propagierung in die 11 konsumierenden Skills erfolgt automatisch beim Build.
 - **Kein Editieren der Einzel-Skills.** Weder die fünf im Issue genannten Skills noch die
@@ -65,7 +65,7 @@ keine manuelle Änderung nötig): die 11 Skills mit `include commit-message-rule
 ### Vorgehen
 
 1. In `skills/_shared/commit-message-rules.md` direkt nach dem bestehenden Punkt
-   „Nutze Conventional-Commit-Präfixe: …" die neue Wirkungs-Regel als Aufzählungspunkt
+   „Nutze Conventional-Commit-Präfixe: …“ die neue Wirkungs-Regel als Aufzählungspunkt
    ergänzen. Inhaltlich abzudecken sind:
    - Commit-Typ nach **Wirkung**, nicht nach Dateiart wählen.
    - Verhaltensändernde Änderungen – auch reine **Config/Env/Secrets/CI** mit Deployment-
@@ -75,7 +75,7 @@ keine manuelle Änderung nötig): die 11 Skills mit `include commit-message-rule
      Formatting, Tooling ohne Laufzeitwirkung).
    - Gilt ebenso für den **Squash-PR-Titel**, der bei Squash-Merge den release-please-Bump
      bestimmt.
-2. Deutsche Typografie prüfen: Umlaute/ß, „…"-Anführungszeichen, Halbgeviertstrich (–);
+2. Deutsche Typografie prüfen: Umlaute/ß, „…“-Anführungszeichen, Halbgeviertstrich (–);
    Code-Spans wie `fix:`, `feat:`, `chore:` als Inline-Code belassen.
 3. `node build.mjs` ausführen, damit die Direktive fehlerfrei aufgelöst und der neue Text in
    die Build-Ausgaben unter `dist/` inlined wird. `dist/` ist gitignored, wird also nicht
@@ -112,15 +112,15 @@ vier Teilpunkten aus Schritt 1 entsprechen.
       (d) Geltung für den Squash-PR-Titel als release-please-Bump-Treiber.
 - [x] `node build.mjs` läuft fehlerfrei durch (Exit 0) und der neue Regeltext erscheint in
       den generierten Ausgaben aller 11 konsumierenden Skills unter `dist/`
-      (prüfbar via Grep auf einen markanten Teilstring, z. B. „nach der **Wirkung**").
+      (prüfbar via Grep auf einen markanten Teilstring, z. B. „nach der **Wirkung**“).
 - [x] Die bestehenden Punkte des Blocks (Co-Authored-By-Verbot, Präfixliste, Tracking-ID-
       Verbot) bleiben unverändert erhalten.
-- [x] Deutsche Typografie ist korrekt (Umlaute/ß, „…", –) und `oxfmt --check` meldet keine
+- [x] Deutsche Typografie ist korrekt (Umlaute/ß, „…“, –) und `oxfmt --check` meldet keine
       Formatabweichung für die geänderte Datei.
 
 ## Validierungsplan
 
-- Build-Lauf `node build.mjs` → Exit 0, keine „Include file not found"-Fehler.
+- Build-Lauf `node build.mjs` → Exit 0, keine „Include file not found“-Fehler.
 - Grep auf einen Ausschnitt des neuen Regeltexts in `dist/claude/**/commands/*.md` und
   `dist/codex/skills/*/SKILL.md`: Treffer in allen 11 Konsumenten bestätigt die Propagierung.
 - `oxfmt --check` auf `skills/_shared/commit-message-rules.md`.
@@ -129,7 +129,7 @@ vier Teilpunkten aus Schritt 1 entsprechen.
 
 ## Annahmen und offene Punkte
 
-- **Annahme:** „Alles auf release-please ausrichten" bezieht sich auf die **Wortwahl der
+- **Annahme:** „Alles auf release-please ausrichten“ bezieht sich auf die **Wortwahl der
   Regel** (release-please-/Conventional-Commit-Semantik, Squash-PR-Titel), nicht auf die
   Einführung von release-please in diesem Plugin-Repo selbst. Das Repo hat aktuell keine
   release-please-Konfiguration; eine solche Adoption wäre ein separater, größerer Scope
@@ -162,11 +162,11 @@ vier Teilpunkten aus Schritt 1 entsprechen.
 
 - Architektur (Hinweis): Verifizierter Kontext – der Block ist zentral in
   `skills/_shared/commit-message-rules.md` und wird von 11 Skills per `include` konsumiert;
-  `build.mjs`/`resolveIncludes` inlint ihn. Der veraltete „überall nachziehen"-Teil des
+  `build.mjs`/`resolveIncludes` inlint ihn. Der veraltete „überall nachziehen“-Teil des
   Issues wird dadurch obsolet und ist im Plan aufgelöst.
 - Fehlerfälle (Hinweis): Include-Auflösung ist textbasiert; die Regel bewusst ohne eigene
   Code-Fence im geteilten File formulieren, um die Markdown-Struktur der Ziel-Skills nicht zu
-  stören. Im Plan unter „Edge Cases" adressiert.
+  stören. Im Plan unter „Edge Cases“ adressiert.
 - Scope (Hinweis): Repo-eigene release-please-Adoption und Anpassung der sf-commit-
   Präfixlegende sind bewusst ausgeschlossen und als Annahmen dokumentiert, um Scope Creep zu
   vermeiden.

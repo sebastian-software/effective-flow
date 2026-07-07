@@ -1,5 +1,7 @@
 # 0006 — ADR-Generierung für nicht umgesetzte Findings
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Wenn vorgeschlagene Refactorings, Fixes oder andere Review-Findings bewusst nicht umgesetzt werden, sollen diese Entscheidungen als Architecture Decision Records (ADR) in `docs/adr/` dokumentiert werden. Der User wird vorher gefragt — es passiert nicht automatisch.

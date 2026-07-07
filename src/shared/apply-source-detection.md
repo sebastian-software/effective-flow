@@ -43,7 +43,7 @@ Typ in dieser Reihenfolge (erste zutreffende Regel gewinnt):
    Referenzen werden als Liste behandelt und einzeln in Stufe B klassifiziert.
 5. **Sonst** → `ambiguous`: das Argument löst sich zu keiner Kategorie auf oder passt
    gleichzeitig zu einer Plan- **und** einer Review-Datei. Nicht raten – der Aufrufer
-   fragt nach (siehe „Mehrdeutigkeit und Fallbacks").
+   fragt nach (siehe „Mehrdeutigkeit und Fallbacks“).
 
 Trennschärfe Plan vs. Report: primär über das Verzeichnis (`docs/plan/` vs.
 `.firmo/review/`), sekundär über den Kopf-Inhalt (Planstatus-Marker
@@ -73,7 +73,7 @@ Sekundärsignal bei fehlendem Label (z. B. manuell entfernt): ein Titel im Forma
 
 Warum Label vor Body: Ein `review-epic` trägt – wie ein generisches
 `container-issue` – eine `- [ ] #NNN`-Checkliste. Das Label `firmo-review-epic` bzw.
-`firmo-review-finding` (Alt-Präfix `sf-` gleichwertig, siehe „Label-Konvention" in
+`firmo-review-finding` (Alt-Präfix `sf-` gleichwertig, siehe „Label-Konvention“ in
 `issue-tracker.md`) ist der sichere Diskriminator und hat Vorrang vor der
 Body-Struktur.
 
@@ -98,16 +98,19 @@ Argumenttyp.
 
 ### Mehrdeutigkeit und Fallbacks
 
-- **`none` (kein Argument):** nicht heuristisch das „neueste" wählen. Der Aufrufer
+- **`none` (kein Argument):** nicht heuristisch das „neueste“ wählen. Der Aufrufer
   listet lokale Kandidaten (offene Pläne aus `docs/plan/`, Report-Dateien unter
-  `.firmo/review/`) und fragt nach der konkreten Quelle.
+  `.firmo/review/`) und fragt nach der konkreten Quelle. Ist der effektive
+  Tracker-Modus `remote`, listet er zusätzlich offene Review-Epics (Label
+  `firmo-review-epic`, inkl. Alt `sf-review-epic`) als Kandidaten, da im
+  Remote-Modus keine lokalen Report-Dateien existieren.
 - **`ambiguous`:** die konkurrierenden Deutungen benennen und nachfragen, statt zu
   raten.
 - **Gemischte Issue-Liste** (verschiedene Subtypen in einem Aufruf, z. B. `review-finding`
   und `plain-issue`): nicht raten. Den User bitten, die Liste nach Zieltyp zu trennen,
   bzw. – im Router – pro Issue routen. Konservativ: nachfragen.
 - **Issue-Referenz, aber Tracker-CLI fehlt/nicht authentifiziert:** Stufe B kann nicht
-  laufen → klare Fehlermeldung mit Behebungshinweis gemäß „Fehler- und Randfälle" in
+  laufen → klare Fehlermeldung mit Behebungshinweis gemäß „Fehler- und Randfälle“ in
   `issue-tracker.md`; kein stiller Fallback auf einen lokalen Typ.
 - **Nicht auflösbarer Pfad:** `ambiguous` → nachfragen bzw. Fehlermeldung; nenne, dass
   `{{SKILL:open-plans}}` offene Pläne auflisten kann.

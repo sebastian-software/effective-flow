@@ -31,7 +31,7 @@ Nicht in den externen Report übernehmen:
    - bei Kollision: `.firmo/review/review-report-YYYY-MM-DD-WORKFLOW-1.md`, `-2`, ...
 4. Schreibe oben im Report immer die Herkunft:
    - `**Ursprungsplan:** [Pfad oder „Keiner"]`
-   - `**Quell-Workflow:** {{SKILL:build}} / {{SKILL:fix}} / {{SKILL:refactor}}`
+   - `**Quell-Workflow:** {{SKILL:build}} / {{SKILL:fix}} / {{SKILL:refactor}} / {{SKILL:maintain}}`
    - `**Quell-Review:** [Reviewer-Skill oder Phase]`
 
 ### Finding-IDs und Memory
@@ -47,13 +47,13 @@ Dieser Report verwendet dieselben globalen Finding-IDs wie `{{SKILL:review}}`.
 
 ### Reportformat
 
-Verwende das kanonische Bericht-Format aus `{{SKILL:review}}` Abschnitt „Bericht-Format". Dupliziere das Template hier nicht und weiche nicht davon ab.
+Verwende das kanonische Bericht-Format aus `{{SKILL:review}}` Abschnitt „Bericht-Format“. Dupliziere das Template hier nicht und weiche nicht davon ab.
 
 Zusätzliche Header-Felder für Workflow-Reports:
 
 - Setze direkt unter `**Projekt-Typ:** ...` diese drei Zeilen:
   - `**Ursprungsplan:** [docs/plan/NNNN-...md oder Keiner]`
-  - `**Quell-Workflow:** [{{SKILL:build}} / {{SKILL:fix}} / {{SKILL:refactor}}]`
+  - `**Quell-Workflow:** [{{SKILL:build}} / {{SKILL:fix}} / {{SKILL:refactor}} / {{SKILL:maintain}}]`
   - `**Quell-Review:** [Reviewer oder Phase]`
 - Alle Tabellen und Finding-Blöcke bleiben im `{{SKILL:review}}`-Format.
 - Die `## Übersprungene Findings (Designentscheidungen)`-Sektion wird nur ausgegeben, wenn solche Findings vorhanden sind.

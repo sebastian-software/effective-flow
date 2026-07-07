@@ -10,7 +10,7 @@ Du listest offene Implementierungspläne aus `docs/plan/`.
 
 - alle Plan-Dateien mit kanonischem offenem Status finden — sowohl `**Planungsstatus:** Nicht umgesetzt` als auch `**Plan status:** Not implemented`
 - pro offenem Plan eine kurze, hilfreiche Zusammenfassung ausgeben
-- Pläne mit fehlendem oder unklarem Status nicht als offen ausgeben, sondern separat als „Status unklar" melden
+- Pläne mit fehlendem oder unklarem Status nicht als offen ausgeben, sondern separat als „Status unklar“ melden
 - keine Dateien ändern
 - keine Tests, Builds oder Validierungen ausführen
 
@@ -48,14 +48,14 @@ plan-status
      - bei Doku-Plänen ohne `**Doku-Kategorie:**`-Zeile zeige `unbekannt`
    - Danach eine kurze Liste mit Status-unklaren Plänen, falls vorhanden
    - Wenn mehrere Plan-Dateien dieselbe vierstellige Nummer tragen, weise gesondert darauf hin (diese Dublette verletzt die `Plan-Nummern-Konvention` und sollte über den passenden Workflow aufgelöst werden)
-   - Wenn keine offenen Pläne existieren: klare Meldung „Keine offenen Pläne gefunden."
+   - Wenn keine offenen Pläne existieren: klare Meldung „Keine offenen Pläne gefunden.“
 
 ## Zusammenfassungsregeln
 
 - Fasse die Anforderung in einem Satz zusammen.
 - Nutze bevorzugt den ersten inhaltlichen Absatz unter `## Anforderung`.
 - Wenn der Abschnitt fehlt, nutze den H1-Titel als Fallback.
-- Entferne reine Meta-Sätze wie „Verifizierter Code-Kontext:" aus der Kurzfassung.
+- Entferne reine Meta-Sätze wie „Verifizierter Code-Kontext:“ aus der Kurzfassung.
 - Kürze lange Zusammenfassungen auf etwa 160 Zeichen.
 - Erfinde keine Inhalte, die nicht in der Plan-Datei stehen.
 

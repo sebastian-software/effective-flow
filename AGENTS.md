@@ -65,7 +65,7 @@ Source frontmatter carries **no** `name` or `type` field — name and category c
 Unless the user asks otherwise (see `src/shared/language-rules.md`):
 
 - Code, identifiers, tests, and commit messages are **English**.
-- Documentation (including files under `docs/` and this repo's Markdown prose) is **German**; continue the existing language of a file you edit.
+- Documentation (including files under `docs/` and this repo's Markdown prose) is **German**; continue the existing language of a file you edit. (This file, AGENTS.md, deliberately stays in English as a cross-harness agent instruction.)
 
 ## Commit messages
 
@@ -81,4 +81,4 @@ Plans use a four-digit gapless prefix `NNNN-slug.md`, each number used exactly o
 
 ## Target-project runtime state (not this repo)
 
-The tools read/write project-local state under `.firmo/` **in the target project** (`config.json` tracked, `memory.json`/`cache.json`/`review/` gitignored). Legacy `.sf-plugin/` dirs are migrated once, non-destructively (`src/shared/firmo-dir-migration.md`). Note: this repo still contains a legacy `.sf-plugin/` of its own review history; issue-tracker labels intentionally keep the `sf-` prefix as stable identifiers.
+The tools read/write project-local state under `.firmo/` **in the target project** (`config.json` tracked, `memory.json`/`cache.json`/`review/` gitignored). Legacy `.sf-plugin/` dirs are migrated once, non-destructively (`src/shared/firmo-dir-migration.md`). Note: this repo still contains a legacy `.sf-plugin/` of its own review history. Issue-tracker labels use the `firmo-` prefix; the old `sf-` prefix is still recognised as equivalent when reading, listing, and deduplicating labels (permanent read backward-compatibility), but new labels are created with `firmo-` only.

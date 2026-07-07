@@ -105,8 +105,8 @@ Wenn ein offener Plan für `{{SKILL:refactor}}` bestätigt ist:
    - Big Picture: Nutzen klar
    - Verhaltens-Invarianz: jede Änderung begründet
 7. Präsentiere den Plan mit Scorecard.
-8. Leite aus den messbaren Akzeptanzkriterien die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung"); sie deckt die Phasen 2–6 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten. Die Abschlussbedingung schließt die Verhaltens-Invarianz ein: die in Phase 2 erhobene Baseline muss unverändert bleiben.
-9. Hole Freigabe ein. Die Freigabe-Frage enthält die explizite Goal-Abfrage (Option „Autonom via /goal"); behandle sie gemäß „Explizite Goal-Abfrage für autonome Läufe": Bei Wahl „Autonom via /goal" gib den `/goal`-String für die Phasen 2–6 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
+8. Leite aus den messbaren Akzeptanzkriterien die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung“); sie deckt die Phasen 2–6 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten. Die Abschlussbedingung schließt die Verhaltens-Invarianz ein: die in Phase 2 erhobene Baseline muss unverändert bleiben.
+9. Hole Freigabe ein. Die Freigabe-Frage enthält die explizite Goal-Abfrage (Option „Autonom via /goal“); behandle sie gemäß „Explizite Goal-Abfrage für autonome Läufe“: Bei Wahl „Autonom via /goal“ gib den `/goal`-String für die Phasen 2–6 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
 
 ```ask
 header: Freigabe
@@ -122,7 +122,7 @@ options:
 
 ### Phase 2: Baseline
 
-Bestimme zuerst gemäß „Worktree-Integration" den effektiven Worktree-Modus und führe bei aktivem Modus das Worktree-Setup aus, bevor die Baseline erhoben wird. Baseline, Refactoring und Nachher-Validierung (Phasen 2–5) laufen dann mit Arbeitsverzeichnis im Worktree.
+Bestimme zuerst gemäß „Worktree-Integration“ den effektiven Worktree-Modus und führe bei aktivem Modus das Worktree-Setup aus, bevor die Baseline erhoben wird. Baseline, Refactoring und Nachher-Validierung (Phasen 2–5) laufen dann mit Arbeitsverzeichnis im Worktree.
 
 Starte parallel:
 
@@ -167,7 +167,7 @@ Dokumentiere die Baseline für den späteren Vergleich.
    - Begründung bei Nicht-Umsetzung oder ADR-Referenz, falls vorhanden
 5. Lege in diesem Workflow niemals ein ADR an und frage auch nicht danach. Bewusst nicht umgesetzte Findings werden ausschließlich im Review-Report dokumentiert. Über die spätere Umsetzung oder über ein ADR für eine bewusste Nicht-Umsetzung entscheidet der Entwickler beim Durchgehen der Findings-Datei, typischerweise via {{SKILL:apply-review}}.
 6. Wenn nach Review Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
-   - schreibe sie gemäß „Offene Review-Finding-Reports" in eine neue Datei unter `.firmo/review/`
+   - schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.firmo/review/`
    - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-NNNN.md`
    - nenne den erzeugten Reportpfad in der Abschlusszusammenfassung
 7. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.firmo/review/` umgesetzt hat:
@@ -192,10 +192,10 @@ Starte parallel:
    - Build
 2. Falls Regressionen gefunden werden:
    - User informieren
-   - zurück zu Phase 3, dann Phase 5 und 6 erneut – gemäß „Goal-getriebene Abschlusssteuerung": begrenze die internen Korrekturrunden und eskaliere an den User, falls die Baseline danach weiterhin nicht erreicht wird, statt unbegrenzt zu wiederholen
+   - zurück zu Phase 3, dann Phase 5 und 6 erneut – gemäß „Goal-getriebene Abschlusssteuerung“: begrenze die internen Korrekturrunden und eskaliere an den User, falls die Baseline danach weiterhin nicht erreicht wird, statt unbegrenzt zu wiederholen
 3. Falls keine Regressionen:
    - Wisdom-Datei löschen
-   - wenn der Worktree-Modus aktiv war: Handback gemäß „Worktree-Integration" ausführen (Änderungen committen, Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`)
+   - wenn der Worktree-Modus aktiv war: Handback gemäß „Worktree-Integration“ ausführen (Änderungen committen, Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`)
    - zusammenfassen, was refactored wurde; bei aktivem Worktree-Modus zusätzlich Liefer-Branch und Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch) nennen
    - bestätigen, dass das Verhalten unverändert blieb
 

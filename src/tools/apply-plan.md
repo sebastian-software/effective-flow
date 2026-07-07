@@ -47,7 +47,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der Plan-Auswertung
    - gib eine kurze Liste der offenen Pläne mit Nummer, Titel und Pfad aus
    - frage den User nach der konkreten Plan-Datei
    - starte keine Umsetzung, bevor eine konkrete Datei ausgewählt ist
-3. Wenn ein Argument vorhanden ist, klassifiziere es zuerst über die „Apply-Quellen-Erkennung". Für `{{SKILL:apply-plan}}` genügt Stufe A (keine Tracker-I/O nötig):
+3. Wenn ein Argument vorhanden ist, klassifiziere es zuerst über die „Apply-Quellen-Erkennung“. Für `{{SKILL:apply-plan}}` genügt Stufe A (keine Tracker-I/O nötig):
    - Quelltyp `plan` → weiter mit Schritt 4.
    - Quelltyp `review-report`, eine Issue-Referenz (`review-epic` / `review-finding` / `container-issue` / `plain-issue`) oder `ambiguous` → dieses Argument gehört nicht zu `{{SKILL:apply-plan}}`. Verweise auf den zuständigen Skill (`{{SKILL:apply-review}}` für Review-Reports und Review-Issues, `{{SKILL:apply-issues}}` für sonstige Issues, oder `{{SKILL:apply}}` zum automatischen Routen) und beende den Skill. Läuft `{{SKILL:apply-plan}}` als Delegation aus `{{SKILL:apply}}`, sollte dieser Fall nicht auftreten; die Weiche bleibt als Schutz.
 4. Für ein `plan`-Argument: verwende die gemeinsame Plan-Referenz-Regel im Routing-Modus.
@@ -84,6 +84,6 @@ plan-reference-routing
 - Ändere selbst keine Implementierungsdateien.
 - Ändere die Plan-Datei nicht selbst; die Status-Aktualisierung erfolgt durch den Ziel-Workflow.
 - Starte keine Build-, Test-, Validator- oder Reviewer-Phase selbst.
-- Verwende keinen heuristischen „neuesten Plan", wenn mehrere offene Pläne existieren.
+- Verwende keinen heuristischen „neuesten Plan“, wenn mehrere offene Pläne existieren.
 - Wenn Status oder Workflow unklar sind, frage nach statt zu raten.
 - Gib Pfade relativ zum Projekt-Root aus.

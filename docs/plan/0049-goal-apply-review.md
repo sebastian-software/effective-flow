@@ -10,9 +10,9 @@
 
 Beim genauen Lesen gibt es **zwei** solcher Stash-Gates plus einen unbeschränkten Loop:
 
-- **Phase 6 (Stash-Bereinigung):** räumt git-Stashes auf, die während der Delegation in Phase 4 entstehen (Pre-Commit-Hooks, `git stash` in Sub-Skills). Sie vergleicht `git stash list` mit der Phase-1-Baseline, ordnet neue Stashes Findings zu und klassifiziert sie: **A** (Inhalt vollständig im Finding-Commit → Auto-Drop ohne Frage), **B** (umgesetzt, aber Extra-Änderungen), **C** (Finding fehlgeschlagen), **D** (keine Zuordnung / Strategie „Keine Commits"). Für B/C/D fragt sie interaktiv pro Stash: Anwenden und löschen / Verwerfen / Behalten.
-- **Phase 4.3 (bedingt):** bricht ein Finding mit unsauberem Arbeitsbaum ab, fragt der Workflow vor dem nächsten Finding „stashen oder verwerfen?".
-- **Phase 7:** unbeschränkter „wiederhole bis fehlerfrei"-Loop der finalen Validierung.
+- **Phase 6 (Stash-Bereinigung):** räumt git-Stashes auf, die während der Delegation in Phase 4 entstehen (Pre-Commit-Hooks, `git stash` in Sub-Skills). Sie vergleicht `git stash list` mit der Phase-1-Baseline, ordnet neue Stashes Findings zu und klassifiziert sie: **A** (Inhalt vollständig im Finding-Commit → Auto-Drop ohne Frage), **B** (umgesetzt, aber Extra-Änderungen), **C** (Finding fehlgeschlagen), **D** (keine Zuordnung / Strategie „Keine Commits“). Für B/C/D fragt sie interaktiv pro Stash: Anwenden und löschen / Verwerfen / Behalten.
+- **Phase 4.3 (bedingt):** bricht ein Finding mit unsauberem Arbeitsbaum ab, fragt der Workflow vor dem nächsten Finding „stashen oder verwerfen?“.
+- **Phase 7:** unbeschränkter „wiederhole bis fehlerfrei“-Loop der finalen Validierung.
 
 Konkrete Stashes existieren zu Beginn noch nicht, also lässt sich das Gate **nicht 1:1** an den Anfang verlegen. Die **Entscheidung** wird stattdessen als vorab gesetzte Policy festgelegt – analog zur bereits vorab entschiedenen Commit-Strategie. Nach einem einzigen Up-front-Strategie-Gate (Commit-Strategie + Stash-Policy) laufen die Phasen 3–8 autonom unter nativem `/goal`.
 
@@ -30,8 +30,8 @@ Konkrete Stashes existieren zu Beginn noch nicht, also lässt sich das Gate **ni
   - `interactive` → heutige Frage (stashen/verwerfen).
   - `keep` → mit Finding-ID stashen (Arbeit erhalten, Baum sauber, weiter).
   - `discard` → verwerfen.
-  - `apply` → hier nicht sinnvoll (es geht ums Saubermachen vor dem nächsten Finding, nicht ums Zurückspielen); wird wie `keep` als „stashen" behandelt und so dokumentiert.
-- **goal-completion-Baustein einbinden** (`include goal-completion`) und den Phase-7-Loop „wiederhole bis fehlerfrei" als beschränkten Loop mit Eskalation formulieren.
+  - `apply` → hier nicht sinnvoll (es geht ums Saubermachen vor dem nächsten Finding, nicht ums Zurückspielen); wird wie `keep` als „stashen“ behandelt und so dokumentiert.
+- **goal-completion-Baustein einbinden** (`include goal-completion`) und den Phase-7-Loop „wiederhole bis fehlerfrei“ als beschränkten Loop mit Eskalation formulieren.
 - **`/goal`-String-Emission** direkt nach dem Phase-2-Strategie-Gate; deckt die Phasen 3–8 ab. Selbsttragend: referenziert den Report und weist die verbleibenden Phasen an.
 - **Abschlussbedingung von `sf-apply-review`:** alle umsetzbaren Findings verarbeitet (umgesetzt / ADR / fehlgeschlagen protokolliert), Report aktualisiert (Phase 5), Stash-Reste gemäß Policy behandelt (Phase 6), finale Validierung grün (Phase 7).
 - **Gated Default unverändert:** Bei `stashPolicy = interactive` verhält sich der Skill exakt wie heute. Der einzige verbleibende Stopp-Punkt nach dem Gate ist der dokumentierte `apply`-Merge-Konflikt.
@@ -41,7 +41,7 @@ Konkrete Stashes existieren zu Beginn noch nicht, also lässt sich das Gate **ni
 | Datei                             | Beschreibung                                                                                                                                                                                                                                                                                |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `skills/sf-apply-review/SKILL.md` | Config-Schema um `stashPolicy` + Migration erweitern; Phase 2 zum kombinierten Strategie-Gate (Commit + Stash) mit `/goal`-String-Emission; Phase 4.3 und Phase 6 (Klassen B/C/D) policy-gesteuert; `include goal-completion`; Phase-7-Loop begrenzen; Phase 8 berichtet behaltene Stashes. |
-| `README.md`                       | `applyReview.stashPolicy` in der Config-Doku und in den Default-/Schnell-Profil-JSON-Beispielen ergänzen; `sf-apply-review` im Abschnitt „Goal-getriebene Abschlusssteuerung" als nun einbezogen nennen.                                                                                    |
+| `README.md`                       | `applyReview.stashPolicy` in der Config-Doku und in den Default-/Schnell-Profil-JSON-Beispielen ergänzen; `sf-apply-review` im Abschnitt „Goal-getriebene Abschlusssteuerung“ als nun einbezogen nennen.                                                                                    |
 | `TODO.md`                         | Den Follow-up-Eintrag für `sf-apply-review` als erledigt markieren (durch den umsetzenden Workflow, außerhalb der Plan-Schreibgrenze).                                                                                                                                                      |
 
 `dist/` ist generiert und gitignored. `build.mjs` braucht keine Änderung (bestehender `include`-Mechanismus). Der `goal-completion`-Baustein selbst (`skills/_shared/goal-completion.md`) bleibt unverändert; er ist generisch genug.
@@ -87,7 +87,7 @@ Konkrete Stashes existieren zu Beginn noch nicht, also lässt sich das Gate **ni
 ## Annahmen und offene Punkte
 
 - Der bestehende `applyReview`-Config-Migrationsmechanismus (Phase 1, `configMigration` in `memory.json`) kann um `stashPolicy` erweitert werden, analog zu `defaultCommitStrategy`.
-- „In die Frage integrieren" wird so umgesetzt, dass die Stash-Policy am selben Phase-2-Gate wie die Commit-Strategie erfragt wird (eine gemeinsame Up-front-Strategie-Entscheidung), nicht als separater späterer Gate. Ob als ein kombiniertes oder zwei direkt benachbarte Auswahl-Asks gerendert wird, entscheidet die Umsetzung; empfohlen sind zwei gekoppelte Auswahlfragen am selben Gate, weil das Kreuzprodukt aus Commit-Strategie × Stash-Policy für eine einzelne Optionsliste zu groß ist.
+- „In die Frage integrieren“ wird so umgesetzt, dass die Stash-Policy am selben Phase-2-Gate wie die Commit-Strategie erfragt wird (eine gemeinsame Up-front-Strategie-Entscheidung), nicht als separater späterer Gate. Ob als ein kombiniertes oder zwei direkt benachbarte Auswahl-Asks gerendert wird, entscheidet die Umsetzung; empfohlen sind zwei gekoppelte Auswahlfragen am selben Gate, weil das Kreuzprodukt aus Commit-Strategie × Stash-Policy für eine einzelne Optionsliste zu groß ist.
 - **Überlappung mit Plan `0048` (Worktree-Integration):** Beide Pläne berühren bei `sf-apply-review` die Phase-2-Region (Commit-Strategie / Worktree-Setup). Die Themen sind orthogonal (Stash-Policy vs. Worktree-Handoff), sollten aber beim Umsetzen koordiniert werden, falls beide gleichzeitig landen.
 
 ## Plan-Review
@@ -119,7 +119,7 @@ Konkrete Stashes existieren zu Beginn noch nicht, also lässt sich das Gate **ni
 
 - `node build.mjs`: erfolgreich – 13 Skills / 9 Agents (Codex) und 13 Commands / 9 Agents (Claude Code).
 - `pnpm agent:check` (oxfmt): keine Formatierungsfehler über 91 Dateien.
-- Einbettung verifiziert: Der Baustein „Goal-getriebene Abschlusssteuerung" erscheint in `sf-apply-review` in beiden Plattform-Ausgaben; keine unaufgelösten `{{…}}`-Platzhalter.
+- Einbettung verifiziert: Der Baustein „Goal-getriebene Abschlusssteuerung“ erscheint in `sf-apply-review` in beiden Plattform-Ausgaben; keine unaufgelösten `{{…}}`-Platzhalter.
 - Umgesetzt: `applyReview.stashPolicy` (Schema, Defaults, gültige Werte, Migration); Phase 2 kombiniertes Commit-/Stash-Strategie-Gate mit `/goal`-String (Phasen 3–8); Phase 4.3 und Phase 6 (Klassen B/C/D) policy-gesteuert, Klasse A weiter Auto-Drop; `goal-completion` eingebunden; Phase-7-Loop begrenzt; Phase 8 berichtet behaltene Stashes; README dokumentiert `stashPolicy` und nennt `sf-apply-review` im Goal-Abschnitt.
 
 ## Review-Findings
@@ -134,4 +134,4 @@ Konkrete Stashes existieren zu Beginn noch nicht, also lässt sich das Gate **ni
 | Behoben          |      3 |
 | Bewusst belassen |      1 |
 
-Reviewer-Findings: 1 Wichtig (Absolut-Aussage „kein weiteres Gate" übersah Cherry-Pick-Konflikt der Worktrees-Strategie und seltenen verwaisten Lock → in `sf-apply-review` und README als konfliktbedingte Eskalationen reframed) und 3 Hinweise. Behoben: das Wichtig-Finding, der zweite Eskalations-Hinweis (verwaister Lock, in dieselbe Reframing-Aussage aufgenommen) und das veraltete Migrations-Beispiel (`addedKeys` auf den historischen Stand zurückgesetzt). Bewusst belassen: der Hinweis zu den Phase-6-Klassen-Bullets B/C/D – die Intro-Klausel rahmt sie bereits explizit als `interactive`-Fall. Keine offenen Findings, kein externer Review-Report.
+Reviewer-Findings: 1 Wichtig (Absolut-Aussage „kein weiteres Gate“ übersah Cherry-Pick-Konflikt der Worktrees-Strategie und seltenen verwaisten Lock → in `sf-apply-review` und README als konfliktbedingte Eskalationen reframed) und 3 Hinweise. Behoben: das Wichtig-Finding, der zweite Eskalations-Hinweis (verwaister Lock, in dieselbe Reframing-Aussage aufgenommen) und das veraltete Migrations-Beispiel (`addedKeys` auf den historischen Stand zurückgesetzt). Bewusst belassen: der Hinweis zu den Phase-6-Klassen-Bullets B/C/D – die Intro-Klausel rahmt sie bereits explizit als `interactive`-Fall. Keine offenen Findings, kein externer Review-Report.

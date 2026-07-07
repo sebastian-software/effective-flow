@@ -82,7 +82,7 @@ Wenn ein offener Plan für `{{SKILL:fix}}` bestätigt ist:
 
 ### Phase 1: Investigation
 
-Führe die read-only-Investigation gemäß „Investigation-Methode", Abschnitt „Symptom und Code untersuchen", aus: Fehlerbeschreibung analysieren, den relevanten Code über einen internen Explore-Sub-Agenten untersuchen, die Standard-Rückfragen (wann tritt der Fehler auf, Fehlermeldung bzw. erwartetes gegenüber tatsächlichem Verhalten, seit wann) klären und die vermutliche Root Cause samt betroffener Dateien identifizieren.
+Führe die read-only-Investigation gemäß „Investigation-Methode“, Abschnitt „Symptom und Code untersuchen“, aus: Fehlerbeschreibung analysieren, den relevanten Code über einen internen Explore-Sub-Agenten untersuchen, die Standard-Rückfragen (wann tritt der Fehler auf, Fehlermeldung bzw. erwartetes gegenüber tatsächlichem Verhalten, seit wann) klären und die vermutliche Root Cause samt betroffener Dateien identifizieren.
 
 ### Phase 2: Reproduktion
 
@@ -95,7 +95,7 @@ Führe die read-only-Investigation gemäß „Investigation-Methode", Abschnitt 
    - fehlende Akzeptanzkriterien
    - Edge Cases
    - Scope Creep
-3. Führe die Diagnose-Validierung gemäß „Investigation-Methode" durch (Clarity, Verification, Context) und ergänze sie um:
+3. Führe die Diagnose-Validierung gemäß „Investigation-Methode“ durch (Clarity, Verification, Context) und ergänze sie um:
    - Fix-Scope: minimaler Fix klar definiert
 4. Präsentiere dem User:
    - wo der Bug liegt
@@ -103,8 +103,8 @@ Führe die read-only-Investigation gemäß „Investigation-Methode", Abschnitt 
    - wie er reproduzierbar ist
    - Gap-Analysis-Erkenntnisse
    - Validierungs-Scorecard
-5. Leite aus Diagnose, Fix-Scope und Akzeptanzkriterien die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung"); sie deckt die Phasen 3–5 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten.
-6. Hole Freigabe ein. Die Freigabe-Frage enthält die explizite Goal-Abfrage (Option „Autonom via /goal"); behandle sie gemäß „Explizite Goal-Abfrage für autonome Läufe": Bei Wahl „Autonom via /goal" gib den `/goal`-String für die Phasen 3–5 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
+5. Leite aus Diagnose, Fix-Scope und Akzeptanzkriterien die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung“); sie deckt die Phasen 3–5 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten.
+6. Hole Freigabe ein. Die Freigabe-Frage enthält die explizite Goal-Abfrage (Option „Autonom via /goal“); behandle sie gemäß „Explizite Goal-Abfrage für autonome Läufe“: Bei Wahl „Autonom via /goal“ gib den `/goal`-String für die Phasen 3–5 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
 
 ```ask
 header: Fix-Plan
@@ -120,7 +120,7 @@ options:
 
 ### Phase 3: Fix
 
-0. Bestimme gemäß „Worktree-Integration" den effektiven Worktree-Modus und führe bei aktivem Modus zuerst das Worktree-Setup aus. Die folgenden Phasen 3–4 (Fix, Verifikation) laufen dann mit Arbeitsverzeichnis im Worktree.
+0. Bestimme gemäß „Worktree-Integration“ den effektiven Worktree-Modus und führe bei aktivem Modus zuerst das Worktree-Setup aus. Die folgenden Phasen 3–4 (Fix, Verifikation) laufen dann mit Arbeitsverzeichnis im Worktree.
 1. Starte den passenden Implementer-Skill:
    - `{{AGENT:ui-implementer}}`, `{{AGENT:nodejs-implementer}}` oder `{{AGENT:rust-implementer}}`
 2. Gib einen präzisen Auftrag:
@@ -154,16 +154,16 @@ Wenn dabei offene Findings oder Restrisiken entstehen, dokumentiere sie struktur
 
 ### Phase 5: Abschluss
 
-1. Falls Fehler in Phase 4 gefunden wurden: behebe sie und verifiziere Phase 4 erneut gemäß „Goal-getriebene Abschlusssteuerung": begrenze die internen Korrekturrunden und eskaliere an den User, falls die Abschlussbedingung danach weiterhin nicht hält, statt unbegrenzt zu wiederholen.
+1. Falls Fehler in Phase 4 gefunden wurden: behebe sie und verifiziere Phase 4 erneut gemäß „Goal-getriebene Abschlusssteuerung“: begrenze die internen Korrekturrunden und eskaliere an den User, falls die Abschlussbedingung danach weiterhin nicht hält, statt unbegrenzt zu wiederholen.
 2. Wenn aus Verifikation, Regressionstest oder Review-ähnlicher Prüfung Findings oder Restrisiken mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
-   - schreibe sie gemäß „Offene Review-Finding-Reports" in eine neue Datei unter `.firmo/review/`
+   - schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.firmo/review/`
    - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-NNNN.md`
    - nenne den erzeugten Reportpfad in der Abschlusszusammenfassung
 3. Wenn dieser Fix ein Finding aus einer bestehenden Review-Report-Datei in `.firmo/review/` gelöst hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
 4. Lösche die Wisdom-Datei.
-5. Wenn der Worktree-Modus aktiv war: führe das Handback gemäß „Worktree-Integration" aus (Änderungen committen, Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`).
+5. Wenn der Worktree-Modus aktiv war: führe das Handback gemäß „Worktree-Integration“ aus (Änderungen committen, Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`).
 6. Fasse zusammen:
    - Root Cause
    - Änderungen

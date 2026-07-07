@@ -1,5 +1,7 @@
 # 0024: Projektweites Verbot von Co-Authored-By-Trailern
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Sicherstellen, dass kein Skill in diesem Plugin `Co-Authored-By`-Trailer in Commit-Messages erzeugt — insbesondere nicht solche, die LLMs (Claude, Codex, GPT, …) als Default vorschlagen oder einfügen. Bisher hatte nur `sf-commit` die explizite Regel; andere committende Skills (`sf-apply-review`, `sf-build-feature`, `sf-fix`, `sf-refactor`, `sf-ui-implementer`, `sf-nodejs-implementer`) hatten keine entsprechende Anweisung.
@@ -7,7 +9,7 @@ Sicherstellen, dass kein Skill in diesem Plugin `Co-Authored-By`-Trailer in Comm
 ## Architekturentscheidungen
 
 - **Neuer Shared-Include `_shared/commit-message-rules.md`** als Single Source of Truth für Commit-Message-Konventionen (kein Co-Authored-By, kein generischer Wortlaut, Conventional-Commit-Präfixe, Anweisung zum aktiven Entfernen vorhandener Trailer).
-- **Klare Trennung von `pre-commit-gate.md`:** Der bestehende Include behandelt weiterhin nur „was muss vor dem Commit bestehen"; der neue Include adressiert „was darf in der Commit-Message stehen".
+- **Klare Trennung von `pre-commit-gate.md`:** Der bestehende Include behandelt weiterhin nur „was muss vor dem Commit bestehen“; der neue Include adressiert „was darf in der Commit-Message stehen“.
 - **Inklusion in alle 7 committenden Skills.** `sf-commit` ersetzt seine Inline-Regel durch das Include; die übrigen 6 ergänzen den Include neben/nach `pre-commit-gate`.
 - **Keine Modifikation von Skills, die nicht committen** (sf-review, sf-version, sf-test-writer, sf-docs-writer, sf-code-validator, sf-code-documenter, sf-e2e-tester, sf-frontend-reviewer, sf-nodejs-reviewer): kein Include nötig.
 - **Explizite Weitergabe in sf-apply-review Phase 2 Commit-Strategie:** zusätzlich zum Include ein Inline-Hinweis im Commit-Strategie-Text, weil der Skill die Strategie als String an Sub-Agenten weitergibt.
@@ -84,7 +86,7 @@ Sicherstellen, dass kein Skill in diesem Plugin `Co-Authored-By`-Trailer in Comm
 - **Bereich**: Regelweitergabe an delegierte Sub-Agenten
 - **Datei**: skills/sf-apply-review/SKILL.md:136-139
 - **Problem**: Der Include gilt für den Orchestrator, aber der Strategie-Text in Phase 2 wird als String an Delegations-Sub-Agenten weitergegeben. Ohne expliziten Inline-Hinweis könnte ein Sub-Agent das Verbot übersehen.
-- **Empfehlung**: Im Strategie-Text der Option „Einzeln" einen expliziten Hinweis ergänzen.
+- **Empfehlung**: Im Strategie-Text der Option „Einzeln“ einen expliziten Hinweis ergänzen.
 - **Status**: Behoben
 
 #### [F5] commit-message-rules: Formulierung zu schwach, kein aktiver Entfernungs-Hinweis
@@ -93,7 +95,7 @@ Sicherstellen, dass kein Skill in diesem Plugin `Co-Authored-By`-Trailer in Comm
 - **Komplexität**: Leicht
 - **Bereich**: Regelschärfe / LLM-Zuverlässigkeit
 - **Datei**: skills/\_shared/commit-message-rules.md:3
-- **Problem**: „anbieten könnten" war konditionell. Außerdem fehlte die Anweisung, vorhandene Co-Authored-By-Zeilen aus Templates/Drafts aktiv zu entfernen.
+- **Problem**: „anbieten könnten“ war konditionell. Außerdem fehlte die Anweisung, vorhandene Co-Authored-By-Zeilen aus Templates/Drafts aktiv zu entfernen.
 - **Empfehlung**: Auf unbedingte Formulierung verschärfen und aktiven Entfernungs-Hinweis ergänzen.
 - **Status**: Behoben
 
@@ -117,7 +119,7 @@ Sicherstellen, dass kein Skill in diesem Plugin `Co-Authored-By`-Trailer in Comm
 - **Empfehlung**: Keine Aktion.
 - **Status**: Offen (bestätigt, keine Aktion)
 
-#### [F6] sf-commit-Frontmatter-Description erwähnt weiterhin „ohne Co-Authored-By-Zeilen"
+#### [F6] sf-commit-Frontmatter-Description erwähnt weiterhin „ohne Co-Authored-By-Zeilen“
 
 - **Schweregrad**: Hinweis
 - **Komplexität**: Leicht

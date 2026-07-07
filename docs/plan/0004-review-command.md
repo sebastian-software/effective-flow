@@ -1,5 +1,7 @@
 # 0004: /review Command
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Neuer `/review` Command, der ein umfassendes Code-Review durchführt und einen strukturierten Bericht erstellt. Jedes Finding im Bericht soll direkt als Input für `/fix`, `/refactor` oder `/build-feature` dienen können.

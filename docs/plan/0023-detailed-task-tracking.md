@@ -1,5 +1,7 @@
 # 0023: Detailliertere TODO-Listen für apply-review und review
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Bei `sf-apply-review` und `sf-review` ist die TODO-Liste während der Ausführung zu grob. Der User sieht nicht, wie viele Findings (apply-review) bzw. Quellen/Sub-Reviewer (review) noch offen sind. Die Per-Item-Granularität soll als Live-Fortschrittsanzeige dienen.
@@ -7,18 +9,18 @@ Bei `sf-apply-review` und `sf-review` ist die TODO-Liste während der Ausführun
 ## Architekturentscheidungen
 
 - **Keine Änderung am shared Include `_shared/task-tracking.md`** — er wird von 16 anderen Skills verwendet, eine Änderung dort würde alle Skills betreffen. Skill-spezifische Granularität gehört in den jeweiligen Skill.
-- **Inline-Sektion „Aufgabenverfolgung im Detail"** direkt nach `{{INCLUDE:task-tracking}}` in beiden Skills.
+- **Inline-Sektion „Aufgabenverfolgung im Detail“** direkt nach `{{INCLUDE:task-tracking}}` in beiden Skills.
 - **sf-apply-review:** Phase-Level-Tasks (1-8) plus Per-Finding-Tasks für jedes umsetzbare Finding. Alle Tasks werden am Ende von Phase 1 nach erfolgreicher Klassifikation angelegt — ein einziger Anlage-Zeitpunkt, klar definiert.
 - **sf-review:** Phase-Level-Tasks (1-4), Per-Quelle-Tasks für 2a, ein Task für 2b, **plus** Per-Sub-Reviewer-Tasks für 2c. Anlage zu **zwei** Zeitpunkten: A (am Ende von Phase 1) für Phasen, 2a, 2b; B (zu Beginn von Phase 2c, nach Verzeichnis-Split-Berechnung) für Sub-Reviewer-Tasks. Grund: der Verzeichnis-Split bestimmt erst zur Laufzeit, wie viele Sub-Reviewer benötigt werden.
-- **ABBRUCH einzelner Tasks:** trotzdem auf `completed` setzen mit Subject-Suffix `[fehlgeschlagen]`, damit die Liste nicht mit hängenden „in_progress"-Zeilen blockiert.
+- **ABBRUCH einzelner Tasks:** trotzdem auf `completed` setzen mit Subject-Suffix `[fehlgeschlagen]`, damit die Liste nicht mit hängenden „in_progress“-Zeilen blockiert.
 - **Vorzeitiger Gesamt-Abbruch** (z. B. keine umsetzbaren Findings, Skill-Unterbrechung): alle offenen Tasks auf `completed` mit Suffix `[abgebrochen]`.
-- **Phase-2-Aggregat-Lifecycle in sf-review:** Phase-Level-Task „Phase 2" gilt erst als `completed`, wenn alle drei Streams ERLEDIGT/ABBRUCH gemeldet haben — analog zur Phase-3-Startbedingung.
+- **Phase-2-Aggregat-Lifecycle in sf-review:** Phase-Level-Task „Phase 2“ gilt erst als `completed`, wenn alle drei Streams ERLEDIGT/ABBRUCH gemeldet haben — analog zur Phase-3-Startbedingung.
 
 ## Betroffene Dateien
 
 | Datei                                      | Beschreibung                                                                                                                                     |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `skills/sf-apply-review/SKILL.md`          | Neue Sektion „Aufgabenverfolgung im Detail" mit Phase-Level + Per-Finding-Tasks, Lifecycle-Regeln inkl. ABBRUCH und vorzeitigem Gesamt-Abbruch   |
+| `skills/sf-apply-review/SKILL.md`          | Neue Sektion „Aufgabenverfolgung im Detail“ mit Phase-Level + Per-Finding-Tasks, Lifecycle-Regeln inkl. ABBRUCH und vorzeitigem Gesamt-Abbruch   |
 | `skills/sf-review/SKILL.md`                | Neue Sektion mit zweistufiger Anlage (Zeitpunkt A und B), Per-Quelle/Per-Sub-Reviewer-Tasks, Phase-2-Aggregat-Lifecycle und Gesamt-Abbruch-Regel |
 | `docs/plan/0023-detailed-task-tracking.md` | Diese Plan-Datei                                                                                                                                 |
 
@@ -88,7 +90,7 @@ Bei `sf-apply-review` und `sf-review` ist die TODO-Liste während der Ausführun
 - **Komplexität**: Leicht
 - **Bereich**: Interne Konsistenz, Lifecycle-Klarheit
 - **Datei**: skills/sf-apply-review/SKILL.md:25-51
-- **Problem**: „zu Beginn von Phase 1" und „vor Phase 4" wurden nebeneinander erwähnt — beide korrekt, aber als zweideutiger Interpretationsspielraum für einen LLM-Orchestrator.
+- **Problem**: „zu Beginn von Phase 1“ und „vor Phase 4“ wurden nebeneinander erwähnt — beide korrekt, aber als zweideutiger Interpretationsspielraum für einen LLM-Orchestrator.
 - **Empfehlung**: Eindeutig auf einen Zeitpunkt konsolidieren: am Ende von Phase 1 nach Klassifikation.
 - **Status**: Behoben
 
@@ -108,7 +110,7 @@ Bei `sf-apply-review` und `sf-review` ist die TODO-Liste während der Ausführun
 - **Komplexität**: Mittel
 - **Bereich**: LLM-Orchestrator-Klarheit, Edge Cases
 - **Datei**: skills/sf-review/SKILL.md:41-44, :55-57, :182-183
-- **Problem**: Die ursprüngliche Anweisung „Tasks anlegen, sobald der Scope in Phase 1 bestätigt ist" widerspricht dem Verzeichnis-Split, der erst in Phase 2c zur Laufzeit berechnet wird.
+- **Problem**: Die ursprüngliche Anweisung „Tasks anlegen, sobald der Scope in Phase 1 bestätigt ist“ widerspricht dem Verzeichnis-Split, der erst in Phase 2c zur Laufzeit berechnet wird.
 - **Empfehlung**: Zwei Anlage-Zeitpunkte (A und B) explizit unterscheiden: A am Ende Phase 1 für Phasen + 2a + 2b, B zu Beginn Phase 2c für Sub-Reviewer.
 - **Status**: Behoben
 

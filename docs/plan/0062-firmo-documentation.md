@@ -2,9 +2,9 @@
 
 **Planungsstatus:** Umgesetzt
 **Quelle:** /plan
-**Empfohlener Workflow:** Dokumentation (`/docs`)
+**Empfohlener Workflow:** Dokumentation (`/firmo docs`)
 **Doku-Kategorie:** developer-guide
-**Ziel-Pfad:** docs/developer-guide/firmo-overview.md
+**Ziel-Pfad:** docs/developer-guide/firmo-overview.md (entfiel — optionaler Developer-Guide bewusst nicht erstellt)
 
 ## Anforderung
 

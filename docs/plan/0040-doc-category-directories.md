@@ -6,7 +6,7 @@
 
 ## Anforderung
 
-Aktuell landen alle Implementierungspläne in `docs/plan/`, unabhängig davon, ob sie ein Feature, einen Bugfix, ein Refactoring oder Dokumentation beschreiben. Pläne der Kategorie „Dokumentation" produzieren am Ende ein finales Dokument, für das es bisher keine projektweite Ablagekonvention gibt. In der Praxis entstehen User-Guides, Entwickler-Guides, Betriebsdokumente und Runbooks, die je nach Projekt an unterschiedlichen Stellen abgelegt werden.
+Aktuell landen alle Implementierungspläne in `docs/plan/`, unabhängig davon, ob sie ein Feature, einen Bugfix, ein Refactoring oder Dokumentation beschreiben. Pläne der Kategorie „Dokumentation“ produzieren am Ende ein finales Dokument, für das es bisher keine projektweite Ablagekonvention gibt. In der Praxis entstehen User-Guides, Entwickler-Guides, Betriebsdokumente und Runbooks, die je nach Projekt an unterschiedlichen Stellen abgelegt werden.
 
 Es soll eine verbindliche Konvention etabliert werden:
 
@@ -14,7 +14,7 @@ Es soll eine verbindliche Konvention etabliert werden:
 - Die finalen, vom Plan erzeugten Dokumente landen in vier neuen Unterverzeichnissen unter `docs/`, getrennt nach Doku-Kategorie.
 - Die Plugin-Skills `sf-plan`, `sf-docs`, `sf-docs-writer`, `sf-apply-plan` und die zentrale Konvention (README, Shared-Includes) werden so angepasst, dass diese Ablage automatisch erkannt, vorgeschlagen und durchgesetzt wird.
 
-Workflow-Empfehlung „Feature": Dies ist eine echte Erweiterung des Plugin-Verhaltens (neue Konvention, neue Skill-Schritte, neue Include-Datei). Bugfix und Refactoring passen nicht, da kein bestehendes Verhalten falsch ist oder strukturell verbessert wird. Reine Dokumentation passt ebenfalls nicht, weil die Skills selbst und ihr Build-Output mit verändert werden.
+Workflow-Empfehlung „Feature“: Dies ist eine echte Erweiterung des Plugin-Verhaltens (neue Konvention, neue Skill-Schritte, neue Include-Datei). Bugfix und Refactoring passen nicht, da kein bestehendes Verhalten falsch ist oder strukturell verbessert wird. Reine Dokumentation passt ebenfalls nicht, weil die Skills selbst und ihr Build-Output mit verändert werden.
 
 ## Architekturentscheidungen
 
@@ -23,7 +23,7 @@ Workflow-Empfehlung „Feature": Dies ist eine echte Erweiterung des Plugin-Verh
 - **Topic-basierte Dateinamen ohne NNNN-Prefix:** Dokumente heißen z. B. `installation.md`, `architecture.md`, `restart-database.md`. Begründung: Pläne lösen einmalige Probleme und profitieren von chronologischer Nummerierung; finale Dokumente sind langlebige Referenzen, die nach Topic gesucht und verlinkt werden. NNNN würde Umsortierung erschweren, Links brechen und keine Wiederfindbarkeit bringen. Das Schema bleibt damit exklusiv für `docs/plan/` und signalisiert klar den Unterschied zwischen kurzlebigem Planungsartefakt und langlebigem Referenzdokument.
 - **README.md nur in `user-guide/`:** End-User profitieren von einer kuratierten Lese-Reihenfolge und einem Einstiegspunkt. Für Entwickler, Betrieb und Runbooks reicht die Verzeichnisliste plus Topic-Slugs; eine zusätzliche README müsste sonst bei jedem neuen Dokument gepflegt werden, ohne dass die Zielgruppe sie braucht.
 - **Optionale Sub-Topics in `runbooks/`:** Bei wachsender Runbook-Sammlung dürfen thematische Unterordner entstehen, z. B. `runbooks/database/restart.md`. Keine Pflicht, weil ein flaches Verzeichnis bei wenigen Runbooks übersichtlicher ist.
-- **Plan-Datei nennt Ziel-Kategorie und Ziel-Pfad explizit:** Für Dokumentationspläne erweitern wir das Plan-Template um die Pflichtfelder „Doku-Kategorie" und „Ziel-Pfad". Damit ist beim späteren `sf-docs`-Lauf eindeutig, wohin das finale Dokument geschrieben wird. Heuristisches Erraten aus dem Plan-Text wird vermieden.
+- **Plan-Datei nennt Ziel-Kategorie und Ziel-Pfad explizit:** Für Dokumentationspläne erweitern wir das Plan-Template um die Pflichtfelder „Doku-Kategorie“ und „Ziel-Pfad“. Damit ist beim späteren `sf-docs`-Lauf eindeutig, wohin das finale Dokument geschrieben wird. Heuristisches Erraten aus dem Plan-Text wird vermieden.
 - **Shared-Include als Konventionsquelle:** Die Konvention wird einmal in `skills/_shared/doc-categories.md` beschrieben und von allen betroffenen Skills via `{{INCLUDE:doc-categories}}` eingebunden. Begründung: dieselbe Konvention darf nicht in mehreren SKILL.md-Dateien dupliziert werden, sonst driftet sie auseinander (gleiches Pattern wie `language-rules`, `plan-status`, `plan-reference-routing`).
 - **Kein Auto-Anlegen leerer Doku-Verzeichnisse:** Verzeichnisse werden erst beim ersten realen Dokument erzeugt. Begründung: leere Verzeichnisse sind in Git ohnehin nicht persistierbar und würden `.gitkeep`-Rauschen erzwingen.
 
@@ -32,12 +32,12 @@ Workflow-Empfehlung „Feature": Dies ist eine echte Erweiterung des Plugin-Verh
 | Datei                              | Beschreibung                                                                                                                                                         |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `skills/_shared/doc-categories.md` | Neuer Shared-Include mit Kategorien, Verzeichnisnamen, Dateinamen-Konvention und README-Regel                                                                        |
-| `skills/sf-plan/SKILL.md`          | Bei Klassifikation „Dokumentation" zusätzlich Doku-Kategorie und Ziel-Pfad bestimmen und im Plan-Template fordern; bindet `doc-categories` ein                       |
+| `skills/sf-plan/SKILL.md`          | Bei Klassifikation „Dokumentation“ zusätzlich Doku-Kategorie und Ziel-Pfad bestimmen und im Plan-Template fordern; bindet `doc-categories` ein                       |
 | `skills/sf-docs/SKILL.md`          | Liest aus dem Plan die Doku-Kategorie und den Ziel-Pfad, legt das Verzeichnis bei Bedarf an, übergibt den Ziel-Pfad an `sf-docs-writer`; bindet `doc-categories` ein |
 | `skills/sf-docs-writer/SKILL.md`   | Schreibt in den im Auftrag genannten Ziel-Pfad innerhalb der gültigen Kategorien-Verzeichnisse, kein Schreiben außerhalb erlaubt; bindet `doc-categories` ein        |
 | `skills/sf-apply-plan/SKILL.md`    | Erkennt Doku-Pläne weiterhin am Workflow-Marker; gibt im Hand-off-Hinweis zusätzlich die im Plan genannte Doku-Kategorie und den Ziel-Pfad mit                       |
 | `skills/sf-open-plans/SKILL.md`    | Listet bei Doku-Plänen zusätzlich die Ziel-Kategorie als Spalte, damit offene Doku-Pläne nach Zielgruppe erkennbar sind                                              |
-| `README.md`                        | Beschreibt die neue Konvention im Abschnitt „Struktur" und ggf. im Abschnitt zur Plan-Statuszeile                                                                    |
+| `README.md`                        | Beschreibt die neue Konvention im Abschnitt „Struktur“ und ggf. im Abschnitt zur Plan-Statuszeile                                                                    |
 | `docs/skill-migration-notes.md`    | Falls historisch relevant: kurzer Hinweis, dass die Konvention ab dieser Plugin-Version gilt                                                                         |
 
 Hinweis zu generierten Artefakten: `build.mjs` selbst muss nicht angepasst werden; durch die Verwendung der bestehenden Platzhalter und des neuen Includes propagiert die Konvention automatisch in `dist/codex/` und `dist/claude/`.
@@ -54,7 +54,7 @@ Hinweis zu generierten Artefakten: `build.mjs` selbst muss nicht angepasst werde
    - README-Regel für `user-guide/`
    - Klare Aussage, dass diese Verzeichnisse die einzig erlaubten Zielorte für finale Doku aus dem Doku-Workflow sind
 2. `sf-plan` erweitern:
-   - In Phase 1 bei Klassifikation „Dokumentation" zusätzlich die Doku-Kategorie bestimmen.
+   - In Phase 1 bei Klassifikation „Dokumentation“ zusätzlich die Doku-Kategorie bestimmen.
    - In Phase 2 fehlt: bei Unsicherheit der Kategorie oder des Topic-Slugs explizit nachfragen.
    - Plan-Template erhält für Doku-Pläne zwei zusätzliche Felder im Kopf:
      - eine Zeile `**Doku-Kategorie:** user-guide | developer-guide | operations | runbooks`
@@ -130,8 +130,8 @@ Nicht relevant. Die Konvention betrifft Markdown-Ablagepfade, keine UI.
 ## Annahmen und offene Punkte
 
 - Annahme: deutsche Doku-Sprache bleibt für die Inhalte erhalten; die Verzeichnisnamen sind bewusst englisch, weil sie strukturelle Bezeichner sind, nicht Inhalte.
-- Annahme: Es gibt aktuell in `docs/plan/` keine Doku-Pläne, die wegen fehlender neuer Felder beim ersten Apply scheitern könnten. Falls doch, fallen sie in den Edge Case „Plan ohne Doku-Kategorie".
-- Offener Punkt: Sub-Topic-Konvention für `runbooks/` ist bewusst „erlaubt aber nicht erzwungen". Wenn sich später ein Muster etabliert (z. B. immer nach betroffenem System), kann das in einem späteren Plan in eine harte Regel überführt werden.
+- Annahme: Es gibt aktuell in `docs/plan/` keine Doku-Pläne, die wegen fehlender neuer Felder beim ersten Apply scheitern könnten. Falls doch, fallen sie in den Edge Case „Plan ohne Doku-Kategorie“.
+- Offener Punkt: Sub-Topic-Konvention für `runbooks/` ist bewusst „erlaubt aber nicht erzwungen“. Wenn sich später ein Muster etabliert (z. B. immer nach betroffenem System), kann das in einem späteren Plan in eine harte Regel überführt werden.
 - Offener Punkt: ob der Plugin-eigene `docs/`-Baum (also dieses Repository selbst) initial mit `developer-guide/` und ggf. `operations/` befüllt werden soll, ist nicht Teil dieses Plans; das ist eigenständige Doku-Arbeit über `/docs` nach Konvention.
 
 ## Plan-Review
@@ -153,9 +153,9 @@ Nicht relevant. Die Konvention betrifft Markdown-Ablagepfade, keine UI.
 ### Befunde
 
 - Architektur (Hinweis): Der neue Shared-Include `doc-categories` koppelt fünf Skills an dieselbe Konventionsquelle. Das ist gewollt; sollte sich die Konvention je nach Projekt unterscheiden müssen, wäre eine projektlokale Überschreibung (z. B. via `.sf-plugin/config.json`) ein späterer Erweiterungspunkt — bewusst nicht jetzt umgesetzt, weil keine konkrete Anforderung dafür existiert.
-- Fehlerfälle (Hinweis): Der Negativ-Test im Validierungsplan deckt nur den Fall ab, dass `Doku-Kategorie` fehlt. Andere Fehlbildungen (z. B. Kategorie vorhanden, Ziel-Pfad inkonsistent) sollten in der Skill-Anpassung von `sf-plan` und `sf-docs` mitgedacht werden. Akzeptanzkriterium dafür ist über „prüft Konsistenz" abgedeckt.
+- Fehlerfälle (Hinweis): Der Negativ-Test im Validierungsplan deckt nur den Fall ab, dass `Doku-Kategorie` fehlt. Andere Fehlbildungen (z. B. Kategorie vorhanden, Ziel-Pfad inkonsistent) sollten in der Skill-Anpassung von `sf-plan` und `sf-docs` mitgedacht werden. Akzeptanzkriterium dafür ist über „prüft Konsistenz“ abgedeckt.
 - Scope (Hinweis): Der Plan ändert bewusst keine Bestandsdokumente und plant keine Migration vorhandener Doku-Pfade. Migration ist ein eigenständiger Folgeplan, falls gewünscht. Damit bleibt der Scope eng.
-- Wartbarkeit (Hinweis): Die Topic-basierte Slug-Konvention setzt voraus, dass Slugs disziplinär gewählt werden. Über die Slug-Kollisions-Prüfung in `sf-plan` ist das maschinell abgesichert, eine zentrale Liste „bereits vergebener Slugs" pro Kategorie ist nicht nötig.
+- Wartbarkeit (Hinweis): Die Topic-basierte Slug-Konvention setzt voraus, dass Slugs disziplinär gewählt werden. Über die Slug-Kollisions-Prüfung in `sf-plan` ist das maschinell abgesichert, eine zentrale Liste „bereits vergebener Slugs“ pro Kategorie ist nicht nötig.
 
 ## Testergebnisse
 

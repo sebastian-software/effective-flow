@@ -47,15 +47,19 @@ issue-tracker
 ### Phase 1: Quelle klassifizieren
 
 1. Lies das User-Argument.
-2. Wende die „Apply-Quellen-Erkennung" an: Stufe A (syntaktisch) und – für eine
+2. Wende die „Apply-Quellen-Erkennung“ an: Stufe A (syntaktisch) und – für eine
    Issue-Referenz – Stufe B (Tracker). Für Stufe B gelten die Host-/CLI-Erkennung und
-   Verfügbarkeitsprüfung aus „Issue-Tracker-Anbindung (Remote-Modus)"; fehlt das CLI
+   Verfügbarkeitsprüfung aus „Issue-Tracker-Anbindung (Remote-Modus)“; fehlt das CLI
    oder die Authentifizierung, brich mit klarer Meldung ab (kein stiller Fallback).
 3. Behandle die Sonderergebnisse:
    - **`none` (kein Argument):** liste lokale Kandidaten – offene Pläne aus
      `docs/plan/` (Status `**Planungsstatus:** Nicht umgesetzt` bzw.
-     `**Plan status:** Not implemented`) und Report-Dateien unter `.firmo/review/` –
-     und frage den User nach der konkreten Quelle. Wähle nichts heuristisch aus.
+     `**Plan status:** Not implemented`) und Report-Dateien unter `.firmo/review/`.
+     Ist der effektive Tracker-Modus `remote` (siehe „Issue-Tracker-Anbindung“),
+     liste zusätzlich offene Review-Epics (Label `firmo-review-epic`, inkl. Alt
+     `sf-review-epic`) als Kandidaten auf – im Remote-Modus werden keine lokalen
+     Report-Dateien geschrieben, sodass sonst keine Quelle angeboten würde. Frage
+     danach den User nach der konkreten Quelle. Wähle nichts heuristisch aus.
    - **`ambiguous`:** benenne die konkurrierenden Deutungen und frage nach.
    - **Gemischte Issue-Liste:** wenn die übergebenen Issue-Referenzen zu
      unterschiedlichen Zuständigkeiten führen (z. B. `review-finding` **und**
@@ -79,9 +83,9 @@ issue-tracker
 ## Regeln
 
 - Ändere selbst keine Implementierungs-, Plan-, Report- oder Tracker-Dateien.
-- Klassifiziere über die gemeinsame „Apply-Quellen-Erkennung"; führe keine eigene,
+- Klassifiziere über die gemeinsame „Apply-Quellen-Erkennung“; führe keine eigene,
   abweichende Erkennungslogik ein.
 - Starte keine Build-, Test-, Validator- oder Reviewer-Phase selbst.
-- Verwende keine heuristische „neueste Quelle", wenn mehrere Kandidaten existieren.
+- Verwende keine heuristische „neueste Quelle“, wenn mehrere Kandidaten existieren.
 - Wenn der Quelltyp unklar oder mehrdeutig ist, frage nach statt zu raten.
 - Gib Pfade relativ zum Projekt-Root aus.

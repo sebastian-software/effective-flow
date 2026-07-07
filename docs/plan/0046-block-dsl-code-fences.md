@@ -79,7 +79,7 @@ Inline-Referenzen (`{{SKILL:…}}`, `{{AGENT:…}}`, `{{VERSION}}`) bleiben bewu
 - Stufe-1-Diff gegen Baseline: byte-identisch.
 - Stufe-2-Diff nach Formatierung: normalisiert leer → rein kosmetisch (Tabellenausrichtung, Leerzeilen).
 - Keine geleakten Fences oder Platzhalter im `dist/`; ASK-Optionszahlen unverändert.
-- `pnpm agent:check`: „All matched files use the correct format" über 82 Dateien.
+- `pnpm agent:check`: „All matched files use the correct format“ über 82 Dateien.
 
 ## Review-Findings
 

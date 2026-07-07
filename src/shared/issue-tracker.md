@@ -65,7 +65,7 @@ Wenn `.firmo/config.json` nicht existiert, lege sie **nicht** nur für die Migra
 Bestimme zu Beginn des Laufs den effektiven Modus in dieser Reihenfolge (die erste zutreffende Regel gewinnt):
 
 1. **Argumenttyp:** Der übergebene Argumenttyp überschreibt den Config-Modus für diesen Lauf. Eine Report-Datei (`*.md` unter `.firmo/review/`) erzwingt `local`; eine Issue-Referenz (Issue-Nummer, `#123` oder eine Issue-URL) erzwingt `remote`.
-2. **Per-Run-Wunsch des Users:** Verlangt der User ausdrücklich Issue-/Tracker-Arbeit, ist `remote` aktiv; verlangt er ausdrücklich lokale Arbeit („lokal", „ohne Issues", „nur Report"), ist `local` aktiv.
+2. **Per-Run-Wunsch des Users:** Verlangt der User ausdrücklich Issue-/Tracker-Arbeit, ist `remote` aktiv; verlangt er ausdrücklich lokale Arbeit („lokal“, „ohne Issues“, „nur Report“), ist `local` aktiv.
 3. **Config:** sonst gilt `tracker.mode` aus `.firmo/config.json`.
 4. **Erstaufruf-Abfrage:** Ist `tracker.mode` nicht in der Config gesetzt und liefert weder Argument noch Per-Run-Wunsch ein Signal, führe die Erstaufruf-Abfrage unten aus.
 
@@ -103,28 +103,28 @@ Bestimme im Remote-Modus das Werkzeug analog zu `{{SKILL:pr}}`:
 
 ### Label-Konvention
 
-Verwende im Remote-Modus diese Labels und lege fehlende Labels idempotent an (eine „already exists"-Meldung tolerieren, nicht als Fehler behandeln):
+Verwende im Remote-Modus diese Labels und lege fehlende Labels idempotent an (eine „already exists“-Meldung tolerieren, nicht als Fehler behandeln):
 
-| Label                                                      | Bedeutung                                                                           |
-| ---------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `firmo-review-finding`                                     | markiert ein einzelnes Finding-Issue                                                |
-| `firmo-review-epic`                                        | markiert das Epic-/Tracking-Issue                                                   |
-| `firmo-fix`, `firmo-refactor`, `firmo-build`, `firmo-docs` | Ziel-Aktion des Findings (genau eines pro Finding-Issue)                            |
-| `kritisch`, `wichtig`                                      | Schweregrad des Findings                                                            |
-| `wontfix`                                                  | Finding bewusst nicht umsetzen → ADR statt Code                                     |
-| `firmo-issue-done`                                         | von `{{SKILL:apply-issues}}` umgesetztes Issue (PR erstellt)                        |
-| `firmo-needs-planning`                                     | von `{{SKILL:apply-issues}}` übersprungen; Planung via `{{SKILL:plan-issue}}` nötig |
+| Label                                                      | Bedeutung                                                                                |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `firmo-review-finding`                                     | markiert ein einzelnes Finding-Issue                                                     |
+| `firmo-review-epic`                                        | markiert das Epic-/Tracking-Issue                                                        |
+| `firmo-fix`, `firmo-refactor`, `firmo-build`, `firmo-docs` | Ziel-Aktion des Findings (genau eines pro Finding-Issue)                                 |
+| `kritisch`, `wichtig`, `hinweis`                           | Schweregrad des Findings (genau eines pro Finding-Issue; `hinweis` für Hinweis-Findings) |
+| `wontfix`                                                  | Finding bewusst nicht umsetzen → ADR statt Code                                          |
+| `firmo-issue-done`                                         | von `{{SKILL:apply-issues}}` umgesetztes Issue (PR erstellt)                             |
+| `firmo-needs-planning`                                     | von `{{SKILL:apply-issues}}` übersprungen; Planung via `{{SKILL:plan-issue}}` nötig      |
 
 `wontfix` existiert auf vielen Trackern bereits; lege es nur an, falls es fehlt. `firmo-issue-done` und `firmo-needs-planning` gehören zum issue-getriebenen Fluss (`{{SKILL:apply-issues}}`/`{{SKILL:plan-issue}}`) und werden dort idempotent angelegt.
 
 **Rückwärtskompatibilität (Alt-Präfix `sf-`):** Frühere Versionen nutzten das Präfix `sf-` statt `firmo-` (`sf-review-finding`, `sf-review-epic`, `sf-fix`/`sf-refactor`/`sf-build`/`sf-docs`, `sf-issue-done`, `sf-needs-planning`). Neu **angelegt oder gesetzt** wird ausschließlich das `firmo-`-Label; ein Upgrade bestehender Alt-Labels ist **nicht** nötig. Beim **Lesen, Auflisten, Deduplizieren und Erkennen** gilt jede `sf-`-Variante dauerhaft als gleichwertig zur zugehörigen `firmo-`-Variante:
 
 - **Auflisten/Filtern** (Dedup, Epic-/Issue-Suche): `gh`/`tea` verknüpfen mehrere `--label`-Angaben mit UND-Semantik. Führe die Abfrage daher **je Präfix getrennt** aus (einmal `firmo-…`, einmal `sf-…`) und vereinige die Treffer über die Issue-Nummer.
-- **Status-Label entfernen** (`firmo-needs-planning`, `firmo-issue-done`): entferne zusätzlich die Alt-`sf-`-Variante, falls vorhanden, damit ein Issue nicht durch ein liegengebliebenes Alt-Label „hängen" bleibt.
+- **Status-Label entfernen** (`firmo-needs-planning`, `firmo-issue-done`): entferne zusätzlich die Alt-`sf-`-Variante, falls vorhanden, damit ein Issue nicht durch ein liegengebliebenes Alt-Label „hängen“ bleibt.
 
 ### Issue-Body-Format (Finding-Issue)
 
-Ein Finding-Issue muss **self-contained** sein: eine fremde LLM-Session muss es ohne Zugriff auf die erzeugende Session abarbeiten können. Es enthält dieselben inhaltlichen Felder wie ein Finding-Block des lokalen Report-Formats (siehe `{{SKILL:review}}`, „Bericht-Format").
+Ein Finding-Issue muss **self-contained** sein: eine fremde LLM-Session muss es ohne Zugriff auf die erzeugende Session abarbeiten können. Es enthält dieselben inhaltlichen Felder wie ein Finding-Block des lokalen Report-Formats (siehe `{{SKILL:review}}`, „Bericht-Format“).
 
 - **Titel:** `[R-XXXXXXX] <Kurztitel>`
 - **Labels:** `firmo-review-finding`, das Aktions-Label und das Schweregrad-Label.
@@ -189,11 +189,11 @@ Beschreibe alle Tracker-Zugriffe abstrakt als Operation und wähle das Kommando 
 
 Beim Epic-Body-Update gilt: Body vor dem Ändern frisch lesen, gezielt nur die betroffene Zeile umschalten und zurückschreiben, damit parallele Änderungen nicht verloren gehen.
 
-Für die auflistenden Operationen (Dedup, Offene Epics) gilt die Rückwärtskompatibilität aus „Label-Konvention": Abfrage je Präfix (`firmo-…` **und** `sf-…`) getrennt ausführen und über die Issue-Nummer vereinigen.
+Für die auflistenden Operationen (Dedup, Offene Epics) gilt die Rückwärtskompatibilität aus „Label-Konvention“: Abfrage je Präfix (`firmo-…` **und** `sf-…`) getrennt ausführen und über die Issue-Nummer vereinigen.
 
 ### Fehler- und Randfälle
 
 - **Fehlendes/nicht authentifiziertes CLI:** klar abbrechen, Behebungshinweis geben, keinen Teilzustand hinterlassen; kein stiller Fallback auf `local`.
 - **Kein Git-Repository / keine `origin`-Remote:** Remote-Modus nicht möglich; melden.
 - **Mehrdeutiger Host:** `remoteToolOverride` bzw. Per-Run-Hinweis nutzen; ist beides unklar, den User fragen.
-- **Argumenttyp widerspricht `tracker.mode`:** Der Argumenttyp überschreibt den Config-Modus für diesen Lauf (siehe „Modus bestimmen").
+- **Argumenttyp widerspricht `tracker.mode`:** Der Argumenttyp überschreibt den Config-Modus für diesen Lauf (siehe „Modus bestimmen“).

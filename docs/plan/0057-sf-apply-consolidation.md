@@ -71,7 +71,7 @@ untergeordnet.
 | `skills/_shared/apply-source-detection.md` | **Neu.** Geteilter Baustein: kanonisches Quelltyp-Enum, zweistufige Erkennung (Stufe A/B), Präzedenz, Ownership-Mapping, Ambiguitäts-/Fallback-Regeln.                                                                   |
 | `skills/sf-apply/SKILL.md`                 | **Neu.** Dünner Router (`type: orchestrator`): bindet den Baustein ein, klassifiziert das Argument, meldet den erkannten Typ und delegiert an den zuständigen Skill.                                                     |
 | `skills/sf-apply-plan/SKILL.md`            | **Ändern.** Argument-Erkennung in Phase 1 auf den Baustein umstellen (Stufe A); Fremdtypen an den zuständigen Skill verweisen. `plan-reference-routing` bleibt für die tiefe Status-/Empfehlungsprüfung.                 |
-| `skills/sf-apply-review/SKILL.md`          | **Ändern.** Bisherigen Abschnitt „Argument-Erkennung und Modusbestimmung" durch den Baustein ersetzen (Stufe A + B); report/epic/finding/list-Fälle daraus ableiten.                                                     |
+| `skills/sf-apply-review/SKILL.md`          | **Ändern.** Bisherigen Abschnitt „Argument-Erkennung und Modusbestimmung“ durch den Baustein ersetzen (Stufe A + B); report/epic/finding/list-Fälle daraus ableiten.                                                     |
 | `skills/sf-apply-issues/SKILL.md`          | **Ändern.** Argument-Prüfung in Phase 1/2 auf den Baustein umstellen; `plan`/`review-report` sowie `review-epic`/`review-finding` an den zuständigen Skill verweisen, `container-issue`/`plain-issue` selbst übernehmen. |
 | `build.mjs`                                | **Optional.** Plugin-Beschreibungstext (`plugins[].description`, Skill-Aufzählung) um `apply` ergänzen. Reiner Anzeigetext, keine Funktionsänderung.                                                                     |
 
@@ -146,7 +146,7 @@ Umsetzungsentscheidung und ändert nichts.
 ### Router `sf-apply`
 
 - Frontmatter: `type: orchestrator`, deutsche `description`, die den Zweck
-  („beliebige Apply-Quelle klassifizieren und an den passenden Skill delegieren")
+  („beliebige Apply-Quelle klassifizieren und an den passenden Skill delegieren“)
   zusammenfasst und die vier möglichen Ziele nennt.
 - Bindet `language-rules`, `task-tracking` und `apply-source-detection` ein.
 - **Phase 1 – Erkennung:** Baustein ausführen. Bei `none`: lokale Kandidaten
@@ -188,7 +188,7 @@ der bestehenden type-spezifischen Tiefenlogik. Passt er nicht:
 ### Edge Cases
 
 - **Kein Argument (`none`):** lokale Kandidaten listen und fragen; nie automatisch das
-  „neueste" wählen.
+  „neueste“ wählen.
 - **Token passt zu Plan- und Report-Datei (`ambiguous`):** beide Deutungen nennen,
   nachfragen.
 - **Gemischte Issue-Liste** (z. B. Finding- und Plain-Issues in einem Aufruf):
@@ -199,7 +199,7 @@ der bestehenden type-spezifischen Tiefenlogik. Passt er nicht:
 - **Issue-Referenz, aber Tracker-CLI fehlt/nicht authentifiziert:** Stufe B kann nicht
   laufen ⇒ klare Fehlermeldung mit Behebungshinweis aus `issue-tracker.md`, kein
   stiller Fallback.
-- **Plan-Pfad mit Status „Umgesetzt":** klassifiziert trotzdem als `plan`; der
+- **Plan-Pfad mit Status „Umgesetzt“:** klassifiziert trotzdem als `plan`; der
   Umsetzungs-/Status-Sonderfall bleibt Sache von `plan-reference-routing`.
 - **Nicht auflösbarer Pfad:** `ambiguous` ⇒ nachfragen bzw. Fehlermeldung.
 
@@ -207,7 +207,7 @@ der bestehenden type-spezifischen Tiefenlogik. Passt er nicht:
 
 - [ ] `skills/_shared/apply-source-detection.md` existiert und dokumentiert alle sechs
       kanonischen Quelltypen plus `none`/`ambiguous`, die zweistufige Erkennung, die
-      Präzedenz „Label vor Body-Struktur" und das Ownership-Mapping.
+      Präzedenz „Label vor Body-Struktur“ und das Ownership-Mapping.
 - [ ] `skills/sf-apply/SKILL.md` existiert mit `type: orchestrator`, bindet
       `apply-source-detection` per ` ```include ``` ` ein und delegiert an genau einen
       der drei Skills bzw. fragt bei `none`/`ambiguous` nach.
@@ -215,7 +215,7 @@ der bestehenden type-spezifischen Tiefenlogik. Passt er nicht:
       die Top-Level-Argument-Klassifikation; Fremdtypen werden an den zuständigen Skill
       verwiesen.
 - [ ] `pnpm build` läuft mit Exit-Code 0; die Build-Summary weist einen Skill mehr aus,
-      und es erscheint kein „Include file not found".
+      und es erscheint kein „Include file not found“.
 - [ ] Der Build erzeugt `dist/claude/sf-claude-plugin/plugins/sf-frontend-workflows/commands/apply.md`
       und `dist/codex/skills/sf-apply/SKILL.md`, und der Detection-Baustein ist in diese
       Artefakte inlined.
@@ -253,7 +253,7 @@ der bestehenden type-spezifischen Tiefenlogik. Passt er nicht:
 **Datum:** 2026-07-06
 
 - `pnpm build`: Exit 0. Build-Summary meldet **18 Skills** (zuvor 17, also +1 durch
-  `sf-apply`) und 11 Agents; kein „Include file not found".
+  `sf-apply`) und 11 Agents; kein „Include file not found“.
 - Artefakt-Prüfung: `dist/claude/…/commands/apply.md` und
   `dist/codex/skills/sf-apply/SKILL.md` existieren und enthalten den inlined
   Detection-Baustein. `{{SKILL:…}}` ist korrekt transformiert (Claude `/apply-plan`,
@@ -261,7 +261,7 @@ der bestehenden type-spezifischen Tiefenlogik. Passt er nicht:
   `$sf-apply-issues`); keine `{{SKILL:` mehr in den Artefakten.
 - Der Detection-Baustein ist zusätzlich in den Artefakten der drei bestehenden
   Skills (`commands/apply-plan.md`, `apply-review.md`, `apply-issues.md`) inlined.
-- `pnpm agent:check` (`oxfmt --check`): „All matched files use the correct format".
+- `pnpm agent:check` (`oxfmt --check`): „All matched files use the correct format“.
 
 Es gibt kein Unit-Test-Framework für die Skills (`package.json` ohne `test`-Script);
 Build und Formatter sind die objektiven Validatoren dieses Markdown-Plugins.
@@ -300,7 +300,7 @@ Keine Findings gefunden.
 ### Befunde
 
 - Architektur (Hinweis): Der neue Baustein überschneidet sich inhaltlich mit der
-  „Modus bestimmen"-Sektion in `issue-tracker.md`. Der Plan adressiert das, indem
+  „Modus bestimmen“-Sektion in `issue-tracker.md`. Der Plan adressiert das, indem
   Stufe B auf `issue-tracker.md` aufsetzt statt zu duplizieren; eine spätere
   Straffung von `issue-tracker.md` kann ein Folgeplan sein.
 - Fehlerfälle (Hinweis): Gemischte Issue-Listen sind bewusst konservativ (nachfragen)

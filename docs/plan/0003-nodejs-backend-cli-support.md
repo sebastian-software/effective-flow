@@ -1,5 +1,7 @@
 # 0003: Node.js Backend- und CLI-Unterstützung
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Das Plugin soll neben Frontend-Entwicklung auch Node.js Backend-Code, CLI-Tools und allgemeine Node.js-Anwendungen unterstützen. Die bestehenden Commands (`/build-feature`, `/fix`, `/refactor`) sollen automatisch erkennen ob Frontend oder Backend/CLI und die passenden Agents wählen.

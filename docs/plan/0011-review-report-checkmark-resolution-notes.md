@@ -1,5 +1,7 @@
 # 0011: Review-Report-Hinweise mit Checkmark und Endposition
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Wenn `$sf-build-feature`, `$sf-refactor` oder `$sf-fix` ein Finding in einer bestehenden `review-report-*.md` Datei als umgesetzt markieren, soll dieser Hinweis der letzte Eintrag zum Finding sein und einen grünen Haken enthalten, damit er visuell schnell gefunden werden kann.

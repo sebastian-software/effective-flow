@@ -85,7 +85,7 @@ Externer Kontext aus Gemini-CLI-Dokumentation:
    - Ausgabe für Gemini Commands, Skills und Agents ergänzen.
 10. README aktualisieren:
 
-- „Dual-Platform" zu „Multi-Platform" ändern.
+- „Dual-Platform“ zu „Multi-Platform“ ändern.
 - Tabelle für Codex, Claude Code und Gemini CLI ergänzen.
 - Installations-/Link-Hinweise für Gemini CLI ergänzen.
 

@@ -1,5 +1,7 @@
 # Apply-Review Cherry-Pick-Konfliktbewertung
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Wenn `sf-apply-review` Worktree-Commits per `git cherry-pick` integriert und ein Konflikt entsteht, soll nicht mehr pauschal beim Benutzer nachgefragt werden. Risikoarme Konflikte sollen nach Untersuchung automatisch gelöst werden. Nur risikoreiche oder unklare Konflikte sollen mit einer kompakten Bewertung an den Benutzer eskaliert werden.
@@ -20,7 +22,7 @@ Wenn `sf-apply-review` Worktree-Commits per `git cherry-pick` integriert und ein
 
 ## Implementierungsdetails
 
-Die bisherige Regel „bei Cherry-Pick-Konflikt stoppen und User informieren" wurde ersetzt durch:
+Die bisherige Regel „bei Cherry-Pick-Konflikt stoppen und User informieren“ wurde ersetzt durch:
 
 1. Konfliktzustand erfassen:
    - `git status --porcelain`

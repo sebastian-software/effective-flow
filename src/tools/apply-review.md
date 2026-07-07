@@ -10,7 +10,7 @@ Du bist der Orchestrator für die automatisierte Umsetzung von Review-Report-Fin
 
 Dieser Workflow liest eine bestehende Review-Report-Datei aus `.firmo/review/` ein, wertet die Entwickler-Anmerkungen pro Finding aus und delegiert die Umsetzung an die passenden Workflows. Findings, die bewusst nicht umgesetzt werden sollen, werden als ADRs dokumentiert.
 
-Im **Remote-Modus** (Tracker-Modus `remote`) liest der Workflow die Findings stattdessen aus einem Issue-Tracker: übergeben wird ein Epic-Issue oder eine Liste konkreter Finding-Issues, pro Finding entsteht ein PR, und der Epic-Eintrag wird nach PR-Erstellung abgehakt. Die Abweichungen sind in „Remote-Modus (Issue-Tracker)" gebündelt; `wontfix`-Findings ersetzen dort die ablehnende Entwickler-Anmerkung.
+Im **Remote-Modus** (Tracker-Modus `remote`) liest der Workflow die Findings stattdessen aus einem Issue-Tracker: übergeben wird ein Epic-Issue oder eine Liste konkreter Finding-Issues, pro Finding entsteht ein PR, und der Epic-Eintrag wird nach PR-Erstellung abgehakt. Die Abweichungen sind in „Remote-Modus (Issue-Tracker)“ gebündelt; `wontfix`-Findings ersetzen dort die ablehnende Entwickler-Anmerkung.
 
 ```include
 language-rules
@@ -33,15 +33,15 @@ Zusätzlich zur generischen Regel im obigen Include verlangt dieser Skill **per-
 Lege gleich zu Beginn von Phase 1 (nach erfolgreicher Report-Klassifikation) folgende Tasks an:
 
 1. **Phase-Level-Tasks** für jede Workflow-Phase, in der Reihenfolge:
-   - „Phase 1: Report einlesen und validieren"
-   - „Phase 2: Commit- und Stash-Strategie festlegen"
-   - „Phase 3: ADR-Erstellung"
-   - „Phase 4: Vorabanalyse und parallele Delegation"
-   - „Phase 5: Report aktualisieren"
-   - „Phase 6: Stash-Bereinigung"
-   - „Phase 7: Finale Validierung"
-   - „Phase 8: Zusammenfassung"
-2. **Per-Finding-Tasks** für jedes umsetzbare Finding aus der Klassifikation in Phase 1 (nicht für „Bereits umgesetzt" oder „Nicht umsetzen"-Findings):
+   - „Phase 1: Report einlesen und validieren“
+   - „Phase 2: Commit- und Stash-Strategie festlegen“
+   - „Phase 3: ADR-Erstellung“
+   - „Phase 4: Vorabanalyse und parallele Delegation“
+   - „Phase 5: Report aktualisieren“
+   - „Phase 6: Stash-Bereinigung“
+   - „Phase 7: Finale Validierung“
+   - „Phase 8: Zusammenfassung“
+2. **Per-Finding-Tasks** für jedes umsetzbare Finding aus der Klassifikation in Phase 1 (nicht für „Bereits umgesetzt“ oder „Nicht umsetzen“-Findings):
    - Subject: `Finding R-XXXXXXX umsetzen` (mit konkreter Finding-ID)
    - Status initial: `pending`
 
@@ -95,9 +95,9 @@ Verwende `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
 
 Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lösche die Datei am Ende.
 
-## Plugin-Konfiguration
+## Firmo-Konfiguration
 
-Plugin-interne Dateien liegen unter `.firmo/` im Projekt-Root.
+Firmo-interne Dateien liegen unter `.firmo/` im Projekt-Root.
 
 - Konfiguration: `.firmo/config.json`
 - Memory-Datei: `.firmo/memory.json`
@@ -192,11 +192,11 @@ apply-source-detection
 
 ## Remote-Modus (Issue-Tracker)
 
-Wenn der Tracker-Modus `remote` ist (siehe „Issue-Tracker-Anbindung (Remote-Modus)"), gelten die folgenden Anpassungen **zusätzlich** zum bzw. anstelle des lokalen Report-Flusses. Bestimme den Modus zu Beginn von Phase 1; der Argumenttyp hat dabei Vorrang vor der Config.
+Wenn der Tracker-Modus `remote` ist (siehe „Issue-Tracker-Anbindung (Remote-Modus)“), gelten die folgenden Anpassungen **zusätzlich** zum bzw. anstelle des lokalen Report-Flusses. Bestimme den Modus zu Beginn von Phase 1; der Argumenttyp hat dabei Vorrang vor der Config.
 
 ### Argument-Erkennung und Modusbestimmung
 
-Klassifiziere das übergebene Argument über die „Apply-Quellen-Erkennung" (Stufe A und – für Issue-Referenzen – Stufe B) und leite Modus und Sub-Modus aus dem Quelltyp ab:
+Klassifiziere das übergebene Argument über die „Apply-Quellen-Erkennung“ (Stufe A und – für Issue-Referenzen – Stufe B) und leite Modus und Sub-Modus aus dem Quelltyp ab:
 
 - **`review-report`** (Report-Datei unter `.firmo/review/`) → `local` (bisheriges Verhalten, unverändert).
 - **`review-epic`** (Issue mit `firmo-review-epic`-Label, Alt `sf-review-epic` gleichwertig) → `remote`, **Epic-Modus**: alle im Epic verlinkten Finding-Issues abarbeiten.
@@ -204,23 +204,23 @@ Klassifiziere das übergebene Argument über die „Apply-Quellen-Erkennung" (St
 - **`remote` ohne Argument** → offene Epics auflisten und den User wählen lassen.
 - **`plan`, `container-issue` oder `plain-issue`** → gehört nicht zu `{{SKILL:apply-review}}`: auf den zuständigen Skill verweisen (`{{SKILL:apply-plan}}` für Plan-Dateien, `{{SKILL:apply-issues}}` für sonstige Issues, oder `{{SKILL:apply}}` zum automatischen Routen) und beenden. Bei Delegation aus `{{SKILL:apply}}` sollte dieser Fall nicht auftreten; die Weiche bleibt als Schutz.
 
-Der Argumenttyp hat Vorrang vor der Config (siehe „Modus bestimmen" in der Tracker-Anbindung): `review-report` erzwingt `local`, `review-epic`/`review-finding` erzwingen `remote`. Bei `remote` vorab Host und CLI erkennen und die CLI-Verfügbarkeit prüfen; fehlt das CLI, klar abbrechen (kein stiller Fallback auf `local`).
+Der Argumenttyp hat Vorrang vor der Config (siehe „Modus bestimmen“ in der Tracker-Anbindung): `review-report` erzwingt `local`, `review-epic`/`review-finding` erzwingen `remote`. Bei `remote` vorab Host und CLI erkennen und die CLI-Verfügbarkeit prüfen; fehlt das CLI, klar abbrechen (kein stiller Fallback auf `local`).
 
 ### Phase 1 remote: Findings aus Issues lesen
 
-Ersetzt das Einlesen der Report-Datei. Bestimme die abzuarbeitenden Finding-Issues (Epic-Task-Liste parsen bzw. übergebene Liste verwenden). Lies je Finding-Issue den vollständigen Body **und die Kommentare frisch vom Tracker** (Operation „Kommentare lesen") und klassifiziere:
+Ersetzt das Einlesen der Report-Datei. Bestimme die abzuarbeitenden Finding-Issues (Epic-Task-Liste parsen bzw. übergebene Liste verwenden). Lies je Finding-Issue den vollständigen Body **und die Kommentare frisch vom Tracker** (Operation „Kommentare lesen“) und klassifiziere:
 
 - **Label `wontfix`** → nicht umsetzen, ADR erstellen (Phase 3 remote).
 - **bereits abgehakt/geschlossen** → überspringen.
 - **Sub-Issue ohne Ziel-Aktion oder Prompt** (manuell verändert) → als nicht umsetzbar melden, nicht raten.
-- **Entwicklerkommentar (Nicht-Plugin) vorhanden** → umsetzen **mit Kontext**: den Kommentartext als zusätzlichen Kontext an den Delegations-Skill mitgeben. Das ist das Remote-Äquivalent der lokalen „Entwickler-Anmerkung" im Fall „Umsetzen mit Kontext". Die bewusste Ablehnung läuft im Remote-Modus weiterhin **ausschließlich** über das Label `wontfix`, nicht über Kommentartext; Plugin-Kommentare (z. B. `<!-- … -->`-markierte Status- oder PR-Link-Kommentare) zählen nicht als Entwickler-Anmerkung.
+- **Entwicklerkommentar (Nicht-Firmo) vorhanden** → umsetzen **mit Kontext**: den Kommentartext als zusätzlichen Kontext an den Delegations-Skill mitgeben. Das ist das Remote-Äquivalent der lokalen „Entwickler-Anmerkung“ im Fall „Umsetzen mit Kontext“. Die bewusste Ablehnung läuft im Remote-Modus weiterhin **ausschließlich** über das Label `wontfix`, nicht über Kommentartext; Firmo-Kommentare (z. B. `<!-- … -->`-markierte Status- oder PR-Link-Kommentare) zählen nicht als Entwickler-Anmerkung.
 - **sonst** → umsetzen.
 
 Lege die Per-Finding-Tasks wie im lokalen Modus an; die Finding-ID ist die `R-XXXXXXX`-ID aus dem Issue-Titel.
 
 ### Phase 2 remote: Commit- und PR-Strategie
 
-Die Commit-Strategie ist im Remote-Modus fest **„ein PR pro Finding"** — die lokale Commit-Strategie-Frage entfällt. Jedes umsetzbare Finding ist eine **eigene Sub-Gruppe** in einem eigenen Worktree/Branch. Basis-Branch und Branch-Namensbildung stützen sich auf den bestehenden `worktree`-Config-Block: Branch `<branchPrefix>/apply-review/<R-ID-oder-slug>` ab `worktree.baseBranch`. Dateiüberlappende Findings laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden; die Union-Find-Zusammenfassung aus Phase 4.2 entfällt, weil jedes Finding einen eigenen Branch/PR braucht. Die Stash-Policy und der `/goal`-String werden wie im lokalen Modus behandelt.
+Die Commit-Strategie ist im Remote-Modus fest **„ein PR pro Finding“** — die lokale Commit-Strategie-Frage entfällt. Jedes umsetzbare Finding ist eine **eigene Sub-Gruppe** in einem eigenen Worktree/Branch. Basis-Branch und Branch-Namensbildung stützen sich auf den bestehenden `worktree`-Config-Block: Branch `<branchPrefix>/apply-review/<R-ID-oder-slug>` ab `worktree.baseBranch`. Dateiüberlappende Findings laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden; die Union-Find-Zusammenfassung aus Phase 4.2 entfällt, weil jedes Finding einen eigenen Branch/PR braucht. Die Stash-Policy und der `/goal`-String werden wie im lokalen Modus behandelt.
 
 ### Phase 3 remote: ADR referenziert Issue
 
@@ -249,11 +249,11 @@ Finale Validierung und Zusammenfassung wie im lokalen Modus; die Zusammenfassung
 
 ### Phase 1: Report einlesen und validieren
 
-Bestimme zuerst den Tracker-Modus gemäß „Issue-Tracker-Anbindung (Remote-Modus)". Ist er `remote`, folge „Remote-Modus (Issue-Tracker)" (Phase 1 remote und folgende) statt der Report-Datei-Schritte 4–7 unten; die Config-, Stash- und Cache-Schritte gelten weiterhin.
+Bestimme zuerst den Tracker-Modus gemäß „Issue-Tracker-Anbindung (Remote-Modus)“. Ist er `remote`, folge „Remote-Modus (Issue-Tracker)“ (Phase 1 remote und folgende) statt der Report-Datei-Schritte 4–7 unten; die Config-, Stash- und Cache-Schritte gelten weiterhin.
 
-1. Lade Plugin-Konfiguration, migriere sie falls nötig und bestimme Commit-Strategie-Default, Stash-Policy, Worktree-Defaults und finales Validierungsprofil.
+1. Lade Firmo-Konfiguration, migriere sie falls nötig und bestimme Commit-Strategie-Default, Stash-Policy, Worktree-Defaults und finales Validierungsprofil.
 2. Lies `.firmo/cache.json`, falls vorhanden und gültig. Verwende nur valide `applyReviewAnalysis`-Einträge.
-3. **Stash-Baseline erfassen:** Führe `git stash list` aus und merke dir die vollständige Liste der bereits vorhandenen Stash-Referenzen (z. B. `stash@{0}`, `stash@{1}`, ... mit ihren Beschreibungen). Halte die Baseline in der Wisdom-Datei fest, damit Phase 6 (Stash-Bereinigung) später neue, durch diesen Workflow entstandene Stashes davon abgrenzen kann. Falls `git stash list` leer ist: notiere „keine Baseline-Stashes".
+3. **Stash-Baseline erfassen:** Führe `git stash list` aus und merke dir die vollständige Liste der bereits vorhandenen Stash-Referenzen (z. B. `stash@{0}`, `stash@{1}`, ... mit ihren Beschreibungen). Halte die Baseline in der Wisdom-Datei fest, damit Phase 6 (Stash-Bereinigung) später neue, durch diesen Workflow entstandene Stashes davon abgrenzen kann. Falls `git stash list` leer ist: notiere „keine Baseline-Stashes“.
 4. Bestimme die Report-Datei:
    - falls als Argument übergeben: verwende diese Datei
    - sonst: suche nach `.firmo/review/review-report-*.md` in `.firmo/review/`
@@ -270,9 +270,9 @@ Bestimme zuerst den Tracker-Modus gemäß „Issue-Tracker-Anbindung (Remote-Mod
    - Bereits vorhandene Umsetzungshinweise (✅)
 7. Klassifiziere jedes Finding:
    - **Bereits umgesetzt:** Finding hat bereits einen ✅-Hinweis → überspringen
-   - **Nicht umsetzen:** Entwickler-Anmerkung beginnt mit „Nicht umsetzen" → ADR erstellen
+   - **Nicht umsetzen:** Entwickler-Anmerkung beginnt mit „Nicht umsetzen“ → ADR erstellen
    - **Umsetzen:** Kein ✅-Hinweis und keine ablehnende Anmerkung → an Skill delegieren
-   - **Umsetzen mit Kontext:** Entwickler-Anmerkung vorhanden, die nicht mit „Nicht umsetzen" beginnt → an Skill delegieren, Anmerkung als zusätzlichen Kontext mitgeben
+   - **Umsetzen mit Kontext:** Entwickler-Anmerkung vorhanden, die nicht mit „Nicht umsetzen“ beginnt → an Skill delegieren, Anmerkung als zusätzlichen Kontext mitgeben
 8. Gib dem User eine Übersicht:
 
 ```markdown
@@ -291,7 +291,7 @@ Bestimme zuerst den Tracker-Modus gemäß „Issue-Tracker-Anbindung (Remote-Mod
 
 ### Phase 2: Commit- und Stash-Strategie
 
-Diese Phase ist das einzige Up-front-Strategie-Gate des Workflows: Commit-Strategie und Stash-Policy werden hier gemeinsam festgelegt, bevor die Findings abgearbeitet werden. Danach folgt kein weiteres **reguläres** Approval-Gate; verbleibende Stopps sind ausschließlich konfliktbedingte Datenintegritäts-Eskalationen: ein `apply`-Merge-Konflikt in Phase 6, ein risikoreicher Cherry-Pick-Konflikt in Phase 4.3 bei der Strategie „Einzeln mit Worktrees" und – selten – ein verwaister Commit-Lock bei der Strategie „Einzeln". Tritt keine solche Eskalation auf, laufen die Phasen 3–8 unter nativem `/goal` autonom.
+Diese Phase ist das einzige Up-front-Strategie-Gate des Workflows: Commit-Strategie und Stash-Policy werden hier gemeinsam festgelegt, bevor die Findings abgearbeitet werden. Danach folgt kein weiteres **reguläres** Approval-Gate; verbleibende Stopps sind ausschließlich konfliktbedingte Datenintegritäts-Eskalationen: ein `apply`-Merge-Konflikt in Phase 6, ein risikoreicher Cherry-Pick-Konflikt in Phase 4.3 bei der Strategie „Einzeln mit Worktrees“ und – selten – ein verwaister Commit-Lock bei der Strategie „Einzeln“. Tritt keine solche Eskalation auf, laufen die Phasen 3–8 unter nativem `/goal` autonom.
 
 Wenn `applyReview.defaultCommitStrategy` gültig gesetzt ist, überspringe die ASK-Frage und verwende die konfigurierte Strategie:
 
@@ -345,9 +345,9 @@ Werte-Zuordnung: Interaktiv → `interactive`, Behalten → `keep`, Verwerfen �
 
 #### Optionaler `/goal`-String
 
-Nachdem Commit-Strategie und Stash-Policy feststehen, gib gemäß „Goal-getriebene Abschlusssteuerung" den optionalen `/goal`-String aus; er deckt die Phasen 3–8 ab. Der String referenziert die Report-Datei und weist an, die verbleibenden Phasen zu durchlaufen. Bei `stashPolicy != interactive` (empfohlen `keep`) laufen diese Phasen ohne reguläres Approval-Gate; verbleibende Stopps sind nur die konfliktbedingten Eskalationen aus der Phase-Einleitung (`apply`-Merge-Konflikt, risikoreicher Cherry-Pick-Konflikt bei Worktrees, selten ein verwaister Lock).
+Nachdem Commit-Strategie und Stash-Policy feststehen, gib gemäß „Goal-getriebene Abschlusssteuerung“ den optionalen `/goal`-String aus; er deckt die Phasen 3–8 ab. Der String referenziert die Report-Datei und weist an, die verbleibenden Phasen zu durchlaufen. Bei `stashPolicy != interactive` (empfohlen `keep`) laufen diese Phasen ohne reguläres Approval-Gate; verbleibende Stopps sind nur die konfliktbedingten Eskalationen aus der Phase-Einleitung (`apply`-Merge-Konflikt, risikoreicher Cherry-Pick-Konflikt bei Worktrees, selten ein verwaister Lock).
 
-#### Git-Commit-Mutex für „Einzeln"
+#### Git-Commit-Mutex für „Einzeln“
 
 Wenn die Commit-Strategie **Einzeln** gewählt wurde, gilt für alle Delegations-Sub-Agenten ein globaler Commit-Mutex. Der Mutex schützt die gesamte kritische Git-Sektion, nicht nur den finalen `git commit`.
 
@@ -374,13 +374,13 @@ Kritische Sektion unter dem Lock:
 
 Falls eine Prüfung in der kritischen Sektion fehlschlägt, muss der Sub-Agent seine eigenen staged changes soweit eindeutig möglich wieder unstagen, den Lock freigeben und `ABBRUCH: [Grund]` melden.
 
-#### Git-Worktree-Isolation für „Einzeln mit Worktrees"
+#### Git-Worktree-Isolation für „Einzeln mit Worktrees“
 
 Wenn die Commit-Strategie **Einzeln mit Worktrees** gewählt wurde, gilt statt des Git-Commit-Mutex eine Worktree-Isolation pro Delegations-Sub-Gruppe.
 
 Vorbedingungen:
 
-- Der ursprüngliche Arbeitsbaum muss vor dem Erstellen der Worktrees sauber sein (`git status --porcelain` leer), abgesehen von ignorierten Plugin-Dateien unter `.firmo/`.
+- Der ursprüngliche Arbeitsbaum muss vor dem Erstellen der Worktrees sauber sein (`git status --porcelain` leer), abgesehen von ignorierten Firmo-Dateien unter `.firmo/`.
 - `git worktree` muss verfügbar sein.
 - Lies `.firmo/config.json`, falls vorhanden. Falls sie fehlt oder keine Worktree-Werte enthält, verwende die Defaults.
 
@@ -497,7 +497,7 @@ Führe keine automatische Konfliktauflösung durch, solange der User keine Richt
 
 ### Phase 3: ADR-Erstellung
 
-Für jedes Finding mit „Nicht umsetzen"-Anmerkung:
+Für jedes Finding mit „Nicht umsetzen“-Anmerkung:
 
 1. Erstelle `docs/adr/` falls nicht vorhanden.
 2. Bestimme die nächste freie ADR-Nummer.
@@ -591,8 +591,8 @@ Beispiel: Aktionsgruppe `{{SKILL:fix}}` mit fünf Findings:
    - die zugehörige Vorabanalyse aus Phase 4.1 als **inline-Kontext-Block** im Prompt — nicht als Verweis auf die Wisdom-Datei. Die Sub-Skills lesen die Wisdom-Datei nicht; sie verarbeiten nur den Prompt-Inhalt. Bette die Vorabanalyse vollständig ein, etwa unter der Überschrift `Vorabanalyse für dieses Finding:`.
    - die Entwickler-Anmerkung (falls vorhanden)
    - die Commit-Strategie aus Phase 2
-   - **Bei Commit-Strategie „Einzeln":** die vollständige Git-Commit-Mutex-Regel aus Phase 2. Der Sub-Agent muss jeden Finding-Commit unter `.firmo/apply-review-commit.lock` ausführen, darf nur Finding-eigene Dateien stage-en und darf niemals `git add .`, `git add -A` oder `git commit -a` verwenden.
-   - **Bei Commit-Strategie „Einzeln mit Worktrees":** die vollständige Git-Worktree-Isolation-Regel aus Phase 2. Der Sub-Agent arbeitet ausschließlich im zugewiesenen Worktree, committet dort jedes Finding einzeln und protokolliert Commit-Hashes in der Wisdom-Datei. Der Sub-Agent darf nicht in den ursprünglichen Worktree wechseln.
+   - **Bei Commit-Strategie „Einzeln“:** die vollständige Git-Commit-Mutex-Regel aus Phase 2. Der Sub-Agent muss jeden Finding-Commit unter `.firmo/apply-review-commit.lock` ausführen, darf nur Finding-eigene Dateien stage-en und darf niemals `git add .`, `git add -A` oder `git commit -a` verwenden.
+   - **Bei Commit-Strategie „Einzeln mit Worktrees“:** die vollständige Git-Worktree-Isolation-Regel aus Phase 2. Der Sub-Agent arbeitet ausschließlich im zugewiesenen Worktree, committet dort jedes Finding einzeln und protokolliert Commit-Hashes in der Wisdom-Datei. Der Sub-Agent darf nicht in den ursprünglichen Worktree wechseln.
    - den Auftrag, den passenden Skill aufzurufen:
      - Aktion fix: `Verwende den Skill {{SKILL:fix}} für dieses Finding.`
      - Aktion refactor: `Verwende den Skill {{SKILL:refactor}} für dieses Finding.`
@@ -600,7 +600,7 @@ Beispiel: Aktionsgruppe `{{SKILL:fix}}` mit fünf Findings:
      - Aktion docs: `Verwende den Skill {{SKILL:docs}} für dieses Finding.`
    - den Prompt-Vorschlag aus dem Report als Aufgabenbeschreibung
    - **Stash-Konvention:** Falls während der Umsetzung dieses Findings irgendein Stash entsteht (durch einen Pre-Commit-Hook, einen manuellen `git stash` im Sub-Skill oder einen Tool-getriggerten Stash), **muss die Stash-Message die Finding-ID enthalten**, z. B. `apply-review R-XXXXXXX <kurze Beschreibung>`. Das ermöglicht der Stash-Bereinigung in Phase 6, den Stash zuverlässig dem Finding zuzuordnen.
-   - den Hinweis, dass der Sub-Agent als **nicht-interaktiver** Delegations-Sub-Agent von `/firmo apply-review` läuft und daher die explizite Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe" überspringt: keine Zusatzoption „Autonom via /goal", kein `/goal`-String. `/firmo apply-review` steuert den autonomen Lauf an seinem eigenen Gate.
+   - den Hinweis, dass der Sub-Agent als **nicht-interaktiver** Delegations-Sub-Agent von `/firmo apply-review` läuft und daher die explizite Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe“ überspringt: keine Zusatzoption „Autonom via /goal“, kein `/goal`-String. `/firmo apply-review` steuert den autonomen Lauf an seinem eigenen Gate.
    - das Fertig-Protokoll
 3. Prüfe jeden Sub-Agenten auf `ERLEDIGT` oder `ABBRUCH`.
 4. Bei `ABBRUCH`:
@@ -642,7 +642,7 @@ Während der Delegation in Phase 4 können die aufgerufenen Sub-Skills oder Pre-
 
 1. Führe `git stash list` aus und vergleiche das Ergebnis mit der in Phase 1 erfassten Baseline.
 2. Bestimme die **neuen Stashes** als alle Einträge, die in der aktuellen Liste, aber nicht in der Baseline vorhanden sind. Vergleiche dabei nicht über `stash@{N}`-Indizes (verschieben sich), sondern über die vollständige Beschreibung (Branch + Commit-Hash + Subject) und idealerweise zusätzlich über die Stash-Commit-Hashes (`git stash list --format='%H %gs'`).
-3. Falls keine neuen Stashes gefunden werden: gib kurz „Keine offenen Stashes aus diesem Lauf." aus und gehe zur nächsten Phase.
+3. Falls keine neuen Stashes gefunden werden: gib kurz „Keine offenen Stashes aus diesem Lauf.“ aus und gehe zur nächsten Phase.
 4. **Stash-Finding-Zuordnung:** Bestimme für jeden neuen Stash das zugehörige Finding über die folgenden Heuristiken — in dieser Priorität:
 
    1. **Stash-Message-Match (primär):** suche per Regex `R-\d{7}` in der Stash-Message. Bei Treffer ist die Zuordnung eindeutig.
@@ -652,8 +652,8 @@ Während der Delegation in Phase 4 können die aufgerufenen Sub-Skills oder Pre-
 5. **Klassifiziere jeden Stash:**
 
    **A. Finding komplett umgesetzt UND Stash-Inhalt vollständig im Commit für das Finding enthalten:**
-   - Lies aus der Wisdom-Datei den Status des zugeordneten Findings. „Komplett umgesetzt" bedeutet: Status `ERLEDIGT` aus Phase 4.3.
-   - Hole die Commits, die zu diesem Finding gehören, aus der in Phase 4.3 protokollierten Wisdom-Zuordnung `Finding-ID -> Commit-Hash`; bei „Keine Commits" entfällt dieser Pfad — siehe Klassifikation D unten.
+   - Lies aus der Wisdom-Datei den Status des zugeordneten Findings. „Komplett umgesetzt“ bedeutet: Status `ERLEDIGT` aus Phase 4.3.
+   - Hole die Commits, die zu diesem Finding gehören, aus der in Phase 4.3 protokollierten Wisdom-Zuordnung `Finding-ID -> Commit-Hash`; bei „Keine Commits“ entfällt dieser Pfad — siehe Klassifikation D unten.
    - Vergleiche `git stash show -p stash@{N}` mit `git show <commit>` für die geänderten Dateien. Wenn der Stash-Diff inhaltlich vollständig im Finding-Commit aufgegangen ist (Stash-Inhalt ist eine Teilmenge der Commit-Änderungen) → **Stash ist Zwischenstand, nicht mehr benötigt**.
 
    **B. Finding komplett umgesetzt, aber Stash enthält Änderungen, die NICHT im Finding-Commit sind:**
@@ -662,13 +662,13 @@ Während der Delegation in Phase 4 können die aufgerufenen Sub-Skills oder Pre-
    **C. Finding fehlgeschlagen (Status `fehlgeschlagen (Delegation)` oder `fehlgeschlagen (Vorabanalyse)`):**
    - Stash ist potenziell die einzige Spur der Teilarbeit — User-Entscheidung erforderlich.
 
-   **D. Kein Finding zugeordnet ODER Commit-Strategie „Keine Commits":**
-   - Bei „Keine Commits" gibt es keinen Commit zum Vergleich → kein Auto-Drop möglich.
+   **D. Kein Finding zugeordnet ODER Commit-Strategie „Keine Commits“:**
+   - Bei „Keine Commits“ gibt es keinen Commit zum Vergleich → kein Auto-Drop möglich.
    - User-Entscheidung erforderlich.
 
 6. **Behandle jeden Stash anhand seiner Klassifikation:**
 
-   **Stash-Policy aus Phase 2 anwenden:** Klasse A bleibt in allen Policies Auto-Drop. Die Klassen B/C/D folgen der `stashPolicy`. Die untenstehenden Klassen-Schritte beschreiben den Fall `stashPolicy = interactive` (Default), der pro Stash die Stash-Frage stellt. Bei den anderen Werten entfällt die Frage und du handelst direkt: `keep` → Stash unverändert behalten und für die Phase-8-Zusammenfassung als „behalten" vermerken; `discard` → `git stash drop`; `apply` → `git stash pop` und bei Merge-Konflikt **nicht** droppen, sondern an den User eskalieren (einziger verbleibender Stopp im Autonom-Lauf).
+   **Stash-Policy aus Phase 2 anwenden:** Klasse A bleibt in allen Policies Auto-Drop. Die Klassen B/C/D folgen der `stashPolicy`. Die untenstehenden Klassen-Schritte beschreiben den Fall `stashPolicy = interactive` (Default), der pro Stash die Stash-Frage stellt. Bei den anderen Werten entfällt die Frage und du handelst direkt: `keep` → Stash unverändert behalten und für die Phase-8-Zusammenfassung als „behalten“ vermerken; `discard` → `git stash drop`; `apply` → `git stash pop` und bei Merge-Konflikt **nicht** droppen, sondern an den User eskalieren (einziger verbleibender Stopp im Autonom-Lauf).
 
    - **Klasse A:** Drop ohne Nachfrage.
      - `git stash drop stash@{N}`
@@ -721,9 +721,9 @@ options:
    - Bei `changedScope`: behebe nur Fehler, die im geänderten Scope oder im einmaligen Standard-Check eindeutig durch diesen Lauf entstanden sind; wenn die Zuordnung unklar ist, informiere den User statt unrelated Fixes breit umzusetzen.
    - protokolliere in der Wisdom-Datei, welche Dateien durch finale Validierungsfixes geändert wurden und ob sie direkt zu Findings gehören oder unrelated Validation-Fixes sind.
    - führe die Prüfungen erneut aus
-   - bei `full`: behebe und prüfe erneut gemäß „Goal-getriebene Abschlusssteuerung"; begrenze die internen Korrekturrunden und eskaliere an den User, falls die Prüfungen danach weiterhin fehlschlagen, statt unbegrenzt zu wiederholen
+   - bei `full`: behebe und prüfe erneut gemäß „Goal-getriebene Abschlusssteuerung“; begrenze die internen Korrekturrunden und eskaliere an den User, falls die Prüfungen danach weiterhin fehlschlagen, statt unbegrenzt zu wiederholen
    - bei `changedScope`: wiederhole nur, wenn die betroffene Prüfung scope-bewusst oder schnell genug ist; andernfalls dokumentiere das Ergebnis und frage bei unklaren Restfehlern den User
-6. Falls in Phase 2 die Commit-Strategie „Einzeln" gewählt wurde und Fixes nötig waren:
+6. Falls in Phase 2 die Commit-Strategie „Einzeln“ gewählt wurde und Fixes nötig waren:
    - verwende den Git-Commit-Mutex aus Phase 2 für die gesamte finale Staging-/Commit-Sektion.
    - führe vor dem Staging `git status --porcelain` aus und unterscheide finale Validierungsfixes von bereits vorhandenen User-Änderungen.
    - stage ausschließlich Dateien, die durch die finale Validierungsfix-Schleife geändert wurden. Verwende keine pauschalen Befehle wie `git add .`, `git add -A` oder `git commit -a`.
