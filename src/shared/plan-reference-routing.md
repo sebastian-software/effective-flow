@@ -15,7 +15,7 @@ Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel 
 ### Status prüfen
 
 1. Lies die Plan-Datei frisch vom Dateisystem.
-2. Prüfe den Umsetzungsstatus ausschließlich über die erste Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**`.
+2. Bestimme den Umsetzungsstatus gemäß der Planstatus-Konvention: genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` und gültigem Wert; bei fehlender, mehrfacher oder ungültiger Statuszeile ist der Status unklar.
 3. Status-Regeln (beide Markersprachen sind gleichwertig):
    - genau eine Statuszeile `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented` → der Plan kann als Grundlage verwendet werden.
    - genau eine Statuszeile `**Planungsstatus:** Umgesetzt` oder `**Plan status:** Implemented` → frage den User, ob der Plan erneut umgesetzt, nur geprüft oder der Workflow abgebrochen werden soll.

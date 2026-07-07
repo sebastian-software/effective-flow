@@ -30,7 +30,7 @@ plan-status
 
 1. Prüfe, ob `docs/plan/` existiert.
 2. Lies alle Markdown-Dateien unter `docs/plan/` in numerisch-lexikografischer Reihenfolge.
-3. Bestimme pro Datei den Planstatus ausschließlich über die erste Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**`.
+3. Bestimme pro Datei den Planstatus über die kanonische Ein-Marker-Regel der Planstatus-Konvention: genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` und gültigem Wert.
 4. Klassifiziere (beide Markersprachen sind gleichwertig):
    - **Offen:** genau `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented`
    - **Abgeschlossen:** genau `**Planungsstatus:** Umgesetzt` oder `**Plan status:** Implemented`
