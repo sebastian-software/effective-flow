@@ -12,7 +12,7 @@ Beide Markerformen sind gleichwertig. Pro Plan-Datei wird nur eine Sprache verwe
 Regeln:
 
 - Der Statusmarker muss exakt wie in den vier kanonischen Beispielen oben geschrieben werden, inklusive Fettdruck, Doppelpunkt sowie Groß-/Kleinschreibung der Marker-Schlüssel und Werte.
-- Nur die erste Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` bestimmt den Planstatus. Bei zwei Statuszeilen unterschiedlicher Sprache zählt die zuerst stehende; weitere Statuszeilen werden ignoriert, sind aber unerwünscht und sollten korrigiert werden.
+- Der Planstatus gilt nur, wenn genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` vorhanden ist. Mehrere Statuszeilen (auch in unterschiedlichen Sprachen) machen den Planstatus unklar (siehe unten) und sollten korrigiert werden.
 - Gültige Wertpaare sind ausschließlich die vier oben genannten Schlüssel-Wert-Kombinationen. Mischformen aus deutschem Schlüssel und englischem Wert oder umgekehrt (z. B. `**Plan status:** Umgesetzt`) gelten **nicht** als gültig.
 - Andere Werte wie `Open`/`Done`, `Pending`/`Complete` oder beliebiger Freitext zählen ebenfalls nicht.
 - Andere Vorkommen von „Nicht umgesetzt", „Umgesetzt", „Not implemented" oder „Implemented" in Review-Findings, ADR-Begründungen oder Fließtext zählen nicht als Planstatus.

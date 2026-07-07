@@ -106,7 +106,7 @@ Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers in d
 #### Schritt 2: Auto-Detection aus `docs/plan/`
 
 1. Lies alle `.md`-Dateien unter `docs/plan/`. Lege _keine_ neuen Verzeichnisse an und schreibe keine anderen Dateien.
-2. Bestimme pro Datei den Planstatus über die kanonische Regel: erste Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` und gültigem Wert.
+2. Bestimme pro Datei den Planstatus über die kanonische Ein-Marker-Regel: genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` und gültigem Wert; Dateien mit fehlender, mehrfacher oder ungültiger Statuszeile gelten als „unklar".
 3. Zähle die Plan-Dateien mit deutschem Marker (`de_count`) und mit englischem Marker (`en_count`). Dateien mit Status „unklar" werden ignoriert.
 4. Bestimme das Detection-Ergebnis:
    - `de_count > 0` und `en_count == 0` → Detection: Deutsch.
