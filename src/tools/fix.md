@@ -1,5 +1,5 @@
 ---
-description: "Orchestriert den Bugfix-Workflow: Investigation, Reproduktion, Gap Analysis, Diagnose-Validierung, minimaler Fix, Regressionstests, Validierung und Abschluss. Verwendet Skill-Wechsel wie {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:rust-implementer}}, {{AGENT:test-writer}} und {{AGENT:code-validator}}."
+description: "Orchestriert den Bugfix-Workflow: Investigation, Reproduktion, Gap Analysis, Diagnose-Validierung, minimaler Fix, Regressionstests, Validierung und Abschluss. Verwendet Skill-Wechsel wie {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:rust-implementer}}, {{AGENT:generic-implementer}}, {{AGENT:test-writer}} und {{AGENT:code-validator}}."
 ---
 
 # Firmo Fix
@@ -55,6 +55,7 @@ Wie bei `{{SKILL:build}}`.
 - Frontend: `{{AGENT:ui-implementer}}`
 - Backend / CLI / Node.js: `{{AGENT:nodejs-implementer}}`
 - Rust: `{{AGENT:rust-implementer}}`
+- Generic / Tooling / CI / Config: `{{AGENT:generic-implementer}}`
 - Fullstack: beide, nur bei klarer Trennung parallel
 
 Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:fix}}`.
@@ -122,7 +123,7 @@ options:
 
 0. Bestimme gemäß „Worktree-Integration“ den effektiven Worktree-Modus und führe bei aktivem Modus zuerst das Worktree-Setup aus. Die folgenden Phasen 3–4 (Fix, Verifikation) laufen dann mit Arbeitsverzeichnis im Worktree.
 1. Starte den passenden Implementer-Skill:
-   - `{{AGENT:ui-implementer}}`, `{{AGENT:nodejs-implementer}}` oder `{{AGENT:rust-implementer}}`
+   - `{{AGENT:ui-implementer}}`, `{{AGENT:nodejs-implementer}}`, `{{AGENT:rust-implementer}}` oder `{{AGENT:generic-implementer}}`
 2. Gib einen präzisen Auftrag:
    - Root Cause
    - betroffene Dateien

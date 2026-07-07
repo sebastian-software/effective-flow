@@ -1,5 +1,5 @@
 ---
-description: "Orchestriert den kompletten Feature-Workflow: Intent-Gate, Plan-Referenz-Erkennung, Planung via {{SKILL:plan}}, Implementierung, Dokumentation, Tests, Validierung, Review und Abschluss. Verwendet explizite Skill-Wechsel wie {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:code-validator}}, {{AGENT:test-writer}}, {{AGENT:docs-writer}} und {{AGENT:frontend-reviewer}}."
+description: "Orchestriert den kompletten Feature-Workflow: Intent-Gate, Plan-Referenz-Erkennung, Planung via {{SKILL:plan}}, Implementierung, Dokumentation, Tests, Validierung, Review und Abschluss. Verwendet explizite Skill-Wechsel wie {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:rust-implementer}}, {{AGENT:generic-implementer}}, {{AGENT:code-validator}}, {{AGENT:test-writer}}, {{AGENT:docs-writer}} und Reviewer."
 ---
 
 # Firmo Build
@@ -161,23 +161,27 @@ Bestimme den Projekt-Typ anhand folgender Signale:
 | Express/Fastify/Hono/Koa Dependencies, `src/routes/`, `src/controllers/`, `src/services/`, `server.ts` | Backend API |
 | `bin/`, CLI-Einstiegspunkt, commander/yargs/meow/clipanion                                             | CLI         |
 | `Cargo.toml`/`Cargo.lock`, `src/main.rs`/`src/lib.rs`, `crates/`, `.rs`-Dateien, Cargo-Workspace       | Rust        |
+| `.github/workflows/`, CI/CD, Tooling-, Build-, Release-, Container- oder Repository-Konfiguration      | Generic     |
 | Kombination aus Frontend + Backend/CLI Signalen                                                        | Fullstack   |
 
 Ein Repo mit Rust **und** JS/TS-Frontend/Backend-Signalen (z. B. Tauri, WASM) gilt als Fullstack: Rust-Dateien gehen an die Rust-Agents, JS/TS-Dateien an die bestehenden Agents.
+Generic-Dateien können zusätzlich zu jedem Projekt-Typ betroffen sein; route sie separat an den Generic-Implementer statt sie einem Sprach-Implementer unterzuschieben.
 
 ### Routing nach Projekt-Typ
 
-| Projekt-Typ             | Implementer                    | Reviewer                      |
-| ----------------------- | ------------------------------ | ----------------------------- |
-| Frontend                | `{{AGENT:ui-implementer}}`     | `{{AGENT:frontend-reviewer}}` |
-| Backend / CLI / Node.js | `{{AGENT:nodejs-implementer}}` | `{{AGENT:nodejs-reviewer}}`   |
-| Rust                    | `{{AGENT:rust-implementer}}`   | `{{AGENT:rust-reviewer}}`     |
-| Fullstack               | beide                          | beide                         |
+| Projekt-Typ             | Implementer                     | Reviewer                      |
+| ----------------------- | ------------------------------- | ----------------------------- |
+| Frontend                | `{{AGENT:ui-implementer}}`      | `{{AGENT:frontend-reviewer}}` |
+| Backend / CLI / Node.js | `{{AGENT:nodejs-implementer}}`  | `{{AGENT:nodejs-reviewer}}`   |
+| Rust                    | `{{AGENT:rust-implementer}}`    | `{{AGENT:rust-reviewer}}`     |
+| Generic                 | `{{AGENT:generic-implementer}}` | `{{AGENT:code-validator}}`    |
+| Fullstack               | beide                           | beide                         |
 
 Bei Fullstack:
 
 - starte Frontend- und Backend-Teilaufgaben parallel, wenn beide Bereiche betroffen sind
 - wenn nur ein Bereich betroffen ist, verwende nur den passenden Skill
+- starte `{{AGENT:generic-implementer}}` zusätzlich, wenn CI, Tooling, Konfiguration, Dependency-Manifeste oder sonstige generische Artefakte betroffen sind
 
 ## Delegationsregeln
 
@@ -187,6 +191,7 @@ Nutze für Spezialphasen explizite Skill-Wechsel:
 - Frontend: `{{AGENT:ui-implementer}}`
 - Backend/CLI: `{{AGENT:nodejs-implementer}}`
 - Rust: `{{AGENT:rust-implementer}}`
+- Generic/Tooling/CI/Config: `{{AGENT:generic-implementer}}`
 - Code-Doku: `{{AGENT:code-documenter}}`
 - User-Doku: `{{AGENT:docs-writer}}`
 - Tests: `{{AGENT:test-writer}}`
@@ -264,6 +269,7 @@ options:
    - Frontend: `Verwende den Skill {{AGENT:ui-implementer}} für diese Phase.`
    - Backend/CLI: `Verwende den Skill {{AGENT:nodejs-implementer}} für diese Phase.`
    - Rust: `Verwende den Skill {{AGENT:rust-implementer}} für diese Phase.`
+   - Generic/Tooling/CI/Config: `Verwende den Skill {{AGENT:generic-implementer}} für diese Phase.`
    - Fullstack: beide parallel oder in klar getrennten Teilphasen
 2. Prüfe auf Fertig-Protokoll, wenn intern delegiert wurde.
 3. Prüfe das Ergebnis gegen die Anforderungen.

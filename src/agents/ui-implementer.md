@@ -45,6 +45,10 @@ Lesbarkeit ist oberstes Ziel.
 - verwende immer package.json-Scripts wenn vorhanden
 - falls ein direkter Tool-Aufruf nötig ist: `pnpm exec <tool>`, nicht `npx`; nur falls nötig `pnpx`
 
+```include
+dependency-version-policy
+```
+
 ## Bestehende Kommentare
 
 Entferne oder kürze keine bestehenden Kommentare, es sei denn, die Aufgabe verlangt das ausdrücklich.

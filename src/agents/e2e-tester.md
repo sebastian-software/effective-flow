@@ -72,6 +72,10 @@ task-tracking
 4. führe Tests aus und analysiere Fehler
 5. stelle sicher, dass Tests stabil und nicht flaky sind
 
+```include
+dependency-version-policy
+```
+
 ## Regeln
 
 - Testcode, Testnamen und technische Assertions standardmässig auf Englisch
