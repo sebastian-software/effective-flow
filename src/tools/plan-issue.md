@@ -93,7 +93,7 @@ Pro geplantem Issue:
 
 ### Phase 4: Zusammenfassung
 
-Berichte dem User, welche Issues geplant und mit einem Planungskommentar versehen wurden, und weise darauf hin, dass `{{SKILL:apply-issues}}` sie nun umsetzen kann. Dieser Skill implementiert selbst nichts.
+Berichte dem User, welche Issues geplant und mit einem Planungskommentar versehen wurden, und weise darauf hin, dass sie nun via {{SKILL:apply}} umgesetzt werden können. Dieser Skill implementiert selbst nichts.
 
 ## Regeln
 
