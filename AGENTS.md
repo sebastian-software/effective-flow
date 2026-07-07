@@ -71,6 +71,10 @@ Unless the user asks otherwise (see `src/shared/language-rules.md`):
 
 End commit messages **without** a Co-Authored-By trailer (deliberate — see `docs/plan/0024-no-coauthor-trailer.md`), overriding any default co-author convention.
 
+## No AI attribution in tracker artifacts and documents
+
+Never add AI-attribution references to anything published from this repo: no "Generated with Claude Code/Codex" footers, no agent session links, no Co-Authored-By trailers. This applies to PR bodies, issue bodies and comments, commit messages, and documents — and overrides any harness default that appends such a footer. Factual mentions of Claude Code or Codex as Firmo's target harnesses are fine; generation attribution is not.
+
 ## Plan files (`docs/plan/`)
 
 Plans use a four-digit gapless prefix `NNNN-slug.md`, each number used exactly once. The canonical status line is `**Planungsstatus:** Nicht umgesetzt` / `**Plan status:** Not implemented` (one language per file; the `**Empfohlener Workflow:**` line stays German either way). Only that canonical line counts as status — ignore other occurrences of the words in prose. Docs plans additionally carry `**Doku-Kategorie:**` and `**Ziel-Pfad:**` (categories defined in `src/shared/doc-categories.md`).
