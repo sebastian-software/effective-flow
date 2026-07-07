@@ -35,7 +35,37 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Schreiben und b
 - **`worktree`** (Quelle: `src/shared/worktree-integration.md`): `enabled` (bool), `baseBranch` (Default `origin/main`), `branchPrefix` (Default `sf`), `completion` (pr/merge/branch/`null` = beim Lauf fragen), `setup` (auto/none/Befehl), `baseDir`
 - **`tracker`** (Quelle: `src/shared/issue-tracker.md`): `mode` (local/remote, Default `local`), `remoteToolOverride` (auto/github/forgejo, Default `auto`)
 
-Die zwei Presets entsprechen den im README im Abschnitt „Plugin-Konfiguration" dokumentierten Beispiel-Konfigurationen: „Sichere Defaults" übernimmt den Block unter der README-Überschrift „Sicheres Default-Verhalten", „Schneller persönlicher Workflow" den Block unter „Schneller persönlicher Review-/Apply-Review-Workflow". Beide ergänzen den `worktree`-Block mit dessen Defaults und den `tracker`-Block mit `mode: local`; `worktree.enabled` und `tracker.mode` werden in jedem Modus explizit erfragt.
+Die zwei Presets sind vollständig hier definiert und setzen ausschließlich die Blöcke `review` und `applyReview`. Unabhängig vom Preset werden `plan.markerLanguage`, `worktree.enabled` (samt `worktree.completion` und `worktree.baseBranch`) und `tracker.mode` in Schritt 4 explizit erfragt.
+
+Preset „Sichere Defaults":
+
+| Schlüssel                           | Wert                      |
+| ----------------------------------- | ------------------------- |
+| `review.profile`                    | `"focused"`               |
+| `review.autoConfirmScope`           | `false`                   |
+| `review.designDecisionSources`      | `"standard"`              |
+| `review.validation`                 | `"full"`                  |
+| `applyReview.defaultCommitStrategy` | `null` (beim Lauf fragen) |
+| `applyReview.finalValidation`       | `"full"`                  |
+| `applyReview.stashPolicy`           | `"interactive"`           |
+| `applyReview.worktree.baseDir`      | `".firmo/.worktrees"`     |
+| `applyReview.worktree.setup`        | `"auto"`                  |
+
+Preset „Schneller persönlicher Workflow":
+
+| Schlüssel                           | Wert                  |
+| ----------------------------------- | --------------------- |
+| `review.profile`                    | `"fast"`              |
+| `review.autoConfirmScope`           | `true`                |
+| `review.designDecisionSources`      | `"minimal"`           |
+| `review.validation`                 | `"quick"`             |
+| `applyReview.defaultCommitStrategy` | `"worktrees"`         |
+| `applyReview.finalValidation`       | `"changedScope"`      |
+| `applyReview.stashPolicy`           | `"keep"`              |
+| `applyReview.worktree.baseDir`      | `".firmo/.worktrees"` |
+| `applyReview.worktree.setup`        | `"auto"`              |
+
+Der schnelle Workflow setzt `review.validation` bewusst auf `"quick"` statt `"off"`: Ein Minimal-Check bleibt so auch im zügigen Solo-Flow erhalten.
 
 ## Workflow
 
@@ -71,14 +101,14 @@ header: Preset
 question: Welche Grundkonfiguration soll verwendet werden?
 options:
   - label: Sichere Defaults
-    description: Konservative Defaults (Review focused, volle Validierung, interaktive Stash-Behandlung)
+    description: Konservative Defaults (Review focused, Validierung full, finalValidation full, stashPolicy interactive, Commit-Strategie beim Lauf fragen)
   - label: Schneller persönlicher Workflow
-    description: Zügiger Solo-Flow (Review fast, changedScope-Validierung, Worktrees als Commit-Strategie, stashPolicy keep)
+    description: Zügiger Solo-Flow (Review fast, Validierung quick, finalValidation changedScope, stashPolicy keep, Worktrees als Commit-Strategie)
   - label: Alles einzeln anpassen
     description: Detailmodus — jeden Schlüssel der vier Blöcke einzeln abfragen
 ```
 
-Bei „Sichere Defaults" oder „Schneller persönlicher Workflow": verwende die entsprechende Beispiel-Konfiguration als Vorschlagswerte – nicht als bedingungsloses Überschreiben. Bei einer leeren oder fehlenden Config werden die Preset-Werte direkt übernommen. Existiert bereits eine Config und weicht ein vorhandener Wert vom Preset-Wert ab, überschreibe ihn **nicht** ungefragt: zeige die betroffenen Schlüssel als Vorher/Nachher-Liste und hole eine Bestätigung ein, bevor du sie änderst (siehe Schritt 6). Bei „Alles einzeln anpassen": gehe in Schritt 5 Block für Block vor.
+Bei „Sichere Defaults" oder „Schneller persönlicher Workflow": verwende die Werte der entsprechenden Preset-Tabelle aus dem Config-Schema oben als Vorschlagswerte – nicht als bedingungsloses Überschreiben. Bei einer leeren oder fehlenden Config werden die Preset-Werte direkt übernommen. Existiert bereits eine Config und weicht ein vorhandener Wert vom Preset-Wert ab, überschreibe ihn **nicht** ungefragt: zeige die betroffenen Schlüssel als Vorher/Nachher-Liste und hole eine Bestätigung ein, bevor du sie änderst (siehe Schritt 6). Bei „Alles einzeln anpassen": gehe in Schritt 5 Block für Block vor.
 
 ### Schritt 4: Zentrale Verhaltensschalter (immer abfragen)
 
