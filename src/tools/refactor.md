@@ -1,5 +1,5 @@
 ---
-description: "Orchestriert den Refactoring-Workflow: Analyse, Gap Analysis, Plan-Validierung, Baseline, Refactoring, Review, Nachvalidierung und Vorher/Nachher-Vergleich. Verwendet {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:rust-implementer}}, {{AGENT:code-validator}}, {{AGENT:test-writer}} und die passenden Reviewer-Skills."
+description: "Orchestriert den Refactoring-Workflow: Analyse, Gap Analysis, Plan-Validierung, Baseline, Refactoring, Review, Nachvalidierung und Vorher/Nachher-Vergleich. Verwendet {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:rust-implementer}}, {{AGENT:generic-implementer}}, {{AGENT:code-validator}}, {{AGENT:test-writer}} und die passenden Reviewer-Skills."
 ---
 
 # Firmo Refactor
@@ -53,6 +53,8 @@ Inhalte:
 ## Projekt-Typ-Erkennung und Routing
 
 Wie bei `{{SKILL:build}}`.
+
+Nutze `{{AGENT:generic-implementer}}` für Refactorings an CI/CD, Tooling, Build-/Release-Konfiguration, Dependency-Manifesten, Container-Konfiguration und anderen Artefakten, die keinem Sprach-Implementer eindeutig gehören.
 
 Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:refactor}}`.
 

@@ -70,6 +70,10 @@ Additiv zu den JS/TS-Test-Patterns: Wenn das Projekt eine `Cargo.toml` enthält,
 5. führe Tests aus
 6. prüfe ob Verhalten statt Implementierungsdetails getestet wird
 
+```include
+dependency-version-policy
+```
+
 ## Regeln
 
 - Testnamen, Testcode und Assertions standardmässig auf Englisch

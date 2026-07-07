@@ -90,6 +90,10 @@ task-tracking
 - Tests über `cargo test`
 - Build-Prüfung über `cargo build`/`cargo check`
 
+```include
+dependency-version-policy
+```
+
 ## Dateilänge und Lesbarkeit
 
 Wenn eine Datei gegen Dateilängenregeln verstösst:

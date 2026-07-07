@@ -1,5 +1,5 @@
 ---
-description: "Orchestriert schlanke, wiederkehrende Wartung eines Node-Projekts: Dependency-Updates, Security-/Audit-Fixes und Breaking-Change-Adaption. Scannt, gruppiert nach Risiko, sichert eine grüne Baseline und delegiert an {{AGENT:code-validator}}, {{AGENT:test-writer}}, die passenden Implementer und Reviewer. Kein Feature-, Bugfix- oder Refactoring-Workflow und kein Scheduler."
+description: "Orchestriert schlanke, wiederkehrende Wartung eines Node-Projekts: Dependency-Updates, Security-/Audit-Fixes und Breaking-Change-Adaption. Scannt, gruppiert nach Risiko, sichert eine grüne Baseline und delegiert an {{AGENT:code-validator}}, {{AGENT:test-writer}}, die passenden Implementer, {{AGENT:generic-implementer}} und Reviewer. Kein Feature-, Bugfix- oder Refactoring-Workflow und kein Scheduler."
 ---
 
 # Firmo Maintain
@@ -61,6 +61,8 @@ Lies die Datei vor jeder delegierten Fachphase und gib ihren Inhalt als Kontext 
 ## Projekt-Typ-Erkennung und Routing
 
 Wie bei `{{SKILL:build}}`. Das bestimmt, welcher Implementer Breaking Changes anpasst und welcher Reviewer geänderten Code prüft.
+
+Nutze `{{AGENT:generic-implementer}}`, wenn ein Update CI/CD, Tooling, Build-/Release-Konfiguration, Dependency-Manifeste, Container-Konfiguration oder andere generische Artefakte betrifft.
 
 ### Package-Manager-Erkennung
 
@@ -152,6 +154,7 @@ Arbeite die freigegebenen Gruppen nacheinander ab. Für jede Gruppe:
    - Frontend: `{{AGENT:ui-implementer}}`
    - Backend/CLI: `{{AGENT:nodejs-implementer}}`
    - Rust: `{{AGENT:rust-implementer}}`
+   - Generic/Tooling/CI/Config: `{{AGENT:generic-implementer}}`
      Auftrag: nur an die geänderte API anpassen, kein neues Verhalten, keine ungeplanten Features.
 3. Validiere die Gruppe: `{{AGENT:code-validator}}` und die bestehenden Tests erneut ausführen.
 4. Gleiche gegen die Baseline ab:
