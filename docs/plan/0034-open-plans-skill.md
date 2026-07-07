@@ -5,14 +5,14 @@
 
 ## Anforderung
 
-Ein neuer Skill soll alle noch nicht umgesetzten Plan-Dateien in `docs/plan/` mit kurzer Zusammenfassung ausgeben. Zusätzlich soll der Marker für nicht umgesetzte Pläne stabilisiert werden, damit neue und bestehende Workflows nicht versehentlich andere „Nicht umgesetzt"-Vorkommen in Review-Findings oder Fließtext als Planstatus interpretieren.
+Ein neuer Skill soll alle noch nicht umgesetzten Plan-Dateien in `docs/plan/` mit kurzer Zusammenfassung ausgeben. Zusätzlich soll der Marker für nicht umgesetzte Pläne stabilisiert werden, damit neue und bestehende Workflows nicht versehentlich andere „Nicht umgesetzt“-Vorkommen in Review-Findings oder Fließtext als Planstatus interpretieren.
 
 ## Architekturentscheidungen
 
 - **Neuer Utility-Skill `sf-open-plans`:** Die Funktion ist ein lesender Hilfsbefehl und gehört daher als `type: utility` in ein eigenes Skill-Verzeichnis.
 - **Kanonischer Planstatus als Shared Include:** Die Statusregeln werden in `skills/_shared/plan-status.md` zentral dokumentiert und in `sf-plan`, `sf-build` und `sf-open-plans` eingebunden.
-- **Exakte Statuszeile statt Freitextsuche:** Nur die erste Zeile mit Präfix `**Planungsstatus:**` bestimmt den Planstatus. Damit zählen Review-Finding-Status wie „Nicht umgesetzt" nicht als offener Plan.
-- **Unklare Pläne separat melden:** Alte Pläne ohne Statusmarker werden nicht automatisch als offen gewertet, sondern als „Status unklar" ausgegeben.
+- **Exakte Statuszeile statt Freitextsuche:** Nur die erste Zeile mit Präfix `**Planungsstatus:**` bestimmt den Planstatus. Damit zählen Review-Finding-Status wie „Nicht umgesetzt“ nicht als offener Plan.
+- **Unklare Pläne separat melden:** Alte Pläne ohne Statusmarker werden nicht automatisch als offen gewertet, sondern als „Status unklar“ ausgegeben.
 
 ## Betroffene Dateien
 
@@ -64,9 +64,9 @@ Nicht relevant.
 ### Edge Cases
 
 - `docs/plan/` fehlt oder enthält keine Markdown-Dateien: `sf-open-plans` meldet das knapp.
-- Plan-Datei enthält keinen Statusmarker: als „Status unklar" melden, nicht als offen.
-- Plan-Datei enthält mehrere Statusmarker: als „Status unklar" melden.
-- Plan-Datei enthält „Nicht umgesetzt" nur in Review-Findings: nicht als offen zählen.
+- Plan-Datei enthält keinen Statusmarker: als „Status unklar“ melden, nicht als offen.
+- Plan-Datei enthält mehrere Statusmarker: als „Status unklar“ melden.
+- Plan-Datei enthält „Nicht umgesetzt“ nur in Review-Findings: nicht als offen zählen.
 - `## Anforderung` fehlt: H1-Titel als Zusammenfassungs-Fallback verwenden.
 
 ## Akzeptanzkriterien
@@ -74,7 +74,7 @@ Nicht relevant.
 - [x] Es gibt einen neuen Utility-Skill `sf-open-plans`.
 - [x] `sf-open-plans` listet nur Pläne mit exakter Statuszeile `**Planungsstatus:** Nicht umgesetzt` als offen.
 - [x] `sf-open-plans` gibt pro offenem Plan eine kurze Zusammenfassung aus.
-- [x] Pläne mit fehlendem oder widersprüchlichem Status werden separat als „Status unklar" behandelt.
+- [x] Pläne mit fehlendem oder widersprüchlichem Status werden separat als „Status unklar“ behandelt.
 - [x] `sf-plan` und `sf-build` verwenden die zentrale Planstatus-Konvention.
 - [x] README dokumentiert den neuen Skill und die Statusmarker-Regel.
 
@@ -88,7 +88,7 @@ Nicht relevant.
 
 ## Annahmen und offene Punkte
 
-- Annahme: Alte Plan-Dateien ohne Statusmarker sollen nicht automatisch als offen gelten, weil ältere Dateien häufig bereits umgesetzt sind und Review-Findings ebenfalls „Nicht umgesetzt" enthalten können.
+- Annahme: Alte Plan-Dateien ohne Statusmarker sollen nicht automatisch als offen gelten, weil ältere Dateien häufig bereits umgesetzt sind und Review-Findings ebenfalls „Nicht umgesetzt“ enthalten können.
 - Offener Punkt: Eine spätere Migration könnte historische Plan-Dateien nachträglich mit Statusmarkern versehen. Diese Änderung ist bewusst nicht Teil dieses Features.
 
 ## Plan-Review

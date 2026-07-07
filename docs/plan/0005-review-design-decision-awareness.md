@@ -1,5 +1,7 @@
 # 0005 — Designentscheidungs-Erkennung im /review Command
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Der `/review`-Command soll dokumentierte Designentscheidungen im Zielprojekt erkennen und Findings, die gegen bewusste Entscheidungen verstossen, nicht fälschlich als Probleme melden. Stattdessen werden sie transparent im Bericht als "übersprungene Findings" dokumentiert.

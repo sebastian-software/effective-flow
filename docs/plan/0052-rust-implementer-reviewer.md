@@ -49,9 +49,9 @@ reine Dokumentation.
   `include`-Blöcke wie die Node.js-Agents (`language-rules`, `task-tracking`; der
   Implementer zusätzlich `pre-commit-gate` und `commit-message-rules`). Keine neuen
   Shared-Includes nötig.
-- **„Rust" als eigener Projekt-Typ.** Die zentrale Projekt-Typ-Erkennung in
+- **„Rust“ als eigener Projekt-Typ.** Die zentrale Projekt-Typ-Erkennung in
   `sf-build` wird um Rust erweitert. Gemischte Repos (z. B. Tauri/WASM mit Rust +
-  JS-Frontend) werden wie „Fullstack" behandelt: Rust-Dateien zu den Rust-Agents,
+  JS-Frontend) werden wie „Fullstack“ behandelt: Rust-Dateien zu den Rust-Agents,
   JS/TS-Dateien zu den bestehenden Agents.
 - **Zentrale Erkennung, lokale Routing-Zeilen.** `sf-fix`, `sf-refactor` und
   `sf-review` verweisen für die Erkennung auf „Wie bei `sf-build`". Ihre jeweils
@@ -81,7 +81,7 @@ reine Dokumentation.
 | `skills/sf-maintain/SKILL.md`         | Implementer-Routing (Major-Bump-Anpassung) und Reviewer-Routing um Rust-Zeilen ergänzen.                                                                                                   |
 | `skills/sf-code-validator/SKILL.md`   | Minimale Cargo-Awareness: Erkennung von `Cargo.toml`/Cargo-Workspace und Nutzung von `cargo build`, `cargo clippy`, `cargo fmt --check` zusätzlich zu den package.json-Scripts.            |
 | `skills/sf-test-writer/SKILL.md`      | Minimale Cargo-Awareness: Rust-Tests (`cargo test`, `#[test]`, Unit-Tests im Modul, Integrationstests unter `tests/`) als zusätzliches Muster neben den JS/TS-Test-Patterns.               |
-| `README.md`                           | Agent-Tabelle um zwei Zeilen (`sf-rust-implementer`, `sf-rust-reviewer`) ergänzen; ggf. Plugin-Beschreibung/Tags um „rust" erweitern.                                                      |
+| `README.md`                           | Agent-Tabelle um zwei Zeilen (`sf-rust-implementer`, `sf-rust-reviewer`) ergänzen; ggf. Plugin-Beschreibung/Tags um „rust“ erweitern.                                                      |
 
 Nicht angefasst: `build.mjs` (Auto-Discovery genügt), `dist/**` (generierter
 Output), übrige Skills ohne Domänen-Routing.
@@ -91,7 +91,7 @@ Output), übrige Skills ohne Domänen-Routing.
 ### Vorgehen
 
 1. **`sf-rust-implementer` anlegen.** Frontmatter wie unter
-   „Architekturentscheidungen" beschrieben. Body spiegelt die Struktur von
+   „Architekturentscheidungen“ beschrieben. Body spiegelt die Struktur von
    `sf-nodejs-implementer` (Includes `language-rules`, `task-tracking`; am Ende
    `pre-commit-gate`, `commit-message-rules`) und ersetzt die Node-Abschnitte durch
    Rust-Themen:
@@ -112,7 +112,7 @@ Output), übrige Skills ohne Domänen-Routing.
    - **Dateilänge:** wie bei Node.js – aufteilen statt komprimieren (z. B. Module
      pro Verantwortlichkeit), bestehende Kommentare nicht kürzen.
 2. **`sf-rust-reviewer` anlegen.** Frontmatter wie beschrieben. Body spiegelt
-   `sf-nodejs-reviewer`: Includes, Abschnitt „Designentscheidungen respektieren"
+   `sf-nodejs-reviewer`: Includes, Abschnitt „Designentscheidungen respektieren“
    (Verweis auf `{{AGENT:sf-frontend-reviewer}}` beibehalten), identisches
    Ausgabeformat (Schweregrad, Komplexität, Bereich, Datei/Stelle, Problem, Lösung,
    Konfidenz, Designentscheidung) und dieselben Regeln (nur Konfidenz ≥ 80, nur
@@ -139,7 +139,7 @@ Output), übrige Skills ohne Domänen-Routing.
 5. **`sf-review` erweitern.** Reviewer-Routing (Phase 2c) um
    „Rust → `{{AGENT:sf-rust-reviewer}}`" ergänzen; Verzeichnis-Split-Heuristik um
    Rust-typische Pfade (`src/`, `crates/<name>/src/`) erweitern; Projekt-Typ-Label
-   im Report-Template um „Rust" ergänzen.
+   im Report-Template um „Rust“ ergänzen.
 6. **`sf-code-validator` und `sf-test-writer` um Cargo-Awareness ergänzen.**
    Jeweils ein knapper Abschnitt/Absatz: Cargo-Projekt erkennen (`Cargo.toml`) und
    die passenden Kommandos verwenden – Validator: `cargo build`, `cargo clippy
@@ -149,7 +149,7 @@ Output), übrige Skills ohne Domänen-Routing.
 7. **README aktualisieren.** Zwei Zeilen in der Agent-Tabelle ergänzen
    (`sf-rust-implementer` → Rust-Implementierung, opus; `sf-rust-reviewer` →
    Rust-Review, opus; Codex jeweils gpt-5.5). Optional Plugin-Beschreibung/Tags
-   um „rust" erweitern.
+   um „rust“ erweitern.
 8. **Build ausführen** (`node build.mjs`) und prüfen, dass die Agent-Zahlen steigen
    und die neuen Dateien unter `dist/` erscheinen. Build erfolgt im
    `/build`-Workflow, nicht in diesem Plan.
@@ -197,7 +197,7 @@ Nicht relevant.
       `commit-message-rules`.
 - [x] `skills/sf-rust-reviewer/SKILL.md` existiert mit `type: agent`, `tools:
 [Read, Glob, Grep]`, `sandbox_mode: read-only`, dem gespiegelten
-      Ausgabeformat und der Regel „nur Findings mit Konfidenz ≥ 80".
+      Ausgabeformat und der Regel „nur Findings mit Konfidenz ≥ 80“.
 - [x] `node build.mjs` läuft fehlerfrei durch und erzeugt
       `dist/claude/.../agents/rust-implementer.md`,
       `dist/claude/.../agents/rust-reviewer.md` sowie
@@ -242,8 +242,8 @@ Nicht relevant.
   `clap`) wird nicht vorgeschrieben, sondern projektabhängig erkannt; die Agents
   formulieren Empfehlungen relativ zum vorhandenen Stack.
 - **Offen (bewusst, nicht-blockierend):** Ob die Plugin-Tags/Marketplace-
-  Beschreibung in `build.mjs`/README zwingend „rust" enthalten sollen, ist
-  kosmetisch; Standard ist ergänzen, da konsistent mit „nodejs".
+  Beschreibung in `build.mjs`/README zwingend „rust“ enthalten sollen, ist
+  kosmetisch; Standard ist ergänzen, da konsistent mit „nodejs“.
 - **Offen (bewusst):** Variante c (eigene Rust-Validator/Test-Writer-Agents) wurde
   verworfen. Sollte sich die additive Cargo-Awareness als zu eng erweisen, ist ein
   Folgeplan möglich.
@@ -284,7 +284,7 @@ erfolgt über den Build und objektive Checks:
 | Offen / Nicht umgesetzt |      0 |
 
 Keine Findings gefunden. Die Umsetzung erfüllt alle Akzeptanzkriterien; der
-bewusst nicht in `build.mjs` aufgenommene „rust"-Marketplace-Tag ist als
+bewusst nicht in `build.mjs` aufgenommene „rust“-Marketplace-Tag ist als
 kosmetischer offener Punkt dokumentiert (Akzeptanzkriterium: `build.mjs` bleibt
 unverändert).
 

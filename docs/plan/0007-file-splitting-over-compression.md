@@ -1,5 +1,7 @@
 # 0007 — File-Splitting statt Zeilen-Eindampfen bei zu langen Dateien
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Wenn beim Überprüfen des Codes festgestellt wird, dass eine Datei zu viele Zeilen hat (z.B. durch Linting-Rules wie `max-lines`), soll nicht versucht werden Zeilen einzudampfen oder Kommentare zu löschen. Lesbarkeit ist oberstes Ziel. Stattdessen soll die Datei in mehrere logisch zusammenhängende Dateien aufgesplittet werden.

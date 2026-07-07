@@ -1,5 +1,7 @@
 # 0016: Review-Memory und Report-Pfad
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 1. Persistente Memory-Datei `.sf-memory.json` für fortlaufende Finding-Nummerierung

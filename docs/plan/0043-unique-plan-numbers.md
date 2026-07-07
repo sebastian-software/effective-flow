@@ -8,7 +8,7 @@
 
 Neue Plan-Dateien in `docs/plan/` sollen immer eine einmalige vierstellige Nummer
 bekommen. Bisher berechnet jeder Skill die nächste Nummer unabhängig als
-„höchste vorhandene + 1". Werden mehrere Pläne parallel entwickelt (z. B. auf
+„höchste vorhandene + 1“. Werden mehrere Pläne parallel entwickelt (z. B. auf
 getrennten Git-Branches oder in derselben Arbeitskopie kurz nacheinander),
 wählen beide dieselbe Nummer und kollidieren. Im Repo existiert bereits eine
 solche Dublette mit der Nummer `0031`.
@@ -37,7 +37,7 @@ Funktionalität im Plugin-Verhalten) → Feature.
 - **Frühe Nummern-Reservierung:** Bereits zu Beginn der Planung (vor der
   Klärungsphase) wird die Nummer bestimmt und eine temporäre Plan-Datei
   `docs/plan/NNNN-<slug>.md` mit minimalem Kopf (H1 + Statusmarker
-  „Nicht umgesetzt") geschrieben. Eine parallele Planung in derselben
+  „Nicht umgesetzt“) geschrieben. Eine parallele Planung in derselben
   Arbeitskopie sieht die Nummer dann als belegt und wählt `NNNN+1`. Die Datei
   wird im Verlauf der Planung mit dem vollständigen Inhalt gefüllt.
 - **Eindeutigkeits-Invariante, lückenlos:** Jede vierstellige Nummer ist genau
@@ -85,7 +85,7 @@ Funktionalität im Plugin-Verhalten) → Feature.
 ### Vorgehen
 
 1. `skills/_shared/plan-numbering.md` erstellen (H2-Überschrift
-   „Plan-Nummern-Konvention", wie andere Shared-Includes).
+   „Plan-Nummern-Konvention“, wie andere Shared-Includes).
 2. In `sf-plan` `{{INCLUDE:plan-numbering}}` einbinden, die frühe Reservierung in
    Phase 1 verankern und Zeile 77 durch einen Verweis auf die zentrale Regel
    ersetzen.
@@ -129,7 +129,7 @@ Funktionalität im Plugin-Verhalten) → Feature.
 - Branch-übergreifende Kollision wird erst nach dem Merge sichtbar → Auflösung
   beim nächsten Skill-Lauf, der `docs/plan/` scannt.
 - Bricht die Planung nach der Reservierung ab, bleibt eine temporäre Datei mit
-  Status „Nicht umgesetzt" zurück; sie ist ein regulärer offener Plan und nimmt
+  Status „Nicht umgesetzt“ zurück; sie ist ein regulärer offener Plan und nimmt
   ihre Nummer dauerhaft ein (keine Lücke).
 - ADR-Nummerierung (`sf-apply-review`) ist nicht betroffen (separates Schema).
 

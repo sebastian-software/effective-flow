@@ -72,7 +72,7 @@ Firmo wird als **Standard-Directory-Skill** ausgeliefert (ein Verzeichnis mit `S
 | Claude Code | `~/.claude/skills/firmo/` (`.md`-Agents)   |
 | Codex       | `~/.agents/skills/firmo/` (`.toml`-Agents) |
 
-Das gebaute Skill ist ein gewöhnliches Agent-Skill und lässt sich auch via [`npx skills`](https://www.npmjs.com/package/skills) installieren oder mit [dalo](https://github.com/sebastian-software/dalo) linken.
+Das gebaute Skill ist ein gewöhnliches Agent-Skill. Da das Repo derzeit **privat** ist, sind Installation via `npx skills` und Verknüpfung über dalo erst nach einer Veröffentlichung verfügbar; die primäre Installation läuft lokal über `./local-update.sh` (siehe Abschnitt [Installation](#installation)).
 
 Empfohlene Codex-Konfiguration (`~/.codex/config.toml`):
 
@@ -154,7 +154,7 @@ Plan-Dateien in `docs/plan/` verwenden einen stabilen Statusmarker im Kopfbereic
 **Empfohlener Workflow:** Feature (`/firmo build`)
 ```
 
-Akzeptierte Werte sind `Nicht umgesetzt`/`Umgesetzt` (Deutsch) und `Not implemented`/`Implemented` (Englisch). Pro Plan-Datei wird nur eine Sprache verwendet; beim Statuswechsel auf abgeschlossen bleibt die Markersprache erhalten. Die Zeile `**Empfohlener Workflow:**` bleibt in beiden Markersprachen auf Deutsch. Nur diese kanonische Statuszeile zählt — andere Vorkommen von „Nicht umgesetzt"/„Umgesetzt" in Fließtext oder Review-Findings nicht.
+Akzeptierte Werte sind `Nicht umgesetzt`/`Umgesetzt` (Deutsch) und `Not implemented`/`Implemented` (Englisch). Pro Plan-Datei wird nur eine Sprache verwendet; beim Statuswechsel auf abgeschlossen bleibt die Markersprache erhalten. Die Zeile `**Empfohlener Workflow:**` bleibt in beiden Markersprachen auf Deutsch. Nur diese kanonische Statuszeile zählt — andere Vorkommen von „Nicht umgesetzt“/„Umgesetzt“ in Fließtext oder Review-Findings nicht.
 
 Plan-Dateien tragen einen vierstelligen Nummern-Prefix (`NNNN-titel-slug.md`); jede Nummer ist genau einmal vergeben und die Folge bleibt lückenlos. `plan` reserviert die Nummer zu Beginn über eine temporäre Plan-Datei, damit parallele Läufe nicht dieselbe Nummer wählen; Dubletten über getrennte Branches lösen die Workflows beim nächsten Scan in Planungsreihenfolge auf.
 
@@ -162,7 +162,7 @@ Neue Pläne enthalten eine Workflow-Empfehlung (Feature, Bugfix, Refactoring ode
 
 ## Goal-getriebene Abschlusssteuerung
 
-Die Workflow-Tools `build`, `fix`, `refactor`, `docs` und `maintain` binden den gemeinsamen Baustein `src/shared/goal-completion.md` ein. Er fasst die internen „wiederhole bis fertig"-Schleifen zu einem einheitlichen Muster zusammen: eine vorab deklarierte, messbare Abschlussbedingung, unabhängige Verifikation über die im jeweiligen Workflow vorgesehenen Prüfungen (`code-validator` und, falls eine Review-Phase existiert, der passende Reviewer) sowie ein beschränkter Korrektur-Loop, der bei anhaltendem Fehlschlag an den User eskaliert statt unbegrenzt zu wiederholen.
+Die Workflow-Tools `build`, `fix`, `refactor`, `docs` und `maintain` binden den gemeinsamen Baustein `src/shared/goal-completion.md` ein. Er fasst die internen „wiederhole bis fertig“-Schleifen zu einem einheitlichen Muster zusammen: eine vorab deklarierte, messbare Abschlussbedingung, unabhängige Verifikation über die im jeweiligen Workflow vorgesehenen Prüfungen (`code-validator` und, falls eine Review-Phase existiert, der passende Reviewer) sowie ein beschränkter Korrektur-Loop, der bei anhaltendem Fehlschlag an den User eskaliert statt unbegrenzt zu wiederholen.
 
 Zusätzlich stellt jeder dieser Workflows an seiner Freigabe-Grenze eine **explizite Goal-Abfrage**: Ja/Nein-Freigaben erhalten eine dritte Option „Autonom via `/goal`", Auswahl-Gates eine knappe Folgefrage. Wählt der User die autonome Option, gibt der Workflow einen copy-paste-baren `/goal`-String aus, den man als neue Eingabe einfügt, um die verbleibenden Phasen unter dem nativen `/goal` (Codex und Claude Code) autonom laufen zu lassen; andernfalls läuft der Workflow unverändert gated weiter. Die Approval-Gates bleiben in jedem Fall erhalten. Läuft ein Workflow als nicht-interaktiver Sub-Agent von `apply` (Review-Modus), entfällt die Goal-Abfrage. `review` und `plan` nutzen nur die explizite, unabhängig geprüfte Abschlussbedingung ohne Autonom-Loop.
 
@@ -189,7 +189,7 @@ Ein Zielprojekt, das zuvor `.sf-plugin/` genutzt hat, wird beim ersten Firmo-Lau
 
 `plan` nutzt `plan.markerLanguage` (`"de"` oder `"en"`), um die Markersprache neuer Plan-Dateien zu bestimmen (Config gewinnt; sonst Detection aus vorhandenen Plänen; sonst Rückfrage mit optionaler Persistenz).
 
-`review` und `apply` (Review-Modus) binden den gemeinsamen Baustein `src/shared/issue-tracker.md` ein und steuern über `tracker.mode` (`"local"`/`"remote"`, Default `local`), ob Findings lokal als Markdown-Report unter `.firmo/review/` oder remote als Issues geführt werden. Der Modus ist **opt-in**. Im Remote-Modus erkennt Firmo das Werkzeug automatisch aus der `origin`-URL (GitHub über `gh`, sonst Forgejo über `tea`); `tracker.remoteToolOverride` (`auto`/`github`/`forgejo`) erzwingt bei mehrdeutigen Hosts ein Werkzeug. Die Tracker-Labels behalten bewusst den `sf-`-Präfix (`sf-review-finding`, `sf-review-epic`, `sf-issue-done`, `sf-needs-planning` sowie die Aktions-Labels `sf-fix`/`sf-refactor`/`sf-build`/`sf-docs`), da sie stabile Label-Bezeichner im Tracker sind.
+`review` und `apply` (Review-Modus) binden den gemeinsamen Baustein `src/shared/issue-tracker.md` ein und steuern über `tracker.mode` (`"local"`/`"remote"`, Default `local`), ob Findings lokal als Markdown-Report unter `.firmo/review/` oder remote als Issues geführt werden. Der Modus ist **opt-in**. Im Remote-Modus erkennt Firmo das Werkzeug automatisch aus der `origin`-URL (GitHub über `gh`, sonst Forgejo über `tea`); `tracker.remoteToolOverride` (`auto`/`github`/`forgejo`) erzwingt bei mehrdeutigen Hosts ein Werkzeug. Die Tracker-Labels verwenden den `firmo-`-Präfix (`firmo-review-finding`, `firmo-review-epic`, `firmo-issue-done`, `firmo-needs-planning` sowie die Aktions-Labels `firmo-fix`/`firmo-refactor`/`firmo-build`/`firmo-docs`). Der frühere `sf-`-Präfix wird beim Lesen, Auflisten und Deduplizieren weiterhin als gleichwertig erkannt (dauerhafte Lese-Rückwärtskompatibilität), aber neu angelegt wird ausschließlich `firmo-`.
 
 Sicheres Default-Verhalten:
 
@@ -249,7 +249,9 @@ firmo/  (Repo)
 │       └── ...
 ├── docs/                            # Projekt-Dokumentation
 │   ├── plan/                        # Implementierungspläne mit NNNN-Schema
-│   ├── user-guide/ developer-guide/ operations/ runbooks/
+│   ├── naming.md
+│   ├── skill-migration-notes.md
+│   └── (user-guide/ developer-guide/ operations/ runbooks/ — bei Bedarf angelegt, siehe src/shared/doc-categories.md)
 ├── dist/                            # Generiert (gitignored)
 │   ├── claude/firmo/                # Router-SKILL.md + tools/*.md + agents/*.md
 │   └── codex/firmo/                 # Router-SKILL.md + tools/*.md + agents/*.toml

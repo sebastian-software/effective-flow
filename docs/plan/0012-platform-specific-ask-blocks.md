@@ -1,5 +1,7 @@
 # 0012: Plattformspezifische Ask-Blöcke
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Skills mit Fragen an den User sollen im Claude-Code-Pfad das `AskUserQuestion`-Tool nutzen und im Codex-Pfad die Frage als Freitext stellen.

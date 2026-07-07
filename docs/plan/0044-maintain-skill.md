@@ -41,7 +41,7 @@ Der Skill implementiert nichts selbst, sondern orchestriert die vorhandenen Work
 - **Phase 0 – Scope-Gate:** Bestätigen, dass es um Wartung (Deps/Audit) geht; bei Feature/Bugfix/Refactoring an den passenden Workflow verweisen. Package-Manager und Projekt-Typ erkennen.
 - **Phase 1 – Scan:** Outdated-Dependencies und Audit-Befunde des erkannten Managers sammeln, klassifizieren (Patch/Minor/Major, Security-relevant, Tests vorhanden?). Ergebnis als Gruppenübersicht präsentieren und per `{{ASK}}` klären, welche Gruppen umgesetzt werden.
 - **Phase 2 – Baseline:** Parallel `{{AGENT:sf-code-validator}}` und bestehende Tests via `{{AGENT:sf-test-writer}}` ausführen, um eine grüne Ausgangsbasis zu dokumentieren.
-- **Phase 3 – Apply pro Gruppe:** Je Gruppe Bump anwenden → bei Breaking Changes Changelog/Migration lesen und Code über den passenden Implementer anpassen → `{{AGENT:sf-code-validator}}` + Tests → bei Erfolg ein sauberer Commit pro Gruppe. Schlägt eine Gruppe fehl und ist nicht reparabel, wird sie zurückgerollt und als „manuell" markiert.
+- **Phase 3 – Apply pro Gruppe:** Je Gruppe Bump anwenden → bei Breaking Changes Changelog/Migration lesen und Code über den passenden Implementer anpassen → `{{AGENT:sf-code-validator}}` + Tests → bei Erfolg ein sauberer Commit pro Gruppe. Schlägt eine Gruppe fehl und ist nicht reparabel, wird sie zurückgerollt und als „manuell“ markiert.
 - **Phase 4 – Review:** Nur wenn Code für Breaking Changes angepasst wurde, den passenden Reviewer auf die geänderten Dateien ansetzen.
 - **Phase 5 – Report & Abschluss:** Zusammenfassen, was durchging und was manuelle Entscheidung braucht. Offene Findings gemäß `unresolved-review-report` nach `.sf-plugin/review/` auslagern.
 
@@ -54,7 +54,7 @@ Der Skill implementiert nichts selbst, sondern orchestriert die vorhandenen Work
 ### Edge Cases
 
 - Kein Lockfile / kein `package.json`: Scope-Gate meldet, dass kein unterstütztes Node-Projekt erkannt wurde, und bricht ab.
-- Keine outdated Dependencies und keine Audit-Befunde: früh und sauber beenden („nichts zu tun").
+- Keine outdated Dependencies und keine Audit-Befunde: früh und sauber beenden („nichts zu tun“).
 - Rote Baseline (Tests/Build schon vor Updates kaputt): nicht updaten, sondern an `sf-fix` verweisen, da Regressionen sonst nicht unterscheidbar sind.
 - Major-Bump ohne Tests im betroffenen Bereich: ausdrücklich als erhöhtes Risiko markieren und einzeln bestätigen lassen.
 - Monorepo/Workspaces: im ersten Wurf auf das Wurzel-Manifest fokussieren; Workspace-weite Strategie als offener Punkt.

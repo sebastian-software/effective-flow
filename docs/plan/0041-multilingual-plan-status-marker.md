@@ -21,7 +21,7 @@ Es handelt sich um neue Funktionalität (Englisch-Erkennung) in der Plan-Konvent
 
 - **Marker bleibt kanonisch eindeutig pro Plan-Datei:** Nur die erste Zeile mit Präfix `**Planungsstatus:**` _oder_ `**Plan status:**` bestimmt den Planstatus. Diese Regel ersetzt die bisherige Einsprach-Regel im Shared-Include.
 - **Wertpaare sind fest definiert und nicht erweiterbar:** Akzeptierte Werte sind ausschließlich `Nicht umgesetzt` / `Umgesetzt` (de) und `Not implemented` / `Implemented` (en). Keine weiteren Aliase wie `Open`/`Done` oder `Pending`/`Complete`. Begründung: minimaler Erkennungsaufwand, klare Konvention.
-- **Mixed-Form ist ungültig und führt zu „Status unklar":** Nach Review-Klarstellung gelten nur die vier kanonischen Schlüssel-Wert-Kombinationen. Eine Zeile wie `**Plan status:** Umgesetzt` wird nicht als abgeschlossen erkannt, sondern führt zum Status `unklar`. Damit bleibt `sf-open-plans` konsistent mit `plan-status.md` und `plan-reference-routing.md`.
+- **Mixed-Form ist ungültig und führt zu „Status unklar“:** Nach Review-Klarstellung gelten nur die vier kanonischen Schlüssel-Wert-Kombinationen. Eine Zeile wie `**Plan status:** Umgesetzt` wird nicht als abgeschlossen erkannt, sondern führt zum Status `unklar`. Damit bleibt `sf-open-plans` konsistent mit `plan-status.md` und `plan-reference-routing.md`.
 - **sf-plan fragt aktiv nach der Markersprache:** Beim Erstellen eines neuen Plans fragt `/plan` den User per `AskUserQuestion`, ob der Marker deutsch oder englisch sein soll. Default-Option: Deutsch (bestehende Konvention).
 - **Workflow-Abschlüsse erhalten die Originalsprache:** Wenn `/build`, `/docs`, `/fix` oder `/refactor` den Status auf erledigt setzen, ersetzen sie ausschließlich den vorhandenen Marker durch sein eigensprachliches Gegenstück (`Nicht umgesetzt` → `Umgesetzt` bzw. `Not implemented` → `Implemented`).
 - **Bestehende Plan-Dateien bleiben unverändert:** Keine Migration vorhandener `docs/plan/`-Dateien nötig. Sie bleiben weiterhin gültig.
@@ -61,7 +61,7 @@ Nicht angefasst (Designentscheidung):
    - Hinweis ergänzen: Status-Update erhält die Markersprache.
 3. `skills/sf-open-plans/SKILL.md`:
    - Klassifikation auf beide Wertpaare erweitern.
-   - „Status unklar" gilt weiterhin bei fehlendem, doppeltem oder unbekanntem Marker.
+   - „Status unklar“ gilt weiterhin bei fehlendem, doppeltem oder unbekanntem Marker.
 4. `skills/sf-plan/SKILL.md`:
    - In Phase 3 vor dem Schreiben der Plan-Datei eine neue `AskUserQuestion` ergänzen, die nach Markersprache fragt (Optionen: Deutsch (Default), Englisch).
    - Template um `{{MARKER_LINE}}`-Erläuterung erweitern (im Plan-Text bleiben beide Beispiel-Marker explizit nebeneinander dokumentiert).
@@ -76,8 +76,8 @@ Nicht angefasst (Designentscheidung):
 8. `skills/sf-fix/SKILL.md` und `skills/sf-refactor/SKILL.md`:
    - Direkt nach Anpassung verifizieren, ob die spezifischen Skill-Texte ebenfalls Status-Aktualisierungen direkt enthalten oder rein über `{{INCLUDE:plan-status}}` laufen. Wenn direkter Text vorhanden ist, Sprachenerhalt analog ergänzen.
 9. `README.md`:
-   - Abschnitt „Plan-Dateien verwenden einen stabilen Statusmarker im Kopfbereich" um zweites Code-Beispiel ergänzen, das die englische Variante zeigt.
-   - Erklärungstext um „Marker und Werte können wahlweise auf Deutsch oder Englisch verwendet werden" ergänzen.
+   - Abschnitt „Plan-Dateien verwenden einen stabilen Statusmarker im Kopfbereich“ um zweites Code-Beispiel ergänzen, das die englische Variante zeigt.
+   - Erklärungstext um „Marker und Werte können wahlweise auf Deutsch oder Englisch verwendet werden“ ergänzen.
 10. `node build.mjs` ausführen und prüfen, dass die generierten Artefakte unter `dist/` die neue Konvention korrekt enthalten.
 
 ### Edge Cases

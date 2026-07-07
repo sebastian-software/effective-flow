@@ -9,5 +9,5 @@
 Bei deutschem Text:
 
 - Umlaute korrekt verwenden (ä, ö, ü, ß), keine ASCII-Ersetzungen (ae, oe, ue, ss)
-- korrekte Anführungszeichen: „…" (außen) und ‚…' (innen)
+- korrekte Anführungszeichen: „…“ (außen) und ‚…’ (innen)
 - Gedankenstrich: – (Halbgeviertstrich), nicht - (Bindestrich)

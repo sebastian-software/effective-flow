@@ -1,5 +1,7 @@
 # 0017: Task-Tracking Include
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Alle Skills sollen bei mehreren Aufgaben eine TODO-Liste (`TaskCreate`/`TaskUpdate`) verwenden, um den Fortschritt zu verfolgen.

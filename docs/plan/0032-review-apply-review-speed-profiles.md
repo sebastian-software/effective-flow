@@ -63,7 +63,7 @@ Annahme:
    - `focused`: kritische und wichtige Findings, Standard-DD-Quellen, Validator nur wenn eindeutig konfiguriert oder vom User angefordert.
    - `fast`: kritische und wichtige Findings, reduzierte DD-Quellen, Validator überspringen oder nur ein explizites schnelles Check-Skript verwenden.
 3. Scope-Bestätigung in `sf-review` bedingt überspringen:
-   - Bei explizitem User-Scope, zum Beispiel „gesamter Code" oder konkreten Pfaden.
+   - Bei explizitem User-Scope, zum Beispiel „gesamter Code“ oder konkreten Pfaden.
    - Bei Konfiguration `review.autoConfirmScope: true`.
    - Weiterhin fragen, wenn Scope-Ermittlung widersprüchlich ist, uncommitted Changes vorhanden sind und der gewünschte Scope nicht eindeutig ist.
 4. Designentscheidungs-Suche profilieren:

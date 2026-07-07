@@ -1,5 +1,7 @@
 # 0019: Review-Findings-Bericht in Plan-Dateien
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Wenn `sf-build-feature` in Phase 7 die Plan-Datei in `docs/plan/` schreibt, soll diese auch einen ausführlichen Bericht aller Review-Findings im Stil des `sf-review`-Berichts enthalten. Dadurch kann der Entwickler später direkt an der Plan-Datei prüfen, welche Findings beim Feature aufgetreten sind, welche behoben wurden und welche offen blieben — ohne eine separate Review-Report-Datei suchen zu müssen.
@@ -28,17 +30,17 @@ Wenn `sf-build-feature` in Phase 7 die Plan-Datei in `docs/plan/` schreibt, soll
 - Schritt 3 (neu): Vergabe lokaler Finding-IDs `F1`, `F2`, ... in Aggregations-Reihenfolge.
 - Schritt 5 erweitert: Live-Zusammenfassung enthält zusätzlich eine Komplexität-Tabelle, damit Phase 7 die Aggregate ohne Re-Derivation übernehmen kann.
 - Schritt 7 erweitert: Strukturierte Erfassung pro Finding um Komplexität ergänzt; Reihenfolge der Felder synchron zum Phase-7-Template.
-- Bestehender Nummerierungsfehler (zwei Punkte „8.") korrigiert.
+- Bestehender Nummerierungsfehler (zwei Punkte „8.“) korrigiert.
 
 ### Phase 7 (Abschluss)
 
-- Schritt 2 Inhaltsliste passt Eintrag „Review-Findings" mit Verweis auf Schritt 3 an.
+- Schritt 2 Inhaltsliste passt Eintrag „Review-Findings“ mit Verweis auf Schritt 3 an.
 - Schritt 3 (neu): Vollständiges Template `## Review-Findings` mit:
   - Datum + Reviewer-Header
   - Zusammenfassungs-Tabelle (Schweregrad / Anzahl / Behoben / Offen)
   - Komplexität-Tabelle
   - Findings-Liste mit allen Feldern aus Phase 6 plus konditionaler `Begründung bei Nicht-Umsetzung`-Zeile (per Inline-HTML-Kommentar)
-  - Optionale Sektion „Übersprungene Findings (Designentscheidungen)" (per Inline-HTML-Kommentar)
+  - Optionale Sektion „Übersprungene Findings (Designentscheidungen)“ (per Inline-HTML-Kommentar)
 - Schritte 4-6 entsprechen bisherigen Schritten 3-5 (umnummeriert).
 
 ### Regeln für den Bericht
@@ -47,9 +49,9 @@ Wenn `sf-build-feature` in Phase 7 die Plan-Datei in `docs/plan/` schreibt, soll
 - Lokale Finding-IDs aus Phase 6 wiederverwenden.
 - Komplexität-Aggregat aus Phase 6 übernehmen, sonst aus Findings-Liste ableiten.
 - `Begründung bei Nicht-Umsetzung` nur bei Status `Nicht umgesetzt`.
-- Bei keinen Findings: Sektion mit „Keine Findings gefunden." statt Tabellen.
+- Bei keinen Findings: Sektion mit „Keine Findings gefunden.“ statt Tabellen.
 - Bei keinem Reviewer-Lauf: kurzer Hinweis mit Begründung statt Tabellen.
-- Sektion „Übersprungene Findings (Designentscheidungen)" nur, wenn vorhanden.
+- Sektion „Übersprungene Findings (Designentscheidungen)“ nur, wenn vorhanden.
 
 ## Review-Findings
 
@@ -72,14 +74,14 @@ Wenn `sf-build-feature` in Phase 7 die Plan-Datei in `docs/plan/` schreibt, soll
 
 ### Findings
 
-#### [F1] Phase-6-Zusammenfassungstemplate hartkodierter `0` in „Offen"-Spalte
+#### [F1] Phase-6-Zusammenfassungstemplate hartkodierter `0` in „Offen“-Spalte
 
 - **Schweregrad**: Wichtig
 - **Komplexität**: Leicht
 - **Bereich**: Konsistenz Phase 6 / Phase 7
 - **Datei**: skills/sf-build-feature/SKILL.md:289-294
 - **Problem**: Im Live-Zusammenfassungs-Template in Phase 6 stand `| Kritisch | X | X | 0 |`. Der hartkodierte `0` ist während der laufenden Review-Phase irreführend — kritische Findings können noch offen sein, bevor sie behoben werden.
-- **Empfehlung**: Hartkodierten `0` durch `X` ersetzen und Hinweis ergänzen, dass die Spalte „Offen" für „Kritisch" vor Abschluss 0 sein muss.
+- **Empfehlung**: Hartkodierten `0` durch `X` ersetzen und Hinweis ergänzen, dass die Spalte „Offen“ für „Kritisch“ vor Abschluss 0 sein muss.
 - **Status**: Behoben
 
 #### [F2] Komplexität-Aggregation fehlte in Phase 6, ungetriggert für Phase 7
@@ -92,7 +94,7 @@ Wenn `sf-build-feature` in Phase 7 die Plan-Datei in `docs/plan/` schreibt, soll
 - **Empfehlung**: Komplexität-Tabelle ins Phase-6-Live-Template aufnehmen und in Phase-7-Regeln Re-Derivation als Fallback explizit benennen.
 - **Status**: Behoben
 
-#### [F3] Feld „Begründung bei Nicht-Umsetzung" unkonditional im Template
+#### [F3] Feld „Begründung bei Nicht-Umsetzung“ unkonditional im Template
 
 - **Schweregrad**: Wichtig
 - **Komplexität**: Leicht
@@ -102,7 +104,7 @@ Wenn `sf-build-feature` in Phase 7 die Plan-Datei in `docs/plan/` schreibt, soll
 - **Empfehlung**: Inline-HTML-Kommentar an die Zeile anhängen und in den Regeln explizit klarstellen: nur bei Status `Nicht umgesetzt`.
 - **Status**: Behoben
 
-#### [F4] „Übersprungene Findings (Designentscheidungen)"-Sektion unkonditional im Template
+#### [F4] „Übersprungene Findings (Designentscheidungen)“-Sektion unkonditional im Template
 
 - **Schweregrad**: Wichtig
 - **Komplexität**: Leicht
@@ -122,12 +124,12 @@ Wenn `sf-build-feature` in Phase 7 die Plan-Datei in `docs/plan/` schreibt, soll
 - **Empfehlung**: Phase 6 Schritt 1 erweitern um expliziten Auftrag an den Reviewer, alle Schweregrade zu liefern, abweichend vom sf-review-Standard.
 - **Status**: Behoben
 
-#### [F6] Cross-Reference „Plan-Datei-Findings-Bericht unten" mehrdeutig
+#### [F6] Cross-Reference „Plan-Datei-Findings-Bericht unten“ mehrdeutig
 
 - **Schweregrad**: Hinweis
 - **Komplexität**: Leicht
 - **Bereich**: Klarheit für LLM-Orchestrator
 - **Datei**: skills/sf-build-feature/SKILL.md:334
-- **Problem**: Forward-Referenz „unten" wird von einem LLM, das Listen sequenziell verarbeitet, möglicherweise als Look-Ahead missverstanden.
-- **Empfehlung**: Konkrete Schritt-Referenz statt „unten" verwenden.
+- **Problem**: Forward-Referenz „unten“ wird von einem LLM, das Listen sequenziell verarbeitet, möglicherweise als Look-Ahead missverstanden.
+- **Empfehlung**: Konkrete Schritt-Referenz statt „unten“ verwenden.
 - **Status**: Behoben

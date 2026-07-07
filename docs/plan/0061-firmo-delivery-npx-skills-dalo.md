@@ -24,7 +24,7 @@ Teil 3 der Staffelung von [0058](0058-firmo-rename-and-lazy-tool-router.md). Ste
 
 ## Implementierungsdetails
 
-Delivery-Details und die konkreten Learnings (npx-skills-Symlink-Fallstricke `--copy`, externen `~/.claude/skills`-Symlink nicht ersetzen, schlanke Payload ohne `node_modules`/`dist`) siehe [0058](0058-firmo-rename-and-lazy-tool-router.md), Abschnitte „Auslieferung", „Learnings" und die zugehörigen Akzeptanzkriterien/Edge Cases.
+Delivery-Details und die konkreten Learnings (npx-skills-Symlink-Fallstricke `--copy`, externen `~/.claude/skills`-Symlink nicht ersetzen, schlanke Payload ohne `node_modules`/`dist`) siehe [0058](0058-firmo-rename-and-lazy-tool-router.md), Abschnitte „Auslieferung“, „Learnings“ und die zugehörigen Akzeptanzkriterien/Edge Cases.
 
 ## Akzeptanzkriterien
 

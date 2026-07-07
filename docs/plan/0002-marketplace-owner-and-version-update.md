@@ -1,5 +1,7 @@
 # 0002: Marketplace Owner-Name und Versions-Update
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 - Marketplace Owner-Name auf "Sebastian Fastner" setzen

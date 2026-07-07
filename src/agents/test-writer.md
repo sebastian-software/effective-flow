@@ -4,7 +4,6 @@ claude:
   model: sonnet
   color: green
   tools: [Read, Write, Edit, Bash, Glob, Grep]
-  skills: [frontend-design]
 codex:
   model: gpt-5.4-mini
   model_reasoning_effort: medium

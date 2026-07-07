@@ -1,5 +1,7 @@
 # 0010: Klare Validierungsgrenze fuer `$sf-commit`
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Im `sf-commit`-Skill soll explizit beschrieben werden, dass keine Projektvalidation wie Linting und Tests ausgefuehrt werden. Diese Verantwortung liegt bei den dafuer vorgesehenen Skills.

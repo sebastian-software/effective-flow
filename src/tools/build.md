@@ -216,7 +216,7 @@ Wenn ein offener Plan für `{{SKILL:build}}` bestätigt ist:
 
 - überspringe Phase 1 vollständig
 - verwende die Inhalte der Plan-Datei als abgestimmten Implementierungsplan
-- leite aus den Akzeptanzkriterien und dem Validierungsplan die explizite Abschlussbedingung ab und stelle vor dem Start von Phase 2 die explizite Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe". Da Phase 1 hier übersprungen wird und keine Ja/Nein-Freigabe an dieser Grenze steht, ist es die eigenständige Ja/Nein-Folgefrage; bei Wahl „Autonom via /goal" den `/goal`-String für die Phasen 2–7 ausgeben. Die Abfrage entfällt, wenn der Workflow nicht-interaktiv delegiert wurde (z. B. durch `/firmo apply-review`); die Übergabe durch `/firmo apply-plan` zählt nicht als solche Delegation.
+- leite aus den Akzeptanzkriterien und dem Validierungsplan die explizite Abschlussbedingung ab und stelle vor dem Start von Phase 2 die explizite Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe“. Da Phase 1 hier übersprungen wird und keine Ja/Nein-Freigabe an dieser Grenze steht, ist es die eigenständige Ja/Nein-Folgefrage; bei Wahl „Autonom via /goal“ den `/goal`-String für die Phasen 2–7 ausgeben. Die Abfrage entfällt, wenn der Workflow nicht-interaktiv delegiert wurde (z. B. durch `/firmo apply-review`); die Übergabe durch `/firmo apply-plan` zählt nicht als solche Delegation.
 - starte direkt mit Phase 2
 
 Ein referenzierter ungebauter Plan ersetzt nur die Planungsphase. Initiale Zustandsdokumentation, Review-Report-Rückverweise, Implementierung, Dokumentation, Tests, Validierung, Review und Abschluss laufen weiterhin normal.
@@ -240,8 +240,8 @@ Wenn keine ungebaute Plan-Datei referenziert wurde:
    - Validierungsplan ist vorhanden
    - betroffene Dateien sind konkret genug für Phase 2
 5. Präsentiere dem User die Plan-Datei mit kurzer Validierungs-Scorecard.
-6. Leite aus den Akzeptanzkriterien und dem Validierungsplan die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung"); sie deckt die Phasen 2–7 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten.
-7. Hole explizite Freigabe ein. Die Freigabe-Frage enthält die explizite Goal-Abfrage (Option „Autonom via /goal"); behandle sie gemäß „Explizite Goal-Abfrage für autonome Läufe": Bei Wahl „Autonom via /goal" gib den `/goal`-String für die Phasen 2–7 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde. Starte Phase 2 nicht ohne diese Freigabe.
+6. Leite aus den Akzeptanzkriterien und dem Validierungsplan die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung“); sie deckt die Phasen 2–7 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten.
+7. Hole explizite Freigabe ein. Die Freigabe-Frage enthält die explizite Goal-Abfrage (Option „Autonom via /goal“); behandle sie gemäß „Explizite Goal-Abfrage für autonome Läufe“: Bei Wahl „Autonom via /goal“ gib den `/goal`-String für die Phasen 2–7 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde. Starte Phase 2 nicht ohne diese Freigabe.
 
 Wenn `{{SKILL:plan}}` wegen fehlender Informationen abbricht, frage den User nach den offenen Punkten und starte die Planung danach erneut.
 
@@ -259,7 +259,7 @@ options:
 
 ### Phase 2: Implementierung
 
-0. Bestimme gemäß „Worktree-Integration" den effektiven Worktree-Modus und führe bei aktivem Modus zuerst das Worktree-Setup aus. Alle folgenden Phasen 2–6 (Implementierung, Doku, Tests, Validierung, Review) laufen dann mit Arbeitsverzeichnis im Worktree.
+0. Bestimme gemäß „Worktree-Integration“ den effektiven Worktree-Modus und führe bei aktivem Modus zuerst das Worktree-Setup aus. Alle folgenden Phasen 2–6 (Implementierung, Doku, Tests, Validierung, Review) laufen dann mit Arbeitsverzeichnis im Worktree.
 1. Starte den passenden Implementer-Skill mit dem abgestimmten Plan:
    - Frontend: `Verwende den Skill {{AGENT:ui-implementer}} für diese Phase.`
    - Backend/CLI: `Verwende den Skill {{AGENT:nodejs-implementer}} für diese Phase.`
@@ -289,7 +289,7 @@ Starte wenn möglich parallel:
 1. Starte `{{AGENT:code-validator}}`.
 2. Gib dem User die vollständige Liste aller gefundenen Fehler und Warnungen aus.
 3. Wenn Fehler gefunden werden: behebe sie direkt oder delegiere erneut an den passenden Implementer.
-4. Behebe und verifiziere erneut gemäß „Goal-getriebene Abschlusssteuerung": begrenze die internen Korrekturrunden und eskaliere an den User, falls der Validator danach weiterhin nicht besteht, statt unbegrenzt zu wiederholen.
+4. Behebe und verifiziere erneut gemäß „Goal-getriebene Abschlusssteuerung“: begrenze die internen Korrekturrunden und eskaliere an den User, falls der Validator danach weiterhin nicht besteht, statt unbegrenzt zu wiederholen.
 
 ### Phase 6: Review
 
@@ -319,7 +319,7 @@ Zusammenfassung:
 | Schwer | Z |
 ```
 
-Hinweis: Vor Abschluss muss die Spalte „Offen" für „Kritisch" 0 sein.
+Hinweis: Vor Abschluss muss die Spalte „Offen“ für „Kritisch“ 0 sein.
 
 6. Falls Findings nicht umgesetzt wurden, liste sie direkt in der Zusammenfassung mit Prompt-Vorschlägen für spätere Umsetzung auf.
 7. Dokumentiere jedes Finding strukturiert, damit offene oder nicht umgesetzte Findings in einen externen Review-Report übernommen werden können:
@@ -335,7 +335,7 @@ Hinweis: Vor Abschluss muss die Spalte „Offen" für „Kritisch" 0 sein.
    - Begründung bei Nicht-Umsetzung (inkl. ADR-Referenz, falls vorhanden)
 8. Lege in diesem Workflow niemals ein ADR an und frage auch nicht danach. Bewusst nicht umgesetzte Findings werden ausschließlich im Review-Report dokumentiert. Über die spätere Umsetzung oder über ein ADR für eine bewusste Nicht-Umsetzung entscheidet der Entwickler beim Durchgehen der Findings-Datei, typischerweise via {{SKILL:apply-review}}.
 9. Wenn nach Review Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
-   - schreibe sie gemäß „Offene Review-Finding-Reports" in eine neue Datei unter `.firmo/review/`
+   - schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.firmo/review/`
    - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-NNNN.md`
    - halte den erzeugten Reportpfad für Phase 7 fest
 10. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.firmo/review/` umgesetzt hat:
@@ -388,12 +388,12 @@ Regeln für den Findings-Bericht:
 - Kopiere offene oder nicht umgesetzte Findings nicht vollständig in die Plan-Datei.
 - Wenn offene oder nicht umgesetzte Findings existieren, nenne den externen Review-Report aus Phase 6.
 - Behobene Findings dürfen knapp gezählt werden; vollständige behobene Finding-Details sind in der Plan-Datei nicht erforderlich.
-- Falls keine Findings aufgekommen sind: schreibe in die Sektion „Keine Findings gefunden." statt der Tabellen.
+- Falls keine Findings aufgekommen sind: schreibe in die Sektion „Keine Findings gefunden.“ statt der Tabellen.
 - Falls in Phase 6 keine Reviewer gestartet wurden (z. B. weil die Änderung kein Review erforderte): schreibe stattdessen einen kurzen Hinweis mit Begründung in die Sektion.
 
 4. Lösche die Wisdom-Datei.
 5. Prüfe ob ein Formatter konfiguriert ist und formatiere alle geänderten Dateien inklusive Plan-Datei einmal einheitlich.
-6. Wenn der Worktree-Modus aktiv war: führe das Handback gemäß „Worktree-Integration" aus (Änderungen committen, Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`).
+6. Wenn der Worktree-Modus aktiv war: führe das Handback gemäß „Worktree-Integration“ aus (Änderungen committen, Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`).
 7. Fasse zusammen, was implementiert, getestet und dokumentiert wurde; nenne bei aktivem Worktree-Modus zusätzlich den Liefer-Branch und das Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch).
 
 ## Regeln

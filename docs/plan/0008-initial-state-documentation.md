@@ -1,5 +1,7 @@
 # 0008: Initiale Zustandsdokumentation im build-feature Workflow
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Wenn `/build-feature` aufgerufen wird und es noch keinen Plan in `docs/plan/` gibt, soll vor allen Code-Änderungen der aktuelle Zustand in eine erste, initiale Plan-Datei geschrieben werden. Der eigentliche Feature-Plan wird dann als zweite Datei (0002) geschrieben.

@@ -1,10 +1,12 @@
 # 0029: Reihenfolge der Commit-Strategie-Optionen in apply-review
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Im `sf-apply-review`-Skill wählt der User in Phase 2 zwischen drei Commit-Strategien:
 einzelne Commits, einzelne Commits mit Worktree-Isolation oder keine Commits. Die
-Reihenfolge der Optionen wird so geändert, dass „Einzeln mit Worktrees" als erste
+Reihenfolge der Optionen wird so geändert, dass „Einzeln mit Worktrees“ als erste
 Option erscheint, weil dies die häufigste Wahl ist und damit die schnellste
 Auswahl per Default-Position ermöglicht.
 
@@ -13,14 +15,14 @@ Auswahl per Default-Position ermöglicht.
 - **Reine UX-Reihenfolge, kein Verhaltenswechsel:** Die drei Strategien selbst
   bleiben unverändert. Mutex, Worktree-Isolation und Cherry-Pick-Integration in
   den nachfolgenden Abschnitten der SKILL.md sind nicht betroffen.
-- **Kontextueller Hinweis statt expliziter Default-Markierung:** „(häufigste Wahl)"
+- **Kontextueller Hinweis statt expliziter Default-Markierung:** „(häufigste Wahl)“
   wird als Beschreibungs-Suffix der ersten Option ergänzt, ohne ein neues
-  „(Empfohlen)"-Pattern im Plugin einzuführen. Damit bleibt die Konvention der
+  „(Empfohlen)“-Pattern im Plugin einzuführen. Damit bleibt die Konvention der
   bestehenden ASK-Blöcke konsistent.
 - **Frage-Text angepasst:** Die alte Frage „Soll jedes Finding einen eigenen
   Git-Commit bekommen?" war Ja/Nein-orientiert und passte schlecht zur neuen
-  Erstoption „Einzeln mit Worktrees" (die ja auch committet, aber im Worktree).
-  Die neue Frage „Welche Commit-Strategie soll für die Findings verwendet werden?"
+  Erstoption „Einzeln mit Worktrees“ (die ja auch committet, aber im Worktree).
+  Die neue Frage „Welche Commit-Strategie soll für die Findings verwendet werden?“
   ist neutral gegenüber allen drei Optionen.
 - **Konsistenz zwischen ASK-Block und Erklärungs-Bullets:** Die nachfolgenden
   Bullet-Erklärungen werden in dieselbe neue Reihenfolge gebracht, damit Frage und

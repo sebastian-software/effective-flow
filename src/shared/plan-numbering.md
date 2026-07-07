@@ -44,7 +44,7 @@ später hinter einer User-Frage wartet. Anschließend:
    Setze die Statuszeile in der Markersprache, die gemäß `Planstatus-Konvention`
    für das Projekt gilt (Konfiguration bzw. Detection). Steht die Markersprache
    zu diesem Zeitpunkt noch nicht fest, lass die Statuszeile zunächst weg – die
-   Datei zählt dann als „Status unklar" und beeinflusst die Sprach-Detection
+   Datei zählt dann als „Status unklar“ und beeinflusst die Sprach-Detection
    nicht; die Statuszeile wird beim Befüllen ergänzt.
 
    Eine parallel laufende Planung in derselben Arbeitskopie sieht die Nummer
@@ -74,7 +74,7 @@ verifiziere die Reservierung gegen das oben beschriebene Race:
 2. Genau eine Datei mit `NNNN` (der eigene Stub): Reservierung bestätigt, fahre
    normal fort.
 3. Mehr als eine Datei mit `NNNN`: ein konkurrierender Lauf hat dieselbe Nummer
-   belegt. Wende die „Kollisionsauflösung in Planungsreihenfolge" unten an. Da
+   belegt. Wende die „Kollisionsauflösung in Planungsreihenfolge“ unten an. Da
    die Stub-Dateien in der Regel noch nicht committet sind, greift der
    deterministische Tie-Break über den `RESERVED_AT`-Suffix: der Stub mit dem
    früheren (lexikografisch kleineren) `RESERVED_AT` behält `NNNN`.

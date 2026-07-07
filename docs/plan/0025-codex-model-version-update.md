@@ -1,5 +1,7 @@
 # 0025: Codex-Modellversionen aktualisieren
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Die vorgeschlagenen Codex-Modelle in den Skill-Agenten und der README sollen gegen die aktuelle OpenAI-Modelllage geprüft und aktualisiert werden. Anlass ist die Verfügbarkeit von `gpt-5.5`.

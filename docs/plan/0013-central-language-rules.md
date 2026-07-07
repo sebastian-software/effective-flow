@@ -1,5 +1,7 @@
 # 0013: Zentrale Sprachregeldatei
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Zentrale Datei mit Sprach- und Typografie-Regeln erstellen. Bei deutschen Texten sollen Umlaute korrekt verwendet werden (keine ASCII-Ersetzungen). Die Regeln sollen in alle Skills eingebunden werden, die Code oder Dokumentation schreiben.

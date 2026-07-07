@@ -1,5 +1,7 @@
 # 0015: Apply-Review-Skill — Automatisierte Umsetzung von Review-Report-Findings
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Neuer Orchestrator-Skill `sf-apply-review`, der eine bestehende Review-Report-Datei einliest, Entwickler-Anmerkungen pro Finding auswertet und die Umsetzung an bestehende Skills delegiert. Findings, die bewusst nicht umgesetzt werden sollen, werden als ADRs dokumentiert. Der Report wird um ein Feld `Entwickler-Anmerkung` erweitert, das der Entwickler vorab befüllt.
@@ -51,7 +53,7 @@ Konvention:
 
 - Leer oder fehlend: Finding wird umgesetzt
 - Freitext: Finding wird umgesetzt, Text als Kontext weitergegeben
-- „Nicht umsetzen: [Grund]": Finding wird übersprungen, ADR wird erstellt
+- „Nicht umsetzen: [Grund]“: Finding wird übersprungen, ADR wird erstellt
 
 ### Skill-Workflow
 

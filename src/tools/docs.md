@@ -109,7 +109,7 @@ Wenn ein offener Plan für `{{SKILL:docs}}` bestätigt ist:
    - betroffene Dateien
    - geplante inhaltliche Änderungen
    - Validierungsstrategie
-8. Leite aus der Validierungsstrategie und den geplanten Änderungen die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung"); sie deckt die Phasen 2–4 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten. Behandle die Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe": Bei Wahl „Autonom via /goal" gib den `/goal`-String für die Phasen 2–4 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
+8. Leite aus der Validierungsstrategie und den geplanten Änderungen die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung“); sie deckt die Phasen 2–4 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten. Behandle die Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe“: Bei Wahl „Autonom via /goal“ gib den `/goal`-String für die Phasen 2–4 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
 
 ```ask
 header: Doku-Plan
@@ -125,7 +125,7 @@ options:
 
 ### Phase 2: Umsetzung
 
-0. Bestimme gemäß „Worktree-Integration" den effektiven Worktree-Modus und führe bei aktivem Modus zuerst das Worktree-Setup aus. Umsetzung und Validierung (Phasen 2–3) laufen dann mit Arbeitsverzeichnis im Worktree.
+0. Bestimme gemäß „Worktree-Integration“ den effektiven Worktree-Modus und führe bei aktivem Modus zuerst das Worktree-Setup aus. Umsetzung und Validierung (Phasen 2–3) laufen dann mit Arbeitsverzeichnis im Worktree.
 1. Stelle sicher, dass das Zielverzeichnis existiert:
    - bei Ziel-Pfaden unterhalb von `docs/user-guide/`, `docs/developer-guide/`, `docs/operations/` oder `docs/runbooks/` lege fehlende Verzeichnisse vor dem Schreiben an
    - lege keine leeren Kategorie-Verzeichnisse an, wenn keine Datei darin geschrieben wird
@@ -152,7 +152,7 @@ options:
    - Slugs entsprechen der Konvention (Kebab-Case, kein NNNN-Prefix)
    - bei User-Guide-Änderungen ist `docs/user-guide/README.md` vorhanden, sobald Inhalte unter `docs/user-guide/` existieren
 3. Starte `{{AGENT:code-validator}}`, wenn Doku-Änderungen technische Artefakte betreffen oder der Projekt-Build die Änderung plausibel prüfen kann.
-4. Wenn Fehler gefunden werden: behebe sie oder delegiere erneut an den passenden Doku-Agenten – gemäß „Goal-getriebene Abschlusssteuerung": begrenze die internen Korrekturrunden und eskaliere an den User, falls die Validierung danach weiterhin Fehler meldet, statt unbegrenzt zu wiederholen.
+4. Wenn Fehler gefunden werden: behebe sie oder delegiere erneut an den passenden Doku-Agenten – gemäß „Goal-getriebene Abschlusssteuerung“: begrenze die internen Korrekturrunden und eskaliere an den User, falls die Validierung danach weiterhin Fehler meldet, statt unbegrenzt zu wiederholen.
 
 ### Phase 4: Abschluss
 
@@ -165,9 +165,9 @@ options:
      - englischer Marker: `**Plan status:** Not implemented` → `**Plan status:** Implemented`
      - wechsle die Markersprache nicht und erzeuge keine zweite Statuszeile.
    - ergänze `## Testergebnisse` mit den ausgeführten Prüfungen
-   - ergänze `## Review-Findings` oder schreibe „Keine Findings gefunden.", wenn kein Review nötig war
+   - ergänze `## Review-Findings` oder schreibe „Keine Findings gefunden.“, wenn kein Review nötig war
 3. Lösche die Wisdom-Datei.
-4. Wenn der Worktree-Modus aktiv war: führe das Handback gemäß „Worktree-Integration" aus (Änderungen committen, Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`).
+4. Wenn der Worktree-Modus aktiv war: führe das Handback gemäß „Worktree-Integration“ aus (Änderungen committen, Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`).
 5. Fasse zusammen:
    - geänderte Dokumentationsbereiche
    - geprüfte Quellen

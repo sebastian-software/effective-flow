@@ -1,5 +1,7 @@
 # 0030: Reiner Planungs-Skill für Feature-Workflows
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Es soll ein reiner Planungs-Skill entstehen, der ausschließlich einen

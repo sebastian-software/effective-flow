@@ -82,7 +82,7 @@ Doku-Änderung.
   entfällt hier, weil jedes Finding einen eigenen Branch/PR braucht; dateiüberlappende
   Findings laufen stattdessen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden.
 - **`wontfix` als Ablehnungssignal.** Im Remote-Modus ersetzt das Issue-Label
-  `wontfix` die lokale „Entwickler-Anmerkung: Nicht umsetzen". Es steuert die
+  `wontfix` die lokale „Entwickler-Anmerkung: Nicht umsetzen“. Es steuert die
   ADR-Erstellung. Optionaler Begründungstext kommt aus dem Issue-Body/-Kommentar.
 - **Sauberer Abbruch bei fehlendem CLI.** Fehlt `gh`/`tea` oder die Authentifizierung,
   bricht der Remote-Modus mit klarer Meldung und Behebungshinweis ab (kein halber
@@ -97,7 +97,7 @@ Doku-Änderung.
 | `skills/sf-review/SKILL.md`       | `tracker`-Config laden, Erstaufruf-Abfrage, Include des neuen Bausteins; Phase 1 um Modus-/CLI-Bestimmung erweitern; Phase 4 (Bericht) um Remote-Zweig ergänzen (Finding-Issues + Epic statt Report-Datei), Finding-Nummerierung beibehalten.                                 |
 | `skills/sf-apply-review/SKILL.md` | Include des neuen Bausteins; Argument um Epic-Issue-Referenz erweitern; Remote-Zweig für Phase 1 (Findings aus Issues lesen, `wontfix`-Klassifikation), Phase 4 (PR pro Finding), Phase 5 (Tracking-Oberfläche statt Report aktualisieren), Phase 3 (ADR referenziert Issue). |
 | `skills/sf-setup/SKILL.md`        | `tracker`-Block ins Config-Schema und in die Presets aufnehmen; zentrale Verhaltensfrage `local`/`remote` in Schritt 4 ergänzen; Detailmodus (Schritt 5) um `tracker`-Schlüssel erweitern.                                                                                    |
-| `README.md`                       | Abschnitt „Plugin-Konfiguration" um den `tracker`-Block und den Remote-Modus von Review/Apply-Review ergänzen (dieser Skill schreibt den Plan nur; die README-Änderung erfolgt später im `/build`-Lauf).                                                                      |
+| `README.md`                       | Abschnitt „Plugin-Konfiguration“ um den `tracker`-Block und den Remote-Modus von Review/Apply-Review ergänzen (dieser Skill schreibt den Plan nur; die README-Änderung erfolgt später im `/build`-Lauf).                                                                      |
 
 ## Implementierungsdetails
 
@@ -121,9 +121,9 @@ Doku-Änderung.
      `tea`-Login); bei Fehlen klar abbrechen.
    - **Label-Konvention:** `sf-review-finding`, `sf-review-epic`, ein Aktions-Label je
      Ziel-Skill (`sf-fix`/`sf-refactor`/`sf-build`/`sf-docs`), ein Schweregrad-Label
-     (`kritisch`/`wichtig`) und `wontfix`. Labels idempotent anlegen („already exists"
+     (`kritisch`/`wichtig`) und `wontfix`. Labels idempotent anlegen („already exists“
      tolerieren).
-   - **Kanonische Body-Formate** (siehe unten „Issue- und Epic-Body-Format").
+   - **Kanonische Body-Formate** (siehe unten „Issue- und Epic-Body-Format“).
 2. **`sf-review` erweitern:**
    - Include `issue-tracker` ergänzen; in Phase 1 Modus, Host und CLI bestimmen; bei
      `remote` CLI-Verfügbarkeit vorab prüfen.
@@ -162,7 +162,7 @@ Doku-Änderung.
      - Label `wontfix` → ADR (Phase 3), kein Code;
      - bereits abgehakt/geschlossen → überspringen;
      - sonst → umsetzen.
-   - Phase 2/4 remote: Commit-Strategie ist fest „ein PR pro Finding". Jedes umsetzbare
+   - Phase 2/4 remote: Commit-Strategie ist fest „ein PR pro Finding“. Jedes umsetzbare
      Finding ist eine eigene Sub-Gruppe in einem eigenen Worktree/Branch
      (`<branchPrefix>/apply-review/<R-ID-oder-slug>`, Basis `worktree.baseBranch`).
      Nach der Umsetzung: committen, Branch pushen, über `{{SKILL:sf-pr}}` einen PR gegen
@@ -172,7 +172,7 @@ Doku-Änderung.
      abhaken (`- [ ]` → `- [x]`, PR-Link anhängen) und optional den PR-Link als Kommentar
      ans Sub-Issue schreiben.
    - Phase 3 remote: ADR referenziert Issue-Nummer und Epic statt Report-Finding; das
-     `wontfix`-Finding im Epic als „nicht umgesetzt (ADR)" markieren.
+     `wontfix`-Finding im Epic als „nicht umgesetzt (ADR)“ markieren.
    - Phase 5 remote: keine Report-Datei aktualisieren, sondern die Tracking-Oberfläche
      (Epic-Checkboxen, Sub-Issue-Kommentare/Labels).
    - Phase 7/8: finale Validierung und Zusammenfassung wie bisher; die Zusammenfassung
@@ -181,7 +181,7 @@ Doku-Änderung.
    Presets mit Default `mode: local` einbetten, in Schritt 4 die zentrale Frage
    `local`/`remote` stellen und im Detailmodus (Schritt 5) `tracker.mode` sowie
    optional `tracker.remoteToolOverride` abfragen.
-5. **README** im Abschnitt „Plugin-Konfiguration" um den `tracker`-Block und die
+5. **README** im Abschnitt „Plugin-Konfiguration“ um den `tracker`-Block und die
    Remote-Modus-Erläuterung ergänzen.
 
 ### API-Anbindung
@@ -214,7 +214,7 @@ kürzestes klares Beispiel:
 - [ ] #123 [R-0000001] Kurztitel — Aktion: sf-fix
 ```
 
-Plus einen nicht-abhakbaren Abschnitt „Übersprungen (Designentscheidungen)" für gefilterte
+Plus einen nicht-abhakbaren Abschnitt „Übersprungen (Designentscheidungen)“ für gefilterte
 Findings. Das exakte Format wird kanonisch im geteilten Baustein festgelegt.
 
 ### Edge Cases
@@ -291,7 +291,7 @@ Findings. Das exakte Format wird kanonisch im geteilten Baustein festgelegt.
 - **Annahme:** `R-XXXXXXX`-IDs bleiben auch im Remote-Modus die stabile Referenz und
   werden in Issue-Titel und -Body geführt; `memory.json` bleibt im Haupt-Repo die Quelle
   der Nummerierung.
-- **Annahme:** „Abhaken nach Abarbeitung" meint nach **PR-Erstellung** (nicht erst nach
+- **Annahme:** „Abhaken nach Abarbeitung“ meint nach **PR-Erstellung** (nicht erst nach
   Merge); der PR schließt das Sub-Issue via `Closes #…` beim Merge automatisch.
 - **Annahme:** Der PR-Basis-Branch und die Branch-Namensbildung im Remote-Apply-Review
   stützen sich auf den bestehenden `worktree`-Config-Block (`baseBranch`, `branchPrefix`);
@@ -350,7 +350,7 @@ verschachtelt hätte (Include ans Sektionsende verschoben). Keine offenen Findin
 ### Befunde
 
 - **Scope, Wichtig:** Die README-Änderung liegt außerhalb der drei Kern-Skills. Sie ist
-  bewusst in „Betroffene Dateien" aufgenommen, damit der `/build`-Lauf die Config-Doku
+  bewusst in „Betroffene Dateien“ aufgenommen, damit der `/build`-Lauf die Config-Doku
   konsistent hält; sie ist optional trennbar, falls der Umsetzungslauf sie separat halten
   will. Eingearbeitet: als eigener, klar abgegrenzter Punkt geführt.
 - **Architektur, Hinweis:** Der geteilte Baustein bündelt bewusst Config, CLI-Erkennung

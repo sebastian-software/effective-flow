@@ -1,5 +1,7 @@
 # 0001: Erste Version — sf-frontend-workflows Plugin
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 Ein Claude Code Plugin für orchestrierte Frontend-Entwicklungs-Workflows mit spezialisierten Agents und Commands erstellen.

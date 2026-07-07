@@ -1,5 +1,5 @@
 ---
-description: "Kapselt eine reine Analyse-Phase für Fehler- und Verhaltensinvestigation: klärt diagnostisch die Root Cause bzw. warum sich etwas so verhält, erzeugt einen Diagnose-Report unter .firmo/investigation/ und keinen Code. Endet mit genau einer Folge-Empfehlung und routet nach {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}} oder {{SKILL:docs}} – oder schließt mit „kein Fehler, gewolltes Verhalten" bzw. „Produktentscheidung nötig"."
+description: "Kapselt eine reine Analyse-Phase für Fehler- und Verhaltensinvestigation: klärt diagnostisch die Root Cause bzw. warum sich etwas so verhält, erzeugt einen Diagnose-Report unter .firmo/investigation/ und keinen Code. Endet mit genau einer Folge-Empfehlung und routet nach {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}} oder {{SKILL:docs}} – oder schließt mit „kein Fehler, gewolltes Verhalten“ bzw. „Produktentscheidung nötig“."
 ---
 
 # Firmo Investigate
@@ -10,9 +10,9 @@ Du bist der Orchestrator für Fehler- und Verhaltensinvestigation. Du klärst di
 
 Dieser Workflow ist deskriptiv und diagnostisch, nicht präskriptiv:
 
-- Er beantwortet „warum verhält sich das so" bzw. „wo liegt die Root Cause" und erzeugt einen Diagnose-Report unter `.firmo/investigation/`.
-- Er darf legitim mit „kein Fehler, gewolltes Verhalten" oder „Produktentscheidung nötig" enden – ein Ausgang, den weder `{{SKILL:plan}}` noch `{{SKILL:fix}}` haben.
-- „Verhaltensinvestigation" ist bewusst weiter als „Bugfix": auch das Verstehen von korrektem, aber überraschendem Verhalten gehört dazu.
+- Er beantwortet „warum verhält sich das so“ bzw. „wo liegt die Root Cause“ und erzeugt einen Diagnose-Report unter `.firmo/investigation/`.
+- Er darf legitim mit „kein Fehler, gewolltes Verhalten“ oder „Produktentscheidung nötig“ enden – ein Ausgang, den weder `{{SKILL:plan}}` noch `{{SKILL:fix}}` haben.
+- „Verhaltensinvestigation“ ist bewusst weiter als „Bugfix“: auch das Verstehen von korrektem, aber überraschendem Verhalten gehört dazu.
 
 Abgrenzung:
 
@@ -38,7 +38,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 
 ## Harte Abgrenzung
 
-- Erlaubt sind ausschließlich Analyse, Rückfragen, Lesen, das Ausführen read-only prüfbarer Befehle bzw. bestehender Checks, das Schreiben des Diagnose-Reports unter `.firmo/investigation/` sowie das Schreiben der transienten Wisdom-Datei `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md` (siehe „Wisdom Accumulation"), die am Ende gelöscht wird.
+- Erlaubt sind ausschließlich Analyse, Rückfragen, Lesen, das Ausführen read-only prüfbarer Befehle bzw. bestehender Checks, das Schreiben des Diagnose-Reports unter `.firmo/investigation/` sowie das Schreiben der transienten Wisdom-Datei `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md` (siehe „Wisdom Accumulation“), die am Ende gelöscht wird.
 - Erlaubt ist das Anlegen von `.firmo/` und `.firmo/investigation/`, falls die Verzeichnisse fehlen.
 - Verboten sind Änderungen an Source-Code, Tests, Konfiguration, Build-Dateien, Doku und ADRs sowie an Plan-Dateien unter `docs/plan/`.
 - Anders als in `{{SKILL:fix}}` darf **kein** Reproduktionstest geschrieben werden. Reproduktion erfolgt nur durch Beobachtung (vorhandene Checks ausführen, Logs/Verhalten beschreiben) oder durch eine dokumentierte Reproduktionsanleitung.
@@ -72,8 +72,8 @@ Am Ende empfiehlt `investigate` genau einen Folge-Schritt:
 
 ### Phase 2: Investigation
 
-1. Führe die read-only-Investigation gemäß „Investigation-Methode", Abschnitt „Symptom und Code untersuchen", aus: Symptom analysieren, Code über einen internen Explore-Sub-Agenten untersuchen, die Standard-Rückfragen klären und die vermutliche Root Cause samt betroffener Dateien identifizieren.
-2. Verfolge Hypothesen und Erkenntnisse gemäß „Wisdom Accumulation".
+1. Führe die read-only-Investigation gemäß „Investigation-Methode“, Abschnitt „Symptom und Code untersuchen“, aus: Symptom analysieren, Code über einen internen Explore-Sub-Agenten untersuchen, die Standard-Rückfragen klären und die vermutliche Root Cause samt betroffener Dateien identifizieren.
+2. Verfolge Hypothesen und Erkenntnisse gemäß „Wisdom Accumulation“.
 3. Arbeite ausschließlich read-only; schreibe keinen Code und keine Tests.
 
 ### Phase 3: Diagnose
@@ -84,7 +84,7 @@ Am Ende empfiehlt `investigate` genau einen Folge-Schritt:
 
 ### Phase 4: Diagnose-Validierung
 
-Bewerte die Diagnose mit der Scorecard aus „Investigation-Methode", Abschnitt „Diagnose-Validierung" (Clarity, Verification, Context) und ergänze sie um:
+Bewerte die Diagnose mit der Scorecard aus „Investigation-Methode“, Abschnitt „Diagnose-Validierung“ (Clarity, Verification, Context) und ergänze sie um:
 
 - **Konfidenz:** Gesamteinschätzung, wie belastbar die Diagnose ist.
 
@@ -94,7 +94,7 @@ Wenn die Scorecard die Diagnose nicht trägt, benenne die konkreten nächsten Di
 
 1. Lege `.firmo/investigation/` an, falls nötig.
 2. Schreibe den Diagnose-Report nach `.firmo/investigation/investigation-YYYY-MM-DD-<slug>.md` gemäß Report-Template unten.
-3. Gib genau eine Folge-Empfehlung mit Begründung aus (siehe „Routing nach außen") und dazu einen copy-paste-baren Aufruf-Vorschlag, der den Report-Pfad referenziert, z. B. `/firmo fix .firmo/investigation/investigation-YYYY-MM-DD-<slug>.md`.
+3. Gib genau eine Folge-Empfehlung mit Begründung aus (siehe „Routing nach außen“) und dazu einen copy-paste-baren Aufruf-Vorschlag, der den Report-Pfad referenziert, z. B. `/firmo fix .firmo/investigation/investigation-YYYY-MM-DD-<slug>.md`.
 4. Biete optional an, direkt in den empfohlenen Folge-Workflow zu übergeben; starte ihn nicht ungefragt.
 
 ## Report-Template
@@ -138,9 +138,9 @@ Wenn die Scorecard die Diagnose nicht trägt, benenne die konkreten nächsten Di
 
 ## Edge Cases
 
-- **Kein Fehler gefunden / gewolltes Verhalten:** Report mit Klassifikation „beabsichtigtes Verhalten" abschließen, Empfehlung „Keine Aktion" oder Routing nach `{{SKILL:docs}}` (Verhalten dokumentieren).
-- **Nicht reproduzierbar:** Reproduktion als „nicht reproduzierbar" markieren, dennoch Hypothesen mit reduzierter Konfidenz und konkrete nächste Diagnoseschritte nennen, statt zu blockieren.
-- **Mehrere plausible Root Causes:** alle mit getrennter Konfidenz auflisten; Empfehlung kann „weitere Investigation nötig" sein.
+- **Kein Fehler gefunden / gewolltes Verhalten:** Report mit Klassifikation „beabsichtigtes Verhalten“ abschließen, Empfehlung „Keine Aktion“ oder Routing nach `{{SKILL:docs}}` (Verhalten dokumentieren).
+- **Nicht reproduzierbar:** Reproduktion als „nicht reproduzierbar“ markieren, dennoch Hypothesen mit reduzierter Konfidenz und konkrete nächste Diagnoseschritte nennen, statt zu blockieren.
+- **Mehrere plausible Root Causes:** alle mit getrennter Konfidenz auflisten; Empfehlung kann „weitere Investigation nötig“ sein.
 - **`.firmo/investigation/` fehlt:** Verzeichnis anlegen (einzige erlaubte Verzeichniserstellung außerhalb der Lesepfade).
 
 ## Regeln

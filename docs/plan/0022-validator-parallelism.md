@@ -1,5 +1,7 @@
 # 0022: Parallelisierung des Code-Validators
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
 `sf-code-validator` schneller machen, ohne Genauigkeit zu verschlechtern. Drei Prüfungen (TypeScript, Linting, Build) liefen bisher sequenziell, obwohl sie read-only und unabhängig sind. Speedup soll durch Parallelisierung, Cache-Awareness und Monorepo-Orchestrator-Nutzung erreicht werden — keine Prüfung wird gestrichen oder gekürzt.
@@ -10,7 +12,7 @@
 - **Cache-Awareness ohne Konfigurations-Änderung:** Der Validator nutzt vorhandene Caches (Composite-TypeScript, ESLint-Cache aus dem Script, Monorepo-Orchestratoren), modifiziert aber keine Skripte oder Configs. CLI-Flags wie `--build` oder `--cache` werden nur dann ergänzt, wenn die Voraussetzung (`composite: true` bzw. existierender Flag im Script) klar erfüllt ist.
 - **Monorepo-Priorität:** Bei mehreren verfügbaren Orchestratoren feste Reihenfolge — `turbo`/`nx` zuerst, dann Top-Level-Script, dann `pnpm -r`. Nie zwei gleichzeitig starten.
 - **Graceful-Degradation für fehlende Skripte:** Wenn ein Script nicht existiert, Sektion als `ÜBERSPRUNGEN` markieren statt direkten Tool-Aufruf — verhindert, dass haiku-Modelle eigenmächtig `tsc`/`eslint` direkt aufrufen.
-- **Race-Condition-Fallback mit konkreten Erkennungssignalen:** Erkennung über stdout/stderr-Strings (`EBUSY`, `lock`, `cache conflict` etc.) und Mehrfach-Failures, nicht über vage „Beobachtung".
+- **Race-Condition-Fallback mit konkreten Erkennungssignalen:** Erkennung über stdout/stderr-Strings (`EBUSY`, `lock`, `cache conflict` etc.) und Mehrfach-Failures, nicht über vage „Beobachtung“.
 - **Cross-Section-Korrelation im Aggregations-Schritt:** Build- und TypeScript-Fehler, die dieselbe Datei betreffen, werden im Build-Abschnitt referenziert statt dupliziert.
 - **Bewusste Verzichte:** Kein File-Scoped-Lint/TypeCheck (Cross-File-Issues könnten verfehlt werden), kein Build-Skip (Bundling-Fehler bleiben sichtbar), keine eigenmächtige Cache-Aktivierung.
 
@@ -79,7 +81,7 @@ Beispiel-Repo: TypeCheck 30 s, Lint 15 s, Build 60 s.
 - **Komplexität**: Leicht
 - **Bereich**: Regeln / Fallback-Logik
 - **Datei**: skills/sf-code-validator/SKILL.md:95
-- **Problem**: Die ursprüngliche Regel sagte „bei beobachteten Race-Conditions" — ein haiku-Modell kann das nicht operationalisieren, weil ihm nur stdout/stderr und Exit-Codes zur Verfügung stehen.
+- **Problem**: Die ursprüngliche Regel sagte „bei beobachteten Race-Conditions“ — ein haiku-Modell kann das nicht operationalisieren, weil ihm nur stdout/stderr und Exit-Codes zur Verfügung stehen.
 - **Empfehlung**: Erkennungssignale konkret als String-Matches und Failure-Patterns formulieren (`EBUSY`, `lock`, `cache conflict`, mehrere parallele Failures trotz vorheriger Einzel-Erfolge).
 - **Status**: Behoben
 

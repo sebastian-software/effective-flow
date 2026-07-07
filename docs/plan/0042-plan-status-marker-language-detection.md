@@ -29,9 +29,9 @@ Das ist eine neue Verhaltensänderung in der Plan-Erstellung — `sf-plan` bekom
 - **Frage nur als letzter Schritt:** Wenn weder Config noch Detection eine Antwort liefern, wird die bestehende `AskUserQuestion` aufgerufen.
 - **Optionale Persistenz nach Frage:** Nach der `AskUserQuestion` zur Markersprache stellt `sf-plan` eine zweite Frage, ob die Wahl in `.sf-plugin/config.json` gespeichert werden soll. Default-Option: speichern (bequemer Default, vermeidet wiederholte Rückfragen).
 - **Nicht-destruktive Config-Migration bei eindeutiger Detection:** Wenn `.sf-plugin/config.json` existiert, aber den Schlüssel `plan.markerLanguage` noch nicht enthält, und die Detection eindeutig ist, ergänzt `sf-plan` den Schlüssel mit dem erkannten Wert. Andere Felder in der Config bleiben unverändert. Der User wird über die Migration informiert. Wenn die Config-Datei nicht existiert, wird sie nicht nur für diese Migration erzeugt.
-- **Config-Schema-Erweiterung minimal halten:** Neue Sektion `plan` mit dem einzigen Schlüssel `markerLanguage`. Werte: `"de"` oder `"en"`. Andere Werte → ignorieren und wie „nicht gesetzt" behandeln, plus User-Hinweis.
+- **Config-Schema-Erweiterung minimal halten:** Neue Sektion `plan` mit dem einzigen Schlüssel `markerLanguage`. Werte: `"de"` oder `"en"`. Andere Werte → ignorieren und wie „nicht gesetzt“ behandeln, plus User-Hinweis.
 - **Transparenz:** Jede automatische Entscheidung (Config-Übernahme, Detection, Config-Migration) wird mit einer einzeiligen Statusmeldung an den User kommuniziert, damit nichts unsichtbar passiert.
-- **Keine Änderung an `sf-build` Phase 7 Fallback:** Der Fall „keine Plan-Datei vorhanden" bleibt bei deutschem Default; dort existiert kein Detection-Pool und keine andere Quelle.
+- **Keine Änderung an `sf-build` Phase 7 Fallback:** Der Fall „keine Plan-Datei vorhanden“ bleibt bei deutschem Default; dort existiert kein Detection-Pool und keine andere Quelle.
 
 ## Betroffene Dateien
 
@@ -45,7 +45,7 @@ Nicht angefasst (Designentscheidung):
 
 | Datei                                                                                                                                                | Grund                                                                                                                                                                    |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `skills/sf-build/SKILL.md`                                                                                                                           | Phase-7-Fallback „keine Plan-Datei vorhanden" hat keinen Detection-Pool und greift nicht auf die Plan-Erstellung von `sf-plan` zurück. Deutscher Default bleibt korrekt. |
+| `skills/sf-build/SKILL.md`                                                                                                                           | Phase-7-Fallback „keine Plan-Datei vorhanden“ hat keinen Detection-Pool und greift nicht auf die Plan-Erstellung von `sf-plan` zurück. Deutscher Default bleibt korrekt. |
 | `skills/_shared/plan-status.md`, `plan-reference-routing.md`                                                                                         | Konventionsdokumente; die Detection- und Config-Logik ist `sf-plan`-spezifisch und gehört nicht in die geteilte Konvention.                                              |
 | `skills/sf-fix/SKILL.md`, `skills/sf-refactor/SKILL.md`, `skills/sf-docs/SKILL.md`, `skills/sf-apply-plan/SKILL.md`, `skills/sf-open-plans/SKILL.md` | Erstellen keine neuen Plan-Dateien; Markersprache spielt dort nur lesend eine Rolle, und das funktioniert seit 0041 bereits beidsprachig.                                |
 
@@ -72,7 +72,7 @@ Nicht angefasst (Designentscheidung):
       - Falls der Schlüssel bereits gesetzt ist: keine Aktion (Config gewann bereits in Schritt 1, dieser Migrationspfad wird unter normalen Umständen gar nicht erreicht — er ist nur relevant, wenn der Wert in Schritt 1 als ungültig verworfen wurde).
    4. **Nutzung der Detection bei eindeutigem Ergebnis:**
       - Verwende die erkannte Sprache als Markersprache der neuen Plan-Datei.
-      - Gib eine einzeilige Statusmeldung aus, z. B. „Markersprache aus 12 vorhandenen Plänen erkannt: Deutsch."
+      - Gib eine einzeilige Statusmeldung aus, z. B. „Markersprache aus 12 vorhandenen Plänen erkannt: Deutsch.“
       - Überspringe `AskUserQuestion` und Persistenzfrage.
    5. **`AskUserQuestion` zur Markersprache (nur bei nicht eindeutiger Detection und ohne gültige Config-Vorgabe):**
       - Bleibt strukturell wie bisher (`Marker`-Header, Optionen Deutsch/Englisch).
@@ -94,8 +94,8 @@ Nicht angefasst (Designentscheidung):
 - **Config gesetzt mit ungültigem Wert (z. B. `"fr"`):** Wert wird ignoriert, kurzer Hinweis an den User, dann ganz normal Detection-Pfad und ggf. Frage.
 - **Config existiert, aber `plan.markerLanguage` fehlt:** Schritt 1 liefert nichts. Detection läuft. Bei eindeutiger Detection wird der Schlüssel via Migration ergänzt.
 - **Leeres oder fehlendes `docs/plan/`:** Detection ergibt `nicht eindeutig`. Ohne Config-Vorgabe → Frage.
-- **Plan-Dateien existieren, aber alle mit Status „unklar":** Wie oben — Detection 0/0 → `nicht eindeutig`.
-- **Plan-Datei mit Mischform (z. B. `**Plan status:** Umgesetzt`):** Bereits durch Konvention als „unklar" klassifiziert; zählt nicht.
+- **Plan-Dateien existieren, aber alle mit Status „unklar“:** Wie oben — Detection 0/0 → `nicht eindeutig`.
+- **Plan-Datei mit Mischform (z. B. `**Plan status:** Umgesetzt`):** Bereits durch Konvention als „unklar“ klassifiziert; zählt nicht.
 - **Zwei Statuszeilen unterschiedlicher Sprache in einer Datei:** Nur die erste zählt, konsistent zur Konvention.
 - **Detection eindeutig, Config existiert nicht:** Detection wird übernommen; es wird _keine_ neue Config-Datei nur für die Migration erzeugt.
 - **`.sf-plugin/config.json` ist syntaktisch defekt:** Schritt 1 fällt durch, Detection läuft normal, Migration entfällt. Kurzer Hinweis an den User.
@@ -142,7 +142,7 @@ Nicht angefasst (Designentscheidung):
 | ---------------------------------------------------------------------------- | --------- |
 | `node build.mjs` (Codex + Claude)                                            | bestanden |
 | Build-Output enthält Schritte 1–6 und beide ASK-Blöcke (Marker + Persistenz) | bestanden |
-| Stichprobe: „überspringe Schritte 2 bis 6" propagiert in `dist/`             | bestanden |
+| Stichprobe: „überspringe Schritte 2 bis 6“ propagiert in `dist/`             | bestanden |
 | Stichprobe: Schritt 3 fordert syntaktisch valides JSON                       | bestanden |
 | README-Tabelle, Erklärtext und Default-Beispiel ergänzt                      | bestanden |
 

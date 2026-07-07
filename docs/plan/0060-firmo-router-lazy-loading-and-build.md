@@ -10,7 +10,7 @@ Teil 2 der Staffelung von [0058](0058-firmo-rename-and-lazy-tool-router.md) – 
 
 ## Scope-Abgrenzung
 
-- **In Scope:** `build.mjs`-Umbau (Ein-Skill-Layout je Harness: Router-`SKILL.md` + `tools/<tool>.md` + genestete `agents/<agent>.md`, kein Marketplace/Plugin/TOML), Router-Template (`skills/_router/SKILL.md`), Platzhalter-Transforms (`{{SKILL:sf-X}}` → `/firmo X` bzw. Codex-Analog; `{{AGENT:sf-X}}` → Subagent-Referenz), Entfernung des `sf-`-Präfix aus Quell-/Ausgabe-Namen, „internes Tool"-Markierung für `apply-plan`/`apply-review`/`apply-issues` (lazy von `apply`), `plan-issues` → `plan-issue`, Frontmatter-Validitäts-Guard, Version-Drift-Guard.
+- **In Scope:** `build.mjs`-Umbau (Ein-Skill-Layout je Harness: Router-`SKILL.md` + `tools/<tool>.md` + genestete `agents/<agent>.md`, kein Marketplace/Plugin/TOML), Router-Template (`skills/_router/SKILL.md`), Platzhalter-Transforms (`{{SKILL:sf-X}}` → `/firmo X` bzw. Codex-Analog; `{{AGENT:sf-X}}` → Subagent-Referenz), Entfernung des `sf-`-Präfix aus Quell-/Ausgabe-Namen, „internes Tool“-Markierung für `apply-plan`/`apply-review`/`apply-issues` (lazy von `apply`), `plan-issues` → `plan-issue`, Frontmatter-Validitäts-Guard, Version-Drift-Guard.
 - **Nicht in Scope:** Deploy-Skripte/Auslieferung (Teil 3), README/Doku (Teil 4).
 
 ## Betroffene Dateien
@@ -24,13 +24,13 @@ Teil 2 der Staffelung von [0058](0058-firmo-rename-and-lazy-tool-router.md) – 
 
 ## Implementierungsdetails
 
-Details, Router-/Lazy-Load-Mechanik, `build.mjs`-Änderungen und Edge Cases siehe [0058](0058-firmo-rename-and-lazy-tool-router.md), Abschnitte „Architekturentscheidungen", „Implementierungsdetails", „Edge Cases" und „Learnings".
+Details, Router-/Lazy-Load-Mechanik, `build.mjs`-Änderungen und Edge Cases siehe [0058](0058-firmo-rename-and-lazy-tool-router.md), Abschnitte „Architekturentscheidungen“, „Implementierungsdetails“, „Edge Cases“ und „Learnings“.
 
 ### Vorgehen (Kurzfassung)
 
 1. Namensabbildung: `sf-<x>` → `<x>`; `plan-issues` → `plan-issue`; `apply-plan`/`apply-review`/`apply-issues` als intern kennzeichnen.
 2. Router-Template anlegen (Katalog der 15 Tools + Dispatch-Regel „lies `tools/<tool>.md`, sonst Liste").
-3. `build.mjs` umbauen: Scan ohne `sf-`-Filter; Kategorisierung über `type` + „intern"-Flag; je Harness ein `firmo/`-Skill (`SKILL.md` aus Router-Template + Katalog, `tools/`, genestete `agents/`); Transforms; Frontmatter-Guard (Descriptions strikt quoten); Version-Drift-Guard (Claude/Codex gleiche Version).
+3. `build.mjs` umbauen: Scan ohne `sf-`-Filter; Kategorisierung über `type` + „intern“-Flag; je Harness ein `firmo/`-Skill (`SKILL.md` aus Router-Template + Katalog, `tools/`, genestete `agents/`); Transforms; Frontmatter-Guard (Descriptions strikt quoten); Version-Drift-Guard (Claude/Codex gleiche Version).
 4. Interne `apply-*`-Anweisungen unter `firmo/tools/_apply/<source>.md`, nur von `apply` referenziert.
 
 ## Akzeptanzkriterien

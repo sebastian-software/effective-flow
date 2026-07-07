@@ -55,7 +55,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 
 1. Analysiere die Anforderung gründlich.
 2. Prüfe vorhandene Plan-Dateien in `docs/plan/`, um Struktur und vorhandene Architekturentscheidungen zu übernehmen.
-3. Reserviere die Plan-Nummer gemäß `Plan-Nummern-Konvention`, Abschnitt „Nummer reservieren", bevor die inhaltliche Klärung beginnt. Verwende dabei einen lauf-eindeutigen Stub-Namen und führe direkt nach dem Stub-Write die „Reservierung verifizieren (Read-back)"-Prüfung aus, um eine durch überlappende Schreibfreigaben entstandene Doppelvergabe sofort aufzulösen. Die so angelegte temporäre Datei wird in Phase 3 mit dem vollständigen Inhalt gefüllt.
+3. Reserviere die Plan-Nummer gemäß `Plan-Nummern-Konvention`, Abschnitt „Nummer reservieren“, bevor die inhaltliche Klärung beginnt. Verwende dabei einen lauf-eindeutigen Stub-Namen und führe direkt nach dem Stub-Write die „Reservierung verifizieren (Read-back)“-Prüfung aus, um eine durch überlappende Schreibfreigaben entstandene Doppelvergabe sofort aufzulösen. Die so angelegte temporäre Datei wird in Phase 3 mit dem vollständigen Inhalt gefüllt.
 4. Untersuche die relevanten Bereiche der Codebase lokal oder mit internem Sub-Agenten:
    - Projektstruktur
    - betroffene Module und Dateien
@@ -106,8 +106,8 @@ Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers in d
 #### Schritt 2: Auto-Detection aus `docs/plan/`
 
 1. Lies alle `.md`-Dateien unter `docs/plan/`. Lege _keine_ neuen Verzeichnisse an und schreibe keine anderen Dateien.
-2. Bestimme pro Datei den Planstatus über die kanonische Ein-Marker-Regel: genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` und gültigem Wert; Dateien mit fehlender, mehrfacher oder ungültiger Statuszeile gelten als „unklar".
-3. Zähle die Plan-Dateien mit deutschem Marker (`de_count`) und mit englischem Marker (`en_count`). Dateien mit Status „unklar" werden ignoriert.
+2. Bestimme pro Datei den Planstatus über die kanonische Ein-Marker-Regel: genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` und gültigem Wert; Dateien mit fehlender, mehrfacher oder ungültiger Statuszeile gelten als „unklar“.
+3. Zähle die Plan-Dateien mit deutschem Marker (`de_count`) und mit englischem Marker (`en_count`). Dateien mit Status „unklar“ werden ignoriert.
 4. Bestimme das Detection-Ergebnis:
    - `de_count > 0` und `en_count == 0` → Detection: Deutsch.
    - `en_count > 0` und `de_count == 0` → Detection: Englisch.
@@ -134,7 +134,7 @@ Wenn `.firmo/config.json` nicht existiert, lege sie _nicht_ nur für die Migrati
 Bei eindeutigem Detection-Ergebnis:
 
 - Verwende die erkannte Sprache als Markersprache der neuen Plan-Datei.
-- Gib eine einzeilige Statusmeldung aus, z. B. „Markersprache aus 12 vorhandenen Plänen erkannt: Deutsch."
+- Gib eine einzeilige Statusmeldung aus, z. B. „Markersprache aus 12 vorhandenen Plänen erkannt: Deutsch.“
 - Überspringe Schritte 5 und 6.
 
 #### Schritt 5: Frage an den User
@@ -285,7 +285,7 @@ Vollständiges Plan-Template (Statuszeile gemäß gewählter Markersprache einse
 
 Regeln:
 
-- Entferne nicht relevante optionale Unterabschnitte oder schreibe knapp „Nicht relevant" mit Begründung.
+- Entferne nicht relevante optionale Unterabschnitte oder schreibe knapp „Nicht relevant“ mit Begründung.
 - Nutze konkrete Datei-Referenzen, sobald sie aus der Codebase ableitbar sind.
 - Formuliere die Akzeptanzkriterien so, dass sie zusammen genau eine messbare Abschlussbedingung ergeben. Der umsetzende Workflow leitet daraus seine Goal-Bedingung und den optionalen `/goal`-String ab; vermeide vage Kriterien ohne benannte Prüfung.
 - Schreibe den Plan als Umsetzungsanleitung, nicht als Vorab-Implementierung.

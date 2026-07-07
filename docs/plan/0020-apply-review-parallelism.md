@@ -1,8 +1,10 @@
 # 0020: Mehr Parallelität in apply-review
 
+**Planungsstatus:** Umgesetzt
+
 ## Anforderung
 
-Phase 4 von `sf-apply-review` arbeitete bisher pro Aktionsgruppe (`sf-fix` / `sf-refactor` / `sf-build-feature`) sequenziell, mit nur drei parallelen Streams. Bei vielen Findings war das ein Bottleneck. Ziel: mehr Parallelität, ohne den 1-Commit-pro-Finding-Vertrag bei Commit-Strategie „Einzeln" zu brechen.
+Phase 4 von `sf-apply-review` arbeitete bisher pro Aktionsgruppe (`sf-fix` / `sf-refactor` / `sf-build-feature`) sequenziell, mit nur drei parallelen Streams. Bei vielen Findings war das ein Bottleneck. Ziel: mehr Parallelität, ohne den 1-Commit-pro-Finding-Vertrag bei Commit-Strategie „Einzeln“ zu brechen.
 
 Umsetzung: Kombination aus zwei orthogonalen Techniken:
 
@@ -83,21 +85,21 @@ Bei stark geclusterten Findings (alle dieselbe Datei): nur C wirkt → 10-20% Sp
 - **Komplexität**: Leicht
 - **Bereich**: Datenfluss / Phasen-Konsistenz
 - **Datei**: skills/sf-apply-review/SKILL.md:227
-- **Problem**: Phase 6 Prüfung B liest „in Phase 4 bearbeitete Findings" aus der Wisdom-Datei. Wenn ein Finding bereits in Phase 4.1 (Vorabanalyse) abgebrochen wurde, kann kein Stash entstanden sein — eine Stash-Zuordnung wäre also irreführend.
+- **Problem**: Phase 6 Prüfung B liest „in Phase 4 bearbeitete Findings“ aus der Wisdom-Datei. Wenn ein Finding bereits in Phase 4.1 (Vorabanalyse) abgebrochen wurde, kann kein Stash entstanden sein — eine Stash-Zuordnung wäre also irreführend.
 - **Empfehlung**: Phase 4.1 ABBRUCH explizit als `fehlgeschlagen (Vorabanalyse)` markieren, Phase 4.3 als `fehlgeschlagen (Delegation)`. Phase 6 kann dann unterscheiden.
 - **Status**: Behoben
 
-#### [F2] Sub-Gruppen-Bildung „Sortiere" ist konzeptuell falsch und mehrdeutig
+#### [F2] Sub-Gruppen-Bildung „Sortiere“ ist konzeptuell falsch und mehrdeutig
 
 - **Schweregrad**: Wichtig
 - **Komplexität**: Leicht
 - **Bereich**: Klarheit für LLM-Orchestrator
 - **Datei**: skills/sf-apply-review/SKILL.md:163-166
-- **Problem**: Das Wort „Sortiere" impliziert Reihenfolge, gemeint ist aber Partitionierung. Außerdem unklar, ob Konfidenz-Niedrig vor oder nach Union-Find behandelt wird.
+- **Problem**: Das Wort „Sortiere“ impliziert Reihenfolge, gemeint ist aber Partitionierung. Außerdem unklar, ob Konfidenz-Niedrig vor oder nach Union-Find behandelt wird.
 - **Empfehlung**: Explizite Zweistufung: (1) Partitioniere in Niedrig vs. Rest. (2) Union-Find nur auf Rest. (3) Niedrig-Findings als Singletons hinzufügen.
 - **Status**: Behoben
 
-#### [F3] Edge Case „alle Findings Konfidenz Niedrig" nicht abgedeckt
+#### [F3] Edge Case „alle Findings Konfidenz Niedrig“ nicht abgedeckt
 
 - **Schweregrad**: Wichtig
 - **Komplexität**: Leicht
@@ -123,21 +125,21 @@ Bei stark geclusterten Findings (alle dieselbe Datei): nur C wirkt → 10-20% Sp
 - **Komplexität**: Leicht
 - **Bereich**: Vollständigkeit / Datenfluss — Phase 4.3
 - **Datei**: skills/sf-apply-review/SKILL.md:183-193
-- **Problem**: Phase 4.3 sagt „Vorabanalyse als zusätzlicher Kontext" — unklar, ob inline im Prompt oder als Verweis auf Wisdom-Datei. Sub-Skills lesen die Wisdom-Datei nicht.
-- **Empfehlung**: Explizit klarstellen: inline-Kontext-Block im Prompt unter Überschrift „Vorabanalyse für dieses Finding:".
+- **Problem**: Phase 4.3 sagt „Vorabanalyse als zusätzlicher Kontext“ — unklar, ob inline im Prompt oder als Verweis auf Wisdom-Datei. Sub-Skills lesen die Wisdom-Datei nicht.
+- **Empfehlung**: Explizit klarstellen: inline-Kontext-Block im Prompt unter Überschrift „Vorabanalyse für dieses Finding:“.
 - **Status**: Behoben
 
-#### [F6] „Kette von Datei-Überlappungen" verschleiert sternförmige Verbindungen
+#### [F6] „Kette von Datei-Überlappungen“ verschleiert sternförmige Verbindungen
 
 - **Schweregrad**: Hinweis
 - **Komplexität**: Leicht
 - **Bereich**: Klarheit — Phase 4.2
 - **Datei**: skills/sf-apply-review/SKILL.md:170
-- **Problem**: „Kette" suggeriert lineare Abfolge. Ein Stern-Muster (A teilt zwei verschiedene Dateien mit B und C, B–C nicht) gehört aber genauso in eine Sub-Gruppe.
+- **Problem**: „Kette“ suggeriert lineare Abfolge. Ein Stern-Muster (A teilt zwei verschiedene Dateien mit B und C, B–C nicht) gehört aber genauso in eine Sub-Gruppe.
 - **Empfehlung**: Klammersatz mit Beispielen für transitive und sternförmige Überlappung ergänzen.
 - **Status**: Behoben
 
-#### [F7] „Sortiere nach Konfidenz" impliziert ungenutzte Ordnung
+#### [F7] „Sortiere nach Konfidenz“ impliziert ungenutzte Ordnung
 
 - **Schweregrad**: Hinweis
 - **Komplexität**: Leicht
