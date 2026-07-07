@@ -51,7 +51,22 @@ Führe diese Prüfung einmalig beim ersten Lesen der Config im Lauf aus – im s
 - Wenn die Datei ungültiges JSON enthält: nicht schreiben, sichere Defaults für diesen Lauf verwenden und den User mit Pfad und Fehler informieren.
 - Wenn ein bekannter Schlüssel einen ungültigen Wert enthält: nicht überschreiben, sicheren Default für diesen Lauf verwenden und den User über den Schlüssel informieren.
 - Wenn die Migration Schlüssel ergänzt hat: teile dem User einmal in diesem Workflow-Lauf mit, dass `.firmo/config.json` migriert wurde, und nenne die ergänzten Schlüssel.
-- Speichere nach erfolgreicher Migration den Status in `.firmo/memory.json` unter `configMigration`, ohne vorhandene Felder wie `lastFindingNumber` zu verlieren.
+- Speichere nach erfolgreicher Migration den Status in `.firmo/memory.json` unter `configMigration.worktree`, ohne vorhandene Felder wie `lastFindingNumber` zu verlieren. Andere Unterschlüssel von `configMigration` (`review`, `applyReview`, `tracker`) unverändert erhalten.
+- Legacy: Liegt in `configMigration` noch ein alter flacher Eintrag (Felder `version`/`appliedAt`/`addedKeys` direkt unter `configMigration`), darf er beim nächsten Schreiben in die Unterschlüssel-Form überführt bzw. ersetzt werden – die Migrationen sind idempotent config-getrieben; die Zuordnung zum Bereich ist optional per `addedKeys`-Präfix möglich.
+
+Memory-Eintrag:
+
+```json
+{
+  "configMigration": {
+    "worktree": {
+      "version": "worktree-integration-v1",
+      "appliedAt": "YYYY-MM-DDTHH:mm:ssZ",
+      "addedKeys": ["worktree.enabled", "worktree.baseBranch"]
+    }
+  }
+}
+```
 
 ### Modus bestimmen (Setup-Phase)
 
