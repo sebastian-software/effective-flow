@@ -13,14 +13,14 @@ im jeweiligen Skill.
 
 ### Kanonische Quelltypen
 
-| Typ               | Bedeutung                                                     | Zuständiger Skill                              |
-| ----------------- | ------------------------------------------------------------- | ---------------------------------------------- |
-| `plan`            | Plan-Datei unter `docs/plan/`                                 | `{{SKILL:apply-plan}}`                         |
-| `review-report`   | Review-Report-Datei unter `.firmo/review/`                    | `{{SKILL:apply-review}}` (lokal)               |
-| `review-epic`     | Tracking-/Epic-Issue eines `{{SKILL:review}}`-Laufs           | `{{SKILL:apply-review}}` (remote, Epic)        |
-| `review-finding`  | einzelnes Finding-Issue eines `{{SKILL:review}}`-Laufs        | `{{SKILL:apply-review}}` (remote, Issue-Liste) |
-| `container-issue` | generisches Issue mit Sub-Issue-Checkliste, ohne Review-Label (`firmo-review-*`/`sf-review-*`) | `{{SKILL:apply-issues}}`      |
-| `plain-issue`     | frei geschriebenes Menschen-Issue                             | `{{SKILL:apply-issues}}`                       |
+| Typ               | Bedeutung                                                                                      | Zuständiger Skill                              |
+| ----------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `plan`            | Plan-Datei unter `docs/plan/`                                                                  | `{{SKILL:apply-plan}}`                         |
+| `review-report`   | Review-Report-Datei unter `.firmo/review/`                                                     | `{{SKILL:apply-review}}` (lokal)               |
+| `review-epic`     | Tracking-/Epic-Issue eines `{{SKILL:review}}`-Laufs                                            | `{{SKILL:apply-review}}` (remote, Epic)        |
+| `review-finding`  | einzelnes Finding-Issue eines `{{SKILL:review}}`-Laufs                                         | `{{SKILL:apply-review}}` (remote, Issue-Liste) |
+| `container-issue` | generisches Issue mit Sub-Issue-Checkliste, ohne Review-Label (`firmo-review-*`/`sf-review-*`) | `{{SKILL:apply-issues}}`                       |
+| `plain-issue`     | frei geschriebenes Menschen-Issue                                                              | `{{SKILL:apply-issues}}`                       |
 
 Sonderergebnisse: `none` (kein/leeres Argument) und `ambiguous` (nicht eindeutig
 auflösbar). `issue-reference` ist ein **Zwischenergebnis** aus Stufe A für eine noch
