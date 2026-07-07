@@ -1,9 +1,33 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, existsSync } from 'node:fs';
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  rmSync,
+  renameSync,
+  readdirSync,
+  existsSync,
+} from 'node:fs';
 import { join, basename, dirname } from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import {
+  normalizeLineEndings,
+  extractFrontmatter,
+  extractBody,
+  getField,
+  getNested,
+  getNestedArray,
+  getNestedList,
+  cleanDescription,
+  firstSentence,
+  tomlString,
+  normalizeCodexSandboxMode,
+  validateRefs,
+  assertQuotedDescription,
+  renderBody,
+} from './build-lib.mjs';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
 const SOURCE_DIR = join(ROOT_DIR, 'src');
@@ -11,10 +35,18 @@ const SHARED_DIR = join(SOURCE_DIR, 'shared');
 const TOOLS_DIR = join(SOURCE_DIR, 'tools');
 const AGENTS_DIR = join(SOURCE_DIR, 'agents');
 const ROUTER_SRC = join(SOURCE_DIR, 'SKILL.md');
-const DIST_CODEX = join(ROOT_DIR, 'dist', 'codex');
-const DIST_CLAUDE = join(ROOT_DIR, 'dist', 'claude');
+
+// The build writes into a temporary tree and swaps it onto dist/ only after a
+// fully successful build (see the atomic swap below), so dist/ is always either
+// entirely the previous build or entirely the new one — never a half-written
+// mix left behind by a mid-build throw.
+const DIST_ROOT = join(ROOT_DIR, 'dist');
+const DIST_TMP = join(ROOT_DIR, 'dist.tmp');
+const DIST_BAK = join(ROOT_DIR, 'dist.bak');
 
 const FIRMO_SKILL_NAME = 'firmo';
+const DIST_CODEX = join(DIST_TMP, 'codex');
+const DIST_CLAUDE = join(DIST_TMP, 'claude');
 const CODEX_SKILL_DIR = join(DIST_CODEX, FIRMO_SKILL_NAME);
 const CLAUDE_SKILL_DIR = join(DIST_CLAUDE, FIRMO_SKILL_NAME);
 // Claude Code does not auto-discover skill-nested agents, so Claude agents ship
@@ -65,10 +97,10 @@ try {
 }
 const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
 
-// --- Clean and create output directories ---
+// --- Clean and (re)create the temporary output tree ---
 
-rmSync(DIST_CODEX, { recursive: true, force: true });
-rmSync(DIST_CLAUDE, { recursive: true, force: true });
+rmSync(DIST_TMP, { recursive: true, force: true });
+rmSync(DIST_BAK, { recursive: true, force: true });
 // Codex: one nested skill dir with tools/ and (nested) agents/.
 mkdirSync(join(CODEX_SKILL_DIR, 'tools'), { recursive: true });
 mkdirSync(join(CODEX_SKILL_DIR, 'agents'), { recursive: true });
@@ -76,139 +108,7 @@ mkdirSync(join(CODEX_SKILL_DIR, 'agents'), { recursive: true });
 mkdirSync(join(CLAUDE_SKILL_DIR, 'tools'), { recursive: true });
 mkdirSync(CLAUDE_AGENTS_DIR, { recursive: true });
 
-// --- Helper functions ---
-
-function escapeRegex(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function normalizeLineEndings(content) {
-  return content.replace(/\r\n/g, '\n');
-}
-
-function extractFrontmatter(content) {
-  const match = content.match(/^---\n([\s\S]*?)\n---\n/);
-  return match ? match[1] : '';
-}
-
-function extractBody(content) {
-  const match = content.match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
-  return match ? match[1].replace(/\n+$/, '\n') : '';
-}
-
-function getField(frontmatter, key) {
-  const re = new RegExp(`^${escapeRegex(key)}:\\s*"?(.+?)"?$`, 'm');
-  const match = frontmatter.match(re);
-  return match ? match[1] : '';
-}
-
-function getNested(frontmatter, section, key) {
-  const sectionRe = new RegExp(`^${escapeRegex(section)}:\\s*$`, 'm');
-  const sectionMatch = sectionRe.exec(frontmatter);
-  if (!sectionMatch) return '';
-
-  const afterSection = frontmatter.slice(sectionMatch.index + sectionMatch[0].length);
-  const sectionEnd = afterSection.search(/^\S/m);
-  const sectionBlock = sectionEnd === -1 ? afterSection : afterSection.slice(0, sectionEnd);
-
-  const keyRe = new RegExp(`^\\s+${escapeRegex(key)}:\\s*"?(.+?)"?$`, 'm');
-  const keyMatch = sectionBlock.match(keyRe);
-  return keyMatch ? keyMatch[1] : '';
-}
-
-function getNestedArray(frontmatter, section, key) {
-  const sectionRe = new RegExp(`^${escapeRegex(section)}:\\s*$`, 'm');
-  const sectionMatch = sectionRe.exec(frontmatter);
-  if (!sectionMatch) return '';
-
-  const afterSection = frontmatter.slice(sectionMatch.index + sectionMatch[0].length);
-  const sectionEnd = afterSection.search(/^\S/m);
-  const sectionBlock = sectionEnd === -1 ? afterSection : afterSection.slice(0, sectionEnd);
-
-  const keyRe = new RegExp(`^\\s+${escapeRegex(key)}:\\s*\\[(.+?)\\]`, 'm');
-  const keyMatch = sectionBlock.match(keyRe);
-  if (!keyMatch) return '';
-
-  return keyMatch[1].replace(/\s/g, '');
-}
-
-function getNestedList(frontmatter, section, key) {
-  const sectionRe = new RegExp(`^${escapeRegex(section)}:\\s*$`, 'm');
-  const sectionMatch = sectionRe.exec(frontmatter);
-  if (!sectionMatch) return '';
-
-  const afterSection = frontmatter.slice(sectionMatch.index + sectionMatch[0].length);
-  const sectionEnd = afterSection.search(/^\S/m);
-  const sectionBlock = sectionEnd === -1 ? afterSection : afterSection.slice(0, sectionEnd);
-
-  const keyRe = new RegExp(`^\\s+${escapeRegex(key)}:\\s*(.*)$`, 'm');
-  const keyMatch = sectionBlock.match(keyRe);
-  if (!keyMatch) return '';
-
-  const rest = keyMatch[1].trim();
-
-  // Inline array [a, b, c]
-  if (rest.startsWith('[')) {
-    const items = rest
-      .slice(1, -1)
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    return items.map((item) => `  - ${item}`).join('\n');
-  }
-
-  // Multi-line list (- items after key line)
-  const afterKey = sectionBlock.slice(keyMatch.index + keyMatch[0].length);
-  const lines = afterKey.split('\n');
-  const items = [];
-  for (const line of lines) {
-    const itemMatch = line.match(/^\s+-\s+(.+)/);
-    if (itemMatch) {
-      items.push(`  - ${itemMatch[1]}`);
-    } else if (line.trim() && !line.match(/^\s+-/)) {
-      break;
-    }
-  }
-  return items.join('\n');
-}
-
-function cleanDescription(desc) {
-  return desc
-    .replace(/\{\{SKILL:sf-([^}]+)\}\}/g, '$1')
-    .replace(/\{\{SKILL:([^}]+)\}\}/g, '$1')
-    .replace(/\{\{AGENT:sf-([^}]+)\}\}/g, '$1')
-    .replace(/\{\{AGENT:([^}]+)\}\}/g, '$1');
-}
-
-function firstSentence(text) {
-  const cleaned = cleanDescription(text).trim();
-  const match = cleaned.match(/^(.*?[.!?])(\s|$)/s);
-  return (match ? match[1] : cleaned).trim();
-}
-
-function tomlString(value) {
-  return JSON.stringify(value);
-}
-
-function normalizeCodexSandboxMode(mode, skillName) {
-  const normalized = {
-    full: 'danger-full-access',
-    read_only: 'read-only',
-    'read-only': 'read-only',
-    'workspace-write': 'workspace-write',
-    'danger-full-access': 'danger-full-access',
-  }[mode];
-
-  if (!mode) return '';
-
-  if (!normalized) {
-    throw new Error(`Unsupported codex sandbox_mode "${mode}" for ${skillName}`);
-  }
-
-  return normalized;
-}
-
-// --- Include transforms ---
+// --- Include transforms (I/O; the pure transforms live in build-lib.mjs) ---
 
 function resolveIncludes(body) {
   return body.replace(/```include\n([^\n]+)\n```/g, (match, name) => {
@@ -221,118 +121,50 @@ function resolveIncludes(body) {
   });
 }
 
-// --- Reference transforms ---
-//
-// {{SKILL:sf-X}} -> `/firmo <name>` for exposed tools, or `` `tools/<name>.md` ``
-//                  for internal tools (loaded on demand by `apply`).
-// {{AGENT:sf-X}} -> the subagent reference. Codex auto-discovers nested skill
-// agents by their bare name; Claude Code only sees agents registered under
-// ~/.claude/agents, so they are referenced namespaced as `firmo-X`.
-function transformRefs(body, harness) {
-  const agentName = (raw) => (harness === 'claude' ? `${CLAUDE_AGENT_PREFIX}${raw}` : raw);
-  return body
-    .replace(/\{\{SKILL:([^}]+)\}\}/g, (_, raw) =>
-      EXPOSED_TOOLS.includes(raw) ? `/firmo ${raw}` : `\`tools/${raw}.md\``,
-    )
-    .replace(/\{\{AGENT:([^}]+)\}\}/g, (_, raw) => `\`${agentName(raw)}\``);
-}
-
-// --- ASK block transforms ---
-
-function parseAskBlock(block) {
-  block = block.replace(/\r/g, '');
-  const headerMatch = block.match(/header:\s*(.+)/);
-  const questionMatch = block.match(/question:\s*(.+)/);
-  const typeMatch = block.match(/type:\s*(\S+)/);
-  const whenMatch = block.match(/when:\s*(.+)/);
-
-  const header = headerMatch ? headerMatch[1].trim() : null;
-  const question = questionMatch ? questionMatch[1].trim() : null;
-  const type = typeMatch ? typeMatch[1].trim() : null;
-  const when = whenMatch ? whenMatch[1].trim() : null;
-
-  if (!header) throw new Error('ASK block missing header field');
-  if (!question) throw new Error('ASK block missing question field');
-
-  let options = [];
-  if (type !== 'approval') {
-    const optsMatch = block.match(/options:\s*\n((?:\s+-\s+label:.*\n\s+description:.*\n?)*)/);
-    if (!optsMatch) throw new Error('ASK block missing options');
-    const optsBlock = optsMatch[1];
-    const optRe = /-\s+label:\s*(.+?)\n\s*description:\s*(.+)/g;
-    let m;
-    while ((m = optRe.exec(optsBlock)) !== null) {
-      options.push({ label: m[1].trim(), description: m[2].trim() });
-    }
-  }
-
-  return { header, question, type, when, options };
-}
-
-function transformAskClaude(body) {
-  return body.replace(/```ask\n([\s\S]*?)```/g, (_, block) => {
-    const { header, question, type, when, options } = parseAskBlock(block);
-    let out = 'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:\n';
-    out += `- header: "${header}"\n`;
-    out += `- question: "${question}"\n`;
-    out += '- multiSelect: false\n';
-    out += '- options:\n';
-    if (type === 'approval') {
-      out += '  - label: "Ja", description: "Freigabe erteilt"\n';
-      out += '  - label: "Anpassen", description: "Feedback als Freitext eingeben"';
-    } else {
-      out += options
-        .map((o) => `  - label: "${o.label}", description: "${o.description}"`)
-        .join('\n');
-    }
-    return when ? `Wenn ${when}:\n\n${out}` : out;
-  });
-}
-
-function transformAskCodex(body) {
-  return body.replace(/```ask\n([\s\S]*?)```/g, (_, block) => {
-    const { question, type, when, options } = parseAskBlock(block);
-    const prefix = when ? `Wenn ${when}: ` : '';
-    if (type === 'approval') {
-      return `${prefix}Frage den User: **${question}** Antworte mit "Ja" oder gib Feedback als Freitext.`;
-    }
-    let out = `Frage den User: **${question}**\n`;
-    out += options.map((o) => `- ${o.label} -- ${o.description}`).join('\n');
-    return prefix ? `${prefix}${out}` : out;
-  });
-}
-
-// Full body pipeline per harness: resolve version, ask blocks, then references.
-function renderBody(resolvedBody, harness) {
-  const withAsk =
-    harness === 'codex' ? transformAskCodex(resolvedBody) : transformAskClaude(resolvedBody);
-  return transformRefs(withAsk, harness);
-}
-
 // --- Collect sources ---
 
 const tools = []; // { name, description, body }
 const agents = []; // { name, fm, body }
 
 try {
-  const readSource = (dir, file) => {
+  const toolFiles = readdirSync(TOOLS_DIR)
+    .filter((f) => f.endsWith('.md'))
+    .sort();
+  const agentFiles = readdirSync(AGENTS_DIR)
+    .filter((f) => f.endsWith('.md'))
+    .sort();
+
+  // Known-name sets for the dead-reference guard: every {{SKILL:X}} must be a
+  // tool source and every {{AGENT:X}} an agent source.
+  const knownTools = new Set(toolFiles.map((f) => basename(f, '.md')));
+  const knownAgents = new Set(agentFiles.map((f) => basename(f, '.md')));
+  const refConfig = {
+    exposedTools: EXPOSED_TOOLS,
+    agentPrefix: CLAUDE_AGENT_PREFIX,
+    knownTools,
+    knownAgents,
+  };
+
+  const readSource = (dir, file, context) => {
     const content = normalizeLineEndings(readFileSync(join(dir, file), 'utf8'));
     const fm = extractFrontmatter(content);
     const body = resolveIncludes(extractBody(content)).replace(/\{\{VERSION\}\}/g, VERSION_STRING);
+    // Guard: description is strictly double-quoted, and every SKILL/AGENT
+    // reference (in frontmatter and body) points at an existing source.
+    assertQuotedDescription(fm, { context });
+    validateRefs(`${fm}\n${body}`, { knownTools, knownAgents, context });
     return { fm, body };
   };
 
-  for (const file of readdirSync(TOOLS_DIR)
-    .filter((f) => f.endsWith('.md'))
-    .sort()) {
-    const { fm, body } = readSource(TOOLS_DIR, file);
+  for (const file of toolFiles) {
+    const context = `tools/${file}`;
+    const { fm, body } = readSource(TOOLS_DIR, file, context);
     tools.push({ name: basename(file, '.md'), description: getField(fm, 'description'), body });
   }
 
-  for (const file of readdirSync(AGENTS_DIR)
-    .filter((f) => f.endsWith('.md'))
-    .sort()) {
-    const { fm, body } = readSource(AGENTS_DIR, file);
+  for (const file of agentFiles) {
+    const context = `agents/${file}`;
+    const { fm, body } = readSource(AGENTS_DIR, file, context);
     agents.push({ name: basename(file, '.md'), fm, body });
   }
 
@@ -361,6 +193,12 @@ try {
     /\{\{VERSION\}\}/g,
     VERSION_STRING,
   );
+  assertQuotedDescription(routerFm, { context: 'SKILL.md' });
+  validateRefs(`${routerFm}\n${routerBodyRaw}`, {
+    knownTools,
+    knownAgents,
+    context: 'SKILL.md',
+  });
 
   const catalog = EXPOSED_TOOLS.map((name) => {
     const t = tools.find((x) => x.name === name);
@@ -376,7 +214,14 @@ try {
     const skillDir = harness === 'claude' ? CLAUDE_SKILL_DIR : CODEX_SKILL_DIR;
 
     // Router SKILL.md
-    const routerBody = renderBody(routerBodyRaw.replace(/\{\{TOOL_CATALOG\}\}/g, catalog), harness);
+    const routerBody = renderBody(
+      routerBodyRaw.replace(/\{\{TOOL_CATALOG\}\}/g, catalog),
+      harness,
+      {
+        ...refConfig,
+        context: 'SKILL.md',
+      },
+    );
     const routerContent = [
       '---',
       `name: ${routerName}`,
@@ -389,16 +234,20 @@ try {
 
     // Tools (exposed + internal), no frontmatter — loaded on demand by the router.
     for (const t of tools) {
-      writeFileSync(join(skillDir, 'tools', `${t.name}.md`), renderBody(t.body, harness));
+      writeFileSync(
+        join(skillDir, 'tools', `${t.name}.md`),
+        renderBody(t.body, harness, { ...refConfig, context: `tools/${t.name}.md` }),
+      );
     }
 
     // Agents (nested subagents)
     for (const a of agents) {
+      const context = `agents/${a.name}.md`;
       if (harness === 'claude') {
-        const claudeModel = getNested(a.fm, 'claude', 'model');
-        const claudeColor = getNested(a.fm, 'claude', 'color');
-        const claudeTools = getNestedArray(a.fm, 'claude', 'tools');
-        const claudeSkills = getNestedList(a.fm, 'claude', 'skills');
+        const claudeModel = getNested(a.fm, 'claude', 'model', { context });
+        const claudeColor = getNested(a.fm, 'claude', 'color', { context });
+        const claudeTools = getNestedArray(a.fm, 'claude', 'tools', { context });
+        const claudeSkills = getNestedList(a.fm, 'claude', 'skills', { context });
         const agentDesc = cleanDescription(getField(a.fm, 'description')).replace(/"/g, '\\"');
 
         const claudeAgentName = `${CLAUDE_AGENT_PREFIX}${a.name}`;
@@ -419,13 +268,13 @@ try {
         agentFm += '---\n';
         writeFileSync(
           join(CLAUDE_AGENTS_DIR, `${claudeAgentName}.md`),
-          agentFm + renderBody(a.body, 'claude'),
+          agentFm + renderBody(a.body, 'claude', { ...refConfig, context }),
         );
       } else {
-        const codexModel = getNested(a.fm, 'codex', 'model');
-        const codexEffort = getNested(a.fm, 'codex', 'model_reasoning_effort');
+        const codexModel = getNested(a.fm, 'codex', 'model', { context });
+        const codexEffort = getNested(a.fm, 'codex', 'model_reasoning_effort', { context });
         const codexSandbox = normalizeCodexSandboxMode(
-          getNested(a.fm, 'codex', 'sandbox_mode'),
+          getNested(a.fm, 'codex', 'sandbox_mode', { context }),
           a.name,
         );
         const tomlDesc = cleanDescription(getField(a.fm, 'description'));
@@ -435,24 +284,35 @@ try {
         if (codexModel) toml += `model = ${tomlString(codexModel)}\n`;
         if (codexEffort) toml += `model_reasoning_effort = ${tomlString(codexEffort)}\n`;
         if (codexSandbox) toml += `sandbox_mode = ${tomlString(codexSandbox)}\n`;
-        toml += `developer_instructions = '''\n${renderBody(a.body, 'codex').replace(/\n+$/, '')}\n'''\n`;
+        toml += `developer_instructions = '''\n${renderBody(a.body, 'codex', { ...refConfig, context }).replace(/\n+$/, '')}\n'''\n`;
         writeFileSync(join(skillDir, 'agents', `${a.name}.toml`), toml);
       }
     }
   }
+
+  // --- Version-drift guard: Claude and Codex router carry the same version ---
+
+  const claudeRouter = readFileSync(join(CLAUDE_SKILL_DIR, 'SKILL.md'), 'utf8');
+  const codexRouter = readFileSync(join(CODEX_SKILL_DIR, 'SKILL.md'), 'utf8');
+  if (!claudeRouter.includes(VERSION_STRING) || !codexRouter.includes(VERSION_STRING)) {
+    throw new Error(`version drift — expected "${VERSION_STRING}" in both router outputs`);
+  }
+
+  // --- Atomic swap: only now, after a fully successful build, replace dist/ ---
+
+  if (existsSync(DIST_ROOT)) renameSync(DIST_ROOT, DIST_BAK);
+  try {
+    renameSync(DIST_TMP, DIST_ROOT);
+  } catch (swapErr) {
+    // Restore the previous dist/ so a failed swap never leaves it missing.
+    if (!existsSync(DIST_ROOT) && existsSync(DIST_BAK)) renameSync(DIST_BAK, DIST_ROOT);
+    throw swapErr;
+  }
+  rmSync(DIST_BAK, { recursive: true, force: true });
 } catch (err) {
+  // Leave the previous dist/ untouched; drop only the temporary tree.
+  rmSync(DIST_TMP, { recursive: true, force: true });
   process.stderr.write(`ERROR: Build failed: ${err.message}\n`);
-  process.exit(1);
-}
-
-// --- Version-drift guard: Claude and Codex router carry the same version ---
-
-const claudeRouter = readFileSync(join(CLAUDE_SKILL_DIR, 'SKILL.md'), 'utf8');
-const codexRouter = readFileSync(join(CODEX_SKILL_DIR, 'SKILL.md'), 'utf8');
-if (!claudeRouter.includes(VERSION_STRING) || !codexRouter.includes(VERSION_STRING)) {
-  process.stderr.write(
-    `ERROR: version drift — expected "${VERSION_STRING}" in both router outputs\n`,
-  );
   process.exit(1);
 }
 
