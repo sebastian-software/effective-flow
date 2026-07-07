@@ -358,6 +358,9 @@ try {
     return `- \`/firmo ${name}\` — ${firstSentence(t.description)}`;
   }).join('\n');
 
+  // Static autocomplete hint for the `<tool>` argument, kept in sync with EXPOSED_TOOLS.
+  const argumentHint = `[${EXPOSED_TOOLS.join('|')}]`;
+
   // --- Per-harness output ---
 
   for (const harness of ['claude', 'codex']) {
@@ -369,6 +372,7 @@ try {
       '---',
       `name: ${routerName}`,
       `description: "${routerDesc}"`,
+      `argument-hint: "${argumentHint}"`,
       '---',
       routerBody,
     ].join('\n');
