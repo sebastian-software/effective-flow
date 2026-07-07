@@ -32,7 +32,7 @@ task-tracking
 - `@example` für nicht triviale APIs
 - `@see` für Verweise
 - `@deprecated` mit Migrationshinweis
-- REST-Endpoint-Handler mit Reqüst/Response-Format und möglichen Status Codes
+- REST-Endpoint-Handler mit Request/Response-Format und möglichen Status Codes
 
 ### Inline-Kommentare
 

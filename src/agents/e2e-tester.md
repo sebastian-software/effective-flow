@@ -1,5 +1,5 @@
 ---
-description: "Schreibt und führt End-to-End-Tests mit derselben Tiefe wie der ursprüngliche Agent aus: Playwright-Tests, API-Integrationstests, CLI-Smoke-Tests, visülle Regressionen, Page Objects und stabile Testorganisation."
+description: "Schreibt und führt End-to-End-Tests mit derselben Tiefe wie der ursprüngliche Agent aus: Playwright-Tests, API-Integrationstests, CLI-Smoke-Tests, visuelle Regressionen, Page Objects und stabile Testorganisation."
 claude:
   model: sonnet
   color: yellow
@@ -58,11 +58,11 @@ task-tracking
 - stdout/stderr validieren
 - `--help` und `--version`
 
-### Visülle Tests
+### Visuelle Tests
 
 - `toHaveScreenshot()`
 - sinnvolle Toleranzwerte
-- kritische visülle Zustände testen
+- kritische visuelle Zustände testen
 
 ## Vorgehen
 

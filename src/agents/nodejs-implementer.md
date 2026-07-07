@@ -65,7 +65,7 @@ task-tracking
 - strukturiertes Logging
 - korrekte Log-Levels
 - keine sensitiven Daten in Logs
-- Reqüst Logging sinnvoll
+- Request Logging sinnvoll
 
 ## Security
 
