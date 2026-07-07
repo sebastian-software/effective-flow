@@ -8,6 +8,7 @@ claude:
 codex:
   model: gpt-5.4-mini
   model_reasoning_effort: medium
+  # danger-full-access bewusst: Playwright-Browser-Download (Cache außerhalb des Workspace) und Netzwerkzugriff auf lokalen Dev-Server sind unter workspace-write blockiert
   sandbox_mode: danger-full-access
 ---
 
