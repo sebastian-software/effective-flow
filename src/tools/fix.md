@@ -107,7 +107,7 @@ Führe die read-only-Investigation gemäß „Investigation-Methode", Abschnitt 
 6. Hole Freigabe ein. Die Freigabe-Frage enthält die explizite Goal-Abfrage (Option „Autonom via /goal"); behandle sie gemäß „Explizite Goal-Abfrage für autonome Läufe": Bei Wahl „Autonom via /goal" gib den `/goal`-String für die Phasen 3–5 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
 
 ```ask
-header: Fix-Strategie
+header: Fix-Plan
 question: Diagnose und Fix-Strategie freigegeben?
 options:
   - label: Ja
