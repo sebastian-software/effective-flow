@@ -76,9 +76,12 @@ Bevor der eigentliche Workflow startet, prüfe ob das Projekt bereits dokumentie
      - bestehende Architekturentscheidungen
    - schreibe den Ausgangszustand als `docs/plan/0001-initial-state.md`
    - verwende dabei das Format der bestehenden Plan-Dateien:
+   - Markersprache der Statuszeile: nutze den deutschen Marker `**Planungsstatus:** Umgesetzt` als Default; nur wenn `.firmo/config.json` `plan.markerLanguage = "en"` setzt, verwende stattdessen `**Plan status:** Implemented`. Erzeuge genau eine Statuszeile, keine Sprachmischform.
 
 ```markdown
 # 0001: Ausgangszustand — [Projektname]
+
+**Planungsstatus:** Umgesetzt
 
 ## Anforderung
 
