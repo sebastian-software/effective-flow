@@ -41,7 +41,22 @@ Führe diese Prüfung einmalig beim ersten Lesen der Config im Lauf aus – im s
 - Wenn die Datei ungültiges JSON enthält: nicht schreiben, sichere Defaults für diesen Lauf verwenden und den User mit Pfad und Fehler informieren.
 - Wenn ein bekannter Schlüssel einen ungültigen Wert enthält: nicht überschreiben, sicheren Default für diesen Lauf verwenden und den User über den Schlüssel informieren.
 - Wenn die Migration Schlüssel ergänzt hat: teile dem User einmal in diesem Workflow-Lauf mit, dass `.firmo/config.json` migriert wurde, und nenne die ergänzten Schlüssel.
-- Speichere nach erfolgreicher Migration den Status in `.firmo/memory.json` unter `configMigration`, ohne vorhandene Felder wie `lastFindingNumber` zu verlieren.
+- Speichere nach erfolgreicher Migration den Status in `.firmo/memory.json` unter `configMigration.tracker`, ohne vorhandene Felder wie `lastFindingNumber` zu verlieren. Andere Unterschlüssel von `configMigration` (`review`, `applyReview`, `worktree`) unverändert erhalten.
+- Legacy: Liegt in `configMigration` noch ein alter flacher Eintrag (Felder `version`/`appliedAt`/`addedKeys` direkt unter `configMigration`), darf er beim nächsten Schreiben in die Unterschlüssel-Form überführt bzw. ersetzt werden – die Migrationen sind idempotent config-getrieben; die Zuordnung zum Bereich ist optional per `addedKeys`-Präfix möglich.
+
+Memory-Eintrag:
+
+```json
+{
+  "configMigration": {
+    "tracker": {
+      "version": "issue-tracker-v1",
+      "appliedAt": "YYYY-MM-DDTHH:mm:ssZ",
+      "addedKeys": ["tracker.mode", "tracker.remoteToolOverride"]
+    }
+  }
+}
+```
 
 Wenn `.firmo/config.json` nicht existiert, lege sie **nicht** nur für die Migration an.
 
@@ -159,18 +174,18 @@ Regeln für die Task-Liste:
 
 Beschreibe alle Tracker-Zugriffe abstrakt als Operation und wähle das Kommando nach dem erkannten Werkzeug. Prüfe bei Forgejo die genauen Flagnamen gegen die installierte `tea`-Version, falls ein Aufruf fehlschlägt (wie in `{{SKILL:pr}}` vermerkt).
 
-| Operation                                | GitHub (`gh`)                                                                  | Forgejo (`tea`)                                                                                      |
-| ---------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| Label anlegen (idempotent)               | `gh label create <name> --force`                                               | `tea labels create --name <name>`                                                                    |
-| Issue anlegen                            | `gh issue create --title … --body-file … --label …`                            | `tea issue create --title … --body … --labels …`                                                     |
-| Issue lesen (Body + Labels + Status)     | `gh issue view <nr> --json title,body,labels,state`                            | `tea issue <nr>` bzw. `tea issue view <nr>`                                                          |
-| Kommentare lesen (Klärungen, Idempotenz) | `gh issue view <nr> --json comments`                                           | `tea issue view <nr> --comments`, sonst Forgejo-API `GET /repos/<owner>/<repo>/issues/<nr>/comments` |
-| Finding-Issues auflisten (für Dedup)     | `gh issue list --label firmo-review-finding --state all --json number,title,body` | `tea issues list --labels firmo-review-finding --state all`                                        |
-| Offene Epics auflisten                   | `gh issue list --label firmo-review-epic --state open`                         | `tea issues list --labels firmo-review-epic --state open`                                            |
-| Issue-Body aktualisieren (Epic abhaken)  | `gh issue edit <nr> --body-file …`                                             | `tea issue edit <nr> --body …`                                                                       |
-| Kommentar hinzufügen (z. B. PR-Link)     | `gh issue comment <nr> --body …`                                               | `tea comment <nr> …`                                                                                 |
-| Label setzen/entfernen                   | `gh issue edit <nr> --add-label … --remove-label …`                            | `tea issue edit <nr> --labels …`                                                                     |
-| Pull-Request erstellen                   | über `{{SKILL:pr}}`                                                            | über `{{SKILL:pr}}`                                                                                  |
+| Operation                                | GitHub (`gh`)                                                                     | Forgejo (`tea`)                                                                                      |
+| ---------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Label anlegen (idempotent)               | `gh label create <name> --force`                                                  | `tea labels create --name <name>`                                                                    |
+| Issue anlegen                            | `gh issue create --title … --body-file … --label …`                               | `tea issue create --title … --body … --labels …`                                                     |
+| Issue lesen (Body + Labels + Status)     | `gh issue view <nr> --json title,body,labels,state`                               | `tea issue <nr>` bzw. `tea issue view <nr>`                                                          |
+| Kommentare lesen (Klärungen, Idempotenz) | `gh issue view <nr> --json comments`                                              | `tea issue view <nr> --comments`, sonst Forgejo-API `GET /repos/<owner>/<repo>/issues/<nr>/comments` |
+| Finding-Issues auflisten (für Dedup)     | `gh issue list --label firmo-review-finding --state all --json number,title,body` | `tea issues list --labels firmo-review-finding --state all`                                          |
+| Offene Epics auflisten                   | `gh issue list --label firmo-review-epic --state open`                            | `tea issues list --labels firmo-review-epic --state open`                                            |
+| Issue-Body aktualisieren (Epic abhaken)  | `gh issue edit <nr> --body-file …`                                                | `tea issue edit <nr> --body …`                                                                       |
+| Kommentar hinzufügen (z. B. PR-Link)     | `gh issue comment <nr> --body …`                                                  | `tea comment <nr> …`                                                                                 |
+| Label setzen/entfernen                   | `gh issue edit <nr> --add-label … --remove-label …`                               | `tea issue edit <nr> --labels …`                                                                     |
+| Pull-Request erstellen                   | über `{{SKILL:pr}}`                                                               | über `{{SKILL:pr}}`                                                                                  |
 
 Beim Epic-Body-Update gilt: Body vor dem Ändern frisch lesen, gezielt nur die betroffene Zeile umschalten und zurückschreiben, damit parallele Änderungen nicht verloren gehen.
 

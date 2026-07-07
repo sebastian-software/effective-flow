@@ -116,12 +116,16 @@ Die Datei `.firmo/memory.json` speichert persistente Zustände über Sessions hi
 {
   "lastFindingNumber": 42,
   "configMigration": {
-    "version": "review-speed-profiles-v1",
-    "appliedAt": "YYYY-MM-DDTHH:mm:ssZ",
-    "addedKeys": ["review.profile"]
+    "review": {
+      "version": "review-speed-profiles-v1",
+      "appliedAt": "YYYY-MM-DDTHH:mm:ssZ",
+      "addedKeys": ["review.profile"]
+    }
   }
 }
 ```
+
+`configMigration` ist ein Objekt mit bereichsspezifischen Unterschlüsseln (`review`, `applyReview`, `tracker`, `worktree`). Jeder Workflow-Bereich schreibt ausschließlich seinen eigenen Unterschlüssel.
 
 ### Konfigurationsschema
 
@@ -175,7 +179,8 @@ Wenn `.firmo/config.json` existiert, prüfe sie beim Start auf fehlende unterst�
 - Wenn die Datei ungültiges JSON enthält: nicht schreiben, sichere Defaults für diesen Lauf verwenden und den User mit Pfad und Fehler informieren.
 - Wenn ein bekannter Schlüssel einen ungültigen Wert enthält: nicht überschreiben, sicheren Default für diesen Lauf verwenden und den User über den Schlüssel informieren.
 - Wenn die Migration Schlüssel ergänzt hat: teile dem User einmal in diesem Workflow-Lauf mit, dass `.firmo/config.json` migriert wurde, nenne die ergänzten Schlüssel und weise darauf hin, dass die Defaults das bisherige sichere Verhalten erhalten.
-- Speichere nach erfolgreicher Migration den Status in `.firmo/memory.json` unter `configMigration`, ohne vorhandene Felder wie `lastFindingNumber` zu verlieren.
+- Speichere nach erfolgreicher Migration den Status in `.firmo/memory.json` unter `configMigration.review` (Schema siehe Abschnitt „Inhalt" oben), ohne vorhandene Felder wie `lastFindingNumber` zu verlieren. Andere Unterschlüssel von `configMigration` (`applyReview`, `tracker`, `worktree`) unverändert erhalten.
+- Legacy: Liegt in `configMigration` noch ein alter flacher Eintrag (Felder `version`/`appliedAt`/`addedKeys` direkt unter `configMigration`), darf er beim nächsten Schreiben in die Unterschlüssel-Form überführt bzw. ersetzt werden – die Migrationen sind idempotent config-getrieben; die Zuordnung zum Bereich ist optional per `addedKeys`-Präfix möglich.
 
 ### Cache-Datei
 
