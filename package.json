@@ -5,7 +5,8 @@
   "scripts": {
     "build": "node build.mjs",
     "format": "oxfmt",
-    "agent:check": "oxfmt --check"
+    "agent:check": "oxfmt --check",
+    "test": "node --test"
   },
   "devDependencies": {
     "oxfmt": "^0.56.0"
