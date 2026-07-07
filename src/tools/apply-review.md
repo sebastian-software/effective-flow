@@ -510,7 +510,7 @@ Nicht umgesetzt
 ## Kontext
 
 Review-Report: [Report-Dateiname], Finding [R-XXXXXXX]
-Workflow: {{SKILL:apply-review}}
+Workflow: Firmo Apply-Review
 
 ## Entscheidung
 
@@ -628,7 +628,7 @@ Beispiel: Aktionsgruppe `{{SKILL:fix}}` mit fünf Findings:
 
 1. Lies die Report-Datei erneut frisch vom Dateisystem ein. Die Datei könnte sich während der Umsetzung geändert haben.
 2. Ergänze an jedem erfolgreich umgesetzten Finding als letzten Eintrag:
-   `✅ Umgesetzt am YYYY-MM-DD via {{SKILL:apply-review}}`
+   `✅ Umgesetzt am YYYY-MM-DD via Firmo Apply-Review`
 3. Ergänze an jedem Finding mit ADR als letzten Eintrag:
    `📋 ADR erstellt am YYYY-MM-DD: [ADR-Dateiname]`
 4. Speichere die aktualisierte Report-Datei.
