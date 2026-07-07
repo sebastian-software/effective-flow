@@ -78,7 +78,7 @@ apply-source-detection
 
 Alle Status-Updates werden als Issue-Kommentare geschrieben (Operation „Kommentar hinzufügen" aus dem Mapping oben). Verwende diese kanonischen Vorlagen und beginne jeden Plugin-Kommentar mit der Markierung `<!-- firmo-apply-issues -->`, damit spätere Läufe eigene Kommentare erkennen und Doppel-Kommentare vermeiden:
 
-- **Umgesetzt:** `🤖 Umgesetzt via /firmo apply-issues — PR #<nr>` (keine internen IDs, kein `Co-Authored-By`).
+- **Umgesetzt:** `🤖 Umgesetzt via /firmo apply — PR #<nr>` (keine internen IDs, kein `Co-Authored-By`).
 - **Übersprungen:** `⏭️ Übersprungen: Für eine autonome Umsetzung fehlen noch Angaben: <Liste des Fehlenden>. Mit /firmo plan-issue vervollständigen.`
 - **Fehlgeschlagen:** `⚠️ Umsetzung fehlgeschlagen: <kurzer Grund>. Issue bleibt offen.`
 
@@ -168,7 +168,7 @@ options:
 5. Bei Wahl „Autonom via `/goal`": gib den `/goal`-String prominent aus und fordere zum Einfügen als neue Eingabe auf. Ohne Einfügen läuft der Skill gated weiter. Form (einzeilig, ohne interne IDs):
 
 ```text
-/goal Arbeite die in /firmo apply-issues analysierten Issues (#… , #…) vollständig ab und durchlaufe die verbleibenden Phasen dieses Workflows: setze jedes ausreichend spezifizierte Issue über den passenden Umsetzungs-Skill um, erstelle je genau einen PR (Closes #<Issue>), kommentiere den PR-Link, setze firmo-issue-done und hake den Epic-Eintrag ab; markiere unzureichende Issues mit firmo-needs-planning und Kommentar; projektkonfigurierte Checks der delegierten Workflows grün. Nichts außerhalb der genannten Issues ändern. Stoppe, wenn alle gewählten Issues verarbeitet sind.
+/goal Arbeite die via /firmo apply analysierten Issues (#… , #…) vollständig ab und durchlaufe die verbleibenden Phasen dieses Workflows: setze jedes ausreichend spezifizierte Issue über den passenden Umsetzungs-Skill um, erstelle je genau einen PR (Closes #<Issue>), kommentiere den PR-Link, setze firmo-issue-done und hake den Epic-Eintrag ab; markiere unzureichende Issues mit firmo-needs-planning und Kommentar; projektkonfigurierte Checks der delegierten Workflows grün. Nichts außerhalb der genannten Issues ändern. Stoppe, wenn alle gewählten Issues verarbeitet sind.
 ```
 
 6. Bei „Ja"/gated (oder normaler Antwort): ohne `/goal`-String gated weiter. Bei „Anpassen": Feedback einarbeiten (Auswahl/Ziel korrigieren) und die Abfrage erneut stellen. Starte Phase 4 erst nach dieser Freigabe.
