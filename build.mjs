@@ -50,10 +50,19 @@ if (!existsSync(versionPath)) {
   process.exit(1);
 }
 const VERSION = readFileSync(versionPath, 'utf8').trim();
-const GIT_SHORT_HASH = execSync('git rev-parse --short HEAD', {
-  cwd: ROOT_DIR,
-  encoding: 'utf8',
-}).trim();
+// The git hash is purely cosmetic version metadata; outside a git repo
+// (e.g. a source export) fall back to a placeholder instead of failing.
+let GIT_SHORT_HASH;
+try {
+  GIT_SHORT_HASH = execSync('git rev-parse --short HEAD', {
+    cwd: ROOT_DIR,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  }).trim();
+} catch {
+  GIT_SHORT_HASH = 'nogit';
+  process.stderr.write('WARN: git hash unavailable, using "nogit"\n');
+}
 const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
 
 // --- Clean and create output directories ---
