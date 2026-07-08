@@ -6,4 +6,8 @@ INSTALL_MODE=copy
 # shellcheck source=local-common.sh
 . "$ROOT_DIR/local-common.sh"
 
-firmo_deploy
+if [ "$#" -gt 0 ]; then
+  firmo_deploy
+else
+  firmo_install_latest_release
+fi

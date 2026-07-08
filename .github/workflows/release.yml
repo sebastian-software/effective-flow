@@ -2,37 +2,31 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   release:
-    name: Verify, build and publish
+    name: Release Please
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-
-      - name: Verify tag matches version.txt
-        run: |
-          expected="v$(cat version.txt)"
-          if [ "$expected" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match version.txt ($expected)" >&2
-            exit 1
-          fi
 
       - name: Format check
         run: pnpm agent:check
@@ -43,10 +37,19 @@ jobs:
       - name: Build distribution
         run: node build.mjs
 
-      - name: Package distribution
-        run: tar -czf "firmo-${GITHUB_REF_NAME}.tar.gz" -C dist .
+      - name: Release Please
+        id: release
+        uses: googleapis/release-please-action@v5
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
 
-      - name: Create release
+      - name: Package distribution
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        run: tar -czf "firmo-${{ steps.release.outputs.tag_name }}.tar.gz" -C dist .
+
+      - name: Upload release archive
+        if: ${{ steps.release.outputs.release_created == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" "firmo-${GITHUB_REF_NAME}.tar.gz" --title "$GITHUB_REF_NAME" --generate-notes
+        run: gh release upload "${{ steps.release.outputs.tag_name }}" "firmo-${{ steps.release.outputs.tag_name }}.tar.gz" --clobber

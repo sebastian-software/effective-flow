@@ -13,17 +13,17 @@ jobs:
     name: Format, test and build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # build.mjs stamps the git short hash into the router; fetch full
           # history so `git rev-parse --short HEAD` resolves instead of "nogit".
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -43,8 +43,8 @@ jobs:
     name: Shellcheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Shellcheck helper scripts
         # Gate at error severity: the scripts use the deliberate `CDPATH= cd`
         # idiom and literal backticks that trip lower-severity style warnings.
-        run: shellcheck --severity=error local-update.sh local-link.sh
+        run: shellcheck --severity=error install-skill.sh local-link.sh

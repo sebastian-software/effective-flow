@@ -11,11 +11,12 @@ Firmo is a **source-to-dist build** for a single Software-Engineering skill set 
 ## Commands
 
 ```sh
-node build.mjs        # build both harnesses into dist/ (also: pnpm build)
-pnpm format           # format with oxfmt (Markdown + JS)
-pnpm agent:check      # oxfmt --check (CI-style, no writes)
-./local-update.sh     # build + copy skill into ~/.claude/skills and ~/.agents/skills
-./local-link.sh       # same but symlinks dist/ (for development)
+node build.mjs           # build both harnesses into dist/ (also: pnpm build)
+pnpm format              # format with oxfmt (Markdown + JS)
+pnpm agent:check         # oxfmt --check (CI-style, no writes)
+./install-skill.sh       # install the latest GitHub release asset
+./install-skill.sh local # build + copy the current checkout
+./local-link.sh          # build + symlink dist/ (for development)
 ```
 
 Package manager is **pnpm** (`packageManager: pnpm@11.9.0`). There is no test suite; correctness is enforced by build-time guards (see below) — after editing sources, `node build.mjs` is the check that must pass.
@@ -42,7 +43,7 @@ The build resolves these — do not hand-write their expansions:
 | ------------------------------------------- | ---------------------------------------------------------------------------- |
 | `{{SKILL:X}}`                               | → `/firmo X` (exposed) or `` `tools/X.md` `` (internal)                      |
 | `{{AGENT:X}}`                               | → `` `X` `` (Codex) or `` `firmo-X` `` (Claude)                              |
-| `{{VERSION}}`                               | version + git short hash                                                     |
+| `{{VERSION}}`                               | release-please manifest version + git short hash                             |
 | ` ```include ` fence (name on its own line) | inlines `src/shared/<name>.md`                                               |
 | ` ```ask ` fence                            | conditional user question (Claude `AskUserQuestion` block / Codex free-text) |
 
@@ -58,12 +59,12 @@ Source frontmatter carries **no** `name` or `type` field — name and category c
 
 ## Versioning
 
-`version.txt` holds the single source of truth (currently bumped via `/firmo version` semantics). The build stamps `<version> (<git-short-hash>)` into both routers and a **version-drift guard** fails the build if Claude and Codex outputs disagree.
-
-For every change that is not a fix, increment the minor component in
-`version.txt` (`x.y.z` → `x.(y+1).0`) as part of the same change.
-For every fix, increment the patch component in `version.txt`
-(`x.y.z` → `x.y.(z+1)`) as part of the same change.
+Release versioning is managed by release-please. The source of truth for the
+current released version is `.release-please-manifest.json`; do not bump versions
+manually in feature or fix commits. Conventional Commit messages drive the next
+release PR, changelog entries, tags, GitHub releases, and release asset upload.
+The build stamps `<manifest-version> (<git-short-hash>)` into both routers and a
+**version-drift guard** fails the build if Claude and Codex outputs disagree.
 
 ## Language rules
 
