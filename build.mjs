@@ -76,12 +76,25 @@ const EXPOSED_TOOLS = [
   'version',
 ];
 
-const versionPath = join(ROOT_DIR, 'version.txt');
-if (!existsSync(versionPath)) {
-  process.stderr.write('ERROR: version.txt not found in project root\n');
+const releasePleaseManifestPath = join(ROOT_DIR, '.release-please-manifest.json');
+if (!existsSync(releasePleaseManifestPath)) {
+  process.stderr.write('ERROR: .release-please-manifest.json not found in project root\n');
   process.exit(1);
 }
-const VERSION = readFileSync(versionPath, 'utf8').trim();
+let VERSION;
+try {
+  const manifest = JSON.parse(readFileSync(releasePleaseManifestPath, 'utf8'));
+  VERSION = manifest['.'];
+} catch (err) {
+  process.stderr.write(`ERROR: Could not read .release-please-manifest.json: ${err.message}\n`);
+  process.exit(1);
+}
+if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(VERSION ?? '')) {
+  process.stderr.write(
+    'ERROR: .release-please-manifest.json must contain a semver string at key "."\n',
+  );
+  process.exit(1);
+}
 // The git hash is purely cosmetic version metadata; outside a git repo
 // (e.g. a source export) fall back to a placeholder instead of failing.
 let GIT_SHORT_HASH;

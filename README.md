@@ -72,7 +72,7 @@ Firmo wird als **Standard-Directory-Skill** ausgeliefert (ein Verzeichnis mit `S
 | Claude Code | `~/.claude/skills/firmo/` (`.md`-Agents)   |
 | Codex       | `~/.agents/skills/firmo/` (`.toml`-Agents) |
 
-Das gebaute Skill ist ein gewöhnliches Agent-Skill. Da das Repo derzeit **privat** ist, sind Installation via `npx skills` und Verknüpfung über dalo erst nach einer Veröffentlichung verfügbar; die primäre Installation läuft lokal über `./local-update.sh` (siehe Abschnitt [Installation](#installation)).
+Das gebaute Skill ist ein gewöhnliches Agent-Skill. Da das Repo derzeit **privat** ist, sind Installation via `npx skills` und Verknüpfung über dalo erst nach einer Veröffentlichung verfügbar; die primäre Installation läuft über das veröffentlichte Release-Archiv mit `./install-skill.sh` (siehe Abschnitt [Installation](#installation)).
 
 Empfohlene Codex-Konfiguration (`~/.codex/config.toml`):
 
@@ -85,16 +85,22 @@ max_depth = 1
 ## Installation
 
 ```sh
-./local-update.sh
+./install-skill.sh
 ```
 
 Das Script:
 
-1. baut für beide Harnesses (`dist/codex/firmo/`, `dist/claude/firmo/`),
+1. lädt das Archiv der letzten verfügbaren GitHub-Release-Version herunter,
 2. kopiert das Firmo-Skill nach `~/.claude/skills/firmo` und `~/.agents/skills/firmo`,
 3. räumt alte `sf-*`-Skills, `~/.codex/agents/sf-*.toml` und den früheren Marketplace `sf-claude-plugin` auf.
 
 Nur das `firmo`-Verzeichnis wird verwaltet: ein bestehender externer `~/.claude/skills`-Symlink (z. B. von dalo) und fremde Nachbar-Skills bleiben unangetastet.
+
+Für Installation aus dem aktuell ausgecheckten Stand statt aus dem letzten Release:
+
+```sh
+./install-skill.sh local
+```
 
 Für Symlinks statt Kopien (Entwicklung):
 
@@ -256,7 +262,7 @@ firmo/  (Repo)
 │   ├── claude/firmo/                # Router-SKILL.md + tools/*.md + agents/*.md
 │   └── codex/firmo/                 # Router-SKILL.md + tools/*.md + agents/*.toml
 ├── build.mjs
-├── local-update.sh
+├── install-skill.sh
 └── local-link.sh
 ```
 
