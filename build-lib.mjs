@@ -216,8 +216,9 @@ export function assertQuotedDescription(frontmatter, { context } = {}) {
 
 // --- Reference transforms ---
 //
-// {{SKILL:X}} -> `/firmo <name>` for exposed tools, or `` `tools/<name>.md` ``
-//               for internal tools (loaded on demand by `apply`).
+// {{SKILL:X}} -> harness-specific exposed tool invocation, or
+//                `` `tools/<name>.md` `` for internal tools (loaded on demand
+//                by `apply`).
 // {{AGENT:X}} -> the subagent reference. Codex auto-discovers nested skill
 // agents by their bare name; Claude Code only sees agents registered under
 // ~/.claude/agents, so they are referenced namespaced as `firmo-X`.
@@ -230,9 +231,11 @@ export function transformRefs(
     validateRefs(body, { knownTools, knownAgents, context });
   }
   const agentName = (raw) => (harness === 'claude' ? `${agentPrefix}${raw}` : raw);
+  const skillInvocation = (raw) => (harness === 'codex' ? `$firmo ${raw}` : `/firmo ${raw}`);
   return body
+    .replace(/\{\{FIRMO\}\}/g, harness === 'codex' ? '$firmo' : '/firmo')
     .replace(/\{\{SKILL:([^}]+)\}\}/g, (_, raw) =>
-      exposedTools.includes(raw) ? `/firmo ${raw}` : `\`tools/${raw}.md\``,
+      exposedTools.includes(raw) ? skillInvocation(raw) : `\`tools/${raw}.md\``,
     )
     .replace(/\{\{AGENT:([^}]+)\}\}/g, (_, raw) => `\`${agentName(raw)}\``);
 }

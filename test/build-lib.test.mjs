@@ -167,7 +167,11 @@ test('assertQuotedDescription rejects a missing description', () => {
 
 test('transformRefs maps exposed vs internal tools and agents per harness', () => {
   assert.equal(transformRefs('{{SKILL:fix}}', 'claude', refConfig), '/firmo fix');
+  assert.equal(transformRefs('{{SKILL:fix}}', 'codex', refConfig), '$firmo fix');
+  assert.equal(transformRefs('{{FIRMO}} plan #118', 'claude', refConfig), '/firmo plan #118');
+  assert.equal(transformRefs('{{FIRMO}} plan #118', 'codex', refConfig), '$firmo plan #118');
   assert.equal(transformRefs('{{SKILL:apply-plan}}', 'claude', refConfig), '`tools/apply-plan.md`');
+  assert.equal(transformRefs('{{SKILL:apply-plan}}', 'codex', refConfig), '`tools/apply-plan.md`');
   assert.equal(
     transformRefs('{{AGENT:nodejs-implementer}}', 'claude', refConfig),
     '`firmo-nodejs-implementer`',
@@ -227,6 +231,14 @@ test('renderBody runs ask + ref transforms for claude', () => {
   assert.equal(
     renderBody(body, 'claude', { ...refConfig, context: 't.md' }),
     'Intro /firmo fix and `firmo-code-validator`.\n',
+  );
+});
+
+test('renderBody uses Codex skill invocation syntax for exposed tool refs', () => {
+  const body = 'Intro {{SKILL:fix}} and {{AGENT:code-validator}}.\n';
+  assert.equal(
+    renderBody(body, 'codex', { ...refConfig, context: 't.md' }),
+    'Intro $firmo fix and `code-validator`.\n',
   );
 });
 
