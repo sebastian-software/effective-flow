@@ -200,10 +200,15 @@ try {
     context: 'SKILL.md',
   });
 
-  const catalog = EXPOSED_TOOLS.map((name) => {
-    const t = tools.find((x) => x.name === name);
-    return `- \`/firmo ${name}\` — ${firstSentence(t.description)}`;
-  }).join('\n');
+  const skillInvocation = (harness, name) =>
+    harness === 'codex' ? `$firmo ${name}` : `/firmo ${name}`;
+  const routerDescForHarness = (harness) =>
+    harness === 'codex' ? routerDesc.replaceAll('/firmo', '$firmo') : routerDesc;
+  const catalogForHarness = (harness) =>
+    EXPOSED_TOOLS.map((name) => {
+      const t = tools.find((x) => x.name === name);
+      return `- \`${skillInvocation(harness, name)}\` — ${firstSentence(t.description)}`;
+    }).join('\n');
 
   // Static autocomplete hint for the `<tool>` argument, kept in sync with EXPOSED_TOOLS.
   const argumentHint = `[${EXPOSED_TOOLS.join('|')}]`;
@@ -215,7 +220,7 @@ try {
 
     // Router SKILL.md
     const routerBody = renderBody(
-      routerBodyRaw.replace(/\{\{TOOL_CATALOG\}\}/g, catalog),
+      routerBodyRaw.replace(/\{\{TOOL_CATALOG\}\}/g, catalogForHarness(harness)),
       harness,
       {
         ...refConfig,
@@ -225,7 +230,7 @@ try {
     const routerContent = [
       '---',
       `name: ${routerName}`,
-      `description: "${routerDesc}"`,
+      `description: "${routerDescForHarness(harness)}"`,
       `argument-hint: "${argumentHint}"`,
       '---',
       routerBody,

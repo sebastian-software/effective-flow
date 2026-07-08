@@ -71,8 +71,8 @@ apply-source-detection
 
 Alle Status-Updates werden als Issue-Kommentare geschrieben (Operation „Kommentar hinzufügen“ aus dem Mapping oben). Verwende diese kanonischen Vorlagen und beginne jeden Firmo-Kommentar mit der Markierung `<!-- firmo-apply-issues -->`, damit spätere Läufe eigene Kommentare erkennen und Doppel-Kommentare vermeiden:
 
-- **Umgesetzt:** `🤖 Umgesetzt via /firmo apply — PR #<nr>` (keine internen IDs, kein `Co-Authored-By`).
-- **Übersprungen:** `⏭️ Übersprungen: Für eine autonome Umsetzung fehlen noch Angaben: <Liste des Fehlenden>. Mit /firmo plan-issue vervollständigen.`
+- **Umgesetzt:** `🤖 Umgesetzt via {{FIRMO}} apply — PR #<nr>` (keine internen IDs, kein `Co-Authored-By`).
+- **Übersprungen:** `⏭️ Übersprungen: Für eine autonome Umsetzung fehlen noch Angaben: <Liste des Fehlenden>. Mit {{FIRMO}} plan-issue vervollständigen.`
 - **Fehlgeschlagen:** `⚠️ Umsetzung fehlgeschlagen: <kurzer Grund>. Issue bleibt offen.`
 
 Exponiere in Kommentaren keine internen Tracking-IDs oder Session-Details.
@@ -161,7 +161,7 @@ options:
 5. Bei Wahl „Autonom via `/goal`": gib den `/goal`-String prominent aus und fordere zum Einfügen als neue Eingabe auf. Ohne Einfügen läuft der Skill gated weiter. Form (einzeilig, ohne interne IDs):
 
 ```text
-/goal Arbeite die via /firmo apply analysierten Issues (#… , #…) vollständig ab und durchlaufe die verbleibenden Phasen dieses Workflows: setze jedes ausreichend spezifizierte Issue über den passenden Umsetzungs-Skill um, erstelle je genau einen PR (Closes #<Issue>), kommentiere den PR-Link, setze firmo-issue-done und hake den Epic-Eintrag ab; markiere unzureichende Issues mit firmo-needs-planning und Kommentar; projektkonfigurierte Checks der delegierten Workflows grün. Nichts außerhalb der genannten Issues ändern. Stoppe, wenn alle gewählten Issues verarbeitet sind.
+/goal Arbeite die via {{FIRMO}} apply analysierten Issues (#… , #…) vollständig ab und durchlaufe die verbleibenden Phasen dieses Workflows: setze jedes ausreichend spezifizierte Issue über den passenden Umsetzungs-Skill um, erstelle je genau einen PR (Closes #<Issue>), kommentiere den PR-Link, setze firmo-issue-done und hake den Epic-Eintrag ab; markiere unzureichende Issues mit firmo-needs-planning und Kommentar; projektkonfigurierte Checks der delegierten Workflows grün. Nichts außerhalb der genannten Issues ändern. Stoppe, wenn alle gewählten Issues verarbeitet sind.
 ```
 
 6. Bei „Ja“/gated (oder normaler Antwort): ohne `/goal`-String gated weiter. Bei „Anpassen“: Feedback einarbeiten (Auswahl/Ziel korrigieren) und die Abfrage erneut stellen. Starte Phase 4 erst nach dieser Freigabe.
@@ -184,7 +184,7 @@ Die Commit-/PR-Strategie ist fest **„ein PR pro Issue“** (keine Commit-Strat
    - Bugfix: `Verwende den Skill {{SKILL:fix}} für dieses Issue.`
    - Refactoring: `Verwende den Skill {{SKILL:refactor}} für dieses Issue.`
    - Dokumentation: `Verwende den Skill {{SKILL:docs}} für dieses Issue.`
-     Der Delegations-Sub-Agent läuft als **nicht-interaktive** Delegation (Kontext-Hinweis „[Kontext von /firmo apply-issues: …]“): keine explizite Goal-Abfrage, kein `/goal`-String, Fertig-Protokoll `ERLEDIGT`/`ABBRUCH`.
+     Der Delegations-Sub-Agent läuft als **nicht-interaktive** Delegation (Kontext-Hinweis „[Kontext von {{FIRMO}} apply-issues: …]“): keine explizite Goal-Abfrage, kein `/goal`-String, Fertig-Protokoll `ERLEDIGT`/`ABBRUCH`.
 2. Änderungen committen (Conventional-Commit-Message, keine internen IDs, kein `Co-Authored-By`) und den Branch über `{{SKILL:pr}}` als genau einen PR gegen den Basis-Branch führen; im PR-Body `Closes #<Issue>` setzen.
 3. **Direkt nach PR-Erstellung:** PR-Link als Kommentar ans Issue schreiben (Vorlage „Umgesetzt“), Label `firmo-issue-done` setzen und – falls das Issue aus einem Container stammt – den zugehörigen Checklisten-Eintrag im Epic-Body abhaken (Epic-Body frisch lesen, nur die betroffene Zeile `- [ ]` → `- [x]` umschalten und den PR-Link anhängen).
 4. Task auf `completed`.

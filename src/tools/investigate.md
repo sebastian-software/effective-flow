@@ -94,7 +94,7 @@ Wenn die Scorecard die Diagnose nicht trägt, benenne die konkreten nächsten Di
 
 1. Lege `.firmo/investigation/` an, falls nötig.
 2. Schreibe den Diagnose-Report nach `.firmo/investigation/investigation-YYYY-MM-DD-<slug>.md` gemäß Report-Template unten.
-3. Gib genau eine Folge-Empfehlung mit Begründung aus (siehe „Routing nach außen“) und dazu einen copy-paste-baren Aufruf-Vorschlag, der den Report-Pfad referenziert, z. B. `/firmo fix .firmo/investigation/investigation-YYYY-MM-DD-<slug>.md`.
+3. Gib genau eine Folge-Empfehlung mit Begründung aus (siehe „Routing nach außen“) und dazu einen copy-paste-baren Aufruf-Vorschlag, der den Report-Pfad referenziert, z. B. `{{FIRMO}} fix .firmo/investigation/investigation-YYYY-MM-DD-<slug>.md`.
 4. Biete optional an, direkt in den empfohlenen Folge-Workflow zu übergeben; starte ihn nicht ungefragt.
 
 ## Report-Template
@@ -127,9 +127,9 @@ Wenn die Scorecard die Diagnose nicht trägt, benenne die konkreten nächsten Di
 
 ## Empfehlung
 
-**Folge-Workflow:** /firmo fix | /firmo refactor | /firmo build | /firmo docs | weitere Investigation nötig | Keine Aktion
+**Folge-Workflow:** {{FIRMO}} fix | {{FIRMO}} refactor | {{FIRMO}} build | {{FIRMO}} docs | weitere Investigation nötig | Keine Aktion
 **Begründung:** [kurz]
-**Aufruf-Vorschlag:** [z. B. `/firmo fix .firmo/investigation/investigation-YYYY-MM-DD-<slug>.md`]
+**Aufruf-Vorschlag:** [z. B. `{{FIRMO}} fix .firmo/investigation/investigation-YYYY-MM-DD-<slug>.md`]
 
 ## Offene Punkte / benötigte Entscheidungen
 

@@ -10,6 +10,13 @@ zusammengefasst und daher gröber als künftige Einträge.
 
 ## [Unreleased]
 
+## [1.39.1] - 2026-07-08
+
+### Fixed
+
+- Codex-Ausgaben rendern Firmo-Aufrufhinweise als `$firmo ...` statt als
+  `/firmo ...`.
+
 ### Added
 
 - CI-Workflow (Format-Check, Tests, Build, Shellcheck) und Release-Workflow mit
