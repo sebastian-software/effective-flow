@@ -60,6 +60,9 @@ Source frontmatter carries **no** `name` or `type` field — name and category c
 
 `version.txt` holds the single source of truth (currently bumped via `/firmo version` semantics). The build stamps `<version> (<git-short-hash>)` into both routers and a **version-drift guard** fails the build if Claude and Codex outputs disagree.
 
+For every change that is not a fix, increment the minor component in
+`version.txt` (`x.y.z` → `x.(y+1).0`) as part of the same change.
+
 ## Language rules
 
 Unless the user asks otherwise (see `src/shared/language-rules.md`):
