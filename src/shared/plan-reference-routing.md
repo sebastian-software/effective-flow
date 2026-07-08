@@ -36,6 +36,18 @@ Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel 
    - frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit dem aktuellen Workflow verwenden will
 6. Wenn die Empfehlung fehlt oder unklar ist: fahre nach Statusprüfung fort, weise aber auf die fehlende oder unklare Empfehlung hin.
 
+### Offene Punkte prüfen
+
+1. Prüfe, ob der Plan einen Abschnitt `## Offene Punkte` oder `## Open Points` enthält.
+2. Wenn der Abschnitt fehlt: fahre fort. Ältere Pläne ohne diesen Abschnitt bleiben kompatibel.
+3. Wenn der Abschnitt existiert und ausschließlich `- Keine offenen Punkte.` oder `- No open points.` enthält: fahre fort.
+4. Wenn der Abschnitt andere Einträge enthält:
+   - zeige die offenen Punkte kurz an,
+   - warne, dass der Plan noch nicht vollständig entschieden ist,
+   - frage den User, ob der aktuelle Workflow trotzdem fortfahren soll.
+5. Ohne ausdrückliche Bestätigung: brich ab und verweise auf `{{SKILL:review}} <plandatei>` als Klärungsweg.
+6. Bei Bestätigung: fahre fort und halte im Wisdom-Kontext fest, dass der User die Umsetzung trotz offener Punkte bestätigt hat.
+
 ### Nach erfolgreicher Prüfung
 
 - Verwende die Inhalte der Plan-Datei als abgestimmte Grundlage für den aktuellen Workflow.

@@ -281,6 +281,10 @@ Vollständiges Plan-Template (Statuszeile gemäß gewählter Markersprache einse
 ### Befunde
 
 - Keine Befunde. / [Befund mit Bereich, Schweregrad, Problem und Anpassung]
+
+## Offene Punkte
+
+- Keine offenen Punkte.
 ```
 
 Regeln:
@@ -292,6 +296,7 @@ Regeln:
 - Vermeide Codeblöcke im Plan. Nutze sie nur, wenn eine kurze Codeformulierung klarer und kürzer ist als eine prose Beschreibung.
 - Wenn ein Codebeispiel nötig ist, begrenze es auf das kleinste aussagekräftige Fragment und dokumentiere, dass es ein Beispiel oder eine Schnittstellenskizze ist.
 - Ergänze einen Abschnitt `## Plan-Review` gemäß Template. Er enthält ausschließlich Befunde auf Plan-Ebene, keine Code-Review-Findings.
+- Ergänze am Ende des Plans einen Abschnitt für offene Punkte. Bei deutschsprachigen Plänen heißt er `## Offene Punkte` mit leerem Zustand `- Keine offenen Punkte.`; bei englischsprachigen Plänen heißt er `## Open Points` mit leerem Zustand `- No open points.`. Wenn der User eine Entscheidung später treffen will, dokumentiere den Punkt dort konkret mit Wiedereinstiegshinweis.
 - Schreibe keine `## Testergebnisse` und keine `## Review-Findings`, weil noch nichts implementiert wurde.
 - Setze den kanonischen offenen Planstatus exakt entsprechend der in Phase 3 gewählten Markersprache: deutsch auf `**Planungsstatus:** Nicht umgesetzt` oder englisch auf `**Plan status:** Not implemented`; `{{SKILL:build}}`, `{{SKILL:fix}}`, `{{SKILL:refactor}}` und `{{SKILL:docs}}` nutzen diesen Status später, um die Planungs- bzw. Analysegrundlage zu erkennen.
 - Setze genau eine Zeile `**Empfohlener Workflow:** ...` im Kopfbereich. Wähle eine der vier Kategorien Feature, Bugfix, Refactoring oder Dokumentation und nenne den passenden Skill in Klammern.
@@ -362,6 +367,29 @@ Vorgehen:
 3. Arbeite wichtige Befunde ein oder dokumentiere im `## Plan-Review`, warum sie bewusst nicht umgesetzt werden.
 4. Aktualisiere den Abschnitt `## Plan-Review` mit Ergebnis, Zusammenfassung und Befunden.
 5. Wenn nach der Überarbeitung weiterhin kritische Befunde bestehen, frage den User nach der fehlenden Entscheidung und schließe den Plan nicht ab.
+
+### Phase 6b: Vertiefter interaktiver Plan-Review
+
+Wenn der interne Plan-Review aus Phase 6 keine kritischen Befunde mehr enthält,
+frage den User, ob der vertiefte interaktive Plan-Review jetzt gestartet werden
+soll.
+
+```ask
+header: Plan-Review
+question: Vertieften interaktiven Plan-Review jetzt starten?
+options:
+  - label: Ja
+    description: Jetzt nach unbekannten, ungenauen und entscheidungsbedürftigen Punkten suchen
+  - label: Nein
+    description: Später über review <plandatei> fortsetzen
+```
+
+Bei `Ja`: Lies die interne Anweisung `{{SKILL:plan-review}}` und führe sie mit der
+gerade erzeugten Plan-Datei aus. Halte weiterhin die Schreibgrenze ein: nur die
+Plan-Datei unter `docs/plan/` darf geändert werden.
+
+Bei `Nein`: Fahre mit Phase 7 fort und nenne im Abschluss den Wiedereinstieg über
+`{{SKILL:review}} <plandatei>`.
 
 ### Phase 7: Abschluss
 

@@ -1,5 +1,5 @@
 ---
-description: "Orchestriert ein umfassendes Code-Review: Scope-Bestimmung, Designentscheidungs-Erkennung, technische Validierung, fachliches Review, Findings-Qualitätsprüfung und Berichtserstellung mit Prompt-Vorschlägen für {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}} oder {{SKILL:docs}}."
+description: "Orchestriert ein umfassendes Code-Review oder bei Plan-Datei-Argument einen vertieften interaktiven Plan-Review: Scope-Bestimmung, Designentscheidungs-Erkennung, technische Validierung, fachliches Review und Berichtserstellung."
 ---
 
 # Firmo Review
@@ -234,6 +234,31 @@ Die Wisdom-Datei transportiert die Outputs der parallelen Phase-2-Streams zwisch
 Lösche die Datei am Ende des Workflows, vor `ERLEDIGT`.
 
 ## Workflow
+
+### Plan-Datei-Sonderfall
+
+Prüfe vor Phase 1 und vor jeder Code-Review-spezifischen Initialisierung
+(`.firmo/config.json`-Migration, Tracker-Modus, Memory, Cache oder Wisdom-Datei),
+ob das User-Argument eindeutig auf eine Plan-Datei unter `docs/plan/` zeigt.
+
+Erlaubte Formen sind:
+
+- vollständiger Pfad, z. B. `docs/plan/0066-feature.md`
+- Dateiname, z. B. `0066-feature.md`
+- vierstellige Nummer, z. B. `0066`
+
+Wenn genau eine Plan-Datei gefunden wird:
+
+1. Lade keine Code-Review-Konfiguration, keinen Tracker-Modus, keine Memory-Datei,
+   keinen Cache und keine Wisdom-Datei.
+2. Lies die interne Anweisung `{{SKILL:plan-review}}`.
+3. Führe sie mit der aufgelösten Plan-Datei aus.
+4. Beende danach diesen `review`-Workflow; starte keinen Code-Review.
+
+Wenn keine oder mehrere Plan-Dateien passen, behandle das Argument nicht als
+Plan-Datei-Sonderfall und fahre mit Phase 1 fort. Falls der User erkennbar einen
+Plan-Review wollte, frage nach der konkreten Plan-Datei statt einen Code-Review zu
+raten.
 
 ### Phase 1: Scope
 
