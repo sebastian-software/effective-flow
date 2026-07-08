@@ -10,6 +10,13 @@ zusammengefasst und daher gröber als künftige Einträge.
 
 ## [Unreleased]
 
+## [1.40.0] - 2026-07-08
+
+### Changed
+
+- Versionierungsregel präzisiert: Fixes, die per Pull Request ausgeliefert
+  werden, erhöhen künftig die Patch-Version.
+
 ## [1.39.1] - 2026-07-08
 
 ### Fixed
