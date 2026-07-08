@@ -39,8 +39,10 @@ Typ in dieser Reihenfolge (erste zutreffende Regel gewinnt):
 3. **Review-Report** → `review-report`, wenn das Argument ein `*.md`-Pfad unter
    `.firmo/review/` ist (bzw. ein Dateiname, der sich dort auflöst).
 4. **Issue-Referenz** → `issue-reference` (weiter mit Stufe B), wenn das Argument eine
-   bare Issue-Nummer (`123`), ein `#123` oder eine Issue-URL ist. Mehrere solcher
-   Referenzen werden als Liste behandelt und einzeln in Stufe B klassifiziert.
+   bare Issue-Nummer (`123`), ein `#123` oder eine Issue-URL ist. Issue-URLs sind
+   hostneutral: erkenne `https://<host>/<owner>/<repo>/issues/<nr>` und vergleichbare
+   Forgejo-/Gitea-URL-Formen genauso wie GitHub-URLs. Mehrere solcher Referenzen werden
+   als Liste behandelt und einzeln in Stufe B klassifiziert.
 5. **Sonst** → `ambiguous`: das Argument löst sich zu keiner Kategorie auf oder passt
    gleichzeitig zu einer Plan- **und** einer Review-Datei. Nicht raten – der Aufrufer
    fragt nach (siehe „Mehrdeutigkeit und Fallbacks“).
