@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.1](https://github.com/fastner/firmo/compare/firmo-v1.41.0...firmo-v1.41.1) (2026-07-09)
+
+
+### Bug Fixes
+
+* require new commits for PR updates ([#74](https://github.com/fastner/firmo/issues/74)) ([52c5106](https://github.com/fastner/firmo/commit/52c51060a6e05faafd66ec5480e27f5a36df4d88))
+
 ## [1.41.0](https://github.com/fastner/firmo/compare/firmo-v1.40.1...firmo-v1.41.0) (2026-07-09)
 
 
