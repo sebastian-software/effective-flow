@@ -264,7 +264,7 @@ options:
 
 ### Phase 2: Implementierung
 
-0. Bestimme gemäß „Worktree-Integration“ den effektiven Worktree-Modus und führe bei aktivem Modus zuerst das Worktree-Setup aus. Alle folgenden Phasen 2–6 (Implementierung, Doku, Tests, Validierung, Review) laufen dann mit Arbeitsverzeichnis im Worktree.
+0. Bestimme gemäß „Delivery- und Worktree-Integration“ den effektiven Delivery-/Worktree-Modus und führe bei aktivem Modus zuerst das passende Setup aus: Worktree-Setup bei Worktree-Ausführung oder Liefer-Branch-Setup im Haupt-Repo bei In-Place-Delivery. Alle folgenden Phasen 2–6 (Implementierung, Doku, Tests, Validierung, Review) laufen dann im Liefer-Arbeitsverzeichnis.
 1. Starte den passenden Implementer-Skill mit dem abgestimmten Plan:
    - Frontend: `Verwende den Skill {{AGENT:ui-implementer}} für diese Phase.`
    - Backend/CLI: `Verwende den Skill {{AGENT:nodejs-implementer}} für diese Phase.`
@@ -399,8 +399,8 @@ Regeln für den Findings-Bericht:
 
 4. Lösche die Wisdom-Datei.
 5. Prüfe ob ein Formatter konfiguriert ist und formatiere alle geänderten Dateien inklusive Plan-Datei einmal einheitlich.
-6. Wenn der Worktree-Modus aktiv war: führe das Handback gemäß „Worktree-Integration“ aus (Änderungen committen, Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`).
-7. Fasse zusammen, was implementiert, getestet und dokumentiert wurde; nenne bei aktivem Worktree-Modus zusätzlich den Liefer-Branch und das Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch).
+6. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus (Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen).
+7. Fasse zusammen, was implementiert, getestet und dokumentiert wurde; nenne bei aktivem Delivery-/Worktree-Modus zusätzlich den Liefer-Branch, den finalen Checkout-Zustand und das Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch).
 
 ## Regeln
 

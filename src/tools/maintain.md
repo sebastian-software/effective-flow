@@ -136,7 +136,7 @@ options:
 
 ### Phase 2: Baseline
 
-Bestimme zuerst gemäß „Worktree-Integration“ den effektiven Worktree-Modus und führe bei aktivem Modus das Worktree-Setup aus, bevor die Baseline erhoben wird. Baseline, Apply pro Gruppe und Review (Phasen 2–4) laufen dann mit Arbeitsverzeichnis im Worktree; die Commits pro Gruppe aus Phase 3 landen so direkt auf dem Liefer-Branch.
+Bestimme zuerst gemäß „Delivery- und Worktree-Integration“ den effektiven Delivery-/Worktree-Modus und führe bei aktivem Modus das passende Setup aus, bevor die Baseline erhoben wird: Worktree-Setup bei Worktree-Ausführung oder Liefer-Branch-Setup im Haupt-Repo bei In-Place-Delivery. Baseline, Apply pro Gruppe und Review (Phasen 2–4) laufen dann im Liefer-Arbeitsverzeichnis; die Commits pro Gruppe aus Phase 3 landen so direkt auf dem Liefer-Branch.
 
 Starte parallel:
 
@@ -183,7 +183,7 @@ Reine Dependency-Bumps ohne Code-Anpassung brauchen kein Reviewer-Pass; vermerke
    - Verweis auf einen ausgelagerten Review-Report, falls vorhanden.
 3. Bestätige, dass das Verhalten unverändert blieb (Baseline-Abgleich grün).
 4. Lösche die Wisdom-Datei.
-5. Wenn der Worktree-Modus aktiv war: führe das Handback gemäß „Worktree-Integration“ aus. Die Commits pro Gruppe liegen bereits auf dem Liefer-Branch; das Handback zieht den Worktree zurück und führt die Abschluss-Aktion `pr`/`merge`/`branch` aus. Nenne Liefer-Branch und Ergebnis in der Zusammenfassung.
+5. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus. Die Commits pro Gruppe liegen bereits auf dem Liefer-Branch; das Handback zieht ggf. den Worktree zurück, führt die Abschluss-Aktion `pr`/`merge`/`branch` aus und stellt den Checkout zurück. Nenne Liefer-Branch, finalen Checkout-Zustand und Ergebnis in der Zusammenfassung.
 
 ```include
 pre-commit-gate

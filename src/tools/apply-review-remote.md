@@ -40,7 +40,7 @@ Lege die Per-Finding-Tasks wie im lokalen Modus an; die Finding-ID ist die `R-XX
 
 ### Phase 2 remote: Commit- und PR-Strategie
 
-Die Commit-Strategie ist im Remote-Modus fest **„ein PR pro Finding“** — die lokale Commit-Strategie-Frage entfällt. Jedes umsetzbare Finding ist eine **eigene Sub-Gruppe** in einem eigenen Worktree/Branch. Basis-Branch und Branch-Namensbildung stützen sich auf den bestehenden `worktree`-Config-Block: Branch `<branchPrefix>/apply-review/<R-ID-oder-slug>` ab `worktree.baseBranch`. Dateiüberlappende Findings laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden; die Union-Find-Zusammenfassung aus Phase 4.2 entfällt, weil jedes Finding einen eigenen Branch/PR braucht. Die Stash-Policy und der `/goal`-String werden wie im lokalen Modus behandelt.
+Die Commit-Strategie ist im Remote-Modus fest **„ein PR pro Finding“** — die lokale Commit-Strategie-Frage entfällt. Jedes umsetzbare Finding ist eine **eigene Sub-Gruppe** in einem eigenen Liefer-Branch, bevorzugt mit Worktree-Isolation. Basis-Branch und Branch-Namensbildung stützen sich auf den `delivery`-Config-Block: Branch `<delivery.branchPrefix>/apply-review/<R-ID-oder-slug>` ab `delivery.baseBranch` (Legacy-Fallback: alte `worktree.baseBranch`/`worktree.branchPrefix`-Werte). Dateiüberlappende Findings laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden; die Union-Find-Zusammenfassung aus Phase 4.2 entfällt, weil jedes Finding einen eigenen Branch/PR braucht. Die Stash-Policy und der `/goal`-String werden wie im lokalen Modus behandelt.
 
 ### Phase 3 remote: ADR referenziert Issue
 
