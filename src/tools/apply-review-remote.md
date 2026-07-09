@@ -30,6 +30,10 @@ Der Argumenttyp hat Vorrang vor der Config (siehe „Modus bestimmen“ in der T
 
 Ersetzt das Einlesen der Report-Datei. Bestimme die abzuarbeitenden Finding-Issues (Epic-Task-Liste parsen bzw. übergebene Liste verwenden). Lies je Finding-Issue den vollständigen Body **und die Kommentare frisch vom Tracker** (Operation „Kommentare lesen“) und klassifiziere:
 
+- **Ziel-PR vorhanden:** Wenn Body oder Nicht-Firmo-Kommentar einen Ziel-PR nennt
+  (`Ziel-PR: #<nr>`, `Target PR: #<nr>` oder eine PR-URL), notiere PR-Nummer, URL,
+  Head-Branch und Basis-Branch des PRs. Ein Ziel-PR überschreibt die
+  Standard-Strategie „ein PR pro Finding“ für dieses Finding.
 - **Label `wontfix`** → nicht umsetzen, ADR erstellen (Phase 3 remote).
 - **bereits abgehakt/geschlossen** → überspringen.
 - **Sub-Issue ohne Ziel-Aktion oder Prompt** (manuell verändert) → als nicht umsetzbar melden, nicht raten.
@@ -40,7 +44,17 @@ Lege die Per-Finding-Tasks wie im lokalen Modus an; die Finding-ID ist die `R-XX
 
 ### Phase 2 remote: Commit- und PR-Strategie
 
-Die Commit-Strategie ist im Remote-Modus fest **„ein PR pro Finding“** — die lokale Commit-Strategie-Frage entfällt. Jedes umsetzbare Finding ist eine **eigene Sub-Gruppe** in einem eigenen Liefer-Branch, bevorzugt mit Worktree-Isolation. Basis-Branch und Branch-Namensbildung stützen sich auf den `delivery`-Config-Block: Branch `<delivery.branchPrefix>/apply-review/<R-ID-oder-slug>` ab `delivery.baseBranch` (Legacy-Fallback: alte `worktree.baseBranch`/`worktree.branchPrefix`-Werte). Dateiüberlappende Findings laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden; die Union-Find-Zusammenfassung aus Phase 4.2 entfällt, weil jedes Finding einen eigenen Branch/PR braucht. Die Stash-Policy und der `/goal`-String werden wie im lokalen Modus behandelt.
+Die Commit-/PR-Strategie ist im Remote-Modus standardmäßig **„ein PR pro Finding“** — die lokale Commit-Strategie-Frage entfällt. Jedes umsetzbare Finding ohne Ziel-PR ist eine **eigene Sub-Gruppe** in einem eigenen Liefer-Branch, bevorzugt mit Worktree-Isolation. Basis-Branch und Branch-Namensbildung stützen sich auf den `delivery`-Config-Block: Branch `<delivery.branchPrefix>/apply-review/<R-ID-oder-slug>` ab `delivery.baseBranch` (Legacy-Fallback: alte `worktree.baseBranch`/`worktree.branchPrefix`-Werte). Dateiüberlappende Findings laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden.
+
+Hat ein Finding einen Ziel-PR aus Phase 1 remote, gilt stattdessen **„neuer Commit auf existierendem PR“**:
+
+1. Erstelle keinen neuen Liefer-Branch und keinen neuen PR.
+2. Hole den Head-Branch des Ziel-PRs, checke ihn in einem isolierten Worktree oder im sauberen aktuellen Checkout aus und aktualisiere ihn per normalem Pull/Fetch ohne Rebase- oder Force-Operation.
+3. Setze das Finding dort um und committe die Änderung als neuen Commit auf dem PR-Branch. Bestehende PR-Commits dürfen nicht per `commit --amend`, Rebase, Squash oder Force-Push umgeschrieben werden.
+4. Pushe den PR-Branch normal. Wird der Push wegen divergierter Remote-History abgelehnt, markiere das Finding als fehlgeschlagen und melde den Konflikt, statt History zu überschreiben.
+5. Verwende die URL des bestehenden PRs als Ergebnis-PR-Link für Issue-Kommentar, Epic-Eintrag und Zusammenfassung.
+
+Findings mit demselben Ziel-PR laufen sequenziell, damit neue Commits geordnet auf demselben PR-Branch entstehen. Findings ohne Ziel-PR behalten die Standard-Strategie „ein PR pro Finding“. Die Stash-Policy und der `/goal`-String werden wie im lokalen Modus behandelt.
 
 ### Phase 3 remote: ADR referenziert Issue
 
@@ -52,9 +66,9 @@ Pro umsetzbarem Finding, in dessen Worktree:
 
 1. Vorabanalyse und Umsetzung wie in Phase 4.1/4.3 über den passenden Delegations-Skill (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}`, `{{SKILL:docs}}`). Gib einen in Phase 1 remote erkannten Entwicklerkommentar als zusätzlichen Kontext an den Delegations-Skill mit.
 2. Änderungen committen (Conventional-Commit-Message, keine internen Finding-IDs, kein `Co-Authored-By`), Branch pushen.
-3. Über `{{SKILL:pr}}` genau einen PR gegen den Basis-Branch erstellen; im PR-Body `Closes #<Sub-Issue>` setzen.
-4. **Direkt nach PR-Erstellung** den zugehörigen Eintrag im Epic-Body abhaken (`- [ ]` → `- [x]`, PR-Link anhängen) und optional den PR-Link als Kommentar ans Sub-Issue schreiben. Body vor dem Ändern frisch lesen und nur die betroffene Zeile umschalten.
-5. **Schlägt die PR-Erstellung fehl** (Push abgelehnt, kein Commit): Finding als fehlgeschlagen markieren, Epic-Eintrag **nicht** abhaken, nächstes Finding fortsetzen.
+3. Wenn ein Ziel-PR vorhanden ist: **keinen neuen PR erstellen**, sondern den bestehenden PR-Link verwenden und optional den PR-Body nur nicht-destruktiv um `Closes #<Sub-Issue>` oder `Refs #<Sub-Issue>` ergänzen, falls das ohne Überschreiben fremder Änderungen möglich ist. Wenn kein Ziel-PR vorhanden ist: über `{{SKILL:pr}}` genau einen PR gegen den Basis-Branch erstellen; im PR-Body `Closes #<Sub-Issue>` setzen.
+4. **Direkt nach erfolgreichem Push bzw. PR-Erstellung** den zugehörigen Eintrag im Epic-Body abhaken (`- [ ]` → `- [x]`, PR-Link anhängen) und optional den PR-Link als Kommentar ans Sub-Issue schreiben. Body vor dem Ändern frisch lesen und nur die betroffene Zeile umschalten.
+5. **Schlägt Push oder PR-Erstellung fehl** (Push abgelehnt, kein Commit): Finding als fehlgeschlagen markieren, Epic-Eintrag **nicht** abhaken, nächstes Finding fortsetzen.
 6. **Fehlt ein zugeordnetes Epic** (Issue-Listen-Modus): Finding trotzdem umsetzen und PR erstellen; das Abhaken entfällt und wird dem User gemeldet.
 
 ### Phase 5 remote: Tracking-Oberfläche statt Report
