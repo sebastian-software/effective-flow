@@ -142,7 +142,7 @@ Dies ist die Freigabe-Grenze dieses Workflows: Die Klassifikation steht fest, un
 | #<nr> | … | unzureichend | fehlt: … |
 ```
 
-2. Deklariere gemäß „Goal-getriebene Abschlusssteuerung“ (Prinzip 1) die explizite Abschlussbedingung für die Phasen 4–5: jedes `ausreichend`-Issue ist über den passenden Umsetzungs-Skill umgesetzt und hat genau einen PR (`Closes #<Issue>`) mit PR-Kommentar, Label `firmo-issue-done` und – bei Container-Herkunft – abgehaktem Epic-Eintrag; jedes `unzureichend`-Issue trägt `firmo-needs-planning` samt Kommentar; die projektkonfigurierten Checks der delegierten Workflows sind grün; nichts außerhalb der gewählten Issues wird geändert.
+2. Deklariere gemäß „Goal-getriebene Abschlusssteuerung“ (Prinzip 1) die explizite Abschlussbedingung für die Phasen 4–5: jedes `ausreichend`-Issue ist über den passenden Umsetzungs-Skill umgesetzt und hat entweder einen neu erstellten PR oder einen neuen Commit auf dem angegebenen Ziel-PR mit PR-Kommentar, Label `firmo-issue-done` und – bei Container-Herkunft – abgehaktem Epic-Eintrag; jedes `unzureichend`-Issue trägt `firmo-needs-planning` samt Kommentar; die projektkonfigurierten Checks der delegierten Workflows sind grün; nichts außerhalb der gewählten Issues wird geändert.
 3. Stelle die Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe“. Die Freigabe-Grenze ist hier eine Ja/Nein-Freigabe, daher als dritte Option „Autonom via `/goal`":
 
 ```ask
@@ -161,14 +161,24 @@ options:
 5. Bei Wahl „Autonom via `/goal`": gib den `/goal`-String prominent aus und fordere zum Einfügen als neue Eingabe auf. Ohne Einfügen läuft der Skill gated weiter. Form (einzeilig, ohne interne IDs):
 
 ```text
-/goal Arbeite die via {{FIRMO}} apply analysierten Issues (#… , #…) vollständig ab und durchlaufe die verbleibenden Phasen dieses Workflows: setze jedes ausreichend spezifizierte Issue über den passenden Umsetzungs-Skill um, erstelle je genau einen PR (Closes #<Issue>), kommentiere den PR-Link, setze firmo-issue-done und hake den Epic-Eintrag ab; markiere unzureichende Issues mit firmo-needs-planning und Kommentar; projektkonfigurierte Checks der delegierten Workflows grün. Nichts außerhalb der genannten Issues ändern. Stoppe, wenn alle gewählten Issues verarbeitet sind.
+/goal Arbeite die via {{FIRMO}} apply analysierten Issues (#… , #…) vollständig ab und durchlaufe die verbleibenden Phasen dieses Workflows: setze jedes ausreichend spezifizierte Issue über den passenden Umsetzungs-Skill um, erstelle je Issue ohne Ziel-PR genau einen PR, aktualisiere Issues mit Ziel-PR ausschließlich durch neue Commits auf dem bestehenden PR-Branch, kommentiere den PR-Link, setze firmo-issue-done und hake den Epic-Eintrag ab; markiere unzureichende Issues mit firmo-needs-planning und Kommentar; projektkonfigurierte Checks der delegierten Workflows grün. Nichts außerhalb der genannten Issues ändern. Stoppe, wenn alle gewählten Issues verarbeitet sind.
 ```
 
 6. Bei „Ja“/gated (oder normaler Antwort): ohne `/goal`-String gated weiter. Bei „Anpassen“: Feedback einarbeiten (Auswahl/Ziel korrigieren) und die Abfrage erneut stellen. Starte Phase 4 erst nach dieser Freigabe.
 
 ### Phase 4: Routing & Delegation
 
-Die Commit-/PR-Strategie ist fest **„ein PR pro Issue“** (keine Commit-Strategie-Frage). Jedes umsetzbare Issue ist eine eigene Sub-Gruppe in einem eigenen Liefer-Branch, bevorzugt mit Worktree-Isolation, analog zum Remote-Modus von `{{SKILL:apply-review}}` (Phase 4 remote): Branch ab dem Basis-Branch aus dem `delivery`-Config-Block (Legacy-Fallback: alte `worktree.baseBranch`/`worktree.branchPrefix`-Werte), ein PR über `{{SKILL:pr}}`. Dateiüberlappende Issues laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden; nicht überlappende laufen parallel.
+Die Commit-/PR-Strategie ist standardmäßig **„ein PR pro Issue“** (keine Commit-Strategie-Frage). Jedes umsetzbare Issue ohne Ziel-PR ist eine eigene Sub-Gruppe in einem eigenen Liefer-Branch, bevorzugt mit Worktree-Isolation, analog zum Remote-Modus von `{{SKILL:apply-review}}` (Phase 4 remote): Branch ab dem Basis-Branch aus dem `delivery`-Config-Block (Legacy-Fallback: alte `worktree.baseBranch`/`worktree.branchPrefix`-Werte), ein PR über `{{SKILL:pr}}`. Dateiüberlappende Issues laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden; nicht überlappende laufen parallel.
+
+Wenn ein Issue-Body oder Nicht-Firmo-Kommentar einen Ziel-PR nennt (`Ziel-PR: #<nr>`, `Target PR: #<nr>` oder eine PR-URL), gilt stattdessen **„neuer Commit auf existierendem PR“**:
+
+1. Erstelle keinen neuen Liefer-Branch und keinen neuen PR.
+2. Hole den Head-Branch des Ziel-PRs, checke ihn in einem isolierten Worktree oder im sauberen aktuellen Checkout aus und aktualisiere ihn per normalem Pull/Fetch ohne Rebase- oder Force-Operation.
+3. Setze das Issue dort um und committe die Änderung als neuen Commit auf dem PR-Branch. Bestehende PR-Commits dürfen nicht per `commit --amend`, Rebase, Squash oder Force-Push umgeschrieben werden.
+4. Pushe den PR-Branch normal. Wird der Push wegen divergierter Remote-History abgelehnt, markiere das Issue als fehlgeschlagen und melde den Konflikt, statt History zu überschreiben.
+5. Verwende die URL des bestehenden PRs als Ergebnis-PR-Link für Issue-Kommentar, Epic-Eintrag und Zusammenfassung.
+
+Issues mit demselben Ziel-PR laufen sequenziell, damit neue Commits geordnet auf demselben PR-Branch entstehen.
 
 **Unzureichende Issues (`unzureichend`):**
 
@@ -185,13 +195,13 @@ Die Commit-/PR-Strategie ist fest **„ein PR pro Issue“** (keine Commit-Strat
    - Refactoring: `Verwende den Skill {{SKILL:refactor}} für dieses Issue.`
    - Dokumentation: `Verwende den Skill {{SKILL:docs}} für dieses Issue.`
      Der Delegations-Sub-Agent läuft als **nicht-interaktive** Delegation (Kontext-Hinweis „[Kontext von {{FIRMO}} apply-issues: …]“): keine explizite Goal-Abfrage, kein `/goal`-String, Fertig-Protokoll `ERLEDIGT`/`ABBRUCH`.
-2. Änderungen committen (Conventional-Commit-Message, keine internen IDs, kein `Co-Authored-By`) und den Branch über `{{SKILL:pr}}` als genau einen PR gegen den Basis-Branch führen; im PR-Body `Closes #<Issue>` setzen.
-3. **Direkt nach PR-Erstellung:** PR-Link als Kommentar ans Issue schreiben (Vorlage „Umgesetzt“), Label `firmo-issue-done` setzen und – falls das Issue aus einem Container stammt – den zugehörigen Checklisten-Eintrag im Epic-Body abhaken (Epic-Body frisch lesen, nur die betroffene Zeile `- [ ]` → `- [x]` umschalten und den PR-Link anhängen).
+2. Änderungen committen (Conventional-Commit-Message, keine internen IDs, kein `Co-Authored-By`) und Branch pushen. Wenn ein Ziel-PR vorhanden ist: **keinen neuen PR erstellen**, sondern den bestehenden PR-Link verwenden und optional den PR-Body nur nicht-destruktiv um `Closes #<Issue>` oder `Refs #<Issue>` ergänzen, falls das ohne Überschreiben fremder Änderungen möglich ist. Wenn kein Ziel-PR vorhanden ist: den Branch über `{{SKILL:pr}}` als genau einen PR gegen den Basis-Branch führen; im PR-Body `Closes #<Issue>` setzen.
+3. **Direkt nach erfolgreichem Push bzw. PR-Erstellung:** PR-Link als Kommentar ans Issue schreiben (Vorlage „Umgesetzt“), Label `firmo-issue-done` setzen und – falls das Issue aus einem Container stammt – den zugehörigen Checklisten-Eintrag im Epic-Body abhaken (Epic-Body frisch lesen, nur die betroffene Zeile `- [ ]` → `- [x]` umschalten und den PR-Link anhängen).
 4. Task auf `completed`.
 
 **Fehlerfälle:**
 
-- Schlägt die Delegation (`ABBRUCH`) oder die PR-Erstellung fehl: Issue **nicht** als erledigt markieren, `firmo-issue-done` nicht setzen, den Epic-Eintrag **nicht** abhaken, einen Fehlgeschlagen-Kommentar anhängen und mit dem nächsten Issue fortfahren. Task auf `completed` mit Zusatz `[fehlgeschlagen]`.
+- Schlägt die Delegation (`ABBRUCH`), der Push auf den Ziel-PR oder die PR-Erstellung fehl: Issue **nicht** als erledigt markieren, `firmo-issue-done` nicht setzen, den Epic-Eintrag **nicht** abhaken, einen Fehlgeschlagen-Kommentar anhängen und mit dem nächsten Issue fortfahren. Task auf `completed` mit Zusatz `[fehlgeschlagen]`.
 - Fehlt einem aus einer Liste übergebenen Issue ein zugeordnetes Epic: trotzdem umsetzen und PR erstellen; das Abhaken entfällt und wird dem User gemeldet.
 
 Gib nach jedem abgeschlossenen Issue eine kurze Statusmeldung.

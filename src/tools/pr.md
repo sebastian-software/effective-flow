@@ -73,6 +73,9 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der PR-Erstellung u
 4. **Host erkennen:** Lies die `origin`-URL (`git remote get-url origin`) und extrahiere daraus den Host robust für HTTPS- und SSH-Formen (`https://host/owner/repo.git`, `ssh://git@host/owner/repo.git`, `git@host:owner/repo.git`). Ist der Host exakt `github.com`, ist das Werkzeug `gh`. Für jeden anderen Host wird Forgejo/Gitea angenommen und `tea` verwendet. Bei mehrdeutigem Host (z. B. self-hosted GitHub Enterprise oder unklare Domain) berücksichtige einen ausdrücklichen Per-Run-Hinweis des Users zum gewünschten Werkzeug.
 5. **Werkzeug-Verfügbarkeit prüfen:** Stelle sicher, dass das gewählte CLI installiert und authentifiziert ist (`gh auth status` bzw. `tea` mit konfiguriertem Login). Fehlt das CLI oder die Authentifizierung: gib eine klare Fehlermeldung mit Behebungshinweis aus und brich ohne Seiteneffekt ab. Der Branch bleibt für eine spätere manuelle PR-Erstellung erhalten.
 6. **Branch pushen:** Pushe den Head-Branch nach `origin`, falls dort noch nicht vorhanden oder nicht aktuell (`git push -u origin <head-branch>`). Wird der Push abgelehnt (z. B. divergierte Remote-History): melde die Ursache knapp und brich ab, statt den Remote-Stand zu überschreiben.
+   Wenn für den Head-Branch bereits ein PR existiert, werden nachträgliche Änderungen
+   ausschließlich als neue Commits auf diesem Branch gepusht. Schreibe bestehende
+   PR-History nicht per `commit --amend`, Rebase, Squash oder Force-Push um.
 7. **Titel und Beschreibung ableiten:** Bestimme die Commits des Head-Branches gegenüber dem Remote-Tracking-Ref des Basis-Branches (`origin/<basis-branch>`, nicht dem lokalen Branch-Anteil – der lokale Basis-Branch kann hinter dem Remote liegen und fremde Commits einschleppen). Leite daraus einen konkreten PR-Titel im Conventional-Commit-Stil und eine kurze Beschreibung der Änderungen ab. Referenziere eine zugehörige Plan-Datei aus `docs/plan/`, falls vorhanden. Setze keine internen Tracking-IDs und keine `Co-Authored-By`-Trailer.
 8. **PR erstellen:**
    - GitHub: `gh pr create --base <basis-branch> --head <head-branch> --title <titel> --body <beschreibung>`.
@@ -90,6 +93,8 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der PR-Erstellung u
 - Erstelle keinen PR aus einem Branch ohne Commits gegenüber dem Basis-Branch; melde das stattdessen.
 - Starte keine Projektvalidation wie Linting, Tests oder Build-Checks; diese Verantwortung liegt bei anderen Skills wie `{{AGENT:code-validator}}`.
 - Überschreibe niemals Remote-History und erzwinge keinen Push.
+- Aktualisiere bestehende PRs immer über zusätzliche Commits auf dem PR-Branch, nie
+  durch Umschreiben vorhandener PR-Commits.
 - Lösche den PR-Head-Branch nach erfolgreicher PR-Erstellung nicht automatisch.
 - Wenn nur ein Teil der lokalen Änderungen in den PR soll, übernimm ausschließlich
   explizit ausgewählte Dateien in den Delivery-Branch oder verweise an einen

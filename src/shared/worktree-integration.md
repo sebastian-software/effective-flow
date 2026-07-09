@@ -228,6 +228,13 @@ lokale Arbeitsdateien zuverlässig außerhalb des PRs.
 Im Anschluss an die reguläre Abschlusslogik des Workflows (inklusive
 Goal-Verifikation und Plan-Datei-Aktualisierung):
 
+**Bestehende PRs aktualisieren:** Wenn der Liefer-Branch bereits einen Pull-Request
+hat und nachträglich Änderungen nötig sind, werden diese Änderungen immer als neue
+Commits auf demselben PR-Branch erstellt und gepusht. Bestehende PR-Commits dürfen
+nicht per `commit --amend`, interaktivem Rebase, Squash oder Force-Push
+umgeschrieben werden. Scheitert ein normaler Push wegen divergierter Remote-History,
+stoppe und melde den Konflikt, statt History zu überschreiben.
+
 1. **Plan-Datei in den Liefer-Branch übernehmen:** Sofern der Workflow eine
    Plan-Datei geführt hat und die Umsetzung in einem Worktree oder Teil-Diff-Worktree
    lief, stelle ihren finalen Zustand aus dem Haupt-Repo im Worktree unter demselben
