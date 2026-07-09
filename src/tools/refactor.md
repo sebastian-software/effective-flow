@@ -124,7 +124,7 @@ options:
 
 ### Phase 2: Baseline
 
-Bestimme zuerst gemäß „Worktree-Integration“ den effektiven Worktree-Modus und führe bei aktivem Modus das Worktree-Setup aus, bevor die Baseline erhoben wird. Baseline, Refactoring und Nachher-Validierung (Phasen 2–5) laufen dann mit Arbeitsverzeichnis im Worktree.
+Bestimme zuerst gemäß „Delivery- und Worktree-Integration“ den effektiven Delivery-/Worktree-Modus und führe bei aktivem Modus das passende Setup aus, bevor die Baseline erhoben wird: Worktree-Setup bei Worktree-Ausführung oder Liefer-Branch-Setup im Haupt-Repo bei In-Place-Delivery. Baseline, Refactoring und Nachher-Validierung (Phasen 2–5) laufen dann im Liefer-Arbeitsverzeichnis.
 
 Starte parallel:
 
@@ -197,8 +197,8 @@ Starte parallel:
    - zurück zu Phase 3, dann Phase 5 und 6 erneut – gemäß „Goal-getriebene Abschlusssteuerung“: begrenze die internen Korrekturrunden und eskaliere an den User, falls die Baseline danach weiterhin nicht erreicht wird, statt unbegrenzt zu wiederholen
 3. Falls keine Regressionen:
    - Wisdom-Datei löschen
-   - wenn der Worktree-Modus aktiv war: Handback gemäß „Worktree-Integration“ ausführen (Änderungen committen, Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`)
-   - zusammenfassen, was refactored wurde; bei aktivem Worktree-Modus zusätzlich Liefer-Branch und Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch) nennen
+   - wenn Delivery oder Worktree-Ausführung aktiv war: Handback gemäß „Delivery- und Worktree-Integration“ ausführen (Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen)
+   - zusammenfassen, was refactored wurde; bei aktivem Delivery-/Worktree-Modus zusätzlich Liefer-Branch, finalen Checkout-Zustand und Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch) nennen
    - bestätigen, dass das Verhalten unverändert blieb
 
 ```include

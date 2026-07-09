@@ -121,7 +121,7 @@ options:
 
 ### Phase 3: Fix
 
-0. Bestimme gemäß „Worktree-Integration“ den effektiven Worktree-Modus und führe bei aktivem Modus zuerst das Worktree-Setup aus. Die folgenden Phasen 3–4 (Fix, Verifikation) laufen dann mit Arbeitsverzeichnis im Worktree.
+0. Bestimme gemäß „Delivery- und Worktree-Integration“ den effektiven Delivery-/Worktree-Modus und führe bei aktivem Modus zuerst das passende Setup aus: Worktree-Setup bei Worktree-Ausführung oder Liefer-Branch-Setup im Haupt-Repo bei In-Place-Delivery. Die folgenden Phasen 3–4 (Fix, Verifikation) laufen dann im Liefer-Arbeitsverzeichnis.
 1. Starte den passenden Implementer-Skill:
    - `{{AGENT:ui-implementer}}`, `{{AGENT:nodejs-implementer}}`, `{{AGENT:rust-implementer}}` oder `{{AGENT:generic-implementer}}`
 2. Gib einen präzisen Auftrag:
@@ -164,13 +164,13 @@ Wenn dabei offene Findings oder Restrisiken entstehen, dokumentiere sie struktur
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
 4. Lösche die Wisdom-Datei.
-5. Wenn der Worktree-Modus aktiv war: führe das Handback gemäß „Worktree-Integration“ aus (Änderungen committen, Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`).
+5. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus (Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen).
 6. Fasse zusammen:
    - Root Cause
    - Änderungen
    - neu oder angepasste Tests
    - Restrisiken
-   - bei aktivem Worktree-Modus: Liefer-Branch und Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch)
+   - bei aktivem Delivery-/Worktree-Modus: Liefer-Branch, finaler Checkout-Zustand und Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch)
 
 ```include
 pre-commit-gate

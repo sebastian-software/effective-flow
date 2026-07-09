@@ -168,7 +168,7 @@ options:
 
 ### Phase 4: Routing & Delegation
 
-Die Commit-/PR-Strategie ist fest **„ein PR pro Issue“** (keine Commit-Strategie-Frage). Jedes umsetzbare Issue ist eine eigene Sub-Gruppe in einem eigenen Worktree/Branch, analog zum Remote-Modus von `{{SKILL:apply-review}}` (Phase 4 remote): Branch ab dem Basis-Branch aus dem `worktree`-Config-Block, ein PR über `{{SKILL:pr}}`. Dateiüberlappende Issues laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden; nicht überlappende laufen parallel.
+Die Commit-/PR-Strategie ist fest **„ein PR pro Issue“** (keine Commit-Strategie-Frage). Jedes umsetzbare Issue ist eine eigene Sub-Gruppe in einem eigenen Liefer-Branch, bevorzugt mit Worktree-Isolation, analog zum Remote-Modus von `{{SKILL:apply-review}}` (Phase 4 remote): Branch ab dem Basis-Branch aus dem `delivery`-Config-Block (Legacy-Fallback: alte `worktree.baseBranch`/`worktree.branchPrefix`-Werte), ein PR über `{{SKILL:pr}}`. Dateiüberlappende Issues laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden; nicht überlappende laufen parallel.
 
 **Unzureichende Issues (`unzureichend`):**
 

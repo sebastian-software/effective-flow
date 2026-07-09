@@ -125,7 +125,7 @@ options:
 
 ### Phase 2: Umsetzung
 
-0. Bestimme gemäß „Worktree-Integration“ den effektiven Worktree-Modus und führe bei aktivem Modus zuerst das Worktree-Setup aus. Umsetzung und Validierung (Phasen 2–3) laufen dann mit Arbeitsverzeichnis im Worktree.
+0. Bestimme gemäß „Delivery- und Worktree-Integration“ den effektiven Delivery-/Worktree-Modus und führe bei aktivem Modus zuerst das passende Setup aus: Worktree-Setup bei Worktree-Ausführung oder Liefer-Branch-Setup im Haupt-Repo bei In-Place-Delivery. Umsetzung und Validierung (Phasen 2–3) laufen dann im Liefer-Arbeitsverzeichnis.
 1. Stelle sicher, dass das Zielverzeichnis existiert:
    - bei Ziel-Pfaden unterhalb von `docs/user-guide/`, `docs/developer-guide/`, `docs/operations/` oder `docs/runbooks/` lege fehlende Verzeichnisse vor dem Schreiben an
    - lege keine leeren Kategorie-Verzeichnisse an, wenn keine Datei darin geschrieben wird
@@ -167,13 +167,13 @@ options:
    - ergänze `## Testergebnisse` mit den ausgeführten Prüfungen
    - ergänze `## Review-Findings` oder schreibe „Keine Findings gefunden.“, wenn kein Review nötig war
 3. Lösche die Wisdom-Datei.
-4. Wenn der Worktree-Modus aktiv war: führe das Handback gemäß „Worktree-Integration“ aus (Änderungen committen, Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`).
+4. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus (Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen).
 5. Fasse zusammen:
    - geänderte Dokumentationsbereiche
    - geprüfte Quellen
    - ausgeführte Validierung
    - Restrisiken
-   - bei aktivem Worktree-Modus: Liefer-Branch und Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch)
+   - bei aktivem Delivery-/Worktree-Modus: Liefer-Branch, finaler Checkout-Zustand und Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch)
 
 ```include
 pre-commit-gate

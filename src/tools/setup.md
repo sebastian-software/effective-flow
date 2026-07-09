@@ -27,15 +27,16 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Schreiben und b
 
 ## Config-Schema
 
-`.firmo/config.json` ist optional und steuert Defaults von vier Blöcken. Die jeweiligen Skills sind die maßgebliche Quelle für gültige Werte und Defaults; dieser Skill fasst sie nur zusammen und darf bei Schema-Erweiterungen nicht als alleinige Wahrheit gelten. Unbekannte Schlüssel einer bestehenden Config bleiben immer erhalten.
+`.firmo/config.json` ist optional und steuert Defaults von fünf Blöcken. Die jeweiligen Skills sind die maßgebliche Quelle für gültige Werte und Defaults; dieser Skill fasst sie nur zusammen und darf bei Schema-Erweiterungen nicht als alleinige Wahrheit gelten. Unbekannte Schlüssel einer bestehenden Config bleiben immer erhalten.
 
 - **`review`** (Quelle: `{{SKILL:review}}`): `profile` (full/focused/fast), `autoConfirmScope` (bool), `designDecisionSources` (full/standard/minimal), `validation` (full/quick/off)
 - **`applyReview`** (Quelle: `{{SKILL:apply-review}}`): `defaultCommitStrategy` (worktrees/single/none/`null` = beim Lauf fragen), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/Befehl)
 - **`plan`** (Quelle: `{{SKILL:plan}}`): `markerLanguage` (de/en)
-- **`worktree`** (Quelle: `{{SKILL:build}}`, Abschnitt „Worktree-Integration“ – ebenso in den weiteren code-ändernden Workflows eingebettet): `enabled` (bool), `baseBranch` (Default `origin/main`), `branchPrefix` (Default `firmo`), `completion` (pr/merge/branch/`null` = beim Lauf fragen), `setup` (auto/none/Befehl), `baseDir`
+- **`delivery`** (Quelle: `{{SKILL:build}}`, Abschnitt „Delivery- und Worktree-Integration“ – ebenso in den weiteren code-ändernden Workflows eingebettet): `enabled` (bool), `baseBranch` (Default `origin/main`), `branchPrefix` (Default `firmo`), `completion` (pr/merge/branch/`null` = beim Lauf fragen), `returnBranch` (auto oder lokaler Branchname)
+- **`worktree`** (Quelle: `{{SKILL:build}}`, Abschnitt „Delivery- und Worktree-Integration“): `enabled` (bool), `setup` (auto/none/Befehl), `baseDir`
 - **`tracker`** (Quelle: `{{SKILL:review}}`, Abschnitt „Issue-Tracker-Anbindung“ – ebenso in `{{SKILL:apply-review}}` und den weiteren Tracker-Workflows eingebettet): `mode` (local/remote, Default `local`), `remoteToolOverride` (auto/github/forgejo, Default `auto`)
 
-Die zwei Presets sind vollständig hier definiert und setzen ausschließlich die Blöcke `review` und `applyReview`. Unabhängig vom Preset werden `plan.markerLanguage`, `worktree.enabled` (samt `worktree.completion` und `worktree.baseBranch`) und `tracker.mode` in Schritt 4 explizit erfragt.
+Die zwei Presets sind vollständig hier definiert und setzen ausschließlich die Blöcke `review` und `applyReview`. Unabhängig vom Preset werden `plan.markerLanguage`, `delivery.enabled` (samt `delivery.completion` und `delivery.baseBranch`), `worktree.enabled` und `tracker.mode` in Schritt 4 explizit erfragt.
 
 Preset „Sichere Defaults“:
 
@@ -105,7 +106,7 @@ options:
   - label: Schneller persönlicher Workflow
     description: Zügiger Solo-Flow (Review fast, Validierung quick, finalValidation changedScope, stashPolicy keep, Worktrees als Commit-Strategie)
   - label: Alles einzeln anpassen
-    description: Detailmodus — jeden Schlüssel der vier Blöcke einzeln abfragen
+    description: Detailmodus — jeden Schlüssel der fünf Blöcke einzeln abfragen
 ```
 
 Bei „Sichere Defaults“ oder „Schneller persönlicher Workflow“: verwende die Werte der entsprechenden Preset-Tabelle aus dem Config-Schema oben als Vorschlagswerte – nicht als bedingungsloses Überschreiben. Bei einer leeren oder fehlenden Config werden die Preset-Werte direkt übernommen. Existiert bereits eine Config und weicht ein vorhandener Wert vom Preset-Wert ab, überschreibe ihn **nicht** ungefragt: zeige die betroffenen Schlüssel als Vorher/Nachher-Liste und hole eine Bestätigung ein, bevor du sie änderst (siehe Schritt 6). Bei „Alles einzeln anpassen“: gehe in Schritt 5 Block für Block vor.
@@ -115,31 +116,41 @@ Bei „Sichere Defaults“ oder „Schneller persönlicher Workflow“: verwende
 Diese Fragen werden in jedem Modus gestellt, weil sie das Kernverhalten bestimmen.
 
 ```ask
-header: Worktree
-question: Soll die Worktree-Integration (Arbeit in Git-Worktree + PR/Merge) aktiviert werden?
+header: Delivery
+question: Sollen code-ändernde Workflows automatisch einen Liefer-Branch abschließen können?
 options:
   - label: Nein
-    description: worktree.enabled = false (Default) — Workflows arbeiten in-place wie bisher
+    description: delivery.enabled = false (Default) — keine automatische Branch-/PR-/Merge-Erzeugung
   - label: Ja
-    description: worktree.enabled = true — Code-ändernde Workflows arbeiten in einem Worktree und schließen mit PR/Merge/Branch ab
+    description: delivery.enabled = true — Workflows schließen Änderungen per PR, Merge oder belassenem Branch ab
 ```
 
 ```ask
-when: die Worktree-Integration in der vorigen Frage aktiviert wurde
+when: Delivery in der vorigen Frage aktiviert wurde
 header: Abschluss
-question: Welche Abschluss-Aktion soll der Worktree-Modus standardmäßig nutzen?
+question: Welche Abschluss-Aktion soll Delivery standardmäßig nutzen?
 options:
   - label: Beim Lauf fragen
-    description: worktree.completion = null — die Aktion wird pro Lauf erfragt
+    description: delivery.completion = null — die Aktion wird pro Lauf erfragt
   - label: Pull-Request
-    description: worktree.completion = pr
+    description: delivery.completion = pr
   - label: Merge
-    description: worktree.completion = merge
+    description: delivery.completion = merge
   - label: Nur Branch
-    description: worktree.completion = branch
+    description: delivery.completion = branch
 ```
 
-Bei aktivierter Worktree-Integration: frage zusätzlich den Basis-Branch als Freitext ab (`worktree.baseBranch`, Default `origin/main`).
+Bei aktivierter Delivery: frage zusätzlich den Basis-Branch als Freitext ab (`delivery.baseBranch`, Default `origin/main`) und optional das Rückwechsel-Ziel (`delivery.returnBranch`, Default `auto`).
+
+```ask
+header: Worktree
+question: Soll die Umsetzung in einem separaten Git-Worktree laufen?
+options:
+  - label: Nein
+    description: worktree.enabled = false (Default) — Liefer-Branches werden bei Bedarf im Haupt-Repo erzeugt
+  - label: Ja
+    description: worktree.enabled = true — Umsetzung läuft in einem separaten Worktree
+```
 
 ```ask
 header: Marker
@@ -170,12 +181,13 @@ Frage Block für Block jeden Schlüssel ab, jeweils mit den gültigen Werten aus
 1. `review`: `review.profile`, `review.autoConfirmScope`, `review.designDecisionSources`, `review.validation`
 2. `applyReview`: `applyReview.defaultCommitStrategy`, `applyReview.finalValidation`, `applyReview.stashPolicy`, `applyReview.worktree.baseDir`, `applyReview.worktree.setup`
 3. `plan`: `plan.markerLanguage` (bereits in Schritt 4 erfragt — übernehmen)
-4. `worktree`: `worktree.enabled`, `worktree.baseBranch`, `worktree.branchPrefix`, `worktree.completion` (bereits in Schritt 4 erfragt — übernehmen), `worktree.setup`, `worktree.baseDir`
-5. `tracker`: `tracker.mode` (bereits in Schritt 4 erfragt — übernehmen), `tracker.remoteToolOverride` (auto/github/forgejo)
+4. `delivery`: `delivery.enabled`, `delivery.baseBranch`, `delivery.branchPrefix`, `delivery.completion` (bereits in Schritt 4 erfragt — übernehmen), `delivery.returnBranch`
+5. `worktree`: `worktree.enabled` (bereits in Schritt 4 erfragt — übernehmen), `worktree.setup`, `worktree.baseDir`
+6. `tracker`: `tracker.mode` (bereits in Schritt 4 erfragt — übernehmen), `tracker.remoteToolOverride` (auto/github/forgejo)
 
-Beachte: `applyReview.worktree.*` (Apply-Review-eigener Worktree-Mechanismus) und der Top-Level-`worktree.*`-Block sind getrennte, unabhängige Config-Pfade — verwechsle sie beim Abfragen und Mergen nicht.
+Beachte: `applyReview.worktree.*` (Apply-Review-eigener Worktree-Mechanismus), der Top-Level-`worktree.*`-Block (Ausführungsort) und der Top-Level-`delivery.*`-Block (Liefer-Branch/Abschluss) sind getrennte, unabhängige Config-Pfade — verwechsle sie beim Abfragen und Mergen nicht.
 
-Freitext-Werte (z. B. `baseBranch`, `branchPrefix`, `baseDir` oder ein expliziter `setup`-Befehl) als Freitext erfragen. Bei ungültiger Eingabe für einen enumerierten Schlüssel erneut fragen oder den Default verwenden und das melden.
+Freitext-Werte (z. B. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir` oder ein expliziter `setup`-Befehl) als Freitext erfragen. Bei ungültiger Eingabe für einen enumerierten Schlüssel erneut fragen oder den Default verwenden und das melden.
 
 ### Schritt 6: Merge und Schreiben
 
@@ -190,7 +202,7 @@ Melde dem User:
 
 - ob der `.gitignore`-Eintrag (`.firmo/*` plus `!.firmo/config.json`) ergänzt, eine bestehende pauschale `.firmo/`- oder Alt-`.sf-plugin/`-Zeile dorthin migriert wurde oder der Soll-Zustand bereits hergestellt war — und dass `.firmo/config.json` dabei getrackt bleibt
 - welches Preset bzw. der Detailmodus gewählt wurde
-- die gesetzten zentralen Verhaltenswerte (`worktree.enabled`, ggf. `worktree.completion`/`worktree.baseBranch`, `plan.markerLanguage`, `tracker.mode` und ggf. `tracker.remoteToolOverride`)
+- die gesetzten zentralen Verhaltenswerte (`delivery.enabled`, ggf. `delivery.completion`/`delivery.baseBranch`/`delivery.returnBranch`, `worktree.enabled`, `plan.markerLanguage`, `tracker.mode` und ggf. `tracker.remoteToolOverride`)
 - bei einer zuvor vorhandenen Config: welche Schlüssel gegenüber dem alten Stand geändert wurden (Vorher/Nachher)
 - den Pfad der geschriebenen Config (`.firmo/config.json`)
 
