@@ -1,5 +1,5 @@
 ---
-description: "Bereitet ein Zielprojekt für die Nutzung von Firmo vor: trägt .firmo/ idempotent in die .gitignore ein und hält dabei .firmo/config.json getrackt, und legt .firmo/config.json interaktiv an bzw. aktualisiert sie. Fragt die gewünschten Werte und das grundsätzliche Verhalten ab — hybrid über Presets und einen Detailmodus — und pflegt eine bestehende Config nicht-destruktiv. Verwende diesen Skill für das einmalige Setup oder zum Anpassen der Firmo-Konfiguration."
+description: "Bereitet ein Zielprojekt für die Nutzung von Firmo vor: trägt .firmo/ idempotent in die .gitignore ein und hält dabei .firmo/config.json getrackt, und legt .firmo/config.json über einen geführten Wizard an bzw. aktualisiert sie. Startet immer von sicheren Defaults, bietet einen Express- und einen geführten Weg, erklärt jede Option auch für Firmo-Neulinge und zeigt bei vorhandener Config die aktuell festgeschriebenen Werte. Pflegt eine bestehende Config nicht-destruktiv. Verwende diesen Skill für das einmalige Setup oder zum Anpassen der Firmo-Konfiguration."
 ---
 
 # Firmo Setup
@@ -9,8 +9,10 @@ Du bereitest ein Zielprojekt für die Nutzung von Firmo vor: `.gitignore`-Eintra
 ## Ziel
 
 - den Laufzeit-Status unter `.firmo/` idempotent in die `.gitignore` eintragen und dabei `.firmo/config.json` getrackt lassen (nur wenn der Soll-Zustand noch nicht hergestellt ist)
-- `.firmo/config.json` interaktiv anlegen oder nicht-destruktiv aktualisieren
-- gewünschte Werte und das grundsätzliche Verhalten beim User abfragen — hybrid über Presets und einen optionalen Detailmodus
+- `.firmo/config.json` über einen geführten Wizard anlegen oder nicht-destruktiv aktualisieren
+- immer von sicheren Defaults starten und dem User zwei Wege bieten: **Express** (Defaults übernehmen) oder **Geführt** (jede Option erklärt durchgehen)
+- jede Option so erklären, dass sie auch ohne Vorwissen über die Arbeitsweise von Firmo verständlich ist
+- bei einer vorhandenen Config bei jeder Auswahl den aktuell festgeschriebenen Wert anzeigen und vorauswählen
 - keine Projektvalidation wie Linting, Tests oder Build-Checks ausführen
 
 ```include
@@ -40,37 +42,35 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Schreiben und b
 - **`worktree`** (Quelle: `{{SKILL:build}}`, Abschnitt „Delivery- und Worktree-Integration“): `enabled` (bool, Default `true`), `setup` (auto/none/Befehl), `baseDir`
 - **`tracker`** (Quelle: `{{SKILL:review}}`, Abschnitt „Issue-Tracker-Anbindung“ – ebenso in `{{SKILL:apply-review}}` und den weiteren Tracker-Workflows eingebettet): `mode` (local/remote, Default `local`), `remoteToolOverride` (auto/github/forgejo, Default `auto`)
 
-Die zwei Presets sind vollständig hier definiert und setzen ausschließlich die Blöcke `review` und `applyReview`. Unabhängig vom Preset werden `plan.markerLanguage`, `worktree.enabled` (Default `true`), `delivery.completion` (Default `merge`) und `tracker.mode` in Schritt 4 explizit erfragt.
+### Sichere Defaults (die eine Basis)
 
-Preset „Sichere Defaults“:
+Der Wizard startet **immer** von dieser einen benannten Sicher-Defaults-Basis. Sie umfasst
+die konservativen `review`-/`applyReview`-Werte plus die Kern-Schalter:
 
-| Schlüssel                           | Wert                      |
-| ----------------------------------- | ------------------------- |
-| `review.profile`                    | `"focused"`               |
-| `review.autoConfirmScope`           | `false`                   |
-| `review.designDecisionSources`      | `"standard"`              |
-| `review.validation`                 | `"full"`                  |
-| `applyReview.defaultCommitStrategy` | `null` (beim Lauf fragen) |
-| `applyReview.finalValidation`       | `"full"`                  |
-| `applyReview.stashPolicy`           | `"interactive"`           |
-| `applyReview.worktree.baseDir`      | `".firmo/.worktrees"`     |
-| `applyReview.worktree.setup`        | `"auto"`                  |
+| Schlüssel                           | Wert                                                    |
+| ----------------------------------- | ------------------------------------------------------- |
+| `review.profile`                    | `"focused"`                                             |
+| `review.autoConfirmScope`           | `false`                                                 |
+| `review.designDecisionSources`      | `"standard"`                                            |
+| `review.validation`                 | `"full"`                                                |
+| `applyReview.defaultCommitStrategy` | `null` (beim Lauf fragen)                               |
+| `applyReview.finalValidation`       | `"full"`                                                |
+| `applyReview.stashPolicy`           | `"interactive"`                                         |
+| `applyReview.worktree.baseDir`      | `".firmo/.worktrees"`                                   |
+| `applyReview.worktree.setup`        | `"auto"`                                                |
+| `worktree.enabled`                  | `true`                                                  |
+| `delivery.completion`               | `"merge"`                                               |
+| `delivery.baseBranch`               | `"origin/main"`                                         |
+| `tracker.mode`                      | `"local"`                                               |
+| `plan.dir`                          | `"docs/plan"`                                           |
+| `plan.markerLanguage`               | abgeleitet: aus vorhandenen Plänen erkennen, sonst `en` |
 
-Preset „Schneller persönlicher Workflow“:
-
-| Schlüssel                           | Wert                  |
-| ----------------------------------- | --------------------- |
-| `review.profile`                    | `"fast"`              |
-| `review.autoConfirmScope`           | `true`                |
-| `review.designDecisionSources`      | `"minimal"`           |
-| `review.validation`                 | `"quick"`             |
-| `applyReview.defaultCommitStrategy` | `"worktrees"`         |
-| `applyReview.finalValidation`       | `"changedScope"`      |
-| `applyReview.stashPolicy`           | `"keep"`              |
-| `applyReview.worktree.baseDir`      | `".firmo/.worktrees"` |
-| `applyReview.worktree.setup`        | `"auto"`              |
-
-Der schnelle Workflow setzt `review.validation` bewusst auf `"quick"` statt `"off"`: Ein Minimal-Check bleibt so auch im zügigen Solo-Flow erhalten.
+Es gibt bewusst **kein** zweites Preset mehr. Wer einen zügigeren Solo-Flow will (z. B.
+`review.profile: fast`, `review.validation: quick`, `applyReview.finalValidation:
+changedScope`), erreicht diese Werte einzeln über den geführten Weg (erweiterte
+Einstellungen). Für `plan.markerLanguage` gilt kein fixer Wert: aus vorhandenen Plänen die
+Marker-Sprache erkennen (Detection wie in `{{SKILL:plan}}`); ohne eindeutiges Signal
+Englisch.
 
 ## Workflow
 
@@ -96,28 +96,43 @@ Wichtige Git-Eigenheit: Ein pauschales `.firmo/` ignoriert das gesamte Verzeichn
 ### Schritt 2: Bestehende Config prüfen
 
 1. Lies `.firmo/config.json`, falls vorhanden.
-2. Bei gültigem JSON: verwende die vorhandenen Werte als Default-Vorbelegung der folgenden Fragen.
+2. Bei gültigem JSON: bilde einen internen „Aktuelle-Werte"-Überblick (Schlüssel → aktuell festgeschriebener Wert). Zeige diesen Wert bei jeder folgenden Frage an („aktuell in der Config: …") und verwende ihn als Vorauswahl. Fehlt ein Schlüssel, benenne die Vorauswahl als Default („aktuell nicht gesetzt – Default: …").
 3. Bei ungültigem JSON: überschreibe nicht still. Informiere den User mit Pfad und Fehler und frage, ob die Datei neu angelegt (altes Backup/Überschreiben) oder der Lauf abgebrochen werden soll.
 
-### Schritt 3: Preset wählen
+### Schritt 3: Express oder Geführt
+
+Erkläre dem User kurz, dass Firmo mit sicheren Defaults sofort einsatzbereit ist und er nur
+dann etwas anpassen muss, wenn er möchte. Biete dann die zwei Wege an:
 
 ```ask
-header: Preset
-question: Welche Grundkonfiguration soll verwendet werden?
+header: Setup-Weg
+question: Wie möchtest du die Firmo-Konfiguration einrichten?
 options:
-  - label: Sichere Defaults
-    description: Konservative Defaults (Review focused, Validierung full, finalValidation full, stashPolicy interactive, Commit-Strategie beim Lauf fragen)
-  - label: Schneller persönlicher Workflow
-    description: Zügiger Solo-Flow (Review fast, Validierung quick, finalValidation changedScope, stashPolicy keep, Worktrees als Commit-Strategie)
-  - label: Alles einzeln anpassen
-    description: Detailmodus — jeden Schlüssel der fünf Blöcke einzeln abfragen
+  - label: Express
+    description: Sichere Defaults übernehmen (bei vorhandener Config deren aktuelle Werte behalten) — ein Bestätigungsschritt, dann fertig
+  - label: Geführt
+    description: Schritt für Schritt durch die Optionen — jede wird erklärt, ideal wenn du Firmo noch nicht kennst
 ```
 
-Bei „Sichere Defaults“ oder „Schneller persönlicher Workflow“: verwende die Werte der entsprechenden Preset-Tabelle aus dem Config-Schema oben als Vorschlagswerte – nicht als bedingungsloses Überschreiben. Bei einer leeren oder fehlenden Config werden die Preset-Werte direkt übernommen. Existiert bereits eine Config und weicht ein vorhandener Wert vom Preset-Wert ab, überschreibe ihn **nicht** ungefragt: zeige die betroffenen Schlüssel als Vorher/Nachher-Liste und hole eine Bestätigung ein, bevor du sie änderst (siehe Schritt 6). Bei „Alles einzeln anpassen“: gehe in Schritt 5 Block für Block vor.
+- **Express:** Bilde die Zielkonfiguration aus der Sicher-Defaults-Basis (Config-Schema oben)
+  plus – falls eine gültige Config existiert – deren vorhandenen Werten. Leite
+  `plan.markerLanguage` gemäß Basis ab (Detection, sonst Englisch). Springe direkt zu
+  Schritt 6 (Merge und Schreiben); die Vorher/Nachher-Liste und Bestätigung dort stellen
+  sicher, dass keine bestehende, abweichende Config still überschrieben wird.
+- **Geführt:** Fahre mit Schritt 4 (Kern-Schalter) fort; danach folgt das optionale
+  Erweitert-Gate (Schritt 5).
 
-### Schritt 4: Zentrale Verhaltensschalter (immer abfragen)
+### Schritt 4: Kern-Schalter (nur im geführten Weg)
 
-Diese Fragen werden in jedem Modus gestellt, weil sie das Kernverhalten bestimmen.
+Diese vier Schalter bestimmen das Kernverhalten. Stelle **vor** jeder Frage eine kurze,
+verständliche Erklärung voran (was ist das, warum ist es relevant, was bedeutet die Wahl) –
+ohne Vorwissen über Firmo vorauszusetzen – und nenne dabei, ob und mit welchem Wert der
+Schalter aktuell in der Config steht (siehe Schritt 2); wähle diesen Wert bzw. den sicheren
+Default vor. Fachbegriffe bei erster Nennung in einem Satz erklären.
+
+**Worktree.** Erkläre: Firmo setzt Änderungen standardmäßig in einem separaten Arbeitsbereich
+mit eigenem Branch um (einem „Worktree"), damit dein aktueller Stand unberührt bleibt und die
+Arbeit sauber gebündelt ist; „Nein" arbeitet direkt in deinem aktuellen Checkout.
 
 ```ask
 header: Worktree
@@ -129,10 +144,13 @@ options:
     description: worktree.enabled = false — In-Place ohne Worktree; Liefer-Branches werden bei Bedarf im Haupt-Repo erzeugt
 ```
 
+**Abschluss-Aktion.** Erkläre: Wie fertige Änderungen eingebracht werden. `merge` bringt sie
+direkt in den Zielbranch, `pr` öffnet einen Pull-Request (Review vor dem Einbringen), `branch`
+lässt den Branch nur liegen; „beim Lauf fragen" entscheidet jedes Mal neu.
+
 ```ask
-when: immer
 header: Abschluss
-question: Welche Abschluss-Aktion soll Delivery standardmäßig nutzen?
+question: Welche Abschluss-Aktion soll Firmo standardmäßig nutzen?
 options:
   - label: Merge
     description: delivery.completion = merge (Default) — Branch lokal in den Basis-Branch mergen, ohne PR
@@ -144,17 +162,26 @@ options:
     description: delivery.completion = null — die Aktion wird pro Lauf erfragt
 ```
 
-Frage zusätzlich den Basis-Branch als Freitext ab (`delivery.baseBranch`, Default `origin/main`) und optional das Rückwechsel-Ziel (`delivery.returnBranch`, Default `auto`).
+Erkläre kurz den Basis-Branch (der Zweig, in den geliefert wird) und frage ihn als Freitext
+ab (`delivery.baseBranch`, Default `origin/main`); das Rückwechsel-Ziel (`delivery.returnBranch`,
+Default `auto`) nur optional.
+
+**Marker-Sprache.** Erkläre: Die Sprache der kleinen Status-Markierung im Kopf von
+Plan-Dateien (nur der Marker, nicht der Planinhalt). Vorauswahl: der aus vorhandenen Plänen
+erkannte Wert; gibt es kein Signal, Englisch.
 
 ```ask
 header: Marker
 question: In welcher Sprache sollen die Statusmarker neuer Plan-Dateien stehen?
 options:
+  - label: Englisch
+    description: plan.markerLanguage = en (Default, falls keine Sprache aus vorhandenen Plänen erkennbar ist)
   - label: Deutsch
     description: plan.markerLanguage = de
-  - label: Englisch
-    description: plan.markerLanguage = en
 ```
+
+**Tracker.** Erkläre: Wo Review-Findings landen – `local` als Markdown-Report im Projekt
+(`.firmo/review/`) oder `remote` als Issues auf GitHub/Forgejo (nützlich für Teamarbeit).
 
 ```ask
 header: Tracker
@@ -168,16 +195,35 @@ options:
 
 Bei „Remote“ den Werkzeug-Override nur bei Bedarf abfragen: Der Default `tracker.remoteToolOverride = auto` erkennt GitHub/Forgejo automatisch aus der `origin`-URL. Nur wenn der User einen mehrdeutigen Host hat (z. B. self-hosted GitHub Enterprise), als Freitext `github` oder `forgejo` erfassen; sonst `auto` belassen.
 
-### Schritt 5: Detailmodus (nur bei „Alles einzeln anpassen“)
+### Schritt 5: Erweiterte Einstellungen (optionales Gate, nur im geführten Weg)
 
-Frage Block für Block jeden Schlüssel ab, jeweils mit den gültigen Werten aus dem Config-Schema oben und der vorhandenen bzw. Default-Belegung als Vorschlag:
+Die Kern-Schalter genügen für den Alltag. Alle übrigen Optionen sind seltener nötig; frage
+daher zuerst, ob der User sie überhaupt anpassen will:
 
-1. `review`: `review.profile`, `review.autoConfirmScope`, `review.designDecisionSources`, `review.validation`
+```ask
+header: Erweitert
+question: Möchtest du erweiterte Einstellungen (Review, Apply-Review, Pfade, Feinheiten) anpassen?
+options:
+  - label: Nein
+    description: Sichere Defaults bzw. bestehende Werte behalten — empfohlen, wenn du Firmo noch kennenlernst
+  - label: Ja
+    description: Die restlichen Optionen einzeln durchgehen, jede erklärt
+```
+
+Bei „Nein": alle erweiterten Schlüssel behalten den sicheren Default bzw. den bestehenden
+Config-Wert; weiter zu Schritt 6. Bei „Ja": frage Block für Block jeden Schlüssel ab, jeweils
+mit einer kurzen Erklärung, den gültigen Werten aus dem Config-Schema oben und dem aktuellen
+Config-Wert bzw. Default als Vorauswahl:
+
+1. `review`: `review.profile` (full/focused/fast — Tiefe des Reviews), `review.autoConfirmScope`, `review.designDecisionSources`, `review.validation`
 2. `applyReview`: `applyReview.defaultCommitStrategy`, `applyReview.finalValidation`, `applyReview.stashPolicy`, `applyReview.worktree.baseDir`, `applyReview.worktree.setup`
-3. `plan`: `plan.markerLanguage` (bereits in Schritt 4 erfragt — übernehmen), `plan.dir` (Freitext, Default `docs/plan`) — nur bei Bedarf abfragen, da selten geändert
-4. `delivery`: `delivery.baseBranch`, `delivery.branchPrefix`, `delivery.completion` (bereits in Schritt 4 erfragt — übernehmen), `delivery.returnBranch`
-5. `worktree`: `worktree.enabled` (bereits in Schritt 4 erfragt — übernehmen, Default `true`), `worktree.setup`, `worktree.baseDir`
+3. `plan`: `plan.markerLanguage` (bereits in Schritt 4 erfragt — übernehmen), `plan.dir` (Freitext, Default `docs/plan` — Verzeichnis der Plan-Dateien)
+4. `delivery`: `delivery.baseBranch` und `delivery.completion` (bereits in Schritt 4 erfragt — übernehmen), `delivery.branchPrefix`, `delivery.returnBranch`
+5. `worktree`: `worktree.enabled` (bereits in Schritt 4 erfragt — übernehmen), `worktree.setup`, `worktree.baseDir`
 6. `tracker`: `tracker.mode` (bereits in Schritt 4 erfragt — übernehmen), `tracker.remoteToolOverride` (auto/github/forgejo)
+
+Wer den früheren „schnellen Solo-Workflow" möchte, setzt hier z. B. `review.profile: fast`,
+`review.validation: quick` und `applyReview.finalValidation: changedScope`.
 
 Beachte: `applyReview.worktree.*` (Apply-Review-eigener Worktree-Mechanismus), der Top-Level-`worktree.*`-Block (Ausführungsort) und der Top-Level-`delivery.*`-Block (Liefer-Branch/Abschluss) sind getrennte, unabhängige Config-Pfade — verwechsle sie beim Abfragen und Mergen nicht.
 
@@ -186,7 +232,7 @@ Freitext-Werte (z. B. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir` od
 ### Schritt 6: Merge und Schreiben
 
 1. Baue die Zielkonfiguration nicht-destruktiv: setze die bekannten Schlüssel auf die gewählten Werte, übernimm vorhandene gültige Werte für nicht abgefragte Schlüssel und lass unbekannte Schlüssel unverändert.
-2. Das gilt auch für Preset-Werte: Ein Preset-Wert, der einen bereits vorhandenen, abweichenden Wert ersetzen würde, wird nur nach ausdrücklicher Bestätigung gesetzt. Zeige vor dem Schreiben eine Vorher/Nachher-Liste **aller** zu ändernden Schlüssel (egal ob aus Preset, Detailmodus oder zentralen Schaltern) und hole die Bestätigung ein. Ein vollständiges Überschreiben (Verwerfen vorhandener Werte) ebenfalls nur nach ausdrücklicher Bestätigung.
+2. Das gilt auch für die Sicher-Defaults: Ein Default-Wert, der einen bereits vorhandenen, abweichenden Config-Wert ersetzen würde, wird nur nach ausdrücklicher Bestätigung gesetzt. Zeige vor dem Schreiben eine Vorher/Nachher-Liste **aller** zu ändernden Schlüssel (egal ob aus Express-Basis, Kern-Schaltern oder erweiterten Einstellungen) und hole die Bestätigung ein. Ein vollständiges Überschreiben (Verwerfen vorhandener Werte) ebenfalls nur nach ausdrücklicher Bestätigung.
 3. Lies eine vorhandene `config.json` direkt vor dem Schreiben noch einmal frisch ein, damit zwischenzeitliche Änderungen nicht verloren gehen.
 4. Lege `.firmo/` an, falls nötig, und schreibe `config.json` als formatiertes, syntaktisch valides JSON.
 5. **Aufgeschobene Migrations-Rückfragen stellen:** `{{SKILL:setup}}` ist gemäß „Config-Migration“ der **einzige** Ort, an dem die aufgeschobenen Migrations-Rückfragen und -Upgrades entschieden werden; andere Skills schieben solche Fälle nur mit einem sicheren Default auf. Wurde beim Einlesen der Alt-Config ein optionales Upgrade erkannt (aktuell: `delivery.completion: null` → neuer Default `merge`), biete es hier als eigene Frage an, bevor der Merge aus Schritt 1–2 geschrieben wird:
@@ -209,7 +255,7 @@ Bei „Ja“ setze `delivery.completion = "merge"` im zu schreibenden Merge-Erge
 Melde dem User:
 
 - ob der `.gitignore`-Eintrag (`.firmo/*` plus `!.firmo/config.json`) ergänzt, eine bestehende pauschale `.firmo/`- oder Alt-`.sf-plugin/`-Zeile dorthin migriert wurde oder der Soll-Zustand bereits hergestellt war — und dass `.firmo/config.json` dabei getrackt bleibt
-- welches Preset bzw. der Detailmodus gewählt wurde
+- welcher Weg gewählt wurde (Express oder Geführt) und ob erweiterte Einstellungen angepasst wurden
 - die gesetzten zentralen Verhaltenswerte (`worktree.enabled` [Default `true`], `delivery.completion` [Default `merge`] samt ggf. `delivery.baseBranch`/`delivery.returnBranch`, `plan.markerLanguage`, `tracker.mode` und ggf. `tracker.remoteToolOverride`) sowie `plan.dir`, falls gesetzt oder gegenüber dem Default geändert
 - bei einer zuvor vorhandenen Config: welche Schlüssel gegenüber dem alten Stand geändert wurden (Vorher/Nachher)
 - den Pfad der geschriebenen Config (`.firmo/config.json`)
