@@ -1,5 +1,6 @@
 ---
 description: "Erstellt aus einem lokalen Branch oder über einen frischen Delivery-Branch einen Pull-Request auf GitHub (über gh) oder Forgejo (über tea). Erkennt den Host an der origin-URL, pusht den Branch bei Bedarf, leitet Titel und Beschreibung aus den Commits ab, stellt den Checkout nach erfolgreicher PR-Erstellung zurück und meldet die PR-URL."
+catalogHint: "Öffnet aus deinem Branch einen Pull-Request (GitHub oder Forgejo)."
 ---
 
 # Firmo PR

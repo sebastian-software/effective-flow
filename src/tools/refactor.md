@@ -1,5 +1,6 @@
 ---
 description: "Orchestriert den Refactoring-Workflow: Analyse, Gap Analysis, Plan-Validierung, Baseline, Refactoring, Review, Nachvalidierung und Vorher/Nachher-Vergleich. Verwendet {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:rust-implementer}}, {{AGENT:generic-implementer}}, {{AGENT:code-validator}}, {{AGENT:test-writer}} und die passenden Reviewer-Skills."
+catalogHint: "Verbessert Struktur oder Lesbarkeit, ohne das Verhalten zu ändern."
 ---
 
 # Firmo Refactor

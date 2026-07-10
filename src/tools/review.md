@@ -1,5 +1,6 @@
 ---
 description: "Orchestriert ein umfassendes Code-Review oder bei Plan-Datei-Argument einen vertieften interaktiven Plan-Review: Scope-Bestimmung, Designentscheidungs-Erkennung, technische Validierung, fachliches Review und Berichtserstellung."
+catalogHint: "Prüft Code auf Qualität und Findings – oder tiefer einen vorhandenen Plan."
 ---
 
 # Firmo Review

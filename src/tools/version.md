@@ -1,5 +1,6 @@
 ---
 description: "Zeigt die aktuelle Firmo-Version inklusive Git-Kurzhash an."
+catalogHint: "Zeigt die installierte Firmo-Version."
 ---
 
 # Firmo Version

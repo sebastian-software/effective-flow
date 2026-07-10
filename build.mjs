@@ -21,7 +21,6 @@ import {
   getNestedArray,
   getNestedList,
   cleanDescription,
-  firstSentence,
   tomlString,
   normalizeCodexSandboxMode,
   validateRefs,
@@ -55,26 +54,54 @@ const CLAUDE_SKILL_DIR = join(DIST_CLAUDE, FIRMO_SKILL_NAME);
 const CLAUDE_AGENTS_DIR = join(DIST_CLAUDE, 'agents');
 const CLAUDE_AGENT_PREFIX = 'firmo-';
 
-// The tools exposed via `/firmo <tool>` (order = catalog order in the router).
-// Orchestrator/utility skills whose mapped name is not in this list are treated
-// as internal (built as tool files, but not listed in the router catalog).
-const EXPOSED_TOOLS = [
-  'build',
-  'fix',
-  'plan',
-  'refactor',
-  'docs',
-  'review',
-  'apply',
-  'plan-issue',
-  'maintain',
-  'commit',
-  'pr',
-  'setup',
-  'open-plans',
-  'investigate',
-  'version',
+// The tools exposed via `/firmo <tool>`, grouped by user intent. The router
+// catalog renders these groups (title + optional "when" line + tools); the flat
+// `EXPOSED_TOOLS` order equals the concatenation of the groups in order.
+// Orchestrator/utility skills whose mapped name is not listed here are treated
+// as internal (built as tool files, but not shown in the router catalog).
+// A tool's usage-oriented one-line `catalogHint` (frontmatter) is what the
+// catalog shows per line; see the catalogHint guard below.
+const TOOL_GROUPS = [
+  {
+    title: 'Verstehen, was zu tun ist',
+    when: 'Analyse & Planung, bevor Code entsteht',
+    tools: ['investigate', 'plan', 'open-plans', 'plan-issue'],
+  },
+  {
+    title: 'Eine Änderung umsetzen',
+    when: 'vom geklärten Plan/Issue zum Code',
+    tools: ['apply', 'build', 'fix', 'refactor', 'docs', 'maintain'],
+  },
+  {
+    title: 'Qualität sichern',
+    tools: ['review'],
+  },
+  {
+    title: 'Änderungen einbringen',
+    tools: ['commit', 'pr'],
+  },
+  {
+    title: 'Einrichten & Infos',
+    tools: ['setup', 'version'],
+  },
 ];
+
+// Guard: each exposed tool is assigned to exactly one group (no duplicates).
+// The "unknown name" case is caught by the "every exposed tool must exist" check.
+{
+  const seenInGroups = new Set();
+  for (const group of TOOL_GROUPS) {
+    for (const name of group.tools) {
+      if (seenInGroups.has(name)) {
+        process.stderr.write(`ERROR: tool "${name}" appears in more than one TOOL_GROUPS entry\n`);
+        process.exit(1);
+      }
+      seenInGroups.add(name);
+    }
+  }
+}
+
+const EXPOSED_TOOLS = TOOL_GROUPS.flatMap((group) => group.tools);
 
 const releasePleaseManifestPath = join(ROOT_DIR, '.release-please-manifest.json');
 if (!existsSync(releasePleaseManifestPath)) {
@@ -172,7 +199,26 @@ try {
   for (const file of toolFiles) {
     const context = `tools/${file}`;
     const { fm, body } = readSource(TOOLS_DIR, file, context);
-    tools.push({ name: basename(file, '.md'), description: getField(fm, 'description'), body });
+    const name = basename(file, '.md');
+    // Guard: every exposed tool carries a non-empty, strictly double-quoted
+    // catalogHint — the usage-oriented one-liner shown in the router catalog.
+    if (EXPOSED_TOOLS.includes(name)) {
+      const hintLine = fm.split('\n').find((l) => /^catalogHint:/.test(l));
+      if (!hintLine) {
+        throw new Error(`Exposed tool "${name}" is missing a catalogHint field (${context})`);
+      }
+      if (!/^catalogHint:\s*".+"\s*$/.test(hintLine)) {
+        throw new Error(
+          `catalogHint for "${name}" must be a non-empty, strictly double-quoted string (${context})`,
+        );
+      }
+    }
+    tools.push({
+      name,
+      description: getField(fm, 'description'),
+      catalogHint: getField(fm, 'catalogHint'),
+      body,
+    });
   }
 
   for (const file of agentFiles) {
@@ -218,10 +264,16 @@ try {
   const routerDescForHarness = (harness) =>
     harness === 'codex' ? routerDesc.replaceAll('/firmo', '$firmo') : routerDesc;
   const catalogForHarness = (harness) =>
-    EXPOSED_TOOLS.map((name) => {
-      const t = tools.find((x) => x.name === name);
-      return `- \`${skillInvocation(harness, name)}\` — ${firstSentence(t.description)}`;
-    }).join('\n');
+    TOOL_GROUPS.map((group) => {
+      const lines = [`### ${group.title}`];
+      if (group.when) lines.push(`_${group.when}_`);
+      lines.push('');
+      for (const name of group.tools) {
+        const t = tools.find((x) => x.name === name);
+        lines.push(`- \`${skillInvocation(harness, name)}\` — ${t.catalogHint}`);
+      }
+      return lines.join('\n');
+    }).join('\n\n');
 
   // Static autocomplete hint for the `<tool>` argument, kept in sync with EXPOSED_TOOLS.
   const argumentHint = `[${EXPOSED_TOOLS.join('|')}]`;

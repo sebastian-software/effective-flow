@@ -54,8 +54,8 @@ Source frontmatter carries **no** `name` or `type` field — name and category c
 ### Adding a tool or agent
 
 1. Create `src/tools/<name>.md` (or `src/agents/<name>.md`).
-2. To expose a tool via `/firmo`, add its name to `EXPOSED_TOOLS` in `build.mjs` (array order = catalog order in the router).
-3. Run `node build.mjs`. Guards will fail if an exposed tool has no source, if an `include` target is missing, or if a Codex `sandbox_mode` is unsupported.
+2. To expose a tool via `/firmo`, add it to exactly one intent group in `TOOL_GROUPS` in `build.mjs`; `EXPOSED_TOOLS` is derived from `TOOL_GROUPS` (array/group order = catalog order in the router). An exposed tool also needs a `catalogHint` frontmatter field (strictly double-quoted, a single usage-oriented line).
+3. Run `node build.mjs`. Guards will fail if an exposed tool has no source, if an `include` target is missing, if a Codex `sandbox_mode` is unsupported, if an exposed tool is missing or has an unquoted `catalogHint`, or if a tool is missing from or duplicated across `TOOL_GROUPS`.
 
 ## Versioning
 
