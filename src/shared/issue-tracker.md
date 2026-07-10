@@ -33,32 +33,7 @@ Gültige Werte:
 
 ### Config-Migration
 
-Führe diese Prüfung einmalig beim ersten Lesen der Config im Lauf aus – im selben Schritt wie die Modusbestimmung unten. Wenn `.firmo/config.json` existiert, prüfe sie auf fehlende unterstützte `tracker`-Schlüssel.
-
-- Ergänze fehlende Schlüssel mit den Defaults oben. Da `tracker.mode` per Default `local` ist, bleibt das Opt-in auch nach automatischer Migration gewahrt.
-- Erhalte vorhandene gültige Werte und unbekannte Schlüssel unverändert.
-- Lies die Datei direkt vor dem Schreiben erneut frisch ein, damit zwischenzeitliche Änderungen nicht überschrieben werden.
-- Wenn die Datei ungültiges JSON enthält: nicht schreiben, sichere Defaults für diesen Lauf verwenden und den User mit Pfad und Fehler informieren.
-- Wenn ein bekannter Schlüssel einen ungültigen Wert enthält: nicht überschreiben, sicheren Default für diesen Lauf verwenden und den User über den Schlüssel informieren.
-- Wenn die Migration Schlüssel ergänzt hat: teile dem User einmal in diesem Workflow-Lauf mit, dass `.firmo/config.json` migriert wurde, und nenne die ergänzten Schlüssel.
-- Speichere nach erfolgreicher Migration den Status in `.firmo/memory.json` unter `configMigration.tracker`, ohne vorhandene Felder wie `lastFindingNumber` zu verlieren. Andere Unterschlüssel von `configMigration` (`review`, `applyReview`, `worktree`) unverändert erhalten.
-- Legacy: Liegt in `configMigration` noch ein alter flacher Eintrag (Felder `version`/`appliedAt`/`addedKeys` direkt unter `configMigration`), darf er beim nächsten Schreiben in die Unterschlüssel-Form überführt bzw. ersetzt werden – die Migrationen sind idempotent config-getrieben; die Zuordnung zum Bereich ist optional per `addedKeys`-Präfix möglich.
-
-Memory-Eintrag:
-
-```json
-{
-  "configMigration": {
-    "tracker": {
-      "version": "issue-tracker-v1",
-      "appliedAt": "YYYY-MM-DDTHH:mm:ssZ",
-      "addedKeys": ["tracker.mode", "tracker.remoteToolOverride"]
-    }
-  }
-}
-```
-
-Wenn `.firmo/config.json` nicht existiert, lege sie **nicht** nur für die Migration an.
+Die Konsolidierung von `.firmo/config.json` (inklusive der `tracker`-Schlüssel) übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `tracker` aus. Das `tracker`-Config-Schema oben (Konfiguration, gültige Werte, Modusbestimmung, Erstaufruf-Abfrage) bleibt davon unberührt.
 
 ### Modus bestimmen
 

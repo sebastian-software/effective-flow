@@ -26,6 +26,10 @@ task-tracking
 ```
 
 ```include
+config-migration
+```
+
+```include
 plan-status
 ```
 

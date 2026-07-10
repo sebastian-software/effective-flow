@@ -29,6 +29,10 @@ language-rules
 task-tracking
 ```
 
+```include
+config-migration
+```
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der Klassifikation und

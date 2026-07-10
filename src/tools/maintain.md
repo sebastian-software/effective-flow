@@ -25,6 +25,10 @@ task-tracking
 ```
 
 ```include
+config-migration
+```
+
+```include
 firmo-dir-migration
 ```
 

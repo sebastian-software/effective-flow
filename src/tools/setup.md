@@ -21,6 +21,10 @@ language-rules
 task-tracking
 ```
 
+```include
+config-migration
+```
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Schreiben und beachte ihre Vorgaben für Konfiguration, Dateiformate und projektweite Konventionen.
@@ -185,6 +189,20 @@ Freitext-Werte (z. B. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir` od
 2. Das gilt auch für Preset-Werte: Ein Preset-Wert, der einen bereits vorhandenen, abweichenden Wert ersetzen würde, wird nur nach ausdrücklicher Bestätigung gesetzt. Zeige vor dem Schreiben eine Vorher/Nachher-Liste **aller** zu ändernden Schlüssel (egal ob aus Preset, Detailmodus oder zentralen Schaltern) und hole die Bestätigung ein. Ein vollständiges Überschreiben (Verwerfen vorhandener Werte) ebenfalls nur nach ausdrücklicher Bestätigung.
 3. Lies eine vorhandene `config.json` direkt vor dem Schreiben noch einmal frisch ein, damit zwischenzeitliche Änderungen nicht verloren gehen.
 4. Lege `.firmo/` an, falls nötig, und schreibe `config.json` als formatiertes, syntaktisch valides JSON.
+5. **Aufgeschobene Migrations-Rückfragen stellen:** `{{SKILL:setup}}` ist gemäß „Config-Migration“ der **einzige** Ort, an dem die aufgeschobenen Migrations-Rückfragen und -Upgrades entschieden werden; andere Skills schieben solche Fälle nur mit einem sicheren Default auf. Wurde beim Einlesen der Alt-Config ein optionales Upgrade erkannt (aktuell: `delivery.completion: null` → neuer Default `merge`), biete es hier als eigene Frage an, bevor der Merge aus Schritt 1–2 geschrieben wird:
+
+```ask
+when: eine Alt-Config konsolidiert wird und delivery.completion aktuell null ist ("beim Lauf fragen")
+header: Upgrade
+question: delivery.completion von "beim Lauf fragen" (null) auf den neuen Default merge umstellen?
+options:
+  - label: Ja
+    description: delivery.completion = merge — Branch künftig standardmäßig ohne Rückfrage mergen
+  - label: Nein
+    description: delivery.completion bleibt null — die Abschluss-Aktion wird weiterhin bei jedem Lauf erfragt
+```
+
+Bei „Ja“ setze `delivery.completion = "merge"` im zu schreibenden Merge-Ergebnis; bei „Nein“ bleibt der Wert `null` unverändert. Markiere die Config-Vollmigration in `.firmo/memory.json` (`configMigration.full`) erst als abgeschlossen, nachdem diese Rückfrage beantwortet oder als „kein Upgrade anstehend“ übersprungen wurde.
 
 ### Schritt 7: Zusammenfassung
 

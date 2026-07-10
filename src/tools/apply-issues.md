@@ -60,6 +60,10 @@ Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lös
 Dieser Skill ist **inhärent remote**: er arbeitet immer gegen den Issue-Tracker der `origin`-Remote. Der `tracker.mode`-Umschalter aus `{{SKILL:review}}`/`{{SKILL:apply-review}}` wird **nicht** ausgewertet. Aus dem folgenden geteilten Baustein nutzt dieser Skill nur die werkzeug-generische Plumbing: Host- und CLI-Erkennung, Verfügbarkeits-/Auth-Prüfung, das Operation-→-Kommando-Mapping und die Fehlerfälle. Die finding-/epic-spezifischen Body-Formate gelten hier nicht; die Checkbox-Abhak-Mechanik für Epic-Bodys wird bei Container-Issues sinngemäß mitgenutzt.
 
 ```include
+config-migration
+```
+
+```include
 issue-tracker
 ```
 

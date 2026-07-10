@@ -21,6 +21,10 @@ task-tracking
 ```
 
 ```include
+config-migration
+```
+
+```include
 commit-message-rules
 ```
 
@@ -131,30 +135,7 @@ Gültige Werte:
 
 ### Config-Migration
 
-Wenn `.firmo/config.json` existiert, prüfe sie beim Start auf fehlende unterstützte Apply-Review-Schlüssel.
-
-- Ergänze fehlende Schlüssel mit den Defaults oben.
-- Erhalte vorhandene gültige Werte und unbekannte Schlüssel unverändert.
-- Lies die Datei direkt vor dem Schreiben erneut frisch ein, damit zwischenzeitliche Änderungen nicht überschrieben werden.
-- Wenn die Datei ungültiges JSON enthält: nicht schreiben, sichere Defaults für diesen Lauf verwenden und den User mit Pfad und Fehler informieren.
-- Wenn ein bekannter Schlüssel einen ungültigen Wert enthält: nicht überschreiben, sicheren Default für diesen Lauf verwenden und den User über den Schlüssel informieren.
-- Wenn die Migration Schlüssel ergänzt hat: teile dem User einmal in diesem Workflow-Lauf mit, dass `.firmo/config.json` migriert wurde, nenne die ergänzten Schlüssel und weise darauf hin, dass die Defaults das bisherige sichere Verhalten erhalten.
-- Speichere nach erfolgreicher Migration den Status in `.firmo/memory.json` unter `configMigration.applyReview`, ohne vorhandene Felder wie `lastFindingNumber` zu verlieren. Andere Unterschlüssel von `configMigration` (`review`, `tracker`, `worktree`) unverändert erhalten. Die `applyReview.worktree.*`-Schlüssel gehören zu `configMigration.applyReview`, nicht zu `configMigration.worktree`.
-- Legacy: Liegt in `configMigration` noch ein alter flacher Eintrag (Felder `version`/`appliedAt`/`addedKeys` direkt unter `configMigration`), darf er beim nächsten Schreiben in die Unterschlüssel-Form überführt bzw. ersetzt werden – die Migrationen sind idempotent config-getrieben; die Zuordnung zum Bereich ist optional per `addedKeys`-Präfix möglich.
-
-Geplanter Memory-Eintrag:
-
-```json
-{
-  "configMigration": {
-    "applyReview": {
-      "version": "apply-review-speed-profiles-v1",
-      "appliedAt": "YYYY-MM-DDTHH:mm:ssZ",
-      "addedKeys": ["applyReview.finalValidation", "applyReview.worktree.baseDir"]
-    }
-  }
-}
-```
+Die Konsolidierung von `.firmo/config.json` (inklusive der `applyReview`-Schlüssel) übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `applyReview` aus. Das `applyReview`-Config-Schema oben (Konfiguration, gültige Werte) bleibt davon unberührt.
 
 ### Cache-Datei
 
