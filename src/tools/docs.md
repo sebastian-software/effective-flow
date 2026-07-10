@@ -159,15 +159,12 @@ options:
 1. Wenn diese Änderung ein Finding aus einer bestehenden Review-Report-Datei in `.firmo/review/` umgesetzt hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
-2. Wenn eine Plan-Datei als Grundlage verwendet wurde:
-   - ersetze die kanonische Statuszeile durch die jeweilige abgeschlossene Form derselben Markersprache:
-     - deutscher Marker: `**Planungsstatus:** Nicht umgesetzt` → `**Planungsstatus:** Umgesetzt`
-     - englischer Marker: `**Plan status:** Not implemented` → `**Plan status:** Implemented`
-     - wechsle die Markersprache nicht und erzeuge keine zweite Statuszeile.
+2. Wenn eine Plan-Datei als Grundlage verwendet wurde, ohne den Statusmarker vorab zu ändern:
+   - der Statusmarker bleibt an dieser Stelle unverändert (`**Planungsstatus:** Nicht umgesetzt` bzw. `**Plan status:** Not implemented`): Statuswechsel auf `Umgesetzt`/`Implemented` sowie die Archivierung nach `<plan.dir>/archive/` übernimmt Schritt 4 unten am Delivery-Punkt gemäß „Delivery- und Worktree-Integration“ (Ausnahme: In-Place ohne Delivery, siehe dort).
    - ergänze `## Testergebnisse` mit den ausgeführten Prüfungen
    - ergänze `## Review-Findings` oder schreibe „Keine Findings gefunden.“, wenn kein Review nötig war
 3. Lösche die Wisdom-Datei.
-4. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus (Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen).
+4. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus (bei geführter Plan-Datei inklusive Plan-Statuswechsel auf `Umgesetzt`/`Implemented` und Archiv-Move nach `<plan.dir>/archive/` am Delivery-Punkt, Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen). Läuft der Workflow ausnahmsweise In-Place ohne Delivery, führt er denselben Statuswechsel und Archiv-Move direkt im Arbeitsbaum aus.
 5. Fasse zusammen:
    - geänderte Dokumentationsbereiche
    - geprüfte Quellen

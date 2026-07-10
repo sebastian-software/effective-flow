@@ -352,14 +352,11 @@ Hinweis: Vor Abschluss muss die Spalte „Offen“ für „Kritisch“ 0 sein.
 ### Phase 7: Abschluss
 
 1. Führe `{{AGENT:code-validator}}` ein letztes Mal als Final-Check aus.
-2. Dokumentiere den abgeschlossenen Workflow in der Plan-Datei:
+2. Dokumentiere den abgeschlossenen Workflow in der Plan-Datei, ohne den Statusmarker vorab zu ändern:
    - wenn Phase 1 eine neue Plan-Datei via `{{SKILL:plan}}` erzeugt hat: aktualisiere diese Datei.
    - wenn der User eine ungebaute Plan-Datei referenziert hat: aktualisiere die referenzierte Datei.
-   - wenn ausnahmsweise keine Plan-Datei existiert: erstelle `<plan.dir>/` und vergib den Datums-Slug-Namen gemäß `Plan-Datei-Konvention`; nutze für die neue Plan-Datei den deutschen Marker (`**Planungsstatus:** Umgesetzt`) als Default — eine explizite Sprachwahl ist in diesem Fall nicht vorgesehen.
-   - ersetze die kanonische Statuszeile durch die jeweilige abgeschlossene Form derselben Markersprache:
-     - deutscher Marker: `**Planungsstatus:** Nicht umgesetzt` → `**Planungsstatus:** Umgesetzt`
-     - englischer Marker: `**Plan status:** Not implemented` → `**Plan status:** Implemented`
-     - wechsle die Markersprache nicht und erzeuge keine zweite Statuszeile.
+   - wenn ausnahmsweise keine Plan-Datei existiert: erstelle `<plan.dir>/` und vergib den Datums-Slug-Namen gemäß `Plan-Datei-Konvention`.
+   - der Statusmarker bleibt an dieser Stelle unverändert (`**Planungsstatus:** Nicht umgesetzt` bzw. `**Plan status:** Not implemented`): Statuswechsel auf `Umgesetzt`/`Implemented` sowie die Archivierung nach `<plan.dir>/archive/` übernimmt Schritt 6 unten am Delivery-Punkt gemäß „Delivery- und Worktree-Integration“ (Ausnahme: In-Place ohne Delivery, siehe dort).
    - Inhalt:
      - Anforderung
      - Architekturentscheidungen
@@ -399,7 +396,7 @@ Regeln für den Findings-Bericht:
 
 4. Lösche die Wisdom-Datei.
 5. Prüfe ob ein Formatter konfiguriert ist und formatiere alle geänderten Dateien inklusive Plan-Datei einmal einheitlich.
-6. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus (Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen).
+6. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus (Plan-Statuswechsel auf `Umgesetzt`/`Implemented` und Archiv-Move nach `<plan.dir>/archive/` am Delivery-Punkt, Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen). Läuft der Workflow ausnahmsweise In-Place ohne Delivery, führe denselben Statuswechsel und Archiv-Move direkt im Arbeitsbaum aus.
 7. Fasse zusammen, was implementiert, getestet und dokumentiert wurde; nenne bei aktivem Delivery-/Worktree-Modus zusätzlich den Liefer-Branch, den finalen Checkout-Zustand und das Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch).
 
 ## Regeln

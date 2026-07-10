@@ -197,7 +197,7 @@ Starte parallel:
    - zurück zu Phase 3, dann Phase 5 und 6 erneut – gemäß „Goal-getriebene Abschlusssteuerung“: begrenze die internen Korrekturrunden und eskaliere an den User, falls die Baseline danach weiterhin nicht erreicht wird, statt unbegrenzt zu wiederholen
 3. Falls keine Regressionen:
    - Wisdom-Datei löschen
-   - wenn Delivery oder Worktree-Ausführung aktiv war: Handback gemäß „Delivery- und Worktree-Integration“ ausführen (Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen)
+   - wenn Delivery oder Worktree-Ausführung aktiv war: Handback gemäß „Delivery- und Worktree-Integration“ ausführen (bei geführter Plan-Datei inklusive Plan-Statuswechsel auf `Umgesetzt`/`Implemented` und Archiv-Move nach `<plan.dir>/archive/` am Delivery-Punkt, Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen). Läuft der Workflow ausnahmsweise In-Place ohne Delivery, führt er denselben Statuswechsel und Archiv-Move direkt im Arbeitsbaum aus.
    - zusammenfassen, was refactored wurde; bei aktivem Delivery-/Worktree-Modus zusätzlich Liefer-Branch, finalen Checkout-Zustand und Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch) nennen
    - bestätigen, dass das Verhalten unverändert blieb
 
