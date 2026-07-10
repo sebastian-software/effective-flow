@@ -36,6 +36,14 @@ firmo-dir-migration
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben für Analyse, Diagnose und Berichtsformate.
 
+## Datenhaltung
+
+Investigations-Reports sind **immer lokal**: Sie liegen ausschließlich unter
+`.firmo/investigation/`, werden **nie committet** und **nie als Issue** geführt – auch
+nicht im Remote-Tracker-Modus. Der local/remote-Umschalter (`tracker.mode`) gilt nur für
+Reviews, nicht für Investigationen. Von den Firmo-Artefakten werden ausschließlich Pläne
+committet.
+
 ## Harte Abgrenzung
 
 - Erlaubt sind ausschließlich Analyse, Rückfragen, Lesen, das Ausführen read-only prüfbarer Befehle bzw. bestehender Checks, das Schreiben des Diagnose-Reports unter `.firmo/investigation/` sowie das Schreiben der transienten Wisdom-Datei `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md` (siehe „Wisdom Accumulation“), die am Ende gelöscht wird.

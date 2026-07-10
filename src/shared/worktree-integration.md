@@ -188,12 +188,19 @@ lokale Arbeitsdateien zuverlässig außerhalb des PRs.
 
 ### Was im Liefer-Branch liegt und was im Haupt-Repo bleibt
 
+Datenhaltungs-Invariante: **Von den Firmo-Artefakten werden ausschließlich Pläne
+committet.** Reviews (lokale Reports) und Investigationen bleiben immer lokal und
+ungetrackt; im Remote-Modus werden Reviews stattdessen als Issues geführt (nie im Repo),
+Investigationen bleiben in jedem Fall rein lokal (siehe „Issue-Tracker-Anbindung“ und
+`{{SKILL:investigate}}`).
+
 - **Im Liefer-Branch:** die eigentlichen Code-, Test- und Doku-Deliverables des
   Workflows sowie – sofern der Workflow eine Plan-Datei geführt hat – deren finaler
-  Zustand.
-- **Nur im Haupt-Repo:** reine Firmo-Buchhaltung und Laufzeitstatus, also alle
-  `.firmo/`-Artefakte (`memory.json`, Review-Reports unter `.firmo/review/`,
-  Config-Migrationsstatus und Wisdom-Dateien).
+  Zustand (im umgesetzten Fall die archivierte, umgesetzt-markierte Plan-Datei).
+- **Nur im Haupt-Repo, nie committet:** reine Firmo-Buchhaltung und Laufzeitstatus, also
+  alle übrigen `.firmo/`-Artefakte – `memory.json`, `cache.json`, lokale Review-Reports
+  unter `.firmo/review/`, Investigations-Reports unter `.firmo/investigation/`,
+  Config-Migrationsstatus und Wisdom-Dateien.
 
 ### Handback und Abschluss-Aktion (Abschlussphase)
 
