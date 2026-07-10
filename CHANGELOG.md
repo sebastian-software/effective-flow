@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.42.0](https://github.com/fastner/firmo/compare/firmo-v1.41.1...firmo-v1.42.0) (2026-07-10)
+
+
+### Features
+
+* update Codex agent models to GPT-5.6 ([#76](https://github.com/fastner/firmo/issues/76)) ([5bc89dc](https://github.com/fastner/firmo/commit/5bc89dce82d1c76bf36dc3feadf2226c3e676c2e))
+
 ## [1.41.1](https://github.com/fastner/firmo/compare/firmo-v1.41.0...firmo-v1.41.1) (2026-07-09)
 
 
