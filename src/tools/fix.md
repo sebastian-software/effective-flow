@@ -78,10 +78,18 @@ Aktueller Workflow für Plan-Referenzen: Bugfix (`{{SKILL:fix}}`).
 plan-reference-routing
 ```
 
-Wenn ein offener Plan für `{{SKILL:fix}}` bestätigt ist:
+```include
+apply-clarity-gate
+```
+
+Wenn ein offener Plan für `{{SKILL:fix}}` bestätigt ist, durchläuft er zuerst das
+„Klärungs-Gate“. Besteht er das Gate nicht, verweise gemäß Gate-Verhalten auf
+`{{SKILL:plan}}` bzw. `{{SKILL:review}} <plandatei>` und beende den Workflow. Besteht
+der Plan das Gate:
 
 - verwende die Inhalte der Plan-Datei als Diagnose- und Fix-Grundlage
 - überspringe keine Reproduktion automatisch; wenn der Plan bereits Reproduktionshinweise enthält, validiere sie in Phase 2
+- wurde aus der Apply-Kette bereits ein „geklärt + goal-getrieben“-Kontext übergeben (Grundlage geklärt, Bestätigung für autonomen Lauf bereits erteilt), honoriere ihn: überspringe die Goal-Abfrage in Phase 2 und durchlaufe die Phasen 3–5 unter der „Goal-getriebenen Abschlusssteuerung“.
 
 ## Workflow
 

@@ -77,12 +77,20 @@ Aktueller Workflow für Plan-Referenzen: Dokumentation (`{{SKILL:docs}}`).
 plan-reference-routing
 ```
 
-Wenn ein offener Plan für `{{SKILL:docs}}` bestätigt ist:
+```include
+apply-clarity-gate
+```
+
+Wenn ein offener Plan für `{{SKILL:docs}}` bestätigt ist, durchläuft er zuerst das
+„Klärungs-Gate“. Besteht er das Gate nicht, verweise gemäß Gate-Verhalten auf
+`{{SKILL:plan}}` bzw. `{{SKILL:review}} <plandatei>` und beende den Workflow. Besteht
+der Plan das Gate:
 
 - verwende die Inhalte der Plan-Datei als abgestimmte Dokumentationsgrundlage
 - lies aus dem Kopfbereich `**Doku-Kategorie:**` und `**Ziel-Pfad:**`
 - wenn beide Zeilen fehlen oder inkonsistent sind: frage den User nach Kategorie und Ziel-Pfad gemäß `Doku-Kategorien` und ergänze die Zeilen vor der Umsetzung in der Plan-Datei
 - wenn der Ziel-Pfad auf eine bestehende Datei zeigt: kläre mit dem User Ersatz oder neuen Slug, bevor `{{AGENT:docs-writer}}` startet
+- wurde aus der Apply-Kette bereits ein „geklärt + goal-getrieben“-Kontext übergeben (Grundlage geklärt, Bestätigung für autonomen Lauf bereits erteilt), honoriere ihn: überspringe die Goal-Abfrage in Phase 1 und durchlaufe die Phasen 2–4 unter der „Goal-getriebenen Abschlusssteuerung“.
 
 ## Workflow
 

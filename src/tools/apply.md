@@ -43,6 +43,10 @@ apply-source-detection
 ```
 
 ```include
+apply-clarity-gate
+```
+
+```include
 issue-tracker
 ```
 
@@ -83,6 +87,11 @@ issue-tracker
    - `container-issue` / `plain-issue` → `{{SKILL:apply-issues}} <arg>`
 3. Übergib als Kontext, dass `{{SKILL:apply}}` die Quelle bereits klassifiziert hat,
    samt erkanntem Quelltyp. Danach liegt die gesamte Verantwortung beim Ziel-Skill.
+4. Der Ziel-Skill prüft die Grundlage selbst gegen das „Klärungs-Gate“, bevor er
+   umsetzt. `{{SKILL:apply}}` selbst führt diese Prüfung nicht aus und implementiert
+   nichts. Bei geklärter Grundlage bevorzugt der Ziel-Skill nach einer Bestätigung die
+   goal-getriebene, autonome Umsetzung (siehe „Explizite Goal-Abfrage für autonome
+   Läufe“ in `goal-completion.md`).
 
 ## Regeln
 

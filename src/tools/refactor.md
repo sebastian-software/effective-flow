@@ -76,10 +76,18 @@ Aktueller Workflow für Plan-Referenzen: Refactoring (`{{SKILL:refactor}}`).
 plan-reference-routing
 ```
 
-Wenn ein offener Plan für `{{SKILL:refactor}}` bestätigt ist:
+```include
+apply-clarity-gate
+```
+
+Wenn ein offener Plan für `{{SKILL:refactor}}` bestätigt ist, durchläuft er zuerst das
+„Klärungs-Gate“. Besteht er das Gate nicht, verweise gemäß Gate-Verhalten auf
+`{{SKILL:plan}}` bzw. `{{SKILL:review}} <plandatei>` und beende den Workflow. Besteht
+der Plan das Gate:
 
 - verwende die Inhalte der Plan-Datei als Refactoring-Plan
 - validiere weiterhin in Phase 1, dass keine beabsichtigte Verhaltensänderung enthalten ist
+- wurde aus der Apply-Kette bereits ein „geklärt + goal-getrieben“-Kontext übergeben (Grundlage geklärt, Bestätigung für autonomen Lauf bereits erteilt), honoriere ihn: überspringe die Goal-Abfrage in Phase 1 und durchlaufe die Phasen 2–6 unter der „Goal-getriebenen Abschlusssteuerung“.
 
 ## Workflow
 

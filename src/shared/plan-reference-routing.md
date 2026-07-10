@@ -41,15 +41,9 @@ Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel 
 
 ### Offene Punkte prüfen
 
-1. Prüfe, ob der Plan einen Abschnitt `## Offene Punkte` oder `## Open Points` enthält.
-2. Wenn der Abschnitt fehlt: fahre fort. Ältere Pläne ohne diesen Abschnitt bleiben kompatibel.
-3. Wenn der Abschnitt existiert und ausschließlich `- Keine offenen Punkte.` oder `- No open points.` enthält: fahre fort.
-4. Wenn der Abschnitt andere Einträge enthält:
-   - zeige die offenen Punkte kurz an,
-   - warne, dass der Plan noch nicht vollständig entschieden ist,
-   - frage den User, ob der aktuelle Workflow trotzdem fortfahren soll.
-5. Ohne ausdrückliche Bestätigung: brich ab und verweise auf `{{SKILL:review}} <plandatei>` als Klärungsweg.
-6. Bei Bestätigung: fahre fort und halte im Wisdom-Kontext fest, dass der User die Umsetzung trotz offener Punkte bestätigt hat.
+Die Prüfung auf offene oder ungeklärte Punkte übernimmt das „Klärungs-Gate“
+(`apply-clarity-gate.md`), das die umsetzenden Workflows und die Apply-Kette selbst
+einbinden. Diese Referenz-Regel dupliziert diese Prüfung nicht separat.
 
 ### Nach erfolgreicher Prüfung
 
