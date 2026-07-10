@@ -51,17 +51,17 @@ Spezialisten, die von den Tools intern als Subagents delegiert werden (liegen un
 
 | Agent                | Beschreibung                        | Codex Model  | Claude Model |
 | -------------------- | ----------------------------------- | ------------ | ------------ |
-| `ui-implementer`     | Frontend-Implementierung            | gpt-5.5      | sonnet       |
-| `nodejs-implementer` | Backend/CLI-Implementierung         | gpt-5.5      | opus         |
-| `rust-implementer`   | Rust-Implementierung                | gpt-5.5      | opus         |
-| `frontend-reviewer`  | Frontend-Review                     | gpt-5.5      | opus         |
-| `nodejs-reviewer`    | Backend/CLI-Review                  | gpt-5.5      | opus         |
-| `rust-reviewer`      | Rust-Review                         | gpt-5.5      | opus         |
-| `code-validator`     | TypeScript, Lint, Build-Validierung | gpt-5.4-mini | haiku        |
-| `code-documenter`    | In-Code-Dokumentation               | gpt-5.4-mini | sonnet       |
-| `docs-writer`        | User-Dokumentation                  | gpt-5.4-mini | sonnet       |
-| `test-writer`        | Unit-Tests                          | gpt-5.4-mini | sonnet       |
-| `e2e-tester`         | E2E-Tests                           | gpt-5.4-mini | sonnet       |
+| `ui-implementer`     | Frontend-Implementierung            | gpt-5.6-sol  | sonnet       |
+| `nodejs-implementer` | Backend/CLI-Implementierung         | gpt-5.6-sol  | opus         |
+| `rust-implementer`   | Rust-Implementierung                | gpt-5.6-sol  | opus         |
+| `frontend-reviewer`  | Frontend-Review                     | gpt-5.6-sol  | opus         |
+| `nodejs-reviewer`    | Backend/CLI-Review                  | gpt-5.6-sol  | opus         |
+| `rust-reviewer`      | Rust-Review                         | gpt-5.6-sol  | opus         |
+| `code-validator`     | TypeScript, Lint, Build-Validierung | gpt-5.6-luna | haiku        |
+| `code-documenter`    | In-Code-Dokumentation               | gpt-5.6-luna | sonnet       |
+| `docs-writer`        | User-Dokumentation                  | gpt-5.6-luna | sonnet       |
+| `test-writer`        | Unit-Tests                          | gpt-5.6-luna | sonnet       |
+| `e2e-tester`         | E2E-Tests                           | gpt-5.6-luna | sonnet       |
 
 ## Auslieferung
 
@@ -289,7 +289,7 @@ claude:
   tools: [Read, Write, Edit, Bash, Glob, Grep]
   skills: [frontend-design, effective-ui-design]
 codex:
-  model: gpt-5.5
+  model: gpt-5.6-sol
   model_reasoning_effort: high
   sandbox_mode: danger-full-access
 ---

@@ -6,7 +6,7 @@ claude:
   tools: [Read, Write, Edit, Glob, Grep]
   skills: [copy-editing]
 codex:
-  model: gpt-5.4-mini
+  model: gpt-5.6-luna
   model_reasoning_effort: medium
   sandbox_mode: workspace-write
 ---
