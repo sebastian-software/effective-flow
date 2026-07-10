@@ -45,9 +45,10 @@ plan-status
 
 Erwarte genau eine Plan-Referenz unter `<plan.dir>/`, zum Beispiel:
 
-- `<plan.dir>/0066-interaktive-plan-review-iteration.md`
-- `0066-interaktive-plan-review-iteration.md`
-- `0066`
+- `<plan.dir>/2024-06-01-interaktive-plan-review-iteration.md`
+- `2024-06-01-interaktive-plan-review-iteration.md`
+- `interaktive-plan-review-iteration` (Titel-Slug)
+- `0066` (Legacy-Nummer eines migrierten Altplans, primär über die H1 aufgelöst)
 
 Wenn die Referenz fehlt, mehrdeutig ist oder nicht auf eine Plan-Datei zeigt, frage
 nach der konkreten Plan-Datei. Wähle niemals heuristisch den neuesten Plan.

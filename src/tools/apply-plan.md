@@ -82,10 +82,10 @@ plan-reference-routing
    - bei Doku-Plänen zusätzlich Doku-Kategorie und Ziel-Pfad aus dem Plan-Kopf
 2. Da der Plan das Klärungs-Gate bestanden hat, liegt eine vollständig geklärte Grundlage vor: biete vor der Delegation die goal-getriebene, autonome Umsetzung an — nach einer expliziten Bestätigung an dieser Freigabe-Grenze gemäß „Explizite Goal-Abfrage für autonome Läufe“ aus `goal-completion.md`. Stimmt der User zu, bevorzuge den eingebauten Goal-Weg: gib den fertigen, copy-paste-baren `/goal`-String aus, falls ein nativer `/goal`-Lauf möglich ist, sonst verweise auf den internen goal-getriebenen Loop des Ziel-Workflows. Bei „Nein“ oder normaler Antwort bleibt der bestehende interaktive (gated) Weg die Alternative.
 3. Starte den erkannten Skill mit der Plan-Datei als Argument:
-   - `{{SKILL:build}} <plan.dir>/NNNN-...md`
-   - `{{SKILL:fix}} <plan.dir>/NNNN-...md`
-   - `{{SKILL:refactor}} <plan.dir>/NNNN-...md`
-   - `{{SKILL:docs}} <plan.dir>/NNNN-...md`
+   - `{{SKILL:build}} <plan.dir>/YYYY-MM-DD-<slug>.md`
+   - `{{SKILL:fix}} <plan.dir>/YYYY-MM-DD-<slug>.md`
+   - `{{SKILL:refactor}} <plan.dir>/YYYY-MM-DD-<slug>.md`
+   - `{{SKILL:docs}} <plan.dir>/YYYY-MM-DD-<slug>.md`
 4. Übergebe als Kontext:
    - dass `{{SKILL:apply-plan}}` den Planstatus, die Workflow-Empfehlung und das Klärungs-Gate bereits geprüft hat
    - den vollständigen Planpfad

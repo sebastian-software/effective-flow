@@ -241,9 +241,10 @@ ob das User-Argument eindeutig auf eine Plan-Datei unter `<plan.dir>/` zeigt.
 
 Erlaubte Formen sind:
 
-- vollständiger Pfad, z. B. `<plan.dir>/0066-feature.md`
-- Dateiname, z. B. `0066-feature.md`
-- vierstellige Nummer, z. B. `0066`
+- vollständiger Pfad, z. B. `<plan.dir>/2024-06-01-feature.md`
+- Datums-Slug-Dateiname, z. B. `2024-06-01-feature.md`
+- Titel-Slug, z. B. `feature`
+- Legacy-Nummer, z. B. `0066` (bei migrierten Altplänen, primär über die H1 aufgelöst)
 
 Wenn genau eine Plan-Datei gefunden wird:
 
