@@ -5,7 +5,7 @@ claude:
   color: red
   tools: [Read, Glob, Grep]
 codex:
-  model: gpt-5.5
+  model: gpt-5.6-sol
   model_reasoning_effort: high
   sandbox_mode: read-only
 ---

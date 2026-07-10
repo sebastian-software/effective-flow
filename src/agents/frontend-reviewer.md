@@ -6,7 +6,7 @@ claude:
   tools: [Read, Glob, Grep]
   skills: [frontend-design, effective-ui-design]
 codex:
-  model: gpt-5.5
+  model: gpt-5.6-sol
   model_reasoning_effort: high
   sandbox_mode: read-only
 ---

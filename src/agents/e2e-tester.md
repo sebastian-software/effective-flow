@@ -6,7 +6,7 @@ claude:
   tools: [Read, Write, Edit, Bash, Glob, Grep]
   skills: [effective-ui-design]
 codex:
-  model: gpt-5.4-mini
+  model: gpt-5.6-luna
   model_reasoning_effort: medium
   # danger-full-access bewusst: Playwright-Browser-Download (Cache außerhalb des Workspace) und Netzwerkzugriff auf lokalen Dev-Server sind unter workspace-write blockiert
   sandbox_mode: danger-full-access

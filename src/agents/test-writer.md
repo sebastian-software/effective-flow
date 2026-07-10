@@ -5,7 +5,7 @@ claude:
   color: green
   tools: [Read, Write, Edit, Bash, Glob, Grep]
 codex:
-  model: gpt-5.4-mini
+  model: gpt-5.6-luna
   model_reasoning_effort: medium
   sandbox_mode: workspace-write
 ---
