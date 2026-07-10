@@ -8,7 +8,7 @@ Du bist der Orchestrator für reine Implementierungsplanung.
 
 ## Ziel
 
-Dieser Skill erstellt einen umsetzbaren, validierten Implementierungsplan in `docs/plan/`. Er empfiehlt den passenden nachfolgenden Workflow, erzeugt **keinen Code**, startet **keine Implementierung** und ändert **keine bestehenden Implementierungsdateien**.
+Dieser Skill erstellt einen umsetzbaren, validierten Implementierungsplan in `<plan.dir>/`. Er empfiehlt den passenden nachfolgenden Workflow, erzeugt **keinen Code**, startet **keine Implementierung** und ändert **keine bestehenden Implementierungsdateien**.
 
 ```include
 language-rules
@@ -32,9 +32,9 @@ doc-categories
 
 ## Harte Abgrenzung
 
-- Erlaubt sind ausschließlich Analyse, Rückfragen und Dokumentationsänderungen unter `docs/plan/`.
-- Erlaubt ist das Erstellen von `docs/plan/`, falls das Verzeichnis fehlt.
-- Verboten sind Änderungen an Source-Code, Tests, Konfiguration, Build-Dateien, README-Dateien, ADRs und sonstigen Projektdateien außerhalb von `docs/plan/`.
+- Erlaubt sind ausschließlich Analyse, Rückfragen und Dokumentationsänderungen unter `<plan.dir>/`.
+- Erlaubt ist das Erstellen von `<plan.dir>/`, falls das Verzeichnis fehlt.
+- Verboten sind Änderungen an Source-Code, Tests, Konfiguration, Build-Dateien, README-Dateien, ADRs und sonstigen Projektdateien außerhalb von `<plan.dir>/`.
 - Verboten sind Implementer-, Test-, Validator- oder Reviewer-Phasen, die Code erzeugen oder verändern könnten.
 - Der Plan selbst soll möglichst wenig oder keinen Code enthalten. Beschreibe gewünschte Änderungen in natürlicher Sprache, mit Datei-Referenzen, Schnittstellen-Namen, Datenformen und Akzeptanzkriterien statt mit vollständigen Codeblöcken.
 - Code im Plan ist nur erlaubt, wenn er die kürzeste klare Form ist, um einen Punkt eindeutig zu machen, zum Beispiel ein einzelnes Literal, ein kurzer Signatur-Entwurf oder ein minimales Datenbeispiel.
@@ -54,8 +54,8 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 ### Phase 1: Scope und Kontext
 
 1. Analysiere die Anforderung gründlich.
-2. Prüfe vorhandene Plan-Dateien in `docs/plan/`, um Struktur und vorhandene Architekturentscheidungen zu übernehmen.
-3. Prüfe, ob in `docs/plan/` noch Pläne im Altformat (`NNNN-slug.md`) liegen. Falls ja, führe die Bulk-Migration gemäß `Plan-Datei-Konvention`, Abschnitt „Migration alter Pläne (NNNN → Datum)“, aus. Die eigentliche Plan-Datei dieses Laufs entsteht erst in Phase 3/7 unter `docs/plan/YYYY-MM-DD-<slug>.md` — es gibt keinen Stub, keine Reservierung und keine Nummer.
+2. Prüfe vorhandene Plan-Dateien in `<plan.dir>/`, um Struktur und vorhandene Architekturentscheidungen zu übernehmen.
+3. Prüfe, ob in `<plan.dir>/` noch Pläne im Altformat (`NNNN-slug.md`) liegen. Falls ja, führe die Bulk-Migration gemäß `Plan-Datei-Konvention`, Abschnitt „Migration alter Pläne (NNNN → Datum)“, aus. Die eigentliche Plan-Datei dieses Laufs entsteht erst in Phase 3/7 unter `<plan.dir>/YYYY-MM-DD-<slug>.md` — es gibt keinen Stub, keine Reservierung und keine Nummer.
 4. Untersuche die relevanten Bereiche der Codebase lokal oder mit internem Sub-Agenten:
    - Projektstruktur
    - betroffene Module und Dateien
@@ -89,7 +89,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 
 ### Phase 3: Plan-Erstellung
 
-Schreibe die Plan-Datei nach `docs/plan/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` ist das Erstellungsdatum (via `date +%F`), `<slug>` ein Kebab-Case-Slug aus dem endgültigen Titel. Bei einer Namenskollision am selben Tag hänge ein numerisches Suffix an (`-2`, `-3`, …). Die H1 ist `# <Titel>` ohne Nummer.
+Schreibe die Plan-Datei nach `<plan.dir>/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` ist das Erstellungsdatum (via `date +%F`), `<slug>` ein Kebab-Case-Slug aus dem endgültigen Titel. Bei einer Namenskollision am selben Tag hänge ein numerisches Suffix an (`-2`, `-3`, …). Die H1 ist `# <Titel>` ohne Nummer.
 
 Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers in dieser Reihenfolge fest. Die erste Quelle, die einen gültigen Wert liefert, gewinnt.
 
@@ -103,9 +103,9 @@ Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers in d
    - Schlüssel fehlt → ohne extra Hinweis zu Schritt 2 (Detection gibt eine eigene Statuszeile aus).
 3. Wenn die Datei nicht lesbar ist (Datei kaputt, kein JSON): kurzer Hinweis an den User, dann Schritt 2.
 
-#### Schritt 2: Auto-Detection aus `docs/plan/`
+#### Schritt 2: Auto-Detection aus `<plan.dir>/`
 
-1. Lies alle `.md`-Dateien unter `docs/plan/`. Lege _keine_ neuen Verzeichnisse an und schreibe keine anderen Dateien.
+1. Lies alle `.md`-Dateien unter `<plan.dir>/`. Lege _keine_ neuen Verzeichnisse an und schreibe keine anderen Dateien.
 2. Bestimme pro Datei den Planstatus über die kanonische Ein-Marker-Regel: genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` und gültigem Wert; Dateien mit fehlender, mehrfacher oder ungültiger Statuszeile gelten als „unklar“.
 3. Zähle die Plan-Dateien mit deutschem Marker (`de_count`) und mit englischem Marker (`en_count`). Dateien mit Status „unklar“ werden ignoriert.
 4. Bestimme das Detection-Ergebnis:
@@ -326,7 +326,7 @@ Bewerte den Plan mit einer Scorecard:
 | Verification        | messbare Akzeptanzkriterien pro Anforderung                                                               |
 | Context             | verifizierter Code vs. Annahmen, Ziel <= 10% Raten                                                        |
 | Big Picture         | Zweck und Workflow explizit beschrieben                                                                   |
-| No-Code-Grenze      | keine Änderungen außerhalb `docs/plan/`                                                                   |
+| No-Code-Grenze      | keine Änderungen außerhalb `<plan.dir>/`                                                                  |
 | Code-Sparsamkeit    | kein Code im Plan, außer ein minimales Fragment ist die kürzeste klare Erklärung                          |
 | Workflow-Empfehlung | Feature, Bugfix, Refactoring oder Dokumentation ist begründet und zum Scope passend                       |
 | Doku-Ziel           | bei Doku-Plänen sind `**Doku-Kategorie:**` und `**Ziel-Pfad:**` gesetzt, gültig und konsistent zueinander |
@@ -340,7 +340,7 @@ Führe vor dem Abschluss einen Review des Plans selbst durch. Dieser Review prü
 Regeln:
 
 - Starte keine normalen Reviewer-Skills, Implementer, Test-Writer oder Validatoren.
-- Ändere weiterhin nur die Plan-Datei unter `docs/plan/`.
+- Ändere weiterhin nur die Plan-Datei unter `<plan.dir>/`.
 - Prüfe die geplanten Änderungen gegen den verifizierten Code-Kontext aus Phase 1.
 - Gib keine vollständigen Codevorschläge aus; halte dich an die Code-Sparsamkeitsregel.
 
@@ -386,7 +386,7 @@ options:
 
 Bei `Ja`: Lies die interne Anweisung `{{SKILL:plan-review}}` und führe sie mit der
 gerade erzeugten Plan-Datei aus. Halte weiterhin die Schreibgrenze ein: nur die
-Plan-Datei unter `docs/plan/` darf geändert werden.
+Plan-Datei unter `<plan.dir>/` darf geändert werden.
 
 Bei `Nein`: Fahre mit Phase 7 fort und nenne im Abschluss den Wiedereinstieg über
 `{{SKILL:review}} <plandatei>`.
@@ -401,7 +401,7 @@ Bei `Nein`: Fahre mit Phase 7 fort und nenne im Abschluss den Wiedereinstieg üb
    - empfohlener Workflow mit Begründung
    - Scorecard-Ergebnis
    - Hinweis, dass keine Code-Änderungen vorgenommen wurden
-   - Hinweis, welcher Skill-Aufruf den Plan später umsetzt, zum Beispiel `{{SKILL:build}} docs/plan/YYYY-MM-DD-<slug>.md`, `{{SKILL:fix}} docs/plan/YYYY-MM-DD-<slug>.md`, `{{SKILL:refactor}} docs/plan/YYYY-MM-DD-<slug>.md` oder `{{SKILL:docs}} docs/plan/YYYY-MM-DD-<slug>.md`
+   - Hinweis, welcher Skill-Aufruf den Plan später umsetzt, zum Beispiel `{{SKILL:build}} <plan.dir>/YYYY-MM-DD-<slug>.md`, `{{SKILL:fix}} <plan.dir>/YYYY-MM-DD-<slug>.md`, `{{SKILL:refactor}} <plan.dir>/YYYY-MM-DD-<slug>.md` oder `{{SKILL:docs}} <plan.dir>/YYYY-MM-DD-<slug>.md`
 
 ## Regeln
 

@@ -31,7 +31,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Schreiben und b
 
 - **`review`** (Quelle: `{{SKILL:review}}`): `profile` (full/focused/fast), `autoConfirmScope` (bool), `designDecisionSources` (full/standard/minimal), `validation` (full/quick/off)
 - **`applyReview`** (Quelle: `{{SKILL:apply-review}}`): `defaultCommitStrategy` (worktrees/single/none/`null` = beim Lauf fragen), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/Befehl)
-- **`plan`** (Quelle: `{{SKILL:plan}}`): `markerLanguage` (de/en)
+- **`plan`** (Quelle: `{{SKILL:plan}}`): `markerLanguage` (de/en), `dir` (String, Default `docs/plan`) — Verzeichnis der Plan-Dateien
 - **`delivery`** (Quelle: `{{SKILL:build}}`, Abschnitt „Delivery- und Worktree-Integration“ – ebenso in den weiteren code-ändernden Workflows eingebettet): `enabled` (bool), `baseBranch` (Default `origin/main`), `branchPrefix` (Default `firmo`), `completion` (pr/merge/branch/`null` = beim Lauf fragen), `returnBranch` (auto oder lokaler Branchname)
 - **`worktree`** (Quelle: `{{SKILL:build}}`, Abschnitt „Delivery- und Worktree-Integration“): `enabled` (bool), `setup` (auto/none/Befehl), `baseDir`
 - **`tracker`** (Quelle: `{{SKILL:review}}`, Abschnitt „Issue-Tracker-Anbindung“ – ebenso in `{{SKILL:apply-review}}` und den weiteren Tracker-Workflows eingebettet): `mode` (local/remote, Default `local`), `remoteToolOverride` (auto/github/forgejo, Default `auto`)
@@ -180,7 +180,7 @@ Frage Block für Block jeden Schlüssel ab, jeweils mit den gültigen Werten aus
 
 1. `review`: `review.profile`, `review.autoConfirmScope`, `review.designDecisionSources`, `review.validation`
 2. `applyReview`: `applyReview.defaultCommitStrategy`, `applyReview.finalValidation`, `applyReview.stashPolicy`, `applyReview.worktree.baseDir`, `applyReview.worktree.setup`
-3. `plan`: `plan.markerLanguage` (bereits in Schritt 4 erfragt — übernehmen)
+3. `plan`: `plan.markerLanguage` (bereits in Schritt 4 erfragt — übernehmen), `plan.dir` (Freitext, Default `docs/plan`) — nur bei Bedarf abfragen, da selten geändert
 4. `delivery`: `delivery.enabled`, `delivery.baseBranch`, `delivery.branchPrefix`, `delivery.completion` (bereits in Schritt 4 erfragt — übernehmen), `delivery.returnBranch`
 5. `worktree`: `worktree.enabled` (bereits in Schritt 4 erfragt — übernehmen), `worktree.setup`, `worktree.baseDir`
 6. `tracker`: `tracker.mode` (bereits in Schritt 4 erfragt — übernehmen), `tracker.remoteToolOverride` (auto/github/forgejo)
@@ -202,7 +202,7 @@ Melde dem User:
 
 - ob der `.gitignore`-Eintrag (`.firmo/*` plus `!.firmo/config.json`) ergänzt, eine bestehende pauschale `.firmo/`- oder Alt-`.sf-plugin/`-Zeile dorthin migriert wurde oder der Soll-Zustand bereits hergestellt war — und dass `.firmo/config.json` dabei getrackt bleibt
 - welches Preset bzw. der Detailmodus gewählt wurde
-- die gesetzten zentralen Verhaltenswerte (`delivery.enabled`, ggf. `delivery.completion`/`delivery.baseBranch`/`delivery.returnBranch`, `worktree.enabled`, `plan.markerLanguage`, `tracker.mode` und ggf. `tracker.remoteToolOverride`)
+- die gesetzten zentralen Verhaltenswerte (`delivery.enabled`, ggf. `delivery.completion`/`delivery.baseBranch`/`delivery.returnBranch`, `worktree.enabled`, `plan.markerLanguage`, `tracker.mode` und ggf. `tracker.remoteToolOverride`) sowie `plan.dir`, falls gesetzt oder gegenüber dem Default geändert
 - bei einer zuvor vorhandenen Config: welche Schlüssel gegenüber dem alten Stand geändert wurden (Vorher/Nachher)
 - den Pfad der geschriebenen Config (`.firmo/config.json`)
 

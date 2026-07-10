@@ -10,6 +10,9 @@ Ohne aktive Delivery- oder Worktree-Anforderung verhalten sich die Workflows wie
 bisher: keine erzwungene Branch-Erzeugung, keine erzwungenen Commits und keine
 automatische PR-Erstellung.
 
+`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir` (Default
+`docs/plan`).
+
 ### Rollen der Config-Blöcke
 
 - **`delivery`** beschreibt den Liefer-Branch und dessen Abschluss: Basis-Ref,
@@ -210,7 +213,7 @@ Der Ablauf:
    lassen. Nicht ausgewählte Änderungen im Haupt-Checkout bleiben unberührt.
 
 Nicht erlaubt ist eine heuristische Teil-Diff-Auswahl nach „alle geänderten Dateien
-außer docs/plan“. Der Workflow muss die einzuschließenden Dateien kennen oder
+außer <plan.dir>“. Der Workflow muss die einzuschließenden Dateien kennen oder
 nachfragen. Dadurch bleiben parallel neu angelegte Pläne, `.firmo/`-State und andere
 lokale Arbeitsdateien zuverlässig außerhalb des PRs.
 
@@ -238,7 +241,7 @@ stoppe und melde den Konflikt, statt History zu überschreiben.
 1. **Plan-Datei in den Liefer-Branch übernehmen:** Sofern der Workflow eine
    Plan-Datei geführt hat und die Umsetzung in einem Worktree oder Teil-Diff-Worktree
    lief, stelle ihren finalen Zustand aus dem Haupt-Repo im Worktree unter demselben
-   Pfad `docs/plan/NNNN-…md` bereit. Diese Datei wird mitcommittet und ist damit
+   Pfad `<plan.dir>/NNNN-…md` bereit. Diese Datei wird mitcommittet und ist damit
    Teil des PRs. Die `.firmo/`-Artefakte bleiben im Haupt-Repo. Führte der Workflow
    keine Plan-Datei oder läuft er bereits im Liefer-Branch des Haupt-Repos, entfällt
    dieser Kopierschritt.

@@ -237,13 +237,16 @@ Lösche die Datei am Ende des Workflows, vor `ERLEDIGT`.
 
 ### Plan-Datei-Sonderfall
 
+`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir` (Default
+`docs/plan`).
+
 Prüfe vor Phase 1 und vor jeder Code-Review-spezifischen Initialisierung
 (`.firmo/config.json`-Migration, Tracker-Modus, Memory, Cache oder Wisdom-Datei),
-ob das User-Argument eindeutig auf eine Plan-Datei unter `docs/plan/` zeigt.
+ob das User-Argument eindeutig auf eine Plan-Datei unter `<plan.dir>/` zeigt.
 
 Erlaubte Formen sind:
 
-- vollständiger Pfad, z. B. `docs/plan/0066-feature.md`
+- vollständiger Pfad, z. B. `<plan.dir>/0066-feature.md`
 - Dateiname, z. B. `0066-feature.md`
 - vierstellige Nummer, z. B. `0066`
 
@@ -297,7 +300,7 @@ Bestimme die aktiven Designentscheidungs-Quellen aus `review.designDecisionSourc
 Starte für jede aktive Quelle einen eigenen Sub-Agenten **parallel**. Jeder Sub-Agent durchsucht nur seine Quelle:
 
 - ADR — `docs/decisions/`, `docs/adr/`, `adr/`, `*.adr.md`
-- Planungs-Dateien — `docs/plan/`, `plans/`
+- Planungs-Dateien — `<plan.dir>/`, `plans/`
 - Konventions-Dateien — `CLAUDE.md`, `AGENTS.md`, vergleichbare Konventionsdateien
 - Code-Kommentare — `@design-decision`, `DELIBERATE`, `INTENTIONAL`, `DESIGN:`
 - Lint-Suppressions mit Begründung — `eslint-disable ... -- [Grund]`, `@ts-expect-error [Grund]`

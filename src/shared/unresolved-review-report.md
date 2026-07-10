@@ -52,7 +52,7 @@ Verwende das kanonische Bericht-Format aus `{{SKILL:review}}` Abschnitt „Beric
 Zusätzliche Header-Felder für Workflow-Reports:
 
 - Setze direkt unter `**Projekt-Typ:** ...` diese drei Zeilen:
-  - `**Ursprungsplan:** [docs/plan/YYYY-MM-DD-<slug>.md oder Keiner]`
+  - `**Ursprungsplan:** [<plan.dir>/YYYY-MM-DD-<slug>.md oder Keiner]` (`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir`, Default `docs/plan`)
   - `**Quell-Workflow:** [{{SKILL:build}} / {{SKILL:fix}} / {{SKILL:refactor}} / {{SKILL:maintain}}]`
   - `**Quell-Review:** [Reviewer oder Phase]`
 - Alle Tabellen und Finding-Blöcke bleiben im `{{SKILL:review}}`-Format.

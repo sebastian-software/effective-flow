@@ -4,7 +4,10 @@ description: "Listet alle noch nicht umgesetzten Plan-Dateien aus docs/plan/ mit
 
 # Firmo Open Plans
 
-Du listest offene Implementierungspläne aus `docs/plan/`.
+Du listest offene Implementierungspläne aus `<plan.dir>/`.
+
+`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir` (Default
+`docs/plan`).
 
 ## Ziel
 
@@ -28,8 +31,8 @@ plan-status
 
 ## Vorgehen
 
-1. Prüfe, ob `docs/plan/` existiert.
-2. Lies alle Markdown-Dateien auf der obersten Ebene von `docs/plan/` in lexikografischer Reihenfolge (Datums-Slug-Namen sortieren dadurch chronologisch). Schließe `docs/plan/archive/` aus.
+1. Prüfe, ob `<plan.dir>/` existiert.
+2. Lies alle Markdown-Dateien auf der obersten Ebene von `<plan.dir>/` in lexikografischer Reihenfolge (Datums-Slug-Namen sortieren dadurch chronologisch). Schließe `<plan.dir>/archive/` aus.
 3. Bestimme pro Datei den Planstatus über die kanonische Ein-Marker-Regel der Planstatus-Konvention: genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` und gültigem Wert.
 4. Klassifiziere (beide Markersprachen sind gleichwertig):
    - **Offen:** genau `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented`
@@ -65,4 +68,4 @@ plan-status
 - Starte keine Implementierung und keine Validierung.
 - Zähle Review-Finding-Status wie `Nicht umgesetzt` oder `Not implemented` nicht als Planstatus.
 - Gib Pfade relativ zum Projekt-Root aus.
-- Wenn `docs/plan/` fehlt oder keine Markdown-Dateien enthält, melde das knapp.
+- Wenn `<plan.dir>/` fehlt oder keine Markdown-Dateien enthält, melde das knapp.

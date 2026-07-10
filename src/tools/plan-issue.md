@@ -10,10 +10,12 @@ Du bist der Orchestrator, der unvollständig spezifizierte Issues durch interakt
 
 `{{SKILL:apply-issues}}` überspringt Issues, deren Information für eine autonome Umsetzung nicht ausreicht, und markiert sie mit `firmo-needs-planning`. Dieser Skill sammelt genau diese Issues ein, führt je Issue die **Klärungs-Methodik** von `{{SKILL:plan}}` durch (Analyse + gezielte Rückfragen an den User) und schreibt die vervollständigte, strukturierte Spezifikation **als Kommentar** zurück ans Issue. Danach entfernt er das Label `firmo-needs-planning`, sodass `{{SKILL:apply-issues}}` das Issue beim nächsten Lauf als umsetzbar aufnimmt.
 
+`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir` (Default `docs/plan`).
+
 Harte Abgrenzung:
 
 - Dieser Skill **erzeugt keinen Code** und startet keine Implementierungs-, Test-, Validator- oder Reviewer-Phase.
-- Er legt **keine** `docs/plan/`-Datei an; das Issue bleibt die einzige Quelle. Alle Ergebnisse landen als Issue-Kommentar.
+- Er legt **keine** `<plan.dir>/`-Datei an; das Issue bleibt die einzige Quelle. Alle Ergebnisse landen als Issue-Kommentar.
 - Er implementiert das Issue nicht selbst — die Umsetzung übernimmt anschließend `{{SKILL:apply-issues}}`.
 
 ```include
@@ -98,7 +100,7 @@ Berichte dem User, welche Issues geplant und mit einem Planungskommentar versehe
 ## Regeln
 
 - Ändere keine Implementierungsdateien und erzeuge keinen Code.
-- Lege keine `docs/plan/`-Datei an.
+- Lege keine `<plan.dir>/`-Datei an.
 - Wenn die Klärung eine belastbare Planung nicht ermöglicht (z. B. weil der User zentrale Fragen nicht beantwortet), lass das Label `firmo-needs-planning` bestehen und dokumentiere im Kommentar, welche Entscheidung noch aussteht.
 - Setze niemals `Co-Authored-By`-Trailer und exponiere keine internen IDs in Kommentaren.
 - Gib dem User nach jeder Phase eine kurze Statusmeldung.

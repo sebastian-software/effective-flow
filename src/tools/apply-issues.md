@@ -220,7 +220,7 @@ Lösche anschließend die Wisdom-Datei.
 ## Regeln
 
 - Ändere selbst keine Implementierungsdateien; die Umsetzung liegt bei den delegierten Workflows.
-- Erzeuge keine `docs/plan/`-Datei; die interne Planung übernimmt der jeweilige Umsetzungs-Workflow.
+- Erzeuge keine `<plan.dir>/`-Datei; die interne Planung übernimmt der jeweilige Umsetzungs-Workflow.
 - Verwende keinen heuristischen „neuesten Issue“, wenn mehrere Kandidaten existieren.
 - Im Zweifel über die Ausreichend-Prüfung: als `unzureichend` behandeln und an `{{SKILL:plan-issue}}` verweisen, statt zu raten.
 - Setze niemals `Co-Authored-By`-Trailer und exponiere keine internen IDs in Commits oder Kommentaren.

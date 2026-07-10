@@ -1,13 +1,17 @@
 ## Plan-Datei-Konvention (Naming, Migration, Archiv)
 
-Plan-Dateien liegen unter `docs/plan/`. Der Dateiname trägt ein **ISO-Datums-Präfix**
+Das Plan-Verzeichnis ist über `.firmo/config.json` `plan.dir` konfigurierbar (Default
+`docs/plan`). Im Folgenden steht `<plan.dir>` für dieses Verzeichnis, `<plan.dir>/archive`
+für sein Archiv.
+
+Plan-Dateien liegen unter `<plan.dir>/`. Der Dateiname trägt ein **ISO-Datums-Präfix**
 statt einer durchlaufenden Nummer. Dadurch entfällt jede Nummern-Reservierung und
 Kollisionsauflösung: Ein Plan wird schlicht beim Befüllen unter seinem endgültigen Namen
 geschrieben.
 
 ### Neuer Plan: Datum + Slug
 
-- Dateiname: `docs/plan/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` ist das Erstellungsdatum
+- Dateiname: `<plan.dir>/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` ist das Erstellungsdatum
   (ISO, z. B. aus `date +%F`). `<slug>` ist ein Kebab-Case-Slug aus dem Titel (nur `a–z`,
   `0–9`, Bindestrich).
 - **Keine Vorab-Reservierung, kein Stub, keine Nummer.** Die Datei entsteht erst, wenn der
@@ -36,23 +40,23 @@ Frühere Pläne trugen einen vierstelligen Nummern-Prefix (`NNNN-slug.md`, z. B.
 
 ### Archiv umgesetzter Pläne
 
-`docs/plan/` enthält nur **offene** oder **in Umsetzung** befindliche Pläne. Ein
-vollständig umgesetzter Plan wird nach `docs/plan/archive/` verschoben; der
+`<plan.dir>/` enthält nur **offene** oder **in Umsetzung** befindliche Pläne. Ein
+vollständig umgesetzter Plan wird nach `<plan.dir>/archive/` verschoben; der
 Umgesetzt-Marker bleibt in der Datei erhalten.
 
 - Der Verschiebe-Zeitpunkt ist an das **Delivery-Event** gekoppelt (PR geöffnet bzw.
   Worktree-Branch gemergt): Der umsetzende Workflow setzt den Statusmarker auf
-  `Umgesetzt`/`Implemented` und verschiebt die Datei per `git mv` nach `docs/plan/archive/`
+  `Umgesetzt`/`Implemented` und verschiebt die Datei per `git mv` nach `<plan.dir>/archive/`
   (Verzeichnis bei Bedarf anlegen), noch im Liefer-Branch, sodass die Verschiebung Teil
   desselben PRs/Merges ist (Umsetzungs-Doku). Details siehe „Delivery- und
   Worktree-Integration“.
-- `{{SKILL:open-plans}}` listet nur die oberste Ebene von `docs/plan/`, nicht das Archiv.
-- Auflöser (siehe unten) suchen in `docs/plan/` **und** `docs/plan/archive/`.
+- `{{SKILL:open-plans}}` listet nur die oberste Ebene von `<plan.dir>/`, nicht das Archiv.
+- Auflöser (siehe unten) suchen in `<plan.dir>/` **und** `<plan.dir>/archive/`.
 
 ### Plan-Referenz auflösen
 
 Eine Plan-Referenz kann sein: vollständiger Pfad, Dateiname, Legacy-Nummer oder
-Titel-Slug. Suche in `docs/plan/` **und** `docs/plan/archive/`.
+Titel-Slug. Suche in `<plan.dir>/` **und** `<plan.dir>/archive/`.
 
 - **Legacy-Nummer eindeutig auflösen:** Eine vierstellige Nummer `NNNN` wird **primär über
   die H1** `# NNNN: …` aufgelöst, nicht über das Dateinamen-Segment. Grund: Ein neuer Plan

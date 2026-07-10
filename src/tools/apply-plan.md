@@ -8,7 +8,7 @@ Du bist der Orchestrator, der offene Plan-Dateien an den passenden Umsetzungs-Wo
 
 ## Ziel
 
-Dieser Skill nimmt eine Plan-Datei aus `docs/plan/`, validiert ihren kanonischen Statusmarker und ihre Workflow-Empfehlung und startet anschließend den passenden Skill:
+Dieser Skill nimmt eine Plan-Datei aus `<plan.dir>/`, validiert ihren kanonischen Statusmarker und ihre Workflow-Empfehlung und startet anschließend den passenden Skill:
 
 - Feature → `{{SKILL:build}}`
 - Bugfix → `{{SKILL:fix}}`
@@ -43,7 +43,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der Plan-Auswertung
 
 1. Lies das User-Argument.
 2. Wenn kein Argument vorhanden ist:
-   - prüfe `docs/plan/` auf offene Pläne mit Status `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented`
+   - prüfe `<plan.dir>/` auf offene Pläne mit Status `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented`
    - gib eine kurze Liste der offenen Pläne mit Nummer, Titel und Pfad aus
    - frage den User nach der konkreten Plan-Datei
    - starte keine Umsetzung, bevor eine konkrete Datei ausgewählt ist
@@ -68,10 +68,10 @@ plan-reference-routing
    - erkannter Ziel-Workflow
    - bei Doku-Plänen zusätzlich Doku-Kategorie und Ziel-Pfad aus dem Plan-Kopf
 2. Starte den erkannten Skill mit der Plan-Datei als Argument:
-   - `{{SKILL:build}} docs/plan/NNNN-...md`
-   - `{{SKILL:fix}} docs/plan/NNNN-...md`
-   - `{{SKILL:refactor}} docs/plan/NNNN-...md`
-   - `{{SKILL:docs}} docs/plan/NNNN-...md`
+   - `{{SKILL:build}} <plan.dir>/NNNN-...md`
+   - `{{SKILL:fix}} <plan.dir>/NNNN-...md`
+   - `{{SKILL:refactor}} <plan.dir>/NNNN-...md`
+   - `{{SKILL:docs}} <plan.dir>/NNNN-...md`
 3. Übergebe als Kontext:
    - dass `{{SKILL:apply-plan}}` den Planstatus und die Workflow-Empfehlung bereits geprüft hat
    - den vollständigen Planpfad

@@ -66,15 +66,15 @@ options:
 
 Bevor der eigentliche Workflow startet, prüfe ob das Projekt bereits dokumentierte Pläne hat:
 
-1. Prüfe ob `docs/plan/` existiert und mindestens eine `.md`-Datei enthält.
+1. Prüfe ob `<plan.dir>/` existiert und mindestens eine `.md`-Datei enthält.
 2. Falls keine Plan-Dateien vorhanden sind:
-   - erstelle `docs/plan/` falls nötig
+   - erstelle `<plan.dir>/` falls nötig
    - untersuche den aktuellen Projektzustand lokal oder mit einem internen Sub-Agenten:
      - Projektstruktur
      - vorhandene Dateien
      - verwendete Technologien
      - bestehende Architekturentscheidungen
-   - schreibe den Ausgangszustand als `docs/plan/YYYY-MM-DD-initial-state.md` (Datum via `date +%F`)
+   - schreibe den Ausgangszustand als `<plan.dir>/YYYY-MM-DD-initial-state.md` (Datum via `date +%F`)
    - verwende dabei das Format der bestehenden Plan-Dateien:
    - Markersprache der Statuszeile: nutze den deutschen Marker `**Planungsstatus:** Umgesetzt` als Default; nur wenn `.firmo/config.json` `plan.markerLanguage = "en"` setzt, verwende stattdessen `**Plan status:** Implemented`. Erzeuge genau eine Statuszeile, keine Sprachmischform.
 
@@ -234,7 +234,7 @@ Wenn keine ungebaute Plan-Datei referenziert wurde:
 
 1. Starte `{{SKILL:plan}}` mit der Feature-Anforderung.
 2. Weise den Planungs-Skill ausdrücklich an:
-   - nur `docs/plan/` zu ändern
+   - nur `<plan.dir>/` zu ändern
    - keinen Code zu erzeugen
    - keine Implementierungs-, Test-, Validator- oder Reviewer-Skills zu starten
    - offene Fragen zu klären, bevor der Plan geschrieben wird
@@ -355,7 +355,7 @@ Hinweis: Vor Abschluss muss die Spalte „Offen“ für „Kritisch“ 0 sein.
 2. Dokumentiere den abgeschlossenen Workflow in der Plan-Datei:
    - wenn Phase 1 eine neue Plan-Datei via `{{SKILL:plan}}` erzeugt hat: aktualisiere diese Datei.
    - wenn der User eine ungebaute Plan-Datei referenziert hat: aktualisiere die referenzierte Datei.
-   - wenn ausnahmsweise keine Plan-Datei existiert: erstelle `docs/plan/` und vergib den Datums-Slug-Namen gemäß `Plan-Datei-Konvention`; nutze für die neue Plan-Datei den deutschen Marker (`**Planungsstatus:** Umgesetzt`) als Default — eine explizite Sprachwahl ist in diesem Fall nicht vorgesehen.
+   - wenn ausnahmsweise keine Plan-Datei existiert: erstelle `<plan.dir>/` und vergib den Datums-Slug-Namen gemäß `Plan-Datei-Konvention`; nutze für die neue Plan-Datei den deutschen Marker (`**Planungsstatus:** Umgesetzt`) als Default — eine explizite Sprachwahl ist in diesem Fall nicht vorgesehen.
    - ersetze die kanonische Statuszeile durch die jeweilige abgeschlossene Form derselben Markersprache:
      - deutscher Marker: `**Planungsstatus:** Nicht umgesetzt` → `**Planungsstatus:** Umgesetzt`
      - englischer Marker: `**Plan status:** Not implemented` → `**Plan status:** Implemented`

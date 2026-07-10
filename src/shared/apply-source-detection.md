@@ -1,5 +1,8 @@
 ## Apply-Quellen-Erkennung
 
+`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir` (Default
+`docs/plan`).
+
 Dieser geteilte Baustein ist die einzige Quelle der Wahrheit dafür, **welcher
 Apply-Quelltyp** ein übergebenes Argument ist. Er wird von `{{SKILL:apply}}`
 (Router) sowie von `{{SKILL:apply-plan}}`, `{{SKILL:apply-review}}` und
@@ -15,7 +18,7 @@ im jeweiligen Skill.
 
 | Typ               | Bedeutung                                                                                      | Zuständiger Skill                              |
 | ----------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `plan`            | Plan-Datei unter `docs/plan/`                                                                  | `{{SKILL:apply-plan}}`                         |
+| `plan`            | Plan-Datei unter `<plan.dir>/`                                                                 | `{{SKILL:apply-plan}}`                         |
 | `review-report`   | Review-Report-Datei unter `.firmo/review/`                                                     | `{{SKILL:apply-review}}` (lokal)               |
 | `review-epic`     | Tracking-/Epic-Issue eines `{{SKILL:review}}`-Laufs                                            | `{{SKILL:apply-review}}` (remote, Epic)        |
 | `review-finding`  | einzelnes Finding-Issue eines `{{SKILL:review}}`-Laufs                                         | `{{SKILL:apply-review}}` (remote, Issue-Liste) |
@@ -33,8 +36,8 @@ Typ in dieser Reihenfolge (erste zutreffende Regel gewinnt):
 
 1. **Leeres/kein Argument** → `none`.
 2. **Plan-Referenz** → `plan`, wenn sich das Argument auf genau eine Datei unter
-   `docs/plan/` oder `docs/plan/archive/` auflöst. Erlaubte Formen wie in
-   `plan-reference-routing`: vollständiger Pfad (`docs/plan/YYYY-MM-DD-…md`),
+   `<plan.dir>/` oder `<plan.dir>/archive/` auflöst. Erlaubte Formen wie in
+   `plan-reference-routing`: vollständiger Pfad (`<plan.dir>/YYYY-MM-DD-…md`),
    Datums-Slug-Dateiname (`YYYY-MM-DD-…md`), Legacy-Nummer ohne Pfad (`NNNN`, primär
    über die H1 aufgelöst) oder – als Fallback – der Titel-Slug.
 3. **Review-Report** → `review-report`, wenn das Argument ein `*.md`-Pfad unter
@@ -48,8 +51,8 @@ Typ in dieser Reihenfolge (erste zutreffende Regel gewinnt):
    gleichzeitig zu einer Plan- **und** einer Review-Datei. Nicht raten – der Aufrufer
    fragt nach (siehe „Mehrdeutigkeit und Fallbacks“).
 
-Trennschärfe Plan vs. Report: primär über das Verzeichnis (`docs/plan/` bzw.
-`docs/plan/archive/` vs. `.firmo/review/`), sekundär über den Kopf-Inhalt
+Trennschärfe Plan vs. Report: primär über das Verzeichnis (`<plan.dir>/` bzw.
+`<plan.dir>/archive/` vs. `.firmo/review/`), sekundär über den Kopf-Inhalt
 (Planstatus-Marker `**Planungsstatus:**` / `**Plan status:**` vs.
 `### [R-XXXXXXX]`-Finding-Blöcke). Eine vierstellige Nummer ohne Pfad ist immer eine
 (Legacy-)Plan-Referenz, nie eine Issue-Referenz.
@@ -103,7 +106,7 @@ Argumenttyp.
 ### Mehrdeutigkeit und Fallbacks
 
 - **`none` (kein Argument):** nicht heuristisch das „neueste“ wählen. Der Aufrufer
-  listet lokale Kandidaten (offene Pläne aus `docs/plan/`, Report-Dateien unter
+  listet lokale Kandidaten (offene Pläne aus `<plan.dir>/`, Report-Dateien unter
   `.firmo/review/`) und fragt nach der konkreten Quelle. Ist der effektive
   Tracker-Modus `remote`, listet er zusätzlich offene Review-Epics (Label
   `firmo-review-epic`, inkl. Alt `sf-review-epic`) als Kandidaten, da im

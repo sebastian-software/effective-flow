@@ -1,12 +1,14 @@
 ## Plan-Referenzen
 
-Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel `docs/plan/2024-06-01-feature.md`, `2024-06-01-feature.md`, `0030` (Legacy-Nummer) oder `feature` (Titel-Slug), prüfe den Plan vor der ersten fachlichen Workflow-Phase.
+`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir` (Default `docs/plan`).
+
+Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel `<plan.dir>/2024-06-01-feature.md`, `2024-06-01-feature.md`, `0030` (Legacy-Nummer) oder `feature` (Titel-Slug), prüfe den Plan vor der ersten fachlichen Workflow-Phase.
 
 ### Referenz auflösen
 
-1. Löse die Referenz auf genau eine Datei unter `docs/plan/` **oder** `docs/plan/archive/` auf.
+1. Löse die Referenz auf genau eine Datei unter `<plan.dir>/` **oder** `<plan.dir>/archive/` auf.
 2. Erlaubte Formen:
-   - vollständiger Pfad, z. B. `docs/plan/2024-06-01-feature.md` oder `docs/plan/archive/2024-06-01-feature.md`
+   - vollständiger Pfad, z. B. `<plan.dir>/2024-06-01-feature.md` oder `<plan.dir>/archive/2024-06-01-feature.md`
    - Datums-Slug-Dateiname, z. B. `2024-06-01-feature.md`
    - Legacy-Nummer, z. B. `0030` (primär über die H1 `# 0030: …` aufgelöst, siehe `Plan-Datei-Konvention`, nicht über das Dateinamen-Segment)
    - Titel-Slug, z. B. `feature`
