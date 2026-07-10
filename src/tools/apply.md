@@ -1,5 +1,6 @@
 ---
 description: "Nimmt eine beliebige Apply-Quelle (Plan-Datei, Review-Report, GitHub-/Forgejo-Issue oder Review-Epic) entgegen, klassifiziert sie über die gemeinsame Apply-Quellen-Erkennung und delegiert an den zuständigen Skill {{SKILL:apply-plan}}, {{SKILL:apply-review}} oder {{SKILL:apply-issues}}. Reine Routing-Schicht ohne eigene Umsetzung."
+catalogHint: "Startet die Umsetzung aus einer fertigen Quelle (Plan, Issue oder Review-Finding)."
 ---
 
 # Firmo Apply

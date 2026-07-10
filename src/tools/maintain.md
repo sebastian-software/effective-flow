@@ -1,5 +1,6 @@
 ---
 description: "Orchestriert schlanke, wiederkehrende Wartung eines Node-Projekts: Dependency-Updates, Security-/Audit-Fixes und Breaking-Change-Adaption. Scannt, gruppiert nach Risiko, sichert eine grüne Baseline und delegiert an {{AGENT:code-validator}}, {{AGENT:test-writer}}, die passenden Implementer, {{AGENT:generic-implementer}} und Reviewer. Kein Feature-, Bugfix- oder Refactoring-Workflow und kein Scheduler."
+catalogHint: "Fährt wiederkehrende Wartung: Dependency-Updates und Security-Fixes."
 ---
 
 # Firmo Maintain

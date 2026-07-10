@@ -1,5 +1,6 @@
 ---
 description: "Orchestriert den Dokumentations-Workflow: Scope-Klärung, Plan-Referenz-Erkennung, Doku-Analyse, Umsetzung via docs-writer oder code-documenter, Validierung und Abschluss."
+catalogHint: "Erstellt oder aktualisiert Dokumentation, ohne Produktverhalten zu ändern."
 ---
 
 # Firmo Docs

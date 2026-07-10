@@ -1,5 +1,6 @@
 ---
 description: "Orchestriert den Bugfix-Workflow: Investigation, Reproduktion, Gap Analysis, Diagnose-Validierung, minimaler Fix, Regressionstests, Validierung und Abschluss. Verwendet Skill-Wechsel wie {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:rust-implementer}}, {{AGENT:generic-implementer}}, {{AGENT:test-writer}} und {{AGENT:code-validator}}."
+catalogHint: "Behebt einen konkreten Bug mit minimalem, regressionsgesichertem Eingriff."
 ---
 
 # Firmo Fix

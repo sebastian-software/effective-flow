@@ -1,5 +1,6 @@
 ---
 description: "Bereitet ein Zielprojekt für die Nutzung von Firmo vor: trägt .firmo/ idempotent in die .gitignore ein und hält dabei .firmo/config.json getrackt, und legt .firmo/config.json über einen geführten Wizard an bzw. aktualisiert sie. Startet immer von sicheren Defaults, bietet einen Express- und einen geführten Weg, erklärt jede Option auch für Firmo-Neulinge und zeigt bei vorhandener Config die aktuell festgeschriebenen Werte. Pflegt eine bestehende Config nicht-destruktiv. Verwende diesen Skill für das einmalige Setup oder zum Anpassen der Firmo-Konfiguration."
+catalogHint: "Richtet Firmo im Projekt ein – geführter Wizard, startet mit sicheren Defaults."
 ---
 
 # Firmo Setup

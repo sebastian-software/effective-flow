@@ -17,12 +17,14 @@ Auf Codex wird dasselbe Skill über den Skill-Namen aufgerufen (z. B. `$firmo <t
 
 ## Dispatch-Regel
 
-1. **Kein oder unbekanntes `<tool>`:** Gib die Tool-Liste unten aus und führe sonst nichts aus. Rate nicht, welches Tool gemeint sein könnte.
+1. **Kein oder unbekanntes `<tool>`:** Gib die **gruppierte** Tool-Liste unten zur Orientierung aus, damit der User das passende Tool wählen kann, und führe sonst nichts aus. Rate nicht, welches Tool gemeint sein könnte.
 2. **Gültiges `<tool>`:** Lies die Datei `tools/<tool>.md` in diesem Skill-Verzeichnis und befolge sie wörtlich. Reiche die restlichen Argumente unverändert an das Tool durch. Lies dabei **keine** weiteren Tool-Dateien — nur die eine, die dem aufgerufenen Tool entspricht.
 
 Beim Tool `apply` kann die Anweisung ihrerseits eine passende **interne** Datei nachladen (`tools/apply-plan.md`, `tools/apply-review.md` oder `tools/apply-issues.md`), je nach erkannter Quelle. Diese internen Dateien sind nicht direkt über `{{FIRMO}}` aufrufbar.
 
 ## Tools
+
+Die Tools sind unten nach Nutzungsabsicht gruppiert.
 
 {{TOOL_CATALOG}}
 
