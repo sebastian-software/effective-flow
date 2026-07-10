@@ -29,14 +29,14 @@ plan-status
 ## Vorgehen
 
 1. Prüfe, ob `docs/plan/` existiert.
-2. Lies alle Markdown-Dateien unter `docs/plan/` in numerisch-lexikografischer Reihenfolge.
+2. Lies alle Markdown-Dateien auf der obersten Ebene von `docs/plan/` in lexikografischer Reihenfolge (Datums-Slug-Namen sortieren dadurch chronologisch). Schließe `docs/plan/archive/` aus.
 3. Bestimme pro Datei den Planstatus über die kanonische Ein-Marker-Regel der Planstatus-Konvention: genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` und gültigem Wert.
 4. Klassifiziere (beide Markersprachen sind gleichwertig):
    - **Offen:** genau `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented`
    - **Abgeschlossen:** genau `**Planungsstatus:** Umgesetzt` oder `**Plan status:** Implemented`
    - **Status unklar:** keine Statuszeile, mehrere Statuszeilen oder anderer Wert
 5. Ermittle für offene Pläne:
-   - Plan-Nummer und Titel aus der ersten H1-Zeile
+   - Titel aus der ersten H1-Zeile (bei migrierten Legacy-Plänen inklusive der dort erhaltenen Nummer, z. B. `# 0030: Titel`)
    - Pfad
    - empfohlener Workflow aus `**Empfohlener Workflow:** ...`
    - bei Doku-Plänen zusätzlich die Doku-Kategorie aus `**Doku-Kategorie:** ...`, falls vorhanden
@@ -47,7 +47,7 @@ plan-status
      - bei nicht-Doku-Plänen zeige in der Spalte `Kategorie` einen Bindestrich
      - bei Doku-Plänen ohne `**Doku-Kategorie:**`-Zeile zeige `unbekannt`
    - Danach eine kurze Liste mit Status-unklaren Plänen, falls vorhanden
-   - Wenn mehrere Plan-Dateien dieselbe vierstellige Nummer tragen, weise gesondert darauf hin (diese Dublette verletzt die `Plan-Nummern-Konvention` und sollte über den passenden Workflow aufgelöst werden)
+   - Wenn mehrere Plan-Dateien denselben Datums-Slug-Namen tragen, weise gesondert darauf hin (diese Dublette verletzt die `Plan-Datei-Konvention` und sollte über den passenden Workflow aufgelöst werden)
    - Wenn keine offenen Pläne existieren: klare Meldung „Keine offenen Pläne gefunden.“
 
 ## Zusammenfassungsregeln

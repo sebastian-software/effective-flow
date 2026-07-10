@@ -158,7 +158,7 @@ Wenn dabei offene Findings oder Restrisiken entstehen, dokumentiere sie struktur
 1. Falls Fehler in Phase 4 gefunden wurden: behebe sie und verifiziere Phase 4 erneut gemäß „Goal-getriebene Abschlusssteuerung“: begrenze die internen Korrekturrunden und eskaliere an den User, falls die Abschlussbedingung danach weiterhin nicht hält, statt unbegrenzt zu wiederholen.
 2. Wenn aus Verifikation, Regressionstest oder Review-ähnlicher Prüfung Findings oder Restrisiken mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
    - schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.firmo/review/`
-   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-NNNN.md`
+   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-<slug>.md`
    - nenne den erzeugten Reportpfad in der Abschlusszusammenfassung
 3. Wenn dieser Fix ein Finding aus einer bestehenden Review-Report-Datei in `.firmo/review/` gelöst hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis

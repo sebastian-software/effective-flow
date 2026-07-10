@@ -24,8 +24,8 @@ Nicht in den externen Report übernehmen:
 
 1. Erstelle `.firmo/review/` falls nötig.
 2. Wenn der Workflow eine Plan-Datei als Grundlage hat, verwende bevorzugt:
-   - `.firmo/review/review-report-YYYY-MM-DD-plan-NNNN.md`
-   - bei Kollision: `.firmo/review/review-report-YYYY-MM-DD-plan-NNNN-1.md`, `-2`, ...
+   - `.firmo/review/review-report-YYYY-MM-DD-plan-<slug>.md`
+   - bei Kollision: `.firmo/review/review-report-YYYY-MM-DD-plan-<slug>-1.md`, `-2`, ...
 3. Wenn keine Plan-Datei als Grundlage existiert, verwende:
    - `.firmo/review/review-report-YYYY-MM-DD-WORKFLOW.md`
    - bei Kollision: `.firmo/review/review-report-YYYY-MM-DD-WORKFLOW-1.md`, `-2`, ...
@@ -52,7 +52,7 @@ Verwende das kanonische Bericht-Format aus `{{SKILL:review}}` Abschnitt „Beric
 Zusätzliche Header-Felder für Workflow-Reports:
 
 - Setze direkt unter `**Projekt-Typ:** ...` diese drei Zeilen:
-  - `**Ursprungsplan:** [docs/plan/NNNN-...md oder Keiner]`
+  - `**Ursprungsplan:** [docs/plan/YYYY-MM-DD-<slug>.md oder Keiner]`
   - `**Quell-Workflow:** [{{SKILL:build}} / {{SKILL:fix}} / {{SKILL:refactor}} / {{SKILL:maintain}}]`
   - `**Quell-Review:** [Reviewer oder Phase]`
 - Alle Tabellen und Finding-Blöcke bleiben im `{{SKILL:review}}`-Format.

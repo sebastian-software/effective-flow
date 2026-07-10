@@ -74,12 +74,12 @@ Bevor der eigentliche Workflow startet, prüfe ob das Projekt bereits dokumentie
      - vorhandene Dateien
      - verwendete Technologien
      - bestehende Architekturentscheidungen
-   - schreibe den Ausgangszustand als `docs/plan/0001-initial-state.md`
+   - schreibe den Ausgangszustand als `docs/plan/YYYY-MM-DD-initial-state.md` (Datum via `date +%F`)
    - verwende dabei das Format der bestehenden Plan-Dateien:
    - Markersprache der Statuszeile: nutze den deutschen Marker `**Planungsstatus:** Umgesetzt` als Default; nur wenn `.firmo/config.json` `plan.markerLanguage = "en"` setzt, verwende stattdessen `**Plan status:** Implemented`. Erzeuge genau eine Statuszeile, keine Sprachmischform.
 
 ```markdown
-# 0001: Ausgangszustand — [Projektname]
+# Ausgangszustand — [Projektname]
 
 **Planungsstatus:** Umgesetzt
 
@@ -105,7 +105,7 @@ Dokumentation des Projektzustands vor dem ersten Feature-Workflow.
 3. Falls Plan-Dateien vorhanden sind: überspringe diesen Schritt ohne Meldung.
 4. Falls eine initiale Plan-Datei erstellt wurde, halte das in der Wisdom-Datei fest.
 
-Wichtig: Die Plan-Datei in der Abschlussphase erhält ihre Nummer gemäß `Plan-Nummern-Konvention` (nächste freie Nummer, eindeutig und lückenlos).
+Wichtig: Die Plan-Datei in der Abschlussphase erhält ihren Datums-Slug-Namen gemäß `Plan-Datei-Konvention`.
 
 ```include
 completion-protocol
@@ -342,7 +342,7 @@ Hinweis: Vor Abschluss muss die Spalte „Offen“ für „Kritisch“ 0 sein.
 8. Lege in diesem Workflow niemals ein ADR an und frage auch nicht danach. Bewusst nicht umgesetzte Findings werden ausschließlich im Review-Report dokumentiert. Über die spätere Umsetzung oder über ein ADR für eine bewusste Nicht-Umsetzung entscheidet der Entwickler beim Durchgehen der Findings-Datei, typischerweise via {{SKILL:apply-review}}.
 9. Wenn nach Review Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
    - schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.firmo/review/`
-   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-NNNN.md`
+   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-<slug>.md`
    - halte den erzeugten Reportpfad für Phase 7 fest
 10. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.firmo/review/` umgesetzt hat:
 
@@ -355,7 +355,7 @@ Hinweis: Vor Abschluss muss die Spalte „Offen“ für „Kritisch“ 0 sein.
 2. Dokumentiere den abgeschlossenen Workflow in der Plan-Datei:
    - wenn Phase 1 eine neue Plan-Datei via `{{SKILL:plan}}` erzeugt hat: aktualisiere diese Datei.
    - wenn der User eine ungebaute Plan-Datei referenziert hat: aktualisiere die referenzierte Datei.
-   - wenn ausnahmsweise keine Plan-Datei existiert: erstelle `docs/plan/` und vergib die Nummer gemäß `Plan-Nummern-Konvention` (nächste freie Nummer, eindeutig und lückenlos); nutze für die neue Plan-Datei den deutschen Marker (`**Planungsstatus:** Umgesetzt`) als Default — eine explizite Sprachwahl ist in diesem Fall nicht vorgesehen.
+   - wenn ausnahmsweise keine Plan-Datei existiert: erstelle `docs/plan/` und vergib den Datums-Slug-Namen gemäß `Plan-Datei-Konvention`; nutze für die neue Plan-Datei den deutschen Marker (`**Planungsstatus:** Umgesetzt`) als Default — eine explizite Sprachwahl ist in diesem Fall nicht vorgesehen.
    - ersetze die kanonische Statuszeile durch die jeweilige abgeschlossene Form derselben Markersprache:
      - deutscher Marker: `**Planungsstatus:** Nicht umgesetzt` → `**Planungsstatus:** Umgesetzt`
      - englischer Marker: `**Plan status:** Not implemented` → `**Plan status:** Implemented`
@@ -384,7 +384,7 @@ Hinweis: Vor Abschluss muss die Spalte „Offen“ für „Kritisch“ 0 sein.
 | Behoben | X |
 | Offen / Nicht umgesetzt | Y |
 
-**Externer Review-Report:** `.firmo/review/review-report-YYYY-MM-DD-plan-NNNN.md` <!-- nur ausgeben, wenn offene Findings ausgelagert wurden -->
+**Externer Review-Report:** `.firmo/review/review-report-YYYY-MM-DD-plan-<slug>.md` <!-- nur ausgeben, wenn offene Findings ausgelagert wurden -->
 
 Keine Findings gefunden. <!-- nur ausgeben, wenn keine Findings aufgekommen sind -->
 ```

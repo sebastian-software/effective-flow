@@ -149,7 +149,7 @@ options:
    - Migrationshinweise haben klare Vorher/Nachher-Aussagen
 2. Prüfe die Schreibpfade:
    - alle neu erstellten oder geänderten finalen Dokumente liegen innerhalb der Kategorie-Verzeichnisse aus `Doku-Kategorien` oder sind eine im Plan explizit genannte Bestands-Datei
-   - Slugs entsprechen der Konvention (Kebab-Case, kein NNNN-Prefix)
+   - Slugs entsprechen der Konvention (Kebab-Case, kein Datums- oder Nummern-Prefix)
    - bei User-Guide-Änderungen ist `docs/user-guide/README.md` vorhanden, sobald Inhalte unter `docs/user-guide/` existieren
 3. Starte `{{AGENT:code-validator}}`, wenn Doku-Änderungen technische Artefakte betreffen oder der Projekt-Build die Änderung plausibel prüfen kann.
 4. Wenn Fehler gefunden werden: behebe sie oder delegiere erneut an den passenden Doku-Agenten – gemäß „Goal-getriebene Abschlusssteuerung“: begrenze die internen Korrekturrunden und eskaliere an den User, falls die Validierung danach weiterhin Fehler meldet, statt unbegrenzt zu wiederholen.

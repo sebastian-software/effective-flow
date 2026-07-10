@@ -33,9 +33,10 @@ Typ in dieser Reihenfolge (erste zutreffende Regel gewinnt):
 
 1. **Leeres/kein Argument** → `none`.
 2. **Plan-Referenz** → `plan`, wenn sich das Argument auf genau eine Datei unter
-   `docs/plan/` auflöst. Erlaubte Formen wie in `plan-reference-routing`: vollständiger
-   Pfad (`docs/plan/NNNN-…md`), Dateiname (`NNNN-…md`), vierstellige Nummer (`NNNN`)
-   oder – als Fallback – der Titel-Slug.
+   `docs/plan/` oder `docs/plan/archive/` auflöst. Erlaubte Formen wie in
+   `plan-reference-routing`: vollständiger Pfad (`docs/plan/YYYY-MM-DD-…md`),
+   Datums-Slug-Dateiname (`YYYY-MM-DD-…md`), Legacy-Nummer ohne Pfad (`NNNN`, primär
+   über die H1 aufgelöst) oder – als Fallback – der Titel-Slug.
 3. **Review-Report** → `review-report`, wenn das Argument ein `*.md`-Pfad unter
    `.firmo/review/` ist (bzw. ein Dateiname, der sich dort auflöst).
 4. **Issue-Referenz** → `issue-reference` (weiter mit Stufe B), wenn das Argument eine
@@ -47,10 +48,11 @@ Typ in dieser Reihenfolge (erste zutreffende Regel gewinnt):
    gleichzeitig zu einer Plan- **und** einer Review-Datei. Nicht raten – der Aufrufer
    fragt nach (siehe „Mehrdeutigkeit und Fallbacks“).
 
-Trennschärfe Plan vs. Report: primär über das Verzeichnis (`docs/plan/` vs.
-`.firmo/review/`), sekundär über den Kopf-Inhalt (Planstatus-Marker
-`**Planungsstatus:**` / `**Plan status:**` vs. `### [R-XXXXXXX]`-Finding-Blöcke). Eine
-vierstellige Nummer ohne Pfad ist immer eine Plan-Referenz, nie eine Issue-Referenz.
+Trennschärfe Plan vs. Report: primär über das Verzeichnis (`docs/plan/` bzw.
+`docs/plan/archive/` vs. `.firmo/review/`), sekundär über den Kopf-Inhalt
+(Planstatus-Marker `**Planungsstatus:**` / `**Plan status:**` vs.
+`### [R-XXXXXXX]`-Finding-Blöcke). Eine vierstellige Nummer ohne Pfad ist immer eine
+(Legacy-)Plan-Referenz, nie eine Issue-Referenz.
 
 ### Stufe B: Issue-Subtyp (Tracker)
 

@@ -55,7 +55,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 
 1. Analysiere die Anforderung gründlich.
 2. Prüfe vorhandene Plan-Dateien in `docs/plan/`, um Struktur und vorhandene Architekturentscheidungen zu übernehmen.
-3. Reserviere die Plan-Nummer gemäß `Plan-Nummern-Konvention`, Abschnitt „Nummer reservieren“, bevor die inhaltliche Klärung beginnt. Verwende dabei einen lauf-eindeutigen Stub-Namen und führe direkt nach dem Stub-Write die „Reservierung verifizieren (Read-back)“-Prüfung aus, um eine durch überlappende Schreibfreigaben entstandene Doppelvergabe sofort aufzulösen. Die so angelegte temporäre Datei wird in Phase 3 mit dem vollständigen Inhalt gefüllt.
+3. Prüfe, ob in `docs/plan/` noch Pläne im Altformat (`NNNN-slug.md`) liegen. Falls ja, führe die Bulk-Migration gemäß `Plan-Datei-Konvention`, Abschnitt „Migration alter Pläne (NNNN → Datum)“, aus. Die eigentliche Plan-Datei dieses Laufs entsteht erst in Phase 3/7 unter `docs/plan/YYYY-MM-DD-<slug>.md` — es gibt keinen Stub, keine Reservierung und keine Nummer.
 4. Untersuche die relevanten Bereiche der Codebase lokal oder mit internem Sub-Agenten:
    - Projektstruktur
    - betroffene Module und Dateien
@@ -89,7 +89,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 
 ### Phase 3: Plan-Erstellung
 
-Fülle die in Phase 1 reservierte Plan-Datei `docs/plan/NNNN-<slug>-<suffix>.md` mit dem vollständigen Inhalt. Die Nummer wurde gemäß `Plan-Nummern-Konvention` bereits vergeben; vergib hier keine neue Nummer. Entferne den `(WIP)`-Zusatz aus der H1, entferne das lauf-eindeutige `<suffix>` aus dem Dateinamen und aktualisiere – falls der endgültige Titel abweicht – den `<slug>` im Dateinamen sowie den Titeltext der H1 auf den endgültigen Titel. Die H1-Nummer bleibt unverändert.
+Schreibe die Plan-Datei nach `docs/plan/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` ist das Erstellungsdatum (via `date +%F`), `<slug>` ein Kebab-Case-Slug aus dem endgültigen Titel. Bei einer Namenskollision am selben Tag hänge ein numerisches Suffix an (`-2`, `-3`, …). Die H1 ist `# <Titel>` ohne Nummer.
 
 Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers in dieser Reihenfolge fest. Die erste Quelle, die einen gültigen Wert liefert, gewinnt.
 
@@ -197,7 +197,7 @@ Statuszeile Englisch:
 Vollständiges Plan-Template (Statuszeile gemäß gewählter Markersprache einsetzen):
 
 ```markdown
-# NNNN: [Titel]
+# [Titel]
 
 **Planungsstatus:** Nicht umgesetzt
 **Quelle:** {{SKILL:plan}}
@@ -401,7 +401,7 @@ Bei `Nein`: Fahre mit Phase 7 fort und nenne im Abschluss den Wiedereinstieg üb
    - empfohlener Workflow mit Begründung
    - Scorecard-Ergebnis
    - Hinweis, dass keine Code-Änderungen vorgenommen wurden
-   - Hinweis, welcher Skill-Aufruf den Plan später umsetzt, zum Beispiel `{{SKILL:build}} docs/plan/NNNN-...md`, `{{SKILL:fix}} docs/plan/NNNN-...md`, `{{SKILL:refactor}} docs/plan/NNNN-...md` oder `{{SKILL:docs}} docs/plan/NNNN-...md`
+   - Hinweis, welcher Skill-Aufruf den Plan später umsetzt, zum Beispiel `{{SKILL:build}} docs/plan/YYYY-MM-DD-<slug>.md`, `{{SKILL:fix}} docs/plan/YYYY-MM-DD-<slug>.md`, `{{SKILL:refactor}} docs/plan/YYYY-MM-DD-<slug>.md` oder `{{SKILL:docs}} docs/plan/YYYY-MM-DD-<slug>.md`
 
 ## Regeln
 
