@@ -8,11 +8,14 @@ Du bist der Orchestrator für vertieften interaktiven Review vorhandener Plan-Da
 
 ## Ziel
 
-Dieser interne Skill prüft eine vorhandene Plan-Datei unter `docs/plan/` auf noch
+Dieser interne Skill prüft eine vorhandene Plan-Datei unter `<plan.dir>/` auf noch
 Unbekanntes, ungenaue Formulierungen, logische Widersprüche, Umsetzungsrisiken und
 fehlende Entscheidungen. Er führt entscheidungsbedürftige Punkte einzeln mit dem
 User durch, arbeitet getroffene Entscheidungen direkt in den Plan ein und hält den
 Abschnitt für offene Punkte aktuell.
+
+`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir` (Default
+`docs/plan`).
 
 ```include
 language-rules
@@ -29,7 +32,7 @@ plan-status
 ## Harte Abgrenzung
 
 - Erlaubt sind ausschließlich Analyse, User-Rückfragen und Änderungen an der
-  referenzierten Plan-Datei unter `docs/plan/`.
+  referenzierten Plan-Datei unter `<plan.dir>/`.
 - Verboten sind Änderungen an Source-Code, Tests, Konfiguration, Build-Dateien,
   README-Dateien, ADRs, Review-Reports und sonstigen Projektdateien.
 - Starte keine Implementer-, Test-, Validator-, Code-Review- oder
@@ -40,11 +43,12 @@ plan-status
 
 ## Eingabe
 
-Erwarte genau eine Plan-Referenz unter `docs/plan/`, zum Beispiel:
+Erwarte genau eine Plan-Referenz unter `<plan.dir>/`, zum Beispiel:
 
-- `docs/plan/0066-interaktive-plan-review-iteration.md`
-- `0066-interaktive-plan-review-iteration.md`
-- `0066`
+- `<plan.dir>/2024-06-01-interaktive-plan-review-iteration.md`
+- `2024-06-01-interaktive-plan-review-iteration.md`
+- `interaktive-plan-review-iteration` (Titel-Slug)
+- `0066` (Legacy-Nummer eines migrierten Altplans, primär über die H1 aufgelöst)
 
 Wenn die Referenz fehlt, mehrdeutig ist oder nicht auf eine Plan-Datei zeigt, frage
 nach der konkreten Plan-Datei. Wähle niemals heuristisch den neuesten Plan.
@@ -53,7 +57,7 @@ nach der konkreten Plan-Datei. Wähle niemals heuristisch den neuesten Plan.
 
 ### Phase 1: Plan laden und normalisieren
 
-1. Löse die Plan-Referenz auf genau eine Datei unter `docs/plan/` auf.
+1. Löse die Plan-Referenz auf genau eine Datei unter `<plan.dir>/` auf.
 2. Lies die Plan-Datei frisch vom Dateisystem.
 3. Prüfe den Planstatus nach der Planstatus-Konvention.
 4. Wenn der Plan bereits umgesetzt ist, frage, ob er nur nachträglich geprüft, für

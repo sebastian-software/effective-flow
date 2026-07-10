@@ -19,6 +19,10 @@ task-tracking
 ```
 
 ```include
+config-migration
+```
+
+```include
 plan-status
 ```
 
@@ -72,10 +76,18 @@ Aktueller Workflow für Plan-Referenzen: Refactoring (`{{SKILL:refactor}}`).
 plan-reference-routing
 ```
 
-Wenn ein offener Plan für `{{SKILL:refactor}}` bestätigt ist:
+```include
+apply-clarity-gate
+```
+
+Wenn ein offener Plan für `{{SKILL:refactor}}` bestätigt ist, durchläuft er zuerst das
+„Klärungs-Gate“. Besteht er das Gate nicht, verweise gemäß Gate-Verhalten auf
+`{{SKILL:plan}}` bzw. `{{SKILL:review}} <plandatei>` und beende den Workflow. Besteht
+der Plan das Gate:
 
 - verwende die Inhalte der Plan-Datei als Refactoring-Plan
 - validiere weiterhin in Phase 1, dass keine beabsichtigte Verhaltensänderung enthalten ist
+- wurde aus der Apply-Kette bereits ein „geklärt + goal-getrieben“-Kontext übergeben (Grundlage geklärt, Bestätigung für autonomen Lauf bereits erteilt), honoriere ihn: überspringe die Goal-Abfrage in Phase 1 und durchlaufe die Phasen 2–6 unter der „Goal-getriebenen Abschlusssteuerung“.
 
 ## Workflow
 
@@ -170,7 +182,7 @@ Dokumentiere die Baseline für den späteren Vergleich.
 5. Lege in diesem Workflow niemals ein ADR an und frage auch nicht danach. Bewusst nicht umgesetzte Findings werden ausschließlich im Review-Report dokumentiert. Über die spätere Umsetzung oder über ein ADR für eine bewusste Nicht-Umsetzung entscheidet der Entwickler beim Durchgehen der Findings-Datei, typischerweise via {{SKILL:apply-review}}.
 6. Wenn nach Review Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
    - schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.firmo/review/`
-   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-NNNN.md`
+   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-<slug>.md`
    - nenne den erzeugten Reportpfad in der Abschlusszusammenfassung
 7. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.firmo/review/` umgesetzt hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
@@ -197,7 +209,7 @@ Starte parallel:
    - zurück zu Phase 3, dann Phase 5 und 6 erneut – gemäß „Goal-getriebene Abschlusssteuerung“: begrenze die internen Korrekturrunden und eskaliere an den User, falls die Baseline danach weiterhin nicht erreicht wird, statt unbegrenzt zu wiederholen
 3. Falls keine Regressionen:
    - Wisdom-Datei löschen
-   - wenn Delivery oder Worktree-Ausführung aktiv war: Handback gemäß „Delivery- und Worktree-Integration“ ausführen (Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen)
+   - wenn Delivery oder Worktree-Ausführung aktiv war: Handback gemäß „Delivery- und Worktree-Integration“ ausführen (bei geführter Plan-Datei inklusive Plan-Statuswechsel auf `Umgesetzt`/`Implemented` und Archiv-Move nach `<plan.dir>/archive/` am Delivery-Punkt, Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen). Läuft der Workflow ausnahmsweise In-Place ohne Delivery, führt er denselben Statuswechsel und Archiv-Move direkt im Arbeitsbaum aus.
    - zusammenfassen, was refactored wurde; bei aktivem Delivery-/Worktree-Modus zusätzlich Liefer-Branch, finalen Checkout-Zustand und Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch) nennen
    - bestätigen, dass das Verhalten unverändert blieb
 

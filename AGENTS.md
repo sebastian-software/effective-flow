@@ -83,7 +83,9 @@ Never add AI-attribution references to anything published from this repo: no "Ge
 
 ## Plan files (`docs/plan/`)
 
-Plans use a four-digit gapless prefix `NNNN-slug.md`, each number used exactly once. The canonical status line is `**Planungsstatus:** Nicht umgesetzt` / `**Plan status:** Not implemented` (one language per file; the `**Empfohlener Workflow:**` line stays German either way). Only that canonical line counts as status — ignore other occurrences of the words in prose. Docs plans additionally carry `**Doku-Kategorie:**` and `**Ziel-Pfad:**` (categories defined in `src/shared/doc-categories.md`).
+The plan directory is configurable via `.firmo/config.json` `plan.dir` (default `docs/plan`).
+
+Plans use an ISO date-slug name `YYYY-MM-DD-<slug>.md` (creation date + kebab-case title slug), with no number and no reservation step — the file is written directly under its final name; a same-day collision appends a numeric suffix (`-2`, `-3`, …). Older plans that still carry the legacy four-digit prefix (`NNNN-slug.md`) are migrated once, in bulk, to `YYYY-MM-DD-NNNN-slug.md` (`YYYY-MM-DD` = migration date, the old `NNNN` kept as a stable reference; the H1 `# NNNN: Title` stays unchanged). Reference resolution for a legacy number resolves primarily via that H1, not the filename segment. Plans that are fully implemented move to `docs/plan/archive/`, kept as part of the same delivery PR/merge; resolvers search both `docs/plan/` and `docs/plan/archive/`. The canonical status line is `**Planungsstatus:** Nicht umgesetzt` / `**Plan status:** Not implemented` (one language per file; the `**Empfohlener Workflow:**` line stays German either way). Only that canonical line counts as status — ignore other occurrences of the words in prose. Docs plans additionally carry `**Doku-Kategorie:**` and `**Ziel-Pfad:**` (categories defined in `src/shared/doc-categories.md`).
 
 ## Target-project runtime state (not this repo)
 

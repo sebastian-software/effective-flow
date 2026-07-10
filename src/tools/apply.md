@@ -29,6 +29,10 @@ language-rules
 task-tracking
 ```
 
+```include
+config-migration
+```
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der Klassifikation und
@@ -36,6 +40,10 @@ beachte ihre Vorgaben für Routing und User-Rückfragen.
 
 ```include
 apply-source-detection
+```
+
+```include
+apply-clarity-gate
 ```
 
 ```include
@@ -53,7 +61,7 @@ issue-tracker
    oder die Authentifizierung, brich mit klarer Meldung ab (kein stiller Fallback).
 3. Behandle die Sonderergebnisse:
    - **`none` (kein Argument):** liste lokale Kandidaten – offene Pläne aus
-     `docs/plan/` (Status `**Planungsstatus:** Nicht umgesetzt` bzw.
+     `<plan.dir>/` (Status `**Planungsstatus:** Nicht umgesetzt` bzw.
      `**Plan status:** Not implemented`) und Report-Dateien unter `.firmo/review/`.
      Ist der effektive Tracker-Modus `remote` (siehe „Issue-Tracker-Anbindung“),
      liste zusätzlich offene Review-Epics (Label `firmo-review-epic`, inkl. Alt
@@ -79,6 +87,11 @@ issue-tracker
    - `container-issue` / `plain-issue` → `{{SKILL:apply-issues}} <arg>`
 3. Übergib als Kontext, dass `{{SKILL:apply}}` die Quelle bereits klassifiziert hat,
    samt erkanntem Quelltyp. Danach liegt die gesamte Verantwortung beim Ziel-Skill.
+4. Der Ziel-Skill prüft die Grundlage selbst gegen das „Klärungs-Gate“, bevor er
+   umsetzt. `{{SKILL:apply}}` selbst führt diese Prüfung nicht aus und implementiert
+   nichts. Bei geklärter Grundlage bevorzugt der Ziel-Skill nach einer Bestätigung die
+   goal-getriebene, autonome Umsetzung (siehe „Explizite Goal-Abfrage für autonome
+   Läufe“ in `goal-completion.md`).
 
 ## Regeln
 

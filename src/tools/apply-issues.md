@@ -60,11 +60,19 @@ Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lös
 Dieser Skill ist **inhärent remote**: er arbeitet immer gegen den Issue-Tracker der `origin`-Remote. Der `tracker.mode`-Umschalter aus `{{SKILL:review}}`/`{{SKILL:apply-review}}` wird **nicht** ausgewertet. Aus dem folgenden geteilten Baustein nutzt dieser Skill nur die werkzeug-generische Plumbing: Host- und CLI-Erkennung, Verfügbarkeits-/Auth-Prüfung, das Operation-→-Kommando-Mapping und die Fehlerfälle. Die finding-/epic-spezifischen Body-Formate gelten hier nicht; die Checkbox-Abhak-Mechanik für Epic-Bodys wird bei Container-Issues sinngemäß mitgenutzt.
 
 ```include
+config-migration
+```
+
+```include
 issue-tracker
 ```
 
 ```include
 apply-source-detection
+```
+
+```include
+apply-clarity-gate
 ```
 
 ## Kommentar-Konventionen
@@ -122,7 +130,7 @@ Jeder Analyse-Sub-Agent erhält den Issue-Body **und die Issue-Kommentare** und 
 
 - **Kommentare als Quelle:** Werte Body und Kommentare gemeinsam aus. Ein `<!-- firmo-plan-issues -->`-Planungskommentar liefert die von `{{SKILL:plan-issue}}` vervollständigte Spezifikation (Soll-Verhalten, Akzeptanzkriterien, betroffene Bereiche) und gilt als **maßgebliche, ausreichende** Grundlage — auch wenn der ursprüngliche Body dünn ist; existieren mehrere, zählt der neueste. Weitere Maintainer-Kommentare zählen als Klärungen für die Ausreichend-Prüfung. Reine Firmo-Statuskommentare (`<!-- firmo-apply-issues -->`) werden nicht als Anforderung gewertet.
 - **Klassifikation:** Feature / Bugfix / Refactoring / Dokumentation (Definitionen wie in `{{SKILL:plan}}`, Phase 1) und daraus der Ziel-Skill (`{{SKILL:build}}` / `{{SKILL:fix}}` / `{{SKILL:refactor}}` / `{{SKILL:docs}}`).
-- **Ausreichend-Prüfung:** Lässt sich aus dem Issue (Body **und Kommentaren**) ein klares Soll-Verhalten und mindestens ein **messbares Akzeptanzkriterium** ableiten, und gibt es genug Datei-/Bereichs-Hinweise, damit der Ziel-Workflow autonom starten kann? Ergebnis: `ausreichend` oder `unzureichend`. Bei `unzureichend`: konkrete Liste des Fehlenden (offene fachliche Fragen, fehlende Akzeptanzkriterien, unklarer Scope).
+- **Ausreichend-Prüfung:** Wendet sinngemäß das „Klärungs-Gate“ auf Issue-Granularität an: Lässt sich aus dem Issue (Body **und Kommentaren**) ein klares Soll-Verhalten und mindestens ein **messbares Akzeptanzkriterium** ableiten, und gibt es genug Datei-/Bereichs-Hinweise, damit der Ziel-Workflow autonom starten kann? Ergebnis: `ausreichend` oder `unzureichend`. Bei `unzureichend`: konkrete Liste des Fehlenden (offene fachliche Fragen, fehlende Akzeptanzkriterien, unklarer Scope).
 - **Prompt-Vorschlag:** direkt verwendbarer Klartext-Auftrag für den Ziel-Skill.
 - **Konfidenz:** `Hoch` / `Mittel` / `Niedrig` bezüglich des Datei-Scopes (analog zur Vorabanalyse in `{{SKILL:apply-review}}`).
 - **Betroffene Dateien:** beste Schätzung der berührten Dateien (für die Konfliktbetrachtung in Phase 4).
@@ -220,7 +228,7 @@ Lösche anschließend die Wisdom-Datei.
 ## Regeln
 
 - Ändere selbst keine Implementierungsdateien; die Umsetzung liegt bei den delegierten Workflows.
-- Erzeuge keine `docs/plan/`-Datei; die interne Planung übernimmt der jeweilige Umsetzungs-Workflow.
+- Erzeuge keine `<plan.dir>/`-Datei; die interne Planung übernimmt der jeweilige Umsetzungs-Workflow.
 - Verwende keinen heuristischen „neuesten Issue“, wenn mehrere Kandidaten existieren.
 - Im Zweifel über die Ausreichend-Prüfung: als `unzureichend` behandeln und an `{{SKILL:plan-issue}}` verweisen, statt zu raten.
 - Setze niemals `Co-Authored-By`-Trailer und exponiere keine internen IDs in Commits oder Kommentaren.

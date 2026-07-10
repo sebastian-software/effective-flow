@@ -14,6 +14,10 @@ language-rules
 task-tracking
 ```
 
+```include
+config-migration
+```
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben für Planung, Implementierung, Review, Tests, Doku und Commits.
@@ -66,20 +70,20 @@ options:
 
 Bevor der eigentliche Workflow startet, prüfe ob das Projekt bereits dokumentierte Pläne hat:
 
-1. Prüfe ob `docs/plan/` existiert und mindestens eine `.md`-Datei enthält.
+1. Prüfe ob `<plan.dir>/` existiert und mindestens eine `.md`-Datei enthält.
 2. Falls keine Plan-Dateien vorhanden sind:
-   - erstelle `docs/plan/` falls nötig
+   - erstelle `<plan.dir>/` falls nötig
    - untersuche den aktuellen Projektzustand lokal oder mit einem internen Sub-Agenten:
      - Projektstruktur
      - vorhandene Dateien
      - verwendete Technologien
      - bestehende Architekturentscheidungen
-   - schreibe den Ausgangszustand als `docs/plan/0001-initial-state.md`
+   - schreibe den Ausgangszustand als `<plan.dir>/YYYY-MM-DD-initial-state.md` (Datum via `date +%F`)
    - verwende dabei das Format der bestehenden Plan-Dateien:
    - Markersprache der Statuszeile: nutze den deutschen Marker `**Planungsstatus:** Umgesetzt` als Default; nur wenn `.firmo/config.json` `plan.markerLanguage = "en"` setzt, verwende stattdessen `**Plan status:** Implemented`. Erzeuge genau eine Statuszeile, keine Sprachmischform.
 
 ```markdown
-# 0001: Ausgangszustand — [Projektname]
+# Ausgangszustand — [Projektname]
 
 **Planungsstatus:** Umgesetzt
 
@@ -105,7 +109,7 @@ Dokumentation des Projektzustands vor dem ersten Feature-Workflow.
 3. Falls Plan-Dateien vorhanden sind: überspringe diesen Schritt ohne Meldung.
 4. Falls eine initiale Plan-Datei erstellt wurde, halte das in der Wisdom-Datei fest.
 
-Wichtig: Die Plan-Datei in der Abschlussphase erhält ihre Nummer gemäß `Plan-Nummern-Konvention` (nächste freie Nummer, eindeutig und lückenlos).
+Wichtig: Die Plan-Datei in der Abschlussphase erhält ihren Datums-Slug-Namen gemäß `Plan-Datei-Konvention`.
 
 ```include
 completion-protocol
@@ -217,11 +221,18 @@ Aktueller Workflow für Plan-Referenzen: Feature (`{{SKILL:build}}`).
 plan-reference-routing
 ```
 
-Wenn ein offener Plan für `{{SKILL:build}}` bestätigt ist:
+```include
+apply-clarity-gate
+```
+
+Wenn ein offener Plan für `{{SKILL:build}}` bestätigt ist, durchläuft er zuerst das
+„Klärungs-Gate“. Besteht er das Gate nicht, verweise gemäß Gate-Verhalten auf
+`{{SKILL:plan}}` bzw. `{{SKILL:review}} <plandatei>` und beende den Workflow. Besteht
+der Plan das Gate:
 
 - überspringe Phase 1 vollständig
 - verwende die Inhalte der Plan-Datei als abgestimmten Implementierungsplan
-- leite aus den Akzeptanzkriterien und dem Validierungsplan die explizite Abschlussbedingung ab und stelle vor dem Start von Phase 2 die explizite Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe“. Da Phase 1 hier übersprungen wird und keine Ja/Nein-Freigabe an dieser Grenze steht, ist es die eigenständige Ja/Nein-Folgefrage; bei Wahl „Autonom via /goal“ den `/goal`-String für die Phasen 2–7 ausgeben. Die Abfrage entfällt, wenn der Workflow nicht-interaktiv delegiert wurde (z. B. durch `{{FIRMO}} apply-review`); die Übergabe durch `{{FIRMO}} apply-plan` zählt nicht als solche Delegation.
+- leite aus den Akzeptanzkriterien und dem Validierungsplan die explizite Abschlussbedingung ab und stelle vor dem Start von Phase 2 die explizite Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe“. Da Phase 1 hier übersprungen wird und keine Ja/Nein-Freigabe an dieser Grenze steht, ist es die eigenständige Ja/Nein-Folgefrage; bei Wahl „Autonom via /goal“ den `/goal`-String für die Phasen 2–7 ausgeben. Die Abfrage entfällt, wenn der Workflow nicht-interaktiv delegiert wurde (z. B. durch `{{FIRMO}} apply-review`); die Übergabe durch `{{FIRMO}} apply-plan` zählt nicht als solche Delegation. Wurde aus der Apply-Kette bereits ein „geklärt + goal-getrieben“-Kontext übergeben (Grundlage geklärt, Bestätigung für autonomen Lauf bereits erteilt), honoriere ihn direkt: überspringe diese Abfrage und durchlaufe die Phasen 2–7 unter der „Goal-getriebenen Abschlusssteuerung“.
 - starte direkt mit Phase 2
 
 Ein referenzierter ungebauter Plan ersetzt nur die Planungsphase. Initiale Zustandsdokumentation, Review-Report-Rückverweise, Implementierung, Dokumentation, Tests, Validierung, Review und Abschluss laufen weiterhin normal.
@@ -234,7 +245,7 @@ Wenn keine ungebaute Plan-Datei referenziert wurde:
 
 1. Starte `{{SKILL:plan}}` mit der Feature-Anforderung.
 2. Weise den Planungs-Skill ausdrücklich an:
-   - nur `docs/plan/` zu ändern
+   - nur `<plan.dir>/` zu ändern
    - keinen Code zu erzeugen
    - keine Implementierungs-, Test-, Validator- oder Reviewer-Skills zu starten
    - offene Fragen zu klären, bevor der Plan geschrieben wird
@@ -342,7 +353,7 @@ Hinweis: Vor Abschluss muss die Spalte „Offen“ für „Kritisch“ 0 sein.
 8. Lege in diesem Workflow niemals ein ADR an und frage auch nicht danach. Bewusst nicht umgesetzte Findings werden ausschließlich im Review-Report dokumentiert. Über die spätere Umsetzung oder über ein ADR für eine bewusste Nicht-Umsetzung entscheidet der Entwickler beim Durchgehen der Findings-Datei, typischerweise via {{SKILL:apply-review}}.
 9. Wenn nach Review Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
    - schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.firmo/review/`
-   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-NNNN.md`
+   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-<slug>.md`
    - halte den erzeugten Reportpfad für Phase 7 fest
 10. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.firmo/review/` umgesetzt hat:
 
@@ -352,14 +363,11 @@ Hinweis: Vor Abschluss muss die Spalte „Offen“ für „Kritisch“ 0 sein.
 ### Phase 7: Abschluss
 
 1. Führe `{{AGENT:code-validator}}` ein letztes Mal als Final-Check aus.
-2. Dokumentiere den abgeschlossenen Workflow in der Plan-Datei:
+2. Dokumentiere den abgeschlossenen Workflow in der Plan-Datei, ohne den Statusmarker vorab zu ändern:
    - wenn Phase 1 eine neue Plan-Datei via `{{SKILL:plan}}` erzeugt hat: aktualisiere diese Datei.
    - wenn der User eine ungebaute Plan-Datei referenziert hat: aktualisiere die referenzierte Datei.
-   - wenn ausnahmsweise keine Plan-Datei existiert: erstelle `docs/plan/` und vergib die Nummer gemäß `Plan-Nummern-Konvention` (nächste freie Nummer, eindeutig und lückenlos); nutze für die neue Plan-Datei den deutschen Marker (`**Planungsstatus:** Umgesetzt`) als Default — eine explizite Sprachwahl ist in diesem Fall nicht vorgesehen.
-   - ersetze die kanonische Statuszeile durch die jeweilige abgeschlossene Form derselben Markersprache:
-     - deutscher Marker: `**Planungsstatus:** Nicht umgesetzt` → `**Planungsstatus:** Umgesetzt`
-     - englischer Marker: `**Plan status:** Not implemented` → `**Plan status:** Implemented`
-     - wechsle die Markersprache nicht und erzeuge keine zweite Statuszeile.
+   - wenn ausnahmsweise keine Plan-Datei existiert: erstelle `<plan.dir>/` und vergib den Datums-Slug-Namen gemäß `Plan-Datei-Konvention`.
+   - der Statusmarker bleibt an dieser Stelle unverändert (`**Planungsstatus:** Nicht umgesetzt` bzw. `**Plan status:** Not implemented`): Statuswechsel auf `Umgesetzt`/`Implemented` sowie die Archivierung nach `<plan.dir>/archive/` übernimmt Schritt 6 unten am Delivery-Punkt gemäß „Delivery- und Worktree-Integration“ (Ausnahme: In-Place ohne Delivery, siehe dort).
    - Inhalt:
      - Anforderung
      - Architekturentscheidungen
@@ -384,7 +392,7 @@ Hinweis: Vor Abschluss muss die Spalte „Offen“ für „Kritisch“ 0 sein.
 | Behoben | X |
 | Offen / Nicht umgesetzt | Y |
 
-**Externer Review-Report:** `.firmo/review/review-report-YYYY-MM-DD-plan-NNNN.md` <!-- nur ausgeben, wenn offene Findings ausgelagert wurden -->
+**Externer Review-Report:** `.firmo/review/review-report-YYYY-MM-DD-plan-<slug>.md` <!-- nur ausgeben, wenn offene Findings ausgelagert wurden -->
 
 Keine Findings gefunden. <!-- nur ausgeben, wenn keine Findings aufgekommen sind -->
 ```
@@ -399,7 +407,7 @@ Regeln für den Findings-Bericht:
 
 4. Lösche die Wisdom-Datei.
 5. Prüfe ob ein Formatter konfiguriert ist und formatiere alle geänderten Dateien inklusive Plan-Datei einmal einheitlich.
-6. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus (Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen).
+6. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus (Plan-Statuswechsel auf `Umgesetzt`/`Implemented` und Archiv-Move nach `<plan.dir>/archive/` am Delivery-Punkt, Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen). Läuft der Workflow ausnahmsweise In-Place ohne Delivery, führe denselben Statuswechsel und Archiv-Move direkt im Arbeitsbaum aus.
 7. Fasse zusammen, was implementiert, getestet und dokumentiert wurde; nenne bei aktivem Delivery-/Worktree-Modus zusätzlich den Liefer-Branch, den finalen Checkout-Zustand und das Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch).
 
 ## Regeln

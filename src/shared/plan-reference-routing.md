@@ -1,14 +1,17 @@
 ## Plan-Referenzen
 
-Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel `docs/plan/0030-feature.md`, `0030-feature.md` oder `0030`, prüfe den Plan vor der ersten fachlichen Workflow-Phase.
+`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir` (Default `docs/plan`).
+
+Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel `<plan.dir>/2024-06-01-feature.md`, `2024-06-01-feature.md`, `0030` (Legacy-Nummer) oder `feature` (Titel-Slug), prüfe den Plan vor der ersten fachlichen Workflow-Phase.
 
 ### Referenz auflösen
 
-1. Löse die Referenz auf genau eine Datei unter `docs/plan/` auf.
+1. Löse die Referenz auf genau eine Datei unter `<plan.dir>/` **oder** `<plan.dir>/archive/` auf.
 2. Erlaubte Formen:
-   - vollständiger Pfad, z. B. `docs/plan/0030-feature.md`
-   - Dateiname, z. B. `0030-feature.md`
-   - Nummer, z. B. `0030`
+   - vollständiger Pfad, z. B. `<plan.dir>/2024-06-01-feature.md` oder `<plan.dir>/archive/2024-06-01-feature.md`
+   - Datums-Slug-Dateiname, z. B. `2024-06-01-feature.md`
+   - Legacy-Nummer, z. B. `0030` (primär über die H1 `# 0030: …` aufgelöst, siehe `Plan-Datei-Konvention`, nicht über das Dateinamen-Segment)
+   - Titel-Slug, z. B. `feature`
 3. Wenn keine Datei passt: melde den Fehler und nenne, dass `{{SKILL:open-plans}}` offene Pläne auflisten kann.
 4. Wenn mehrere Dateien passen: frage den User nach der konkreten Datei.
 
@@ -38,15 +41,9 @@ Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel 
 
 ### Offene Punkte prüfen
 
-1. Prüfe, ob der Plan einen Abschnitt `## Offene Punkte` oder `## Open Points` enthält.
-2. Wenn der Abschnitt fehlt: fahre fort. Ältere Pläne ohne diesen Abschnitt bleiben kompatibel.
-3. Wenn der Abschnitt existiert und ausschließlich `- Keine offenen Punkte.` oder `- No open points.` enthält: fahre fort.
-4. Wenn der Abschnitt andere Einträge enthält:
-   - zeige die offenen Punkte kurz an,
-   - warne, dass der Plan noch nicht vollständig entschieden ist,
-   - frage den User, ob der aktuelle Workflow trotzdem fortfahren soll.
-5. Ohne ausdrückliche Bestätigung: brich ab und verweise auf `{{SKILL:review}} <plandatei>` als Klärungsweg.
-6. Bei Bestätigung: fahre fort und halte im Wisdom-Kontext fest, dass der User die Umsetzung trotz offener Punkte bestätigt hat.
+Die Prüfung auf offene oder ungeklärte Punkte übernimmt das „Klärungs-Gate“
+(`apply-clarity-gate.md`), das die umsetzenden Workflows und die Apply-Kette selbst
+einbinden. Diese Referenz-Regel dupliziert diese Prüfung nicht separat.
 
 ### Nach erfolgreicher Prüfung
 

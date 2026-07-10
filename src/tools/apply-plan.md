@@ -8,7 +8,7 @@ Du bist der Orchestrator, der offene Plan-Dateien an den passenden Umsetzungs-Wo
 
 ## Ziel
 
-Dieser Skill nimmt eine Plan-Datei aus `docs/plan/`, validiert ihren kanonischen Statusmarker und ihre Workflow-Empfehlung und startet anschließend den passenden Skill:
+Dieser Skill nimmt eine Plan-Datei aus `<plan.dir>/`, validiert ihren kanonischen Statusmarker und ihre Workflow-Empfehlung und startet anschließend den passenden Skill:
 
 - Feature → `{{SKILL:build}}`
 - Bugfix → `{{SKILL:fix}}`
@@ -26,11 +26,23 @@ task-tracking
 ```
 
 ```include
+config-migration
+```
+
+```include
 plan-status
 ```
 
 ```include
 apply-source-detection
+```
+
+```include
+apply-clarity-gate
+```
+
+```include
+goal-completion
 ```
 
 ## Projektkonventionen
@@ -43,7 +55,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der Plan-Auswertung
 
 1. Lies das User-Argument.
 2. Wenn kein Argument vorhanden ist:
-   - prüfe `docs/plan/` auf offene Pläne mit Status `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented`
+   - prüfe `<plan.dir>/` auf offene Pläne mit Status `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented`
    - gib eine kurze Liste der offenen Pläne mit Nummer, Titel und Pfad aus
    - frage den User nach der konkreten Plan-Datei
    - starte keine Umsetzung, bevor eine konkrete Datei ausgewählt ist
@@ -59,6 +71,7 @@ plan-reference-routing
 ```
 
 5. Wenn kein Ziel-Workflow eindeutig bestimmbar ist: frage den User nach dem Ziel-Workflow und nenne die vier erlaubten Optionen.
+6. Prüfe den Plan zusätzlich gegen das „Klärungs-Gate“: nur ein vollständig geklärter Plan gilt als Grundlage für die Umsetzung. Besteht der Plan das Gate nicht, verweise gemäß Gate-Verhalten auf `{{SKILL:plan}}` bzw. `{{SKILL:review}} <plandatei>` und beende den Skill, statt zu delegieren.
 
 ### Phase 2: Übergabe an Ziel-Workflow
 
@@ -67,17 +80,19 @@ plan-reference-routing
    - Planstatus
    - erkannter Ziel-Workflow
    - bei Doku-Plänen zusätzlich Doku-Kategorie und Ziel-Pfad aus dem Plan-Kopf
-2. Starte den erkannten Skill mit der Plan-Datei als Argument:
-   - `{{SKILL:build}} docs/plan/NNNN-...md`
-   - `{{SKILL:fix}} docs/plan/NNNN-...md`
-   - `{{SKILL:refactor}} docs/plan/NNNN-...md`
-   - `{{SKILL:docs}} docs/plan/NNNN-...md`
-3. Übergebe als Kontext:
-   - dass `{{SKILL:apply-plan}}` den Planstatus und die Workflow-Empfehlung bereits geprüft hat
+2. Da der Plan das Klärungs-Gate bestanden hat, liegt eine vollständig geklärte Grundlage vor: biete vor der Delegation die goal-getriebene, autonome Umsetzung an — nach einer expliziten Bestätigung an dieser Freigabe-Grenze gemäß „Explizite Goal-Abfrage für autonome Läufe“ aus `goal-completion.md`. Stimmt der User zu, bevorzuge den eingebauten Goal-Weg: gib den fertigen, copy-paste-baren `/goal`-String aus, falls ein nativer `/goal`-Lauf möglich ist, sonst verweise auf den internen goal-getriebenen Loop des Ziel-Workflows. Bei „Nein“ oder normaler Antwort bleibt der bestehende interaktive (gated) Weg die Alternative.
+3. Starte den erkannten Skill mit der Plan-Datei als Argument:
+   - `{{SKILL:build}} <plan.dir>/YYYY-MM-DD-<slug>.md`
+   - `{{SKILL:fix}} <plan.dir>/YYYY-MM-DD-<slug>.md`
+   - `{{SKILL:refactor}} <plan.dir>/YYYY-MM-DD-<slug>.md`
+   - `{{SKILL:docs}} <plan.dir>/YYYY-MM-DD-<slug>.md`
+4. Übergebe als Kontext:
+   - dass `{{SKILL:apply-plan}}` den Planstatus, die Workflow-Empfehlung und das Klärungs-Gate bereits geprüft hat
    - den vollständigen Planpfad
    - den erkannten Workflow
+   - dass die Grundlage bereits geklärt ist und die Umsetzung, falls bestätigt, goal-getrieben laufen soll
    - bei Doku-Plänen zusätzlich die im Plan-Kopf gefundenen Werte für `**Doku-Kategorie:**` und `**Ziel-Pfad:**`, oder den Hinweis, dass eine oder beide Zeilen fehlen
-4. Danach liegt die Verantwortung für Umsetzung, Validierung, Review, Planstatus-Aktualisierung und Commit-Vorbereitung beim Ziel-Workflow.
+5. Danach liegt die Verantwortung für Umsetzung, Validierung, Review, Planstatus-Aktualisierung und Commit-Vorbereitung beim Ziel-Workflow.
 
 ## Regeln
 

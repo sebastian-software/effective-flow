@@ -21,6 +21,10 @@ language-rules
 task-tracking
 ```
 
+```include
+config-migration
+```
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Schreiben und beachte ihre Vorgaben für Konfiguration, Dateiformate und projektweite Konventionen.
@@ -31,12 +35,12 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Schreiben und b
 
 - **`review`** (Quelle: `{{SKILL:review}}`): `profile` (full/focused/fast), `autoConfirmScope` (bool), `designDecisionSources` (full/standard/minimal), `validation` (full/quick/off)
 - **`applyReview`** (Quelle: `{{SKILL:apply-review}}`): `defaultCommitStrategy` (worktrees/single/none/`null` = beim Lauf fragen), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/Befehl)
-- **`plan`** (Quelle: `{{SKILL:plan}}`): `markerLanguage` (de/en)
-- **`delivery`** (Quelle: `{{SKILL:build}}`, Abschnitt „Delivery- und Worktree-Integration“ – ebenso in den weiteren code-ändernden Workflows eingebettet): `enabled` (bool), `baseBranch` (Default `origin/main`), `branchPrefix` (Default `firmo`), `completion` (pr/merge/branch/`null` = beim Lauf fragen), `returnBranch` (auto oder lokaler Branchname)
-- **`worktree`** (Quelle: `{{SKILL:build}}`, Abschnitt „Delivery- und Worktree-Integration“): `enabled` (bool), `setup` (auto/none/Befehl), `baseDir`
+- **`plan`** (Quelle: `{{SKILL:plan}}`): `markerLanguage` (de/en), `dir` (String, Default `docs/plan`) — Verzeichnis der Plan-Dateien
+- **`delivery`** (Quelle: `{{SKILL:build}}`, Abschnitt „Delivery- und Worktree-Integration“ – ebenso in den weiteren code-ändernden Workflows eingebettet): Delivery ist durch Worktree/Branch impliziert (kein eigener `enabled`-Schalter mehr) — `baseBranch` (Default `origin/main`), `branchPrefix` (Default `firmo`), `completion` (pr/merge/branch, Default `merge`), `returnBranch` (auto oder lokaler Branchname)
+- **`worktree`** (Quelle: `{{SKILL:build}}`, Abschnitt „Delivery- und Worktree-Integration“): `enabled` (bool, Default `true`), `setup` (auto/none/Befehl), `baseDir`
 - **`tracker`** (Quelle: `{{SKILL:review}}`, Abschnitt „Issue-Tracker-Anbindung“ – ebenso in `{{SKILL:apply-review}}` und den weiteren Tracker-Workflows eingebettet): `mode` (local/remote, Default `local`), `remoteToolOverride` (auto/github/forgejo, Default `auto`)
 
-Die zwei Presets sind vollständig hier definiert und setzen ausschließlich die Blöcke `review` und `applyReview`. Unabhängig vom Preset werden `plan.markerLanguage`, `delivery.enabled` (samt `delivery.completion` und `delivery.baseBranch`), `worktree.enabled` und `tracker.mode` in Schritt 4 explizit erfragt.
+Die zwei Presets sind vollständig hier definiert und setzen ausschließlich die Blöcke `review` und `applyReview`. Unabhängig vom Preset werden `plan.markerLanguage`, `worktree.enabled` (Default `true`), `delivery.completion` (Default `merge`) und `tracker.mode` in Schritt 4 explizit erfragt.
 
 Preset „Sichere Defaults“:
 
@@ -116,41 +120,31 @@ Bei „Sichere Defaults“ oder „Schneller persönlicher Workflow“: verwende
 Diese Fragen werden in jedem Modus gestellt, weil sie das Kernverhalten bestimmen.
 
 ```ask
-header: Delivery
-question: Sollen code-ändernde Workflows automatisch einen Liefer-Branch abschließen können?
-options:
-  - label: Nein
-    description: delivery.enabled = false (Default) — keine automatische Branch-/PR-/Merge-Erzeugung
-  - label: Ja
-    description: delivery.enabled = true — Workflows schließen Änderungen per PR, Merge oder belassenem Branch ab
-```
-
-```ask
-when: Delivery in der vorigen Frage aktiviert wurde
-header: Abschluss
-question: Welche Abschluss-Aktion soll Delivery standardmäßig nutzen?
-options:
-  - label: Beim Lauf fragen
-    description: delivery.completion = null — die Aktion wird pro Lauf erfragt
-  - label: Pull-Request
-    description: delivery.completion = pr
-  - label: Merge
-    description: delivery.completion = merge
-  - label: Nur Branch
-    description: delivery.completion = branch
-```
-
-Bei aktivierter Delivery: frage zusätzlich den Basis-Branch als Freitext ab (`delivery.baseBranch`, Default `origin/main`) und optional das Rückwechsel-Ziel (`delivery.returnBranch`, Default `auto`).
-
-```ask
 header: Worktree
 question: Soll die Umsetzung in einem separaten Git-Worktree laufen?
 options:
-  - label: Nein
-    description: worktree.enabled = false (Default) — Liefer-Branches werden bei Bedarf im Haupt-Repo erzeugt
   - label: Ja
-    description: worktree.enabled = true — Umsetzung läuft in einem separaten Worktree
+    description: worktree.enabled = true (Default) — Umsetzung läuft in einem separaten Worktree mit eigenem Liefer-Branch
+  - label: Nein
+    description: worktree.enabled = false — In-Place ohne Worktree; Liefer-Branches werden bei Bedarf im Haupt-Repo erzeugt
 ```
+
+```ask
+when: immer
+header: Abschluss
+question: Welche Abschluss-Aktion soll Delivery standardmäßig nutzen?
+options:
+  - label: Merge
+    description: delivery.completion = merge (Default) — Branch lokal in den Basis-Branch mergen, ohne PR
+  - label: Pull-Request
+    description: delivery.completion = pr
+  - label: Nur Branch
+    description: delivery.completion = branch
+  - label: Beim Lauf fragen
+    description: delivery.completion = null — die Aktion wird pro Lauf erfragt
+```
+
+Frage zusätzlich den Basis-Branch als Freitext ab (`delivery.baseBranch`, Default `origin/main`) und optional das Rückwechsel-Ziel (`delivery.returnBranch`, Default `auto`).
 
 ```ask
 header: Marker
@@ -180,9 +174,9 @@ Frage Block für Block jeden Schlüssel ab, jeweils mit den gültigen Werten aus
 
 1. `review`: `review.profile`, `review.autoConfirmScope`, `review.designDecisionSources`, `review.validation`
 2. `applyReview`: `applyReview.defaultCommitStrategy`, `applyReview.finalValidation`, `applyReview.stashPolicy`, `applyReview.worktree.baseDir`, `applyReview.worktree.setup`
-3. `plan`: `plan.markerLanguage` (bereits in Schritt 4 erfragt — übernehmen)
-4. `delivery`: `delivery.enabled`, `delivery.baseBranch`, `delivery.branchPrefix`, `delivery.completion` (bereits in Schritt 4 erfragt — übernehmen), `delivery.returnBranch`
-5. `worktree`: `worktree.enabled` (bereits in Schritt 4 erfragt — übernehmen), `worktree.setup`, `worktree.baseDir`
+3. `plan`: `plan.markerLanguage` (bereits in Schritt 4 erfragt — übernehmen), `plan.dir` (Freitext, Default `docs/plan`) — nur bei Bedarf abfragen, da selten geändert
+4. `delivery`: `delivery.baseBranch`, `delivery.branchPrefix`, `delivery.completion` (bereits in Schritt 4 erfragt — übernehmen), `delivery.returnBranch`
+5. `worktree`: `worktree.enabled` (bereits in Schritt 4 erfragt — übernehmen, Default `true`), `worktree.setup`, `worktree.baseDir`
 6. `tracker`: `tracker.mode` (bereits in Schritt 4 erfragt — übernehmen), `tracker.remoteToolOverride` (auto/github/forgejo)
 
 Beachte: `applyReview.worktree.*` (Apply-Review-eigener Worktree-Mechanismus), der Top-Level-`worktree.*`-Block (Ausführungsort) und der Top-Level-`delivery.*`-Block (Liefer-Branch/Abschluss) sind getrennte, unabhängige Config-Pfade — verwechsle sie beim Abfragen und Mergen nicht.
@@ -195,6 +189,20 @@ Freitext-Werte (z. B. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir` od
 2. Das gilt auch für Preset-Werte: Ein Preset-Wert, der einen bereits vorhandenen, abweichenden Wert ersetzen würde, wird nur nach ausdrücklicher Bestätigung gesetzt. Zeige vor dem Schreiben eine Vorher/Nachher-Liste **aller** zu ändernden Schlüssel (egal ob aus Preset, Detailmodus oder zentralen Schaltern) und hole die Bestätigung ein. Ein vollständiges Überschreiben (Verwerfen vorhandener Werte) ebenfalls nur nach ausdrücklicher Bestätigung.
 3. Lies eine vorhandene `config.json` direkt vor dem Schreiben noch einmal frisch ein, damit zwischenzeitliche Änderungen nicht verloren gehen.
 4. Lege `.firmo/` an, falls nötig, und schreibe `config.json` als formatiertes, syntaktisch valides JSON.
+5. **Aufgeschobene Migrations-Rückfragen stellen:** `{{SKILL:setup}}` ist gemäß „Config-Migration“ der **einzige** Ort, an dem die aufgeschobenen Migrations-Rückfragen und -Upgrades entschieden werden; andere Skills schieben solche Fälle nur mit einem sicheren Default auf. Wurde beim Einlesen der Alt-Config ein optionales Upgrade erkannt (aktuell: `delivery.completion: null` → neuer Default `merge`), biete es hier als eigene Frage an, bevor der Merge aus Schritt 1–2 geschrieben wird:
+
+```ask
+when: eine Alt-Config konsolidiert wird und delivery.completion aktuell null ist ("beim Lauf fragen")
+header: Upgrade
+question: delivery.completion von "beim Lauf fragen" (null) auf den neuen Default merge umstellen?
+options:
+  - label: Ja
+    description: delivery.completion = merge — Branch künftig standardmäßig ohne Rückfrage mergen
+  - label: Nein
+    description: delivery.completion bleibt null — die Abschluss-Aktion wird weiterhin bei jedem Lauf erfragt
+```
+
+Bei „Ja“ setze `delivery.completion = "merge"` im zu schreibenden Merge-Ergebnis; bei „Nein“ bleibt der Wert `null` unverändert. Markiere die Config-Vollmigration in `.firmo/memory.json` (`configMigration.full`) erst als abgeschlossen, nachdem diese Rückfrage beantwortet oder als „kein Upgrade anstehend“ übersprungen wurde.
 
 ### Schritt 7: Zusammenfassung
 
@@ -202,7 +210,7 @@ Melde dem User:
 
 - ob der `.gitignore`-Eintrag (`.firmo/*` plus `!.firmo/config.json`) ergänzt, eine bestehende pauschale `.firmo/`- oder Alt-`.sf-plugin/`-Zeile dorthin migriert wurde oder der Soll-Zustand bereits hergestellt war — und dass `.firmo/config.json` dabei getrackt bleibt
 - welches Preset bzw. der Detailmodus gewählt wurde
-- die gesetzten zentralen Verhaltenswerte (`delivery.enabled`, ggf. `delivery.completion`/`delivery.baseBranch`/`delivery.returnBranch`, `worktree.enabled`, `plan.markerLanguage`, `tracker.mode` und ggf. `tracker.remoteToolOverride`)
+- die gesetzten zentralen Verhaltenswerte (`worktree.enabled` [Default `true`], `delivery.completion` [Default `merge`] samt ggf. `delivery.baseBranch`/`delivery.returnBranch`, `plan.markerLanguage`, `tracker.mode` und ggf. `tracker.remoteToolOverride`) sowie `plan.dir`, falls gesetzt oder gegenüber dem Default geändert
 - bei einer zuvor vorhandenen Config: welche Schlüssel gegenüber dem alten Stand geändert wurden (Vorher/Nachher)
 - den Pfad der geschriebenen Config (`.firmo/config.json`)
 

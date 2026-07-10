@@ -1,6 +1,9 @@
 ## Planstatus-Konvention
 
-Plan-Dateien in `docs/plan/` verwenden genau einen kanonischen Statusmarker im Kopfbereich. Der Marker darf wahlweise auf Deutsch oder auf Englisch geschrieben werden:
+`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir` (Default
+`docs/plan`).
+
+Plan-Dateien in `<plan.dir>/` verwenden genau einen kanonischen Statusmarker im Kopfbereich. Der Marker darf wahlweise auf Deutsch oder auf Englisch geschrieben werden:
 
 - offen (Deutsch): `**Planungsstatus:** Nicht umgesetzt`
 - abgeschlossen (Deutsch): `**Planungsstatus:** Umgesetzt`

@@ -19,6 +19,10 @@ task-tracking
 ```
 
 ```include
+config-migration
+```
+
+```include
 plan-status
 ```
 
@@ -73,12 +77,20 @@ Aktueller Workflow für Plan-Referenzen: Dokumentation (`{{SKILL:docs}}`).
 plan-reference-routing
 ```
 
-Wenn ein offener Plan für `{{SKILL:docs}}` bestätigt ist:
+```include
+apply-clarity-gate
+```
+
+Wenn ein offener Plan für `{{SKILL:docs}}` bestätigt ist, durchläuft er zuerst das
+„Klärungs-Gate“. Besteht er das Gate nicht, verweise gemäß Gate-Verhalten auf
+`{{SKILL:plan}}` bzw. `{{SKILL:review}} <plandatei>` und beende den Workflow. Besteht
+der Plan das Gate:
 
 - verwende die Inhalte der Plan-Datei als abgestimmte Dokumentationsgrundlage
 - lies aus dem Kopfbereich `**Doku-Kategorie:**` und `**Ziel-Pfad:**`
 - wenn beide Zeilen fehlen oder inkonsistent sind: frage den User nach Kategorie und Ziel-Pfad gemäß `Doku-Kategorien` und ergänze die Zeilen vor der Umsetzung in der Plan-Datei
 - wenn der Ziel-Pfad auf eine bestehende Datei zeigt: kläre mit dem User Ersatz oder neuen Slug, bevor `{{AGENT:docs-writer}}` startet
+- wurde aus der Apply-Kette bereits ein „geklärt + goal-getrieben“-Kontext übergeben (Grundlage geklärt, Bestätigung für autonomen Lauf bereits erteilt), honoriere ihn: überspringe die Goal-Abfrage in Phase 1 und durchlaufe die Phasen 2–4 unter der „Goal-getriebenen Abschlusssteuerung“.
 
 ## Workflow
 
@@ -149,7 +161,7 @@ options:
    - Migrationshinweise haben klare Vorher/Nachher-Aussagen
 2. Prüfe die Schreibpfade:
    - alle neu erstellten oder geänderten finalen Dokumente liegen innerhalb der Kategorie-Verzeichnisse aus `Doku-Kategorien` oder sind eine im Plan explizit genannte Bestands-Datei
-   - Slugs entsprechen der Konvention (Kebab-Case, kein NNNN-Prefix)
+   - Slugs entsprechen der Konvention (Kebab-Case, kein Datums- oder Nummern-Prefix)
    - bei User-Guide-Änderungen ist `docs/user-guide/README.md` vorhanden, sobald Inhalte unter `docs/user-guide/` existieren
 3. Starte `{{AGENT:code-validator}}`, wenn Doku-Änderungen technische Artefakte betreffen oder der Projekt-Build die Änderung plausibel prüfen kann.
 4. Wenn Fehler gefunden werden: behebe sie oder delegiere erneut an den passenden Doku-Agenten – gemäß „Goal-getriebene Abschlusssteuerung“: begrenze die internen Korrekturrunden und eskaliere an den User, falls die Validierung danach weiterhin Fehler meldet, statt unbegrenzt zu wiederholen.
@@ -159,15 +171,12 @@ options:
 1. Wenn diese Änderung ein Finding aus einer bestehenden Review-Report-Datei in `.firmo/review/` umgesetzt hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
-2. Wenn eine Plan-Datei als Grundlage verwendet wurde:
-   - ersetze die kanonische Statuszeile durch die jeweilige abgeschlossene Form derselben Markersprache:
-     - deutscher Marker: `**Planungsstatus:** Nicht umgesetzt` → `**Planungsstatus:** Umgesetzt`
-     - englischer Marker: `**Plan status:** Not implemented` → `**Plan status:** Implemented`
-     - wechsle die Markersprache nicht und erzeuge keine zweite Statuszeile.
+2. Wenn eine Plan-Datei als Grundlage verwendet wurde, ohne den Statusmarker vorab zu ändern:
+   - der Statusmarker bleibt an dieser Stelle unverändert (`**Planungsstatus:** Nicht umgesetzt` bzw. `**Plan status:** Not implemented`): Statuswechsel auf `Umgesetzt`/`Implemented` sowie die Archivierung nach `<plan.dir>/archive/` übernimmt Schritt 4 unten am Delivery-Punkt gemäß „Delivery- und Worktree-Integration“ (Ausnahme: In-Place ohne Delivery, siehe dort).
    - ergänze `## Testergebnisse` mit den ausgeführten Prüfungen
    - ergänze `## Review-Findings` oder schreibe „Keine Findings gefunden.“, wenn kein Review nötig war
 3. Lösche die Wisdom-Datei.
-4. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus (Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen).
+4. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus (bei geführter Plan-Datei inklusive Plan-Statuswechsel auf `Umgesetzt`/`Implemented` und Archiv-Move nach `<plan.dir>/archive/` am Delivery-Punkt, Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen). Läuft der Workflow ausnahmsweise In-Place ohne Delivery, führt er denselben Statuswechsel und Archiv-Move direkt im Arbeitsbaum aus.
 5. Fasse zusammen:
    - geänderte Dokumentationsbereiche
    - geprüfte Quellen

@@ -36,11 +36,19 @@ firmo-dir-migration
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben für Analyse, Diagnose und Berichtsformate.
 
+## Datenhaltung
+
+Investigations-Reports sind **immer lokal**: Sie liegen ausschließlich unter
+`.firmo/investigation/`, werden **nie committet** und **nie als Issue** geführt – auch
+nicht im Remote-Tracker-Modus. Der local/remote-Umschalter (`tracker.mode`) gilt nur für
+Reviews, nicht für Investigationen. Von den Firmo-Artefakten werden ausschließlich Pläne
+committet.
+
 ## Harte Abgrenzung
 
 - Erlaubt sind ausschließlich Analyse, Rückfragen, Lesen, das Ausführen read-only prüfbarer Befehle bzw. bestehender Checks, das Schreiben des Diagnose-Reports unter `.firmo/investigation/` sowie das Schreiben der transienten Wisdom-Datei `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md` (siehe „Wisdom Accumulation“), die am Ende gelöscht wird.
 - Erlaubt ist das Anlegen von `.firmo/` und `.firmo/investigation/`, falls die Verzeichnisse fehlen.
-- Verboten sind Änderungen an Source-Code, Tests, Konfiguration, Build-Dateien, Doku und ADRs sowie an Plan-Dateien unter `docs/plan/`.
+- Verboten sind Änderungen an Source-Code, Tests, Konfiguration, Build-Dateien, Doku und ADRs sowie an Plan-Dateien unter `<plan.dir>/` (das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir`, Default `docs/plan`).
 - Anders als in `{{SKILL:fix}}` darf **kein** Reproduktionstest geschrieben werden. Reproduktion erfolgt nur durch Beobachtung (vorhandene Checks ausführen, Logs/Verhalten beschreiben) oder durch eine dokumentierte Reproduktionsanleitung.
 - Wenn der User während dieses Skills eine Umsetzung verlangt, verweise je nach Diagnose auf `{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}` oder `{{SKILL:docs}}` und beende diesen Skill nach dem Report.
 

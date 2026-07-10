@@ -19,6 +19,10 @@ task-tracking
 ```
 
 ```include
+config-migration
+```
+
+```include
 plan-status
 ```
 
@@ -74,10 +78,18 @@ Aktueller Workflow für Plan-Referenzen: Bugfix (`{{SKILL:fix}}`).
 plan-reference-routing
 ```
 
-Wenn ein offener Plan für `{{SKILL:fix}}` bestätigt ist:
+```include
+apply-clarity-gate
+```
+
+Wenn ein offener Plan für `{{SKILL:fix}}` bestätigt ist, durchläuft er zuerst das
+„Klärungs-Gate“. Besteht er das Gate nicht, verweise gemäß Gate-Verhalten auf
+`{{SKILL:plan}}` bzw. `{{SKILL:review}} <plandatei>` und beende den Workflow. Besteht
+der Plan das Gate:
 
 - verwende die Inhalte der Plan-Datei als Diagnose- und Fix-Grundlage
 - überspringe keine Reproduktion automatisch; wenn der Plan bereits Reproduktionshinweise enthält, validiere sie in Phase 2
+- wurde aus der Apply-Kette bereits ein „geklärt + goal-getrieben“-Kontext übergeben (Grundlage geklärt, Bestätigung für autonomen Lauf bereits erteilt), honoriere ihn: überspringe die Goal-Abfrage in Phase 2 und durchlaufe die Phasen 3–5 unter der „Goal-getriebenen Abschlusssteuerung“.
 
 ## Workflow
 
@@ -158,13 +170,13 @@ Wenn dabei offene Findings oder Restrisiken entstehen, dokumentiere sie struktur
 1. Falls Fehler in Phase 4 gefunden wurden: behebe sie und verifiziere Phase 4 erneut gemäß „Goal-getriebene Abschlusssteuerung“: begrenze die internen Korrekturrunden und eskaliere an den User, falls die Abschlussbedingung danach weiterhin nicht hält, statt unbegrenzt zu wiederholen.
 2. Wenn aus Verifikation, Regressionstest oder Review-ähnlicher Prüfung Findings oder Restrisiken mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
    - schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.firmo/review/`
-   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-NNNN.md`
+   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-<slug>.md`
    - nenne den erzeugten Reportpfad in der Abschlusszusammenfassung
 3. Wenn dieser Fix ein Finding aus einer bestehenden Review-Report-Datei in `.firmo/review/` gelöst hat:
    - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
    - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
 4. Lösche die Wisdom-Datei.
-5. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus (Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen).
+5. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus (bei geführter Plan-Datei inklusive Plan-Statuswechsel auf `Umgesetzt`/`Implemented` und Archiv-Move nach `<plan.dir>/archive/` am Delivery-Punkt, Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen). Läuft der Workflow ausnahmsweise In-Place ohne Delivery, führt er denselben Statuswechsel und Archiv-Move direkt im Arbeitsbaum aus.
 6. Fasse zusammen:
    - Root Cause
    - Änderungen

@@ -2,6 +2,8 @@
 
 Dieser geteilte Baustein verbindet `{{SKILL:review}}` und `{{SKILL:apply-review}}` mit einem externen Issue-Tracker (GitHub über `gh`, Forgejo über `tea`). Er ist **opt-in** über `.firmo/config.json` und standardmäßig deaktiviert (`local`). Im lokalen Modus verhalten sich beide Skills unverändert – Findings laufen über die Markdown-Report-Datei unter `.firmo/review/`, es werden keine Issues erzeugt und kein CLI aufgerufen.
 
+Der local/remote-Umschalter (`tracker.mode`) betrifft ausschließlich **Reviews**. **Investigationen** (`{{SKILL:investigate}}`) sind davon ausgenommen und bleiben in jedem Modus rein lokal unter `.firmo/investigation/` (nie committet, nie als Issue). Von den Firmo-Artefakten werden ausschließlich **Pläne** committet.
+
 Er kapselt die **gemeinsamen** Bausteine: das `tracker`-Config-Schema samt Migration, die Modusbestimmung, die Host- und CLI-Erkennung, die Label-Konvention, die kanonischen Issue- und Epic-Body-Formate sowie das Mapping der Tracker-Operationen auf `gh`/`tea`. Die eigentliche Orchestrierung – wann Issues **erstellt** (`{{SKILL:review}}`) und wann sie **gelesen und abgearbeitet** werden (`{{SKILL:apply-review}}`) – bleibt im jeweiligen Skill.
 
 Zusätzlich nutzen `{{SKILL:apply-issues}}` und `{{SKILL:plan-issue}}` diesen Baustein, allerdings nur für die **werkzeug-generische Plumbing**: die Host- und CLI-Erkennung (unten), die Verfügbarkeits-/Auth-Prüfung, das Mapping der Tracker-Operationen auf `gh`/`tea` und die Fehlerfälle. Diese beiden Skills verarbeiten **beliebige** Menschen-Issues statt der von `{{SKILL:review}}` erzeugten Finding-Issues; sie sind **inhärent remote** und werten den `tracker.mode`-Umschalter (local/remote) **nicht** aus – sie brauchen lediglich ein Git-Repository, eine `origin`-Remote und ein authentifiziertes CLI. Die finding-/epic-spezifischen Abschnitte (Issue-Body-Format, Epic-Body-Format, `R-XXXXXXX`-Konvention) gelten nur für `{{SKILL:review}}`/`{{SKILL:apply-review}}`; die Checkbox-Abhak-Mechanik für Epic-Bodys nutzt `{{SKILL:apply-issues}}` bei Container-Issues sinngemäß mit.
@@ -33,32 +35,7 @@ Gültige Werte:
 
 ### Config-Migration
 
-Führe diese Prüfung einmalig beim ersten Lesen der Config im Lauf aus – im selben Schritt wie die Modusbestimmung unten. Wenn `.firmo/config.json` existiert, prüfe sie auf fehlende unterstützte `tracker`-Schlüssel.
-
-- Ergänze fehlende Schlüssel mit den Defaults oben. Da `tracker.mode` per Default `local` ist, bleibt das Opt-in auch nach automatischer Migration gewahrt.
-- Erhalte vorhandene gültige Werte und unbekannte Schlüssel unverändert.
-- Lies die Datei direkt vor dem Schreiben erneut frisch ein, damit zwischenzeitliche Änderungen nicht überschrieben werden.
-- Wenn die Datei ungültiges JSON enthält: nicht schreiben, sichere Defaults für diesen Lauf verwenden und den User mit Pfad und Fehler informieren.
-- Wenn ein bekannter Schlüssel einen ungültigen Wert enthält: nicht überschreiben, sicheren Default für diesen Lauf verwenden und den User über den Schlüssel informieren.
-- Wenn die Migration Schlüssel ergänzt hat: teile dem User einmal in diesem Workflow-Lauf mit, dass `.firmo/config.json` migriert wurde, und nenne die ergänzten Schlüssel.
-- Speichere nach erfolgreicher Migration den Status in `.firmo/memory.json` unter `configMigration.tracker`, ohne vorhandene Felder wie `lastFindingNumber` zu verlieren. Andere Unterschlüssel von `configMigration` (`review`, `applyReview`, `worktree`) unverändert erhalten.
-- Legacy: Liegt in `configMigration` noch ein alter flacher Eintrag (Felder `version`/`appliedAt`/`addedKeys` direkt unter `configMigration`), darf er beim nächsten Schreiben in die Unterschlüssel-Form überführt bzw. ersetzt werden – die Migrationen sind idempotent config-getrieben; die Zuordnung zum Bereich ist optional per `addedKeys`-Präfix möglich.
-
-Memory-Eintrag:
-
-```json
-{
-  "configMigration": {
-    "tracker": {
-      "version": "issue-tracker-v1",
-      "appliedAt": "YYYY-MM-DDTHH:mm:ssZ",
-      "addedKeys": ["tracker.mode", "tracker.remoteToolOverride"]
-    }
-  }
-}
-```
-
-Wenn `.firmo/config.json` nicht existiert, lege sie **nicht** nur für die Migration an.
+Die Konsolidierung von `.firmo/config.json` (inklusive der `tracker`-Schlüssel) übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `tracker` aus. Das `tracker`-Config-Schema oben (Konfiguration, gültige Werte, Modusbestimmung, Erstaufruf-Abfrage) bleibt davon unberührt.
 
 ### Modus bestimmen
 

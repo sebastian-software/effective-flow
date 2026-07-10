@@ -1,14 +1,23 @@
 ## Delivery- und Worktree-Integration
 
-Dieser optionale Baustein verknüpft code-ändernde Workflows mit Liefer-Branches,
-Pull-Requests und optionalen Git-Worktrees. Die allgemeinen Werte für Basis-Branch,
-Branch-Namensbildung und Abschluss-Aktion liegen im Config-Block `delivery`; der
-Block `worktree` steuert nur noch, ob und wie die Umsetzung in einem separaten
-Git-Worktree läuft.
+Dieser Baustein verknüpft code-ändernde Workflows mit Liefer-Branches, Pull-Requests und
+Git-Worktrees. Die allgemeinen Werte für Basis-Branch, Branch-Namensbildung und
+Abschluss-Aktion liegen im Config-Block `delivery`; der Block `worktree` steuert
+ausschließlich, ob und wie die Umsetzung in einem separaten Git-Worktree läuft.
 
-Ohne aktive Delivery- oder Worktree-Anforderung verhalten sich die Workflows wie
-bisher: keine erzwungene Branch-Erzeugung, keine erzwungenen Commits und keine
-automatische PR-Erstellung.
+**Standardmäßig läuft die Umsetzung in einem eigenen Git-Worktree mit eigenem Branch**
+(`worktree.enabled` Default `true`). Sobald in einem Worktree bzw. auf einem eigenen
+Liefer-Branch gearbeitet wird, **ist Delivery implizit aktiv** und schließt per `merge`
+(Default) oder `pr` ab. Es gibt keinen separaten `delivery.enabled`-Schalter mehr (siehe
+„Delivery ist durch Worktree/Branch impliziert“).
+
+Nur wenn der User ausdrücklich In-Place-Arbeit ohne Worktree verlangt und keine
+Branch-/PR-/Merge-Aktion wünscht, verhält sich der Workflow wie ohne diesen Baustein: keine
+erzwungene Branch-Erzeugung, keine erzwungenen Commits und keine automatische
+PR-Erstellung.
+
+`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir` (Default
+`docs/plan`).
 
 ### Rollen der Config-Blöcke
 
@@ -31,14 +40,13 @@ Falls `.firmo/config.json` vorhanden ist, darf sie diese Defaults überschreiben
 ```json
 {
   "delivery": {
-    "enabled": false,
     "baseBranch": "origin/main",
     "branchPrefix": "firmo",
-    "completion": null,
+    "completion": "merge",
     "returnBranch": "auto"
   },
   "worktree": {
-    "enabled": false,
+    "enabled": true,
     "setup": "auto",
     "baseDir": ".firmo/.worktrees"
   }
@@ -47,89 +55,53 @@ Falls `.firmo/config.json` vorhanden ist, darf sie diese Defaults überschreiben
 
 Fehlende Werte haben diese Defaults:
 
-- `delivery.enabled`: `false` (keine automatische Liefer-Branch-/PR-Erzeugung)
 - `delivery.baseBranch`: `"origin/main"`
 - `delivery.branchPrefix`: `"firmo"`
-- `delivery.completion`: nicht gesetzt (Abschluss-Aktion wird gefragt, wenn Delivery
-  aktiv ist)
+- `delivery.completion`: `"merge"` (Merge in den Zielbranch als Standard-Abschluss)
 - `delivery.returnBranch`: `"auto"` (lokaler Branch-Anteil aus `delivery.baseBranch`)
-- `worktree.enabled`: `false` (kein separater Worktree)
+- `worktree.enabled`: `true` (Umsetzung läuft in einem eigenen Worktree)
 - `worktree.setup`: `"auto"`
 - `worktree.baseDir`: `.firmo/.worktrees`
 
 Gültige Werte:
 
-- `delivery.enabled`: `true`, `false`
 - `delivery.completion`: `"pr"`, `"merge"`, `"branch"`
 - `delivery.returnBranch`: `"auto"` oder ein lokaler Branchname als String
 - `worktree.enabled`: `true`, `false`
 - `worktree.setup`: `"auto"`, `"none"` oder ein expliziter Setup-Befehl als String
 
-### Legacy-Fallback und Config-Migration
+`delivery.enabled` ist **entwertet**: Delivery wird nicht mehr über einen eigenen Schalter
+aktiviert, sondern ist immer dann aktiv, wenn in einem Worktree/eigenen Branch gearbeitet
+wird (siehe „Delivery ist durch Worktree/Branch impliziert“). Ein in einer Altconfig noch
+vorhandenes `delivery.enabled` wird beim Lesen ignoriert und von der Config-Vollmigration
+entfernt (siehe „Config-Migration“).
 
-Ältere Configs können die allgemeinen Lieferwerte noch unter `worktree.*` tragen.
-Lies Werte in dieser Reihenfolge:
+### Config-Migration
 
-1. neuer Wert aus `delivery.*`
-2. Legacy-Wert aus `worktree.baseBranch`, `worktree.branchPrefix` oder
-   `worktree.completion`
-3. Default
+Die Konsolidierung von `.firmo/config.json` auf das aktuelle Schema – insbesondere das
+Verschieben alter Lieferwerte aus `worktree.baseBranch`/`worktree.branchPrefix`/
+`worktree.completion` nach `delivery.*` und das Entfernen des entwerteten
+`delivery.enabled` – übernimmt der geteilte Baustein „Config-Migration“
+(`config-migration.md`) einmalig und zentral. Dieser Baustein führt **keine** eigene
+per-Block-Migration mehr aus. Bis eine Config migriert ist, gilt beim Lesen: neuer Wert aus
+`delivery.*` vor Legacy-Wert aus `worktree.*` vor Default; ein vorhandenes
+`delivery.enabled` wird ignoriert.
 
-Führe diese Prüfung einmalig beim ersten Lesen der Config im Lauf aus. Wenn
-`.firmo/config.json` existiert, prüfe sie auf fehlende unterstützte `delivery`- und
-`worktree`-Schlüssel.
-
-- Ergänze fehlende `delivery.*`-Schlüssel nicht-destruktiv. Wenn ein Legacy-Wert in
-  `worktree.baseBranch`, `worktree.branchPrefix` oder `worktree.completion` existiert
-  und gültig ist, übernimm ihn in den entsprechenden `delivery.*`-Schlüssel; sonst
-  verwende den Default.
-- Ergänze fehlende Worktree-spezifische Schlüssel (`worktree.enabled`,
-  `worktree.setup`, `worktree.baseDir`) mit den Defaults oben.
-- Entferne alte allgemeine `worktree.*`-Schlüssel nicht automatisch. Sie bleiben als
-  Legacy-Fallback lesbar.
-- Erhalte vorhandene gültige Werte und unbekannte Schlüssel unverändert.
-- Lies die Datei direkt vor dem Schreiben erneut frisch ein, damit zwischenzeitliche
-  Änderungen nicht überschrieben werden.
-- Wenn die Datei ungültiges JSON enthält: nicht schreiben, sichere Defaults für
-  diesen Lauf verwenden und den User mit Pfad und Fehler informieren.
-- Wenn ein bekannter Schlüssel einen ungültigen Wert enthält: nicht überschreiben,
-  sicheren Default für diesen Lauf verwenden und den User über den Schlüssel
-  informieren.
-- Wenn die Migration Schlüssel ergänzt hat: teile dem User einmal in diesem
-  Workflow-Lauf mit, dass `.firmo/config.json` migriert wurde, und nenne die
-  ergänzten Schlüssel.
-- Speichere nach erfolgreicher Migration den Status in `.firmo/memory.json` unter
-  `configMigration.delivery`, ohne vorhandene Felder wie `lastFindingNumber` zu
-  verlieren. Andere Unterschlüssel von `configMigration` (`review`, `applyReview`,
-  `tracker`, `worktree`) unverändert erhalten.
-
-Memory-Eintrag:
-
-```json
-{
-  "configMigration": {
-    "delivery": {
-      "version": "delivery-lifecycle-v1",
-      "appliedAt": "YYYY-MM-DDTHH:mm:ssZ",
-      "addedKeys": ["delivery.enabled", "delivery.baseBranch"]
-    }
-  }
-}
-```
-
-### Modus bestimmen (Setup-Phase)
+### Modus bestimmen (Setup-Phase): Delivery ist durch Worktree/Branch impliziert
 
 Bestimme zu Beginn der eigentlichen Umsetzungsarbeit den effektiven Modus:
 
-- Delivery ist aktiv, wenn `delivery.enabled: true` gesetzt ist oder der User im Lauf
-  ausdrücklich PR-, Branch- oder Merge-Arbeit verlangt.
-- Worktree-Ausführung ist aktiv, wenn `worktree.enabled: true` gesetzt ist oder der
-  User ausdrücklich Worktree-Arbeit verlangt.
-- Verlangt der User ausdrücklich In-Place-Arbeit („ohne Worktree“, „direkt auf dem
-  aktuellen Branch“), bleibt die Worktree-Ausführung aus. Delivery kann trotzdem
-  aktiv sein und dann im Haupt-Repo einen Liefer-Branch erzeugen.
-- Ist weder Delivery noch Worktree aktiv: keine weiteren Schritte aus diesem
-  Baustein ausführen.
+- **Worktree-Ausführung ist standardmäßig aktiv** (`worktree.enabled` Default `true`). Sie
+  bleibt nur aus, wenn `worktree.enabled: false` gesetzt ist oder der User ausdrücklich
+  In-Place-Arbeit verlangt („ohne Worktree“, „direkt auf dem aktuellen Branch“).
+- **Delivery ist aktiv, sobald in einem Worktree oder auf einem eigenen Liefer-Branch
+  gearbeitet wird** – also im Default-Fall immer. Zusätzlich ist Delivery aktiv, wenn der
+  User ausdrücklich PR-, Branch- oder Merge-Arbeit verlangt (auch bei In-Place-Arbeit; dann
+  wird der Liefer-Branch im Haupt-Repo erzeugt).
+- Ist der Worktree per Config deaktiviert (`worktree.enabled: false`), gib einen kurzen
+  Hinweis aus, dass der (Default-)Worktree-Modus per Config aus ist. Verlangt der User dann
+  auch keine Delivery-Aktion, führe keine weiteren Schritte aus diesem Baustein aus
+  (In-Place ohne Delivery).
 
 ### Gemeinsame Vorbedingungen
 
@@ -210,23 +182,33 @@ Der Ablauf:
    lassen. Nicht ausgewählte Änderungen im Haupt-Checkout bleiben unberührt.
 
 Nicht erlaubt ist eine heuristische Teil-Diff-Auswahl nach „alle geänderten Dateien
-außer docs/plan“. Der Workflow muss die einzuschließenden Dateien kennen oder
+außer <plan.dir>“. Der Workflow muss die einzuschließenden Dateien kennen oder
 nachfragen. Dadurch bleiben parallel neu angelegte Pläne, `.firmo/`-State und andere
 lokale Arbeitsdateien zuverlässig außerhalb des PRs.
 
 ### Was im Liefer-Branch liegt und was im Haupt-Repo bleibt
 
+Datenhaltungs-Invariante: **Von den Firmo-Artefakten werden ausschließlich Pläne
+committet.** Reviews (lokale Reports) und Investigationen bleiben immer lokal und
+ungetrackt; im Remote-Modus werden Reviews stattdessen als Issues geführt (nie im Repo),
+Investigationen bleiben in jedem Fall rein lokal (siehe „Issue-Tracker-Anbindung“ und
+`{{SKILL:investigate}}`).
+
 - **Im Liefer-Branch:** die eigentlichen Code-, Test- und Doku-Deliverables des
   Workflows sowie – sofern der Workflow eine Plan-Datei geführt hat – deren finaler
-  Zustand.
-- **Nur im Haupt-Repo:** reine Firmo-Buchhaltung und Laufzeitstatus, also alle
-  `.firmo/`-Artefakte (`memory.json`, Review-Reports unter `.firmo/review/`,
-  Config-Migrationsstatus und Wisdom-Dateien).
+  Zustand (im umgesetzten Fall die archivierte, umgesetzt-markierte Plan-Datei).
+- **Nur im Haupt-Repo, nie committet:** reine Firmo-Buchhaltung und Laufzeitstatus, also
+  alle übrigen `.firmo/`-Artefakte – `memory.json`, `cache.json`, lokale Review-Reports
+  unter `.firmo/review/`, Investigations-Reports unter `.firmo/investigation/`,
+  Config-Migrationsstatus und Wisdom-Dateien.
 
 ### Handback und Abschluss-Aktion (Abschlussphase)
 
-Im Anschluss an die reguläre Abschlusslogik des Workflows (inklusive
-Goal-Verifikation und Plan-Datei-Aktualisierung):
+Im Anschluss an die reguläre Abschlusslogik des Workflows (inklusive Goal-Verifikation).
+Den finalen Statuswechsel der Plan-Datei auf `Umgesetzt`/`Implemented` und ihre
+Archivierung übernimmt Schritt 1 unten am Delivery-Punkt – der umsetzende Workflow setzt
+den Status also **nicht** vorab, sondern überlässt ihn dieser Phase (Ausnahme: In-Place ohne
+Delivery, siehe Schritt 1):
 
 **Bestehende PRs aktualisieren:** Wenn der Liefer-Branch bereits einen Pull-Request
 hat und nachträglich Änderungen nötig sind, werden diese Änderungen immer als neue
@@ -235,13 +217,25 @@ nicht per `commit --amend`, interaktivem Rebase, Squash oder Force-Push
 umgeschrieben werden. Scheitert ein normaler Push wegen divergierter Remote-History,
 stoppe und melde den Konflikt, statt History zu überschreiben.
 
-1. **Plan-Datei in den Liefer-Branch übernehmen:** Sofern der Workflow eine
-   Plan-Datei geführt hat und die Umsetzung in einem Worktree oder Teil-Diff-Worktree
-   lief, stelle ihren finalen Zustand aus dem Haupt-Repo im Worktree unter demselben
-   Pfad `docs/plan/NNNN-…md` bereit. Diese Datei wird mitcommittet und ist damit
-   Teil des PRs. Die `.firmo/`-Artefakte bleiben im Haupt-Repo. Führte der Workflow
-   keine Plan-Datei oder läuft er bereits im Liefer-Branch des Haupt-Repos, entfällt
-   dieser Kopierschritt.
+1. **Plan als umgesetzt markieren, archivieren und in den Liefer-Branch übernehmen:**
+   Sofern der Workflow eine Plan-Datei geführt hat, ist dies der **Delivery-Punkt**, an dem
+   der Plan als umgesetzt gilt (unmittelbar bevor der PR geöffnet bzw. der Liefer-Branch
+   gemergt wird):
+   - Setze den kanonischen Statusmarker auf `Umgesetzt`/`Implemented` (Markersprache
+     erhalten: deutscher Marker → `**Planungsstatus:** Umgesetzt`, englischer →
+     `**Plan status:** Implemented`).
+   - Verschiebe die Plan-Datei per `git mv` nach `<plan.dir>/archive/` (Verzeichnis bei
+     Bedarf anlegen), gemäß „Archiv umgesetzter Pläne“ der Plan-Datei-Konvention.
+   - Lief die Umsetzung in einem Worktree oder Teil-Diff-Worktree, stelle diesen finalen,
+     archivierten und umgesetzt-markierten Zustand im Worktree bereit (unter
+     `<plan.dir>/archive/<datei>`). Markierung und Verschiebung werden **mitcommittet** und
+     sind damit Teil des PRs/Merges (Umsetzungs-Doku). Die `.firmo/`-Artefakte bleiben im
+     Haupt-Repo.
+   - Führte der Workflow keine Plan-Datei, entfällt dieser Schritt.
+   - Läuft der Workflow ausnahmsweise In-Place ohne Delivery (kein Worktree, keine
+     Branch-/PR-/Merge-Aktion), führt der Workflow denselben Statuswechsel und
+     Archiv-Move direkt im Arbeitsbaum aus; der abschließende Commit/Merge in den
+     Zielbranch ist dann das Delivery-Event.
 2. **Commit sicherstellen:** Alle beabsichtigten Änderungen im Liefer-Branch committen
    – Code-, Test- und Doku-Deliverables sowie die übernommene Plan-Datei – über die
    Commit-Logik aus `{{SKILL:commit}}` (ausschließlich bekannte geänderte Dateien

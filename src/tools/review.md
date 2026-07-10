@@ -171,16 +171,7 @@ Explizit gesetzte Detailwerte haben Vorrang vor Profil-Ableitungen.
 
 ### Config-Migration
 
-Wenn `.firmo/config.json` existiert, prüfe sie beim Start auf fehlende unterstützte Review-Schlüssel.
-
-- Ergänze fehlende Schlüssel mit den Defaults oben.
-- Erhalte vorhandene gültige Werte und unbekannte Schlüssel unverändert.
-- Lies die Datei direkt vor dem Schreiben erneut frisch ein, damit zwischenzeitliche Änderungen nicht überschrieben werden.
-- Wenn die Datei ungültiges JSON enthält: nicht schreiben, sichere Defaults für diesen Lauf verwenden und den User mit Pfad und Fehler informieren.
-- Wenn ein bekannter Schlüssel einen ungültigen Wert enthält: nicht überschreiben, sicheren Default für diesen Lauf verwenden und den User über den Schlüssel informieren.
-- Wenn die Migration Schlüssel ergänzt hat: teile dem User einmal in diesem Workflow-Lauf mit, dass `.firmo/config.json` migriert wurde, nenne die ergänzten Schlüssel und weise darauf hin, dass die Defaults das bisherige sichere Verhalten erhalten.
-- Speichere nach erfolgreicher Migration den Status in `.firmo/memory.json` unter `configMigration.review` (Schema siehe Abschnitt „Inhalt“ oben), ohne vorhandene Felder wie `lastFindingNumber` zu verlieren. Andere Unterschlüssel von `configMigration` (`applyReview`, `tracker`, `worktree`) unverändert erhalten.
-- Legacy: Liegt in `configMigration` noch ein alter flacher Eintrag (Felder `version`/`appliedAt`/`addedKeys` direkt unter `configMigration`), darf er beim nächsten Schreiben in die Unterschlüssel-Form überführt bzw. ersetzt werden – die Migrationen sind idempotent config-getrieben; die Zuordnung zum Bereich ist optional per `addedKeys`-Präfix möglich.
+Die Konsolidierung von `.firmo/config.json` (inklusive der `review`-Schlüssel) übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `review` aus. Das `review`-Config-Schema oben (Defaults, Profil-Ableitung) bleibt davon unberührt.
 
 ### Cache-Datei
 
@@ -218,6 +209,10 @@ Ob `.firmo/` eingecheckt oder ignoriert wird, entscheidet das jeweilige Projekt 
 8. Schreibe nach Erstellung des Berichts die höchste vergebene Finding-Nummer zurück in `.firmo/memory.json`. Erhalte dabei `configMigration` und andere vorhandene Memory-Felder. Die Memory-Datei muss geschrieben werden, bevor der Workflow mit `ERLEDIGT` abgeschlossen wird. Falls der Schreibvorgang fehlschlägt, weise den User darauf hin.
 
 ```include
+config-migration
+```
+
+```include
 issue-tracker
 ```
 
@@ -237,15 +232,19 @@ Lösche die Datei am Ende des Workflows, vor `ERLEDIGT`.
 
 ### Plan-Datei-Sonderfall
 
+`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir` (Default
+`docs/plan`).
+
 Prüfe vor Phase 1 und vor jeder Code-Review-spezifischen Initialisierung
 (`.firmo/config.json`-Migration, Tracker-Modus, Memory, Cache oder Wisdom-Datei),
-ob das User-Argument eindeutig auf eine Plan-Datei unter `docs/plan/` zeigt.
+ob das User-Argument eindeutig auf eine Plan-Datei unter `<plan.dir>/` zeigt.
 
 Erlaubte Formen sind:
 
-- vollständiger Pfad, z. B. `docs/plan/0066-feature.md`
-- Dateiname, z. B. `0066-feature.md`
-- vierstellige Nummer, z. B. `0066`
+- vollständiger Pfad, z. B. `<plan.dir>/2024-06-01-feature.md`
+- Datums-Slug-Dateiname, z. B. `2024-06-01-feature.md`
+- Titel-Slug, z. B. `feature`
+- Legacy-Nummer, z. B. `0066` (bei migrierten Altplänen, primär über die H1 aufgelöst)
 
 Wenn genau eine Plan-Datei gefunden wird:
 
@@ -297,7 +296,7 @@ Bestimme die aktiven Designentscheidungs-Quellen aus `review.designDecisionSourc
 Starte für jede aktive Quelle einen eigenen Sub-Agenten **parallel**. Jeder Sub-Agent durchsucht nur seine Quelle:
 
 - ADR — `docs/decisions/`, `docs/adr/`, `adr/`, `*.adr.md`
-- Planungs-Dateien — `docs/plan/`, `plans/`
+- Planungs-Dateien — `<plan.dir>/`, `plans/`
 - Konventions-Dateien — `CLAUDE.md`, `AGENTS.md`, vergleichbare Konventionsdateien
 - Code-Kommentare — `@design-decision`, `DELIBERATE`, `INTENTIONAL`, `DESIGN:`
 - Lint-Suppressions mit Begründung — `eslint-disable ... -- [Grund]`, `@ts-expect-error [Grund]`
