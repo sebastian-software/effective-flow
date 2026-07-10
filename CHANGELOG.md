@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.43.0](https://github.com/fastner/firmo/compare/firmo-v1.42.0...firmo-v1.43.0) (2026-07-10)
+
+
+### Features
+
+* guided setup wizard (plan 0071) ([#80](https://github.com/fastner/firmo/issues/80)) ([edde0f1](https://github.com/fastner/firmo/commit/edde0f1cc9a0c70b577304e7274c885816059c6c))
+* intent-grouped router tool catalog (plan 0072) ([#81](https://github.com/fastner/firmo/issues/81)) ([789de1d](https://github.com/fastner/firmo/commit/789de1d936765b45f7e038f9028b48da4f39e26a))
+* simplify firmo toolset (plan 0070) ([#78](https://github.com/fastner/firmo/issues/78)) ([6822b92](https://github.com/fastner/firmo/commit/6822b921220080b8a1cac13503f1b9fe04c5191f))
+
 ## [1.42.0](https://github.com/fastner/firmo/compare/firmo-v1.41.1...firmo-v1.42.0) (2026-07-10)
 
 
