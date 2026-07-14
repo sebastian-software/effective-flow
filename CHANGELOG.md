@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.44.0](https://github.com/fastner/firmo/compare/firmo-v1.43.1...firmo-v1.44.0) (2026-07-14)
+
+
+### Features
+
+* report installed firmo version in install output ([#84](https://github.com/fastner/firmo/issues/84)) ([2df6dc8](https://github.com/fastner/firmo/commit/2df6dc8ac87b62b41cbaea5066567e5a1a343d74))
+
 ## [1.43.1](https://github.com/fastner/firmo/compare/firmo-v1.43.0...firmo-v1.43.1) (2026-07-14)
 
 
