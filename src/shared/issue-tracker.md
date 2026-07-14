@@ -99,6 +99,10 @@ Verwende im Remote-Modus diese Labels und lege fehlende Labels idempotent an (ei
 - **Auflisten/Filtern** (Dedup, Epic-/Issue-Suche): `gh`/`tea` verknüpfen mehrere `--label`-Angaben mit UND-Semantik. Führe die Abfrage daher **je Präfix getrennt** aus (einmal `firmo-…`, einmal `sf-…`) und vereinige die Treffer über die Issue-Nummer.
 - **Status-Label entfernen** (`firmo-needs-planning`, `firmo-issue-done`): entferne zusätzlich die Alt-`sf-`-Variante, falls vorhanden, damit ein Issue nicht durch ein liegengebliebenes Alt-Label „hängen“ bleibt.
 
+### Keine KI-Attribution in Issue-Bodys und -Kommentaren
+
+Füge Issue-Bodys, Epic-Bodys und Kommentaren keine KI-Attribution hinzu: keine „Generated with Claude Code/Codex"-Footer, keine Agent-Session-Links (z. B. `https://claude.ai/code/…`) und keine `Co-Authored-By`-Trailer – auch dann nicht, wenn der Harness sie als Default anhängt. Sachliche Erwähnungen von Claude Code oder Codex als Ziel-Harness sind erlaubt, Generierungs-Attribution nicht.
+
 ### Issue-Body-Format (Finding-Issue)
 
 Ein Finding-Issue muss **self-contained** sein: eine fremde LLM-Session muss es ohne Zugriff auf die erzeugende Session abarbeiten können. Es enthält dieselben inhaltlichen Felder wie ein Finding-Block des lokalen Report-Formats (siehe `{{SKILL:review}}`, „Bericht-Format“).
