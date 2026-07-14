@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.43.1](https://github.com/fastner/firmo/compare/firmo-v1.43.0...firmo-v1.43.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* forbid AI-attribution footers and session links in PR, issue and commit output ([#82](https://github.com/fastner/firmo/issues/82)) ([2077ee8](https://github.com/fastner/firmo/commit/2077ee87ca71905e005f504ed565ecac9b01a085))
+
 ## [1.43.0](https://github.com/fastner/firmo/compare/firmo-v1.42.0...firmo-v1.43.0) (2026-07-10)
 
 
