@@ -53,7 +53,19 @@ cleanup_sf() {
   done
 }
 
+# Extract the firmo version string (e.g. "1.43.0 (22024cf)") the build stamped
+# into the router SKILL.md, so the install report can name what was just placed.
+firmo_installed_version() {
+  skill_md="$DIST_ROOT/claude/firmo/SKILL.md"
+  [ -f "$skill_md" ] || return 0
+  sed -n 's/.*(Version \(.*\))\..*/\1/p' "$skill_md"
+}
+
 firmo_report() {
+  version="$(firmo_installed_version)"
+  if [ -n "$version" ]; then
+    printf 'firmo %s\n' "$version"
+  fi
   if [ "$INSTALL_MODE" = link ]; then
     printf 'Linked firmo skill to:\n'
     printf '  Claude Code: %s/firmo (+ agents in %s/firmo-*.md)\n' "$CLAUDE_SKILLS" "$CLAUDE_AGENTS"
