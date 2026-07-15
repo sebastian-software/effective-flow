@@ -1,0 +1,163 @@
+# Tool-Referenz: Eine Änderung umsetzen
+
+Diese Gruppe führt vom geklärten Plan oder Issue zum fertigen Code. Fünf der sechs Tools
+(`build`, `fix`, `refactor`, `docs`, `maintain`) teilen dasselbe Grundmuster:
+
+- Sie können direkt mit einer Anforderung gestartet werden **oder** eine bereits von
+  `/firmo plan` erzeugte Plan-Datei referenzieren. Eine referenzierte Plan-Datei muss zuerst
+  das **Klärungs-Gate** bestehen (ausreichend konkrete Akzeptanzkriterien, betroffene
+  Dateien, keine offenen Kernfragen); besteht sie es nicht, verweist das Tool auf
+  `/firmo plan` bzw. `/firmo review <plandatei>`.
+- Bei aktivem Delivery-/Worktree-Modus läuft die eigentliche Umsetzung in einem separaten
+  Liefer-Branch bzw. Worktree; am Ende steht eine Abschluss-Aktion (`pr`, `merge` oder
+  `branch`). Details siehe [Worktree und Delivery](worktree-und-delivery.md).
+  `/firmo apply` selbst implementiert nichts, sondern delegiert nur.
+- Nach der Freigabe eines internen Plans bieten sie eine explizite Goal-Abfrage an
+  („Autonom via `/goal`“), damit die verbleibenden Phasen autonom statt schrittweise gated
+  laufen können.
+- Sie sichten vor der Analyse verfügbare Host-Skills (siehe
+  [Skill-Discovery](skill-discovery.md)) und respektieren dabei ihre jeweilige
+  Schreibgrenze.
+
+`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` → `plan.dir` (Default
+`docs/plan`, siehe [Konfiguration](konfiguration.md)).
+
+## `/firmo apply`
+
+**Zweck:** Reiner Einstiegs-Router. Nimmt eine beliebige Apply-Quelle entgegen – Plan-Datei,
+lokaler Review-Report, Remote-Review-Epic/-Finding oder GitHub-/Forgejo-Issue –, klassifiziert
+sie über die gemeinsame Apply-Quellen-Erkennung und delegiert an das zuständige interne Tool
+(intern `apply-plan`, `apply-review` oder `apply-issues`; diese sind nicht direkt über
+`/firmo` aufrufbar). `apply` implementiert selbst nichts.
+
+**Wann nutzen:** Als Standard-Einstieg, um eine fertige Quelle umzusetzen, ohne selbst
+entscheiden zu müssen, welches Tool zuständig ist.
+
+**Typischer Aufruf:** `/firmo apply [<Plan-Datei>|<Report-Pfad>|<Issue-Referenz>]`
+
+**Ein-/Ausgabe:** Ohne Argument listet `apply` lokale Kandidaten (offene Pläne aus
+`<plan.dir>/`, Report-Dateien unter `.firmo/review/`) sowie im Remote-Tracker-Modus zusätzlich
+offene Review-Epics und fragt danach nach der konkreten Quelle. Die Ausgabe besteht aus dem
+erkannten Quelltyp, dem aufgelösten Handle und dem gestarteten Ziel-Tool.
+
+**Zusammenspiel:** Reine Klassifikations- und Routing-Schicht; Umsetzung, Validierung,
+Review und Commit-Vorbereitung liegen vollständig beim jeweiligen Ziel-Tool. Bei
+mehrdeutigem oder gemischtem Quelltyp fragt `apply` nach, statt heuristisch zu raten.
+
+## `/firmo build`
+
+**Zweck:** Orchestriert den kompletten Feature-Workflow: Intent-Gate, optionale Planung über
+`/firmo plan`, Implementierung, Dokumentation, Tests, Validierung, Review und Abschluss.
+
+**Wann nutzen:** Neue Funktionalität, neues UI-Element, neue Seite, neue Integration oder
+verändertes Nutzerverhalten. Wird der Intent stattdessen als Bugfix, Refactoring oder reine
+Dokumentation erkannt, verweist `build` an `/firmo fix`, `/firmo refactor` bzw. `/firmo docs`
+und beendet sich.
+
+**Typischer Aufruf:** `/firmo build <Anforderung>` oder `/firmo build <plandatei>`
+
+**Ein-/Ausgabe:** Eingabe ist die Feature-Anforderung oder eine referenzierte Plan-Datei.
+Ausgabe sind die Code-Änderungen samt Tests und Doku, eine aktualisierte Plan-Datei (Status
+`Umgesetzt`/`Implemented`, Review-Findings-Zusammenfassung, Archiv-Move nach
+`<plan.dir>/archive/`) sowie – bei aktivem Delivery-/Worktree-Modus – ein Liefer-Branch mit
+PR, Merge oder belassenem Branch.
+
+**Zusammenspiel:** Delegiert intern an projekttyp-passende Implementer-, Test-, Doku- und
+Reviewer-Agents. Offene, nicht umgesetzte Review-Findings landen als externer Report unter
+`.firmo/review/`, der später über `/firmo apply` bzw. den passenden Umsetzungs-Workflow
+abgearbeitet werden kann.
+
+## `/firmo fix`
+
+**Zweck:** Orchestriert den Bugfix-Workflow: Investigation, Reproduktion, Gap-Analyse,
+Diagnose-Validierung, minimaler Fix, Regressionstest, Validierung und Abschluss – schlanker
+als `build`, da standardmäßig keine eigene Planungsphase vorgeschaltet ist.
+
+**Wann nutzen:** Ein konkreter Fehler soll behoben werden: etwas funktioniert nicht wie
+erwartet oder es liegt eine Regression vor.
+
+**Typischer Aufruf:** `/firmo fix <Fehlerbeschreibung>` oder `/firmo fix <plandatei>`
+
+**Ein-/Ausgabe:** Eingabe ist die Fehlerbeschreibung, eine Plan-Datei oder der Aufruf-Vorschlag
+aus einem `/firmo investigate`-Report. Ausgabe ist der minimale Fix samt Regressionstest, die
+aktualisierte Plan-Datei (falls referenziert) und – bei aktivem Delivery-/Worktree-Modus – der
+übliche Liefer-Branch mit Abschluss-Aktion.
+
+**Zusammenspiel:** Baut häufig direkt auf einem `/firmo investigate`-Report auf. Anders als
+`investigate` schreibt `fix` in Phase 2 bewusst einen Reproduktionstest, statt nur zu
+beobachten.
+
+## `/firmo refactor`
+
+**Zweck:** Orchestriert Struktur- oder Lesbarkeitsverbesserungen ohne beabsichtigte
+Verhaltensänderung. Erhebt vor der Umstrukturierung eine Baseline (Tests, TypeScript, Lint,
+Build) und vergleicht sie nach dem Refactoring erneut, als Sicherheitsnetz gegen
+Regressionen.
+
+**Wann nutzen:** Code soll umstrukturiert, technische Schulden abgebaut oder Performance
+verbessert werden, ohne dass sich das externe Verhalten ändert.
+
+**Typischer Aufruf:** `/firmo refactor <Beschreibung>` oder `/firmo refactor <plandatei>`
+
+**Ein-/Ausgabe:** Eingabe ist die Refactoring-Anforderung oder eine Plan-Datei. Ausgabe ist
+der umstrukturierte Code samt Bestätigung, dass Tests/TypeScript/Lint/Build gegenüber der
+Baseline unverändert grün sind, plus – bei aktivem Delivery-/Worktree-Modus – Liefer-Branch
+und Abschluss-Aktion.
+
+**Zusammenspiel:** Führt keine Dokumentationsphase ein, wenn kein öffentliches Verhalten
+betroffen ist, und lässt neue Features oder ungeplante Bugfixes während des Laufs bewusst
+außen vor – dafür sind `/firmo build` bzw. `/firmo fix` zuständig.
+
+## `/firmo docs`
+
+**Zweck:** Orchestriert Dokumentationsänderungen: README-Dateien, Entwickler-Guides,
+API-/CLI-Dokumentation, Skill-Dokumentation, Migrationshinweise, Changelogs und
+In-Code-Dokumentation. Ändert Produkt- oder Codeverhalten nur, wenn die Änderung selbst
+dokumentationsnah ist (z. B. CLI-Help-Text oder JSDoc/TSDoc).
+
+**Wann nutzen:** Dokumentation fehlt, ist veraltet oder soll neu strukturiert werden, ohne
+dass sich Produktverhalten ändert. Dieses Referenzdokument selbst ist über `/firmo docs`
+entstanden.
+
+**Typischer Aufruf:** `/firmo docs <Beschreibung>` oder `/firmo docs <Doku-Plandatei>`
+
+**Ein-/Ausgabe:** Eingabe ist die Dokumentationsanforderung oder eine Plan-Datei mit den
+Kopfzeilen `**Doku-Kategorie:**` und `**Ziel-Pfad:**`. Ausgabe ist das neue oder aktualisierte
+Dokument innerhalb einer der vier Kategorien (`docs/user-guide/`, `docs/developer-guide/`,
+`docs/operations/`, `docs/runbooks/`); fehlen Kategorie oder Ziel-Pfad im Plan, fragt `docs`
+danach.
+
+**Zusammenspiel:** Nutzt für User-Doku den `docs-writer`-Agent, für In-Code-Dokumentation den
+`code-documenter`-Agent. Details zur Kategorie- und Namenskonvention siehe
+[Plan-Konventionen](../developer-guide/plan-konventionen.md).
+
+## `/firmo maintain`
+
+**Zweck:** Orchestriert schlanke, wiederkehrende Wartung eines Node-Projekts:
+Dependency-Updates, Security-/Audit-Fixes und Breaking-Change-Adaption bei Major-Bumps.
+Bewusst kein Scheduler – automatisches, zeitgesteuertes Bumpen übernehmen Werkzeuge wie
+Renovate oder Dependabot; `maintain` ist der interaktive „jetzt aufräumen“-Lauf.
+
+**Wann nutzen:** Veraltete Dependencies oder Security-Findings sollen aufgeräumt werden.
+Nicht geeignet für allgemeines Refactoring (→ `/firmo refactor`), Bugfixes ohne
+Dependency-Bezug (→ `/firmo fix`) oder neue Funktionalität (→ `/firmo build`).
+
+**Typischer Aufruf:** `/firmo maintain`
+
+**Ein-/Ausgabe:** Keine Eingabe nötig; das Tool erkennt den Paketmanager am Lockfile. Ausgabe
+ist eine Gruppenübersicht (Safe-Batch, Major einzeln, Security) zur Auswahl, danach ein
+eigener Commit je umgesetzter Gruppe und eine Zusammenfassung der zurückgestellten
+„manuellen“ Updates.
+
+**Zusammenspiel:** Verweigert das Aktualisieren, solange die Vorher-Baseline bereits rot ist,
+und verweist stattdessen auf `/firmo fix`. Bei Code-Anpassungen für Breaking Changes läuft
+ein Reviewer-Pass wie bei `build`/`refactor`.
+
+## Weiterführend
+
+- [Worktree und Delivery](worktree-und-delivery.md) – Liefer-Branch, Worktree,
+  PR/Merge/Branch-Abschluss
+- [Konfiguration](konfiguration.md) – `delivery.*`, `worktree.*`, `plan.*`
+- [Skill-Discovery](skill-discovery.md) – wie diese Tools Host-Skills nutzen
+- [Tools: Qualität sichern](tools-qualitaet.md) – wie Review-Reports entstehen, die hier
+  eingearbeitet werden
