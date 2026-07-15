@@ -3,8 +3,7 @@ description: "Schreibt und führt End-to-End-Tests mit derselben Tiefe wie der u
 claude:
   model: sonnet
   color: yellow
-  tools: [Read, Write, Edit, Bash, Glob, Grep]
-  skills: [effective-ui-design]
+  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
   model: gpt-5.6-luna
   model_reasoning_effort: medium
@@ -22,6 +21,10 @@ language-rules
 
 ```include
 task-tracking
+```
+
+```include
+skill-discovery
 ```
 
 ## Kernaufgaben

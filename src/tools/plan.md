@@ -56,6 +56,14 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 
 ## Workflow
 
+Sichte vor der Analyse nützliche Skills gemäß folgendem Baustein. Die No-Code-Grenze dieses
+Tools bleibt dabei strikt: Skills informieren nur Analyse und Plan, erzeugen keinen Code und
+ändern nichts außer der Plan-Datei unter `<plan.dir>/`.
+
+```include
+skill-discovery
+```
+
 ### Phase 1: Scope und Kontext
 
 1. Analysiere die Anforderung gründlich.

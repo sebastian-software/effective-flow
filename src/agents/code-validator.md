@@ -3,7 +3,7 @@ description: "Prüft Codequalität durch Linting, Type-Checking und Build-Validi
 claude:
   model: haiku
   color: magenta
-  tools: [Read, Bash, Glob, Grep]
+  tools: [Read, Bash, Glob, Grep, Skill]
 codex:
   model: gpt-5.6-luna
   model_reasoning_effort: medium
@@ -20,6 +20,10 @@ language-rules
 
 ```include
 task-tracking
+```
+
+```include
+skill-discovery
 ```
 
 - englische Testnamen und Commit-Konventionen als Standard behandeln

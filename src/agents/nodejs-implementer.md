@@ -3,7 +3,7 @@ description: "Implementiert Node.js Backend-Code, CLI-Tools und serverseitige An
 claude:
   model: opus
   color: cyan
-  tools: [Read, Write, Edit, Bash, Glob, Grep]
+  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
   model: gpt-5.6-sol
   model_reasoning_effort: high
@@ -20,6 +20,10 @@ language-rules
 
 ```include
 task-tracking
+```
+
+```include
+skill-discovery
 ```
 
 ## Backend APIs

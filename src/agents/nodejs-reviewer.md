@@ -3,7 +3,7 @@ description: "Führt spezialisiertes Backend- und CLI-Review mit derselben Tiefe
 claude:
   model: opus
   color: red
-  tools: [Read, Glob, Grep]
+  tools: [Read, Glob, Grep, Skill]
 codex:
   model: gpt-5.6-sol
   model_reasoning_effort: high
@@ -20,6 +20,10 @@ language-rules
 
 ```include
 task-tracking
+```
+
+```include
+skill-discovery
 ```
 
 ## Prüffelder

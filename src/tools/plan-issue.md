@@ -81,6 +81,14 @@ Schreibe das Planungsergebnis als Issue-Kommentar (Operation „Kommentar hinzuf
 4. Zeige dem User die gefundene Liste (Nummer, Titel) und lass ihn wählen, welche Issues geplant werden sollen (eines, mehrere oder alle).
 5. Lege pro gewähltem Issue eine Task an (Aufgabenverfolgung).
 
+Sichte vor der Planung nützliche Skills gemäß folgendem Baustein. Die No-Code-Grenze dieses
+Tools bleibt dabei strikt: Skills informieren nur die Klärung/Planung, erzeugen keinen Code
+und ändern nichts außer den Issue-Kommentaren.
+
+```include
+skill-discovery
+```
+
 ### Phase 2: Planung je Issue (interaktiv)
 
 Für jedes gewählte Issue nacheinander:

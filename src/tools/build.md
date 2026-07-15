@@ -274,6 +274,10 @@ options:
     description: Feedback als Freitext eingeben
 ```
 
+```include
+skill-discovery
+```
+
 ### Phase 2: Implementierung
 
 0. Bestimme gemäß „Delivery- und Worktree-Integration“ den effektiven Delivery-/Worktree-Modus und führe bei aktivem Modus zuerst das passende Setup aus: Worktree-Setup bei Worktree-Ausführung oder Liefer-Branch-Setup im Haupt-Repo bei In-Place-Delivery. Alle folgenden Phasen 2–6 (Implementierung, Doku, Tests, Validierung, Review) laufen dann im Liefer-Arbeitsverzeichnis.

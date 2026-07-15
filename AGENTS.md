@@ -57,6 +57,23 @@ Source frontmatter carries **no** `name` or `type` field — name and category c
 2. To expose a tool via `/firmo`, add it to exactly one intent group in `TOOL_GROUPS` in `build.mjs`; `EXPOSED_TOOLS` is derived from `TOOL_GROUPS` (array/group order = catalog order in the router). An exposed tool also needs a `catalogHint` frontmatter field (strictly double-quoted, a single usage-oriented line).
 3. Run `node build.mjs`. Guards will fail if an exposed tool has no source, if an `include` target is missing, if a Codex `sandbox_mode` is unsupported, if an exposed tool is missing or has an unquoted `catalogHint`, or if a tool is missing from or duplicated across `TOOL_GROUPS`.
 
+## Skill discovery
+
+Umsetzer- and analysis/planning tools plus all agents embed the shared `skill-discovery`
+include (via a ` ```include ` fence): before implementing, planning, or reviewing they scan
+the host's available skills and apply the useful ones. The mechanism is fully
+harness-neutral — on Claude via the `Skill` tool (added to every agent's `claude.tools`),
+on Codex via its own skill discovery.
+
+There is **no** static `skills:` frontmatter preload anymore. Per-agent skill
+recommendations live as a short `## Empfohlene Skills` prose section in the agent source
+(honoured by the include as "prefer if available"; a fallback group is written `A › B`,
+meaning "prefer A, else B"). A project tunes this at runtime through the optional `skills`
+block in `.firmo/config.json` (`enabled`, `include`, `exclude`, plus per-agent
+`agents.<name>` and per-tool `tools.<name>`); `exclude` and `enabled: false` are hard
+off-switches. See `src/shared/skill-discovery.md`, `src/shared/config-migration.md` (defaults)
+and `/firmo setup` (wizard).
+
 ## Versioning
 
 Release versioning is managed by release-please. The source of truth for the

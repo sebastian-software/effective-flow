@@ -79,6 +79,14 @@ Am Ende empfiehlt `investigate` genau einen Folge-Schritt:
 2. Klassifiziere früh: Fehler, beabsichtigtes-aber-überraschendes Verhalten oder unklar.
 3. Halte explizit fest, welche Aussagen verifizierter Kontext und welche Annahmen sind.
 
+Sichte vor der Analyse nützliche Skills gemäß folgendem Baustein. Die No-Code-Grenze dieses
+Tools bleibt dabei strikt: Skills informieren nur die Ursachenanalyse, erzeugen keinen Code
+und ändern nichts außer dem Investigation-Report unter `.firmo/investigation/`.
+
+```include
+skill-discovery
+```
+
 ### Phase 2: Investigation
 
 1. Führe die read-only-Investigation gemäß „Investigation-Methode“, Abschnitt „Symptom und Code untersuchen“, aus: Symptom analysieren, Code über einen internen Explore-Sub-Agenten untersuchen, die Standard-Rückfragen klären und die vermutliche Root Cause samt betroffener Dateien identifizieren.

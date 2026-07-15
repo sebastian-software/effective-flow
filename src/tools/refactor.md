@@ -151,6 +151,10 @@ Starte parallel:
 
 Dokumentiere die Baseline für den späteren Vergleich.
 
+```include
+skill-discovery
+```
+
 ### Phase 3: Refactoring
 
 1. Starte den passenden Implementer-Skill.
