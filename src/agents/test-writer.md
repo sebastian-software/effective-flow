@@ -3,7 +3,7 @@ description: "Schreibt und verbessert Unit-, Integrations- und Komponententests 
 claude:
   model: sonnet
   color: green
-  tools: [Read, Write, Edit, Bash, Glob, Grep]
+  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
   model: gpt-5.6-luna
   model_reasoning_effort: medium
@@ -20,6 +20,10 @@ language-rules
 
 ```include
 task-tracking
+```
+
+```include
+skill-discovery
 ```
 
 ## Kernaufgaben

@@ -3,8 +3,7 @@ description: "Erstellt und pflegt End-User-Dokumentation mit derselben Tiefe wie
 claude:
   model: sonnet
   color: blue
-  tools: [Read, Write, Edit, Bash, Glob, Grep]
-  skills: [copywriting, copy-editing, humanizer]
+  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
   model: gpt-5.6-luna
   model_reasoning_effort: medium
@@ -21,6 +20,14 @@ language-rules
 
 ```include
 task-tracking
+```
+
+## Empfohlene Skills
+
+- `humanizer`
+
+```include
+skill-discovery
 ```
 
 ```include

@@ -3,8 +3,7 @@ description: "Erstellt und verbessert In-Code-Dokumentation mit derselben Tiefe 
 claude:
   model: sonnet
   color: cyan
-  tools: [Read, Write, Edit, Glob, Grep]
-  skills: [copy-editing]
+  tools: [Read, Write, Edit, Glob, Grep, Skill]
 codex:
   model: gpt-5.6-luna
   model_reasoning_effort: medium
@@ -21,6 +20,14 @@ language-rules
 
 ```include
 task-tracking
+```
+
+## Empfohlene Skills
+
+- `humanizer`
+
+```include
+skill-discovery
 ```
 
 ## Kernaufgaben

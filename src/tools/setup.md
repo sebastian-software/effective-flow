@@ -34,7 +34,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Schreiben und b
 
 ## Config-Schema
 
-`.firmo/config.json` ist optional und steuert Defaults von fünf Blöcken. Die jeweiligen Skills sind die maßgebliche Quelle für gültige Werte und Defaults; dieser Skill fasst sie nur zusammen und darf bei Schema-Erweiterungen nicht als alleinige Wahrheit gelten. Unbekannte Schlüssel einer bestehenden Config bleiben immer erhalten.
+`.firmo/config.json` ist optional und steuert Defaults der folgenden Blöcke. Die jeweiligen Skills sind die maßgebliche Quelle für gültige Werte und Defaults; dieser Skill fasst sie nur zusammen und darf bei Schema-Erweiterungen nicht als alleinige Wahrheit gelten. Unbekannte Schlüssel einer bestehenden Config bleiben immer erhalten.
 
 - **`review`** (Quelle: `{{SKILL:review}}`): `profile` (full/focused/fast), `autoConfirmScope` (bool), `designDecisionSources` (full/standard/minimal), `validation` (full/quick/off)
 - **`applyReview`** (Quelle: `{{SKILL:apply-review}}`): `defaultCommitStrategy` (worktrees/single/none/`null` = beim Lauf fragen), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/Befehl)
@@ -42,6 +42,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Schreiben und b
 - **`delivery`** (Quelle: `{{SKILL:build}}`, Abschnitt „Delivery- und Worktree-Integration“ – ebenso in den weiteren code-ändernden Workflows eingebettet): Delivery ist durch Worktree/Branch impliziert (kein eigener `enabled`-Schalter mehr) — `baseBranch` (Default `origin/main`), `branchPrefix` (Default `firmo`), `completion` (pr/merge/branch, Default `merge`), `returnBranch` (auto oder lokaler Branchname)
 - **`worktree`** (Quelle: `{{SKILL:build}}`, Abschnitt „Delivery- und Worktree-Integration“): `enabled` (bool, Default `true`), `setup` (auto/none/Befehl), `baseDir`
 - **`tracker`** (Quelle: `{{SKILL:review}}`, Abschnitt „Issue-Tracker-Anbindung“ – ebenso in `{{SKILL:apply-review}}` und den weiteren Tracker-Workflows eingebettet): `mode` (local/remote, Default `local`), `remoteToolOverride` (auto/github/forgejo, Default `auto`)
+- **`skills`** (Quelle: Baustein „Skill-Discovery“): `enabled` (bool, Default `true` — schaltet die dynamische Skill-Nutzung), `include` (Liste — Skills projektweit bevorzugt einbinden), `exclude` (Liste — Skills nie anwenden), `agents.<name>` und `tools.<name>` (je `include`/`exclude` für einen einzelnen Agent bzw. ein einzelnes Tool). Schlüssel sind die Quell-Agent-/Tool-Namen (z. B. `ui-implementer`, `plan`).
 
 ### Sichere Defaults (die eine Basis)
 
@@ -222,6 +223,7 @@ Config-Wert bzw. Default als Vorauswahl:
 4. `delivery`: `delivery.baseBranch` und `delivery.completion` (bereits in Schritt 4 erfragt — übernehmen), `delivery.branchPrefix`, `delivery.returnBranch`
 5. `worktree`: `worktree.enabled` (bereits in Schritt 4 erfragt — übernehmen), `worktree.setup`, `worktree.baseDir`
 6. `tracker`: `tracker.mode` (bereits in Schritt 4 erfragt — übernehmen), `tracker.remoteToolOverride` (auto/github/forgejo)
+7. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (globale Listen) sowie – als Fortgeschrittenen-Option – `skills.agents.<name>` und `skills.tools.<name>` für einzelne Agents/Tools. Biete zusätzlich optional an (nicht erzwingen), die eingebauten per-Agent-Empfehlungen sichtbar als `skills.agents.<name>.include` in die Config zu materialisieren; schreibe dabei bei einer Fallback-Empfehlung (`impeccable › frontend-design`) nur den **primären** Skill (`["impeccable"]`) — der Built-in-Fallback bleibt aktiv. Flache Empfehlungen (`humanizer`) werden unverändert übernommen.
 
 Wer den früheren „schnellen Solo-Workflow" möchte, setzt hier z. B. `review.profile: fast`,
 `review.validation: quick` und `applyReview.finalValidation: changedScope`.

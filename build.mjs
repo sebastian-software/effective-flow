@@ -19,7 +19,6 @@ import {
   getField,
   getNested,
   getNestedArray,
-  getNestedList,
   cleanDescription,
   tomlString,
   normalizeCodexSandboxMode,
@@ -317,7 +316,6 @@ try {
         const claudeModel = getNested(a.fm, 'claude', 'model', { context });
         const claudeColor = getNested(a.fm, 'claude', 'color', { context });
         const claudeTools = getNestedArray(a.fm, 'claude', 'tools', { context });
-        const claudeSkills = getNestedList(a.fm, 'claude', 'skills', { context });
         const agentDesc = cleanDescription(getField(a.fm, 'description')).replace(/"/g, '\\"');
 
         const claudeAgentName = `${CLAUDE_AGENT_PREFIX}${a.name}`;
@@ -334,7 +332,6 @@ try {
             .join(', ');
           agentFm += `tools: ${toolList}\n`;
         }
-        if (claudeSkills) agentFm += `skills:\n${claudeSkills}\n`;
         agentFm += '---\n';
         writeFileSync(
           join(CLAUDE_AGENTS_DIR, `${claudeAgentName}.md`),

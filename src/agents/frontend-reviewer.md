@@ -3,8 +3,7 @@ description: "Führt spezialisiertes Frontend-Review mit derselben Tiefe wie der
 claude:
   model: opus
   color: red
-  tools: [Read, Glob, Grep]
-  skills: [frontend-design, effective-ui-design]
+  tools: [Read, Glob, Grep, Skill]
 codex:
   model: gpt-5.6-sol
   model_reasoning_effort: high
@@ -21,6 +20,14 @@ language-rules
 
 ```include
 task-tracking
+```
+
+## Empfohlene Skills
+
+- `impeccable › frontend-design` (Fallback)
+
+```include
+skill-discovery
 ```
 
 ## Prüffelder

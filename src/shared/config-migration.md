@@ -36,6 +36,9 @@ Lauf, lässt das betroffene Feld unverändert, meldet den offenen Punkt kurz und
   - `delivery.baseBranch` → `"origin/main"`, `delivery.branchPrefix` → `"firmo"`,
     `delivery.completion` → `"merge"`, `delivery.returnBranch` → `"auto"`
   - `tracker.mode` → `"local"`, `tracker.remoteToolOverride` → `"auto"`
+  - `skills.enabled` → `true`, `skills.include` → `[]`, `skills.exclude` → `[]`,
+    `skills.agents` → `{}`, `skills.tools` → `{}` (steuert die Skill-Discovery; siehe
+    `{{SKILL:setup}}` und den Baustein „Skill-Discovery“)
   - `review`- und `applyReview`-Schlüssel gemäß den Defaults ihrer Quell-Skills
     (`{{SKILL:review}}` bzw. `{{SKILL:apply-review}}`)
 - Bereits gesetzte gültige Werte bleiben **unverändert** (auch ein explizites

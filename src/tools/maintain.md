@@ -150,6 +150,10 @@ Starte parallel:
 
 Dokumentiere die Baseline. Wenn die Baseline bereits rot ist (Build/Tests vor jedem Update kaputt): updaten nicht, sondern an `{{SKILL:fix}}` verweisen, da spätere Regressionen sonst nicht von Altlasten unterscheidbar sind.
 
+```include
+skill-discovery
+```
+
 ### Phase 3: Apply pro Gruppe
 
 Arbeite die freigegebenen Gruppen nacheinander ab. Für jede Gruppe:
