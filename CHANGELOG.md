@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.45.0](https://github.com/sebastian-software/firmo/compare/firmo-v1.44.0...firmo-v1.45.0) (2026-07-15)
+
+
+### Features
+
+* discover and apply host skills across firmo tools and agents ([#86](https://github.com/sebastian-software/firmo/issues/86)) ([1178fb0](https://github.com/sebastian-software/firmo/commit/1178fb0170ddefc431e5cd6f836c27f34ef257e5))
+
 ## [1.44.0](https://github.com/fastner/firmo/compare/firmo-v1.43.1...firmo-v1.44.0) (2026-07-14)
 
 
