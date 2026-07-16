@@ -24,7 +24,7 @@ task-tracking
 
 ## Empfohlene Skills
 
-- `impeccable › frontend-design` (Fallback)
+- `effective-web › impeccable › frontend-design` (Fallback)
 
 ```include
 skill-discovery
