@@ -31,6 +31,14 @@ task-tracking
 commit-message-rules
 ```
 
+## Empfohlene Skills
+
+- `metro-english › humanizer` (Fallback)
+
+```include
+skill-discovery
+```
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der PR-Erstellung und beachte ihre Vorgaben für Branch-Namen, PR-Titel, PR-Beschreibung und projektweite Konventionen.

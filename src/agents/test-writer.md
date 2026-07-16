@@ -22,6 +22,10 @@ language-rules
 task-tracking
 ```
 
+## Empfohlene Skills
+
+- `effective-web`
+
 ```include
 skill-discovery
 ```

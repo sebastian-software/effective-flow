@@ -22,6 +22,10 @@ language-rules
 task-tracking
 ```
 
+## Empfohlene Skills
+
+- `software-architecture`
+
 ```include
 skill-discovery
 ```

@@ -65,10 +65,10 @@ the host's available skills and apply the useful ones. The mechanism is fully
 harness-neutral — on Claude via the `Skill` tool (added to every agent's `claude.tools`),
 on Codex via its own skill discovery.
 
-There is **no** static `skills:` frontmatter preload anymore. Per-agent skill
-recommendations live as a short `## Empfohlene Skills` prose section in the agent source
-(honoured by the include as "prefer if available"; a fallback group is written `A › B`,
-meaning "prefer A, else B"). A project tunes this at runtime through the optional `skills`
+There is **no** static `skills:` frontmatter preload anymore. Per-agent and per-tool
+skill recommendations live as a short `## Empfohlene Skills` prose section in the agent or
+tool source (honoured by the include as "prefer if available"; a fallback group is written
+`A › B`, meaning "prefer A, else B"). A project tunes this at runtime through the optional `skills`
 block in `.firmo/config.json` (`enabled`, `include`, `exclude`, plus per-agent
 `agents.<name>` and per-tool `tools.<name>`); `exclude` and `enabled: false` are hard
 off-switches. See `src/shared/skill-discovery.md`, `src/shared/config-migration.md` (defaults)
