@@ -81,7 +81,7 @@ Bevor der eigentliche Workflow startet, prüfe ob das Projekt bereits dokumentie
      - bestehende Architekturentscheidungen
    - schreibe den Ausgangszustand als `<plan.dir>/YYYY-MM-DD-initial-state.md` (Datum via `date +%F`)
    - verwende dabei das Format der bestehenden Plan-Dateien:
-   - Markersprache der Statuszeile: nutze den deutschen Marker `**Planungsstatus:** Umgesetzt` als Default; nur wenn `.firmo/config.json` `plan.markerLanguage = "en"` setzt, verwende stattdessen `**Plan status:** Implemented`. Erzeuge genau eine Statuszeile, keine Sprachmischform.
+   - Markersprache der Statuszeile: nutze den deutschen Marker `**Planungsstatus:** Umgesetzt` als Default; nur wenn die Firmo-Konfiguration (Projektsetup-ADR) `plan.markerLanguage = "en"` setzt, verwende stattdessen `**Plan status:** Implemented`. Erzeuge genau eine Statuszeile, keine Sprachmischform.
 
 ```markdown
 # Ausgangszustand — [Projektname]
@@ -354,7 +354,7 @@ Hinweis: Vor Abschluss muss die Spalte „Offen“ für „Kritisch“ 0 sein.
    - Problem
    - Empfehlung
    - Status (Behoben / Offen / Nicht umgesetzt)
-   - Begründung bei Nicht-Umsetzung (inkl. ADR-Referenz, falls vorhanden)
+   - Begründung bei Nicht-Umsetzung (inkl. ADR-Referenz als Slug, falls vorhanden, z. B. `(ADR: <slug>)`)
 8. Lege in diesem Workflow niemals ein ADR an und frage auch nicht danach. Bewusst nicht umgesetzte Findings werden ausschließlich im Review-Report dokumentiert. Über die spätere Umsetzung oder über ein ADR für eine bewusste Nicht-Umsetzung entscheidet der Entwickler beim Durchgehen der Findings-Datei, typischerweise via {{SKILL:apply-review}}.
 9. Wenn nach Review Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
    - schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.firmo/review/`

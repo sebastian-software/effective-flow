@@ -103,7 +103,7 @@ Projekt-Typ-Erkennung wie bei `{{SKILL:build}}`. Das Reviewer-Routing samt Verze
 
 Firmo-interne Dateien liegen unter `.firmo/` im Projekt-Root.
 
-- Konfiguration: `.firmo/config.json`
+- Konfiguration: Firmo-Konfiguration aus der Projektsetup-ADR (siehe Baustein „Config-Migration“)
 - Memory-Datei: `.firmo/memory.json`
 - Cache-Datei: `.firmo/cache.json`
 - Review-Reports: `.firmo/review/`
@@ -130,7 +130,7 @@ Die Datei `.firmo/memory.json` speichert persistente Zustände über Sessions hi
 
 ### Konfigurationsschema
 
-`review` funktioniert ohne Konfigurationsdatei. Wenn `.firmo/config.json` fehlt, verwende interne Defaults und lege keine Datei automatisch an.
+`review` funktioniert ohne festgeschriebene Konfiguration. Fehlt die Firmo-Konfiguration (Projektsetup-ADR), verwende interne Defaults und lege nichts automatisch an.
 
 Unterstützte Review-Konfiguration:
 
@@ -172,7 +172,7 @@ Explizit gesetzte Detailwerte haben Vorrang vor Profil-Ableitungen.
 
 ### Config-Migration
 
-Die Konsolidierung von `.firmo/config.json` (inklusive der `review`-Schlüssel) übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `review` aus. Das `review`-Config-Schema oben (Defaults, Profil-Ableitung) bleibt davon unberührt.
+Das Lesen der Firmo-Konfiguration aus der Projektsetup-ADR (inklusive der `review`-Schlüssel) und die einmalige Migration einer Alt-Config übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `review` aus. Das `review`-Config-Schema oben (Defaults, Profil-Ableitung) bleibt davon unberührt.
 
 ### Cache-Datei
 
@@ -204,7 +204,7 @@ Ob `.firmo/` eingecheckt oder ignoriert wird, entscheidet das jeweilige Projekt 
 2. Lies `.firmo/memory.json` beim Start des Review-Workflows.
 3. Falls `.firmo/memory.json` nicht existiert, aber die alte Datei `.sf-memory.json` vorhanden ist: migriere deren Inhalt nach `.firmo/memory.json`, entferne `.sf-memory.json` erst nach erfolgreichem Schreiben und weise den User darauf hin.
 4. Falls keine Memory-Datei existiert, starte mit `lastFindingNumber: 0`.
-5. Lies und migriere `.firmo/config.json`, falls vorhanden.
+5. Lies die Firmo-Konfiguration aus der Projektsetup-ADR, falls vorhanden (Migration einer Alt-Config über den Baustein „Config-Migration“).
 6. Lies `.firmo/cache.json`, falls vorhanden und gültig; verwende nur valide, nicht veraltete Cache-Einträge.
 7. Nummeriere neue Findings fortlaufend ab `lastFindingNumber + 1` mit 7-stelliger Formatierung: `R-0000001`, `R-0000002`, ...
 8. Schreibe nach Erstellung des Berichts die höchste vergebene Finding-Nummer zurück in `.firmo/memory.json`. Erhalte dabei `configMigration` und andere vorhandene Memory-Felder. Die Memory-Datei muss geschrieben werden, bevor der Workflow mit `ERLEDIGT` abgeschlossen wird. Falls der Schreibvorgang fehlschlägt, weise den User darauf hin.
@@ -233,11 +233,11 @@ Lösche die Datei am Ende des Workflows, vor `ERLEDIGT`.
 
 ### Plan-Datei-Sonderfall
 
-`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir` (Default
+`<plan.dir>` ist das Plan-Verzeichnis aus der Firmo-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
 `docs/plan`).
 
 Prüfe vor Phase 1 und vor jeder Code-Review-spezifischen Initialisierung
-(`.firmo/config.json`-Migration, Tracker-Modus, Memory, Cache oder Wisdom-Datei),
+(Config-Migration, Tracker-Modus, Memory, Cache oder Wisdom-Datei),
 ob das User-Argument eindeutig auf eine Plan-Datei unter `<plan.dir>/` zeigt.
 
 Erlaubte Formen sind:
@@ -296,7 +296,7 @@ Bestimme die aktiven Designentscheidungs-Quellen aus `review.designDecisionSourc
 
 Starte für jede aktive Quelle einen eigenen Sub-Agenten **parallel**. Jeder Sub-Agent durchsucht nur seine Quelle:
 
-- ADR — `docs/decisions/`, `docs/adr/`, `adr/`, `*.adr.md`
+- ADR — `docs/decisions/`, `docs/adr/`, `adr/`, `*.adr.md`. ADRs können im lebenden, slug-benannten Format (`# <Titel>`, `## Status`) **oder** im nummerierten Alt-Format (`# NNNN — Titel`) vorliegen; beide Formen werden gelesen, die Such-Globs bleiben unverändert. **Ausnahme:** Die Firmo-Projektsetup-ADR (Config, bekannter Slug `firmo-project-setup`, z. B. `docs/adr/firmo-project-setup.md`) ist Konfiguration, keine Architekturbegründung, und wird **nicht** als Designentscheidungs-Quelle gesammelt.
 - Planungs-Dateien — `<plan.dir>/`, `plans/`
 - Konventions-Dateien — `CLAUDE.md`, `AGENTS.md`, vergleichbare Konventionsdateien
 - Code-Kommentare — `@design-decision`, `DELIBERATE`, `INTENTIONAL`, `DESIGN:`

@@ -42,7 +42,7 @@ Links entstehen.
 ### Dateinamen-Konvention
 
 - topic-basierte Slugs in Kebab-Case, z. B. `installation.md`, `architecture.md`, `restart-database.md`
-- kein Datums- oder Nummern-Prefix; das Datums-Slug-Schema (mit erhaltener Legacy-Nummer) ist exklusiv für das Plan-Verzeichnis `<plan.dir>/` (aus `.firmo/config.json` `plan.dir`, Default `docs/plan`)
+- kein Datums- oder Nummern-Prefix; das Datums-Slug-Schema (mit erhaltener Legacy-Nummer) ist exklusiv für das Plan-Verzeichnis `<plan.dir>/` (aus `plan.dir` der Firmo-Konfiguration/Projektsetup-ADR, Default `docs/plan`)
 - Slugs müssen innerhalb ihrer Kategorie eindeutig sein
 - Dateiendung immer `.md`
 

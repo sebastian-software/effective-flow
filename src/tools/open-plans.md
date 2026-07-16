@@ -7,7 +7,7 @@ catalogHint: "Zeigt, welche Pläne noch offen sind, wenn du den Faden wieder auf
 
 Du listest offene Implementierungspläne aus `<plan.dir>/`.
 
-`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir` (Default
+`<plan.dir>` ist das Plan-Verzeichnis aus der Firmo-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
 `docs/plan`).
 
 ## Ziel

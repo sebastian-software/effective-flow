@@ -1,6 +1,6 @@
 ## Apply-Quellen-Erkennung
 
-`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir` (Default
+`<plan.dir>` ist das Plan-Verzeichnis aus der Firmo-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
 `docs/plan`).
 
 Dieser geteilte Baustein ist die einzige Quelle der Wahrheit dafür, **welcher

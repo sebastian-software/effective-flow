@@ -1,6 +1,6 @@
 ## Issue-Tracker-Anbindung (Remote-Modus)
 
-Dieser geteilte Baustein verbindet `{{SKILL:review}}` und `{{SKILL:apply-review}}` mit einem externen Issue-Tracker (GitHub über `gh`, Forgejo über `tea`). Er ist **opt-in** über `.firmo/config.json` und standardmäßig deaktiviert (`local`). Im lokalen Modus verhalten sich beide Skills unverändert – Findings laufen über die Markdown-Report-Datei unter `.firmo/review/`, es werden keine Issues erzeugt und kein CLI aufgerufen.
+Dieser geteilte Baustein verbindet `{{SKILL:review}}` und `{{SKILL:apply-review}}` mit einem externen Issue-Tracker (GitHub über `gh`, Forgejo über `tea`). Er ist **opt-in** über die Firmo-Konfiguration (Projektsetup-ADR) und standardmäßig deaktiviert (`local`). Im lokalen Modus verhalten sich beide Skills unverändert – Findings laufen über die Markdown-Report-Datei unter `.firmo/review/`, es werden keine Issues erzeugt und kein CLI aufgerufen.
 
 Der local/remote-Umschalter (`tracker.mode`) betrifft ausschließlich **Reviews**. **Investigationen** (`{{SKILL:investigate}}`) sind davon ausgenommen und bleiben in jedem Modus rein lokal unter `.firmo/investigation/` (nie committet, nie als Issue). Von den Firmo-Artefakten werden ausschließlich **Pläne** committet.
 
@@ -10,7 +10,7 @@ Zusätzlich nutzen `{{SKILL:apply-issues}}` und `{{SKILL:plan-issue}}` diesen Ba
 
 ### Konfiguration
 
-Der Remote-Modus funktioniert ohne Konfigurationsdatei (dann bleibt er deaktiviert, `local`). Falls `.firmo/config.json` vorhanden ist, darf sie diese Defaults überschreiben:
+Der Remote-Modus funktioniert ohne festgeschriebene Konfiguration (dann bleibt er deaktiviert, `local`). Falls die Firmo-Konfiguration (Projektsetup-ADR) entsprechende Werte festschreibt, überschreiben sie diese Defaults (Schema hier zur Illustration):
 
 ```json
 {
@@ -35,7 +35,7 @@ Gültige Werte:
 
 ### Config-Migration
 
-Die Konsolidierung von `.firmo/config.json` (inklusive der `tracker`-Schlüssel) übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `tracker` aus. Das `tracker`-Config-Schema oben (Konfiguration, gültige Werte, Modusbestimmung, Erstaufruf-Abfrage) bleibt davon unberührt.
+Das Lesen der Firmo-Konfiguration aus der Projektsetup-ADR (inklusive der `tracker`-Schlüssel) und die einmalige Migration einer Alt-Config übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `tracker` aus. Das `tracker`-Config-Schema oben (Konfiguration, gültige Werte, Modusbestimmung, Erstaufruf-Abfrage) bleibt davon unberührt.
 
 ### Modus bestimmen
 
@@ -43,10 +43,10 @@ Bestimme zu Beginn des Laufs den effektiven Modus in dieser Reihenfolge (die ers
 
 1. **Argumenttyp:** Der übergebene Argumenttyp überschreibt den Config-Modus für diesen Lauf. Eine Report-Datei (`*.md` unter `.firmo/review/`) erzwingt `local`; eine Issue-Referenz (Issue-Nummer, `#123` oder eine Issue-URL) erzwingt `remote`.
 2. **Per-Run-Wunsch des Users:** Verlangt der User ausdrücklich Issue-/Tracker-Arbeit, ist `remote` aktiv; verlangt er ausdrücklich lokale Arbeit („lokal“, „ohne Issues“, „nur Report“), ist `local` aktiv.
-3. **Config:** sonst gilt `tracker.mode` aus `.firmo/config.json`.
+3. **Config:** sonst gilt `tracker.mode` aus der Firmo-Konfiguration (Projektsetup-ADR).
 4. **Erstaufruf-Abfrage:** Ist `tracker.mode` nicht in der Config gesetzt und liefert weder Argument noch Per-Run-Wunsch ein Signal, führe die Erstaufruf-Abfrage unten aus.
 
-### Erstaufruf-Abfrage und Persistenz
+### Erstaufruf-Abfrage
 
 Nur wenn Schritt 4 oben greift (kein Config-Wert, kein Argument-/Per-Run-Signal):
 
@@ -60,12 +60,7 @@ options:
     description: tracker.mode = remote — Findings als Issues, Werkzeug automatisch aus origin (gh/tea)
 ```
 
-Persistiere die Wahl anschließend nicht-destruktiv in `.firmo/config.json` unter `tracker.mode` (Muster wie `plan.markerLanguage` in `{{SKILL:plan}}`):
-
-- Lies eine vorhandene `config.json` direkt vor dem Schreiben frisch ein und ergänze nur `tracker.mode`, ohne andere Felder zu verändern.
-- Existiert die Datei nicht, lege sie minimal mit `{ "tracker": { "mode": "<wert>" } }` an.
-- Gib eine kurze Statusmeldung aus, z. B. „Tracker-Modus `remote` in `.firmo/config.json` gespeichert."
-- Schlägt das Schreiben fehl, gib einen knappen Hinweis aus und fahre mit dem gewählten Modus für diesen Lauf fort.
+Verwende die gewählte Antwort als Tracker-Modus **für diesen Lauf**. Schreibe sie **nicht** selbst in die Konfiguration — das dauerhafte Festschreiben von `tracker.mode` in der Projektsetup-ADR übernimmt ausschließlich `{{SKILL:setup}}`. Weise den User kurz darauf hin, z. B. „Tracker-Modus `remote` für diesen Lauf verwendet; dauerhaft festschreiben über `{{SKILL:setup}}`.“
 
 ### Host- und CLI-Erkennung (nur Remote-Modus)
 
@@ -149,7 +144,7 @@ Regeln für die Task-Liste:
 
 - Jeder Eintrag unter `## Findings` referenziert genau ein Finding-Issue über seine Nummer und trägt die `R-XXXXXXX`-ID sowie die Aktion.
 - Die Sektion `## Übersprungen (Designentscheidungen)` verwendet **keine** Checkboxen und listet nur durch Designentscheidungen gefilterte Findings. Sie entfällt, wenn keine solchen Findings vorhanden sind.
-- Das Abhaken erfolgt durch Umschalten `- [ ]` → `- [x]` und optionales Anhängen des PR-Links am Eintrag; ein bewusst nicht umgesetztes Finding wird als `- [x] … — nicht umgesetzt (ADR <Nummer>)` markiert.
+- Das Abhaken erfolgt durch Umschalten `- [ ]` → `- [x]` und optionales Anhängen des PR-Links am Eintrag; ein bewusst nicht umgesetztes Finding wird per Slug-Referenz als `- [x] … — nicht umgesetzt (ADR: <slug>)` markiert.
 
 ### Tracker-Operationen (Werkzeug-Mapping)
 

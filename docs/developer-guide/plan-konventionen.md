@@ -1,7 +1,8 @@
 # Plan-Konventionen
 
 Plan-Dateien entstehen über `/firmo plan` (rein planend, kein Code) und liegen unter
-`<plan.dir>/`, konfigurierbar via `.firmo/config.json` `plan.dir` (Default `docs/plan`). Dieses
+`<plan.dir>/`, konfigurierbar via `plan.dir` in der Firmo-Konfiguration (Projektsetup-ADR,
+Default `docs/plan`). Dieses
 Dokument beschreibt das Namensschema, die Statusmarker und den Lebenszyklus der Plan-Dateien.
 Quelle ist [`src/tools/plan.md`](../../src/tools/plan.md); Agenten-Verhaltensregeln für Plan-
 Dateien stehen kanonisch in [`AGENTS.md`](../../AGENTS.md), Abschnitt „Plan files (`docs/plan/`)".
@@ -59,9 +60,10 @@ Statuswechsel auf abgeschlossen bleibt die einmal gewählte Markersprache erhalt
 kanonische Statuszeile zählt als Status – andere Vorkommen der Begriffe in Fließtext oder
 Review-Findings sind irrelevant.
 
-Die Markersprache wird beim Anlegen eines Plans in dieser Reihenfolge bestimmt: `.firmo/config.json`
-(`plan.markerLanguage`) → Auto-Detection aus vorhandenen Plänen → Rückfrage an den User mit
-optionaler Persistenz.
+Die Markersprache wird beim Anlegen eines Plans in dieser Reihenfolge bestimmt: `plan.markerLanguage`
+aus der Firmo-Konfiguration (Projektsetup-ADR) → Auto-Detection aus vorhandenen Plänen → Rückfrage an
+den User. Persistiert wird eine Entscheidung über `/firmo setup` in der Projektsetup-ADR, nicht mehr
+in `.firmo/config.json`.
 
 ## Archiv umgesetzter Pläne
 

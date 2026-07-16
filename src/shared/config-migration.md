@@ -1,91 +1,79 @@
-## Config-Migration
+## Firmo-Konfiguration (Projektsetup-ADR)
 
-Dieser geteilte Baustein konsolidiert `.firmo/config.json` **einmalig vollständig** auf das
-aktuelle Schema. Er ersetzt die früheren, über einzelne Bausteine verstreuten
-per-Block-Migrationen (`review`, `applyReview`, `tracker`, `delivery`/`worktree`). Er läuft
-beim **ersten Lesen der Config** in einem Lauf und ist idempotent: Nach erfolgreichem
-Abschluss verhindert eine Migrations-Version in `.firmo/memory.json` einen zweiten Lauf.
+Die getrackte Wahrheit für die Firmo-Konfiguration ist eine lebende ADR „Firmo project
+setup“ (Default-Slug `firmo-project-setup`, siehe Baustein „Lebendes ADR-Modell“). Sie trägt
+die Config-Parameter mit minimaler Prosa als **Markdown-Tabelle**. Es gibt **keine**
+`.firmo/config.json` mehr als Config-Quelle; `.firmo/` ist reines Laufzeit-Verzeichnis
+(`memory.json`, `cache.json`, `review/`, `.worktrees/`) und wird komplett gitignored.
 
-Existiert keine `.firmo/config.json`, wird sie **nicht** allein für die Migration angelegt.
+### Config-Locator (Auflösungsreihenfolge)
 
-### Zwei Ausführungspfade
+Beim Lesen der Konfiguration wird die Projektsetup-ADR in dieser Reihenfolge aufgelöst; der
+erste greifende Schritt gewinnt:
 
-**Deterministischer Pfad – läuft in jedem config-lesenden Skill, nicht-blockierend.** Alle
-eindeutigen Abbildungen werden ohne Rückfrage ausgeführt und zurückgeschrieben. Da nie
-gefragt wird, bleibt ein autonomer bzw. `/goal`-Lauf frei von blockierenden Config-Dialogen.
+1. **AGENTS.md-Marker.** Die kanonische Zeile `**Firmo project setup:** <pfad>` in
+   `AGENTS.md`, sonst in `CLAUDE.md` bzw. einer vergleichbaren Konventionsdatei → die ADR
+   unter `<pfad>` lesen. Zeigt der Marker auf einen Pfad, unter dem **keine** ADR liegt
+   (toter/veralteter Marker), nicht dort stehenbleiben, sondern in dieser Reihenfolge
+   weiterfallen und den veralteten Marker melden (Korrektur in {{SKILL:setup}}).
+2. **Default-Pfad/Scan.** Sonst `docs/adr/firmo-project-setup.md` bzw. ein Scan des erkannten
+   ADR-Verzeichnisses (`docs/adr/`, `docs/decisions/`, `adr/`) nach der Projektsetup-ADR.
+3. **Übergangs-Kompatibilität.** Sonst — nur übergangsweise — eine noch vorhandene
+   `.firmo/config.json` lesen und auf {{SKILL:setup}} hinweisen. Dieser Lesepfad legt
+   **nichts** an und berührt **kein** Git.
+4. **Eingebaute Defaults.** Sonst die Defaults der jeweiligen Quell-Skills verwenden.
 
-**Rückfrage-Pfad – ausschließlich in `{{SKILL:setup}}`.** Ein Wert, der sich nicht eindeutig
-auf genau ein neues Feld abbilden lässt, oder ein optionales Upgrade wird **nicht** von
-einem beliebigen Skill entschieden: Der laufende Skill nutzt einen sicheren Default für den
-Lauf, lässt das betroffene Feld unverändert, meldet den offenen Punkt kurz und verweist auf
-`{{SKILL:setup}}`. Nur `{{SKILL:setup}}` stellt die eigentlichen Migrations-Rückfragen.
+Der deterministische Lesepfad beliebiger Tools ist nicht-blockierend: Er liest die ADR (bzw.
+den Übergangs-Fallback), erzeugt aber selbst keine Datei und mutiert kein Git. Das Anlegen
+der ADR, der Marker und die Migration passieren ausschließlich im git-berührenden Pfad von
+{{SKILL:setup}}.
 
-### Deterministische Abbildungen (ohne Rückfrage)
+### Tabellen-Encoding (verbindlich für Schreiber und Leser)
 
-- Lieferwerte aus dem `worktree`-Block nach `delivery` verschieben, sofern dort noch nicht
-  gesetzt: `worktree.baseBranch` → `delivery.baseBranch`, `worktree.branchPrefix` →
-  `delivery.branchPrefix`, `worktree.completion` → `delivery.completion` (werterhaltend;
-  `null` bleibt `null` = „beim Lauf fragen“). Danach diese drei Legacy-Schlüssel aus dem
-  `worktree`-Block entfernen.
-- `delivery.enabled` **entfernen** (entwertet – Delivery ist durch Worktree/Branch
-  impliziert).
-- Fehlende Schlüssel mit ihren Defaults ergänzen (additiv):
-  - `plan.dir` → `"docs/plan"`
-  - `worktree.enabled` → `true`, `worktree.setup` → `"auto"`, `worktree.baseDir` →
-    `".firmo/.worktrees"`
-  - `delivery.baseBranch` → `"origin/main"`, `delivery.branchPrefix` → `"firmo"`,
-    `delivery.completion` → `"merge"`, `delivery.returnBranch` → `"auto"`
-  - `tracker.mode` → `"local"`, `tracker.remoteToolOverride` → `"auto"`
-  - `skills.enabled` → `true`, `skills.include` → `[]`, `skills.exclude` → `[]`,
-    `skills.agents` → `{}`, `skills.tools` → `{}` (steuert die Skill-Discovery; siehe
-    `{{SKILL:setup}}` und den Baustein „Skill-Discovery“)
-  - `review`- und `applyReview`-Schlüssel gemäß den Defaults ihrer Quell-Skills
-    (`{{SKILL:review}}` bzw. `{{SKILL:apply-review}}`)
-- Bereits gesetzte gültige Werte bleiben **unverändert** (auch ein explizites
-  `worktree.enabled: false` – es wird nicht auf `true` gedreht).
-- Nicht von Firmo stammende **Fremd-Schlüssel** bleiben unverändert erhalten. Nur veraltete
-  bzw. umbenannte Firmo-Schlüssel (z. B. `delivery.enabled`, die verschobenen
-  `worktree.*`-Lieferwerte) werden entfernt.
+Die Config-Parameter stehen als flache Markdown-Tabelle mit zwei Spalten
+`| Schlüssel | Wert |`. Schreiber ({{SKILL:setup}}, Migration) und Leser (alle Tools)
+interpretieren die Werte identisch nach dieser Kodierung:
 
-### Rückfrage-/Upgrade-Fälle (nur `{{SKILL:setup}}`)
+- **Boolean** → `true` / `false`.
+- **String** → literal, unquoted (z. B. `focused`, `origin/main`).
+- **`null`** (semantisch „beim Lauf fragen“, z. B. `applyReview.defaultCommitStrategy`) →
+  das Literal-Token `null`.
+- **Leere Liste** → `(leer)`.
+- **Gefüllte Liste** → kommagetrennt (z. B. `humanizer, distill`).
+- **Verschachtelung** → dotted keys (z. B. `applyReview.worktree.baseDir`,
+  `skills.agents.ui-implementer.include`); ein leeres Objekt hat keine Unterzeilen.
+- **Fehlende Zeile = Schlüssel nicht gesetzt → Default des Quell-Skills.** Bewusst
+  verschieden von einer vorhandenen Zeile mit Wert `null` (expliziter Wert, semantisch „beim
+  Lauf fragen“). Beispiel: keine `delivery.completion`-Zeile → Default `merge`; eine
+  `delivery.completion | null`-Zeile → beim Lauf fragen.
 
-- Optionales Upgrade von `delivery.completion: null` („beim Lauf fragen“) auf den neuen
-  Default `merge`.
-- Jeder Legacy-Wert, der sich nicht eindeutig auf genau ein neues Feld abbilden lässt.
+Das Lesen eines einzelnen Werts ist ein trivialer Zeilen-Lookup (Zeile mit dotted key →
+Wertzelle). Beispiel-Ausschnitt (Schnittstellenskizze, kein vollständiger Inhalt):
 
-Außerhalb von `{{SKILL:setup}}` werden solche Fälle nicht entschieden: sicherer Default für
-den Lauf, Feld unverändert lassen, Hinweis auf `{{SKILL:setup}}`.
+```markdown
+## Konfiguration
 
-### Sicherheit und Persistenz
-
-- Lies die Datei direkt vor dem Schreiben erneut frisch ein, damit zwischenzeitliche
-  Änderungen nicht überschrieben werden.
-- Enthält die Datei ungültiges JSON: **nicht** schreiben, sichere Defaults für diesen Lauf
-  verwenden und den User mit Pfad und Fehler informieren; die Migration läuft dann nicht.
-- Enthält ein bekannter Schlüssel einen ungültigen Wert: nicht überschreiben, sicheren
-  Default für den Lauf verwenden und den User über den Schlüssel informieren.
-- Markiere den Abschluss in `.firmo/memory.json` unter `configMigration.full`, ohne
-  vorhandene Felder (`lastFindingNumber`, andere `configMigration`-Unterschlüssel) zu
-  verlieren:
-
-```json
-{
-  "configMigration": {
-    "full": {
-      "version": "config-consolidation-v1",
-      "appliedAt": "YYYY-MM-DDTHH:mm:ssZ"
-    }
-  }
-}
+| Schlüssel                         | Wert    |
+| --------------------------------- | ------- |
+| review.profile                    | focused |
+| applyReview.defaultCommitStrategy | null    |
+| skills.exclude                    | (leer)  |
+| worktree.enabled                  | true    |
 ```
 
-- Ist `configMigration.full` mit dieser Version bereits gesetzt, überspringe die Migration.
-- Altvorhandene per-Block-Einträge (`configMigration.review`/`.tracker`/`.applyReview`/
-  `.delivery`/`.worktree`) bleiben unverändert liegen; sie stören nicht.
+Ist die Tabelle ungültig oder mehrdeutig (fehlender Schlüssel, unbekanntes Encoding): einen
+sicheren Default für den Lauf verwenden, den User über den betroffenen Schlüssel
+informieren, **nicht** raten.
 
-### Sichtbarkeit
+### Einmalige Migration `.firmo/config.json` → Projektsetup-ADR
 
-Wenn die Migration Schlüssel verschoben, ergänzt oder entfernt hat, teile dem User einmal je
-Lauf mit, dass `.firmo/config.json` konsolidiert wurde, und nenne die verschobenen, neu
-gesetzten und entfernten Schlüssel sowie – falls vorhanden – die nach `{{SKILL:setup}}`
-aufgeschobenen Upgrades.
+Die Migration einer bestehenden `.firmo/config.json` in die Projektsetup-ADR ist
+**git-berührend** und läuft ausschließlich im {{SKILL:setup}}-Pfad. Sie erzeugt die
+ADR-Tabelle aus dem aktuellen Config-Inhalt (Encoding wie oben), schreibt den
+AGENTS.md-Marker, stellt `.gitignore` auf ein einzelnes `.firmo/` um und enttrackt die
+Alt-`config.json` (`git rm --cached`, Datei-Inhalt auf Platte belassen). Der genaue Ablauf
+inklusive Idempotenz-Markierung steht in {{SKILL:setup}}.
+
+Außerhalb von {{SKILL:setup}} findet **keine** Migration statt: Der deterministische
+Lesepfad legt nichts an und berührt kein Git; er liest bei fehlender ADR ersatzweise eine
+noch vorhandene `.firmo/config.json` und weist auf {{SKILL:setup}} hin.

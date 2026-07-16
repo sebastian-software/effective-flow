@@ -58,7 +58,7 @@ Findings mit demselben Ziel-PR laufen sequenziell, damit neue Commits geordnet a
 
 ### Phase 3 remote: ADR referenziert Issue
 
-Für jedes `wontfix`-Finding ein ADR erstellen wie in Phase 3, jedoch mit Bezug auf Issue-Nummer und Epic statt auf ein Report-Finding (Kontext: `Issue #<nr>` und `Epic #<nr>`). Markiere das Finding im Epic später als `- [x] … — nicht umgesetzt (ADR <Nummer>)`.
+Für jedes `wontfix`-Finding eine lebende, slug-benannte ADR erstellen bzw. aktualisieren wie in Phase 3 (`adr-convention.md`), jedoch mit Bezug auf Issue-Nummer und Epic statt auf ein Report-Finding (Kontext: `Issue #<nr>` und `Epic #<nr>`). Es wird **kein** nummeriertes ADR angelegt. Markiere das Finding im Epic später per Slug-Referenz als `- [x] … — nicht umgesetzt (ADR: <slug>)`.
 
 ### Phase 4 remote: Umsetzung, PR und Epic-Abhaken
 

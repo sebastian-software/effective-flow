@@ -14,7 +14,7 @@ fehlende Entscheidungen. Er führt entscheidungsbedürftige Punkte einzeln mit d
 User durch, arbeitet getroffene Entscheidungen direkt in den Plan ein und hält den
 Abschnitt für offene Punkte aktuell.
 
-`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir` (Default
+`<plan.dir>` ist das Plan-Verzeichnis aus der Firmo-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
 `docs/plan`).
 
 ```include
