@@ -1,7 +1,8 @@
 # Tool-Referenz: Eine Änderung umsetzen
 
-Diese Gruppe führt vom geklärten Plan oder Issue zum fertigen Code. Fünf der sechs Tools
-(`build`, `fix`, `refactor`, `docs`, `maintain`) teilen dasselbe Grundmuster:
+Diese Gruppe führt vom geklärten Plan oder Issue zum fertigen Code. Fünf der sieben Tools
+(`build`, `fix`, `refactor`, `docs`, `maintain`) teilen dasselbe Grundmuster (`apply` ist der
+reine Router, `iterate` setzt eine bereits gelieferte Änderung fort):
 
 - Sie können direkt mit einer Anforderung gestartet werden **oder** eine bereits von
   `/firmo plan` erzeugte Plan-Datei referenzieren. Eine referenzierte Plan-Datei muss zuerst
@@ -152,6 +153,40 @@ eigener Commit je umgesetzter Gruppe und eine Zusammenfassung der zurückgestell
 **Zusammenspiel:** Verweigert das Aktualisieren, solange die Vorher-Baseline bereits rot ist,
 und verweist stattdessen auf `/firmo fix`. Bei Code-Anpassungen für Breaking Changes läuft
 ein Reviewer-Pass wie bei `build`/`refactor`.
+
+## `/firmo iterate`
+
+**Zweck:** Führt Review-Anmerkungen aus einem bestehenden Pull-Request – Review-Bots wie
+Greptile **und** menschliche Reviewer – sowie zusätzliche Freitext-Instruktionen als neue
+Commits zurück in denselben PR. Ein „Mini-Build“ auf einer bereits gelieferten Änderung:
+klassifiziert jeden Punkt, delegiert an `/firmo fix`, `/firmo refactor`, `/firmo build` bzw.
+`/firmo docs`, antwortet auf die adressierten Review-Threads und löst sie auf.
+
+**Wann nutzen:** Ein Workflow wie `/firmo build` hat bereits einen PR erstellt, und danach sind
+Anmerkungen eingegangen (Greptile-/Reviewer-Kommentare), die einfließen sollen – oder eine
+bestehende Änderung soll gezielt per Freitext-Instruktion nachgebessert werden. Für eine neue
+Änderung von Grund auf sind stattdessen `/firmo build`, `/firmo fix`, `/firmo refactor` bzw.
+`/firmo docs` zuständig.
+
+**Typischer Aufruf:** `/firmo iterate [<PR-Referenz>] [<Freitext-Instruktionen>]` – die
+PR-Referenz ist optional (`#42`, bare Nummer oder PR-URL); ohne sie versucht `iterate`, den
+offenen PR des aktuellen Branch aufzulösen.
+
+**Ein-/Ausgabe:** Im **PR-Modus** liest `iterate` die Review-Threads aller Reviewer frisch,
+klassifiziert jeden Punkt (umsetzbar, bereits adressiert oder reine Frage) und holt eine
+Freigabe. Ausgabe ist **ein Commit pro umgesetztem Punkt** auf dem PR-Head-Branch (nur neue
+Commits – kein Force-Push, Amend oder Rebase), eine kurze Antwort samt Auflösen je adressiertem
+Thread und ein Summary-Kommentar. Reine Reviewer-Fragen werden zurückgestellt und im Summary
+gelistet, nicht automatisch inhaltlich beantwortet. Ohne PR (**Local-Modus**) iteriert `iterate`
+anhand der Freitext-Instruktionen auf dem Diff des aktuellen Branch gegenüber dem Basis-Branch
+und committet lokal, ohne zu pushen oder zu kommentieren.
+
+**Zusammenspiel:** Ergänzt die Apply-Kette um die bislang fehlende Quelle
+„PR-Review-Kommentare“: `/firmo apply` liest Firmo-eigene Reports bzw. Issues, `iterate` liest
+die direkt am PR hinterlassenen Threads. Die eigentliche Umsetzung übernehmen die bestehenden
+Umsetzungs-Tools; bestehende PRs werden ausschließlich über neue Commits aktualisiert. GitHub
+(`gh`) und Forgejo (`tea`) werden unterstützt – das Auflösen von Threads nutzt auf GitHub die
+GraphQL-Mutation, auf Forgejo best-effort (sonst nur Antwort, Vermerk im Summary).
 
 ## Weiterführend
 
