@@ -69,7 +69,7 @@ const TOOL_GROUPS = [
   {
     title: 'Eine Änderung umsetzen',
     when: 'vom geklärten Plan/Issue zum Code',
-    tools: ['apply', 'build', 'fix', 'refactor', 'docs', 'maintain'],
+    tools: ['apply', 'build', 'fix', 'refactor', 'docs', 'maintain', 'iterate'],
   },
   {
     title: 'Qualität sichern',
