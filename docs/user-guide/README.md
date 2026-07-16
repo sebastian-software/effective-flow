@@ -15,7 +15,7 @@ Neu bei Firmo? Lies in dieser Reihenfolge:
    - [Verstehen, was zu tun ist](tools-verstehen.md) – `investigate`, `plan`,
      `open-plans`, `plan-issue`.
    - [Eine Änderung umsetzen](tools-umsetzen.md) – `apply`, `build`, `fix`,
-     `refactor`, `docs`, `maintain`.
+     `refactor`, `docs`, `maintain`, `iterate`.
    - [Qualität sichern](tools-qualitaet.md) – `review`.
    - [Änderungen einbringen](tools-einbringen.md) – `commit`, `pr`.
    - [Einrichten & Infos](tools-einrichten.md) – `setup`, `version`.
