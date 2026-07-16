@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.46.0](https://github.com/sebastian-software/firmo/compare/firmo-v1.45.0...firmo-v1.46.0) (2026-07-16)
+
+
+### Features
+
+* **agents:** prefer effective-web skill in frontend agents ([#90](https://github.com/sebastian-software/firmo/issues/90)) ([8eba25b](https://github.com/sebastian-software/firmo/commit/8eba25bd89c4319955796bb237365ae36a04cd3a))
+
 ## [1.45.0](https://github.com/sebastian-software/firmo/compare/firmo-v1.44.0...firmo-v1.45.0) (2026-07-15)
 
 
