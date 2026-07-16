@@ -38,6 +38,11 @@ doc-categories
 
 ### README-Dateien
 
+Gilt für Kategorie-Einstiegs-READMEs (z. B. `docs/user-guide/README.md`,
+`docs/developer-guide/README.md`) und Unterprojekt-READMEs – **nicht** für die
+Root-`README.md`. Die Root-`README.md` ist der Marketing-Einstieg der Standard-Doku-Struktur
+und wird vom `{{AGENT:marketing-writer}}` erstellt; fasse sie nicht an.
+
 - Struktur: Übersicht, Installation, Schnellstart, API-Referenz, Beispiele, Mitwirken
 - knapper Satz für WAS und WARUM
 - lauffähige und aktuelle Code-Beispiele
@@ -95,3 +100,5 @@ doc-categories
 - eine Datei außerhalb dieser Verzeichnisse nur ändern, wenn sie ausdrücklich in der `Betroffene Dateien`-Tabelle des zugrunde liegenden Plans genannt ist
 - keine neuen Verzeichnisse außerhalb der vier Kategorie-Verzeichnisse anlegen
 - für `docs/user-guide/`: README.md als Einstiegspunkt anlegen oder aktualisieren, sobald mindestens ein Guide-Dokument existiert
+- für `docs/developer-guide/`: README.md als kuratierten Einstiegspunkt (Überblick für Entwickler, Entscheidungsgrundlage für Softwarearchitekten) anlegen oder aktualisieren, sobald mindestens ein Developer-Guide-Dokument existiert; er ist das Ziel des zweiten Links der Root-README
+- die Root-`README.md` (Marketing-Einstieg) niemals selbst schreiben; sie gehört dem `{{AGENT:marketing-writer}}`
