@@ -24,7 +24,7 @@ task-tracking
 
 ## Empfohlene Skills
 
-- `humanizer`
+- `metro-english › humanizer` (Fallback)
 
 ```include
 skill-discovery
