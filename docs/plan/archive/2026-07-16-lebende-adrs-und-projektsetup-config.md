@@ -391,10 +391,10 @@ Dritte Runde (erneuter `/firmo review`, alle direkt eingearbeitet):
 
 ### Zusammenfassung
 
-| Status | Anzahl |
-|---|---:|
-| Behoben | 3 |
-| Offen / Nicht umgesetzt | 0 |
+| Status                  | Anzahl |
+| ----------------------- | -----: |
+| Behoben                 |      3 |
+| Offen / Nicht umgesetzt |      0 |
 
 Alle 9 Akzeptanzkriterien als erfüllt bestätigt. Behoben: (1) **Wichtig** —
 `src/shared/firmo-dir-migration.md` nannte noch den alten `.gitignore`-Soll-Zustand
