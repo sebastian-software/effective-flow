@@ -25,6 +25,10 @@ config-migration
 ```
 
 ```include
+adr-convention
+```
+
+```include
 commit-message-rules
 ```
 
@@ -96,13 +100,13 @@ Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lös
 
 Firmo-interne Dateien liegen unter `.firmo/` im Projekt-Root.
 
-- Konfiguration: `.firmo/config.json`
+- Konfiguration: Firmo-Konfiguration aus der Projektsetup-ADR (siehe Baustein „Config-Migration“)
 - Memory-Datei: `.firmo/memory.json`
 - Cache-Datei: `.firmo/cache.json`
 - Review-Reports: `.firmo/review/`
 - Temporäre Wisdom-Dateien: `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
-`apply-review` funktioniert ohne Konfigurationsdatei. Falls `.firmo/config.json` vorhanden ist, darf sie Apply-Review-Defaults überschreiben:
+`apply-review` funktioniert ohne festgeschriebene Konfiguration. Falls die Firmo-Konfiguration (Projektsetup-ADR) Apply-Review-Werte festschreibt, überschreiben sie die Defaults (Schema hier zur Illustration):
 
 ```json
 {
@@ -135,7 +139,7 @@ Gültige Werte:
 
 ### Config-Migration
 
-Die Konsolidierung von `.firmo/config.json` (inklusive der `applyReview`-Schlüssel) übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `applyReview` aus. Das `applyReview`-Config-Schema oben (Konfiguration, gültige Werte) bleibt davon unberührt.
+Das Lesen der Firmo-Konfiguration aus der Projektsetup-ADR (inklusive der `applyReview`-Schlüssel) und die einmalige Migration einer Alt-Config übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `applyReview` aus. Das `applyReview`-Config-Schema oben (Konfiguration, gültige Werte) bleibt davon unberührt.
 
 ### Cache-Datei
 
@@ -218,7 +222,7 @@ Wenn `applyReview.defaultCommitStrategy` gültig gesetzt ist, überspringe die A
 - `single` → **Einzeln**
 - `none` → **Keine Commits**
 
-Melde kurz, dass die Commit-Strategie aus `.firmo/config.json` übernommen wurde. Wenn kein gültiger Wert gesetzt ist, frage wie bisher:
+Melde kurz, dass die Commit-Strategie aus der Firmo-Konfiguration (Projektsetup-ADR) übernommen wurde. Wenn kein gültiger Wert gesetzt ist, frage wie bisher:
 
 ```ask
 when: kein gültiger Wert für `applyReview.defaultCommitStrategy` gesetzt ist
@@ -243,7 +247,7 @@ Halte die Antwort fest und gib sie an jeden delegierten Skill als Anweisung weit
 
 Teil desselben Up-front-Gates: Die Stash-Policy legt vorab fest, wie die Stash-Bereinigung in Phase 6 (Klassen B/C/D) und das Abbruch-Aufräumen in Phase 4.3 mit hinterlassenen Stashes umgehen – ohne spätere Rückfrage. Konkrete Stashes existieren zu Beginn noch nicht; entschieden wird daher die Policy, nicht der Einzelfall.
 
-Wenn `applyReview.stashPolicy` gültig gesetzt ist, überspringe die ASK-Frage und verwende den Wert; melde kurz, dass die Stash-Policy aus `.firmo/config.json` übernommen wurde. Wenn kein gültiger Wert gesetzt ist, frage am selben Gate wie die Commit-Strategie:
+Wenn `applyReview.stashPolicy` gültig gesetzt ist, überspringe die ASK-Frage und verwende den Wert; melde kurz, dass die Stash-Policy aus der Firmo-Konfiguration (Projektsetup-ADR) übernommen wurde. Wenn kein gültiger Wert gesetzt ist, frage am selben Gate wie die Commit-Strategie:
 
 ```ask
 when: kein gültiger Wert für `applyReview.stashPolicy` gesetzt ist
@@ -272,14 +276,18 @@ Die detaillierte Mechanik der committenden Strategien – **Einzeln** (Git-Commi
 
 ### Phase 3: ADR-Erstellung
 
+ADRs sind lebende, slug-benannte Dokumente gemäß „Lebendes ADR-Modell“ (`adr-convention.md`). Dieser Workflow legt **kein** nummeriertes ADR mehr an und bestimmt keine ADR-Nummer.
+
 Für jedes Finding mit „Nicht umsetzen“-Anmerkung:
 
-1. Erstelle `docs/adr/` falls nicht vorhanden.
-2. Bestimme die nächste freie ADR-Nummer.
-3. Erstelle ein ADR-Dokument:
+1. Bestimme das ADR-Verzeichnis (Default `docs/adr/`) und erstelle es falls nicht vorhanden.
+2. Bilde aus dem Finding-Titel einen kebab-case-Slug (`<slug>`). Prüfe, ob im ADR-Verzeichnis bereits eine thematisch passende lebende ADR existiert (gleiches Thema/gleiche Entscheidung, per Slug oder Titel erkennbar):
+   - **Vorhanden:** aktualisiere sie **in-place** gemäß `adr-convention.md` (Inhalt und `## Status`), statt ein zweites Dokument anzulegen. Datei direkt vor dem Schreiben frisch einlesen.
+   - **Nicht vorhanden:** lege eine neue lebende ADR unter `docs/adr/<slug>.md` an.
+3. Inhalt der ADR (kein `NNNN`-Präfix im Titel):
 
 ```markdown
-# [Nummer] — [Finding-Titel]
+# [Finding-Titel]
 
 ## Status
 
@@ -303,7 +311,7 @@ Workflow: Firmo Apply-Review
 [R-XXXXXXX] aus [Report-Dateiname]: [Problem-Beschreibung aus dem Finding]
 ```
 
-4. Gib dem User eine Statusmeldung über die erstellten ADRs.
+4. Gib dem User eine Statusmeldung über die angelegten bzw. aktualisierten ADRs und referenziere jede per Slug, z. B. `(ADR: <slug>)`.
 
 ### Phase 4: Vorabanalyse und parallele Delegation
 
@@ -408,7 +416,7 @@ Beispiel: Aktionsgruppe `{{SKILL:fix}}` mit fünf Findings:
 2. Ergänze an jedem erfolgreich umgesetzten Finding als letzten Eintrag:
    `✅ Umgesetzt am YYYY-MM-DD via Firmo Apply-Review`
 3. Ergänze an jedem Finding mit ADR als letzten Eintrag:
-   `📋 ADR erstellt am YYYY-MM-DD: [ADR-Dateiname]`
+   `📋 ADR am YYYY-MM-DD angelegt/aktualisiert: nicht umgesetzt (ADR: <slug>)`
 4. Speichere die aktualisierte Report-Datei.
 
 ### Phase 6: Stash-Bereinigung

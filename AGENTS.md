@@ -69,7 +69,7 @@ There is **no** static `skills:` frontmatter preload anymore. Per-agent and per-
 skill recommendations live as a short `## Empfohlene Skills` prose section in the agent or
 tool source (honoured by the include as "prefer if available"; a fallback group is written
 `A › B`, meaning "prefer A, else B"). A project tunes this at runtime through the optional `skills`
-block in `.firmo/config.json` (`enabled`, `include`, `exclude`, plus per-agent
+block in the Firmo configuration / Projektsetup ADR (`enabled`, `include`, `exclude`, plus per-agent
 `agents.<name>` and per-tool `tools.<name>`); `exclude` and `enabled: false` are hard
 off-switches. See `src/shared/skill-discovery.md`, `src/shared/config-migration.md` (defaults)
 and `/firmo setup` (wizard).
@@ -100,10 +100,12 @@ Never add AI-attribution references to anything published from this repo: no "Ge
 
 ## Plan files (`docs/plan/`)
 
-The plan directory is configurable via `.firmo/config.json` `plan.dir` (default `docs/plan`).
+The plan directory is configurable via the Firmo configuration (the Projektsetup ADR) `plan.dir` (default `docs/plan`).
 
 Plans use an ISO date-slug name `YYYY-MM-DD-<slug>.md` (creation date + kebab-case title slug), with no number and no reservation step — the file is written directly under its final name; a same-day collision appends a numeric suffix (`-2`, `-3`, …). Older plans that still carry the legacy four-digit prefix (`NNNN-slug.md`) are migrated once, in bulk, to `YYYY-MM-DD-NNNN-slug.md` (`YYYY-MM-DD` = migration date, the old `NNNN` kept as a stable reference; the H1 `# NNNN: Title` stays unchanged). Reference resolution for a legacy number resolves primarily via that H1, not the filename segment. Plans that are fully implemented move to `docs/plan/archive/`, kept as part of the same delivery PR/merge; resolvers search both `docs/plan/` and `docs/plan/archive/`. The canonical status line is `**Planungsstatus:** Nicht umgesetzt` / `**Plan status:** Not implemented` (one language per file; the `**Empfohlener Workflow:**` line stays German either way). Only that canonical line counts as status — ignore other occurrences of the words in prose. Docs plans additionally carry `**Doku-Kategorie:**` and `**Ziel-Pfad:**` (categories defined in `src/shared/doc-categories.md`).
 
-## Target-project runtime state (not this repo)
+## Configuration and ADRs (target-project behavior)
 
-The tools read/write project-local state under `.firmo/` **in the target project** (`config.json` tracked, `memory.json`/`cache.json`/`review/` gitignored). Legacy `.sf-plugin/` dirs are migrated once, non-destructively (`src/shared/firmo-dir-migration.md`). Note: this repo still contains a legacy `.sf-plugin/` of its own review history. Issue-tracker labels use the `firmo-` prefix; the old `sf-` prefix is still recognised as equivalent when reading, listing, and deduplicating labels (permanent read backward-compatibility), but new labels are created with `firmo-` only.
+Firmo configuration lives in a **living "Projektsetup" ADR** (default `docs/adr/firmo-project-setup.md`) as a Markdown key/value table, **not** in `.firmo/config.json`. Firmo locates it via a canonical marker line `**Firmo project setup:** <path>` in the target project's `AGENTS.md` (resolution order and table encoding are defined in `src/shared/config-migration.md`; `/firmo setup` writes the ADR, the marker, and migrates a legacy `.firmo/config.json`). ADRs are treated as **living** documents (mutable, numberless, slug-named — see `src/shared/adr-convention.md`), a deliberate divergence from the host `decision-records` skill.
+
+Consequently `.firmo/` **in the target project** now holds runtime state only (`memory.json`, `cache.json`, `review/`, `.worktrees/`, wisdom files) and is **fully gitignored**. Legacy `.sf-plugin/` dirs are migrated once, non-destructively (`src/shared/firmo-dir-migration.md`); this repo still contains a legacy `.sf-plugin/` of its own review history. Issue-tracker labels use the `firmo-` prefix; the old `sf-` prefix is still recognised as equivalent when reading, listing, and deduplicating labels (permanent read backward-compatibility), but new labels are created with `firmo-` only.

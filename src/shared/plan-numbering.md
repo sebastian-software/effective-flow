@@ -1,6 +1,6 @@
 ## Plan-Datei-Konvention (Naming, Migration, Archiv)
 
-Das Plan-Verzeichnis ist über `.firmo/config.json` `plan.dir` konfigurierbar (Default
+Das Plan-Verzeichnis ist über die Firmo-Konfiguration (Projektsetup-ADR) `plan.dir` konfigurierbar (Default
 `docs/plan`). Im Folgenden steht `<plan.dir>` für dieses Verzeichnis, `<plan.dir>/archive`
 für sein Archiv.
 

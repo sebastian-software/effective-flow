@@ -168,7 +168,7 @@ Wenn dabei offene Findings oder Restrisiken entstehen, dokumentiere sie struktur
 - Aktion (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}` oder `{{SKILL:docs}}`)
 - Prompt-Vorschlag
 - Status (Behoben / Offen / Nicht umgesetzt)
-- Begründung bei Nicht-Umsetzung oder ADR-Referenz, falls vorhanden
+- Begründung bei Nicht-Umsetzung oder ADR-Referenz als Slug, falls vorhanden, z. B. `(ADR: <slug>)`
 
 ### Phase 5: Abschluss
 

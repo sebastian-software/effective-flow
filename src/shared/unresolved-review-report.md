@@ -12,7 +12,7 @@ Gilt für Findings mit Status:
 
 - `Offen`
 - `Nicht umgesetzt`
-- `Nicht umgesetzt (ADR XXX)` oder vergleichbare ADR-Status
+- `Nicht umgesetzt (ADR: <slug>)` oder vergleichbare ADR-Status
 
 Nicht in den externen Report übernehmen:
 
@@ -52,7 +52,7 @@ Verwende das kanonische Bericht-Format aus `{{SKILL:review}}` Abschnitt „Beric
 Zusätzliche Header-Felder für Workflow-Reports:
 
 - Setze direkt unter `**Projekt-Typ:** ...` diese drei Zeilen:
-  - `**Ursprungsplan:** [<plan.dir>/YYYY-MM-DD-<slug>.md oder Keiner]` (`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir`, Default `docs/plan`)
+  - `**Ursprungsplan:** [<plan.dir>/YYYY-MM-DD-<slug>.md oder Keiner]` (`<plan.dir>` ist das Plan-Verzeichnis aus `plan.dir` der Firmo-Konfiguration/Projektsetup-ADR, Default `docs/plan`)
   - `**Quell-Workflow:** [{{SKILL:build}} / {{SKILL:fix}} / {{SKILL:refactor}} / {{SKILL:maintain}}]`
   - `**Quell-Review:** [Reviewer oder Phase]`
 - Alle Tabellen und Finding-Blöcke bleiben im `{{SKILL:review}}`-Format.
@@ -62,5 +62,5 @@ Regeln:
 
 - Kritische Findings dürfen nur dann in diesem Report verbleiben, wenn der User ausdrücklich entschieden hat, den Workflow trotz offenem kritischem Finding abzuschließen.
 - Bestimme die Aktion wie bei `{{SKILL:review}}`: Defekt → `{{SKILL:fix}}`, Strukturproblem → `{{SKILL:refactor}}`, fehlende Funktionalität oder Schutzmechanismus → `{{SKILL:build}}`, reine Dokumentationslücke → `{{SKILL:docs}}`.
-- Trage niemals automatisch etwas in `Entwickler-Anmerkung` ein. Dieses Feld ist ausschließlich für manuelle Notizen des Entwicklers reserviert und bleibt in automatisch erzeugten Reports leer. Wenn ein Finding bewusst nicht umgesetzt wurde und ein ADR existiert, vermerke die ADR-Referenz im `Status`, z. B. `Nicht umgesetzt (ADR 0003)`.
+- Trage niemals automatisch etwas in `Entwickler-Anmerkung` ein. Dieses Feld ist ausschließlich für manuelle Notizen des Entwicklers reserviert und bleibt in automatisch erzeugten Reports leer. Wenn ein Finding bewusst nicht umgesetzt wurde und ein ADR existiert, vermerke die ADR-Referenz im `Status` per Slug, z. B. `Nicht umgesetzt (ADR: <slug>)`.
 - Gib dem User nach dem Schreiben den Reportpfad aus.

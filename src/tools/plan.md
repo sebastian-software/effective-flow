@@ -108,13 +108,13 @@ Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers in d
 
 #### Schritt 1: Konfiguration konsultieren
 
-1. Prüfe, ob `.firmo/config.json` existiert und syntaktisch valides JSON enthält.
-2. Lies den Pfad `plan.markerLanguage`:
-   - `"de"` → Markersprache Deutsch, gib eine Statuszeile aus wie „Markersprache aus `.firmo/config.json` übernommen: Deutsch." und überspringe Schritte 2 bis 6.
+1. Lies die Firmo-Konfiguration aus der Projektsetup-ADR (Locator via `**Firmo project setup:**`-Marker in `AGENTS.md`; siehe Baustein „Config-Migration“), falls vorhanden.
+2. Lies den Wert `plan.markerLanguage`:
+   - `"de"` → Markersprache Deutsch, gib eine Statuszeile aus wie „Markersprache aus der Firmo-Konfiguration (Projektsetup-ADR) übernommen: Deutsch." und überspringe Schritte 2 bis 6.
    - `"en"` → analog Englisch.
    - anderer Wert (z. B. `"fr"`, `null`, `true`) → ignoriere ihn, gib einen kurzen Hinweis aus und fahre mit Schritt 2 fort.
    - Schlüssel fehlt → ohne extra Hinweis zu Schritt 2 (Detection gibt eine eigene Statuszeile aus).
-3. Wenn die Datei nicht lesbar ist (Datei kaputt, kein JSON): kurzer Hinweis an den User, dann Schritt 2.
+3. Ist die Konfiguration nicht lesbar (fehlt oder ist defekt): kurzer Hinweis an den User, dann Schritt 2.
 
 #### Schritt 2: Auto-Detection aus `<plan.dir>/`
 
@@ -126,21 +126,9 @@ Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers in d
    - `en_count > 0` und `de_count == 0` → Detection: Englisch.
    - sonst (beide > 0 oder beide == 0) → Detection: nicht eindeutig.
 
-#### Schritt 3: Migration bei eindeutiger Detection
+#### Schritt 3: Hinweis auf dauerhafte Festschreibung
 
-Nur wenn alle folgenden Bedingungen zutreffen:
-
-- die Detection aus Schritt 2 ergab ein eindeutiges Ergebnis,
-- `.firmo/config.json` existiert und enthält syntaktisch valides JSON,
-- der Schlüssel `plan.markerLanguage` _fehlt_ in dieser Config (nicht: ist ungültig).
-
-Wenn diese Bedingungen erfüllt sind:
-
-1. Ergänze `plan.markerLanguage` nicht-destruktiv mit dem Detection-Wert (`"de"` oder `"en"`). Behalte alle anderen Felder unverändert.
-2. Schreibe die Config-Datei zurück.
-3. Gib eine Statusmeldung aus, z. B. „Config-Migration: `plan.markerLanguage = de` aus Detection ergänzt."
-
-Wenn `.firmo/config.json` nicht existiert, lege sie _nicht_ nur für die Migration an.
+Ergab die Detection aus Schritt 2 ein eindeutiges Ergebnis und ist `plan.markerLanguage` in der Firmo-Konfiguration (Projektsetup-ADR) noch nicht gesetzt: verwende den erkannten Wert für diesen Lauf und weise kurz darauf hin, dass `{{SKILL:setup}}` die Markersprache dauerhaft in der Projektsetup-ADR festschreibt. Schreibe hier **nichts** in die Konfiguration und lege keine Datei an.
 
 #### Schritt 4: Detection-Ergebnis übernehmen
 
@@ -166,28 +154,9 @@ options:
 
 Nenne in der Begleitmeldung kurz, warum gefragt wird (Mischbestand, kein erkennbarer Marker oder Config nicht gesetzt).
 
-#### Schritt 6: Persistenz nach Frage
+#### Schritt 6: Hinweis nach Frage
 
-Nur wenn Schritt 5 ausgeführt wurde:
-
-```ask
-header: Persistenz
-question: Soll die gewählte Markersprache in .firmo/config.json als plan.markerLanguage gespeichert werden?
-options:
-  - label: Ja
-    description: Wahl persistieren — Default, empfohlen, vermeidet künftige Rückfragen
-  - label: Nein
-    description: Wahl nur für diesen Plan verwenden
-```
-
-Bei `Ja`:
-
-- Lies `.firmo/config.json`, falls vorhanden, und ergänze `plan.markerLanguage` nicht-destruktiv.
-- Wenn die Datei nicht existiert: lege sie minimal mit `{ "plan": { "markerLanguage": "<wert>" } }` an.
-- Gib eine Statusmeldung aus, z. B. „Markersprache `de` in `.firmo/config.json` gespeichert."
-- Wenn das Schreiben fehlschlägt, gib einen knappen Fehlerhinweis aus und fahre mit dem Plan-Lauf fort.
-
-Bei `Nein`: keine Änderung an der Config-Datei.
+Nur wenn Schritt 5 ausgeführt wurde: Verwende die gewählte Markersprache für **diesen Plan**. Schreibe sie **nicht** in die Konfiguration — das dauerhafte Festschreiben von `plan.markerLanguage` in der Projektsetup-ADR übernimmt ausschließlich `{{SKILL:setup}}`. Weise den User kurz darauf hin, z. B. „Markersprache `de` für diesen Plan verwendet; dauerhaft festschreiben über `{{SKILL:setup}}`.“
 
 #### Konsistenzregeln
 

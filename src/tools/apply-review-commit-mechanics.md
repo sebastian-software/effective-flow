@@ -41,17 +41,17 @@ Vorbedingungen:
 
 - Der ursprüngliche Arbeitsbaum muss vor dem Erstellen der Worktrees sauber sein (`git status --porcelain` leer), abgesehen von ignorierten Firmo-Dateien unter `.firmo/`.
 - `git worktree` muss verfügbar sein.
-- Lies `.firmo/config.json`, falls vorhanden. Falls sie fehlt oder keine Worktree-Werte enthält, verwende die Defaults.
+- Lies die Firmo-Konfiguration (Projektsetup-ADR), falls vorhanden. Fehlt sie oder enthält sie keine Worktree-Werte, verwende die Defaults.
 
 Worktree-Pfade:
 
 1. Bestimme den Repo-Namen aus `basename "$(git rev-parse --show-toplevel)"`.
-2. Verwende als BaseDir `applyReview.worktree.baseDir` aus `.firmo/config.json` oder den Default `.firmo/.worktrees`.
+2. Verwende als BaseDir `applyReview.worktree.baseDir` aus der Firmo-Konfiguration (Projektsetup-ADR) oder den Default `.firmo/.worktrees`.
 3. Erstelle Worktrees unter:
    `BASE_DIR/REPO_NAME/SESSION_ID/GROUP_NAME`
 4. `GROUP_NAME` muss deterministisch, kurz und dateisystemtauglich sein, z. B. `fix-1`, `refactor-2`, `build-1` oder eine slugifizierte Sub-Gruppen-Beschreibung.
 
-Der Default liegt bewusst innerhalb des Projekt-Roots. Dadurch bleiben Worktree-Erstellung, Dateiänderungen und Setup-Kommandos in der üblichen Workspace-Sandbox. Externe BaseDirs sind nur zu verwenden, wenn sie explizit in `.firmo/config.json` konfiguriert sind und die Umgebung Schreib- und Ausführungsrechte dafür erlaubt.
+Der Default liegt bewusst innerhalb des Projekt-Roots. Dadurch bleiben Worktree-Erstellung, Dateiänderungen und Setup-Kommandos in der üblichen Workspace-Sandbox. Externe BaseDirs sind nur zu verwenden, wenn sie explizit in der Firmo-Konfiguration (Projektsetup-ADR) festgeschrieben sind und die Umgebung Schreib- und Ausführungsrechte dafür erlaubt.
 
 Branch-Konvention:
 

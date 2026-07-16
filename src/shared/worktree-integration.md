@@ -16,7 +16,7 @@ Branch-/PR-/Merge-Aktion wünscht, verhält sich der Workflow wie ohne diesen Ba
 erzwungene Branch-Erzeugung, keine erzwungenen Commits und keine automatische
 PR-Erstellung.
 
-`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir` (Default
+`<plan.dir>` ist das Plan-Verzeichnis aus der Firmo-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
 `docs/plan`).
 
 ### Rollen der Config-Blöcke
@@ -35,7 +35,7 @@ unterscheiden.
 
 ### Konfiguration
 
-Falls `.firmo/config.json` vorhanden ist, darf sie diese Defaults überschreiben:
+Falls die Firmo-Konfiguration (Projektsetup-ADR) entsprechende Werte festschreibt, überschreiben sie diese Defaults (Schema hier zur Illustration):
 
 ```json
 {
@@ -78,11 +78,11 @@ entfernt (siehe „Config-Migration“).
 
 ### Config-Migration
 
-Die Konsolidierung von `.firmo/config.json` auf das aktuelle Schema – insbesondere das
-Verschieben alter Lieferwerte aus `worktree.baseBranch`/`worktree.branchPrefix`/
-`worktree.completion` nach `delivery.*` und das Entfernen des entwerteten
-`delivery.enabled` – übernimmt der geteilte Baustein „Config-Migration“
-(`config-migration.md`) einmalig und zentral. Dieser Baustein führt **keine** eigene
+Das Lesen der Firmo-Konfiguration aus der Projektsetup-ADR und die einmalige Konsolidierung
+einer Alt-Config auf das aktuelle Schema – insbesondere das Verschieben alter Lieferwerte aus
+`worktree.baseBranch`/`worktree.branchPrefix`/`worktree.completion` nach `delivery.*` und das
+Entfernen des entwerteten `delivery.enabled` – übernimmt der geteilte Baustein
+„Config-Migration“ (`config-migration.md`) einmalig und zentral. Dieser Baustein führt **keine** eigene
 per-Block-Migration mehr aus. Bis eine Config migriert ist, gilt beim Lesen: neuer Wert aus
 `delivery.*` vor Legacy-Wert aus `worktree.*` vor Default; ein vorhandenes
 `delivery.enabled` wird ignoriert.
@@ -246,8 +246,8 @@ stoppe und melde den Konflikt, statt History zu überschreiben.
    informieren, einen automatisch erzeugten leeren Liefer-Branch entfernen und ohne
    PR/Merge enden.
 3. **Abschluss-Aktion bestimmen:** Wenn `delivery.completion` einen gültigen Wert hat,
-   diesen verwenden und kurz melden, dass die Aktion aus `.firmo/config.json`
-   übernommen wurde. Sonst fragen:
+   diesen verwenden und kurz melden, dass die Aktion aus der Firmo-Konfiguration
+   (Projektsetup-ADR) übernommen wurde. Sonst fragen:
 
 ```ask
 when: Delivery aktiv war und kein gültiger Wert für `delivery.completion` gesetzt ist

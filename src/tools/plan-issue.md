@@ -11,7 +11,7 @@ Du bist der Orchestrator, der unvollständig spezifizierte Issues durch interakt
 
 `{{SKILL:apply-issues}}` überspringt Issues, deren Information für eine autonome Umsetzung nicht ausreicht, und markiert sie mit `firmo-needs-planning`. Dieser Skill sammelt genau diese Issues ein, führt je Issue die **Klärungs-Methodik** von `{{SKILL:plan}}` durch (Analyse + gezielte Rückfragen an den User) und schreibt die vervollständigte, strukturierte Spezifikation **als Kommentar** zurück ans Issue. Danach entfernt er das Label `firmo-needs-planning`, sodass `{{SKILL:apply-issues}}` das Issue beim nächsten Lauf als umsetzbar aufnimmt.
 
-`<plan.dir>` ist das Plan-Verzeichnis aus `.firmo/config.json` `plan.dir` (Default `docs/plan`).
+`<plan.dir>` ist das Plan-Verzeichnis aus der Firmo-Konfiguration (Projektsetup-ADR) `plan.dir` (Default `docs/plan`).
 
 Harte Abgrenzung:
 
