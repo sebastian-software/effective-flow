@@ -33,6 +33,10 @@ config-migration
 firmo-dir-migration
 ```
 
+## Empfohlene Skills
+
+- `smart-dependency-updater`
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Scan und beachte ihre Vorgaben für Dependencies, Tests, Review und Commits.

@@ -27,6 +27,11 @@ config-migration
 plan-status
 ```
 
+## Empfohlene Skills
+
+- `codebase-improvement`
+- `port-codebases`
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Analyse und Refactoring und beachte ihre Vorgaben für Struktur, Grenzen, Tests, Review und Commits.
