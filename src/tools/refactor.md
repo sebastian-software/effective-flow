@@ -176,7 +176,7 @@ skill-discovery
    - Kritisch: vor Abschluss beheben
    - Wichtig: sollte behoben werden
    - Hinweis: optional
-3. Präsentiere die Review-Ergebnisse detailliert, einschliesslich Status je Finding.
+3. Präsentiere die Review-Ergebnisse detailliert, einschließlich Status je Finding.
 4. Dokumentiere jedes Finding strukturiert, damit offene oder nicht umgesetzte Findings als Review-Report geschrieben werden können:
    - Titel
    - Schweregrad (Kritisch / Wichtig / Hinweis)

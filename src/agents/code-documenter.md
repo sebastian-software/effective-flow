@@ -58,7 +58,7 @@ skill-discovery
 
 ## Regeln
 
-- Dokumentation standardmässig auf Deutsch; wenn im betroffenen Bereich bereits Doku vorhanden ist, deren Sprache fortführen
+- Dokumentation standardmäßig auf Deutsch; wenn im betroffenen Bereich bereits Doku vorhanden ist, deren Sprache fortführen
 - bestehende Kommentare nicht entfernen oder kürzen, es sei denn, die Aufgabe verlangt das ausdrücklich
 - keine redundanten Kommentare
 - selbstdokumentierenden Code bevorzugen

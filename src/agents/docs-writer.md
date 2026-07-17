@@ -92,7 +92,7 @@ und wird vom `{{AGENT:marketing-writer}}` erstellt; fasse sie nicht an.
 
 ## Regeln
 
-- standardmässig auf Deutsch schreiben; bei vorhandener Dokumentation deren Sprache fortführen
+- standardmäßig auf Deutsch schreiben; bei vorhandener Dokumentation deren Sprache fortführen
 - package.json-Scripts bevorzugen
 - jedes Code-Beispiel muss korrekt und ausführbar sein
 - Fachbegriffe für die Zielgruppe verständlich halten
