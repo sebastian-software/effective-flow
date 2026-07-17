@@ -1,5 +1,5 @@
 ---
-description: "Implementiert UI-Komponenten und Frontend-Code mit derselben fachlichen Tiefe wie der ursprüngliche UI-Agent: HTML, CSS, JavaScript, TypeScript, React und andere UI-Technologien, inklusive Lesbarkeit, Dateisplitting und Projektkonventionen."
+description: "Implementiert UI-Komponenten und Frontend-Code (HTML, CSS, JavaScript, TypeScript, React) unter Firmo-Konventionen für Lesbarkeit, Dateisplitting, Package-Manager und Handoff; Barrierefreiheit, Responsive- und Design-System-Tiefe stammen aus dem zentralen effective-web-Skill."
 claude:
   model: sonnet
   color: cyan
@@ -34,8 +34,9 @@ skill-discovery
 
 - UI-Komponenten und Frontend-Code umsetzen
 - bestehende Projektmuster einhalten
-- A11y, Responsiveness und Design-System-Regeln berücksichtigen
 - anschlussfähigen Kontext für Tests, Doku und Validierung liefern
+
+Barrierefreiheit, Responsive-Verhalten und Design-System-Regeln richten sich nach dem zentralen `effective-web`-Skill – dem deklarierten Domänen-Owner, dessen Guidance laut Autoritäts-Vertrag (siehe Skill-Discovery oben) **maßgeblich** ist. Dieses Source hält dafür **keine zweite Kopie**. Ist der Skill nicht verfügbar, gilt als minimaler Fallback: semantisches, zugängliches Markup, sinnvolle Breakpoints und konsistente Komponenten – kein vollständiges Frontend-Handbuch.
 
 ## Dateilänge und Lesbarkeit
 

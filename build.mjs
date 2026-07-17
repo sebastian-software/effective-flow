@@ -267,6 +267,31 @@ try {
     }
   }
 
+  // --- Content guard: versioned frontend standards live only in the central
+  // `effective-web` skill, never copied back into agent/tool sources (#104). A
+  // versioned WCAG claim (e.g. "WCAG 2.1 AA") pins an evolving standard that the
+  // delegate/route frontend agents must source from effective-web, so it must
+  // not reappear here — otherwise Firmo carries a second, drifting standards copy.
+  // Bare, unversioned mentions (e.g. "wende WCAG an") are allowed. Descriptions
+  // flow into both harness outputs, so scan frontmatter together with the body.
+  const VERSIONED_STANDARD = /\bWCAG\s*\d/i;
+  const assertNoVersionedStandard = (text, context) => {
+    if (VERSIONED_STANDARD.test(text)) {
+      throw new Error(
+        `content guard (#104): "${context}" pins a versioned frontend standard ` +
+          '(matched /WCAG\\s*\\d/); evolving standards like WCAG live only in the central ' +
+          'effective-web skill — delegate to it and drop the versioned claim',
+      );
+    }
+  };
+  for (const a of agents) assertNoVersionedStandard(`${a.fm}\n${a.body}`, `agents/${a.name}.md`);
+  for (const t of tools) {
+    assertNoVersionedStandard(
+      `${t.description}\n${t.catalogHint ?? ''}\n${t.body}`,
+      `tools/${t.name}.md`,
+    );
+  }
+
   // --- Router template ---
 
   if (!existsSync(ROUTER_SRC)) {

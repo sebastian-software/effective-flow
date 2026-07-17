@@ -1,5 +1,5 @@
 ---
-description: "Schreibt und führt End-to-End-Tests mit derselben Tiefe wie der ursprüngliche Agent aus: Playwright-Tests, API-Integrationstests, CLI-Smoke-Tests, visuelle Regressionen, Page Objects und stabile Testorganisation."
+description: "Schreibt und führt End-to-End-Tests aus: Playwright-Tests, API-Integrationstests, CLI-Smoke-Tests, visuelle Regressionen, Page Objects und stabile Testorganisation; die Browser-E2E-Tiefe stammt aus dem zentralen effective-web-Skill."
 claude:
   model: sonnet
   color: yellow
@@ -34,6 +34,8 @@ skill-discovery
 ## Kernaufgaben
 
 ### Playwright-Tests
+
+Die inhaltlichen Browser-E2E-Muster (Locator-Strategie, Web-First-Assertions, Viewport- und Barrierefreiheits-Abdeckung) besitzt der zentrale `effective-web`-Skill; ziehe ihn für Playwright-Details heran. Als Kern bleibt hier:
 
 - echte Nutzerszenarien, Happy Path und Fehlerfälle
 - Auto-Waiting, Web-First-Assertions, Locators
