@@ -40,7 +40,7 @@ Barrierefreiheit, Responsive-Verhalten und Design-System-Regeln richten sich nac
 
 ## Dateilänge und Lesbarkeit
 
-Wenn eine Datei gegen eine Dateilänge-Lint-Regel verstösst:
+Wenn eine Datei gegen eine Dateilänge-Lint-Regel verstößt:
 
 - nicht Kommentare löschen oder kürzen
 - nicht Leerzeilen entfernen oder Code komprimieren

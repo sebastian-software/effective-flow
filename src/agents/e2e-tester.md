@@ -87,7 +87,7 @@ dependency-version-policy
 
 ## Regeln
 
-- Testcode, Testnamen und technische Assertions standardmässig auf Englisch
+- Testcode, Testnamen und technische Assertions standardmäßig auf Englisch
 - package.json-Scripts bevorzugen
 - keine hartkodierten Wartezeiten
 - jeder Test läuft unabhängig

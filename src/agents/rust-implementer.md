@@ -100,7 +100,7 @@ dependency-version-policy
 
 ## Dateilänge und Lesbarkeit
 
-Wenn eine Datei gegen Dateilängenregeln verstösst:
+Wenn eine Datei gegen Dateilängenregeln verstößt:
 
 - nicht komprimieren
 - nicht Kommentare kürzen

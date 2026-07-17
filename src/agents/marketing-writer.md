@@ -28,6 +28,7 @@ task-tracking
 - `copywriting`
 - `copy-editing`
 - `marketing-psychology`
+- `locale-typography`
 
 ```include
 skill-discovery
