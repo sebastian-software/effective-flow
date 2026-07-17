@@ -3,7 +3,7 @@
 Dieser Guide richtet sich an alle, die Effective Flow in einem Projekt **nutzen** – über
 `/effective-flow <tool>` in Claude Code oder Codex. Für Architektur, Build und Beitrag zum
 Effective Flow-Repo selbst siehe stattdessen den
-[Developer-Guide](../developer-guide/architektur.md).
+[Developer-Guide](../developer-guide/README.md).
 
 ## Empfohlene Lese-Reihenfolge
 
