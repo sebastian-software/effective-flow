@@ -1,16 +1,16 @@
 ---
-description: "Bereitet ein Zielprojekt für die Nutzung von Firmo vor: trägt `.firmo/` komplett und idempotent in die `.gitignore` ein (reines Laufzeit-Verzeichnis) und schreibt die Firmo-Konfiguration über einen geführten Wizard in eine lebende Projektsetup-ADR (Markdown-Tabelle), auf die ein `**Firmo project setup:**`-Marker in AGENTS.md verweist. Migriert eine bestehende `.firmo/config.json` einmalig in die ADR und enttrackt sie non-destruktiv. Startet immer von sicheren Defaults, bietet einen Express- und einen geführten Weg, erklärt jede Option auch für Firmo-Neulinge und zeigt bei vorhandener Config die aktuell festgeschriebenen Werte. Pflegt eine bestehende Konfiguration nicht-destruktiv. Verwende diesen Skill für das einmalige Setup oder zum Anpassen der Firmo-Konfiguration."
+description: "Bereitet ein Zielprojekt für die Nutzung von Firmo vor: trägt `.effective-flow/` komplett und idempotent in die `.gitignore` ein (reines Laufzeit-Verzeichnis) und schreibt die Firmo-Konfiguration über einen geführten Wizard in eine lebende Projektsetup-ADR (Markdown-Tabelle), auf die ein `**Effective Flow project setup:**`-Marker in AGENTS.md verweist. Migriert eine bestehende `.firmo/config.json` einmalig in die ADR und enttrackt sie non-destruktiv. Startet immer von sicheren Defaults, bietet einen Express- und einen geführten Weg, erklärt jede Option auch für Firmo-Neulinge und zeigt bei vorhandener Config die aktuell festgeschriebenen Werte. Pflegt eine bestehende Konfiguration nicht-destruktiv. Verwende diesen Skill für das einmalige Setup oder zum Anpassen der Firmo-Konfiguration."
 catalogHint: "Richtet Firmo im Projekt ein – geführter Wizard, startet mit sicheren Defaults."
 ---
 
 # Firmo Setup
 
-Du bereitest ein Zielprojekt für die Nutzung von Firmo vor: `.gitignore`-Eintrag für das reine Laufzeit-Verzeichnis `.firmo/` und interaktive Pflege der Firmo-Konfiguration in einer lebenden **Projektsetup-ADR** (Default `docs/adr/firmo-project-setup.md`), auf die ein Marker in `AGENTS.md` verweist.
+Du bereitest ein Zielprojekt für die Nutzung von Firmo vor: `.gitignore`-Eintrag für das reine Laufzeit-Verzeichnis `.effective-flow/` und interaktive Pflege der Firmo-Konfiguration in einer lebenden **Projektsetup-ADR** (Default `docs/adr/effective-flow-project-setup.md`), auf die ein Marker in `AGENTS.md` verweist.
 
 ## Ziel
 
-- das Laufzeit-Verzeichnis `.firmo/` komplett und idempotent in die `.gitignore` eintragen (nur wenn der Soll-Zustand noch nicht hergestellt ist)
-- die Firmo-Konfiguration über einen geführten Wizard in die Projektsetup-ADR-Tabelle schreiben oder nicht-destruktiv aktualisieren und den `**Firmo project setup:**`-Marker in `AGENTS.md` (bzw. `CLAUDE.md`) setzen
+- das Laufzeit-Verzeichnis `.effective-flow/` komplett und idempotent in die `.gitignore` eintragen (nur wenn der Soll-Zustand noch nicht hergestellt ist)
+- die Firmo-Konfiguration über einen geführten Wizard in die Projektsetup-ADR-Tabelle schreiben oder nicht-destruktiv aktualisieren und den `**Effective Flow project setup:**`-Marker in `AGENTS.md` (bzw. `CLAUDE.md`) setzen
 - eine bestehende `.firmo/config.json` einmalig in die ADR migrieren und anschließend enttracken (Datei-Inhalt auf Platte belassen)
 - immer von sicheren Defaults starten und dem User zwei Wege bieten: **Express** (Defaults übernehmen) oder **Geführt** (jede Option erklärt durchgehen)
 - jede Option so erklären, dass sie auch ohne Vorwissen über die Arbeitsweise von Firmo verständlich ist
@@ -44,7 +44,7 @@ Die Firmo-Konfiguration ist optional und steuert Defaults der folgenden Blöcke.
 - **`review`** (Quelle: `{{SKILL:review}}`): `profile` (full/focused/fast), `autoConfirmScope` (bool), `designDecisionSources` (full/standard/minimal), `validation` (full/quick/off)
 - **`applyReview`** (Quelle: `{{SKILL:apply-review}}`): `defaultCommitStrategy` (worktrees/single/none/`null` = beim Lauf fragen), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/Befehl)
 - **`plan`** (Quelle: `{{SKILL:plan}}`): `markerLanguage` (de/en), `dir` (String, Default `docs/plan`) — Verzeichnis der Plan-Dateien
-- **`delivery`** (Quelle: `{{SKILL:build}}`, Abschnitt „Delivery- und Worktree-Integration“ – ebenso in den weiteren code-ändernden Workflows eingebettet): Delivery ist durch Worktree/Branch impliziert (kein eigener `enabled`-Schalter mehr) — `baseBranch` (Default `origin/main`), `branchPrefix` (Default `firmo`), `completion` (pr/merge/branch, Default `merge`), `returnBranch` (auto oder lokaler Branchname)
+- **`delivery`** (Quelle: `{{SKILL:build}}`, Abschnitt „Delivery- und Worktree-Integration“ – ebenso in den weiteren code-ändernden Workflows eingebettet): Delivery ist durch Worktree/Branch impliziert (kein eigener `enabled`-Schalter mehr) — `baseBranch` (Default `origin/main`), `branchPrefix` (Default `effective-flow`), `completion` (pr/merge/branch, Default `merge`), `returnBranch` (auto oder lokaler Branchname)
 - **`worktree`** (Quelle: `{{SKILL:build}}`, Abschnitt „Delivery- und Worktree-Integration“): `enabled` (bool, Default `true`), `setup` (auto/none/Befehl), `baseDir`
 - **`tracker`** (Quelle: `{{SKILL:review}}`, Abschnitt „Issue-Tracker-Anbindung“ – ebenso in `{{SKILL:apply-review}}` und den weiteren Tracker-Workflows eingebettet): `mode` (local/remote, Default `local`), `remoteToolOverride` (auto/github/forgejo, Default `auto`)
 - **`skills`** (Quelle: Baustein „Skill-Discovery“): `enabled` (bool, Default `true` — schaltet die dynamische Skill-Nutzung), `include` (Liste — Skills projektweit bevorzugt einbinden), `exclude` (Liste — Skills nie anwenden), `agents.<name>` und `tools.<name>` (je `include`/`exclude` für einen einzelnen Agent bzw. ein einzelnes Tool). Schlüssel sind die Quell-Agent-/Tool-Namen (z. B. `ui-implementer`, `plan`).
@@ -64,7 +64,7 @@ Tabellen-Encoding-Form der ADR):
 | applyReview.defaultCommitStrategy | null (beim Lauf fragen)                                 |
 | applyReview.finalValidation       | full                                                    |
 | applyReview.stashPolicy           | interactive                                             |
-| applyReview.worktree.baseDir      | .firmo/.worktrees                                       |
+| applyReview.worktree.baseDir      | .effective-flow/.worktrees                              |
 | applyReview.worktree.setup        | auto                                                    |
 | worktree.enabled                  | true                                                    |
 | delivery.completion               | merge                                                   |
@@ -84,19 +84,19 @@ Englisch.
 
 ### Schritt 1: .gitignore-Eintrag
 
-Soll-Zustand: Das gesamte Laufzeit-Verzeichnis `.firmo/` (`config.json`-Migration ausgenommen — die Config lebt künftig in der ADR; Laufzeit-Dateien wie `memory.json`, `cache.json`, `review/`, `.worktrees/`) ist ignoriert. Das erreicht die eine Zeile:
+Soll-Zustand: Das gesamte Laufzeit-Verzeichnis `.effective-flow/` (`config.json`-Migration ausgenommen — die Config lebt künftig in der ADR; Laufzeit-Dateien wie `memory.json`, `cache.json`, `review/`, `.worktrees/`) ist ignoriert. Das erreicht die eine Zeile:
 
 ```gitignore
-.firmo/
+.effective-flow/
 ```
 
-Es gibt **kein** `!.firmo/config.json`-Ausnahme-Pattern mehr: Die Firmo-Konfiguration wird nicht länger als getrackte `.firmo/config.json` geführt, sondern in der Projektsetup-ADR. `.firmo/` ist damit reines Laufzeit-Verzeichnis und wird komplett ignoriert.
+Es gibt **kein** `!.effective-flow/config.json`-Ausnahme-Pattern mehr: Die Effective-Flow-Konfiguration wird nicht länger als getrackte `config.json` geführt, sondern in der Projektsetup-ADR. `.effective-flow/` ist damit reines Laufzeit-Verzeichnis und wird komplett ignoriert.
 
-1. Prüfe, ob der Soll-Zustand bereits hergestellt ist — bei verfügbarem Git über: `git check-ignore -q .firmo/config.json` muss mit Exit-Code 0 enden (das Verzeichnis inklusive `config.json` ist ignoriert) und es darf **keine** `!.firmo/config.json`-Negationszeile mehr in der `.gitignore` stehen. Ohne Git über einen Zeilenabgleich der `.gitignore`: eine Zeile ignoriert `.firmo/` als Ganzes und es folgt **keine** `!.firmo/…`-Negationszeile.
+1. Prüfe, ob der Soll-Zustand bereits hergestellt ist — bei verfügbarem Git über: `git check-ignore -q .effective-flow/config.json` muss mit Exit-Code 0 enden (das Verzeichnis inklusive `config.json` ist ignoriert) und es darf **keine** `!.effective-flow/config.json`-Negationszeile mehr in der `.gitignore` stehen. Ohne Git über einen Zeilenabgleich der `.gitignore`: eine Zeile ignoriert `.effective-flow/` als Ganzes und es folgt **keine** `!.effective-flow/…`-Negationszeile.
 2. Falls der Soll-Zustand noch nicht hergestellt ist:
-   - Migriere das frühere Zwei-Zeilen-Pattern: enthält die `.gitignore` die Zeilen `.firmo/*` und `!.firmo/config.json` (alter Soll-Zustand mit getrackter `config.json`), ersetze **beide** durch die eine Zeile `.firmo/`.
-   - Migriere Alt-Patterns: ignoriert eine Zeile das frühere `.sf-plugin/` (gängige Schreibweisen `.sf-plugin/`, `.sf-plugin`, `/.sf-plugin/`), ersetze sie durch `.firmo/`. Ein bereits vorhandenes pauschales `.firmo/` (bzw. `.firmo`, `/.firmo/`) auf `.firmo/` normalisieren und eine etwaige nachfolgende `!.firmo/config.json`-Negationszeile entfernen.
-   - Fehlt jeder `.firmo/`-Eintrag, hänge die Zeile `.firmo/` an. Stelle vor dem Anhängen einen abschließenden Zeilenumbruch sicher. Fehlt die `.gitignore`, lege sie mit dieser einen Zeile an.
+   - Migriere das frühere Zwei-Zeilen-Pattern: enthält die `.gitignore` die Zeilen `.effective-flow/*` und `!.effective-flow/config.json` (alter Soll-Zustand mit getrackter `config.json`), ersetze **beide** durch die eine Zeile `.effective-flow/`.
+   - Migriere Alt-Verzeichnis-Patterns der Vorgänger-Namen: ignoriert eine Zeile das frühere `.firmo/` oder `.sf-plugin/` (gängige Schreibweisen mit/ohne führenden bzw. abschließenden Slash, inklusive der alten `.firmo/*` + `!.firmo/config.json`-Zwei-Zeilen-Form), ersetze sie durch die eine Zeile `.effective-flow/`. Ein bereits vorhandenes pauschales `.effective-flow/` (bzw. `.effective-flow`, `/.effective-flow/`) auf `.effective-flow/` normalisieren und eine etwaige nachfolgende `!.effective-flow/config.json`-Negationszeile entfernen.
+   - Fehlt jeder `.effective-flow/`-Eintrag, hänge die Zeile `.effective-flow/` an. Stelle vor dem Anhängen einen abschließenden Zeilenumbruch sicher. Fehlt die `.gitignore`, lege sie mit dieser einen Zeile an.
 3. Falls der Soll-Zustand bereits hergestellt ist: nichts ändern und das knapp melden.
 4. Ist das Projekt kein Git-Repository: weise darauf hin, dass eine `.gitignore` ohne Git wirkungslos ist, und frage, ob sie trotzdem geschrieben werden soll. Verwende dann denselben Zeilenabgleich wie oben statt `git check-ignore`. Die Config-Erstellung läuft unabhängig davon weiter.
 
@@ -122,7 +122,7 @@ options:
 ```
 
 2. **Projektsetup-ADR auflösen.** Löse eine bereits vorhandene Projektsetup-ADR über den
-   Config-Locator auf (AGENTS.md-Marker `**Firmo project setup:** <pfad>` → Default-Pfad/Scan
+   Config-Locator auf (AGENTS.md-Marker `**Effective Flow project setup:** <pfad>` → Default-Pfad/Scan
    → Übergangs-`.firmo/config.json`; siehe Baustein oben). Zeigt ein Marker auf einen toten
    Pfad, falle in der Reihenfolge weiter und merke den veralteten Marker zur Korrektur vor.
 3. **Aktuelle Werte bilden.** Bei vorhandener ADR: parse die `## Konfiguration`-Tabelle
@@ -219,14 +219,14 @@ options:
 ```
 
 **Tracker.** Erkläre: Wo Review-Findings landen – `local` als Markdown-Report im Projekt
-(`.firmo/review/`) oder `remote` als Issues auf GitHub/Forgejo (nützlich für Teamarbeit).
+(`.effective-flow/review/`) oder `remote` als Issues auf GitHub/Forgejo (nützlich für Teamarbeit).
 
 ```ask
 header: Tracker
 question: Sollen Review-Findings lokal als Markdown-Report oder remote als Issues (GitHub/Forgejo) geführt werden?
 options:
   - label: Lokal
-    description: tracker.mode = local (Default) — Markdown-Report unter .firmo/review/
+    description: tracker.mode = local (Default) — Markdown-Report unter .effective-flow/review/
   - label: Remote
     description: tracker.mode = remote — Findings als Issues, Werkzeug automatisch aus origin (gh/tea)
 ```
@@ -274,17 +274,17 @@ Freitext-Werte (z. B. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir` od
 2. Das gilt auch für die Sicher-Defaults: Ein Default-Wert, der einen bereits vorhandenen, abweichenden Config-Wert ersetzen würde, wird nur nach ausdrücklicher Bestätigung gesetzt. Zeige vor dem Schreiben eine Vorher/Nachher-Liste **aller** zu ändernden Schlüssel (egal ob aus Express-Basis, Kern-Schaltern oder erweiterten Einstellungen) und hole die Bestätigung ein. Ein vollständiges Überschreiben (Verwerfen vorhandener Werte) ebenfalls nur nach ausdrücklicher Bestätigung.
 3. Löse die Projektsetup-ADR direkt vor dem Schreiben noch einmal frisch auf (Locator) und lies eine vorhandene ADR-Tabelle bzw. Alt-`config.json` frisch ein, damit zwischenzeitliche Änderungen nicht verloren gehen.
 4. **Projektsetup-ADR schreiben.** Bestimme das ADR-Verzeichnis (Schritt 2) und schreibe die
-   ADR unter `<adr-dir>/firmo-project-setup.md` (Default-Slug `firmo-project-setup`) im
+   ADR unter `<adr-dir>/effective-flow-project-setup.md` (Default-Slug `effective-flow-project-setup`; ein Alt-Slug `firmo-project-setup` wird beim Scan gleichwertig erkannt und beim Schreiben auf den neuen Slug umgestellt) im
    lebenden ADR-Format:
-   - H1 `# Firmo project setup`
+   - H1 `# Effective Flow project setup`
    - `## Status` mit `Aktiv`
-   - eine kurze `## Kontext`-Prosa (diese ADR hält die getrackte Firmo-Konfiguration; `.firmo/` ist reines Laufzeit-Verzeichnis)
+   - eine kurze `## Kontext`-Prosa (diese ADR hält die getrackte Firmo-Konfiguration; `.effective-flow/` ist reines Laufzeit-Verzeichnis)
    - `## Konfiguration` mit der Zwei-Spalten-Tabelle `| Schlüssel | Wert |`; je Schlüssel eine Zeile in der Tabellen-Encoding-Form (Boolean, unquoted String, Literal-`null`, `(leer)`, kommagetrennte Liste, dotted keys). Unbekannte Fremd-Schlüssel aus einer vorhandenen Quelle als eigene Zeilen erhalten.
 
    Beispiel-Skelett:
 
    ```markdown
-   # Firmo project setup
+   # Effective Flow project setup
 
    ## Status
 
@@ -292,7 +292,7 @@ Freitext-Werte (z. B. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir` od
 
    ## Kontext
 
-   Diese ADR hält die getrackte Firmo-Konfiguration dieses Projekts. `.firmo/` ist reines
+   Diese ADR hält die getrackte Firmo-Konfiguration dieses Projekts. `.effective-flow/` ist reines
    Laufzeit-Verzeichnis und komplett gitignored.
 
    ## Konfiguration
@@ -305,26 +305,26 @@ Freitext-Werte (z. B. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir` od
    | tracker.mode                      | local   |
    ```
 
-5. **AGENTS.md-Marker setzen.** Schreibe die kanonische Zeile `**Firmo project setup:** <adr-pfad>` nicht-destruktiv: bevorzugt in eine vorhandene `AGENTS.md`, sonst in eine vorhandene `CLAUDE.md`, sonst lege eine minimale `AGENTS.md` mit dieser Zeile an. Übrigen Inhalt unangetastet lassen; einen vorhandenen (ggf. veralteten) Marker aktualisieren statt duplizieren.
+5. **AGENTS.md-Marker setzen.** Schreibe die kanonische Zeile `**Effective Flow project setup:** <adr-pfad>` nicht-destruktiv: bevorzugt in eine vorhandene `AGENTS.md`, sonst in eine vorhandene `CLAUDE.md`, sonst lege eine minimale `AGENTS.md` mit dieser Zeile an. Übrigen Inhalt unangetastet lassen; einen vorhandenen (ggf. veralteten) Marker aktualisieren statt duplizieren — das schließt einen Alt-Marker `**Firmo project setup:**` ein, der dabei auf die neue Schreibweise umgestellt wird.
 6. **Migration und Enttracken (nur im Migrationsfall).** Wurde eine Alt-`.firmo/config.json` als Quelle gelesen:
    - Enttracke sie automatisch mit `git rm --cached .firmo/config.json`; den **Datei-Inhalt auf der Platte belassen** (Firmos Non-Destruktiv-Linie), das Aufräumen dem User überlassen. `git rm --cached` **staged** eine Index-Änderung, erzeugt aber **keinen** Commit — die Setup-Regel „erstellt keine Commits“ bleibt gewahrt.
    - Ist das Projekt kein Git-Repository oder die Datei nicht getrackt, überspringe das Enttracken und melde das.
-   - Markiere den Migrationsabschluss idempotent in `.firmo/memory.json` unter `configMigration.adr` (`version` z. B. `config-to-adr-v1`, `appliedAt` Zeitstempel), ohne vorhandene `memory.json`-Felder zu verlieren. Ist dieser Marker bereits gesetzt, migriere nicht erneut.
+   - Markiere den Migrationsabschluss idempotent in `.effective-flow/memory.json` unter `configMigration.adr` (`version` z. B. `config-to-adr-v1`, `appliedAt` Zeitstempel), ohne vorhandene `memory.json`-Felder zu verlieren. Ist dieser Marker bereits gesetzt, migriere nicht erneut.
 
 ### Schritt 7: Zusammenfassung
 
 Melde dem User:
 
-- ob die `.gitignore`-Zeile `.firmo/` ergänzt, ein früheres Zwei-Zeilen-Pattern (`.firmo/*` plus `!.firmo/config.json`) oder eine Alt-`.sf-plugin/`-Zeile dorthin migriert wurde oder der Soll-Zustand bereits hergestellt war
+- ob die `.gitignore`-Zeile `.effective-flow/` ergänzt, ein früheres Zwei-Zeilen-Pattern (`.effective-flow/*` plus `!.effective-flow/config.json`) oder eine Alt-`.firmo/`-/`.sf-plugin/`-Zeile dorthin migriert wurde oder der Soll-Zustand bereits hergestellt war
 - welcher Weg gewählt wurde (Express oder Geführt) und ob erweiterte Einstellungen angepasst wurden
 - die gesetzten zentralen Verhaltenswerte (`worktree.enabled` [Default `true`], `delivery.completion` [Default `merge`] samt ggf. `delivery.baseBranch`/`delivery.returnBranch`, `plan.markerLanguage`, `tracker.mode` und ggf. `tracker.remoteToolOverride`) sowie `plan.dir`, falls gesetzt oder gegenüber dem Default geändert
 - bei einer zuvor vorhandenen Config: welche Schlüssel gegenüber dem alten Stand geändert wurden (Vorher/Nachher)
-- den Pfad der geschriebenen Projektsetup-ADR und den Ort des gesetzten `**Firmo project setup:**`-Markers (`AGENTS.md`/`CLAUDE.md`)
+- den Pfad der geschriebenen Projektsetup-ADR und den Ort des gesetzten `**Effective Flow project setup:**`-Markers (`AGENTS.md`/`CLAUDE.md`)
 - im Migrationsfall: dass die Alt-`.firmo/config.json` per `git rm --cached` **gestaged entfernt** (Inhalt auf Platte belassen), aber **nicht** committet wurde — und dass der User das Aufräumen selbst übernimmt
 
 ## Regeln
 
-- Ändere ausschließlich `.gitignore` (die `.firmo/`-Zeile bzw. deren Migration), die Projektsetup-ADR und den `**Firmo project setup:**`-Marker in `AGENTS.md`/`CLAUDE.md`; keine weiteren Setup-Schritte wie Deployment oder Git-Hooks.
+- Ändere ausschließlich `.gitignore` (die `.effective-flow/`-Zeile bzw. deren Migration), die Projektsetup-ADR und den `**Effective Flow project setup:**`-Marker in `AGENTS.md`/`CLAUDE.md`; keine weiteren Setup-Schritte wie Deployment oder Git-Hooks.
 - Überschreibe vorhandene Config-Werte und unbekannte Schlüssel niemals ungefragt.
 - Hinterlasse bei einem Abbruch während der Fragen keine halb geschriebene ADR; schreibe nur einmal am Ende.
 - Starte keine Projektvalidation; Linting, Tests und Build-Checks sind Aufgabe anderer Skills wie `{{AGENT:code-validator}}`.

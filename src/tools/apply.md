@@ -65,8 +65,8 @@ issue-tracker
      `<plan.dir>/` (Status `**Planungsstatus:** Nicht umgesetzt` bzw.
      `**Plan status:** Not implemented`) und Report-Dateien unter `.effective-flow/review/`.
      Ist der effektive Tracker-Modus `remote` (siehe „Issue-Tracker-Anbindung“),
-     liste zusätzlich offene Review-Epics (Label `firmo-review-epic`, inkl. Alt
-     `sf-review-epic`) als Kandidaten auf – im Remote-Modus werden keine lokalen
+     liste zusätzlich offene Review-Epics (Label `effective-flow-review-epic`, inkl. Alt
+     `firmo-review-epic`) als Kandidaten auf – im Remote-Modus werden keine lokalen
      Report-Dateien geschrieben, sodass sonst keine Quelle angeboten würde. Frage
      danach den User nach der konkreten Quelle. Wähle nichts heuristisch aus.
    - **`ambiguous`:** benenne die konkurrierenden Deutungen und frage nach.

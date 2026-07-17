@@ -1,26 +1,31 @@
-## Firmo-Konfiguration (Projektsetup-ADR)
+## Effective-Flow-Konfiguration (Projektsetup-ADR)
 
-Die getrackte Wahrheit für die Firmo-Konfiguration ist eine lebende ADR „Firmo project
-setup“ (Default-Slug `firmo-project-setup`, siehe Baustein „Lebendes ADR-Modell“). Sie trägt
-die Config-Parameter mit minimaler Prosa als **Markdown-Tabelle**. Es gibt **keine**
-`.firmo/config.json` mehr als Config-Quelle; `.firmo/` ist reines Laufzeit-Verzeichnis
-(`memory.json`, `cache.json`, `review/`, `.worktrees/`) und wird komplett gitignored.
+Die getrackte Wahrheit für die Effective-Flow-Konfiguration ist eine lebende ADR „Effective
+Flow project setup“ (Default-Slug `effective-flow-project-setup`, siehe Baustein „Lebendes
+ADR-Modell“). Sie trägt die Config-Parameter mit minimaler Prosa als **Markdown-Tabelle**. Es
+gibt **keine** `.effective-flow/config.json` mehr als Config-Quelle; `.effective-flow/` ist
+reines Laufzeit-Verzeichnis (`memory.json`, `cache.json`, `review/`, `.worktrees/`) und wird
+komplett gitignored.
 
 ### Config-Locator (Auflösungsreihenfolge)
 
 Beim Lesen der Konfiguration wird die Projektsetup-ADR in dieser Reihenfolge aufgelöst; der
 erste greifende Schritt gewinnt:
 
-1. **AGENTS.md-Marker.** Die kanonische Zeile `**Firmo project setup:** <pfad>` in
+1. **AGENTS.md-Marker.** Die kanonische Zeile `**Effective Flow project setup:** <pfad>` in
    `AGENTS.md`, sonst in `CLAUDE.md` bzw. einer vergleichbaren Konventionsdatei → die ADR
-   unter `<pfad>` lesen. Zeigt der Marker auf einen Pfad, unter dem **keine** ADR liegt
-   (toter/veralteter Marker), nicht dort stehenbleiben, sondern in dieser Reihenfolge
-   weiterfallen und den veralteten Marker melden (Korrektur in {{SKILL:setup}}).
-2. **Default-Pfad/Scan.** Sonst `docs/adr/firmo-project-setup.md` bzw. ein Scan des erkannten
+   unter `<pfad>` lesen. **Backcompat (eine Generation):** ein noch vorhandener Alt-Marker
+   `**Firmo project setup:** <pfad>` wird beim Lesen gleichwertig erkannt; {{SKILL:setup}}
+   stellt ihn beim nächsten Lauf nicht-destruktiv auf die neue Schreibweise um. Zeigt der
+   Marker auf einen Pfad, unter dem **keine** ADR liegt (toter/veralteter Marker), nicht dort
+   stehenbleiben, sondern in dieser Reihenfolge weiterfallen und den veralteten Marker melden
+   (Korrektur in {{SKILL:setup}}).
+2. **Default-Pfad/Scan.** Sonst `docs/adr/effective-flow-project-setup.md` (der Alt-Slug
+   `firmo-project-setup` wird beim Scan gleichwertig erkannt) bzw. ein Scan des erkannten
    ADR-Verzeichnisses (`docs/adr/`, `docs/decisions/`, `adr/`) nach der Projektsetup-ADR.
 3. **Übergangs-Kompatibilität.** Sonst — nur übergangsweise — eine noch vorhandene
-   `.firmo/config.json` lesen und auf {{SKILL:setup}} hinweisen. Dieser Lesepfad legt
-   **nichts** an und berührt **kein** Git.
+   `.effective-flow/config.json` (sonst eine Legacy-`.firmo/config.json`) lesen und auf
+   {{SKILL:setup}} hinweisen. Dieser Lesepfad legt **nichts** an und berührt **kein** Git.
 4. **Eingebaute Defaults.** Sonst die Defaults der jeweiligen Quell-Skills verwenden.
 
 Der deterministische Lesepfad beliebiger Tools ist nicht-blockierend: Er liest die ADR (bzw.
@@ -65,15 +70,17 @@ Ist die Tabelle ungültig oder mehrdeutig (fehlender Schlüssel, unbekanntes Enc
 sicheren Default für den Lauf verwenden, den User über den betroffenen Schlüssel
 informieren, **nicht** raten.
 
-### Einmalige Migration `.firmo/config.json` → Projektsetup-ADR
+### Einmalige Migration Legacy-`config.json` → Projektsetup-ADR
 
-Die Migration einer bestehenden `.firmo/config.json` in die Projektsetup-ADR ist
-**git-berührend** und läuft ausschließlich im {{SKILL:setup}}-Pfad. Sie erzeugt die
-ADR-Tabelle aus dem aktuellen Config-Inhalt (Encoding wie oben), schreibt den
-AGENTS.md-Marker, stellt `.gitignore` auf ein einzelnes `.firmo/` um und enttrackt die
-Alt-`config.json` (`git rm --cached`, Datei-Inhalt auf Platte belassen). Der genaue Ablauf
-inklusive Idempotenz-Markierung steht in {{SKILL:setup}}.
+Die Migration einer bestehenden `.effective-flow/config.json` bzw. Legacy-`.firmo/config.json`
+in die Projektsetup-ADR ist **git-berührend** und läuft ausschließlich im
+{{SKILL:setup}}-Pfad. Sie erzeugt die ADR-Tabelle aus dem aktuellen Config-Inhalt (Encoding
+wie oben), schreibt den AGENTS.md-Marker `**Effective Flow project setup:**`, stellt
+`.gitignore` auf ein einzelnes `.effective-flow/` um und enttrackt die Alt-`config.json`
+(`git rm --cached`, Datei-Inhalt auf Platte belassen). Der genaue Ablauf inklusive
+Idempotenz-Markierung steht in {{SKILL:setup}}.
 
 Außerhalb von {{SKILL:setup}} findet **keine** Migration statt: Der deterministische
 Lesepfad legt nichts an und berührt kein Git; er liest bei fehlender ADR ersatzweise eine
-noch vorhandene `.firmo/config.json` und weist auf {{SKILL:setup}} hin.
+noch vorhandene `.effective-flow/config.json` (sonst `.firmo/config.json`) und weist auf
+{{SKILL:setup}} hin.

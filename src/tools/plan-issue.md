@@ -1,5 +1,5 @@
 ---
-description: "Sammelt von {{SKILL:apply-issues}} übersprungene, mit firmo-needs-planning markierte GitHub-/Forgejo-Issues ein und vervollständigt die Planung interaktiv nach der Klärungs-Methodik von {{SKILL:plan}}. Das Ergebnis wird als strukturierter Kommentar ans Issue zurückgeschrieben und das Label entfernt, sodass {{SKILL:apply-issues}} das Issue anschließend umsetzen kann. Erzeugt keinen Code und keine Plan-Datei."
+description: "Sammelt von {{SKILL:apply-issues}} übersprungene, mit effective-flow-needs-planning markierte GitHub-/Forgejo-Issues ein und vervollständigt die Planung interaktiv nach der Klärungs-Methodik von {{SKILL:plan}}. Das Ergebnis wird als strukturierter Kommentar ans Issue zurückgeschrieben und das Label entfernt, sodass {{SKILL:apply-issues}} das Issue anschließend umsetzen kann. Erzeugt keinen Code und keine Plan-Datei."
 catalogHint: "Vervollständigt die Planung für Issues, die noch Klärung brauchen."
 ---
 
@@ -9,7 +9,7 @@ Du bist der Orchestrator, der unvollständig spezifizierte Issues durch interakt
 
 ## Ziel
 
-`{{SKILL:apply-issues}}` überspringt Issues, deren Information für eine autonome Umsetzung nicht ausreicht, und markiert sie mit `firmo-needs-planning`. Dieser Skill sammelt genau diese Issues ein, führt je Issue die **Klärungs-Methodik** von `{{SKILL:plan}}` durch (Analyse + gezielte Rückfragen an den User) und schreibt die vervollständigte, strukturierte Spezifikation **als Kommentar** zurück ans Issue. Danach entfernt er das Label `firmo-needs-planning`, sodass `{{SKILL:apply-issues}}` das Issue beim nächsten Lauf als umsetzbar aufnimmt.
+`{{SKILL:apply-issues}}` überspringt Issues, deren Information für eine autonome Umsetzung nicht ausreicht, und markiert sie mit `effective-flow-needs-planning`. Dieser Skill sammelt genau diese Issues ein, führt je Issue die **Klärungs-Methodik** von `{{SKILL:plan}}` durch (Analyse + gezielte Rückfragen an den User) und schreibt die vervollständigte, strukturierte Spezifikation **als Kommentar** zurück ans Issue. Danach entfernt er das Label `effective-flow-needs-planning`, sodass `{{SKILL:apply-issues}}` das Issue beim nächsten Lauf als umsetzbar aufnimmt.
 
 `<plan.dir>` ist das Plan-Verzeichnis aus der Firmo-Konfiguration (Projektsetup-ADR) `plan.dir` (Default `docs/plan`).
 
@@ -75,9 +75,9 @@ Schreibe das Planungsergebnis als Issue-Kommentar (Operation „Kommentar hinzuf
 
 1. Bestimme Host und CLI und prüfe Verfügbarkeit/Authentifizierung gemäß „Host- und CLI-Erkennung“. Vorbedingung: Git-Repository mit `origin`-Remote. Fehlt etwas: klar melden und abbrechen.
 2. Bestimme die zu planenden Issues:
-   - ohne Argument: liste alle offenen Issues mit Label `firmo-needs-planning` (Alt-Label `sf-needs-planning` gleichwertig mitabfragen, siehe „Label-Konvention“).
+   - ohne Argument: liste alle offenen Issues mit Label `effective-flow-needs-planning` (Alt-Label `firmo-needs-planning` gleichwertig mitabfragen, siehe „Label-Konvention“).
    - mit Argument: verwende die übergebenen Issue-Referenzen (Nummer, `#123`, URL).
-3. Gibt es keine passenden Issues: Kurzmeldung („keine offenen `firmo-needs-planning`-Issues") und Ende.
+3. Gibt es keine passenden Issues: Kurzmeldung („keine offenen `effective-flow-needs-planning`-Issues") und Ende.
 4. Zeige dem User die gefundene Liste (Nummer, Titel) und lass ihn wählen, welche Issues geplant werden sollen (eines, mehrere oder alle).
 5. Lege pro gewähltem Issue eine Task an (Aufgabenverfolgung).
 
@@ -103,7 +103,7 @@ Für jedes gewählte Issue nacheinander:
 Pro geplantem Issue:
 
 1. Schreibe die vervollständigte Spezifikation als Kommentar ans Issue (kanonische Struktur oben). Der Kommentar muss self-contained sein: eine fremde Session muss das Issue danach ohne diese Planungssession umsetzen können. Existiert aus einem früheren Lauf bereits ein `<!-- firmo-plan-issues -->`-Kommentar (aus der Kommentar-Prüfung in Phase 2 bekannt), aktualisiere bzw. ersetze dessen Inhalt, statt einen zweiten anzuhängen (Idempotenz auf Basis der Operation „Kommentare lesen“).
-2. Entferne das Label `firmo-needs-planning` (Planung abgeschlossen; eine ggf. vorhandene Alt-`sf-needs-planning`-Variante mitentfernen, siehe „Label-Konvention“). Setze **kein** `firmo-issue-done` — das Issue ist geplant, aber noch nicht umgesetzt.
+2. Entferne das Label `effective-flow-needs-planning` (Planung abgeschlossen; eine ggf. vorhandene Alt-`firmo-needs-planning`-Variante mitentfernen, siehe „Label-Konvention“). Setze **kein** `effective-flow-issue-done` — das Issue ist geplant, aber noch nicht umgesetzt.
 3. Task auf `completed`.
 
 ### Phase 4: Zusammenfassung
@@ -114,6 +114,6 @@ Berichte dem User, welche Issues geplant und mit einem Planungskommentar versehe
 
 - Ändere keine Implementierungsdateien und erzeuge keinen Code.
 - Lege keine `<plan.dir>/`-Datei an.
-- Wenn die Klärung eine belastbare Planung nicht ermöglicht (z. B. weil der User zentrale Fragen nicht beantwortet), lass das Label `firmo-needs-planning` bestehen und dokumentiere im Kommentar, welche Entscheidung noch aussteht.
+- Wenn die Klärung eine belastbare Planung nicht ermöglicht (z. B. weil der User zentrale Fragen nicht beantwortet), lass das Label `effective-flow-needs-planning` bestehen und dokumentiere im Kommentar, welche Entscheidung noch aussteht.
 - Setze niemals `Co-Authored-By`-Trailer und exponiere keine internen IDs in Kommentaren.
 - Gib dem User nach jeder Phase eine kurze Statusmeldung.

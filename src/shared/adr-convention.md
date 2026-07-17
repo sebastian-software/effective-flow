@@ -27,7 +27,7 @@ Referenzen auf ADRs erfolgen über **Slug oder Titel**, nicht über eine Nummer,
 Vorhandene nummerierte Alt-ADRs (`NNNN-*.md`, H1 `# NNNN — Titel`) bleiben **lesbar und per
 Nummer auflösbar**. Es gibt **keine** verpflichtende Bulk-Umbenennung; Alt-ADRs werden nicht
 angetastet. Neue ADRs entstehen ausschließlich im lebenden Slug-Format. Das spiegelt Firmos
-etablierte Kompatibilitätslinie (Plan-Nummern per H1, `sf-`/`firmo-`-Labels).
+etablierte Kompatibilitätslinie (Plan-Nummern per H1, `firmo-`/`effective-flow-`-Labels).
 
 ### Abweichung vom `decision-records`-Skill
 

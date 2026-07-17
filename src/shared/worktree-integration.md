@@ -41,7 +41,7 @@ Falls die Firmo-Konfiguration (Projektsetup-ADR) entsprechende Werte festschreib
 {
   "delivery": {
     "baseBranch": "origin/main",
-    "branchPrefix": "firmo",
+    "branchPrefix": "effective-flow",
     "completion": "merge",
     "returnBranch": "auto"
   },
@@ -56,7 +56,7 @@ Falls die Firmo-Konfiguration (Projektsetup-ADR) entsprechende Werte festschreib
 Fehlende Werte haben diese Defaults:
 
 - `delivery.baseBranch`: `"origin/main"`
-- `delivery.branchPrefix`: `"firmo"`
+- `delivery.branchPrefix`: `"effective-flow"`
 - `delivery.completion`: `"merge"` (Merge in den Zielbranch als Standard-Abschluss)
 - `delivery.returnBranch`: `"auto"` (lokaler Branch-Anteil aus `delivery.baseBranch`)
 - `worktree.enabled`: `true` (Umsetzung läuft in einem eigenen Worktree)
