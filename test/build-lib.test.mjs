@@ -147,6 +147,44 @@ test('validateRefs throws on an unknown agent ref', () => {
   );
 });
 
+// Legacy `sf-`-prefixed placeholders are rejected with a migration message
+// rather than the generic unknown-reference error (issue #106).
+test('validateRefs rejects a legacy sf- tool ref with a migration message', () => {
+  assert.throws(
+    () =>
+      validateRefs('{{SKILL:sf-fix}}', {
+        knownTools: refConfig.knownTools,
+        knownAgents: refConfig.knownAgents,
+        context: 'x.md',
+      }),
+    /Legacy placeholder \{\{SKILL:sf-fix\}\} is no longer supported.*drop the "sf-" prefix.*x\.md/,
+  );
+});
+
+test('validateRefs rejects a legacy sf- agent ref with a migration message', () => {
+  assert.throws(
+    () =>
+      validateRefs('{{AGENT:sf-test-writer}}', {
+        knownTools: refConfig.knownTools,
+        knownAgents: refConfig.knownAgents,
+      }),
+    /Legacy placeholder \{\{AGENT:sf-test-writer\}\} is no longer supported/,
+  );
+});
+
+test('validateRefs prefers the legacy message even when the sf- name is unknown', () => {
+  // An internal tool name with the legacy prefix still reports migration, not
+  // "unknown tool reference".
+  assert.throws(
+    () =>
+      validateRefs('{{SKILL:sf-apply-plan}}', {
+        knownTools: refConfig.knownTools,
+        knownAgents: refConfig.knownAgents,
+      }),
+    /Legacy placeholder \{\{SKILL:sf-apply-plan\}\} is no longer supported/,
+  );
+});
+
 // --- assertQuotedDescription (quoting guard) ---
 
 test('assertQuotedDescription accepts a strictly quoted description', () => {
@@ -187,6 +225,51 @@ test('transformRefs maps exposed vs internal tools and agents per harness', () =
     transformRefs('{{AGENT:nodejs-implementer}}', 'codex', refConfig),
     '`nodejs-implementer`',
   );
+});
+
+// Rendering must apply the same guard as validation: the known-name sets are
+// required, so transformRefs can never render an unvalidated reference (#106).
+test('transformRefs requires the known-name sets', () => {
+  for (const harness of ['claude', 'codex']) {
+    assert.throws(
+      () =>
+        transformRefs('{{SKILL:fix}}', harness, {
+          exposedTools: refConfig.exposedTools,
+          agentPrefix: refConfig.agentPrefix,
+          skillName: refConfig.skillName,
+          context: 'x.md',
+        }),
+      /transformRefs requires knownTools and knownAgents.*x\.md/,
+    );
+  }
+});
+
+// No accepted placeholder can render a non-existent target: legacy sf- refs are
+// rejected for exposed tools, internal tools, and agents, on both harnesses.
+test('transformRefs rejects legacy sf- refs for exposed, internal, and agent names on both harnesses', () => {
+  const legacyRefs = [
+    '{{SKILL:sf-fix}}', // exposed tool
+    '{{SKILL:sf-apply-plan}}', // internal tool
+    '{{AGENT:sf-test-writer}}', // agent
+  ];
+  for (const harness of ['claude', 'codex']) {
+    for (const ref of legacyRefs) {
+      assert.throws(
+        () => transformRefs(ref, harness, refConfig),
+        /Legacy placeholder .* is no longer supported/,
+        `${ref} on ${harness}`,
+      );
+    }
+  }
+});
+
+test('renderBody rejects a legacy sf- ref on both harnesses', () => {
+  for (const harness of ['claude', 'codex']) {
+    assert.throws(
+      () => renderBody('Ruft {{SKILL:sf-fix}} auf.\n', harness, { ...refConfig, context: 't.md' }),
+      /Legacy placeholder \{\{SKILL:sf-fix\}\} is no longer supported.*t\.md/,
+    );
+  }
 });
 
 // --- parseAskBlock ---

@@ -41,6 +41,12 @@ nutzen die Mustache-Syntax `{{…}}`:
 | `{{AGENT:X}}` | Agent-Referenz                 | `` `X` `` (Codex) bzw. `` `effective-flow-X` `` (Claude-Subagent) |
 | `{{VERSION}}` | Version inklusive Git-Kurzhash | Manifest-Version + `git rev-parse --short HEAD`                   |
 
+**Keine Legacy-Aliase.** Namen aus der Zeit vor der Umbenennung – also `{{SKILL:sf-…}}` oder
+`{{AGENT:sf-…}}` mit dem alten `sf-`-Präfix – werden **nicht** auf ihre aktuellen Namen
+abgebildet. Der Referenz-Guard lehnt sie mit einer Migrationsmeldung ab („drop the `sf-`
+prefix"), statt still eine tote `tools/sf-….md`- bzw. `sf-…`-Referenz zu rendern. Verwende in den
+Quellen immer den aktuellen, präfixlosen Namen.
+
 **Block-Direktiven** stehen auf eigenen Zeilen als Code-Fence mit Info-String. Der Fence-Interior
 bleibt gegen den Markdown-Formatter (oxfmt) wortwörtlich erhalten
 (`embeddedLanguageFormatting: off`).
@@ -67,7 +73,10 @@ Der Build bricht mit einer Fehlermeldung ab, wenn einer dieser Guards verletzt i
 - **Frontmatter-/Quoting-Guard:** `description` (und bei exponierten Tools zusätzlich
   `catalogHint`) muss strikt doppelt gequotet sein.
 - **Referenz-Guard:** Jedes `{{SKILL:X}}` muss auf eine existierende `src/tools/X.md`, jedes
-  `{{AGENT:X}}` auf eine existierende `src/agents/X.md` zeigen.
+  `{{AGENT:X}}` auf eine existierende `src/agents/X.md` zeigen. Ein Legacy-`sf-`-Präfix (siehe
+  „Keine Legacy-Aliase" oben) wird gezielt mit einer Migrationsmeldung abgelehnt. Derselbe Guard
+  läuft auch beim Rendern (`transformRefs`), sodass kein akzeptierter Platzhalter je ein
+  nicht-existentes Ziel erzeugen kann.
 - **Include-Ziel-Guard:** Jede ` ```include ` -Fence muss auf eine existierende
   `src/shared/<name>.md` zeigen.
 - **`catalogHint`-Guard:** Jedes in `TOOL_GROUPS` gelistete (exponierte) Tool braucht ein
