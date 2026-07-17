@@ -86,6 +86,20 @@ läuft; sie entsteht ausschließlich über [`/effective-flow setup`](./tools-ein
 manuelles Anlegen. Willst du von den Defaults abweichen, ist `/effective-flow setup` der einfachste
 Weg – der Express-Weg übernimmt die sicheren Defaults nach einer einzigen Bestätigung.
 
+## Alte `.firmo/`-/`.sf-plugin/`-Verzeichnisse oder `firmo-`-Labels loswerden
+
+Effective Flow migriert projektlokale Altdaten (`.firmo/`, `.sf-plugin/`, `firmo-`-Labels)
+**non-destruktiv**: Es kopiert bei Bedarf und liest das Alte als Fallback, löscht es aber nie
+von selbst. Bleiben nach einer Migration also Alt-Verzeichnisse, eine enttrackte
+`.firmo/config.json` oder `firmo-`-Labels zurück, ist das **kein Fehler**, sondern Absicht.
+
+Zum endgültigen Aufräumen dient [`/effective-flow cleanup`](./tools-einrichten.md): Es zeigt
+zuerst eine Bestandsaufnahme und eine Dry-Run-Vorschau, fragt vor jedem Löschen und entfernt
+getrackte Dateien via `git rm` (über die Git-Historie wiederherstellbar), ungetrackte
+Verzeichnisse erst nach ausdrücklicher Bestätigung. Es committet nicht und legt kein Backup
+an – die gestageten Änderungen bringst du danach mit
+[`/effective-flow commit`](./tools-einbringen.md) ein.
+
 ## Siehe auch
 
 - [Konfiguration](./konfiguration.md) – vollständige Feldreferenz
