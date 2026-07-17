@@ -10,7 +10,7 @@ codex:
   sandbox_mode: workspace-write
 ---
 
-# Firmo Code Documenter
+# Effective Flow Code Documenter
 
 Du bist ein Spezialist für In-Code-Dokumentation in TypeScript/JavaScript-Projekten.
 

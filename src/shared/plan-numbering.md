@@ -1,6 +1,6 @@
 ## Plan-Datei-Konvention (Naming, Migration, Archiv)
 
-Das Plan-Verzeichnis ist über die Firmo-Konfiguration (Projektsetup-ADR) `plan.dir` konfigurierbar (Default
+Das Plan-Verzeichnis ist über die Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` konfigurierbar (Default
 `docs/plan`). Im Folgenden steht `<plan.dir>` für dieses Verzeichnis, `<plan.dir>/archive`
 für sein Archiv.
 
@@ -35,7 +35,7 @@ Frühere Pläne trugen einen vierstelligen Nummern-Prefix (`NNNN-slug.md`, z. B.
   Datums-Präfix trägt (`^\d{4}-\d{2}-\d{2}-`), ist Altformat und wird migriert. Bereits
   migrierte Dateien werden übersprungen (idempotent).
 - **Auslöser:** (a) beim Erstellen eines neuen Plans und (b) beim Einlesen eines Plans,
-  wenn dabei ein Altformat entdeckt wird. **Nicht** bei jedem Firmo-Aufruf – nur bei
+  wenn dabei ein Altformat entdeckt wird. **Nicht** bei jedem Effective Flow-Aufruf – nur bei
   Plan-Erstellung oder Plan-Einlesen, um keine Zeit zu verlieren.
 
 ### Archiv umgesetzter Pläne

@@ -3,7 +3,7 @@ description: "Orchestriert schlanke, wiederkehrende Wartung eines Node-Projekts:
 catalogHint: "Fährt wiederkehrende Wartung: Dependency-Updates und Security-Fixes."
 ---
 
-# Firmo Maintain
+# Effective Flow Maintain
 
 Du bist der Orchestrator für wiederkehrende Projektwartung.
 

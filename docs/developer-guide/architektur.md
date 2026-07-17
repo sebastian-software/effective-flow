@@ -1,6 +1,6 @@
 # Architektur
 
-Dieses Dokument beschreibt, wie Firmo als Repository aufgebaut ist: das Source-to-dist-Modell,
+Dieses Dokument beschreibt, wie Effective Flow als Repository aufgebaut ist: das Source-to-dist-Modell,
 den Router mit Lazy-Loading und die Aufteilung auf die beiden Harnesses Claude Code und Codex.
 Verhaltensregeln für Agenten (Sprachregeln, Commit-Konventionen, No-AI-Attribution, Plan-Datei-
 Konventionen) stehen kanonisch in [`AGENTS.md`](../../AGENTS.md) – dieses Dokument verweist
@@ -8,7 +8,7 @@ darauf, statt sie zu duplizieren.
 
 ## Source-to-dist-Modell
 
-Firmo ist **kein** Laufzeitprodukt, sondern ein Build: `build.mjs` liest die Markdown-Quellen
+Effective Flow ist **kein** Laufzeitprodukt, sondern ein Build: `build.mjs` liest die Markdown-Quellen
 unter `src/` und erzeugt daraus zwei harness-spezifische Skill-Verzeichnisse unter `dist/`.
 
 - Bearbeitet wird ausschließlich `src/`. `dist/` ist generiert und gitignored – Änderungen dort
@@ -21,35 +21,35 @@ unter `src/` und erzeugt daraus zwei harness-spezifische Skill-Verzeichnisse unt
 ## Dünner Router mit Lazy-Loading
 
 `src/SKILL.md` ist der Router: ein Tool-Katalog plus Dispatch-Regel, sonst nichts. Er lädt
-niemals alle Tools vor, sondern verweist beim Aufruf `/firmo <tool>` (Claude) bzw.
-`$firmo <tool>` (Codex) genau auf die eine passende `tools/<tool>.md`. Dieses Lazy-Loading hält
+niemals alle Tools vor, sondern verweist beim Aufruf `/effective-flow <tool>` (Claude) bzw.
+`$effective-flow <tool>` (Codex) genau auf die eine passende `tools/<tool>.md`. Dieses Lazy-Loading hält
 die Session schlank und vermeidet Token-Exhaustion durch unnötig vorgeladene Tool-Anweisungen.
 
 Ohne oder mit unbekanntem `<tool>` gibt der Router nur die Tool-Liste aus und tut sonst nichts.
 
-Firmo kennt zwei Bausteintypen:
+Effective Flow kennt zwei Bausteintypen:
 
-| Typ       | Beschreibung                                   | Aufruf                                          |
-| --------- | ---------------------------------------------- | ----------------------------------------------- |
-| **Tool**  | Workflow- oder Utility-Anweisung               | `/firmo <tool>` (lädt `tools/<tool>.md`)        |
-| **Agent** | spezialisierter Worker (Implementer, Reviewer) | intern von Tools als Subagent (`agents/<name>`) |
+| Typ       | Beschreibung                                   | Aufruf                                            |
+| --------- | ---------------------------------------------- | ------------------------------------------------- |
+| **Tool**  | Workflow- oder Utility-Anweisung               | `/effective-flow <tool>` (lädt `tools/<tool>.md`) |
+| **Agent** | spezialisierter Worker (Implementer, Reviewer) | intern von Tools als Subagent (`agents/<name>`)   |
 
 ## Quell-Verzeichnisse
 
 ```text
 src/
 ├── SKILL.md      # Router: Tool-Katalog + Dispatch, keine Tool-Inhalte
-├── tools/        # ein .md je Tool → dist/<harness>/firmo/tools/<name>.md
+├── tools/        # ein .md je Tool → dist/<harness>/effective-flow/tools/<name>.md
 ├── agents/       # ein .md je Agent → dist/<harness>/agents/<name>
 └── shared/       # Include-Fragmente, eingebettet via `include`-Fence
 ```
 
-- **`src/tools/<name>.md`**: Ein Tool ist nur dann über `/firmo <name>` aufrufbar, wenn sein
+- **`src/tools/<name>.md`**: Ein Tool ist nur dann über `/effective-flow <name>` aufrufbar, wenn sein
   Name in genau einer Gruppe von `TOOL_GROUPS` in `build.mjs` steht (siehe
   [`build-system.md`](build-system.md)). Nicht gelistete Tools (z. B. `apply-plan`,
   `apply-review`, `apply-issues`) sind **intern**: gebaut, aber nicht im Router-Katalog
   sichtbar; `apply` lädt die passende interne Anweisung je nach erkannter Quelle nach.
-- **`src/agents/<name>.md`**: Agenten sind **keine** `/firmo`-Tools. Workflow-Tools rufen sie
+- **`src/agents/<name>.md`**: Agenten sind **keine** `/effective-flow`-Tools. Workflow-Tools rufen sie
   intern als Subagenten auf. Das Frontmatter trägt Konfiguration je Harness unter den Schlüsseln
   `claude:` und `codex:` (Modell, Farbe, Tools/Sandbox).
 - **`src/shared/<name>.md`**: Include-Fragmente, die per ` ```include ` -Fence in Tools und
@@ -60,10 +60,10 @@ src/
 
 Der Build erzeugt aus derselben Quelle zwei unabhängige Ausgaben:
 
-| Harness     | Ziel                 | Agenten-Format                                                                                                                                                                |
-| ----------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Code | `dist/claude/firmo/` | eigenständige `.md`-Subagenten unter `dist/claude/agents/`, namensraum-präfixiert `firmo-<name>.md` (Claude Code entdeckt in Skills verschachtelte Agenten nicht automatisch) |
-| Codex       | `dist/codex/firmo/`  | `.toml`-Agenten verschachtelt unter `dist/codex/firmo/agents/<name>.toml`                                                                                                     |
+| Harness     | Ziel                          | Agenten-Format                                                                                                                                                                         |
+| ----------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code | `dist/claude/effective-flow/` | eigenständige `.md`-Subagenten unter `dist/claude/agents/`, namensraum-präfixiert `effective-flow-<name>.md` (Claude Code entdeckt in Skills verschachtelte Agenten nicht automatisch) |
+| Codex       | `dist/codex/effective-flow/`  | `.toml`-Agenten verschachtelt unter `dist/codex/effective-flow/agents/<name>.toml`                                                                                                     |
 
 Beide Ausgaben tragen denselben Versionsstempel (siehe
 [`release-und-installation.md`](release-und-installation.md)); ein Build-Guard verhindert
@@ -72,15 +72,15 @@ Versions-Drift zwischen den Harnesses.
 ## Repo-Struktur im Überblick
 
 ```text
-firmo/                        (Repo)
+effective-flow/                        (Repo)
 ├── src/                      # Quellen (siehe oben)
 ├── docs/                     # Projekt-Dokumentation
 │   ├── plan/                 # Implementierungspläne (ISO-Datum-Slug, siehe plan-konventionen.md)
 │   ├── user-guide/           # End-User-Dokumentation
 │   └── developer-guide/      # dieses Dokument und seine Nachbarn
 ├── dist/                     # Generiert, gitignored
-│   ├── claude/firmo/         # Router-SKILL.md + tools/*.md, Agenten separat unter dist/claude/agents/
-│   └── codex/firmo/          # Router-SKILL.md + tools/*.md + agents/*.toml
+│   ├── claude/effective-flow/         # Router-SKILL.md + tools/*.md, Agenten separat unter dist/claude/agents/
+│   └── codex/effective-flow/          # Router-SKILL.md + tools/*.md + agents/*.toml
 ├── build.mjs                 # Build-Skript (siehe build-system.md)
 ├── install-skill.sh          # Installation aus Release bzw. lokalem Checkout
 └── local-link.sh             # Build + Symlink für die Entwicklung

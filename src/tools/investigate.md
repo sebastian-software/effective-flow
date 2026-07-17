@@ -3,7 +3,7 @@ description: "Kapselt eine reine Analyse-Phase für Fehler- und Verhaltensinvest
 catalogHint: "Findet die Ursache eines Fehlers oder überraschenden Verhaltens – reine Analyse, kein Code."
 ---
 
-# Firmo Investigate
+# Effective Flow Investigate
 
 Du bist der Orchestrator für Fehler- und Verhaltensinvestigation. Du klärst diagnostisch, warum sich etwas so verhält bzw. wo die Root Cause liegt, erzeugst einen Diagnose-Report und änderst keinen Code.
 
@@ -42,14 +42,14 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 Investigations-Reports sind **immer lokal**: Sie liegen ausschließlich unter
 `.effective-flow/investigation/`, werden **nie committet** und **nie als Issue** geführt – auch
 nicht im Remote-Tracker-Modus. Der local/remote-Umschalter (`tracker.mode`) gilt nur für
-Reviews, nicht für Investigationen. Von den Firmo-Artefakten werden ausschließlich Pläne
+Reviews, nicht für Investigationen. Von den Effective Flow-Artefakten werden ausschließlich Pläne
 committet.
 
 ## Harte Abgrenzung
 
 - Erlaubt sind ausschließlich Analyse, Rückfragen, Lesen, das Ausführen read-only prüfbarer Befehle bzw. bestehender Checks, das Schreiben des Diagnose-Reports unter `.effective-flow/investigation/` sowie das Schreiben der transienten Wisdom-Datei `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` (siehe „Wisdom Accumulation“), die am Ende gelöscht wird.
 - Erlaubt ist das Anlegen von `.effective-flow/` und `.effective-flow/investigation/`, falls die Verzeichnisse fehlen.
-- Verboten sind Änderungen an Source-Code, Tests, Konfiguration, Build-Dateien, Doku und ADRs sowie an Plan-Dateien unter `<plan.dir>/` (das Plan-Verzeichnis aus der Firmo-Konfiguration (Projektsetup-ADR) `plan.dir`, Default `docs/plan`).
+- Verboten sind Änderungen an Source-Code, Tests, Konfiguration, Build-Dateien, Doku und ADRs sowie an Plan-Dateien unter `<plan.dir>/` (das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir`, Default `docs/plan`).
 - Anders als in `{{SKILL:fix}}` darf **kein** Reproduktionstest geschrieben werden. Reproduktion erfolgt nur durch Beobachtung (vorhandene Checks ausführen, Logs/Verhalten beschreiben) oder durch eine dokumentierte Reproduktionsanleitung.
 - Wenn der User während dieses Skills eine Umsetzung verlangt, verweise je nach Diagnose auf `{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}` oder `{{SKILL:docs}}` und beende diesen Skill nach dem Report.
 

@@ -15,7 +15,7 @@ fahre ohne Fehler oder Blockade fort.
 2. **Relevanz beurteilen:** Prüfe jeden Skill gegen die **konkrete** Aufgabe und binde nur
    klar passende ein (typisch 0–2). Lade keine Skills „auf Verdacht" — Token-Sparsamkeit.
 3. **Config berücksichtigen:** Lies, falls vorhanden, den `skills`-Block aus der
-   Firmo-Konfiguration (Projektsetup-ADR) best-effort — die globalen Felder plus deinen
+   Effective Flow-Konfiguration (Projektsetup-ADR) best-effort — die globalen Felder plus deinen
    eigenen Scope-Eintrag (ein Agent liest `agents.<eigener-name>`, ein Tool liest
    `tools.<eigener-name>`).
    - `enabled: false` → überspringe die gesamte dynamische Skill-Nutzung.

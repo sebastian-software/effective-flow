@@ -2,7 +2,7 @@
 description: "Liest eine Review-Report-Datei ein, wertet Entwickler-Anmerkungen aus, erstellt ADRs für abgelehnte Findings und delegiert umsetzbare Findings parallel an {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}} oder {{SKILL:docs}}."
 ---
 
-# Firmo Apply Review
+# Effective Flow Apply Review
 
 Du bist der Orchestrator für die automatisierte Umsetzung von Review-Report-Findings.
 
@@ -96,17 +96,17 @@ Verwende `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
 
 Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lösche die Datei am Ende.
 
-## Firmo-Konfiguration
+## Effective Flow-Konfiguration
 
-Firmo-interne Dateien liegen unter `.effective-flow/` im Projekt-Root.
+Effective Flow-interne Dateien liegen unter `.effective-flow/` im Projekt-Root.
 
-- Konfiguration: Firmo-Konfiguration aus der Projektsetup-ADR (siehe Baustein „Config-Migration“)
+- Konfiguration: Effective Flow-Konfiguration aus der Projektsetup-ADR (siehe Baustein „Config-Migration“)
 - Memory-Datei: `.effective-flow/memory.json`
 - Cache-Datei: `.effective-flow/cache.json`
 - Review-Reports: `.effective-flow/review/`
 - Temporäre Wisdom-Dateien: `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
-`apply-review` funktioniert ohne festgeschriebene Konfiguration. Falls die Firmo-Konfiguration (Projektsetup-ADR) Apply-Review-Werte festschreibt, überschreiben sie die Defaults (Schema hier zur Illustration):
+`apply-review` funktioniert ohne festgeschriebene Konfiguration. Falls die Effective Flow-Konfiguration (Projektsetup-ADR) Apply-Review-Werte festschreibt, überschreiben sie die Defaults (Schema hier zur Illustration):
 
 ```json
 {
@@ -139,7 +139,7 @@ Gültige Werte:
 
 ### Config-Migration
 
-Das Lesen der Firmo-Konfiguration aus der Projektsetup-ADR (inklusive der `applyReview`-Schlüssel) und die einmalige Migration einer Alt-Config übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `applyReview` aus. Das `applyReview`-Config-Schema oben (Konfiguration, gültige Werte) bleibt davon unberührt.
+Das Lesen der Effective Flow-Konfiguration aus der Projektsetup-ADR (inklusive der `applyReview`-Schlüssel) und die einmalige Migration einer Alt-Config übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `applyReview` aus. Das `applyReview`-Config-Schema oben (Konfiguration, gültige Werte) bleibt davon unberührt.
 
 ### Cache-Datei
 
@@ -174,7 +174,7 @@ Ist der Tracker-Modus `remote` (das Argument ist ein Epic- oder Finding-Issue), 
 
 Bestimme zuerst den Tracker-Modus über die „Apply-Quellen-Erkennung“ (Report-Datei unter `.effective-flow/review/` → `local`; Epic-/Finding-Issue → `remote`). Ist er `remote`, lies und befolge die interne Teil-Datei `tools/apply-review-remote.md` (Phase 1 remote und folgende) statt der Report-Datei-Schritte 4–7 unten; die Config-, Stash- und Cache-Schritte gelten weiterhin.
 
-1. Lade Firmo-Konfiguration, migriere sie falls nötig und bestimme Commit-Strategie-Default, Stash-Policy, Worktree-Defaults und finales Validierungsprofil.
+1. Lade Effective Flow-Konfiguration, migriere sie falls nötig und bestimme Commit-Strategie-Default, Stash-Policy, Worktree-Defaults und finales Validierungsprofil.
 2. Lies `.effective-flow/cache.json`, falls vorhanden und gültig. Verwende nur valide `applyReviewAnalysis`-Einträge.
 3. **Stash-Baseline erfassen:** Führe `git stash list` aus und merke dir die vollständige Liste der bereits vorhandenen Stash-Referenzen (z. B. `stash@{0}`, `stash@{1}`, ... mit ihren Beschreibungen). Halte die Baseline in der Wisdom-Datei fest, damit Phase 6 (Stash-Bereinigung) später neue, durch diesen Workflow entstandene Stashes davon abgrenzen kann. Falls `git stash list` leer ist: notiere „keine Baseline-Stashes“.
 4. Bestimme die Report-Datei:
@@ -222,7 +222,7 @@ Wenn `applyReview.defaultCommitStrategy` gültig gesetzt ist, überspringe die A
 - `single` → **Einzeln**
 - `none` → **Keine Commits**
 
-Melde kurz, dass die Commit-Strategie aus der Firmo-Konfiguration (Projektsetup-ADR) übernommen wurde. Wenn kein gültiger Wert gesetzt ist, frage wie bisher:
+Melde kurz, dass die Commit-Strategie aus der Effective Flow-Konfiguration (Projektsetup-ADR) übernommen wurde. Wenn kein gültiger Wert gesetzt ist, frage wie bisher:
 
 ```ask
 when: kein gültiger Wert für `applyReview.defaultCommitStrategy` gesetzt ist
@@ -247,7 +247,7 @@ Halte die Antwort fest und gib sie an jeden delegierten Skill als Anweisung weit
 
 Teil desselben Up-front-Gates: Die Stash-Policy legt vorab fest, wie die Stash-Bereinigung in Phase 6 (Klassen B/C/D) und das Abbruch-Aufräumen in Phase 4.3 mit hinterlassenen Stashes umgehen – ohne spätere Rückfrage. Konkrete Stashes existieren zu Beginn noch nicht; entschieden wird daher die Policy, nicht der Einzelfall.
 
-Wenn `applyReview.stashPolicy` gültig gesetzt ist, überspringe die ASK-Frage und verwende den Wert; melde kurz, dass die Stash-Policy aus der Firmo-Konfiguration (Projektsetup-ADR) übernommen wurde. Wenn kein gültiger Wert gesetzt ist, frage am selben Gate wie die Commit-Strategie:
+Wenn `applyReview.stashPolicy` gültig gesetzt ist, überspringe die ASK-Frage und verwende den Wert; melde kurz, dass die Stash-Policy aus der Effective Flow-Konfiguration (Projektsetup-ADR) übernommen wurde. Wenn kein gültiger Wert gesetzt ist, frage am selben Gate wie die Commit-Strategie:
 
 ```ask
 when: kein gültiger Wert für `applyReview.stashPolicy` gesetzt ist
@@ -296,7 +296,7 @@ Nicht umgesetzt
 ## Kontext
 
 Review-Report: [Report-Dateiname], Finding [R-XXXXXXX]
-Workflow: Firmo Apply-Review
+Workflow: Effective Flow Apply-Review
 
 ## Entscheidung
 
@@ -414,7 +414,7 @@ Beispiel: Aktionsgruppe `{{SKILL:fix}}` mit fünf Findings:
 
 1. Lies die Report-Datei erneut frisch vom Dateisystem ein. Die Datei könnte sich während der Umsetzung geändert haben.
 2. Ergänze an jedem erfolgreich umgesetzten Finding als letzten Eintrag:
-   `✅ Umgesetzt am YYYY-MM-DD via Firmo Apply-Review`
+   `✅ Umgesetzt am YYYY-MM-DD via Effective Flow Apply-Review`
 3. Ergänze an jedem Finding mit ADR als letzten Eintrag:
    `📋 ADR am YYYY-MM-DD angelegt/aktualisiert: nicht umgesetzt (ADR: <slug>)`
 4. Speichere die aktualisierte Report-Datei.

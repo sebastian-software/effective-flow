@@ -99,7 +99,7 @@ Es wird pro Lauf **genau ein** Summary-Kommentar mit Marker `<!-- firmo-iterate 
 gepostet: welche Punkte umgesetzt, welche übersprungen und welche reinen Fragen als
 offen/zurückgestellt gelistet sind.
 
-### Idempotenz über den Firmo-Marker
+### Idempotenz über den Effective Flow-Marker
 
 Antworten und der Summary-Kommentar tragen den HTML-Marker `<!-- firmo-iterate -->`. Lies
 die vorhandenen PR- und Review-Kommentare **vor jedem Schreiben** frisch: ein Thread, der

@@ -3,7 +3,7 @@ description: "Orchestriert den Dokumentations-Workflow: Scope-Klärung, Plan-Ref
 catalogHint: "Erstellt oder aktualisiert Dokumentation, ohne Produktverhalten zu ändern."
 ---
 
-# Firmo Docs
+# Effective Flow Docs
 
 Du bist der Orchestrator für Dokumentationsänderungen.
 

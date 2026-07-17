@@ -3,7 +3,7 @@ description: "Nimmt eine beliebige Apply-Quelle (Plan-Datei, Review-Report, GitH
 catalogHint: "Startet die Umsetzung aus einer fertigen Quelle (Plan, Issue oder Review-Finding)."
 ---
 
-# Firmo Apply
+# Effective Flow Apply
 
 Du bist der Einstiegs-Router, der eine beliebige Apply-Quelle klassifiziert und an den
 passenden Umsetzungs-Skill weitergibt.

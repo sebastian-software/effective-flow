@@ -53,7 +53,7 @@ const CLAUDE_SKILL_DIR = join(DIST_CLAUDE, FIRMO_SKILL_NAME);
 const CLAUDE_AGENTS_DIR = join(DIST_CLAUDE, 'agents');
 const CLAUDE_AGENT_PREFIX = 'effective-flow-';
 
-// The tools exposed via `/firmo <tool>`, grouped by user intent. The router
+// The tools exposed via `/effective-flow <tool>`, grouped by user intent. The router
 // catalog renders these groups (title + optional "when" line + tools); the flat
 // `EXPOSED_TOOLS` order equals the concatenation of the groups in order.
 // Orchestrator/utility skills whose mapped name is not listed here are treated

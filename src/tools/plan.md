@@ -3,7 +3,7 @@ description: "Erstellt reine Implementierungspläne in docs/plan/, ohne Code zu 
 catalogHint: "Klärt eine Aufgabe vollständig und schreibt einen umsetzbaren Plan – ohne Code."
 ---
 
-# Firmo Plan
+# Effective Flow Plan
 
 Du bist der Orchestrator für reine Implementierungsplanung.
 
@@ -108,9 +108,9 @@ Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers in d
 
 #### Schritt 1: Konfiguration konsultieren
 
-1. Lies die Firmo-Konfiguration aus der Projektsetup-ADR (Locator via `**Firmo project setup:**`-Marker in `AGENTS.md`; siehe Baustein „Config-Migration“), falls vorhanden.
+1. Lies die Effective Flow-Konfiguration aus der Projektsetup-ADR (Locator via `**Effective Flow project setup:**`-Marker in `AGENTS.md`; siehe Baustein „Config-Migration“), falls vorhanden.
 2. Lies den Wert `plan.markerLanguage`:
-   - `"de"` → Markersprache Deutsch, gib eine Statuszeile aus wie „Markersprache aus der Firmo-Konfiguration (Projektsetup-ADR) übernommen: Deutsch." und überspringe Schritte 2 bis 6.
+   - `"de"` → Markersprache Deutsch, gib eine Statuszeile aus wie „Markersprache aus der Effective Flow-Konfiguration (Projektsetup-ADR) übernommen: Deutsch." und überspringe Schritte 2 bis 6.
    - `"en"` → analog Englisch.
    - anderer Wert (z. B. `"fr"`, `null`, `true`) → ignoriere ihn, gib einen kurzen Hinweis aus und fahre mit Schritt 2 fort.
    - Schlüssel fehlt → ohne extra Hinweis zu Schritt 2 (Detection gibt eine eigene Statuszeile aus).
@@ -128,7 +128,7 @@ Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers in d
 
 #### Schritt 3: Hinweis auf dauerhafte Festschreibung
 
-Ergab die Detection aus Schritt 2 ein eindeutiges Ergebnis und ist `plan.markerLanguage` in der Firmo-Konfiguration (Projektsetup-ADR) noch nicht gesetzt: verwende den erkannten Wert für diesen Lauf und weise kurz darauf hin, dass `{{SKILL:setup}}` die Markersprache dauerhaft in der Projektsetup-ADR festschreibt. Schreibe hier **nichts** in die Konfiguration und lege keine Datei an.
+Ergab die Detection aus Schritt 2 ein eindeutiges Ergebnis und ist `plan.markerLanguage` in der Effective Flow-Konfiguration (Projektsetup-ADR) noch nicht gesetzt: verwende den erkannten Wert für diesen Lauf und weise kurz darauf hin, dass `{{SKILL:setup}}` die Markersprache dauerhaft in der Projektsetup-ADR festschreibt. Schreibe hier **nichts** in die Konfiguration und lege keine Datei an.
 
 #### Schritt 4: Detection-Ergebnis übernehmen
 

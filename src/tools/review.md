@@ -3,7 +3,7 @@ description: "Orchestriert ein umfassendes Code-Review oder bei Plan-Datei-Argum
 catalogHint: "Prüft Code auf Qualität und Findings – oder tiefer einen vorhandenen Plan."
 ---
 
-# Firmo Review
+# Effective Flow Review
 
 Du bist der Orchestrator für umfassende Code-Reviews.
 
@@ -99,11 +99,11 @@ Der Review-Workflow erkennt dokumentierte Designentscheidungen, damit Findings g
 
 Projekt-Typ-Erkennung wie bei `{{SKILL:build}}`. Das Reviewer-Routing samt Verzeichnis-Split-Heuristik ist in Phase 2c definiert.
 
-## Firmo-Konfiguration und Memory
+## Effective Flow-Konfiguration und Memory
 
-Firmo-interne Dateien liegen unter `.effective-flow/` im Projekt-Root.
+Effective Flow-interne Dateien liegen unter `.effective-flow/` im Projekt-Root.
 
-- Konfiguration: Firmo-Konfiguration aus der Projektsetup-ADR (siehe Baustein „Config-Migration“)
+- Konfiguration: Effective Flow-Konfiguration aus der Projektsetup-ADR (siehe Baustein „Config-Migration“)
 - Memory-Datei: `.effective-flow/memory.json`
 - Cache-Datei: `.effective-flow/cache.json`
 - Review-Reports: `.effective-flow/review/`
@@ -130,7 +130,7 @@ Die Datei `.effective-flow/memory.json` speichert persistente Zustände über Se
 
 ### Konfigurationsschema
 
-`review` funktioniert ohne festgeschriebene Konfiguration. Fehlt die Firmo-Konfiguration (Projektsetup-ADR), verwende interne Defaults und lege nichts automatisch an.
+`review` funktioniert ohne festgeschriebene Konfiguration. Fehlt die Effective Flow-Konfiguration (Projektsetup-ADR), verwende interne Defaults und lege nichts automatisch an.
 
 Unterstützte Review-Konfiguration:
 
@@ -172,7 +172,7 @@ Explizit gesetzte Detailwerte haben Vorrang vor Profil-Ableitungen.
 
 ### Config-Migration
 
-Das Lesen der Firmo-Konfiguration aus der Projektsetup-ADR (inklusive der `review`-Schlüssel) und die einmalige Migration einer Alt-Config übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `review` aus. Das `review`-Config-Schema oben (Defaults, Profil-Ableitung) bleibt davon unberührt.
+Das Lesen der Effective Flow-Konfiguration aus der Projektsetup-ADR (inklusive der `review`-Schlüssel) und die einmalige Migration einer Alt-Config übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `review` aus. Das `review`-Config-Schema oben (Defaults, Profil-Ableitung) bleibt davon unberührt.
 
 ### Cache-Datei
 
@@ -204,7 +204,7 @@ Ob `.effective-flow/` eingecheckt oder ignoriert wird, entscheidet das jeweilige
 2. Lies `.effective-flow/memory.json` beim Start des Review-Workflows.
 3. Falls `.effective-flow/memory.json` nicht existiert, aber die alte Datei `.sf-memory.json` vorhanden ist: migriere deren Inhalt nach `.effective-flow/memory.json`, entferne `.sf-memory.json` erst nach erfolgreichem Schreiben und weise den User darauf hin.
 4. Falls keine Memory-Datei existiert, starte mit `lastFindingNumber: 0`.
-5. Lies die Firmo-Konfiguration aus der Projektsetup-ADR, falls vorhanden (Migration einer Alt-Config über den Baustein „Config-Migration“).
+5. Lies die Effective Flow-Konfiguration aus der Projektsetup-ADR, falls vorhanden (Migration einer Alt-Config über den Baustein „Config-Migration“).
 6. Lies `.effective-flow/cache.json`, falls vorhanden und gültig; verwende nur valide, nicht veraltete Cache-Einträge.
 7. Nummeriere neue Findings fortlaufend ab `lastFindingNumber + 1` mit 7-stelliger Formatierung: `R-0000001`, `R-0000002`, ...
 8. Schreibe nach Erstellung des Berichts die höchste vergebene Finding-Nummer zurück in `.effective-flow/memory.json`. Erhalte dabei `configMigration` und andere vorhandene Memory-Felder. Die Memory-Datei muss geschrieben werden, bevor der Workflow mit `ERLEDIGT` abgeschlossen wird. Falls der Schreibvorgang fehlschlägt, weise den User darauf hin.
@@ -233,7 +233,7 @@ Lösche die Datei am Ende des Workflows, vor `ERLEDIGT`.
 
 ### Plan-Datei-Sonderfall
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Firmo-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
+`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
 `docs/plan`).
 
 Prüfe vor Phase 1 und vor jeder Code-Review-spezifischen Initialisierung
@@ -263,7 +263,7 @@ raten.
 ### Phase 1: Scope
 
 1. Lies die Argumente.
-2. Lade Firmo-Konfiguration, migriere sie falls nötig und bestimme Review-Profil, DD-Quellenprofil und Validierungsmodus. Bestimme zusätzlich den Tracker-Modus gemäß „Issue-Tracker-Anbindung (Remote-Modus)“ (Config `tracker.mode`, Argument-/Per-Run-Signal, ggf. Erstaufruf-Abfrage). Bei `remote`: erkenne Host und CLI und prüfe die CLI-Verfügbarkeit sowie Authentifizierung vorab; fehlt das CLI, brich klar ab (kein stiller Fallback auf `local`).
+2. Lade Effective Flow-Konfiguration, migriere sie falls nötig und bestimme Review-Profil, DD-Quellenprofil und Validierungsmodus. Bestimme zusätzlich den Tracker-Modus gemäß „Issue-Tracker-Anbindung (Remote-Modus)“ (Config `tracker.mode`, Argument-/Per-Run-Signal, ggf. Erstaufruf-Abfrage). Bei `remote`: erkenne Host und CLI und prüfe die CLI-Verfügbarkeit sowie Authentifizierung vorab; fehlt das CLI, brich klar ab (kein stiller Fallback auf `local`).
 3. Ohne Argumente:
    - prüfe `git diff --name-only`
    - prüfe `git diff --cached --name-only`
@@ -296,7 +296,7 @@ Bestimme die aktiven Designentscheidungs-Quellen aus `review.designDecisionSourc
 
 Starte für jede aktive Quelle einen eigenen Sub-Agenten **parallel**. Jeder Sub-Agent durchsucht nur seine Quelle:
 
-- ADR — `docs/decisions/`, `docs/adr/`, `adr/`, `*.adr.md`. ADRs können im lebenden, slug-benannten Format (`# <Titel>`, `## Status`) **oder** im nummerierten Alt-Format (`# NNNN — Titel`) vorliegen; beide Formen werden gelesen, die Such-Globs bleiben unverändert. **Ausnahme:** Die Firmo-Projektsetup-ADR (Config, bekannter Slug `firmo-project-setup`, z. B. `docs/adr/firmo-project-setup.md`) ist Konfiguration, keine Architekturbegründung, und wird **nicht** als Designentscheidungs-Quelle gesammelt.
+- ADR — `docs/decisions/`, `docs/adr/`, `adr/`, `*.adr.md`. ADRs können im lebenden, slug-benannten Format (`# <Titel>`, `## Status`) **oder** im nummerierten Alt-Format (`# NNNN — Titel`) vorliegen; beide Formen werden gelesen, die Such-Globs bleiben unverändert. **Ausnahme:** Die Effective Flow-Projektsetup-ADR (Config, bekannter Slug `firmo-project-setup`, z. B. `docs/adr/effective-flow-project-setup.md`) ist Konfiguration, keine Architekturbegründung, und wird **nicht** als Designentscheidungs-Quelle gesammelt.
 - Planungs-Dateien — `<plan.dir>/`, `plans/`
 - Konventions-Dateien — `CLAUDE.md`, `AGENTS.md`, vergleichbare Konventionsdateien
 - Code-Kommentare — `@design-decision`, `DELIBERATE`, `INTENTIONAL`, `DESIGN:`

@@ -3,7 +3,7 @@ description: "Orchestriert den Bugfix-Workflow: Investigation, Reproduktion, Gap
 catalogHint: "Behebt einen konkreten Bug mit minimalem, regressionsgesichertem Eingriff."
 ---
 
-# Firmo Fix
+# Effective Flow Fix
 
 Du bist der Orchestrator für den Bugfix-Workflow.
 

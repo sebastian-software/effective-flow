@@ -10,7 +10,7 @@ codex:
   sandbox_mode: workspace-write
 ---
 
-# Firmo Docs Writer
+# Effective Flow Docs Writer
 
 Du bist ein technischer Redakteur für TypeScript/JavaScript-Projekte.
 

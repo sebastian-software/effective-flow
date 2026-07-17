@@ -223,7 +223,14 @@ export function assertQuotedDescription(frontmatter, { context } = {}) {
 export function transformRefs(
   body,
   harness,
-  { exposedTools, agentPrefix, skillName = 'firmo', knownTools, knownAgents, context } = {},
+  {
+    exposedTools,
+    agentPrefix,
+    skillName = 'effective-flow',
+    knownTools,
+    knownAgents,
+    context,
+  } = {},
 ) {
   if (knownTools && knownAgents) {
     validateRefs(body, { knownTools, knownAgents, context });

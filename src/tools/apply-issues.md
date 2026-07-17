@@ -2,7 +2,7 @@
 description: "Nimmt einen oder mehrere GitHub-/Forgejo-Issues (einzeln, als Liste oder als Container-Issue mit Sub-Issue-Checkliste) entgegen, analysiert und klassifiziert den Inhalt und routet ausreichend spezifizierte Issues an {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} oder {{SKILL:docs}} (ein PR pro Issue). Unzureichend spezifizierte Issues werden übersprungen und für {{SKILL:plan-issue}} markiert. Status-Updates laufen als Issue-Kommentare."
 ---
 
-# Firmo Apply Issues
+# Effective Flow Apply Issues
 
 Du bist der Orchestrator, der beliebige Issues aus einem externen Tracker analysiert und an den passenden Umsetzungs-Workflow weitergibt.
 
@@ -77,7 +77,7 @@ apply-clarity-gate
 
 ## Kommentar-Konventionen
 
-Alle Status-Updates werden als Issue-Kommentare geschrieben (Operation „Kommentar hinzufügen“ aus dem Mapping oben). Verwende diese kanonischen Vorlagen und beginne jeden Firmo-Kommentar mit der Markierung `<!-- firmo-apply-issues -->`, damit spätere Läufe eigene Kommentare erkennen und Doppel-Kommentare vermeiden:
+Alle Status-Updates werden als Issue-Kommentare geschrieben (Operation „Kommentar hinzufügen“ aus dem Mapping oben). Verwende diese kanonischen Vorlagen und beginne jeden Effective Flow-Kommentar mit der Markierung `<!-- firmo-apply-issues -->`, damit spätere Läufe eigene Kommentare erkennen und Doppel-Kommentare vermeiden:
 
 - **Umgesetzt:** `🤖 Umgesetzt via {{FIRMO}} apply — PR #<nr>` (keine internen IDs, kein `Co-Authored-By`).
 - **Übersprungen:** `⏭️ Übersprungen: Für eine autonome Umsetzung fehlen noch Angaben: <Liste des Fehlenden>. Mit {{FIRMO}} plan-issue vervollständigen.`
@@ -100,7 +100,7 @@ Exponiere in Kommentaren keine internen Tracking-IDs oder Session-Details.
 
 ### Phase 2: Expansion & Arbeitsliste
 
-1. Lies jedes referenzierte Issue **frisch** vom Tracker (Body, Labels, Status und **Kommentare** über die Operation „Kommentare lesen“). Die Kommentare sind Teil der Analysegrundlage: ein Planungskommentar von `{{SKILL:plan-issue}}` (Markierung `<!-- firmo-plan-issues -->`) enthält die vervollständigte Spezifikation, und Maintainer können Klärungen als Kommentar statt im Body nachreichen. Eigene Firmo-Kommentare (`<!-- firmo-apply-issues -->`) werden hier nur für die Idempotenz-Prüfung in Phase 4 gemerkt, nicht als fachliche Anforderung gewertet.
+1. Lies jedes referenzierte Issue **frisch** vom Tracker (Body, Labels, Status und **Kommentare** über die Operation „Kommentare lesen“). Die Kommentare sind Teil der Analysegrundlage: ein Planungskommentar von `{{SKILL:plan-issue}}` (Markierung `<!-- firmo-plan-issues -->`) enthält die vervollständigte Spezifikation, und Maintainer können Klärungen als Kommentar statt im Body nachreichen. Eigene Effective Flow-Kommentare (`<!-- firmo-apply-issues -->`) werden hier nur für die Idempotenz-Prüfung in Phase 4 gemerkt, nicht als fachliche Anforderung gewertet.
 2. **Container-Erkennung:** Enthält der Body eine Aufgabenliste mit Issue-Referenzen (`- [ ] #NNN …` / `- [x] #NNN …`), behandle das Issue als Container:
    - expandiere auf die **offenen** (`- [ ]`) Sub-Issue-Referenzen und merke das Container-Issue als Epic für das spätere Abhaken,
    - überspringe erledigte (`- [x]`) Einträge,
@@ -128,7 +128,7 @@ Starte für **jedes Arbeitsitem** einen Analyse-Sub-Agenten parallel. Diese Sub-
 
 Jeder Analyse-Sub-Agent erhält den Issue-Body **und die Issue-Kommentare** und den Auftrag, die Codebase zu untersuchen und ein strukturiertes Ergebnis zu liefern:
 
-- **Kommentare als Quelle:** Werte Body und Kommentare gemeinsam aus. Ein `<!-- firmo-plan-issues -->`-Planungskommentar liefert die von `{{SKILL:plan-issue}}` vervollständigte Spezifikation (Soll-Verhalten, Akzeptanzkriterien, betroffene Bereiche) und gilt als **maßgebliche, ausreichende** Grundlage — auch wenn der ursprüngliche Body dünn ist; existieren mehrere, zählt der neueste. Weitere Maintainer-Kommentare zählen als Klärungen für die Ausreichend-Prüfung. Reine Firmo-Statuskommentare (`<!-- firmo-apply-issues -->`) werden nicht als Anforderung gewertet.
+- **Kommentare als Quelle:** Werte Body und Kommentare gemeinsam aus. Ein `<!-- firmo-plan-issues -->`-Planungskommentar liefert die von `{{SKILL:plan-issue}}` vervollständigte Spezifikation (Soll-Verhalten, Akzeptanzkriterien, betroffene Bereiche) und gilt als **maßgebliche, ausreichende** Grundlage — auch wenn der ursprüngliche Body dünn ist; existieren mehrere, zählt der neueste. Weitere Maintainer-Kommentare zählen als Klärungen für die Ausreichend-Prüfung. Reine Effective Flow-Statuskommentare (`<!-- firmo-apply-issues -->`) werden nicht als Anforderung gewertet.
 - **Klassifikation:** Feature / Bugfix / Refactoring / Dokumentation (Definitionen wie in `{{SKILL:plan}}`, Phase 1) und daraus der Ziel-Skill (`{{SKILL:build}}` / `{{SKILL:fix}}` / `{{SKILL:refactor}}` / `{{SKILL:docs}}`).
 - **Ausreichend-Prüfung:** Wendet sinngemäß das „Klärungs-Gate“ auf Issue-Granularität an: Lässt sich aus dem Issue (Body **und Kommentaren**) ein klares Soll-Verhalten und mindestens ein **messbares Akzeptanzkriterium** ableiten, und gibt es genug Datei-/Bereichs-Hinweise, damit der Ziel-Workflow autonom starten kann? Ergebnis: `ausreichend` oder `unzureichend`. Bei `unzureichend`: konkrete Liste des Fehlenden (offene fachliche Fragen, fehlende Akzeptanzkriterien, unklarer Scope).
 - **Prompt-Vorschlag:** direkt verwendbarer Klartext-Auftrag für den Ziel-Skill.
@@ -178,7 +178,7 @@ options:
 
 Die Commit-/PR-Strategie ist standardmäßig **„ein PR pro Issue“** (keine Commit-Strategie-Frage). Jedes umsetzbare Issue ohne Ziel-PR ist eine eigene Sub-Gruppe in einem eigenen Liefer-Branch, bevorzugt mit Worktree-Isolation, analog zum Remote-Modus von `{{SKILL:apply-review}}` (Phase 4 remote): Branch ab dem Basis-Branch aus dem `delivery`-Config-Block (Legacy-Fallback: alte `worktree.baseBranch`/`worktree.branchPrefix`-Werte), ein PR über `{{SKILL:pr}}`. Dateiüberlappende Issues laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden; nicht überlappende laufen parallel.
 
-Wenn ein Issue-Body oder Nicht-Firmo-Kommentar einen Ziel-PR nennt (`Ziel-PR: #<nr>`, `Target PR: #<nr>` oder eine PR-URL), gilt stattdessen **„neuer Commit auf existierendem PR“**:
+Wenn ein Issue-Body oder Nicht-Effective Flow-Kommentar einen Ziel-PR nennt (`Ziel-PR: #<nr>`, `Target PR: #<nr>` oder eine PR-URL), gilt stattdessen **„neuer Commit auf existierendem PR“**:
 
 1. Erstelle keinen neuen Liefer-Branch und keinen neuen PR.
 2. Hole den Head-Branch des Ziel-PRs, checke ihn in einem isolierten Worktree oder im sauberen aktuellen Checkout aus und aktualisiere ihn per normalem Pull/Fetch ohne Rebase- oder Force-Operation.

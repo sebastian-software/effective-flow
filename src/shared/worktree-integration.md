@@ -16,7 +16,7 @@ Branch-/PR-/Merge-Aktion wünscht, verhält sich der Workflow wie ohne diesen Ba
 erzwungene Branch-Erzeugung, keine erzwungenen Commits und keine automatische
 PR-Erstellung.
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Firmo-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
+`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
 `docs/plan`).
 
 ### Rollen der Config-Blöcke
@@ -35,7 +35,7 @@ unterscheiden.
 
 ### Konfiguration
 
-Falls die Firmo-Konfiguration (Projektsetup-ADR) entsprechende Werte festschreibt, überschreiben sie diese Defaults (Schema hier zur Illustration):
+Falls die Effective Flow-Konfiguration (Projektsetup-ADR) entsprechende Werte festschreibt, überschreiben sie diese Defaults (Schema hier zur Illustration):
 
 ```json
 {
@@ -78,7 +78,7 @@ entfernt (siehe „Config-Migration“).
 
 ### Config-Migration
 
-Das Lesen der Firmo-Konfiguration aus der Projektsetup-ADR und die einmalige Konsolidierung
+Das Lesen der Effective Flow-Konfiguration aus der Projektsetup-ADR und die einmalige Konsolidierung
 einer Alt-Config auf das aktuelle Schema – insbesondere das Verschieben alter Lieferwerte aus
 `worktree.baseBranch`/`worktree.branchPrefix`/`worktree.completion` nach `delivery.*` und das
 Entfernen des entwerteten `delivery.enabled` – übernimmt der geteilte Baustein
@@ -188,7 +188,7 @@ lokale Arbeitsdateien zuverlässig außerhalb des PRs.
 
 ### Was im Liefer-Branch liegt und was im Haupt-Repo bleibt
 
-Datenhaltungs-Invariante: **Von den Firmo-Artefakten werden ausschließlich Pläne
+Datenhaltungs-Invariante: **Von den Effective Flow-Artefakten werden ausschließlich Pläne
 committet.** Reviews (lokale Reports) und Investigationen bleiben immer lokal und
 ungetrackt; im Remote-Modus werden Reviews stattdessen als Issues geführt (nie im Repo),
 Investigationen bleiben in jedem Fall rein lokal (siehe „Issue-Tracker-Anbindung“ und
@@ -197,7 +197,7 @@ Investigationen bleiben in jedem Fall rein lokal (siehe „Issue-Tracker-Anbindu
 - **Im Liefer-Branch:** die eigentlichen Code-, Test- und Doku-Deliverables des
   Workflows sowie – sofern der Workflow eine Plan-Datei geführt hat – deren finaler
   Zustand (im umgesetzten Fall die archivierte, umgesetzt-markierte Plan-Datei).
-- **Nur im Haupt-Repo, nie committet:** reine Firmo-Buchhaltung und Laufzeitstatus, also
+- **Nur im Haupt-Repo, nie committet:** reine Effective Flow-Buchhaltung und Laufzeitstatus, also
   alle übrigen `.effective-flow/`-Artefakte – `memory.json`, `cache.json`, lokale Review-Reports
   unter `.effective-flow/review/`, Investigations-Reports unter `.effective-flow/investigation/`,
   Config-Migrationsstatus und Wisdom-Dateien.
@@ -246,7 +246,7 @@ stoppe und melde den Konflikt, statt History zu überschreiben.
    informieren, einen automatisch erzeugten leeren Liefer-Branch entfernen und ohne
    PR/Merge enden.
 3. **Abschluss-Aktion bestimmen:** Wenn `delivery.completion` einen gültigen Wert hat,
-   diesen verwenden und kurz melden, dass die Aktion aus der Firmo-Konfiguration
+   diesen verwenden und kurz melden, dass die Aktion aus der Effective Flow-Konfiguration
    (Projektsetup-ADR) übernommen wurde. Sonst fragen:
 
 ```ask

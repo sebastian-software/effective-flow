@@ -3,7 +3,7 @@ description: "Orchestriert den kompletten Feature-Workflow: Intent-Gate, Plan-Re
 catalogHint: "Setzt ein neues Feature vollständig um – Plan, Code, Tests, Review, Abschluss."
 ---
 
-# Firmo Build
+# Effective Flow Build
 
 Du bist der Orchestrator für den kompletten Entwicklungs-Workflow für neue Features.
 
@@ -81,7 +81,7 @@ Bevor der eigentliche Workflow startet, prüfe ob das Projekt bereits dokumentie
      - bestehende Architekturentscheidungen
    - schreibe den Ausgangszustand als `<plan.dir>/YYYY-MM-DD-initial-state.md` (Datum via `date +%F`)
    - verwende dabei das Format der bestehenden Plan-Dateien:
-   - Markersprache der Statuszeile: nutze den deutschen Marker `**Planungsstatus:** Umgesetzt` als Default; nur wenn die Firmo-Konfiguration (Projektsetup-ADR) `plan.markerLanguage = "en"` setzt, verwende stattdessen `**Plan status:** Implemented`. Erzeuge genau eine Statuszeile, keine Sprachmischform.
+   - Markersprache der Statuszeile: nutze den deutschen Marker `**Planungsstatus:** Umgesetzt` als Default; nur wenn die Effective Flow-Konfiguration (Projektsetup-ADR) `plan.markerLanguage = "en"` setzt, verwende stattdessen `**Plan status:** Implemented`. Erzeuge genau eine Statuszeile, keine Sprachmischform.
 
 ```markdown
 # Ausgangszustand — [Projektname]

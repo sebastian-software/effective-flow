@@ -29,11 +29,11 @@ nie von Hand geschrieben.
 **Inline-Referenzen** stehen mitten im Text (auch im Frontmatter-`description:`-String) und
 nutzen die Mustache-Syntax `{{…}}`:
 
-| Platzhalter   | Bedeutung                      | Ersetzung                                                |
-| ------------- | ------------------------------ | -------------------------------------------------------- |
-| `{{SKILL:X}}` | Tool-Referenz                  | `/firmo X` (exponiert) bzw. `` `tools/X.md` `` (intern)  |
-| `{{AGENT:X}}` | Agent-Referenz                 | `` `X` `` (Codex) bzw. `` `firmo-X` `` (Claude-Subagent) |
-| `{{VERSION}}` | Version inklusive Git-Kurzhash | Manifest-Version + `git rev-parse --short HEAD`          |
+| Platzhalter   | Bedeutung                      | Ersetzung                                                         |
+| ------------- | ------------------------------ | ----------------------------------------------------------------- |
+| `{{SKILL:X}}` | Tool-Referenz                  | `/effective-flow X` (exponiert) bzw. `` `tools/X.md` `` (intern)  |
+| `{{AGENT:X}}` | Agent-Referenz                 | `` `X` `` (Codex) bzw. `` `effective-flow-X` `` (Claude-Subagent) |
+| `{{VERSION}}` | Version inklusive Git-Kurzhash | Manifest-Version + `git rev-parse --short HEAD`                   |
 
 **Block-Direktiven** stehen auf eigenen Zeilen als Code-Fence mit Info-String. Der Fence-Interior
 bleibt gegen den Markdown-Formatter (oxfmt) wortwörtlich erhalten
@@ -79,7 +79,7 @@ Der Build bricht mit einer Fehlermeldung ab, wenn einer dieser Guards verletzt i
 Kurzfassung (kanonisch in [`AGENTS.md`](../../AGENTS.md), Abschnitt „Adding a tool or agent"):
 
 1. Neue Quelldatei unter `src/tools/<name>.md` bzw. `src/agents/<name>.md` anlegen.
-2. Um ein Tool über `/firmo` zu exponieren, den Namen in genau eine Gruppe von `TOOL_GROUPS` in
+2. Um ein Tool über `/effective-flow` zu exponieren, den Namen in genau eine Gruppe von `TOOL_GROUPS` in
    `build.mjs` eintragen (die Array-/Gruppenreihenfolge bestimmt die Katalogreihenfolge im
    Router) und ein strikt gequotetes `catalogHint`-Frontmatter-Feld ergänzen.
 3. `node build.mjs` ausführen. Die oben beschriebenen Guards decken fehlende Quellen, fehlende

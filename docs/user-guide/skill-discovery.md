@@ -1,10 +1,10 @@
 # Skill-Discovery
 
-Firmo-Tools und die Agents, die sie intern aufrufen, arbeiten nicht isoliert: Bevor sie mit
+Effective Flow-Tools und die Agents, die sie intern aufrufen, arbeiten nicht isoliert: Bevor sie mit
 Planung, Umsetzung oder Prüfung beginnen, sichten sie die in deiner Umgebung ohnehin
 verfügbaren Skills (z. B. `humanizer`, `impeccable`, `context7`, `effective-german-typography-skill`)
 und binden die für die konkrete Aufgabe passenden zusätzlich ein. Das ist reine
-Qualitätssteigerung „on top“ – kein Firmo-Tool und kein Firmo-Agent hängt in seiner
+Qualitätssteigerung „on top“ – kein Effective Flow-Tool und kein Effective Flow-Agent hängt in seiner
 Grundfunktion von einem Host-Skill ab.
 
 ## Wie die Erkennung abläuft
@@ -16,7 +16,7 @@ Grundfunktion von einem Host-Skill ab.
    verfügbare, nicht ausgeschlossene Skill der Gruppe wird genommen – nie beide gleichzeitig.
 2. **Relevanz beurteilen.** Jeder Skill wird gegen die konkrete Aufgabe geprüft; es werden
    nur klar passende eingebunden (typisch null bis zwei), nicht „auf Verdacht“.
-3. **Config berücksichtigen.** Der `skills`-Block aus `.firmo/config.json` steuert das
+3. **Config berücksichtigen.** Der `skills`-Block aus `.effective-flow/config.json` steuert das
    Verhalten global sowie – feiner – pro Agent und pro Tool (siehe unten).
 4. **Aktuelle Library-Doku bei Bedarf.** Bei unbekannten oder aktuellen Frameworks/Libraries
    nutzen Tools bei Bedarf Doku-Skills wie `context7`, statt aus dem Trainingsstand zu raten.
@@ -29,12 +29,12 @@ Grundfunktion von einem Host-Skill ab.
    passte.
 
 Stellt deine Umgebung kein Skill-Verzeichnis bereit oder passt keiner der verfügbaren Skills,
-ist dieser gesamte Ablauf ein No-Op: Firmo-Tools laufen unverändert mit ihrer eingebauten
+ist dieser gesamte Ablauf ein No-Op: Effective Flow-Tools laufen unverändert mit ihrer eingebauten
 Anweisung weiter.
 
 ## Steuerung über die Konfiguration
 
-Der Block `skills` in `.firmo/config.json` (vollständige Feldreferenz siehe
+Der Block `skills` in `.effective-flow/config.json` (vollständige Feldreferenz siehe
 [Konfiguration](./konfiguration.md#block-skills)) steuert die dynamische Skill-Nutzung auf
 drei Ebenen:
 
@@ -67,9 +67,9 @@ Beispiel – `humanizer` global bevorzugen, aber für das Tool `docs` deaktivier
 }
 ```
 
-## Materialisierung über `/firmo setup`
+## Materialisierung über `/effective-flow setup`
 
-Im geführten Weg von [`/firmo setup`](./tools-einrichten.md) kannst du dir die eingebauten
+Im geführten Weg von [`/effective-flow setup`](./tools-einrichten.md) kannst du dir die eingebauten
 Fallback-Empfehlungen einzelner Agents sichtbar in die Config schreiben lassen (Abschnitt
 „Erweiterte Einstellungen“). Bei einer Fallback-Empfehlung wie `impeccable › frontend-design`
 wird dabei nur der **primäre** Skill materialisiert (`skills.agents.<name>.include: ["impeccable"]`)
@@ -81,5 +81,5 @@ Empfehlungen der Tools und Agents ohnehin bereits.
 ## Siehe auch
 
 - [Konfiguration](./konfiguration.md) – vollständige Feldreferenz für `skills`
-- [Tools einrichten](./tools-einrichten.md) – `/firmo setup`
+- [Tools einrichten](./tools-einrichten.md) – `/effective-flow setup`
 - [Glossar](./glossar.md) – Skill, Agent, Harness

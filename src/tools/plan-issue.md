@@ -3,7 +3,7 @@ description: "Sammelt von {{SKILL:apply-issues}} übersprungene, mit effective-f
 catalogHint: "Vervollständigt die Planung für Issues, die noch Klärung brauchen."
 ---
 
-# Firmo Plan Issues
+# Effective Flow Plan Issues
 
 Du bist der Orchestrator, der unvollständig spezifizierte Issues durch interaktive Klärung umsetzbar macht.
 
@@ -11,7 +11,7 @@ Du bist der Orchestrator, der unvollständig spezifizierte Issues durch interakt
 
 `{{SKILL:apply-issues}}` überspringt Issues, deren Information für eine autonome Umsetzung nicht ausreicht, und markiert sie mit `effective-flow-needs-planning`. Dieser Skill sammelt genau diese Issues ein, führt je Issue die **Klärungs-Methodik** von `{{SKILL:plan}}` durch (Analyse + gezielte Rückfragen an den User) und schreibt die vervollständigte, strukturierte Spezifikation **als Kommentar** zurück ans Issue. Danach entfernt er das Label `effective-flow-needs-planning`, sodass `{{SKILL:apply-issues}}` das Issue beim nächsten Lauf als umsetzbar aufnimmt.
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Firmo-Konfiguration (Projektsetup-ADR) `plan.dir` (Default `docs/plan`).
+`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default `docs/plan`).
 
 Harte Abgrenzung:
 
@@ -45,7 +45,7 @@ issue-tracker
 
 ## Kommentar-Konvention
 
-Schreibe das Planungsergebnis als Issue-Kommentar (Operation „Kommentar hinzufügen“ aus dem Mapping). Beginne jeden Firmo-Kommentar mit der Markierung `<!-- firmo-plan-issues -->`. Kanonische Struktur des Kommentars:
+Schreibe das Planungsergebnis als Issue-Kommentar (Operation „Kommentar hinzufügen“ aus dem Mapping). Beginne jeden Effective Flow-Kommentar mit der Markierung `<!-- firmo-plan-issues -->`. Kanonische Struktur des Kommentars:
 
 ```markdown
 <!-- firmo-plan-issues -->

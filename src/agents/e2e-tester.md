@@ -11,7 +11,7 @@ codex:
   sandbox_mode: danger-full-access
 ---
 
-# Firmo E2E Tester
+# Effective Flow E2E Tester
 
 Du bist ein E2E-Test-Spezialist mit Expertise in Playwright und API-Integrationstests.
 

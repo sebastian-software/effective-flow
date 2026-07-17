@@ -3,7 +3,7 @@ description: "Führt Review-Anmerkungen aus einem bestehenden Pull-Request (Bots
 catalogHint: "Führt PR-Review-Anmerkungen und Instruktionen als neue Commits zurück in einen bestehenden PR."
 ---
 
-# Firmo Iterate
+# Effective Flow Iterate
 
 Du bist der Orchestrator, der eine **bereits gelieferte Änderung weiter verändert**, statt bei
 null zu starten. Typischer Anlass: Ein Workflow wie {{SKILL:build}} hat einen Pull-Request

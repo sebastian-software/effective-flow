@@ -1,19 +1,19 @@
 ---
-description: "Bereitet ein Zielprojekt für die Nutzung von Firmo vor: trägt `.effective-flow/` komplett und idempotent in die `.gitignore` ein (reines Laufzeit-Verzeichnis) und schreibt die Firmo-Konfiguration über einen geführten Wizard in eine lebende Projektsetup-ADR (Markdown-Tabelle), auf die ein `**Effective Flow project setup:**`-Marker in AGENTS.md verweist. Migriert eine bestehende `.firmo/config.json` einmalig in die ADR und enttrackt sie non-destruktiv. Startet immer von sicheren Defaults, bietet einen Express- und einen geführten Weg, erklärt jede Option auch für Firmo-Neulinge und zeigt bei vorhandener Config die aktuell festgeschriebenen Werte. Pflegt eine bestehende Konfiguration nicht-destruktiv. Verwende diesen Skill für das einmalige Setup oder zum Anpassen der Firmo-Konfiguration."
-catalogHint: "Richtet Firmo im Projekt ein – geführter Wizard, startet mit sicheren Defaults."
+description: "Bereitet ein Zielprojekt für die Nutzung von Effective Flow vor: trägt `.effective-flow/` komplett und idempotent in die `.gitignore` ein (reines Laufzeit-Verzeichnis) und schreibt die Effective Flow-Konfiguration über einen geführten Wizard in eine lebende Projektsetup-ADR (Markdown-Tabelle), auf die ein `**Effective Flow project setup:**`-Marker in AGENTS.md verweist. Migriert eine bestehende `.firmo/config.json` einmalig in die ADR und enttrackt sie non-destruktiv. Startet immer von sicheren Defaults, bietet einen Express- und einen geführten Weg, erklärt jede Option auch für Effective Flow-Neulinge und zeigt bei vorhandener Config die aktuell festgeschriebenen Werte. Pflegt eine bestehende Konfiguration nicht-destruktiv. Verwende diesen Skill für das einmalige Setup oder zum Anpassen der Effective Flow-Konfiguration."
+catalogHint: "Richtet Effective Flow im Projekt ein – geführter Wizard, startet mit sicheren Defaults."
 ---
 
-# Firmo Setup
+# Effective Flow Setup
 
-Du bereitest ein Zielprojekt für die Nutzung von Firmo vor: `.gitignore`-Eintrag für das reine Laufzeit-Verzeichnis `.effective-flow/` und interaktive Pflege der Firmo-Konfiguration in einer lebenden **Projektsetup-ADR** (Default `docs/adr/effective-flow-project-setup.md`), auf die ein Marker in `AGENTS.md` verweist.
+Du bereitest ein Zielprojekt für die Nutzung von Effective Flow vor: `.gitignore`-Eintrag für das reine Laufzeit-Verzeichnis `.effective-flow/` und interaktive Pflege der Effective Flow-Konfiguration in einer lebenden **Projektsetup-ADR** (Default `docs/adr/effective-flow-project-setup.md`), auf die ein Marker in `AGENTS.md` verweist.
 
 ## Ziel
 
 - das Laufzeit-Verzeichnis `.effective-flow/` komplett und idempotent in die `.gitignore` eintragen (nur wenn der Soll-Zustand noch nicht hergestellt ist)
-- die Firmo-Konfiguration über einen geführten Wizard in die Projektsetup-ADR-Tabelle schreiben oder nicht-destruktiv aktualisieren und den `**Effective Flow project setup:**`-Marker in `AGENTS.md` (bzw. `CLAUDE.md`) setzen
+- die Effective Flow-Konfiguration über einen geführten Wizard in die Projektsetup-ADR-Tabelle schreiben oder nicht-destruktiv aktualisieren und den `**Effective Flow project setup:**`-Marker in `AGENTS.md` (bzw. `CLAUDE.md`) setzen
 - eine bestehende `.firmo/config.json` einmalig in die ADR migrieren und anschließend enttracken (Datei-Inhalt auf Platte belassen)
 - immer von sicheren Defaults starten und dem User zwei Wege bieten: **Express** (Defaults übernehmen) oder **Geführt** (jede Option erklärt durchgehen)
-- jede Option so erklären, dass sie auch ohne Vorwissen über die Arbeitsweise von Firmo verständlich ist
+- jede Option so erklären, dass sie auch ohne Vorwissen über die Arbeitsweise von Effective Flow verständlich ist
 - bei einer vorhandenen Config bei jeder Auswahl den aktuell festgeschriebenen Wert anzeigen und vorauswählen
 - keine Projektvalidation wie Linting, Tests oder Build-Checks ausführen
 
@@ -39,7 +39,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Schreiben und b
 
 ## Config-Schema
 
-Die Firmo-Konfiguration ist optional und steuert Defaults der folgenden Blöcke. Ihre Wahrheit ist die Projektsetup-ADR-Tabelle (Encoding und Locator siehe Baustein oben). Die jeweiligen Skills sind die maßgebliche Quelle für gültige Werte und Defaults; dieser Skill fasst sie nur zusammen und darf bei Schema-Erweiterungen nicht als alleinige Wahrheit gelten. Unbekannte Schlüssel einer bestehenden Config bleiben immer erhalten.
+Die Effective Flow-Konfiguration ist optional und steuert Defaults der folgenden Blöcke. Ihre Wahrheit ist die Projektsetup-ADR-Tabelle (Encoding und Locator siehe Baustein oben). Die jeweiligen Skills sind die maßgebliche Quelle für gültige Werte und Defaults; dieser Skill fasst sie nur zusammen und darf bei Schema-Erweiterungen nicht als alleinige Wahrheit gelten. Unbekannte Schlüssel einer bestehenden Config bleiben immer erhalten.
 
 - **`review`** (Quelle: `{{SKILL:review}}`): `profile` (full/focused/fast), `autoConfirmScope` (bool), `designDecisionSources` (full/standard/minimal), `validation` (full/quick/off)
 - **`applyReview`** (Quelle: `{{SKILL:apply-review}}`): `defaultCommitStrategy` (worktrees/single/none/`null` = beim Lauf fragen), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/Befehl)
@@ -111,7 +111,7 @@ Es gibt **kein** `!.effective-flow/config.json`-Ausnahme-Pattern mehr: Die Effec
 ```ask
 when: mehrere ADR-Verzeichnisse existieren und keines eindeutig `docs/adr/` ist
 header: ADR-Ort
-question: In welchem Verzeichnis soll die Firmo-Projektsetup-ADR liegen?
+question: In welchem Verzeichnis soll die Effective Flow-Projektsetup-ADR liegen?
 options:
   - label: docs/adr/
     description: Empfohlener Default für die Projektsetup-ADR
@@ -139,17 +139,17 @@ options:
 
 ### Schritt 3: Express oder Geführt
 
-Erkläre dem User kurz, dass Firmo mit sicheren Defaults sofort einsatzbereit ist und er nur
+Erkläre dem User kurz, dass Effective Flow mit sicheren Defaults sofort einsatzbereit ist und er nur
 dann etwas anpassen muss, wenn er möchte. Biete dann die zwei Wege an:
 
 ```ask
 header: Setup-Weg
-question: Wie möchtest du die Firmo-Konfiguration einrichten?
+question: Wie möchtest du die Effective Flow-Konfiguration einrichten?
 options:
   - label: Express
     description: Sichere Defaults übernehmen (bei vorhandener Config deren aktuelle Werte behalten) — ein Bestätigungsschritt, dann fertig
   - label: Geführt
-    description: Schritt für Schritt durch die Optionen — jede wird erklärt, ideal wenn du Firmo noch nicht kennst
+    description: Schritt für Schritt durch die Optionen — jede wird erklärt, ideal wenn du Effective Flow noch nicht kennst
 ```
 
 - **Express:** Bilde die Zielkonfiguration aus der Sicher-Defaults-Basis (Config-Schema oben)
@@ -164,11 +164,11 @@ options:
 
 Diese vier Schalter bestimmen das Kernverhalten. Stelle **vor** jeder Frage eine kurze,
 verständliche Erklärung voran (was ist das, warum ist es relevant, was bedeutet die Wahl) –
-ohne Vorwissen über Firmo vorauszusetzen – und nenne dabei, ob und mit welchem Wert der
+ohne Vorwissen über Effective Flow vorauszusetzen – und nenne dabei, ob und mit welchem Wert der
 Schalter aktuell in der Config steht (siehe Schritt 2); wähle diesen Wert bzw. den sicheren
 Default vor. Fachbegriffe bei erster Nennung in einem Satz erklären.
 
-**Worktree.** Erkläre: Firmo setzt Änderungen standardmäßig in einem separaten Arbeitsbereich
+**Worktree.** Erkläre: Effective Flow setzt Änderungen standardmäßig in einem separaten Arbeitsbereich
 mit eigenem Branch um (einem „Worktree"), damit dein aktueller Stand unberührt bleibt und die
 Arbeit sauber gebündelt ist; „Nein" arbeitet direkt in deinem aktuellen Checkout.
 
@@ -188,7 +188,7 @@ lässt den Branch nur liegen; „beim Lauf fragen" entscheidet jedes Mal neu.
 
 ```ask
 header: Abschluss
-question: Welche Abschluss-Aktion soll Firmo standardmäßig nutzen?
+question: Welche Abschluss-Aktion soll Effective Flow standardmäßig nutzen?
 options:
   - label: Merge
     description: delivery.completion = merge (Default) — Branch lokal in den Basis-Branch mergen, ohne PR
@@ -243,7 +243,7 @@ header: Erweitert
 question: Möchtest du erweiterte Einstellungen (Review, Apply-Review, Pfade, Feinheiten) anpassen?
 options:
   - label: Nein
-    description: Sichere Defaults bzw. bestehende Werte behalten — empfohlen, wenn du Firmo noch kennenlernst
+    description: Sichere Defaults bzw. bestehende Werte behalten — empfohlen, wenn du Effective Flow noch kennenlernst
   - label: Ja
     description: Die restlichen Optionen einzeln durchgehen, jede erklärt
 ```
@@ -278,7 +278,7 @@ Freitext-Werte (z. B. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir` od
    lebenden ADR-Format:
    - H1 `# Effective Flow project setup`
    - `## Status` mit `Aktiv`
-   - eine kurze `## Kontext`-Prosa (diese ADR hält die getrackte Firmo-Konfiguration; `.effective-flow/` ist reines Laufzeit-Verzeichnis)
+   - eine kurze `## Kontext`-Prosa (diese ADR hält die getrackte Effective Flow-Konfiguration; `.effective-flow/` ist reines Laufzeit-Verzeichnis)
    - `## Konfiguration` mit der Zwei-Spalten-Tabelle `| Schlüssel | Wert |`; je Schlüssel eine Zeile in der Tabellen-Encoding-Form (Boolean, unquoted String, Literal-`null`, `(leer)`, kommagetrennte Liste, dotted keys). Unbekannte Fremd-Schlüssel aus einer vorhandenen Quelle als eigene Zeilen erhalten.
 
    Beispiel-Skelett:
@@ -292,7 +292,7 @@ Freitext-Werte (z. B. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir` od
 
    ## Kontext
 
-   Diese ADR hält die getrackte Firmo-Konfiguration dieses Projekts. `.effective-flow/` ist reines
+   Diese ADR hält die getrackte Effective Flow-Konfiguration dieses Projekts. `.effective-flow/` ist reines
    Laufzeit-Verzeichnis und komplett gitignored.
 
    ## Konfiguration
@@ -307,7 +307,7 @@ Freitext-Werte (z. B. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir` od
 
 5. **AGENTS.md-Marker setzen.** Schreibe die kanonische Zeile `**Effective Flow project setup:** <adr-pfad>` nicht-destruktiv: bevorzugt in eine vorhandene `AGENTS.md`, sonst in eine vorhandene `CLAUDE.md`, sonst lege eine minimale `AGENTS.md` mit dieser Zeile an. Übrigen Inhalt unangetastet lassen; einen vorhandenen (ggf. veralteten) Marker aktualisieren statt duplizieren — das schließt einen Alt-Marker `**Firmo project setup:**` ein, der dabei auf die neue Schreibweise umgestellt wird.
 6. **Migration und Enttracken (nur im Migrationsfall).** Wurde eine Alt-`.firmo/config.json` als Quelle gelesen:
-   - Enttracke sie automatisch mit `git rm --cached .firmo/config.json`; den **Datei-Inhalt auf der Platte belassen** (Firmos Non-Destruktiv-Linie), das Aufräumen dem User überlassen. `git rm --cached` **staged** eine Index-Änderung, erzeugt aber **keinen** Commit — die Setup-Regel „erstellt keine Commits“ bleibt gewahrt.
+   - Enttracke sie automatisch mit `git rm --cached .firmo/config.json`; den **Datei-Inhalt auf der Platte belassen** (Effective Flows Non-Destruktiv-Linie), das Aufräumen dem User überlassen. `git rm --cached` **staged** eine Index-Änderung, erzeugt aber **keinen** Commit — die Setup-Regel „erstellt keine Commits“ bleibt gewahrt.
    - Ist das Projekt kein Git-Repository oder die Datei nicht getrackt, überspringe das Enttracken und melde das.
    - Markiere den Migrationsabschluss idempotent in `.effective-flow/memory.json` unter `configMigration.adr` (`version` z. B. `config-to-adr-v1`, `appliedAt` Zeitstempel), ohne vorhandene `memory.json`-Felder zu verlieren. Ist dieser Marker bereits gesetzt, migriere nicht erneut.
 

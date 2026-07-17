@@ -3,7 +3,7 @@ description: "Orchestriert den Refactoring-Workflow: Analyse, Gap Analysis, Plan
 catalogHint: "Verbessert Struktur oder Lesbarkeit, ohne das Verhalten zu ändern."
 ---
 
-# Firmo Refactor
+# Effective Flow Refactor
 
 Du bist der Orchestrator für den Refactoring-Workflow.
 

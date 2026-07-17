@@ -3,7 +3,7 @@
 Diese Gruppe umfasst genau ein Tool: `review`. Es prüft bestehenden Code auf Qualität und
 liefert strukturierte Findings, die direkt als Input für die Umsetzungs-Tools dienen.
 
-## `/firmo review`
+## `/effective-flow review`
 
 **Zweck:** Orchestriert ein umfassendes Code-Review – oder, wenn das Argument eindeutig auf
 eine Plan-Datei zeigt, einen vertieften interaktiven Plan-Review. Beim Code-Review laufen drei
@@ -19,10 +19,10 @@ geeignet, um einen bestehenden Plan vor der Umsetzung vertieft gegenzuprüfen.
 
 **Typischer Aufruf:**
 
-- `/firmo review` – ohne Argument: reviewt uncommitted Changes, falls vorhanden, sonst den
+- `/effective-flow review` – ohne Argument: reviewt uncommitted Changes, falls vorhanden, sonst den
   gesamten Code
-- `/firmo review <Bereich>` – reviewt nur den beschriebenen Bereich
-- `/firmo review <plandatei>` – startet stattdessen den vertieften interaktiven
+- `/effective-flow review <Bereich>` – reviewt nur den beschriebenen Bereich
+- `/effective-flow review <plandatei>` – startet stattdessen den vertieften interaktiven
   Plan-Review für diese Plan-Datei
 
 **Ein-/Ausgabe:**
@@ -30,19 +30,19 @@ geeignet, um einen bestehenden Plan vor der Umsetzung vertieft gegenzuprüfen.
 - Standard-Finding-Scope ist **nur kritisch + wichtig**; Hinweise erscheinen nur bei
   explizit gewünschtem umfassendem Review.
 - Im lokalen Tracker-Modus (Default): Ausgabe ist ein Bericht unter
-  `.firmo/review/review-report-YYYY-MM-DD[-N].md` mit Finding-Tabelle, Schweregrad,
+  `.effective-flow/review/review-report-YYYY-MM-DD[-N].md` mit Finding-Tabelle, Schweregrad,
   Komplexität, Datei+Zeile, Empfehlung und vorgeschlagener Folgeaktion.
 - Im Remote-Tracker-Modus (`tracker.mode: remote`): kein lokaler Report, stattdessen ein
   Finding-Issue je neuem Finding plus ein Epic-Issue, das sie bündelt; bereits vorhandene
   Findings werden dedupliziert.
 - Findings werden fortlaufend nummeriert (`R-0000001`, `R-0000002`, …) und in
-  `.firmo/memory.json` verfolgt.
+  `.effective-flow/memory.json` verfolgt.
 
 **Zusammenspiel:** Jedes Finding trägt eine Empfehlung für die passende Folgeaktion –
-`/firmo fix` (Defekt), `/firmo refactor` (Strukturproblem), `/firmo build` (fehlende
-Funktionalität) oder `/firmo docs` (Dokumentationslücke). Der entstandene Report bzw. das
-Epic wird typischerweise über `/firmo apply` aufgegriffen. Verhalten und Tiefe des Reviews
-lassen sich über `review.profile` (`full`/`focused`/`fast`) in `.firmo/config.json` steuern,
+`/effective-flow fix` (Defekt), `/effective-flow refactor` (Strukturproblem), `/effective-flow build` (fehlende
+Funktionalität) oder `/effective-flow docs` (Dokumentationslücke). Der entstandene Report bzw. das
+Epic wird typischerweise über `/effective-flow apply` aufgegriffen. Verhalten und Tiefe des Reviews
+lassen sich über `review.profile` (`full`/`focused`/`fast`) in `.effective-flow/config.json` steuern,
 siehe [Konfiguration](konfiguration.md). Der Remote-Modus ist in
 [Remote-Tracker](remote-tracker.md) beschrieben.
 
