@@ -42,7 +42,7 @@ const DIST_ROOT = join(ROOT_DIR, 'dist');
 const DIST_TMP = join(ROOT_DIR, 'dist.tmp');
 const DIST_BAK = join(ROOT_DIR, 'dist.bak');
 
-const FIRMO_SKILL_NAME = 'firmo';
+const FIRMO_SKILL_NAME = 'effective-flow';
 const DIST_CODEX = join(DIST_TMP, 'codex');
 const DIST_CLAUDE = join(DIST_TMP, 'claude');
 const CODEX_SKILL_DIR = join(DIST_CODEX, FIRMO_SKILL_NAME);
@@ -51,7 +51,7 @@ const CLAUDE_SKILL_DIR = join(DIST_CLAUDE, FIRMO_SKILL_NAME);
 // separately as registered subagents (installed into ~/.claude/agents),
 // namespaced with a `firmo-` prefix to avoid collisions with other agents.
 const CLAUDE_AGENTS_DIR = join(DIST_CLAUDE, 'agents');
-const CLAUDE_AGENT_PREFIX = 'firmo-';
+const CLAUDE_AGENT_PREFIX = 'effective-flow-';
 
 // The tools exposed via `/firmo <tool>`, grouped by user intent. The router
 // catalog renders these groups (title + optional "when" line + tools); the flat
@@ -180,6 +180,7 @@ try {
   const refConfig = {
     exposedTools: EXPOSED_TOOLS,
     agentPrefix: CLAUDE_AGENT_PREFIX,
+    skillName: FIRMO_SKILL_NAME,
     knownTools,
     knownAgents,
   };
@@ -259,9 +260,11 @@ try {
   });
 
   const skillInvocation = (harness, name) =>
-    harness === 'codex' ? `$firmo ${name}` : `/firmo ${name}`;
+    harness === 'codex' ? `$${FIRMO_SKILL_NAME} ${name}` : `/${FIRMO_SKILL_NAME} ${name}`;
   const routerDescForHarness = (harness) =>
-    harness === 'codex' ? routerDesc.replaceAll('/firmo', '$firmo') : routerDesc;
+    harness === 'codex'
+      ? routerDesc.replaceAll(`/${FIRMO_SKILL_NAME}`, `$${FIRMO_SKILL_NAME}`)
+      : routerDesc;
   const catalogForHarness = (harness) =>
     TOOL_GROUPS.map((group) => {
       const lines = [`### ${group.title}`];
@@ -388,7 +391,7 @@ try {
 const exposedCount = tools.filter((t) => EXPOSED_TOOLS.includes(t.name)).length;
 const internalCount = tools.length - exposedCount;
 
-process.stdout.write('Built firmo skill:\n');
+process.stdout.write(`Built ${FIRMO_SKILL_NAME} skill:\n`);
 process.stdout.write(
   `  Claude Code: ${exposedCount} tools (+${internalCount} internal) -> dist/claude/${FIRMO_SKILL_NAME}/, ${agents.length} agents -> dist/claude/agents/${CLAUDE_AGENT_PREFIX}*.md\n`,
 );
