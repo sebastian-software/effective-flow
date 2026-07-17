@@ -7,7 +7,7 @@ INSTALL_MODE=copy
 . "$ROOT_DIR/local-common.sh"
 
 if [ "$#" -gt 0 ]; then
-  firmo_deploy
+  effective_flow_deploy
 else
-  firmo_install_latest_release
+  effective_flow_install_latest_release
 fi
