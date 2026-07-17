@@ -44,6 +44,15 @@ eingereicht werden sollen, statt sie direkt zu mergen.
 Basis-Branch (Default aus `delivery.baseBranch`, Legacy-Fallback `worktree.baseBranch`, sonst
 `main`). Ausgabe ist die PR-URL, der Branch-Name und der finale lokale Checkout-Zustand.
 
+**Conventional-Commit-Titel:** `pr` erzwingt einen PR-Titel mit gültigem Conventional-Commit-Typ
+(`feat:`, `fix:`, `docs:`, `refactor:`, …), abgeleitet nach der **Wirkung** der Änderung bzw. dem
+auslösenden Workflow; ein bereits gültiger, selbst gesetzter Titel bleibt erhalten. Das ist
+wichtig, weil Repositories mit **Squash-Merge** den PR-Titel als Subject des einzigen Commits auf
+dem Zielbranch übernehmen: Dort ist der PR-Titel Teil des Release-Vertrags, und
+**release-please** leitet den Versions-Bump daraus ab. Ein untypisierter Titel führt trotz grüner
+CI zu einem stillen No-Op-Release (keine Version, keine Auslieferung) – deshalb normalisiert `pr`
+den Titel und fragt nur bei echter Mehrdeutigkeit nach.
+
 **Zusammenspiel:** `pr` ist eine der drei möglichen Abschluss-Aktionen
 (`delivery.completion: pr`), die `/effective-flow build`, `/effective-flow fix`, `/effective-flow refactor`,
 `/effective-flow docs` und `/effective-flow maintain` am Ende ihres Delivery-/Worktree-Handbacks auslösen

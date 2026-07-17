@@ -276,8 +276,10 @@ options:
      hinter seinem Remote-Tracking-Ref, darauf hinweisen. Den Liefer-Branch mergen –
      Fast-Forward bevorzugen, sonst Merge-Commit; bei Konflikt stoppen, Branch
      belassen und User informieren, keine automatische Konfliktauflösung.
-   - `pr`: an `{{SKILL:pr}}` delegieren und Liefer-Branch sowie Basis-Branch
-     übergeben.
+   - `pr`: an `{{SKILL:pr}}` delegieren und Liefer-Branch, Basis-Branch sowie den
+     Workflow-/Änderungstyp (`feat`/`fix`/`refactor`/`docs`/`chore` je nach umsetzendem
+     Workflow und Wirkung) als Titel-Typ-Hinweis übergeben, damit der PR-Titel einen
+     gültigen Conventional-Commit-Typ trägt — bei Squash-Merge ist er das Release-Signal.
 6. **Checkout zurückstellen:** Nach erfolgreicher PR-Erstellung oder bei `branch` auf
    `delivery.returnBranch` bzw. bei `auto` auf den lokalen Branch-Anteil von
    `delivery.baseBranch` zurückwechseln, sofern der Arbeitsbaum sauber ist. Wenn der
