@@ -132,7 +132,7 @@ Erkenntnisse aus früheren Phasen müssen an spätere Phasen weitergegeben werde
 
 Erzeuge zu Beginn eine Session-ID, zum Beispiel via Timestamp. Verwende sie in:
 
-- `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md`
+- `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
 ### Protokoll
 
@@ -357,10 +357,10 @@ Hinweis: Vor Abschluss muss die Spalte „Offen“ für „Kritisch“ 0 sein.
    - Begründung bei Nicht-Umsetzung (inkl. ADR-Referenz als Slug, falls vorhanden, z. B. `(ADR: <slug>)`)
 8. Lege in diesem Workflow niemals ein ADR an und frage auch nicht danach. Bewusst nicht umgesetzte Findings werden ausschließlich im Review-Report dokumentiert. Über die spätere Umsetzung oder über ein ADR für eine bewusste Nicht-Umsetzung entscheidet der Entwickler beim Durchgehen der Findings-Datei, typischerweise via {{SKILL:apply-review}}.
 9. Wenn nach Review Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
-   - schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.firmo/review/`
+   - schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.effective-flow/review/`
    - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-<slug>.md`
    - halte den erzeugten Reportpfad für Phase 7 fest
-10. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.firmo/review/` umgesetzt hat:
+10. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.effective-flow/review/` umgesetzt hat:
 
 - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
 - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
@@ -397,7 +397,7 @@ Hinweis: Vor Abschluss muss die Spalte „Offen“ für „Kritisch“ 0 sein.
 | Behoben | X |
 | Offen / Nicht umgesetzt | Y |
 
-**Externer Review-Report:** `.firmo/review/review-report-YYYY-MM-DD-plan-<slug>.md` <!-- nur ausgeben, wenn offene Findings ausgelagert wurden -->
+**Externer Review-Report:** `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>.md` <!-- nur ausgeben, wenn offene Findings ausgelagert wurden -->
 
 Keine Findings gefunden. <!-- nur ausgeben, wenn keine Findings aufgekommen sind -->
 ```

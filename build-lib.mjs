@@ -150,9 +150,7 @@ export function getNestedList(frontmatter, section, key, { context } = {}) {
 }
 
 export function cleanDescription(desc) {
-  return desc
-    .replace(/\{\{SKILL:([^}]+)\}\}/g, '$1')
-    .replace(/\{\{AGENT:([^}]+)\}\}/g, '$1');
+  return desc.replace(/\{\{SKILL:([^}]+)\}\}/g, '$1').replace(/\{\{AGENT:([^}]+)\}\}/g, '$1');
 }
 
 export function firstSentence(text) {

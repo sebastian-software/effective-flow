@@ -47,7 +47,7 @@ doc-categories
 - Wenn der User während dieses Skills Implementierung verlangt, verweise je nach empfohlener Umsetzung auf `{{SKILL:build}}`, `{{SKILL:fix}}`, `{{SKILL:refactor}}` oder `{{SKILL:docs}}` und beende diesen Skill nach dem Plan.
 
 ```include
-firmo-dir-migration
+effective-flow-dir-migration
 ```
 
 ## Projektkonventionen

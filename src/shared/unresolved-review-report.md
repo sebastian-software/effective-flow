@@ -1,6 +1,6 @@
 ## Offene Review-Finding-Reports
 
-Wenn ein Workflow-Review Findings erzeugt, die vor Abschluss nicht direkt behoben werden, schreibe diese offenen Findings zusätzlich in eine Review-Report-Datei unter `.firmo/review/`.
+Wenn ein Workflow-Review Findings erzeugt, die vor Abschluss nicht direkt behoben werden, schreibe diese offenen Findings zusätzlich in eine Review-Report-Datei unter `.effective-flow/review/`.
 
 Ziel:
 
@@ -22,13 +22,13 @@ Nicht in den externen Report übernehmen:
 
 ### Report-Pfad
 
-1. Erstelle `.firmo/review/` falls nötig.
+1. Erstelle `.effective-flow/review/` falls nötig.
 2. Wenn der Workflow eine Plan-Datei als Grundlage hat, verwende bevorzugt:
-   - `.firmo/review/review-report-YYYY-MM-DD-plan-<slug>.md`
-   - bei Kollision: `.firmo/review/review-report-YYYY-MM-DD-plan-<slug>-1.md`, `-2`, ...
+   - `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>.md`
+   - bei Kollision: `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>-1.md`, `-2`, ...
 3. Wenn keine Plan-Datei als Grundlage existiert, verwende:
-   - `.firmo/review/review-report-YYYY-MM-DD-WORKFLOW.md`
-   - bei Kollision: `.firmo/review/review-report-YYYY-MM-DD-WORKFLOW-1.md`, `-2`, ...
+   - `.effective-flow/review/review-report-YYYY-MM-DD-WORKFLOW.md`
+   - bei Kollision: `.effective-flow/review/review-report-YYYY-MM-DD-WORKFLOW-1.md`, `-2`, ...
 4. Schreibe oben im Report immer die Herkunft:
    - `**Ursprungsplan:** [Pfad oder „Keiner"]`
    - `**Quell-Workflow:** {{SKILL:build}} / {{SKILL:fix}} / {{SKILL:refactor}} / {{SKILL:maintain}}`
@@ -38,10 +38,10 @@ Nicht in den externen Report übernehmen:
 
 Dieser Report verwendet dieselben globalen Finding-IDs wie `{{SKILL:review}}`.
 
-1. Lies `.firmo/memory.json`, falls vorhanden.
+1. Lies `.effective-flow/memory.json`, falls vorhanden.
 2. Falls die Datei fehlt, starte mit `lastFindingNumber: 0`.
 3. Nummeriere neue Findings fortlaufend ab `lastFindingNumber + 1` mit sieben Stellen, z. B. `R-0000021`.
-4. Schreibe nach dem Report die höchste vergebene Nummer zurück nach `.firmo/memory.json`.
+4. Schreibe nach dem Report die höchste vergebene Nummer zurück nach `.effective-flow/memory.json`.
 5. Erhalte vorhandene Felder wie `configMigration` unverändert.
 6. Wenn Memory nicht geschrieben werden kann, informiere den User und nenne den Reportpfad trotzdem.
 

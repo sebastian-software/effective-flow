@@ -18,7 +18,7 @@ Wenn der Tracker-Modus `remote` ist (siehe „Issue-Tracker-Anbindung (Remote-Mo
 
 Klassifiziere das übergebene Argument über die „Apply-Quellen-Erkennung“ (Stufe A und – für Issue-Referenzen – Stufe B) und leite Modus und Sub-Modus aus dem Quelltyp ab:
 
-- **`review-report`** (Report-Datei unter `.firmo/review/`) → `local` (bisheriges Verhalten, unverändert).
+- **`review-report`** (Report-Datei unter `.effective-flow/review/`) → `local` (bisheriges Verhalten, unverändert).
 - **`review-epic`** (Issue mit `firmo-review-epic`-Label, Alt `sf-review-epic` gleichwertig) → `remote`, **Epic-Modus**: alle im Epic verlinkten Finding-Issues abarbeiten.
 - **`review-finding`** (ein einzelnes Finding-Issue oder eine Liste von Finding-Issue-Referenzen) → `remote`, **Issue-Listen-Modus**: nur genau diese Findings abarbeiten. Das zugehörige Epic je Finding wird für das spätere Abhaken aus dem Sub-Issue ermittelt (`Epic`-Feld/Referenz), sofern vorhanden.
 - **`remote` ohne Argument** → offene Epics auflisten und den User wählen lassen.

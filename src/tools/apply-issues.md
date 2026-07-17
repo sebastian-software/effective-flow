@@ -45,7 +45,7 @@ goal-completion
 
 ## Wisdom Accumulation
 
-Verwende `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
+Verwende `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
 
 - die aufgelöste Arbeitsliste (Issue-Nummer, optionale Epic-Referenz)
 - die Analyse pro Issue (Klassifikation, ausreichend/unzureichend, Ziel-Skill, Prompt-Vorschlag, Konfidenz, Fehlendes)

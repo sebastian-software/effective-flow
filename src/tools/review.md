@@ -67,7 +67,7 @@ Tasks werden an **zwei** Zeitpunkten angelegt, weil der Verzeichnis-Split in Pha
 - Aktualisiere Tasks zeitnah, sobald ein Sub-Agent meldet — nicht gebatched.
 
 ```include
-firmo-dir-migration
+effective-flow-dir-migration
 ```
 
 ## Projektkonventionen
@@ -101,15 +101,15 @@ Projekt-Typ-Erkennung wie bei `{{SKILL:build}}`. Das Reviewer-Routing samt Verze
 
 ## Firmo-Konfiguration und Memory
 
-Firmo-interne Dateien liegen unter `.firmo/` im Projekt-Root.
+Firmo-interne Dateien liegen unter `.effective-flow/` im Projekt-Root.
 
 - Konfiguration: Firmo-Konfiguration aus der Projektsetup-ADR (siehe Baustein „Config-Migration“)
-- Memory-Datei: `.firmo/memory.json`
-- Cache-Datei: `.firmo/cache.json`
-- Review-Reports: `.firmo/review/`
-- Temporäre Wisdom-Dateien: `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md`
+- Memory-Datei: `.effective-flow/memory.json`
+- Cache-Datei: `.effective-flow/cache.json`
+- Review-Reports: `.effective-flow/review/`
+- Temporäre Wisdom-Dateien: `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
-Die Datei `.firmo/memory.json` speichert persistente Zustände über Sessions hinweg. Im Gegensatz zur Wisdom-Datei wird sie nie gelöscht.
+Die Datei `.effective-flow/memory.json` speichert persistente Zustände über Sessions hinweg. Im Gegensatz zur Wisdom-Datei wird sie nie gelöscht.
 
 ### Inhalt
 
@@ -176,7 +176,7 @@ Das Lesen der Firmo-Konfiguration aus der Projektsetup-ADR (inklusive der `revie
 
 ### Cache-Datei
 
-Persistente Cache-Daten liegen ausschließlich in `.firmo/cache.json`, nicht in `.firmo/memory.json` und nicht dauerhaft in Wisdom-Dateien.
+Persistente Cache-Daten liegen ausschließlich in `.effective-flow/cache.json`, nicht in `.effective-flow/memory.json` und nicht dauerhaft in Wisdom-Dateien.
 
 `review` darf diese Cache-Bereiche verwenden:
 
@@ -196,18 +196,18 @@ Regeln:
 
 ### Git-Tracking
 
-Ob `.firmo/` eingecheckt oder ignoriert wird, entscheidet das jeweilige Projekt selbst. Der Skill ändert keine `.gitignore`-Dateien in Zielprojekten.
+Ob `.effective-flow/` eingecheckt oder ignoriert wird, entscheidet das jeweilige Projekt selbst. Der Skill ändert keine `.gitignore`-Dateien in Zielprojekten.
 
 ### Verwendung
 
-1. Erstelle `.firmo/` bei Bedarf.
-2. Lies `.firmo/memory.json` beim Start des Review-Workflows.
-3. Falls `.firmo/memory.json` nicht existiert, aber die alte Datei `.sf-memory.json` vorhanden ist: migriere deren Inhalt nach `.firmo/memory.json`, entferne `.sf-memory.json` erst nach erfolgreichem Schreiben und weise den User darauf hin.
+1. Erstelle `.effective-flow/` bei Bedarf.
+2. Lies `.effective-flow/memory.json` beim Start des Review-Workflows.
+3. Falls `.effective-flow/memory.json` nicht existiert, aber die alte Datei `.sf-memory.json` vorhanden ist: migriere deren Inhalt nach `.effective-flow/memory.json`, entferne `.sf-memory.json` erst nach erfolgreichem Schreiben und weise den User darauf hin.
 4. Falls keine Memory-Datei existiert, starte mit `lastFindingNumber: 0`.
 5. Lies die Firmo-Konfiguration aus der Projektsetup-ADR, falls vorhanden (Migration einer Alt-Config über den Baustein „Config-Migration“).
-6. Lies `.firmo/cache.json`, falls vorhanden und gültig; verwende nur valide, nicht veraltete Cache-Einträge.
+6. Lies `.effective-flow/cache.json`, falls vorhanden und gültig; verwende nur valide, nicht veraltete Cache-Einträge.
 7. Nummeriere neue Findings fortlaufend ab `lastFindingNumber + 1` mit 7-stelliger Formatierung: `R-0000001`, `R-0000002`, ...
-8. Schreibe nach Erstellung des Berichts die höchste vergebene Finding-Nummer zurück in `.firmo/memory.json`. Erhalte dabei `configMigration` und andere vorhandene Memory-Felder. Die Memory-Datei muss geschrieben werden, bevor der Workflow mit `ERLEDIGT` abgeschlossen wird. Falls der Schreibvorgang fehlschlägt, weise den User darauf hin.
+8. Schreibe nach Erstellung des Berichts die höchste vergebene Finding-Nummer zurück in `.effective-flow/memory.json`. Erhalte dabei `configMigration` und andere vorhandene Memory-Felder. Die Memory-Datei muss geschrieben werden, bevor der Workflow mit `ERLEDIGT` abgeschlossen wird. Falls der Schreibvorgang fehlschlägt, weise den User darauf hin.
 
 ```include
 config-migration
@@ -219,7 +219,7 @@ issue-tracker
 
 ## Wisdom Accumulation
 
-Erzeuge zu Beginn von Phase 1 eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen, falls mehrere Review-Runs parallel laufen.
+Erzeuge zu Beginn von Phase 1 eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen, falls mehrere Review-Runs parallel laufen.
 
 Die Wisdom-Datei transportiert die Outputs der parallelen Phase-2-Streams zwischen den Phasen:
 
@@ -301,7 +301,7 @@ Starte für jede aktive Quelle einen eigenen Sub-Agenten **parallel**. Jeder Sub
 - Konventions-Dateien — `CLAUDE.md`, `AGENTS.md`, vergleichbare Konventionsdateien
 - Code-Kommentare — `@design-decision`, `DELIBERATE`, `INTENTIONAL`, `DESIGN:`
 - Lint-Suppressions mit Begründung — `eslint-disable ... -- [Grund]`, `@ts-expect-error [Grund]`
-- Vorherige Review-Reports — `.firmo/review/review-report-*.md`
+- Vorherige Review-Reports — `.effective-flow/review/review-report-*.md`
 
 Nicht aktive Quellen werden nicht durchsucht und im Wisdom-Abschnitt mit „übersprungen durch Profil“ dokumentiert. Verwende valide `designDecisions`-Cache-Einträge pro Quelle, wenn ihre Invalidierungsdaten noch passen; andernfalls berechne die Quelle neu und aktualisiere den Cache nach erfolgreicher Extraktion.
 
@@ -379,11 +379,11 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 
 ### Phase 4: Bericht
 
-Phase 4 verzweigt nach dem in Phase 1 bestimmten Tracker-Modus. Im lokalen Modus wird wie bisher ein Markdown-Report geschrieben. Im Remote-Modus wird **kein** lokaler Report geschrieben; stattdessen werden Finding-Issues und ein Epic-Issue angelegt. Die Finding-Nummerierung aus `.firmo/memory.json` gilt in beiden Modi.
+Phase 4 verzweigt nach dem in Phase 1 bestimmten Tracker-Modus. Im lokalen Modus wird wie bisher ein Markdown-Report geschrieben. Im Remote-Modus wird **kein** lokaler Report geschrieben; stattdessen werden Finding-Issues und ein Epic-Issue angelegt. Die Finding-Nummerierung aus `.effective-flow/memory.json` gilt in beiden Modi.
 
 #### Lokaler Modus
 
-1. Erstelle einen Bericht als `.firmo/review/review-report-YYYY-MM-DD[-N].md`. Erstelle `.firmo/review/` falls nicht vorhanden. Verwende das untenstehende Bericht-Format.
+1. Erstelle einen Bericht als `.effective-flow/review/review-report-YYYY-MM-DD[-N].md`. Erstelle `.effective-flow/review/` falls nicht vorhanden. Verwende das untenstehende Bericht-Format.
 2. Wenn der aktive Finding-Scope nur kritische und wichtige Findings umfasst (Standard):
    - nimm Hinweise nicht in den Hauptbericht auf
    - erwähne kurz, dass Hinweise ausgefiltert wurden und ein umfassendes Review auf Wunsch möglich ist
@@ -405,7 +405,7 @@ Verwende die Formate, Labels und Operationen aus „Issue-Tracker-Anbindung (Rem
 7. Melde dem User Epic-URL, Anzahl neu angelegter und Anzahl deduplizierter Findings.
 8. Lösche die Wisdom-Datei.
 
-**Abschlussbedingung (ohne Autonom-Loop):** Das Review ist abgeschlossen, wenn die in Phase 3 qualitätsgeprüften und gegen Designentscheidungen gefilterten Findings vorliegen — im lokalen Modus im Bericht, im Remote-Modus als Finding-Issues plus Epic (bzw. mit der Meldung, dass alle Findings bereits existieren) —, `.firmo/memory.json` mit der höchsten vergebenen Finding-Nummer geschrieben ist und die Wisdom-Datei gelöscht wurde. Die unabhängige Prüfung leistet die Findings-Qualitätsprüfung in Phase 3 (Konfidenzfilter, Duplikat- und Schweregrad-Konsistenz). Dieser Workflow erzeugt nur einen Bericht und setzt nichts um; deshalb gibt es weder einen beschränkten Korrektur-Loop noch einen `/goal`-String.
+**Abschlussbedingung (ohne Autonom-Loop):** Das Review ist abgeschlossen, wenn die in Phase 3 qualitätsgeprüften und gegen Designentscheidungen gefilterten Findings vorliegen — im lokalen Modus im Bericht, im Remote-Modus als Finding-Issues plus Epic (bzw. mit der Meldung, dass alle Findings bereits existieren) —, `.effective-flow/memory.json` mit der höchsten vergebenen Finding-Nummer geschrieben ist und die Wisdom-Datei gelöscht wurde. Die unabhängige Prüfung leistet die Findings-Qualitätsprüfung in Phase 3 (Konfidenzfilter, Duplikat- und Schweregrad-Konsistenz). Dieser Workflow erzeugt nur einen Bericht und setzt nichts um; deshalb gibt es weder einen beschränkten Korrektur-Loop noch einen `/goal`-String.
 
 ### Bericht-Format
 

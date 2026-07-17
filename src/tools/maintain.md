@@ -30,7 +30,7 @@ config-migration
 ```
 
 ```include
-firmo-dir-migration
+effective-flow-dir-migration
 ```
 
 ## Empfohlene Skills
@@ -55,7 +55,7 @@ worktree-integration
 
 ## Wisdom Accumulation
 
-Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
+Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
 
 Inhalte:
 
@@ -182,7 +182,7 @@ Nur wenn in Phase 3 Code für Breaking Changes angepasst wurde:
 
 1. Starte den passenden Reviewer für die geänderten Dateien (`{{AGENT:frontend-reviewer}}`, `{{AGENT:nodejs-reviewer}}` bzw. `{{AGENT:rust-reviewer}}`).
 2. Behebe kritische Findings vor dem Abschluss.
-3. Wenn Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben, schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.firmo/review/` und nenne den Reportpfad in der Abschlusszusammenfassung.
+3. Wenn Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben, schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.effective-flow/review/` und nenne den Reportpfad in der Abschlusszusammenfassung.
 
 Reine Dependency-Bumps ohne Code-Anpassung brauchen kein Reviewer-Pass; vermerke das kurz.
 

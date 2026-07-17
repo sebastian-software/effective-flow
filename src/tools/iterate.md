@@ -55,7 +55,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 Vorgaben für Implementierung, Commits, Branch-/PR-Konventionen und Qualitätskriterien.
 
 ```include
-firmo-dir-migration
+effective-flow-dir-migration
 ```
 
 ```include
@@ -77,7 +77,7 @@ pr-review-comments
 ## Wisdom Accumulation
 
 Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp) und verwende
-`.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
+`.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
 
 - aufgelösten PR (Nummer, Head-/Basis-Branch, URL) bzw. den Local-Ziel-Diff
 - gelesene Review-Threads mit Autor, Datei/Zeile und Resolved-Status

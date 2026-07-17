@@ -19,7 +19,7 @@ im jeweiligen Skill.
 | Typ               | Bedeutung                                                                                      | Zuständiger Skill                              |
 | ----------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------- |
 | `plan`            | Plan-Datei unter `<plan.dir>/`                                                                 | `{{SKILL:apply-plan}}`                         |
-| `review-report`   | Review-Report-Datei unter `.firmo/review/`                                                     | `{{SKILL:apply-review}}` (lokal)               |
+| `review-report`   | Review-Report-Datei unter `.effective-flow/review/`                                            | `{{SKILL:apply-review}}` (lokal)               |
 | `review-epic`     | Tracking-/Epic-Issue eines `{{SKILL:review}}`-Laufs                                            | `{{SKILL:apply-review}}` (remote, Epic)        |
 | `review-finding`  | einzelnes Finding-Issue eines `{{SKILL:review}}`-Laufs                                         | `{{SKILL:apply-review}}` (remote, Issue-Liste) |
 | `container-issue` | generisches Issue mit Sub-Issue-Checkliste, ohne Review-Label (`firmo-review-*`/`sf-review-*`) | `{{SKILL:apply-issues}}`                       |
@@ -41,7 +41,7 @@ Typ in dieser Reihenfolge (erste zutreffende Regel gewinnt):
    Datums-Slug-Dateiname (`YYYY-MM-DD-…md`), Legacy-Nummer ohne Pfad (`NNNN`, primär
    über die H1 aufgelöst) oder – als Fallback – der Titel-Slug.
 3. **Review-Report** → `review-report`, wenn das Argument ein `*.md`-Pfad unter
-   `.firmo/review/` ist (bzw. ein Dateiname, der sich dort auflöst).
+   `.effective-flow/review/` ist (bzw. ein Dateiname, der sich dort auflöst).
 4. **Issue-Referenz** → `issue-reference` (weiter mit Stufe B), wenn das Argument eine
    bare Issue-Nummer (`123`), ein `#123` oder eine Issue-URL ist. Issue-URLs sind
    hostneutral: erkenne `https://<host>/<owner>/<repo>/issues/<nr>` und vergleichbare
@@ -52,7 +52,7 @@ Typ in dieser Reihenfolge (erste zutreffende Regel gewinnt):
    fragt nach (siehe „Mehrdeutigkeit und Fallbacks“).
 
 Trennschärfe Plan vs. Report: primär über das Verzeichnis (`<plan.dir>/` bzw.
-`<plan.dir>/archive/` vs. `.firmo/review/`), sekundär über den Kopf-Inhalt
+`<plan.dir>/archive/` vs. `.effective-flow/review/`), sekundär über den Kopf-Inhalt
 (Planstatus-Marker `**Planungsstatus:**` / `**Plan status:**` vs.
 `### [R-XXXXXXX]`-Finding-Blöcke). Eine vierstellige Nummer ohne Pfad ist immer eine
 (Legacy-)Plan-Referenz, nie eine Issue-Referenz.
@@ -107,7 +107,7 @@ Argumenttyp.
 
 - **`none` (kein Argument):** nicht heuristisch das „neueste“ wählen. Der Aufrufer
   listet lokale Kandidaten (offene Pläne aus `<plan.dir>/`, Report-Dateien unter
-  `.firmo/review/`) und fragt nach der konkreten Quelle. Ist der effektive
+  `.effective-flow/review/`) und fragt nach der konkreten Quelle. Ist der effektive
   Tracker-Modus `remote`, listet er zusätzlich offene Review-Epics (Label
   `firmo-review-epic`, inkl. Alt `sf-review-epic`) als Kandidaten, da im
   Remote-Modus keine lokalen Report-Dateien existieren.

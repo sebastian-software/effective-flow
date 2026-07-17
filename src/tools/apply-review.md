@@ -8,7 +8,7 @@ Du bist der Orchestrator für die automatisierte Umsetzung von Review-Report-Fin
 
 ## Ziel
 
-Dieser Workflow liest eine bestehende Review-Report-Datei aus `.firmo/review/` ein, wertet die Entwickler-Anmerkungen pro Finding aus und delegiert die Umsetzung an die passenden Workflows. Findings, die bewusst nicht umgesetzt werden sollen, werden als ADRs dokumentiert.
+Dieser Workflow liest eine bestehende Review-Report-Datei aus `.effective-flow/review/` ein, wertet die Entwickler-Anmerkungen pro Finding aus und delegiert die Umsetzung an die passenden Workflows. Findings, die bewusst nicht umgesetzt werden sollen, werden als ADRs dokumentiert.
 
 Im **Remote-Modus** (Tracker-Modus `remote`) liest der Workflow die Findings stattdessen aus einem Issue-Tracker: übergeben wird ein Epic-Issue oder eine Liste konkreter Finding-Issues, pro Finding entsteht ein PR, und der Epic-Eintrag wird nach PR-Erstellung abgehakt. Die Abweichungen sind in „Remote-Modus (Issue-Tracker)“ gebündelt; `wontfix`-Findings ersetzen dort die ablehnende Entwickler-Anmerkung.
 
@@ -68,7 +68,7 @@ Lege gleich zu Beginn von Phase 1 (nach erfolgreicher Report-Klassifikation) fol
 - Aktualisiere Tasks zeitnah: jeder Lifecycle-Wechsel direkt nach dem Ereignis (nicht gebatched am Phasen-Ende).
 
 ```include
-firmo-dir-migration
+effective-flow-dir-migration
 ```
 
 ## Projektkonventionen
@@ -85,7 +85,7 @@ goal-completion
 
 ## Wisdom Accumulation
 
-Verwende `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
+Verwende `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
 
 - Stash-Baseline aus Phase 1 (Liste der bereits vorhandenen Stash-Referenzen mit Beschreibungen und Commit-Hashes)
 - Vorabanalyse pro Finding aus Phase 4.1 (betroffene Dateien, Root Cause / Anforderung, Implementierungsskizze, Risiken, Konfidenz)
@@ -98,13 +98,13 @@ Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lös
 
 ## Firmo-Konfiguration
 
-Firmo-interne Dateien liegen unter `.firmo/` im Projekt-Root.
+Firmo-interne Dateien liegen unter `.effective-flow/` im Projekt-Root.
 
 - Konfiguration: Firmo-Konfiguration aus der Projektsetup-ADR (siehe Baustein „Config-Migration“)
-- Memory-Datei: `.firmo/memory.json`
-- Cache-Datei: `.firmo/cache.json`
-- Review-Reports: `.firmo/review/`
-- Temporäre Wisdom-Dateien: `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md`
+- Memory-Datei: `.effective-flow/memory.json`
+- Cache-Datei: `.effective-flow/cache.json`
+- Review-Reports: `.effective-flow/review/`
+- Temporäre Wisdom-Dateien: `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
 `apply-review` funktioniert ohne festgeschriebene Konfiguration. Falls die Firmo-Konfiguration (Projektsetup-ADR) Apply-Review-Werte festschreibt, überschreiben sie die Defaults (Schema hier zur Illustration):
 
@@ -115,7 +115,7 @@ Firmo-interne Dateien liegen unter `.firmo/` im Projekt-Root.
     "finalValidation": "full",
     "stashPolicy": "interactive",
     "worktree": {
-      "baseDir": ".firmo/.worktrees",
+      "baseDir": ".effective-flow/.worktrees",
       "setup": "auto"
     }
   }
@@ -127,7 +127,7 @@ Fehlende Werte haben diese Defaults:
 - `applyReview.defaultCommitStrategy`: nicht gesetzt (Commit-Strategie wird gefragt)
 - `applyReview.finalValidation`: `full`
 - `applyReview.stashPolicy`: `interactive` (heutiges interaktives Pro-Stash-Nachfragen)
-- `applyReview.worktree.baseDir`: `.firmo/.worktrees`
+- `applyReview.worktree.baseDir`: `.effective-flow/.worktrees`
 - `applyReview.worktree.setup`: `auto`
 
 Gültige Werte:
@@ -143,7 +143,7 @@ Das Lesen der Firmo-Konfiguration aus der Projektsetup-ADR (inklusive der `apply
 
 ### Cache-Datei
 
-Persistente Cache-Daten liegen ausschließlich in `.firmo/cache.json`, nicht in `.firmo/memory.json` und nicht dauerhaft in Wisdom-Dateien.
+Persistente Cache-Daten liegen ausschließlich in `.effective-flow/cache.json`, nicht in `.effective-flow/memory.json` und nicht dauerhaft in Wisdom-Dateien.
 
 `apply-review` darf diesen Cache-Bereich verwenden:
 
@@ -166,20 +166,20 @@ apply-source-detection
 
 ## Remote-Modus (Issue-Tracker)
 
-Ist der Tracker-Modus `remote` (das Argument ist ein Epic- oder Finding-Issue), lies **vor** dem lokalen Report-Fluss die interne Teil-Datei `tools/apply-review-remote.md` und befolge sie. Sie enthält die Issue-Tracker-Anbindung sowie den kompletten Remote-Ablauf (Phase 1–8 remote) und ersetzt bzw. ergänzt die entsprechenden lokalen Schritte. Im lokalen Modus (Report-Datei unter `.firmo/review/`) wird sie nicht geladen.
+Ist der Tracker-Modus `remote` (das Argument ist ein Epic- oder Finding-Issue), lies **vor** dem lokalen Report-Fluss die interne Teil-Datei `tools/apply-review-remote.md` und befolge sie. Sie enthält die Issue-Tracker-Anbindung sowie den kompletten Remote-Ablauf (Phase 1–8 remote) und ersetzt bzw. ergänzt die entsprechenden lokalen Schritte. Im lokalen Modus (Report-Datei unter `.effective-flow/review/`) wird sie nicht geladen.
 
 ## Workflow
 
 ### Phase 1: Report einlesen und validieren
 
-Bestimme zuerst den Tracker-Modus über die „Apply-Quellen-Erkennung“ (Report-Datei unter `.firmo/review/` → `local`; Epic-/Finding-Issue → `remote`). Ist er `remote`, lies und befolge die interne Teil-Datei `tools/apply-review-remote.md` (Phase 1 remote und folgende) statt der Report-Datei-Schritte 4–7 unten; die Config-, Stash- und Cache-Schritte gelten weiterhin.
+Bestimme zuerst den Tracker-Modus über die „Apply-Quellen-Erkennung“ (Report-Datei unter `.effective-flow/review/` → `local`; Epic-/Finding-Issue → `remote`). Ist er `remote`, lies und befolge die interne Teil-Datei `tools/apply-review-remote.md` (Phase 1 remote und folgende) statt der Report-Datei-Schritte 4–7 unten; die Config-, Stash- und Cache-Schritte gelten weiterhin.
 
 1. Lade Firmo-Konfiguration, migriere sie falls nötig und bestimme Commit-Strategie-Default, Stash-Policy, Worktree-Defaults und finales Validierungsprofil.
-2. Lies `.firmo/cache.json`, falls vorhanden und gültig. Verwende nur valide `applyReviewAnalysis`-Einträge.
+2. Lies `.effective-flow/cache.json`, falls vorhanden und gültig. Verwende nur valide `applyReviewAnalysis`-Einträge.
 3. **Stash-Baseline erfassen:** Führe `git stash list` aus und merke dir die vollständige Liste der bereits vorhandenen Stash-Referenzen (z. B. `stash@{0}`, `stash@{1}`, ... mit ihren Beschreibungen). Halte die Baseline in der Wisdom-Datei fest, damit Phase 6 (Stash-Bereinigung) später neue, durch diesen Workflow entstandene Stashes davon abgrenzen kann. Falls `git stash list` leer ist: notiere „keine Baseline-Stashes“.
 4. Bestimme die Report-Datei:
    - falls als Argument übergeben: verwende diese Datei
-   - sonst: suche nach `.firmo/review/review-report-*.md` in `.firmo/review/`
+   - sonst: suche nach `.effective-flow/review/review-report-*.md` in `.effective-flow/review/`
    - bei mehreren Reports: frage den User welcher verwendet werden soll
    - falls kein Report gefunden: Fehlermeldung und Abbruch
 5. **Lies die Datei frisch ein.** Da die Datei zwischen Konversationen gelöscht und neu erstellt werden kann, darf kein zuvor eingelesener Inhalt verwendet werden. Lies die Datei immer direkt vom Dateisystem.
@@ -374,7 +374,7 @@ Beispiel: Aktionsgruppe `{{SKILL:fix}}` mit fünf Findings:
    - die zugehörige Vorabanalyse aus Phase 4.1 als **inline-Kontext-Block** im Prompt — nicht als Verweis auf die Wisdom-Datei. Die Sub-Skills lesen die Wisdom-Datei nicht; sie verarbeiten nur den Prompt-Inhalt. Bette die Vorabanalyse vollständig ein, etwa unter der Überschrift `Vorabanalyse für dieses Finding:`.
    - die Entwickler-Anmerkung (falls vorhanden)
    - die Commit-Strategie aus Phase 2
-   - **Bei Commit-Strategie „Einzeln“:** die vollständige Git-Commit-Mutex-Regel aus `tools/apply-review-commit-mechanics.md`. Der Sub-Agent muss jeden Finding-Commit unter `.firmo/apply-review-commit.lock` ausführen, darf nur Finding-eigene Dateien stage-en und darf niemals `git add .`, `git add -A` oder `git commit -a` verwenden.
+   - **Bei Commit-Strategie „Einzeln“:** die vollständige Git-Commit-Mutex-Regel aus `tools/apply-review-commit-mechanics.md`. Der Sub-Agent muss jeden Finding-Commit unter `.effective-flow/apply-review-commit.lock` ausführen, darf nur Finding-eigene Dateien stage-en und darf niemals `git add .`, `git add -A` oder `git commit -a` verwenden.
    - **Bei Commit-Strategie „Einzeln mit Worktrees“:** die vollständige Git-Worktree-Isolation-Regel aus `tools/apply-review-commit-mechanics.md`. Der Sub-Agent arbeitet ausschließlich im zugewiesenen Worktree, committet dort jedes Finding einzeln und protokolliert Commit-Hashes in der Wisdom-Datei. Der Sub-Agent darf nicht in den ursprünglichen Worktree wechseln.
    - den Auftrag, den passenden Skill aufzurufen:
      - Aktion fix: `Verwende den Skill {{SKILL:fix}} für dieses Finding.`
@@ -552,4 +552,4 @@ options:
 - Überspringe bereits umgesetzte Findings (mit ✅) ohne Meldung
 - Gib internen Sub-Agenten das Fertig-Protokoll vor
 - Schreibe nach jeder abgeschlossenen Phase ein Wisdom-Summary
-- Dieser Skill vergibt keine neuen Finding-IDs. Falls zukünftig neue Findings erstellt werden sollen, muss `.firmo/memory.json` gelesen und aktualisiert werden (siehe `{{SKILL:review}}`)
+- Dieser Skill vergibt keine neuen Finding-IDs. Falls zukünftig neue Findings erstellt werden sollen, muss `.effective-flow/memory.json` gelesen und aktualisiert werden (siehe `{{SKILL:review}}`)

@@ -42,7 +42,7 @@ je Divergenzpunkt:
   ermitteln — genau der Kontext-Overhead, den Firmo vermeidet.
 - **Config-Werte in der ADR.** Für den eng umrissenen Fall „Projektsetup“ ist die Kolokation
   von Wert und Kurzbegründung in **einer** getrackten, menschenlesbaren Quelle gewollt — nur
-  so kann `.firmo/` komplett gitignored werden.
+  so kann `.effective-flow/` komplett gitignored werden.
 - **Nummernlos/Slug und ein Bündel-Record.** Slug-Referenzen sind stabil; die
   Locator-Auffindbarkeit (ein Marker → eine Datei) und der kleine Kontext wiegen hier
   schwerer als „eine Entscheidung pro Record“.

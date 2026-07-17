@@ -48,7 +48,7 @@ Falls die Firmo-Konfiguration (Projektsetup-ADR) entsprechende Werte festschreib
   "worktree": {
     "enabled": true,
     "setup": "auto",
-    "baseDir": ".firmo/.worktrees"
+    "baseDir": ".effective-flow/.worktrees"
   }
 }
 ```
@@ -61,7 +61,7 @@ Fehlende Werte haben diese Defaults:
 - `delivery.returnBranch`: `"auto"` (lokaler Branch-Anteil aus `delivery.baseBranch`)
 - `worktree.enabled`: `true` (Umsetzung läuft in einem eigenen Worktree)
 - `worktree.setup`: `"auto"`
-- `worktree.baseDir`: `.firmo/.worktrees`
+- `worktree.baseDir`: `.effective-flow/.worktrees`
 
 Gültige Werte:
 
@@ -126,7 +126,7 @@ Wenn Delivery oder Worktree aktiv ist:
 Wenn Worktree-Ausführung aktiv ist:
 
 1. Repo-Namen bestimmen aus `basename "$(git rev-parse --show-toplevel)"` und als
-   BaseDir `worktree.baseDir` (Default `.firmo/.worktrees`) verwenden. Worktree-Pfad:
+   BaseDir `worktree.baseDir` (Default `.effective-flow/.worktrees`) verwenden. Worktree-Pfad:
    `BASE_DIR/REPO_NAME/SESSION_ID`.
 2. Worktree und Liefer-Branch erzeugen:
    `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> <BASE_REF>`.
@@ -183,7 +183,7 @@ Der Ablauf:
 
 Nicht erlaubt ist eine heuristische Teil-Diff-Auswahl nach „alle geänderten Dateien
 außer <plan.dir>“. Der Workflow muss die einzuschließenden Dateien kennen oder
-nachfragen. Dadurch bleiben parallel neu angelegte Pläne, `.firmo/`-State und andere
+nachfragen. Dadurch bleiben parallel neu angelegte Pläne, `.effective-flow/`-State und andere
 lokale Arbeitsdateien zuverlässig außerhalb des PRs.
 
 ### Was im Liefer-Branch liegt und was im Haupt-Repo bleibt
@@ -198,8 +198,8 @@ Investigationen bleiben in jedem Fall rein lokal (siehe „Issue-Tracker-Anbindu
   Workflows sowie – sofern der Workflow eine Plan-Datei geführt hat – deren finaler
   Zustand (im umgesetzten Fall die archivierte, umgesetzt-markierte Plan-Datei).
 - **Nur im Haupt-Repo, nie committet:** reine Firmo-Buchhaltung und Laufzeitstatus, also
-  alle übrigen `.firmo/`-Artefakte – `memory.json`, `cache.json`, lokale Review-Reports
-  unter `.firmo/review/`, Investigations-Reports unter `.firmo/investigation/`,
+  alle übrigen `.effective-flow/`-Artefakte – `memory.json`, `cache.json`, lokale Review-Reports
+  unter `.effective-flow/review/`, Investigations-Reports unter `.effective-flow/investigation/`,
   Config-Migrationsstatus und Wisdom-Dateien.
 
 ### Handback und Abschluss-Aktion (Abschlussphase)
@@ -229,7 +229,7 @@ stoppe und melde den Konflikt, statt History zu überschreiben.
    - Lief die Umsetzung in einem Worktree oder Teil-Diff-Worktree, stelle diesen finalen,
      archivierten und umgesetzt-markierten Zustand im Worktree bereit (unter
      `<plan.dir>/archive/<datei>`). Markierung und Verschiebung werden **mitcommittet** und
-     sind damit Teil des PRs/Merges (Umsetzungs-Doku). Die `.firmo/`-Artefakte bleiben im
+     sind damit Teil des PRs/Merges (Umsetzungs-Doku). Die `.effective-flow/`-Artefakte bleiben im
      Haupt-Repo.
    - Führte der Workflow keine Plan-Datei, entfällt dieser Schritt.
    - Läuft der Workflow ausnahmsweise In-Place ohne Delivery (kein Worktree, keine
