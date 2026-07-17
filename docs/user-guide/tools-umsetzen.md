@@ -130,8 +130,11 @@ Dokument innerhalb einer der vier Kategorien (`docs/user-guide/`, `docs/develope
 danach.
 
 **Zusammenspiel:** Nutzt für User-Doku den `docs-writer`-Agent, für In-Code-Dokumentation den
-`code-documenter`-Agent. Details zur Kategorie- und Namenskonvention siehe
-[Plan-Konventionen](../developer-guide/plan-konventionen.md).
+`code-documenter`-Agent. Beide arbeiten sprachübergreifend und dokumentieren im idiomatischen
+Format der Zielsprache – JSDoc/TSDoc für JS/TS, rustdoc-Doc-Comments und Crate-/Modul-Doku für
+Rust; in gemischten Rust/JS-Repos routet die Doku per Datei/Domäne, und bei Cargo-Projekten
+prüft der `code-validator` zusätzlich `cargo doc` und Doctests. Details zur Kategorie- und
+Namenskonvention siehe [Plan-Konventionen](../developer-guide/plan-konventionen.md).
 
 ## `/effective-flow maintain`
 
