@@ -41,7 +41,7 @@ der übrige Laufzeit-Status – bewusst – lokal und ungetrackt bleibt.
 
 ## Vollständiges Beispiel
 
-Die folgende Datei zeigt alle Blöcke mit ihren jeweiligen Defaultwerten:
+Die folgende Datei zeigt alle Blöcke mit beispielhaften Werten. Bis auf eine Ausnahme entsprechen sie den jeweiligen Defaults; `plan.markerLanguage` hat **keinen** festen Default – der hier gezeigte Wert `"de"` ist nur ein Beispiel. Tatsächlich wird die Marker-Sprache aus vorhandenen Plänen erkannt und fällt ohne eindeutiges Signal auf `en` zurück (siehe [Block `plan`](#block-plan)).
 
 ```json
 {

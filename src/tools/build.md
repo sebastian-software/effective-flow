@@ -81,7 +81,7 @@ Bevor der eigentliche Workflow startet, prüfe ob das Projekt bereits dokumentie
      - bestehende Architekturentscheidungen
    - schreibe den Ausgangszustand als `<plan.dir>/YYYY-MM-DD-initial-state.md` (Datum via `date +%F`)
    - verwende dabei das Format der bestehenden Plan-Dateien:
-   - Markersprache der Statuszeile: nutze den deutschen Marker `**Planungsstatus:** Umgesetzt` als Default; nur wenn die Effective Flow-Konfiguration (Projektsetup-ADR) `plan.markerLanguage = "en"` setzt, verwende stattdessen `**Plan status:** Implemented`. Erzeuge genau eine Statuszeile, keine Sprachmischform.
+   - Markersprache der Statuszeile: bestimme sie nach demselben Verfahren wie `{{SKILL:plan}}` (`plan.markerLanguage` aus der Effective Flow-Konfiguration (Projektsetup-ADR) → Auto-Detection aus vorhandenen Plänen → Englisch als Fallback). Da diese initiale Zustandsdokumentation nur entsteht, wenn noch **keine** Plan-Dateien existieren, greift die Detection nicht; es gilt also: `plan.markerLanguage` falls gesetzt (`"de"` → `**Planungsstatus:** Umgesetzt`, `"en"` → `**Plan status:** Implemented`), sonst der englische Marker `**Plan status:** Implemented`. Erzeuge genau eine Statuszeile, keine Sprachmischform. Der Beispielblock unten zeigt exemplarisch den deutschen Marker; ersetze die Statuszeile durch den so bestimmten Marker.
 
 ```markdown
 # Ausgangszustand — [Projektname]
