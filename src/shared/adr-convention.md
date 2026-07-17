@@ -29,25 +29,69 @@ Nummer auflösbar**. Es gibt **keine** verpflichtende Bulk-Umbenennung; Alt-ADRs
 angetastet. Neue ADRs entstehen ausschließlich im lebenden Slug-Format. Das spiegelt Effective Flows
 etablierte Kompatibilitätslinie (Plan-Nummern per H1, `firmo-`/`effective-flow-`-Labels).
 
-### Abweichung vom `decision-records`-Skill
+### Verhältnis zum `decision-records`-Skill (deklarierte Konvention + Fallback)
 
-Der Host-Skill `decision-records` definiert ADRs als _immutabel-nach-accepted_,
-_nummeriert_, _eine-Entscheidung-pro-Record_ und _nur Rationale, keine Config-Werte_. Effective Flow
-weicht hier **bewusst** ab; diese Konvention hat für Effective Flow-erzeugte ADRs Vorrang. Begründung
-je Divergenzpunkt:
+Das oben beschriebene lebende Slug-Modell ist die **deklarierte ADR-Konvention dieses
+Repos**. Der Host-Skill `decision-records` ist der Domänen-Owner für die ADR-Craft (ob eine
+Entscheidung überhaupt ADR-würdig ist, Lifecycle, Supersession, Index); seine erste
+Operating-Regel ist, **die vorhandene Repo-Konvention zu entdecken und ihr zu folgen**, statt
+eine eigene zu erzwingen. Genau dieser Baustein ist diese Konvention — der Skill autort
+Effective-Flow-ADRs also im lebenden Slug-Format (Ort/Dateiname/Titel/Status/Mutabilität wie
+oben), nicht in einem immutabel-nummerierten.
 
-- **Mutabilität (lebend statt Supersede-Kette).** Effective Flow optimiert auf kleinen, eindeutigen
-  LLM-Lesekontext. „Die aktuelle Datei = die Wahrheit“ ist ein trivialer Read; eine
-  Supersede-Historie zwänge jeden Leser, erst den gültigen Record aus einer Kette zu
-  ermitteln — genau der Kontext-Overhead, den Effective Flow vermeidet.
-- **Config-Werte in der ADR.** Für den eng umrissenen Fall „Projektsetup“ ist die Kolokation
-  von Wert und Kurzbegründung in **einer** getrackten, menschenlesbaren Quelle gewollt — nur
-  so kann `.effective-flow/` komplett gitignored werden.
-- **Nummernlos/Slug und ein Bündel-Record.** Slug-Referenzen sind stabil; die
-  Locator-Auffindbarkeit (ein Marker → eine Datei) und der kleine Kontext wiegen hier
-  schwerer als „eine Entscheidung pro Record“.
+Damit gilt der geschichtete Vertrag (siehe `skill-discovery.md`):
 
-**Koexistenz.** Wo ein Projekt lieber das klassische `decision-records`-Modell fährt, kann es
-den Skill für Effective Flow-Agents und -Tools gezielt über die `skills`-Config (`include`/`exclude`,
-auch per-Agent/-Tool) zu- oder abschalten. Effective Flows eigene ADR-Konvention bleibt davon
-unberührt.
+- **`decision-records` maßgeblich, wenn vorhanden.** Der Skill entscheidet, **ob** ein Finding
+  eine dauerhafte Entscheidung ist, und autort — falls ja — nach der hier deklarierten
+  Konvention. Deklariert das Zielrepo eine **eigene** ADR-Konvention (anderes Verzeichnis,
+  Titel-/Status-Format, Index), folgt der Skill dieser; das lebende Slug-Modell ist nur der
+  Default, wenn das Repo nichts anderes deklariert.
+- **Minimaler Fallback, wenn der Skill fehlt.** Ist `decision-records` nicht verfügbar (nicht
+  installiert, `skills.enabled: false` oder via `exclude` deaktiviert), autort das
+  aufrufende Tool selbst nach der **minimalen Fallback-Struktur** unten — **kein** stilles
+  Erfinden einer zweiten Konvention.
+
+Frühere Fassungen dieses Bausteins beschrieben das Slug-Modell als **bewusste Abweichung**
+gegenüber einem angeblich immutabel/nummerierten `decision-records`-Skill. Diese Prämisse ist
+überholt: `decision-records` unterstützt inzwischen ein deklariert-lebendes/mutables Modell
+(opt-in) und folgt ohnehin der Repo-Konvention. Das lebende Slug-Modell ist deshalb keine
+Divergenz mehr, sondern die vom Skill befolgte deklarierte Konvention.
+
+**Koexistenz.** Wo ein Projekt lieber ein anderes ADR-Modell fährt, deklariert es dessen
+Konvention im Zielrepo (der Skill folgt ihr) oder schaltet `decision-records` gezielt über die
+`skills`-Config (`include`/`exclude`, auch per-Agent/-Tool) zu oder ab.
+
+### Minimale Fallback-Struktur (nur ohne `decision-records`)
+
+Kurze Kern-Struktur, damit ein aufrufendes Tool eine abgelehnte Entscheidung auch ohne den
+Skill als lebende Slug-ADR festhalten kann — **kein** zweites vollständiges ADR-Handbuch. Ort
+und Form wie unter „Form und Ort“; die Datei vor dem Schreiben frisch einlesen und eine
+thematisch passende bestehende ADR in-place aktualisieren statt zu duplizieren:
+
+```markdown
+# [Titel der Entscheidung]
+
+## Status
+
+Nicht umgesetzt
+
+## Kontext
+
+[Herkunft: Review-Report + Finding-ID, bzw. Issue-/Epic-Nummer im Remote-Modus]
+
+## Entscheidung
+
+[Kurzbegründung, warum nicht umgesetzt wird]
+
+## Begründung
+
+[Vollständige Entwickler-Anmerkung bzw. `wontfix`-Begründung]
+
+## Quell-Finding
+
+[Finding-ID] aus [Quelle]: [Kurzfassung des Problems]  <!-- nachverfolgbarer Backlink -->
+```
+
+Nur **dauerhafte** Entscheidungen werden so festgehalten; eine reine Delivery-Ablehnung ohne
+dauerhafte Architektur-Wirkung bleibt im Review-Report bzw. Tracker-Artefakt und wird nicht in
+eine ADR gezwungen.

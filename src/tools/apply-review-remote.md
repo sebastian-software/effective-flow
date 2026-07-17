@@ -56,9 +56,9 @@ Hat ein Finding einen Ziel-PR aus Phase 1 remote, gilt stattdessen **„neuer Co
 
 Findings mit demselben Ziel-PR laufen sequenziell, damit neue Commits geordnet auf demselben PR-Branch entstehen. Findings ohne Ziel-PR behalten die Standard-Strategie „ein PR pro Finding“. Die Stash-Policy und der `/goal`-String werden wie im lokalen Modus behandelt.
 
-### Phase 3 remote: ADR referenziert Issue
+### Phase 3 remote: Abgelehntes Finding → Entscheidungs-Kandidat
 
-Für jedes `wontfix`-Finding eine lebende, slug-benannte ADR erstellen bzw. aktualisieren wie in Phase 3 (`adr-convention.md`), jedoch mit Bezug auf Issue-Nummer und Epic statt auf ein Report-Finding (Kontext: `Issue #<nr>` und `Epic #<nr>`). Es wird **kein** nummeriertes ADR angelegt. Markiere das Finding im Epic später per Slug-Referenz als `- [x] … — nicht umgesetzt (ADR: <slug>)`.
+Für jedes `wontfix`-Finding gilt dieselbe Ownership-Regel wie in Phase 3 (lokal): den Kandidaten an `decision-records` delegieren (Skill entscheidet, ob ein ADR gerechtfertigt ist, und autort nach der entdeckten Repo-Konvention; minimaler living-slug-Fallback aus `adr-convention.md`, wenn der Skill fehlt). Der Kontext des Kandidaten referenziert hier **Issue-Nummer und Epic** (`Issue #<nr>` und `Epic #<nr>`) statt eines Report-Findings; die `wontfix`-Begründung ersetzt die Entwickler-Anmerkung. Es wird **kein** nummeriertes ADR angelegt. Entsteht eine dauerhafte ADR, markiere das Finding im Epic später per Slug-Referenz als `- [x] … — nicht umgesetzt (ADR: <slug>)`; stuft der Skill die Ablehnung als nicht-dauerhaft ein, bleibt sie ohne ADR am Issue/Epic dokumentiert (`- [x] … — nicht umgesetzt (siehe Issue-Begründung)`).
 
 ### Phase 4 remote: Umsetzung, PR und Epic-Abhaken
 
@@ -73,7 +73,7 @@ Pro umsetzbarem Finding, in dessen Worktree:
 
 ### Phase 5 remote: Tracking-Oberfläche statt Report
 
-Es wird keine Report-Datei aktualisiert. Stelle stattdessen sicher, dass alle Epic-Checkboxen und Sub-Issue-Kommentare/Labels den Endstand widerspiegeln (umgesetzt → abgehakt mit PR-Link, `wontfix` → abgehakt mit ADR-Referenz).
+Es wird keine Report-Datei aktualisiert. Stelle stattdessen sicher, dass alle Epic-Checkboxen und Sub-Issue-Kommentare/Labels den Endstand widerspiegeln (umgesetzt → abgehakt mit PR-Link; `wontfix` mit dauerhafter Entscheidung → abgehakt mit ADR-Referenz; `wontfix` ohne dauerhafte Entscheidung → abgehakt mit Verweis auf die Issue-Begründung, ohne ADR).
 
 ### Phase 7/8 remote
 

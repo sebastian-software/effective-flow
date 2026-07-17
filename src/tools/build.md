@@ -294,8 +294,10 @@ skill-discovery
 
 Starte wenn möglich parallel:
 
-1. `{{AGENT:code-documenter}}` für JSDoc/TSDoc und In-Code-Dokumentation aller neuen oder geänderten Exports
-2. `{{AGENT:docs-writer}}` für README/Guide-Updates, falls die Änderung nutzerrelevant ist
+1. `{{AGENT:code-documenter}}` für In-Code-Dokumentation aller neuen oder geänderten Exports – JSDoc/TSDoc bei JS/TS, rustdoc-Doc-Comments (`///`/`//!`) bei Rust
+2. `{{AGENT:docs-writer}}` für README/Guide-Updates, falls die Änderung nutzerrelevant ist (bei Rust inkl. Crate-/Modul-Doku)
+
+Weise die Doku-Phase nach demselben Projekt-Typ an wie Implementierung und Review (siehe „Routing nach Projekt-Typ“). In gemischten Rust/JS-Repos (Projekt-Typ Fullstack) routet die Doku **per Datei/Domäne**: Rust-Dateien mit rustdoc-Konventionen, JS/TS-Dateien wie bisher.
 
 Überspringe User-Doku nur mit kurzer Begründung.
 

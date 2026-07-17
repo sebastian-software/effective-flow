@@ -58,6 +58,7 @@ Additiv zur JS/TS-Logik: Wenn das Projekt eine `Cargo.toml` enthält (Cargo-Proj
 - Type-/Build-Check: `cargo check` bzw. `cargo build`
 - Linting: `cargo clippy --all-targets` (Warnungen als solche kennzeichnen)
 - Formatierung: `cargo fmt --check`
+- Doku-Validierung (wenn verfügbar): `cargo doc --no-deps` prüft, dass die rustdoc-Doku fehlerfrei baut; `cargo test --doc` führt die Doctests aus. Behandle beide wie Build-/Test-Checks und führe sie nur bei vorhandener `Cargo.toml` aus.
 
 In gemischten Repos (Rust **und** JS/TS) beide Toolchains nebeneinander ausführen und im Report getrennt ausweisen. Führe Cargo-Kommandos nur aus, wenn eine `Cargo.toml` vorhanden ist.
 
