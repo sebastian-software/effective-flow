@@ -1,6 +1,6 @@
 ## Apply-Quellen-Erkennung
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Firmo-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
+`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
 `docs/plan`).
 
 Dieser geteilte Baustein ist die einzige Quelle der Wahrheit dafür, **welcher
@@ -16,14 +16,14 @@ im jeweiligen Skill.
 
 ### Kanonische Quelltypen
 
-| Typ               | Bedeutung                                                                                      | Zuständiger Skill                              |
-| ----------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `plan`            | Plan-Datei unter `<plan.dir>/`                                                                 | `{{SKILL:apply-plan}}`                         |
-| `review-report`   | Review-Report-Datei unter `.firmo/review/`                                                     | `{{SKILL:apply-review}}` (lokal)               |
-| `review-epic`     | Tracking-/Epic-Issue eines `{{SKILL:review}}`-Laufs                                            | `{{SKILL:apply-review}}` (remote, Epic)        |
-| `review-finding`  | einzelnes Finding-Issue eines `{{SKILL:review}}`-Laufs                                         | `{{SKILL:apply-review}}` (remote, Issue-Liste) |
-| `container-issue` | generisches Issue mit Sub-Issue-Checkliste, ohne Review-Label (`firmo-review-*`/`sf-review-*`) | `{{SKILL:apply-issues}}`                       |
-| `plain-issue`     | frei geschriebenes Menschen-Issue                                                              | `{{SKILL:apply-issues}}`                       |
+| Typ               | Bedeutung                                                                                                  | Zuständiger Skill                              |
+| ----------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `plan`            | Plan-Datei unter `<plan.dir>/`                                                                             | `{{SKILL:apply-plan}}`                         |
+| `review-report`   | Review-Report-Datei unter `.effective-flow/review/`                                                        | `{{SKILL:apply-review}}` (lokal)               |
+| `review-epic`     | Tracking-/Epic-Issue eines `{{SKILL:review}}`-Laufs                                                        | `{{SKILL:apply-review}}` (remote, Epic)        |
+| `review-finding`  | einzelnes Finding-Issue eines `{{SKILL:review}}`-Laufs                                                     | `{{SKILL:apply-review}}` (remote, Issue-Liste) |
+| `container-issue` | generisches Issue mit Sub-Issue-Checkliste, ohne Review-Label (`effective-flow-review-*`/`firmo-review-*`) | `{{SKILL:apply-issues}}`                       |
+| `plain-issue`     | frei geschriebenes Menschen-Issue                                                                          | `{{SKILL:apply-issues}}`                       |
 
 Sonderergebnisse: `none` (kein/leeres Argument) und `ambiguous` (nicht eindeutig
 auflösbar). `issue-reference` ist ein **Zwischenergebnis** aus Stufe A für eine noch
@@ -41,7 +41,7 @@ Typ in dieser Reihenfolge (erste zutreffende Regel gewinnt):
    Datums-Slug-Dateiname (`YYYY-MM-DD-…md`), Legacy-Nummer ohne Pfad (`NNNN`, primär
    über die H1 aufgelöst) oder – als Fallback – der Titel-Slug.
 3. **Review-Report** → `review-report`, wenn das Argument ein `*.md`-Pfad unter
-   `.firmo/review/` ist (bzw. ein Dateiname, der sich dort auflöst).
+   `.effective-flow/review/` ist (bzw. ein Dateiname, der sich dort auflöst).
 4. **Issue-Referenz** → `issue-reference` (weiter mit Stufe B), wenn das Argument eine
    bare Issue-Nummer (`123`), ein `#123` oder eine Issue-URL ist. Issue-URLs sind
    hostneutral: erkenne `https://<host>/<owner>/<repo>/issues/<nr>` und vergleichbare
@@ -52,7 +52,7 @@ Typ in dieser Reihenfolge (erste zutreffende Regel gewinnt):
    fragt nach (siehe „Mehrdeutigkeit und Fallbacks“).
 
 Trennschärfe Plan vs. Report: primär über das Verzeichnis (`<plan.dir>/` bzw.
-`<plan.dir>/archive/` vs. `.firmo/review/`), sekundär über den Kopf-Inhalt
+`<plan.dir>/archive/` vs. `.effective-flow/review/`), sekundär über den Kopf-Inhalt
 (Planstatus-Marker `**Planungsstatus:**` / `**Plan status:**` vs.
 `### [R-XXXXXXX]`-Finding-Blöcke). Eine vierstellige Nummer ohne Pfad ist immer eine
 (Legacy-)Plan-Referenz, nie eine Issue-Referenz.
@@ -68,8 +68,8 @@ um eine Issue-Referenz als Fremdtyp zu erkennen und weiterzuleiten.
 Lies je Issue Labels und Body **einmal frisch** vom Tracker und bestimme den Subtyp in
 dieser Präzedenz – **Label vor Body-Struktur**:
 
-1. Label `firmo-review-epic` (oder Alt `sf-review-epic`) → `review-epic`.
-2. Label `firmo-review-finding` (oder Alt `sf-review-finding`) → `review-finding`.
+1. Label `effective-flow-review-epic` (oder Alt `firmo-review-epic`) → `review-epic`.
+2. Label `effective-flow-review-finding` (oder Alt `firmo-review-finding`) → `review-finding`.
 3. kein Review-Label, aber der Body enthält eine Sub-Issue-Checkliste
    (`- [ ] #NNN …` / `- [x] #NNN …`) → `container-issue`.
 4. sonst → `plain-issue`.
@@ -79,8 +79,8 @@ Sekundärsignal bei fehlendem Label (z. B. manuell entfernt): ein Titel im Forma
 `review-finding` behandelt. Bleibt der Subtyp danach unklar → `ambiguous`.
 
 Warum Label vor Body: Ein `review-epic` trägt – wie ein generisches
-`container-issue` – eine `- [ ] #NNN`-Checkliste. Das Label `firmo-review-epic` bzw.
-`firmo-review-finding` (Alt-Präfix `sf-` gleichwertig, siehe „Label-Konvention“ in
+`container-issue` – eine `- [ ] #NNN`-Checkliste. Das Label `effective-flow-review-epic` bzw.
+`effective-flow-review-finding` (Alt-Präfix `firmo-` gleichwertig, siehe „Label-Konvention“ in
 `issue-tracker.md`) ist der sichere Diskriminator und hat Vorrang vor der
 Body-Struktur.
 
@@ -107,9 +107,9 @@ Argumenttyp.
 
 - **`none` (kein Argument):** nicht heuristisch das „neueste“ wählen. Der Aufrufer
   listet lokale Kandidaten (offene Pläne aus `<plan.dir>/`, Report-Dateien unter
-  `.firmo/review/`) und fragt nach der konkreten Quelle. Ist der effektive
+  `.effective-flow/review/`) und fragt nach der konkreten Quelle. Ist der effektive
   Tracker-Modus `remote`, listet er zusätzlich offene Review-Epics (Label
-  `firmo-review-epic`, inkl. Alt `sf-review-epic`) als Kandidaten, da im
+  `effective-flow-review-epic`, inkl. Alt `firmo-review-epic`) als Kandidaten, da im
   Remote-Modus keine lokalen Report-Dateien existieren.
 - **`ambiguous`:** die konkurrierenden Deutungen benennen und nachfragen, statt zu
   raten.

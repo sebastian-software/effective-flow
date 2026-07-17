@@ -1,7 +1,7 @@
 {
-  "name": "firmo",
+  "name": "effective-flow",
   "private": true,
-  "description": "Firmo — single-source, lazy-loading /firmo <tool> skill set for Codex and Claude Code",
+  "description": "Effective Flow — single-source, lazy-loading /effective-flow <tool> skill set for Codex and Claude Code",
   "scripts": {
     "build": "node build.mjs",
     "format": "oxfmt",

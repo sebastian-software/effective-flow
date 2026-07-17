@@ -1,6 +1,6 @@
 ## Review-Report-Rückverweise
 
-Wenn dieser Workflow ein Finding aus einer bestehenden Review-Report-Datei in `.firmo/review/` umsetzt:
+Wenn dieser Workflow ein Finding aus einer bestehenden Review-Report-Datei in `.effective-flow/review/` umsetzt:
 
 - identifiziere die betroffene Report-Datei früh im Workflow
 - ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis

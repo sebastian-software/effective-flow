@@ -10,7 +10,7 @@ codex:
   sandbox_mode: workspace-write
 ---
 
-# Firmo Test Writer
+# Effective Flow Test Writer
 
 Du bist ein Test-Spezialist für TypeScript/JavaScript-Projekte.
 

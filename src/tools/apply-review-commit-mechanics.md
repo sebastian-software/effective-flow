@@ -2,7 +2,7 @@
 description: "Interne Teil-Datei von apply-review: Git-Commit-Mutex, Worktree-Isolation und Cherry-Pick-Konfliktbewertung. Wird von tools/apply-review.md nur geladen, wenn eine committende Strategie gewählt wurde."
 ---
 
-# Firmo Apply Review – Commit-Mechanik
+# Effective Flow Apply Review – Commit-Mechanik
 
 Diese interne Teil-Datei wird von `tools/apply-review.md` geladen, sobald in Phase 2 die Commit-Strategie `Einzeln` oder `Einzeln mit Worktrees` feststeht. Bei `Keine Commits` wird sie nicht benötigt.
 
@@ -14,8 +14,8 @@ Ziel: Parallele Sub-Agenten dürfen gleichzeitig Dateien bearbeiten, aber niemal
 
 Mutex-Konvention:
 
-- Lock-Pfad: `.firmo/apply-review-commit.lock`
-- Lock-Erwerb: atomar per `mkdir .firmo/apply-review-commit.lock`
+- Lock-Pfad: `.effective-flow/apply-review-commit.lock`
+- Lock-Erwerb: atomar per `mkdir .effective-flow/apply-review-commit.lock`
 - Lock-Inhalt: schreibe nach erfolgreichem Erwerb eine kurze Owner-Datei, z. B. `owner`, mit Finding-ID, Sub-Gruppe und Timestamp.
 - Lock-Freigabe: lösche nur den Lock, den du selbst erworben hast, nach Commit-Erfolg, Commit-Abbruch oder Fehlerbehandlung.
 - Wenn der Lock bereits existiert: warten und erneut versuchen. Falls der Lock offensichtlich verwaist wirkt, den User fragen, bevor er entfernt wird.
@@ -39,19 +39,19 @@ Wenn die Commit-Strategie **Einzeln mit Worktrees** gewählt wurde, gilt statt d
 
 Vorbedingungen:
 
-- Der ursprüngliche Arbeitsbaum muss vor dem Erstellen der Worktrees sauber sein (`git status --porcelain` leer), abgesehen von ignorierten Firmo-Dateien unter `.firmo/`.
+- Der ursprüngliche Arbeitsbaum muss vor dem Erstellen der Worktrees sauber sein (`git status --porcelain` leer), abgesehen von ignorierten Effective Flow-Dateien unter `.effective-flow/`.
 - `git worktree` muss verfügbar sein.
-- Lies die Firmo-Konfiguration (Projektsetup-ADR), falls vorhanden. Fehlt sie oder enthält sie keine Worktree-Werte, verwende die Defaults.
+- Lies die Effective Flow-Konfiguration (Projektsetup-ADR), falls vorhanden. Fehlt sie oder enthält sie keine Worktree-Werte, verwende die Defaults.
 
 Worktree-Pfade:
 
 1. Bestimme den Repo-Namen aus `basename "$(git rev-parse --show-toplevel)"`.
-2. Verwende als BaseDir `applyReview.worktree.baseDir` aus der Firmo-Konfiguration (Projektsetup-ADR) oder den Default `.firmo/.worktrees`.
+2. Verwende als BaseDir `applyReview.worktree.baseDir` aus der Effective Flow-Konfiguration (Projektsetup-ADR) oder den Default `.effective-flow/.worktrees`.
 3. Erstelle Worktrees unter:
    `BASE_DIR/REPO_NAME/SESSION_ID/GROUP_NAME`
 4. `GROUP_NAME` muss deterministisch, kurz und dateisystemtauglich sein, z. B. `fix-1`, `refactor-2`, `build-1` oder eine slugifizierte Sub-Gruppen-Beschreibung.
 
-Der Default liegt bewusst innerhalb des Projekt-Roots. Dadurch bleiben Worktree-Erstellung, Dateiänderungen und Setup-Kommandos in der üblichen Workspace-Sandbox. Externe BaseDirs sind nur zu verwenden, wenn sie explizit in der Firmo-Konfiguration (Projektsetup-ADR) festgeschrieben sind und die Umgebung Schreib- und Ausführungsrechte dafür erlaubt.
+Der Default liegt bewusst innerhalb des Projekt-Roots. Dadurch bleiben Worktree-Erstellung, Dateiänderungen und Setup-Kommandos in der üblichen Workspace-Sandbox. Externe BaseDirs sind nur zu verwenden, wenn sie explizit in der Effective Flow-Konfiguration (Projektsetup-ADR) festgeschrieben sind und die Umgebung Schreib- und Ausführungsrechte dafür erlaubt.
 
 Branch-Konvention:
 

@@ -3,7 +3,7 @@ description: "Erstellt aus einem lokalen Branch oder über einen frischen Delive
 catalogHint: "Öffnet aus deinem Branch einen Pull-Request (GitHub oder Forgejo)."
 ---
 
-# Firmo PR
+# Effective Flow PR
 
 Du erstellst aus einem lokalen Branch oder über einen frischen Delivery-Branch einen
 Pull-Request auf dem erkannten Git-Host.
@@ -50,7 +50,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der PR-Erstellung u
   Basis-Ref zu erzeugen oder einen bereits vorbereiteten Delivery-Branch
   abzuschließen.
 - **Basis-Branch:** das PR-Ziel. Default: der Branch-Anteil aus
-  `delivery.baseBranch` aus der Firmo-Konfiguration (Projektsetup-ADR; bei `origin/main` also `main`);
+  `delivery.baseBranch` aus der Effective Flow-Konfiguration (Projektsetup-ADR; bei `origin/main` also `main`);
   Legacy-Fallback: `worktree.baseBranch`; fehlt die Config, `main`.
 - **Rückwechsel-Ziel:** Default aus `delivery.returnBranch`; bei `auto` der lokale
   Branch-Anteil aus `delivery.baseBranch`.
@@ -59,7 +59,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der PR-Erstellung u
 ## Vorgehen
 
 1. **Config und Modus bestimmen:**
-   - Lies die Firmo-Konfiguration (Projektsetup-ADR), falls vorhanden. Verwende `delivery.baseBranch`,
+   - Lies die Effective Flow-Konfiguration (Projektsetup-ADR), falls vorhanden. Verwende `delivery.baseBranch`,
      `delivery.branchPrefix` und `delivery.returnBranch`; falle für
      `baseBranch`/`branchPrefix` auf alte `worktree.*`-Werte zurück.
    - Wenn der Aufruf ausdrücklich einen frischen Branch verlangt oder aus einem
@@ -85,7 +85,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der PR-Erstellung u
    Wenn für den Head-Branch bereits ein PR existiert, werden nachträgliche Änderungen
    ausschließlich als neue Commits auf diesem Branch gepusht. Schreibe bestehende
    PR-History nicht per `commit --amend`, Rebase, Squash oder Force-Push um.
-7. **Titel und Beschreibung ableiten:** Bestimme die Commits des Head-Branches gegenüber dem Remote-Tracking-Ref des Basis-Branches (`origin/<basis-branch>`, nicht dem lokalen Branch-Anteil – der lokale Basis-Branch kann hinter dem Remote liegen und fremde Commits einschleppen). Leite daraus einen konkreten PR-Titel im Conventional-Commit-Stil und eine kurze Beschreibung der Änderungen ab. Referenziere eine zugehörige Plan-Datei aus `<plan.dir>/` (dem Plan-Verzeichnis aus der Firmo-Konfiguration (Projektsetup-ADR) `plan.dir`, Default `docs/plan`), falls vorhanden. Setze keine internen Tracking-IDs, keine `Co-Authored-By`-Trailer und keine KI-Attribution (keine „Generated with Claude Code/Codex"-Footer, keine Agent-Session-Links wie `https://claude.ai/code/…`) in PR-Titel oder -Beschreibung – auch dann nicht, wenn der Harness sie als Default anhängt.
+7. **Titel und Beschreibung ableiten:** Bestimme die Commits des Head-Branches gegenüber dem Remote-Tracking-Ref des Basis-Branches (`origin/<basis-branch>`, nicht dem lokalen Branch-Anteil – der lokale Basis-Branch kann hinter dem Remote liegen und fremde Commits einschleppen). Leite daraus einen konkreten PR-Titel im Conventional-Commit-Stil und eine kurze Beschreibung der Änderungen ab. Referenziere eine zugehörige Plan-Datei aus `<plan.dir>/` (dem Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir`, Default `docs/plan`), falls vorhanden. Setze keine internen Tracking-IDs, keine `Co-Authored-By`-Trailer und keine KI-Attribution (keine „Generated with Claude Code/Codex"-Footer, keine Agent-Session-Links wie `https://claude.ai/code/…`) in PR-Titel oder -Beschreibung – auch dann nicht, wenn der Harness sie als Default anhängt.
 8. **PR erstellen:**
    - GitHub: `gh pr create --base <basis-branch> --head <head-branch> --title <titel> --body <beschreibung>`.
    - Forgejo: `tea pr create` mit den entsprechenden Optionen für Basis-Branch, Head-Branch, Titel und Beschreibung. Prüfe die genauen Flagnamen gegen die installierte `tea`-Version, falls ein Aufruf fehlschlägt.

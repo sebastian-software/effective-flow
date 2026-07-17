@@ -1,8 +1,8 @@
 ## Issue-Tracker-Anbindung (Remote-Modus)
 
-Dieser geteilte Baustein verbindet `{{SKILL:review}}` und `{{SKILL:apply-review}}` mit einem externen Issue-Tracker (GitHub über `gh`, Forgejo über `tea`). Er ist **opt-in** über die Firmo-Konfiguration (Projektsetup-ADR) und standardmäßig deaktiviert (`local`). Im lokalen Modus verhalten sich beide Skills unverändert – Findings laufen über die Markdown-Report-Datei unter `.firmo/review/`, es werden keine Issues erzeugt und kein CLI aufgerufen.
+Dieser geteilte Baustein verbindet `{{SKILL:review}}` und `{{SKILL:apply-review}}` mit einem externen Issue-Tracker (GitHub über `gh`, Forgejo über `tea`). Er ist **opt-in** über die Effective Flow-Konfiguration (Projektsetup-ADR) und standardmäßig deaktiviert (`local`). Im lokalen Modus verhalten sich beide Skills unverändert – Findings laufen über die Markdown-Report-Datei unter `.effective-flow/review/`, es werden keine Issues erzeugt und kein CLI aufgerufen.
 
-Der local/remote-Umschalter (`tracker.mode`) betrifft ausschließlich **Reviews**. **Investigationen** (`{{SKILL:investigate}}`) sind davon ausgenommen und bleiben in jedem Modus rein lokal unter `.firmo/investigation/` (nie committet, nie als Issue). Von den Firmo-Artefakten werden ausschließlich **Pläne** committet.
+Der local/remote-Umschalter (`tracker.mode`) betrifft ausschließlich **Reviews**. **Investigationen** (`{{SKILL:investigate}}`) sind davon ausgenommen und bleiben in jedem Modus rein lokal unter `.effective-flow/investigation/` (nie committet, nie als Issue). Von den Effective Flow-Artefakten werden ausschließlich **Pläne** committet.
 
 Er kapselt die **gemeinsamen** Bausteine: das `tracker`-Config-Schema samt Migration, die Modusbestimmung, die Host- und CLI-Erkennung, die Label-Konvention, die kanonischen Issue- und Epic-Body-Formate sowie das Mapping der Tracker-Operationen auf `gh`/`tea`. Die eigentliche Orchestrierung – wann Issues **erstellt** (`{{SKILL:review}}`) und wann sie **gelesen und abgearbeitet** werden (`{{SKILL:apply-review}}`) – bleibt im jeweiligen Skill.
 
@@ -10,7 +10,7 @@ Zusätzlich nutzen `{{SKILL:apply-issues}}` und `{{SKILL:plan-issue}}` diesen Ba
 
 ### Konfiguration
 
-Der Remote-Modus funktioniert ohne festgeschriebene Konfiguration (dann bleibt er deaktiviert, `local`). Falls die Firmo-Konfiguration (Projektsetup-ADR) entsprechende Werte festschreibt, überschreiben sie diese Defaults (Schema hier zur Illustration):
+Der Remote-Modus funktioniert ohne festgeschriebene Konfiguration (dann bleibt er deaktiviert, `local`). Falls die Effective Flow-Konfiguration (Projektsetup-ADR) entsprechende Werte festschreibt, überschreiben sie diese Defaults (Schema hier zur Illustration):
 
 ```json
 {
@@ -35,15 +35,15 @@ Gültige Werte:
 
 ### Config-Migration
 
-Das Lesen der Firmo-Konfiguration aus der Projektsetup-ADR (inklusive der `tracker`-Schlüssel) und die einmalige Migration einer Alt-Config übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `tracker` aus. Das `tracker`-Config-Schema oben (Konfiguration, gültige Werte, Modusbestimmung, Erstaufruf-Abfrage) bleibt davon unberührt.
+Das Lesen der Effective Flow-Konfiguration aus der Projektsetup-ADR (inklusive der `tracker`-Schlüssel) und die einmalige Migration einer Alt-Config übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `tracker` aus. Das `tracker`-Config-Schema oben (Konfiguration, gültige Werte, Modusbestimmung, Erstaufruf-Abfrage) bleibt davon unberührt.
 
 ### Modus bestimmen
 
 Bestimme zu Beginn des Laufs den effektiven Modus in dieser Reihenfolge (die erste zutreffende Regel gewinnt):
 
-1. **Argumenttyp:** Der übergebene Argumenttyp überschreibt den Config-Modus für diesen Lauf. Eine Report-Datei (`*.md` unter `.firmo/review/`) erzwingt `local`; eine Issue-Referenz (Issue-Nummer, `#123` oder eine Issue-URL) erzwingt `remote`.
+1. **Argumenttyp:** Der übergebene Argumenttyp überschreibt den Config-Modus für diesen Lauf. Eine Report-Datei (`*.md` unter `.effective-flow/review/`) erzwingt `local`; eine Issue-Referenz (Issue-Nummer, `#123` oder eine Issue-URL) erzwingt `remote`.
 2. **Per-Run-Wunsch des Users:** Verlangt der User ausdrücklich Issue-/Tracker-Arbeit, ist `remote` aktiv; verlangt er ausdrücklich lokale Arbeit („lokal“, „ohne Issues“, „nur Report“), ist `local` aktiv.
-3. **Config:** sonst gilt `tracker.mode` aus der Firmo-Konfiguration (Projektsetup-ADR).
+3. **Config:** sonst gilt `tracker.mode` aus der Effective Flow-Konfiguration (Projektsetup-ADR).
 4. **Erstaufruf-Abfrage:** Ist `tracker.mode` nicht in der Config gesetzt und liefert weder Argument noch Per-Run-Wunsch ein Signal, führe die Erstaufruf-Abfrage unten aus.
 
 ### Erstaufruf-Abfrage
@@ -55,7 +55,7 @@ header: Tracker
 question: Sollen Review-Findings lokal als Markdown-Report oder remote als Issues (GitHub/Forgejo) geführt werden?
 options:
   - label: Lokal
-    description: tracker.mode = local — Markdown-Report unter .firmo/review/ (bisheriges Verhalten)
+    description: tracker.mode = local — Markdown-Report unter .effective-flow/review/ (bisheriges Verhalten)
   - label: Remote
     description: tracker.mode = remote — Findings als Issues, Werkzeug automatisch aus origin (gh/tea)
 ```
@@ -77,22 +77,24 @@ Bestimme im Remote-Modus das Werkzeug analog zu `{{SKILL:pr}}`:
 
 Verwende im Remote-Modus diese Labels und lege fehlende Labels idempotent an (eine „already exists“-Meldung tolerieren, nicht als Fehler behandeln):
 
-| Label                                                      | Bedeutung                                                                                |
-| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `firmo-review-finding`                                     | markiert ein einzelnes Finding-Issue                                                     |
-| `firmo-review-epic`                                        | markiert das Epic-/Tracking-Issue                                                        |
-| `firmo-fix`, `firmo-refactor`, `firmo-build`, `firmo-docs` | Ziel-Aktion des Findings (genau eines pro Finding-Issue)                                 |
-| `kritisch`, `wichtig`, `hinweis`                           | Schweregrad des Findings (genau eines pro Finding-Issue; `hinweis` für Hinweis-Findings) |
-| `wontfix`                                                  | Finding bewusst nicht umsetzen → ADR statt Code                                          |
-| `firmo-issue-done`                                         | von `{{SKILL:apply-issues}}` umgesetztes Issue (PR erstellt)                             |
-| `firmo-needs-planning`                                     | von `{{SKILL:apply-issues}}` übersprungen; Planung via `{{SKILL:plan-issue}}` nötig      |
+| Label                                                                                          | Bedeutung                                                                                |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `effective-flow-review-finding`                                                                | markiert ein einzelnes Finding-Issue                                                     |
+| `effective-flow-review-epic`                                                                   | markiert das Epic-/Tracking-Issue                                                        |
+| `effective-flow-fix`, `effective-flow-refactor`, `effective-flow-build`, `effective-flow-docs` | Ziel-Aktion des Findings (genau eines pro Finding-Issue)                                 |
+| `kritisch`, `wichtig`, `hinweis`                                                               | Schweregrad des Findings (genau eines pro Finding-Issue; `hinweis` für Hinweis-Findings) |
+| `wontfix`                                                                                      | Finding bewusst nicht umsetzen → ADR statt Code                                          |
+| `effective-flow-issue-done`                                                                    | von `{{SKILL:apply-issues}}` umgesetztes Issue (PR erstellt)                             |
+| `effective-flow-needs-planning`                                                                | von `{{SKILL:apply-issues}}` übersprungen; Planung via `{{SKILL:plan-issue}}` nötig      |
 
-`wontfix` existiert auf vielen Trackern bereits; lege es nur an, falls es fehlt. `firmo-issue-done` und `firmo-needs-planning` gehören zum issue-getriebenen Fluss (`{{SKILL:apply-issues}}`/`{{SKILL:plan-issue}}`) und werden dort idempotent angelegt.
+`wontfix` existiert auf vielen Trackern bereits; lege es nur an, falls es fehlt. `effective-flow-issue-done` und `effective-flow-needs-planning` gehören zum issue-getriebenen Fluss (`{{SKILL:apply-issues}}`/`{{SKILL:plan-issue}}`) und werden dort idempotent angelegt.
 
-**Rückwärtskompatibilität (Alt-Präfix `sf-`):** Frühere Versionen nutzten das Präfix `sf-` statt `firmo-` (`sf-review-finding`, `sf-review-epic`, `sf-fix`/`sf-refactor`/`sf-build`/`sf-docs`, `sf-issue-done`, `sf-needs-planning`). Neu **angelegt oder gesetzt** wird ausschließlich das `firmo-`-Label; ein Upgrade bestehender Alt-Labels ist **nicht** nötig. Beim **Lesen, Auflisten, Deduplizieren und Erkennen** gilt jede `sf-`-Variante dauerhaft als gleichwertig zur zugehörigen `firmo-`-Variante:
+**Rückwärtskompatibilität (Alt-Präfix `firmo-`):** Frühere Versionen nutzten das Präfix `firmo-` statt `effective-flow-` (`firmo-review-finding`, `firmo-review-epic`, `firmo-fix`/`firmo-refactor`/`firmo-build`/`firmo-docs`, `firmo-issue-done`, `firmo-needs-planning`). Neu **angelegt oder gesetzt** wird ausschließlich das `effective-flow-`-Label; ein Upgrade bestehender `firmo-`-Labels ist **nicht** nötig. Beim **Lesen, Auflisten, Deduplizieren und Erkennen** gilt jede `firmo-`-Variante dauerhaft als gleichwertig zur zugehörigen `effective-flow-`-Variante:
 
-- **Auflisten/Filtern** (Dedup, Epic-/Issue-Suche): `gh`/`tea` verknüpfen mehrere `--label`-Angaben mit UND-Semantik. Führe die Abfrage daher **je Präfix getrennt** aus (einmal `firmo-…`, einmal `sf-…`) und vereinige die Treffer über die Issue-Nummer.
-- **Status-Label entfernen** (`firmo-needs-planning`, `firmo-issue-done`): entferne zusätzlich die Alt-`sf-`-Variante, falls vorhanden, damit ein Issue nicht durch ein liegengebliebenes Alt-Label „hängen“ bleibt.
+- **Auflisten/Filtern** (Dedup, Epic-/Issue-Suche): `gh`/`tea` verknüpfen mehrere `--label`-Angaben mit UND-Semantik. Führe die Abfrage daher **je Präfix getrennt** aus (einmal `effective-flow-…`, einmal `firmo-…`) und vereinige die Treffer über die Issue-Nummer.
+- **Status-Label entfernen** (`effective-flow-needs-planning`, `effective-flow-issue-done`): entferne zusätzlich die Alt-`firmo-`-Variante, falls vorhanden, damit ein Issue nicht durch ein liegengebliebenes Alt-Label „hängen“ bleibt.
+
+**Einmalige `sf-`-Label-Migration:** Das noch ältere Präfix `sf-` (`sf-review-finding`, `sf-review-epic`, `sf-fix`/`sf-refactor`/`sf-build`/`sf-docs`, `sf-issue-done`, `sf-needs-planning`) wird **nicht** mehr laufend erkannt, sondern **einmal pro Repo migriert**. Beim **ersten** Remote-Tracker-Zugriff — sofern der Marker `labelMigration.sf.done` in `.effective-flow/memory.json` fehlt und ein authentifiziertes CLI vorliegt — zieht eine idempotente Migration jedes noch vorhandene `sf-<x>`-Label auf `effective-flow-<x>` um: erst `effective-flow-<x>` am Issue ergänzen, dann `sf-<x>` entfernen (nicht umgekehrt, damit ein Abbruch kein Issue unklassifiziert zurücklässt). Danach den Marker setzen. Findet die Migration keine `sf-`-Labels, ist sie ein geräuschloser No-Op. Ist der Marker gesetzt, entfällt jeder weitere Scan — laufende Operationen kennen nur `effective-flow-` und `firmo-`. `sf-` wird ausschließlich in dieser Migration referenziert.
 
 ### Keine KI-Attribution in Issue-Bodys und -Kommentaren
 
@@ -103,7 +105,7 @@ Füge Issue-Bodys, Epic-Bodys und Kommentaren keine KI-Attribution hinzu: keine 
 Ein Finding-Issue muss **self-contained** sein: eine fremde LLM-Session muss es ohne Zugriff auf die erzeugende Session abarbeiten können. Es enthält dieselben inhaltlichen Felder wie ein Finding-Block des lokalen Report-Formats (siehe `{{SKILL:review}}`, „Bericht-Format“).
 
 - **Titel:** `[R-XXXXXXX] <Kurztitel>`
-- **Labels:** `firmo-review-finding`, das Aktions-Label und das Schweregrad-Label.
+- **Labels:** `effective-flow-review-finding`, das Aktions-Label und das Schweregrad-Label.
 - **Body** (kanonisches Template):
 
 ```markdown
@@ -113,7 +115,7 @@ Ein Finding-Issue muss **self-contained** sein: eine fremde LLM-Session muss es 
 - **Datei**: [pfad:zeile]
 - **Problem**: [...]
 - **Empfehlung**: [...]
-- **Aktion**: firmo-fix | firmo-refactor | firmo-build | firmo-docs
+- **Aktion**: effective-flow-fix | effective-flow-refactor | effective-flow-build | effective-flow-docs
 - **Prompt-Vorschlag**: [direkt kopierbarer Klartext, ohne umschließende Anführungszeichen, ohne Escape-Sequenzen]
 - **Epic**: #<Epic-Nummer> (leer, falls kein Epic)
 - **Signatur**: [pfad:zeile] · [Bereich] · [Kurzfassung des Problems]  <!-- Dedup-Schlüssel -->
@@ -124,7 +126,7 @@ Das Feld **Signatur** fixiert den inhaltlichen Dedup-Schlüssel (Datei+Zeile, Be
 ### Epic-Body-Format (Tracking-Issue)
 
 - **Titel:** `Code-Review YYYY-MM-DD[-N]`
-- **Labels:** `firmo-review-epic`
+- **Labels:** `effective-flow-review-epic`
 - **Body** (kanonisches Template):
 
 ```markdown
@@ -132,8 +134,8 @@ Code-Review vom YYYY-MM-DD · Scope: [Gesamter Code / Beschriebener Bereich] · 
 
 ## Findings
 
-- [ ] #<nr> [R-0000001] <Kurztitel> — Aktion: firmo-fix
-- [ ] #<nr> [R-0000002] <Kurztitel> — Aktion: firmo-refactor
+- [ ] #<nr> [R-0000001] <Kurztitel> — Aktion: effective-flow-fix
+- [ ] #<nr> [R-0000002] <Kurztitel> — Aktion: effective-flow-refactor
 
 ## Übersprungen (Designentscheidungen)
 
@@ -150,22 +152,22 @@ Regeln für die Task-Liste:
 
 Beschreibe alle Tracker-Zugriffe abstrakt als Operation und wähle das Kommando nach dem erkannten Werkzeug. Prüfe bei Forgejo die genauen Flagnamen gegen die installierte `tea`-Version, falls ein Aufruf fehlschlägt (wie in `{{SKILL:pr}}` vermerkt).
 
-| Operation                                | GitHub (`gh`)                                                                     | Forgejo (`tea`)                                                                                      |
-| ---------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Label anlegen (idempotent)               | `gh label create <name> --force`                                                  | `tea labels create --name <name>`                                                                    |
-| Issue anlegen                            | `gh issue create --title … --body-file … --label …`                               | `tea issue create --title … --body … --labels …`                                                     |
-| Issue lesen (Body + Labels + Status)     | `gh issue view <nr> --json title,body,labels,state`                               | `tea issue <nr>` bzw. `tea issue view <nr>`                                                          |
-| Kommentare lesen (Klärungen, Idempotenz) | `gh issue view <nr> --json comments`                                              | `tea issue view <nr> --comments`, sonst Forgejo-API `GET /repos/<owner>/<repo>/issues/<nr>/comments` |
-| Finding-Issues auflisten (für Dedup)     | `gh issue list --label firmo-review-finding --state all --json number,title,body` | `tea issues list --labels firmo-review-finding --state all`                                          |
-| Offene Epics auflisten                   | `gh issue list --label firmo-review-epic --state open`                            | `tea issues list --labels firmo-review-epic --state open`                                            |
-| Issue-Body aktualisieren (Epic abhaken)  | `gh issue edit <nr> --body-file …`                                                | `tea issue edit <nr> --body …`                                                                       |
-| Kommentar hinzufügen (z. B. PR-Link)     | `gh issue comment <nr> --body …`                                                  | `tea comment <nr> …`                                                                                 |
-| Label setzen/entfernen                   | `gh issue edit <nr> --add-label … --remove-label …`                               | `tea issue edit <nr> --labels …`                                                                     |
-| Pull-Request erstellen                   | über `{{SKILL:pr}}`                                                               | über `{{SKILL:pr}}`                                                                                  |
+| Operation                                | GitHub (`gh`)                                                                              | Forgejo (`tea`)                                                                                      |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| Label anlegen (idempotent)               | `gh label create <name> --force`                                                           | `tea labels create --name <name>`                                                                    |
+| Issue anlegen                            | `gh issue create --title … --body-file … --label …`                                        | `tea issue create --title … --body … --labels …`                                                     |
+| Issue lesen (Body + Labels + Status)     | `gh issue view <nr> --json title,body,labels,state`                                        | `tea issue <nr>` bzw. `tea issue view <nr>`                                                          |
+| Kommentare lesen (Klärungen, Idempotenz) | `gh issue view <nr> --json comments`                                                       | `tea issue view <nr> --comments`, sonst Forgejo-API `GET /repos/<owner>/<repo>/issues/<nr>/comments` |
+| Finding-Issues auflisten (für Dedup)     | `gh issue list --label effective-flow-review-finding --state all --json number,title,body` | `tea issues list --labels effective-flow-review-finding --state all`                                 |
+| Offene Epics auflisten                   | `gh issue list --label effective-flow-review-epic --state open`                            | `tea issues list --labels effective-flow-review-epic --state open`                                   |
+| Issue-Body aktualisieren (Epic abhaken)  | `gh issue edit <nr> --body-file …`                                                         | `tea issue edit <nr> --body …`                                                                       |
+| Kommentar hinzufügen (z. B. PR-Link)     | `gh issue comment <nr> --body …`                                                           | `tea comment <nr> …`                                                                                 |
+| Label setzen/entfernen                   | `gh issue edit <nr> --add-label … --remove-label …`                                        | `tea issue edit <nr> --labels …`                                                                     |
+| Pull-Request erstellen                   | über `{{SKILL:pr}}`                                                                        | über `{{SKILL:pr}}`                                                                                  |
 
 Beim Epic-Body-Update gilt: Body vor dem Ändern frisch lesen, gezielt nur die betroffene Zeile umschalten und zurückschreiben, damit parallele Änderungen nicht verloren gehen.
 
-Für die auflistenden Operationen (Dedup, Offene Epics) gilt die Rückwärtskompatibilität aus „Label-Konvention“: Abfrage je Präfix (`firmo-…` **und** `sf-…`) getrennt ausführen und über die Issue-Nummer vereinigen.
+Für die auflistenden Operationen (Dedup, Offene Epics) gilt die Rückwärtskompatibilität aus „Label-Konvention“: Abfrage je Präfix (`effective-flow-…` **und** `firmo-…`) getrennt ausführen und über die Issue-Nummer vereinigen.
 
 ### Fehler- und Randfälle
 

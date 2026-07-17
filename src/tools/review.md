@@ -3,7 +3,7 @@ description: "Orchestriert ein umfassendes Code-Review oder bei Plan-Datei-Argum
 catalogHint: "Prüft Code auf Qualität und Findings – oder tiefer einen vorhandenen Plan."
 ---
 
-# Firmo Review
+# Effective Flow Review
 
 Du bist der Orchestrator für umfassende Code-Reviews.
 
@@ -67,7 +67,7 @@ Tasks werden an **zwei** Zeitpunkten angelegt, weil der Verzeichnis-Split in Pha
 - Aktualisiere Tasks zeitnah, sobald ein Sub-Agent meldet — nicht gebatched.
 
 ```include
-firmo-dir-migration
+effective-flow-dir-migration
 ```
 
 ## Projektkonventionen
@@ -99,17 +99,17 @@ Der Review-Workflow erkennt dokumentierte Designentscheidungen, damit Findings g
 
 Projekt-Typ-Erkennung wie bei `{{SKILL:build}}`. Das Reviewer-Routing samt Verzeichnis-Split-Heuristik ist in Phase 2c definiert.
 
-## Firmo-Konfiguration und Memory
+## Effective Flow-Konfiguration und Memory
 
-Firmo-interne Dateien liegen unter `.firmo/` im Projekt-Root.
+Effective Flow-interne Dateien liegen unter `.effective-flow/` im Projekt-Root.
 
-- Konfiguration: Firmo-Konfiguration aus der Projektsetup-ADR (siehe Baustein „Config-Migration“)
-- Memory-Datei: `.firmo/memory.json`
-- Cache-Datei: `.firmo/cache.json`
-- Review-Reports: `.firmo/review/`
-- Temporäre Wisdom-Dateien: `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md`
+- Konfiguration: Effective Flow-Konfiguration aus der Projektsetup-ADR (siehe Baustein „Config-Migration“)
+- Memory-Datei: `.effective-flow/memory.json`
+- Cache-Datei: `.effective-flow/cache.json`
+- Review-Reports: `.effective-flow/review/`
+- Temporäre Wisdom-Dateien: `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
-Die Datei `.firmo/memory.json` speichert persistente Zustände über Sessions hinweg. Im Gegensatz zur Wisdom-Datei wird sie nie gelöscht.
+Die Datei `.effective-flow/memory.json` speichert persistente Zustände über Sessions hinweg. Im Gegensatz zur Wisdom-Datei wird sie nie gelöscht.
 
 ### Inhalt
 
@@ -130,7 +130,7 @@ Die Datei `.firmo/memory.json` speichert persistente Zustände über Sessions hi
 
 ### Konfigurationsschema
 
-`review` funktioniert ohne festgeschriebene Konfiguration. Fehlt die Firmo-Konfiguration (Projektsetup-ADR), verwende interne Defaults und lege nichts automatisch an.
+`review` funktioniert ohne festgeschriebene Konfiguration. Fehlt die Effective Flow-Konfiguration (Projektsetup-ADR), verwende interne Defaults und lege nichts automatisch an.
 
 Unterstützte Review-Konfiguration:
 
@@ -172,11 +172,11 @@ Explizit gesetzte Detailwerte haben Vorrang vor Profil-Ableitungen.
 
 ### Config-Migration
 
-Das Lesen der Firmo-Konfiguration aus der Projektsetup-ADR (inklusive der `review`-Schlüssel) und die einmalige Migration einer Alt-Config übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `review` aus. Das `review`-Config-Schema oben (Defaults, Profil-Ableitung) bleibt davon unberührt.
+Das Lesen der Effective Flow-Konfiguration aus der Projektsetup-ADR (inklusive der `review`-Schlüssel) und die einmalige Migration einer Alt-Config übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `review` aus. Das `review`-Config-Schema oben (Defaults, Profil-Ableitung) bleibt davon unberührt.
 
 ### Cache-Datei
 
-Persistente Cache-Daten liegen ausschließlich in `.firmo/cache.json`, nicht in `.firmo/memory.json` und nicht dauerhaft in Wisdom-Dateien.
+Persistente Cache-Daten liegen ausschließlich in `.effective-flow/cache.json`, nicht in `.effective-flow/memory.json` und nicht dauerhaft in Wisdom-Dateien.
 
 `review` darf diese Cache-Bereiche verwenden:
 
@@ -196,18 +196,18 @@ Regeln:
 
 ### Git-Tracking
 
-Ob `.firmo/` eingecheckt oder ignoriert wird, entscheidet das jeweilige Projekt selbst. Der Skill ändert keine `.gitignore`-Dateien in Zielprojekten.
+Ob `.effective-flow/` eingecheckt oder ignoriert wird, entscheidet das jeweilige Projekt selbst. Der Skill ändert keine `.gitignore`-Dateien in Zielprojekten.
 
 ### Verwendung
 
-1. Erstelle `.firmo/` bei Bedarf.
-2. Lies `.firmo/memory.json` beim Start des Review-Workflows.
-3. Falls `.firmo/memory.json` nicht existiert, aber die alte Datei `.sf-memory.json` vorhanden ist: migriere deren Inhalt nach `.firmo/memory.json`, entferne `.sf-memory.json` erst nach erfolgreichem Schreiben und weise den User darauf hin.
+1. Erstelle `.effective-flow/` bei Bedarf.
+2. Lies `.effective-flow/memory.json` beim Start des Review-Workflows.
+3. Falls `.effective-flow/memory.json` nicht existiert, aber die alte Datei `.sf-memory.json` vorhanden ist: migriere deren Inhalt nach `.effective-flow/memory.json`, entferne `.sf-memory.json` erst nach erfolgreichem Schreiben und weise den User darauf hin.
 4. Falls keine Memory-Datei existiert, starte mit `lastFindingNumber: 0`.
-5. Lies die Firmo-Konfiguration aus der Projektsetup-ADR, falls vorhanden (Migration einer Alt-Config über den Baustein „Config-Migration“).
-6. Lies `.firmo/cache.json`, falls vorhanden und gültig; verwende nur valide, nicht veraltete Cache-Einträge.
+5. Lies die Effective Flow-Konfiguration aus der Projektsetup-ADR, falls vorhanden (Migration einer Alt-Config über den Baustein „Config-Migration“).
+6. Lies `.effective-flow/cache.json`, falls vorhanden und gültig; verwende nur valide, nicht veraltete Cache-Einträge.
 7. Nummeriere neue Findings fortlaufend ab `lastFindingNumber + 1` mit 7-stelliger Formatierung: `R-0000001`, `R-0000002`, ...
-8. Schreibe nach Erstellung des Berichts die höchste vergebene Finding-Nummer zurück in `.firmo/memory.json`. Erhalte dabei `configMigration` und andere vorhandene Memory-Felder. Die Memory-Datei muss geschrieben werden, bevor der Workflow mit `ERLEDIGT` abgeschlossen wird. Falls der Schreibvorgang fehlschlägt, weise den User darauf hin.
+8. Schreibe nach Erstellung des Berichts die höchste vergebene Finding-Nummer zurück in `.effective-flow/memory.json`. Erhalte dabei `configMigration` und andere vorhandene Memory-Felder. Die Memory-Datei muss geschrieben werden, bevor der Workflow mit `ERLEDIGT` abgeschlossen wird. Falls der Schreibvorgang fehlschlägt, weise den User darauf hin.
 
 ```include
 config-migration
@@ -219,7 +219,7 @@ issue-tracker
 
 ## Wisdom Accumulation
 
-Erzeuge zu Beginn von Phase 1 eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.firmo/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen, falls mehrere Review-Runs parallel laufen.
+Erzeuge zu Beginn von Phase 1 eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen, falls mehrere Review-Runs parallel laufen.
 
 Die Wisdom-Datei transportiert die Outputs der parallelen Phase-2-Streams zwischen den Phasen:
 
@@ -233,7 +233,7 @@ Lösche die Datei am Ende des Workflows, vor `ERLEDIGT`.
 
 ### Plan-Datei-Sonderfall
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Firmo-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
+`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
 `docs/plan`).
 
 Prüfe vor Phase 1 und vor jeder Code-Review-spezifischen Initialisierung
@@ -263,7 +263,7 @@ raten.
 ### Phase 1: Scope
 
 1. Lies die Argumente.
-2. Lade Firmo-Konfiguration, migriere sie falls nötig und bestimme Review-Profil, DD-Quellenprofil und Validierungsmodus. Bestimme zusätzlich den Tracker-Modus gemäß „Issue-Tracker-Anbindung (Remote-Modus)“ (Config `tracker.mode`, Argument-/Per-Run-Signal, ggf. Erstaufruf-Abfrage). Bei `remote`: erkenne Host und CLI und prüfe die CLI-Verfügbarkeit sowie Authentifizierung vorab; fehlt das CLI, brich klar ab (kein stiller Fallback auf `local`).
+2. Lade Effective Flow-Konfiguration, migriere sie falls nötig und bestimme Review-Profil, DD-Quellenprofil und Validierungsmodus. Bestimme zusätzlich den Tracker-Modus gemäß „Issue-Tracker-Anbindung (Remote-Modus)“ (Config `tracker.mode`, Argument-/Per-Run-Signal, ggf. Erstaufruf-Abfrage). Bei `remote`: erkenne Host und CLI und prüfe die CLI-Verfügbarkeit sowie Authentifizierung vorab; fehlt das CLI, brich klar ab (kein stiller Fallback auf `local`).
 3. Ohne Argumente:
    - prüfe `git diff --name-only`
    - prüfe `git diff --cached --name-only`
@@ -296,12 +296,12 @@ Bestimme die aktiven Designentscheidungs-Quellen aus `review.designDecisionSourc
 
 Starte für jede aktive Quelle einen eigenen Sub-Agenten **parallel**. Jeder Sub-Agent durchsucht nur seine Quelle:
 
-- ADR — `docs/decisions/`, `docs/adr/`, `adr/`, `*.adr.md`. ADRs können im lebenden, slug-benannten Format (`# <Titel>`, `## Status`) **oder** im nummerierten Alt-Format (`# NNNN — Titel`) vorliegen; beide Formen werden gelesen, die Such-Globs bleiben unverändert. **Ausnahme:** Die Firmo-Projektsetup-ADR (Config, bekannter Slug `firmo-project-setup`, z. B. `docs/adr/firmo-project-setup.md`) ist Konfiguration, keine Architekturbegründung, und wird **nicht** als Designentscheidungs-Quelle gesammelt.
+- ADR — `docs/decisions/`, `docs/adr/`, `adr/`, `*.adr.md`. ADRs können im lebenden, slug-benannten Format (`# <Titel>`, `## Status`) **oder** im nummerierten Alt-Format (`# NNNN — Titel`) vorliegen; beide Formen werden gelesen, die Such-Globs bleiben unverändert. **Ausnahme:** Die Effective Flow-Projektsetup-ADR (Config, bekannter Slug `effective-flow-project-setup`, Alt `firmo-project-setup`, z. B. `docs/adr/effective-flow-project-setup.md`) ist Konfiguration, keine Architekturbegründung, und wird **nicht** als Designentscheidungs-Quelle gesammelt.
 - Planungs-Dateien — `<plan.dir>/`, `plans/`
 - Konventions-Dateien — `CLAUDE.md`, `AGENTS.md`, vergleichbare Konventionsdateien
 - Code-Kommentare — `@design-decision`, `DELIBERATE`, `INTENTIONAL`, `DESIGN:`
 - Lint-Suppressions mit Begründung — `eslint-disable ... -- [Grund]`, `@ts-expect-error [Grund]`
-- Vorherige Review-Reports — `.firmo/review/review-report-*.md`
+- Vorherige Review-Reports — `.effective-flow/review/review-report-*.md`
 
 Nicht aktive Quellen werden nicht durchsucht und im Wisdom-Abschnitt mit „übersprungen durch Profil“ dokumentiert. Verwende valide `designDecisions`-Cache-Einträge pro Quelle, wenn ihre Invalidierungsdaten noch passen; andernfalls berechne die Quelle neu und aktualisiere den Cache nach erfolgreicher Extraktion.
 
@@ -379,11 +379,11 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 
 ### Phase 4: Bericht
 
-Phase 4 verzweigt nach dem in Phase 1 bestimmten Tracker-Modus. Im lokalen Modus wird wie bisher ein Markdown-Report geschrieben. Im Remote-Modus wird **kein** lokaler Report geschrieben; stattdessen werden Finding-Issues und ein Epic-Issue angelegt. Die Finding-Nummerierung aus `.firmo/memory.json` gilt in beiden Modi.
+Phase 4 verzweigt nach dem in Phase 1 bestimmten Tracker-Modus. Im lokalen Modus wird wie bisher ein Markdown-Report geschrieben. Im Remote-Modus wird **kein** lokaler Report geschrieben; stattdessen werden Finding-Issues und ein Epic-Issue angelegt. Die Finding-Nummerierung aus `.effective-flow/memory.json` gilt in beiden Modi.
 
 #### Lokaler Modus
 
-1. Erstelle einen Bericht als `.firmo/review/review-report-YYYY-MM-DD[-N].md`. Erstelle `.firmo/review/` falls nicht vorhanden. Verwende das untenstehende Bericht-Format.
+1. Erstelle einen Bericht als `.effective-flow/review/review-report-YYYY-MM-DD[-N].md`. Erstelle `.effective-flow/review/` falls nicht vorhanden. Verwende das untenstehende Bericht-Format.
 2. Wenn der aktive Finding-Scope nur kritische und wichtige Findings umfasst (Standard):
    - nimm Hinweise nicht in den Hauptbericht auf
    - erwähne kurz, dass Hinweise ausgefiltert wurden und ein umfassendes Review auf Wunsch möglich ist
@@ -396,16 +396,16 @@ Phase 4 verzweigt nach dem in Phase 1 bestimmten Tracker-Modus. Im lokalen Modus
 
 Verwende die Formate, Labels und Operationen aus „Issue-Tracker-Anbindung (Remote-Modus)“. Es wird **kein** lokaler Report geschrieben.
 
-1. **Labels sicherstellen:** Lege die benötigten Labels idempotent an (`firmo-review-finding`, `firmo-review-epic`, die Aktions- und Schweregrad-Labels, `wontfix`).
-2. **Dedup zuerst:** Frage die vorhandenen Finding-Issues am Tracker ab (Label `firmo-review-finding`, Status offen **und** geschlossen; das Alt-Label `sf-review-finding` gleichwertig mitabfragen und vereinigen, siehe „Label-Konvention“) und gleiche jedes qualitätsgeprüfte Finding über die inhaltliche Signatur (Datei+Zeile, Bereich, Problem) gegen deren `Signatur`-Feld ab. Entferne bereits vorhandene Findings aus der Anlageliste. Bei unsicherer Übereinstimmung (z. B. nur verschobene Zeilennummer bei gleichem Problem) im Zweifel als neues Finding behandeln und die mögliche Verwandtschaft im Issue-Body notieren.
+1. **Labels sicherstellen:** Lege die benötigten Labels idempotent an (`effective-flow-review-finding`, `effective-flow-review-epic`, die Aktions- und Schweregrad-Labels, `wontfix`).
+2. **Dedup zuerst:** Frage die vorhandenen Finding-Issues am Tracker ab (Label `effective-flow-review-finding`, Status offen **und** geschlossen; das Alt-Label `firmo-review-finding` gleichwertig mitabfragen und vereinigen, siehe „Label-Konvention“) und gleiche jedes qualitätsgeprüfte Finding über die inhaltliche Signatur (Datei+Zeile, Bereich, Problem) gegen deren `Signatur`-Feld ab. Entferne bereits vorhandene Findings aus der Anlageliste. Bei unsicherer Übereinstimmung (z. B. nur verschobene Zeilennummer bei gleichem Problem) im Zweifel als neues Finding behandeln und die mögliche Verwandtschaft im Issue-Body notieren.
 3. **Neue Finding-Issues anlegen:** Vergib erst für die verbleibenden **neuen** Findings je eine `R-XXXXXXX`-ID (nummeriere fortlaufend ab `lastFindingNumber + 1`, schreibe `memory.json` nur für tatsächlich angelegte Issues fort) und lege je ein Issue im kanonischen Finding-Body-Format mit vollständigem Inhalt und Labels an.
-4. **Neues Epic anlegen:** Lege ein **neues** Epic-Issue im kanonischen Epic-Body-Format an (Titel `Code-Review YYYY-MM-DD[-N]`, Label `firmo-review-epic`). Die Task-Liste enthält ausschließlich die in diesem Lauf neu angelegten Finding-Issues. Übersprungene Findings (Designentscheidungen) kommen in den nicht-abhakbaren Abschnitt „Übersprungen (Designentscheidungen)“; bereits existierende (deduplizierte) Findings werden **nicht** referenziert. Ein bestehendes Epic wird nie erweitert. Trage die Epic-Nummer im `Epic`-Feld der zugehörigen Finding-Issues nach.
+4. **Neues Epic anlegen:** Lege ein **neues** Epic-Issue im kanonischen Epic-Body-Format an (Titel `Code-Review YYYY-MM-DD[-N]`, Label `effective-flow-review-epic`). Die Task-Liste enthält ausschließlich die in diesem Lauf neu angelegten Finding-Issues. Übersprungene Findings (Designentscheidungen) kommen in den nicht-abhakbaren Abschnitt „Übersprungen (Designentscheidungen)“; bereits existierende (deduplizierte) Findings werden **nicht** referenziert. Ein bestehendes Epic wird nie erweitert. Trage die Epic-Nummer im `Epic`-Feld der zugehörigen Finding-Issues nach.
 5. **Leeres Epic vermeiden:** Sind nach dem Dedup keine neuen Findings übrig, lege **kein** leeres Epic an, sondern melde dem User, dass alle Findings bereits als Issues existieren.
 6. Schreibe `memory.json` mit der höchsten vergebenen Finding-Nummer (wie im lokalen Modus).
 7. Melde dem User Epic-URL, Anzahl neu angelegter und Anzahl deduplizierter Findings.
 8. Lösche die Wisdom-Datei.
 
-**Abschlussbedingung (ohne Autonom-Loop):** Das Review ist abgeschlossen, wenn die in Phase 3 qualitätsgeprüften und gegen Designentscheidungen gefilterten Findings vorliegen — im lokalen Modus im Bericht, im Remote-Modus als Finding-Issues plus Epic (bzw. mit der Meldung, dass alle Findings bereits existieren) —, `.firmo/memory.json` mit der höchsten vergebenen Finding-Nummer geschrieben ist und die Wisdom-Datei gelöscht wurde. Die unabhängige Prüfung leistet die Findings-Qualitätsprüfung in Phase 3 (Konfidenzfilter, Duplikat- und Schweregrad-Konsistenz). Dieser Workflow erzeugt nur einen Bericht und setzt nichts um; deshalb gibt es weder einen beschränkten Korrektur-Loop noch einen `/goal`-String.
+**Abschlussbedingung (ohne Autonom-Loop):** Das Review ist abgeschlossen, wenn die in Phase 3 qualitätsgeprüften und gegen Designentscheidungen gefilterten Findings vorliegen — im lokalen Modus im Bericht, im Remote-Modus als Finding-Issues plus Epic (bzw. mit der Meldung, dass alle Findings bereits existieren) —, `.effective-flow/memory.json` mit der höchsten vergebenen Finding-Nummer geschrieben ist und die Wisdom-Datei gelöscht wurde. Die unabhängige Prüfung leistet die Findings-Qualitätsprüfung in Phase 3 (Konfidenzfilter, Duplikat- und Schweregrad-Konsistenz). Dieser Workflow erzeugt nur einen Bericht und setzt nichts um; deshalb gibt es weder einen beschränkten Korrektur-Loop noch einen `/goal`-String.
 
 ### Bericht-Format
 

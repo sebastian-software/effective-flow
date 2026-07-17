@@ -7,12 +7,12 @@
 ```
 
 Das Script lädt das Archiv der letzten verfügbaren GitHub-Release-Version herunter und
-installiert Firmo als Skill-Verzeichnis nach `~/.claude/skills/firmo` (Claude Code) und
-`~/.agents/skills/firmo` (Codex). Alte `sf-*`-Skills und der frühere Marketplace-Plugin-Pfad
+installiert Effective Flow als Skill-Verzeichnis nach `~/.claude/skills/effective-flow` (Claude Code) und
+`~/.agents/skills/effective-flow` (Codex). Alte `sf-*`-Skills und der frühere Marketplace-Plugin-Pfad
 werden dabei aufgeräumt; ein bestehender externer `~/.claude/skills`-Symlink und fremde
 Nachbar-Skills bleiben unangetastet.
 
-Zwei Varianten für die Entwicklung am Firmo-Repo selbst:
+Zwei Varianten für die Entwicklung am Effective Flow-Repo selbst:
 
 ```sh
 ./install-skill.sh local  # baut den aktuell ausgecheckten Stand und kopiert ihn
@@ -24,28 +24,28 @@ Zwei Varianten für die Entwicklung am Firmo-Repo selbst:
 In Claude Code:
 
 ```text
-/firmo
+/effective-flow
 ```
 
 In Codex:
 
 ```text
-$firmo
+$effective-flow
 ```
 
 Ohne oder mit unbekanntem `<tool>` gibt der Router nur die gruppierte Tool-Liste aus und
 tut sonst nichts – das ist der schnellste Weg, sich einen Überblick zu verschaffen. Sobald
-du ein konkretes Tool nennst (`/firmo plan`, `/firmo build`, …), lädt Firmo dessen
+du ein konkretes Tool nennst (`/effective-flow plan`, `/effective-flow build`, …), lädt Effective Flow dessen
 vollständige Anweisung nach und arbeitet danach.
 
 ## Der typische Flow: Plan → Build → Pull-Request
 
 Für eine neue Funktionalität oder eine größere Änderung ist das der übliche Dreischritt:
 
-1. **`/firmo plan "<Beschreibung der Aufgabe>"`** klärt die Anforderung, stellt bei Bedarf
+1. **`/effective-flow plan "<Beschreibung der Aufgabe>"`** klärt die Anforderung, stellt bei Bedarf
    Rückfragen und schreibt einen umsetzbaren Plan nach `docs/plan/` – noch ohne
    Code-Änderung. Der Plan empfiehlt gleich den passenden Folge-Workflow (meist `build`).
-2. **`/firmo build`** setzt den Plan um: Implementierung, Tests, Doku, Validierung und
+2. **`/effective-flow build`** setzt den Plan um: Implementierung, Tests, Doku, Validierung und
    Review in einem Lauf. Standardmäßig (`worktree.enabled: true`) läuft das in einem
    eigenen Git-Worktree auf einem eigenen Liefer-Branch, sodass dein aktueller Checkout
    unberührt bleibt.
@@ -53,7 +53,7 @@ Für eine neue Funktionalität oder eine größere Änderung ist das der üblich
    mergen (Default), den Branch stehen lassen oder – bei `completion: "pr"` oder auf
    Nachfrage im Workflow – direkt einen Pull-Request öffnen. Ohne Worktree oder bei
    stehen gelassenem Branch holst du den Pull-Request manuell nach:
-   **`/firmo pr`** öffnet ihn aus dem aktuellen Branch auf GitHub (`gh`) oder Forgejo
+   **`/effective-flow pr`** öffnet ihn aus dem aktuellen Branch auf GitHub (`gh`) oder Forgejo
    (`tea`), inklusive aus den Commits abgeleitetem Titel und Beschreibung.
 
 Details zu Worktree, Liefer-Branch und den drei Abschlussarten stehen in
@@ -68,7 +68,7 @@ Details zu Worktree, Liefer-Branch und den drei Abschlussarten stehen in
 Für einen bereits klar umrissenen Fehler lohnt sich die volle Planungsphase meist nicht:
 
 ```text
-/firmo fix "Login-Formular zeigt keine Fehlermeldung bei falschem Passwort"
+/effective-flow fix "Login-Formular zeigt keine Fehlermeldung bei falschem Passwort"
 ```
 
 `fix` investigiert, reproduziert, behebt minimal und sichert die Änderung mit
@@ -79,16 +79,16 @@ Regressionstests ab – ohne separate Plan-Datei.
 Ist unklar, woran ein Bug überhaupt liegt, geht der Analyse eine eigene Phase voraus:
 
 ```text
-/firmo investigate "Bestellungen verschwinden gelegentlich aus der Übersicht"
+/effective-flow investigate "Bestellungen verschwinden gelegentlich aus der Übersicht"
 ```
 
 `investigate` liefert einen reinen Diagnose-Report, ohne etwas zu ändern. Mit der
-gefundenen Ursache folgt danach `/firmo fix`.
+gefundenen Ursache folgt danach `/effective-flow fix`.
 
 ### Dokumentation aktualisieren
 
 ```text
-/firmo docs "README für das neue CLI-Flag ergänzen"
+/effective-flow docs "README für das neue CLI-Flag ergänzen"
 ```
 
 `docs` erstellt oder aktualisiert Dokumentation, ohne Produkt- oder Codeverhalten zu

@@ -10,7 +10,7 @@ codex:
   sandbox_mode: danger-full-access
 ---
 
-# Firmo Rust Implementer
+# Effective Flow Rust Implementer
 
 Du bist ein Rust-Spezialist. Setze Anforderungen präzise und idiomatisch um und halte dich strikt an die vorgegebenen Konventionen.
 

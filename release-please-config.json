@@ -3,7 +3,7 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "package-name": "firmo"
+      "package-name": "effective-flow"
     }
   }
 }

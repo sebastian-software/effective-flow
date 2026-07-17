@@ -20,7 +20,8 @@ import {
 
 const refConfig = {
   exposedTools: ['build', 'fix', 'apply'],
-  agentPrefix: 'firmo-',
+  agentPrefix: 'effective-flow-',
+  skillName: 'effective-flow',
   knownTools: new Set(['build', 'fix', 'apply', 'apply-plan']),
   knownAgents: new Set(['nodejs-implementer', 'code-validator']),
 };
@@ -93,9 +94,9 @@ test('getNestedList does not bleed past a blank line or dedent', () => {
 
 // --- cleanDescription / firstSentence ---
 
-test('cleanDescription strips SKILL/AGENT refs including sf- prefix', () => {
+test('cleanDescription strips SKILL/AGENT refs', () => {
   assert.equal(
-    cleanDescription('use {{SKILL:fix}} and {{AGENT:sf-test-writer}}'),
+    cleanDescription('use {{SKILL:fix}} and {{AGENT:test-writer}}'),
     'use fix and test-writer',
   );
 });
@@ -114,9 +115,9 @@ test('normalizeCodexSandboxMode maps and rejects', () => {
 
 // --- validateRefs (dead-reference guard) ---
 
-test('validateRefs accepts known refs and sf- aliases', () => {
+test('validateRefs accepts known refs', () => {
   assert.doesNotThrow(() =>
-    validateRefs('{{SKILL:fix}} {{SKILL:apply-plan}} {{AGENT:code-validator}} {{SKILL:sf-fix}}', {
+    validateRefs('{{SKILL:fix}} {{SKILL:apply-plan}} {{AGENT:code-validator}}', {
       knownTools: refConfig.knownTools,
       knownAgents: refConfig.knownAgents,
     }),
@@ -166,15 +167,21 @@ test('assertQuotedDescription rejects a missing description', () => {
 // --- transformRefs ---
 
 test('transformRefs maps exposed vs internal tools and agents per harness', () => {
-  assert.equal(transformRefs('{{SKILL:fix}}', 'claude', refConfig), '/firmo fix');
-  assert.equal(transformRefs('{{SKILL:fix}}', 'codex', refConfig), '$firmo fix');
-  assert.equal(transformRefs('{{FIRMO}} plan #118', 'claude', refConfig), '/firmo plan #118');
-  assert.equal(transformRefs('{{FIRMO}} plan #118', 'codex', refConfig), '$firmo plan #118');
+  assert.equal(transformRefs('{{SKILL:fix}}', 'claude', refConfig), '/effective-flow fix');
+  assert.equal(transformRefs('{{SKILL:fix}}', 'codex', refConfig), '$effective-flow fix');
+  assert.equal(
+    transformRefs('{{FIRMO}} plan #118', 'claude', refConfig),
+    '/effective-flow plan #118',
+  );
+  assert.equal(
+    transformRefs('{{FIRMO}} plan #118', 'codex', refConfig),
+    '$effective-flow plan #118',
+  );
   assert.equal(transformRefs('{{SKILL:apply-plan}}', 'claude', refConfig), '`tools/apply-plan.md`');
   assert.equal(transformRefs('{{SKILL:apply-plan}}', 'codex', refConfig), '`tools/apply-plan.md`');
   assert.equal(
     transformRefs('{{AGENT:nodejs-implementer}}', 'claude', refConfig),
-    '`firmo-nodejs-implementer`',
+    '`effective-flow-nodejs-implementer`',
   );
   assert.equal(
     transformRefs('{{AGENT:nodejs-implementer}}', 'codex', refConfig),
@@ -230,7 +237,7 @@ test('renderBody runs ask + ref transforms for claude', () => {
   const body = 'Intro {{SKILL:fix}} and {{AGENT:code-validator}}.\n';
   assert.equal(
     renderBody(body, 'claude', { ...refConfig, context: 't.md' }),
-    'Intro /firmo fix and `firmo-code-validator`.\n',
+    'Intro /effective-flow fix and `effective-flow-code-validator`.\n',
   );
 });
 
@@ -238,7 +245,7 @@ test('renderBody uses Codex skill invocation syntax for exposed tool refs', () =
   const body = 'Intro {{SKILL:fix}} and {{AGENT:code-validator}}.\n';
   assert.equal(
     renderBody(body, 'codex', { ...refConfig, context: 't.md' }),
-    'Intro $firmo fix and `code-validator`.\n',
+    'Intro $effective-flow fix and `code-validator`.\n',
   );
 });
 
@@ -272,7 +279,7 @@ test('end-to-end: fixture source renders to the expected skill body', () => {
     '',
     '# Fixture',
     '',
-    'Ruft /firmo fix und `firmo-nodejs-implementer` auf.',
+    'Ruft /effective-flow fix und `effective-flow-nodejs-implementer` auf.',
     '',
     'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:',
     '- header: "Freigabe"',

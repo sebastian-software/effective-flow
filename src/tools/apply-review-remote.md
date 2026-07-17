@@ -2,7 +2,7 @@
 description: "Interne Teil-Datei von apply-review: Issue-Tracker-Anbindung und kompletter Remote-Ablauf. Wird von tools/apply-review.md nur geladen, wenn der Tracker-Modus remote ist."
 ---
 
-# Firmo Apply Review – Remote-Modus
+# Effective Flow Apply Review – Remote-Modus
 
 Diese interne Teil-Datei wird von `tools/apply-review.md` geladen, sobald der Tracker-Modus `remote` ist (das Argument ist ein Epic- oder Finding-Issue). Sie enthält die vollständige Issue-Tracker-Anbindung und den Remote-Ablauf; im lokalen Modus wird sie nie geladen.
 
@@ -18,8 +18,8 @@ Wenn der Tracker-Modus `remote` ist (siehe „Issue-Tracker-Anbindung (Remote-Mo
 
 Klassifiziere das übergebene Argument über die „Apply-Quellen-Erkennung“ (Stufe A und – für Issue-Referenzen – Stufe B) und leite Modus und Sub-Modus aus dem Quelltyp ab:
 
-- **`review-report`** (Report-Datei unter `.firmo/review/`) → `local` (bisheriges Verhalten, unverändert).
-- **`review-epic`** (Issue mit `firmo-review-epic`-Label, Alt `sf-review-epic` gleichwertig) → `remote`, **Epic-Modus**: alle im Epic verlinkten Finding-Issues abarbeiten.
+- **`review-report`** (Report-Datei unter `.effective-flow/review/`) → `local` (bisheriges Verhalten, unverändert).
+- **`review-epic`** (Issue mit `effective-flow-review-epic`-Label, Alt `firmo-review-epic` gleichwertig) → `remote`, **Epic-Modus**: alle im Epic verlinkten Finding-Issues abarbeiten.
 - **`review-finding`** (ein einzelnes Finding-Issue oder eine Liste von Finding-Issue-Referenzen) → `remote`, **Issue-Listen-Modus**: nur genau diese Findings abarbeiten. Das zugehörige Epic je Finding wird für das spätere Abhaken aus dem Sub-Issue ermittelt (`Epic`-Feld/Referenz), sofern vorhanden.
 - **`remote` ohne Argument** → offene Epics auflisten und den User wählen lassen.
 - **`plan`, `container-issue` oder `plain-issue`** → gehört nicht zu `{{SKILL:apply-review}}`: auf den zuständigen Skill verweisen (`{{SKILL:apply-plan}}` für Plan-Dateien, `{{SKILL:apply-issues}}` für sonstige Issues, oder `{{SKILL:apply}}` zum automatischen Routen) und beenden. Bei Delegation aus `{{SKILL:apply}}` sollte dieser Fall nicht auftreten; die Weiche bleibt als Schutz.
@@ -30,14 +30,14 @@ Der Argumenttyp hat Vorrang vor der Config (siehe „Modus bestimmen“ in der T
 
 Ersetzt das Einlesen der Report-Datei. Bestimme die abzuarbeitenden Finding-Issues (Epic-Task-Liste parsen bzw. übergebene Liste verwenden). Lies je Finding-Issue den vollständigen Body **und die Kommentare frisch vom Tracker** (Operation „Kommentare lesen“) und klassifiziere:
 
-- **Ziel-PR vorhanden:** Wenn Body oder Nicht-Firmo-Kommentar einen Ziel-PR nennt
+- **Ziel-PR vorhanden:** Wenn Body oder Nicht-Effective Flow-Kommentar einen Ziel-PR nennt
   (`Ziel-PR: #<nr>`, `Target PR: #<nr>` oder eine PR-URL), notiere PR-Nummer, URL,
   Head-Branch und Basis-Branch des PRs. Ein Ziel-PR überschreibt die
   Standard-Strategie „ein PR pro Finding“ für dieses Finding.
 - **Label `wontfix`** → nicht umsetzen, ADR erstellen (Phase 3 remote).
 - **bereits abgehakt/geschlossen** → überspringen.
 - **Sub-Issue ohne Ziel-Aktion oder Prompt** (manuell verändert) → als nicht umsetzbar melden, nicht raten.
-- **Entwicklerkommentar (Nicht-Firmo) vorhanden** → umsetzen **mit Kontext**: den Kommentartext als zusätzlichen Kontext an den Delegations-Skill mitgeben. Das ist das Remote-Äquivalent der lokalen „Entwickler-Anmerkung“ im Fall „Umsetzen mit Kontext“. Die bewusste Ablehnung läuft im Remote-Modus weiterhin **ausschließlich** über das Label `wontfix`, nicht über Kommentartext; Firmo-Kommentare (z. B. `<!-- … -->`-markierte Status- oder PR-Link-Kommentare) zählen nicht als Entwickler-Anmerkung.
+- **Entwicklerkommentar (Nicht-Effective Flow) vorhanden** → umsetzen **mit Kontext**: den Kommentartext als zusätzlichen Kontext an den Delegations-Skill mitgeben. Das ist das Remote-Äquivalent der lokalen „Entwickler-Anmerkung“ im Fall „Umsetzen mit Kontext“. Die bewusste Ablehnung läuft im Remote-Modus weiterhin **ausschließlich** über das Label `wontfix`, nicht über Kommentartext; Effective Flow-Kommentare (z. B. `<!-- … -->`-markierte Status- oder PR-Link-Kommentare) zählen nicht als Entwickler-Anmerkung.
 - **sonst** → umsetzen.
 
 Lege die Per-Finding-Tasks wie im lokalen Modus an; die Finding-ID ist die `R-XXXXXXX`-ID aus dem Issue-Titel.

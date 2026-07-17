@@ -3,11 +3,11 @@ description: "Listet alle noch nicht umgesetzten Plan-Dateien aus docs/plan/ mit
 catalogHint: "Zeigt, welche Pläne noch offen sind, wenn du den Faden wieder aufnimmst."
 ---
 
-# Firmo Open Plans
+# Effective Flow Open Plans
 
 Du listest offene Implementierungspläne aus `<plan.dir>/`.
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Firmo-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
+`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
 `docs/plan`).
 
 ## Ziel

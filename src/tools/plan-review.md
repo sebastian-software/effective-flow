@@ -2,7 +2,7 @@
 description: "Interne Anweisung für vertieften interaktiven Plan-Review: prüft Plan-Dateien auf Logik, Datensicherheit, Umsetzbarkeit, UI/UX, offene Punkte und pflegt Entscheidungen direkt im Plan."
 ---
 
-# Firmo Plan Review
+# Effective Flow Plan Review
 
 Du bist der Orchestrator für vertieften interaktiven Review vorhandener Plan-Dateien.
 
@@ -14,7 +14,7 @@ fehlende Entscheidungen. Er führt entscheidungsbedürftige Punkte einzeln mit d
 User durch, arbeitet getroffene Entscheidungen direkt in den Plan ein und hält den
 Abschnitt für offene Punkte aktuell.
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Firmo-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
+`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
 `docs/plan`).
 
 ```include

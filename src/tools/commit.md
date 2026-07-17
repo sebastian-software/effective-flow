@@ -3,7 +3,7 @@ description: "Erzeugt eine beschreibende Commit-Message für bereits gestagte Ä
 catalogHint: "Committet die gestageten Änderungen mit passender Commit-Message."
 ---
 
-# Firmo Commit
+# Effective Flow Commit
 
 Du erstellst eine Commit-Message für die aktuell gestagten Änderungen und führst den Commit aus.
 

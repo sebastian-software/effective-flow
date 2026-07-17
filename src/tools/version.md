@@ -1,15 +1,15 @@
 ---
-description: "Zeigt die aktuelle Firmo-Version inklusive Git-Kurzhash an."
-catalogHint: "Zeigt die installierte Firmo-Version."
+description: "Zeigt die aktuelle Effective Flow-Version inklusive Git-Kurzhash an."
+catalogHint: "Zeigt die installierte Effective Flow-Version."
 ---
 
-# Firmo Version
+# Effective Flow Version
 
 ```include
 task-tracking
 ```
 
-Gib die folgende Firmo-Version aus:
+Gib die folgende Effective Flow-Version aus:
 
 **{{VERSION}}**
 

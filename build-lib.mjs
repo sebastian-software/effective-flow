@@ -150,11 +150,7 @@ export function getNestedList(frontmatter, section, key, { context } = {}) {
 }
 
 export function cleanDescription(desc) {
-  return desc
-    .replace(/\{\{SKILL:sf-([^}]+)\}\}/g, '$1')
-    .replace(/\{\{SKILL:([^}]+)\}\}/g, '$1')
-    .replace(/\{\{AGENT:sf-([^}]+)\}\}/g, '$1')
-    .replace(/\{\{AGENT:([^}]+)\}\}/g, '$1');
+  return desc.replace(/\{\{SKILL:([^}]+)\}\}/g, '$1').replace(/\{\{AGENT:([^}]+)\}\}/g, '$1');
 }
 
 export function firstSentence(text) {
@@ -186,17 +182,15 @@ export function normalizeCodexSandboxMode(mode, skillName) {
 }
 
 // Fail the build if any {{SKILL:X}} / {{AGENT:X}} reference points at a name
-// that has no matching tool/agent source. A leading `sf-` (legacy prefix) is
-// stripped before the lookup, matching cleanDescription/backward-compat.
+// that has no matching tool/agent source.
 export function validateRefs(text, { knownTools, knownAgents, context } = {}) {
-  const strip = (raw) => (raw.startsWith('sf-') ? raw.slice(3) : raw);
   for (const m of text.matchAll(/\{\{SKILL:([^}]+)\}\}/g)) {
-    if (!knownTools.has(strip(m[1]))) {
+    if (!knownTools.has(m[1])) {
       throw new Error(`Unknown tool reference {{SKILL:${m[1]}}}${contextSuffix(context)}`);
     }
   }
   for (const m of text.matchAll(/\{\{AGENT:([^}]+)\}\}/g)) {
-    if (!knownAgents.has(strip(m[1]))) {
+    if (!knownAgents.has(m[1])) {
       throw new Error(`Unknown agent reference {{AGENT:${m[1]}}}${contextSuffix(context)}`);
     }
   }
@@ -221,19 +215,31 @@ export function assertQuotedDescription(frontmatter, { context } = {}) {
 //                by `apply`).
 // {{AGENT:X}} -> the subagent reference. Codex auto-discovers nested skill
 // agents by their bare name; Claude Code only sees agents registered under
-// ~/.claude/agents, so they are referenced namespaced as `firmo-X`.
+// ~/.claude/agents, so they are referenced namespaced as `<agentPrefix>X`.
+//
+// The command name (`/<skillName>` on Claude, `$<skillName>` on Codex) and the
+// agent prefix are passed in from the single source of truth in build.mjs, so a
+// rebrand only touches those constants.
 export function transformRefs(
   body,
   harness,
-  { exposedTools, agentPrefix, knownTools, knownAgents, context } = {},
+  {
+    exposedTools,
+    agentPrefix,
+    skillName = 'effective-flow',
+    knownTools,
+    knownAgents,
+    context,
+  } = {},
 ) {
   if (knownTools && knownAgents) {
     validateRefs(body, { knownTools, knownAgents, context });
   }
   const agentName = (raw) => (harness === 'claude' ? `${agentPrefix}${raw}` : raw);
-  const skillInvocation = (raw) => (harness === 'codex' ? `$firmo ${raw}` : `/firmo ${raw}`);
+  const command = harness === 'codex' ? `$${skillName}` : `/${skillName}`;
+  const skillInvocation = (raw) => `${command} ${raw}`;
   return body
-    .replace(/\{\{FIRMO\}\}/g, harness === 'codex' ? '$firmo' : '/firmo')
+    .replace(/\{\{FIRMO\}\}/g, command)
     .replace(/\{\{SKILL:([^}]+)\}\}/g, (_, raw) =>
       exposedTools.includes(raw) ? skillInvocation(raw) : `\`tools/${raw}.md\``,
     )

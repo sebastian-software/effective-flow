@@ -1,9 +1,9 @@
 # Konfiguration
 
-Firmo funktioniert ohne jede Konfiguration – alle Tools starten von sicheren Defaults. Wer
+Effective Flow funktioniert ohne jede Konfiguration – alle Tools starten von sicheren Defaults. Wer
 Verhalten dauerhaft anpassen will (z. B. Merge statt Pull-Request, Remote-Tracker statt
 lokalem Report, striktere Review-Tiefe), tut das über eine einzige Datei:
-`.firmo/config.json`.
+`.effective-flow/config.json`.
 
 Diese Seite ist die vollständige Referenz aller Schlüssel. Die Guides
 [Worktree und Delivery](./worktree-und-delivery.md), [Remote-Tracker](./remote-tracker.md)
@@ -12,30 +12,30 @@ verlinken hierher für die genauen Feldwerte, statt sie zu duplizieren.
 
 ## Grundprinzip
 
-- `.firmo/config.json` ist **optional**. Fehlt sie, gelten die unten dokumentierten Defaults.
+- `.effective-flow/config.json` ist **optional**. Fehlt sie, gelten die unten dokumentierten Defaults.
 - Ein Tool überschreibt vorhandene Werte **nie** ungefragt. Unbekannte Schlüssel (z. B. aus
   einer künftigen Version oder einem eigenen Zusatz) bleiben beim Schreiben unverändert
   erhalten.
 - Eine ältere Config wird beim ersten Lesen automatisch auf das aktuelle Schema konsolidiert
   (verschobene, ergänzte oder entfernte Schlüssel – siehe „Migration einer bestehenden
   Config“ unten). Das passiert einmalig und ohne Rückfrage, außer bei mehrdeutigen Fällen.
-- [`/firmo setup`](./tools-einrichten.md) ist der geführte Weg, diese Datei anzulegen oder zu
+- [`/effective-flow setup`](./tools-einrichten.md) ist der geführte Weg, diese Datei anzulegen oder zu
   pflegen – manuelles Bearbeiten funktioniert genauso, solange die Datei syntaktisch valides
   JSON bleibt.
 
 ## `.gitignore`-Eintrag
 
-`/firmo setup` trägt beim ersten Lauf dieses zweizeilige Muster in die `.gitignore` ein:
+`/effective-flow setup` trägt beim ersten Lauf dieses zweizeilige Muster in die `.gitignore` ein:
 
 ```gitignore
-.firmo/*
-!.firmo/config.json
+.effective-flow/*
+!.effective-flow/config.json
 ```
 
 Grund für die zwei Zeilen: Git kann ein einmal komplett ignoriertes Verzeichnis nicht durch
-eine spätere Negation teilweise wieder einschließen. `.firmo/*` ignoriert deshalb nur den
-_Inhalt_ von `.firmo/` (Laufzeit-Status wie `memory.json`, `cache.json`, lokale
-Review-Reports, Investigationen, Worktrees), während `!.firmo/config.json` die Config
+eine spätere Negation teilweise wieder einschließen. `.effective-flow/*` ignoriert deshalb nur den
+_Inhalt_ von `.effective-flow/` (Laufzeit-Status wie `memory.json`, `cache.json`, lokale
+Review-Reports, Investigationen, Worktrees), während `!.effective-flow/config.json` die Config
 gezielt davon ausnimmt. So bleibt `config.json` getrackt und teilbar im Repository, während
 der übrige Laufzeit-Status – bewusst – lokal und ungetrackt bleibt.
 
@@ -56,7 +56,7 @@ Die folgende Datei zeigt alle Blöcke mit ihren jeweiligen Defaultwerten:
     "finalValidation": "full",
     "stashPolicy": "interactive",
     "worktree": {
-      "baseDir": ".firmo/.worktrees",
+      "baseDir": ".effective-flow/.worktrees",
       "setup": "auto"
     }
   },
@@ -66,14 +66,14 @@ Die folgende Datei zeigt alle Blöcke mit ihren jeweiligen Defaultwerten:
   },
   "delivery": {
     "baseBranch": "origin/main",
-    "branchPrefix": "firmo",
+    "branchPrefix": "effective-flow",
     "completion": "merge",
     "returnBranch": "auto"
   },
   "worktree": {
     "enabled": true,
     "setup": "auto",
-    "baseDir": ".firmo/.worktrees"
+    "baseDir": ".effective-flow/.worktrees"
   },
   "tracker": {
     "mode": "local",
@@ -94,7 +94,7 @@ gilt jeweils der Default aus den Tabellen unten.
 
 ## Block `review`
 
-Steuert die Tiefe und das Verhalten von [`/firmo review`](./tools-qualitaet.md).
+Steuert die Tiefe und das Verhalten von [`/effective-flow review`](./tools-qualitaet.md).
 
 | Schlüssel               | Werte                           | Default    | Bedeutung                                                                                                             |
 | ----------------------- | ------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -105,16 +105,16 @@ Steuert die Tiefe und das Verhalten von [`/firmo review`](./tools-qualitaet.md).
 
 ## Block `applyReview`
 
-Steuert [`/firmo apply`](./tools-umsetzen.md) beim Abarbeiten von Review-Findings
+Steuert [`/effective-flow apply`](./tools-umsetzen.md) beim Abarbeiten von Review-Findings
 (`apply-review`).
 
-| Schlüssel               | Werte                                        | Default             | Bedeutung                                                                        |
-| ----------------------- | -------------------------------------------- | ------------------- | -------------------------------------------------------------------------------- |
-| `defaultCommitStrategy` | `worktrees` / `single` / `none` / `null`     | `null`              | `null` = die Strategie wird bei jedem Lauf erfragt                               |
-| `finalValidation`       | `full` / `changedScope` / `off`              | `full`              | Umfang der abschließenden Validierung nach dem Abarbeiten aller Findings         |
-| `stashPolicy`           | `interactive` / `keep` / `discard` / `apply` | `interactive`       | Umgang mit uncommitteten Änderungen im Arbeitsbaum vor dem Start                 |
-| `worktree.baseDir`      | String                                       | `.firmo/.worktrees` | Basisverzeichnis für die **findingsinternen** Isolations-Worktrees (siehe unten) |
-| `worktree.setup`        | `auto` / `none` / Freitext-Befehl            | `auto`              | Setup-Kommando je isoliertem Finding-Worktree                                    |
+| Schlüssel               | Werte                                        | Default                      | Bedeutung                                                                        |
+| ----------------------- | -------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------- |
+| `defaultCommitStrategy` | `worktrees` / `single` / `none` / `null`     | `null`                       | `null` = die Strategie wird bei jedem Lauf erfragt                               |
+| `finalValidation`       | `full` / `changedScope` / `off`              | `full`                       | Umfang der abschließenden Validierung nach dem Abarbeiten aller Findings         |
+| `stashPolicy`           | `interactive` / `keep` / `discard` / `apply` | `interactive`                | Umgang mit uncommitteten Änderungen im Arbeitsbaum vor dem Start                 |
+| `worktree.baseDir`      | String                                       | `.effective-flow/.worktrees` | Basisverzeichnis für die **findingsinternen** Isolations-Worktrees (siehe unten) |
+| `worktree.setup`        | `auto` / `none` / Freitext-Befehl            | `auto`                       | Setup-Kommando je isoliertem Finding-Worktree                                    |
 
 `applyReview.worktree.*` ist ein eigener, **von `worktree.*` (siehe unten) unabhängiger**
 Mechanismus: Er isoliert die parallele Bearbeitung einzelner Findings und führt deren
@@ -123,7 +123,7 @@ gegenüber dem Liefer-Worktree stehen in [Worktree und Delivery](./worktree-und-
 
 ## Block `plan`
 
-Steuert [`/firmo plan`](./tools-verstehen.md) und alle Tools, die Plan-Dateien lesen oder
+Steuert [`/effective-flow plan`](./tools-verstehen.md) und alle Tools, die Plan-Dateien lesen oder
 schreiben.
 
 | Schlüssel        | Werte       | Default                                    | Bedeutung                                                      |
@@ -138,22 +138,22 @@ bewusst **keinen** eigenen `delivery.enabled`-Schalter mehr – Delivery ist imm
 wenn in einem Worktree oder auf einem eigenen Liefer-Branch gearbeitet wird (siehe
 [Worktree und Delivery](./worktree-und-delivery.md)).
 
-| Schlüssel      | Werte                          | Default       | Bedeutung                                                              |
-| -------------- | ------------------------------ | ------------- | ---------------------------------------------------------------------- |
-| `baseBranch`   | Git-Ref als String             | `origin/main` | Ausgangspunkt des Liefer-Branches                                      |
-| `branchPrefix` | String                         | `firmo`       | Präfix der erzeugten Branch-Namen (`<branchPrefix>/<skill>/<slug>`)    |
-| `completion`   | `pr` / `merge` / `branch`      | `merge`       | Abschluss-Aktion: PR öffnen, lokal mergen oder nur den Branch belassen |
-| `returnBranch` | `auto` oder lokaler Branchname | `auto`        | Branch, zu dem nach Abschluss zurückgewechselt wird                    |
+| Schlüssel      | Werte                          | Default          | Bedeutung                                                              |
+| -------------- | ------------------------------ | ---------------- | ---------------------------------------------------------------------- |
+| `baseBranch`   | Git-Ref als String             | `origin/main`    | Ausgangspunkt des Liefer-Branches                                      |
+| `branchPrefix` | String                         | `effective-flow` | Präfix der erzeugten Branch-Namen (`<branchPrefix>/<skill>/<slug>`)    |
+| `completion`   | `pr` / `merge` / `branch`      | `merge`          | Abschluss-Aktion: PR öffnen, lokal mergen oder nur den Branch belassen |
+| `returnBranch` | `auto` oder lokaler Branchname | `auto`           | Branch, zu dem nach Abschluss zurückgewechselt wird                    |
 
 ## Block `worktree`
 
 Beschreibt ausschließlich den **Ausführungsort** der Umsetzung – nicht, ob geliefert wird.
 
-| Schlüssel | Werte                             | Default             | Bedeutung                                            |
-| --------- | --------------------------------- | ------------------- | ---------------------------------------------------- |
-| `enabled` | `true` / `false`                  | `true`              | Läuft die Umsetzung in einem separaten Git-Worktree? |
-| `setup`   | `auto` / `none` / Freitext-Befehl | `auto`              | Setup-Kommando im frisch erzeugten Worktree          |
-| `baseDir` | String                            | `.firmo/.worktrees` | Basisverzeichnis aller Liefer-Worktrees              |
+| Schlüssel | Werte                             | Default                      | Bedeutung                                            |
+| --------- | --------------------------------- | ---------------------------- | ---------------------------------------------------- |
+| `enabled` | `true` / `false`                  | `true`                       | Läuft die Umsetzung in einem separaten Git-Worktree? |
+| `setup`   | `auto` / `none` / Freitext-Befehl | `auto`                       | Setup-Kommando im frisch erzeugten Worktree          |
+| `baseDir` | String                            | `.effective-flow/.worktrees` | Basisverzeichnis aller Liefer-Worktrees              |
 
 ## Block `tracker`
 
@@ -185,7 +185,7 @@ Skill-Beschreibung. Ein per `exclude` ausgeschlossenes Mitglied einer Fallback-E
 
 ## Sichere Defaults im Überblick
 
-Diese Werte bilden die eine Sicher-Defaults-Basis, von der `/firmo setup` immer ausgeht:
+Diese Werte bilden die eine Sicher-Defaults-Basis, von der `/effective-flow setup` immer ausgeht:
 
 | Schlüssel                           | Wert                                       |
 | ----------------------------------- | ------------------------------------------ |
@@ -196,7 +196,7 @@ Diese Werte bilden die eine Sicher-Defaults-Basis, von der `/firmo setup` immer 
 | `applyReview.defaultCommitStrategy` | `null` (beim Lauf fragen)                  |
 | `applyReview.finalValidation`       | `full`                                     |
 | `applyReview.stashPolicy`           | `interactive`                              |
-| `applyReview.worktree.baseDir`      | `.firmo/.worktrees`                        |
+| `applyReview.worktree.baseDir`      | `.effective-flow/.worktrees`               |
 | `applyReview.worktree.setup`        | `auto`                                     |
 | `worktree.enabled`                  | `true`                                     |
 | `delivery.completion`               | `merge`                                    |
@@ -208,12 +208,12 @@ Diese Werte bilden die eine Sicher-Defaults-Basis, von der `/firmo setup` immer 
 Es gibt bewusst kein zweites, „schnelleres“ Preset. Wer einen zügigeren Solo-Workflow will
 (z. B. `review.profile: fast`, `review.validation: quick`,
 `applyReview.finalValidation: changedScope`), stellt diese Werte einzeln über den geführten
-Weg von `/firmo setup` ein.
+Weg von `/effective-flow setup` ein.
 
-## Wie `/firmo setup` die Config pflegt
+## Wie `/effective-flow setup` die Config pflegt
 
-[`/firmo setup`](./tools-einrichten.md) ist der einzige Ort, an dem sowohl der
-`.gitignore`-Eintrag als auch `.firmo/config.json` geschrieben werden. Der Wizard bietet
+[`/effective-flow setup`](./tools-einrichten.md) ist der einzige Ort, an dem sowohl der
+`.gitignore`-Eintrag als auch `.effective-flow/config.json` geschrieben werden. Der Wizard bietet
 dabei zwei Wege:
 
 - **Express:** Sicher-Defaults-Basis plus – falls bereits eine gültige Config existiert –
@@ -229,7 +229,7 @@ Unbekannte Schlüssel bleiben in jedem Fall erhalten.
 
 ## Migration einer bestehenden Config
 
-Jedes config-lesende Tool konsolidiert eine ältere `.firmo/config.json` beim ersten Lesen
+Jedes config-lesende Tool konsolidiert eine ältere `.effective-flow/config.json` beim ersten Lesen
 automatisch auf das aktuelle Schema, unter anderem:
 
 - alte Lieferwerte aus `worktree.baseBranch`/`worktree.branchPrefix`/`worktree.completion`
@@ -242,7 +242,7 @@ automatisch auf das aktuelle Schema, unter anderem:
 Uneindeutige Fälle (z. B. das optionale Upgrade von `delivery.completion: null` auf den
 neuen Default `merge`) werden **nicht** automatisch entschieden: Das aufrufende Tool nutzt
 für den laufenden Aufruf einen sicheren Default, lässt den Wert unverändert und verweist auf
-`/firmo setup`. Nur dort wird die eigentliche Migrations-Rückfrage gestellt.
+`/effective-flow setup`. Nur dort wird die eigentliche Migrations-Rückfrage gestellt.
 
 ## Siehe auch
 
@@ -250,5 +250,5 @@ für den laufenden Aufruf einen sicheren Default, lässt den Wert unverändert u
   `worktree`
 - [Remote-Tracker](./remote-tracker.md) – Nutzung des Blocks `tracker`
 - [Skill-Discovery](./skill-discovery.md) – Nutzung des Blocks `skills`
-- [Tools einrichten](./tools-einrichten.md) – `/firmo setup` und `/firmo version`
+- [Tools einrichten](./tools-einrichten.md) – `/effective-flow setup` und `/effective-flow version`
 - [Glossar](./glossar.md) – Begriffe wie Worktree, Delivery, Finding

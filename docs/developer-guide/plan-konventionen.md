@@ -1,7 +1,7 @@
 # Plan-Konventionen
 
-Plan-Dateien entstehen über `/firmo plan` (rein planend, kein Code) und liegen unter
-`<plan.dir>/`, konfigurierbar via `plan.dir` in der Firmo-Konfiguration (Projektsetup-ADR,
+Plan-Dateien entstehen über `/effective-flow plan` (rein planend, kein Code) und liegen unter
+`<plan.dir>/`, konfigurierbar via `plan.dir` in der Effective Flow-Konfiguration (Projektsetup-ADR,
 Default `docs/plan`). Dieses
 Dokument beschreibt das Namensschema, die Statusmarker und den Lebenszyklus der Plan-Dateien.
 Quelle ist [`src/tools/plan.md`](../../src/tools/plan.md); Agenten-Verhaltensregeln für Plan-
@@ -34,7 +34,7 @@ Namenskollision am selben Tag wird durch ein numerisches Suffix aufgelöst
 - Die Umbenennung erfolgt per `git mv`, um die Historie zu erhalten, und läuft als Bulk-Vorgang
   über das gesamte Plan-Verzeichnis.
 - Auslöser sind ausschließlich das Erstellen eines neuen Plans oder das Einlesen eines Plans im
-  Altformat – nicht jeder Firmo-Aufruf.
+  Altformat – nicht jeder Effective Flow-Aufruf.
 
 Die Auflösung einer Legacy-Nummer erfolgt primär über die H1 `# NNNN: …`, nicht über das
 Dateinamen-Segment, da ein neuer, nummerähnlicher Titel-Slug sonst nicht eindeutig vom
@@ -61,9 +61,9 @@ kanonische Statuszeile zählt als Status – andere Vorkommen der Begriffe in Fl
 Review-Findings sind irrelevant.
 
 Die Markersprache wird beim Anlegen eines Plans in dieser Reihenfolge bestimmt: `plan.markerLanguage`
-aus der Firmo-Konfiguration (Projektsetup-ADR) → Auto-Detection aus vorhandenen Plänen → Rückfrage an
-den User. Persistiert wird eine Entscheidung über `/firmo setup` in der Projektsetup-ADR, nicht mehr
-in `.firmo/config.json`.
+aus der Effective Flow-Konfiguration (Projektsetup-ADR) → Auto-Detection aus vorhandenen Plänen → Rückfrage an
+den User. Persistiert wird eine Entscheidung über `/effective-flow setup` in der Projektsetup-ADR, nicht mehr
+in `.effective-flow/config.json`.
 
 ## Archiv umgesetzter Pläne
 
@@ -71,7 +71,7 @@ in `.firmo/config.json`.
 vollständig umgesetzt ist, setzt der umsetzende Workflow den Statusmarker auf
 `Umgesetzt`/`Implemented` und verschiebt die Datei per `git mv` nach `<plan.dir>/archive/`
 (Verzeichnis bei Bedarf angelegt) – noch im selben Liefer-Branch, sodass die Verschiebung Teil
-desselben Pull-Requests bzw. Merges ist. `/firmo open-plans` listet nur die oberste Ebene von
+desselben Pull-Requests bzw. Merges ist. `/effective-flow open-plans` listet nur die oberste Ebene von
 `<plan.dir>/`, nicht das Archiv; Auflöser für Plan-Referenzen (Pfad, Dateiname, Legacy-Nummer
 oder Titel-Slug) durchsuchen dagegen sowohl `<plan.dir>/` als auch `<plan.dir>/archive/`.
 

@@ -3,7 +3,7 @@ description: "Nimmt eine beliebige Apply-Quelle (Plan-Datei, Review-Report, GitH
 catalogHint: "Startet die Umsetzung aus einer fertigen Quelle (Plan, Issue oder Review-Finding)."
 ---
 
-# Firmo Apply
+# Effective Flow Apply
 
 Du bist der Einstiegs-Router, der eine beliebige Apply-Quelle klassifiziert und an den
 passenden Umsetzungs-Skill weitergibt.
@@ -63,10 +63,10 @@ issue-tracker
 3. Behandle die Sonderergebnisse:
    - **`none` (kein Argument):** liste lokale Kandidaten – offene Pläne aus
      `<plan.dir>/` (Status `**Planungsstatus:** Nicht umgesetzt` bzw.
-     `**Plan status:** Not implemented`) und Report-Dateien unter `.firmo/review/`.
+     `**Plan status:** Not implemented`) und Report-Dateien unter `.effective-flow/review/`.
      Ist der effektive Tracker-Modus `remote` (siehe „Issue-Tracker-Anbindung“),
-     liste zusätzlich offene Review-Epics (Label `firmo-review-epic`, inkl. Alt
-     `sf-review-epic`) als Kandidaten auf – im Remote-Modus werden keine lokalen
+     liste zusätzlich offene Review-Epics (Label `effective-flow-review-epic`, inkl. Alt
+     `firmo-review-epic`) als Kandidaten auf – im Remote-Modus werden keine lokalen
      Report-Dateien geschrieben, sodass sonst keine Quelle angeboten würde. Frage
      danach den User nach der konkreten Quelle. Wähle nichts heuristisch aus.
    - **`ambiguous`:** benenne die konkurrierenden Deutungen und frage nach.

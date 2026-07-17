@@ -10,7 +10,7 @@ codex:
   sandbox_mode: workspace-write
 ---
 
-# Firmo Code Validator
+# Effective Flow Code Validator
 
 Du bist ein Code-Validierungs-Spezialist. Deine Aufgabe ist es, die technische Korrektheit des Codes durch automatisierte Prüfungen sicherzustellen.
 

@@ -1,11 +1,11 @@
 ---
-name: firmo
-description: "Firmo — Software-Engineering-Workflows als Tools, aufgerufen über /firmo <tool>. Dünnes Router-Skill mit Lazy-Loading: die vollständige Anweisung eines Tools wird erst gelesen, wenn das Tool aufgerufen wird. Tools: build, fix, plan, refactor, docs, review, apply, plan-issue, maintain, commit, pr, setup, open-plans, investigate, version."
+name: effective-flow
+description: "Effective Flow — Software-Engineering-Workflows als Tools, aufgerufen über /effective-flow <tool>. Dünnes Router-Skill mit Lazy-Loading: die vollständige Anweisung eines Tools wird erst gelesen, wenn das Tool aufgerufen wird. Tools: build, fix, plan, refactor, docs, review, apply, plan-issue, maintain, commit, pr, setup, open-plans, investigate, version."
 ---
 
-# Firmo
+# Effective Flow
 
-Firmo bündelt einen kompletten Software-Engineering-Workflow als Tools, die über `{{FIRMO}} <tool>` aufgerufen werden (Version {{VERSION}}).
+Effective Flow bündelt einen kompletten Software-Engineering-Workflow als Tools, die über `{{FIRMO}} <tool>` aufgerufen werden (Version {{VERSION}}).
 
 Dieses Router-Skill ist bewusst **dünn**. Es enthält nur den Tool-Katalog und die Dispatch-Regel; die vollständige Anweisung eines Tools wird **erst bei Bedarf** aus `tools/<tool>.md` geladen. So bleibt die Session schlank und es entsteht keine Token-Exhaustion durch das Vorladen aller Tools.
 
@@ -13,7 +13,7 @@ Dieses Router-Skill ist bewusst **dünn**. Es enthält nur den Tool-Katalog und 
 
 `{{FIRMO}} <tool> [argumente]`
 
-Auf Codex wird dasselbe Skill über den Skill-Namen aufgerufen (z. B. `$firmo <tool> [argumente]`); die Dispatch-Regel ist identisch.
+Auf Codex wird dasselbe Skill über den Skill-Namen aufgerufen (z. B. `$effective-flow <tool> [argumente]`); die Dispatch-Regel ist identisch.
 
 ## Dispatch-Regel
 
@@ -31,4 +31,4 @@ Die Tools sind unten nach Nutzungsabsicht gruppiert.
 ## Regeln
 
 - Lade nie mehrere Tool-Dateien „auf Vorrat“; immer nur das aktuell aufgerufene Tool (plus ggf. die eine interne `apply`-Quelle).
-- Spezialisten-Agents (Implementer, Reviewer, Validator, Test-/Docs-Writer …) sind **keine** `{{FIRMO}}`-Tools; die Tools rufen sie intern als Subagents auf (auf Codex genestet unter `agents/`, auf Claude Code als registrierte `firmo-*`-Subagents).
+- Spezialisten-Agents (Implementer, Reviewer, Validator, Test-/Docs-Writer …) sind **keine** `{{FIRMO}}`-Tools; die Tools rufen sie intern als Subagents auf (auf Codex genestet unter `agents/`, auf Claude Code als registrierte `effective-flow-*`-Subagents).
