@@ -95,9 +95,10 @@ definiert:
 | Runbooks        | `docs/runbooks/`        | Step-by-Step-Prozeduren für Incident-Response und Routineaufgaben |
 
 Kategorie und Ziel-Pfad müssen zueinander passen; der Ziel-Pfad muss innerhalb des jeweiligen
-Kategorie-Verzeichnisses liegen. `docs/user-guide/README.md` ist als kuratierter Einstiegspunkt
-Pflicht, sobald mindestens ein User-Guide-Dokument existiert; `developer-guide`, `operations` und
-`runbooks` haben standardmäßig keine README. Slugs sind topic-basiertes Kebab-Case ohne Datums-
+Kategorie-Verzeichnisses liegen. `docs/user-guide/README.md` und
+`docs/developer-guide/README.md` sind als kuratierte Einstiegspunkte Pflicht, sobald mindestens
+ein User-Guide- bzw. Developer-Guide-Dokument existiert; `operations` und `runbooks` haben
+standardmäßig keine README. Slugs sind topic-basiertes Kebab-Case ohne Datums-
 oder Nummern-Präfix und müssen innerhalb ihrer Kategorie eindeutig sein – das Datums-Slug-Schema
 mit erhaltener Legacy-Nummer bleibt exklusiv dem Plan-Verzeichnis vorbehalten.
 

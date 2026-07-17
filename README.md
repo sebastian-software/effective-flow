@@ -42,5 +42,5 @@ der Planung einer ersten Aufgabe zu starten.
 
 - **Nutzung:** [docs/user-guide/README.md](docs/user-guide/README.md) – Installation,
   Tool-Referenz, Konfiguration, Troubleshooting.
-- **Technik:** [docs/developer-guide/architektur.md](docs/developer-guide/architektur.md) –
+- **Technik:** [docs/developer-guide/README.md](docs/developer-guide/README.md) –
   Source-to-dist-Build, Router-Konzept, Beitrag zum Projekt.
