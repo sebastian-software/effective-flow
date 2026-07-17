@@ -13,14 +13,33 @@ Single Source of Truth für die aktuell veröffentlichte Version ist
 oder Fix-Commits erhöht. Conventional-Commit-Nachrichten steuern den nächsten Release-PR,
 Changelog-Einträge, Tags, GitHub-Releases und den Upload des Release-Archivs.
 
-Der Release-Workflow (`.github/workflows/release.yml`) läuft bei jedem Push auf `main`:
+Der Release-Workflow (`.github/workflows/release.yml`) läuft bei jedem Push auf den
+Quell-Branch `develop`:
 
-1. `pnpm agent:check` (Formatprüfung) und `node --test` (Unit-Tests).
+1. `pnpm agent:check` (Formatprüfung) und `pnpm test` (Unit-Tests).
 2. `node build.mjs` baut die Distribution nach `dist/`.
 3. `release-please-action` erstellt bzw. aktualisiert den Release-PR und, sobald gemerged, den
    Git-Tag und das GitHub-Release.
 4. Bei einem tatsächlich erstellten Release wird `dist/` als `effective-flow-<tag>.tar.gz` gepackt und an
    das GitHub-Release angehängt.
+5. Ebenfalls nur bei einem erstellten Release wird der gebaute `dist/`-Output (beide Harnesses,
+   `claude/` und `codex/`) als **frischer Commit** auf den Auslieferungs-Branch `main` gepusht
+   (kein Force-Push, damit Konsumenten-Pins stabil bleiben).
+
+## Quell- und Auslieferungs-Branch
+
+Effective Flow trennt Quelle und gebaute Auslieferung auf zwei Branches:
+
+- **`develop`** ist der **Quell-/Arbeits-Branch** (nur `src/`, `build.mjs`, `docs/`, Tests —
+  `dist/` bleibt gitignored). PRs, CI und release-please laufen hier.
+- **`main`** ist der **Auslieferungs-Branch** und zugleich der **Default-Branch**: er trägt
+  **ausschließlich** das gebaute `dist/` (`claude/` + `codex/` im Root), maschinell vom
+  Release-Workflow geschrieben.
+
+So ziehen Installer, die **keinen** Build ausführen (`dalo`, `npx skills`), automatisch die
+fertigen Artefakte vom Default-Branch — ohne Zusatzkonfiguration. Wer stattdessen das
+Release-Archiv nutzt, installiert unverändert über [`install-skill.sh`](#installation) (lädt
+das `effective-flow-<tag>.tar.gz`-Asset).
 
 Da `release-please-config.json` das einzelne Paket `.` unter dem Namen `effective-flow` führt, tragen die
 Releases **komponenten-Tags** der Form `effective-flow-vX.Y.Z` (z. B. `effective-flow-v1.45.0`) statt eines
