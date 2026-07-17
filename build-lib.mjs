@@ -352,3 +352,18 @@ export function renderBody(resolvedBody, harness, config = {}) {
       : transformAskClaude(resolvedBody, { context: config.context });
   return transformRefs(withAsk, harness, config);
 }
+
+// Documentation categories whose curated README.md landing page is mandatory
+// once the category holds at least one document (see src/shared/doc-categories.md).
+export const README_MANDATORY_CATEGORIES = ['user-guide', 'developer-guide'];
+
+// Given a map of category -> file names present in docs/<category>/, return the
+// mandatory categories that hold at least one .md document but lack README.md.
+// The build guard uses this so a required landing page cannot silently disappear.
+export function missingCategoryReadmes(entriesByCategory) {
+  return README_MANDATORY_CATEGORIES.filter((category) => {
+    const entries = entriesByCategory[category] ?? [];
+    const hasDoc = entries.some((f) => f.endsWith('.md') && f !== 'README.md');
+    return hasDoc && !entries.includes('README.md');
+  });
+}

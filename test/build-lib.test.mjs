@@ -15,6 +15,7 @@ import {
   transformRefs,
   parseAskBlock,
   renderBody,
+  missingCategoryReadmes,
   ASK_MAX_HEADER_LENGTH,
 } from '../build-lib.mjs';
 
@@ -374,4 +375,30 @@ test('end-to-end: fixture source renders to the expected skill body', () => {
     '',
   ].join('\n');
   assert.equal(claude, expected);
+});
+
+test('missingCategoryReadmes flags mandatory categories that hold docs but no README', () => {
+  // developer-guide has documents but no README -> flagged
+  assert.deepEqual(
+    missingCategoryReadmes({ 'developer-guide': ['architektur.md', 'build-system.md'] }),
+    ['developer-guide'],
+  );
+  // README present -> not flagged
+  assert.deepEqual(
+    missingCategoryReadmes({ 'developer-guide': ['README.md', 'architektur.md'] }),
+    [],
+  );
+  // empty or README-only category -> not flagged
+  assert.deepEqual(missingCategoryReadmes({ 'user-guide': [] }), []);
+  assert.deepEqual(missingCategoryReadmes({ 'user-guide': ['README.md'] }), []);
+  // non-.md files do not count as documents
+  assert.deepEqual(missingCategoryReadmes({ 'user-guide': ['.keep', 'logo.png'] }), []);
+  // both mandatory categories are evaluated independently
+  assert.deepEqual(
+    missingCategoryReadmes({
+      'user-guide': ['README.md', 'installation.md'],
+      'developer-guide': ['architektur.md'],
+    }),
+    ['developer-guide'],
+  );
 });
