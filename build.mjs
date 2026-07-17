@@ -81,7 +81,7 @@ const TOOL_GROUPS = [
   },
   {
     title: 'Einrichten & Infos',
-    tools: ['setup', 'version'],
+    tools: ['setup', 'cleanup', 'version'],
   },
 ];
 

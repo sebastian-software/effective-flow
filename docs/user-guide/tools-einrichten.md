@@ -28,6 +28,35 @@ sicheren Default auf. Die hier gesetzten Werte (`review.*`, `applyReview.*`, `pl
 `delivery.*`, `worktree.*`, `tracker.*`, `skills.*`) steuern das Verhalten aller anderen
 Tools – die vollständige Schema-Referenz steht in [Konfiguration](konfiguration.md).
 
+## `/effective-flow cleanup`
+
+**Zweck:** Räumt die Altlasten auf, die Effective Flows Migrationen bewusst hinterlassen. Er
+erfasst vier Klassen von Altlasten im aktuellen Projekt – Alt-Laufzeitverzeichnisse
+`.firmo/`/`.sf-plugin/`, eine enttrackte oder Legacy-`config.json`, veraltete
+`.gitignore`-Zeilen und `firmo-`-Labels im Remote-Issue-Tracker –, liest sie, prüft gegen
+ihr neues Gegenstück, ob noch etwas übernommen werden soll, lässt jeden Übernahme-Kandidaten
+bestätigen und löscht die Altdaten danach **git-aware** und nur nach ausdrücklicher
+Bestätigung.
+
+**Wann nutzen:** Nachdem Effective Flow ein Projekt von einer älteren Version (`.firmo/`,
+`.sf-plugin/`, `firmo-`-Labels) auf den aktuellen Stand migriert hat und du die bewusst
+belassenen Altdaten endgültig loswerden willst. Alle Migrationen selbst sind
+non-destruktiv; `cleanup` ist der einzige Pfad, der wirklich löscht.
+
+**Typischer Aufruf:** `/effective-flow cleanup`
+
+**Ein-/Ausgabe:** Keine Eingabe außer den Bestätigungen. Der Skill zeigt zuerst eine
+Bestandsaufnahme, dann eine Dry-Run-Vorschau der Löschung; getrackte Dateien entfernt er via
+`git rm` (über die Git-Historie wiederherstellbar), ungetrackte/gitignorte Verzeichnisse
+physisch und unwiderruflich nach expliziter Bestätigung. Er erstellt **keinen** Commit und
+kein Backup, fasst weder `.effective-flow/` noch die Projektsetup-ADR noch eine globale
+Skill-Installation an und ist ein No-Op, wenn keine Altlasten vorhanden sind.
+
+**Zusammenspiel:** Config-Werte aus einer Legacy-`config.json` übernimmt `cleanup` nicht
+selbst – es verweist dafür auf [`/effective-flow setup`](#effective-flow-setup), den Owner
+der Projektsetup-ADR. Für die gestageten `git rm`-Änderungen ist danach
+[`/effective-flow commit`](tools-einbringen.md) zuständig.
+
 ## `/effective-flow version`
 
 **Zweck:** Zeigt die aktuell installierte Effective Flow-Version inklusive Git-Kurzhash an.
