@@ -151,9 +151,15 @@ ist eine Gruppenübersicht (Safe-Batch, Major einzeln, Security) zur Auswahl, da
 eigener Commit je umgesetzter Gruppe und eine Zusammenfassung der zurückgestellten
 „manuellen“ Updates.
 
-**Zusammenspiel:** Verweigert das Aktualisieren, solange die Vorher-Baseline bereits rot ist,
-und verweist stattdessen auf `/effective-flow fix`. Bei Code-Anpassungen für Breaking Changes läuft
-ein Reviewer-Pass wie bei `build`/`refactor`.
+**Zusammenspiel:** `maintain` ist ein **dünner Adapter** um den zentralen Skill
+`smart-dependency-updater` – dieser liefert die eigentliche Update-Mechanik (Ecosystem-Erkennung,
+Risiko-Gruppierung, Changelog-Research, Kompatibilitäts-Anpassung, Validierungsstrategie,
+Update-Reporting), `maintain` besitzt nur die Orchestrierung und Delivery (Scope-Gate, grüne
+Baseline, ein Commit pro Gruppe, Worktree/PR-Handback) und gibt dem Skill „Effective Flow besitzt
+Delivery“ vor, damit nicht zwei Delivery-Schleifen laufen. Fehlt der Skill, greift ein bewusst
+minimaler Fallback. `maintain` verweigert das Aktualisieren, solange die Vorher-Baseline bereits
+rot ist, und verweist stattdessen auf `/effective-flow fix`. Bei Code-Anpassungen für Breaking
+Changes läuft ein Reviewer-Pass wie bei `build`/`refactor`.
 
 ## `/effective-flow iterate`
 
