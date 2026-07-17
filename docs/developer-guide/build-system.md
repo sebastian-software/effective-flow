@@ -66,6 +66,21 @@ question: Plan freigegeben?
 type: approval
 ```
 
+Ein `lazy-include`-Fence **verzögert** ein modus-gated Shared-Fragment (Progressive Disclosure,
+siehe unten). Statt es eager zu inlinen, liefert der Build `src/shared/<name>.md` einmal pro
+Harness als ladbare Datei `shared/<name>.md` aus und ersetzt das Direktiv durch einen
+konditionalen Lade-Pointer am Entscheidungspunkt. Die `when:`-Zeile ist der Lade-Trigger und
+wird im Pointer hinter „sobald " gerendert:
+
+```lazy-include
+worktree-integration
+when: der Delivery-/Worktree-Modus bestimmt wird
+```
+
+→ wird zu: „**Bei Bedarf laden:** Lies `shared/worktree-integration.md`, sobald der
+Delivery-/Worktree-Modus bestimmt wird." Ein Routine-Lauf, der den Modus nie erreicht, lädt das
+Fragment nie.
+
 ## Guards
 
 Der Build bricht mit einer Fehlermeldung ab, wenn einer dieser Guards verletzt ist:
@@ -79,6 +94,17 @@ Der Build bricht mit einer Fehlermeldung ab, wenn einer dieser Guards verletzt i
   nicht-existentes Ziel erzeugen kann.
 - **Include-Ziel-Guard:** Jede ` ```include ` -Fence muss auf eine existierende
   `src/shared/<name>.md` zeigen.
+- **Lazy-Include-Guards (#99):** (a) Kein Fragment darf in derselben Datei zugleich eager
+  (` ```include `) **und** lazy (` ```lazy-include `) eingebunden sein (sonst würde der Block
+  doppelt geladen). (b) Jedes lazy-referenzierte Fragment muss für **beide** Harnesses als
+  `shared/<name>.md` ausgeliefert sein, damit der Lade-Pointer auf Claude Code und Codex
+  auflöst. Die reine Prüflogik (`resolveLazyIncludes`, `collectIncludeNames`,
+  `assertNoEagerLazyOverlap`) liegt in `build-lib.mjs` und ist in `test/build-lib.test.mjs`
+  abgedeckt.
+- **Kontext-Budget-Guard (#99):** Der always-loaded-Kern der größten Tools (`build`, `fix`,
+  `docs`, `review`, `plan`) – die gebaute Tool-Datei ohne die lazy Fragmente – bleibt unter
+  **700 Zeilen**. Der Build gibt die gemessenen Größen als Report aus und bricht ab, wenn ein
+  Tool das Budget überschreitet.
 - **`catalogHint`-Guard:** Jedes in `TOOL_GROUPS` gelistete (exponierte) Tool braucht ein
   nicht-leeres, strikt gequotetes `catalogHint`-Feld – die Zeile, die der Router-Katalog je Tool
   anzeigt.
@@ -117,6 +143,33 @@ Kurzfassung (kanonisch in [`AGENTS.md`](../../AGENTS.md), Abschnitt „Adding a 
 3. `node build.mjs` ausführen. Die oben beschriebenen Guards decken fehlende Quellen, fehlende
    Include-Ziele, nicht unterstützte Codex-Sandbox-Modi sowie fehlende oder doppelte
    `TOOL_GROUPS`-Einträge ab.
+
+## Progressive Disclosure über den Router hinaus
+
+Der Top-Level-Router (`SKILL.md`) lädt nur den Tool-Katalog und die Dispatch-Regel; die
+vollständige Anweisung eines Tools kommt erst beim Aufruf aus `tools/<tool>.md`. Diese
+Progressive Disclosure setzt sich **innerhalb** eines Tools fort: Ein großes Tool inlinet nicht
+mehr jedes Shared-Fragment eager, sondern verschiebt die **modus-gated** Blöcke hinter einen
+`lazy-include`-Pointer (siehe „Platzhalter- und Direktiven-Syntax").
+
+- **Kern-Flow bleibt inline** – Blöcke, die (fast) jeder Lauf braucht: `language-rules`,
+  `task-tracking`, `skill-discovery`, `completion-protocol`, `commit-message-rules`,
+  `pre-commit-gate`, `goal-completion`, `apply-clarity-gate`, `plan-status`.
+- **Modus-gated Blöcke sind lazy** – nur bei erreichtem Zweig nötig: `config-migration`,
+  `worktree-integration`, `issue-tracker`, `review-report-backlinks`,
+  `unresolved-review-report`, `plan-numbering`, `plan-reference-routing`,
+  `effective-flow-dir-migration`. Der Lade-Trigger (`when:`) sitzt am Entscheidungspunkt, an dem
+  der Modus/Zweig bestimmt wird.
+
+Das Fragment wird **einmal pro Harness** dedupliziert nach `dist/<harness>/effective-flow/shared/`
+ausgeliefert und dort durch dieselbe Pipeline wie ein Tool-Body gerendert (geschachtelte eager
+Includes, `{{VERSION}}`, Referenzen/`ask`). Ein Agent liest die Datei zur Laufzeit genauso nach,
+wie der Router `tools/<tool>.md` oder `apply` seine `apply-*.md`-Geschwister nachlädt.
+
+**Kontext-Budget.** Der always-loaded-Kern der fünf größten Tools bleibt unter **700 Zeilen**
+(gemessen und beim Build erzwungen, siehe „Guards"); der Build gibt die Größen als Report aus.
+Zum Vergleich vor der Umstellung: `build` 1185 → ~624, `fix` 917 → ~425, `docs` 925 → ~498,
+`review` 787 → ~646, `plan` 723 → ~615 Zeilen. Der Rest wird nur bei erreichtem Modus geladen.
 
 ## Weiterführend
 

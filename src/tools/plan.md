@@ -19,16 +19,18 @@ language-rules
 task-tracking
 ```
 
-```include
+```lazy-include
 config-migration
+when: die Effective-Flow-Konfiguration erstmals gelesen oder eine Alt-Config migriert wird
 ```
 
 ```include
 plan-status
 ```
 
-```include
+```lazy-include
 plan-numbering
+when: eine Plan-Datei angelegt oder ihr Datums-Slug-Name aufgelöst wird
 ```
 
 ```include
@@ -50,8 +52,9 @@ doc-categories
 - Wenn Code verwendet wird, halte ihn minimal: keine vollständigen Funktionen, Komponenten, Klassen, Tests oder größeren Snippets vorwegnehmen.
 - Wenn der User während dieses Skills Implementierung verlangt, verweise je nach empfohlener Umsetzung auf `{{SKILL:build}}`, `{{SKILL:fix}}`, `{{SKILL:refactor}}` oder `{{SKILL:docs}}` und beende diesen Skill nach dem Plan.
 
-```include
+```lazy-include
 effective-flow-dir-migration
+when: eine Legacy-`.sf-plugin/`- oder `.firmo/`-Runtime-Dir migriert werden muss
 ```
 
 ## Projektkonventionen

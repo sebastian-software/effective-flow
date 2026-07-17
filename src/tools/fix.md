@@ -19,8 +19,9 @@ language-rules
 task-tracking
 ```
 
-```include
+```lazy-include
 config-migration
+when: die Effective-Flow-Konfiguration erstmals gelesen oder eine Alt-Config migriert wird
 ```
 
 ```include
@@ -39,8 +40,9 @@ completion-protocol
 goal-completion
 ```
 
-```include
+```lazy-include
 worktree-integration
+when: der Delivery-/Worktree-Modus bestimmt wird
 ```
 
 ```include
@@ -65,18 +67,21 @@ Wie bei `{{SKILL:build}}`.
 
 Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:fix}}`.
 
-```include
+```lazy-include
 review-report-backlinks
+when: ein Review-Report-Rückverweis geschrieben oder aktualisiert wird
 ```
 
-```include
+```lazy-include
 unresolved-review-report
+when: offene oder nicht umgesetzte Review-Findings als Report ausgelagert werden
 ```
 
 Aktueller Workflow für Plan-Referenzen: Bugfix (`{{SKILL:fix}}`).
 
-```include
+```lazy-include
 plan-reference-routing
+when: das Argument auf eine bestehende Plan-Datei zeigen könnte
 ```
 
 ```include
