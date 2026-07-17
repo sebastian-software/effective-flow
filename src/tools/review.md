@@ -70,6 +70,20 @@ Tasks werden an **zwei** Zeitpunkten angelegt, weil der Verzeichnis-Split in Pha
 effective-flow-dir-migration
 ```
 
+## Empfohlene Skills
+
+- `codebase-improvement`
+
+```include
+audit-reasoning-delegation
+```
+
+`review.md` ist bereits überwiegend Orchestrierung; der delegierbare Anteil ist das
+**Finding-Quality-Reasoning** (Evidence-Standards, Validierung/Rejection, Dedup-Beurteilung,
+Priorisierung) in den Phasen 2c/3. Die Reviewer-Agents (`{{AGENT:frontend-reviewer}}`,
+`{{AGENT:nodejs-reviewer}}`, `{{AGENT:rust-reviewer}}`) behalten ihre Line-Level-Checks und
+sind **nicht** Teil dieser Delegation.
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Review und behandle ihre Vorgaben als zusätzlichen Review-Kontext für Scope, Konventionen, Designentscheidungen und Qualitätskriterien.
@@ -284,6 +298,12 @@ type: approval
 
 ### Phase 2: Parallele Datensammlung
 
+Sichte zuerst die verfügbaren Skills und binde `codebase-improvement` gemäß Skill-Discovery ein; fehlt der Skill, greift der „Minimale Fallback ohne Skill“ am Ende. Die Discovery läuft einmal, bevor die drei Streams starten.
+
+```include
+skill-discovery
+```
+
 Diese Phase besteht aus drei unabhängigen Streams, die alle gleichzeitig gestartet werden müssen — kein Stream wartet auf einen anderen. Schreibe die Outputs jeweils in die Wisdom-Datei.
 
 #### Phase 2a: Designentscheidungs-Sammlung (parallel pro Quelle)
@@ -357,7 +377,7 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
 **Vorbedingung:** Starte Phase 3 erst, wenn alle drei Phase-2-Streams (2a, 2b, 2c) `ERLEDIGT` (oder `ABBRUCH`) gemeldet haben. Ein opportunistisches Voraus-Lesen der Wisdom-Datei, während noch ein Stream schreibt, würde unvollständige Daten verarbeiten.
 
 1. Aggregiere Findings aus `## Technische Befunde` und allen Sub-Sektionen unter `## Reviewer-Findings`.
-2. Findings-Qualitätsprüfung:
+2. Findings-Qualitätsprüfung. Das **Reasoning** hinter Evidence-Beurteilung, Validierung, Kandidaten-Rejection, Dedup-Einschätzung und Priorisierung folgt `codebase-improvement` (siehe „Delegations-Vertrag: generisches Audit-Reasoning“), sofern verfügbar; fehlt der Skill, greift der minimale Fallback. Die folgenden **deterministischen Schwellen und Schlüssel** bleiben in jedem Fall Effective-Flow-Output-Contract und werden nicht an den Skill abgegeben:
    - Konfidenz < 80 herausfiltern
    - Duplikate entfernen (gleicher Bereich, gleiche Datei+Zeile, ähnliches Problem)
    - Schweregrad-Konsistenz prüfen
@@ -464,6 +484,15 @@ Wenn ein Finding später über `{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:b
 - **Verzeichnis-Split in Phase 2c** kann Cross-Cutting-Issues über Modul-Grenzen hinweg verschleiern (z. B. Architektur-Konsistenz zwischen `src/components/` und `src/lib/`). Bei Repos, in denen solche Module-übergreifenden Reviews wichtig sind: Threshold im User-Argument überschreiben oder den ganzen Scope ohne Split reviewen.
 - **Reviewer in Phase 2c haben keinen Designentscheidungs-Kontext** — bewusster Trade-off zugunsten von Geschwindigkeit. Der zentrale Filter in Phase 3 fängt dokumentierte Designentscheidungen ab, kann aber bei ambigen Fällen (teilweise Überlappung) mehr False Positives produzieren als ein im Reviewer informierter Pass.
 - **Phase 3 darf erst starten, wenn alle drei Phase-2-Streams abgeschlossen sind.** Ein LLM-Orchestrator muss diese Synchronisation explizit einhalten — opportunistisches Vorlesen während ein Stream noch schreibt führt zu unvollständigen Daten in Aggregation und Filter.
+
+## Minimaler Fallback ohne Skill
+
+Nur relevant, wenn `codebase-improvement` nicht verfügbar ist. Kurze Kern-Guidance für das Finding-Quality-Reasoning in Phase 3, damit `review` sauber degradiert – **kein** zweites vollständiges Audit-Handbuch:
+
+- Ein Finding zählt nur mit konkreter Evidence (Datei+Zeile, reproduzierbare Ursache); vage oder rein stilistische Vermutungen verwerfen.
+- Duplikate über die inhaltliche Signatur (Datei+Zeile, Bereich, ähnliches Problem) zusammenführen, nicht über die Formulierung.
+- Nach Wirkung priorisieren: höchster Schaden × Eintrittswahrscheinlichkeit zuerst; breit wirksame Ursachen vor lokalen Symptomen.
+- Die deterministischen Gates oben (Konfidenz < 80, Schweregrad-Konsistenz, Finding-Scope) bleiben unverändert.
 
 ## Regeln
 

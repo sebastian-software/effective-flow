@@ -32,6 +32,16 @@ plan-status
 - `codebase-improvement`
 - `port-codebases`
 
+```include
+audit-reasoning-delegation
+```
+
+`refactor.md` trägt mehr Inline-Reasoning als `{{SKILL:review}}`; der delegierbare Anteil ist
+die **Gap-Analyse und Plan-Validierung** in Phase 1 (Root-Cause, Komplexität/Over-Engineering,
+Scope, Risiko, Refactor-Plan-Qualität). Der Cross-Language-/Runtime-Migrations-Zweig routet
+weiterhin an `port-codebases`. Baseline, Verhaltens-Invarianz, Reports und Delivery bleiben
+Effective-Flow-Contract.
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Analyse und Refactoring und beachte ihre Vorgaben für Struktur, Grenzen, Tests, Review und Commits.
@@ -111,14 +121,8 @@ der Plan das Gate:
    - vorher -> nachher
    - betroffene Dateien und Abhängigkeiten
    - Risiken und Seiteneffekte
-5. Führe Gap Analysis durch:
-   - Over-Engineering
-   - Scope Creep
-   - unausgesprochene Annahmen
-   - fehlende Akzeptanzkriterien
-   - Edge Cases
-   - mögliche Verhaltensänderungen
-6. Führe Plan-Validierung durch:
+5. Führe die Gap Analysis durch. Das **Reasoning** (Root-Cause-Platzierung, Over-Engineering-/Komplexitäts-Linse, Scope-Kontrolle, Risiko, unausgesprochene Annahmen, Edge Cases) folgt `codebase-improvement` (siehe „Delegations-Vertrag: generisches Audit-Reasoning“), sofern verfügbar; fehlt der Skill, greift der minimale Fallback. Effective-Flow-spezifisch bleibt die Prüfung auf **mögliche Verhaltensänderungen** (Refactoring darf kein Verhalten ändern) und **fehlende messbare Akzeptanzkriterien**.
+6. Führe die Plan-Validierung durch. Die inhaltliche Beurteilung (ist der Refactor-Plan tragfähig, ausführbar, richtig geschnitten) folgt demselben Skill; die folgenden **deterministischen Scorecard-Schwellen** und die **Verhaltens-Invarianz** bleiben Effective-Flow-Output-Contract und werden nicht an den Skill abgegeben:
    - Clarity: Datei-Referenzen, Ziel >= 80%
    - Verification: messbare Akzeptanzkriterien jenseits von "Tests laufen"
    - Context: <= 10% Raten
@@ -230,6 +234,15 @@ pre-commit-gate
 ```include
 commit-message-rules
 ```
+
+## Minimaler Fallback ohne Skill
+
+Nur relevant, wenn `codebase-improvement` nicht verfügbar ist. Kurze Kern-Guidance für die Gap-Analyse und Plan-Validierung in Phase 1, damit `refactor` sauber degradiert – **kein** zweites vollständiges Audit-Handbuch:
+
+- Die Ursache am richtigen Ort platzieren: das strukturelle Problem selbst angehen, nicht das nächstgelegene Symptom.
+- Scope eng halten: nur die geplante Umstrukturierung; keine Features, keine Bugfixes, kein Gold-Plating (Over-Engineering-Linse).
+- Risiko nach Blast-Radius bewerten: breit genutzte oder untestbare Stellen vorsichtiger und in kleineren Schritten.
+- Die deterministischen Scorecard-Schwellen oben (Clarity >= 80%, Context <= 10% Raten) und die Verhaltens-Invarianz bleiben unverändert.
 
 ## Regeln
 
