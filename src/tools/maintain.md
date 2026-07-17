@@ -1,15 +1,17 @@
 ---
-description: "Orchestriert schlanke, wiederkehrende Wartung eines Node-Projekts: Dependency-Updates, Security-/Audit-Fixes und Breaking-Change-Adaption. Scannt, gruppiert nach Risiko, sichert eine grüne Baseline und delegiert an {{AGENT:code-validator}}, {{AGENT:test-writer}}, die passenden Implementer, {{AGENT:generic-implementer}} und Reviewer. Kein Feature-, Bugfix- oder Refactoring-Workflow und kein Scheduler."
+description: "Dünner Adapter für wiederkehrende Node-Projekt-Wartung: delegiert die Dependency-Update-Mechanik (Ecosystem-Erkennung, Risiko-Gruppierung, Changelog-Research, Kompatibilitäts-Anpassung, Validierungsstrategie, Update-Reporting) an den zentralen Skill smart-dependency-updater und besitzt selbst nur die Orchestrierung: Scope-Gate, grüne Baseline, Commit pro Gruppe, Review-Report-Backlinks und Delivery-/Worktree-Handback. Kein Feature-, Bugfix- oder Refactoring-Workflow und kein Scheduler."
 catalogHint: "Fährt wiederkehrende Wartung: Dependency-Updates und Security-Fixes."
 ---
 
 # Effective Flow Maintain
 
-Du bist der Orchestrator für wiederkehrende Projektwartung.
+Du bist der Orchestrator für wiederkehrende Projektwartung – ein **dünner Adapter** um den zentralen Skill `smart-dependency-updater`.
 
 ## Ziel
 
 Ein Projekt wird gepflegt, ohne sein Verhalten zu ändern: veraltete Dependencies werden risikobewusst hochgezogen, Security-/Audit-Befunde behoben und bei Major-Bumps der Code an geänderte APIs angepasst. Eine grüne Vorher-Baseline dient als Sicherheitsnetz.
+
+Die **fachliche Update-Mechanik besitzt `maintain` nicht selbst** – sie stammt aus dem zentralen Skill (siehe „Delegations-Vertrag“). `maintain` steuert nur die Orchestrierung und die Auslieferung.
 
 Scharfe Abgrenzung – `maintain` ist bewusst schlank:
 
@@ -37,6 +39,29 @@ effective-flow-dir-migration
 
 - `smart-dependency-updater`
 
+## Delegations-Vertrag
+
+`smart-dependency-updater` ist der **deklarierte Domänen-Owner** für Dependency-Updates (Klassifikation `delegate`, siehe [Skill-Ownership](../../docs/developer-guide/skill-ownership.md)). Seine Guidance ist **maßgeblich**, nicht optionaler Rat; `maintain` trägt **keine zweite Kopie** dieses Playbooks.
+
+**Der Skill besitzt die Update-Mechanik (das „Wie“):**
+
+- Ecosystem-/Paketmanager-Erkennung und Update-Inventar (outdated + Security-Audit),
+- Gruppierung nach realer Kopplung und Risiko (Safe-Batch, Major einzeln, Security),
+- Changelog-/Release-Notes-Research für den exakten Versionssprung,
+- lokale Impact-Analyse und Kompatibilitäts-Anpassung an geänderte APIs,
+- Validierungsstrategie und update-spezifisches Reporting (was sich upstream geändert hat, Risiko).
+
+**`maintain` besitzt die Orchestrierung und Delivery (das „Was/Wann“):**
+
+- den `{{SKILL:maintain}}`-Einstieg, das Scope-Gate und die Fortschrittsmeldungen,
+- Effective-Flow-Konfiguration, Goal-/Abschlusssteuerung und Review-Report-Backlinks,
+- die grüne Vorher/Nachher-Baseline als Sicherheitsnetz,
+- die Liefer-Policy: **ein Commit pro Gruppe**, Worktree-Isolation und Delivery-Handback.
+
+**Delivery-Constraint an den Skill (verbindlich).** Der Skill liefert per Default selbst aus (ein PR pro Gruppe, eigener Branch/Worktree, Push). In `maintain` besitzt **Effective Flow die Delivery**: Gib dem Skill ausdrücklich mit, dass er **keine Branches oder Worktrees anlegt, nichts pusht und keine Pull-Requests erstellt** und **nicht** nach einer reinen Chat-Zusammenfassung stoppt. Er beschränkt sich auf **Analyse, Research, Update und lokale Validierung pro Gruppe**; Commit pro Gruppe, Worktree und Handback macht ausschließlich `maintain`. So laufen nicht zwei Delivery-Schleifen parallel.
+
+**Minimaler Fallback (Skill fehlt).** Ist `smart-dependency-updater` nicht verfügbar (nicht installiert, `skills.enabled: false` oder via `exclude` deaktiviert), greift die kurze Kern-Guidance unter „Minimaler Fallback ohne Skill“. Sie hält `maintain` funktionsfähig, hält aber **kein** zweites vollständiges Update-Handbuch vor – volle Tiefe kommt nur mit dem Skill.
+
 ## Projektkonventionen
 
 Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Scan und beachte ihre Vorgaben für Dependencies, Tests, Review und Commits.
@@ -61,28 +86,10 @@ Inhalte:
 
 - Baseline-Werte und deren Bedeutung
 - gewählte Update-Gruppen und Begründung
-- Breaking Changes mit Migrationsquelle (Changelog/Release Notes)
-- zurückgerollte oder als „manuell“ markierte Updates
-- entdeckte Abhängigkeiten zwischen Packages
+- Ergebnis pro Gruppe (committet, zurückgerollt oder als „manuell“ markiert)
+- vom Skill gemeldete Breaking Changes mit Migrationsquelle (Changelog/Release Notes)
 
 Lies die Datei vor jeder delegierten Fachphase und gib ihren Inhalt als Kontext weiter. Lösche sie am Ende des Workflows.
-
-## Projekt-Typ-Erkennung und Routing
-
-Wie bei `{{SKILL:build}}`. Das bestimmt, welcher Implementer Breaking Changes anpasst und welcher Reviewer geänderten Code prüft.
-
-Nutze `{{AGENT:generic-implementer}}`, wenn ein Update CI/CD, Tooling, Build-/Release-Konfiguration, Dependency-Manifeste, Container-Konfiguration oder andere generische Artefakte betrifft.
-
-### Package-Manager-Erkennung
-
-Bestimme den Paketmanager über das Lockfile und leite alle Befehle daraus ab – keine Hardcodierung auf npm:
-
-| Signal                                      | Manager |
-| ------------------------------------------- | ------- |
-| `pnpm-lock.yaml`                            | pnpm    |
-| `yarn.lock`                                 | yarn    |
-| `bun.lockb`                                 | bun     |
-| `package-lock.json` oder nur `package.json` | npm     |
 
 Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:maintain}}`.
 
@@ -99,26 +106,37 @@ unresolved-review-report
 ### Phase 0: Scope-Gate
 
 1. Bestätige, dass es um Wartung im obigen Sinn geht. Wenn der Auftrag eigentlich ein Feature, ein Bugfix ohne Dependency-Bezug oder ein allgemeines Refactoring ist, gib eine deutlich sichtbare Meldung aus, verweise an den passenden Workflow und beende.
-2. Erkenne Projekt-Typ und Paketmanager.
+2. Erkenne den Projekt-Typ wie bei `{{SKILL:build}}`; das bestimmt, welcher Implementer eine Kompatibilitäts-Anpassung ausführt und welcher Reviewer geänderten Code prüft. Die Ecosystem-/Paketmanager-Erkennung selbst übernimmt der Skill.
 3. Wenn kein `package.json` und kein Lockfile vorhanden sind: melde, dass kein unterstütztes Node-Projekt erkannt wurde, und beende.
 
-### Phase 1: Scan
+### Phase 1: Skill-Discovery und Delivery-Setup
 
-1. Sammle veraltete Dependencies über den erkannten Manager (`outdated`) und die Security-Befunde (`audit`).
-2. Klassifiziere jede Position:
-   - Update-Art: Patch / Minor / Major
-   - Security-relevant: ja / nein
-   - Testabdeckung im betroffenen Bereich: vorhanden / unklar / keine
-3. Bilde Gruppen:
-   - **Safe-Batch:** Patch- und Minor-Bumps ohne bekannte Breaking Changes
-   - **Major einzeln:** jeder Major-Bump als eigene Gruppe mit Hinweis auf Changelog/Migration
-   - **Security:** Audit-Fixes, ggf. priorisiert
-4. Wenn nichts veraltet und keine Audit-Befunde: melde „nichts zu tun“ und beende sauber.
-5. Präsentiere die Gruppenübersicht und kläre die Auswahl:
+1. Sichte die verfügbaren Skills und binde `smart-dependency-updater` gemäß Skill-Discovery ein. Fehlt er, greift der „Minimale Fallback ohne Skill“ am Ende.
+
+```include
+skill-discovery
+```
+
+2. Bestimme gemäß „Delivery- und Worktree-Integration“ den effektiven Delivery-/Worktree-Modus und führe bei aktivem Modus das passende Setup aus (Worktree-Setup bei Worktree-Ausführung oder Liefer-Branch-Setup im Haupt-Repo bei In-Place-Delivery), **bevor** Baseline und Updates laufen. Alle folgenden Phasen laufen im Liefer-Arbeitsverzeichnis, damit die Commits pro Gruppe direkt auf dem Liefer-Branch entstehen.
+
+### Phase 2: Baseline
+
+Starte parallel im Liefer-Arbeitsverzeichnis:
+
+1. `{{AGENT:code-validator}}` – Type-Checking, Lint, Build-Status.
+2. `{{AGENT:test-writer}}` – führe ausschließlich die bestehenden Tests aus und dokumentiere das Ergebnis; schreibe in dieser Phase keine neuen Tests.
+
+Dokumentiere die Baseline. Wenn die Baseline bereits rot ist (Build/Tests vor jedem Update kaputt): updaten nicht, sondern an `{{SKILL:fix}}` verweisen, da spätere Regressionen sonst nicht von Altlasten unterscheidbar sind.
+
+### Phase 3: Delegierte Update-Umsetzung
+
+Folge für die eigentliche Update-Arbeit dem `smart-dependency-updater`-Skill unter dem oben festgelegten **Delivery-Constraint**. Der Skill übernimmt: Update-Inventar (outdated + Audit), Gruppierung nach Risiko und Kopplung, Changelog-/Migrations-Research, lokale Impact-Analyse und Kompatibilitäts-Anpassung sowie die Validierungsstrategie pro Gruppe. `maintain` steuert die Orchestrierung, das Auswahl-Gate und die Auslieferung um diese Arbeit herum.
+
+1. **Auswahl-Gate:** Präsentiere die vom Skill vorgeschlagenen Gruppen und kläre, welche jetzt umgesetzt werden.
 
 ```ask
 header: Updates
-question: Welche Update-Gruppen sollen jetzt umgesetzt werden?
+question: Welche der vorgeschlagenen Update-Gruppen sollen jetzt umgesetzt werden?
 options:
   - label: Alle sicheren
     description: Safe-Batch (Patch/Minor) und Security-Fixes automatisch, Major-Bumps überspringen
@@ -130,7 +148,7 @@ options:
     description: Konkrete Gruppen als Freitext benennen
 ```
 
-6. Leite aus der gewählten Update-Auswahl die explizite Abschlussbedingung ab (umgesetzte Gruppen, Baseline-Abgleich grün, Reviewer ohne offene kritische Findings bei Code-Anpassungen; siehe „Goal-getriebene Abschlusssteuerung“); sie deckt die Phasen 2–5 ab. Da das Update-Gate eine Auswahlfrage ist, stelle direkt nach der Auswahl die eigenständige Goal-Folgefrage gemäß „Explizite Goal-Abfrage für autonome Läufe“. Bei Wahl „Autonom via /goal“ gib den `/goal`-String für die Phasen 2–5 aus; die Folgefrage entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
+2. Leite aus der gewählten Update-Auswahl die explizite Abschlussbedingung ab (umgesetzte Gruppen, Baseline-Abgleich grün, Reviewer ohne offene kritische Findings bei Code-Anpassungen; siehe „Goal-getriebene Abschlusssteuerung“); sie deckt die Phasen 3–5 ab. Da das Update-Gate eine Auswahlfrage ist, stelle direkt nach der Auswahl die eigenständige Goal-Folgefrage gemäß „Explizite Goal-Abfrage für autonome Läufe“. Bei Wahl „Autonom via /goal“ gib den `/goal`-String für die Phasen 3–5 aus; die Folgefrage entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
 
 ```ask
 when: der Workflow interaktiv läuft und nicht als nicht-interaktiver Sub-Agent (z. B. durch {{FIRMO}} apply-review) delegiert wurde
@@ -143,38 +161,11 @@ options:
     description: Verbleibende Phasen autonom unter nativem /goal — der Skill gibt den einzufügenden /goal-String aus
 ```
 
-### Phase 2: Baseline
-
-Bestimme zuerst gemäß „Delivery- und Worktree-Integration“ den effektiven Delivery-/Worktree-Modus und führe bei aktivem Modus das passende Setup aus, bevor die Baseline erhoben wird: Worktree-Setup bei Worktree-Ausführung oder Liefer-Branch-Setup im Haupt-Repo bei In-Place-Delivery. Baseline, Apply pro Gruppe und Review (Phasen 2–4) laufen dann im Liefer-Arbeitsverzeichnis; die Commits pro Gruppe aus Phase 3 landen so direkt auf dem Liefer-Branch.
-
-Starte parallel:
-
-1. `{{AGENT:code-validator}}` – Type-Checking, Lint, Build-Status.
-2. `{{AGENT:test-writer}}` – führe ausschließlich die bestehenden Tests aus und dokumentiere das Ergebnis; schreibe in dieser Phase keine neuen Tests.
-
-Dokumentiere die Baseline. Wenn die Baseline bereits rot ist (Build/Tests vor jedem Update kaputt): updaten nicht, sondern an `{{SKILL:fix}}` verweisen, da spätere Regressionen sonst nicht von Altlasten unterscheidbar sind.
-
-```include
-skill-discovery
-```
-
-### Phase 3: Apply pro Gruppe
-
-Arbeite die freigegebenen Gruppen nacheinander ab. Für jede Gruppe:
-
-1. Wende die Versionssprünge der Gruppe über den erkannten Manager an und aktualisiere das Lockfile.
-2. Bei Major-Bumps: lies Changelog/Release Notes der betroffenen Packages und passe den Code über den passenden Implementer an:
-   - Frontend: `{{AGENT:ui-implementer}}`
-   - Backend/CLI: `{{AGENT:nodejs-implementer}}`
-   - Rust: `{{AGENT:rust-implementer}}`
-   - Generic/Tooling/CI/Config: `{{AGENT:generic-implementer}}`
-     Auftrag: nur an die geänderte API anpassen, kein neues Verhalten, keine ungeplanten Features.
-3. Validiere die Gruppe: `{{AGENT:code-validator}}` und die bestehenden Tests erneut ausführen.
-4. Gleiche gegen die Baseline ab:
-   - grün → ein sauberer Commit pro Gruppe (siehe Commit-Regeln), aussagekräftige Message, z. B. `chore(deps): …`.
+3. Arbeite die freigegebenen Gruppen **nacheinander** ab. Für jede Gruppe wendet der Skill den Versionssprung an, aktualisiert das Lockfile über den erkannten Manager, recherchiert Breaking Changes und passt bei Bedarf lokalen Code an die geänderte API an – ausgeführt über den in Phase 0 bestimmten Implementer (`{{AGENT:ui-implementer}}`, `{{AGENT:nodejs-implementer}}`, `{{AGENT:rust-implementer}}` bzw. `{{AGENT:generic-implementer}}` für Tooling/CI/Config; Auftrag: nur an die geänderte API anpassen, kein neues Verhalten). Danach gleicht `maintain` gegen die Baseline ab:
+   - grün → **ein sauberer Commit pro Gruppe** (siehe Commit-Regeln), aussagekräftige Message, z. B. `chore(deps): …`.
    - rot und reparabel → Anpassung über den Implementer nachziehen, erneut validieren – gemäß „Goal-getriebene Abschlusssteuerung“ die internen Korrekturrunden begrenzen; bleibt die Gruppe danach rot, wie „nicht sinnvoll reparabel“ behandeln statt unbegrenzt zu wiederholen.
    - rot und nicht sinnvoll reparabel → Gruppe zurückrollen (Manifest und Lockfile auf den Stand vor der Gruppe) und als „manuell“ markieren.
-5. Halte Ergebnis und Begründung in der Wisdom-Datei fest.
+4. Halte Ergebnis und Begründung je Gruppe in der Wisdom-Datei fest.
 
 ### Phase 4: Review
 
@@ -189,7 +180,7 @@ Reine Dependency-Bumps ohne Code-Anpassung brauchen kein Reviewer-Pass; vermerke
 ### Phase 5: Report und Abschluss
 
 1. Führe `{{AGENT:code-validator}}` ein letztes Mal als Final-Check aus.
-2. Fasse zusammen:
+2. Fasse auf Basis des update-spezifischen Reportings aus dem Skill zusammen:
    - welche Gruppen umgesetzt und committet wurden (mit Versionssprüngen),
    - welche Audit-Befunde behoben wurden,
    - welche Updates als „manuell“ zurückgestellt wurden und warum,
@@ -206,6 +197,16 @@ pre-commit-gate
 commit-message-rules
 ```
 
+## Minimaler Fallback ohne Skill
+
+Nur relevant, wenn `smart-dependency-updater` nicht verfügbar ist. Kurze Kern-Guidance, damit `maintain` sauber degradiert – **kein** zweites vollständiges Update-Handbuch:
+
+- Paketmanager am Lockfile erkennen (`pnpm-lock.yaml` → pnpm, `yarn.lock` → yarn, `bun.lockb` → bun, sonst `package-lock.json`/npm) und alle Befehle daraus ableiten – nie auf npm hardcodieren.
+- Veraltete Dependencies (`outdated`) und Security-Befunde (`audit`) über den erkannten Manager sammeln.
+- Grob gruppieren: Safe-Batch (Patch/Minor ohne bekannte Breaking Changes), Major einzeln (mit Changelog-Hinweis), Security separat.
+- Pro Gruppe: Bump anwenden, Lockfile über den Manager aktualisieren, gegen die Baseline validieren; grün → ein Commit pro Gruppe, rot → zurückrollen und als „manuell“ markieren.
+- Bei Major-Bumps Changelog/Release Notes lesen und Code nur an die geänderte API anpassen (kein neues Verhalten).
+
 ## Regeln
 
 - Starte unabhängige Phasen (Baseline-Validierung und Tests) parallel.
@@ -214,3 +215,4 @@ commit-message-rules
 - Niemals updaten, solange die Baseline rot ist.
 - Keine neuen Features, keine ungeplanten Bugfixes und kein allgemeines Refactoring im Wartungslauf.
 - Bei unklarem Risiko (Major ohne Tests im betroffenen Bereich) einzeln bestätigen lassen, statt im Batch durchzuwinken.
+- Delivery bleibt bei `maintain`: der delegierte Skill legt keine Branches/PRs an und pusht nicht.
