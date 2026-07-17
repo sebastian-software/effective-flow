@@ -83,7 +83,7 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Review und beha
 
 Der Standard-Finding-Scope ist **nur kritische und wichtige Findings**. Hinweise werden nur dann in den Bericht aufgenommen, wenn der User explizit ein umfassendes oder vollständiges Review verlangt (z. B. „umfassendes Review“, „alle Findings“, „inklusive Hinweise“).
 
-Weise den User zu Beginn kurz darauf hin, dass standardmässig nur kritische und wichtige Findings berichtet werden und ein umfassendes Review auf Wunsch möglich ist.
+Weise den User zu Beginn kurz darauf hin, dass standardmäßig nur kritische und wichtige Findings berichtet werden und ein umfassendes Review auf Wunsch möglich ist.
 
 Verwende den aktiven Finding-Scope als Filter für Reviewer-Auftrag, Aggregation, Bericht und Zusammenfassung.
 
@@ -361,7 +361,7 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
    - Konfidenz < 80 herausfiltern
    - Duplikate entfernen (gleicher Bereich, gleiche Datei+Zeile, ähnliches Problem)
    - Schweregrad-Konsistenz prüfen
-   - Findings ausserhalb des aktiven Finding-Scopes aus dem Hauptbericht herausfiltern
+   - Findings außerhalb des aktiven Finding-Scopes aus dem Hauptbericht herausfiltern
 3. **Zentraler Designentscheidungs-Filter** (das ist der einzige Ort, an dem Designentscheidungen gegen Findings abgeglichen werden):
    - Lies alle in `## Designentscheidungen` aus der Wisdom-Datei gesammelten Einträge.
    - Prüfe jedes verbleibende Finding einzeln, ob es durch eine dokumentierte Designentscheidung abgedeckt ist.
@@ -374,7 +374,7 @@ Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit
    - reine Dokumentationslücke, veraltete Dokumentation, falsche Beispiele, fehlende Migrations-, CLI- oder API-Dokumentation → `{{SKILL:docs}}`
 5. Formuliere Prompt-Vorschläge:
    - direkt kopierbarer Klartext
-   - keine umschliessenden Anführungszeichen
+   - keine umschließenden Anführungszeichen
    - keine Escape-Sequenzen wie `\"`
 
 ### Phase 4: Bericht

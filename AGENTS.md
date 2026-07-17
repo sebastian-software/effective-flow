@@ -102,6 +102,7 @@ Unless the user asks otherwise (see `src/shared/language-rules.md`):
 
 - Code, identifiers, tests, and commit messages are **English**.
 - Documentation (including files under `docs/` and this repo's Markdown prose) is **German**; continue the existing language of a file you edit. (This file, AGENTS.md, deliberately stays in English as a cross-harness agent instruction.)
+- The German locale is **de-DE**. Locale-specific typography of visible prose (quotation marks, dashes, `ß`/umlauts, spacing, number and date formats) is owned by the central [`locale-typography`](https://github.com/sebastian-software/skills.sebastian-software.com/tree/main/skills/locale-typography) skill — the canonical source. Effective Flow keeps no second typography guide; see [`docs/developer-guide/skill-ownership.md`](docs/developer-guide/skill-ownership.md).
 
 ## Commit messages
 
