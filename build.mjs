@@ -25,6 +25,8 @@ import {
   validateRefs,
   assertQuotedDescription,
   renderBody,
+  missingCategoryReadmes,
+  README_MANDATORY_CATEGORIES,
 } from './build-lib.mjs';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -139,6 +141,28 @@ try {
   process.stderr.write('WARN: git hash unavailable, using "nogit"\n');
 }
 const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
+
+// --- Guard: mandatory curated README per documentation category ---
+// doc-categories.md requires a README.md landing page in user-guide and
+// developer-guide once the category holds any document. Enforce it here so the
+// required entry point cannot silently disappear (CI runs `node build.mjs`).
+{
+  const docsDir = join(ROOT_DIR, 'docs');
+  const entriesByCategory = {};
+  for (const category of README_MANDATORY_CATEGORIES) {
+    const categoryDir = join(docsDir, category);
+    entriesByCategory[category] = existsSync(categoryDir) ? readdirSync(categoryDir) : [];
+  }
+  const missingReadmes = missingCategoryReadmes(entriesByCategory);
+  if (missingReadmes.length > 0) {
+    for (const category of missingReadmes) {
+      process.stderr.write(
+        `ERROR: docs/${category}/ holds documents but is missing the mandatory docs/${category}/README.md landing page\n`,
+      );
+    }
+    process.exit(1);
+  }
+}
 
 // --- Clean and (re)create the temporary output tree ---
 

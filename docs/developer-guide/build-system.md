@@ -88,6 +88,12 @@ Der Build bricht mit einer Fehlermeldung ab, wenn einer dieser Guards verletzt i
   unterstützten Modi gehören.
 - **Versions-Drift-Guard:** Der in beide Router-Ausgaben gestempelte Versionsstring
   (`<Manifest-Version> (<Git-Kurzhash>)`) muss in Claude- und Codex-Ausgabe identisch sein.
+- **Doku-Landing-Page-Guard:** Enthält eine README-pflichtige Doku-Kategorie
+  (`docs/user-guide/`, `docs/developer-guide/`) mindestens ein Dokument, muss dort eine
+  `README.md` als kuratierte Landing-Page liegen (Regel aus `src/shared/doc-categories.md`);
+  sonst bricht der Build ab. So kann der verpflichtende technische Einstiegspunkt nicht
+  unbemerkt verschwinden. Die reine Prüflogik liegt als `missingCategoryReadmes` in
+  `build-lib.mjs` und ist in `test/build-lib.test.mjs` abgedeckt.
 
 ## Tool oder Agent hinzufügen
 
