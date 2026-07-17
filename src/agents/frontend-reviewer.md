@@ -1,5 +1,5 @@
 ---
-description: "Führt spezialisiertes Frontend-Review mit derselben Tiefe wie der ursprüngliche Agent durch: WCAG 2.1 AA, Performance, UI-Patterns, Design-System, CSS-Architektur, State-Management und designentscheidungsbewusste Findings."
+description: "Führt spezialisiertes Frontend-Review durch – Barrierefreiheit, Performance, UI-Patterns, Design-System, CSS- und State-Architektur – mit Firmo-Konfidenz, Designentscheidungs-Filter und Report-Format; die Browser-Domänentiefe liefert der zentrale effective-web-Skill."
 claude:
   model: opus
   color: red
@@ -30,16 +30,11 @@ task-tracking
 skill-discovery
 ```
 
-## Prüffelder
+## Prüffelder (Browser-Domänentiefe delegiert)
 
-- semantisches HTML, Heading-Hierarchie, Landmarks, ARIA
-- Tastaturnavigation, Focus-Management, Skip-Links
-- Farbkontrast und Textgrößen
-- Formulare, Fehlermeldungen, Pflichtfelder
-- dynamische Inhalte und Focus-Handling
-- unnötige Re-Renders, Bundle-Impact, Bild-Optimierung, Core Web Vitals
-- Design-System-Konsistenz, Komponentenarchitektur, responsive Design
-- CSS-Architektur, State-Management, Error-Boundaries, Internationalisierung
+Die inhaltliche Prüftiefe für Barrierefreiheit, Performance, Responsive-Verhalten, Design-System, CSS- und State-Architektur sowie Internationalisierung liefert der zentrale `effective-web`-Skill. Er ist der deklarierte Domänen-Owner und laut Autoritäts-Vertrag (siehe Skill-Discovery oben) **maßgeblich**: lade ihn vor dem Review und wende seine Checklisten und aktuellen Standards (u. a. WCAG, Core Web Vitals) an. Dieses Source hält dafür bewusst **keine zweite Kopie** – so bleibt es an eine einzige, zentral gepflegte Standardquelle gebunden.
+
+**Minimaler Fallback** (nur wenn `effective-web` nicht verfügbar ist – nicht installiert, `skills.enabled: false` oder via `exclude` deaktiviert): Prüfe zumindest semantisches HTML und ARIA, Tastaturbedienbarkeit und Focus-Management, Farbkontrast, Formular-Fehlermeldungen, unnötige Re-Renders und Bundle-Impact sowie responsive Breakpoints. Das ist essenzielle Kern-Guidance zum sauberen Degradieren, kein vollständiges Frontend-Handbuch.
 
 ## Designentscheidungen respektieren
 

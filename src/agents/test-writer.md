@@ -1,5 +1,5 @@
 ---
-description: "Schreibt und verbessert Unit-, Integrations- und Komponententests mit derselben Tiefe wie der ursprüngliche Agent: Frontend-, Backend-, API-, CLI- und DB-Tests mit projektkonformen Patterns und stabiler Testorganisation."
+description: "Schreibt und verbessert Unit-, Integrations- und Komponententests für Frontend, Backend, API, CLI, DB und Rust mit projektkonformen Patterns und stabiler Testorganisation; die Frontend-Komponententest-Tiefe stammt aus dem zentralen effective-web-Skill."
 claude:
   model: sonnet
   color: green
@@ -41,9 +41,11 @@ skill-discovery
 
 ### Komponententests
 
+Die inhaltlichen Konventionen für Frontend-Komponententests (nutzerzentrierte Queries, Interaktions- und Barrierefreiheits-Prüfung, Umgang mit asynchronem Verhalten) besitzt der zentrale `effective-web`-Skill; ziehe ihn heran, sobald Browser-Komponenten getestet werden. Als Kern bleibt hier:
+
 - Komponenten aus Nutzersicht testen
 - `getByRole`, `getByLabelText`, `getByText` bevorzugen
-- Rendering, Interaktionen, Zustandsänderungen, asynchrones Verhalten
+- Rendering, Interaktionen, Zustandsänderungen, asynchrones Verhalten abdecken
 - Barrierefreiheit mittesten
 
 ### Integrationstests
