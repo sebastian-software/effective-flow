@@ -54,7 +54,8 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der PR-Erstellung u
   Legacy-Fallback: `worktree.baseBranch`; fehlt die Config, `main`.
 - **Rückwechsel-Ziel:** Default aus `delivery.returnBranch`; bei `auto` der lokale
   Branch-Anteil aus `delivery.baseBranch`.
-- **Titel/Beschreibung:** optional vorgegeben. Fehlen sie, leite sie aus den Commits ab.
+- **Titel/Beschreibung:** optional vorgegeben; ein vorgegebener Titel ohne gültigen Conventional-Commit-Typ wird in Schritt 7 normalisiert. Fehlen sie, leite sie aus den Commits und dem Workflow-/Änderungstyp ab.
+- **Titel-Typ-Hinweis:** optionaler Workflow-/Änderungstyp aus einem Delivery-Handback (z. B. `feat`, `fix`, `refactor`, `docs`), der die Typ-Wahl in Schritt 7 speist.
 
 ## Vorgehen
 
@@ -85,7 +86,17 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der PR-Erstellung u
    Wenn für den Head-Branch bereits ein PR existiert, werden nachträgliche Änderungen
    ausschließlich als neue Commits auf diesem Branch gepusht. Schreibe bestehende
    PR-History nicht per `commit --amend`, Rebase, Squash oder Force-Push um.
-7. **Titel und Beschreibung ableiten:** Bestimme die Commits des Head-Branches gegenüber dem Remote-Tracking-Ref des Basis-Branches (`origin/<basis-branch>`, nicht dem lokalen Branch-Anteil – der lokale Basis-Branch kann hinter dem Remote liegen und fremde Commits einschleppen). Leite daraus einen konkreten PR-Titel im Conventional-Commit-Stil und eine kurze Beschreibung der Änderungen ab. Referenziere eine zugehörige Plan-Datei aus `<plan.dir>/` (dem Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir`, Default `docs/plan`), falls vorhanden. Setze keine internen Tracking-IDs, keine `Co-Authored-By`-Trailer und keine KI-Attribution (keine „Generated with Claude Code/Codex"-Footer, keine Agent-Session-Links wie `https://claude.ai/code/…`) in PR-Titel oder -Beschreibung – auch dann nicht, wenn der Harness sie als Default anhängt.
+7. **PR-Titel und -Beschreibung ableiten (gültigen Conventional-Commit-Titel erzwingen):** Bestimme die Commits des Head-Branches gegenüber dem Remote-Tracking-Ref des Basis-Branches (`origin/<basis-branch>`, nicht dem lokalen Branch-Anteil – der lokale Basis-Branch kann hinter dem Remote liegen und fremde Commits einschleppen). Leite daraus eine kurze Beschreibung der Änderungen ab und referenziere eine zugehörige Plan-Datei aus `<plan.dir>/` (dem Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir`, Default `docs/plan`), falls vorhanden.
+
+   Der **PR-Titel muss ein gültiger Conventional Commit** sein — Form `<typ>[(scope)][!]: <beschreibung>` mit einem Typ aus den „Commit-Message-Regeln" (oben eingebettet). Das ist verpflichtend, weil der Titel bei Squash-Merge zur Subject des einzigen Commits auf dem Zielbranch wird und release-please daraus den Versions-Bump ableitet; ein untypisierter Titel erzeugt ein No-Op-Release (kein Bump, keine Auslieferung), obwohl CI grün bleibt. Bestimme den Titel in dieser Reihenfolge:
+   - **Gültigen Titel erhalten:** Trägt ein vom User oder aus dem Delivery-Handback übergebener Titel bereits einen gültigen Typ (inklusive optionalem `(scope)` und Breaking-Marker `!`), übernimm ihn unverändert.
+   - **Typ nach Wirkung wählen:** Sonst wähle den Typ nach der **Wirkung** der Änderung gemäß „Commit-Message-Regeln" und — falls vorhanden — dem übergebenen Titel-Typ-Hinweis: `feat` für neues Produktverhalten, `fix` für Korrekturen, `docs` für reine Doku, `refactor` für verhaltenserhaltende Umstrukturierung, `chore`/`build`/`ci` bzw. ein Dependency-Typ für Wartung. Umfasst der Branch mehrere Wirkungen, richtet sich der Typ nach der stärksten Wirkung (wie beim Squash-Subject), nicht nach dem jüngsten Commit.
+   - **Untypisiertes Subject normalisieren:** Hat ein sonst passender Titel kein gültiges Präfix, präfixe ihn mit dem klassifizierten Typ, statt ihn untypisiert zu lassen; optionalen `(scope)`/`!`-Marker dabei valide halten.
+   - **Nur bei echter Mehrdeutigkeit fragen:** Lässt sich die Wirkung nicht eindeutig einem Typ zuordnen, frage den User kurz nach dem Typ. Rate nicht.
+   - **Selbst-Check vor dem Erstellen:** Passt der Titel nicht auf das Muster `<typ>[(scope)][!]: …` mit einem der erlaubten Typen, bilde ihn neu — emittiere in Schritt 8 **nie** einen untypisierten Titel.
+
+   Setze keine internen Tracking-IDs, keine `Co-Authored-By`-Trailer und keine KI-Attribution (keine „Generated with Claude Code/Codex"-Footer, keine Agent-Session-Links wie `https://claude.ai/code/…`) in PR-Titel oder -Beschreibung – auch dann nicht, wenn der Harness sie als Default anhängt.
+
 8. **PR erstellen:**
    - GitHub: `gh pr create --base <basis-branch> --head <head-branch> --title <titel> --body <beschreibung>`.
    - Forgejo: `tea pr create` mit den entsprechenden Optionen für Basis-Branch, Head-Branch, Titel und Beschreibung. Prüfe die genauen Flagnamen gegen die installierte `tea`-Version, falls ein Aufruf fehlschlägt.
