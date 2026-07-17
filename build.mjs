@@ -34,6 +34,10 @@ const TOOLS_DIR = join(SOURCE_DIR, 'tools');
 const AGENTS_DIR = join(SOURCE_DIR, 'agents');
 const ROUTER_SRC = join(SOURCE_DIR, 'SKILL.md');
 
+// Hand-maintained user guide (not generated from src/). A content guard below
+// protects the canonical Plan->Build handoff examples against regression (#107).
+const DOCS_USER_GUIDE = join(ROOT_DIR, 'docs', 'user-guide');
+
 // The build writes into a temporary tree and swaps it onto dist/ only after a
 // fully successful build (see the atomic swap below), so dist/ is always either
 // entirely the previous build or entirely the new one — never a half-written
@@ -366,6 +370,41 @@ try {
   const codexRouter = readFileSync(join(CODEX_SKILL_DIR, 'SKILL.md'), 'utf8');
   if (!claudeRouter.includes(VERSION_STRING) || !codexRouter.includes(VERSION_STRING)) {
     throw new Error(`version drift — expected "${VERSION_STRING}" in both router outputs`);
+  }
+
+  // --- Docs handoff guard: the user guide must document an executable Plan->Build
+  // handoff and keep maintain out of the shared plan-reference contract (#107). ---
+
+  const gettingStarted = readFileSync(join(DOCS_USER_GUIDE, 'getting-started.md'), 'utf8');
+  if (!/\/effective-flow build docs\/plan\//.test(gettingStarted)) {
+    throw new Error(
+      'docs guard (#107): getting-started.md must show the Plan->Build handoff passing an ' +
+        'explicit plan path (e.g. `/effective-flow build docs/plan/<datei>`), not a bare build call',
+    );
+  }
+
+  const umsetzen = readFileSync(join(DOCS_USER_GUIDE, 'tools-umsetzen.md'), 'utf8');
+  const sharedGroup = umsetzen.match(/Tools\s*\(([^)]*?)\)\s*teilen dasselbe Grundmuster/);
+  if (!sharedGroup) {
+    throw new Error(
+      'docs guard (#107): tools-umsetzen.md is missing the shared plan-reference intro sentence ' +
+        '("… Tools (…) teilen dasselbe Grundmuster")',
+    );
+  }
+  for (const tool of ['build', 'fix', 'refactor', 'docs']) {
+    if (!sharedGroup[1].includes(tool)) {
+      throw new Error(
+        `docs guard (#107): "${tool}" must be listed in the shared plan-reference group in tools-umsetzen.md`,
+      );
+    }
+  }
+  for (const tool of ['maintain', 'apply', 'iterate']) {
+    if (sharedGroup[1].includes(tool)) {
+      throw new Error(
+        `docs guard (#107): "${tool}" must not be in the shared plan-reference group in ` +
+          'tools-umsetzen.md (it has no plan-file input / is a router or continuation tool)',
+      );
+    }
   }
 
   // --- Atomic swap: only now, after a fully successful build, replace dist/ ---

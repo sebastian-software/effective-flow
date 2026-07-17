@@ -44,17 +44,25 @@ Für eine neue Funktionalität oder eine größere Änderung ist das der üblich
 
 1. **`/effective-flow plan "<Beschreibung der Aufgabe>"`** klärt die Anforderung, stellt bei Bedarf
    Rückfragen und schreibt einen umsetzbaren Plan nach `docs/plan/` – noch ohne
-   Code-Änderung. Der Plan empfiehlt gleich den passenden Folge-Workflow (meist `build`).
-2. **`/effective-flow build`** setzt den Plan um: Implementierung, Tests, Doku, Validierung und
-   Review in einem Lauf. Standardmäßig (`worktree.enabled: true`) läuft das in einem
-   eigenen Git-Worktree auf einem eigenen Liefer-Branch, sodass dein aktueller Checkout
-   unberührt bleibt.
+   Code-Änderung. Am Ende nennt `plan` den genauen Pfad der erzeugten Plan-Datei
+   (etwa `docs/plan/2026-07-17-user-login.md`) und empfiehlt den passenden
+   Folge-Workflow (meist `build`).
+2. **`/effective-flow build docs/plan/2026-07-17-user-login.md`** übergibt genau diese
+   Plan-Datei und setzt sie um: Implementierung, Tests, Doku, Validierung und Review in
+   einem Lauf. Reiche den in Schritt 1 gemeldeten Pfad ausdrücklich weiter – `build`
+   verarbeitet nur den übergebenen Handle und rät **nicht** die neueste Plan-Datei.
+   Standardmäßig (`worktree.enabled: true`) läuft das in einem eigenen Git-Worktree auf
+   einem eigenen Liefer-Branch, sodass dein aktueller Checkout unberührt bleibt.
 3. **Abschluss** richtet sich nach `delivery.completion`: lokal auf den Basis-Branch
    mergen (Default), den Branch stehen lassen oder – bei `completion: "pr"` oder auf
    Nachfrage im Workflow – direkt einen Pull-Request öffnen. Ohne Worktree oder bei
    stehen gelassenem Branch holst du den Pull-Request manuell nach:
    **`/effective-flow pr`** öffnet ihn aus dem aktuellen Branch auf GitHub (`gh`) oder Forgejo
    (`tea`), inklusive aus den Commits abgeleitetem Titel und Beschreibung.
+
+In Codex ist die Syntax identisch – nur das Präfix wechselt von `/effective-flow` zu
+`$effective-flow`. Der Handoff lautet dort also `$effective-flow plan "<Beschreibung der Aufgabe>"`
+und anschließend `$effective-flow build docs/plan/2026-07-17-user-login.md`.
 
 Details zu Worktree, Liefer-Branch und den drei Abschlussarten stehen in
 [Worktree und Delivery](worktree-und-delivery.md); die vollständige Tool-Referenz für

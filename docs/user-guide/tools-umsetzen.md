@@ -1,8 +1,9 @@
 # Tool-Referenz: Eine Änderung umsetzen
 
-Diese Gruppe führt vom geklärten Plan oder Issue zum fertigen Code. Fünf der sieben Tools
-(`build`, `fix`, `refactor`, `docs`, `maintain`) teilen dasselbe Grundmuster (`apply` ist der
-reine Router, `iterate` setzt eine bereits gelieferte Änderung fort):
+Diese Gruppe führt vom geklärten Plan oder Issue zum fertigen Code. Vier der sieben Tools
+(`build`, `fix`, `refactor`, `docs`) teilen dasselbe Grundmuster; `apply` ist der reine
+Router, `maintain` fährt wiederkehrende Wartung ohne Plan-Eingabe (siehe unten) und
+`iterate` setzt eine bereits gelieferte Änderung fort:
 
 - Sie können direkt mit einer Anforderung gestartet werden **oder** eine bereits von
   `/effective-flow plan` erzeugte Plan-Datei referenzieren. Eine referenzierte Plan-Datei muss zuerst
