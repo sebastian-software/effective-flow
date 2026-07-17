@@ -81,7 +81,7 @@ fehlschlägt (wie in `{{SKILL:pr}}` vermerkt).
 | ------------------------------ | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | Auf Review-Kommentar antworten | `gh api repos/<owner>/<repo>/pulls/<nr>/comments/<comment-id>/replies -f body=…` | Forgejo-API `POST /repos/<owner>/<repo>/pulls/<nr>/reviews` mit Bezug auf den Kommentar |
 
-Jede Antwort trägt den Marker `<!-- firmo-iterate -->` (siehe Idempotenz).
+Jede Antwort trägt den Marker `<!-- effective-flow-iterate -->` (siehe Idempotenz).
 
 ### Einen Thread auflösen
 
@@ -95,16 +95,19 @@ Jede Antwort trägt den Marker `<!-- firmo-iterate -->` (siehe Idempotenz).
 | ------------------- | ----------------------------- | --------------------------------------- |
 | PR-Kommentar posten | `gh pr comment <nr> --body …` | `tea comment <nr> …`, sonst Forgejo-API |
 
-Es wird pro Lauf **genau ein** Summary-Kommentar mit Marker `<!-- firmo-iterate -->`
+Es wird pro Lauf **genau ein** Summary-Kommentar mit Marker `<!-- effective-flow-iterate -->`
 gepostet: welche Punkte umgesetzt, welche übersprungen und welche reinen Fragen als
 offen/zurückgestellt gelistet sind.
 
 ### Idempotenz über den Effective Flow-Marker
 
-Antworten und der Summary-Kommentar tragen den HTML-Marker `<!-- firmo-iterate -->`. Lies
+Antworten und der Summary-Kommentar tragen den HTML-Marker `<!-- effective-flow-iterate -->`. Lies
 die vorhandenen PR- und Review-Kommentare **vor jedem Schreiben** frisch: ein Thread, der
-bereits `resolved` ist oder eine `<!-- firmo-iterate -->`-Antwort trägt, gilt als erledigt und
-wird nicht erneut bearbeitet. So bleibt ein zweiter `{{SKILL:iterate}}`-Lauf auf demselben PR
+bereits `resolved` ist oder eine `<!-- effective-flow-iterate -->`-Antwort trägt, gilt als erledigt und
+wird nicht erneut bearbeitet. **Backcompat (eine Generation):** ein noch vorhandener Alt-Marker
+`<!-- firmo-iterate -->` aus einem früheren Lauf wird beim Lesen gleichwertig erkannt (kein
+Doppel-Bearbeiten in-flight befindlicher Threads); neu geschrieben wird ausschließlich
+`<!-- effective-flow-iterate -->`. So bleibt ein zweiter `{{SKILL:iterate}}`-Lauf auf demselben PR
 sauber.
 
 ### Keine History-Umschreibung
