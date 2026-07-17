@@ -19,8 +19,9 @@ language-rules
 task-tracking
 ```
 
-```include
+```lazy-include
 config-migration
+when: die Effective-Flow-Konfiguration erstmals gelesen oder eine Alt-Config migriert wird
 ```
 
 ```include
@@ -43,8 +44,9 @@ completion-protocol
 goal-completion
 ```
 
-```include
+```lazy-include
 worktree-integration
+when: der Delivery-/Worktree-Modus bestimmt wird (Phase 2, Schritt 0)
 ```
 
 ## Wisdom Accumulation
@@ -84,14 +86,16 @@ Ein initiales Aufsetzen der Projektdokumentation ist kein eigenes Tool, sondern 
 
 Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:docs}}`.
 
-```include
+```lazy-include
 review-report-backlinks
+when: ein Review-Report-Rückverweis geschrieben oder aktualisiert wird
 ```
 
 Aktueller Workflow für Plan-Referenzen: Dokumentation (`{{SKILL:docs}}`).
 
-```include
+```lazy-include
 plan-reference-routing
+when: das Argument auf eine bestehende Plan-Datei zeigen könnte
 ```
 
 ```include

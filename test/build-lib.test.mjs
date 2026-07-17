@@ -18,6 +18,10 @@ import {
   missingCategoryReadmes,
   findSelfReferentialContractPhrases,
   ASK_MAX_HEADER_LENGTH,
+  renderLazyPointer,
+  resolveLazyIncludes,
+  collectIncludeNames,
+  assertNoEagerLazyOverlap,
 } from '../build-lib.mjs';
 
 const refConfig = {
@@ -482,5 +486,100 @@ test('findSelfReferentialContractPhrases allows legitimate {{AGENT:X}} delegatio
       'Cherry-pick zurück in den ursprünglichen Branch; auch wenn der ursprüngliche Body dünn ist.',
     ),
     [],
+  );
+});
+
+// --- Lazy-include directive (#99) ---
+
+test('renderLazyPointer renders a load pointer with and without a trigger', () => {
+  assert.equal(
+    renderLazyPointer('worktree-integration', 'der Delivery-Modus bestimmt wird'),
+    '**Bei Bedarf laden:** Lies `shared/worktree-integration.md`, sobald der Delivery-Modus bestimmt wird.',
+  );
+  // No trigger clause → just the load pointer, still ending in a period.
+  assert.equal(
+    renderLazyPointer('config-migration', ''),
+    '**Bei Bedarf laden:** Lies `shared/config-migration.md`.',
+  );
+});
+
+test('resolveLazyIncludes replaces fences with pointers and collects unique names', () => {
+  const body = [
+    'Vorher.',
+    '```lazy-include',
+    'config-migration',
+    'when: die Config gelesen wird',
+    '```',
+    'Mitte.',
+    '```lazy-include',
+    'issue-tracker',
+    'when: der Tracker-Modus `remote` aktiv ist',
+    '```',
+    'Nachher.',
+  ].join('\n');
+  const { body: out, names } = resolveLazyIncludes(body);
+  assert.deepEqual(names, ['config-migration', 'issue-tracker']);
+  assert.match(
+    out,
+    /\*\*Bei Bedarf laden:\*\* Lies `shared\/config-migration\.md`, sobald die Config gelesen wird\./,
+  );
+  assert.match(
+    out,
+    /Lies `shared\/issue-tracker\.md`, sobald der Tracker-Modus `remote` aktiv ist\./,
+  );
+  // The fence markers are gone; the surrounding prose is preserved.
+  assert.doesNotMatch(out, /```lazy-include/);
+  assert.match(out, /Vorher\.[\s\S]*Mitte\.[\s\S]*Nachher\./);
+});
+
+test('resolveLazyIncludes de-duplicates a fragment referenced twice', () => {
+  const body = [
+    '```lazy-include',
+    'config-migration',
+    'when: A',
+    '```',
+    '```lazy-include',
+    'config-migration',
+    'when: B',
+    '```',
+  ].join('\n');
+  const { names } = resolveLazyIncludes(body);
+  assert.deepEqual(names, ['config-migration']);
+});
+
+test('resolveLazyIncludes tolerates a fence without a when trigger', () => {
+  const { body, names } = resolveLazyIncludes('```lazy-include\nplan-numbering\n```');
+  assert.deepEqual(names, ['plan-numbering']);
+  assert.equal(body, '**Bei Bedarf laden:** Lies `shared/plan-numbering.md`.');
+});
+
+test('collectIncludeNames separates eager and lazy includes', () => {
+  const body = [
+    '```include',
+    'language-rules',
+    '```',
+    '```lazy-include',
+    'config-migration',
+    'when: X',
+    '```',
+    '```include',
+    'task-tracking',
+    '```',
+  ].join('\n');
+  const { eager, lazy } = collectIncludeNames(body);
+  assert.deepEqual([...eager].sort(), ['language-rules', 'task-tracking']);
+  assert.deepEqual([...lazy], ['config-migration']);
+});
+
+test('assertNoEagerLazyOverlap passes for disjoint sets and throws on overlap', () => {
+  assert.doesNotThrow(() =>
+    assertNoEagerLazyOverlap(new Set(['language-rules']), new Set(['config-migration'])),
+  );
+  assert.throws(
+    () =>
+      assertNoEagerLazyOverlap(new Set(['config-migration', 'x']), new Set(['config-migration']), {
+        context: 'tools/build.md',
+      }),
+    /both eager- and lazy-included \(in tools\/build\.md\): config-migration/,
   );
 });

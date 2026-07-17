@@ -28,6 +28,9 @@ import {
   missingCategoryReadmes,
   README_MANDATORY_CATEGORIES,
   findSelfReferentialContractPhrases,
+  resolveLazyIncludes,
+  collectIncludeNames,
+  assertNoEagerLazyOverlap,
 } from './build-lib.mjs';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -193,6 +196,7 @@ function resolveIncludes(body) {
 
 const tools = []; // { name, description, body }
 const agents = []; // { name, fm, body }
+let budgetReport = []; // [{ name, lines }] — always-loaded size of the largest tools (#99)
 
 try {
   const toolFiles = readdirSync(TOOLS_DIR)
@@ -214,10 +218,24 @@ try {
     knownAgents,
   };
 
+  // Shared fragments deferred via ```lazy-include across all sources; each is
+  // shipped once per harness as shared/<name>.md (see the per-harness loop).
+  const lazyFragments = new Set();
+
   const readSource = (dir, file, context) => {
     const content = normalizeLineEndings(readFileSync(join(dir, file), 'utf8'));
     const fm = extractFrontmatter(content);
-    const body = resolveIncludes(extractBody(content)).replace(/\{\{VERSION\}\}/g, VERSION_STRING);
+    const rawBody = extractBody(content);
+    // Guard: no fragment is both eager- and lazy-included in the same file.
+    const { eager, lazy } = collectIncludeNames(rawBody);
+    assertNoEagerLazyOverlap(eager, lazy, { context });
+    // Eager includes inline now; each lazy include becomes a load pointer and is
+    // recorded for shipping as a standalone shared/<name>.md fragment.
+    const { body: withPointers, names } = resolveLazyIncludes(resolveIncludes(rawBody), {
+      context,
+    });
+    for (const name of names) lazyFragments.add(name);
+    const body = withPointers.replace(/\{\{VERSION\}\}/g, VERSION_STRING);
     // Guard: description is strictly double-quoted, and every SKILL/AGENT
     // reference (in frontmatter and body) points at an existing source.
     assertQuotedDescription(fm, { context });
@@ -388,6 +406,27 @@ try {
       );
     }
 
+    // Lazy-loaded shared fragments (#99): each deferred fragment is shipped once
+    // per harness as shared/<name>.md so a tool's load pointer resolves. Rendered
+    // through the same pipeline as a tool body (nested eager includes, version,
+    // refs/ask).
+    if (lazyFragments.size > 0) {
+      mkdirSync(join(skillDir, 'shared'), { recursive: true });
+      for (const name of lazyFragments) {
+        const fragPath = join(SHARED_DIR, `${name}.md`);
+        if (!existsSync(fragPath)) {
+          throw new Error(`lazy-include fragment source not found: ${fragPath}`);
+        }
+        const rawFrag = resolveIncludes(
+          normalizeLineEndings(readFileSync(fragPath, 'utf8')),
+        ).replace(/\{\{VERSION\}\}/g, VERSION_STRING);
+        writeFileSync(
+          join(skillDir, 'shared', `${name}.md`),
+          renderBody(rawFrag, harness, { ...refConfig, context: `shared/${name}.md` }),
+        );
+      }
+    }
+
     // Agents (nested subagents)
     for (const a of agents) {
       const context = `agents/${a.name}.md`;
@@ -434,6 +473,42 @@ try {
         writeFileSync(join(skillDir, 'agents', `${a.name}.toml`), toml);
       }
     }
+  }
+
+  // --- Guard: every lazy-loaded fragment is shipped for BOTH harnesses (#99) ---
+  // A tool's load pointer ("Lies `shared/<name>.md` …") must resolve on Claude
+  // Code and Codex alike, so the fragment file has to exist in both skill dirs.
+  for (const name of lazyFragments) {
+    for (const [harness, skillDir] of [
+      ['claude', CLAUDE_SKILL_DIR],
+      ['codex', CODEX_SKILL_DIR],
+    ]) {
+      const shipped = join(skillDir, 'shared', `${name}.md`);
+      if (!existsSync(shipped)) {
+        throw new Error(
+          `lazy-include guard (#99): fragment "${name}" is referenced but not shipped for ${harness} (${shipped})`,
+        );
+      }
+    }
+  }
+
+  // --- Context budget report + guard (#99) ---
+  // The largest tools keep their always-loaded core — the built tool file, which
+  // no longer inlines the mode-gated fragments — under a documented line budget.
+  // A routine invocation that never reaches a deferred mode loads only this core.
+  // See docs/developer-guide/build-system.md ("Progressive Disclosure").
+  const CONTEXT_BUDGET_MAX_LINES = 700;
+  const BUDGET_TOOLS = ['build', 'fix', 'docs', 'review', 'plan'];
+  budgetReport = BUDGET_TOOLS.map((name) => {
+    const built = readFileSync(join(CLAUDE_SKILL_DIR, 'tools', `${name}.md`), 'utf8');
+    return { name, lines: built.split('\n').length };
+  });
+  const overBudget = budgetReport.filter((r) => r.lines > CONTEXT_BUDGET_MAX_LINES);
+  if (overBudget.length > 0) {
+    throw new Error(
+      `context budget (#99): always-loaded tool core exceeds the ${CONTEXT_BUDGET_MAX_LINES}-line budget: ` +
+        overBudget.map((r) => `${r.name} (${r.lines})`).join(', '),
+    );
   }
 
   // --- Version-drift guard: Claude and Codex router carry the same version ---
@@ -509,3 +584,7 @@ process.stdout.write(
 process.stdout.write(
   `  Codex:       ${exposedCount} tools (+${internalCount} internal), ${agents.length} agents -> dist/codex/${FIRMO_SKILL_NAME}/\n`,
 );
+if (budgetReport.length > 0) {
+  const sizes = budgetReport.map((r) => `${r.name} ${r.lines}`).join(', ');
+  process.stdout.write(`  Always-loaded core (lines, budget 700): ${sizes}\n`);
+}

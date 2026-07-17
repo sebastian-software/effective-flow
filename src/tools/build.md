@@ -15,8 +15,9 @@ language-rules
 task-tracking
 ```
 
-```include
+```lazy-include
 config-migration
+when: die Effective-Flow-Konfiguration erstmals gelesen oder eine Alt-Config migriert wird
 ```
 
 ## Projektkonventionen
@@ -27,8 +28,9 @@ Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und b
 plan-status
 ```
 
-```include
+```lazy-include
 plan-numbering
+when: eine Plan-Datei angelegt oder ihr Datums-Slug-Name aufgelöst wird
 ```
 
 ## Phase 0: Intent Gate
@@ -120,8 +122,9 @@ completion-protocol
 goal-completion
 ```
 
-```include
+```lazy-include
 worktree-integration
+when: der Delivery-/Worktree-Modus bestimmt wird (Phase 2, Schritt 0)
 ```
 
 ## Wisdom Accumulation
@@ -208,18 +211,21 @@ Bei gut trennbaren Teilaufgaben ist das interne Sub-Agent-Pattern erlaubt und f�
 
 Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:build}}`.
 
-```include
+```lazy-include
 review-report-backlinks
+when: ein Review-Report-Rückverweis geschrieben oder aktualisiert wird
 ```
 
-```include
+```lazy-include
 unresolved-review-report
+when: offene oder nicht umgesetzte Review-Findings als Report ausgelagert werden
 ```
 
 Aktueller Workflow für Plan-Referenzen: Feature (`{{SKILL:build}}`).
 
-```include
+```lazy-include
 plan-reference-routing
+when: das Argument auf eine bestehende Plan-Datei zeigen könnte
 ```
 
 ```include

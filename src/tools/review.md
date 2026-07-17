@@ -66,8 +66,9 @@ Tasks werden an **zwei** Zeitpunkten angelegt, weil der Verzeichnis-Split in Pha
 - Tasks gemäß Zeitpunkt A und B oben anlegen, damit der User vor jedem Start der relevanten Sub-Agenten die volle Liste sieht.
 - Aktualisiere Tasks zeitnah, sobald ein Sub-Agent meldet — nicht gebatched.
 
-```include
+```lazy-include
 effective-flow-dir-migration
+when: eine Legacy-`.sf-plugin/`- oder `.firmo/`-Runtime-Dir migriert werden muss
 ```
 
 ## Empfohlene Skills
@@ -223,12 +224,14 @@ Ob `.effective-flow/` eingecheckt oder ignoriert wird, entscheidet das jeweilige
 7. Nummeriere neue Findings fortlaufend ab `lastFindingNumber + 1` mit 7-stelliger Formatierung: `R-0000001`, `R-0000002`, ...
 8. Schreibe nach Erstellung des Berichts die höchste vergebene Finding-Nummer zurück in `.effective-flow/memory.json`. Erhalte dabei `configMigration` und andere vorhandene Memory-Felder. Die Memory-Datei muss geschrieben werden, bevor der Workflow mit `ERLEDIGT` abgeschlossen wird. Falls der Schreibvorgang fehlschlägt, weise den User darauf hin.
 
-```include
+```lazy-include
 config-migration
+when: die Effective-Flow-Konfiguration erstmals gelesen oder eine Alt-Config migriert wird
 ```
 
-```include
+```lazy-include
 issue-tracker
+when: der Tracker-Modus `remote` aktiv ist
 ```
 
 ## Wisdom Accumulation

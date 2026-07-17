@@ -417,3 +417,70 @@ export function findSelfReferentialContractPhrases(text) {
   }
   return hits;
 }
+
+// --- Lazy-include directive (#99) — progressive disclosure inside a tool ---
+//
+// A ```lazy-include fence defers a mode-gated shared fragment. Instead of
+// inlining `src/shared/<name>.md` eagerly (```include), the build ships the
+// fragment once per harness as a loadable `shared/<name>.md` and replaces the
+// directive with a conditional load pointer at the decision point, so a routine
+// invocation that never reaches the mode never loads the fragment. See
+// docs/developer-guide/build-system.md ("Progressive Disclosure über den Router
+// hinaus").
+//
+// Fence shape (the interior is kept verbatim by oxfmt):
+//   ```lazy-include
+//   <name>
+//   when: <trigger clause>
+//   ```
+// `name` is the shared fragment; `when` is the trigger clause rendered after
+// "sobald " in the pointer (optional but expected — it is the load trigger).
+export const LAZY_INCLUDE_RE = /```lazy-include\n([^\n]+)\n(?:when:[ \t]*([^\n]*)\n)?```/g;
+
+// The harness-neutral load pointer emitted in place of one lazy fence. It names
+// the shipped `shared/<name>.md` and, when a trigger is given, the exact
+// condition under which the agent should read it.
+export function renderLazyPointer(name, when) {
+  const trigger = when && when.trim() ? `, sobald ${when.trim()}` : '';
+  return `**Bei Bedarf laden:** Lies \`shared/${name}.md\`${trigger}.`;
+}
+
+// Replace every ```lazy-include fence in `body` with its load pointer. Returns
+// { body, names } where `names` is the ordered, de-duplicated list of referenced
+// fragments (so build.mjs knows which fragment files to ship). A fence without a
+// name throws with context.
+export function resolveLazyIncludes(body, { context } = {}) {
+  const names = [];
+  const out = body.replace(LAZY_INCLUDE_RE, (_, rawName, when) => {
+    const name = rawName.trim();
+    if (!name) {
+      throw new Error(`lazy-include fence is missing a fragment name${contextSuffix(context)}`);
+    }
+    if (!names.includes(name)) names.push(name);
+    return renderLazyPointer(name, when);
+  });
+  return { body: out, names };
+}
+
+// Collect the shared-fragment names a raw body references eagerly (```include)
+// and lazily (```lazy-include). Run this on the raw source body, before either
+// resolver rewrites it.
+export function collectIncludeNames(body) {
+  const eager = new Set();
+  for (const m of body.matchAll(/```include\n([^\n]+)\n```/g)) eager.add(m[1].trim());
+  const lazy = new Set();
+  for (const m of body.matchAll(LAZY_INCLUDE_RE)) lazy.add(m[1].trim());
+  return { eager, lazy };
+}
+
+// Guard: a fragment must not be both eager- and lazy-included in the same file.
+// Doing both would defer the block in prose yet still inline its full content,
+// doubling it and defeating the budget. Throws listing every overlapping name.
+export function assertNoEagerLazyOverlap(eager, lazy, { context } = {}) {
+  const overlap = [...lazy].filter((name) => eager.has(name));
+  if (overlap.length > 0) {
+    throw new Error(
+      `fragment(s) both eager- and lazy-included${contextSuffix(context)}: ${overlap.join(', ')}`,
+    );
+  }
+}

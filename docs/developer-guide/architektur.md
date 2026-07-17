@@ -27,6 +27,12 @@ die Session schlank und vermeidet Token-Exhaustion durch unnötig vorgeladene To
 
 Ohne oder mit unbekanntem `<tool>` gibt der Router nur die Tool-Liste aus und tut sonst nichts.
 
+Dieselbe Progressive Disclosure wirkt **innerhalb** eines Tools: modus-gated Shared-Fragmente
+(z. B. Worktree-Delivery, Remote-Tracker, Report-Handling) werden nicht mehr eager inlined,
+sondern per `lazy-include` erst am Entscheidungspunkt nachgeladen. Details und das
+Kontext-Budget stehen in [`build-system.md`](build-system.md) unter „Progressive Disclosure
+über den Router hinaus".
+
 Effective Flow kennt zwei Bausteintypen:
 
 | Typ       | Beschreibung                                   | Aufruf                                            |
