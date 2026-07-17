@@ -1,5 +1,5 @@
 ---
-description: "Liest eine Review-Report-Datei ein, wertet Entwickler-Anmerkungen aus, erstellt ADRs für abgelehnte Findings und delegiert umsetzbare Findings parallel an {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}} oder {{SKILL:docs}}."
+description: "Liest eine Review-Report-Datei ein, wertet Entwickler-Anmerkungen aus, übergibt abgelehnte Findings als Entscheidungs-Kandidaten an den decision-records-Skill (ADR nur bei dauerhafter Entscheidung) und delegiert umsetzbare Findings parallel an {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}} oder {{SKILL:docs}}."
 ---
 
 # Effective Flow Apply Review
@@ -8,7 +8,7 @@ Du bist der Orchestrator für die automatisierte Umsetzung von Review-Report-Fin
 
 ## Ziel
 
-Dieser Workflow liest eine bestehende Review-Report-Datei aus `.effective-flow/review/` ein, wertet die Entwickler-Anmerkungen pro Finding aus und delegiert die Umsetzung an die passenden Workflows. Findings, die bewusst nicht umgesetzt werden sollen, werden als ADRs dokumentiert.
+Dieser Workflow liest eine bestehende Review-Report-Datei aus `.effective-flow/review/` ein, wertet die Entwickler-Anmerkungen pro Finding aus und delegiert die Umsetzung an die passenden Workflows. Findings, die bewusst nicht umgesetzt werden sollen, übergibt der Workflow als Entscheidungs-Kandidaten an den `decision-records`-Skill; nur dauerhafte Entscheidungen werden als ADR dokumentiert, nicht-dauerhafte Ablehnungen bleiben im Report bzw. Tracker-Artefakt.
 
 Im **Remote-Modus** (Tracker-Modus `remote`) liest der Workflow die Findings stattdessen aus einem Issue-Tracker: übergeben wird ein Epic-Issue oder eine Liste konkreter Finding-Issues, pro Finding entsteht ein PR, und der Epic-Eintrag wird nach PR-Erstellung abgehakt. Die Abweichungen sind in „Remote-Modus (Issue-Tracker)“ gebündelt; `wontfix`-Findings ersetzen dort die ablehnende Entwickler-Anmerkung.
 
@@ -32,6 +32,10 @@ adr-convention
 commit-message-rules
 ```
 
+## Empfohlene Skills
+
+- `decision-records`
+
 ## Aufgabenverfolgung im Detail
 
 Zusätzlich zur generischen Regel im obigen Include verlangt dieser Skill **per-Finding-Granularität**, damit der User während des Workflows live sieht, wie viele Findings noch offen sind.
@@ -43,7 +47,7 @@ Lege gleich zu Beginn von Phase 1 (nach erfolgreicher Report-Klassifikation) fol
 1. **Phase-Level-Tasks** für jede Workflow-Phase, in der Reihenfolge:
    - „Phase 1: Report einlesen und validieren“
    - „Phase 2: Commit- und Stash-Strategie festlegen“
-   - „Phase 3: ADR-Erstellung“
+   - „Phase 3: Abgelehnte Findings an decision-records übergeben“
    - „Phase 4: Vorabanalyse und parallele Delegation“
    - „Phase 5: Report aktualisieren“
    - „Phase 6: Stash-Bereinigung“
@@ -92,7 +96,7 @@ Verwende `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
 - berechnete Komponenten aus Phase 4.2
 - umgesetzte Findings und deren Ergebnis
 - fehlgeschlagene Delegationen
-- erzeugte ADRs
+- abgelehnte Findings und ihr Ergebnis (dauerhafte Entscheidung mit ADR-Slug bzw. nicht-dauerhaft ohne ADR)
 
 Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lösche die Datei am Ende.
 
@@ -193,7 +197,7 @@ Bestimme zuerst den Tracker-Modus über die „Apply-Quellen-Erkennung“ (Repor
    - Bereits vorhandene Umsetzungshinweise (✅)
 7. Klassifiziere jedes Finding:
    - **Bereits umgesetzt:** Finding hat bereits einen ✅-Hinweis → überspringen
-   - **Nicht umsetzen:** Entwickler-Anmerkung beginnt mit „Nicht umsetzen“ → ADR erstellen
+   - **Nicht umsetzen:** Entwickler-Anmerkung beginnt mit „Nicht umsetzen“ → als Entscheidungs-Kandidat an `decision-records` (ADR nur bei dauerhafter Entscheidung)
    - **Umsetzen:** Kein ✅-Hinweis und keine ablehnende Anmerkung → an Skill delegieren
    - **Umsetzen mit Kontext:** Entwickler-Anmerkung vorhanden, die nicht mit „Nicht umsetzen“ beginnt → an Skill delegieren, Anmerkung als zusätzlichen Kontext mitgeben
 8. Gib dem User eine Übersicht:
@@ -205,12 +209,12 @@ Bestimme zuerst den Tracker-Modus über die „Apply-Quellen-Erkennung“ (Repor
 | Status | Anzahl |
 |---|---|
 | Umzusetzen | X |
-| Nicht umsetzen (ADR) | Y |
+| Nicht umsetzen (→ decision-records) | Y |
 | Bereits umgesetzt | Z |
 | Gesamt | N |
 ```
 
-9. Falls keine umsetzbaren Findings vorhanden sind und keine ADRs zu erstellen sind: Kurzmeldung und Abbruch.
+9. Falls keine umsetzbaren Findings vorhanden sind und keine abgelehnten Findings zu behandeln sind: Kurzmeldung und Abbruch.
 
 ### Phase 2: Commit- und Stash-Strategie
 
@@ -274,44 +278,23 @@ Nachdem Commit-Strategie und Stash-Policy feststehen, gib gemäß „Goal-getrie
 
 Die detaillierte Mechanik der committenden Strategien – **Einzeln** (Git-Commit-Mutex) und **Einzeln mit Worktrees** (Worktree-Isolation samt Cherry-Pick-Konfliktbewertung) – steht in der internen Teil-Datei `tools/apply-review-commit-mechanics.md`. Lies sie, sobald in Phase 2 die Strategie feststeht und Commits erzeugt werden; bei **Keine Commits** entfällt sie. Die späteren Phasen verweisen für die Detailregeln auf diese Teil-Datei.
 
-### Phase 3: ADR-Erstellung
+### Phase 3: Abgelehnte Findings → Entscheidungs-Kandidat (Delegation an `decision-records`)
 
-ADRs sind lebende, slug-benannte Dokumente gemäß „Lebendes ADR-Modell“ (`adr-convention.md`). Dieser Workflow legt **kein** nummeriertes ADR mehr an und bestimmt keine ADR-Nummer.
+Das ADR-Authoring besitzt der Host-Skill `decision-records` (Domänen-Owner: ADR-Würdigung, Repo-Konventions-Erkennung, Lifecycle, Supersession, Index). Dieser Workflow **autort kein ADR mehr selbst** und kodiert weder `docs/adr/`, noch Nummerierung, Status-Text oder ein festes Template. Firmo behält das **Mapping** (Finding + Entwickler-Anmerkung → Entscheidungs-Kandidat), den Approval-/Status-Fluss, den **Backlink** zu Report/Remote-Issue und das Tracking des Ergebnis-Artefakts in der Zusammenfassung.
 
-Für jedes Finding mit „Nicht umsetzen“-Anmerkung:
+Sichte zunächst die verfügbaren Skills:
 
-1. Bestimme das ADR-Verzeichnis (Default `docs/adr/`) und erstelle es falls nicht vorhanden.
-2. Bilde aus dem Finding-Titel einen kebab-case-Slug (`<slug>`). Prüfe, ob im ADR-Verzeichnis bereits eine thematisch passende lebende ADR existiert (gleiches Thema/gleiche Entscheidung, per Slug oder Titel erkennbar):
-   - **Vorhanden:** aktualisiere sie **in-place** gemäß `adr-convention.md` (Inhalt und `## Status`), statt ein zweites Dokument anzulegen. Datei direkt vor dem Schreiben frisch einlesen.
-   - **Nicht vorhanden:** lege eine neue lebende ADR unter `docs/adr/<slug>.md` an.
-3. Inhalt der ADR (kein `NNNN`-Präfix im Titel):
-
-```markdown
-# [Finding-Titel]
-
-## Status
-
-Nicht umgesetzt
-
-## Kontext
-
-Review-Report: [Report-Dateiname], Finding [R-XXXXXXX]
-Workflow: Effective Flow Apply-Review
-
-## Entscheidung
-
-[Grund aus der Entwickler-Anmerkung]
-
-## Begründung
-
-[Entwickler-Anmerkung vollständig]
-
-## Quell-Finding
-
-[R-XXXXXXX] aus [Report-Dateiname]: [Problem-Beschreibung aus dem Finding]
+```include
+skill-discovery
 ```
 
-4. Gib dem User eine Statusmeldung über die angelegten bzw. aktualisierten ADRs und referenziere jede per Slug, z. B. `(ADR: <slug>)`.
+Für jedes Finding mit „Nicht umsetzen“-Anmerkung (im Remote-Modus: `wontfix`-Finding, mit `wontfix`-Begründung statt Entwickler-Anmerkung):
+
+1. **Entscheidungs-Kandidat bilden.** Fasse aus dem Finding und der Entwickler-Anmerkung einen Kandidaten zusammen: sprechender Titel, Kontext (Report-Dateiname + Finding-ID bzw. Issue-/Epic-Nummer), die Ablehnungs-Begründung (vollständige Anmerkung/`wontfix`-Text) und einen nachverfolgbaren **Backlink** zum Quell-Finding.
+2. **An `decision-records` delegieren.** Übergib den Kandidaten an den Skill mit dem Auftrag, (a) zu **entscheiden, ob** eine dauerhafte Architektur-/Grundsatzentscheidung vorliegt, die eine ADR rechtfertigt, und (b) sie, falls ja, nach der **entdeckten Repo-Konvention** zu autoren. Die für dieses Repo deklarierte Konvention ist das lebende Slug-Modell aus `adr-convention.md` (Ort/Dateiname/Titel/Status/Mutabilität); deklariert das Zielprojekt eine eigene ADR-Konvention, folgt der Skill dieser. Constraint an den Skill: die ADR trägt den Backlink zum Finding und wird **nicht** zu einem Task-Status-Ledger; eine bestehende thematisch passende lebende ADR wird **in-place** aktualisiert statt dupliziert.
+3. **Nicht-dauerhafte Ablehnung.** Stuft `decision-records` den Kandidaten als reine Delivery-Historie ohne dauerhafte Wirkung ein (kein ADR gerechtfertigt), wird **keine** ADR erzwungen — die Ablehnung bleibt im Review-Report bzw. (Remote-Modus) am Issue/Epic dokumentiert (siehe Phase 5).
+4. **Minimaler Fallback (Skill fehlt).** Ist `decision-records` nicht verfügbar (nicht installiert, `skills.enabled: false` oder via `exclude` deaktiviert), autort dieser Workflow die dauerhafte Entscheidung selbst nach der **minimalen Fallback-Struktur** aus `adr-convention.md` (lebende Slug-ADR unter dem erkannten ADR-Verzeichnis, Default `docs/adr/<slug>.md`; bestehende thematisch passende ADR in-place aktualisieren, Datei vorher frisch einlesen). **Kein** Erfinden einer zweiten Konvention.
+5. Gib dem User eine Statusmeldung über die erzeugten bzw. aktualisierten Records und referenziere jeden per Slug, z. B. `(ADR: <slug>)`; nenne die als nicht-dauerhaft eingestuften Ablehnungen separat.
 
 ### Phase 4: Vorabanalyse und parallele Delegation
 
@@ -416,8 +399,9 @@ Beispiel (aktionsübergreifend) mit fünf Findings über mehrere Aktionen:
 1. Lies die Report-Datei erneut frisch vom Dateisystem ein. Die Datei könnte sich während der Umsetzung geändert haben.
 2. Ergänze an jedem erfolgreich umgesetzten Finding als letzten Eintrag:
    `✅ Umgesetzt am YYYY-MM-DD via Effective Flow Apply-Review`
-3. Ergänze an jedem Finding mit ADR als letzten Eintrag:
-   `📋 ADR am YYYY-MM-DD angelegt/aktualisiert: nicht umgesetzt (ADR: <slug>)`
+3. Ergänze an jedem abgelehnten Finding als letzten Eintrag – je nach Einstufung durch `decision-records`:
+   - dauerhafte Entscheidung mit ADR: `📋 ADR am YYYY-MM-DD angelegt/aktualisiert: nicht umgesetzt (ADR: <slug>)`
+   - nicht-dauerhafte Ablehnung ohne ADR: `⏭️ Am YYYY-MM-DD als nicht umgesetzt dokumentiert (keine dauerhafte Entscheidung, kein ADR)`
 4. Speichere die aktualisierte Report-Datei.
 
 ### Phase 6: Stash-Bereinigung
@@ -529,7 +513,8 @@ options:
 | Status | Anzahl |
 |---|---|
 | Erfolgreich umgesetzt | X |
-| ADR erstellt | Y |
+| ADR erstellt (dauerhafte Entscheidung) | Y |
+| Abgelehnt ohne ADR (nicht-dauerhaft) | V |
 | Fehlgeschlagen | Z |
 | Übersprungen (bereits umgesetzt) | W |
 
