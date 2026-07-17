@@ -44,7 +44,7 @@ Lege die Per-Finding-Tasks wie im lokalen Modus an; die Finding-ID ist die `R-XX
 
 ### Phase 2 remote: Commit- und PR-Strategie
 
-Die Commit-/PR-Strategie ist im Remote-Modus standardmäßig **„ein PR pro Finding“** — die lokale Commit-Strategie-Frage entfällt. Jedes umsetzbare Finding ohne Ziel-PR ist eine **eigene Sub-Gruppe** in einem eigenen Liefer-Branch, bevorzugt mit Worktree-Isolation. Basis-Branch und Branch-Namensbildung stützen sich auf den `delivery`-Config-Block: Branch `<delivery.branchPrefix>/apply-review/<R-ID-oder-slug>` ab `delivery.baseBranch` (Legacy-Fallback: alte `worktree.baseBranch`/`worktree.branchPrefix`-Werte). Dateiüberlappende Findings laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden.
+Die Commit-/PR-Strategie ist im Remote-Modus standardmäßig **„ein PR pro Finding“** — die lokale Commit-Strategie-Frage entfällt. Jedes umsetzbare Finding ohne Ziel-PR ist eine **eigene Komponente** in einem eigenen Liefer-Branch, bevorzugt mit Worktree-Isolation. Basis-Branch und Branch-Namensbildung stützen sich auf den `delivery`-Config-Block: Branch `<delivery.branchPrefix>/apply-review/<R-ID-oder-slug>` ab `delivery.baseBranch` (Legacy-Fallback: alte `worktree.baseBranch`/`worktree.branchPrefix`-Werte). Dateiüberlappende Findings laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden.
 
 Hat ein Finding einen Ziel-PR aus Phase 1 remote, gilt stattdessen **„neuer Commit auf existierendem PR“**:
 

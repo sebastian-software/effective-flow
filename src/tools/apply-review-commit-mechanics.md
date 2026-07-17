@@ -16,7 +16,7 @@ Mutex-Konvention:
 
 - Lock-Pfad: `.effective-flow/apply-review-commit.lock`
 - Lock-Erwerb: atomar per `mkdir .effective-flow/apply-review-commit.lock`
-- Lock-Inhalt: schreibe nach erfolgreichem Erwerb eine kurze Owner-Datei, z. B. `owner`, mit Finding-ID, Sub-Gruppe und Timestamp.
+- Lock-Inhalt: schreibe nach erfolgreichem Erwerb eine kurze Owner-Datei, z. B. `owner`, mit Finding-ID, Komponente und Timestamp.
 - Lock-Freigabe: lösche nur den Lock, den du selbst erworben hast, nach Commit-Erfolg, Commit-Abbruch oder Fehlerbehandlung.
 - Wenn der Lock bereits existiert: warten und erneut versuchen. Falls der Lock offensichtlich verwaist wirkt, den User fragen, bevor er entfernt wird.
 
@@ -35,7 +35,7 @@ Falls eine Prüfung in der kritischen Sektion fehlschlägt, muss der Sub-Agent s
 
 #### Git-Worktree-Isolation für „Einzeln mit Worktrees“
 
-Wenn die Commit-Strategie **Einzeln mit Worktrees** gewählt wurde, gilt statt des Git-Commit-Mutex eine Worktree-Isolation pro Delegations-Sub-Gruppe.
+Wenn die Commit-Strategie **Einzeln mit Worktrees** gewählt wurde, gilt statt des Git-Commit-Mutex eine Worktree-Isolation pro Delegations-Komponente.
 
 Vorbedingungen:
 
@@ -49,13 +49,13 @@ Worktree-Pfade:
 2. Verwende als BaseDir `applyReview.worktree.baseDir` aus der Effective Flow-Konfiguration (Projektsetup-ADR) oder den Default `.effective-flow/.worktrees`.
 3. Erstelle Worktrees unter:
    `BASE_DIR/REPO_NAME/SESSION_ID/GROUP_NAME`
-4. `GROUP_NAME` muss deterministisch, kurz und dateisystemtauglich sein, z. B. `fix-1`, `refactor-2`, `build-1` oder eine slugifizierte Sub-Gruppen-Beschreibung.
+4. `GROUP_NAME` muss deterministisch, kurz und dateisystemtauglich sein und die Komponente aus Phase 4.2 identifizieren, z. B. `component-1`, `component-2` oder eine slugifizierte Komponenten-Beschreibung. Kein aktionsgebundener Name, da eine Komponente Findings mehrerer Aktionen enthalten kann.
 
 Der Default liegt bewusst innerhalb des Projekt-Roots. Dadurch bleiben Worktree-Erstellung, Dateiänderungen und Setup-Kommandos in der üblichen Workspace-Sandbox. Externe BaseDirs sind nur zu verwenden, wenn sie explizit in der Effective Flow-Konfiguration (Projektsetup-ADR) festgeschrieben sind und die Umgebung Schreib- und Ausführungsrechte dafür erlaubt.
 
 Branch-Konvention:
 
-- Pro Sub-Gruppe: `apply-review/<SESSION_ID>/<GROUP_NAME>`
+- Pro Komponente: `apply-review/<SESSION_ID>/<GROUP_NAME>`
 - Erstelle den Worktree mit:
   `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> HEAD`
 
@@ -86,12 +86,12 @@ Delegation im Worktree:
 
 Integration zurück in den ursprünglichen Branch:
 
-1. Warte auf alle Worktree-Sub-Gruppen-Endstatus.
-2. Für jede erfolgreiche Sub-Gruppe: ermittle die neuen Commits auf ihrem Branch seit `HEAD` des ursprünglichen Branches.
+1. Warte auf alle Worktree-Komponenten-Endstatus.
+2. Verarbeite die erfolgreichen Komponenten in der **deterministischen Komponenten-Reihenfolge aus Phase 4.2, Schritt 5** (nach Report-Position ihres ersten Findings). Ermittle je Komponente die neuen Commits auf ihrem Branch seit `HEAD` des ursprünglichen Branches, in Komponenten-Reihenfolge.
 3. Führe die Commits im ursprünglichen Worktree sequenziell mit `git cherry-pick <commit>` zurück.
 4. Bei Cherry-Pick-Konflikt: führe zuerst die Cherry-Pick-Konfliktbewertung aus. Löse risikoarme Konflikte direkt; frage den User nur bei risikoreichen oder unklaren Konflikten.
 5. Nach erfolgreicher Integration und Validierung: Worktree entfernen (`git worktree remove <WORKTREE_PATH>`) und den temporären Branch löschen (`git branch -d <BRANCH_NAME>`).
-6. Bei fehlgeschlagener Sub-Gruppe: Worktree und Branch zunächst behalten, Pfade in der Zusammenfassung nennen und User-Entscheidung zum Cleanup einholen.
+6. Bei fehlgeschlagener Komponente: Worktree und Branch zunächst behalten, Pfade in der Zusammenfassung nennen und User-Entscheidung zum Cleanup einholen.
 
 Cherry-Pick-Konfliktbewertung:
 
