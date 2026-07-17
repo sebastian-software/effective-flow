@@ -89,7 +89,7 @@ Verwende `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
 
 - Stash-Baseline aus Phase 1 (Liste der bereits vorhandenen Stash-Referenzen mit Beschreibungen und Commit-Hashes)
 - Vorabanalyse pro Finding aus Phase 4.1 (betroffene Dateien, Root Cause / Anforderung, Implementierungsskizze, Risiken, Konfidenz)
-- berechnete Sub-Gruppen aus Phase 4.2
+- berechnete Komponenten aus Phase 4.2
 - umgesetzte Findings und deren Ergebnis
 - fehlgeschlagene Delegationen
 - erzeugte ADRs
@@ -230,7 +230,7 @@ header: Commits
 question: Welche Commit-Strategie soll für die Findings verwendet werden?
 options:
   - label: Einzeln mit Worktrees
-    description: Parallele Sub-Gruppen laufen in isolierten Git-Worktrees und werden anschließend zurückgeführt (häufigste Wahl)
+    description: Parallele Komponenten laufen in isolierten Git-Worktrees und werden anschließend zurückgeführt (häufigste Wahl)
   - label: Einzeln
     description: Jedes Finding wird nach Umsetzung einzeln committet
   - label: Keine Commits
@@ -239,7 +239,7 @@ options:
 
 Halte die Antwort fest und gib sie an jeden delegierten Skill als Anweisung weiter:
 
-- **Einzeln mit Worktrees:** Jede parallele Sub-Gruppe arbeitet in einem eigenen Git-Worktree, committet dort die Findings einzeln und der Orchestrator führt die Commits danach sequenziell per `git cherry-pick` in den ursprünglichen Branch zurück. Commit-Messages folgen denselben Regeln wie bei `Einzeln`: konkrete Conventional-Commit-Message, keine internen Finding-IDs, kein `Co-Authored-By`.
+- **Einzeln mit Worktrees:** Jede parallele Komponente arbeitet in einem eigenen Git-Worktree, committet dort die Findings einzeln und der Orchestrator führt die Commits danach sequenziell per `git cherry-pick` in den ursprünglichen Branch zurück. Commit-Messages folgen denselben Regeln wie bei `Einzeln`: konkrete Conventional-Commit-Message, keine internen Finding-IDs, kein `Co-Authored-By`.
 - **Einzeln:** Nach jedem abgeschlossenen Finding die Änderungen committen. Verwende eine konkrete Conventional-Commit-Message ohne interne Finding-ID, z. B. `fix: clarify review decision filtering`. Setze **niemals** `Co-Authored-By`-Trailer (auch nicht für LLMs); das gilt für jeden Commit, der durch diesen Workflow oder einen delegierten Sub-Agenten erzeugt wird. Protokolliere die Zuordnung von Finding-ID zu Commit-Hash direkt nach jedem erfolgreichen Commit in der Wisdom-Datei.
 - **Keine Commits:** Keine automatischen Commits, der User committet selbst.
 
@@ -337,38 +337,39 @@ Schreibe das Ergebnis pro Finding in die Wisdom-Datei unter `## Vorabanalyse [R-
 
 Verwende einen validen `applyReviewAnalysis`-Cache-Eintrag nur dann, wenn Report-Datei-Hash, Finding-ID und relevante Code-Datei-Hashes zur aktuellen Situation passen. Wenn der Cache nicht eindeutig valide ist, führe die Vorabanalyse neu aus. Aktualisiere den Cache nur nach erfolgreicher Vorabanalyse; schreibe keine User-Entscheidungen oder fehlgeschlagenen Delegationsoutputs in den Cache.
 
-#### Phase 4.2: Sub-Gruppen-Bildung (lokal im Orchestrator)
+#### Phase 4.2: Überlappungs-Komponenten bilden (lokal im Orchestrator)
 
-Für jede Aktionsgruppe (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}`, `{{SKILL:docs}}`) bilde Sub-Gruppen anhand der Datei-Listen aus Phase 4.1. Vorgehen explizit zweistufig:
+Bilde die Parallelisierungs-Einheiten **global über alle umsetzbaren Findings aller Aktionsgruppen hinweg** (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}`, `{{SKILL:docs}}`), anhand der Datei-Listen aus Phase 4.1. Die Aktionsgruppe eines Findings bestimmt später nur, welcher Skill es umsetzt (Phase 4.3), **nicht** die Gruppierung: Zwei Findings, die dieselbe Datei anfassen, dürfen nie gleichzeitig laufen — auch dann nicht, wenn ihre Aktionen unterschiedlich sind. Vorgehen explizit zweistufig:
 
-1. **Partitioniere** die Findings der Aktionsgruppe in zwei Mengen:
+1. **Partitioniere** alle Findings (aktionsübergreifend) in zwei Mengen:
    - **Konfidenz-Niedrig-Menge:** Findings mit Konfidenz `Niedrig` (File-Scope unsicher).
    - **Rest-Menge:** Findings mit Konfidenz `Hoch` oder `Mittel`.
-2. Wende **Union-Find ausschließlich auf die Rest-Menge** an:
-   - Initialisiere jedes Finding der Rest-Menge als eigene Sub-Gruppe.
-   - Für jeden Datei-Pfad, der von mehr als einem Finding der Rest-Menge genannt wird: vereinige die Sub-Gruppen der beteiligten Findings.
-   - Ergebnis: zwei Findings sind genau dann in derselben Sub-Gruppe, wenn sie über eine Kette von Datei-Überlappungen verbunden sind (auch transitiv: teilen A–B und B–C je eine Datei, ohne dass A–C direkt überlappen, landen A, B, C in derselben Sub-Gruppe; auch sternförmig: teilt A je eine Datei mit B und mit C, ohne dass B–C überlappen, landen ebenfalls alle drei in derselben Sub-Gruppe).
-3. Füge die **Konfidenz-Niedrig-Menge als eine gemeinsame Safety-Sub-Gruppe** zum Ergebnis hinzu. Diese Gruppe läuft intern sequenziell, weil der File-Scope unsicher ist und parallele Singleton-Streams sonst dieselbe Datei verändern könnten, ohne dass Union-Find den Konflikt erkennt.
-4. Reihenfolge innerhalb einer Sub-Gruppe: Reihenfolge wie im Report (deterministisch). Keine Schweregrad-Sortierung — Schweregrade können Abhängigkeiten implizieren.
-5. Ergebnis pro Aktionsgruppe: Liste von Sub-Gruppen, jede mit 1-N Findings.
+2. Wende **Union-Find auf die Rest-Menge aller Aktionsgruppen gemeinsam** an:
+   - Initialisiere jedes Finding der Rest-Menge als eigene Komponente.
+   - Für jeden Datei-Pfad, der von mehr als einem Finding der Rest-Menge genannt wird: vereinige die Komponenten der beteiligten Findings — unabhängig von deren Aktionsgruppe.
+   - Ergebnis: zwei Findings sind genau dann in derselben Komponente, wenn sie über eine Kette von Datei-Überlappungen verbunden sind (auch transitiv: teilen A–B und B–C je eine Datei, ohne dass A–C direkt überlappen, landen A, B, C in derselben Komponente; auch sternförmig: teilt A je eine Datei mit B und mit C, ohne dass B–C überlappen, landen ebenfalls alle drei in derselben Komponente). Eine Komponente darf Findings mehrerer Aktionsgruppen enthalten.
+3. Füge die **Konfidenz-Niedrig-Menge als eine gemeinsame Safety-Komponente** zum Ergebnis hinzu. Diese Komponente läuft intern sequenziell, weil der File-Scope unsicher ist und parallele Singleton-Streams sonst dieselbe Datei verändern könnten, ohne dass Union-Find den Konflikt erkennt.
+4. Reihenfolge innerhalb einer Komponente: Reihenfolge wie im Report (deterministisch). Keine Schweregrad-Sortierung — Schweregrade können Abhängigkeiten implizieren. Jedes Finding behält seine Aktionsgruppe; sie entscheidet in Phase 4.3 den Ziel-Skill.
+5. Reihenfolge **der Komponenten** untereinander: deterministisch nach der Report-Position ihres ersten Findings. Diese Reihenfolge ist zugleich die Integrationsreihenfolge im Worktree-Modus (Phase 4.3, Schritt 7).
+6. Ergebnis: eine globale Liste von Überlappungs-Komponenten, jede mit 1-N Findings (ggf. gemischter Aktion).
 
 Edge Cases:
 
-- Sind alle Findings einer Aktionsgruppe Konfidenz `Niedrig`, entsteht eine einzelne Safety-Sub-Gruppe mit allen Findings; der Union-Find-Schritt entfällt.
-- Hat eine Aktionsgruppe genau ein Finding, ist das Ergebnis immer eine einzelne Sub-Gruppe (mit oder ohne Union-Find).
-- Hat eine Aktionsgruppe keine Findings, entsteht keine Sub-Gruppe — der entsprechende Stream in Phase 4.3 entfällt.
+- Sind alle Findings Konfidenz `Niedrig`, entsteht eine einzelne Safety-Komponente mit allen Findings; der Union-Find-Schritt entfällt.
+- Gibt es genau ein umsetzbares Finding, ist das Ergebnis immer eine einzelne Komponente.
+- Ein Finding, das mit keinem anderen Finding eine Datei teilt, bleibt eine eigene Komponente und läuft parallel zu den übrigen.
 
-Beispiel: Aktionsgruppe `{{SKILL:fix}}` mit fünf Findings:
+Beispiel (aktionsübergreifend) mit fünf Findings über mehrere Aktionen:
 
-- F1, F2 betreffen `src/auth.ts` → Sub-Gruppe A (sequenziell)
-- F3 betrifft `src/billing.ts` → Sub-Gruppe B (parallel zu A)
-- F4, F5 betreffen `src/ui.tsx` → Sub-Gruppe C (parallel zu A und B, intern sequenziell)
-  Damit drei parallele Streams in dieser Aktionsgruppe statt einem.
+- F1 `[fix] src/auth.ts` und F2 `[refactor] src/auth.ts` → Komponente A (sequenziell, gemischte Aktion: F1 via `{{SKILL:fix}}`, F2 via `{{SKILL:refactor}}`)
+- F3 `[fix] src/billing.ts` → Komponente B (parallel zu A)
+- F4 `[docs] docs/guide.md` und F5 `[build] docs/guide.md` → Komponente C (parallel zu A und B, intern sequenziell)
+  Drei parallele Streams. Die frühere getrennt-pro-Aktion-Gruppierung hätte F1 und F2 in verschiedene Streams gelegt und beide gleichzeitig auf `src/auth.ts` schreiben lassen.
 
 #### Phase 4.3: Parallele Delegation
 
-1. Starte für jede `(Aktionsgruppe × Sub-Gruppe)`-Kombination einen Delegations-Sub-Agenten. Alle laufen parallel; innerhalb eines Sub-Agenten werden seine Findings sequenziell abgearbeitet.
-   - Bei Commit-Strategie `Einzeln mit Worktrees`: erstelle vorher pro Sub-Gruppe den Worktree gemäß der Worktree-Regeln und starte den Sub-Agenten mit diesem Worktree als Arbeitsverzeichnis.
+1. Starte für jede **Überlappungs-Komponente** aus Phase 4.2 einen Delegations-Sub-Agenten. Alle Komponenten laufen parallel (sie teilen sich per Konstruktion keine Datei); innerhalb eines Sub-Agenten werden seine Findings **sequenziell** in Komponenten-Reihenfolge abgearbeitet — auch wenn die Komponente Findings mehrerer Aktionsgruppen enthält.
+   - Bei Commit-Strategie `Einzeln mit Worktrees`: erstelle vorher pro Komponente den Worktree gemäß der Worktree-Regeln und starte den Sub-Agenten mit diesem Worktree als Arbeitsverzeichnis.
 2. Jeder Delegations-Sub-Agent erhält im Prompt direkt eingebettet:
    - die Finding-Details (ID, Problem, Empfehlung, Prompt-Vorschlag, Datei)
    - die zugehörige Vorabanalyse aus Phase 4.1 als **inline-Kontext-Block** im Prompt — nicht als Verweis auf die Wisdom-Datei. Die Sub-Skills lesen die Wisdom-Datei nicht; sie verarbeiten nur den Prompt-Inhalt. Bette die Vorabanalyse vollständig ein, etwa unter der Überschrift `Vorabanalyse für dieses Finding:`.
@@ -376,7 +377,7 @@ Beispiel: Aktionsgruppe `{{SKILL:fix}}` mit fünf Findings:
    - die Commit-Strategie aus Phase 2
    - **Bei Commit-Strategie „Einzeln“:** die vollständige Git-Commit-Mutex-Regel aus `tools/apply-review-commit-mechanics.md`. Der Sub-Agent muss jeden Finding-Commit unter `.effective-flow/apply-review-commit.lock` ausführen, darf nur Finding-eigene Dateien stage-en und darf niemals `git add .`, `git add -A` oder `git commit -a` verwenden.
    - **Bei Commit-Strategie „Einzeln mit Worktrees“:** die vollständige Git-Worktree-Isolation-Regel aus `tools/apply-review-commit-mechanics.md`. Der Sub-Agent arbeitet ausschließlich im zugewiesenen Worktree, committet dort jedes Finding einzeln und protokolliert Commit-Hashes in der Wisdom-Datei. Der Sub-Agent darf nicht in den ursprünglichen Worktree wechseln.
-   - den Auftrag, den passenden Skill aufzurufen:
+   - den Auftrag, für **jedes** Finding den zu seiner Aktionsgruppe passenden Skill aufzurufen (bei gemischten Komponenten also pro Finding neu bestimmt):
      - Aktion fix: `Verwende den Skill {{SKILL:fix}} für dieses Finding.`
      - Aktion refactor: `Verwende den Skill {{SKILL:refactor}} für dieses Finding.`
      - Aktion build: `Verwende den Skill {{SKILL:build}} für dieses Finding.`
@@ -388,29 +389,29 @@ Beispiel: Aktionsgruppe `{{SKILL:fix}}` mit fünf Findings:
 3. Prüfe jeden Sub-Agenten auf `ERLEDIGT` oder `ABBRUCH`.
 4. Bei `ABBRUCH`:
    - User informieren, Finding als `fehlgeschlagen (Delegation)` in der Wisdom-Datei markieren.
-   - **Vor dem nächsten Finding derselben Sub-Gruppe:** prüfe via `git status`, ob der Arbeitsbaum sauber ist. Falls uncommittete Änderungen vorhanden sind (halbfertige Datei vom abgebrochenen Finding), räume den Arbeitsbaum gemäß der in Phase 2 festgelegten `stashPolicy` auf, bevor das nächste Finding startet – sonst arbeitet es auf inkonsistentem Zustand:
+   - **Vor dem nächsten Finding derselben Komponente:** prüfe via `git status`, ob der Arbeitsbaum sauber ist. Falls uncommittete Änderungen vorhanden sind (halbfertige Datei vom abgebrochenen Finding), räume den Arbeitsbaum gemäß der in Phase 2 festgelegten `stashPolicy` auf, bevor das nächste Finding startet – sonst arbeitet es auf inkonsistentem Zustand:
      - `interactive` → den User fragen, ob die Änderungen gestasht oder verworfen werden sollen.
      - `keep` und `apply` → mit Finding-ID stashen (`git stash push -m "apply-review abort R-XXXXXXX"`); `apply` ist hier nicht sinnvoll, da es ums Saubermachen vor dem nächsten Finding geht, und wird daher wie `keep` behandelt.
      - `discard` → die Änderungen verwerfen.
 
      Stashe in jedem Fall mit der Finding-ID in der Message, damit Phase 6 den Stash zuordnen kann.
 
-   - Mit dem nächsten Finding innerhalb derselben Sub-Gruppe fortfahren. Andere Sub-Gruppen laufen unabhängig weiter.
+   - Mit dem nächsten Finding innerhalb derselben Komponente fortfahren. Andere Komponenten laufen unabhängig weiter.
 
-5. Gib dem User nach jeder abgeschlossenen Sub-Gruppe eine Statusmeldung mit dem Ergebnis pro Finding.
+5. Gib dem User nach jeder abgeschlossenen Komponente eine Statusmeldung mit dem Ergebnis pro Finding.
 6. **Synchronisationsbarriere vor Phase 5:** Starte Phase 5 erst, wenn **alle** in Phase 4.3 gestarteten Delegations-Sub-Agenten einen Endstatus geliefert haben (`ERLEDIGT` oder `ABBRUCH`).
-7. Bei Commit-Strategie `Einzeln mit Worktrees`: integriere nach der Synchronisationsbarriere alle erfolgreichen Worktree-Branches sequenziell per `git cherry-pick` in den ursprünglichen Branch. Phase 5 darf erst starten, wenn diese Integration abgeschlossen ist oder der Workflow wegen Konflikt/User-Entscheidung angehalten wurde.
-8. Eine Statusmeldung nach einer abgeschlossenen Sub-Gruppe ist **keine** Abschlussmeldung des Gesamt-Workflows und **kein** Halt. Nach jeder Statusmeldung prüfst du aktiv, welche Delegations-Sub-Gruppen noch laufen, wartest auf deren Endstatus und setzt Phase 4.3 fort, bis keine Sub-Gruppe mehr offen ist.
+7. Bei Commit-Strategie `Einzeln mit Worktrees`: integriere nach der Synchronisationsbarriere alle erfolgreichen Worktree-Branches sequenziell per `git cherry-pick` in den ursprünglichen Branch, und zwar in der **deterministischen Komponenten-Reihenfolge aus Phase 4.2, Schritt 5** (Komponenten nach Report-Position ihres ersten Findings; innerhalb einer Komponente die Finding-Commits in Komponenten-Reihenfolge). Diese feste Reihenfolge macht das Integrationsergebnis reproduzierbar. Phase 5 darf erst starten, wenn diese Integration abgeschlossen ist oder der Workflow wegen Konflikt/User-Entscheidung angehalten wurde.
+8. Eine Statusmeldung nach einer abgeschlossenen Komponente ist **keine** Abschlussmeldung des Gesamt-Workflows und **kein** Halt. Nach jeder Statusmeldung prüfst du aktiv, welche Delegations-Komponenten noch laufen, wartest auf deren Endstatus und setzt Phase 4.3 fort, bis keine Komponente mehr offen ist.
 
 #### Bekannte Einschränkungen
 
-- **Cross-Action-Datei-Konflikte** werden nicht erkannt: Findings aus unterschiedlichen Aktionsgruppen wie `{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}` oder `{{SKILL:docs}}` können dieselbe Datei betreffen und parallel laufen. Diese Situation war auch im sequenziellen Vorgängermodell möglich und ist in der Praxis selten. Bei einem Konflikt fängt die Stash-Bereinigung in Phase 6 die hinterlassenen Stashes auf.
-- **Konfidenz-Niedrig-Findings** laufen pro Aktionsgruppe in einer gemeinsamen Safety-Sub-Gruppe sequenziell, weil ihr File-Scope unsicher ist.
-- Der Git-Commit-Mutex isoliert nur Staging und Commit im ursprünglichen Worktree. Der Worktree-Modus isoliert zusätzlich Arbeitsbaum und Git-Index, verschiebt mögliche Konflikte aber in die sequenzielle Cherry-Pick-Integration.
+- **Cross-Action-Datei-Konflikte werden erkannt:** Die Überlappungs-Komponenten aus Phase 4.2 entstehen global über alle Aktionsgruppen. Findings, die dieselbe Datei betreffen, landen daher in derselben Komponente und laufen sequenziell — auch bei unterschiedlichen Aktionen schreiben sie nie gleichzeitig in einen Arbeitsbaum. Verbleibende Einschränkung: Die Erkennung ist nur so genau wie die Datei-Listen der Vorabanalyse (Phase 4.1). Fasst ein Finding zur Laufzeit eine in seiner Analyse nicht genannte Datei an, kann eine Überlappung unentdeckt bleiben; Konfidenz-Niedrig-Findings mit unsicherem File-Scope deckt hierfür die gemeinsame Safety-Komponente ab.
+- **Konfidenz-Niedrig-Findings** laufen aktionsübergreifend in einer gemeinsamen Safety-Komponente sequenziell, weil ihr File-Scope unsicher ist.
+- Der Git-Commit-Mutex isoliert nur Staging und Commit im ursprünglichen Worktree. Der Worktree-Modus isoliert zusätzlich Arbeitsbaum und Git-Index, verschiebt mögliche Konflikte aber in die sequenzielle Cherry-Pick-Integration (in deterministischer Komponenten-Reihenfolge).
 
 ### Phase 5: Report aktualisieren
 
-**Vorbedingung:** Phase 5 darf erst starten, wenn die Synchronisationsbarriere aus Phase 4.3 erfüllt ist, also keine Delegations-Sub-Gruppe mehr offen ist.
+**Vorbedingung:** Phase 5 darf erst starten, wenn die Synchronisationsbarriere aus Phase 4.3 erfüllt ist, also keine Delegations-Komponente mehr offen ist.
 
 1. Lies die Report-Datei erneut frisch vom Dateisystem ein. Die Datei könnte sich während der Umsetzung geändert haben.
 2. Ergänze an jedem erfolgreich umgesetzten Finding als letzten Eintrag:
@@ -544,8 +545,8 @@ options:
 ## Regeln
 
 - Vorabanalyse (Phase 4.1) immer parallel pro Finding
-- Delegation (Phase 4.3) parallel pro `(Aktionsgruppe × Sub-Gruppe)`; innerhalb einer Sub-Gruppe sequenziell, damit Datei-Konflikte und Commit-Reihenfolge sauber bleiben
-- Nach dem Start der Delegation in Phase 4.3 aktiv auf **alle** Sub-Gruppen-Endstatus warten, bevor Phase 5 beginnt oder der Workflow endet
+- Delegation (Phase 4.3) parallel pro **Überlappungs-Komponente** (global über alle Aktionsgruppen gebildet); innerhalb einer Komponente sequenziell, damit gleiche-Datei-Findings — auch aktionsübergreifend — nie gleichzeitig schreiben und die Commit-Reihenfolge sauber bleibt
+- Nach dem Start der Delegation in Phase 4.3 aktiv auf **alle** Komponenten-Endstatus warten, bevor Phase 5 beginnt oder der Workflow endet
 - Die Report-Datei muss beim Start des Skills frisch vom Dateisystem gelesen werden
 - Gib dem User nach jeder Phase eine kurze Statusmeldung
 - Wenn ein delegierter Skill fehlschlägt: User informieren, nächstes Finding fortsetzen
