@@ -29,6 +29,10 @@ task-tracking
 plan-status
 ```
 
+## Empfohlene Skills
+
+- `codebase-improvement`
+
 ## Harte Abgrenzung
 
 - Erlaubt sind ausschließlich Analyse, User-Rückfragen und Änderungen an der
@@ -55,6 +59,22 @@ nach der konkreten Plan-Datei. Wähle niemals heuristisch den neuesten Plan.
 
 ## Workflow
 
+Sichte vor der Analyse nützliche Skills gemäß folgendem Baustein. Die Grenze dieses Tools
+bleibt strikt: Skills informieren nur das Review-Urteil, ändern nichts außer der referenzierten
+Plan-Datei und erzeugen keinen Code.
+
+```include
+skill-discovery
+```
+
+Das generische Plan-Review-**Urteil** dieses Tools (Phase 2) stammt aus dem zentralen Skill
+`codebase-improvement`; Effective Flow bleibt der Plan-Artefakt-Orchestrator (interaktiver Loop,
+edit-only, Status- und Offene-Punkte-Normalisierung). Es gilt der folgende Baustein:
+
+```include
+central-reasoning-delegation
+```
+
 ### Phase 1: Plan laden und normalisieren
 
 1. Löse die Plan-Referenz auf genau eine Datei unter `<plan.dir>/` auf.
@@ -77,24 +97,18 @@ nach der konkreten Plan-Datei. Wähle niemals heuristisch den neuesten Plan.
 
 ### Phase 2: Befunde identifizieren
 
-Prüfe den Plan mindestens auf:
+Das fachliche Review-**Urteil** liefert `codebase-improvement` (siehe „Delegation des
+Domänen-Urteils an zentrale Skills“): Wende den Skill auf die geladene Plan-Datei an, damit er
+die Befunde beurteilt — u. a. logische Widersprüche zwischen Anforderung,
+Architekturentscheidungen, Vorgehen, Edge Cases, Akzeptanzkriterien und Validierungsplan;
+Datensicherheit/Datenschutz; Security; Umsetzbarkeit; Fehlerfälle; Testbarkeit; Scope und
+Wartbarkeit. Kreuzt der Plan eine deklarierte Spezialisten-Boundary, ziehe den zuständigen Owner
+über das Relevanz-Gate hinzu — Browser-/UI-/Barrierefreiheits-Detail an `effective-web`,
+Product-/Design-Fragen an `product-management`/`product-design`, weitere Owner analog; ein
+schmaler Plan bleibt schmal. Fehlt `codebase-improvement`, greift der minimale generische
+Fallback aus dem Baustein statt einer lokalen Voll-Checkliste.
 
-- **Logik:** Widersprüche zwischen Anforderung, Architekturentscheidungen,
-  Vorgehen, Edge Cases, Akzeptanzkriterien und Validierungsplan.
-- **Datensicherheit und Datenschutz:** neue Persistenz, sensible Daten, Logging,
-  Export, Aufbewahrung, Zugriff auf lokale Dateien oder externe Systeme.
-- **Security:** neue Eingaben, Berechtigungen, Secrets, externe Prozesse,
-  Netzwerkzugriffe, Dateizugriffe und Missbrauchspfade.
-- **Umsetzbarkeit:** konkrete Dateien, realistische Schrittfolge, passende
-  Modulgrenzen, Build- und Harness-Kompatibilität.
-- **UI/UX und Barrierefreiheit:** nur soweit der Plan UI-Verhalten berührt.
-- **Fehlerfälle:** Recovery, idempotentes Verhalten, Race Conditions,
-  Unterbrechungen, ungültige Eingaben und Wiedereinstieg.
-- **Testbarkeit:** messbare Akzeptanzkriterien und konkrete Validierungswege.
-- **Scope und Wartbarkeit:** Scope Creep, neue Kopplung, Duplikation,
-  Migrationslast und unnötige Abhängigkeiten.
-
-Teile Befunde in zwei Gruppen:
+Teile die gemeldeten Befunde in zwei Gruppen (Effective-Flow-Artefakt-Handling):
 
 - **Direkt einarbeitbar:** Klarer Planmangel, der ohne fachliche Entscheidung
   korrigiert werden kann. Arbeite ihn direkt ein und dokumentiere ihn im

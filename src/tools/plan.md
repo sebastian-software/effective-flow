@@ -35,6 +35,10 @@ plan-numbering
 doc-categories
 ```
 
+## Empfohlene Skills
+
+- `codebase-improvement`
+
 ## Harte Abgrenzung
 
 - Erlaubt sind ausschließlich Analyse, Rückfragen und Dokumentationsänderungen unter `<plan.dir>/`.
@@ -62,6 +66,14 @@ Tools bleibt dabei strikt: Skills informieren nur Analyse und Plan, erzeugen kei
 
 ```include
 skill-discovery
+```
+
+Das generische Plan-Quality- und Plan-Review-**Urteil** dieses Tools (Phasen 4–6) stammt aus
+dem zentralen Skill `codebase-improvement`; Effective Flow bleibt der Plan-Artefakt-Orchestrator.
+Es gilt der folgende Baustein:
+
+```include
+central-reasoning-delegation
 ```
 
 ### Phase 1: Scope und Kontext
@@ -286,21 +298,22 @@ Regeln:
 
 ### Phase 4: Gap Analysis
 
-Prüfe den Plan auf:
+Das Gap-Urteil liegt bei `codebase-improvement` (siehe „Delegation des Domänen-Urteils an
+zentrale Skills“). Wende den Skill auf den Plan an und lass ihn die generischen Lücken
+beurteilen — Over-Engineering, Scope Creep, unausgesprochene Annahmen, fehlende oder nicht
+messbare Akzeptanzkriterien, Edge Cases, versteckte Intentionen, Umsetzungsrisiken, Evidenz vs.
+Raten. Kreuzt der konkrete Plan eine deklarierte Spezialisten-Boundary (Product, Design,
+Browser/Barrierefreiheit, Architektur, Legal …), ziehe den zuständigen Owner über das
+Relevanz-Gate hinzu; ein schmaler Engineering-Plan bleibt schmal.
 
-- Over-Engineering
-- Scope Creep
-- unausgesprochene Annahmen
-- fehlende Akzeptanzkriterien
-- Edge Cases
-- versteckte Intentionen
-- Umsetzungsrisiken
-
-Bereinige den Plan, bevor du ihn als abgeschlossen meldest.
+Arbeite die gemeldeten Lücken in den Plan ein und bereinige ihn, bevor du ihn als abgeschlossen
+meldest. Fehlt `codebase-improvement`, greift der minimale generische Fallback aus dem Baustein
+(kurze Kern-Checkliste), **kein** zweites Plan-Quality-Handbuch.
 
 ### Phase 5: Plan-Validierung
 
-Bewerte den Plan mit einer Scorecard:
+Normalisiere das Qualitätsurteil aus Phase 4 in die Effective-Flow-Scorecard (der Skill liefert
+das Urteil, Effective Flow die Artefakt-Form):
 
 | Kriterium           | Ziel                                                                                                      |
 | ------------------- | --------------------------------------------------------------------------------------------------------- |
@@ -326,17 +339,15 @@ Regeln:
 - Prüfe die geplanten Änderungen gegen den verifizierten Code-Kontext aus Phase 1.
 - Gib keine vollständigen Codevorschläge aus; halte dich an die Code-Sparsamkeitsregel.
 
-Prüfe mindestens diese Bereiche:
+Das Review-**Urteil** liefert `codebase-improvement` (siehe „Delegation des Domänen-Urteils an
+zentrale Skills“): Wende den Skill auf den Plan an, damit er die Befunde auf Plan-Ebene
+beurteilt — u. a. Architektur-Passung, Security-Oberfläche, Datenschutz, Fehlerfälle,
+Testbarkeit, Scope und Wartbarkeit. Kreuzt der Plan eine deklarierte Spezialisten-Boundary
+(Product, Design, Browser/Barrierefreiheit, Architektur, Legal …), ziehe den zuständigen Owner
+über das Relevanz-Gate hinzu. Fehlt `codebase-improvement`, greift der minimale generische
+Fallback aus dem Baustein statt einer lokalen Voll-Checkliste.
 
-- **Architektur:** Passt der Plan zu bestehenden Patterns, Modulgrenzen, Zuständigkeiten und Abstraktionsebenen?
-- **Security:** Führt der Plan neue Eingaben, Auth-/Permission-Pfade, Secrets, Netzwerkzugriffe, Dateizugriffe, externe Prozesse oder Persistenz ein?
-- **Datenschutz:** Werden sensible Daten verarbeitet, geloggt, gespeichert, exportiert oder länger aufbewahrt?
-- **Fehlerfälle:** Sind Failure Modes, Recovery, idempotentes Verhalten, Race Conditions und Edge Cases ausreichend abgedeckt?
-- **Testbarkeit:** Sind Akzeptanzkriterien und Validierungsplan konkret genug, um die spätere Umsetzung zu prüfen?
-- **Scope:** Enthält der Plan Scope Creep, versteckte Nebenfeatures oder zu vage Teilaufgaben?
-- **Wartbarkeit:** Erzeugt der Plan unnötige Kopplung, neue Abhängigkeiten, Migrationslast oder schwer erweiterbare Strukturen?
-
-Klassifiziere Befunde:
+Klassifiziere die vom Skill gemeldeten Befunde in die Effective-Flow-Schwere (Artefakt-Form):
 
 - **Kritisch:** Plan darf nicht abgeschlossen werden, bevor der Befund eingearbeitet ist.
 - **Wichtig:** Befund soll eingearbeitet werden; wenn bewusst nicht, dokumentiere die Begründung im Plan.
@@ -344,7 +355,7 @@ Klassifiziere Befunde:
 
 Vorgehen:
 
-1. Prüfe den Plan anhand der Bereiche oben.
+1. Hole das Review-Urteil über `codebase-improvement` (plus relevante Spezialisten) ein.
 2. Arbeite alle kritischen Befunde direkt in den Plan ein.
 3. Arbeite wichtige Befunde ein oder dokumentiere im `## Plan-Review`, warum sie bewusst nicht umgesetzt werden.
 4. Aktualisiere den Abschnitt `## Plan-Review` mit Ergebnis, Zusammenfassung und Befunden.
