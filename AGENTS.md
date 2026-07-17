@@ -75,6 +75,18 @@ block in the Effective Flow configuration / Projektsetup ADR (`enabled`, `includ
 off-switches. See `src/shared/skill-discovery.md`, `src/shared/config-migration.md` (defaults)
 and `/effective-flow setup` (wizard).
 
+**Layered ownership contract.** Recommended central skills are not mere advice: where a central
+skill is the _declared domain owner_ for the task at hand and fully covers it, its guidance is
+**authoritative** and the Effective Flow source carries **no second copy** of that playbook —
+only scope/output/lifecycle constraints plus a minimal generic fallback for when the skill is
+absent. Effective Flow keeps ownership of orchestration (routing, plan/report state, finding
+IDs, tracker, agent selection, worktrees, commits, delivery, harness transform, config). The
+per-skill classification (delegate / route-when-relevant / no-overlap) lives in
+[`docs/developer-guide/skill-ownership.md`](docs/developer-guide/skill-ownership.md). **When
+adding or expanding a tool, agent, or shared include, run the ownership check:** does it carry a
+second copy of a centrally owned playbook? If so, delegate to the skill and keep only a minimal
+fallback.
+
 ## Versioning
 
 Release versioning is managed by release-please. The source of truth for the

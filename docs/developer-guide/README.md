@@ -18,7 +18,10 @@ Codex). Es gibt keine Laufzeitanwendung – du editierst `src/`, nie `dist/`.
    Projektsetup-ADR, mit dem entwicklerorientierten Überblick über alle Config-Blöcke.
 4. [Plan-Konventionen](plan-konventionen.md) – Namensschema, kanonische Status-Marker und
    Archivierung der Plan-Dateien unter `<plan.dir>/`.
-5. [Release und Installation](release-und-installation.md) – Versionierung über
+5. [Skill-Ownership](skill-ownership.md) – die Grenze zwischen Effective-Flow-Orchestrierung
+   und zentraler Skill-Expertise (geschichteter Vertrag) samt Ownership-Inventar über den
+   aktuellen Skillset.
+6. [Release und Installation](release-und-installation.md) – Versionierung über
    release-please, Veröffentlichung und Installation des gebauten Skills.
 
 ## Siehe auch

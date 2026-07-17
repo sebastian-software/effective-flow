@@ -3,9 +3,10 @@
 Effective Flow-Tools und die Agents, die sie intern aufrufen, arbeiten nicht isoliert: Bevor sie mit
 Planung, Umsetzung oder Prüfung beginnen, sichten sie die in deiner Umgebung ohnehin
 verfügbaren Skills (z. B. `humanizer`, `impeccable`, `context7`, `effective-german-typography-skill`)
-und binden die für die konkrete Aufgabe passenden zusätzlich ein. Das ist reine
-Qualitätssteigerung „on top“ – kein Effective Flow-Tool und kein Effective Flow-Agent hängt in seiner
-Grundfunktion von einem Host-Skill ab.
+und binden die für die konkrete Aufgabe passenden zusätzlich ein. Wo ein Skill der
+**Owner seiner Domäne** ist, ist seine Guidance maßgeblich; fehlt er, bleibt die Grundfunktion
+jedes Tools über einen bewusst minimalen Fallback erhalten – kein Effective Flow-Tool und kein
+Effective Flow-Agent hängt in seiner Grundfunktion von einem Host-Skill ab.
 
 ## Wie die Erkennung abläuft
 
@@ -20,11 +21,16 @@ Grundfunktion von einem Host-Skill ab.
    Verhalten global sowie – feiner – pro Agent und pro Tool (siehe unten).
 4. **Aktuelle Library-Doku bei Bedarf.** Bei unbekannten oder aktuellen Frameworks/Libraries
    nutzen Tools bei Bedarf Doku-Skills wie `context7`, statt aus dem Trainingsstand zu raten.
-5. **Klare Präzedenz.** Ein Skill informiert immer nur das **Wie** – er überschreibt nie das
-   **Was**: der abgestimmte Plan, Projektkonventionen sowie Sprach-, Commit- und
-   Scope-Regeln bleiben in jedem Fall maßgeblich. Kein Skill darf Scope erweitern, neue
-   Abhängigkeiten einführen oder den Plan verletzen. In reinen Analyse-/Planungs-Tools bleibt
-   die No-Code-Grenze strikt: Skills informieren dort nur Analyse und Plan, nie Code.
+5. **Geschichtete Autorität.** Effective Flow besitzt die **Orchestrierung** (das Was/Wann:
+   Routing, Plan-/Report-State, Agent-Auswahl, Worktrees, Commits, Delivery, Config) – diese
+   Ebene bleibt immer maßgeblich, und kein Skill darf Scope erweitern, neue Abhängigkeiten
+   einführen oder den Plan verletzen. Die **fachliche Expertise** (das Wie: Domänen-Checklisten,
+   Standards, Spezialisten-Guidance) besitzen die zentralen Skills: Ist ein empfohlener Skill der
+   deklarierte Owner einer Fachfrage und deckt er sie ab, ist seine Guidance **maßgeblich**, nicht
+   bloß optionaler Rat. Fehlt der Skill, greift ein bewusst **minimaler Fallback** – das Tool
+   bleibt funktionsfähig, nur mit geringerer Tiefe. Die genaue Zuordnung je Skill steht im
+   [Developer-Guide → Skill-Ownership](../developer-guide/skill-ownership.md). In reinen
+   Analyse-/Planungs-Tools bleibt die No-Code-Grenze strikt.
 6. **Melden.** Am Ende meldet das Tool kurz, welche Skills genutzt wurden – oder dass keiner
    passte.
 
