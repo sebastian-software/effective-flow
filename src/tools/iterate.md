@@ -126,7 +126,7 @@ Bestimme pro Punkt (Review-Thread bzw. Freitext-Instruktion):
    - **reine Fragen** ohne Codeänderungsbedarf werden nicht umgesetzt und **nicht automatisch
      inhaltlich beantwortet**; sie werden in der Zusammenfassung als offen/zurückgestellt
      gelistet, damit der User sie selbst beantwortet.
-2. **bereits adressiert:** Thread ist `resolved` oder trägt eine `<!-- firmo-iterate -->`-
+2. **bereits adressiert:** Thread ist `resolved` oder trägt eine `<!-- effective-flow-iterate -->`-
    Antwort → überspringen.
 3. **Aktionstyp** ableiten:
    - {{SKILL:fix}} für Bug/Korrektur,
@@ -180,8 +180,8 @@ options:
 1. Pushe den Head-Branch normal (kein Force). Schlägt der Push wegen divergierter Remote-History
    fehl: stoppe, melde den Konflikt, überschreibe keine History und löse keine Threads auf.
 2. Antworte pro adressiertem Thread kurz und löse ihn auf (GitHub via GraphQL; Forgejo
-   best-effort). Verwende den Marker `<!-- firmo-iterate -->`.
-3. Poste **einen** Summary-Kommentar am PR (Marker `<!-- firmo-iterate -->`): welche Punkte
+   best-effort). Verwende den Marker `<!-- effective-flow-iterate -->`.
+3. Poste **einen** Summary-Kommentar am PR (Marker `<!-- effective-flow-iterate -->`): welche Punkte
    umgesetzt bzw. übersprungen wurden und welche reinen Fragen offen/zurückgestellt sind (ohne
    inhaltliche Auto-Antwort).
 

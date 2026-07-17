@@ -45,10 +45,10 @@ issue-tracker
 
 ## Kommentar-Konvention
 
-Schreibe das Planungsergebnis als Issue-Kommentar (Operation „Kommentar hinzufügen“ aus dem Mapping). Beginne jeden Effective Flow-Kommentar mit der Markierung `<!-- firmo-plan-issues -->`. Kanonische Struktur des Kommentars:
+Schreibe das Planungsergebnis als Issue-Kommentar (Operation „Kommentar hinzufügen“ aus dem Mapping). Beginne jeden Effective Flow-Kommentar mit der Markierung `<!-- effective-flow-plan-issues -->`. Kanonische Struktur des Kommentars:
 
 ```markdown
-<!-- firmo-plan-issues -->
+<!-- effective-flow-plan-issues -->
 ## Vervollständigte Planung
 
 **Empfohlener Workflow:** Feature / Bugfix / Refactoring / Dokumentation
@@ -93,7 +93,7 @@ skill-discovery
 
 Für jedes gewählte Issue nacheinander:
 
-1. Lies das Issue frisch vom Tracker – **inklusive Kommentare** (Operation „Kommentare lesen“) – und untersuche die relevante Codebase (lokal oder mit internem Analyse-Sub-Agenten). Berücksichtige Maintainer-Klärungen aus Kommentaren als Teil der Anforderung. Existiert bereits ein `<!-- firmo-plan-issues -->`-Planungskommentar aus einem früheren Lauf, behandle diesen Lauf als **Aktualisierung**: knüpfe an den vorhandenen Stand an, statt eine zweite, konkurrierende Planung zu erzeugen.
+1. Lies das Issue frisch vom Tracker – **inklusive Kommentare** (Operation „Kommentare lesen“) – und untersuche die relevante Codebase (lokal oder mit internem Analyse-Sub-Agenten). Berücksichtige Maintainer-Klärungen aus Kommentaren als Teil der Anforderung. Existiert bereits ein `<!-- effective-flow-plan-issues -->`-Planungskommentar aus einem früheren Lauf (der Alt-Marker `<!-- firmo-plan-issues -->` wird dabei gleichwertig erkannt, eine Generation Backcompat), behandle diesen Lauf als **Aktualisierung**: knüpfe an den vorhandenen Stand an, statt eine zweite, konkurrierende Planung zu erzeugen.
 2. Wende die Klärungs-Methodik aus `{{SKILL:plan}}` (Phase 1/2) an: identifiziere die wirklich relevanten Unklarheiten — Soll-Verhalten, fachliche Regeln, technische Vorgaben, Abhängigkeiten, Edge Cases, Akzeptanzkriterien — und frage den User gezielt danach.
 3. Wiederhole die Klärung, bis eine belastbare Grundlage besteht. Unwichtige Restpunkte als Annahme dokumentieren, statt den Ablauf zu blockieren.
 4. Bestimme die empfohlene Umsetzung (Feature / Bugfix / Refactoring / Dokumentation) gemäß den Klassifikationsdefinitionen aus `{{SKILL:plan}}`.
@@ -102,7 +102,7 @@ Für jedes gewählte Issue nacheinander:
 
 Pro geplantem Issue:
 
-1. Schreibe die vervollständigte Spezifikation als Kommentar ans Issue (kanonische Struktur oben). Der Kommentar muss self-contained sein: eine fremde Session muss das Issue danach ohne diese Planungssession umsetzen können. Existiert aus einem früheren Lauf bereits ein `<!-- firmo-plan-issues -->`-Kommentar (aus der Kommentar-Prüfung in Phase 2 bekannt), aktualisiere bzw. ersetze dessen Inhalt, statt einen zweiten anzuhängen (Idempotenz auf Basis der Operation „Kommentare lesen“).
+1. Schreibe die vervollständigte Spezifikation als Kommentar ans Issue (kanonische Struktur oben). Der Kommentar muss self-contained sein: eine fremde Session muss das Issue danach ohne diese Planungssession umsetzen können. Existiert aus einem früheren Lauf bereits ein `<!-- effective-flow-plan-issues -->`-Kommentar (aus der Kommentar-Prüfung in Phase 2 bekannt), aktualisiere bzw. ersetze dessen Inhalt, statt einen zweiten anzuhängen (Idempotenz auf Basis der Operation „Kommentare lesen“).
 2. Entferne das Label `effective-flow-needs-planning` (Planung abgeschlossen; eine ggf. vorhandene Alt-`firmo-needs-planning`-Variante mitentfernen, siehe „Label-Konvention“). Setze **kein** `effective-flow-issue-done` — das Issue ist geplant, aber noch nicht umgesetzt.
 3. Task auf `completed`.
 

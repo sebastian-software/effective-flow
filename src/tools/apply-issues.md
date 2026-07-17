@@ -77,7 +77,7 @@ apply-clarity-gate
 
 ## Kommentar-Konventionen
 
-Alle Status-Updates werden als Issue-Kommentare geschrieben (Operation „Kommentar hinzufügen“ aus dem Mapping oben). Verwende diese kanonischen Vorlagen und beginne jeden Effective Flow-Kommentar mit der Markierung `<!-- firmo-apply-issues -->`, damit spätere Läufe eigene Kommentare erkennen und Doppel-Kommentare vermeiden:
+Alle Status-Updates werden als Issue-Kommentare geschrieben (Operation „Kommentar hinzufügen“ aus dem Mapping oben). Verwende diese kanonischen Vorlagen und beginne jeden Effective Flow-Kommentar mit der Markierung `<!-- effective-flow-apply-issues -->`, damit spätere Läufe eigene Kommentare erkennen und Doppel-Kommentare vermeiden:
 
 - **Umgesetzt:** `🤖 Umgesetzt via {{FIRMO}} apply — PR #<nr>` (keine internen IDs, kein `Co-Authored-By`).
 - **Übersprungen:** `⏭️ Übersprungen: Für eine autonome Umsetzung fehlen noch Angaben: <Liste des Fehlenden>. Mit {{FIRMO}} plan-issue vervollständigen.`
@@ -100,7 +100,7 @@ Exponiere in Kommentaren keine internen Tracking-IDs oder Session-Details.
 
 ### Phase 2: Expansion & Arbeitsliste
 
-1. Lies jedes referenzierte Issue **frisch** vom Tracker (Body, Labels, Status und **Kommentare** über die Operation „Kommentare lesen“). Die Kommentare sind Teil der Analysegrundlage: ein Planungskommentar von `{{SKILL:plan-issue}}` (Markierung `<!-- firmo-plan-issues -->`) enthält die vervollständigte Spezifikation, und Maintainer können Klärungen als Kommentar statt im Body nachreichen. Eigene Effective Flow-Kommentare (`<!-- firmo-apply-issues -->`) werden hier nur für die Idempotenz-Prüfung in Phase 4 gemerkt, nicht als fachliche Anforderung gewertet.
+1. Lies jedes referenzierte Issue **frisch** vom Tracker (Body, Labels, Status und **Kommentare** über die Operation „Kommentare lesen“). Die Kommentare sind Teil der Analysegrundlage: ein Planungskommentar von `{{SKILL:plan-issue}}` (Markierung `<!-- effective-flow-plan-issues -->`) enthält die vervollständigte Spezifikation, und Maintainer können Klärungen als Kommentar statt im Body nachreichen. Eigene Effective Flow-Kommentare (`<!-- effective-flow-apply-issues -->`) werden hier nur für die Idempotenz-Prüfung in Phase 4 gemerkt, nicht als fachliche Anforderung gewertet. **Backcompat (eine Generation):** die Alt-Marker `<!-- firmo-plan-issues -->` und `<!-- firmo-apply-issues -->` aus früheren Läufen werden beim Lesen gleichwertig erkannt; neu geschrieben wird ausschließlich die `effective-flow-`-Variante.
 2. **Container-Erkennung:** Enthält der Body eine Aufgabenliste mit Issue-Referenzen (`- [ ] #NNN …` / `- [x] #NNN …`), behandle das Issue als Container:
    - expandiere auf die **offenen** (`- [ ]`) Sub-Issue-Referenzen und merke das Container-Issue als Epic für das spätere Abhaken,
    - überspringe erledigte (`- [x]`) Einträge,
@@ -128,7 +128,7 @@ Starte für **jedes Arbeitsitem** einen Analyse-Sub-Agenten parallel. Diese Sub-
 
 Jeder Analyse-Sub-Agent erhält den Issue-Body **und die Issue-Kommentare** und den Auftrag, die Codebase zu untersuchen und ein strukturiertes Ergebnis zu liefern:
 
-- **Kommentare als Quelle:** Werte Body und Kommentare gemeinsam aus. Ein `<!-- firmo-plan-issues -->`-Planungskommentar liefert die von `{{SKILL:plan-issue}}` vervollständigte Spezifikation (Soll-Verhalten, Akzeptanzkriterien, betroffene Bereiche) und gilt als **maßgebliche, ausreichende** Grundlage — auch wenn der ursprüngliche Body dünn ist; existieren mehrere, zählt der neueste. Weitere Maintainer-Kommentare zählen als Klärungen für die Ausreichend-Prüfung. Reine Effective Flow-Statuskommentare (`<!-- firmo-apply-issues -->`) werden nicht als Anforderung gewertet.
+- **Kommentare als Quelle:** Werte Body und Kommentare gemeinsam aus. Ein `<!-- effective-flow-plan-issues -->`-Planungskommentar liefert die von `{{SKILL:plan-issue}}` vervollständigte Spezifikation (Soll-Verhalten, Akzeptanzkriterien, betroffene Bereiche) und gilt als **maßgebliche, ausreichende** Grundlage — auch wenn der ursprüngliche Body dünn ist; existieren mehrere, zählt der neueste. Weitere Maintainer-Kommentare zählen als Klärungen für die Ausreichend-Prüfung. Reine Effective Flow-Statuskommentare (`<!-- effective-flow-apply-issues -->`) werden nicht als Anforderung gewertet.
 - **Klassifikation:** Feature / Bugfix / Refactoring / Dokumentation (Definitionen wie in `{{SKILL:plan}}`, Phase 1) und daraus der Ziel-Skill (`{{SKILL:build}}` / `{{SKILL:fix}}` / `{{SKILL:refactor}}` / `{{SKILL:docs}}`).
 - **Ausreichend-Prüfung:** Wendet sinngemäß das „Klärungs-Gate“ auf Issue-Granularität an: Lässt sich aus dem Issue (Body **und Kommentaren**) ein klares Soll-Verhalten und mindestens ein **messbares Akzeptanzkriterium** ableiten, und gibt es genug Datei-/Bereichs-Hinweise, damit der Ziel-Workflow autonom starten kann? Ergebnis: `ausreichend` oder `unzureichend`. Bei `unzureichend`: konkrete Liste des Fehlenden (offene fachliche Fragen, fehlende Akzeptanzkriterien, unklarer Scope).
 - **Prompt-Vorschlag:** direkt verwendbarer Klartext-Auftrag für den Ziel-Skill.
@@ -192,7 +192,7 @@ Issues mit demselben Ziel-PR laufen sequenziell, damit neue Commits geordnet auf
 
 1. Nicht implementieren.
 2. Label `effective-flow-needs-planning` setzen.
-3. Übersprungen-Kommentar mit der Liste des Fehlenden anhängen (Vorlage oben), sofern die in Phase 2 gelesenen Kommentare nicht bereits einen gleichlautenden `<!-- firmo-apply-issues -->`-Übersprungen-Kommentar enthalten (Idempotenz auf Basis der Operation „Kommentare lesen“).
+3. Übersprungen-Kommentar mit der Liste des Fehlenden anhängen (Vorlage oben), sofern die in Phase 2 gelesenen Kommentare nicht bereits einen gleichlautenden `<!-- effective-flow-apply-issues -->`-Übersprungen-Kommentar enthalten (Idempotenz auf Basis der Operation „Kommentare lesen“).
 4. Task auf `completed` mit Zusatz `[übersprungen]`.
 
 **Ausreichende Issues (`ausreichend`), je Issue in dessen Worktree:**
