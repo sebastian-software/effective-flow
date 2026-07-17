@@ -69,6 +69,10 @@ Lösche die Wisdom-Datei am Ende.
 
 Die Rollen und die Standard-Struktur (Marketing-Root-README, Benutzerdoku, technische Doku) sind in `Doku-Kategorien` unter „Vorgegebene Standard-Doku-Struktur“ beschrieben; sie gelten als Prosa-Default, solange der User bzw. Plan nichts anderes vorgibt.
 
+### Sprach-/Projekttyp-Bewusstsein
+
+Die Doku-Agenten dokumentieren im idiomatischen Format der Zielsprache: JSDoc/TSDoc für JS/TS, rustdoc-Doc-Comments (`///`/`//!`) und Crate-/Modul-Doku für Rust. Erkenne Rust an `Cargo.toml`/`Cargo.lock` bzw. `.rs`-Dateien und weise die Doku-Phase entsprechend an – analog dazu, wie `{{SKILL:build}}` Implementierung und Review nach Projekt-Typ routet, statt sprach-agnostisch weiterzureichen. In gemischten Rust/JS-Repos routet die Doku **per Datei/Domäne** (Rust-Dateien → Rust-Guidance, JS/TS → bisherige). Bei einem Cargo-Projekt nutzt die technische Prüfung (`{{AGENT:code-validator}}`) zusätzlich die vorhandenen Cargo-Doku-Checks (`cargo doc`, Doctests).
+
 ### Initiales Doku-Setup (Scaffold-Modus)
 
 Ein initiales Aufsetzen der Projektdokumentation ist kein eigenes Tool, sondern ein Modus dieses Workflows. Er greift, wenn (a) der Auftrag ausdrücklich „Projektdokumentation initial aufsetzen“ lautet **oder** (b) noch keine Doku-Struktur existiert.
