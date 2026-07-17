@@ -10,7 +10,7 @@
     "finalValidation": "full",
     "stashPolicy": "interactive",
     "worktree": {
-      "baseDir": ".firmo/.worktrees",
+      "baseDir": ".effective-flow/.worktrees",
       "setup": "auto"
     }
   },
@@ -18,12 +18,15 @@
     "markerLanguage": "de"
   },
   "worktree": {
-    "enabled": false,
-    "baseBranch": "origin/main",
-    "branchPrefix": "firmo",
-    "completion": null,
+    "enabled": true,
     "setup": "auto",
-    "baseDir": ".firmo/.worktrees"
+    "baseDir": ".effective-flow/.worktrees"
+  },
+  "delivery": {
+    "baseBranch": "origin/main",
+    "branchPrefix": "effective-flow",
+    "completion": "pr",
+    "returnBranch": "auto"
   },
   "tracker": {
     "mode": "remote",
