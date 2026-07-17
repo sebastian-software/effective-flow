@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.47.0](https://github.com/sebastian-software/firmo/compare/firmo-v1.46.0...firmo-v1.47.0) (2026-07-17)
+
+
+### Features
+
+* add iterate tool to fold PR review feedback into an existing PR ([#115](https://github.com/sebastian-software/firmo/issues/115)) ([13fb55b](https://github.com/sebastian-software/firmo/commit/13fb55b9cc9d44edae8eaacba7190203b3a8fcd6))
+* **agents:** prefer metro-english over humanizer in docs agents ([#93](https://github.com/sebastian-software/firmo/issues/93)) ([1db020f](https://github.com/sebastian-software/firmo/commit/1db020f4b4a825ec9f7d8370696888890e690507))
+* **docs:** prescribe default documentation structure with marketing README ([#95](https://github.com/sebastian-software/firmo/issues/95)) ([caf379d](https://github.com/sebastian-software/firmo/commit/caf379d9b22f61ff0929c8e54823c0edb0aeb629))
+* **skills:** recommend skills-repo skills across firmo agents and tools ([#97](https://github.com/sebastian-software/firmo/issues/97)) ([c8b17fb](https://github.com/sebastian-software/firmo/commit/c8b17fb672ee4f69b3b8b594be5a985d2e9635df))
+* store Firmo config in a living Projektsetup ADR; treat ADRs as living documents ([#109](https://github.com/sebastian-software/firmo/issues/109)) ([9b8b7a9](https://github.com/sebastian-software/firmo/commit/9b8b7a9113f1566be81af28aeee5bb877cefe4bc))
+
 ## [1.46.0](https://github.com/sebastian-software/firmo/compare/firmo-v1.45.0...firmo-v1.46.0) (2026-07-16)
 
 
