@@ -1,5 +1,5 @@
 ---
-description: "Erstellt und pflegt End-User-Dokumentation mit derselben Tiefe wie der ursprüngliche Agent: README-Dateien, Entwickler-Guides, Komponenten-Dokumentation, API-Dokumentation (inkl. Rust-Crate-/Modul-Doku), CLI-Dokumentation und Migrationshinweise."
+description: "Erstellt und pflegt End-User-Dokumentation: README-Dateien, Entwickler-Guides, Komponenten-Dokumentation, API-Dokumentation (inkl. Rust-Crate-/Modul-Doku), CLI-Dokumentation und Migrationshinweise."
 claude:
   model: sonnet
   color: blue

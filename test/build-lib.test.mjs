@@ -16,6 +16,7 @@ import {
   parseAskBlock,
   renderBody,
   missingCategoryReadmes,
+  findSelfReferentialContractPhrases,
   ASK_MAX_HEADER_LENGTH,
 } from '../build-lib.mjs';
 
@@ -400,5 +401,86 @@ test('missingCategoryReadmes flags mandatory categories that hold docs but no RE
       'developer-guide': ['architektur.md'],
     }),
     ['developer-guide'],
+  );
+});
+
+// --- Self-contained agent-contract guard (#100) ---
+
+test('findSelfReferentialContractPhrases flags historical "ursprüngliche(r) Agent" comparisons', () => {
+  const hits = findSelfReferentialContractPhrases(
+    'description: "Erstellt In-Code-Dokumentation mit derselben Tiefe wie der ursprüngliche Agent: JSDoc."',
+  );
+  assert.equal(hits.length, 1);
+  assert.match(hits[0].label, /ursprüngliche/);
+  assert.equal(hits[0].match, 'ursprüngliche Agent');
+  // inflected forms are caught too
+  assert.equal(
+    findSelfReferentialContractPhrases('… wie der ursprünglichen Agent durch …').length,
+    1,
+  );
+});
+
+test('findSelfReferentialContractPhrases flags "original agent" and "same depth as the"', () => {
+  assert.equal(findSelfReferentialContractPhrases('same depth as the original agent').length, 2);
+});
+
+test('findSelfReferentialContractPhrases flags relative-to-sibling scope', () => {
+  const hits = findSelfReferentialContractPhrases(
+    'description: "Implementiert Rust-Code mit derselben fachlichen Tiefe wie der Node.js-Implementer: Cargo."',
+  );
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].match, 'wie der Node.js-Implementer');
+  assert.equal(
+    findSelfReferentialContractPhrases('Rust-Review wie der Node.js-Reviewer durch').length,
+    1,
+  );
+});
+
+test('findSelfReferentialContractPhrases flags sibling contractions and the genitive', () => {
+  // "beim"/"vom"/"im" (= bei/von/in dem) are as idiomatic as "wie der …".
+  assert.equal(
+    findSelfReferentialContractPhrases('… mit derselben Tiefe wie beim Node.js-Reviewer.').length,
+    1,
+  );
+  assert.equal(
+    findSelfReferentialContractPhrases('genauso wie vom Rust-Implementer erwartet').length,
+    1,
+  );
+  // Genitive "-Reviewers" must not slip through a suffix word boundary.
+  const gen = findSelfReferentialContractPhrases('Prüftiefe wie des Node.js-Reviewers ausgelegt');
+  assert.equal(gen.length, 1);
+  assert.equal(gen[0].match, 'wie des Node.js-Reviewers');
+});
+
+test('findSelfReferentialContractPhrases flags "Wie bei {{AGENT:…}}" contract substitute', () => {
+  const hits = findSelfReferentialContractPhrases('Wie bei `{{AGENT:frontend-reviewer}}`.');
+  assert.equal(hits.length, 1);
+  assert.match(hits[0].label, /contract substitute/);
+});
+
+test('findSelfReferentialContractPhrases allows legitimate {{AGENT:X}} delegation', () => {
+  // A bare delegation reference is not a contract substitute.
+  assert.deepEqual(
+    findSelfReferentialContractPhrases('An `{{AGENT:code-validator}}` delegieren.'),
+    [],
+  );
+  // "Wie bei" gates on {{AGENT:…}} only — a {{SKILL:…}} cross-reference is allowed.
+  assert.deepEqual(
+    findSelfReferentialContractPhrases('Wie bei `{{SKILL:review}}` beschrieben.'),
+    [],
+  );
+  // Self-contained, concrete scope descriptions produce no hits.
+  assert.deepEqual(
+    findSelfReferentialContractPhrases(
+      'description: "Führt spezialisiertes Backend- und CLI-Review durch: API Design, Security."',
+    ),
+    [],
+  );
+  // Legitimate prose using "ursprünglich" for a branch/plan/body — not "Agent".
+  assert.deepEqual(
+    findSelfReferentialContractPhrases(
+      'Cherry-pick zurück in den ursprünglichen Branch; auch wenn der ursprüngliche Body dünn ist.',
+    ),
+    [],
   );
 });

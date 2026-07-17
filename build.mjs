@@ -27,6 +27,7 @@ import {
   renderBody,
   missingCategoryReadmes,
   README_MANDATORY_CATEGORIES,
+  findSelfReferentialContractPhrases,
 } from './build-lib.mjs';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -289,6 +290,28 @@ try {
     assertNoVersionedStandard(
       `${t.description}\n${t.catalogHint ?? ''}\n${t.body}`,
       `tools/${t.name}.md`,
+    );
+  }
+
+  // --- Content guard: self-contained agent contracts (#100). Every agent
+  // description/body is the complete runtime contract handed to its subagent, so
+  // it must not defer meaning to a historical "original" agent, to a sibling by
+  // relative comparison, or to another agent via a "Wie bei {{AGENT:…}}"
+  // shorthand. A legitimate {{AGENT:X}} delegation reference stays allowed. Scan
+  // frontmatter together with the body, since descriptions flow into both
+  // harness outputs. The pure checker lives in build-lib.mjs and is unit-tested.
+  const contractViolations = [];
+  for (const a of agents) {
+    for (const v of findSelfReferentialContractPhrases(`${a.fm}\n${a.body}`)) {
+      contractViolations.push(`agents/${a.name}.md — ${v.label}: "${v.match}"`);
+    }
+  }
+  if (contractViolations.length > 0) {
+    throw new Error(
+      'content guard (#100): agent descriptions/contracts must be self-contained ' +
+        '(no historical "original"/sibling comparison, no "Wie bei {{AGENT:…}}" contract ' +
+        'substitute; a bare {{AGENT:X}} delegation reference stays allowed):\n  ' +
+        contractViolations.join('\n  '),
     );
   }
 

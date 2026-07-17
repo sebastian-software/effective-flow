@@ -94,6 +94,17 @@ Der Build bricht mit einer Fehlermeldung ab, wenn einer dieser Guards verletzt i
   sonst bricht der Build ab. So kann der verpflichtende technische Einstiegspunkt nicht
   unbemerkt verschwinden. Die reine Prüflogik liegt als `missingCategoryReadmes` in
   `build-lib.mjs` und ist in `test/build-lib.test.mjs` abgedeckt.
+- **Self-contained-Agent-Contract-Guard (#100):** Jede Agent-Description und jeder Agent-Body
+  ist die vollständige Laufzeit-Metadaten- und Instruktionsgrundlage des Subagenten – er
+  erhält zur Laufzeit keinen Geschwister- oder Historien-Kontext. Der Guard bricht den Build
+  daher ab, wenn eine Agent-Quelle (Frontmatter **und** Body) ihre Bedeutung auf einen anderen
+  Agenten abwälzt: Historien-Vergleiche („ursprüngliche(r) Agent", „original agent", „same
+  depth as the …"), Relativ-zu-Geschwister-Scope („… wie der `<X>`-Reviewer/-Implementer/…")
+  oder ein Cross-Agent-Shorthand als Contract-Ersatz („Wie bei `{{AGENT:…}}`"). Eine
+  **legitime** Delegations-Referenz wie „an `{{AGENT:code-validator}}` delegieren" bleibt
+  erlaubt – nur die „Wie bei `{{AGENT:…}}`"-Form ist blockiert. Die reine Prüflogik liegt als
+  `findSelfReferentialContractPhrases` (mit der Blocklist `SELF_CONTAINED_CONTRACT_PATTERNS`)
+  in `build-lib.mjs` und ist in `test/build-lib.test.mjs` abgedeckt.
 
 ## Tool oder Agent hinzufügen
 

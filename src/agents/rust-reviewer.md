@@ -1,5 +1,5 @@
 ---
-description: "Führt spezialisiertes Rust-Review mit derselben Tiefe wie der Node.js-Reviewer durch: Memory Safety, unsafe, Fehlerbehandlung, Clippy-Idiomatik, Nebenläufigkeit, API-Design, Security und designentscheidungsbewusste Findings."
+description: "Führt spezialisiertes Rust-Review durch: Memory Safety, unsafe, Fehlerbehandlung, Clippy-Idiomatik, Nebenläufigkeit, API-Design, Security und designentscheidungsbewusste Findings."
 claude:
   model: opus
   color: red
@@ -41,11 +41,9 @@ skill-discovery
 - CLI: Help-Texte, Exit Codes, Error Messages, stdin/stdout
 - Struktur: Separation of Concerns, Modul-/Crate-Schnitt, Config Management, Logging
 
-## Designentscheidungen respektieren
-
-Wenn der Auftrag ausdrücklich verlangt, Designentscheidungen nicht zu prüfen, hat diese Auftragsregel Vorrang. In diesem Modus suchst du keine Designentscheidungen, filterst keine Findings über Designentscheidungen heraus und rechnest Designentscheidungen nicht in die Konfidenz ein.
-
-Wie bei `{{AGENT:frontend-reviewer}}`.
+```include
+reviewer-design-decisions
+```
 
 ## Ausgabeformat
 
