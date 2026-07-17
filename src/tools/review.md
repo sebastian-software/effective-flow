@@ -296,7 +296,7 @@ Bestimme die aktiven Designentscheidungs-Quellen aus `review.designDecisionSourc
 
 Starte für jede aktive Quelle einen eigenen Sub-Agenten **parallel**. Jeder Sub-Agent durchsucht nur seine Quelle:
 
-- ADR — `docs/decisions/`, `docs/adr/`, `adr/`, `*.adr.md`. ADRs können im lebenden, slug-benannten Format (`# <Titel>`, `## Status`) **oder** im nummerierten Alt-Format (`# NNNN — Titel`) vorliegen; beide Formen werden gelesen, die Such-Globs bleiben unverändert. **Ausnahme:** Die Effective Flow-Projektsetup-ADR (Config, bekannter Slug `firmo-project-setup`, z. B. `docs/adr/effective-flow-project-setup.md`) ist Konfiguration, keine Architekturbegründung, und wird **nicht** als Designentscheidungs-Quelle gesammelt.
+- ADR — `docs/decisions/`, `docs/adr/`, `adr/`, `*.adr.md`. ADRs können im lebenden, slug-benannten Format (`# <Titel>`, `## Status`) **oder** im nummerierten Alt-Format (`# NNNN — Titel`) vorliegen; beide Formen werden gelesen, die Such-Globs bleiben unverändert. **Ausnahme:** Die Effective Flow-Projektsetup-ADR (Config, bekannter Slug `effective-flow-project-setup`, Alt `firmo-project-setup`, z. B. `docs/adr/effective-flow-project-setup.md`) ist Konfiguration, keine Architekturbegründung, und wird **nicht** als Designentscheidungs-Quelle gesammelt.
 - Planungs-Dateien — `<plan.dir>/`, `plans/`
 - Konventions-Dateien — `CLAUDE.md`, `AGENTS.md`, vergleichbare Konventionsdateien
 - Code-Kommentare — `@design-decision`, `DELIBERATE`, `INTENTIONAL`, `DESIGN:`
