@@ -17,6 +17,21 @@ function contextSuffix(context) {
   return context ? ` (in ${context})` : '';
 }
 
+// Placeholder names carried over from the pre-rename era (`{{SKILL:sf-fix}}`,
+// `{{AGENT:sf-test-writer}}`). Effective Flow does not alias these to their new
+// names — they are rejected at validation time so the rendering step can never
+// turn an accepted placeholder into a dead `tools/sf-*.md` / `sf-*` reference.
+// See docs/developer-guide/build-system.md ("Legacy-Aliase").
+const LEGACY_REF_PREFIX = 'sf-';
+
+function assertNotLegacyRef(marker, name, context) {
+  if (name.startsWith(LEGACY_REF_PREFIX)) {
+    throw new Error(
+      `Legacy placeholder {{${marker}:${name}}} is no longer supported; drop the "${LEGACY_REF_PREFIX}" prefix and use the current name${contextSuffix(context)}`,
+    );
+  }
+}
+
 export function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -185,11 +200,13 @@ export function normalizeCodexSandboxMode(mode, skillName) {
 // that has no matching tool/agent source.
 export function validateRefs(text, { knownTools, knownAgents, context } = {}) {
   for (const m of text.matchAll(/\{\{SKILL:([^}]+)\}\}/g)) {
+    assertNotLegacyRef('SKILL', m[1], context);
     if (!knownTools.has(m[1])) {
       throw new Error(`Unknown tool reference {{SKILL:${m[1]}}}${contextSuffix(context)}`);
     }
   }
   for (const m of text.matchAll(/\{\{AGENT:([^}]+)\}\}/g)) {
+    assertNotLegacyRef('AGENT', m[1], context);
     if (!knownAgents.has(m[1])) {
       throw new Error(`Unknown agent reference {{AGENT:${m[1]}}}${contextSuffix(context)}`);
     }
@@ -232,9 +249,15 @@ export function transformRefs(
     context,
   } = {},
 ) {
-  if (knownTools && knownAgents) {
-    validateRefs(body, { knownTools, knownAgents, context });
+  // Rendering always runs the same guard as validation: a placeholder that
+  // validateRefs would reject (legacy `sf-` name or a dead reference) must never
+  // be rendered into the output. The known-name sets are therefore required.
+  if (!knownTools || !knownAgents) {
+    throw new Error(
+      `transformRefs requires knownTools and knownAgents to guard references${contextSuffix(context)}`,
+    );
   }
+  validateRefs(body, { knownTools, knownAgents, context });
   const agentName = (raw) => (harness === 'claude' ? `${agentPrefix}${raw}` : raw);
   const command = harness === 'codex' ? `$${skillName}` : `/${skillName}`;
   const skillInvocation = (raw) => `${command} ${raw}`;
