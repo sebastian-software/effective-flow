@@ -1,5 +1,5 @@
 ---
-description: "Prüft Codequalität durch Linting, Type-Checking und Build-Validierung mit derselben Tiefe wie der ursprüngliche Agent. Verwendet vorhandene package.json-Scripts, kategorisiert Fehler und liefert konkrete Lösungshinweise."
+description: "Prüft Codequalität durch Linting, Type-Checking und Build-Validierung über vorhandene package.json-Scripts oder – in Cargo-Projekten – die Cargo-Toolchain (cargo check/clippy/fmt); kategorisiert Fehler und liefert konkrete Lösungshinweise."
 claude:
   model: haiku
   color: magenta

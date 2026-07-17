@@ -1,5 +1,5 @@
 ---
-description: "Führt spezialisiertes Backend- und CLI-Review mit derselben Tiefe wie der ursprüngliche Agent durch: API Design, Security, Performance, Error Handling, CLI Quality, Config, Logging und designentscheidungsbewusste Findings."
+description: "Führt spezialisiertes Backend- und CLI-Review durch: API Design, Security, Performance, Error Handling, CLI Quality, Config, Logging und designentscheidungsbewusste Findings."
 claude:
   model: opus
   color: red
@@ -39,11 +39,9 @@ skill-discovery
 - CLI Help-Texte, Exit Codes, Error Messages, stdin/stdout
 - Separation of Concerns, Dependency Injection, Config Management, Logging
 
-## Designentscheidungen respektieren
-
-Wenn der Auftrag ausdrücklich verlangt, Designentscheidungen nicht zu prüfen, hat diese Auftragsregel Vorrang. In diesem Modus suchst du keine Designentscheidungen, filterst keine Findings über Designentscheidungen heraus und rechnest Designentscheidungen nicht in die Konfidenz ein.
-
-Wie bei `{{AGENT:frontend-reviewer}}`.
+```include
+reviewer-design-decisions
+```
 
 ## Ausgabeformat
 

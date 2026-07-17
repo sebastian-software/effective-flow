@@ -367,3 +367,53 @@ export function missingCategoryReadmes(entriesByCategory) {
     return hasDoc && !entries.includes('README.md');
   });
 }
+
+// --- Self-contained agent-contract guard (#100) ---
+//
+// An agent (description + body) is routing metadata plus the only instructions
+// its subagent ever receives at runtime. It must therefore stand on its own: it
+// may not defer its meaning to a *historical* "original" agent that is not part
+// of the delivered context, to a *sibling* agent by relative comparison, or to
+// another agent's instructions via a "Wie bei {{AGENT:…}}" shorthand that names
+// the rule without loading it. These phrases make the contract untestable or
+// runtime-incomplete, so the build rejects them.
+//
+// Each pattern's `label` explains why it is blocked; matching is case-insensitive
+// and global so every occurrence is reported.
+export const SELF_CONTAINED_CONTRACT_PATTERNS = [
+  {
+    label: 'historical comparison to an "ursprüngliche(r) Agent"',
+    re: /urspr(?:ü|ue)nglich(?:e|er|en|es|em)\s+Agent/gi,
+  },
+  {
+    label: 'historical comparison to an "original agent"',
+    re: /\boriginal\s+agent\b/gi,
+  },
+  {
+    label: 'historical "same depth as the …" comparison',
+    re: /\bsame\s+depth\s+as\s+the\b/gi,
+  },
+  {
+    label: 'relative-to-sibling scope ("wie der/beim/vom <X>-Reviewer/-Implementer/…")',
+    re: /\bwie\s+(?:der|dem|des|beim|vom|im|zum)\s+[A-Za-zÄÖÜäöüß0-9.]+-(?:Reviewer|Implementer|Documenter|Validator|Writer|Tester|Agent)(?:s|en|n)?\b/gi,
+  },
+  {
+    label: 'cross-agent shorthand as a contract substitute ("Wie bei {{AGENT:…}}")',
+    re: /\bWie\s+bei\s+`?\{\{AGENT:[^}]+\}\}/gi,
+  },
+];
+
+// Return every self-referential contract phrase in `text` (an agent's
+// frontmatter + body), as { label, match } records. A legitimate delegation
+// reference such as "an {{AGENT:code-validator}} delegieren" is deliberately not
+// matched — only the "Wie bei {{AGENT:…}}" contract-substitute shape is. Returns
+// an empty array when the text is self-contained; build.mjs fails on any hit.
+export function findSelfReferentialContractPhrases(text) {
+  const hits = [];
+  for (const { label, re } of SELF_CONTAINED_CONTRACT_PATTERNS) {
+    for (const m of text.matchAll(re)) {
+      hits.push({ label, match: m[0].trim() });
+    }
+  }
+  return hits;
+}

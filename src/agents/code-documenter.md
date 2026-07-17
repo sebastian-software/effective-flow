@@ -1,5 +1,5 @@
 ---
-description: "Erstellt und verbessert In-Code-Dokumentation mit derselben Tiefe wie der ursprüngliche Agent: JSDoc, TSDoc, Inline-Kommentare, Type-Annotationen, React-Props, REST-Handler und CLI-Hilfetexte."
+description: "Erstellt und verbessert In-Code-Dokumentation: JSDoc, TSDoc, Inline-Kommentare, Type-Annotationen, React-Props, REST-Handler und CLI-Hilfetexte."
 claude:
   model: sonnet
   color: cyan

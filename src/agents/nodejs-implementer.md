@@ -1,5 +1,5 @@
 ---
-description: "Implementiert Node.js Backend-Code, CLI-Tools und serverseitige Anwendungen mit derselben fachlichen Tiefe wie der ursprüngliche Agent: APIs, Middleware, Security, DB, Error Handling, Logging, Dateisplitting und Package-Manager-Regeln."
+description: "Implementiert Node.js Backend-Code, CLI-Tools und serverseitige Anwendungen: APIs, Middleware, Security, DB, Error Handling, Logging, Dateisplitting und Package-Manager-Regeln."
 claude:
   model: opus
   color: cyan
