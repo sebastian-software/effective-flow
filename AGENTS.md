@@ -14,12 +14,13 @@ Effective Flow is a **source-to-dist build** for a single Software-Engineering s
 node build.mjs           # build both harnesses into dist/ (also: pnpm build)
 pnpm format              # format with oxfmt (Markdown + JS)
 pnpm agent:check         # oxfmt --check (CI-style, no writes)
+pnpm test                # run the unit test suite (node:test)
 ./install-skill.sh       # install the latest GitHub release asset
 ./install-skill.sh local # build + copy the current checkout
 ./local-link.sh          # build + symlink dist/ (for development)
 ```
 
-Package manager is **pnpm** (`packageManager: pnpm@11.9.0`). There is no test suite; correctness is enforced by build-time guards (see below) — after editing sources, `node build.mjs` is the check that must pass.
+Package manager is **pnpm** (`packageManager: pnpm@11.9.0`). Correctness rests on two layers: a `node:test` unit suite (`pnpm test`, in `test/build-lib.test.mjs`) covering the pure `build-lib.mjs` transforms — frontmatter parsing, `{{SKILL:X}}`/`{{AGENT:X}}` and `include` resolution, body rendering, description quoting — **and** the build-time guards (see below) that run during `node build.mjs`. After editing sources, run the same sequence CI runs: `pnpm agent:check` (format), `pnpm test` (unit tests), then `node build.mjs` (build + guards).
 
 ## Build architecture
 

@@ -32,9 +32,7 @@ jobs:
         run: pnpm agent:check
 
       - name: Unit tests
-        # Invoke the runner directly (not `pnpm test`) so this passes cleanly
-        # before the test suite is added and runs it automatically once present.
-        run: node --test
+        run: pnpm test
 
       - name: Build distribution
         run: node build.mjs

@@ -9,13 +9,19 @@ Platzhalter-Syntax und Build-Guards. Konventionen zum Hinzufügen von Tools und 
 
 ```sh
 node build.mjs   # baut beide Harnesses nach dist/ (alias: pnpm build)
+pnpm test        # führt die Unit-Test-Suite aus (node:test)
 pnpm format      # formatiert mit oxfmt (Markdown + JS)
 pnpm agent:check # oxfmt --check, CI-Modus ohne Schreibzugriff
 ```
 
-Paketmanager ist **pnpm** (`packageManager: pnpm@11.9.0`). Es gibt keine klassische Testsuite;
-Korrektheit wird über die Build-Guards erzwungen (siehe unten) – nach jeder Quelländerung ist
-`node build.mjs` die maßgebliche Prüfung.
+Paketmanager ist **pnpm** (`packageManager: pnpm@11.9.0`). Die Korrektheit ruht auf zwei
+komplementären Schichten: einer `node:test`-Unit-Suite (`pnpm test`, `test/build-lib.test.mjs`),
+die die reinen `build-lib.mjs`-Transforms abdeckt (Frontmatter-Parsing, `{{SKILL:X}}`/`{{AGENT:X}}`-
+und `include`-Auflösung, Body-Rendering, Description-Quoting), **und** den Build-Guards (siehe
+„Guards"), die beim `node build.mjs`-Lauf greifen – die Unit-Tests sichern die Transform-Logik,
+die Guards die Vollständigkeit und Konsistenz der Quellen. Nach jeder Quelländerung gilt dieselbe
+Reihenfolge wie in CI: `pnpm agent:check` (Format), `pnpm test` (Unit-Tests), dann `node build.mjs`
+(Build + Guards).
 
 Der Build schreibt zunächst in ein temporäres Verzeichnis (`dist.tmp/`) und tauscht es erst nach
 einem vollständig erfolgreichen Lauf atomar gegen `dist/`. Schlägt der Build fehl, bleibt das
