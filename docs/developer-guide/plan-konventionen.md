@@ -1,49 +1,47 @@
-# Plan-Konventionen
+# Plan conventions
 
-Plan-Dateien entstehen über `/effective-flow plan` (rein planend, kein Code) und liegen unter
-`<plan.dir>/`, konfigurierbar via `plan.dir` in der Effective Flow-Konfiguration (Projektsetup-ADR,
-Default `docs/plan`). Dieses
-Dokument beschreibt das Namensschema, die Statusmarker und den Lebenszyklus der Plan-Dateien.
-Quelle ist [`src/tools/plan.md`](../../src/tools/plan.md); Agenten-Verhaltensregeln für Plan-
-Dateien stehen kanonisch in [`AGENTS.md`](../../AGENTS.md), Abschnitt „Plan files (`docs/plan/`)".
+Plan files are created via `/effective-flow plan` (purely planning, no code) and live under
+`<plan.dir>/`, configurable via `plan.dir` in the Effective Flow configuration (project-setup
+ADR, default `docs/plan`). This
+document describes the naming scheme, the status markers, and the lifecycle of the plan files.
+The source is [`src/tools/plan.md`](../../src/tools/plan.md); agent behavior rules for plan files
+are canonical in [`AGENTS.md`](../../AGENTS.md), section "Plan files (`docs/plan/`)".
 
-## Namensschema: ISO-Datum-Slug
+## Naming scheme: ISO-date slug
 
-Neue Plan-Dateien tragen **kein** durchlaufendes Nummern-Präfix mehr. Der Dateiname ist
+New plan files no longer carry a running number prefix. The file name is
 `<plan.dir>/YYYY-MM-DD-<slug>.md`:
 
-- `YYYY-MM-DD` ist das Erstellungsdatum (ISO, z. B. via `date +%F`).
-- `<slug>` ist ein Kebab-Case-Slug aus dem endgültigen Titel (nur `a`–`z`, `0`–`9`,
-  Bindestrich).
-- Die H1 im Dokument ist der Titel ohne Nummer: `# <Titel>`.
+- `YYYY-MM-DD` is the creation date (ISO, e.g. via `date +%F`).
+- `<slug>` is a kebab-case slug from the final title (only `a`–`z`, `0`–`9`, hyphen).
+- The H1 in the document is the title without a number: `# <Title>`.
 
-Es gibt **keine Vorab-Reservierung, keinen Stub und keine Nummer**: Die Datei entsteht direkt
-unter ihrem endgültigen Namen, sobald der Plan tatsächlich geschrieben wird – anders als beim
-früheren vierstelligen `NNNN`-Schema, das eine Nummernreservierung zu Beginn erforderte. Eine
-Namenskollision am selben Tag wird durch ein numerisches Suffix aufgelöst
-(`YYYY-MM-DD-<slug>-2.md`, `-3`, …); ein stilles Überschreiben findet nicht statt.
+There is **no pre-reservation, no stub, and no number**: the file is created directly under its
+final name as soon as the plan is actually written – unlike the earlier four-digit `NNNN`
+scheme, which required a number reservation up front. A name collision on the same day is
+resolved by a numeric suffix (`YYYY-MM-DD-<slug>-2.md`, `-3`, …); silent overwriting does not
+happen.
 
-### Migration alter Pläne (`NNNN` → Datum)
+### Migration of old plans (`NNNN` → date)
 
-Ältere Pläne mit dem vierstelligen Präfix (`NNNN-slug.md`) werden **einmalig** umgestellt:
+Older plans with the four-digit prefix (`NNNN-slug.md`) are migrated **once**:
 
-- Zielname: `YYYY-MM-DD-NNNN-slug.md`, wobei `YYYY-MM-DD` das **Umstellungsdatum** ist und die
-  alte `NNNN` als stabile Referenz erhalten bleibt.
-- Die H1 (`# NNNN: Titel`) bleibt dabei **unverändert** – die Nummer bleibt dort als
-  Referenzanker.
-- Die Umbenennung erfolgt per `git mv`, um die Historie zu erhalten, und läuft als Bulk-Vorgang
-  über das gesamte Plan-Verzeichnis.
-- Auslöser sind ausschließlich das Erstellen eines neuen Plans oder das Einlesen eines Plans im
-  Altformat – nicht jeder Effective Flow-Aufruf.
+- Target name: `YYYY-MM-DD-NNNN-slug.md`, where `YYYY-MM-DD` is the **migration date** and the
+  old `NNNN` is preserved as a stable reference.
+- The H1 (`# NNNN: Title`) stays **unchanged** – the number remains there as a reference anchor.
+- The rename happens via `git mv` to preserve history and runs as a bulk operation over the
+  entire plan directory.
+- Triggers are exclusively the creation of a new plan or the reading of a plan in the old format
+  – not every Effective Flow call.
 
-Die Auflösung einer Legacy-Nummer erfolgt primär über die H1 `# NNNN: …`, nicht über das
-Dateinamen-Segment, da ein neuer, nummerähnlicher Titel-Slug sonst nicht eindeutig vom
-migrierten Altformat unterscheidbar wäre.
+The resolution of a legacy number happens primarily via the H1 `# NNNN: …`, not via the file
+name segment, since a new, number-like title slug would otherwise not be unambiguously
+distinguishable from the migrated old format.
 
-## Statusmarker (Deutsch/Englisch)
+## Status markers (German/English)
 
-Jeder Plan trägt im Kopfbereich genau eine kanonische Statuszeile, wahlweise auf Deutsch oder
-Englisch:
+Every plan carries exactly one canonical status line in the header area, either in German or
+English:
 
 ```md
 **Planungsstatus:** Nicht umgesetzt
@@ -53,57 +51,55 @@ Englisch:
 **Plan status:** Not implemented
 ```
 
-Akzeptierte Werte sind `Nicht umgesetzt`/`Umgesetzt` (Deutsch) beziehungsweise
-`Not implemented`/`Implemented` (Englisch). Pro Plan-Datei wird nur eine Sprache verwendet; beim
-Statuswechsel auf abgeschlossen bleibt die einmal gewählte Markersprache erhalten. Die Zeile
-`**Empfohlener Workflow:**` bleibt unabhängig von der Markersprache immer auf Deutsch. Nur diese
-kanonische Statuszeile zählt als Status – andere Vorkommen der Begriffe in Fließtext oder
-Review-Findings sind irrelevant.
+Accepted values are `Nicht umgesetzt`/`Umgesetzt` (German) or `Not implemented`/`Implemented`
+(English). Only one language is used per plan file; when the status switches to completed, the
+once-chosen marker language is preserved. The `**Recommended workflow:**` line uses its fixed
+canonical form independent of the marker language. Only this canonical status line counts as the
+status – other occurrences of the terms in running text or review findings are irrelevant.
 
-Die Markersprache wird beim Anlegen eines Plans in dieser Reihenfolge bestimmt: `plan.markerLanguage`
-aus der Effective Flow-Konfiguration (Projektsetup-ADR) → Auto-Detection aus vorhandenen Plänen → Rückfrage an
-den User. Persistiert wird eine Entscheidung über `/effective-flow setup` in der Projektsetup-ADR, nicht mehr
-in `.effective-flow/config.json`.
+The marker language is determined when a plan is created in this order: `plan.markerLanguage`
+from the Effective Flow configuration (project-setup ADR) → auto-detection from existing plans →
+follow-up question to the user. A decision is persisted via `/effective-flow setup` in the
+project-setup ADR, no longer in `.effective-flow/config.json`.
 
-## Archiv umgesetzter Pläne
+## Archive of implemented plans
 
-`<plan.dir>/` enthält nur **offene** oder **in Umsetzung** befindliche Pläne. Sobald ein Plan
-vollständig umgesetzt ist, setzt der umsetzende Workflow den Statusmarker auf
-`Umgesetzt`/`Implemented` und verschiebt die Datei per `git mv` nach `<plan.dir>/archive/`
-(Verzeichnis bei Bedarf angelegt) – noch im selben Liefer-Branch, sodass die Verschiebung Teil
-desselben Pull-Requests bzw. Merges ist. `/effective-flow open-plans` listet nur die oberste Ebene von
-`<plan.dir>/`, nicht das Archiv; Auflöser für Plan-Referenzen (Pfad, Dateiname, Legacy-Nummer
-oder Titel-Slug) durchsuchen dagegen sowohl `<plan.dir>/` als auch `<plan.dir>/archive/`.
+`<plan.dir>/` contains only **open** or **in-progress** plans. As soon as a plan is fully
+implemented, the implementing workflow sets the status marker to `Umgesetzt`/`Implemented` and
+moves the file via `git mv` to `<plan.dir>/archive/` (directory created if needed) – still in
+the same delivery branch, so the move is part of the same pull request or merge.
+`/effective-flow open-plans` lists only the top level of `<plan.dir>/`, not the archive;
+resolvers for plan references (path, file name, legacy number, or title slug), by contrast,
+search both `<plan.dir>/` and `<plan.dir>/archive/`.
 
-## Doku-Kategorien
+## Doc categories
 
-Pläne mit `**Empfohlener Workflow:** Dokumentation` tragen im Kopf zwei zusätzliche Zeilen:
+Plans with `**Recommended workflow:** Documentation` carry two additional lines in the header:
 
 ```md
-**Doku-Kategorie:** user-guide | developer-guide | operations | runbooks
-**Ziel-Pfad:** docs/<kategorie>/<topic-slug>.md
+**Doc category:** user-guide | developer-guide | operations | runbooks
+**Target path:** docs/<category>/<topic-slug>.md
 ```
 
-Die vier Kategorien sind in [`src/shared/doc-categories.md`](../../src/shared/doc-categories.md)
-definiert:
+The four categories are defined in
+[`src/shared/doc-categories.md`](../../src/shared/doc-categories.md):
 
-| Kategorie       | Verzeichnis             | Zielgruppe                                                        |
-| --------------- | ----------------------- | ----------------------------------------------------------------- |
-| User-Guide      | `docs/user-guide/`      | End-User der Anwendung                                            |
-| Developer-Guide | `docs/developer-guide/` | Entwickler, die am Projekt mitarbeiten                            |
-| Operations      | `docs/operations/`      | Betrieb, Deployment, Monitoring, Infrastruktur                    |
-| Runbooks        | `docs/runbooks/`        | Step-by-Step-Prozeduren für Incident-Response und Routineaufgaben |
+| Category        | Directory               | Audience                                                        |
+| --------------- | ----------------------- | --------------------------------------------------------------- |
+| User-Guide      | `docs/user-guide/`      | End users of the application                                    |
+| Developer-Guide | `docs/developer-guide/` | Developers who contribute to the project                        |
+| Operations      | `docs/operations/`      | Operations, deployment, monitoring, infrastructure              |
+| Runbooks        | `docs/runbooks/`        | Step-by-step procedures for incident response and routine tasks |
 
-Kategorie und Ziel-Pfad müssen zueinander passen; der Ziel-Pfad muss innerhalb des jeweiligen
-Kategorie-Verzeichnisses liegen. `docs/user-guide/README.md` und
-`docs/developer-guide/README.md` sind als kuratierte Einstiegspunkte Pflicht, sobald mindestens
-ein User-Guide- bzw. Developer-Guide-Dokument existiert; `operations` und `runbooks` haben
-standardmäßig keine README. Slugs sind topic-basiertes Kebab-Case ohne Datums-
-oder Nummern-Präfix und müssen innerhalb ihrer Kategorie eindeutig sein – das Datums-Slug-Schema
-mit erhaltener Legacy-Nummer bleibt exklusiv dem Plan-Verzeichnis vorbehalten.
+Category and target path must match; the target path must lie within the respective category
+directory. `docs/user-guide/README.md` and `docs/developer-guide/README.md` are mandatory as
+curated entry points as soon as at least one User-Guide or Developer-Guide document exists;
+`operations` and `runbooks` have no README by default. Slugs are topic-based kebab-case without a
+date or number prefix and must be unique within their category – the date-slug scheme with the
+preserved legacy number stays exclusive to the plan directory.
 
-## Weiterführend
+## Further reading
 
-- [`architektur.md`](architektur.md) – Repo-Struktur, in der `<plan.dir>/` eingeordnet ist.
-- [`release-und-installation.md`](release-und-installation.md) – Versionierung und Release.
-- [`AGENTS.md`](../../AGENTS.md) – kanonische Plan-Datei-Regeln.
+- [`architektur.md`](architektur.md) – repo structure into which `<plan.dir>/` is placed.
+- [`release-und-installation.md`](release-und-installation.md) – versioning and release.
+- [`AGENTS.md`](../../AGENTS.md) – canonical plan-file rules.

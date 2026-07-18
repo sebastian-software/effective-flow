@@ -1,34 +1,34 @@
 # Developer Guide
 
-Technischer Einstiegspunkt für Effective Flow – für Entwickler, die am Projekt mitarbeiten, und
-für Softwarearchitekten, die einschätzen wollen, wie Effective Flow aufgebaut ist und ob es
-technisch passt.
+Technical entry point for Effective Flow – for developers who contribute to the project and for
+software architects who want to assess how Effective Flow is built and whether it fits
+technically.
 
-Effective Flow ist ein **Source-to-dist-Build**: `build.mjs` transformiert die Markdown-Quellen
-unter `src/` in zwei harness-spezifische Skill-Verzeichnisse unter `dist/` (Claude Code und
-Codex). Es gibt keine Laufzeitanwendung – du editierst `src/`, nie `dist/`.
+Effective Flow is a **source-to-dist build**: `build.mjs` transforms the Markdown sources under
+`src/` into two harness-specific skill directories under `dist/` (Claude Code and Codex). There
+is no runtime application – you edit `src/`, never `dist/`.
 
-## Lese-Reihenfolge
+## Reading order
 
-1. [Architektur](architektur.md) – Repository-Aufbau: Source-to-dist-Modell, der dünne Router
-   mit Lazy-Loading und die Aufteilung auf die beiden Harnesses.
-2. [Build-System](build-system.md) – wie `build.mjs` `src/` nach `dist/` transformiert:
-   Aufruf, Platzhalter-Syntax, Build-Guards und die Unit-Test-Suite.
-3. [Konfiguration](konfiguration.md) – die Effective Flow-Konfiguration in der lebenden
-   Projektsetup-ADR, mit dem entwicklerorientierten Überblick über alle Config-Blöcke.
-4. [Plan-Konventionen](plan-konventionen.md) – Namensschema, kanonische Status-Marker und
-   Archivierung der Plan-Dateien unter `<plan.dir>/`.
-5. [Skill-Ownership](skill-ownership.md) – die Grenze zwischen Effective-Flow-Orchestrierung
-   und zentraler Skill-Expertise (geschichteter Vertrag) samt Ownership-Inventar über den
-   aktuellen Skillset.
-6. [Release und Installation](release-und-installation.md) – Versionierung über
-   release-please, Veröffentlichung und Installation des gebauten Skills.
-7. [Terminology](terminology.md) – verbindliches DE→EN-Glossar für die Sprach-Migration
-   (Englisch als Default, Deutsch weiterhin zulässig).
+1. [Architecture](architektur.md) – repository layout: source-to-dist model, the thin router
+   with lazy loading, and the split across the two harnesses.
+2. [Build system](build-system.md) – how `build.mjs` transforms `src/` into `dist/`: invocation,
+   placeholder syntax, build guards, and the unit test suite.
+3. [Configuration](konfiguration.md) – the Effective Flow configuration in the living
+   project-setup ADR, with the developer-oriented overview of all config blocks.
+4. [Plan conventions](plan-konventionen.md) – naming scheme, canonical status markers, and
+   archiving of the plan files under `<plan.dir>/`.
+5. [Skill ownership](skill-ownership.md) – the boundary between Effective Flow orchestration
+   and central skill expertise (layered contract), including the ownership inventory over the
+   current skillset.
+6. [Release and installation](release-und-installation.md) – versioning via release-please,
+   publishing, and installation of the built skill.
+7. [Terminology](terminology.md) – binding DE→EN glossary for the language migration (English
+   as default, German still permitted).
 
-## Siehe auch
+## See also
 
-- [`AGENTS.md`](../../AGENTS.md) – kanonische Konventionen zum Hinzufügen von Tools und
-  Agenten sowie die verbindlichen Sprach-, Commit- und Versionierungsregeln.
-- [User Guide](../user-guide/README.md) – Nutzung von Effective Flow (Installation,
-  Tool-Referenz, Konfiguration, Troubleshooting).
+- [`AGENTS.md`](../../AGENTS.md) – canonical conventions for adding tools and agents, plus the
+  binding language, commit, and versioning rules.
+- [User Guide](../user-guide/README.md) – using Effective Flow (installation, tool reference,
+  configuration, troubleshooting).

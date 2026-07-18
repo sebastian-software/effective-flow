@@ -1,49 +1,49 @@
-# Benutzer-Guide
+# User Guide
 
-Dieser Guide richtet sich an alle, die Effective Flow in einem Projekt **nutzen** – über
-`/effective-flow <tool>` in Claude Code oder Codex. Für Architektur, Build und Beitrag zum
-Effective Flow-Repo selbst siehe stattdessen den
-[Developer-Guide](../developer-guide/README.md).
+This guide is for everyone who **uses** Effective Flow in a project – via
+`/effective-flow <tool>` in Claude Code or Codex. For the architecture, build, and how to
+contribute to the Effective Flow repo itself, see the
+[Developer Guide](../developer-guide/README.md) instead.
 
-## Empfohlene Lese-Reihenfolge
+## Recommended reading order
 
-Neu bei Effective Flow? Lies in dieser Reihenfolge:
+New to Effective Flow? Read in this order:
 
-1. [Erste Schritte](getting-started.md) – Installation, erster Aufruf, der typische
-   Ablauf von der Planung bis zum Pull-Request.
-2. Tool-Referenz, gruppiert nach Absicht:
-   - [Verstehen, was zu tun ist](tools-verstehen.md) – `investigate`, `plan`,
+1. [Getting started](getting-started.md) – installation, first invocation, the typical
+   flow from planning to pull request.
+2. Tool reference, grouped by intent:
+   - [Understand what needs doing](tools-understand.md) – `investigate`, `plan`,
      `open-plans`, `plan-issue`.
-   - [Eine Änderung umsetzen](tools-umsetzen.md) – `apply`, `build`, `fix`,
+   - [Implement a change](tools-implement.md) – `apply`, `build`, `fix`,
      `refactor`, `docs`, `maintain`, `iterate`.
-   - [Qualität sichern](tools-qualitaet.md) – `review`.
-   - [Änderungen einbringen](tools-einbringen.md) – `commit`, `pr`.
-   - [Einrichten & Infos](tools-einrichten.md) – `setup`, `version`.
-3. Vertiefende Guides:
-   - [Konfiguration](konfiguration.md) – die vollständige
-     `.effective-flow/config.json`-Referenz.
-   - [Worktree und Delivery](worktree-und-delivery.md) – paralleles Arbeiten in
-     Git-Worktrees, Liefer-Branch, Pull-Request/Merge/Branch-Abschluss.
-   - [Remote-Tracker](remote-tracker.md) – Findings und Issues auf GitHub oder
-     Forgejo statt lokal führen.
-   - [Skill-Discovery](skill-discovery.md) – wie Effective Flow Host-Skills erkennt und wie
-     man das steuert.
-4. Bei Problemen: [Troubleshooting](troubleshooting.md).
-5. Unbekannter Begriff? [Glossar](glossar.md).
+   - [Ensure quality](tools-quality.md) – `review`.
+   - [Deliver changes](tools-deliver.md) – `commit`, `pr`.
+   - [Set up & info](tools-setup.md) – `setup`, `version`.
+3. In-depth guides:
+   - [Configuration](configuration.md) – the complete
+     `.effective-flow/config.json` reference.
+   - [Worktree and delivery](worktree-and-delivery.md) – parallel work in
+     Git worktrees, delivery branch, pull request/merge/branch completion.
+   - [Remote tracker](remote-tracker.md) – keep findings and issues on GitHub or
+     Forgejo instead of locally.
+   - [Skill discovery](skill-discovery.md) – how Effective Flow detects host skills and how
+     to control that.
+4. Running into problems? [Troubleshooting](troubleshooting.md).
+5. Unfamiliar term? [Glossary](glossary.md).
 
-## Alle Dokumente dieser Kategorie
+## All documents in this category
 
-| Dokument                                             | Inhalt                                               |
-| ---------------------------------------------------- | ---------------------------------------------------- |
-| [getting-started.md](getting-started.md)             | Installation, erster Aufruf, typischer Flow, Rezepte |
-| [tools-verstehen.md](tools-verstehen.md)             | Tool-Referenz: Analyse & Planung                     |
-| [tools-umsetzen.md](tools-umsetzen.md)               | Tool-Referenz: Umsetzung                             |
-| [tools-qualitaet.md](tools-qualitaet.md)             | Tool-Referenz: Review                                |
-| [tools-einbringen.md](tools-einbringen.md)           | Tool-Referenz: Commit & Pull-Request                 |
-| [tools-einrichten.md](tools-einrichten.md)           | Tool-Referenz: Setup & Version                       |
-| [konfiguration.md](konfiguration.md)                 | Vollständige `.effective-flow/config.json`-Referenz  |
-| [worktree-und-delivery.md](worktree-und-delivery.md) | Worktree, Liefer-Branch, Abschlussarten              |
-| [remote-tracker.md](remote-tracker.md)               | Remote-Issue-Modus (GitHub/Forgejo)                  |
-| [skill-discovery.md](skill-discovery.md)             | Host-Skill-Erkennung und -Steuerung                  |
-| [troubleshooting.md](troubleshooting.md)             | FAQ und häufige Probleme                             |
-| [glossar.md](glossar.md)                             | Begriffe von Tool bis Skill-Discovery                |
+| Document                                             | Content                                               |
+| ---------------------------------------------------- | ----------------------------------------------------- |
+| [getting-started.md](getting-started.md)             | Installation, first invocation, typical flow, recipes |
+| [tools-understand.md](tools-understand.md)           | Tool reference: analysis & planning                   |
+| [tools-implement.md](tools-implement.md)             | Tool reference: implementation                        |
+| [tools-quality.md](tools-quality.md)                 | Tool reference: review                                |
+| [tools-deliver.md](tools-deliver.md)                 | Tool reference: commit & pull request                 |
+| [tools-setup.md](tools-setup.md)                     | Tool reference: setup & version                       |
+| [configuration.md](configuration.md)                 | Complete `.effective-flow/config.json` reference      |
+| [worktree-and-delivery.md](worktree-and-delivery.md) | Worktree, delivery branch, completion types           |
+| [remote-tracker.md](remote-tracker.md)               | Remote issue mode (GitHub/Forgejo)                    |
+| [skill-discovery.md](skill-discovery.md)             | Host skill detection and control                      |
+| [troubleshooting.md](troubleshooting.md)             | FAQ and common problems                               |
+| [glossary.md](glossary.md)                           | Terms from tool to skill discovery                    |

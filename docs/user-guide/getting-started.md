@@ -1,4 +1,4 @@
-# Erste Schritte
+# Getting started
 
 ## Installation
 
@@ -6,20 +6,20 @@
 ./install-skill.sh
 ```
 
-Das Script lädt das Archiv der letzten verfügbaren GitHub-Release-Version herunter und
-installiert Effective Flow als Skill-Verzeichnis nach `~/.claude/skills/effective-flow` (Claude Code) und
-`~/.agents/skills/effective-flow` (Codex). Alte `sf-*`-Skills und der frühere Marketplace-Plugin-Pfad
-werden dabei aufgeräumt; ein bestehender externer `~/.claude/skills`-Symlink und fremde
-Nachbar-Skills bleiben unangetastet.
+The script downloads the archive of the latest available GitHub release version and
+installs Effective Flow as a skill directory into `~/.claude/skills/effective-flow` (Claude Code) and
+`~/.agents/skills/effective-flow` (Codex). Old `sf-*` skills and the former marketplace plugin path
+are cleaned up in the process; an existing external `~/.claude/skills` symlink and unrelated
+neighboring skills are left untouched.
 
-Zwei Varianten für die Entwicklung am Effective Flow-Repo selbst:
+Two variants for developing on the Effective Flow repo itself:
 
 ```sh
-./install-skill.sh local  # baut den aktuell ausgecheckten Stand und kopiert ihn
-./local-link.sh           # baut und verlinkt dist/ per Symlink statt zu kopieren
+./install-skill.sh local  # builds the currently checked-out state and copies it
+./local-link.sh           # builds and symlinks dist/ instead of copying
 ```
 
-## Erster Aufruf
+## First invocation
 
 In Claude Code:
 
@@ -33,78 +33,78 @@ In Codex:
 $effective-flow
 ```
 
-Ohne oder mit unbekanntem `<tool>` gibt der Router nur die gruppierte Tool-Liste aus und
-tut sonst nichts – das ist der schnellste Weg, sich einen Überblick zu verschaffen. Sobald
-du ein konkretes Tool nennst (`/effective-flow plan`, `/effective-flow build`, …), lädt Effective Flow dessen
-vollständige Anweisung nach und arbeitet danach.
+Without a `<tool>` or with an unknown one, the router only prints the grouped tool list and
+does nothing else – it's the fastest way to get an overview. As soon as you name a
+concrete tool (`/effective-flow plan`, `/effective-flow build`, …), Effective Flow loads its
+full instruction and works from there.
 
-## Der typische Flow: Plan → Build → Pull-Request
+## The typical flow: Plan → Build → Pull Request
 
-Für eine neue Funktionalität oder eine größere Änderung ist das der übliche Dreischritt:
+For new functionality or a larger change, this is the usual three-step process:
 
-1. **`/effective-flow plan "<Beschreibung der Aufgabe>"`** klärt die Anforderung, stellt bei Bedarf
-   Rückfragen und schreibt einen umsetzbaren Plan nach `docs/plan/` – noch ohne
-   Code-Änderung. Am Ende nennt `plan` den genauen Pfad der erzeugten Plan-Datei
-   (etwa `docs/plan/2026-07-17-user-login.md`) und empfiehlt den passenden
-   Folge-Workflow (meist `build`).
-2. **`/effective-flow build docs/plan/2026-07-17-user-login.md`** übergibt genau diese
-   Plan-Datei und setzt sie um: Implementierung, Tests, Doku, Validierung und Review in
-   einem Lauf. Reiche den in Schritt 1 gemeldeten Pfad ausdrücklich weiter – `build`
-   verarbeitet nur den übergebenen Handle und rät **nicht** die neueste Plan-Datei.
-   Standardmäßig (`worktree.enabled: true`) läuft das in einem eigenen Git-Worktree auf
-   einem eigenen Liefer-Branch, sodass dein aktueller Checkout unberührt bleibt.
-3. **Abschluss** richtet sich nach `delivery.completion`: lokal auf den Basis-Branch
-   mergen (Default), den Branch stehen lassen oder – bei `completion: "pr"` oder auf
-   Nachfrage im Workflow – direkt einen Pull-Request öffnen. Ohne Worktree oder bei
-   stehen gelassenem Branch holst du den Pull-Request manuell nach:
-   **`/effective-flow pr`** öffnet ihn aus dem aktuellen Branch auf GitHub (`gh`) oder Forgejo
-   (`tea`), inklusive aus den Commits abgeleitetem Titel und Beschreibung.
+1. **`/effective-flow plan "<description of the task>"`** clarifies the requirement, asks
+   follow-up questions if needed, and writes an implementable plan to `docs/plan/` – still without
+   any code change. At the end, `plan` names the exact path of the generated plan file
+   (e.g. `docs/plan/2026-07-17-user-login.md`) and recommends the appropriate
+   follow-up workflow (usually `build`).
+2. **`/effective-flow build docs/plan/2026-07-17-user-login.md`** hands over exactly that
+   plan file and implements it: implementation, tests, docs, validation, and review in
+   one run. Pass the path reported in step 1 explicitly – `build`
+   processes only the handed-over handle and does **not** guess the newest plan file.
+   By default (`worktree.enabled: true`) this runs in its own Git worktree on
+   its own delivery branch, so your current checkout stays untouched.
+3. **Completion** follows `delivery.completion`: merge locally onto the base branch
+   (default), leave the branch standing, or – with `completion: "pr"` or on
+   request in the workflow – open a pull request directly. Without a worktree or with a
+   left-standing branch, you open the pull request manually afterwards:
+   **`/effective-flow pr`** opens it from the current branch on GitHub (`gh`) or Forgejo
+   (`tea`), including a title and description derived from the commits.
 
-In Codex ist die Syntax identisch – nur das Präfix wechselt von `/effective-flow` zu
-`$effective-flow`. Der Handoff lautet dort also `$effective-flow plan "<Beschreibung der Aufgabe>"`
-und anschließend `$effective-flow build docs/plan/2026-07-17-user-login.md`.
+In Codex the syntax is identical – only the prefix changes from `/effective-flow` to
+`$effective-flow`. The handoff there is thus `$effective-flow plan "<description of the task>"`
+followed by `$effective-flow build docs/plan/2026-07-17-user-login.md`.
 
-Details zu Worktree, Liefer-Branch und den drei Abschlussarten stehen in
-[Worktree und Delivery](worktree-und-delivery.md); die vollständige Tool-Referenz für
-`plan`, `build` und `pr` in [Tools verstehen](tools-verstehen.md),
-[Tools umsetzen](tools-umsetzen.md) und [Tools einbringen](tools-einbringen.md).
+Details on worktree, delivery branch, and the three completion types are in
+[Worktree and delivery](worktree-and-delivery.md); the complete tool reference for
+`plan`, `build`, and `pr` in [Understand the tools](tools-understand.md),
+[Implement the tools](tools-implement.md), and [Deliver the tools](tools-deliver.md).
 
-## Kurze Rezepte
+## Short recipes
 
-### Ein konkreter Bug
+### A concrete bug
 
-Für einen bereits klar umrissenen Fehler lohnt sich die volle Planungsphase meist nicht:
+For an already clearly outlined defect, the full planning phase usually isn't worth it:
 
 ```text
 /effective-flow fix "Login-Formular zeigt keine Fehlermeldung bei falschem Passwort"
 ```
 
-`fix` investigiert, reproduziert, behebt minimal und sichert die Änderung mit
-Regressionstests ab – ohne separate Plan-Datei.
+`fix` investigates, reproduces, fixes minimally, and secures the change with
+regression tests – without a separate plan file.
 
-### Ein Fehler mit unklarer Ursache
+### A bug with an unclear cause
 
-Ist unklar, woran ein Bug überhaupt liegt, geht der Analyse eine eigene Phase voraus:
-
-```text
-/effective-flow investigate "Bestellungen verschwinden gelegentlich aus der Übersicht"
-```
-
-`investigate` liefert einen reinen Diagnose-Report, ohne etwas zu ändern. Mit der
-gefundenen Ursache folgt danach `/effective-flow fix`.
-
-### Dokumentation aktualisieren
+If it's unclear what's actually causing a bug, the analysis gets its own phase first:
 
 ```text
-/effective-flow docs "README für das neue CLI-Flag ergänzen"
+/effective-flow investigate "Orders occasionally disappear from the overview"
 ```
 
-`docs` erstellt oder aktualisiert Dokumentation, ohne Produkt- oder Codeverhalten zu
-ändern (Ausnahme: dokumentationsnahe Änderungen wie CLI-Hilfetexte oder JSDoc/TSDoc in
-bestehenden Dateien).
+`investigate` delivers a pure diagnostic report without changing anything. With the
+cause found, `/effective-flow fix` follows.
 
-## Wie es weitergeht
+### Update documentation
 
-Die vollständige Tool-Referenz, Guides zu Konfiguration, Worktree/Delivery,
-Remote-Tracker und Skill-Discovery sowie Troubleshooting und Glossar findest du im
-[Benutzer-Guide-Index](README.md).
+```text
+/effective-flow docs "Add the new CLI flag to the README"
+```
+
+`docs` creates or updates documentation without changing product or code behavior
+(exception: documentation-adjacent changes such as CLI help texts or JSDoc/TSDoc in
+existing files).
+
+## Where to go from here
+
+The complete tool reference, guides on configuration, worktree/delivery,
+remote tracker, and skill discovery, as well as troubleshooting and the glossary are in the
+[User Guide index](README.md).

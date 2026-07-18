@@ -1,80 +1,78 @@
-# Release und Installation
+# Release and installation
 
-Dieses Dokument beschreibt, wie Effective Flow versioniert, veröffentlicht und installiert wird.
-Kanonische Versionierungsregeln stehen in [`AGENTS.md`](../../AGENTS.md), Abschnitt
-„Versioning"; hier folgen die konkreten Mechanismen (release-please, Installations-Skripte,
-Versionsstempel).
+This document describes how Effective Flow is versioned, published, and installed. Canonical
+versioning rules are in [`AGENTS.md`](../../AGENTS.md), section "Versioning"; the concrete
+mechanisms (release-please, installation scripts, version stamp) follow here.
 
-## Versionierung mit release-please
+## Versioning with release-please
 
-Die Release-Versionierung übernimmt [release-please](https://github.com/googleapis/release-please).
-Single Source of Truth für die aktuell veröffentlichte Version ist
-`.release-please-manifest.json` (Feld `"."`); Versionen werden **nicht** von Hand in Feature-
-oder Fix-Commits erhöht. Conventional-Commit-Nachrichten steuern den nächsten Release-PR,
-Changelog-Einträge, Tags, GitHub-Releases und den Upload des Release-Archivs.
+Release versioning is handled by [release-please](https://github.com/googleapis/release-please).
+The single source of truth for the currently published version is
+`.release-please-manifest.json` (field `"."`); versions are **not** bumped by hand in feature or
+fix commits. Conventional-commit messages drive the next release PR, changelog entries, tags,
+GitHub releases, and the upload of the release archive.
 
-Der Release-Workflow (`.github/workflows/release.yml`) läuft bei jedem Push auf den
-Quell-Branch `develop`:
+The release workflow (`.github/workflows/release.yml`) runs on every push to the source branch
+`develop`:
 
-1. `pnpm agent:check` (Formatprüfung) und `pnpm test` (Unit-Tests).
-2. `node build.mjs` baut die Distribution nach `dist/`.
-3. `release-please-action` erstellt bzw. aktualisiert den Release-PR und, sobald gemerged, den
-   Git-Tag und das GitHub-Release.
-4. Bei einem tatsächlich erstellten Release wird `dist/` als `effective-flow-<tag>.tar.gz` gepackt und an
-   das GitHub-Release angehängt.
-5. Ebenfalls nur bei einem erstellten Release wird der gebaute `dist/`-Output (beide Harnesses,
-   `claude/` und `codex/`) **zusammen mit der konsumentenorientierten Dokumentation** (`README.md`
-   und `docs/user-guide/`) als **frischer Commit** auf den Auslieferungs-Branch `main` gepusht
-   (kein Force-Push, damit Konsumenten-Pins stabil bleiben). Ein kleiner Helfer
-   (`scripts/deliver-docs.mjs`) schreibt dabei die Links in die Entwickler-Doku um (siehe unten).
+1. `pnpm agent:check` (format check) and `pnpm test` (unit tests).
+2. `node build.mjs` builds the distribution into `dist/`.
+3. `release-please-action` creates or updates the release PR and, once merged, the Git tag and
+   the GitHub release.
+4. On an actually created release, `dist/` is packed as `effective-flow-<tag>.tar.gz` and
+   attached to the GitHub release.
+5. Also only on a created release, the built `dist/` output (both harnesses, `claude/` and
+   `codex/`) is pushed **together with the consumer-facing documentation** (`README.md` and
+   `docs/user-guide/`) as a **fresh commit** to the delivery branch `main` (no force push, so
+   consumer pins stay stable). A small helper (`scripts/deliver-docs.mjs`) rewrites the links
+   into the developer docs in the process (see below).
 
-## Quell- und Auslieferungs-Branch
+## Source and delivery branch
 
-Effective Flow trennt Quelle und gebaute Auslieferung auf zwei Branches:
+Effective Flow separates source and built delivery across two branches:
 
-- **`develop`** ist der **Quell-/Arbeits-Branch** (nur `src/`, `build.mjs`, `docs/`, Tests —
-  `dist/` bleibt gitignored). PRs, CI und release-please laufen hier.
-- **`main`** ist der **Auslieferungs-Branch** und zugleich der **Default-Branch**: er trägt den
-  gebauten `dist/`-Payload (`claude/` + `codex/` im Root) **und die konsumentenorientierte
-  Dokumentation**, maschinell vom Release-Workflow geschrieben.
+- **`develop`** is the **source/working branch** (only `src/`, `build.mjs`, `docs/`, tests —
+  `dist/` stays gitignored). PRs, CI, and release-please run here.
+- **`main`** is the **delivery branch** and at the same time the **default branch**: it carries
+  the built `dist/` payload (`claude/` + `codex/` in the root) **and the consumer-facing
+  documentation**, written mechanically by the release workflow.
 
-So ziehen Installer, die **keinen** Build ausführen (`dalo`, `npx skills`), automatisch die
-fertigen Artefakte vom Default-Branch — ohne Zusatzkonfiguration. Wer stattdessen das
-Release-Archiv nutzt, installiert unverändert über [`install-skill.sh`](#installation) (lädt
-das `effective-flow-<tag>.tar.gz`-Asset).
+This way installers that run **no** build (`dalo`, `npx skills`) automatically pull the finished
+artifacts from the default branch — without any extra configuration. Anyone using the release
+archive instead installs unchanged via [`install-skill.sh`](#installation) (downloads the
+`effective-flow-<tag>.tar.gz` asset).
 
-### Dokumentation nach Zielgruppe getrennt
+### Documentation separated by audience
 
-Die Doku ist entlang der Branch-Grenze in drei Klassen aufgeteilt:
+The docs are split along the branch boundary into three classes:
 
-- **Benutzer-Doku** (`docs/user-guide/`) — wird **auf `main` ausgeliefert** (Endnutzer).
-- **Marketing-Einstieg** (`README.md`) — wird **auf `main` ausgeliefert** und ersetzt dort den
-  Seed-README; er ist die Landefläche des Default-Branch auf GitHub.
-- **Entwickler-Doku** (`docs/developer-guide/`) — bleibt **nur auf `develop`** (Skill-Interna,
-  Build-System, Architektur); sie wird **nie** nach `main` geliefert.
+- **User docs** (`docs/user-guide/`) — **delivered to `main`** (end users).
+- **Marketing entry** (`README.md`) — **delivered to `main`** and replaces the seed README
+  there; it is the landing surface of the default branch on GitHub.
+- **Developer docs** (`docs/developer-guide/`) — stay **on `develop` only** (skill internals,
+  build system, architecture); they are **never** delivered to `main`.
 
-Damit die Links stimmen, transformiert `scripts/deliver-docs.mjs` (reine Logik in
-`build-lib.mjs`, per `node:test` abgedeckt) beim Ausliefern die kopierten Dateien:
+So the links are correct, `scripts/deliver-docs.mjs` (pure logic in `build-lib.mjs`, covered by
+`node:test`) transforms the copied files on delivery:
 
-- Relative Links in die Entwickler-Doku (`docs/developer-guide/…` im README,
-  `../developer-guide/…` in der Benutzer-Doku) werden auf absolute
-  `https://github.com/<repo>/blob/develop/docs/developer-guide/…`-URLs umgeschrieben, weil das
-  Ziel auf `main` fehlt. Benutzer-Doku-interne Links bleiben relativ und lösen auf `main` auf.
-- Das gelieferte `main`-`README.md` erhält eine dezente Fußzeile, die auf `develop` als Quelle
-  und Beitragsziel verweist. Beide Transformationen sind idempotent; der `develop`-Stand bleibt
-  unverändert.
+- Relative links into the developer docs (`docs/developer-guide/…` in the README,
+  `../developer-guide/…` in the user docs) are rewritten to absolute
+  `https://github.com/<repo>/blob/develop/docs/developer-guide/…` URLs, because the target is
+  missing on `main`. User-doc-internal links stay relative and resolve on `main`.
+- The delivered `main` `README.md` gets a subtle footer that references `develop` as the source
+  and contribution target. Both transformations are idempotent; the `develop` state stays
+  unchanged.
 
-Da `release-please-config.json` das einzelne Paket `.` unter dem Namen `effective-flow` führt, tragen die
-Releases **komponenten-Tags** der Form `effective-flow-vX.Y.Z` (z. B. `effective-flow-v1.45.0`) statt eines
-bloßen `vX.Y.Z`.
+Since `release-please-config.json` carries the single package `.` under the name
+`effective-flow`, the releases carry **component tags** of the form `effective-flow-vX.Y.Z` (e.g.
+`effective-flow-v1.45.0`) instead of a bare `vX.Y.Z`.
 
-## Versionsstempel und Drift-Guard
+## Version stamp and drift guard
 
-Der Build stempelt `<Manifest-Version> (<Git-Kurzhash>)` (z. B. `1.45.0 (01bd063)`) in beide
-Router-Ausgaben (`dist/claude/effective-flow/SKILL.md` und `dist/codex/effective-flow/SKILL.md`). Ein
-**Versions-Drift-Guard** lässt den Build fehlschlagen, falls Claude- und Codex-Ausgabe nicht
-denselben Versionsstring tragen – Details siehe
-[`build-system.md`](build-system.md#guards).
+The build stamps `<manifest version> (<git short hash>)` (e.g. `1.45.0 (01bd063)`) into both
+router outputs (`dist/claude/effective-flow/SKILL.md` and `dist/codex/effective-flow/SKILL.md`).
+A **version-drift guard** makes the build fail if the Claude and Codex output do not carry the
+same version string – for details see [`build-system.md`](build-system.md#guards).
 
 ## Installation
 
@@ -82,50 +80,50 @@ denselben Versionsstring tragen – Details siehe
 ./install-skill.sh
 ```
 
-Das Skript:
+The script:
 
-1. lädt das Archiv der zuletzt veröffentlichten GitHub-Release-Version herunter
-   (`gh release download`, Muster `effective-flow-*.tar.gz`),
-2. kopiert das Effective Flow-Skill nach `~/.claude/skills/effective-flow` und `~/.agents/skills/effective-flow`,
-3. registriert die Claude-Agenten unter `~/.claude/agents/effective-flow-*.md` (Claude Code entdeckt in
-   Skills verschachtelte Agenten nicht automatisch),
-4. räumt veraltete `sf-*`-Skills, `~/.codex/agents/sf-*.toml` und den früheren Marketplace
-   `sf-claude-plugin` auf.
+1. downloads the archive of the most recently published GitHub release version
+   (`gh release download`, pattern `effective-flow-*.tar.gz`),
+2. copies the Effective Flow skill to `~/.claude/skills/effective-flow` and
+   `~/.agents/skills/effective-flow`,
+3. registers the Claude agents under `~/.claude/agents/effective-flow-*.md` (Claude Code does
+   not automatically discover agents nested inside skills),
+4. cleans up outdated `sf-*` skills, `~/.codex/agents/sf-*.toml`, and the former marketplace
+   `sf-claude-plugin`.
 
-Verwaltet wird ausschließlich das `effective-flow`-Unterverzeichnis: ein bestehender externer
-`~/.claude/skills`-Symlink (z. B. von einem anderen Tool) und fremde Nachbar-Skills bleiben
-unangetastet.
+Only the `effective-flow` subdirectory is managed: an existing external `~/.claude/skills`
+symlink (e.g. from another tool) and foreign neighboring skills stay untouched.
 
-### Installation aus dem lokalen Checkout
+### Installation from the local checkout
 
 ```sh
 ./install-skill.sh local
 ```
 
-Baut den aktuellen Checkout (statt ein Release herunterzuladen) und deployt ihn identisch zur
-Standard-Installation – nützlich, um einen unveröffentlichten Stand lokal zu testen.
+Builds the current checkout (instead of downloading a release) and deploys it identically to the
+standard installation – useful for testing an unpublished state locally.
 
-### Entwicklung: Symlink statt Kopie
+### Development: symlink instead of copy
 
 ```sh
 ./local-link.sh
 ```
 
-Baut den aktuellen Checkout und verknüpft `dist/` per Symlink in die Harness-Verzeichnisse, statt
-zu kopieren. Änderungen an `src/` werden so nach einem erneuten `node build.mjs` ohne erneute
-Installation wirksam.
+Builds the current checkout and links `dist/` via symlink into the harness directories instead
+of copying. Changes to `src/` thus take effect after another `node build.mjs` without a
+reinstall.
 
-Beide Installationswege teilen sich dieselbe Deployment-Logik in `local-common.sh`; nur die
-Installationsstrategie (`cp -R` vs. `ln -s`) und die abschließende Meldung unterscheiden sich.
+Both installation paths share the same deployment logic in `local-common.sh`; only the
+installation strategy (`cp -R` vs. `ln -s`) and the final message differ.
 
-### Nur bauen, ohne Deployment
+### Build only, no deployment
 
 ```sh
 node build.mjs
 ```
 
-## Weiterführend
+## Further reading
 
-- [`build-system.md`](build-system.md) – Build-Ablauf und Guards, inklusive Versionsstempel.
-- [`architektur.md`](architektur.md) – Repo-Struktur und Zwei-Harness-Split.
-- [`AGENTS.md`](../../AGENTS.md) – kanonische Versionierungsregeln.
+- [`build-system.md`](build-system.md) – build flow and guards, including the version stamp.
+- [`architektur.md`](architektur.md) – repo structure and two-harness split.
+- [`AGENTS.md`](../../AGENTS.md) – canonical versioning rules.
