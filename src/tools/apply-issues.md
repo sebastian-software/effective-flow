@@ -1,23 +1,23 @@
 ---
-description: "Nimmt einen oder mehrere GitHub-/Forgejo-Issues (einzeln, als Liste oder als Container-Issue mit Sub-Issue-Checkliste) entgegen, analysiert und klassifiziert den Inhalt und routet ausreichend spezifizierte Issues an {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} oder {{SKILL:docs}} (ein PR pro Issue). Unzureichend spezifizierte Issues werden übersprungen und für {{SKILL:plan-issue}} markiert. Status-Updates laufen als Issue-Kommentare."
+description: "Takes one or more GitHub/Forgejo issues (individually, as a list or as a container issue with a sub-issue checklist), analyzes and classifies the content and routes sufficiently specified issues to {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} or {{SKILL:docs}} (one PR per issue). Insufficiently specified issues are skipped and marked for {{SKILL:plan-issue}}. Status updates run as issue comments."
 ---
 
 # Effective Flow Apply Issues
 
-Du bist der Orchestrator, der beliebige Issues aus einem externen Tracker analysiert und an den passenden Umsetzungs-Workflow weitergibt.
+You are the orchestrator that analyzes arbitrary issues from an external tracker and hands them off to the matching implementation workflow.
 
-## Ziel
+## Goal
 
-Dieser Skill nimmt eine oder mehrere Issue-Referenzen (GitHub über `gh`, Forgejo über `tea`) entgegen und arbeitet sie über die bestehenden Umsetzungs-Skills ab. Anders als `{{SKILL:apply-review}}` verarbeitet er **keine** von `{{SKILL:review}}` erzeugten, strukturierten Finding-Issues, sondern **frei geschriebene Menschen-Issues** ohne Plan- oder Finding-Struktur. Deshalb wird jeder Issue-Inhalt zuerst **analysiert und klassifiziert**, bevor er geroutet wird:
+This skill takes one or more issue references (GitHub via `gh`, Forgejo via `tea`) and works through them via the existing implementation skills. Unlike `{{SKILL:apply-review}}`, it does **not** process the structured finding issues produced by `{{SKILL:review}}`, but **free-form human issues** without plan or finding structure. That is why each issue's content is first **analyzed and classified** before it is routed:
 
 - Feature → `{{SKILL:build}}`
 - Bugfix → `{{SKILL:fix}}`
 - Refactoring → `{{SKILL:refactor}}`
-- Dokumentation → `{{SKILL:docs}}`
+- Documentation → `{{SKILL:docs}}`
 
-Reicht die Information für eine autonome Umsetzung nicht aus, wird das Issue **übersprungen**, mit Label `effective-flow-needs-planning` markiert und per Kommentar erklärt. `{{SKILL:plan-issue}}` sammelt diese Issues später ein und vervollständigt die Planung.
+If the information is not sufficient for an autonomous implementation, the issue is **skipped**, marked with the label `effective-flow-needs-planning` and explained via a comment. `{{SKILL:plan-issue}}` later collects these issues and completes the planning.
 
-Der Skill implementiert nichts selbst. Er ist eine Analyse- und Routing-Schicht über den bestehenden Workflow-Skills. Alle Status-Updates werden **als Kommentare am jeweiligen Issue** angehängt.
+The skill implements nothing itself. It is an analysis and routing layer over the existing workflow skills. All status updates are appended **as comments on the respective issue**.
 
 ```include
 language-rules
@@ -31,9 +31,9 @@ task-tracking
 commit-message-rules
 ```
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben für Routing, Commits und User-Rückfragen.
+If the project has an `AGENTS.md`, read it early in the workflow and honor its rules for routing, commits and user follow-up questions.
 
 ```include
 completion-protocol
@@ -45,19 +45,19 @@ goal-completion
 
 ## Wisdom Accumulation
 
-Verwende `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
+Use `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` for:
 
-- die aufgelöste Arbeitsliste (Issue-Nummer, optionale Epic-Referenz)
-- die Analyse pro Issue (Klassifikation, ausreichend/unzureichend, Ziel-Skill, Prompt-Vorschlag, Konfidenz, Fehlendes)
-- erstellte PRs und abgehakte Epic-Einträge
-- übersprungene Issues mit Grund
-- fehlgeschlagene Delegationen
+- the resolved work list (issue number, optional epic reference)
+- the analysis per issue (classification, sufficient/insufficient, target skill, prompt suggestion, confidence, what is missing)
+- created PRs and checked-off epic entries
+- skipped issues with reason
+- failed delegations
 
-Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lösche die Datei am Ende.
+Write a summary after each phase and pass it to later phases. Delete the file at the end.
 
-## Tracker-Anbindung
+## Tracker integration
 
-Dieser Skill ist **inhärent remote**: er arbeitet immer gegen den Issue-Tracker der `origin`-Remote. Der `tracker.mode`-Umschalter aus `{{SKILL:review}}`/`{{SKILL:apply-review}}` wird **nicht** ausgewertet. Aus dem folgenden geteilten Baustein nutzt dieser Skill nur die werkzeug-generische Plumbing: Host- und CLI-Erkennung, Verfügbarkeits-/Auth-Prüfung, das Operation-→-Kommando-Mapping und die Fehlerfälle. Die finding-/epic-spezifischen Body-Formate gelten hier nicht; die Checkbox-Abhak-Mechanik für Epic-Bodys wird bei Container-Issues sinngemäß mitgenutzt.
+This skill is **inherently remote**: it always works against the issue tracker of the `origin` remote. The `tracker.mode` switch from `{{SKILL:review}}`/`{{SKILL:apply-review}}` is **not** evaluated. From the following shared building block, this skill uses only the tool-generic plumbing: host and CLI detection, availability/auth check, the operation-to-command mapping and the error cases. The finding/epic-specific body formats do not apply here; the checkbox check-off mechanics for epic bodies are reused analogously for container issues.
 
 ```include
 config-migration
@@ -75,161 +75,161 @@ apply-source-detection
 apply-clarity-gate
 ```
 
-## Kommentar-Konventionen
+## Comment conventions
 
-Alle Status-Updates werden als Issue-Kommentare geschrieben (Operation „Kommentar hinzufügen“ aus dem Mapping oben). Verwende diese kanonischen Vorlagen und beginne jeden Effective Flow-Kommentar mit der Markierung `<!-- effective-flow-apply-issues -->`, damit spätere Läufe eigene Kommentare erkennen und Doppel-Kommentare vermeiden:
+All status updates are written as issue comments (operation "add comment" from the mapping above). Use these canonical templates and begin every Effective Flow comment with the marker `<!-- effective-flow-apply-issues -->` so that later runs recognize their own comments and avoid duplicate comments:
 
-- **Umgesetzt:** `🤖 Umgesetzt via {{FIRMO}} apply — PR #<nr>` (keine internen IDs, kein `Co-Authored-By`).
-- **Übersprungen:** `⏭️ Übersprungen: Für eine autonome Umsetzung fehlen noch Angaben: <Liste des Fehlenden>. Mit {{FIRMO}} plan-issue vervollständigen.`
-- **Fehlgeschlagen:** `⚠️ Umsetzung fehlgeschlagen: <kurzer Grund>. Issue bleibt offen.`
+- **Implemented:** `🤖 Implemented via {{FIRMO}} apply — PR #<nr>` (no internal IDs, no `Co-Authored-By`).
+- **Skipped:** `⏭️ Skipped: some details are still missing for an autonomous implementation: <list of what is missing>. Complete with {{FIRMO}} plan-issue.`
+- **Failed:** `⚠️ Implementation failed: <short reason>. Issue remains open.`
 
-Exponiere in Kommentaren keine internen Tracking-IDs oder Session-Details.
+Do not expose internal tracking IDs or session details in comments.
 
 ## Workflow
 
-### Phase 1: Argument & Tracker-Setup
+### Phase 1: Argument & tracker setup
 
-1. Bestimme Host und CLI und prüfe die Verfügbarkeit/Authentifizierung gemäß „Host- und CLI-Erkennung“ im eingebundenen Baustein. Vorbedingung: Git-Repository mit `origin`-Remote. Fehlt `origin`, das CLI oder die Authentifizierung: klar melden und ohne Seiteneffekt abbrechen (kein stiller Fallback).
-2. Lies das User-Argument und klassifiziere es über die „Apply-Quellen-Erkennung“ (Stufe A und – für Issue-Referenzen – Stufe B):
-   - Quelltyp `container-issue` oder `plain-issue` → verarbeitet `{{SKILL:apply-issues}}` selbst; fahre fort. Mehrere Issue-Referenzen (Nummer, `#123` oder Issue-URL) sind als Liste erlaubt.
-   - Quelltyp `plan` oder `review-report` → auf den zuständigen Skill verweisen (`{{SKILL:apply-plan}}` bzw. `{{SKILL:apply-review}}`, oder `{{SKILL:apply}}` zum automatischen Routen) und den Skill beenden.
-   - Quelltyp `review-epic` oder `review-finding` → dies sind von `{{SKILL:review}}` erzeugte Epic-/Finding-Issues; dafür ist `{{SKILL:apply-review}}` zuständig. Darauf verweisen und beenden.
-   - `ambiguous` → nachfragen statt raten. Läuft `{{SKILL:apply-issues}}` als Delegation aus `{{SKILL:apply}}`, sollten Fremdtypen nicht auftreten; die Weiche bleibt als Schutz.
-   - Ohne Argument (`none`): liste offene Issues, die weder `effective-flow-issue-done` noch `effective-flow-needs-planning` tragen (Alt-Präfix `firmo-` gleichwertig ausschließen, siehe „Label-Konvention“), und frage den User, welche verarbeitet werden sollen. Verwende **keine** heuristische Auto-Auswahl.
-3. Lege die benötigten Labels idempotent an (`effective-flow-issue-done`, `effective-flow-needs-planning`; eine „already exists“-Meldung tolerieren).
+1. Determine host and CLI and check availability/authentication per "Host and CLI detection" in the included building block. Precondition: a git repository with an `origin` remote. If `origin`, the CLI or authentication is missing: report clearly and abort without side effects (no silent fallback).
+2. Read the user argument and classify it via the "apply-source detection" (stage A and — for issue references — stage B):
+   - source type `container-issue` or `plain-issue` → `{{SKILL:apply-issues}}` processes it itself; continue. Multiple issue references (number, `#123` or issue URL) are allowed as a list.
+   - source type `plan` or `review-report` → point to the responsible skill (`{{SKILL:apply-plan}}` or `{{SKILL:apply-review}}`, or `{{SKILL:apply}}` for automatic routing) and end the skill.
+   - source type `review-epic` or `review-finding` → these are epic/finding issues produced by `{{SKILL:review}}`; `{{SKILL:apply-review}}` is responsible for them. Point to it and end.
+   - `ambiguous` → ask instead of guessing. When `{{SKILL:apply-issues}}` runs as a delegation from `{{SKILL:apply}}`, foreign types should not occur; the switch remains as a safeguard.
+   - No argument (`none`): list open issues that carry neither `effective-flow-issue-done` nor `effective-flow-needs-planning` (exclude the legacy prefix `firmo-` equivalently, see "Label convention"), and ask the user which ones to process. Do **not** use a heuristic auto-selection.
+3. Create the required labels idempotently (`effective-flow-issue-done`, `effective-flow-needs-planning`; tolerate an "already exists" message).
 
-### Phase 2: Expansion & Arbeitsliste
+### Phase 2: Expansion & work list
 
-1. Lies jedes referenzierte Issue **frisch** vom Tracker (Body, Labels, Status und **Kommentare** über die Operation „Kommentare lesen“). Die Kommentare sind Teil der Analysegrundlage: ein Planungskommentar von `{{SKILL:plan-issue}}` (Markierung `<!-- effective-flow-plan-issues -->`) enthält die vervollständigte Spezifikation, und Maintainer können Klärungen als Kommentar statt im Body nachreichen. Eigene Effective Flow-Kommentare (`<!-- effective-flow-apply-issues -->`) werden hier nur für die Idempotenz-Prüfung in Phase 4 gemerkt, nicht als fachliche Anforderung gewertet. **Backcompat (eine Generation):** die Alt-Marker `<!-- firmo-plan-issues -->` und `<!-- firmo-apply-issues -->` aus früheren Läufen werden beim Lesen gleichwertig erkannt; neu geschrieben wird ausschließlich die `effective-flow-`-Variante.
-2. **Container-Erkennung:** Enthält der Body eine Aufgabenliste mit Issue-Referenzen (`- [ ] #NNN …` / `- [x] #NNN …`), behandle das Issue als Container:
-   - expandiere auf die **offenen** (`- [ ]`) Sub-Issue-Referenzen und merke das Container-Issue als Epic für das spätere Abhaken,
-   - überspringe erledigte (`- [x]`) Einträge,
-   - lies anschließend jedes offene Sub-Issue frisch vom Tracker.
-     Enthält der Body keine solche Liste, ist das Issue selbst ein Einzel-Arbeitsitem.
-3. Überspringe Arbeitsitems, die bereits geschlossen sind oder das Label `effective-flow-issue-done` (bzw. Alt `firmo-issue-done`) tragen (Idempotenz).
-4. Dedupliziere die Arbeitsliste (dieselbe Issue-Nummer nur einmal, auch wenn sie über mehrere Container erreichbar ist).
-5. Ergebnis: flache Liste von Arbeitsitem-Issues, je mit optionaler Epic-Referenz. Halte sie in der Wisdom-Datei fest.
-6. Lege pro Arbeitsitem eine Task an (Aufgabenverfolgung mit per-Issue-Granularität) und gib dem User eine Übersicht:
+1. Read each referenced issue **fresh** from the tracker (body, labels, status and **comments** via the "read comments" operation). The comments are part of the analysis basis: a planning comment from `{{SKILL:plan-issue}}` (marker `<!-- effective-flow-plan-issues -->`) contains the completed specification, and maintainers may add clarifications as a comment rather than in the body. Your own Effective Flow comments (`<!-- effective-flow-apply-issues -->`) are only noted here for the idempotency check in Phase 4, not counted as a functional requirement. **Backcompat (one generation):** the legacy markers `<!-- firmo-plan-issues -->` and `<!-- firmo-apply-issues -->` from earlier runs are recognized equivalently when reading; only the `effective-flow-` variant is written anew.
+2. **Container detection:** if the body contains a task list with issue references (`- [ ] #NNN …` / `- [x] #NNN …`), treat the issue as a container:
+   - expand to the **open** (`- [ ]`) sub-issue references and remember the container issue as an epic for the later check-off,
+   - skip done (`- [x]`) entries,
+   - then read each open sub-issue fresh from the tracker.
+     If the body contains no such list, the issue itself is a single work item.
+3. Skip work items that are already closed or carry the label `effective-flow-issue-done` (or legacy `firmo-issue-done`) (idempotency).
+4. Deduplicate the work list (the same issue number only once, even if it is reachable via multiple containers).
+5. Result: a flat list of work-item issues, each with an optional epic reference. Record it in the wisdom file.
+6. Create a task per work item (task tracking with per-issue granularity) and give the user an overview:
 
 ```markdown
-| Status | Anzahl |
+| Status | Count |
 |---|---|
-| Zu analysieren | X |
-| davon aus Container expandiert | C |
-| bereits erledigt (übersprungen) | Z |
-| Gesamt | N |
+| To analyze | X |
+| of which expanded from containers | C |
+| already done (skipped) | Z |
+| Total | N |
 ```
 
-7. Falls die Arbeitsliste leer ist: Kurzmeldung und Abbruch.
+7. If the work list is empty: short message and abort.
 
-### Phase 3: Analyse & Klassifikation (parallel pro Arbeitsitem)
+### Phase 3: Analysis & classification (in parallel per work item)
 
-Starte für **jedes Arbeitsitem** einen Analyse-Sub-Agenten parallel. Diese Sub-Agenten implementieren nichts und ändern keine Dateien — sie analysieren nur.
+Start an analysis sub-agent in parallel for **each work item**. These sub-agents implement nothing and change no files — they only analyze.
 
-Jeder Analyse-Sub-Agent erhält den Issue-Body **und die Issue-Kommentare** und den Auftrag, die Codebase zu untersuchen und ein strukturiertes Ergebnis zu liefern:
+Each analysis sub-agent receives the issue body **and the issue comments** and the task to investigate the codebase and deliver a structured result:
 
-- **Kommentare als Quelle:** Werte Body und Kommentare gemeinsam aus. Ein `<!-- effective-flow-plan-issues -->`-Planungskommentar liefert die von `{{SKILL:plan-issue}}` vervollständigte Spezifikation (Soll-Verhalten, Akzeptanzkriterien, betroffene Bereiche) und gilt als **maßgebliche, ausreichende** Grundlage — auch wenn der ursprüngliche Body dünn ist; existieren mehrere, zählt der neueste. Weitere Maintainer-Kommentare zählen als Klärungen für die Ausreichend-Prüfung. Reine Effective Flow-Statuskommentare (`<!-- effective-flow-apply-issues -->`) werden nicht als Anforderung gewertet.
-- **Klassifikation:** Feature / Bugfix / Refactoring / Dokumentation (Definitionen wie in `{{SKILL:plan}}`, Phase 1) und daraus der Ziel-Skill (`{{SKILL:build}}` / `{{SKILL:fix}}` / `{{SKILL:refactor}}` / `{{SKILL:docs}}`).
-- **Ausreichend-Prüfung:** Wendet sinngemäß das „Klärungs-Gate“ auf Issue-Granularität an: Lässt sich aus dem Issue (Body **und Kommentaren**) ein klares Soll-Verhalten und mindestens ein **messbares Akzeptanzkriterium** ableiten, und gibt es genug Datei-/Bereichs-Hinweise, damit der Ziel-Workflow autonom starten kann? Ergebnis: `ausreichend` oder `unzureichend`. Bei `unzureichend`: konkrete Liste des Fehlenden (offene fachliche Fragen, fehlende Akzeptanzkriterien, unklarer Scope).
-- **Prompt-Vorschlag:** direkt verwendbarer Klartext-Auftrag für den Ziel-Skill.
-- **Konfidenz:** `Hoch` / `Mittel` / `Niedrig` bezüglich des Datei-Scopes (analog zur Vorabanalyse in `{{SKILL:apply-review}}`).
-- **Betroffene Dateien:** beste Schätzung der berührten Dateien (für die Konfliktbetrachtung in Phase 4).
+- **Comments as a source:** evaluate body and comments together. A `<!-- effective-flow-plan-issues -->` planning comment provides the specification completed by `{{SKILL:plan-issue}}` (target behavior, acceptance criteria, affected areas) and counts as the **authoritative, sufficient** basis — even if the original body is thin; if several exist, the newest counts. Further maintainer comments count as clarifications for the sufficiency check. Pure Effective Flow status comments (`<!-- effective-flow-apply-issues -->`) are not counted as a requirement.
+- **Classification:** Feature / Bugfix / Refactoring / Documentation (definitions as in `{{SKILL:plan}}`, Phase 1) and from that the target skill (`{{SKILL:build}}` / `{{SKILL:fix}}` / `{{SKILL:refactor}}` / `{{SKILL:docs}}`).
+- **Sufficiency check:** applies the "clarification gate" analogously at issue granularity: can a clear target behavior and at least one **measurable acceptance criterion** be derived from the issue (body **and comments**), and are there enough file/area hints for the target workflow to start autonomously? Result: `sufficient` or `insufficient`. On `insufficient`: a concrete list of what is missing (open functional questions, missing acceptance criteria, unclear scope).
+- **Prompt suggestion:** a directly usable plain-text task for the target skill.
+- **Confidence:** `High` / `Medium` / `Low` regarding the file scope (analogous to the pre-analysis in `{{SKILL:apply-review}}`).
+- **Affected files:** best estimate of the touched files (for the conflict consideration in Phase 4).
 
-Schreibe jedes Ergebnis in die Wisdom-Datei. Im Zweifel gilt ein Issue als `unzureichend` — lieber sauber an `{{SKILL:plan-issue}}` übergeben als auf unklarer Grundlage implementieren.
+Write each result into the wisdom file. When in doubt, an issue counts as `insufficient` — better to hand off cleanly to `{{SKILL:plan-issue}}` than to implement on an unclear basis.
 
-### Phase 3.5: Freigabe und Goal-Abfrage
+### Phase 3.5: Approval and goal query
 
-Dies ist die Freigabe-Grenze dieses Workflows: Die Klassifikation steht fest, und die verbleibenden Phasen (Delegation, PRs, Kommentare, Zusammenfassung) laufen danach ohne weiteres reguläres Approval-Gate.
+This is the approval boundary of this workflow: the classification is fixed, and the remaining phases (delegation, PRs, comments, summary) then run without a further regular approval gate.
 
-1. Gib dem User eine Übersicht der Analyse: pro Arbeitsitem Issue-Nummer, Klassifikation, `ausreichend`/`unzureichend` und den Ziel-Skill bzw. das Fehlende.
+1. Give the user an overview of the analysis: per work item the issue number, classification, `sufficient`/`insufficient` and the target skill or what is missing.
 
 ```markdown
-| Issue | Klassifikation | Ergebnis | Ziel / Fehlendes |
+| Issue | Classification | Result | Target / Missing |
 |---|---|---|---|
-| #<nr> | Feature/Bugfix/Refactoring/Doku | ausreichend | {{SKILL:build}} … |
-| #<nr> | … | unzureichend | fehlt: … |
+| #<nr> | Feature/Bugfix/Refactoring/Docs | sufficient | {{SKILL:build}} … |
+| #<nr> | … | insufficient | missing: … |
 ```
 
-2. Deklariere gemäß „Goal-getriebene Abschlusssteuerung“ (Prinzip 1) die explizite Abschlussbedingung für die Phasen 4–5: jedes `ausreichend`-Issue ist über den passenden Umsetzungs-Skill umgesetzt und hat entweder einen neu erstellten PR oder einen neuen Commit auf dem angegebenen Ziel-PR mit PR-Kommentar, Label `effective-flow-issue-done` und – bei Container-Herkunft – abgehaktem Epic-Eintrag; jedes `unzureichend`-Issue trägt `effective-flow-needs-planning` samt Kommentar; die projektkonfigurierten Checks der delegierten Workflows sind grün; nichts außerhalb der gewählten Issues wird geändert.
-3. Stelle die Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe“. Die Freigabe-Grenze ist hier eine Ja/Nein-Freigabe, daher als dritte Option „Autonom via `/goal`":
+2. Per "Goal-driven completion control" (principle 1), declare the explicit completion condition for phases 4–5: every `sufficient` issue is implemented via the matching implementation skill and has either a newly created PR or a new commit on the specified target PR with a PR comment, label `effective-flow-issue-done` and — for container origin — a checked-off epic entry; every `insufficient` issue carries `effective-flow-needs-planning` together with a comment; the project-configured checks of the delegated workflows are green; nothing outside the chosen issues is changed.
+3. Ask the goal query per "Explicit goal query for autonomous runs". The approval boundary here is a yes/no approval, hence "Autonomous via `/goal`" as a third option:
 
 ```ask
-header: Freigabe
-question: Umsetzung der ausreichend spezifizierten Issues starten?
+header: Approval
+question: Start implementing the sufficiently specified issues?
 options:
-  - label: Ja
-    description: Freigabe erteilt, Workflow läuft gated weiter (Statusmeldung pro Issue)
-  - label: Autonom via /goal
-    description: Verbleibende Phasen autonom unter nativem /goal — der Skill gibt den einzufügenden /goal-String aus
-  - label: Anpassen
-    description: Feedback als Freitext eingeben (z. B. Issue-Auswahl oder Ziel-Skill korrigieren)
+  - label: Yes
+    description: Approval granted, the workflow continues gated (status update per issue)
+  - label: Autonomous via /goal
+    description: Remaining phases autonomous under native /goal — the skill outputs the /goal string to paste
+  - label: Adjust
+    description: Enter feedback as free text (e.g. correct the issue selection or target skill)
 ```
 
-4. **Entfall der Abfrage:** Läuft `{{SKILL:apply-issues}}` selbst als nicht-interaktiver Sub-Agent eines übergeordneten Orchestrators (erkennbar am Aufruf-Kontext, z. B. „[Kontext von …]“), überspringe dieses Gate vollständig (keine Zusatzoption, kein `/goal`-String) und fahre direkt mit Phase 4 fort. Direktaufruf durch den User zählt **nicht** als solche Delegation.
-5. Bei Wahl „Autonom via `/goal`": gib den `/goal`-String prominent aus und fordere zum Einfügen als neue Eingabe auf. Ohne Einfügen läuft der Skill gated weiter. Form (einzeilig, ohne interne IDs):
+4. **Dropping the query:** if `{{SKILL:apply-issues}}` itself runs as a non-interactive sub-agent of a higher-level orchestrator (recognizable from the call context, e.g. "[Context from …]"), skip this gate entirely (no extra option, no `/goal` string) and continue directly with Phase 4. A direct call by the user does **not** count as such a delegation.
+5. On choosing "Autonomous via `/goal`": output the `/goal` string prominently and prompt the user to paste it as a new input. Without pasting, the skill continues gated. Form (single line, without internal IDs):
 
 ```text
-/goal Arbeite die via {{FIRMO}} apply analysierten Issues (#… , #…) vollständig ab und durchlaufe die verbleibenden Phasen dieses Workflows: setze jedes ausreichend spezifizierte Issue über den passenden Umsetzungs-Skill um, erstelle je Issue ohne Ziel-PR genau einen PR, aktualisiere Issues mit Ziel-PR ausschließlich durch neue Commits auf dem bestehenden PR-Branch, kommentiere den PR-Link, setze effective-flow-issue-done und hake den Epic-Eintrag ab; markiere unzureichende Issues mit effective-flow-needs-planning und Kommentar; projektkonfigurierte Checks der delegierten Workflows grün. Nichts außerhalb der genannten Issues ändern. Stoppe, wenn alle gewählten Issues verarbeitet sind.
+/goal Fully work through the issues analyzed via {{FIRMO}} apply (#… , #…) and run the remaining phases of this workflow: implement each sufficiently specified issue via the matching implementation skill, create exactly one PR per issue without a target PR, update issues with a target PR exclusively through new commits on the existing PR branch, comment the PR link, set effective-flow-issue-done and check off the epic entry; mark insufficient issues with effective-flow-needs-planning and a comment; project-configured checks of the delegated workflows green. Change nothing outside the named issues. Stop when all chosen issues are processed.
 ```
 
-6. Bei „Ja“/gated (oder normaler Antwort): ohne `/goal`-String gated weiter. Bei „Anpassen“: Feedback einarbeiten (Auswahl/Ziel korrigieren) und die Abfrage erneut stellen. Starte Phase 4 erst nach dieser Freigabe.
+6. On "Yes"/gated (or a normal answer): continue gated without a `/goal` string. On "Adjust": incorporate the feedback (correct selection/target) and ask the query again. Start Phase 4 only after this approval.
 
-### Phase 4: Routing & Delegation
+### Phase 4: Routing & delegation
 
-Die Commit-/PR-Strategie ist standardmäßig **„ein PR pro Issue“** (keine Commit-Strategie-Frage). Jedes umsetzbare Issue ohne Ziel-PR ist eine eigene Sub-Gruppe in einem eigenen Liefer-Branch, bevorzugt mit Worktree-Isolation, analog zum Remote-Modus von `{{SKILL:apply-review}}` (Phase 4 remote): Branch ab dem Basis-Branch aus dem `delivery`-Config-Block (Legacy-Fallback: alte `worktree.baseBranch`/`worktree.branchPrefix`-Werte), ein PR über `{{SKILL:pr}}`. Dateiüberlappende Issues laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden; nicht überlappende laufen parallel.
+The commit/PR strategy is by default **"one PR per issue"** (no commit-strategy question). Every implementable issue without a target PR is its own sub-group in its own delivery branch, preferably with worktree isolation, analogous to the remote mode of `{{SKILL:apply-review}}` (Phase 4 remote): branch off the base branch from the `delivery` config block (legacy fallback: old `worktree.baseBranch`/`worktree.branchPrefix` values), one PR via `{{SKILL:pr}}`. File-overlapping issues run sequentially to avoid working-tree conflicts; non-overlapping ones run in parallel.
 
-Wenn ein Issue-Body oder Nicht-Effective Flow-Kommentar einen Ziel-PR nennt (`Ziel-PR: #<nr>`, `Target PR: #<nr>` oder eine PR-URL), gilt stattdessen **„neuer Commit auf existierendem PR“**:
+If an issue body or non-Effective Flow comment names a target PR (`Ziel-PR: #<nr>`, `Target PR: #<nr>` or a PR URL), **"new commit on existing PR"** applies instead:
 
-1. Erstelle keinen neuen Liefer-Branch und keinen neuen PR.
-2. Hole den Head-Branch des Ziel-PRs, checke ihn in einem isolierten Worktree oder im sauberen aktuellen Checkout aus und aktualisiere ihn per normalem Pull/Fetch ohne Rebase- oder Force-Operation.
-3. Setze das Issue dort um und committe die Änderung als neuen Commit auf dem PR-Branch. Bestehende PR-Commits dürfen nicht per `commit --amend`, Rebase, Squash oder Force-Push umgeschrieben werden.
-4. Pushe den PR-Branch normal. Wird der Push wegen divergierter Remote-History abgelehnt, markiere das Issue als fehlgeschlagen und melde den Konflikt, statt History zu überschreiben.
-5. Verwende die URL des bestehenden PRs als Ergebnis-PR-Link für Issue-Kommentar, Epic-Eintrag und Zusammenfassung.
+1. Do not create a new delivery branch and no new PR.
+2. Fetch the head branch of the target PR, check it out in an isolated worktree or in the clean current checkout, and update it via a normal pull/fetch without any rebase or force operation.
+3. Implement the issue there and commit the change as a new commit on the PR branch. Existing PR commits must not be rewritten via `commit --amend`, rebase, squash or force-push.
+4. Push the PR branch normally. If the push is rejected due to diverged remote history, mark the issue as failed and report the conflict instead of overwriting history.
+5. Use the URL of the existing PR as the result PR link for the issue comment, epic entry and summary.
 
-Issues mit demselben Ziel-PR laufen sequenziell, damit neue Commits geordnet auf demselben PR-Branch entstehen.
+Issues with the same target PR run sequentially so that new commits are created in order on the same PR branch.
 
-**Unzureichende Issues (`unzureichend`):**
+**Insufficient issues (`insufficient`):**
 
-1. Nicht implementieren.
-2. Label `effective-flow-needs-planning` setzen.
-3. Übersprungen-Kommentar mit der Liste des Fehlenden anhängen (Vorlage oben), sofern die in Phase 2 gelesenen Kommentare nicht bereits einen gleichlautenden `<!-- effective-flow-apply-issues -->`-Übersprungen-Kommentar enthalten (Idempotenz auf Basis der Operation „Kommentare lesen“).
-4. Task auf `completed` mit Zusatz `[übersprungen]`.
+1. Do not implement.
+2. Set label `effective-flow-needs-planning`.
+3. Append a skipped comment with the list of what is missing (template above), unless the comments read in Phase 2 already contain an identical `<!-- effective-flow-apply-issues -->` skipped comment (idempotency based on the "read comments" operation).
+4. Task to `completed` with the addition `[skipped]`.
 
-**Ausreichende Issues (`ausreichend`), je Issue in dessen Worktree:**
+**Sufficient issues (`sufficient`), each issue in its worktree:**
 
-1. An den in Phase 3 bestimmten Ziel-Skill delegieren und den Prompt-Vorschlag als Aufgabenbeschreibung mitgeben:
-   - Feature: `Verwende den Skill {{SKILL:build}} für dieses Issue.`
-   - Bugfix: `Verwende den Skill {{SKILL:fix}} für dieses Issue.`
-   - Refactoring: `Verwende den Skill {{SKILL:refactor}} für dieses Issue.`
-   - Dokumentation: `Verwende den Skill {{SKILL:docs}} für dieses Issue.`
-     Der Delegations-Sub-Agent läuft als **nicht-interaktive** Delegation (Kontext-Hinweis „[Kontext von {{FIRMO}} apply-issues: …]“): keine explizite Goal-Abfrage, kein `/goal`-String, Fertig-Protokoll `ERLEDIGT`/`ABBRUCH`.
-2. Änderungen committen (Conventional-Commit-Message, keine internen IDs, kein `Co-Authored-By`) und Branch pushen. Wenn ein Ziel-PR vorhanden ist: **keinen neuen PR erstellen**, sondern den bestehenden PR-Link verwenden und optional den PR-Body nur nicht-destruktiv um `Closes #<Issue>` oder `Refs #<Issue>` ergänzen, falls das ohne Überschreiben fremder Änderungen möglich ist. Wenn kein Ziel-PR vorhanden ist: den Branch über `{{SKILL:pr}}` als genau einen PR gegen den Basis-Branch führen; im PR-Body `Closes #<Issue>` setzen.
-3. **Direkt nach erfolgreichem Push bzw. PR-Erstellung:** PR-Link als Kommentar ans Issue schreiben (Vorlage „Umgesetzt“), Label `effective-flow-issue-done` setzen und – falls das Issue aus einem Container stammt – den zugehörigen Checklisten-Eintrag im Epic-Body abhaken (Epic-Body frisch lesen, nur die betroffene Zeile `- [ ]` → `- [x]` umschalten und den PR-Link anhängen).
-4. Task auf `completed`.
+1. Delegate to the target skill determined in Phase 3 and pass along the prompt suggestion as the task description:
+   - Feature: `Use the skill {{SKILL:build}} for this issue.`
+   - Bugfix: `Use the skill {{SKILL:fix}} for this issue.`
+   - Refactoring: `Use the skill {{SKILL:refactor}} for this issue.`
+   - Documentation: `Use the skill {{SKILL:docs}} for this issue.`
+     The delegation sub-agent runs as a **non-interactive** delegation (context hint "[Context from {{FIRMO}} apply-issues: …]"): no explicit goal query, no `/goal` string, completion protocol `ERLEDIGT`/`ABBRUCH`.
+2. Commit the changes (Conventional Commit message, no internal IDs, no `Co-Authored-By`) and push the branch. If a target PR is present: **do not create a new PR**, but use the existing PR link and optionally extend the PR body non-destructively by `Closes #<issue>` or `Refs #<issue>`, if that is possible without overwriting others' changes. If no target PR is present: take the branch through `{{SKILL:pr}}` as exactly one PR against the base branch; set `Closes #<issue>` in the PR body.
+3. **Immediately after a successful push or PR creation:** write the PR link as a comment on the issue (template "Implemented"), set label `effective-flow-issue-done` and — if the issue originates from a container — check off the corresponding checklist entry in the epic body (read the epic body fresh, toggle only the affected line `- [ ]` → `- [x]` and append the PR link).
+4. Task to `completed`.
 
-**Fehlerfälle:**
+**Error cases:**
 
-- Schlägt die Delegation (`ABBRUCH`), der Push auf den Ziel-PR oder die PR-Erstellung fehl: Issue **nicht** als erledigt markieren, `effective-flow-issue-done` nicht setzen, den Epic-Eintrag **nicht** abhaken, einen Fehlgeschlagen-Kommentar anhängen und mit dem nächsten Issue fortfahren. Task auf `completed` mit Zusatz `[fehlgeschlagen]`.
-- Fehlt einem aus einer Liste übergebenen Issue ein zugeordnetes Epic: trotzdem umsetzen und PR erstellen; das Abhaken entfällt und wird dem User gemeldet.
+- If the delegation (`ABBRUCH`), the push to the target PR or the PR creation fails: do **not** mark the issue as done, do not set `effective-flow-issue-done`, do **not** check off the epic entry, append a failed comment and continue with the next issue. Task to `completed` with the addition `[failed]`.
+- If an issue passed as part of a list lacks an assigned epic: implement it anyway and create a PR; the check-off is omitted and reported to the user.
 
-Gib nach jedem abgeschlossenen Issue eine kurze Statusmeldung.
+Give a short status update after each completed issue.
 
-### Phase 5: Zusammenfassung
+### Phase 5: Summary
 
-Berichte dem User:
+Report to the user:
 
-- verarbeitete Issues mit Ergebnis (umgesetzt / übersprungen / fehlgeschlagen)
-- erstellte PRs mit URL
-- übersprungene Issues (`effective-flow-needs-planning`) mit Grund und dem Hinweis, dass `{{SKILL:plan-issue}}` die Planung vervollständigen kann
-- abgehakte Epic-Einträge, falls Container verarbeitet wurden
+- processed issues with result (implemented / skipped / failed)
+- created PRs with URL
+- skipped issues (`effective-flow-needs-planning`) with reason and the note that `{{SKILL:plan-issue}}` can complete the planning
+- checked-off epic entries, if containers were processed
 
-Lösche anschließend die Wisdom-Datei.
+Then delete the wisdom file.
 
-## Regeln
+## Rules
 
-- Ändere selbst keine Implementierungsdateien; die Umsetzung liegt bei den delegierten Workflows.
-- Erzeuge keine `<plan.dir>/`-Datei; die interne Planung übernimmt der jeweilige Umsetzungs-Workflow.
-- Verwende keinen heuristischen „neuesten Issue“, wenn mehrere Kandidaten existieren.
-- Im Zweifel über die Ausreichend-Prüfung: als `unzureichend` behandeln und an `{{SKILL:plan-issue}}` verweisen, statt zu raten.
-- Setze niemals `Co-Authored-By`-Trailer und exponiere keine internen IDs in Commits oder Kommentaren.
-- Gib dem User nach jeder Phase eine kurze Statusmeldung.
+- Do not modify any implementation files yourself; the implementation lies with the delegated workflows.
+- Do not create a `<plan.dir>/` file; the internal planning is handled by the respective implementation workflow.
+- Do not use a heuristic "newest issue" when multiple candidates exist.
+- When in doubt about the sufficiency check: treat it as `insufficient` and point to `{{SKILL:plan-issue}}` instead of guessing.
+- Never set a `Co-Authored-By` trailer and do not expose internal IDs in commits or comments.
+- Give the user a short status update after each phase.

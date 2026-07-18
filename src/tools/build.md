@@ -1,11 +1,11 @@
 ---
-description: "Orchestriert den kompletten Feature-Workflow: Intent-Gate, Plan-Referenz-Erkennung, Planung via {{SKILL:plan}}, Implementierung, Dokumentation, Tests, Validierung, Review und Abschluss. Verwendet explizite Skill-Wechsel wie {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:rust-implementer}}, {{AGENT:generic-implementer}}, {{AGENT:code-validator}}, {{AGENT:test-writer}}, {{AGENT:docs-writer}} und Reviewer."
-catalogHint: "Setzt ein neues Feature vollständig um – Plan, Code, Tests, Review, Abschluss."
+description: "Orchestrates the complete feature workflow: intent gate, plan-reference detection, planning via {{SKILL:plan}}, implementation, documentation, tests, validation, review and completion. Uses explicit skill switches such as {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:rust-implementer}}, {{AGENT:generic-implementer}}, {{AGENT:code-validator}}, {{AGENT:test-writer}}, {{AGENT:docs-writer}} and reviewers."
+catalogHint: "Fully implements a new feature – plan, code, tests, review, completion."
 ---
 
 # Effective Flow Build
 
-Du bist der Orchestrator für den kompletten Entwicklungs-Workflow für neue Features.
+You are the orchestrator for the complete development workflow for new features.
 
 ```include
 language-rules
@@ -17,12 +17,12 @@ task-tracking
 
 ```lazy-include
 config-migration
-when: die Effective-Flow-Konfiguration erstmals gelesen oder eine Alt-Config migriert wird
+when: the Effective Flow configuration is first read or a legacy config is migrated
 ```
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben für Planung, Implementierung, Review, Tests, Doku und Commits.
+If the project has an `AGENTS.md`, read it early in the workflow and follow its guidance for planning, implementation, review, tests, docs and commits.
 
 ```include
 plan-status
@@ -30,89 +30,89 @@ plan-status
 
 ```lazy-include
 plan-numbering
-when: eine Plan-Datei angelegt oder ihr Datums-Slug-Name aufgelöst wird
+when: a plan file is created or its date-slug name is resolved
 ```
 
 ## Phase 0: Intent Gate
 
-Bevor du den Workflow startest, klassifiziere die Anforderung des Users:
+Before starting the workflow, classify the user's requirement:
 
-1. Bestimme den Intent:
-   - Feature: neue Funktionalität, neues UI-Element, neue Seite, neue Integration
-   - Bugfix: Fehler beheben, etwas funktioniert nicht, unerwartetes Verhalten
-   - Refactoring: Code umstrukturieren, Performance verbessern, technische Schulden abbauen, ohne Verhalten zu ändern
-   - Dokumentation: README, Guides, API-Dokumentation oder andere Dokumente ändern, ohne Produkt- oder Codeverhalten zu ändern
-2. Falls der Intent eindeutig ein Feature ist: weiter.
-3. Falls der Intent nicht eindeutig ist, frage den User:
+1. Determine the intent:
+   - Feature: new functionality, new UI element, new page, new integration
+   - Bugfix: fix a defect, something does not work, unexpected behavior
+   - Refactoring: restructure code, improve performance, reduce technical debt, without changing behavior
+   - Documentation: change README, guides, API documentation or other documents without changing product or code behavior
+2. If the intent is clearly a feature: continue.
+3. If the intent is not clear, ask the user:
 
 ```ask
 header: Intent
-question: Welchen Typ hat diese Anforderung?
+question: What type is this requirement?
 options:
   - label: Feature
-    description: Neue Funktionalität, neues UI-Element, neue Seite oder Integration
+    description: New functionality, new UI element, new page or integration
   - label: Bugfix
-    description: Fehler beheben, unerwartetes Verhalten korrigieren
+    description: Fix a defect, correct unexpected behavior
   - label: Refactoring
-    description: Code umstrukturieren ohne Verhaltensänderung
-  - label: Dokumentation
-    description: Dokumentation ändern ohne Produkt- oder Codeverhalten
+    description: Restructure code without changing behavior
+  - label: Documentation
+    description: Change documentation without product or code behavior
 ```
 
-4. Bei Bugfix oder Refactoring:
-   - gib eine deutlich sichtbare Meldung aus, dass kein Feature erkannt wurde
-   - verweise an `{{SKILL:fix}}` bzw. `{{SKILL:refactor}}`
-   - beende den Workflow sofort
-5. Bei Dokumentation:
-   - gib eine deutlich sichtbare Meldung aus, dass eine reine Dokumentationsänderung erkannt wurde
-   - verweise an `{{SKILL:docs}}`
-   - beende den Workflow sofort, außer der User hat ausdrücklich `{{SKILL:build}}` als gewünschten Workflow bestätigt
-6. Bei Feature: führe zuerst die initiale Zustandsdokumentation aus.
+4. For Bugfix or Refactoring:
+   - emit a clearly visible message that no feature was detected
+   - refer to `{{SKILL:fix}}` or `{{SKILL:refactor}}` respectively
+   - end the workflow immediately
+5. For Documentation:
+   - emit a clearly visible message that a pure documentation change was detected
+   - refer to `{{SKILL:docs}}`
+   - end the workflow immediately, unless the user has explicitly confirmed `{{SKILL:build}}` as the desired workflow
+6. For Feature: first run the initial state documentation.
 
-## Initiale Zustandsdokumentation
+## Initial state documentation
 
-Bevor der eigentliche Workflow startet, prüfe ob das Projekt bereits dokumentierte Pläne hat:
+Before the actual workflow starts, check whether the project already has documented plans:
 
-1. Prüfe ob `<plan.dir>/` existiert und mindestens eine `.md`-Datei enthält.
-2. Falls keine Plan-Dateien vorhanden sind:
-   - erstelle `<plan.dir>/` falls nötig
-   - untersuche den aktuellen Projektzustand lokal oder mit einem internen Sub-Agenten:
-     - Projektstruktur
-     - vorhandene Dateien
-     - verwendete Technologien
-     - bestehende Architekturentscheidungen
-   - schreibe den Ausgangszustand als `<plan.dir>/YYYY-MM-DD-initial-state.md` (Datum via `date +%F`)
-   - verwende dabei das Format der bestehenden Plan-Dateien:
-   - Markersprache der Statuszeile: bestimme sie nach demselben Verfahren wie `{{SKILL:plan}}` (`plan.markerLanguage` aus der Effective Flow-Konfiguration (Projektsetup-ADR) → Auto-Detection aus vorhandenen Plänen → Englisch als Fallback). Da diese initiale Zustandsdokumentation nur entsteht, wenn noch **keine** Plan-Dateien existieren, greift die Detection nicht; es gilt also: `plan.markerLanguage` falls gesetzt (`"de"` → `**Planungsstatus:** Umgesetzt`, `"en"` → `**Plan status:** Implemented`), sonst der englische Marker `**Plan status:** Implemented`. Erzeuge genau eine Statuszeile, keine Sprachmischform. Der Beispielblock unten zeigt exemplarisch den deutschen Marker; ersetze die Statuszeile durch den so bestimmten Marker.
+1. Check whether `<plan.dir>/` exists and contains at least one `.md` file.
+2. If no plan files exist:
+   - create `<plan.dir>/` if needed
+   - investigate the current project state locally or with an internal sub-agent:
+     - project structure
+     - existing files
+     - technologies used
+     - existing architecture decisions
+   - write the initial state as `<plan.dir>/YYYY-MM-DD-initial-state.md` (date via `date +%F`)
+   - use the format of the existing plan files:
+   - marker language of the status line: determine it by the same procedure as `{{SKILL:plan}}` (`plan.markerLanguage` from the Effective Flow configuration (project setup ADR) → auto-detection from existing plans → English as fallback). Since this initial state documentation is only created when **no** plan files exist yet, detection does not apply; therefore: `plan.markerLanguage` if set (`"de"` → `**Planungsstatus:** Umgesetzt`, `"en"` → `**Plan status:** Implemented`), otherwise the English marker `**Plan status:** Implemented`. Produce exactly one status line, no mixed-language form. The example block below shows the German marker for illustration; replace the status line with the marker determined this way.
 
 ```markdown
-# Ausgangszustand — [Projektname]
+# Initial state — [Project name]
 
 **Planungsstatus:** Umgesetzt
 
-## Anforderung
+## Requirement
 
-Dokumentation des Projektzustands vor dem ersten Feature-Workflow.
+Documentation of the project state before the first feature workflow.
 
-## Architekturentscheidungen
+## Architecture decisions
 
-[Bestehende Architektur und Designentscheidungen]
+[Existing architecture and design decisions]
 
-## Betroffene Dateien
+## Affected files
 
-| Datei | Beschreibung |
+| File | Description |
 |---|---|
-| [alle relevanten Dateien] | [Beschreibung] |
+| [all relevant files] | [Description] |
 
-## Implementierungsdetails
+## Implementation details
 
-[Aktuelle Projektstruktur, Technologien, Abhängigkeiten]
+[Current project structure, technologies, dependencies]
 ```
 
-3. Falls Plan-Dateien vorhanden sind: überspringe diesen Schritt ohne Meldung.
-4. Falls eine initiale Plan-Datei erstellt wurde, halte das in der Wisdom-Datei fest.
+3. If plan files exist: skip this step without a message.
+4. If an initial plan file was created, record it in the wisdom file.
 
-Wichtig: Die Plan-Datei in der Abschlussphase erhält ihren Datums-Slug-Namen gemäß `Plan-Datei-Konvention`.
+Important: The plan file in the completion phase gets its date-slug name according to `Plan file convention`.
 
 ```include
 completion-protocol
@@ -124,306 +124,306 @@ goal-completion
 
 ```lazy-include
 worktree-integration
-when: der Delivery-/Worktree-Modus bestimmt wird (Phase 2, Schritt 0)
+when: the delivery/worktree mode is determined (Phase 2, step 0)
 ```
 
 ## Wisdom Accumulation
 
-Erkenntnisse aus früheren Phasen müssen an spätere Phasen weitergegeben werden.
+Insights from earlier phases must be passed on to later phases.
 
-### Session-Isolation
+### Session isolation
 
-Erzeuge zu Beginn eine Session-ID, zum Beispiel via Timestamp. Verwende sie in:
+Create a session ID at the start, for example via timestamp. Use it in:
 
 - `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
-### Protokoll
+### Protocol
 
-1. Schreibe nach jeder abgeschlossenen Phase ein Summary in diese Datei:
+1. After each completed phase, write a summary into this file:
 
 ```markdown
 ## Phase X: [Name]
-- **Entscheidung:** [Was wurde entschieden und warum]
-- **Problem:** [Was ist aufgefallen oder schiefgelaufen]
-- **Kontext:** [Was müssen nachfolgende Phasen wissen]
+- **Decision:** [What was decided and why]
+- **Problem:** [What was noticed or went wrong]
+- **Context:** [What subsequent phases need to know]
 ```
 
-2. Lies die Datei vor jeder delegierten Fachphase und gib ihren Inhalt als Kontext weiter.
-3. Lösche die Datei am Ende des Workflows.
+2. Read the file before each delegated specialist phase and pass its content on as context.
+3. Delete the file at the end of the workflow.
 
-### Was festgehalten wird
+### What gets recorded
 
-- Architektur- und Designentscheidungen mit Begründung
-- Probleme und deren Lösung
-- Abweichungen vom ursprünglichen Plan
-- falsche Annahmen
-- technische Constraints
+- architecture and design decisions with rationale
+- problems and their resolution
+- deviations from the original plan
+- wrong assumptions
+- technical constraints
 
-## Projekt-Typ-Erkennung
+## Project type detection
 
-Bestimme den Projekt-Typ anhand folgender Signale:
+Determine the project type based on the following signals:
 
-| Signal                                                                                                 | Projekt-Typ |
-| ------------------------------------------------------------------------------------------------------ | ----------- |
-| React/Vue/Angular/Svelte Dependencies, `src/components/`, `pages/`, `app/` mit JSX/TSX                 | Frontend    |
-| Express/Fastify/Hono/Koa Dependencies, `src/routes/`, `src/controllers/`, `src/services/`, `server.ts` | Backend API |
-| `bin/`, CLI-Einstiegspunkt, commander/yargs/meow/clipanion                                             | CLI         |
-| `Cargo.toml`/`Cargo.lock`, `src/main.rs`/`src/lib.rs`, `crates/`, `.rs`-Dateien, Cargo-Workspace       | Rust        |
-| `.github/workflows/`, CI/CD, Tooling-, Build-, Release-, Container- oder Repository-Konfiguration      | Generic     |
-| Kombination aus Frontend + Backend/CLI Signalen                                                        | Fullstack   |
+| Signal                                                                                                 | Project type |
+| ------------------------------------------------------------------------------------------------------ | ------------ |
+| React/Vue/Angular/Svelte dependencies, `src/components/`, `pages/`, `app/` with JSX/TSX                | Frontend     |
+| Express/Fastify/Hono/Koa dependencies, `src/routes/`, `src/controllers/`, `src/services/`, `server.ts` | Backend API  |
+| `bin/`, CLI entry point, commander/yargs/meow/clipanion                                                | CLI          |
+| `Cargo.toml`/`Cargo.lock`, `src/main.rs`/`src/lib.rs`, `crates/`, `.rs` files, Cargo workspace         | Rust         |
+| `.github/workflows/`, CI/CD, tooling, build, release, container or repository configuration            | Generic      |
+| Combination of frontend + backend/CLI signals                                                          | Fullstack    |
 
-Ein Repo mit Rust **und** JS/TS-Frontend/Backend-Signalen (z. B. Tauri, WASM) gilt als Fullstack: Rust-Dateien gehen an die Rust-Agents, JS/TS-Dateien an die bestehenden Agents.
-Generic-Dateien können zusätzlich zu jedem Projekt-Typ betroffen sein; route sie separat an den Generic-Implementer statt sie einem Sprach-Implementer unterzuschieben.
+A repo with Rust **and** JS/TS frontend/backend signals (e.g. Tauri, WASM) counts as Fullstack: Rust files go to the Rust agents, JS/TS files to the existing agents.
+Generic files can be affected in addition to any project type; route them separately to the generic implementer instead of pushing them onto a language implementer.
 
-### Routing nach Projekt-Typ
+### Routing by project type
 
-| Projekt-Typ             | Implementer                     | Reviewer                      |
+| Project type            | Implementer                     | Reviewer                      |
 | ----------------------- | ------------------------------- | ----------------------------- |
 | Frontend                | `{{AGENT:ui-implementer}}`      | `{{AGENT:frontend-reviewer}}` |
 | Backend / CLI / Node.js | `{{AGENT:nodejs-implementer}}`  | `{{AGENT:nodejs-reviewer}}`   |
 | Rust                    | `{{AGENT:rust-implementer}}`    | `{{AGENT:rust-reviewer}}`     |
 | Generic                 | `{{AGENT:generic-implementer}}` | `{{AGENT:code-validator}}`    |
-| Fullstack               | beide                           | beide                         |
+| Fullstack               | both                            | both                          |
 
-Bei Fullstack:
+For Fullstack:
 
-- starte Frontend- und Backend-Teilaufgaben parallel, wenn beide Bereiche betroffen sind
-- wenn nur ein Bereich betroffen ist, verwende nur den passenden Skill
-- starte `{{AGENT:generic-implementer}}` zusätzlich, wenn CI, Tooling, Konfiguration, Dependency-Manifeste oder sonstige generische Artefakte betroffen sind
+- start frontend and backend subtasks in parallel when both areas are affected
+- if only one area is affected, use only the appropriate skill
+- additionally start `{{AGENT:generic-implementer}}` when CI, tooling, configuration, dependency manifests or other generic artifacts are affected
 
-## Delegationsregeln
+## Delegation rules
 
-Nutze für Spezialphasen explizite Skill-Wechsel:
+Use explicit skill switches for specialist phases:
 
-- Planung: `{{SKILL:plan}}`
+- Planning: `{{SKILL:plan}}`
 - Frontend: `{{AGENT:ui-implementer}}`
 - Backend/CLI: `{{AGENT:nodejs-implementer}}`
 - Rust: `{{AGENT:rust-implementer}}`
 - Generic/Tooling/CI/Config: `{{AGENT:generic-implementer}}`
-- Code-Doku: `{{AGENT:code-documenter}}`
-- User-Doku: `{{AGENT:docs-writer}}`
+- Code docs: `{{AGENT:code-documenter}}`
+- User docs: `{{AGENT:docs-writer}}`
 - Tests: `{{AGENT:test-writer}}`
 - E2E: `{{AGENT:e2e-tester}}`
-- Validierung: `{{AGENT:code-validator}}`
+- Validation: `{{AGENT:code-validator}}`
 - Review: `{{AGENT:frontend-reviewer}}`, `{{AGENT:nodejs-reviewer}}`, `{{AGENT:rust-reviewer}}`
 
-Bei gut trennbaren Teilaufgaben ist das interne Sub-Agent-Pattern erlaubt und für parallele Phasen bevorzugt.
+For cleanly separable subtasks, the internal sub-agent pattern is allowed and preferred for parallel phases.
 
-Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:build}}`.
+Current workflow for review-report backlinks: `{{SKILL:build}}`.
 
 ```lazy-include
 review-report-backlinks
-when: ein Review-Report-Rückverweis geschrieben oder aktualisiert wird
+when: a review-report backlink is written or updated
 ```
 
 ```lazy-include
 unresolved-review-report
-when: offene oder nicht umgesetzte Review-Findings als Report ausgelagert werden
+when: open or unimplemented review findings are offloaded as a report
 ```
 
-Aktueller Workflow für Plan-Referenzen: Feature (`{{SKILL:build}}`).
+Current workflow for plan references: Feature (`{{SKILL:build}}`).
 
 ```lazy-include
 plan-reference-routing
-when: das Argument auf eine bestehende Plan-Datei zeigen könnte
+when: the argument could point to an existing plan file
 ```
 
 ```include
 apply-clarity-gate
 ```
 
-Wenn ein offener Plan für `{{SKILL:build}}` bestätigt ist, durchläuft er zuerst das
-„Klärungs-Gate“. Besteht er das Gate nicht, verweise gemäß Gate-Verhalten auf
-`{{SKILL:plan}}` bzw. `{{SKILL:review}} <plandatei>` und beende den Workflow. Besteht
-der Plan das Gate:
+When an open plan for `{{SKILL:build}}` is confirmed, it first passes through the
+"clarification gate". If it does not pass the gate, refer according to the gate behavior to
+`{{SKILL:plan}}` or `{{SKILL:review}} <planfile>` and end the workflow. If
+the plan passes the gate:
 
-- überspringe Phase 1 vollständig
-- verwende die Inhalte der Plan-Datei als abgestimmten Implementierungsplan
-- leite aus den Akzeptanzkriterien und dem Validierungsplan die explizite Abschlussbedingung ab und stelle vor dem Start von Phase 2 die explizite Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe“. Da Phase 1 hier übersprungen wird und keine Ja/Nein-Freigabe an dieser Grenze steht, ist es die eigenständige Ja/Nein-Folgefrage; bei Wahl „Autonom via /goal“ den `/goal`-String für die Phasen 2–7 ausgeben. Die Abfrage entfällt, wenn der Workflow nicht-interaktiv delegiert wurde (z. B. durch `{{FIRMO}} apply-review`); die Übergabe durch `{{FIRMO}} apply-plan` zählt nicht als solche Delegation. Wurde aus der Apply-Kette bereits ein „geklärt + goal-getrieben“-Kontext übergeben (Grundlage geklärt, Bestätigung für autonomen Lauf bereits erteilt), honoriere ihn direkt: überspringe diese Abfrage und durchlaufe die Phasen 2–7 unter der „Goal-getriebenen Abschlusssteuerung“.
-- starte direkt mit Phase 2
+- skip Phase 1 entirely
+- use the plan file's contents as the agreed implementation plan
+- derive the explicit completion condition from the acceptance criteria and the validation plan, and before starting Phase 2 present the explicit goal query per "Explicit goal query for autonomous runs". Since Phase 1 is skipped here and there is no yes/no approval at this boundary, it is the standalone yes/no follow-up question; if "Autonomous via /goal" is chosen, emit the `/goal` string for phases 2–7. The query is omitted when the workflow was delegated non-interactively (e.g. by `{{FIRMO}} apply-review`); the handover through `{{FIRMO}} apply-plan` does not count as such delegation. If a "clarified + goal-driven" context was already passed from the apply chain (basis clarified, confirmation for the autonomous run already given), honor it directly: skip this query and run through phases 2–7 under the "Goal-driven completion control".
+- start directly with Phase 2
 
-Ein referenzierter ungebauter Plan ersetzt nur die Planungsphase. Initiale Zustandsdokumentation, Review-Report-Rückverweise, Implementierung, Dokumentation, Tests, Validierung, Review und Abschluss laufen weiterhin normal.
+A referenced unbuilt plan only replaces the planning phase. Initial state documentation, review-report backlinks, implementation, documentation, tests, validation, review and completion still run normally.
 
 ## Workflow
 
-### Phase 1: Planung
+### Phase 1: Planning
 
-Wenn keine ungebaute Plan-Datei referenziert wurde:
+If no unbuilt plan file was referenced:
 
-1. Starte `{{SKILL:plan}}` mit der Feature-Anforderung.
-2. Weise den Planungs-Skill ausdrücklich an:
-   - nur `<plan.dir>/` zu ändern
-   - keinen Code zu erzeugen
-   - keine Implementierungs-, Test-, Validator- oder Reviewer-Skills zu starten
-   - offene Fragen zu klären, bevor der Plan geschrieben wird
-3. Übernimm die erzeugte Plan-Datei als abgestimmten Implementierungsplan.
-4. Lies die Plan-Datei vollständig und prüfe:
-   - genau eine kanonische Statuszeile `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented` ist vorhanden
-   - Akzeptanzkriterien sind messbar
-   - Validierungsplan ist vorhanden
-   - betroffene Dateien sind konkret genug für Phase 2
-5. Präsentiere dem User die Plan-Datei mit kurzer Validierungs-Scorecard.
-6. Leite aus den Akzeptanzkriterien und dem Validierungsplan die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung“); sie deckt die Phasen 2–7 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten.
-7. Hole explizite Freigabe ein. Die Freigabe-Frage enthält die explizite Goal-Abfrage (Option „Autonom via /goal“); behandle sie gemäß „Explizite Goal-Abfrage für autonome Läufe“: Bei Wahl „Autonom via /goal“ gib den `/goal`-String für die Phasen 2–7 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde. Starte Phase 2 nicht ohne diese Freigabe.
+1. Start `{{SKILL:plan}}` with the feature requirement.
+2. Explicitly instruct the planning skill:
+   - to change only `<plan.dir>/`
+   - to produce no code
+   - to start no implementation, test, validator or reviewer skills
+   - to clarify open questions before the plan is written
+3. Adopt the generated plan file as the agreed implementation plan.
+4. Read the plan file in full and check:
+   - exactly one canonical status line `**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented` is present
+   - acceptance criteria are measurable
+   - a validation plan is present
+   - affected files are concrete enough for Phase 2
+5. Present the plan file to the user with a short validation scorecard.
+6. Derive the explicit completion condition from the acceptance criteria and the validation plan (see "Goal-driven completion control"); it covers phases 2–7 and feeds the explicit goal query in the approval question below.
+7. Obtain explicit approval. The approval question contains the explicit goal query (option "Autonomous via /goal"); handle it per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, emit the `/goal` string for phases 2–7; the option is omitted when the workflow was delegated non-interactively. Do not start Phase 2 without this approval.
 
-Wenn `{{SKILL:plan}}` wegen fehlender Informationen abbricht, frage den User nach den offenen Punkten und starte die Planung danach erneut.
+If `{{SKILL:plan}}` aborts due to missing information, ask the user about the open points and then restart the planning.
 
 ```ask
-header: Freigabe
-question: Implementierungsplan freigegeben?
+header: Approval
+question: Implementation plan approved?
 options:
-  - label: Ja
-    description: Freigabe erteilt, Workflow läuft gated weiter
-  - label: Autonom via /goal
-    description: Verbleibende Phasen autonom unter nativem /goal — der Skill gibt den einzufügenden /goal-String aus (entfällt bei nicht-interaktiver Delegation)
-  - label: Anpassen
-    description: Feedback als Freitext eingeben
+  - label: Yes
+    description: Approval granted, workflow continues gated
+  - label: Autonomous via /goal
+    description: Remaining phases autonomous under the native /goal — the skill emits the /goal string to paste (omitted for non-interactive delegation)
+  - label: Adjust
+    description: Enter feedback as free text
 ```
 
 ```include
 skill-discovery
 ```
 
-### Phase 2: Implementierung
+### Phase 2: Implementation
 
-0. Bestimme gemäß „Delivery- und Worktree-Integration“ den effektiven Delivery-/Worktree-Modus und führe bei aktivem Modus zuerst das passende Setup aus: Worktree-Setup bei Worktree-Ausführung oder Liefer-Branch-Setup im Haupt-Repo bei In-Place-Delivery. Alle folgenden Phasen 2–6 (Implementierung, Doku, Tests, Validierung, Review) laufen dann im Liefer-Arbeitsverzeichnis.
-1. Starte den passenden Implementer-Skill mit dem abgestimmten Plan:
-   - Frontend: `Verwende den Skill {{AGENT:ui-implementer}} für diese Phase.`
-   - Backend/CLI: `Verwende den Skill {{AGENT:nodejs-implementer}} für diese Phase.`
-   - Rust: `Verwende den Skill {{AGENT:rust-implementer}} für diese Phase.`
-   - Generic/Tooling/CI/Config: `Verwende den Skill {{AGENT:generic-implementer}} für diese Phase.`
-   - Fullstack: beide parallel oder in klar getrennten Teilphasen
-2. Prüfe auf Fertig-Protokoll, wenn intern delegiert wurde.
-3. Prüfe das Ergebnis gegen die Anforderungen.
+0. Per "Delivery and worktree integration", determine the effective delivery/worktree mode and, when a mode is active, first run the appropriate setup: worktree setup for worktree execution or delivery-branch setup in the main repo for in-place delivery. All following phases 2–6 (implementation, docs, tests, validation, review) then run in the delivery working directory.
+1. Start the appropriate implementer skill with the agreed plan:
+   - Frontend: `Use the {{AGENT:ui-implementer}} skill for this phase.`
+   - Backend/CLI: `Use the {{AGENT:nodejs-implementer}} skill for this phase.`
+   - Rust: `Use the {{AGENT:rust-implementer}} skill for this phase.`
+   - Generic/Tooling/CI/Config: `Use the {{AGENT:generic-implementer}} skill for this phase.`
+   - Fullstack: both in parallel or in clearly separated subphases
+2. Check for the done protocol when delegating internally.
+3. Check the result against the requirements.
 
-### Phase 3: Dokumentation
+### Phase 3: Documentation
 
-Starte wenn möglich parallel:
+Start in parallel if possible:
 
-1. `{{AGENT:code-documenter}}` für In-Code-Dokumentation aller neuen oder geänderten Exports – JSDoc/TSDoc bei JS/TS, rustdoc-Doc-Comments (`///`/`//!`) bei Rust
-2. `{{AGENT:docs-writer}}` für README/Guide-Updates, falls die Änderung nutzerrelevant ist (bei Rust inkl. Crate-/Modul-Doku)
+1. `{{AGENT:code-documenter}}` for in-code documentation of all new or changed exports – JSDoc/TSDoc for JS/TS, rustdoc doc comments (`///`/`//!`) for Rust
+2. `{{AGENT:docs-writer}}` for README/guide updates if the change is user-relevant (for Rust incl. crate/module docs)
 
-Weise die Doku-Phase nach demselben Projekt-Typ an wie Implementierung und Review (siehe „Routing nach Projekt-Typ“). In gemischten Rust/JS-Repos (Projekt-Typ Fullstack) routet die Doku **per Datei/Domäne**: Rust-Dateien mit rustdoc-Konventionen, JS/TS-Dateien wie bisher.
+Assign the documentation phase by the same project type as implementation and review (see "Routing by project type"). In mixed Rust/JS repos (project type Fullstack), documentation routes **per file/domain**: Rust files with rustdoc conventions, JS/TS files as before.
 
-Überspringe User-Doku nur mit kurzer Begründung.
+Skip user docs only with a short justification.
 
 ### Phase 4: Tests
 
-Starte wenn möglich parallel:
+Start in parallel if possible:
 
-1. `{{AGENT:test-writer}}` für Unit-Tests und Komponententests
-2. `{{AGENT:e2e-tester}}` für neue User-Flows, falls ein echter Flow dazugekommen ist
+1. `{{AGENT:test-writer}}` for unit tests and component tests
+2. `{{AGENT:e2e-tester}}` for new user flows if a real flow was added
 
-### Phase 5: Validierung
+### Phase 5: Validation
 
-1. Starte `{{AGENT:code-validator}}`.
-2. Gib dem User die vollständige Liste aller gefundenen Fehler und Warnungen aus.
-3. Wenn Fehler gefunden werden: behebe sie direkt oder delegiere erneut an den passenden Implementer.
-4. Behebe und verifiziere erneut gemäß „Goal-getriebene Abschlusssteuerung“: begrenze die internen Korrekturrunden und eskaliere an den User, falls der Validator danach weiterhin nicht besteht, statt unbegrenzt zu wiederholen.
+1. Start `{{AGENT:code-validator}}`.
+2. Give the user the complete list of all errors and warnings found.
+3. If errors are found: fix them directly or delegate again to the appropriate implementer.
+4. Fix and re-verify per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the validator still does not pass afterwards, instead of repeating indefinitely.
 
 ### Phase 6: Review
 
-1. Starte den passenden Reviewer-Skill für die geänderten Dateien. Weise den Reviewer ausdrücklich an, **alle Schweregrade** zu liefern (Kritisch + Wichtig + Hinweis), damit der spätere Plan-Datei-Bericht als vollständiger Audit-Trail dient — abweichend vom `{{SKILL:review}}`-Standard, der nur Kritisch + Wichtig liefert.
-2. Aggregiere alle Review-Findings und klassifiziere sie:
-   - Kritisch: muss vor Abschluss behoben werden
-   - Wichtig: sollte behoben werden, kann als Follow-up behandelt werden
+1. Start the appropriate reviewer skill for the changed files. Explicitly instruct the reviewer to deliver **all severities** (Kritisch + Wichtig + Hinweis), so the later plan-file report serves as a complete audit trail — deviating from the `{{SKILL:review}}` default, which delivers only Kritisch + Wichtig.
+2. Aggregate all review findings and classify them:
+   - Kritisch: must be fixed before completion
+   - Wichtig: should be fixed, can be handled as a follow-up
    - Hinweis: optional
-3. Vergib jedem Finding eine lokale ID in der Reihenfolge der Aggregation: `F1`, `F2`, `F3`, ... Diese IDs gelten nur innerhalb dieses Workflow-Laufs und werden später in der Plan-Datei wiederverwendet.
-4. Behebe alle kritischen Findings vor dem Abschluss.
-5. Präsentiere die Review-Ergebnisse in diesem Format. Aggregiere zusätzlich die Komplexität-Zähler, damit Phase 7 sie ohne erneute Ableitung übernehmen kann:
+3. Assign each finding a local ID in the order of aggregation: `F1`, `F2`, `F3`, ... These IDs apply only within this workflow run and are reused later in the plan file.
+4. Fix all critical findings before completion.
+5. Present the review results in this format. Additionally aggregate the Komplexität counters so Phase 7 can adopt them without deriving them again:
 
 ```markdown
-**Review-Ergebnisse**
+**Review results**
 
-Zusammenfassung:
-| Schweregrad | Anzahl | Behoben | Offen |
+Summary:
+| Schweregrad | Count | Behoben | Offen |
 |---|---|---|---|
 | Kritisch | X | X | X |
 | Wichtig | X | X | X |
 | Hinweis | X | X | X |
 
-| Komplexität | Anzahl |
+| Komplexität | Count |
 |---|---|
-| Leicht | X |
-| Mittel | Y |
-| Schwer | Z |
+| Low | X |
+| Medium | Y |
+| High | Z |
 ```
 
-Hinweis: Vor Abschluss muss die Spalte „Offen“ für „Kritisch“ 0 sein.
+Note: Before completion, the "Offen" column for "Kritisch" must be 0.
 
-6. Falls Findings nicht umgesetzt wurden, liste sie direkt in der Zusammenfassung mit Prompt-Vorschlägen für spätere Umsetzung auf.
-7. Dokumentiere jedes Finding strukturiert, damit offene oder nicht umgesetzte Findings in einen externen Review-Report übernommen werden können:
-   - lokale ID (`F1`, `F2`, ...)
-   - Titel
+6. If findings were not implemented, list them directly in the summary with prompt suggestions for later implementation.
+7. Document each finding in a structured way so open or unimplemented findings can be carried over into an external review report:
+   - local ID (`F1`, `F2`, ...)
+   - Title
    - Schweregrad (Kritisch / Wichtig / Hinweis)
    - Komplexität (Leicht / Mittel / Schwer)
    - Bereich
-   - Datei + Zeile
+   - Datei + line
    - Problem
    - Empfehlung
    - Status (Behoben / Offen / Nicht umgesetzt)
-   - Begründung bei Nicht-Umsetzung (inkl. ADR-Referenz als Slug, falls vorhanden, z. B. `(ADR: <slug>)`)
-8. Lege in diesem Workflow niemals ein ADR an und frage auch nicht danach. Bewusst nicht umgesetzte Findings werden ausschließlich im Review-Report dokumentiert. Über die spätere Umsetzung oder über ein ADR für eine bewusste Nicht-Umsetzung entscheidet der Entwickler beim Durchgehen der Findings-Datei, typischerweise via {{SKILL:apply-review}}.
-9. Wenn nach Review Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
-   - schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.effective-flow/review/`
-   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-<slug>.md`
-   - halte den erzeugten Reportpfad für Phase 7 fest
-10. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.effective-flow/review/` umgesetzt hat:
+   - rationale for non-implementation (incl. ADR reference as slug, if present, e.g. `(ADR: <slug>)`)
+8. Never create an ADR in this workflow and do not ask for one either. Deliberately unimplemented findings are documented exclusively in the review report. The developer decides on later implementation or on an ADR for a deliberate non-implementation when going through the findings file, typically via {{SKILL:apply-review}}.
+9. If after review there remain findings with status `Offen` or `Nicht umgesetzt`:
+   - write them into a new file under `.effective-flow/review/` per "Open review-finding reports"
+   - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
+   - record the generated report path for Phase 7
+10. If this phase implemented a finding from an existing review-report file in `.effective-flow/review/`:
 
-- ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
-- beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
+- add a short implementation note as the last entry directly in the affected finding
+- begin the note with `✅` and name at least the date and workflow
 
-### Phase 7: Abschluss
+### Phase 7: Completion
 
-1. Führe `{{AGENT:code-validator}}` ein letztes Mal als Final-Check aus.
-2. Dokumentiere den abgeschlossenen Workflow in der Plan-Datei, ohne den Statusmarker vorab zu ändern:
-   - wenn Phase 1 eine neue Plan-Datei via `{{SKILL:plan}}` erzeugt hat: aktualisiere diese Datei.
-   - wenn der User eine ungebaute Plan-Datei referenziert hat: aktualisiere die referenzierte Datei.
-   - wenn ausnahmsweise keine Plan-Datei existiert: erstelle `<plan.dir>/` und vergib den Datums-Slug-Namen gemäß `Plan-Datei-Konvention`.
-   - der Statusmarker bleibt an dieser Stelle unverändert (`**Planungsstatus:** Nicht umgesetzt` bzw. `**Plan status:** Not implemented`): Statuswechsel auf `Umgesetzt`/`Implemented` sowie die Archivierung nach `<plan.dir>/archive/` übernimmt Schritt 6 unten am Delivery-Punkt gemäß „Delivery- und Worktree-Integration“ (Ausnahme: In-Place ohne Delivery, siehe dort).
-   - Inhalt:
-     - Anforderung
-     - Architekturentscheidungen
-     - betroffene Dateien
-     - Implementierungsdetails
-     - Testergebnisse
-     - Review-Ergebnis und Verweis auf externe Review-Reports, falls offene Findings ausgelagert wurden
-3. **Plan-Datei-Findings-Zusammenfassung:** Schreibe in der Plan-Datei nur eine kompakte Zusammenfassung. Offene oder nicht umgesetzte Findings werden nicht vollständig in die Plan-Datei kopiert, sondern in den externen Review-Report aus Phase 6 geschrieben.
+1. Run `{{AGENT:code-validator}}` one last time as a final check.
+2. Document the completed workflow in the plan file, without changing the status marker beforehand:
+   - if Phase 1 created a new plan file via `{{SKILL:plan}}`: update that file.
+   - if the user referenced an unbuilt plan file: update the referenced file.
+   - if, exceptionally, no plan file exists: create `<plan.dir>/` and assign the date-slug name per `Plan file convention`.
+   - the status marker stays unchanged here (`**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented`): the status switch to `Umgesetzt`/`Implemented` and the archiving to `<plan.dir>/archive/` are handled by step 6 below at the delivery point per "Delivery and worktree integration" (exception: in-place without delivery, see there).
+   - Content:
+     - requirement
+     - architecture decisions
+     - affected files
+     - implementation details
+     - test results
+     - review result and reference to external review reports if open findings were offloaded
+3. **Plan-file findings summary:** Write only a compact summary in the plan file. Open or unimplemented findings are not copied in full into the plan file, but written into the external review report from Phase 6.
 
-   Verwende dieses Template:
+   Use this template:
 
 ```markdown
 ## Review-Findings
 
-**Datum:** YYYY-MM-DD
-**Reviewer:** [frontend-reviewer / nodejs-reviewer / beide / keiner]
+**Date:** YYYY-MM-DD
+**Reviewer:** [frontend-reviewer / nodejs-reviewer / both / none]
 
-### Zusammenfassung
+### Summary
 
-| Status | Anzahl |
+| Status | Count |
 |---|---:|
 | Behoben | X |
 | Offen / Nicht umgesetzt | Y |
 
-**Externer Review-Report:** `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>.md` <!-- nur ausgeben, wenn offene Findings ausgelagert wurden -->
+**External review report:** `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>.md` <!-- only output if open findings were offloaded -->
 
-Keine Findings gefunden. <!-- nur ausgeben, wenn keine Findings aufgekommen sind -->
+No findings found. <!-- only output if no findings arose -->
 ```
 
-Regeln für den Findings-Bericht:
+Rules for the findings report:
 
-- Kopiere offene oder nicht umgesetzte Findings nicht vollständig in die Plan-Datei.
-- Wenn offene oder nicht umgesetzte Findings existieren, nenne den externen Review-Report aus Phase 6.
-- Behobene Findings dürfen knapp gezählt werden; vollständige behobene Finding-Details sind in der Plan-Datei nicht erforderlich.
-- Falls keine Findings aufgekommen sind: schreibe in die Sektion „Keine Findings gefunden.“ statt der Tabellen.
-- Falls in Phase 6 keine Reviewer gestartet wurden (z. B. weil die Änderung kein Review erforderte): schreibe stattdessen einen kurzen Hinweis mit Begründung in die Sektion.
+- Do not copy open or unimplemented findings in full into the plan file.
+- If open or unimplemented findings exist, name the external review report from Phase 6.
+- Fixed findings may be counted briefly; full details of fixed findings are not required in the plan file.
+- If no findings arose: write "No findings found." in the section instead of the tables.
+- If no reviewers were started in Phase 6 (e.g. because the change required no review): write a short note with justification in the section instead.
 
-4. Lösche die Wisdom-Datei.
-5. Prüfe ob ein Formatter konfiguriert ist und formatiere alle geänderten Dateien inklusive Plan-Datei einmal einheitlich.
-6. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus (Plan-Statuswechsel auf `Umgesetzt`/`Implemented` und Archiv-Move nach `<plan.dir>/archive/` am Delivery-Punkt, Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen). Läuft der Workflow ausnahmsweise In-Place ohne Delivery, führe denselben Statuswechsel und Archiv-Move direkt im Arbeitsbaum aus.
-7. Fasse zusammen, was implementiert, getestet und dokumentiert wurde; nenne bei aktivem Delivery-/Worktree-Modus zusätzlich den Liefer-Branch, den finalen Checkout-Zustand und das Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch).
+4. Delete the wisdom file.
+5. Check whether a formatter is configured and format all changed files including the plan file once, consistently.
+6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, retract the worktree if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
+7. Summarize what was implemented, tested and documented; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch).
 
-## Regeln
+## Rules
 
 ```include
 pre-commit-gate
@@ -433,12 +433,12 @@ pre-commit-gate
 commit-message-rules
 ```
 
-- Starte unabhängige Fachphasen immer parallel, wenn sie wirklich unabhängig sind
-- Gib dem User nach jeder Phase eine kurze Statusmeldung
-- Wenn eine Phase Fehler meldet, behebe sie vor dem Fortfahren
-- Überspringe optionale Schritte nur mit kurzer Begründung
-- Gib internen Sub-Agenten den Hinweis:
-  - Aufgabe zuerst in 2-3 Sätzen zusammenfassen
-  - mit `ERLEDIGT` oder `ABBRUCH: [Grund]` beenden
-- Schreibe nach jeder abgeschlossenen Phase ein Wisdom-Summary
-- Gib jeder delegierten Phase die bisherigen Erkenntnisse aus der Wisdom-Datei mit
+- Always start independent specialist phases in parallel when they are truly independent
+- Give the user a short status update after each phase
+- If a phase reports errors, fix them before continuing
+- Skip optional steps only with a short justification
+- Give internal sub-agents the instruction:
+  - first summarize the task in 2-3 sentences
+  - end with `ERLEDIGT` or `ABBRUCH: [reason]`
+- Write a wisdom summary after each completed phase
+- Pass the accumulated insights from the wisdom file to each delegated phase

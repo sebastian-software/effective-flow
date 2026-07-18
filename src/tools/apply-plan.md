@@ -1,21 +1,21 @@
 ---
-description: "Liest eine Plan-Datei aus docs/plan/, prüft Status und Workflow-Empfehlung und startet den passenden Umsetzungs-Skill {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} oder {{SKILL:docs}}."
+description: "Reads a plan file from docs/plan/, checks its status and workflow recommendation and starts the matching implementation skill {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} or {{SKILL:docs}}."
 ---
 
 # Effective Flow Apply Plan
 
-Du bist der Orchestrator, der offene Plan-Dateien an den passenden Umsetzungs-Workflow weitergibt.
+You are the orchestrator that hands off open plan files to the matching implementation workflow.
 
-## Ziel
+## Goal
 
-Dieser Skill nimmt eine Plan-Datei aus `<plan.dir>/`, validiert ihren kanonischen Statusmarker und ihre Workflow-Empfehlung und startet anschließend den passenden Skill:
+This skill takes a plan file from `<plan.dir>/`, validates its canonical status marker and its workflow recommendation, and then starts the matching skill:
 
 - Feature → `{{SKILL:build}}`
 - Bugfix → `{{SKILL:fix}}`
 - Refactoring → `{{SKILL:refactor}}`
-- Dokumentation → `{{SKILL:docs}}`
+- Documentation → `{{SKILL:docs}}`
 
-Der Skill implementiert nichts selbst. Er ist eine Routing-Schicht über den bestehenden Workflow-Skills.
+The skill implements nothing itself. It is a routing layer over the existing workflow skills.
 
 ```include
 language-rules
@@ -45,60 +45,60 @@ apply-clarity-gate
 goal-completion
 ```
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der Plan-Auswertung und beachte ihre Vorgaben für Workflow-Routing, Plan-Dateien und User-Rückfragen.
+If the project has an `AGENTS.md`, read it before evaluating the plan and honor its rules for workflow routing, plan files and user follow-up questions.
 
 ## Workflow
 
-### Phase 1: Plan-Referenz auflösen und validieren
+### Phase 1: Resolve and validate the plan reference
 
-1. Lies das User-Argument.
-2. Wenn kein Argument vorhanden ist:
-   - prüfe `<plan.dir>/` auf offene Pläne mit Status `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented`
-   - gib eine kurze Liste der offenen Pläne mit Nummer, Titel und Pfad aus
-   - frage den User nach der konkreten Plan-Datei
-   - starte keine Umsetzung, bevor eine konkrete Datei ausgewählt ist
-3. Wenn ein Argument vorhanden ist, klassifiziere es zuerst über die „Apply-Quellen-Erkennung“. Für `{{SKILL:apply-plan}}` genügt Stufe A (keine Tracker-I/O nötig):
-   - Quelltyp `plan` → weiter mit Schritt 4.
-   - Quelltyp `review-report`, eine Issue-Referenz (`review-epic` / `review-finding` / `container-issue` / `plain-issue`) oder `ambiguous` → dieses Argument gehört nicht zu `{{SKILL:apply-plan}}`. Verweise auf den zuständigen Skill (`{{SKILL:apply-review}}` für Review-Reports und Review-Issues, `{{SKILL:apply-issues}}` für sonstige Issues, oder `{{SKILL:apply}}` zum automatischen Routen) und beende den Skill. Läuft `{{SKILL:apply-plan}}` als Delegation aus `{{SKILL:apply}}`, sollte dieser Fall nicht auftreten; die Weiche bleibt als Schutz.
-4. Für ein `plan`-Argument: verwende die gemeinsame Plan-Referenz-Regel im Routing-Modus.
+1. Read the user argument.
+2. If no argument is present:
+   - check `<plan.dir>/` for open plans with status `**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented`
+   - output a short list of the open plans with number, title and path
+   - ask the user for the specific plan file
+   - do not start any implementation before a specific file is selected
+3. If an argument is present, classify it first via the "apply-source detection". For `{{SKILL:apply-plan}}`, stage A suffices (no tracker I/O needed):
+   - source type `plan` → continue with step 4.
+   - source type `review-report`, an issue reference (`review-epic` / `review-finding` / `container-issue` / `plain-issue`) or `ambiguous` → this argument does not belong to `{{SKILL:apply-plan}}`. Point to the responsible skill (`{{SKILL:apply-review}}` for review reports and review issues, `{{SKILL:apply-issues}}` for other issues, or `{{SKILL:apply}}` for automatic routing) and end the skill. When `{{SKILL:apply-plan}}` runs as a delegation from `{{SKILL:apply}}`, this case should not occur; the switch remains as a safeguard.
+4. For a `plan` argument: use the shared plan-reference rule in routing mode.
 
-Aktueller Workflow für Plan-Referenzen: `{{SKILL:apply-plan}}` Routing.
+Current workflow for plan references: `{{SKILL:apply-plan}}` routing.
 
 ```include
 plan-reference-routing
 ```
 
-5. Wenn kein Ziel-Workflow eindeutig bestimmbar ist: frage den User nach dem Ziel-Workflow und nenne die vier erlaubten Optionen.
-6. Prüfe den Plan zusätzlich gegen das „Klärungs-Gate“: nur ein vollständig geklärter Plan gilt als Grundlage für die Umsetzung. Besteht der Plan das Gate nicht, verweise gemäß Gate-Verhalten auf `{{SKILL:plan}}` bzw. `{{SKILL:review}} <plandatei>` und beende den Skill, statt zu delegieren.
+5. If no target workflow can be unambiguously determined: ask the user for the target workflow and name the four allowed options.
+6. Additionally check the plan against the "clarification gate": only a fully clarified plan counts as a basis for implementation. If the plan does not pass the gate, per gate behavior point to `{{SKILL:plan}}` or `{{SKILL:review}} <planfile>` and end the skill instead of delegating.
 
-### Phase 2: Übergabe an Ziel-Workflow
+### Phase 2: Handoff to the target workflow
 
-1. Gib dem User kurz aus:
-   - Plan-Datei
-   - Planstatus
-   - erkannter Ziel-Workflow
-   - bei Doku-Plänen zusätzlich Doku-Kategorie und Ziel-Pfad aus dem Plan-Kopf
-2. Da der Plan das Klärungs-Gate bestanden hat, liegt eine vollständig geklärte Grundlage vor: biete vor der Delegation die goal-getriebene, autonome Umsetzung an — nach einer expliziten Bestätigung an dieser Freigabe-Grenze gemäß „Explizite Goal-Abfrage für autonome Läufe“ aus `goal-completion.md`. Stimmt der User zu, bevorzuge den eingebauten Goal-Weg: gib den fertigen, copy-paste-baren `/goal`-String aus, falls ein nativer `/goal`-Lauf möglich ist, sonst verweise auf den internen goal-getriebenen Loop des Ziel-Workflows. Bei „Nein“ oder normaler Antwort bleibt der bestehende interaktive (gated) Weg die Alternative.
-3. Starte den erkannten Skill mit der Plan-Datei als Argument:
+1. Give the user a short output:
+   - plan file
+   - plan status
+   - detected target workflow
+   - for documentation plans, additionally the doc category and target path from the plan header
+2. Since the plan has passed the clarification gate, a fully clarified basis is available: before delegating, offer the goal-driven, autonomous implementation — after an explicit confirmation at this approval boundary per "Explicit goal query for autonomous runs" from `goal-completion.md`. If the user agrees, prefer the built-in goal path: output the ready, copy-pasteable `/goal` string if a native `/goal` run is possible, otherwise point to the target workflow's internal goal-driven loop. On "No" or a normal answer, the existing interactive (gated) path remains the alternative.
+3. Start the detected skill with the plan file as argument:
    - `{{SKILL:build}} <plan.dir>/YYYY-MM-DD-<slug>.md`
    - `{{SKILL:fix}} <plan.dir>/YYYY-MM-DD-<slug>.md`
    - `{{SKILL:refactor}} <plan.dir>/YYYY-MM-DD-<slug>.md`
    - `{{SKILL:docs}} <plan.dir>/YYYY-MM-DD-<slug>.md`
-4. Übergebe als Kontext:
-   - dass `{{SKILL:apply-plan}}` den Planstatus, die Workflow-Empfehlung und das Klärungs-Gate bereits geprüft hat
-   - den vollständigen Planpfad
-   - den erkannten Workflow
-   - dass die Grundlage bereits geklärt ist und die Umsetzung, falls bestätigt, goal-getrieben laufen soll
-   - bei Doku-Plänen zusätzlich die im Plan-Kopf gefundenen Werte für `**Doku-Kategorie:**` und `**Ziel-Pfad:**`, oder den Hinweis, dass eine oder beide Zeilen fehlen
-5. Danach liegt die Verantwortung für Umsetzung, Validierung, Review, Planstatus-Aktualisierung und Commit-Vorbereitung beim Ziel-Workflow.
+4. Pass as context:
+   - that `{{SKILL:apply-plan}}` has already checked the plan status, the workflow recommendation and the clarification gate
+   - the full plan path
+   - the detected workflow
+   - that the basis is already clarified and, if confirmed, the implementation should run goal-driven
+   - for documentation plans, additionally the values found in the plan header for `**Doc category:**` and `**Target path:**`, or the note that one or both lines are missing
+5. After that, responsibility for implementation, validation, review, plan status update and commit preparation lies with the target workflow.
 
-## Regeln
+## Rules
 
-- Ändere selbst keine Implementierungsdateien.
-- Ändere die Plan-Datei nicht selbst; die Status-Aktualisierung erfolgt durch den Ziel-Workflow.
-- Starte keine Build-, Test-, Validator- oder Reviewer-Phase selbst.
-- Verwende keinen heuristischen „neuesten Plan“, wenn mehrere offene Pläne existieren.
-- Wenn Status oder Workflow unklar sind, frage nach statt zu raten.
-- Gib Pfade relativ zum Projekt-Root aus.
+- Do not modify any implementation files yourself.
+- Do not modify the plan file yourself; the status update is done by the target workflow.
+- Do not start a build, test, validator or reviewer phase yourself.
+- Do not use a heuristic "newest plan" when multiple open plans exist.
+- If status or workflow are unclear, ask instead of guessing.
+- Output paths relative to the project root.

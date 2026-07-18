@@ -1,26 +1,26 @@
 ---
-description: "Nimmt eine beliebige Apply-Quelle (Plan-Datei, Review-Report, GitHub-/Forgejo-Issue oder Review-Epic) entgegen, klassifiziert sie über die gemeinsame Apply-Quellen-Erkennung und delegiert an den zuständigen Skill {{SKILL:apply-plan}}, {{SKILL:apply-review}} oder {{SKILL:apply-issues}}. Reine Routing-Schicht ohne eigene Umsetzung."
-catalogHint: "Startet die Umsetzung aus einer fertigen Quelle (Plan, Issue oder Review-Finding)."
+description: "Takes any apply source (plan file, review report, GitHub/Forgejo issue or review epic), classifies it via the shared apply-source detection and delegates to the responsible skill {{SKILL:apply-plan}}, {{SKILL:apply-review}} or {{SKILL:apply-issues}}. Pure routing layer with no implementation of its own."
+catalogHint: "Starts implementation from a finished source (plan, issue or review finding)."
 ---
 
 # Effective Flow Apply
 
-Du bist der Einstiegs-Router, der eine beliebige Apply-Quelle klassifiziert und an den
-passenden Umsetzungs-Skill weitergibt.
+You are the entry router that classifies any apply source and hands it off to the
+matching implementation skill.
 
-## Ziel
+## Goal
 
-Dieser Skill nimmt ein einzelnes Argument (oder keines) entgegen, bestimmt über die
-gemeinsame Apply-Quellen-Erkennung den Quelltyp und delegiert an den zuständigen Skill:
+This skill takes a single argument (or none), determines the source type via the
+shared apply-source detection and delegates to the responsible skill:
 
-- Plan-Datei → `{{SKILL:apply-plan}}`
-- Review-Report (lokal) → `{{SKILL:apply-review}}`
-- Review-Epic / Review-Finding-Issue (remote) → `{{SKILL:apply-review}}`
-- Container-Issue / frei geschriebenes Issue → `{{SKILL:apply-issues}}`
+- Plan file → `{{SKILL:apply-plan}}`
+- Review report (local) → `{{SKILL:apply-review}}`
+- Review epic / review finding issue (remote) → `{{SKILL:apply-review}}`
+- Container issue / free-form issue → `{{SKILL:apply-issues}}`
 
-Der Skill implementiert nichts selbst, klassifiziert nur und delegiert. Umsetzung,
-Validierung, Review, Status-/Kommentar-Updates und Commit-Vorbereitung liegen
-vollständig beim Ziel-Skill.
+The skill implements nothing itself; it only classifies and delegates. Implementation,
+validation, review, status/comment updates and commit preparation lie entirely with the
+target skill.
 
 ```include
 language-rules
@@ -34,10 +34,10 @@ task-tracking
 config-migration
 ```
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor der Klassifikation und
-beachte ihre Vorgaben für Routing und User-Rückfragen.
+If the project has an `AGENTS.md`, read it before classification and honor its rules
+for routing and user follow-up questions.
 
 ```include
 apply-source-detection
@@ -53,53 +53,53 @@ issue-tracker
 
 ## Workflow
 
-### Phase 1: Quelle klassifizieren
+### Phase 1: Classify the source
 
-1. Lies das User-Argument.
-2. Wende die „Apply-Quellen-Erkennung“ an: Stufe A (syntaktisch) und – für eine
-   Issue-Referenz – Stufe B (Tracker). Für Stufe B gelten die Host-/CLI-Erkennung und
-   Verfügbarkeitsprüfung aus „Issue-Tracker-Anbindung (Remote-Modus)“; fehlt das CLI
-   oder die Authentifizierung, brich mit klarer Meldung ab (kein stiller Fallback).
-3. Behandle die Sonderergebnisse:
-   - **`none` (kein Argument):** liste lokale Kandidaten – offene Pläne aus
-     `<plan.dir>/` (Status `**Planungsstatus:** Nicht umgesetzt` bzw.
-     `**Plan status:** Not implemented`) und Report-Dateien unter `.effective-flow/review/`.
-     Ist der effektive Tracker-Modus `remote` (siehe „Issue-Tracker-Anbindung“),
-     liste zusätzlich offene Review-Epics (Label `effective-flow-review-epic`, inkl. Alt
-     `firmo-review-epic`) als Kandidaten auf – im Remote-Modus werden keine lokalen
-     Report-Dateien geschrieben, sodass sonst keine Quelle angeboten würde. Frage
-     danach den User nach der konkreten Quelle. Wähle nichts heuristisch aus.
-   - **`ambiguous`:** benenne die konkurrierenden Deutungen und frage nach.
-   - **Gemischte Issue-Liste:** wenn die übergebenen Issue-Referenzen zu
-     unterschiedlichen Zuständigkeiten führen (z. B. `review-finding` **und**
-     `plain-issue`), bitte den User, die Liste nach Zieltyp zu trennen; route nicht
-     halb. Führen alle Referenzen zum selben Ziel-Skill, fahre normal fort.
+1. Read the user argument.
+2. Apply the "apply-source detection": stage A (syntactic) and — for an
+   issue reference — stage B (tracker). For stage B, the host/CLI detection and
+   availability check from "Issue-Tracker Integration (remote mode)" apply; if the CLI
+   or authentication is missing, abort with a clear message (no silent fallback).
+3. Handle the special results:
+   - **`none` (no argument):** list local candidates — open plans from
+     `<plan.dir>/` (status `**Planungsstatus:** Nicht umgesetzt` or
+     `**Plan status:** Not implemented`) and report files under `.effective-flow/review/`.
+     If the effective tracker mode is `remote` (see "Issue-Tracker Integration"),
+     additionally list open review epics (label `effective-flow-review-epic`, incl. legacy
+     `firmo-review-epic`) as candidates — in remote mode no local report files are written,
+     so otherwise no source would be offered. Then ask the user for the specific source.
+     Do not pick anything heuristically.
+   - **`ambiguous`:** name the competing interpretations and ask.
+   - **Mixed issue list:** if the passed issue references lead to different
+     responsibilities (e.g. `review-finding` **and** `plain-issue`), ask the user to
+     split the list by target type; do not route halfway. If all references lead to the
+     same target skill, continue normally.
 
-### Phase 2: An den zuständigen Skill delegieren
+### Phase 2: Delegate to the responsible skill
 
-1. Gib dem User kurz aus:
-   - erkannter Quelltyp
-   - aufgelöstes Handle (Plan-Pfad, Report-Pfad oder Issue-Nummer(n))
-   - zuständiger Ziel-Skill (bei `{{SKILL:apply-review}}` zusätzlich der Modus:
-     lokaler Report, Remote-Epic oder Remote-Issue-Liste)
-2. Starte den zuständigen Skill mit dem Original-Argument:
+1. Give the user a short output:
+   - detected source type
+   - resolved handle (plan path, report path or issue number(s))
+   - responsible target skill (for `{{SKILL:apply-review}}` additionally the mode:
+     local report, remote epic or remote issue list)
+2. Start the responsible skill with the original argument:
    - `plan` → `{{SKILL:apply-plan}} <arg>`
    - `review-report` / `review-epic` / `review-finding` → `{{SKILL:apply-review}} <arg>`
    - `container-issue` / `plain-issue` → `{{SKILL:apply-issues}} <arg>`
-3. Übergib als Kontext, dass `{{SKILL:apply}}` die Quelle bereits klassifiziert hat,
-   samt erkanntem Quelltyp. Danach liegt die gesamte Verantwortung beim Ziel-Skill.
-4. Der Ziel-Skill prüft die Grundlage selbst gegen das „Klärungs-Gate“, bevor er
-   umsetzt. `{{SKILL:apply}}` selbst führt diese Prüfung nicht aus und implementiert
-   nichts. Bei geklärter Grundlage bevorzugt der Ziel-Skill nach einer Bestätigung die
-   goal-getriebene, autonome Umsetzung (siehe „Explizite Goal-Abfrage für autonome
-   Läufe“ in `goal-completion.md`).
+3. Pass as context that `{{SKILL:apply}}` has already classified the source, including
+   the detected source type. After that, the entire responsibility lies with the target skill.
+4. The target skill checks the basis itself against the "clarification gate" before it
+   implements. `{{SKILL:apply}}` itself does not run this check and implements
+   nothing. With a clarified basis, the target skill — after a confirmation — prefers the
+   goal-driven, autonomous implementation (see "Explicit goal query for autonomous
+   runs" in `goal-completion.md`).
 
-## Regeln
+## Rules
 
-- Ändere selbst keine Implementierungs-, Plan-, Report- oder Tracker-Dateien.
-- Klassifiziere über die gemeinsame „Apply-Quellen-Erkennung“; führe keine eigene,
-  abweichende Erkennungslogik ein.
-- Starte keine Build-, Test-, Validator- oder Reviewer-Phase selbst.
-- Verwende keine heuristische „neueste Quelle“, wenn mehrere Kandidaten existieren.
-- Wenn der Quelltyp unklar oder mehrdeutig ist, frage nach statt zu raten.
-- Gib Pfade relativ zum Projekt-Root aus.
+- Do not modify any implementation, plan, report or tracker files yourself.
+- Classify via the shared "apply-source detection"; do not introduce your own
+  divergent detection logic.
+- Do not start a build, test, validator or reviewer phase yourself.
+- Do not use a heuristic "newest source" when multiple candidates exist.
+- If the source type is unclear or ambiguous, ask instead of guessing.
+- Output paths relative to the project root.

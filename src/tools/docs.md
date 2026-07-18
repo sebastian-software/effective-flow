@@ -1,15 +1,15 @@
 ---
-description: "Orchestriert den Dokumentations-Workflow: Scope-Klärung, Plan-Referenz-Erkennung, Doku-Analyse, Umsetzung via docs-writer oder code-documenter, Validierung und Abschluss."
-catalogHint: "Erstellt oder aktualisiert Dokumentation, ohne Produktverhalten zu ändern."
+description: "Orchestrates the documentation workflow: scope clarification, plan-reference detection, doc analysis, implementation via docs-writer or code-documenter, validation and completion."
+catalogHint: "Creates or updates documentation without changing product behavior."
 ---
 
 # Effective Flow Docs
 
-Du bist der Orchestrator für Dokumentationsänderungen.
+You are the orchestrator for documentation changes.
 
-## Ziel
+## Goal
 
-Dieser Workflow ist spezialisiert auf README-Dateien, Entwickler-Guides, API-/CLI-Dokumentation, Skill-Dokumentation, Migrationshinweise, Changelogs und In-Code-Dokumentation. Er ändert Produkt- oder Codeverhalten nur dann, wenn die Änderung dokumentationsnah ist, zum Beispiel CLI-Help-Text oder JSDoc/TSDoc in bestehenden Code-Dateien.
+This workflow specializes in README files, developer guides, API/CLI documentation, skill documentation, migration notes, changelogs and in-code documentation. It changes product or code behavior only when the change is documentation-adjacent, for example CLI help text or JSDoc/TSDoc in existing code files.
 
 ```include
 language-rules
@@ -21,7 +21,7 @@ task-tracking
 
 ```lazy-include
 config-migration
-when: die Effective-Flow-Konfiguration erstmals gelesen oder eine Alt-Config migriert wird
+when: the Effective Flow configuration is first read or a legacy config is migrated
 ```
 
 ```include
@@ -32,9 +32,9 @@ plan-status
 doc-categories
 ```
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Analyse und Umsetzung und beachte ihre Vorgaben für Dokumentationsstil, Dateiformate, Beispiele, Tests, Validierung und Commits.
+If the project has an `AGENTS.md`, read it before analysis and implementation and follow its guidance for documentation style, file formats, examples, tests, validation and commits.
 
 ```include
 completion-protocol
@@ -46,177 +46,177 @@ goal-completion
 
 ```lazy-include
 worktree-integration
-when: der Delivery-/Worktree-Modus bestimmt wird (Phase 2, Schritt 0)
+when: the delivery/worktree mode is determined (Phase 2, step 0)
 ```
 
 ## Wisdom Accumulation
 
-Erzeuge zu Beginn eine Session-ID, zum Beispiel via Timestamp. Verwende sie konsistent für `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`.
+Create a session ID at the start, for example via timestamp. Use it consistently for `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`.
 
-Halte nach jeder Phase fest:
+After each phase, record:
 
-- Zielgruppe und Doku-Art
-- geprüfte Code-/CLI-/API-Quellen
-- Entscheidungen zu Beispielen, Terminologie und Struktur
-- Annahmen, Lücken und nicht verifizierte Aussagen
+- audience and doc type
+- checked code/CLI/API sources
+- decisions on examples, terminology and structure
+- assumptions, gaps and unverified statements
 
-Lösche die Wisdom-Datei am Ende.
+Delete the wisdom file at the end.
 
 ## Routing
 
-- Root-`README.md` als Marketing-Einstieg der Standard-Doku-Struktur: `{{AGENT:marketing-writer}}`
-- User- und Projekt-Dokumentation (inkl. Benutzerdoku unter `docs/user-guide/` und technischer Doku unter `docs/developer-guide/`): `{{AGENT:docs-writer}}`
-- In-Code-Dokumentation, JSDoc/TSDoc, CLI-Help-Texte: `{{AGENT:code-documenter}}`
-- Technische Prüfung bei generierten Artefakten, CLI-Help, Build-Dateien oder Code-Dateien: `{{AGENT:code-validator}}`
+- Root `README.md` as the marketing entry point of the standard doc structure: `{{AGENT:marketing-writer}}`
+- User and project documentation (incl. user docs under `docs/user-guide/` and technical docs under `docs/developer-guide/`): `{{AGENT:docs-writer}}`
+- In-code documentation, JSDoc/TSDoc, CLI help texts: `{{AGENT:code-documenter}}`
+- Technical check for generated artifacts, CLI help, build files or code files: `{{AGENT:code-validator}}`
 
-Die Rollen und die Standard-Struktur (Marketing-Root-README, Benutzerdoku, technische Doku) sind in `Doku-Kategorien` unter „Vorgegebene Standard-Doku-Struktur“ beschrieben; sie gelten als Prosa-Default, solange der User bzw. Plan nichts anderes vorgibt.
+The roles and the standard structure (marketing root README, user docs, technical docs) are described in `Doc categories` under "Prescribed standard doc structure"; they apply as the prose default as long as the user or plan does not specify otherwise.
 
-### Sprach-/Projekttyp-Bewusstsein
+### Language/project-type awareness
 
-Die Doku-Agenten dokumentieren im idiomatischen Format der Zielsprache: JSDoc/TSDoc für JS/TS, rustdoc-Doc-Comments (`///`/`//!`) und Crate-/Modul-Doku für Rust. Erkenne Rust an `Cargo.toml`/`Cargo.lock` bzw. `.rs`-Dateien und weise die Doku-Phase entsprechend an – analog dazu, wie `{{SKILL:build}}` Implementierung und Review nach Projekt-Typ routet, statt sprach-agnostisch weiterzureichen. In gemischten Rust/JS-Repos routet die Doku **per Datei/Domäne** (Rust-Dateien → Rust-Guidance, JS/TS → bisherige). Bei einem Cargo-Projekt nutzt die technische Prüfung (`{{AGENT:code-validator}}`) zusätzlich die vorhandenen Cargo-Doku-Checks (`cargo doc`, Doctests).
+The doc agents document in the idiomatic format of the target language: JSDoc/TSDoc for JS/TS, rustdoc doc comments (`///`/`//!`) and crate/module docs for Rust. Detect Rust by `Cargo.toml`/`Cargo.lock` or `.rs` files and instruct the documentation phase accordingly – analogous to how `{{SKILL:build}}` routes implementation and review by project type instead of passing on language-agnostically. In mixed Rust/JS repos, documentation routes **per file/domain** (Rust files → Rust guidance, JS/TS → the previous). For a Cargo project, the technical check (`{{AGENT:code-validator}}`) additionally uses the existing Cargo doc checks (`cargo doc`, doctests).
 
-### Initiales Doku-Setup (Scaffold-Modus)
+### Initial doc setup (scaffold mode)
 
-Ein initiales Aufsetzen der Projektdokumentation ist kein eigenes Tool, sondern ein Modus dieses Workflows. Er greift, wenn (a) der Auftrag ausdrücklich „Projektdokumentation initial aufsetzen“ lautet **oder** (b) noch keine Doku-Struktur existiert.
+An initial setup of the project documentation is not a separate tool but a mode of this workflow. It applies when (a) the assignment is explicitly "set up project documentation initially" **or** (b) no doc structure exists yet.
 
-- Erzeuge in **einem** Lauf die drei Rollen der Standard-Struktur und koordiniere die Agenten so, dass die zwei README-Links am Ende auf existierende Ziele zeigen: `{{AGENT:marketing-writer}}` für die Root-`README.md`, `{{AGENT:docs-writer}}` für `docs/user-guide/README.md` (plus erste Guides) und `docs/developer-guide/README.md`.
-- Reihenfolge so wählen, dass die Ziele der beiden Links existieren, bevor die Root-README sie verlinkt (Kategorie-Einstiege zuerst oder im selben Lauf miterstellen).
-- Existiert bereits ein Teil der Struktur, scaffolde nur die fehlenden Teile und verlinke die vorhandenen; bestehende Dateien werden nicht still überschrieben, sondern über die Ersatzklärung behandelt.
-- Der Scaffold-Modus nutzt die regulären Phasen, das Delivery-/Worktree-Setup, die Goal-getriebene Abschlusssteuerung und das Commit-Gate dieses Workflows; es entsteht **kein** neues Top-Level-Tool.
+- In **one** run, create the three roles of the standard structure and coordinate the agents so the two README links point to existing targets at the end: `{{AGENT:marketing-writer}}` for the root `README.md`, `{{AGENT:docs-writer}}` for `docs/user-guide/README.md` (plus initial guides) and `docs/developer-guide/README.md`.
+- Choose the order so the targets of the two links exist before the root README links to them (create the category entry points first or in the same run).
+- If part of the structure already exists, scaffold only the missing parts and link the existing ones; existing files are not silently overwritten but handled via the replacement clarification.
+- The scaffold mode uses the regular phases, the delivery/worktree setup, the goal-driven completion control and the commit gate of this workflow; **no** new top-level tool is created.
 
-Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:docs}}`.
+Current workflow for review-report backlinks: `{{SKILL:docs}}`.
 
 ```lazy-include
 review-report-backlinks
-when: ein Review-Report-Rückverweis geschrieben oder aktualisiert wird
+when: a review-report backlink is written or updated
 ```
 
-Aktueller Workflow für Plan-Referenzen: Dokumentation (`{{SKILL:docs}}`).
+Current workflow for plan references: Documentation (`{{SKILL:docs}}`).
 
 ```lazy-include
 plan-reference-routing
-when: das Argument auf eine bestehende Plan-Datei zeigen könnte
+when: the argument could point to an existing plan file
 ```
 
 ```include
 apply-clarity-gate
 ```
 
-Wenn ein offener Plan für `{{SKILL:docs}}` bestätigt ist, durchläuft er zuerst das
-„Klärungs-Gate“. Besteht er das Gate nicht, verweise gemäß Gate-Verhalten auf
-`{{SKILL:plan}}` bzw. `{{SKILL:review}} <plandatei>` und beende den Workflow. Besteht
-der Plan das Gate:
+When an open plan for `{{SKILL:docs}}` is confirmed, it first passes through the
+"clarification gate". If it does not pass the gate, refer according to the gate behavior to
+`{{SKILL:plan}}` or `{{SKILL:review}} <planfile>` and end the workflow. If
+the plan passes the gate:
 
-- verwende die Inhalte der Plan-Datei als abgestimmte Dokumentationsgrundlage
-- lies aus dem Kopfbereich `**Doku-Kategorie:**` und `**Ziel-Pfad:**`
-- wenn beide Zeilen fehlen oder inkonsistent sind: frage den User nach Kategorie und Ziel-Pfad gemäß `Doku-Kategorien` und ergänze die Zeilen vor der Umsetzung in der Plan-Datei
-- wenn der Ziel-Pfad auf eine bestehende Datei zeigt: kläre mit dem User Ersatz oder neuen Slug, bevor `{{AGENT:docs-writer}}` startet
-- wurde aus der Apply-Kette bereits ein „geklärt + goal-getrieben“-Kontext übergeben (Grundlage geklärt, Bestätigung für autonomen Lauf bereits erteilt), honoriere ihn: überspringe die Goal-Abfrage in Phase 1 und durchlaufe die Phasen 2–4 unter der „Goal-getriebenen Abschlusssteuerung“.
+- use the plan file's contents as the agreed documentation basis
+- read `**Doc category:**` and `**Target path:**` from the header area
+- if both lines are missing or inconsistent: ask the user for the category and target path per `Doc categories` and add the lines in the plan file before implementation
+- if the target path points to an existing file: clarify replacement or a new slug with the user before `{{AGENT:docs-writer}}` starts
+- if a "clarified + goal-driven" context was already passed from the apply chain (basis clarified, confirmation for the autonomous run already given), honor it: skip the goal query in Phase 1 and run through phases 2–4 under the "Goal-driven completion control".
 
 ## Workflow
 
-### Phase 1: Scope und Analyse
+### Phase 1: Scope and analysis
 
-1. Analysiere die Dokumentationsanforderung gründlich. Prüfe früh, ob es sich um ein initiales Doku-Setup handelt (siehe „Initiales Doku-Setup (Scaffold-Modus)“); wenn ja, folge diesem Modus und erzeuge die drei Rollen der Standard-Struktur koordiniert in einem Lauf.
-2. Bestimme die Doku-Art:
-   - Root-`README.md` als Marketing-Einstieg (Standard-Doku-Struktur)
-   - README / Guide
-   - API- oder CLI-Dokumentation
-   - Skill-/Workflow-Dokumentation
-   - Migrationshinweis / Changelog
-   - In-Code-Dokumentation
-3. Bestimme die Doku-Kategorie gemäß `Doku-Kategorien`:
-   - User-Guide, Developer-Guide, Operations oder Runbooks
-   - beim Marketing-Einstieg (Root-`README.md`) entfällt die Kategorie: sie ist keine der vier `docs/`-Kategorien, der Ziel-Pfad ist `README.md` und die Umsetzung geht an `{{AGENT:marketing-writer}}`
-   - bei In-Code-Dokumentation oder bei einer im Plan ausdrücklich genannten Bestands-Datei außerhalb der Kategorie-Verzeichnisse darf die Kategorie entfallen; halte das explizit im Doku-Plan fest
-4. Lege den Ziel-Pfad für das finale Dokument fest:
-   - bei Kategorie-Doku: `docs/<kategorie>/<topic-slug>.md`
-   - beim Marketing-Einstieg: `README.md`
-   - prüfe Eindeutigkeit des Slugs innerhalb der Kategorie
-   - bei Kollision (auch bei bereits vorhandener Root-`README.md`): kläre Ersatz, Erweiterung oder alternativen Slug mit dem User
-5. Prüfe die relevanten Quellen:
-   - bestehende Dokumentation
-   - Code, Exports, CLI-Optionen, API-Routen oder Konfiguration, auf die sich die Doku bezieht
-   - vorhandene Beispiele, Scripts und Validierungspfade
-6. Kläre offene Fragen direkt mit dem User, wenn Zielgruppe, Umfang oder fachliche Aussagen nicht belastbar ableitbar sind.
-7. Erstelle einen kurzen Dokumentationsplan:
-   - Zielgruppe
-   - Doku-Kategorie und Ziel-Pfad
-   - betroffene Dateien
-   - geplante inhaltliche Änderungen
-   - Validierungsstrategie
-8. Leite aus der Validierungsstrategie und den geplanten Änderungen die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung“); sie deckt die Phasen 2–4 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten. Behandle die Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe“: Bei Wahl „Autonom via /goal“ gib den `/goal`-String für die Phasen 2–4 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
+1. Analyze the documentation requirement thoroughly. Check early whether this is an initial doc setup (see "Initial doc setup (scaffold mode)"); if so, follow that mode and create the three roles of the standard structure in a coordinated single run.
+2. Determine the doc type:
+   - Root `README.md` as the marketing entry point (standard doc structure)
+   - README / guide
+   - API or CLI documentation
+   - Skill/workflow documentation
+   - Migration note / changelog
+   - In-code documentation
+3. Determine the doc category per `Doc categories`:
+   - User guide, developer guide, operations or runbooks
+   - for the marketing entry point (root `README.md`) the category is omitted: it is not one of the four `docs/` categories, the target path is `README.md` and the implementation goes to `{{AGENT:marketing-writer}}`
+   - for in-code documentation or for an existing file explicitly named in the plan outside the category directories, the category may be omitted; record this explicitly in the doc plan
+4. Set the target path for the final document:
+   - for category docs: `docs/<category>/<topic-slug>.md`
+   - for the marketing entry point: `README.md`
+   - check the uniqueness of the slug within the category
+   - on collision (also for an already existing root `README.md`): clarify replacement, extension or an alternative slug with the user
+5. Check the relevant sources:
+   - existing documentation
+   - code, exports, CLI options, API routes or configuration the docs refer to
+   - existing examples, scripts and validation paths
+6. Clarify open questions directly with the user when the audience, scope or substantive statements cannot be reliably derived.
+7. Create a short documentation plan:
+   - audience
+   - doc category and target path
+   - affected files
+   - planned content changes
+   - validation strategy
+8. Derive the explicit completion condition from the validation strategy and the planned changes (see "Goal-driven completion control"); it covers phases 2–4 and feeds the explicit goal query in the approval question below. Handle the goal query per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, emit the `/goal` string for phases 2–4; the option is omitted when the workflow was delegated non-interactively.
 
 ```ask
-header: Doku-Plan
-question: Dokumentationsplan freigegeben?
+header: Doc plan
+question: Documentation plan approved?
 options:
-  - label: Ja
-    description: Freigabe erteilt, Workflow läuft gated weiter
-  - label: Autonom via /goal
-    description: Verbleibende Phasen autonom unter nativem /goal — der Skill gibt den einzufügenden /goal-String aus (entfällt bei nicht-interaktiver Delegation)
-  - label: Anpassen
-    description: Feedback als Freitext eingeben
+  - label: Yes
+    description: Approval granted, workflow continues gated
+  - label: Autonomous via /goal
+    description: Remaining phases autonomous under the native /goal — the skill emits the /goal string to paste (omitted for non-interactive delegation)
+  - label: Adjust
+    description: Enter feedback as free text
 ```
 
 ```include
 skill-discovery
 ```
 
-### Phase 2: Umsetzung
+### Phase 2: Implementation
 
-0. Bestimme gemäß „Delivery- und Worktree-Integration“ den effektiven Delivery-/Worktree-Modus und führe bei aktivem Modus zuerst das passende Setup aus: Worktree-Setup bei Worktree-Ausführung oder Liefer-Branch-Setup im Haupt-Repo bei In-Place-Delivery. Umsetzung und Validierung (Phasen 2–3) laufen dann im Liefer-Arbeitsverzeichnis.
-1. Stelle sicher, dass das Zielverzeichnis existiert:
-   - bei Ziel-Pfaden unterhalb von `docs/user-guide/`, `docs/developer-guide/`, `docs/operations/` oder `docs/runbooks/` lege fehlende Verzeichnisse vor dem Schreiben an
-   - lege keine leeren Kategorie-Verzeichnisse an, wenn keine Datei darin geschrieben wird
-2. Starte den passenden Agent:
-   - `{{AGENT:marketing-writer}}` für die Root-`README.md` als Marketing-Einstieg
-   - `{{AGENT:docs-writer}}` für Kategorie-Guides, Kategorie-Einstiegs-READMEs (z. B. `docs/user-guide/README.md`, `docs/developer-guide/README.md`), API-/CLI-Doku, Migration, Changelog und Skill-Dokumentation – **nicht** für die Root-Marketing-README
-   - `{{AGENT:code-documenter}}` für JSDoc/TSDoc, Inline-Kommentare und CLI-Help-Texte in Code-Dateien
-3. Bei klar getrennten Datei- und Doku-Bereichen dürfen beide Agenten parallel laufen.
-4. Gib den Agenten:
-   - den freigegebenen Dokumentationsplan inklusive Doku-Kategorie und Ziel-Pfad
-   - relevante Code-/Doku-Kontexte
-   - bisherige Wisdom-Erkenntnisse
-   - den Hinweis, keine Produktlogik zu ändern
-   - die Schreibgrenze gemäß `Doku-Kategorien`
+0. Per "Delivery and worktree integration", determine the effective delivery/worktree mode and, when a mode is active, first run the appropriate setup: worktree setup for worktree execution or delivery-branch setup in the main repo for in-place delivery. Implementation and validation (phases 2–3) then run in the delivery working directory.
+1. Ensure the target directory exists:
+   - for target paths under `docs/user-guide/`, `docs/developer-guide/`, `docs/operations/` or `docs/runbooks/`, create missing directories before writing
+   - do not create empty category directories if no file is written in them
+2. Start the appropriate agent:
+   - `{{AGENT:marketing-writer}}` for the root `README.md` as the marketing entry point
+   - `{{AGENT:docs-writer}}` for category guides, category entry-point READMEs (e.g. `docs/user-guide/README.md`, `docs/developer-guide/README.md`), API/CLI docs, migration, changelog and skill documentation – **not** for the root marketing README
+   - `{{AGENT:code-documenter}}` for JSDoc/TSDoc, inline comments and CLI help texts in code files
+3. For clearly separated file and doc areas, both agents may run in parallel.
+4. Give the agents:
+   - the approved documentation plan including doc category and target path
+   - relevant code/doc contexts
+   - the accumulated wisdom insights
+   - the note not to change product logic
+   - the write boundary per `Doc categories`
 
-### Phase 3: Validierung
+### Phase 3: Validation
 
-1. Prüfe die geänderte Dokumentation gegen die verifizierten Quellen:
-   - Code-Beispiele passen zu aktuellen APIs
-   - CLI-Optionen und Defaults stimmen
-   - Links und Pfade sind plausibel
-   - Migrationshinweise haben klare Vorher/Nachher-Aussagen
-2. Prüfe die Schreibpfade:
-   - alle neu erstellten oder geänderten finalen Dokumente liegen innerhalb der Kategorie-Verzeichnisse aus `Doku-Kategorien`, sind die Root-`README.md` als Marketing-Einstieg oder eine im Plan explizit genannte Bestands-Datei
-   - Slugs entsprechen der Konvention (Kebab-Case, kein Datums- oder Nummern-Prefix)
-   - bei User-Guide-Änderungen ist `docs/user-guide/README.md` vorhanden, sobald Inhalte unter `docs/user-guide/` existieren
-   - bei Developer-Guide-Änderungen ist `docs/developer-guide/README.md` vorhanden, sobald Inhalte unter `docs/developer-guide/` existieren
-3. Prüfe bei der Root-`README.md` als Marketing-Einstieg:
-   - sie ist aus Benutzersicht geschrieben (Nutzenversprechen, keine internen Architekturdetails)
-   - sie endet mit genau zwei Links gemäß der Zwei-Links-Regel aus `Doku-Kategorien`: erster Link → `docs/user-guide/README.md`, zweiter Link → `docs/developer-guide/README.md`
-   - jeder gesetzte Link zeigt auf ein existierendes Ziel; ein fehlendes Ziel wurde ausgelassen und als offener Punkt vermerkt statt als toter Link geschrieben
-4. Starte `{{AGENT:code-validator}}`, wenn Doku-Änderungen technische Artefakte betreffen oder der Projekt-Build die Änderung plausibel prüfen kann.
-5. Wenn Fehler gefunden werden: behebe sie oder delegiere erneut an den passenden Doku-Agenten – gemäß „Goal-getriebene Abschlusssteuerung“: begrenze die internen Korrekturrunden und eskaliere an den User, falls die Validierung danach weiterhin Fehler meldet, statt unbegrenzt zu wiederholen.
+1. Check the changed documentation against the verified sources:
+   - code examples match current APIs
+   - CLI options and defaults are correct
+   - links and paths are plausible
+   - migration notes have clear before/after statements
+2. Check the write paths:
+   - all newly created or changed final documents lie within the category directories from `Doc categories`, are the root `README.md` as the marketing entry point, or an existing file explicitly named in the plan
+   - slugs follow the convention (kebab-case, no date or number prefix)
+   - for user-guide changes, `docs/user-guide/README.md` is present as soon as content exists under `docs/user-guide/`
+   - for developer-guide changes, `docs/developer-guide/README.md` is present as soon as content exists under `docs/developer-guide/`
+3. For the root `README.md` as the marketing entry point, check:
+   - it is written from the user's perspective (value proposition, no internal architecture details)
+   - it ends with exactly two links per the two-links rule from `Doc categories`: first link → `docs/user-guide/README.md`, second link → `docs/developer-guide/README.md`
+   - every link that is set points to an existing target; a missing target was omitted and noted as an open point instead of being written as a dead link
+4. Start `{{AGENT:code-validator}}` when doc changes affect technical artifacts or the project build can plausibly check the change.
+5. If errors are found: fix them or delegate again to the appropriate doc agent – per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if validation still reports errors afterwards, instead of repeating indefinitely.
 
-### Phase 4: Abschluss
+### Phase 4: Completion
 
-1. Wenn diese Änderung ein Finding aus einer bestehenden Review-Report-Datei in `.effective-flow/review/` umgesetzt hat:
-   - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
-   - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
-2. Wenn eine Plan-Datei als Grundlage verwendet wurde, ohne den Statusmarker vorab zu ändern:
-   - der Statusmarker bleibt an dieser Stelle unverändert (`**Planungsstatus:** Nicht umgesetzt` bzw. `**Plan status:** Not implemented`): Statuswechsel auf `Umgesetzt`/`Implemented` sowie die Archivierung nach `<plan.dir>/archive/` übernimmt Schritt 4 unten am Delivery-Punkt gemäß „Delivery- und Worktree-Integration“ (Ausnahme: In-Place ohne Delivery, siehe dort).
-   - ergänze `## Testergebnisse` mit den ausgeführten Prüfungen
-   - ergänze `## Review-Findings` oder schreibe „Keine Findings gefunden.“, wenn kein Review nötig war
-3. Lösche die Wisdom-Datei.
-4. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus (bei geführter Plan-Datei inklusive Plan-Statuswechsel auf `Umgesetzt`/`Implemented` und Archiv-Move nach `<plan.dir>/archive/` am Delivery-Punkt, Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen). Läuft der Workflow ausnahmsweise In-Place ohne Delivery, führt er denselben Statuswechsel und Archiv-Move direkt im Arbeitsbaum aus.
-5. Fasse zusammen:
-   - geänderte Dokumentationsbereiche
-   - geprüfte Quellen
-   - ausgeführte Validierung
-   - Restrisiken
-   - bei aktivem Delivery-/Worktree-Modus: Liefer-Branch, finaler Checkout-Zustand und Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch)
+1. If this change implemented a finding from an existing review-report file in `.effective-flow/review/`:
+   - add a short implementation note as the last entry directly in the affected finding
+   - begin the note with `✅` and name at least the date and workflow
+2. If a plan file was used as the basis, without changing the status marker beforehand:
+   - the status marker stays unchanged here (`**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented`): the status switch to `Umgesetzt`/`Implemented` and the archiving to `<plan.dir>/archive/` are handled by step 4 below at the delivery point per "Delivery and worktree integration" (exception: in-place without delivery, see there).
+   - add `## Testergebnisse` with the checks that were run
+   - add `## Review-Findings` or write "No findings found." if no review was needed
+3. Delete the wisdom file.
+4. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, retract the worktree if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
+5. Summarize:
+   - changed documentation areas
+   - checked sources
+   - validation performed
+   - residual risks
+   - for an active delivery/worktree mode: delivery branch, final checkout state and result of the completion action (PR URL, merge or retained branch)
 
 ```include
 pre-commit-gate
@@ -226,10 +226,10 @@ pre-commit-gate
 commit-message-rules
 ```
 
-## Regeln
+## Rules
 
-- Ändere keine Produktlogik.
-- Dokumentationsnahe Codeänderungen sind nur erlaubt, wenn sie selbst Dokumentation sind, zum Beispiel Kommentare, JSDoc/TSDoc oder CLI-Help-Texte.
-- Erfinde keine fachlichen Aussagen. Wenn etwas nicht verifizierbar ist, markiere es als Annahme oder frage nach.
-- Halte Beispiele lauffähig und synchron zum Code.
-- Gib dem User nach jeder Phase eine kurze Statusmeldung.
+- Do not change product logic.
+- Documentation-adjacent code changes are only allowed if they are documentation themselves, for example comments, JSDoc/TSDoc or CLI help texts.
+- Do not invent substantive statements. If something is not verifiable, mark it as an assumption or ask.
+- Keep examples runnable and in sync with the code.
+- Give the user a short status update after each phase.

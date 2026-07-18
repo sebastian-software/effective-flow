@@ -1,34 +1,34 @@
 ---
 name: effective-flow
-description: "Effective Flow — Software-Engineering-Workflows als Tools, aufgerufen über /effective-flow <tool>. Dünnes Router-Skill mit Lazy-Loading: die vollständige Anweisung eines Tools wird erst gelesen, wenn das Tool aufgerufen wird. Tools: build, fix, plan, refactor, docs, review, apply, plan-issue, maintain, commit, pr, setup, cleanup, open-plans, investigate, version."
+description: "Effective Flow — software engineering workflows as tools, invoked via /effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: build, fix, plan, refactor, docs, review, apply, plan-issue, maintain, commit, pr, setup, cleanup, open-plans, investigate, version."
 ---
 
 # Effective Flow
 
-Effective Flow bündelt einen kompletten Software-Engineering-Workflow als Tools, die über `{{FIRMO}} <tool>` aufgerufen werden (Version {{VERSION}}).
+Effective Flow bundles a complete software engineering workflow as tools invoked via `{{FIRMO}} <tool>` (version {{VERSION}}).
 
-Dieses Router-Skill ist bewusst **dünn**. Es enthält nur den Tool-Katalog und die Dispatch-Regel; die vollständige Anweisung eines Tools wird **erst bei Bedarf** aus `tools/<tool>.md` geladen. So bleibt die Session schlank und es entsteht keine Token-Exhaustion durch das Vorladen aller Tools.
+This router skill is deliberately **thin**. It contains only the tool catalog and the dispatch rule; a tool's full instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the session lean and avoids token exhaustion from preloading all tools.
 
-## Aufruf
+## Invocation
 
-`{{FIRMO}} <tool> [argumente]`
+`{{FIRMO}} <tool> [arguments]`
 
-Auf Codex wird dasselbe Skill über den Skill-Namen aufgerufen (z. B. `$effective-flow <tool> [argumente]`); die Dispatch-Regel ist identisch.
+On Codex the same skill is invoked via the skill name (e.g. `$effective-flow <tool> [arguments]`); the dispatch rule is identical.
 
-## Dispatch-Regel
+## Dispatch rule
 
-1. **Kein oder unbekanntes `<tool>`:** Gib die **gruppierte** Tool-Liste unten zur Orientierung aus, damit der User das passende Tool wählen kann, und führe sonst nichts aus. Rate nicht, welches Tool gemeint sein könnte.
-2. **Gültiges `<tool>`:** Lies die Datei `tools/<tool>.md` in diesem Skill-Verzeichnis und befolge sie wörtlich. Reiche die restlichen Argumente unverändert an das Tool durch. Lies dabei **keine** weiteren Tool-Dateien — nur die eine, die dem aufgerufenen Tool entspricht.
+1. **No or unknown `<tool>`:** Output the **grouped** tool list below for orientation so the user can choose the right tool, and do nothing else. Do not guess which tool might be meant.
+2. **Valid `<tool>`:** Read the file `tools/<tool>.md` in this skill directory and follow it verbatim. Pass the remaining arguments through to the tool unchanged. Do **not** read any further tool files in the process — only the one that corresponds to the invoked tool.
 
-Beim Tool `apply` kann die Anweisung ihrerseits eine passende **interne** Datei nachladen (`tools/apply-plan.md`, `tools/apply-review.md` oder `tools/apply-issues.md`), je nach erkannter Quelle. Diese internen Dateien sind nicht direkt über `{{FIRMO}}` aufrufbar.
+For the `apply` tool, its instructions may in turn load an appropriate **internal** file (`tools/apply-plan.md`, `tools/apply-review.md`, or `tools/apply-issues.md`), depending on the detected source. These internal files are not directly invocable via `{{FIRMO}}`.
 
 ## Tools
 
-Die Tools sind unten nach Nutzungsabsicht gruppiert.
+The tools are grouped below by usage intent.
 
 {{TOOL_CATALOG}}
 
-## Regeln
+## Rules
 
-- Lade nie mehrere Tool-Dateien „auf Vorrat“; immer nur das aktuell aufgerufene Tool (plus ggf. die eine interne `apply`-Quelle).
-- Spezialisten-Agents (Implementer, Reviewer, Validator, Test-/Docs-Writer …) sind **keine** `{{FIRMO}}`-Tools; die Tools rufen sie intern als Subagents auf (auf Codex genestet unter `agents/`, auf Claude Code als registrierte `effective-flow-*`-Subagents).
+- Never load multiple tool files "just in case"; always only the currently invoked tool (plus, if applicable, the single internal `apply` source).
+- Specialist agents (implementers, reviewers, validators, test/docs writers …) are **not** `{{FIRMO}}` tools; the tools invoke them internally as subagents (nested under `agents/` on Codex, as registered `effective-flow-*` subagents on Claude Code).

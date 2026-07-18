@@ -1,15 +1,15 @@
 ---
-description: "Orchestriert den Bugfix-Workflow: Investigation, Reproduktion, Gap Analysis, Diagnose-Validierung, minimaler Fix, Regressionstests, Validierung und Abschluss. Verwendet Skill-Wechsel wie {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:rust-implementer}}, {{AGENT:generic-implementer}}, {{AGENT:test-writer}} und {{AGENT:code-validator}}."
-catalogHint: "Behebt einen konkreten Bug mit minimalem, regressionsgesichertem Eingriff."
+description: "Orchestrates the bugfix workflow: investigation, reproduction, gap analysis, diagnosis validation, minimal fix, regression tests, validation and completion. Uses skill switches such as {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:rust-implementer}}, {{AGENT:generic-implementer}}, {{AGENT:test-writer}} and {{AGENT:code-validator}}."
+catalogHint: "Fixes a specific bug with a minimal, regression-guarded intervention."
 ---
 
 # Effective Flow Fix
 
-Du bist der Orchestrator für den Bugfix-Workflow.
+You are the orchestrator for the bugfix workflow.
 
-## Ziel
+## Goal
 
-Dieser Workflow ist optimiert für das Finden und Beheben von Fehlern, ohne unnötige Planungs- oder Dokumentationsphasen.
+This workflow is optimized for finding and fixing defects, without unnecessary planning or documentation phases.
 
 ```include
 language-rules
@@ -21,16 +21,16 @@ task-tracking
 
 ```lazy-include
 config-migration
-when: die Effective-Flow-Konfiguration erstmals gelesen oder eine Alt-Config migriert wird
+when: the Effective Flow configuration is first read or a legacy config is migrated
 ```
 
 ```include
 plan-status
 ```
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Investigation und Fix und beachte ihre Vorgaben für Analyse, Implementierung, Tests, Validierung und Commits.
+If the project has an `AGENTS.md`, read it before investigation and fix and follow its guidance for analysis, implementation, tests, validation and commits.
 
 ```include
 completion-protocol
@@ -42,7 +42,7 @@ goal-completion
 
 ```lazy-include
 worktree-integration
-when: der Delivery-/Worktree-Modus bestimmt wird
+when: the delivery/worktree mode is determined
 ```
 
 ```include
@@ -53,9 +53,9 @@ investigation-method
 wisdom-accumulation
 ```
 
-## Projekt-Typ-Erkennung
+## Project type detection
 
-Wie bei `{{SKILL:build}}`.
+As with `{{SKILL:build}}`.
 
 ## Routing
 
@@ -63,78 +63,78 @@ Wie bei `{{SKILL:build}}`.
 - Backend / CLI / Node.js: `{{AGENT:nodejs-implementer}}`
 - Rust: `{{AGENT:rust-implementer}}`
 - Generic / Tooling / CI / Config: `{{AGENT:generic-implementer}}`
-- Fullstack: beide, nur bei klarer Trennung parallel
+- Fullstack: both, in parallel only with clear separation
 
-Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:fix}}`.
+Current workflow for review-report backlinks: `{{SKILL:fix}}`.
 
 ```lazy-include
 review-report-backlinks
-when: ein Review-Report-Rückverweis geschrieben oder aktualisiert wird
+when: a review-report backlink is written or updated
 ```
 
 ```lazy-include
 unresolved-review-report
-when: offene oder nicht umgesetzte Review-Findings als Report ausgelagert werden
+when: open or unimplemented review findings are offloaded as a report
 ```
 
-Aktueller Workflow für Plan-Referenzen: Bugfix (`{{SKILL:fix}}`).
+Current workflow for plan references: Bugfix (`{{SKILL:fix}}`).
 
 ```lazy-include
 plan-reference-routing
-when: das Argument auf eine bestehende Plan-Datei zeigen könnte
+when: the argument could point to an existing plan file
 ```
 
 ```include
 apply-clarity-gate
 ```
 
-Wenn ein offener Plan für `{{SKILL:fix}}` bestätigt ist, durchläuft er zuerst das
-„Klärungs-Gate“. Besteht er das Gate nicht, verweise gemäß Gate-Verhalten auf
-`{{SKILL:plan}}` bzw. `{{SKILL:review}} <plandatei>` und beende den Workflow. Besteht
-der Plan das Gate:
+When an open plan for `{{SKILL:fix}}` is confirmed, it first passes through the
+"clarification gate". If it does not pass the gate, refer according to the gate behavior to
+`{{SKILL:plan}}` or `{{SKILL:review}} <planfile>` and end the workflow. If
+the plan passes the gate:
 
-- verwende die Inhalte der Plan-Datei als Diagnose- und Fix-Grundlage
-- überspringe keine Reproduktion automatisch; wenn der Plan bereits Reproduktionshinweise enthält, validiere sie in Phase 2
-- wurde aus der Apply-Kette bereits ein „geklärt + goal-getrieben“-Kontext übergeben (Grundlage geklärt, Bestätigung für autonomen Lauf bereits erteilt), honoriere ihn: überspringe die Goal-Abfrage in Phase 2 und durchlaufe die Phasen 3–5 unter der „Goal-getriebenen Abschlusssteuerung“.
+- use the plan file's contents as the basis for diagnosis and fix
+- do not skip reproduction automatically; if the plan already contains reproduction hints, validate them in Phase 2
+- if a "clarified + goal-driven" context was already passed from the apply chain (basis clarified, confirmation for the autonomous run already given), honor it: skip the goal query in Phase 2 and run through phases 3–5 under the "Goal-driven completion control".
 
 ## Workflow
 
 ### Phase 1: Investigation
 
-Führe die read-only-Investigation gemäß „Investigation-Methode“, Abschnitt „Symptom und Code untersuchen“, aus: Fehlerbeschreibung analysieren, den relevanten Code über einen internen Explore-Sub-Agenten untersuchen, die Standard-Rückfragen (wann tritt der Fehler auf, Fehlermeldung bzw. erwartetes gegenüber tatsächlichem Verhalten, seit wann) klären und die vermutliche Root Cause samt betroffener Dateien identifizieren.
+Run the read-only investigation per "Investigation method", section "Investigate symptom and code": analyze the error description, investigate the relevant code via an internal explore sub-agent, clarify the standard follow-up questions (when does the error occur, error message or expected versus actual behavior, since when) and identify the probable root cause along with the affected files.
 
-### Phase 2: Reproduktion
+### Phase 2: Reproduction
 
-1. Versuche den Bug zu reproduzieren:
-   - `{{AGENT:code-validator}}` für aktuellen technischen Zustand
-   - falls möglich: `{{AGENT:test-writer}}` für einen fehlschlagenden Test, der das Verhalten dokumentiert
-2. Führe eine Gap Analysis für Diagnose und Fix-Strategie durch:
-   - Over-Engineering
-   - unausgesprochene Annahmen
-   - fehlende Akzeptanzkriterien
-   - Edge Cases
-   - Scope Creep
-3. Führe die Diagnose-Validierung gemäß „Investigation-Methode“ durch (Clarity, Verification, Context) und ergänze sie um:
-   - Fix-Scope: minimaler Fix klar definiert
-4. Präsentiere dem User:
-   - wo der Bug liegt
-   - was die Root Cause ist
-   - wie er reproduzierbar ist
-   - Gap-Analysis-Erkenntnisse
-   - Validierungs-Scorecard
-5. Leite aus Diagnose, Fix-Scope und Akzeptanzkriterien die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung“); sie deckt die Phasen 3–5 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten.
-6. Hole Freigabe ein. Die Freigabe-Frage enthält die explizite Goal-Abfrage (Option „Autonom via /goal“); behandle sie gemäß „Explizite Goal-Abfrage für autonome Läufe“: Bei Wahl „Autonom via /goal“ gib den `/goal`-String für die Phasen 3–5 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
+1. Try to reproduce the bug:
+   - `{{AGENT:code-validator}}` for the current technical state
+   - if possible: `{{AGENT:test-writer}}` for a failing test that documents the behavior
+2. Perform a gap analysis for the diagnosis and fix strategy:
+   - over-engineering
+   - unspoken assumptions
+   - missing acceptance criteria
+   - edge cases
+   - scope creep
+3. Perform the diagnosis validation per "Investigation method" (Clarity, Verification, Context) and extend it with:
+   - fix scope: minimal fix clearly defined
+4. Present to the user:
+   - where the bug is
+   - what the root cause is
+   - how it can be reproduced
+   - gap-analysis insights
+   - validation scorecard
+5. Derive the explicit completion condition from the diagnosis, fix scope and acceptance criteria (see "Goal-driven completion control"); it covers phases 3–5 and feeds the explicit goal query in the approval question below.
+6. Obtain approval. The approval question contains the explicit goal query (option "Autonomous via /goal"); handle it per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, emit the `/goal` string for phases 3–5; the option is omitted when the workflow was delegated non-interactively.
 
 ```ask
-header: Fix-Plan
-question: Diagnose und Fix-Strategie freigegeben?
+header: Fix plan
+question: Diagnosis and fix strategy approved?
 options:
-  - label: Ja
-    description: Freigabe erteilt, Workflow läuft gated weiter
-  - label: Autonom via /goal
-    description: Verbleibende Phasen autonom unter nativem /goal — der Skill gibt den einzufügenden /goal-String aus (entfällt bei nicht-interaktiver Delegation)
-  - label: Anpassen
-    description: Feedback als Freitext eingeben
+  - label: Yes
+    description: Approval granted, workflow continues gated
+  - label: Autonomous via /goal
+    description: Remaining phases autonomous under the native /goal — the skill emits the /goal string to paste (omitted for non-interactive delegation)
+  - label: Adjust
+    description: Enter feedback as free text
 ```
 
 ```include
@@ -143,56 +143,56 @@ skill-discovery
 
 ### Phase 3: Fix
 
-0. Bestimme gemäß „Delivery- und Worktree-Integration“ den effektiven Delivery-/Worktree-Modus und führe bei aktivem Modus zuerst das passende Setup aus: Worktree-Setup bei Worktree-Ausführung oder Liefer-Branch-Setup im Haupt-Repo bei In-Place-Delivery. Die folgenden Phasen 3–4 (Fix, Verifikation) laufen dann im Liefer-Arbeitsverzeichnis.
-1. Starte den passenden Implementer-Skill:
-   - `{{AGENT:ui-implementer}}`, `{{AGENT:nodejs-implementer}}`, `{{AGENT:rust-implementer}}` oder `{{AGENT:generic-implementer}}`
-2. Gib einen präzisen Auftrag:
-   - Root Cause
-   - betroffene Dateien
-   - gewünschtes Verhalten nach dem Fix
-   - Hinweis: minimale Änderung, kein Refactoring
+0. Per "Delivery and worktree integration", determine the effective delivery/worktree mode and, when a mode is active, first run the appropriate setup: worktree setup for worktree execution or delivery-branch setup in the main repo for in-place delivery. The following phases 3–4 (fix, verification) then run in the delivery working directory.
+1. Start the appropriate implementer skill:
+   - `{{AGENT:ui-implementer}}`, `{{AGENT:nodejs-implementer}}`, `{{AGENT:rust-implementer}}` or `{{AGENT:generic-implementer}}`
+2. Give a precise assignment:
+   - root cause
+   - affected files
+   - desired behavior after the fix
+   - note: minimal change, no refactoring
 
-### Phase 4: Verifikation
+### Phase 4: Verification
 
-Starte parallel, wenn möglich:
+Start in parallel if possible:
 
 1. `{{AGENT:test-writer}}`
-   - bestätigt den fehlschlagenden Test aus Phase 2 oder schreibt einen Regressionstest
+   - confirms the failing test from Phase 2 or writes a regression test
 2. `{{AGENT:code-validator}}`
-   - TypeScript, Lint und Build
+   - TypeScript, lint and build
 
-Wenn dabei offene Findings oder Restrisiken entstehen, dokumentiere sie strukturiert, damit Phase 5 sie als Review-Report schreiben kann:
+If open findings or residual risks arise in the process, document them in a structured way so Phase 5 can write them as a review report:
 
-- Titel
+- Title
 - Schweregrad (Kritisch / Wichtig / Hinweis)
 - Komplexität (Leicht / Mittel / Schwer)
 - Bereich
-- Datei + Zeile
+- Datei + line
 - Problem
 - Empfehlung
-- Aktion (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}` oder `{{SKILL:docs}}`)
+- Aktion (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}` or `{{SKILL:docs}}`)
 - Prompt-Vorschlag
 - Status (Behoben / Offen / Nicht umgesetzt)
-- Begründung bei Nicht-Umsetzung oder ADR-Referenz als Slug, falls vorhanden, z. B. `(ADR: <slug>)`
+- rationale for non-implementation or ADR reference as slug, if present, e.g. `(ADR: <slug>)`
 
-### Phase 5: Abschluss
+### Phase 5: Completion
 
-1. Falls Fehler in Phase 4 gefunden wurden: behebe sie und verifiziere Phase 4 erneut gemäß „Goal-getriebene Abschlusssteuerung“: begrenze die internen Korrekturrunden und eskaliere an den User, falls die Abschlussbedingung danach weiterhin nicht hält, statt unbegrenzt zu wiederholen.
-2. Wenn aus Verifikation, Regressionstest oder Review-ähnlicher Prüfung Findings oder Restrisiken mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
-   - schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.effective-flow/review/`
-   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-<slug>.md`
-   - nenne den erzeugten Reportpfad in der Abschlusszusammenfassung
-3. Wenn dieser Fix ein Finding aus einer bestehenden Review-Report-Datei in `.effective-flow/review/` gelöst hat:
-   - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
-   - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
-4. Lösche die Wisdom-Datei.
-5. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus (bei geführter Plan-Datei inklusive Plan-Statuswechsel auf `Umgesetzt`/`Implemented` und Archiv-Move nach `<plan.dir>/archive/` am Delivery-Punkt, Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen). Läuft der Workflow ausnahmsweise In-Place ohne Delivery, führt er denselben Statuswechsel und Archiv-Move direkt im Arbeitsbaum aus.
-6. Fasse zusammen:
-   - Root Cause
-   - Änderungen
-   - neu oder angepasste Tests
-   - Restrisiken
-   - bei aktivem Delivery-/Worktree-Modus: Liefer-Branch, finaler Checkout-Zustand und Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch)
+1. If errors were found in Phase 4: fix them and re-verify Phase 4 per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the completion condition still does not hold afterwards, instead of repeating indefinitely.
+2. If findings or residual risks with status `Offen` or `Nicht umgesetzt` remain from verification, regression test or review-like check:
+   - write them into a new file under `.effective-flow/review/` per "Open review-finding reports"
+   - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
+   - name the generated report path in the completion summary
+3. If this fix resolved a finding from an existing review-report file in `.effective-flow/review/`:
+   - add a short implementation note as the last entry directly in the affected finding
+   - begin the note with `✅` and name at least the date and workflow
+4. Delete the wisdom file.
+5. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, retract the worktree if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
+6. Summarize:
+   - root cause
+   - changes
+   - new or adjusted tests
+   - residual risks
+   - for an active delivery/worktree mode: delivery branch, final checkout state and result of the completion action (PR URL, merge or retained branch)
 
 ```include
 pre-commit-gate
@@ -202,10 +202,10 @@ pre-commit-gate
 commit-message-rules
 ```
 
-## Regeln
+## Rules
 
-- Starte unabhängige Fachphasen parallel
-- gib dem User nach jeder Phase eine kurze Statusmeldung
-- behebe Fehler vor dem Fortfahren
-- halte Änderungen minimal
-- gib internen Sub-Agenten das Fertig-Protokoll vor
+- Start independent specialist phases in parallel
+- give the user a short status update after each phase
+- fix errors before continuing
+- keep changes minimal
+- give internal sub-agents the done protocol
