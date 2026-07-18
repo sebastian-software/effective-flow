@@ -1,614 +1,612 @@
 
 # Effective Flow Plan
 
-Du bist der Orchestrator für reine Implementierungsplanung.
+You are the orchestrator for pure implementation planning.
 
-## Ziel
+## Goal
 
-Dieser Skill erstellt einen umsetzbaren, validierten Implementierungsplan in `<plan.dir>/`. Er empfiehlt den passenden nachfolgenden Workflow, erzeugt **keinen Code**, startet **keine Implementierung** und ändert **keine bestehenden Implementierungsdateien**.
+This skill creates an actionable, validated implementation plan in `<plan.dir>/`. It recommends the appropriate follow-up workflow, generates **no code**, starts **no implementation**, and changes **no existing implementation files**.
 
-## Sprachregel
+## Language rule
 
-- Code, Bezeichner und Tests auf Englisch
-- Dokumentationsinhalte auf Deutsch, außer bestehende Doku führt eine andere Sprache fort
-- Commit-Messages auf Englisch
+- Code, identifiers, and tests in English
+- Documentation and tool instructions in English **by default**; German remains a permitted
+  option — continue the existing language of a file you edit, and honour an explicit German
+  choice for a project, document, or plan marker
+- Commit messages in English
 
-Die deutsche Repository-Locale ist **de-DE**.
+English is the default; German is not deprecated. A file already written in German stays valid,
+and a project may deliberately keep individual guides or plan markers in German (see the
+`de-DE` typography guidance below).
 
-### Typografie
+### Typography
 
-Locale-spezifische Typografie sichtbarer Prosa – Anführungszeichen, Gedankenstriche,
-Umlaute und ß, geschützte Leerzeichen, Zahlen- und Datumsformate – besitzt der zentrale
-Skill `locale-typography`. Beim Schreiben oder Bearbeiten sichtbarer deutscher Prosa ist
-dessen `de-DE`-Guidance maßgeblich; Effective Flow führt hier bewusst keine zweite
-Typografie-Checkliste.
+Locale-specific typography of visible prose — quotation marks, dashes, umlauts and ß, non-breaking
+spaces, number and date formats — is owned by the central `locale-typography` skill. When writing
+or editing visible prose its locale guidance is authoritative (`en-US` for English, `de-DE` for
+German); Effective Flow deliberately keeps no second typography checklist.
 
-Fehlt der Skill (nicht installiert, `skills.enabled: false` oder via `exclude`
-deaktiviert), gilt als minimaler Fallback für deutschen Text: echte Umlaute und ß statt
-ASCII-Ersatz (ae, oe, ue, ss), typografische Anführungszeichen „…“ statt gerader und
-Halbgeviertstrich – statt Bindestrich.
+If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
+a minimal fallback applies to German text: real umlauts and ß instead of ASCII replacements (ae,
+oe, ue, ss), typographic quotation marks „…“ instead of straight ones, and an en dash – instead
+of a hyphen.
 
-## Aufgabenverfolgung
+## Task tracking
 
-Wenn mehrere Aufgaben zu erledigen sind, verwende ein verfügbares TODO- oder Task-Tracking-Tool (z. B. `TaskCreate`/`TaskUpdate`, `TodoWrite` oder ein vergleichbares Tool), um eine Aufgabenliste anzulegen. Setze jede Aufgabe vor Beginn auf „in Arbeit“ und nach Abschluss auf „erledigt“.
+When there are several tasks to complete, use an available TODO or task-tracking tool (e.g. `TaskCreate`/`TaskUpdate`, `TodoWrite`, or a comparable tool) to create a task list. Set each task to "in progress" before starting it and to "done" after completing it.
 
-Falls kein Task-Tool verfügbar ist, gib dem User stattdessen eine kurze Fortschrittsmeldung nach jedem abgeschlossenen Schritt.
+If no task tool is available, give the user a short progress update after each completed step instead.
 
-### Wann verwenden
+### When to use
 
-- bei drei oder mehr Teilaufgaben oder Schritten
-- bei komplexen Aufträgen mit mehreren Phasen
-- wenn der User mehrere Aufgaben gleichzeitig nennt
+- with three or more subtasks or steps
+- with complex tasks that have multiple phases
+- when the user names several tasks at once
 
-### Wann nicht verwenden
+### When not to use
 
-- bei einer einzelnen, trivialen Aufgabe
-- wenn der Auftrag in weniger als drei einfachen Schritten erledigt ist
+- with a single, trivial task
+- when the task is done in fewer than three simple steps
 
-**Bei Bedarf laden:** Lies `shared/config-migration.md`, sobald die Effective-Flow-Konfiguration erstmals gelesen oder eine Alt-Config migriert wird.
+**Load on demand:** Read `shared/config-migration.md`, when the Effective Flow configuration is read for the first time or an old config is migrated.
 
-## Planstatus-Konvention
+## Plan status convention
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
+`<plan.dir>` is the plan directory from the Effective Flow configuration (project-setup ADR) `plan.dir` (default
 `docs/plan`).
 
-Plan-Dateien in `<plan.dir>/` verwenden genau einen kanonischen Statusmarker im Kopfbereich. Der Marker darf wahlweise auf Deutsch oder auf Englisch geschrieben werden:
+Plan files in `<plan.dir>/` use exactly one canonical status marker in their header. The marker may be written in either German or English:
 
-- offen (Deutsch): `**Planungsstatus:** Nicht umgesetzt`
-- abgeschlossen (Deutsch): `**Planungsstatus:** Umgesetzt`
-- offen (Englisch): `**Plan status:** Not implemented`
-- abgeschlossen (Englisch): `**Plan status:** Implemented`
+- open (German): `**Planungsstatus:** Nicht umgesetzt`
+- completed (German): `**Planungsstatus:** Umgesetzt`
+- open (English): `**Plan status:** Not implemented`
+- completed (English): `**Plan status:** Implemented`
 
-Beide Markerformen sind gleichwertig. Pro Plan-Datei wird nur eine Sprache verwendet.
+Both marker forms are equivalent. Only one language is used per plan file.
 
-Regeln:
+Rules:
 
-- Der Statusmarker muss exakt wie in den vier kanonischen Beispielen oben geschrieben werden, inklusive Fettdruck, Doppelpunkt sowie Groß-/Kleinschreibung der Marker-Schlüssel und Werte.
-- Der Planstatus gilt nur, wenn genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` vorhanden ist. Mehrere Statuszeilen (auch in unterschiedlichen Sprachen) machen den Planstatus unklar (siehe unten) und sollten korrigiert werden.
-- Gültige Wertpaare sind ausschließlich die vier oben genannten Schlüssel-Wert-Kombinationen. Mischformen aus deutschem Schlüssel und englischem Wert oder umgekehrt (z. B. `**Plan status:** Umgesetzt`) gelten **nicht** als gültig.
-- Andere Werte wie `Open`/`Done`, `Pending`/`Complete` oder beliebiger Freitext zählen ebenfalls nicht.
-- Andere Vorkommen von „Nicht umgesetzt“, „Umgesetzt“, „Not implemented“ oder „Implemented“ in Review-Findings, ADR-Begründungen oder Fließtext zählen nicht als Planstatus.
-- Wenn der Marker fehlt, mehrfach vorkommt, einen ungültigen Wert enthält oder eine Mischform aus Schlüssel- und Wert-Sprache verwendet, ist der Planstatus unklar. Behandle den Plan dann nicht automatisch als offen oder abgeschlossen.
-- Wenn ein Workflow den Status auf abgeschlossen setzt, bleibt die Markersprache erhalten: ein deutscher Marker wird zu `**Planungsstatus:** Umgesetzt`, ein englischer Marker zu `**Plan status:** Implemented`.
+- The status marker must be written exactly as in the four canonical examples above, including bold, colon, and the capitalization of the marker keys and values.
+- The plan status only applies when exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` is present. Multiple status lines (even in different languages) make the plan status unclear (see below) and should be corrected.
+- The only valid value pairs are the four key-value combinations listed above. Mixed forms of a German key and an English value or vice versa (e.g. `**Plan status:** Umgesetzt`) are **not** considered valid.
+- Other values such as `Open`/`Done`, `Pending`/`Complete`, or arbitrary free text do not count either.
+- Other occurrences of „Nicht umgesetzt“, „Umgesetzt“, "Not implemented", or "Implemented" in review findings, ADR rationales, or body text do not count as a plan status.
+- If the marker is missing, occurs multiple times, contains an invalid value, or uses a mixed form of key and value language, the plan status is unclear. In that case, do not automatically treat the plan as open or completed.
+- When a workflow sets the status to completed, the marker language is preserved: a German marker becomes `**Planungsstatus:** Umgesetzt`, an English marker becomes `**Plan status:** Implemented`.
 
-**Bei Bedarf laden:** Lies `shared/plan-numbering.md`, sobald eine Plan-Datei angelegt oder ihr Datums-Slug-Name aufgelöst wird.
+**Load on demand:** Read `shared/plan-numbering.md`, when a plan file is created or its date-slug name is resolved.
 
-## Doku-Kategorien
+## Doc categories
 
-Finale Dokumente aus dem Doku-Workflow werden ausschließlich in einer der vier festen Kategorien unter `docs/` abgelegt.
+Final documents from the documentation workflow are placed exclusively in one of the four fixed categories under `docs/`.
 
-| Kategorie       | Verzeichnis             | Zielgruppe                                                        |
-| --------------- | ----------------------- | ----------------------------------------------------------------- |
-| User-Guide      | `docs/user-guide/`      | End-User der Anwendung                                            |
-| Developer-Guide | `docs/developer-guide/` | Entwickler, die am Projekt mitarbeiten                            |
-| Operations      | `docs/operations/`      | Betrieb, Deployment, Monitoring, Infrastruktur                    |
-| Runbooks        | `docs/runbooks/`        | Step-by-Step-Prozeduren für Incident-Response und Routineaufgaben |
+| Category        | Directory               | Audience                                                        |
+| --------------- | ----------------------- | --------------------------------------------------------------- |
+| User guide      | `docs/user-guide/`      | End users of the application                                    |
+| Developer guide | `docs/developer-guide/` | Developers who contribute to the project                        |
+| Operations      | `docs/operations/`      | Operations, deployment, monitoring, infrastructure              |
+| Runbooks        | `docs/runbooks/`        | Step-by-step procedures for incident response and routine tasks |
 
-### Vorgegebene Standard-Doku-Struktur
+### Prescribed standard doc structure
 
-Solange der User bzw. der zugrunde liegende Plan nichts anderes vorgibt, gilt für die
-Projektdokumentation diese **Standard-Struktur** aus drei Rollen. Sie ist ein
-Prosa-Default: Der Doku-Workflow wendet sie an, wenn keine abweichende Struktur verlangt
-wird; ein ausdrücklicher Wunsch des Users (z. B. rein technische README ohne Marketing)
-hat immer Vorrang. Es gibt dafür **kein** Config-Feld.
+Unless the user or the underlying plan specifies otherwise, this **standard structure** of
+three roles applies to the project documentation. It is a prose default: the documentation
+workflow applies it when no different structure is required; an explicit wish of the user
+(e.g. a purely technical README without marketing) always takes precedence. There is **no**
+config field for this.
 
-1. **Root-`README.md` – Marketing-Einstieg.** Eine Marketing-Seite komplett aus
-   Benutzersicht: Nutzenversprechen zuerst, werbende Sprache erlaubt, kurz gehalten. Sie
-   wird vom Marketing-Agenten erstellt (nicht vom sachlichen Doku-Agenten) und endet mit
-   genau zwei weiterführenden Links (siehe unten).
-2. **Benutzerdokumentation → `docs/user-guide/`.** Komplett aus Benutzersicht: beschreibt
-   umfangreich Installation und Benutzung, optional mit FAQ und ähnlichen Ergänzungen.
-   Einstieg ist `docs/user-guide/README.md`.
-3. **Technische Dokumentation → `docs/developer-guide/`.** Für Entwickler und
-   Softwarearchitekten: Entwickler bekommen einen Überblick über die Software,
-   Softwarearchitekten können daraus ableiten, ob die Software aus technischer Sicht
-   genutzt werden sollte. Einstieg ist `docs/developer-guide/README.md`.
+1. **Root `README.md` – marketing entry point.** A marketing page entirely from the user's
+   perspective: value proposition first, promotional language allowed, kept short. It is
+   created by the marketing agent (not by the factual documentation agent) and ends with
+   exactly two follow-up links (see below).
+2. **User documentation → `docs/user-guide/`.** Entirely from the user's perspective:
+   describes installation and usage extensively, optionally with an FAQ and similar additions.
+   The entry point is `docs/user-guide/README.md`.
+3. **Technical documentation → `docs/developer-guide/`.** For developers and software
+   architects: developers get an overview of the software, software architects can derive from
+   it whether the software should be used from a technical standpoint. The entry point is
+   `docs/developer-guide/README.md`.
 
-**Zwei-Links-Regel für die Root-README.** Die Root-`README.md` endet mit genau zwei
-Links, in dieser Reihenfolge:
+**Two-links rule for the root README.** The root `README.md` ends with exactly two links, in
+this order:
 
-- erster Link → `docs/user-guide/README.md` (Benutzerdokumentation)
-- zweiter Link → `docs/developer-guide/README.md` (technische Dokumentation)
+- first link → `docs/user-guide/README.md` (user documentation)
+- second link → `docs/developer-guide/README.md` (technical documentation)
 
-Ein Link wird nur gesetzt, wenn sein Ziel existiert oder im selben Doku-Lauf miterstellt
-wird; sonst wird der Link ausgelassen und als offener Punkt vermerkt, damit keine toten
-Links entstehen.
+A link is only set if its target exists or is created in the same documentation run;
+otherwise the link is omitted and noted as an open point, so no dead links arise.
 
-### Dateinamen-Konvention
+### File name convention
 
-- topic-basierte Slugs in Kebab-Case, z. B. `installation.md`, `architecture.md`, `restart-database.md`
-- kein Datums- oder Nummern-Prefix; das Datums-Slug-Schema (mit erhaltener Legacy-Nummer) ist exklusiv für das Plan-Verzeichnis `<plan.dir>/` (aus `plan.dir` der Effective Flow-Konfiguration/Projektsetup-ADR, Default `docs/plan`)
-- Slugs müssen innerhalb ihrer Kategorie eindeutig sein
-- Dateiendung immer `.md`
+- topic-based slugs in kebab-case, e.g. `installation.md`, `architecture.md`, `restart-database.md`
+- no date or number prefix; the date-slug scheme (with a preserved legacy number) is exclusive to the plan directory `<plan.dir>/` (from `plan.dir` of the Effective Flow configuration/project-setup ADR, default `docs/plan`)
+- slugs must be unique within their category
+- file extension always `.md`
 
-### Verzeichnis-Regeln
+### Directory rules
 
-- `docs/user-guide/README.md` als kuratierter Einstiegspunkt mit Lese-Reihenfolge ist Pflicht, sobald mindestens ein User-Guide-Dokument existiert.
-- `docs/developer-guide/README.md` als kuratierter Einstiegspunkt ist Pflicht, sobald mindestens ein Developer-Guide-Dokument existiert. Er gibt Entwicklern einen Überblick und Softwarearchitekten eine Entscheidungsgrundlage und ist das Ziel des zweiten Links der Root-README (siehe „Vorgegebene Standard-Doku-Struktur“).
-- `docs/operations/` und `docs/runbooks/` haben standardmäßig keine README.
-- In `docs/runbooks/` sind thematische Unterordner erlaubt, z. B. `docs/runbooks/database/restart.md`. Sie sind optional; Pflicht erst, wenn die flache Liste unübersichtlich wird.
-- Leere Verzeichnisse werden nicht vorab angelegt. Ein Kategorie-Verzeichnis entsteht erst mit dem ersten Dokument darin.
+- `docs/user-guide/README.md` as a curated entry point with a reading order is mandatory as soon as at least one user-guide document exists.
+- `docs/developer-guide/README.md` as a curated entry point is mandatory as soon as at least one developer-guide document exists. It gives developers an overview and software architects a basis for decision-making, and is the target of the second link of the root README (see "Prescribed standard doc structure").
+- `docs/operations/` and `docs/runbooks/` have no README by default.
+- In `docs/runbooks/`, thematic subfolders are allowed, e.g. `docs/runbooks/database/restart.md`. They are optional; mandatory only once the flat list becomes unwieldy.
+- Empty directories are not created in advance. A category directory comes into being only with the first document in it.
 
-### Schreibgrenze
+### Write boundary
 
-- Der Doku-Workflow darf finale Dokumente ausschließlich in diese vier Verzeichnisse und deren Unterordner schreiben.
-- **Ausnahme Root-`README.md`:** Als Marketing-Einstieg der Standard-Doku-Struktur ist die Root-`README.md` ein sanktioniertes Schreibziel des Doku-Workflows und muss dafür nicht in jeder Plan-Tabelle einzeln genannt sein. Sie wird ausschließlich in dieser Marketing-Einstieg-Rolle geschrieben; existiert bereits eine Root-README, wird sie nicht still überschrieben, sondern der Ersatz mit dem User geklärt (analog zur Kollisionsregel für bestehende Ziel-Pfade).
-- Jede **andere** bestehende Datei außerhalb dieser Verzeichnisse darf nur dann geändert werden, wenn sie ausdrücklich in der `Betroffene Dateien`-Tabelle der zugrunde liegenden Plan-Datei genannt ist.
+- The documentation workflow may write final documents exclusively into these four directories and their subfolders.
+- **Exception root `README.md`:** As the marketing entry point of the standard doc structure, the root `README.md` is a sanctioned write target of the documentation workflow and does not need to be named individually in every plan table for that. It is written exclusively in this marketing-entry-point role; if a root README already exists, it is not silently overwritten but the replacement is clarified with the user (analogous to the collision rule for existing target paths).
+- Every **other** existing file outside these directories may only be changed if it is explicitly named in the `Affected files` table of the underlying plan file.
 
-### Plan-Kopfzeilen für Doku-Pläne
+### Plan headers for documentation plans
 
-Plan-Dateien mit `**Empfohlener Workflow:** Dokumentation` enthalten im Kopf zusätzlich zwei Zeilen direkt unter der Workflow-Empfehlung:
+Plan files with `**Recommended workflow:** Documentation` additionally contain two lines in the header directly under the workflow recommendation:
 
-- `**Doku-Kategorie:** user-guide | developer-guide | operations | runbooks`
-- `**Ziel-Pfad:** docs/<kategorie>/<topic-slug>.md`
+- `**Doc category:** user-guide | developer-guide | operations | runbooks`
+- `**Target path:** docs/<category>/<topic-slug>.md`
 
-Regeln:
+Rules:
 
-- Beide Zeilen müssen exakt so geschrieben sein, inklusive Fettdruck, Doppelpunkt und Kleinschreibung der Kategorie.
-- Die Kategorie in `**Doku-Kategorie:**` muss zum Verzeichnis-Präfix in `**Ziel-Pfad:**` passen.
-- Der Ziel-Pfad muss auf eine Datei innerhalb des passenden Kategorie-Verzeichnisses zeigen.
-- Beispiel: `**Doku-Kategorie:** runbooks` zusammen mit `**Ziel-Pfad:** docs/runbooks/database/restart.md`.
-- **Sonderfall Marketing-Einstieg:** Zielt der Doku-Plan auf die Root-`README.md`, wird `**Ziel-Pfad:** README.md` gesetzt und die Zeile `**Doku-Kategorie:**` **entfällt** – die Root-README ist keine der vier `docs/`-Kategorien. Nur in genau diesem Fall darf die Kategorie-Zeile fehlen; die Konsistenzregel „Kategorie passt zum Verzeichnis-Präfix“ bleibt für alle `docs/`-Ziele unverändert.
+- Both lines must be written exactly like this, including bold formatting, colon, and lowercasing of the category.
+- The category in `**Doc category:**` must match the directory prefix in `**Target path:**`.
+- The target path must point to a file within the matching category directory.
+- Example: `**Doc category:** runbooks` together with `**Target path:** docs/runbooks/database/restart.md`.
+- **Special case marketing entry point:** If the documentation plan targets the root `README.md`, `**Target path:** README.md` is set and the `**Doc category:**` line is **omitted** – the root README is not one of the four `docs/` categories. Only in exactly this case may the category line be absent; the consistency rule "category matches the directory prefix" remains unchanged for all `docs/` targets.
 
-## Empfohlene Skills
+## Recommended skills
 
 - `codebase-improvement`
 
-## Harte Abgrenzung
+## Hard scope boundary
 
-- Erlaubt sind ausschließlich Analyse, Rückfragen und Dokumentationsänderungen unter `<plan.dir>/`.
-- Erlaubt ist das Erstellen von `<plan.dir>/`, falls das Verzeichnis fehlt.
-- Verboten sind Änderungen an Source-Code, Tests, Konfiguration, Build-Dateien, README-Dateien, ADRs und sonstigen Projektdateien außerhalb von `<plan.dir>/`.
-- Verboten sind Implementer-, Test-, Validator- oder Reviewer-Phasen, die Code erzeugen oder verändern könnten.
-- Der Plan selbst soll möglichst wenig oder keinen Code enthalten. Beschreibe gewünschte Änderungen in natürlicher Sprache, mit Datei-Referenzen, Schnittstellen-Namen, Datenformen und Akzeptanzkriterien statt mit vollständigen Codeblöcken.
-- Code im Plan ist nur erlaubt, wenn er die kürzeste klare Form ist, um einen Punkt eindeutig zu machen, zum Beispiel ein einzelnes Literal, ein kurzer Signatur-Entwurf oder ein minimales Datenbeispiel.
-- Wenn Code verwendet wird, halte ihn minimal: keine vollständigen Funktionen, Komponenten, Klassen, Tests oder größeren Snippets vorwegnehmen.
-- Wenn der User während dieses Skills Implementierung verlangt, verweise je nach empfohlener Umsetzung auf `/effective-flow build`, `/effective-flow fix`, `/effective-flow refactor` oder `/effective-flow docs` und beende diesen Skill nach dem Plan.
+- Only analysis, follow-up questions, and documentation changes under `<plan.dir>/` are allowed.
+- Creating `<plan.dir>/` is allowed if the directory is missing.
+- Changes to source code, tests, configuration, build files, README files, ADRs, and other project files outside `<plan.dir>/` are forbidden.
+- Implementer, test, validator, or reviewer phases that could generate or modify code are forbidden.
+- The plan itself should contain as little code as possible, or none. Describe the desired changes in natural language, with file references, interface names, data shapes, and acceptance criteria instead of complete code blocks.
+- Code in the plan is only allowed when it is the shortest clear form to make a point unambiguous, for example a single literal, a short signature draft, or a minimal data example.
+- If code is used, keep it minimal: do not anticipate complete functions, components, classes, tests, or larger snippets.
+- If the user requests implementation during this skill, refer them — depending on the recommended implementation — to `/effective-flow build`, `/effective-flow fix`, `/effective-flow refactor`, or `/effective-flow docs` and end this skill after the plan.
 
-**Bei Bedarf laden:** Lies `shared/effective-flow-dir-migration.md`, sobald eine Legacy-`.sf-plugin/`- oder `.firmo/`-Runtime-Dir migriert werden muss.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a legacy `.sf-plugin/` or `.firmo/` runtime dir must be migrated.
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben für Planung, Doku und Dateiformate.
+If the project contains an `AGENTS.md`, read it early in the workflow and observe its specifications for planning, documentation, and file formats.
 
 ## Workflow
 
-Sichte vor der Analyse nützliche Skills gemäß folgendem Baustein. Die No-Code-Grenze dieses
-Tools bleibt dabei strikt: Skills informieren nur Analyse und Plan, erzeugen keinen Code und
-ändern nichts außer der Plan-Datei unter `<plan.dir>/`.
+Before the analysis, review useful skills according to the following building block. The no-code
+boundary of this tool remains strict: skills only inform the analysis and plan, generate no code,
+and change nothing except the plan file under `<plan.dir>/`.
 
-## Skill-Discovery
+## Skill discovery
 
-Bevor du mit der eigentlichen Umsetzung, Planung bzw. Prüfung beginnst, sichte die in der
-Umgebung verfügbaren Skills und binde die für die konkrete Aufgabe nützlichen ein. Stellt
-die Umgebung kein Skill-Verzeichnis bereit oder passt keiner, ist dieser Schritt ein No-Op —
-fahre ohne Fehler oder Blockade fort.
+Before you start the actual implementation, planning, or review, survey the skills available in
+the environment and pull in the ones useful for the concrete task. If the environment provides
+no skill directory or none fits, this step is a no-op — continue without an error or a block.
 
-### Vorgehen
+### Approach
 
-1. **Empfohlene Skills bevorzugen:** Wende die weiter oben unter „Empfohlene Skills"
-   genannten Skills bevorzugt an, sofern sie verfügbar und für die konkrete Aufgabe relevant
-   sind. „Bevorzugen" ist die Auswahl; über die **Autorität** entscheidet der Vertrag in
-   Punkt 5 (ist ein empfohlener Skill der deklarierte Domänen-Owner, ist seine Guidance
-   maßgeblich, nicht nur optional). Eine Fallback-Notation `A › B` ist eine geordnete Präferenz: nimm den ersten
-   verfügbaren, nicht ausgeschlossenen Skill der Gruppe, nie beide. Fehlt ein solcher
-   Abschnitt (z. B. bei Tools), entfällt dieser Punkt.
-2. **Relevanz beurteilen:** Prüfe jeden Skill gegen die **konkrete** Aufgabe und binde nur
-   klar passende ein (typisch 0–2). Lade keine Skills „auf Verdacht" — Token-Sparsamkeit.
-3. **Config berücksichtigen:** Lies, falls vorhanden, den `skills`-Block aus der
-   Effective Flow-Konfiguration (Projektsetup-ADR) best-effort — die globalen Felder plus deinen
-   eigenen Scope-Eintrag (ein Agent liest `agents.<eigener-name>`, ein Tool liest
-   `tools.<eigener-name>`).
-   - `enabled: false` → überspringe die gesamte dynamische Skill-Nutzung.
-   - `exclude` (global oder Scope) → diese Skills nie anwenden; ein ausgeschlossenes
-     Fallback-Mitglied wird zugunsten des nächsten Fallbacks übersprungen.
-   - `include` (global oder Scope) → diese Skills zusätzlich bevorzugt berücksichtigen; ein
-     nicht installierter Skill wird still ignoriert.
-   - Fehlt der Block oder die Datei, gilt der Default (`enabled` an, keine Zusatz-Listen).
-     Lies die Config nur; migriere oder schreibe sie hier nicht.
-4. **Library-Doku:** Wird gegen eine unbekannte oder aktuelle Library bzw. ein Framework
-   gearbeitet, nutze bei Bedarf aktuelle-Doku-Skills (z. B. `context7`), falls verfügbar,
-   statt aus Erinnerung zu raten. Nur bei Bedarf, kein Zwang.
-5. **Autoritäts-Vertrag (Orchestrierung vs. Domänen-Expertise):** Effective Flow und die zentralen
-   Skills teilen sich die Verantwortung **geschichtet** — nicht „Effective Flow gewinnt immer":
-   - **Effective Flow besitzt die Orchestrierung** (das **Was/Wann**): Routing und User-Interaktion,
-     Plan-/Report-State, Finding-IDs, Backlinks, Tracker-Integration, Resumability,
-     Agent-Auswahl und Parallelisierung, Baseline-Vergleich, Worktrees, Commits, Delivery,
-     Harness-Transform und Config. Diese Regeln, `AGENTS.md`/Projektkonventionen sowie die
-     eigenen Sprach-, Commit- und Scope-Regeln haben **immer** Vorrang; kein Skill darf Scope
-     erweitern, neue Dependencies einführen oder den abgestimmten Plan verletzen. In
-     Analyse-/Planungs-Tools bleibt die No-Code-Grenze strikt.
-   - **Zentrale Skills besitzen wiederverwendbare Expertise** (das **Wie**): Domänen-Checklisten,
-     Heuristiken, Standards, Research-Prozeduren und Spezialisten-Guidance. Ist ein empfohlener
-     Skill der **deklarierte Domänen-Owner** für die anstehende Fachfrage **und** deckt er sie
-     ab, ist seine Guidance **maßgeblich** — nicht optionaler Rat. Das eigene Source trägt dann
-     **keine zweite Kopie** dieses Playbooks, sondern nur Scope-/Output-/Lifecycle-Constraints
-     plus einen minimalen Fallback (Punkt 6).
-   - **Grenzfälle:** Deckt ein Skill nur einen Spezialzweig ab (_route-when-relevant_) oder
-     divergiert Effective Flows Produktverhalten bewusst (_no-overlap_), bleibt die Effective Flow-Guidance
-     führend. Die verbindliche Zuordnung je Skill/Intersection steht im Ownership-Inventar im
-     Developer-Guide (`docs/developer-guide/skill-ownership.md`).
-6. **Fehlender maßgeblicher Skill (minimaler Fallback):** Ist der maßgebliche Skill nicht
-   verfügbar (nicht installiert, `skills.enabled: false` oder via `exclude` deaktiviert),
-   greift der im Source belassene **minimale generische Fallback** — eine kurze essentielle
-   Kern-Guidance, damit das Tool funktionsfähig bleibt und sauber degradiert. Es wird **kein**
-   zweites vollständiges Domänen-Handbuch vorgehalten; volle Tiefe kommt nur mit dem zentralen
-   Skill.
-7. **Melden:** Nenne kurz, welche Skills genutzt wurden (bzw. dass keiner passte). Hat dir
-   ein Orchestrator-Tool bereits relevante Skills mitgegeben, wende sie an und führe keine
-   redundante Voll-Discovery durch.
+1. **Prefer recommended skills:** Preferentially apply the skills listed further above under
+   "Recommended skills", provided they are available and relevant to the concrete task.
+   "Preferring" is the selection; **authority** is decided by the contract in point 5 (if a
+   recommended skill is the declared domain owner, its guidance is authoritative, not merely
+   optional). A fallback notation `A › B` is an ordered preference: take the first available,
+   non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
+   this point does not apply.
+2. **Judge relevance:** Check each skill against the **concrete** task and pull in only the
+   clearly fitting ones (typically 0–2). Do not load skills "on suspicion" — be token-frugal.
+3. **Take config into account:** If present, read the `skills` block from the Effective Flow
+   configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
+   scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
+   - `enabled: false` → skip the entire dynamic skill usage.
+   - `exclude` (global or scope) → never apply these skills; an excluded fallback member is
+     skipped in favor of the next fallback.
+   - `include` (global or scope) → additionally consider these skills as preferred; a
+     skill that is not installed is silently ignored.
+   - If the block or the file is missing, the default applies (`enabled` on, no additional
+     lists). Only read the config; do not migrate or write it here.
+4. **Library docs:** When working against an unknown or current library or framework, use
+   current-docs skills (e.g. `context7`) as needed, if available, instead of guessing from
+   memory. Only when needed, never mandatory.
+5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
+   skills share the responsibility in a **layered** way — not "Effective Flow always wins":
+   - **Effective Flow owns the orchestration** (the **what/when**): routing and user
+     interaction, plan/report state, finding IDs, backlinks, tracker integration, resumability,
+     agent selection and parallelization, baseline comparison, worktrees, commits, delivery,
+     harness transform, and config. These rules, `AGENTS.md`/project conventions, plus its own
+     language, commit, and scope rules **always** take precedence; no skill may widen scope,
+     introduce new dependencies, or violate the agreed plan. In analysis/planning tools the
+     no-code boundary stays strict.
+   - **Central skills own reusable expertise** (the **how**): domain checklists, heuristics,
+     standards, research procedures, and specialist guidance. If a recommended skill is the
+     **declared domain owner** for the technical question at hand **and** covers it, its
+     guidance is **authoritative** — not optional advice. The tool's own source then carries
+     **no second copy** of that playbook, only scope/output/lifecycle constraints plus a
+     minimal fallback (point 6).
+   - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
+     Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
+     guidance stays leading. The binding assignment per skill/intersection is in the ownership
+     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
+   available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
+   **minimal generic fallback** left in the source applies — a short, essential core guidance
+   so the tool stays functional and degrades cleanly. **No** second full domain handbook is
+   kept on hand; full depth comes only with the central skill.
+7. **Report:** Briefly name which skills were used (or that none fit). If an orchestrator tool
+   already handed you relevant skills, apply them and do not run a redundant full discovery.
 
-Das generische Plan-Quality- und Plan-Review-**Urteil** dieses Tools (Phasen 4–6) stammt aus
-dem zentralen Skill `codebase-improvement`; Effective Flow bleibt der Plan-Artefakt-Orchestrator.
-Es gilt der folgende Baustein:
+The generic plan-quality and plan-review **judgment** of this tool (Phases 4–6) comes from
+the central skill `codebase-improvement`; Effective Flow remains the plan-artifact orchestrator.
+The following building block applies:
 
-## Delegation des Domänen-Urteils an zentrale Skills
+## Delegating the domain judgment to central skills
 
-Das **generische fachliche Urteil** des aufrufenden Tools — für Planung die
-Plan-Quality- und Plan-Review-Disziplin (Executable-Plan-Schärfe, Gap-/Drift-Prüfung,
-Scope, Evidenz, Verifikation, Wartungsfokus) — besitzt der zentrale Skill
-`codebase-improvement`. Effective Flow ist hier der **Artefakt-Orchestrator**, kein zweites
-Fach-Handbuch: Das eigene Source trägt **keine zweite Kopie** dieser Heuristiken, sondern
-delegiert das Urteil und normalisiert das Ergebnis in den eigenen Artefakt-Contract (Status,
-Scorecard/Befund-Form, offene Punkte, Handoff).
+The **generic technical judgment** of the calling tool — for planning, the plan-quality and
+plan-review discipline (executable-plan sharpness, gap/drift checking, scope, evidence,
+verification, maintenance focus) — is owned by the central skill `codebase-improvement`.
+Effective Flow is the **artifact orchestrator** here, not a second domain handbook: the tool's
+own source carries **no second copy** of these heuristics, but delegates the judgment and
+normalizes the result into its own artifact contract (status, scorecard/finding form, open
+points, handoff).
 
-### Was delegiert wird (das „Wie“ des Urteils)
+### What gets delegated (the "how" of the judgment)
 
-- generische Qualitäts-Heuristiken: Over-Engineering, Scope Creep, unausgesprochene Annahmen,
-  fehlende oder nicht messbare Akzeptanzkriterien, Edge Cases, Umsetzungsrisiken, Evidenz vs.
-  Raten, Verifizierbarkeit;
-- das Review-**Urteil** (welche Befunde bestehen und wie schwer sie wiegen) auf Artefakt-Ebene.
+- generic quality heuristics: over-engineering, scope creep, unspoken assumptions, missing or
+  non-measurable acceptance criteria, edge cases, implementation risks, evidence vs. guessing,
+  verifiability;
+- the review **judgment** (which findings hold and how heavily they weigh) at the artifact
+  level.
 
-Wende dafür `codebase-improvement` an, sofern verfügbar und für die konkrete Aufgabe relevant;
-es ist der **Default-Owner** für dieses generische Reasoning. Das Ergebnis bringst du danach in
-die Effective-Flow-Artefakt-Form.
+For this, apply `codebase-improvement`, provided it is available and relevant to the concrete
+task; it is the **default owner** for this generic reasoning. Afterwards you bring the result
+into the Effective Flow artifact form.
 
-### Spezialisten nur bei gekreuzter Boundary (eine generische Regel)
+### Specialists only at a crossed boundary (one generic rule)
 
-Deklarierte Domänen-Owner werden **nicht** hart pro Skill verdrahtet, sondern über **eine**
-Regel geladen: Kreuzt die konkrete Aufgabe die deklarierte Boundary eines Spezialisten, lade
-dessen Owner über das Relevanz-Gate (Baustein „Skill-Discovery“) und das Ownership-Inventar
-(`docs/developer-guide/skill-ownership.md`). Typische Owner:
+Declared domain owners are **not** hard-wired per skill, but loaded via **one** rule: if the
+concrete task crosses the declared boundary of a specialist, load its owner via the relevance
+gate (building block "Skill discovery") and the ownership inventory
+(`docs/developer-guide/skill-ownership.md`). Typical owners:
 
-- `product-management` — Product-Outcomes, what/why/for-whom, Prioritisierung, Release-Urteil;
-- `product-design` — Research, Problem-Framing, Information-Architecture, Flows, Prototyp;
-- `effective-web` — Browser-Implementierungs- und Barrierefreiheits-Detail;
-- weitere deklarierte Owner (z. B. `software-architecture`, `web-legal-compliance`) analog.
+- `product-management` — product outcomes, what/why/for-whom, prioritization, release judgment;
+- `product-design` — research, problem framing, information architecture, flows, prototype;
+- `effective-web` — browser implementation and accessibility detail;
+- further declared owners (e.g. `software-architecture`, `web-legal-compliance`) analogously.
 
-Das Relevanz-Gate **hält schmale Aufgaben schmal**: Ein kleiner Engineering-Plan lädt weder
-Product- noch Design-Owner, und Product-Discovery wird nicht erzwungen.
+The relevance gate **keeps narrow tasks narrow**: a small engineering plan loads neither
+product nor design owners, and product discovery is not forced.
 
-### Autoritäts-Vertrag und minimaler Fallback
+### Authority contract and minimal fallback
 
-Es gilt der geschichtete Vertrag aus dem Baustein „Skill-Discovery“: Effective Flow besitzt die
-**Orchestrierung** (Artefakt-Lifecycle, Status, offene Punkte, Handoff, User-Interaktion und
-die jeweilige No-Code-/Edit-Grenze), die zentralen Skills besitzen das **Domänen-Urteil**. Ist
-der maßgebliche Skill nicht verfügbar (nicht installiert, `skills.enabled: false` oder via
-`exclude` deaktiviert), greift ein **minimaler generischer Fallback**: eine kurze essentielle
-Kern-Checkliste (Over-Engineering, Scope Creep, fehlende messbare Akzeptanzkriterien, Edge
-Cases, Umsetzungsrisiken), damit das Tool funktionsfähig bleibt und sauber degradiert — **kein**
-vollständiges lokales Handbuch.
+The layered contract from the building block "Skill discovery" applies: Effective Flow owns the
+**orchestration** (artifact lifecycle, status, open points, handoff, user interaction, and the
+respective no-code/edit boundary), the central skills own the **domain judgment**. If the
+authoritative skill is not available (not installed, `skills.enabled: false`, or disabled via
+`exclude`), a **minimal generic fallback** applies: a short, essential core checklist
+(over-engineering, scope creep, missing measurable acceptance criteria, edge cases,
+implementation risks) so the tool stays functional and degrades cleanly — **not** a full local
+handbook.
 
-### Phase 1: Scope und Kontext
+### Phase 1: Scope and context
 
-1. Analysiere die Anforderung gründlich.
-2. Prüfe vorhandene Plan-Dateien in `<plan.dir>/`, um Struktur und vorhandene Architekturentscheidungen zu übernehmen.
-3. Prüfe, ob in `<plan.dir>/` noch Pläne im Altformat (`NNNN-slug.md`) liegen. Falls ja, führe die Bulk-Migration gemäß `Plan-Datei-Konvention`, Abschnitt „Migration alter Pläne (NNNN → Datum)“, aus. Die eigentliche Plan-Datei dieses Laufs entsteht erst in Phase 3/7 unter `<plan.dir>/YYYY-MM-DD-<slug>.md` — es gibt keinen Stub, keine Reservierung und keine Nummer.
-4. Untersuche die relevanten Bereiche der Codebase lokal oder mit internem Sub-Agenten:
-   - Projektstruktur
-   - betroffene Module und Dateien
-   - bestehende Architekturentscheidungen
-   - verwendete Technologien
-   - relevante Tests und Validierungspfade
-5. Klassifiziere die empfohlene Umsetzung:
-   - **Feature:** neue Funktionalität, neues UI-Element, neue Seite, neue Integration oder verändertes Nutzerverhalten.
-   - **Bugfix:** Fehler beheben, unerwartetes Verhalten korrigieren oder Regression beseitigen.
-   - **Refactoring:** Struktur, Wartbarkeit oder Performance verbessern, ohne beabsichtigte Verhaltensänderung.
-   - **Dokumentation:** README, Guides, API-Dokumentation, Kommentare oder sonstige Dokumentation ändern, ohne Produkt- oder Codeverhalten zu ändern.
-6. Wenn die Klassifikation `Dokumentation` ist:
-   - bestimme zusätzlich die Doku-Kategorie gemäß `Doku-Kategorien` (user-guide, developer-guide, operations, runbooks).
-   - schlage einen topic-basierten Datei-Slug für das Zieldokument vor, der innerhalb der Kategorie eindeutig ist.
-   - prüfe, ob der vorgeschlagene Ziel-Pfad unter `docs/<kategorie>/` bereits existiert. Bei Kollision schlage einen alternativen Slug vor oder kläre die Überschreibung später in Phase 2.
-7. Halte explizit fest, welche Aussagen verifizierter Code-Kontext sind und welche Aussagen Annahmen sind.
+1. Analyze the requirement thoroughly.
+2. Review existing plan files in `<plan.dir>/` to adopt structure and existing architecture decisions.
+3. Check whether any plans in the old format (`NNNN-slug.md`) still exist in `<plan.dir>/`. If so, perform the bulk migration according to `Plan file convention`, section "Migration of old plans (NNNN → date)". The actual plan file for this run is only created in Phase 3/7 under `<plan.dir>/YYYY-MM-DD-<slug>.md` — there is no stub, no reservation, and no number.
+4. Examine the relevant areas of the codebase locally or with an internal sub-agent:
+   - project structure
+   - affected modules and files
+   - existing architecture decisions
+   - technologies used
+   - relevant tests and validation paths
+5. Classify the recommended implementation:
+   - **Feature:** new functionality, a new UI element, a new page, a new integration, or changed user behavior.
+   - **Bugfix:** fix a bug, correct unexpected behavior, or eliminate a regression.
+   - **Refactoring:** improve structure, maintainability, or performance without intended behavior change.
+   - **Documentation:** change README, guides, API documentation, comments, or other documentation without changing product or code behavior.
+6. If the classification is `Documentation`:
+   - additionally determine the doc category according to `Doc categories` (user-guide, developer-guide, operations, runbooks).
+   - propose a topic-based file slug for the target document that is unique within the category.
+   - check whether the proposed target path under `docs/<category>/` already exists. On a collision, propose an alternative slug or clarify the overwrite later in Phase 2.
+7. Explicitly record which statements are verified code context and which statements are assumptions.
 
-### Phase 2: Klärung
+### Phase 2: Clarification
 
-1. Identifiziere alle wirklich relevanten Unklarheiten:
-   - gewünschtes Verhalten
-   - fachliche Regeln
-   - technische Vorgaben
-   - Abhängigkeiten
-   - Edge Cases
-   - Akzeptanzkriterien
-   - bei Doku-Plänen zusätzlich: Doku-Kategorie und Ziel-Pfad, falls in Phase 1 nicht eindeutig bestimmbar
-2. Frage den User nach jeder relevanten Unklarheit.
-3. Wiederhole die Klärung, bis keine offenen Punkte mehr bestehen, die eine belastbare Planung verhindern.
-4. Wenn eine Unsicherheit unwichtig für die Umsetzung ist, dokumentiere sie als Annahme statt den Workflow zu blockieren.
+1. Identify all genuinely relevant ambiguities:
+   - desired behavior
+   - domain rules
+   - technical requirements
+   - dependencies
+   - edge cases
+   - acceptance criteria
+   - for documentation plans additionally: doc category and target path, if not unambiguously determinable in Phase 1
+2. Ask the user about every relevant ambiguity.
+3. Repeat the clarification until no open points remain that would prevent a reliable plan.
+4. If an uncertainty is unimportant for the implementation, document it as an assumption instead of blocking the workflow.
 
-### Phase 3: Plan-Erstellung
+### Phase 3: Plan creation
 
-Schreibe die Plan-Datei nach `<plan.dir>/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` ist das Erstellungsdatum (via `date +%F`), `<slug>` ein Kebab-Case-Slug aus dem endgültigen Titel. Bei einer Namenskollision am selben Tag hänge ein numerisches Suffix an (`-2`, `-3`, …). Die H1 ist `# <Titel>` ohne Nummer.
+Write the plan file to `<plan.dir>/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` is the creation date (via `date +%F`), `<slug>` a kebab-case slug from the final title. On a name collision on the same day, append a numeric suffix (`-2`, `-3`, …). The H1 is `# <title>` without a number.
 
-Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers in dieser Reihenfolge fest. Die erste Quelle, die einen gültigen Wert liefert, gewinnt.
+Before you write the plan, determine the language of the canonical status marker in this order. The first source that yields a valid value wins.
 
-#### Schritt 1: Konfiguration konsultieren
+#### Step 1: Consult the configuration
 
-1. Lies die Effective Flow-Konfiguration aus der Projektsetup-ADR (Locator via `**Effective Flow project setup:**`-Marker in `AGENTS.md`; siehe Baustein „Config-Migration“), falls vorhanden.
-2. Lies den Wert `plan.markerLanguage`:
-   - `"de"` → Markersprache Deutsch, gib eine Statuszeile aus wie „Markersprache aus der Effective Flow-Konfiguration (Projektsetup-ADR) übernommen: Deutsch." und überspringe Schritte 2 bis 6.
-   - `"en"` → analog Englisch.
-   - anderer Wert (z. B. `"fr"`, `null`, `true`) → ignoriere ihn, gib einen kurzen Hinweis aus und fahre mit Schritt 2 fort.
-   - Schlüssel fehlt → ohne extra Hinweis zu Schritt 2 (Detection gibt eine eigene Statuszeile aus).
-3. Ist die Konfiguration nicht lesbar (fehlt oder ist defekt): kurzer Hinweis an den User, dann Schritt 2.
+1. Read the Effective Flow configuration from the project-setup ADR (locator via the `**Effective Flow project setup:**` marker in `AGENTS.md`; see the "Config migration" building block) if present.
+2. Read the value `plan.markerLanguage`:
+   - `"de"` → marker language German; output a status line like "Marker language adopted from the Effective Flow configuration (project-setup ADR): German." and skip Steps 2 to 6.
+   - `"en"` → analogously English.
+   - any other value (e.g. `"fr"`, `null`, `true`) → ignore it, output a brief note, and continue with Step 2.
+   - key missing → go to Step 2 without an extra note (detection outputs its own status line).
+3. If the configuration is not readable (missing or corrupt): a brief note to the user, then Step 2.
 
-#### Schritt 2: Auto-Detection aus `<plan.dir>/`
+#### Step 2: Auto-detection from `<plan.dir>/`
 
-1. Lies alle `.md`-Dateien unter `<plan.dir>/`. Lege _keine_ neuen Verzeichnisse an und schreibe keine anderen Dateien.
-2. Bestimme pro Datei den Planstatus über die kanonische Ein-Marker-Regel: genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` und gültigem Wert; Dateien mit fehlender, mehrfacher oder ungültiger Statuszeile gelten als „unklar“.
-3. Zähle die Plan-Dateien mit deutschem Marker (`de_count`) und mit englischem Marker (`en_count`). Dateien mit Status „unklar“ werden ignoriert.
-4. Bestimme das Detection-Ergebnis:
-   - `de_count > 0` und `en_count == 0` → Detection: Deutsch.
-   - `en_count > 0` und `de_count == 0` → Detection: Englisch.
-   - sonst (beide > 0 oder beide == 0) → Detection: nicht eindeutig.
+1. Read all `.md` files under `<plan.dir>/`. Do _not_ create any new directories and do not write any other files.
+2. Determine the plan status per file via the canonical single-marker rule: exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` and a valid value; files with a missing, multiple, or invalid status line count as "unclear".
+3. Count the plan files with a German marker (`de_count`) and with an English marker (`en_count`). Files with status "unclear" are ignored.
+4. Determine the detection result:
+   - `de_count > 0` and `en_count == 0` → detection: German.
+   - `en_count > 0` and `de_count == 0` → detection: English.
+   - otherwise (both > 0 or both == 0) → detection: not unambiguous.
 
-#### Schritt 3: Hinweis auf dauerhafte Festschreibung
+#### Step 3: Note on permanent commitment
 
-Ergab die Detection aus Schritt 2 ein eindeutiges Ergebnis und ist `plan.markerLanguage` in der Effective Flow-Konfiguration (Projektsetup-ADR) noch nicht gesetzt: verwende den erkannten Wert für diesen Lauf und weise kurz darauf hin, dass `/effective-flow setup` die Markersprache dauerhaft in der Projektsetup-ADR festschreibt. Schreibe hier **nichts** in die Konfiguration und lege keine Datei an.
+If the detection from Step 2 yielded an unambiguous result and `plan.markerLanguage` is not yet set in the Effective Flow configuration (project-setup ADR): use the detected value for this run and briefly note that `/effective-flow setup` permanently commits the marker language in the project-setup ADR. Write **nothing** to the configuration here and do not create a file.
 
-#### Schritt 4: Detection-Ergebnis übernehmen
+#### Step 4: Adopt the detection result
 
-Bei eindeutigem Detection-Ergebnis:
+For an unambiguous detection result:
 
-- Verwende die erkannte Sprache als Markersprache der neuen Plan-Datei.
-- Gib eine einzeilige Statusmeldung aus, z. B. „Markersprache aus 12 vorhandenen Plänen erkannt: Deutsch.“
-- Überspringe Schritte 5 und 6.
+- Use the detected language as the marker language of the new plan file.
+- Output a one-line status update, e.g. "Marker language detected from 12 existing plans: German."
+- Skip Steps 5 and 6.
 
-#### Schritt 5: Frage an den User
+#### Step 5: Question to the user
 
-Nur wenn weder Schritt 1 noch Schritt 4 die Sprache bestimmen konnten:
+Only if neither Step 1 nor Step 4 could determine the language:
 
 Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
 - header: "Marker"
-- question: "In welcher Sprache soll der Statusmarker im Plan-Kopf stehen?"
+- question: "In which language should the status marker in the plan header be written?"
 - multiSelect: false
 - options:
-  - label: "Deutsch", description: "Statuszeile **Planungsstatus:** Nicht umgesetzt"
-  - label: "Englisch", description: "Statuszeile **Plan status:** Not implemented"
+  - label: "German", description: "Status line **Planungsstatus:** Nicht umgesetzt"
+  - label: "English", description: "Status line **Plan status:** Not implemented"
 
-Nenne in der Begleitmeldung kurz, warum gefragt wird (Mischbestand, kein erkennbarer Marker oder Config nicht gesetzt).
+In the accompanying message, briefly state why the question is asked (mixed inventory, no recognizable marker, or config not set).
 
-#### Schritt 6: Hinweis nach Frage
+#### Step 6: Note after the question
 
-Nur wenn Schritt 5 ausgeführt wurde: Verwende die gewählte Markersprache für **diesen Plan**. Schreibe sie **nicht** in die Konfiguration — das dauerhafte Festschreiben von `plan.markerLanguage` in der Projektsetup-ADR übernimmt ausschließlich `/effective-flow setup`. Weise den User kurz darauf hin, z. B. „Markersprache `de` für diesen Plan verwendet; dauerhaft festschreiben über `/effective-flow setup`.“
+Only if Step 5 was executed: use the chosen marker language for **this plan**. Do **not** write it to the configuration — permanently committing `plan.markerLanguage` in the project-setup ADR is done exclusively by `/effective-flow setup`. Briefly note this to the user, e.g. "Marker language `de` used for this plan; commit permanently via `/effective-flow setup`."
 
-#### Konsistenzregeln
+#### Consistency rules
 
-Verwende die finale Markersprache konsistent: deutscher Marker mit deutschen Werten, englischer Marker mit englischen Werten. Mische Marker-Schlüssel und Wert nicht. Übernimm keine Sprach-Erklärungen oder HTML-Kommentare aus den Beispielblöcken unten in die finale Plan-Datei.
+Use the final marker language consistently: German marker with German values, English marker with English values. Do not mix the marker key and value. Do not carry over language explanations or HTML comments from the example blocks below into the final plan file.
 
-Der Plan muss mindestens diese Struktur verwenden. Verwende je nach gewählter Markersprache eine der beiden Statuszeilen, nicht beide:
+The plan must use at least this structure. Depending on the chosen marker language, use one of the two status lines, not both:
 
-Statuszeile Deutsch:
+German status line:
 
 ```markdown
 **Planungsstatus:** Nicht umgesetzt
 ```
 
-Statuszeile Englisch:
+English status line:
 
 ```markdown
 **Plan status:** Not implemented
 ```
 
-Vollständiges Plan-Template (Statuszeile gemäß gewählter Markersprache einsetzen):
+Complete plan template (insert the status line according to the chosen marker language):
 
 ```markdown
-# [Titel]
+# [Title]
 
-**Planungsstatus:** Nicht umgesetzt
-**Quelle:** /effective-flow plan
-**Empfohlener Workflow:** Feature (`/effective-flow build`) / Bugfix (`/effective-flow fix`) / Refactoring (`/effective-flow refactor`) / Dokumentation (`/effective-flow docs`)
-<!-- Nur bei Empfohlenem Workflow: Dokumentation: -->
-**Doku-Kategorie:** user-guide | developer-guide | operations | runbooks
-**Ziel-Pfad:** docs/<kategorie>/<topic-slug>.md
+**Plan status:** Not implemented
+**Source:** /effective-flow plan
+**Recommended workflow:** Feature (`/effective-flow build`) / Bugfix (`/effective-flow fix`) / Refactoring (`/effective-flow refactor`) / Documentation (`/effective-flow docs`)
+<!-- Only for Recommended workflow: Documentation: -->
+**Doc category:** user-guide | developer-guide | operations | runbooks
+**Target path:** docs/<category>/<topic-slug>.md
 
-## Anforderung
+## Requirement
 
-[Anforderung, Ziel und Begründung der Workflow-Empfehlung]
+[Requirement, goal, and rationale for the workflow recommendation]
 
-## Architekturentscheidungen
+## Architecture decisions
 
-- [Entscheidung mit Begründung]
+- [Decision with rationale]
 
-## Betroffene Dateien
+## Affected files
 
-| Datei | Beschreibung |
+| File | Description |
 |---|---|
-| `pfad/datei` | [geplante Änderung] |
+| `path/file` | [planned change] |
 
-## Implementierungsdetails
+## Implementation details
 
-### Vorgehen
+### Approach
 
-1. [konkreter Umsetzungsschritt]
+1. [concrete implementation step]
 
-### Komponenten-Struktur
+### Component structure
 
-[Nur falls relevant]
+[Only if relevant]
 
-### State-Management
+### State management
 
-[Nur falls relevant]
+[Only if relevant]
 
-### API-Anbindung
+### API integration
 
-[Nur falls relevant]
+[Only if relevant]
 
-### Styling-Ansatz
+### Styling approach
 
-[Nur falls relevant]
+[Only if relevant]
 
-### Barrierefreiheit
+### Accessibility
 
-[Nur falls relevant]
+[Only if relevant]
 
-### Edge Cases
+### Edge cases
 
-- [Edge Case und erwartetes Verhalten]
+- [Edge case and expected behavior]
 
-## Akzeptanzkriterien
+## Acceptance criteria
 
-- [ ] [messbares Kriterium]
+- [ ] [measurable criterion]
 
-## Validierungsplan
+## Validation plan
 
-- [geplanter Test, Check oder manuelle Prüfung]
+- [planned test, check, or manual verification]
 
-## Annahmen und offene Punkte
+## Assumptions and open points
 
-- [Annahme oder bewusst dokumentierter Restpunkt]
+- [Assumption or deliberately documented remaining point]
 
-## Plan-Review
+## Plan review
 
-**Ergebnis:** Freigegeben / Überarbeiten
+**Result:** Approved / Revise
 
-### Zusammenfassung
+### Summary
 
-| Bereich | Kritisch | Wichtig | Hinweis |
+| Area | Critical | Important | Note |
 |---|---:|---:|---:|
-| Architektur | 0 | 0 | 0 |
+| Architecture | 0 | 0 | 0 |
 | Security | 0 | 0 | 0 |
-| Datenschutz | 0 | 0 | 0 |
-| Fehlerfälle | 0 | 0 | 0 |
-| Testbarkeit | 0 | 0 | 0 |
+| Data protection | 0 | 0 | 0 |
+| Error cases | 0 | 0 | 0 |
+| Testability | 0 | 0 | 0 |
 | Scope | 0 | 0 | 0 |
-| Wartbarkeit | 0 | 0 | 0 |
+| Maintainability | 0 | 0 | 0 |
 
-### Befunde
+### Findings
 
-- Keine Befunde. / [Befund mit Bereich, Schweregrad, Problem und Anpassung]
+- No findings. / [Finding with area, severity, problem, and adjustment]
 
-## Offene Punkte
+## Open Points
 
-- Keine offenen Punkte.
+- No open points.
 ```
 
-Regeln:
+Rules:
 
-- Entferne nicht relevante optionale Unterabschnitte oder schreibe knapp „Nicht relevant“ mit Begründung.
-- Nutze konkrete Datei-Referenzen, sobald sie aus der Codebase ableitbar sind.
-- Formuliere die Akzeptanzkriterien so, dass sie zusammen genau eine messbare Abschlussbedingung ergeben. Der umsetzende Workflow leitet daraus seine Goal-Bedingung und den optionalen `/goal`-String ab; vermeide vage Kriterien ohne benannte Prüfung.
-- Schreibe den Plan als Umsetzungsanleitung, nicht als Vorab-Implementierung.
-- Vermeide Codeblöcke im Plan. Nutze sie nur, wenn eine kurze Codeformulierung klarer und kürzer ist als eine prose Beschreibung.
-- Wenn ein Codebeispiel nötig ist, begrenze es auf das kleinste aussagekräftige Fragment und dokumentiere, dass es ein Beispiel oder eine Schnittstellenskizze ist.
-- Ergänze einen Abschnitt `## Plan-Review` gemäß Template. Er enthält ausschließlich Befunde auf Plan-Ebene, keine Code-Review-Findings.
-- Ergänze am Ende des Plans einen Abschnitt für offene Punkte. Bei deutschsprachigen Plänen heißt er `## Offene Punkte` mit leerem Zustand `- Keine offenen Punkte.`; bei englischsprachigen Plänen heißt er `## Open Points` mit leerem Zustand `- No open points.`. Wenn der User eine Entscheidung später treffen will, dokumentiere den Punkt dort konkret mit Wiedereinstiegshinweis.
-- Schreibe keine `## Testergebnisse` und keine `## Review-Findings`, weil noch nichts implementiert wurde.
-- Setze den kanonischen offenen Planstatus exakt entsprechend der in Phase 3 gewählten Markersprache: deutsch auf `**Planungsstatus:** Nicht umgesetzt` oder englisch auf `**Plan status:** Not implemented`; `/effective-flow build`, `/effective-flow fix`, `/effective-flow refactor` und `/effective-flow docs` nutzen diesen Status später, um die Planungs- bzw. Analysegrundlage zu erkennen.
-- Setze genau eine Zeile `**Empfohlener Workflow:** ...` im Kopfbereich. Wähle eine der vier Kategorien Feature, Bugfix, Refactoring oder Dokumentation und nenne den passenden Skill in Klammern.
-- Bei `**Empfohlener Workflow:** Dokumentation (`/effective-flow docs`)` setze direkt darunter die beiden zusätzlichen Zeilen `**Doku-Kategorie:** ...` und `**Ziel-Pfad:** ...` gemäß `Doku-Kategorien`. Lasse den HTML-Kommentar `<!-- Nur bei ... -->` und die beiden Zeilen für die anderen drei Workflows aus dem Kopfbereich weg.
+- Remove irrelevant optional subsections or write a brief "Not relevant" with a rationale.
+- Use concrete file references as soon as they can be derived from the codebase.
+- Formulate the acceptance criteria so that together they yield exactly one measurable completion condition. The implementing workflow derives its goal condition and the optional `/goal` string from them; avoid vague criteria without a named check.
+- Write the plan as an implementation guide, not as a pre-implementation.
+- Avoid code blocks in the plan. Use them only when a short code formulation is clearer and shorter than a prose description.
+- If a code example is necessary, limit it to the smallest meaningful fragment and document that it is an example or an interface sketch.
+- Add a `## Plan review` section per the template. It contains exclusively plan-level findings, no code-review findings.
+- Add a section for open points at the end of the plan. For German-language plans it is called `## Offene Punkte` with the empty state `- Keine offenen Punkte.`; for English-language plans it is called `## Open Points` with the empty state `- No open points.`. If the user wants to make a decision later, document the point there concretely with a re-entry note.
+- Do not write any `## Test results` or `## Review findings`, because nothing has been implemented yet.
+- Set the canonical open plan status exactly according to the marker language chosen in Phase 3: German to `**Planungsstatus:** Nicht umgesetzt` or English to `**Plan status:** Not implemented`; `/effective-flow build`, `/effective-flow fix`, `/effective-flow refactor`, and `/effective-flow docs` later use this status to recognize the planning or analysis basis.
+- Set exactly one line `**Recommended workflow:** ...` in the header area. Choose one of the four categories Feature, Bugfix, Refactoring, or Documentation and name the appropriate skill in parentheses.
+- For `**Recommended workflow:** Documentation (`/effective-flow docs`)`, place the two additional lines `**Doc category:** ...` and `**Target path:** ...` directly below it per `Doc categories`. Omit the HTML comment `<!-- Only for ... -->` and the two lines for the other three workflows from the header area.
 
-### Phase 4: Gap Analysis
+### Phase 4: Gap analysis
 
-Das Gap-Urteil liegt bei `codebase-improvement` (siehe „Delegation des Domänen-Urteils an
-zentrale Skills“). Wende den Skill auf den Plan an und lass ihn die generischen Lücken
-beurteilen — Over-Engineering, Scope Creep, unausgesprochene Annahmen, fehlende oder nicht
-messbare Akzeptanzkriterien, Edge Cases, versteckte Intentionen, Umsetzungsrisiken, Evidenz vs.
-Raten. Kreuzt der konkrete Plan eine deklarierte Spezialisten-Boundary (Product, Design,
-Browser/Barrierefreiheit, Architektur, Legal …), ziehe den zuständigen Owner über das
-Relevanz-Gate hinzu; ein schmaler Engineering-Plan bleibt schmal.
+The gap judgment rests with `codebase-improvement` (see "Delegating the domain judgment to
+central skills"). Apply the skill to the plan and let it assess the generic gaps —
+over-engineering, scope creep, unspoken assumptions, missing or non-measurable acceptance
+criteria, edge cases, hidden intentions, implementation risks, evidence vs. guessing. If the
+concrete plan crosses a declared specialist boundary (product, design, browser/accessibility,
+architecture, legal …), bring in the responsible owner via the relevance gate; a narrow
+engineering plan stays narrow.
 
-Arbeite die gemeldeten Lücken in den Plan ein und bereinige ihn, bevor du ihn als abgeschlossen
-meldest. Fehlt `codebase-improvement`, greift der minimale generische Fallback aus dem Baustein
-(kurze Kern-Checkliste), **kein** zweites Plan-Quality-Handbuch.
+Incorporate the reported gaps into the plan and clean it up before you report it as complete. If
+`codebase-improvement` is missing, the minimal generic fallback from the building block applies
+(a short core checklist), **not** a second plan-quality handbook.
 
-### Phase 5: Plan-Validierung
+### Phase 5: Plan validation
 
-Normalisiere das Qualitätsurteil aus Phase 4 in die Effective-Flow-Scorecard (der Skill liefert
-das Urteil, Effective Flow die Artefakt-Form):
+Normalize the quality judgment from Phase 4 into the Effective Flow scorecard (the skill provides
+the judgment, Effective Flow the artifact form):
 
-| Kriterium           | Ziel                                                                                                      |
-| ------------------- | --------------------------------------------------------------------------------------------------------- |
-| Clarity             | konkrete Datei-Referenzen und klare Schritte, Ziel >= 80%                                                 |
-| Verification        | messbare Akzeptanzkriterien pro Anforderung                                                               |
-| Context             | verifizierter Code vs. Annahmen, Ziel <= 10% Raten                                                        |
-| Big Picture         | Zweck und Workflow explizit beschrieben                                                                   |
-| No-Code-Grenze      | keine Änderungen außerhalb `<plan.dir>/`                                                                  |
-| Code-Sparsamkeit    | kein Code im Plan, außer ein minimales Fragment ist die kürzeste klare Erklärung                          |
-| Workflow-Empfehlung | Feature, Bugfix, Refactoring oder Dokumentation ist begründet und zum Scope passend                       |
-| Doku-Ziel           | bei Doku-Plänen sind `**Doku-Kategorie:**` und `**Ziel-Pfad:**` gesetzt, gültig und konsistent zueinander |
+| Criterion               | Target                                                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Clarity                 | concrete file references and clear steps, target >= 80%                                                            |
+| Verification            | measurable acceptance criteria per requirement                                                                     |
+| Context                 | verified code vs. assumptions, target <= 10% guessing                                                              |
+| Big Picture             | purpose and workflow explicitly described                                                                          |
+| No-code boundary        | no changes outside `<plan.dir>/`                                                                                   |
+| Code frugality          | no code in the plan unless a minimal fragment is the shortest clear explanation                                    |
+| Workflow recommendation | Feature, Bugfix, Refactoring, or Documentation is justified and fits the scope                                     |
+| Doc target              | for documentation plans, `**Doc category:**` and `**Target path:**` are set, valid, and consistent with each other |
 
-Wenn ein Kriterium nicht erfüllt ist, überarbeite den Plan oder frage den User nach der fehlenden Information.
+If a criterion is not met, revise the plan or ask the user for the missing information.
 
-### Phase 6: Plan-Review
+### Phase 6: Plan review
 
-Führe vor dem Abschluss einen Review des Plans selbst durch. Dieser Review prüft die geplanten Änderungen auf Plan-Ebene und ist **kein Code-Review**.
+Before completion, perform a review of the plan itself. This review checks the planned changes at the plan level and is **not a code review**.
 
-Regeln:
+Rules:
 
-- Starte keine normalen Reviewer-Skills, Implementer, Test-Writer oder Validatoren.
-- Ändere weiterhin nur die Plan-Datei unter `<plan.dir>/`.
-- Prüfe die geplanten Änderungen gegen den verifizierten Code-Kontext aus Phase 1.
-- Gib keine vollständigen Codevorschläge aus; halte dich an die Code-Sparsamkeitsregel.
+- Do not start any normal reviewer skills, implementers, test writers, or validators.
+- Continue to change only the plan file under `<plan.dir>/`.
+- Check the planned changes against the verified code context from Phase 1.
+- Do not output complete code suggestions; adhere to the code-frugality rule.
 
-Das Review-**Urteil** liefert `codebase-improvement` (siehe „Delegation des Domänen-Urteils an
-zentrale Skills“): Wende den Skill auf den Plan an, damit er die Befunde auf Plan-Ebene
-beurteilt — u. a. Architektur-Passung, Security-Oberfläche, Datenschutz, Fehlerfälle,
-Testbarkeit, Scope und Wartbarkeit. Kreuzt der Plan eine deklarierte Spezialisten-Boundary
-(Product, Design, Browser/Barrierefreiheit, Architektur, Legal …), ziehe den zuständigen Owner
-über das Relevanz-Gate hinzu. Fehlt `codebase-improvement`, greift der minimale generische
-Fallback aus dem Baustein statt einer lokalen Voll-Checkliste.
+The review **judgment** is provided by `codebase-improvement` (see "Delegating the domain
+judgment to central skills"): apply the skill to the plan so that it assesses the findings at the
+plan level — among others architecture fit, security surface, data protection, error cases,
+testability, scope, and maintainability. If the plan crosses a declared specialist boundary
+(product, design, browser/accessibility, architecture, legal …), bring in the responsible owner
+via the relevance gate. If `codebase-improvement` is missing, the minimal generic fallback from
+the building block applies instead of a local full checklist.
 
-Klassifiziere die vom Skill gemeldeten Befunde in die Effective-Flow-Schwere (Artefakt-Form):
+Classify the findings reported by the skill into the Effective Flow severity (artifact form):
 
-- **Kritisch:** Plan darf nicht abgeschlossen werden, bevor der Befund eingearbeitet ist.
-- **Wichtig:** Befund soll eingearbeitet werden; wenn bewusst nicht, dokumentiere die Begründung im Plan.
-- **Hinweis:** Optionaler Verbesserungs- oder Prüfpunkt.
+- **Critical:** the plan may not be completed before the finding is incorporated.
+- **Important:** the finding should be incorporated; if deliberately not, document the rationale in the plan.
+- **Note:** optional improvement or check point.
 
-Vorgehen:
+Approach:
 
-1. Hole das Review-Urteil über `codebase-improvement` (plus relevante Spezialisten) ein.
-2. Arbeite alle kritischen Befunde direkt in den Plan ein.
-3. Arbeite wichtige Befunde ein oder dokumentiere im `## Plan-Review`, warum sie bewusst nicht umgesetzt werden.
-4. Aktualisiere den Abschnitt `## Plan-Review` mit Ergebnis, Zusammenfassung und Befunden.
-5. Wenn nach der Überarbeitung weiterhin kritische Befunde bestehen, frage den User nach der fehlenden Entscheidung und schließe den Plan nicht ab.
+1. Obtain the review judgment via `codebase-improvement` (plus relevant specialists).
+2. Incorporate all critical findings directly into the plan.
+3. Incorporate important findings or document in the `## Plan review` why they are deliberately not implemented.
+4. Update the `## Plan review` section with the result, summary, and findings.
+5. If critical findings still remain after the revision, ask the user for the missing decision and do not complete the plan.
 
-### Phase 6b: Vertiefter interaktiver Plan-Review
+### Phase 6b: Deep interactive plan review
 
-Wenn der interne Plan-Review aus Phase 6 keine kritischen Befunde mehr enthält,
-frage den User, ob der vertiefte interaktive Plan-Review jetzt gestartet werden
-soll.
+If the internal plan review from Phase 6 no longer contains any critical findings,
+ask the user whether the deep interactive plan review should be started now.
 
 Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
-- header: "Plan-Review"
-- question: "Vertieften interaktiven Plan-Review jetzt starten?"
+- header: "Plan review"
+- question: "Start the deep interactive plan review now?"
 - multiSelect: false
 - options:
-  - label: "Ja", description: "Jetzt nach unbekannten, ungenauen und entscheidungsbedürftigen Punkten suchen"
-  - label: "Nein", description: "Später über review <plandatei> fortsetzen"
+  - label: "Yes", description: "Search now for unknown, imprecise, and decision-requiring points"
+  - label: "No", description: "Continue later via review <plan-file>"
 
-Bei `Ja`: Lies die interne Anweisung ``tools/plan-review.md`` und führe sie mit der
-gerade erzeugten Plan-Datei aus. Halte weiterhin die Schreibgrenze ein: nur die
-Plan-Datei unter `<plan.dir>/` darf geändert werden.
+On `Yes`: Read the internal instruction ``tools/plan-review.md`` and run it with the
+just-created plan file. Continue to observe the write boundary: only the
+plan file under `<plan.dir>/` may be changed.
 
-Bei `Nein`: Fahre mit Phase 7 fort und nenne im Abschluss den Wiedereinstieg über
-`/effective-flow review <plandatei>`.
+On `No`: Continue with Phase 7 and name in the conclusion the re-entry via
+`/effective-flow review <plan-file>`.
 
-### Phase 7: Abschluss
+### Phase 7: Completion
 
-1. Schreibe die Plan-Datei.
-2. Formatiere nur die neue Plan-Datei, falls ein Formatter für Markdown klar konfiguriert ist.
-3. Melde dem User:
-   - Pfad der erzeugten Plan-Datei
-   - kurze Zusammenfassung des geplanten Vorgehens
-   - empfohlener Workflow mit Begründung
-   - Scorecard-Ergebnis
-   - Hinweis, dass keine Code-Änderungen vorgenommen wurden
-   - Hinweis, welcher Skill-Aufruf den Plan später umsetzt, zum Beispiel `/effective-flow build <plan.dir>/YYYY-MM-DD-<slug>.md`, `/effective-flow fix <plan.dir>/YYYY-MM-DD-<slug>.md`, `/effective-flow refactor <plan.dir>/YYYY-MM-DD-<slug>.md` oder `/effective-flow docs <plan.dir>/YYYY-MM-DD-<slug>.md`
+1. Write the plan file.
+2. Format only the new plan file if a formatter for Markdown is clearly configured.
+3. Report to the user:
+   - the path of the created plan file
+   - a brief summary of the planned approach
+   - the recommended workflow with rationale
+   - the scorecard result
+   - a note that no code changes were made
+   - a note as to which skill call implements the plan later, for example `/effective-flow build <plan.dir>/YYYY-MM-DD-<slug>.md`, `/effective-flow fix <plan.dir>/YYYY-MM-DD-<slug>.md`, `/effective-flow refactor <plan.dir>/YYYY-MM-DD-<slug>.md`, or `/effective-flow docs <plan.dir>/YYYY-MM-DD-<slug>.md`
 
-## Regeln
+## Rules
 
-- Starte keine Implementierungsphase.
-- Führe keine Tests aus, die Projektdateien ändern könnten.
-- Erstelle keine Commits.
-- Gib dem User nach jeder Phase eine kurze Statusmeldung.
-- Wenn der Plan wegen fehlender Informationen nicht belastbar wäre, frage nach statt zu raten.
+- Do not start any implementation phase.
+- Do not run any tests that could change project files.
+- Do not create any commits.
+- Give the user a brief status update after each phase.
+- If the plan would not be reliable due to missing information, ask instead of guessing.

@@ -1,215 +1,216 @@
 
 # Effective Flow Review
 
-Du bist der Orchestrator für umfassende Code-Reviews.
+You are the orchestrator for comprehensive code reviews.
 
-## Ziel
+## Goal
 
-Dieser Workflow analysiert Code-Qualität und erstellt einen strukturierten Bericht, dessen Findings direkt als Input für `/effective-flow fix`, `/effective-flow refactor`, `/effective-flow build` und `/effective-flow docs` dienen können.
+This workflow analyzes code quality and produces a structured report whose findings can serve directly as input for `/effective-flow fix`, `/effective-flow refactor`, `/effective-flow build`, and `/effective-flow docs`.
 
-## Sprachregel
+## Language rule
 
-- Code, Bezeichner und Tests auf Englisch
-- Dokumentationsinhalte auf Deutsch, außer bestehende Doku führt eine andere Sprache fort
-- Commit-Messages auf Englisch
+- Code, identifiers, and tests in English
+- Documentation and tool instructions in English **by default**; German remains a permitted
+  option — continue the existing language of a file you edit, and honour an explicit German
+  choice for a project, document, or plan marker
+- Commit messages in English
 
-Die deutsche Repository-Locale ist **de-DE**.
+English is the default; German is not deprecated. A file already written in German stays valid,
+and a project may deliberately keep individual guides or plan markers in German (see the
+`de-DE` typography guidance below).
 
-### Typografie
+### Typography
 
-Locale-spezifische Typografie sichtbarer Prosa – Anführungszeichen, Gedankenstriche,
-Umlaute und ß, geschützte Leerzeichen, Zahlen- und Datumsformate – besitzt der zentrale
-Skill `locale-typography`. Beim Schreiben oder Bearbeiten sichtbarer deutscher Prosa ist
-dessen `de-DE`-Guidance maßgeblich; Effective Flow führt hier bewusst keine zweite
-Typografie-Checkliste.
+Locale-specific typography of visible prose — quotation marks, dashes, umlauts and ß, non-breaking
+spaces, number and date formats — is owned by the central `locale-typography` skill. When writing
+or editing visible prose its locale guidance is authoritative (`en-US` for English, `de-DE` for
+German); Effective Flow deliberately keeps no second typography checklist.
 
-Fehlt der Skill (nicht installiert, `skills.enabled: false` oder via `exclude`
-deaktiviert), gilt als minimaler Fallback für deutschen Text: echte Umlaute und ß statt
-ASCII-Ersatz (ae, oe, ue, ss), typografische Anführungszeichen „…“ statt gerader und
-Halbgeviertstrich – statt Bindestrich.
+If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
+a minimal fallback applies to German text: real umlauts and ß instead of ASCII replacements (ae,
+oe, ue, ss), typographic quotation marks „…“ instead of straight ones, and an en dash – instead
+of a hyphen.
 
-## Aufgabenverfolgung
+## Task tracking
 
-Wenn mehrere Aufgaben zu erledigen sind, verwende ein verfügbares TODO- oder Task-Tracking-Tool (z. B. `TaskCreate`/`TaskUpdate`, `TodoWrite` oder ein vergleichbares Tool), um eine Aufgabenliste anzulegen. Setze jede Aufgabe vor Beginn auf „in Arbeit“ und nach Abschluss auf „erledigt“.
+When there are several tasks to complete, use an available TODO or task-tracking tool (e.g. `TaskCreate`/`TaskUpdate`, `TodoWrite`, or a comparable tool) to create a task list. Set each task to "in progress" before starting it and to "done" after completing it.
 
-Falls kein Task-Tool verfügbar ist, gib dem User stattdessen eine kurze Fortschrittsmeldung nach jedem abgeschlossenen Schritt.
+If no task tool is available, give the user a short progress update after each completed step instead.
 
-### Wann verwenden
+### When to use
 
-- bei drei oder mehr Teilaufgaben oder Schritten
-- bei komplexen Aufträgen mit mehreren Phasen
-- wenn der User mehrere Aufgaben gleichzeitig nennt
+- with three or more subtasks or steps
+- with complex tasks that have multiple phases
+- when the user names several tasks at once
 
-### Wann nicht verwenden
+### When not to use
 
-- bei einer einzelnen, trivialen Aufgabe
-- wenn der Auftrag in weniger als drei einfachen Schritten erledigt ist
+- with a single, trivial task
+- when the task is done in fewer than three simple steps
 
-## Aufgabenverfolgung im Detail
+## Task tracking in detail
 
-Zusätzlich zur generischen Regel im obigen Include verlangt dieser Skill **per-Quelle- und per-Sub-Reviewer-Granularität**, damit der User während des Workflows live sieht, welche Streams und Sub-Agenten noch laufen.
+In addition to the generic rule in the include above, this skill requires **per-source and per-sub-reviewer granularity** so that during the workflow the user sees live which streams and sub-agents are still running.
 
-### Task-Struktur
+### Task structure
 
-Tasks werden an **zwei** Zeitpunkten angelegt, weil der Verzeichnis-Split in Phase 2c die Anzahl der Sub-Reviewer erst zur Laufzeit bestimmt:
+Tasks are created at **two** points in time, because the directory split in Phase 2c only determines the number of sub-reviewers at runtime:
 
-**Zeitpunkt A — direkt nach Scope-Bestätigung am Ende von Phase 1:**
+**Point A — immediately after scope confirmation at the end of Phase 1:**
 
-1. **Phase-Level-Tasks:**
-   - „Phase 1: Scope“
-   - „Phase 2: Parallele Datensammlung“
-   - „Phase 3: Aggregation und Designentscheidungs-Filter“
-   - „Phase 4: Bericht“
-2. **Per-Quelle-Tasks für Phase 2a** (eine pro Designentscheidungs-Quelle):
-   - „2a: ADR-Quelle durchsuchen“
-   - „2a: Plan-Quelle durchsuchen“
-   - „2a: Konventionen-Quelle durchsuchen“
-   - „2a: Code-Kommentar-Quelle durchsuchen“
-   - „2a: Lint-Suppressions durchsuchen“
-   - „2a: Vorherige Reviews durchsuchen“
-3. **Ein Task für Phase 2b:**
-   - „2b: Technische Validierung“
+1. **Phase-level tasks:**
+   - "Phase 1: Scope"
+   - "Phase 2: Parallel data collection"
+   - "Phase 3: Aggregation and design-decision filter"
+   - "Phase 4: Report"
+2. **Per-source tasks for Phase 2a** (one per design-decision source):
+   - "2a: Search ADR source"
+   - "2a: Search plan source"
+   - "2a: Search conventions source"
+   - "2a: Search code-comment source"
+   - "2a: Search lint suppressions"
+   - "2a: Search previous reviews"
+3. **One task for Phase 2b:**
+   - "2b: Technical validation"
 
-**Zeitpunkt B — zu Beginn von Phase 2c, nachdem die Verzeichnis-Split-Heuristik die Sub-Reviewer-Aufteilung bestimmt hat, aber **bevor** der erste Sub-Reviewer gestartet wird:**
+**Point B — at the start of Phase 2c, after the directory-split heuristic has determined the sub-reviewer partition but **before** the first sub-reviewer is started:**
 
-4. **Per-Sub-Reviewer-Tasks für Phase 2c** (1 bis N je nach Verzeichnis-Split):
-   - Bei einzelnem Reviewer pro Project-Type-Bucket: z. B. „2c: Frontend-Review“ oder „2c: Backend-Review“
-   - Bei Verzeichnis-Split: pro Sub-Reviewer ein eigener Task mit dem Verzeichnis im Subject, z. B. „2c: Frontend-Review src/components“, „2c: Backend-Review src/routes“
-   - Bei rekursivem Split: pro Sub-Sub-Reviewer ein Task mit dem tieferen Pfad im Subject, z. B. „2c: Frontend-Review src/components/forms“.
+4. **Per-sub-reviewer tasks for Phase 2c** (1 to N depending on the directory split):
+   - For a single reviewer per project-type bucket: e.g. "2c: Frontend review" or "2c: Backend review"
+   - For a directory split: one dedicated task per sub-reviewer with the directory in the subject, e.g. "2c: Frontend review src/components", "2c: Backend review src/routes"
+   - For a recursive split: one task per sub-sub-reviewer with the deeper path in the subject, e.g. "2c: Frontend review src/components/forms".
 
-### Lifecycle der Tasks
+### Task lifecycle
 
-- **Phase-Level-Tasks:** vor Phase-Start auf `in_progress`, nach Abschluss auf `completed`. Phase 1 ist beim Anlegen der Tasks bereits aktiv → setze sie direkt auf `in_progress` und nach Abschluss von Phase 1 auf `completed`.
-- **Per-Quelle-/Per-Sub-Reviewer-Tasks:**
-  - `in_progress`: beim Start des jeweiligen Sub-Agenten in Phase 2.
-  - `completed`: bei `ERLEDIGT` des Sub-Agenten.
-  - **Bei `ABBRUCH`:** trotzdem auf `completed` setzen, Subject um `[fehlgeschlagen]` ergänzen.
-- **Phase-2-Aggregat-Lifecycle:** Der Phase-Level-Task „Phase 2“ gilt erst als `completed`, wenn alle drei Streams (2a, 2b, 2c) `ERLEDIGT` oder `ABBRUCH` gemeldet haben — analog zur Phase-3-Startbedingung.
-- **Bei vorzeitigem Gesamt-Abbruch** (z. B. Skill wird unterbrochen, mehrere kritische Sub-Agenten brechen ab und der Workflow kann nicht in Phase 3 fortgesetzt werden): alle noch offenen `pending`- und `in_progress`-Tasks auf `completed` setzen und ihre Subjects mit `[abgebrochen]` ergänzen, bevor der Skill mit `ERLEDIGT` oder `ABBRUCH` endet.
+- **Phase-level tasks:** set to `in_progress` before the phase starts, to `completed` after completion. Phase 1 is already active when the tasks are created → set it directly to `in_progress` and to `completed` after Phase 1 finishes.
+- **Per-source / per-sub-reviewer tasks:**
+  - `in_progress`: when the respective sub-agent in Phase 2 starts.
+  - `completed`: when the sub-agent reports `DONE`.
+  - **On `ABORT`:** still set to `completed`, and append `[failed]` to the subject.
+- **Phase-2 aggregate lifecycle:** the phase-level task "Phase 2" only counts as `completed` once all three streams (2a, 2b, 2c) have reported `DONE` or `ABORT` — analogous to the Phase-3 start condition.
+- **On early overall abort** (e.g. the skill is interrupted, several critical sub-agents abort, and the workflow cannot continue into Phase 3): set all still-open `pending` and `in_progress` tasks to `completed` and append `[aborted]` to their subjects before the skill ends with `DONE` or `ABORT`.
 
-### Wichtig
+### Important
 
-- Tasks gemäß Zeitpunkt A und B oben anlegen, damit der User vor jedem Start der relevanten Sub-Agenten die volle Liste sieht.
-- Aktualisiere Tasks zeitnah, sobald ein Sub-Agent meldet — nicht gebatched.
+- Create tasks according to Point A and B above so that the user sees the full list before each start of the relevant sub-agents.
+- Update tasks promptly as soon as a sub-agent reports — not batched.
 
-**Bei Bedarf laden:** Lies `shared/effective-flow-dir-migration.md`, sobald eine Legacy-`.sf-plugin/`- oder `.firmo/`-Runtime-Dir migriert werden muss.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a legacy `.sf-plugin/` or `.firmo/` runtime dir must be migrated.
 
-## Empfohlene Skills
+## Recommended skills
 
 - `codebase-improvement`
 
-## Delegations-Vertrag: generisches Audit-Reasoning
+## Delegation contract: generic audit reasoning
 
-Der zentrale Skill `codebase-improvement` ist der **deklarierte Owner** des generischen
-Audit-Reasonings (Klassifikation `route-when-relevant`, siehe
-[Skill-Ownership](../../docs/developer-guide/skill-ownership.md)). Wo dieses Reasoning greift,
-ist seine Guidance **maßgeblich**, nicht optionaler Rat; dieses Tool trägt **keine zweite
-Kopie** des Audit-Playbooks – nur den Output-Contract, die Lifecycle-Constraints und einen
-minimalen Fallback.
+The central skill `codebase-improvement` is the **declared owner** of the generic audit
+reasoning (classification `route-when-relevant`, see
+[Skill ownership](../../docs/developer-guide/skill-ownership.md)). Where this reasoning applies,
+its guidance is **authoritative**, not optional advice; this tool carries **no second copy** of
+the audit playbook – only the output contract, the lifecycle constraints, and a minimal
+fallback.
 
-**Der Skill besitzt das generische Reasoning (das „Wie“):**
+**The skill owns the generic reasoning (the "how"):**
 
-- Repository-Reconnaissance und Projektkonventions-Erkennung,
-- Evidence-Standards sowie Finding-Validierung, -Rejection und Deduplizierungs-Beurteilung,
-- Leverage-basierte Priorisierung, Komplexitäts- und Over-Engineering-Linsen,
-- Gap-Analyse, Root-Cause-Platzierung, Scope-/Risiko-Kontrolle und Plan-Qualität.
+- repository reconnaissance and project-convention detection,
+- evidence standards plus finding validation, rejection, and deduplication judgment,
+- leverage-based prioritization, complexity and over-engineering lenses,
+- gap analysis, root-cause placement, scope/risk control, and plan quality.
 
-**Dieses Tool besitzt die Orchestrierung und den Output-Contract (das „Was/Wann“):**
+**This tool owns the orchestration and the output contract (the "what/when"):**
 
-- den `/effective-flow`-Einstieg, das Scope-Gate und die Fortschrittsmeldungen,
-- die Agent-Auswahl, Parallelisierung und – im Review – die Verzeichnis-Split-Heuristik,
-- das Finding-Schema (IDs `R-XXXXXXX`, Schweregrad, Komplexität, Konfidenz-Gate), die
-  Report-/Tracker-Persistenz, Baselines/Verhaltens-Invarianz, Resumability und Delivery.
+- the `/effective-flow` entry point, the scope gate, and the progress updates,
+- the agent selection, parallelization, and – in review – the directory-split heuristic,
+- the finding schema (IDs `R-XXXXXXX`, severity, complexity, confidence gate), the
+  report/tracker persistence, baselines/behavior invariance, resumability, and delivery.
 
-**Output-Contract an den Skill (verbindlich).** Übergib dem Skill das
-Effective-Flow-Finding-Schema (Datei+Zeile, Schweregrad, Komplexität, Bereich, Problem,
-Empfehlung, Konfidenz) als Zielformat und weise ihn an, **kein eigenes Report-, Issue- oder
-Delivery-Artefakt** anzulegen und **nicht** nach einer reinen Zusammenfassung zu stoppen. Er
-liefert Reasoning und Finding-Kandidaten in dieses Schema; die deterministischen Schwellen und
-Schlüssel (Konfidenz-Gate, Dedup-Schlüssel, Scorecard-Grenzen), die Persistenz, die Baseline
-und die Delivery besitzt ausschließlich dieses Tool. So laufen keine zwei
-Persistenz-/Lieferschleifen parallel.
+**Output contract to the skill (binding).** Hand the skill the Effective Flow finding schema
+(file+line, severity, complexity, area, problem, recommendation, confidence) as the target
+format and instruct it to create **no report, issue, or delivery artifact of its own** and
+**not** to stop after a mere summary. It delivers reasoning and finding candidates in this
+schema; the deterministic thresholds and keys (confidence gate, dedup keys, scorecard bounds),
+the persistence, the baseline, and the delivery are owned exclusively by this tool. That way no
+two persistence/delivery loops run in parallel.
 
-**Spezialzweige** routen weiterhin an ihre engeren Owner, wenn deren deklarierter Scope greift:
-`effective-web` (Frontend, Barrierefreiheit, CSS-Architektur, React), `software-architecture`
-(Architektur-Reasoning), `port-codebases` (Cross-Language-/Runtime-Migration),
-`smart-dependency-updater` (Dependency-Updates) und `decision-records` (ADR-Authoring) –
-konsistent mit dem [Ownership-Inventar](../../docs/developer-guide/skill-ownership.md).
+**Special branches** still route to their narrower owners when their declared scope applies:
+`effective-web` (frontend, accessibility, CSS architecture, React), `software-architecture`
+(architecture reasoning), `port-codebases` (cross-language/runtime migration),
+`smart-dependency-updater` (dependency updates), and `decision-records` (ADR authoring) –
+consistent with the [ownership inventory](../../docs/developer-guide/skill-ownership.md).
 
-**Minimaler Fallback (Skill fehlt).** Ist `codebase-improvement` nicht verfügbar (nicht
-installiert, `skills.enabled: false` oder via `exclude` deaktiviert), greift die kurze
-Kern-Guidance im Abschnitt „Minimaler Fallback ohne Skill“ dieses Tools. Sie hält den Workflow
-funktionsfähig, hält aber **kein** zweites vollständiges Audit-Handbuch vor – volle Tiefe kommt
-nur mit dem Skill.
+**Minimal fallback (skill missing).** If `codebase-improvement` is not available (not
+installed, `skills.enabled: false`, or disabled via `exclude`), the short core guidance in this
+tool's "Minimal fallback without skill" section applies. It keeps the workflow functional but
+holds **no** second full audit handbook on hand – full depth comes only with the skill.
 
-`review.md` ist bereits überwiegend Orchestrierung; der delegierbare Anteil ist das
-**Finding-Quality-Reasoning** (Evidence-Standards, Validierung/Rejection, Dedup-Beurteilung,
-Priorisierung) in den Phasen 2c/3. Die Reviewer-Agents (``effective-flow-frontend-reviewer``,
-``effective-flow-nodejs-reviewer``, ``effective-flow-rust-reviewer``) behalten ihre Line-Level-Checks und
-sind **nicht** Teil dieser Delegation.
+`review.md` is already mostly orchestration; the delegable part is the
+**finding-quality reasoning** (evidence standards, validation/rejection, dedup judgment,
+prioritization) in Phases 2c/3. The reviewer agents (``effective-flow-frontend-reviewer``,
+``effective-flow-nodejs-reviewer``, ``effective-flow-rust-reviewer``) keep their line-level checks and
+are **not** part of this delegation.
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Review und behandle ihre Vorgaben als zusätzlichen Review-Kontext für Scope, Konventionen, Designentscheidungen und Qualitätskriterien.
+If the project contains an `AGENTS.md`, read it before the review and treat its specifications as additional review context for scope, conventions, design decisions, and quality criteria.
 
-## Scope-Bestimmung
+## Scope determination
 
-- Ohne Argumente: prüfe auf uncommitted Changes; falls vorhanden, reviewe nur diese, sonst den gesamten Code
-- Mit Argumenten: nur der beschriebene Bereich
+- Without arguments: check for uncommitted changes; if present, review only those, otherwise the entire codebase
+- With arguments: only the described area
 
-## Finding-Scope
+## Finding scope
 
-Der Standard-Finding-Scope ist **nur kritische und wichtige Findings**. Hinweise werden nur dann in den Bericht aufgenommen, wenn der User explizit ein umfassendes oder vollständiges Review verlangt (z. B. „umfassendes Review“, „alle Findings“, „inklusive Hinweise“).
+The default finding scope is **only critical and important findings**. Notes are included in the report only when the user explicitly requests a comprehensive or complete review (e.g. "comprehensive review", "all findings", "including notes").
 
-Weise den User zu Beginn kurz darauf hin, dass standardmäßig nur kritische und wichtige Findings berichtet werden und ein umfassendes Review auf Wunsch möglich ist.
+Briefly point out to the user at the start that by default only critical and important findings are reported and that a comprehensive review is available on request.
 
-Verwende den aktiven Finding-Scope als Filter für Reviewer-Auftrag, Aggregation, Bericht und Zusammenfassung.
+Use the active finding scope as a filter for the reviewer assignment, aggregation, report, and summary.
 
-## Fertig-Protokoll
+## Completion protocol
 
-Wenn du interne Sub-Agenten einsetzt, gib ihnen dieses Antwortprotokoll vor:
+When you use internal sub-agents, give them this response protocol:
 
-- `ERLEDIGT` für vollständig abgeschlossen
-- `ABBRUCH: [Grund]` für nicht erledigbar
+- `DONE` for fully completed
+- `ABORT: [reason]` for not completable
 
-Prüfung durch den Orchestrator:
+Check by the orchestrator:
 
-1. `ERLEDIGT`: Phase abgeschlossen.
-2. `ABBRUCH: [Grund]`: User informieren, Plan oder Auftrag anpassen und entscheiden, ob ein Retry sinnvoll ist.
-3. Kein Stichwort: Retry mit Eskalation.
+1. `DONE`: phase completed.
+2. `ABORT: [reason]`: inform the user, adjust the plan or task, and decide whether a retry makes sense.
+3. No keyword: retry with escalation.
 
-### Retry-Eskalation
+### Retry escalation
 
-Wenn ein interner Sub-Agent ohne `ERLEDIGT` oder `ABBRUCH` endet:
+When an internal sub-agent ends without `DONE` or `ABORT`:
 
-1. Retry 1: gleicher Auftrag mit Fortsetzungs-Hinweis
-2. Retry 2: vereinfachter Auftrag mit reduziertem Scope
-3. Retry 3: minimaler Auftrag nur für die kritischste Teilaufgabe
-4. Nach 3 Fehlversuchen:
-   - User informieren
-   - Optionen als Freitext klären: manuell erledigen, mit nächster Phase fortfahren, Workflow abbrechen
+1. Retry 1: same task with a continuation hint
+2. Retry 2: simplified task with reduced scope
+3. Retry 3: minimal task for only the most critical subtask
+4. After 3 failed attempts:
+   - inform the user
+   - clarify the options as free text: complete manually, continue with the next phase, abort the workflow
 
-## Designentscheidungs-Erkennung
+## Design-decision detection
 
-Der Review-Workflow erkennt dokumentierte Designentscheidungen, damit Findings gegen bewusste Entscheidungen nicht fälschlich als Probleme gemeldet werden. Die Quellen werden in Phase 2a parallel durchsucht; der Abgleich mit Findings erfolgt zentral in Phase 3.
+The review workflow detects documented design decisions so that findings against deliberate decisions are not falsely reported as problems. The sources are searched in parallel in Phase 2a; the reconciliation with findings happens centrally in Phase 3.
 
-## Projekt-Typ-Erkennung und Routing
+## Project-type detection and routing
 
-Projekt-Typ-Erkennung wie bei `/effective-flow build`. Das Reviewer-Routing samt Verzeichnis-Split-Heuristik ist in Phase 2c definiert.
+Project-type detection as in `/effective-flow build`. The reviewer routing including the directory-split heuristic is defined in Phase 2c.
 
-## Effective Flow-Konfiguration und Memory
+## Effective Flow configuration and memory
 
-Effective Flow-interne Dateien liegen unter `.effective-flow/` im Projekt-Root.
+Effective Flow-internal files live under `.effective-flow/` in the project root.
 
-- Konfiguration: Effective Flow-Konfiguration aus der Projektsetup-ADR (siehe Baustein „Config-Migration“)
-- Memory-Datei: `.effective-flow/memory.json`
-- Cache-Datei: `.effective-flow/cache.json`
-- Review-Reports: `.effective-flow/review/`
-- Temporäre Wisdom-Dateien: `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`
+- Configuration: Effective Flow configuration from the project-setup ADR (see the "Config migration" building block)
+- Memory file: `.effective-flow/memory.json`
+- Cache file: `.effective-flow/cache.json`
+- Review reports: `.effective-flow/review/`
+- Temporary wisdom files: `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
-Die Datei `.effective-flow/memory.json` speichert persistente Zustände über Sessions hinweg. Im Gegensatz zur Wisdom-Datei wird sie nie gelöscht.
+The file `.effective-flow/memory.json` stores persistent state across sessions. Unlike the wisdom file, it is never deleted.
 
-### Inhalt
+### Content
 
 ```json
 {
@@ -224,13 +225,13 @@ Die Datei `.effective-flow/memory.json` speichert persistente Zustände über Se
 }
 ```
 
-`configMigration` ist ein Objekt mit bereichsspezifischen Unterschlüsseln (`review`, `applyReview`, `tracker`, `worktree`). Jeder Workflow-Bereich schreibt ausschließlich seinen eigenen Unterschlüssel.
+`configMigration` is an object with area-specific sub-keys (`review`, `applyReview`, `tracker`, `worktree`). Each workflow area writes only its own sub-key.
 
-### Konfigurationsschema
+### Configuration schema
 
-`review` funktioniert ohne festgeschriebene Konfiguration. Fehlt die Effective Flow-Konfiguration (Projektsetup-ADR), verwende interne Defaults und lege nichts automatisch an.
+`review` works without a committed configuration. If the Effective Flow configuration (project-setup ADR) is missing, use internal defaults and do not create anything automatically.
 
-Unterstützte Review-Konfiguration:
+Supported review configuration:
 
 ```json
 {
@@ -245,352 +246,347 @@ Unterstützte Review-Konfiguration:
 
 Defaults:
 
-| Schlüssel                      | Default    | Werte                         |
+| Key                            | Default    | Values                        |
 | ------------------------------ | ---------- | ----------------------------- |
 | `review.profile`               | `focused`  | `full`, `focused`, `fast`     |
 | `review.autoConfirmScope`      | `false`    | Boolean                       |
 | `review.designDecisionSources` | `standard` | `full`, `standard`, `minimal` |
 | `review.validation`            | `full`     | `full`, `quick`, `off`        |
 
-Profil-Bedeutung:
+Profile meaning:
 
-- `full`: aktuelles tiefes Verhalten mit allen Designentscheidungs-Quellen und vollständiger technischer Validierung.
-- `focused`: kritische und wichtige Findings, Standard-DD-Quellen und vollständige Validierung als sicherer Default.
-- `fast`: kritische und wichtige Findings, reduzierte DD-Quellen und schnelle oder deaktivierte Validierung, sofern nicht explizit anders konfiguriert.
+- `full`: the current deep behavior with all design-decision sources and full technical validation.
+- `focused`: critical and important findings, standard DD sources, and full validation as a safe default.
+- `fast`: critical and important findings, reduced DD sources, and fast or disabled validation unless explicitly configured otherwise.
 
-Wenn `review.profile` gesetzt ist und einzelne Detailwerte fehlen, leite fehlende Detailwerte aus dem Profil ab:
+If `review.profile` is set and individual detail values are missing, derive the missing detail values from the profile:
 
-| Profil    | DD-Quellen | Validierung |
-| --------- | ---------- | ----------- |
-| `full`    | `full`     | `full`      |
-| `focused` | `standard` | `full`      |
-| `fast`    | `minimal`  | `off`       |
+| Profile   | DD sources | Validation |
+| --------- | ---------- | ---------- |
+| `full`    | `full`     | `full`     |
+| `focused` | `standard` | `full`     |
+| `fast`    | `minimal`  | `off`      |
 
-Explizit gesetzte Detailwerte haben Vorrang vor Profil-Ableitungen.
+Explicitly set detail values take precedence over profile derivations.
 
-### Config-Migration
+### Config migration
 
-Das Lesen der Effective Flow-Konfiguration aus der Projektsetup-ADR (inklusive der `review`-Schlüssel) und die einmalige Migration einer Alt-Config übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `review` aus. Das `review`-Config-Schema oben (Defaults, Profil-Ableitung) bleibt davon unberührt.
+Reading the Effective Flow configuration from the project-setup ADR (including the `review` keys) and the one-time migration of an old config is handled centrally by the "Config migration" building block (`config-migration.md`); this building block no longer performs its own per-block migration for `review`. The `review` config schema above (defaults, profile derivation) is unaffected.
 
-### Cache-Datei
+### Cache file
 
-Persistente Cache-Daten liegen ausschließlich in `.effective-flow/cache.json`, nicht in `.effective-flow/memory.json` und nicht dauerhaft in Wisdom-Dateien.
+Persistent cache data lives exclusively in `.effective-flow/cache.json`, not in `.effective-flow/memory.json` and not permanently in wisdom files.
 
-`review` darf diese Cache-Bereiche verwenden:
+`review` may use these cache areas:
 
-| Bereich            | Inhalt                                                                     | Invalidierung                                          |
-| ------------------ | -------------------------------------------------------------------------- | ------------------------------------------------------ |
-| `designDecisions`  | Extrahierte Designentscheidungen pro Quelle                                | Hash oder mtime der Quelldateien, Cache-Schema-Version |
-| `scopeIndex`       | Dateiliste, Project-Type-Buckets und Reviewer-Split für Whole-Code-Reviews | Git-HEAD, Dirty-State und relevante Dateiänderungen    |
-| `validatorScripts` | Erkannte Check-Skripte und zuletzt brauchbares Validierungsprofil          | Änderung an Package-/Build-Konfigurationsdateien       |
+| Area               | Content                                                                    | Invalidation                                            |
+| ------------------ | -------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `designDecisions`  | Extracted design decisions per source                                      | Hash or mtime of the source files, cache schema version |
+| `scopeIndex`       | File list, project-type buckets, and reviewer split for whole-code reviews | Git HEAD, dirty state, and relevant file changes        |
+| `validatorScripts` | Detected check scripts and last usable validation profile                  | Changes to package/build configuration files            |
 
-Regeln:
+Rules:
 
-- Jeder Cache-Eintrag braucht `version`, `createdAt` und `sourceHash` oder gleichwertige Invalidierungsdaten.
-- Bei Unsicherheit, fehlender Datei, ungültigem JSON, Versionswechsel oder nicht eindeutig prüfbarer Invalidierung: Cache ignorieren und normal neu berechnen.
-- Ungültige Cache-Dateien nicht überschreiben; User kurz informieren und ohne Cache fortfahren.
-- Finale Review-Findings niemals aus dem Cache übernehmen oder durch Cache-Ergebnisse ersetzen.
-- Wisdom-Dateien bleiben temporäre In-Run-Speicher und werden am Ende gelöscht.
+- Every cache entry needs `version`, `createdAt`, and `sourceHash` or equivalent invalidation data.
+- In case of uncertainty, a missing file, invalid JSON, a version change, or invalidation that cannot be checked unambiguously: ignore the cache and recompute normally.
+- Do not overwrite invalid cache files; briefly inform the user and continue without the cache.
+- Never take final review findings from the cache or replace them with cached results.
+- Wisdom files remain temporary in-run storage and are deleted at the end.
 
-### Git-Tracking
+### Git tracking
 
-Ob `.effective-flow/` eingecheckt oder ignoriert wird, entscheidet das jeweilige Projekt selbst. Der Skill ändert keine `.gitignore`-Dateien in Zielprojekten.
+Whether `.effective-flow/` is checked in or ignored is up to each project. The skill does not change any `.gitignore` files in target projects.
 
-### Verwendung
+### Usage
 
-1. Erstelle `.effective-flow/` bei Bedarf.
-2. Lies `.effective-flow/memory.json` beim Start des Review-Workflows.
-3. Falls `.effective-flow/memory.json` nicht existiert, aber die alte Datei `.sf-memory.json` vorhanden ist: migriere deren Inhalt nach `.effective-flow/memory.json`, entferne `.sf-memory.json` erst nach erfolgreichem Schreiben und weise den User darauf hin.
-4. Falls keine Memory-Datei existiert, starte mit `lastFindingNumber: 0`.
-5. Lies die Effective Flow-Konfiguration aus der Projektsetup-ADR, falls vorhanden (Migration einer Alt-Config über den Baustein „Config-Migration“).
-6. Lies `.effective-flow/cache.json`, falls vorhanden und gültig; verwende nur valide, nicht veraltete Cache-Einträge.
-7. Nummeriere neue Findings fortlaufend ab `lastFindingNumber + 1` mit 7-stelliger Formatierung: `R-0000001`, `R-0000002`, ...
-8. Schreibe nach Erstellung des Berichts die höchste vergebene Finding-Nummer zurück in `.effective-flow/memory.json`. Erhalte dabei `configMigration` und andere vorhandene Memory-Felder. Die Memory-Datei muss geschrieben werden, bevor der Workflow mit `ERLEDIGT` abgeschlossen wird. Falls der Schreibvorgang fehlschlägt, weise den User darauf hin.
+1. Create `.effective-flow/` if needed.
+2. Read `.effective-flow/memory.json` at the start of the review workflow.
+3. If `.effective-flow/memory.json` does not exist but the old file `.sf-memory.json` is present: migrate its content to `.effective-flow/memory.json`, remove `.sf-memory.json` only after a successful write, and inform the user.
+4. If no memory file exists, start with `lastFindingNumber: 0`.
+5. Read the Effective Flow configuration from the project-setup ADR if present (migration of an old config via the "Config migration" building block).
+6. Read `.effective-flow/cache.json` if present and valid; use only valid, non-stale cache entries.
+7. Number new findings consecutively from `lastFindingNumber + 1` with 7-digit formatting: `R-0000001`, `R-0000002`, ...
+8. After creating the report, write the highest assigned finding number back to `.effective-flow/memory.json`. Preserve `configMigration` and other existing memory fields. The memory file must be written before the workflow is completed with `DONE`. If the write fails, inform the user.
 
-**Bei Bedarf laden:** Lies `shared/config-migration.md`, sobald die Effective-Flow-Konfiguration erstmals gelesen oder eine Alt-Config migriert wird.
+**Load on demand:** Read `shared/config-migration.md`, when the Effective Flow configuration is read for the first time or an old config is migrated.
 
-**Bei Bedarf laden:** Lies `shared/issue-tracker.md`, sobald der Tracker-Modus `remote` aktiv ist.
+**Load on demand:** Read `shared/issue-tracker.md`, when the tracker mode `remote` is active.
 
-## Wisdom Accumulation
+## Wisdom accumulation
 
-Erzeuge zu Beginn von Phase 1 eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen, falls mehrere Review-Runs parallel laufen.
+At the start of Phase 1, generate a session ID (e.g. via the timestamp `date +%Y%m%d%H%M%S`) and use it consistently for the wisdom file `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`. This prevents collisions if several review runs are running in parallel.
 
-Die Wisdom-Datei transportiert die Outputs der parallelen Phase-2-Streams zwischen den Phasen:
+The wisdom file carries the outputs of the parallel Phase-2 streams between the phases:
 
-- gesammelte Designentscheidungen aus Phase 2a (pro Quelle ein Block)
-- technische Befunde aus Phase 2b
-- Reviewer-Findings aus Phase 2c (pro Sub-Reviewer ein Block)
+- collected design decisions from Phase 2a (one block per source)
+- technical findings from Phase 2b
+- reviewer findings from Phase 2c (one block per sub-reviewer)
 
-Lösche die Datei am Ende des Workflows, vor `ERLEDIGT`.
+Delete the file at the end of the workflow, before `DONE`.
 
 ## Workflow
 
-### Plan-Datei-Sonderfall
+### Plan-file special case
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
+`<plan.dir>` is the plan directory from the Effective Flow configuration (project-setup ADR) `plan.dir` (default
 `docs/plan`).
 
-Prüfe vor Phase 1 und vor jeder Code-Review-spezifischen Initialisierung
-(Config-Migration, Tracker-Modus, Memory, Cache oder Wisdom-Datei),
-ob das User-Argument eindeutig auf eine Plan-Datei unter `<plan.dir>/` zeigt.
+Before Phase 1 and before any code-review-specific initialization
+(config migration, tracker mode, memory, cache, or wisdom file),
+check whether the user argument unambiguously points to a plan file under `<plan.dir>/`.
 
-Erlaubte Formen sind:
+Allowed forms are:
 
-- vollständiger Pfad, z. B. `<plan.dir>/2024-06-01-feature.md`
-- Datums-Slug-Dateiname, z. B. `2024-06-01-feature.md`
-- Titel-Slug, z. B. `feature`
-- Legacy-Nummer, z. B. `0066` (bei migrierten Altplänen, primär über die H1 aufgelöst)
+- full path, e.g. `<plan.dir>/2024-06-01-feature.md`
+- date-slug file name, e.g. `2024-06-01-feature.md`
+- title slug, e.g. `feature`
+- legacy number, e.g. `0066` (for migrated old plans, resolved primarily via the H1)
 
-Wenn genau eine Plan-Datei gefunden wird:
+If exactly one plan file is found:
 
-1. Lade keine Code-Review-Konfiguration, keinen Tracker-Modus, keine Memory-Datei,
-   keinen Cache und keine Wisdom-Datei.
-2. Lies die interne Anweisung ``tools/plan-review.md``.
-3. Führe sie mit der aufgelösten Plan-Datei aus.
-4. Beende danach diesen `review`-Workflow; starte keinen Code-Review.
+1. Do not load any code-review configuration, tracker mode, memory file,
+   cache, or wisdom file.
+2. Read the internal instruction ``tools/plan-review.md``.
+3. Run it with the resolved plan file.
+4. Then end this `review` workflow; do not start a code review.
 
-Wenn keine oder mehrere Plan-Dateien passen, behandle das Argument nicht als
-Plan-Datei-Sonderfall und fahre mit Phase 1 fort. Falls der User erkennbar einen
-Plan-Review wollte, frage nach der konkreten Plan-Datei statt einen Code-Review zu
-raten.
+If no plan file or multiple plan files match, do not treat the argument as a
+plan-file special case and continue with Phase 1. If the user clearly wanted a
+plan review, ask for the specific plan file instead of guessing a code review.
 
 ### Phase 1: Scope
 
-1. Lies die Argumente.
-2. Lade Effective Flow-Konfiguration, migriere sie falls nötig und bestimme Review-Profil, DD-Quellenprofil und Validierungsmodus. Bestimme zusätzlich den Tracker-Modus gemäß „Issue-Tracker-Anbindung (Remote-Modus)“ (Config `tracker.mode`, Argument-/Per-Run-Signal, ggf. Erstaufruf-Abfrage). Bei `remote`: erkenne Host und CLI und prüfe die CLI-Verfügbarkeit sowie Authentifizierung vorab; fehlt das CLI, brich klar ab (kein stiller Fallback auf `local`).
-3. Ohne Argumente:
-   - prüfe `git diff --name-only`
-   - prüfe `git diff --cached --name-only`
-   - falls Änderungen vorhanden: reviewe nur diese Dateien
-   - sonst den gesamten Code
-4. Untersuche Projektstruktur und Projekt-Typ. Nutze einen validen `scopeIndex`-Cache nur, wenn Git-HEAD, Dirty-State und relevante Dateiänderungen zur aktuellen Situation passen.
-5. Bestimme den finalen Review-Scope (konkrete Datei-Liste oder Verzeichnis-Beschreibung).
-6. Bestimme den aktiven Finding-Scope: Standard ist nur kritisch+wichtig, es sei denn, der User hat explizit ein umfassendes Review verlangt.
-7. Hole User-Bestätigung nur ein, wenn Scope oder Review-Ziel unklar ist.
-8. Überspringe die Scope-Bestätigung, wenn der User den Scope explizit angegeben hat oder `review.autoConfirmScope: true` gesetzt ist und die Scope-Ermittlung eindeutig ist. Frage trotzdem, wenn uncommitted Changes vorhanden sind und der gewünschte Scope nicht eindeutig ist.
+1. Read the arguments.
+2. Load the Effective Flow configuration, migrate it if necessary, and determine the review profile, DD source profile, and validation mode. Additionally determine the tracker mode according to "Issue-tracker integration (remote mode)" (config `tracker.mode`, argument/per-run signal, and possibly a first-call query). For `remote`: detect the host and CLI and check CLI availability and authentication in advance; if the CLI is missing, abort clearly (no silent fallback to `local`).
+3. Without arguments:
+   - check `git diff --name-only`
+   - check `git diff --cached --name-only`
+   - if there are changes: review only those files
+   - otherwise the entire codebase
+4. Examine the project structure and project type. Use a valid `scopeIndex` cache only if Git HEAD, dirty state, and relevant file changes match the current situation.
+5. Determine the final review scope (concrete file list or directory description).
+6. Determine the active finding scope: the default is only critical+important, unless the user has explicitly requested a comprehensive review.
+7. Obtain user confirmation only if the scope or review goal is unclear.
+8. Skip the scope confirmation if the user has explicitly specified the scope, or if `review.autoConfirmScope: true` is set and the scope determination is unambiguous. Still ask if there are uncommitted changes and the desired scope is not unambiguous.
 
-Wenn nach den Regeln oben eine Scope-Bestätigung nötig ist:
+Wenn a scope confirmation is required per the rules above:
 
 Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
-- header: "Review-Scope"
-- question: "Review-Scope bestätigt?"
+- header: "Review scope"
+- question: "Review scope confirmed?"
 - multiSelect: false
 - options:
   - label: "Ja", description: "Freigabe erteilt"
   - label: "Anpassen", description: "Feedback als Freitext eingeben"
 
-### Phase 2: Parallele Datensammlung
+### Phase 2: Parallel data collection
 
-Sichte zuerst die verfügbaren Skills und binde `codebase-improvement` gemäß Skill-Discovery ein; fehlt der Skill, greift der „Minimale Fallback ohne Skill“ am Ende. Die Discovery läuft einmal, bevor die drei Streams starten.
+First review the available skills and include `codebase-improvement` per skill discovery; if the skill is missing, the "Minimal fallback without the skill" at the end applies. Discovery runs once before the three streams start.
 
-## Skill-Discovery
+## Skill discovery
 
-Bevor du mit der eigentlichen Umsetzung, Planung bzw. Prüfung beginnst, sichte die in der
-Umgebung verfügbaren Skills und binde die für die konkrete Aufgabe nützlichen ein. Stellt
-die Umgebung kein Skill-Verzeichnis bereit oder passt keiner, ist dieser Schritt ein No-Op —
-fahre ohne Fehler oder Blockade fort.
+Before you start the actual implementation, planning, or review, survey the skills available in
+the environment and pull in the ones useful for the concrete task. If the environment provides
+no skill directory or none fits, this step is a no-op — continue without an error or a block.
 
-### Vorgehen
+### Approach
 
-1. **Empfohlene Skills bevorzugen:** Wende die weiter oben unter „Empfohlene Skills"
-   genannten Skills bevorzugt an, sofern sie verfügbar und für die konkrete Aufgabe relevant
-   sind. „Bevorzugen" ist die Auswahl; über die **Autorität** entscheidet der Vertrag in
-   Punkt 5 (ist ein empfohlener Skill der deklarierte Domänen-Owner, ist seine Guidance
-   maßgeblich, nicht nur optional). Eine Fallback-Notation `A › B` ist eine geordnete Präferenz: nimm den ersten
-   verfügbaren, nicht ausgeschlossenen Skill der Gruppe, nie beide. Fehlt ein solcher
-   Abschnitt (z. B. bei Tools), entfällt dieser Punkt.
-2. **Relevanz beurteilen:** Prüfe jeden Skill gegen die **konkrete** Aufgabe und binde nur
-   klar passende ein (typisch 0–2). Lade keine Skills „auf Verdacht" — Token-Sparsamkeit.
-3. **Config berücksichtigen:** Lies, falls vorhanden, den `skills`-Block aus der
-   Effective Flow-Konfiguration (Projektsetup-ADR) best-effort — die globalen Felder plus deinen
-   eigenen Scope-Eintrag (ein Agent liest `agents.<eigener-name>`, ein Tool liest
-   `tools.<eigener-name>`).
-   - `enabled: false` → überspringe die gesamte dynamische Skill-Nutzung.
-   - `exclude` (global oder Scope) → diese Skills nie anwenden; ein ausgeschlossenes
-     Fallback-Mitglied wird zugunsten des nächsten Fallbacks übersprungen.
-   - `include` (global oder Scope) → diese Skills zusätzlich bevorzugt berücksichtigen; ein
-     nicht installierter Skill wird still ignoriert.
-   - Fehlt der Block oder die Datei, gilt der Default (`enabled` an, keine Zusatz-Listen).
-     Lies die Config nur; migriere oder schreibe sie hier nicht.
-4. **Library-Doku:** Wird gegen eine unbekannte oder aktuelle Library bzw. ein Framework
-   gearbeitet, nutze bei Bedarf aktuelle-Doku-Skills (z. B. `context7`), falls verfügbar,
-   statt aus Erinnerung zu raten. Nur bei Bedarf, kein Zwang.
-5. **Autoritäts-Vertrag (Orchestrierung vs. Domänen-Expertise):** Effective Flow und die zentralen
-   Skills teilen sich die Verantwortung **geschichtet** — nicht „Effective Flow gewinnt immer":
-   - **Effective Flow besitzt die Orchestrierung** (das **Was/Wann**): Routing und User-Interaktion,
-     Plan-/Report-State, Finding-IDs, Backlinks, Tracker-Integration, Resumability,
-     Agent-Auswahl und Parallelisierung, Baseline-Vergleich, Worktrees, Commits, Delivery,
-     Harness-Transform und Config. Diese Regeln, `AGENTS.md`/Projektkonventionen sowie die
-     eigenen Sprach-, Commit- und Scope-Regeln haben **immer** Vorrang; kein Skill darf Scope
-     erweitern, neue Dependencies einführen oder den abgestimmten Plan verletzen. In
-     Analyse-/Planungs-Tools bleibt die No-Code-Grenze strikt.
-   - **Zentrale Skills besitzen wiederverwendbare Expertise** (das **Wie**): Domänen-Checklisten,
-     Heuristiken, Standards, Research-Prozeduren und Spezialisten-Guidance. Ist ein empfohlener
-     Skill der **deklarierte Domänen-Owner** für die anstehende Fachfrage **und** deckt er sie
-     ab, ist seine Guidance **maßgeblich** — nicht optionaler Rat. Das eigene Source trägt dann
-     **keine zweite Kopie** dieses Playbooks, sondern nur Scope-/Output-/Lifecycle-Constraints
-     plus einen minimalen Fallback (Punkt 6).
-   - **Grenzfälle:** Deckt ein Skill nur einen Spezialzweig ab (_route-when-relevant_) oder
-     divergiert Effective Flows Produktverhalten bewusst (_no-overlap_), bleibt die Effective Flow-Guidance
-     führend. Die verbindliche Zuordnung je Skill/Intersection steht im Ownership-Inventar im
-     Developer-Guide (`docs/developer-guide/skill-ownership.md`).
-6. **Fehlender maßgeblicher Skill (minimaler Fallback):** Ist der maßgebliche Skill nicht
-   verfügbar (nicht installiert, `skills.enabled: false` oder via `exclude` deaktiviert),
-   greift der im Source belassene **minimale generische Fallback** — eine kurze essentielle
-   Kern-Guidance, damit das Tool funktionsfähig bleibt und sauber degradiert. Es wird **kein**
-   zweites vollständiges Domänen-Handbuch vorgehalten; volle Tiefe kommt nur mit dem zentralen
-   Skill.
-7. **Melden:** Nenne kurz, welche Skills genutzt wurden (bzw. dass keiner passte). Hat dir
-   ein Orchestrator-Tool bereits relevante Skills mitgegeben, wende sie an und führe keine
-   redundante Voll-Discovery durch.
+1. **Prefer recommended skills:** Preferentially apply the skills listed further above under
+   "Recommended skills", provided they are available and relevant to the concrete task.
+   "Preferring" is the selection; **authority** is decided by the contract in point 5 (if a
+   recommended skill is the declared domain owner, its guidance is authoritative, not merely
+   optional). A fallback notation `A › B` is an ordered preference: take the first available,
+   non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
+   this point does not apply.
+2. **Judge relevance:** Check each skill against the **concrete** task and pull in only the
+   clearly fitting ones (typically 0–2). Do not load skills "on suspicion" — be token-frugal.
+3. **Take config into account:** If present, read the `skills` block from the Effective Flow
+   configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
+   scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
+   - `enabled: false` → skip the entire dynamic skill usage.
+   - `exclude` (global or scope) → never apply these skills; an excluded fallback member is
+     skipped in favor of the next fallback.
+   - `include` (global or scope) → additionally consider these skills as preferred; a
+     skill that is not installed is silently ignored.
+   - If the block or the file is missing, the default applies (`enabled` on, no additional
+     lists). Only read the config; do not migrate or write it here.
+4. **Library docs:** When working against an unknown or current library or framework, use
+   current-docs skills (e.g. `context7`) as needed, if available, instead of guessing from
+   memory. Only when needed, never mandatory.
+5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
+   skills share the responsibility in a **layered** way — not "Effective Flow always wins":
+   - **Effective Flow owns the orchestration** (the **what/when**): routing and user
+     interaction, plan/report state, finding IDs, backlinks, tracker integration, resumability,
+     agent selection and parallelization, baseline comparison, worktrees, commits, delivery,
+     harness transform, and config. These rules, `AGENTS.md`/project conventions, plus its own
+     language, commit, and scope rules **always** take precedence; no skill may widen scope,
+     introduce new dependencies, or violate the agreed plan. In analysis/planning tools the
+     no-code boundary stays strict.
+   - **Central skills own reusable expertise** (the **how**): domain checklists, heuristics,
+     standards, research procedures, and specialist guidance. If a recommended skill is the
+     **declared domain owner** for the technical question at hand **and** covers it, its
+     guidance is **authoritative** — not optional advice. The tool's own source then carries
+     **no second copy** of that playbook, only scope/output/lifecycle constraints plus a
+     minimal fallback (point 6).
+   - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
+     Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
+     guidance stays leading. The binding assignment per skill/intersection is in the ownership
+     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
+   available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
+   **minimal generic fallback** left in the source applies — a short, essential core guidance
+   so the tool stays functional and degrades cleanly. **No** second full domain handbook is
+   kept on hand; full depth comes only with the central skill.
+7. **Report:** Briefly name which skills were used (or that none fit). If an orchestrator tool
+   already handed you relevant skills, apply them and do not run a redundant full discovery.
 
-Diese Phase besteht aus drei unabhängigen Streams, die alle gleichzeitig gestartet werden müssen — kein Stream wartet auf einen anderen. Schreibe die Outputs jeweils in die Wisdom-Datei.
+This phase consists of three independent streams that must all be started simultaneously — no stream waits for another. Write each stream's outputs to the wisdom file.
 
-#### Phase 2a: Designentscheidungs-Sammlung (parallel pro Quelle)
+#### Phase 2a: Design-decision collection (parallel per source)
 
-Bestimme die aktiven Designentscheidungs-Quellen aus `review.designDecisionSources`:
+Determine the active design-decision sources from `review.designDecisionSources`:
 
-- `full`: alle unten genannten Quellen.
-- `standard`: ADR, Planungs-Dateien und Konventions-Dateien.
-- `minimal`: ADR und Konventions-Dateien.
+- `full`: all sources listed below.
+- `standard`: ADRs, plan files, and convention files.
+- `minimal`: ADRs and convention files.
 
-Starte für jede aktive Quelle einen eigenen Sub-Agenten **parallel**. Jeder Sub-Agent durchsucht nur seine Quelle:
+Start a dedicated sub-agent for each active source **in parallel**. Each sub-agent searches only its own source:
 
-- ADR — `docs/decisions/`, `docs/adr/`, `adr/`, `*.adr.md`. ADRs können im lebenden, slug-benannten Format (`# <Titel>`, `## Status`) **oder** im nummerierten Alt-Format (`# NNNN — Titel`) vorliegen; beide Formen werden gelesen, die Such-Globs bleiben unverändert. **Ausnahme:** Die Effective Flow-Projektsetup-ADR (Config, bekannter Slug `effective-flow-project-setup`, Alt `firmo-project-setup`, z. B. `docs/adr/effective-flow-project-setup.md`) ist Konfiguration, keine Architekturbegründung, und wird **nicht** als Designentscheidungs-Quelle gesammelt.
-- Planungs-Dateien — `<plan.dir>/`, `plans/`
-- Konventions-Dateien — `CLAUDE.md`, `AGENTS.md`, vergleichbare Konventionsdateien
-- Code-Kommentare — `@design-decision`, `DELIBERATE`, `INTENTIONAL`, `DESIGN:`
-- Lint-Suppressions mit Begründung — `eslint-disable ... -- [Grund]`, `@ts-expect-error [Grund]`
-- Vorherige Review-Reports — `.effective-flow/review/review-report-*.md`
+- ADR — `docs/decisions/`, `docs/adr/`, `adr/`, `*.adr.md`. ADRs may exist in the living, slug-named format (`# <title>`, `## Status`) **or** in the numbered old format (`# NNNN — title`); both forms are read, and the search globs stay unchanged. **Exception:** the Effective Flow project-setup ADR (config, known slug `effective-flow-project-setup`, old `firmo-project-setup`, e.g. `docs/adr/effective-flow-project-setup.md`) is configuration, not an architecture rationale, and is **not** collected as a design-decision source.
+- Plan files — `<plan.dir>/`, `plans/`
+- Convention files — `CLAUDE.md`, `AGENTS.md`, comparable convention files
+- Code comments — `@design-decision`, `DELIBERATE`, `INTENTIONAL`, `DESIGN:`
+- Lint suppressions with a rationale — `eslint-disable ... -- [reason]`, `@ts-expect-error [reason]`
+- Previous review reports — `.effective-flow/review/review-report-*.md`
 
-Nicht aktive Quellen werden nicht durchsucht und im Wisdom-Abschnitt mit „übersprungen durch Profil“ dokumentiert. Verwende valide `designDecisions`-Cache-Einträge pro Quelle, wenn ihre Invalidierungsdaten noch passen; andernfalls berechne die Quelle neu und aktualisiere den Cache nach erfolgreicher Extraktion.
+Inactive sources are not searched and are documented in the wisdom section as "skipped by profile". Use valid `designDecisions` cache entries per source if their invalidation data still matches; otherwise recompute the source and update the cache after a successful extraction.
 
-Jeder Sub-Agent liefert eine Liste von Designentscheidungen im Format:
+Each sub-agent returns a list of design decisions in the format:
 
 ```text
-- [DD-001] [Quelle] [Bereich/Datei]: [Zusammenfassung]
+- [DD-001] [source] [area/file]: [summary]
 ```
 
-Falls eine Quelle leer ist: Liste mit „keine gefunden“ abschließen.
+If a source is empty: end the list with "none found".
 
-Schreibe alle Ergebnisse in die Wisdom-Datei unter `## Designentscheidungen` mit Sub-Sektionen pro Quelle.
+Write all results to the wisdom file under `## Design decisions` with sub-sections per source.
 
-#### Phase 2b: Technische Validierung
+#### Phase 2b: Technical validation
 
-1. Beachte `review.validation`:
-   - `full`: Starte ``effective-flow-code-validator`` im Check-Modus `full` (TypeScript, Lint, Build, keine Fixes).
-   - `quick`: Starte ``effective-flow-code-validator`` im Check-Modus `quick` (schnelles kombiniertes Check-Skript bevorzugen; sonst TypeScript und Lint, Build überspringen).
-   - `off`: Starte keinen Validator. Dokumentiere in der Wisdom-Datei und im Bericht, dass technische Validierung durch Profil deaktiviert wurde.
-2. Sammle technische Probleme in der Wisdom-Datei unter `## Technische Befunde`.
-3. Nutze valide `validatorScripts`-Cache-Einträge nur für die Skript-Erkennung und Profilwahl. Verwende keine gecachten Fehlerlisten als aktuelles Validierungsergebnis.
+1. Observe `review.validation`:
+   - `full`: Start ``effective-flow-code-validator`` in check mode `full` (TypeScript, lint, build, no fixes).
+   - `quick`: Start ``effective-flow-code-validator`` in check mode `quick` (prefer a fast combined check script; otherwise TypeScript and lint, skip build).
+   - `off`: Do not start a validator. Document in the wisdom file and in the report that technical validation was disabled by the profile.
+2. Collect technical problems in the wisdom file under `## Technical findings`.
+3. Use valid `validatorScripts` cache entries only for script detection and profile selection. Do not use cached error lists as the current validation result.
 
-#### Phase 2c: Qualitäts-Review
+#### Phase 2c: Quality review
 
-1. **Reviewer-Auswahl pro Project-Type:**
+1. **Reviewer selection per project type:**
    - Frontend → ``effective-flow-frontend-reviewer``
    - Backend / CLI / Node.js → ``effective-flow-nodejs-reviewer``
    - Rust → ``effective-flow-rust-reviewer``
-   - Fullstack → die jeweils betroffenen Reviewer (Rust-Dateien an ``effective-flow-rust-reviewer``, JS/TS an die passenden)
-2. **Verzeichnis-Split-Heuristik** (pro Project-Type-Bucket im Scope):
-   - Zähle die Dateien im Scope für diesen Bucket.
-   - **≤ 30 Dateien:** ein Reviewer-Sub-Agent für den ganzen Bucket.
-   - **> 30 Dateien:** Splitte den Scope nach Top-Level-Verzeichnis (z. B. `src/components/`, `src/pages/`, `src/lib/` für Frontend; `src/routes/`, `src/services/`, `src/middleware/` für Backend; `src/`, `crates/<name>/src/` für Rust). Pro Top-Level-Verzeichnis ein eigener Reviewer-Sub-Agent. Falls ein Top-Level-Verzeichnis weiterhin > 30 Dateien hat: rekursiv eine Ebene tiefer splitten — maximal **3 Rekursionsebenen** ab dem ersten Split.
-   - **Fallback bei Flat-Repos:** Falls keine Sub-Verzeichnisse existieren, alle Dateien direkt im Root-Scope liegen oder die maximale Rekursionsebene erreicht ist und ein Bucket weiterhin > 30 Dateien enthält: teile die Datei-Liste in alphabetische Blöcke von je ≤ 30 Dateien auf und weise jedem Block einen eigenen Reviewer-Sub-Agenten zu.
-   - Ein valider `scopeIndex`-Cache darf die Dateiliste, Project-Type-Buckets und Split-Berechnung liefern. Wenn die Invalidierung nicht eindeutig passt, berechne den Split neu.
-3. **Auftrag an jeden Reviewer-Sub-Agenten:**
-   - umfassendes Review der zugewiesenen Dateien
-   - beachte den aktiven Finding-Scope
-   - **keine Designentscheidungs-Prüfung im Reviewer** — die Designentscheidungen werden zentral in Phase 3 abgeglichen, das hält den Reviewer-Auftrag schlank. Diese Anweisung überschreibt gegenteilige Standardregeln in ``effective-flow-frontend-reviewer``, ``effective-flow-nodejs-reviewer`` oder ``effective-flow-rust-reviewer``: Reviewer dürfen in Phase 2c Designentscheidungen nicht suchen, nicht filtern und nicht in die Konfidenz einrechnen.
-   - für jedes Finding:
-     - Schweregrad
-     - Bereich
-     - Datei + Zeile
-     - Problem
-     - Lösung
-     - Konfidenz
-     - Komplexität
-4. Alle Reviewer-Sub-Agenten laufen **parallel** (sowohl Project-Type-übergreifend als auch innerhalb eines Project-Types bei Verzeichnis-Split).
-5. Sammle alle Findings in der Wisdom-Datei unter `## Reviewer-Findings` mit Sub-Sektionen pro Sub-Reviewer.
+   - Fullstack → the respectively affected reviewers (Rust files to ``effective-flow-rust-reviewer``, JS/TS to the appropriate ones)
+2. **Directory-split heuristic** (per project-type bucket in scope):
+   - Count the files in scope for this bucket.
+   - **≤ 30 files:** one reviewer sub-agent for the whole bucket.
+   - **> 30 files:** Split the scope by top-level directory (e.g. `src/components/`, `src/pages/`, `src/lib/` for frontend; `src/routes/`, `src/services/`, `src/middleware/` for backend; `src/`, `crates/<name>/src/` for Rust). One dedicated reviewer sub-agent per top-level directory. If a top-level directory still has > 30 files: split recursively one level deeper — at most **3 recursion levels** from the first split.
+   - **Fallback for flat repos:** If no sub-directories exist, all files lie directly in the root scope, or the maximum recursion level is reached and a bucket still contains > 30 files: split the file list into alphabetical blocks of ≤ 30 files each and assign each block its own reviewer sub-agent.
+   - A valid `scopeIndex` cache may provide the file list, project-type buckets, and split calculation. If the invalidation does not clearly match, recompute the split.
+3. **Assignment to each reviewer sub-agent:**
+   - comprehensive review of the assigned files
+   - observe the active finding scope
+   - **no design-decision check in the reviewer** — the design decisions are reconciled centrally in Phase 3, which keeps the reviewer assignment lean. This instruction overrides contrary default rules in ``effective-flow-frontend-reviewer``, ``effective-flow-nodejs-reviewer``, or ``effective-flow-rust-reviewer``: in Phase 2c, reviewers must not search for, filter by, or factor design decisions into the confidence.
+   - for each finding:
+     - severity
+     - area
+     - file + line
+     - problem
+     - solution
+     - confidence
+     - complexity
+4. All reviewer sub-agents run **in parallel** (both across project types and within a project type when there is a directory split).
+5. Collect all findings in the wisdom file under `## Reviewer findings` with sub-sections per sub-reviewer.
 
-### Phase 3: Aggregation und Designentscheidungs-Filter
+### Phase 3: Aggregation and design-decision filter
 
-**Vorbedingung:** Starte Phase 3 erst, wenn alle drei Phase-2-Streams (2a, 2b, 2c) `ERLEDIGT` (oder `ABBRUCH`) gemeldet haben. Ein opportunistisches Voraus-Lesen der Wisdom-Datei, während noch ein Stream schreibt, würde unvollständige Daten verarbeiten.
+**Precondition:** Start Phase 3 only once all three Phase-2 streams (2a, 2b, 2c) have reported `DONE` (or `ABORT`). Opportunistically reading the wisdom file ahead while a stream is still writing would process incomplete data.
 
-1. Aggregiere Findings aus `## Technische Befunde` und allen Sub-Sektionen unter `## Reviewer-Findings`.
-2. Findings-Qualitätsprüfung. Das **Reasoning** hinter Evidence-Beurteilung, Validierung, Kandidaten-Rejection, Dedup-Einschätzung und Priorisierung folgt `codebase-improvement` (siehe „Delegations-Vertrag: generisches Audit-Reasoning“), sofern verfügbar; fehlt der Skill, greift der minimale Fallback. Die folgenden **deterministischen Schwellen und Schlüssel** bleiben in jedem Fall Effective-Flow-Output-Contract und werden nicht an den Skill abgegeben:
-   - Konfidenz < 80 herausfiltern
-   - Duplikate entfernen (gleicher Bereich, gleiche Datei+Zeile, ähnliches Problem)
-   - Schweregrad-Konsistenz prüfen
-   - Findings außerhalb des aktiven Finding-Scopes aus dem Hauptbericht herausfiltern
-3. **Zentraler Designentscheidungs-Filter** (das ist der einzige Ort, an dem Designentscheidungen gegen Findings abgeglichen werden):
-   - Lies alle in `## Designentscheidungen` aus der Wisdom-Datei gesammelten Einträge.
-   - Prüfe jedes verbleibende Finding einzeln, ob es durch eine dokumentierte Designentscheidung abgedeckt ist.
-   - Bei Treffer: Finding aus dem Hauptbericht entfernen und in die Tabelle „Übersprungene Findings (Designentscheidungen)“ verschieben mit Quellenangabe.
-   - Bei Unsicherheit (teilweise Überlappung): Finding im Bericht belassen, aber mit Hinweis auf die möglicherweise relevante Designentscheidung versehen.
-4. Bestimme für jedes verbleibende Finding die Folgeaktion:
-   - Defekt → `/effective-flow fix`
-   - strukturelles Problem → `/effective-flow refactor`
-   - fehlende Funktionalität / Schutzmechanismus → `/effective-flow build`
-   - reine Dokumentationslücke, veraltete Dokumentation, falsche Beispiele, fehlende Migrations-, CLI- oder API-Dokumentation → `/effective-flow docs`
-5. Formuliere Prompt-Vorschläge:
-   - direkt kopierbarer Klartext
-   - keine umschließenden Anführungszeichen
-   - keine Escape-Sequenzen wie `\"`
+1. Aggregate findings from `## Technical findings` and all sub-sections under `## Reviewer findings`.
+2. Finding-quality check. The **reasoning** behind evidence assessment, validation, candidate rejection, dedup judgment, and prioritization follows `codebase-improvement` (see "Delegation contract: generic audit reasoning") where available; if the skill is missing, the minimal fallback applies. The following **deterministic thresholds and keys** remain an Effective Flow output contract in every case and are not handed off to the skill:
+   - filter out confidence < 80
+   - remove duplicates (same area, same file+line, similar problem)
+   - check severity consistency
+   - filter findings outside the active finding scope out of the main report
+3. **Central design-decision filter** (this is the only place where design decisions are reconciled against findings):
+   - Read all entries collected under `## Design decisions` in the wisdom file.
+   - Check each remaining finding individually for whether it is covered by a documented design decision.
+   - On a match: remove the finding from the main report and move it into the "Skipped findings (design decisions)" table with a source reference.
+   - In case of uncertainty (partial overlap): keep the finding in the report but annotate it with a reference to the potentially relevant design decision.
+4. Determine the follow-up action for each remaining finding:
+   - defect → `/effective-flow fix`
+   - structural problem → `/effective-flow refactor`
+   - missing functionality / safeguard → `/effective-flow build`
+   - pure documentation gap, outdated documentation, incorrect examples, missing migration, CLI, or API documentation → `/effective-flow docs`
+5. Formulate prompt suggestions:
+   - directly copyable plain text
+   - no surrounding quotation marks
+   - no escape sequences like `\"`
 
-### Phase 4: Bericht
+### Phase 4: Report
 
-Phase 4 verzweigt nach dem in Phase 1 bestimmten Tracker-Modus. Im lokalen Modus wird wie bisher ein Markdown-Report geschrieben. Im Remote-Modus wird **kein** lokaler Report geschrieben; stattdessen werden Finding-Issues und ein Epic-Issue angelegt. Die Finding-Nummerierung aus `.effective-flow/memory.json` gilt in beiden Modi.
+Phase 4 branches according to the tracker mode determined in Phase 1. In local mode a Markdown report is written as before. In remote mode **no** local report is written; instead, finding issues and an epic issue are created. The finding numbering from `.effective-flow/memory.json` applies in both modes.
 
-#### Lokaler Modus
+#### Local mode
 
-1. Erstelle einen Bericht als `.effective-flow/review/review-report-YYYY-MM-DD[-N].md`. Erstelle `.effective-flow/review/` falls nicht vorhanden. Verwende das untenstehende Bericht-Format.
-2. Wenn der aktive Finding-Scope nur kritische und wichtige Findings umfasst (Standard):
-   - nimm Hinweise nicht in den Hauptbericht auf
-   - erwähne kurz, dass Hinweise ausgefiltert wurden und ein umfassendes Review auf Wunsch möglich ist
-3. Wenn `review.validation: off` aktiv war, erwähne im Bericht, dass technische Validierung übersprungen wurde.
-4. Aktualisiere valide Cache-Bereiche (`designDecisions`, `scopeIndex`, `validatorScripts`) nur nach erfolgreicher Neuberechnung. Schreibe keine Review-Findings in den Cache.
-5. Präsentiere dem User die wichtigsten Findings und weise auf die gespeicherte Report-Datei hin.
-6. Lösche die Wisdom-Datei.
+1. Create a report as `.effective-flow/review/review-report-YYYY-MM-DD[-N].md`. Create `.effective-flow/review/` if it does not exist. Use the report format below.
+2. If the active finding scope only covers critical and important findings (default):
+   - do not include notes in the main report
+   - briefly mention that notes were filtered out and that a comprehensive review is available on request
+3. If `review.validation: off` was active, mention in the report that technical validation was skipped.
+4. Update valid cache areas (`designDecisions`, `scopeIndex`, `validatorScripts`) only after a successful recomputation. Do not write review findings to the cache.
+5. Present the most important findings to the user and point to the saved report file.
+6. Delete the wisdom file.
 
-#### Remote-Modus
+#### Remote mode
 
-Verwende die Formate, Labels und Operationen aus „Issue-Tracker-Anbindung (Remote-Modus)“. Es wird **kein** lokaler Report geschrieben.
+Use the formats, labels, and operations from "Issue-tracker integration (remote mode)". **No** local report is written.
 
-1. **Labels sicherstellen:** Lege die benötigten Labels idempotent an (`effective-flow-review-finding`, `effective-flow-review-epic`, die Aktions- und Schweregrad-Labels, `wontfix`).
-2. **Dedup zuerst:** Frage die vorhandenen Finding-Issues am Tracker ab (Label `effective-flow-review-finding`, Status offen **und** geschlossen; das Alt-Label `firmo-review-finding` gleichwertig mitabfragen und vereinigen, siehe „Label-Konvention“) und gleiche jedes qualitätsgeprüfte Finding über die inhaltliche Signatur (Datei+Zeile, Bereich, Problem) gegen deren `Signatur`-Feld ab. Entferne bereits vorhandene Findings aus der Anlageliste. Bei unsicherer Übereinstimmung (z. B. nur verschobene Zeilennummer bei gleichem Problem) im Zweifel als neues Finding behandeln und die mögliche Verwandtschaft im Issue-Body notieren.
-3. **Neue Finding-Issues anlegen:** Vergib erst für die verbleibenden **neuen** Findings je eine `R-XXXXXXX`-ID (nummeriere fortlaufend ab `lastFindingNumber + 1`, schreibe `memory.json` nur für tatsächlich angelegte Issues fort) und lege je ein Issue im kanonischen Finding-Body-Format mit vollständigem Inhalt und Labels an.
-4. **Neues Epic anlegen:** Lege ein **neues** Epic-Issue im kanonischen Epic-Body-Format an (Titel `Code-Review YYYY-MM-DD[-N]`, Label `effective-flow-review-epic`). Die Task-Liste enthält ausschließlich die in diesem Lauf neu angelegten Finding-Issues. Übersprungene Findings (Designentscheidungen) kommen in den nicht-abhakbaren Abschnitt „Übersprungen (Designentscheidungen)“; bereits existierende (deduplizierte) Findings werden **nicht** referenziert. Ein bestehendes Epic wird nie erweitert. Trage die Epic-Nummer im `Epic`-Feld der zugehörigen Finding-Issues nach.
-5. **Leeres Epic vermeiden:** Sind nach dem Dedup keine neuen Findings übrig, lege **kein** leeres Epic an, sondern melde dem User, dass alle Findings bereits als Issues existieren.
-6. Schreibe `memory.json` mit der höchsten vergebenen Finding-Nummer (wie im lokalen Modus).
-7. Melde dem User Epic-URL, Anzahl neu angelegter und Anzahl deduplizierter Findings.
-8. Lösche die Wisdom-Datei.
+1. **Ensure labels:** Create the required labels idempotently (`effective-flow-review-finding`, `effective-flow-review-epic`, the action and severity labels, `wontfix`).
+2. **Dedup first:** Query the existing finding issues from the tracker (label `effective-flow-review-finding`, status open **and** closed; also query and merge the old label `firmo-review-finding` as equivalent, see "Label convention") and reconcile each quality-checked finding via its content signature (file+line, area, problem) against their `Signatur` field. Remove already-existing findings from the creation list. In case of an uncertain match (e.g. only a shifted line number for the same problem), when in doubt treat it as a new finding and note the possible relationship in the issue body.
+3. **Create new finding issues:** Only for the remaining **new** findings, assign each an `R-XXXXXXX` ID (number consecutively from `lastFindingNumber + 1`, advance `memory.json` only for issues actually created) and create one issue each in the canonical finding-body format with full content and labels.
+4. **Create a new epic:** Create a **new** epic issue in the canonical epic-body format (title `Code review YYYY-MM-DD[-N]`, label `effective-flow-review-epic`). The task list contains exclusively the finding issues newly created in this run. Skipped findings (design decisions) go into the non-checkable "Skipped (design decisions)" section; already-existing (deduplicated) findings are **not** referenced. An existing epic is never extended. Record the epic number in the `Epic` field of the associated finding issues.
+5. **Avoid an empty epic:** If no new findings remain after dedup, do **not** create an empty epic; instead report to the user that all findings already exist as issues.
+6. Write `memory.json` with the highest assigned finding number (as in local mode).
+7. Report to the user the epic URL, the number of newly created findings, and the number of deduplicated findings.
+8. Delete the wisdom file.
 
-**Abschlussbedingung (ohne Autonom-Loop):** Das Review ist abgeschlossen, wenn die in Phase 3 qualitätsgeprüften und gegen Designentscheidungen gefilterten Findings vorliegen — im lokalen Modus im Bericht, im Remote-Modus als Finding-Issues plus Epic (bzw. mit der Meldung, dass alle Findings bereits existieren) —, `.effective-flow/memory.json` mit der höchsten vergebenen Finding-Nummer geschrieben ist und die Wisdom-Datei gelöscht wurde. Die unabhängige Prüfung leistet die Findings-Qualitätsprüfung in Phase 3 (Konfidenzfilter, Duplikat- und Schweregrad-Konsistenz). Dieser Workflow erzeugt nur einen Bericht und setzt nichts um; deshalb gibt es weder einen beschränkten Korrektur-Loop noch einen `/goal`-String.
+**Completion condition (no autonomous loop):** The review is complete when the findings that were quality-checked in Phase 3 and filtered against design decisions are available — in local mode in the report, in remote mode as finding issues plus an epic (or with the message that all findings already exist) —, `.effective-flow/memory.json` has been written with the highest assigned finding number, and the wisdom file has been deleted. The independent check is provided by the finding-quality check in Phase 3 (confidence filter, duplicate and severity consistency). This workflow only produces a report and implements nothing; therefore there is neither a bounded correction loop nor a `/goal` string.
 
-### Bericht-Format
+### Report format
 
 ```markdown
-# Code-Review-Bericht
+# Code review report
 
-**Datum:** YYYY-MM-DD
-**Scope:** [Gesamter Code / Beschriebener Bereich]
-**Projekt-Typ:** [Frontend / Backend / CLI / Rust / Fullstack]
+**Date:** YYYY-MM-DD
+**Scope:** [Entire code / Described area]
+**Project type:** [Frontend / Backend / CLI / Rust / Fullstack]
 
-## Zusammenfassung
+## Summary
 
-| Schweregrad | Anzahl |
+| Severity | Count |
 |---|---|
-| Kritisch | X |
-| Wichtig | Y |
-| Hinweis | Z |
+| Critical | X |
+| Important | Y |
+| Note | Z |
 
-| Komplexität | Anzahl |
+| Complexity | Count |
 |---|---|
-| Leicht | X |
-| Mittel | Y |
-| Schwer | Z |
+| Low | X |
+| Medium | Y |
+| High | Z |
 
-| Aktion | Anzahl |
+| Aktion | Count |
 |---|---|
 | /effective-flow fix | X |
 | /effective-flow refactor | Y |
@@ -600,46 +596,46 @@ Verwende die Formate, Labels und Operationen aus „Issue-Tracker-Anbindung (Rem
 ## Findings
 
 ### [R-0000001] [Titel]
-- **Schweregrad**: Kritisch / Wichtig / Hinweis
-- **Komplexität**: Leicht / Mittel / Schwer
-- **Bereich**: [...]
-- **Datei**: [pfad:zeile]
+- **Severity**: Critical / Important / Note
+- **Complexity**: Low / Medium / High
+- **Area**: [...]
+- **File**: [path:line]
 - **Problem**: [...]
-- **Empfehlung**: [...]
-- **Aktion**: `/effective-flow fix` | `/effective-flow refactor` | `/effective-flow build` | `/effective-flow docs`
-- **Prompt-Vorschlag**: [...]
-- **Entwickler-Anmerkung**: <!-- nur vom Entwickler manuell auszufüllen; bei der Report-Erstellung immer leer lassen, niemals automatisch befüllen. Spätere Entwicklerwerte: Freitext oder „Nicht umsetzen: [Grund]" -->
+- **Recommendation**: [...]
+- **Action**: `/effective-flow fix` | `/effective-flow refactor` | `/effective-flow build` | `/effective-flow docs`
+- **Prompt suggestion**: [...]
+- **Developer note**: <!-- to be filled in manually by the developer only; always leave empty when generating the report, never fill automatically. Later developer values: free text or "Do not implement: [reason]" (the German form "Nicht umsetzen: [reason]" is also recognized) -->
 
-## Übersprungene Findings (Designentscheidungen)
+## Skipped findings (design decisions)
 
-| Finding | Designentscheidung | Quelle |
+| Finding | Design decision | Source |
 |---|---|---|
 | [...] | [DD-XXX] | [...] |
 ```
 
-Wenn ein Finding später über `/effective-flow fix`, `/effective-flow refactor`, `/effective-flow build` oder `/effective-flow docs` umgesetzt wird, darf die bestehende Report-Datei am betroffenen Finding um einen kurzen Statushinweis ergänzt werden, zum Beispiel `Umgesetzt am YYYY-MM-DD via /effective-flow fix`.
+If a finding is later implemented via `/effective-flow fix`, `/effective-flow refactor`, `/effective-flow build`, or `/effective-flow docs`, the existing report file may be augmented at the affected finding with a short status note, for example `Implemented on YYYY-MM-DD via /effective-flow fix`. English field labels and values are the default; German field labels and values in a pre-existing report stay recognized when reading it.
 
-## Bekannte Einschränkungen
+## Known limitations
 
-- **Verzeichnis-Split in Phase 2c** kann Cross-Cutting-Issues über Modul-Grenzen hinweg verschleiern (z. B. Architektur-Konsistenz zwischen `src/components/` und `src/lib/`). Bei Repos, in denen solche Module-übergreifenden Reviews wichtig sind: Threshold im User-Argument überschreiben oder den ganzen Scope ohne Split reviewen.
-- **Reviewer in Phase 2c haben keinen Designentscheidungs-Kontext** — bewusster Trade-off zugunsten von Geschwindigkeit. Der zentrale Filter in Phase 3 fängt dokumentierte Designentscheidungen ab, kann aber bei ambigen Fällen (teilweise Überlappung) mehr False Positives produzieren als ein im Reviewer informierter Pass.
-- **Phase 3 darf erst starten, wenn alle drei Phase-2-Streams abgeschlossen sind.** Ein LLM-Orchestrator muss diese Synchronisation explizit einhalten — opportunistisches Vorlesen während ein Stream noch schreibt führt zu unvollständigen Daten in Aggregation und Filter.
+- **The directory split in Phase 2c** can obscure cross-cutting issues across module boundaries (e.g. architecture consistency between `src/components/` and `src/lib/`). For repos where such cross-module reviews are important: override the threshold in the user argument or review the entire scope without a split.
+- **Reviewers in Phase 2c have no design-decision context** — a deliberate trade-off in favor of speed. The central filter in Phase 3 catches documented design decisions but, in ambiguous cases (partial overlap), may produce more false positives than a reviewer-informed pass.
+- **Phase 3 may only start once all three Phase-2 streams are complete.** An LLM orchestrator must observe this synchronization explicitly — opportunistic pre-reading while a stream is still writing leads to incomplete data in aggregation and filtering.
 
-## Minimaler Fallback ohne Skill
+## Minimal fallback without the skill
 
-Nur relevant, wenn `codebase-improvement` nicht verfügbar ist. Kurze Kern-Guidance für das Finding-Quality-Reasoning in Phase 3, damit `review` sauber degradiert – **kein** zweites vollständiges Audit-Handbuch:
+Only relevant if `codebase-improvement` is not available. Brief core guidance for the finding-quality reasoning in Phase 3 so that `review` degrades cleanly – **not** a second full audit handbook:
 
-- Ein Finding zählt nur mit konkreter Evidence (Datei+Zeile, reproduzierbare Ursache); vage oder rein stilistische Vermutungen verwerfen.
-- Duplikate über die inhaltliche Signatur (Datei+Zeile, Bereich, ähnliches Problem) zusammenführen, nicht über die Formulierung.
-- Nach Wirkung priorisieren: höchster Schaden × Eintrittswahrscheinlichkeit zuerst; breit wirksame Ursachen vor lokalen Symptomen.
-- Die deterministischen Gates oben (Konfidenz < 80, Schweregrad-Konsistenz, Finding-Scope) bleiben unverändert.
+- A finding counts only with concrete evidence (file+line, reproducible cause); discard vague or purely stylistic guesses.
+- Merge duplicates via the content signature (file+line, area, similar problem), not via the wording.
+- Prioritize by impact: highest damage × probability of occurrence first; broadly effective causes before local symptoms.
+- The deterministic gates above (confidence < 80, severity consistency, finding scope) remain unchanged.
 
-## Regeln
+## Rules
 
-- Phase 2 (2a, 2b, 2c) **immer parallel starten** — keine sequenzielle Abarbeitung.
-- Innerhalb von Phase 2a alle Designentscheidungs-Quellen parallel.
-- Innerhalb von Phase 2c alle Reviewer-Sub-Agenten parallel (Project-Type-übergreifend und Verzeichnis-Split-übergreifend).
-- Reviewer in Phase 2c prüfen **keine** Designentscheidungen — der zentrale Filter erfolgt in Phase 3.
-- Im lokalen Modus liest und schreibt dieser Skill nur den Review-Bericht und die temporäre Wisdom-Datei. Im Remote-Modus schreibt er zusätzlich Finding- und Epic-Issues über den Tracker und schreibt **keinen** lokalen Report.
-- Prompt-Vorschläge müssen ohne Anführungszeichen und ohne Escape-Sequenzen direkt kopierbar sein (gilt für Report und Issue-Body gleichermaßen).
-- Der aktive Finding-Scope (Standard: nur kritisch+wichtig) muss im Bericht bzw. in den Finding-Issues respektiert werden.
+- **Always start** Phase 2 (2a, 2b, 2c) **in parallel** — no sequential processing.
+- Within Phase 2a, all design-decision sources in parallel.
+- Within Phase 2c, all reviewer sub-agents in parallel (across project types and across directory splits).
+- Reviewers in Phase 2c check **no** design decisions — the central filter happens in Phase 3.
+- In local mode, this skill only reads and writes the review report and the temporary wisdom file. In remote mode, it additionally writes finding and epic issues via the tracker and writes **no** local report.
+- Prompt suggestions must be directly copyable without quotation marks and without escape sequences (applies to the report and the issue body alike).
+- The active finding scope (default: only critical+important) must be respected in the report or in the finding issues.

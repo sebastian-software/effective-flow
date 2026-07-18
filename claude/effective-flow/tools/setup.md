@@ -1,490 +1,496 @@
 
 # Effective Flow Setup
 
-Du bereitest ein Zielprojekt für die Nutzung von Effective Flow vor: `.gitignore`-Eintrag für das reine Laufzeit-Verzeichnis `.effective-flow/` und interaktive Pflege der Effective Flow-Konfiguration in einer lebenden **Projektsetup-ADR** (Default `docs/adr/effective-flow-project-setup.md`), auf die ein Marker in `AGENTS.md` verweist.
+You prepare a target project for using Effective Flow: a `.gitignore` entry for the pure runtime directory `.effective-flow/` and interactive maintenance of the Effective Flow configuration in a living **project setup ADR** (default `docs/adr/effective-flow-project-setup.md`) that a marker in `AGENTS.md` points to.
 
-## Ziel
+## Goal
 
-- das Laufzeit-Verzeichnis `.effective-flow/` komplett und idempotent in die `.gitignore` eintragen (nur wenn der Soll-Zustand noch nicht hergestellt ist)
-- die Effective Flow-Konfiguration über einen geführten Wizard in die Projektsetup-ADR-Tabelle schreiben oder nicht-destruktiv aktualisieren und den `**Effective Flow project setup:**`-Marker in `AGENTS.md` (bzw. `CLAUDE.md`) setzen
-- eine bestehende `.firmo/config.json` einmalig in die ADR migrieren und anschließend enttracken (Datei-Inhalt auf Platte belassen)
-- immer von sicheren Defaults starten und dem User zwei Wege bieten: **Express** (Defaults übernehmen) oder **Geführt** (jede Option erklärt durchgehen)
-- jede Option so erklären, dass sie auch ohne Vorwissen über die Arbeitsweise von Effective Flow verständlich ist
-- bei einer vorhandenen Config bei jeder Auswahl den aktuell festgeschriebenen Wert anzeigen und vorauswählen
-- keine Projektvalidation wie Linting, Tests oder Build-Checks ausführen
+- enter the runtime directory `.effective-flow/` completely and idempotently into `.gitignore` (only if the target state is not yet established)
+- write the Effective Flow configuration via a guided wizard into the project setup ADR table or update it non-destructively, and set the `**Effective Flow project setup:**` marker in `AGENTS.md` (or `CLAUDE.md`)
+- migrate an existing `.firmo/config.json` once into the ADR and then untrack it (leave the file content on disk)
+- always start from safe defaults and offer the user two paths: **Express** (adopt defaults) or **Guided** (go through every option explained)
+- explain every option so that it is understandable even without prior knowledge of how Effective Flow works
+- for an existing config, show and pre-select the currently recorded value at every choice
+- do not run project validation such as linting, tests, or build checks
 
-## Sprachregel
+## Language rule
 
-- Code, Bezeichner und Tests auf Englisch
-- Dokumentationsinhalte auf Deutsch, außer bestehende Doku führt eine andere Sprache fort
-- Commit-Messages auf Englisch
+- Code, identifiers, and tests in English
+- Documentation and tool instructions in English **by default**; German remains a permitted
+  option — continue the existing language of a file you edit, and honour an explicit German
+  choice for a project, document, or plan marker
+- Commit messages in English
 
-Die deutsche Repository-Locale ist **de-DE**.
+English is the default; German is not deprecated. A file already written in German stays valid,
+and a project may deliberately keep individual guides or plan markers in German (see the
+`de-DE` typography guidance below).
 
-### Typografie
+### Typography
 
-Locale-spezifische Typografie sichtbarer Prosa – Anführungszeichen, Gedankenstriche,
-Umlaute und ß, geschützte Leerzeichen, Zahlen- und Datumsformate – besitzt der zentrale
-Skill `locale-typography`. Beim Schreiben oder Bearbeiten sichtbarer deutscher Prosa ist
-dessen `de-DE`-Guidance maßgeblich; Effective Flow führt hier bewusst keine zweite
-Typografie-Checkliste.
+Locale-specific typography of visible prose — quotation marks, dashes, umlauts and ß, non-breaking
+spaces, number and date formats — is owned by the central `locale-typography` skill. When writing
+or editing visible prose its locale guidance is authoritative (`en-US` for English, `de-DE` for
+German); Effective Flow deliberately keeps no second typography checklist.
 
-Fehlt der Skill (nicht installiert, `skills.enabled: false` oder via `exclude`
-deaktiviert), gilt als minimaler Fallback für deutschen Text: echte Umlaute und ß statt
-ASCII-Ersatz (ae, oe, ue, ss), typografische Anführungszeichen „…“ statt gerader und
-Halbgeviertstrich – statt Bindestrich.
+If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
+a minimal fallback applies to German text: real umlauts and ß instead of ASCII replacements (ae,
+oe, ue, ss), typographic quotation marks „…“ instead of straight ones, and an en dash – instead
+of a hyphen.
 
-## Aufgabenverfolgung
+## Task tracking
 
-Wenn mehrere Aufgaben zu erledigen sind, verwende ein verfügbares TODO- oder Task-Tracking-Tool (z. B. `TaskCreate`/`TaskUpdate`, `TodoWrite` oder ein vergleichbares Tool), um eine Aufgabenliste anzulegen. Setze jede Aufgabe vor Beginn auf „in Arbeit“ und nach Abschluss auf „erledigt“.
+When there are several tasks to complete, use an available TODO or task-tracking tool (e.g. `TaskCreate`/`TaskUpdate`, `TodoWrite`, or a comparable tool) to create a task list. Set each task to "in progress" before starting it and to "done" after completing it.
 
-Falls kein Task-Tool verfügbar ist, gib dem User stattdessen eine kurze Fortschrittsmeldung nach jedem abgeschlossenen Schritt.
+If no task tool is available, give the user a short progress update after each completed step instead.
 
-### Wann verwenden
+### When to use
 
-- bei drei oder mehr Teilaufgaben oder Schritten
-- bei komplexen Aufträgen mit mehreren Phasen
-- wenn der User mehrere Aufgaben gleichzeitig nennt
+- with three or more subtasks or steps
+- with complex tasks that have multiple phases
+- when the user names several tasks at once
 
-### Wann nicht verwenden
+### When not to use
 
-- bei einer einzelnen, trivialen Aufgabe
-- wenn der Auftrag in weniger als drei einfachen Schritten erledigt ist
+- with a single, trivial task
+- when the task is done in fewer than three simple steps
 
-## Lebendes ADR-Modell
+## Living ADR model
 
-Effective Flow führt Architekturentscheidungen (ADRs) als **lebende Dokumente**: mutable
-Markdown-Dateien, die stets den aktuell gültigen Stand einer Entscheidung tragen. Es gibt
-keine Nummerierung und keine Supersede-Kette; die aktuelle Datei ist die Wahrheit. Dieser
-Baustein ist die maßgebliche Konvention für alle **von Effective Flow erzeugten** ADRs.
+Effective Flow keeps architecture decisions (ADRs) as **living documents**: mutable
+Markdown files that always carry the currently valid state of a decision. There is
+no numbering and no supersede chain; the current file is the truth. This
+building block is the authoritative convention for all ADRs **produced by Effective Flow**.
 
-### Form und Ort
+### Form and location
 
-- **Ort:** ADRs liegen im erkannten ADR-Verzeichnis des Projekts, Default `docs/adr/`.
-- **Dateiname:** nummernlos, kebab-case-Slug — `docs/adr/<slug>.md` (z. B.
+- **Location:** ADRs live in the project's detected ADR directory, default `docs/adr/`.
+- **File name:** numberless, kebab-case slug — `docs/adr/<slug>.md` (e.g.
   `docs/adr/effective-flow-project-setup.md`).
-- **Titel:** eine H1 mit dem sprechenden Titel — `# <Titel>` (kein `NNNN`-Präfix).
-- **Status:** ein `## Status`-Abschnitt hält den aktuellen Zustand. Kanonische Werte:
-  `Aktiv`, `Abgelöst`, `Nicht umgesetzt`.
-- **Mutabilität:** eine bestehende ADR wird bei Änderung der Entscheidung **in-place**
-  aktualisiert (Inhalt und `## Status`), nicht dupliziert oder per Nachfolge-Record ersetzt.
-- **Nebenläufigkeit:** die Datei direkt vor dem Schreiben frisch einlesen.
+- **Title:** an H1 with the descriptive title — `# <Title>` (no `NNNN` prefix).
+- **Status:** a `## Status` section holds the current state. Canonical values (English by
+  default): `Active`, `Superseded`, `Not implemented`. The former German values `Aktiv`,
+  `Abgelöst`, `Nicht umgesetzt` stay recognized when reading an existing ADR.
+- **Mutability:** an existing ADR is updated **in place** when the decision changes
+  (content and `## Status`), not duplicated or replaced by a successor record.
+- **Concurrency:** read the file fresh immediately before writing.
 
-### Referenzierung
+### Referencing
 
-Referenzen auf ADRs erfolgen über **Slug oder Titel**, nicht über eine Nummer, z. B.
-`(ADR: <slug>)`. Slug-Referenzen bleiben über Inhaltsänderungen hinweg stabil.
+References to ADRs use the **slug or title**, not a number, e.g.
+`(ADR: <slug>)`. Slug references stay stable across content changes.
 
-### Rückwärts-Lese-Kompatibilität für nummerierte Alt-ADRs
+### Backward read compatibility for numbered legacy ADRs
 
-Vorhandene nummerierte Alt-ADRs (`NNNN-*.md`, H1 `# NNNN — Titel`) bleiben **lesbar und per
-Nummer auflösbar**. Es gibt **keine** verpflichtende Bulk-Umbenennung; Alt-ADRs werden nicht
-angetastet. Neue ADRs entstehen ausschließlich im lebenden Slug-Format. Das spiegelt Effective Flows
-etablierte Kompatibilitätslinie (Plan-Nummern per H1, `firmo-`/`effective-flow-`-Labels).
+Existing numbered legacy ADRs (`NNNN-*.md`, H1 `# NNNN — Title`) remain **readable and
+resolvable by number**. There is **no** mandatory bulk rename; legacy ADRs are not
+touched. New ADRs are created exclusively in the living slug format. This mirrors Effective Flow's
+established compatibility line (plan numbers via H1, `firmo-`/`effective-flow-` labels).
 
-### Verhältnis zum `decision-records`-Skill (deklarierte Konvention + Fallback)
+### Relationship to the `decision-records` skill (declared convention + fallback)
 
-Das oben beschriebene lebende Slug-Modell ist die **deklarierte ADR-Konvention dieses
-Repos**. Der Host-Skill `decision-records` ist der Domänen-Owner für die ADR-Craft (ob eine
-Entscheidung überhaupt ADR-würdig ist, Lifecycle, Supersession, Index); seine erste
-Operating-Regel ist, **die vorhandene Repo-Konvention zu entdecken und ihr zu folgen**, statt
-eine eigene zu erzwingen. Genau dieser Baustein ist diese Konvention — der Skill autort
-Effective-Flow-ADRs also im lebenden Slug-Format (Ort/Dateiname/Titel/Status/Mutabilität wie
-oben), nicht in einem immutabel-nummerierten.
+The living slug model described above is the **declared ADR convention of this
+repo**. The host skill `decision-records` is the domain owner for ADR craft (whether a
+decision is even ADR-worthy, lifecycle, supersession, index); its first
+operating rule is to **discover the existing repo convention and follow it**, rather than
+enforcing its own. This very building block is that convention — so the skill authors
+Effective Flow ADRs in the living slug format (location/file name/title/status/mutability as
+above), not in an immutably numbered one.
 
-Damit gilt der geschichtete Vertrag (siehe `skill-discovery.md`):
+The layered contract therefore applies (see `skill-discovery.md`):
 
-- **`decision-records` maßgeblich, wenn vorhanden.** Der Skill entscheidet, **ob** ein Finding
-  eine dauerhafte Entscheidung ist, und autort — falls ja — nach der hier deklarierten
-  Konvention. Deklariert das Zielrepo eine **eigene** ADR-Konvention (anderes Verzeichnis,
-  Titel-/Status-Format, Index), folgt der Skill dieser; das lebende Slug-Modell ist nur der
-  Default, wenn das Repo nichts anderes deklariert.
-- **Minimaler Fallback, wenn der Skill fehlt.** Ist `decision-records` nicht verfügbar (nicht
-  installiert, `skills.enabled: false` oder via `exclude` deaktiviert), autort das
-  aufrufende Tool selbst nach der **minimalen Fallback-Struktur** unten — **kein** stilles
-  Erfinden einer zweiten Konvention.
+- **`decision-records` is authoritative when present.** The skill decides **whether** a finding
+  is a durable decision and — if so — authors it according to the convention declared here.
+  If the target repo declares its **own** ADR convention (different directory,
+  title/status format, index), the skill follows that; the living slug model is only the
+  default when the repo declares nothing else.
+- **Minimal fallback when the skill is absent.** If `decision-records` is unavailable (not
+  installed, `skills.enabled: false`, or disabled via `exclude`), the
+  calling tool itself authors according to the **minimal fallback structure**
+  below — **no** silent invention of a second convention.
 
-Frühere Fassungen dieses Bausteins beschrieben das Slug-Modell als **bewusste Abweichung**
-gegenüber einem angeblich immutabel/nummerierten `decision-records`-Skill. Diese Prämisse ist
-überholt: `decision-records` unterstützt inzwischen ein deklariert-lebendes/mutables Modell
-(opt-in) und folgt ohnehin der Repo-Konvention. Das lebende Slug-Modell ist deshalb keine
-Divergenz mehr, sondern die vom Skill befolgte deklarierte Konvention.
+Earlier versions of this building block described the slug model as a **deliberate divergence**
+from an allegedly immutable/numbered `decision-records` skill. That premise is
+outdated: `decision-records` now supports a declared living/mutable model (opt-in)
+and follows the repo convention anyway. The living slug model is therefore no longer a
+divergence but the declared convention the skill follows.
 
-**Koexistenz.** Wo ein Projekt lieber ein anderes ADR-Modell fährt, deklariert es dessen
-Konvention im Zielrepo (der Skill folgt ihr) oder schaltet `decision-records` gezielt über die
-`skills`-Config (`include`/`exclude`, auch per-Agent/-Tool) zu oder ab.
+**Coexistence.** Where a project prefers to run a different ADR model, it declares that
+convention in the target repo (the skill follows it) or toggles `decision-records` deliberately via the
+`skills` config (`include`/`exclude`, also per-agent/-tool) on or off.
 
-### Minimale Fallback-Struktur (nur ohne `decision-records`)
+### Minimal fallback structure (only without `decision-records`)
 
-Kurze Kern-Struktur, damit ein aufrufendes Tool eine abgelehnte Entscheidung auch ohne den
-Skill als lebende Slug-ADR festhalten kann — **kein** zweites vollständiges ADR-Handbuch. Ort
-und Form wie unter „Form und Ort“; die Datei vor dem Schreiben frisch einlesen und eine
-thematisch passende bestehende ADR in-place aktualisieren statt zu duplizieren:
+A short core structure so that a calling tool can record a rejected decision as a living
+slug ADR even without the skill — **not** a second full ADR handbook. Location
+and form as under "Form and location"; read the file fresh before writing and update a
+thematically fitting existing ADR in place instead of duplicating:
 
 ```markdown
-# [Titel der Entscheidung]
+# [Title of the decision]
 
 ## Status
 
-Nicht umgesetzt
+Not implemented
 
-## Kontext
+## Context
 
-[Herkunft: Review-Report + Finding-ID, bzw. Issue-/Epic-Nummer im Remote-Modus]
+[Origin: review report + finding ID, or issue/epic number in remote mode]
 
-## Entscheidung
+## Decision
 
-[Kurzbegründung, warum nicht umgesetzt wird]
+[Short rationale for why it is not implemented]
 
-## Begründung
+## Rationale
 
-[Vollständige Entwickler-Anmerkung bzw. `wontfix`-Begründung]
+[Full developer note or `wontfix` rationale]
 
-## Quell-Finding
+## Source finding
 
-[Finding-ID] aus [Quelle]: [Kurzfassung des Problems]  <!-- nachverfolgbarer Backlink -->
+[Finding ID] from [source]: [short version of the problem]  <!-- traceable backlink -->
 ```
 
-Nur **dauerhafte** Entscheidungen werden so festgehalten; eine reine Delivery-Ablehnung ohne
-dauerhafte Architektur-Wirkung bleibt im Review-Report bzw. Tracker-Artefakt und wird nicht in
-eine ADR gezwungen.
+Only **durable** decisions are recorded this way; a pure delivery rejection without a
+durable architectural effect stays in the review report or tracker artifact and is not forced into
+an ADR.
 
-## Effective-Flow-Konfiguration (Projektsetup-ADR)
+## Effective Flow configuration (project setup ADR)
 
-Die getrackte Wahrheit für die Effective-Flow-Konfiguration ist eine lebende ADR „Effective
-Flow project setup“ (Default-Slug `effective-flow-project-setup`, siehe Baustein „Lebendes
-ADR-Modell“). Sie trägt die Config-Parameter mit minimaler Prosa als **Markdown-Tabelle**. Es
-gibt **keine** `.effective-flow/config.json` mehr als Config-Quelle; `.effective-flow/` ist
-reines Laufzeit-Verzeichnis (`memory.json`, `cache.json`, `review/`, `.worktrees/`) und wird
-komplett gitignored.
+The tracked truth for the Effective Flow configuration is a living ADR "Effective
+Flow project setup" (default slug `effective-flow-project-setup`, see fragment "Living
+ADR model"). It carries the config parameters with minimal prose as a **Markdown table**. There
+is **no** `.effective-flow/config.json` as a config source anymore; `.effective-flow/` is a
+pure runtime directory (`memory.json`, `cache.json`, `review/`, `.worktrees/`) and is
+completely gitignored.
 
-### Config-Locator (Auflösungsreihenfolge)
+### Config locator (resolution order)
 
-Beim Lesen der Konfiguration wird die Projektsetup-ADR in dieser Reihenfolge aufgelöst; der
-erste greifende Schritt gewinnt:
+When reading the configuration, the project setup ADR is resolved in this order; the
+first matching step wins:
 
-1. **AGENTS.md-Marker.** Die kanonische Zeile `**Effective Flow project setup:** <pfad>` in
-   `AGENTS.md`, sonst in `CLAUDE.md` bzw. einer vergleichbaren Konventionsdatei → die ADR
-   unter `<pfad>` lesen. **Backcompat (eine Generation):** ein noch vorhandener Alt-Marker
-   `**Firmo project setup:** <pfad>` wird beim Lesen gleichwertig erkannt; /effective-flow setup
-   stellt ihn beim nächsten Lauf nicht-destruktiv auf die neue Schreibweise um. Zeigt der
-   Marker auf einen Pfad, unter dem **keine** ADR liegt (toter/veralteter Marker), nicht dort
-   stehenbleiben, sondern in dieser Reihenfolge weiterfallen und den veralteten Marker melden
-   (Korrektur in /effective-flow setup).
-2. **Default-Pfad/Scan.** Sonst `docs/adr/effective-flow-project-setup.md` (der Alt-Slug
-   `firmo-project-setup` wird beim Scan gleichwertig erkannt) bzw. ein Scan des erkannten
-   ADR-Verzeichnisses (`docs/adr/`, `docs/decisions/`, `adr/`) nach der Projektsetup-ADR.
-3. **Übergangs-Kompatibilität.** Sonst — nur übergangsweise — eine noch vorhandene
-   `.effective-flow/config.json` (sonst eine Legacy-`.firmo/config.json`) lesen und auf
-   /effective-flow setup hinweisen. Dieser Lesepfad legt **nichts** an und berührt **kein** Git.
-4. **Eingebaute Defaults.** Sonst die Defaults der jeweiligen Quell-Skills verwenden.
+1. **AGENTS.md marker.** The canonical line `**Effective Flow project setup:** <path>` in
+   `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR
+   under `<path>`. **Backcompat (one generation):** a still-present legacy marker
+   `**Firmo project setup:** <path>` is recognized as equivalent on read; /effective-flow setup
+   converts it non-destructively to the new spelling on the next run. If the
+   marker points to a path under which **no** ADR lives (dead/stale marker), do not stay
+   there, but fall through in this order and report the stale marker
+   (correction in /effective-flow setup).
+2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` (the legacy slug
+   `firmo-project-setup` is recognized as equivalent during the scan) or a scan of the detected
+   ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR.
+3. **Transitional compatibility.** Otherwise — only transitionally — read a still-present
+   `.effective-flow/config.json` (otherwise a legacy `.firmo/config.json`) and point to
+   /effective-flow setup. This read path creates **nothing** and touches **no** Git.
+4. **Built-in defaults.** Otherwise use the defaults of the respective source skills.
 
-Der deterministische Lesepfad beliebiger Tools ist nicht-blockierend: Er liest die ADR (bzw.
-den Übergangs-Fallback), erzeugt aber selbst keine Datei und mutiert kein Git. Das Anlegen
-der ADR, der Marker und die Migration passieren ausschließlich im git-berührenden Pfad von
+The deterministic read path of any tool is non-blocking: It reads the ADR (or
+the transitional fallback), but itself creates no file and mutates no Git. Creating
+the ADR, the markers and the migration happen exclusively in the Git-touching path of
 /effective-flow setup.
 
-### Tabellen-Encoding (verbindlich für Schreiber und Leser)
+### Table encoding (binding for writers and readers)
 
-Die Config-Parameter stehen als flache Markdown-Tabelle mit zwei Spalten
-`| Schlüssel | Wert |`. Schreiber (/effective-flow setup, Migration) und Leser (alle Tools)
-interpretieren die Werte identisch nach dieser Kodierung:
+The config parameters stand as a flat Markdown table with two columns
+`| Key | Value |`. Writers (/effective-flow setup, migration) and readers (all tools)
+interpret the values identically per this encoding. English is the default encoding;
+a pre-existing ADR written in the former German form (`## Konfiguration`, header
+`| Schlüssel | Wert |`, `## Kontext`, status `Aktiv`/`Abgelöst`, empty list `(leer)`) stays
+recognized on read and is rewritten to the English form on the next write:
 
 - **Boolean** → `true` / `false`.
-- **String** → literal, unquoted (z. B. `focused`, `origin/main`).
-- **`null`** (semantisch „beim Lauf fragen“, z. B. `applyReview.defaultCommitStrategy`) →
-  das Literal-Token `null`.
-- **Leere Liste** → `(leer)`.
-- **Gefüllte Liste** → kommagetrennt (z. B. `humanizer, distill`).
-- **Verschachtelung** → dotted keys (z. B. `applyReview.worktree.baseDir`,
-  `skills.agents.ui-implementer.include`); ein leeres Objekt hat keine Unterzeilen.
-- **Fehlende Zeile = Schlüssel nicht gesetzt → Default des Quell-Skills.** Bewusst
-  verschieden von einer vorhandenen Zeile mit Wert `null` (expliziter Wert, semantisch „beim
-  Lauf fragen“). Beispiel: keine `delivery.completion`-Zeile → Default `merge`; eine
-  `delivery.completion | null`-Zeile → beim Lauf fragen.
+- **String** → literal, unquoted (e.g. `focused`, `origin/main`).
+- **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
+  the literal token `null`.
+- **Empty list** → `(empty)`.
+- **Filled list** → comma-separated (e.g. `humanizer, distill`).
+- **Nesting** → dotted keys (e.g. `applyReview.worktree.baseDir`,
+  `skills.agents.ui-implementer.include`); an empty object has no sub-lines.
+- **Missing line = key not set → default of the source skill.** Deliberately
+  different from a present line with value `null` (an explicit value, semantically "ask at
+  run time"). Example: no `delivery.completion` line → default `merge`; a
+  `delivery.completion | null` line → ask at run time.
 
-Das Lesen eines einzelnen Werts ist ein trivialer Zeilen-Lookup (Zeile mit dotted key →
-Wertzelle). Beispiel-Ausschnitt (Schnittstellenskizze, kein vollständiger Inhalt):
+Reading a single value is a trivial line lookup (line with dotted key →
+value cell). Example excerpt (interface sketch, not full content):
 
 ```markdown
-## Konfiguration
+## Configuration
 
-| Schlüssel                         | Wert    |
+| Key                         | Value    |
 | --------------------------------- | ------- |
 | review.profile                    | focused |
 | applyReview.defaultCommitStrategy | null    |
-| skills.exclude                    | (leer)  |
+| skills.exclude                    | (empty)  |
 | worktree.enabled                  | true    |
 ```
 
-Ist die Tabelle ungültig oder mehrdeutig (fehlender Schlüssel, unbekanntes Encoding): einen
-sicheren Default für den Lauf verwenden, den User über den betroffenen Schlüssel
-informieren, **nicht** raten.
+If the table is invalid or ambiguous (missing key, unknown encoding): use a
+safe default for the run, inform the user about the affected key,
+do **not** guess.
 
-### Einmalige Migration Legacy-`config.json` → Projektsetup-ADR
+### One-time migration legacy `config.json` → project setup ADR
 
-Die Migration einer bestehenden `.effective-flow/config.json` bzw. Legacy-`.firmo/config.json`
-in die Projektsetup-ADR ist **git-berührend** und läuft ausschließlich im
-/effective-flow setup-Pfad. Sie erzeugt die ADR-Tabelle aus dem aktuellen Config-Inhalt (Encoding
-wie oben), schreibt den AGENTS.md-Marker `**Effective Flow project setup:**`, stellt
-`.gitignore` auf ein einzelnes `.effective-flow/` um und enttrackt die Alt-`config.json`
-(`git rm --cached`, Datei-Inhalt auf Platte belassen). Der genaue Ablauf inklusive
-Idempotenz-Markierung steht in /effective-flow setup.
+The migration of an existing `.effective-flow/config.json` or legacy `.firmo/config.json`
+into the project setup ADR is **Git-touching** and runs exclusively in the
+/effective-flow setup path. It produces the ADR table from the current config content (encoding
+as above), writes the AGENTS.md marker `**Effective Flow project setup:**`, switches
+`.gitignore` to a single `.effective-flow/` and untracks the legacy `config.json`
+(`git rm --cached`, leave the file content on disk). The exact procedure including
+idempotency marking is in /effective-flow setup.
 
-Außerhalb von /effective-flow setup findet **keine** Migration statt: Der deterministische
-Lesepfad legt nichts an und berührt kein Git; er liest bei fehlender ADR ersatzweise eine
-noch vorhandene `.effective-flow/config.json` (sonst `.firmo/config.json`) und weist auf
-/effective-flow setup hin.
+Outside /effective-flow setup, **no** migration takes place: The deterministic
+read path creates nothing and touches no Git; on a missing ADR it reads instead a
+still-present `.effective-flow/config.json` (otherwise `.firmo/config.json`) and points to
+/effective-flow setup.
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Schreiben und beachte ihre Vorgaben für Konfiguration, Dateiformate und projektweite Konventionen.
+If the project has an `AGENTS.md`, read it before writing and follow its guidance on configuration, file formats, and project-wide conventions.
 
-## Config-Schema
+## Config schema
 
-Die Effective Flow-Konfiguration ist optional und steuert Defaults der folgenden Blöcke. Ihre Wahrheit ist die Projektsetup-ADR-Tabelle (Encoding und Locator siehe Baustein oben). Die jeweiligen Skills sind die maßgebliche Quelle für gültige Werte und Defaults; dieser Skill fasst sie nur zusammen und darf bei Schema-Erweiterungen nicht als alleinige Wahrheit gelten. Unbekannte Schlüssel einer bestehenden Config bleiben immer erhalten.
+The Effective Flow configuration is optional and controls the defaults of the following blocks. Its source of truth is the project setup ADR table (see the building block above for encoding and locator). The respective skills are the authoritative source for valid values and defaults; this skill only summarizes them and must not count as the sole truth when the schema is extended. Unknown keys of an existing config are always preserved.
 
-- **`review`** (Quelle: `/effective-flow review`): `profile` (full/focused/fast), `autoConfirmScope` (bool), `designDecisionSources` (full/standard/minimal), `validation` (full/quick/off)
-- **`applyReview`** (Quelle: ``tools/apply-review.md``): `defaultCommitStrategy` (worktrees/single/none/`null` = beim Lauf fragen), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/Befehl)
-- **`plan`** (Quelle: `/effective-flow plan`): `markerLanguage` (de/en), `dir` (String, Default `docs/plan`) — Verzeichnis der Plan-Dateien
-- **`delivery`** (Quelle: `/effective-flow build`, Abschnitt „Delivery- und Worktree-Integration“ – ebenso in den weiteren code-ändernden Workflows eingebettet): Delivery ist durch Worktree/Branch impliziert (kein eigener `enabled`-Schalter mehr) — `baseBranch` (Default `origin/main`), `branchPrefix` (Default `effective-flow`), `completion` (pr/merge/branch, Default `merge`), `returnBranch` (auto oder lokaler Branchname)
-- **`worktree`** (Quelle: `/effective-flow build`, Abschnitt „Delivery- und Worktree-Integration“): `enabled` (bool, Default `true`), `setup` (auto/none/Befehl), `baseDir`
-- **`tracker`** (Quelle: `/effective-flow review`, Abschnitt „Issue-Tracker-Anbindung“ – ebenso in ``tools/apply-review.md`` und den weiteren Tracker-Workflows eingebettet): `mode` (local/remote, Default `local`), `remoteToolOverride` (auto/github/forgejo, Default `auto`)
-- **`skills`** (Quelle: Baustein „Skill-Discovery“): `enabled` (bool, Default `true` — schaltet die dynamische Skill-Nutzung), `include` (Liste — Skills projektweit bevorzugt einbinden), `exclude` (Liste — Skills nie anwenden), `agents.<name>` und `tools.<name>` (je `include`/`exclude` für einen einzelnen Agent bzw. ein einzelnes Tool). Schlüssel sind die Quell-Agent-/Tool-Namen (z. B. `ui-implementer`, `plan`).
+- **`review`** (source: `/effective-flow review`): `profile` (full/focused/fast), `autoConfirmScope` (bool), `designDecisionSources` (full/standard/minimal), `validation` (full/quick/off)
+- **`applyReview`** (source: ``tools/apply-review.md``): `defaultCommitStrategy` (worktrees/single/none/`null` = ask at run time), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/command)
+- **`plan`** (source: `/effective-flow plan`): `markerLanguage` (de/en), `dir` (string, default `docs/plan`) — directory of the plan files
+- **`delivery`** (source: `/effective-flow build`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default `origin/main`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name)
+- **`worktree`** (source: `/effective-flow build`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
+- **`tracker`** (source: `/effective-flow review`, section "Issue-tracker integration" – likewise embedded in ``tools/apply-review.md`` and the other tracker workflows): `mode` (local/remote, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`)
+- **`skills`** (source: building block "Skill discovery"): `enabled` (bool, default `true` — toggles dynamic skill usage), `include` (list — prefer these skills project-wide), `exclude` (list — never apply these skills), `agents.<name>` and `tools.<name>` (each `include`/`exclude` for a single agent or a single tool). Keys are the source agent/tool names (e.g. `ui-implementer`, `plan`).
 
-### Sichere Defaults (die eine Basis)
+### Safe defaults (the single base)
 
-Der Wizard startet **immer** von dieser einen benannten Sicher-Defaults-Basis. Sie umfasst
-die konservativen `review`-/`applyReview`-Werte plus die Kern-Schalter (Werte in der
-Tabellen-Encoding-Form der ADR):
+The wizard **always** starts from this single named safe-defaults base. It comprises
+the conservative `review`/`applyReview` values plus the core switches (values in the
+ADR's table-encoding form):
 
-| Schlüssel                         | Wert                                                    |
-| --------------------------------- | ------------------------------------------------------- |
-| review.profile                    | focused                                                 |
-| review.autoConfirmScope           | false                                                   |
-| review.designDecisionSources      | standard                                                |
-| review.validation                 | full                                                    |
-| applyReview.defaultCommitStrategy | null (beim Lauf fragen)                                 |
-| applyReview.finalValidation       | full                                                    |
-| applyReview.stashPolicy           | interactive                                             |
-| applyReview.worktree.baseDir      | .effective-flow/.worktrees                              |
-| applyReview.worktree.setup        | auto                                                    |
-| worktree.enabled                  | true                                                    |
-| delivery.completion               | merge                                                   |
-| delivery.baseBranch               | origin/main                                             |
-| tracker.mode                      | local                                                   |
-| plan.dir                          | docs/plan                                               |
-| plan.markerLanguage               | abgeleitet: aus vorhandenen Plänen erkennen, sonst `en` |
+| Key                               | Value                                               |
+| --------------------------------- | --------------------------------------------------- |
+| review.profile                    | focused                                             |
+| review.autoConfirmScope           | false                                               |
+| review.designDecisionSources      | standard                                            |
+| review.validation                 | full                                                |
+| applyReview.defaultCommitStrategy | null (ask at run time)                              |
+| applyReview.finalValidation       | full                                                |
+| applyReview.stashPolicy           | interactive                                         |
+| applyReview.worktree.baseDir      | .effective-flow/.worktrees                          |
+| applyReview.worktree.setup        | auto                                                |
+| worktree.enabled                  | true                                                |
+| delivery.completion               | merge                                               |
+| delivery.baseBranch               | origin/main                                         |
+| tracker.mode                      | local                                               |
+| plan.dir                          | docs/plan                                           |
+| plan.markerLanguage               | derived: detect from existing plans, otherwise `en` |
 
-Es gibt bewusst **kein** zweites Preset mehr. Wer einen zügigeren Solo-Flow will (z. B.
+There is deliberately **no** second preset anymore. Anyone who wants a faster solo flow (e.g.
 `review.profile: fast`, `review.validation: quick`, `applyReview.finalValidation:
-changedScope`), erreicht diese Werte einzeln über den geführten Weg (erweiterte
-Einstellungen). Für `plan.markerLanguage` gilt kein fixer Wert: aus vorhandenen Plänen die
-Marker-Sprache erkennen (Detection wie in `/effective-flow plan`); ohne eindeutiges Signal
-Englisch.
+changedScope`) reaches these values individually via the guided path (advanced
+settings). For `plan.markerLanguage` there is no fixed value: detect the marker language
+from existing plans (detection as in `/effective-flow plan`); without a clear signal,
+English.
 
 ## Workflow
 
-### Schritt 1: .gitignore-Eintrag
+### Step 1: .gitignore entry
 
-Soll-Zustand: Das gesamte Laufzeit-Verzeichnis `.effective-flow/` (`config.json`-Migration ausgenommen — die Config lebt künftig in der ADR; Laufzeit-Dateien wie `memory.json`, `cache.json`, `review/`, `.worktrees/`) ist ignoriert. Das erreicht die eine Zeile:
+Target state: the entire runtime directory `.effective-flow/` (excluding the `config.json` migration — the config now lives in the ADR; runtime files like `memory.json`, `cache.json`, `review/`, `.worktrees/`) is ignored. The single line achieves this:
 
 ```gitignore
 .effective-flow/
 ```
 
-Es gibt **kein** `!.effective-flow/config.json`-Ausnahme-Pattern mehr: Die Effective-Flow-Konfiguration wird nicht länger als getrackte `config.json` geführt, sondern in der Projektsetup-ADR. `.effective-flow/` ist damit reines Laufzeit-Verzeichnis und wird komplett ignoriert.
+There is **no** `!.effective-flow/config.json` exception pattern anymore: the Effective Flow configuration is no longer kept as a tracked `config.json`, but in the project setup ADR. `.effective-flow/` is thus a pure runtime directory and is ignored completely.
 
-1. Prüfe, ob der Soll-Zustand bereits hergestellt ist — bei verfügbarem Git über: `git check-ignore -q .effective-flow/config.json` muss mit Exit-Code 0 enden (das Verzeichnis inklusive `config.json` ist ignoriert) und es darf **keine** `!.effective-flow/config.json`-Negationszeile mehr in der `.gitignore` stehen. Ohne Git über einen Zeilenabgleich der `.gitignore`: eine Zeile ignoriert `.effective-flow/` als Ganzes und es folgt **keine** `!.effective-flow/…`-Negationszeile.
-2. Falls der Soll-Zustand noch nicht hergestellt ist:
-   - Migriere das frühere Zwei-Zeilen-Pattern: enthält die `.gitignore` die Zeilen `.effective-flow/*` und `!.effective-flow/config.json` (alter Soll-Zustand mit getrackter `config.json`), ersetze **beide** durch die eine Zeile `.effective-flow/`.
-   - Migriere Alt-Verzeichnis-Patterns der Vorgänger-Namen: ignoriert eine Zeile das frühere `.firmo/` oder `.sf-plugin/` (gängige Schreibweisen mit/ohne führenden bzw. abschließenden Slash, inklusive der alten `.firmo/*` + `!.firmo/config.json`-Zwei-Zeilen-Form), ersetze sie durch die eine Zeile `.effective-flow/`. Ein bereits vorhandenes pauschales `.effective-flow/` (bzw. `.effective-flow`, `/.effective-flow/`) auf `.effective-flow/` normalisieren und eine etwaige nachfolgende `!.effective-flow/config.json`-Negationszeile entfernen.
-   - Fehlt jeder `.effective-flow/`-Eintrag, hänge die Zeile `.effective-flow/` an. Stelle vor dem Anhängen einen abschließenden Zeilenumbruch sicher. Fehlt die `.gitignore`, lege sie mit dieser einen Zeile an.
-3. Falls der Soll-Zustand bereits hergestellt ist: nichts ändern und das knapp melden.
-4. Ist das Projekt kein Git-Repository: weise darauf hin, dass eine `.gitignore` ohne Git wirkungslos ist, und frage, ob sie trotzdem geschrieben werden soll. Verwende dann denselben Zeilenabgleich wie oben statt `git check-ignore`. Die Config-Erstellung läuft unabhängig davon weiter.
+1. Check whether the target state is already established — with Git available, via: `git check-ignore -q .effective-flow/config.json` must end with exit code 0 (the directory including `config.json` is ignored) and there must be **no** `!.effective-flow/config.json` negation line left in `.gitignore`. Without Git, via a line comparison of `.gitignore`: one line ignores `.effective-flow/` as a whole and **no** `!.effective-flow/…` negation line follows.
+2. If the target state is not yet established:
+   - Migrate the former two-line pattern: if `.gitignore` contains the lines `.effective-flow/*` and `!.effective-flow/config.json` (old target state with a tracked `config.json`), replace **both** with the single line `.effective-flow/`.
+   - Migrate old directory patterns of the predecessor names: if a line ignores the former `.firmo/` or `.sf-plugin/` (common spellings with/without a leading or trailing slash, including the old `.firmo/*` + `!.firmo/config.json` two-line form), replace it with the single line `.effective-flow/`. Normalize an already-present blanket `.effective-flow/` (or `.effective-flow`, `/.effective-flow/`) to `.effective-flow/` and remove any subsequent `!.effective-flow/config.json` negation line.
+   - If every `.effective-flow/` entry is missing, append the line `.effective-flow/`. Ensure a trailing newline before appending. If `.gitignore` is missing, create it with this single line.
+3. If the target state is already established: change nothing and report that briefly.
+4. If the project is not a Git repository: point out that a `.gitignore` is ineffective without Git, and ask whether it should be written anyway. Then use the same line comparison as above instead of `git check-ignore`. The config creation continues independently of this.
 
-### Schritt 2: ADR-Ort bestimmen und bestehende Config lesen
+### Step 2: Determine the ADR location and read the existing config
 
-1. **ADR-Verzeichnis erkennen.** Suche eine vorhandene ADR-Konvention (in Anlehnung an die
-   Such-Globs von `/effective-flow review`): `docs/adr/`, `docs/decisions/`, `adr/`. Nutze ein
-   vorhandenes Verzeichnis. Existiert keines, ist der Default `docs/adr/`. Existieren
-   **mehrere**, bevorzuge für die Projektsetup-ADR `docs/adr/`; nur bei echter
-   Mehrdeutigkeit im geführten Weg nachfragen:
+1. **Detect the ADR directory.** Look for an existing ADR convention (following the
+   search globs of `/effective-flow review`): `docs/adr/`, `docs/decisions/`, `adr/`. Use an
+   existing directory. If none exists, the default is `docs/adr/`. If
+   **several** exist, prefer `docs/adr/` for the project setup ADR; ask only on genuine
+   ambiguity in the guided path:
 
-Wenn mehrere ADR-Verzeichnisse existieren und keines eindeutig `docs/adr/` ist:
-
-Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
-- header: "ADR-Ort"
-- question: "In welchem Verzeichnis soll die Effective Flow-Projektsetup-ADR liegen?"
-- multiSelect: false
-- options:
-  - label: "docs/adr/", description: "Empfohlener Default für die Projektsetup-ADR"
-  - label: "docs/decisions/", description: "Vorhandenes Verzeichnis nutzen"
-  - label: "adr/", description: "Vorhandenes Verzeichnis nutzen"
-
-2. **Projektsetup-ADR auflösen.** Löse eine bereits vorhandene Projektsetup-ADR über den
-   Config-Locator auf (AGENTS.md-Marker `**Effective Flow project setup:** <pfad>` → Default-Pfad/Scan
-   → Übergangs-`.firmo/config.json`; siehe Baustein oben). Zeigt ein Marker auf einen toten
-   Pfad, falle in der Reihenfolge weiter und merke den veralteten Marker zur Korrektur vor.
-3. **Aktuelle Werte bilden.** Bei vorhandener ADR: parse die `## Konfiguration`-Tabelle
-   gemäß Encoding zu einem internen „Aktuelle-Werte“-Überblick (Schlüssel → aktuell
-   festgeschriebener Wert). Existiert (noch) keine ADR, aber eine `.firmo/config.json`
-   (Migrationsfall): lies deren Werte als aktuelle Werte und merke intern vor, dass migriert
-   wird. Zeige den jeweiligen Wert bei jeder folgenden Frage an („aktuell festgeschrieben:
-   …“) und verwende ihn als Vorauswahl. Fehlt ein Schlüssel, benenne die Vorauswahl als
-   Default („aktuell nicht gesetzt – Default: …“).
-4. **Ungültige Quelle.** Ist die ADR-Tabelle ungültig/mehrdeutig oder eine Alt-`config.json`
-   kein gültiges JSON: überschreibe nicht still. Informiere den User mit Pfad und Fehler und
-   frage, ob die Konfiguration neu angelegt (altes Backup/Überschreiben) oder der Lauf
-   abgebrochen werden soll.
-
-### Schritt 3: Express oder Geführt
-
-Erkläre dem User kurz, dass Effective Flow mit sicheren Defaults sofort einsatzbereit ist und er nur
-dann etwas anpassen muss, wenn er möchte. Biete dann die zwei Wege an:
+Wenn several ADR directories exist and none is clearly `docs/adr/`:
 
 Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
-- header: "Setup-Weg"
-- question: "Wie möchtest du die Effective Flow-Konfiguration einrichten?"
+- header: "ADR location"
+- question: "In which directory should the Effective Flow project setup ADR live?"
 - multiSelect: false
 - options:
-  - label: "Express", description: "Sichere Defaults übernehmen (bei vorhandener Config deren aktuelle Werte behalten) — ein Bestätigungsschritt, dann fertig"
-  - label: "Geführt", description: "Schritt für Schritt durch die Optionen — jede wird erklärt, ideal wenn du Effective Flow noch nicht kennst"
+  - label: "docs/adr/", description: "Recommended default for the project setup ADR"
+  - label: "docs/decisions/", description: "Use an existing directory"
+  - label: "adr/", description: "Use an existing directory"
 
-- **Express:** Bilde die Zielkonfiguration aus der Sicher-Defaults-Basis (Config-Schema oben)
-  plus – falls eine gültige Config existiert – deren vorhandenen Werten. Leite
-  `plan.markerLanguage` gemäß Basis ab (Detection, sonst Englisch). Springe direkt zu
-  Schritt 6 (Merge und Schreiben); die Vorher/Nachher-Liste und Bestätigung dort stellen
-  sicher, dass keine bestehende, abweichende Config still überschrieben wird.
-- **Geführt:** Fahre mit Schritt 4 (Kern-Schalter) fort; danach folgt das optionale
-  Erweitert-Gate (Schritt 5).
+2. **Resolve the project setup ADR.** Resolve an already-existing project setup ADR via the
+   config locator (AGENTS.md marker `**Effective Flow project setup:** <path>` → default path/scan
+   → transitional `.firmo/config.json`; see the building block above). If a marker points to a dead
+   path, continue down the order and note the outdated marker for correction.
+3. **Form the current values.** If an ADR exists: parse the `## Configuration` table
+   per the encoding into an internal "current values" overview (key → currently
+   recorded value). If no ADR exists (yet) but a `.firmo/config.json` does
+   (migration case): read its values as the current values and note internally that a migration
+   will happen. Show the respective value at every following question ("currently recorded:
+   …") and use it as the pre-selection. If a key is missing, label the pre-selection as the
+   default ("currently not set – default: …").
+4. **Invalid source.** If the ADR table is invalid/ambiguous or an old `config.json`
+   is not valid JSON: do not overwrite silently. Inform the user with the path and error and
+   ask whether the configuration should be newly created (old backup/overwrite) or the run
+   aborted.
 
-### Schritt 4: Kern-Schalter (nur im geführten Weg)
+### Step 3: Express or Guided
 
-Diese vier Schalter bestimmen das Kernverhalten. Stelle **vor** jeder Frage eine kurze,
-verständliche Erklärung voran (was ist das, warum ist es relevant, was bedeutet die Wahl) –
-ohne Vorwissen über Effective Flow vorauszusetzen – und nenne dabei, ob und mit welchem Wert der
-Schalter aktuell in der Config steht (siehe Schritt 2); wähle diesen Wert bzw. den sicheren
-Default vor. Fachbegriffe bei erster Nennung in einem Satz erklären.
+Briefly explain to the user that Effective Flow is immediately ready to use with safe defaults and that they only need to adjust something if they want to. Then offer the two paths:
 
-**Worktree.** Erkläre: Effective Flow setzt Änderungen standardmäßig in einem separaten Arbeitsbereich
-mit eigenem Branch um (einem „Worktree"), damit dein aktueller Stand unberührt bleibt und die
-Arbeit sauber gebündelt ist; „Nein" arbeitet direkt in deinem aktuellen Checkout.
+Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
+- header: "Setup path"
+- question: "How would you like to set up the Effective Flow configuration?"
+- multiSelect: false
+- options:
+  - label: "Express", description: "Adopt safe defaults (keep the current values of an existing config) — one confirmation step, then done"
+  - label: "Guided", description: "Step by step through the options — each is explained, ideal if you do not yet know Effective Flow"
+
+- **Express:** Build the target configuration from the safe-defaults base (config schema above)
+  plus – if a valid config exists – its existing values. Derive
+  `plan.markerLanguage` per the base (detection, otherwise English). Jump directly to
+  Step 6 (merge and write); the before/after list and confirmation there
+  ensure that no existing, differing config is silently overwritten.
+- **Guided:** Continue with Step 4 (core switches); the optional
+  advanced gate follows afterwards (Step 5).
+
+### Step 4: Core switches (guided path only)
+
+These four switches determine the core behavior. **Before** each question, provide a short,
+understandable explanation (what is it, why is it relevant, what does the choice mean) –
+without assuming prior knowledge of Effective Flow – and state whether and with which value the
+switch is currently set in the config (see Step 2); pre-select this value or the safe
+default. Explain technical terms in one sentence at first mention.
+
+**Worktree.** Explain: Effective Flow implements changes by default in a separate workspace
+with its own branch (a "worktree"), so that your current state stays untouched and the
+work is cleanly bundled; "No" works directly in your current checkout.
 
 Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
 - header: "Worktree"
-- question: "Soll die Umsetzung in einem separaten Git-Worktree laufen?"
+- question: "Should the implementation run in a separate Git worktree?"
 - multiSelect: false
 - options:
-  - label: "Ja", description: "worktree.enabled = true (Default) — Umsetzung läuft in einem separaten Worktree mit eigenem Liefer-Branch"
-  - label: "Nein", description: "worktree.enabled = false — In-Place ohne Worktree; Liefer-Branches werden bei Bedarf im Haupt-Repo erzeugt"
+  - label: "Yes", description: "worktree.enabled = true (default) — the implementation runs in a separate worktree with its own delivery branch"
+  - label: "No", description: "worktree.enabled = false — in-place without a worktree; delivery branches are created in the main repo when needed"
 
-**Abschluss-Aktion.** Erkläre: Wie fertige Änderungen eingebracht werden. `merge` bringt sie
-direkt in den Zielbranch, `pr` öffnet einen Pull-Request (Review vor dem Einbringen), `branch`
-lässt den Branch nur liegen; „beim Lauf fragen" entscheidet jedes Mal neu.
+**Completion action.** Explain: how finished changes are brought in. `merge` brings them
+directly into the target branch, `pr` opens a pull request (review before integration), `branch`
+just leaves the branch; "ask at run time" decides anew each time.
 
 Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
-- header: "Abschluss"
-- question: "Welche Abschluss-Aktion soll Effective Flow standardmäßig nutzen?"
+- header: "Completion"
+- question: "Which completion action should Effective Flow use by default?"
 - multiSelect: false
 - options:
-  - label: "Merge", description: "delivery.completion = merge (Default) — Branch lokal in den Basis-Branch mergen, ohne PR"
-  - label: "Pull-Request", description: "delivery.completion = pr"
-  - label: "Nur Branch", description: "delivery.completion = branch"
-  - label: "Beim Lauf fragen", description: "delivery.completion = null — die Aktion wird pro Lauf erfragt"
+  - label: "Merge", description: "delivery.completion = merge (default) — merge the branch locally into the base branch, without a PR"
+  - label: "Pull request", description: "delivery.completion = pr"
+  - label: "Branch only", description: "delivery.completion = branch"
+  - label: "Ask at run time", description: "delivery.completion = null — the action is asked per run"
 
-Erkläre kurz den Basis-Branch (der Zweig, in den geliefert wird) und frage ihn als Freitext
-ab (`delivery.baseBranch`, Default `origin/main`); das Rückwechsel-Ziel (`delivery.returnBranch`,
-Default `auto`) nur optional.
+Briefly explain the base branch (the branch that is delivered into) and ask for it as free text
+(`delivery.baseBranch`, default `origin/main`); the switch-back target (`delivery.returnBranch`,
+default `auto`) only optionally.
 
-**Marker-Sprache.** Erkläre: Die Sprache der kleinen Status-Markierung im Kopf von
-Plan-Dateien (nur der Marker, nicht der Planinhalt). Vorauswahl: der aus vorhandenen Plänen
-erkannte Wert; gibt es kein Signal, Englisch.
+**Marker language.** Explain: the language of the small status marker at the head of
+plan files (only the marker, not the plan content). Pre-selection: the value detected from existing
+plans; if there is no signal, English.
 
 Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
 - header: "Marker"
-- question: "In welcher Sprache sollen die Statusmarker neuer Plan-Dateien stehen?"
+- question: "In which language should the status markers of new plan files be?"
 - multiSelect: false
 - options:
-  - label: "Englisch", description: "plan.markerLanguage = en (Default, falls keine Sprache aus vorhandenen Plänen erkennbar ist)"
-  - label: "Deutsch", description: "plan.markerLanguage = de"
+  - label: "English", description: "plan.markerLanguage = en (default if no language can be detected from existing plans)"
+  - label: "German", description: "plan.markerLanguage = de"
 
-**Tracker.** Erkläre: Wo Review-Findings landen – `local` als Markdown-Report im Projekt
-(`.effective-flow/review/`) oder `remote` als Issues auf GitHub/Forgejo (nützlich für Teamarbeit).
+**Tracker.** Explain: where review findings end up – `local` as a Markdown report in the project
+(`.effective-flow/review/`) or `remote` as issues on GitHub/Forgejo (useful for teamwork).
 
 Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
 - header: "Tracker"
-- question: "Sollen Review-Findings lokal als Markdown-Report oder remote als Issues (GitHub/Forgejo) geführt werden?"
+- question: "Should review findings be kept locally as a Markdown report or remotely as issues (GitHub/Forgejo)?"
 - multiSelect: false
 - options:
-  - label: "Lokal", description: "tracker.mode = local (Default) — Markdown-Report unter .effective-flow/review/"
-  - label: "Remote", description: "tracker.mode = remote — Findings als Issues, Werkzeug automatisch aus origin (gh/tea)"
+  - label: "Local", description: "tracker.mode = local (default) — Markdown report under .effective-flow/review/"
+  - label: "Remote", description: "tracker.mode = remote — findings as issues, tool automatically from origin (gh/tea)"
 
-Bei „Remote“ den Werkzeug-Override nur bei Bedarf abfragen: Der Default `tracker.remoteToolOverride = auto` erkennt GitHub/Forgejo automatisch aus der `origin`-URL. Nur wenn der User einen mehrdeutigen Host hat (z. B. self-hosted GitHub Enterprise), als Freitext `github` oder `forgejo` erfassen; sonst `auto` belassen.
+For "Remote", ask for the tool override only if needed: the default `tracker.remoteToolOverride = auto` detects GitHub/Forgejo automatically from the `origin` URL. Only if the user has an ambiguous host (e.g. self-hosted GitHub Enterprise), capture `github` or `forgejo` as free text; otherwise leave `auto`.
 
-### Schritt 5: Erweiterte Einstellungen (optionales Gate, nur im geführten Weg)
+### Step 5: Advanced settings (optional gate, guided path only)
 
-Die Kern-Schalter genügen für den Alltag. Alle übrigen Optionen sind seltener nötig; frage
-daher zuerst, ob der User sie überhaupt anpassen will:
+The core switches suffice for everyday use. All remaining options are needed less often; therefore
+first ask whether the user wants to adjust them at all:
 
 Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
-- header: "Erweitert"
-- question: "Möchtest du erweiterte Einstellungen (Review, Apply-Review, Pfade, Feinheiten) anpassen?"
+- header: "Advanced"
+- question: "Would you like to adjust advanced settings (review, apply-review, paths, fine details)?"
 - multiSelect: false
 - options:
-  - label: "Nein", description: "Sichere Defaults bzw. bestehende Werte behalten — empfohlen, wenn du Effective Flow noch kennenlernst"
-  - label: "Ja", description: "Die restlichen Optionen einzeln durchgehen, jede erklärt"
+  - label: "No", description: "Keep safe defaults or existing values — recommended if you are still getting to know Effective Flow"
+  - label: "Yes", description: "Go through the remaining options one by one, each explained"
 
-Bei „Nein": alle erweiterten Schlüssel behalten den sicheren Default bzw. den bestehenden
-Config-Wert; weiter zu Schritt 6. Bei „Ja": frage Block für Block jeden Schlüssel ab, jeweils
-mit einer kurzen Erklärung, den gültigen Werten aus dem Config-Schema oben und dem aktuellen
-Config-Wert bzw. Default als Vorauswahl:
+For "No": all advanced keys keep the safe default or the existing
+config value; continue to Step 6. For "Yes": ask for each key block by block, each
+with a short explanation, the valid values from the config schema above, and the current
+config value or default as the pre-selection:
 
-1. `review`: `review.profile` (full/focused/fast — Tiefe des Reviews), `review.autoConfirmScope`, `review.designDecisionSources`, `review.validation`
+1. `review`: `review.profile` (full/focused/fast — depth of the review), `review.autoConfirmScope`, `review.designDecisionSources`, `review.validation`
 2. `applyReview`: `applyReview.defaultCommitStrategy`, `applyReview.finalValidation`, `applyReview.stashPolicy`, `applyReview.worktree.baseDir`, `applyReview.worktree.setup`
-3. `plan`: `plan.markerLanguage` (bereits in Schritt 4 erfragt — übernehmen), `plan.dir` (Freitext, Default `docs/plan` — Verzeichnis der Plan-Dateien)
-4. `delivery`: `delivery.baseBranch` und `delivery.completion` (bereits in Schritt 4 erfragt — übernehmen), `delivery.branchPrefix`, `delivery.returnBranch`
-5. `worktree`: `worktree.enabled` (bereits in Schritt 4 erfragt — übernehmen), `worktree.setup`, `worktree.baseDir`
-6. `tracker`: `tracker.mode` (bereits in Schritt 4 erfragt — übernehmen), `tracker.remoteToolOverride` (auto/github/forgejo)
-7. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (globale Listen) sowie – als Fortgeschrittenen-Option – `skills.agents.<name>` und `skills.tools.<name>` für einzelne Agents/Tools. Biete zusätzlich optional an (nicht erzwingen), die eingebauten per-Agent- und per-Tool-Empfehlungen sichtbar als `skills.agents.<name>.include` bzw. `skills.tools.<name>.include` in die Config zu materialisieren; schreibe dabei bei einer Fallback-Empfehlung (`effective-web › impeccable › frontend-design`) nur den **primären** Skill (`effective-web`) — der Built-in-Fallback bleibt aktiv. Flache Empfehlungen (z. B. `locale-typography`) werden unverändert übernommen.
+3. `plan`: `plan.markerLanguage` (already asked in Step 4 — carry over), `plan.dir` (free text, default `docs/plan` — directory of the plan files)
+4. `delivery`: `delivery.baseBranch` and `delivery.completion` (already asked in Step 4 — carry over), `delivery.branchPrefix`, `delivery.returnBranch`
+5. `worktree`: `worktree.enabled` (already asked in Step 4 — carry over), `worktree.setup`, `worktree.baseDir`
+6. `tracker`: `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo)
+7. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (global lists) as well as – as an advanced option – `skills.agents.<name>` and `skills.tools.<name>` for individual agents/tools. Additionally offer optionally (do not force) to materialize the built-in per-agent and per-tool recommendations visibly into the config as `skills.agents.<name>.include` or `skills.tools.<name>.include`; for a fallback recommendation (`effective-web › impeccable › frontend-design`), write only the **primary** skill (`effective-web`) — the built-in fallback stays active. Flat recommendations (e.g. `locale-typography`) are carried over unchanged.
 
-Wer den früheren „schnellen Solo-Workflow" möchte, setzt hier z. B. `review.profile: fast`,
-`review.validation: quick` und `applyReview.finalValidation: changedScope`.
+Anyone who wants the former "fast solo workflow" sets, for example, `review.profile: fast`,
+`review.validation: quick`, and `applyReview.finalValidation: changedScope` here.
 
-Beachte: `applyReview.worktree.*` (Apply-Review-eigener Worktree-Mechanismus), der Top-Level-`worktree.*`-Block (Ausführungsort) und der Top-Level-`delivery.*`-Block (Liefer-Branch/Abschluss) sind getrennte, unabhängige Config-Pfade — verwechsle sie beim Abfragen und Mergen nicht.
+Note: `applyReview.worktree.*` (apply-review's own worktree mechanism), the top-level `worktree.*` block (execution location), and the top-level `delivery.*` block (delivery branch/completion) are separate, independent config paths — do not confuse them when asking and merging.
 
-Freitext-Werte (z. B. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir` oder ein expliziter `setup`-Befehl) als Freitext erfragen. Bei ungültiger Eingabe für einen enumerierten Schlüssel erneut fragen oder den Default verwenden und das melden.
+Ask for free-text values (e.g. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir`, or an explicit `setup` command) as free text. On invalid input for an enumerated key, ask again or use the default and report that.
 
-### Schritt 6: Merge und Schreiben
+### Step 6: Merge and write
 
-1. Baue die Zielkonfiguration nicht-destruktiv: setze die bekannten Schlüssel auf die gewählten Werte, übernimm vorhandene gültige Werte für nicht abgefragte Schlüssel und lass unbekannte Schlüssel unverändert.
-2. Das gilt auch für die Sicher-Defaults: Ein Default-Wert, der einen bereits vorhandenen, abweichenden Config-Wert ersetzen würde, wird nur nach ausdrücklicher Bestätigung gesetzt. Zeige vor dem Schreiben eine Vorher/Nachher-Liste **aller** zu ändernden Schlüssel (egal ob aus Express-Basis, Kern-Schaltern oder erweiterten Einstellungen) und hole die Bestätigung ein. Ein vollständiges Überschreiben (Verwerfen vorhandener Werte) ebenfalls nur nach ausdrücklicher Bestätigung.
-3. Löse die Projektsetup-ADR direkt vor dem Schreiben noch einmal frisch auf (Locator) und lies eine vorhandene ADR-Tabelle bzw. Alt-`config.json` frisch ein, damit zwischenzeitliche Änderungen nicht verloren gehen.
-4. **Projektsetup-ADR schreiben.** Bestimme das ADR-Verzeichnis (Schritt 2) und schreibe die
-   ADR unter `<adr-dir>/effective-flow-project-setup.md` (Default-Slug `effective-flow-project-setup`; ein Alt-Slug `firmo-project-setup` wird beim Scan gleichwertig erkannt und beim Schreiben auf den neuen Slug umgestellt) im
-   lebenden ADR-Format:
+1. Build the target configuration non-destructively: set the known keys to the chosen values, carry over existing valid values for keys not asked about, and leave unknown keys unchanged.
+2. This also applies to the safe defaults: a default value that would replace an already-present, differing config value is set only after explicit confirmation. Before writing, show a before/after list of **all** keys to be changed (whether from the express base, the core switches, or the advanced settings) and obtain confirmation. A full overwrite (discarding existing values) likewise only after explicit confirmation.
+3. Resolve the project setup ADR freshly once more directly before writing (locator) and re-read an existing ADR table or old `config.json` freshly, so that intervening changes are not lost.
+4. **Write the project setup ADR.** Determine the ADR directory (Step 2) and write the
+   ADR to `<adr-dir>/effective-flow-project-setup.md` (default slug `effective-flow-project-setup`; an old slug `firmo-project-setup` is recognized as equivalent during the scan and switched to the new slug on write) in the
+   living ADR format:
    - H1 `# Effective Flow project setup`
-   - `## Status` mit `Aktiv`
-   - eine kurze `## Kontext`-Prosa (diese ADR hält die getrackte Effective Flow-Konfiguration; `.effective-flow/` ist reines Laufzeit-Verzeichnis)
-   - `## Konfiguration` mit der Zwei-Spalten-Tabelle `| Schlüssel | Wert |`; je Schlüssel eine Zeile in der Tabellen-Encoding-Form (Boolean, unquoted String, Literal-`null`, `(leer)`, kommagetrennte Liste, dotted keys). Unbekannte Fremd-Schlüssel aus einer vorhandenen Quelle als eigene Zeilen erhalten.
+   - `## Status` with `Active`
+   - a short `## Context` prose (this ADR holds the tracked Effective Flow configuration; `.effective-flow/` is a pure runtime directory)
+   - `## Configuration` with the two-column table `| Key | Value |`; one row per key in the table-encoding form (boolean, unquoted string, literal `null`, `(empty)`, comma-separated list, dotted keys). Preserve unknown foreign keys from an existing source as their own rows.
 
-   Beispiel-Skelett:
+   Example skeleton:
 
    ```markdown
    # Effective Flow project setup
 
    ## Status
 
-   Aktiv
+   Active
 
-   ## Kontext
+   ## Context
 
-   Diese ADR hält die getrackte Effective Flow-Konfiguration dieses Projekts. `.effective-flow/` ist reines
-   Laufzeit-Verzeichnis und komplett gitignored.
+   This ADR holds this project's tracked Effective Flow configuration. `.effective-flow/` is a pure
+   runtime directory and completely gitignored.
 
-   ## Konfiguration
+   ## Configuration
 
-   | Schlüssel                         | Wert    |
+   | Key                         | Value    |
    | --------------------------------- | ------- |
    | review.profile                    | focused |
    | applyReview.defaultCommitStrategy | null    |
@@ -492,28 +498,28 @@ Freitext-Werte (z. B. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir` od
    | tracker.mode                      | local   |
    ```
 
-5. **AGENTS.md-Marker setzen.** Schreibe die kanonische Zeile `**Effective Flow project setup:** <adr-pfad>` nicht-destruktiv: bevorzugt in eine vorhandene `AGENTS.md`, sonst in eine vorhandene `CLAUDE.md`, sonst lege eine minimale `AGENTS.md` mit dieser Zeile an. Übrigen Inhalt unangetastet lassen; einen vorhandenen (ggf. veralteten) Marker aktualisieren statt duplizieren — das schließt einen Alt-Marker `**Firmo project setup:**` ein, der dabei auf die neue Schreibweise umgestellt wird.
-6. **Migration und Enttracken (nur im Migrationsfall).** Wurde eine Alt-`.firmo/config.json` als Quelle gelesen:
-   - Enttracke sie automatisch mit `git rm --cached .firmo/config.json`; den **Datei-Inhalt auf der Platte belassen** (Effective Flows Non-Destruktiv-Linie), das Aufräumen dem User überlassen. `git rm --cached` **staged** eine Index-Änderung, erzeugt aber **keinen** Commit — die Setup-Regel „erstellt keine Commits“ bleibt gewahrt.
-   - Ist das Projekt kein Git-Repository oder die Datei nicht getrackt, überspringe das Enttracken und melde das.
-   - Markiere den Migrationsabschluss idempotent in `.effective-flow/memory.json` unter `configMigration.adr` (`version` z. B. `config-to-adr-v1`, `appliedAt` Zeitstempel), ohne vorhandene `memory.json`-Felder zu verlieren. Ist dieser Marker bereits gesetzt, migriere nicht erneut.
+5. **Set the AGENTS.md marker.** Write the canonical line `**Effective Flow project setup:** <adr-path>` non-destructively: preferably into an existing `AGENTS.md`, otherwise into an existing `CLAUDE.md`, otherwise create a minimal `AGENTS.md` with this line. Leave the remaining content untouched; update an existing (possibly outdated) marker instead of duplicating it — this includes an old marker `**Firmo project setup:**`, which is switched to the new spelling in the process.
+6. **Migration and untracking (migration case only).** If an old `.firmo/config.json` was read as the source:
+   - Untrack it automatically with `git rm --cached .firmo/config.json`; **leave the file content on disk** (Effective Flow's non-destructive line), leaving the cleanup to the user. `git rm --cached` **stages** an index change but creates **no** commit — the setup rule "creates no commits" stays intact.
+   - If the project is not a Git repository or the file is not tracked, skip the untracking and report that.
+   - Mark the migration completion idempotently in `.effective-flow/memory.json` under `configMigration.adr` (`version` e.g. `config-to-adr-v1`, `appliedAt` timestamp), without losing existing `memory.json` fields. If this marker is already set, do not migrate again.
 
-### Schritt 7: Zusammenfassung
+### Step 7: Summary
 
-Melde dem User:
+Report to the user:
 
-- ob die `.gitignore`-Zeile `.effective-flow/` ergänzt, ein früheres Zwei-Zeilen-Pattern (`.effective-flow/*` plus `!.effective-flow/config.json`) oder eine Alt-`.firmo/`-/`.sf-plugin/`-Zeile dorthin migriert wurde oder der Soll-Zustand bereits hergestellt war
-- welcher Weg gewählt wurde (Express oder Geführt) und ob erweiterte Einstellungen angepasst wurden
-- die gesetzten zentralen Verhaltenswerte (`worktree.enabled` [Default `true`], `delivery.completion` [Default `merge`] samt ggf. `delivery.baseBranch`/`delivery.returnBranch`, `plan.markerLanguage`, `tracker.mode` und ggf. `tracker.remoteToolOverride`) sowie `plan.dir`, falls gesetzt oder gegenüber dem Default geändert
-- bei einer zuvor vorhandenen Config: welche Schlüssel gegenüber dem alten Stand geändert wurden (Vorher/Nachher)
-- den Pfad der geschriebenen Projektsetup-ADR und den Ort des gesetzten `**Effective Flow project setup:**`-Markers (`AGENTS.md`/`CLAUDE.md`)
-- im Migrationsfall: dass die Alt-`.firmo/config.json` per `git rm --cached` **gestaged entfernt** (Inhalt auf Platte belassen), aber **nicht** committet wurde — und dass der User das Aufräumen selbst übernimmt
+- whether the `.gitignore` line `.effective-flow/` was added, a former two-line pattern (`.effective-flow/*` plus `!.effective-flow/config.json`) or an old `.firmo/`/`.sf-plugin/` line was migrated to it, or the target state was already established
+- which path was chosen (Express or Guided) and whether advanced settings were adjusted
+- the set central behavior values (`worktree.enabled` [default `true`], `delivery.completion` [default `merge`] including, if applicable, `delivery.baseBranch`/`delivery.returnBranch`, `plan.markerLanguage`, `tracker.mode`, and, if applicable, `tracker.remoteToolOverride`) as well as `plan.dir`, if set or changed from the default
+- for a previously existing config: which keys were changed from the old state (before/after)
+- the path of the written project setup ADR and the location of the set `**Effective Flow project setup:**` marker (`AGENTS.md`/`CLAUDE.md`)
+- in the migration case: that the old `.firmo/config.json` was **removed staged** via `git rm --cached` (content left on disk) but **not** committed — and that the user handles the cleanup themselves
 
-## Regeln
+## Rules
 
-- Ändere ausschließlich `.gitignore` (die `.effective-flow/`-Zeile bzw. deren Migration), die Projektsetup-ADR und den `**Effective Flow project setup:**`-Marker in `AGENTS.md`/`CLAUDE.md`; keine weiteren Setup-Schritte wie Deployment oder Git-Hooks.
-- Überschreibe vorhandene Config-Werte und unbekannte Schlüssel niemals ungefragt.
-- Hinterlasse bei einem Abbruch während der Fragen keine halb geschriebene ADR; schreibe nur einmal am Ende.
-- Starte keine Projektvalidation; Linting, Tests und Build-Checks sind Aufgabe anderer Skills wie ``effective-flow-code-validator``.
-- Erstelle keine Commits; das Committen übernimmt der User oder `/effective-flow commit`. Das Enttracken einer Alt-`config.json` staged nur eine Index-Änderung (`git rm --cached`), ohne zu committen.
-- Verarbeite oder speichere keine Secrets; die Konfiguration enthält ausschließlich Verhaltens-Defaults.
+- Change only `.gitignore` (the `.effective-flow/` line or its migration), the project setup ADR, and the `**Effective Flow project setup:**` marker in `AGENTS.md`/`CLAUDE.md`; no further setup steps like deployment or Git hooks.
+- Never overwrite existing config values and unknown keys without asking.
+- On an abort during the questions, leave no half-written ADR; write only once at the end.
+- Do not start project validation; linting, tests, and build checks are the job of other skills such as ``effective-flow-code-validator``.
+- Do not create commits; committing is done by the user or `/effective-flow commit`. Untracking an old `config.json` only stages an index change (`git rm --cached`) without committing.
+- Do not process or store any secrets; the configuration contains only behavior defaults.

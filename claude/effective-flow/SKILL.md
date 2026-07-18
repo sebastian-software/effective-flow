@@ -1,67 +1,67 @@
 ---
 name: effective-flow
-description: "Effective Flow — Software-Engineering-Workflows als Tools, aufgerufen über /effective-flow <tool>. Dünnes Router-Skill mit Lazy-Loading: die vollständige Anweisung eines Tools wird erst gelesen, wenn das Tool aufgerufen wird. Tools: build, fix, plan, refactor, docs, review, apply, plan-issue, maintain, commit, pr, setup, cleanup, open-plans, investigate, version."
+description: "Effective Flow — software engineering workflows as tools, invoked via /effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: build, fix, plan, refactor, docs, review, apply, plan-issue, maintain, commit, pr, setup, cleanup, open-plans, investigate, version."
 argument-hint: "[investigate|plan|open-plans|plan-issue|apply|build|fix|refactor|docs|maintain|iterate|review|commit|pr|setup|cleanup|version]"
 ---
 
 # Effective Flow
 
-Effective Flow bündelt einen kompletten Software-Engineering-Workflow als Tools, die über `/effective-flow <tool>` aufgerufen werden (Version 1.47.0 (997b2ed)).
+Effective Flow bundles a complete software engineering workflow as tools invoked via `/effective-flow <tool>` (version 1.48.0 (1cdd053)).
 
-Dieses Router-Skill ist bewusst **dünn**. Es enthält nur den Tool-Katalog und die Dispatch-Regel; die vollständige Anweisung eines Tools wird **erst bei Bedarf** aus `tools/<tool>.md` geladen. So bleibt die Session schlank und es entsteht keine Token-Exhaustion durch das Vorladen aller Tools.
+This router skill is deliberately **thin**. It contains only the tool catalog and the dispatch rule; a tool's full instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the session lean and avoids token exhaustion from preloading all tools.
 
-## Aufruf
+## Invocation
 
-`/effective-flow <tool> [argumente]`
+`/effective-flow <tool> [arguments]`
 
-Auf Codex wird dasselbe Skill über den Skill-Namen aufgerufen (z. B. `$effective-flow <tool> [argumente]`); die Dispatch-Regel ist identisch.
+On Codex the same skill is invoked via the skill name (e.g. `$effective-flow <tool> [arguments]`); the dispatch rule is identical.
 
-## Dispatch-Regel
+## Dispatch rule
 
-1. **Kein oder unbekanntes `<tool>`:** Gib die **gruppierte** Tool-Liste unten zur Orientierung aus, damit der User das passende Tool wählen kann, und führe sonst nichts aus. Rate nicht, welches Tool gemeint sein könnte.
-2. **Gültiges `<tool>`:** Lies die Datei `tools/<tool>.md` in diesem Skill-Verzeichnis und befolge sie wörtlich. Reiche die restlichen Argumente unverändert an das Tool durch. Lies dabei **keine** weiteren Tool-Dateien — nur die eine, die dem aufgerufenen Tool entspricht.
+1. **No or unknown `<tool>`:** Output the **grouped** tool list below for orientation so the user can choose the right tool, and do nothing else. Do not guess which tool might be meant.
+2. **Valid `<tool>`:** Read the file `tools/<tool>.md` in this skill directory and follow it verbatim. Pass the remaining arguments through to the tool unchanged. Do **not** read any further tool files in the process — only the one that corresponds to the invoked tool.
 
-Beim Tool `apply` kann die Anweisung ihrerseits eine passende **interne** Datei nachladen (`tools/apply-plan.md`, `tools/apply-review.md` oder `tools/apply-issues.md`), je nach erkannter Quelle. Diese internen Dateien sind nicht direkt über `/effective-flow` aufrufbar.
+For the `apply` tool, its instructions may in turn load an appropriate **internal** file (`tools/apply-plan.md`, `tools/apply-review.md`, or `tools/apply-issues.md`), depending on the detected source. These internal files are not directly invocable via `/effective-flow`.
 
 ## Tools
 
-Die Tools sind unten nach Nutzungsabsicht gruppiert.
+The tools are grouped below by usage intent.
 
-### Verstehen, was zu tun ist
-_Analyse & Planung, bevor Code entsteht_
+### Understand what to do
+_Analysis & planning before code_
 
-- `/effective-flow investigate` — Findet die Ursache eines Fehlers oder überraschenden Verhaltens – reine Analyse, kein Code.
-- `/effective-flow plan` — Klärt eine Aufgabe vollständig und schreibt einen umsetzbaren Plan – ohne Code.
-- `/effective-flow open-plans` — Zeigt, welche Pläne noch offen sind, wenn du den Faden wieder aufnimmst.
-- `/effective-flow plan-issue` — Vervollständigt die Planung für Issues, die noch Klärung brauchen.
+- `/effective-flow investigate` — Finds the cause of a bug or surprising behavior – pure analysis, no code.
+- `/effective-flow plan` — Fully clarifies a task and writes an actionable plan – without code.
+- `/effective-flow open-plans` — Shows which plans are still open when you pick the thread back up.
+- `/effective-flow plan-issue` — Completes the planning for issues that still need clarification.
 
-### Eine Änderung umsetzen
-_vom geklärten Plan/Issue zum Code_
+### Implement a change
+_from a clarified plan/issue to code_
 
-- `/effective-flow apply` — Startet die Umsetzung aus einer fertigen Quelle (Plan, Issue oder Review-Finding).
-- `/effective-flow build` — Setzt ein neues Feature vollständig um – Plan, Code, Tests, Review, Abschluss.
-- `/effective-flow fix` — Behebt einen konkreten Bug mit minimalem, regressionsgesichertem Eingriff.
-- `/effective-flow refactor` — Verbessert Struktur oder Lesbarkeit, ohne das Verhalten zu ändern.
-- `/effective-flow docs` — Erstellt oder aktualisiert Dokumentation, ohne Produktverhalten zu ändern.
-- `/effective-flow maintain` — Fährt wiederkehrende Wartung: Dependency-Updates und Security-Fixes.
-- `/effective-flow iterate` — Führt PR-Review-Anmerkungen und Instruktionen als neue Commits zurück in einen bestehenden PR.
+- `/effective-flow apply` — Starts implementation from a finished source (plan, issue or review finding).
+- `/effective-flow build` — Fully implements a new feature – plan, code, tests, review, completion.
+- `/effective-flow fix` — Fixes a specific bug with a minimal, regression-guarded intervention.
+- `/effective-flow refactor` — Improves structure or readability without changing behavior.
+- `/effective-flow docs` — Creates or updates documentation without changing product behavior.
+- `/effective-flow maintain` — Runs recurring maintenance: dependency updates and security fixes.
+- `/effective-flow iterate` — Feeds PR review notes and instructions back into an existing PR as new commits.
 
-### Qualität sichern
+### Ensure quality
 
-- `/effective-flow review` — Prüft Code auf Qualität und Findings – oder tiefer einen vorhandenen Plan.
+- `/effective-flow review` — Checks code for quality and findings – or, more deeply, an existing plan.
 
-### Änderungen einbringen
+### Deliver changes
 
-- `/effective-flow commit` — Committet die gestageten Änderungen mit passender Commit-Message.
-- `/effective-flow pr` — Öffnet aus deinem Branch einen Pull-Request (GitHub oder Forgejo).
+- `/effective-flow commit` — Commits the staged changes with a fitting commit message.
+- `/effective-flow pr` — Opens a pull request from your branch (GitHub or Forgejo).
 
-### Einrichten & Infos
+### Set up & info
 
-- `/effective-flow setup` — Richtet Effective Flow im Projekt ein – geführter Wizard, startet mit sicheren Defaults.
-- `/effective-flow cleanup` — Räumt Migrations-Altlasten (`.firmo/`, alte Config, `firmo-`-Labels) nach Bestätigung auf.
-- `/effective-flow version` — Zeigt die installierte Effective Flow-Version.
+- `/effective-flow setup` — Sets up Effective Flow in the project – guided wizard, starts with safe defaults.
+- `/effective-flow cleanup` — Cleans up migration remnants (`.firmo/`, old config, `firmo-` labels) after confirmation.
+- `/effective-flow version` — Shows the installed Effective Flow version.
 
-## Regeln
+## Rules
 
-- Lade nie mehrere Tool-Dateien „auf Vorrat“; immer nur das aktuell aufgerufene Tool (plus ggf. die eine interne `apply`-Quelle).
-- Spezialisten-Agents (Implementer, Reviewer, Validator, Test-/Docs-Writer …) sind **keine** `/effective-flow`-Tools; die Tools rufen sie intern als Subagents auf (auf Codex genestet unter `agents/`, auf Claude Code als registrierte `effective-flow-*`-Subagents).
+- Never load multiple tool files "just in case"; always only the currently invoked tool (plus, if applicable, the single internal `apply` source).
+- Specialist agents (implementers, reviewers, validators, test/docs writers …) are **not** `/effective-flow` tools; the tools invoke them internally as subagents (nested under `agents/` on Codex, as registered `effective-flow-*` subagents on Claude Code).

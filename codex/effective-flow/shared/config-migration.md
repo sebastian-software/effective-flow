@@ -1,86 +1,89 @@
-## Effective-Flow-Konfiguration (Projektsetup-ADR)
+## Effective Flow configuration (project setup ADR)
 
-Die getrackte Wahrheit für die Effective-Flow-Konfiguration ist eine lebende ADR „Effective
-Flow project setup“ (Default-Slug `effective-flow-project-setup`, siehe Baustein „Lebendes
-ADR-Modell“). Sie trägt die Config-Parameter mit minimaler Prosa als **Markdown-Tabelle**. Es
-gibt **keine** `.effective-flow/config.json` mehr als Config-Quelle; `.effective-flow/` ist
-reines Laufzeit-Verzeichnis (`memory.json`, `cache.json`, `review/`, `.worktrees/`) und wird
-komplett gitignored.
+The tracked truth for the Effective Flow configuration is a living ADR "Effective
+Flow project setup" (default slug `effective-flow-project-setup`, see fragment "Living
+ADR model"). It carries the config parameters with minimal prose as a **Markdown table**. There
+is **no** `.effective-flow/config.json` as a config source anymore; `.effective-flow/` is a
+pure runtime directory (`memory.json`, `cache.json`, `review/`, `.worktrees/`) and is
+completely gitignored.
 
-### Config-Locator (Auflösungsreihenfolge)
+### Config locator (resolution order)
 
-Beim Lesen der Konfiguration wird die Projektsetup-ADR in dieser Reihenfolge aufgelöst; der
-erste greifende Schritt gewinnt:
+When reading the configuration, the project setup ADR is resolved in this order; the
+first matching step wins:
 
-1. **AGENTS.md-Marker.** Die kanonische Zeile `**Effective Flow project setup:** <pfad>` in
-   `AGENTS.md`, sonst in `CLAUDE.md` bzw. einer vergleichbaren Konventionsdatei → die ADR
-   unter `<pfad>` lesen. **Backcompat (eine Generation):** ein noch vorhandener Alt-Marker
-   `**Firmo project setup:** <pfad>` wird beim Lesen gleichwertig erkannt; $effective-flow setup
-   stellt ihn beim nächsten Lauf nicht-destruktiv auf die neue Schreibweise um. Zeigt der
-   Marker auf einen Pfad, unter dem **keine** ADR liegt (toter/veralteter Marker), nicht dort
-   stehenbleiben, sondern in dieser Reihenfolge weiterfallen und den veralteten Marker melden
-   (Korrektur in $effective-flow setup).
-2. **Default-Pfad/Scan.** Sonst `docs/adr/effective-flow-project-setup.md` (der Alt-Slug
-   `firmo-project-setup` wird beim Scan gleichwertig erkannt) bzw. ein Scan des erkannten
-   ADR-Verzeichnisses (`docs/adr/`, `docs/decisions/`, `adr/`) nach der Projektsetup-ADR.
-3. **Übergangs-Kompatibilität.** Sonst — nur übergangsweise — eine noch vorhandene
-   `.effective-flow/config.json` (sonst eine Legacy-`.firmo/config.json`) lesen und auf
-   $effective-flow setup hinweisen. Dieser Lesepfad legt **nichts** an und berührt **kein** Git.
-4. **Eingebaute Defaults.** Sonst die Defaults der jeweiligen Quell-Skills verwenden.
+1. **AGENTS.md marker.** The canonical line `**Effective Flow project setup:** <path>` in
+   `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR
+   under `<path>`. **Backcompat (one generation):** a still-present legacy marker
+   `**Firmo project setup:** <path>` is recognized as equivalent on read; $effective-flow setup
+   converts it non-destructively to the new spelling on the next run. If the
+   marker points to a path under which **no** ADR lives (dead/stale marker), do not stay
+   there, but fall through in this order and report the stale marker
+   (correction in $effective-flow setup).
+2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` (the legacy slug
+   `firmo-project-setup` is recognized as equivalent during the scan) or a scan of the detected
+   ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR.
+3. **Transitional compatibility.** Otherwise — only transitionally — read a still-present
+   `.effective-flow/config.json` (otherwise a legacy `.firmo/config.json`) and point to
+   $effective-flow setup. This read path creates **nothing** and touches **no** Git.
+4. **Built-in defaults.** Otherwise use the defaults of the respective source skills.
 
-Der deterministische Lesepfad beliebiger Tools ist nicht-blockierend: Er liest die ADR (bzw.
-den Übergangs-Fallback), erzeugt aber selbst keine Datei und mutiert kein Git. Das Anlegen
-der ADR, der Marker und die Migration passieren ausschließlich im git-berührenden Pfad von
+The deterministic read path of any tool is non-blocking: It reads the ADR (or
+the transitional fallback), but itself creates no file and mutates no Git. Creating
+the ADR, the markers and the migration happen exclusively in the Git-touching path of
 $effective-flow setup.
 
-### Tabellen-Encoding (verbindlich für Schreiber und Leser)
+### Table encoding (binding for writers and readers)
 
-Die Config-Parameter stehen als flache Markdown-Tabelle mit zwei Spalten
-`| Schlüssel | Wert |`. Schreiber ($effective-flow setup, Migration) und Leser (alle Tools)
-interpretieren die Werte identisch nach dieser Kodierung:
+The config parameters stand as a flat Markdown table with two columns
+`| Key | Value |`. Writers ($effective-flow setup, migration) and readers (all tools)
+interpret the values identically per this encoding. English is the default encoding;
+a pre-existing ADR written in the former German form (`## Konfiguration`, header
+`| Schlüssel | Wert |`, `## Kontext`, status `Aktiv`/`Abgelöst`, empty list `(leer)`) stays
+recognized on read and is rewritten to the English form on the next write:
 
 - **Boolean** → `true` / `false`.
-- **String** → literal, unquoted (z. B. `focused`, `origin/main`).
-- **`null`** (semantisch „beim Lauf fragen“, z. B. `applyReview.defaultCommitStrategy`) →
-  das Literal-Token `null`.
-- **Leere Liste** → `(leer)`.
-- **Gefüllte Liste** → kommagetrennt (z. B. `humanizer, distill`).
-- **Verschachtelung** → dotted keys (z. B. `applyReview.worktree.baseDir`,
-  `skills.agents.ui-implementer.include`); ein leeres Objekt hat keine Unterzeilen.
-- **Fehlende Zeile = Schlüssel nicht gesetzt → Default des Quell-Skills.** Bewusst
-  verschieden von einer vorhandenen Zeile mit Wert `null` (expliziter Wert, semantisch „beim
-  Lauf fragen“). Beispiel: keine `delivery.completion`-Zeile → Default `merge`; eine
-  `delivery.completion | null`-Zeile → beim Lauf fragen.
+- **String** → literal, unquoted (e.g. `focused`, `origin/main`).
+- **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
+  the literal token `null`.
+- **Empty list** → `(empty)`.
+- **Filled list** → comma-separated (e.g. `humanizer, distill`).
+- **Nesting** → dotted keys (e.g. `applyReview.worktree.baseDir`,
+  `skills.agents.ui-implementer.include`); an empty object has no sub-lines.
+- **Missing line = key not set → default of the source skill.** Deliberately
+  different from a present line with value `null` (an explicit value, semantically "ask at
+  run time"). Example: no `delivery.completion` line → default `merge`; a
+  `delivery.completion | null` line → ask at run time.
 
-Das Lesen eines einzelnen Werts ist ein trivialer Zeilen-Lookup (Zeile mit dotted key →
-Wertzelle). Beispiel-Ausschnitt (Schnittstellenskizze, kein vollständiger Inhalt):
+Reading a single value is a trivial line lookup (line with dotted key →
+value cell). Example excerpt (interface sketch, not full content):
 
 ```markdown
-## Konfiguration
+## Configuration
 
-| Schlüssel                         | Wert    |
+| Key                         | Value    |
 | --------------------------------- | ------- |
 | review.profile                    | focused |
 | applyReview.defaultCommitStrategy | null    |
-| skills.exclude                    | (leer)  |
+| skills.exclude                    | (empty)  |
 | worktree.enabled                  | true    |
 ```
 
-Ist die Tabelle ungültig oder mehrdeutig (fehlender Schlüssel, unbekanntes Encoding): einen
-sicheren Default für den Lauf verwenden, den User über den betroffenen Schlüssel
-informieren, **nicht** raten.
+If the table is invalid or ambiguous (missing key, unknown encoding): use a
+safe default for the run, inform the user about the affected key,
+do **not** guess.
 
-### Einmalige Migration Legacy-`config.json` → Projektsetup-ADR
+### One-time migration legacy `config.json` → project setup ADR
 
-Die Migration einer bestehenden `.effective-flow/config.json` bzw. Legacy-`.firmo/config.json`
-in die Projektsetup-ADR ist **git-berührend** und läuft ausschließlich im
-$effective-flow setup-Pfad. Sie erzeugt die ADR-Tabelle aus dem aktuellen Config-Inhalt (Encoding
-wie oben), schreibt den AGENTS.md-Marker `**Effective Flow project setup:**`, stellt
-`.gitignore` auf ein einzelnes `.effective-flow/` um und enttrackt die Alt-`config.json`
-(`git rm --cached`, Datei-Inhalt auf Platte belassen). Der genaue Ablauf inklusive
-Idempotenz-Markierung steht in $effective-flow setup.
+The migration of an existing `.effective-flow/config.json` or legacy `.firmo/config.json`
+into the project setup ADR is **Git-touching** and runs exclusively in the
+$effective-flow setup path. It produces the ADR table from the current config content (encoding
+as above), writes the AGENTS.md marker `**Effective Flow project setup:**`, switches
+`.gitignore` to a single `.effective-flow/` and untracks the legacy `config.json`
+(`git rm --cached`, leave the file content on disk). The exact procedure including
+idempotency marking is in $effective-flow setup.
 
-Außerhalb von $effective-flow setup findet **keine** Migration statt: Der deterministische
-Lesepfad legt nichts an und berührt kein Git; er liest bei fehlender ADR ersatzweise eine
-noch vorhandene `.effective-flow/config.json` (sonst `.firmo/config.json`) und weist auf
-$effective-flow setup hin.
+Outside $effective-flow setup, **no** migration takes place: The deterministic
+read path creates nothing and touches no Git; on a missing ADR it reads instead a
+still-present `.effective-flow/config.json` (otherwise `.firmo/config.json`) and points to
+$effective-flow setup.

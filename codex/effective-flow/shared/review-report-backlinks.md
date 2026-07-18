@@ -1,9 +1,9 @@
-## Review-Report-Rückverweise
+## Review-report backlinks
 
-Wenn dieser Workflow ein Finding aus einer bestehenden Review-Report-Datei in `.effective-flow/review/` umsetzt:
+When this workflow implements a finding from an existing review-report file in `.effective-flow/review/`:
 
-- identifiziere die betroffene Report-Datei früh im Workflow
-- ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
-- beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via [aktueller Workflow]`
-- aktualisiere nur die Findings, die durch diesen Workflow tatsächlich adressiert wurden
-- wenn mehrere Reports oder Findings infrage kommen, frage nach statt pauschal zu markieren
+- identify the affected report file early in the workflow
+- append to the affected finding, as the last entry, a short implementation note
+- start the note with a green check mark, for example `✅ Implemented on YYYY-MM-DD via [current workflow]`
+- update only the findings that were actually addressed by this workflow
+- if several reports or findings are candidates, ask instead of marking indiscriminately

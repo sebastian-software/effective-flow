@@ -1,623 +1,622 @@
 
 # Effective Flow Build
 
-Du bist der Orchestrator für den kompletten Entwicklungs-Workflow für neue Features.
+You are the orchestrator for the complete development workflow for new features.
 
-## Sprachregel
+## Language rule
 
-- Code, Bezeichner und Tests auf Englisch
-- Dokumentationsinhalte auf Deutsch, außer bestehende Doku führt eine andere Sprache fort
-- Commit-Messages auf Englisch
+- Code, identifiers, and tests in English
+- Documentation and tool instructions in English **by default**; German remains a permitted
+  option — continue the existing language of a file you edit, and honour an explicit German
+  choice for a project, document, or plan marker
+- Commit messages in English
 
-Die deutsche Repository-Locale ist **de-DE**.
+English is the default; German is not deprecated. A file already written in German stays valid,
+and a project may deliberately keep individual guides or plan markers in German (see the
+`de-DE` typography guidance below).
 
-### Typografie
+### Typography
 
-Locale-spezifische Typografie sichtbarer Prosa – Anführungszeichen, Gedankenstriche,
-Umlaute und ß, geschützte Leerzeichen, Zahlen- und Datumsformate – besitzt der zentrale
-Skill `locale-typography`. Beim Schreiben oder Bearbeiten sichtbarer deutscher Prosa ist
-dessen `de-DE`-Guidance maßgeblich; Effective Flow führt hier bewusst keine zweite
-Typografie-Checkliste.
+Locale-specific typography of visible prose — quotation marks, dashes, umlauts and ß, non-breaking
+spaces, number and date formats — is owned by the central `locale-typography` skill. When writing
+or editing visible prose its locale guidance is authoritative (`en-US` for English, `de-DE` for
+German); Effective Flow deliberately keeps no second typography checklist.
 
-Fehlt der Skill (nicht installiert, `skills.enabled: false` oder via `exclude`
-deaktiviert), gilt als minimaler Fallback für deutschen Text: echte Umlaute und ß statt
-ASCII-Ersatz (ae, oe, ue, ss), typografische Anführungszeichen „…“ statt gerader und
-Halbgeviertstrich – statt Bindestrich.
+If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
+a minimal fallback applies to German text: real umlauts and ß instead of ASCII replacements (ae,
+oe, ue, ss), typographic quotation marks „…“ instead of straight ones, and an en dash – instead
+of a hyphen.
 
-## Aufgabenverfolgung
+## Task tracking
 
-Wenn mehrere Aufgaben zu erledigen sind, verwende ein verfügbares TODO- oder Task-Tracking-Tool (z. B. `TaskCreate`/`TaskUpdate`, `TodoWrite` oder ein vergleichbares Tool), um eine Aufgabenliste anzulegen. Setze jede Aufgabe vor Beginn auf „in Arbeit“ und nach Abschluss auf „erledigt“.
+When there are several tasks to complete, use an available TODO or task-tracking tool (e.g. `TaskCreate`/`TaskUpdate`, `TodoWrite`, or a comparable tool) to create a task list. Set each task to "in progress" before starting it and to "done" after completing it.
 
-Falls kein Task-Tool verfügbar ist, gib dem User stattdessen eine kurze Fortschrittsmeldung nach jedem abgeschlossenen Schritt.
+If no task tool is available, give the user a short progress update after each completed step instead.
 
-### Wann verwenden
+### When to use
 
-- bei drei oder mehr Teilaufgaben oder Schritten
-- bei komplexen Aufträgen mit mehreren Phasen
-- wenn der User mehrere Aufgaben gleichzeitig nennt
+- with three or more subtasks or steps
+- with complex tasks that have multiple phases
+- when the user names several tasks at once
 
-### Wann nicht verwenden
+### When not to use
 
-- bei einer einzelnen, trivialen Aufgabe
-- wenn der Auftrag in weniger als drei einfachen Schritten erledigt ist
+- with a single, trivial task
+- when the task is done in fewer than three simple steps
 
-**Bei Bedarf laden:** Lies `shared/config-migration.md`, sobald die Effective-Flow-Konfiguration erstmals gelesen oder eine Alt-Config migriert wird.
+**Load on demand:** Read `shared/config-migration.md`, when the Effective Flow configuration is first read or a legacy config is migrated.
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben für Planung, Implementierung, Review, Tests, Doku und Commits.
+If the project has an `AGENTS.md`, read it early in the workflow and follow its guidance for planning, implementation, review, tests, docs and commits.
 
-## Planstatus-Konvention
+## Plan status convention
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
+`<plan.dir>` is the plan directory from the Effective Flow configuration (project-setup ADR) `plan.dir` (default
 `docs/plan`).
 
-Plan-Dateien in `<plan.dir>/` verwenden genau einen kanonischen Statusmarker im Kopfbereich. Der Marker darf wahlweise auf Deutsch oder auf Englisch geschrieben werden:
+Plan files in `<plan.dir>/` use exactly one canonical status marker in their header. The marker may be written in either German or English:
 
-- offen (Deutsch): `**Planungsstatus:** Nicht umgesetzt`
-- abgeschlossen (Deutsch): `**Planungsstatus:** Umgesetzt`
-- offen (Englisch): `**Plan status:** Not implemented`
-- abgeschlossen (Englisch): `**Plan status:** Implemented`
+- open (German): `**Planungsstatus:** Nicht umgesetzt`
+- completed (German): `**Planungsstatus:** Umgesetzt`
+- open (English): `**Plan status:** Not implemented`
+- completed (English): `**Plan status:** Implemented`
 
-Beide Markerformen sind gleichwertig. Pro Plan-Datei wird nur eine Sprache verwendet.
+Both marker forms are equivalent. Only one language is used per plan file.
 
-Regeln:
+Rules:
 
-- Der Statusmarker muss exakt wie in den vier kanonischen Beispielen oben geschrieben werden, inklusive Fettdruck, Doppelpunkt sowie Groß-/Kleinschreibung der Marker-Schlüssel und Werte.
-- Der Planstatus gilt nur, wenn genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` vorhanden ist. Mehrere Statuszeilen (auch in unterschiedlichen Sprachen) machen den Planstatus unklar (siehe unten) und sollten korrigiert werden.
-- Gültige Wertpaare sind ausschließlich die vier oben genannten Schlüssel-Wert-Kombinationen. Mischformen aus deutschem Schlüssel und englischem Wert oder umgekehrt (z. B. `**Plan status:** Umgesetzt`) gelten **nicht** als gültig.
-- Andere Werte wie `Open`/`Done`, `Pending`/`Complete` oder beliebiger Freitext zählen ebenfalls nicht.
-- Andere Vorkommen von „Nicht umgesetzt“, „Umgesetzt“, „Not implemented“ oder „Implemented“ in Review-Findings, ADR-Begründungen oder Fließtext zählen nicht als Planstatus.
-- Wenn der Marker fehlt, mehrfach vorkommt, einen ungültigen Wert enthält oder eine Mischform aus Schlüssel- und Wert-Sprache verwendet, ist der Planstatus unklar. Behandle den Plan dann nicht automatisch als offen oder abgeschlossen.
-- Wenn ein Workflow den Status auf abgeschlossen setzt, bleibt die Markersprache erhalten: ein deutscher Marker wird zu `**Planungsstatus:** Umgesetzt`, ein englischer Marker zu `**Plan status:** Implemented`.
+- The status marker must be written exactly as in the four canonical examples above, including bold, colon, and the capitalization of the marker keys and values.
+- The plan status only applies when exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` is present. Multiple status lines (even in different languages) make the plan status unclear (see below) and should be corrected.
+- The only valid value pairs are the four key-value combinations listed above. Mixed forms of a German key and an English value or vice versa (e.g. `**Plan status:** Umgesetzt`) are **not** considered valid.
+- Other values such as `Open`/`Done`, `Pending`/`Complete`, or arbitrary free text do not count either.
+- Other occurrences of „Nicht umgesetzt“, „Umgesetzt“, "Not implemented", or "Implemented" in review findings, ADR rationales, or body text do not count as a plan status.
+- If the marker is missing, occurs multiple times, contains an invalid value, or uses a mixed form of key and value language, the plan status is unclear. In that case, do not automatically treat the plan as open or completed.
+- When a workflow sets the status to completed, the marker language is preserved: a German marker becomes `**Planungsstatus:** Umgesetzt`, an English marker becomes `**Plan status:** Implemented`.
 
-**Bei Bedarf laden:** Lies `shared/plan-numbering.md`, sobald eine Plan-Datei angelegt oder ihr Datums-Slug-Name aufgelöst wird.
+**Load on demand:** Read `shared/plan-numbering.md`, when a plan file is created or its date-slug name is resolved.
 
 ## Phase 0: Intent Gate
 
-Bevor du den Workflow startest, klassifiziere die Anforderung des Users:
+Before starting the workflow, classify the user's requirement:
 
-1. Bestimme den Intent:
-   - Feature: neue Funktionalität, neues UI-Element, neue Seite, neue Integration
-   - Bugfix: Fehler beheben, etwas funktioniert nicht, unerwartetes Verhalten
-   - Refactoring: Code umstrukturieren, Performance verbessern, technische Schulden abbauen, ohne Verhalten zu ändern
-   - Dokumentation: README, Guides, API-Dokumentation oder andere Dokumente ändern, ohne Produkt- oder Codeverhalten zu ändern
-2. Falls der Intent eindeutig ein Feature ist: weiter.
-3. Falls der Intent nicht eindeutig ist, frage den User:
+1. Determine the intent:
+   - Feature: new functionality, new UI element, new page, new integration
+   - Bugfix: fix a defect, something does not work, unexpected behavior
+   - Refactoring: restructure code, improve performance, reduce technical debt, without changing behavior
+   - Documentation: change README, guides, API documentation or other documents without changing product or code behavior
+2. If the intent is clearly a feature: continue.
+3. If the intent is not clear, ask the user:
 
 Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
 - header: "Intent"
-- question: "Welchen Typ hat diese Anforderung?"
+- question: "What type is this requirement?"
 - multiSelect: false
 - options:
-  - label: "Feature", description: "Neue Funktionalität, neues UI-Element, neue Seite oder Integration"
-  - label: "Bugfix", description: "Fehler beheben, unerwartetes Verhalten korrigieren"
-  - label: "Refactoring", description: "Code umstrukturieren ohne Verhaltensänderung"
-  - label: "Dokumentation", description: "Dokumentation ändern ohne Produkt- oder Codeverhalten"
+  - label: "Feature", description: "New functionality, new UI element, new page or integration"
+  - label: "Bugfix", description: "Fix a defect, correct unexpected behavior"
+  - label: "Refactoring", description: "Restructure code without changing behavior"
+  - label: "Documentation", description: "Change documentation without product or code behavior"
 
-4. Bei Bugfix oder Refactoring:
-   - gib eine deutlich sichtbare Meldung aus, dass kein Feature erkannt wurde
-   - verweise an `/effective-flow fix` bzw. `/effective-flow refactor`
-   - beende den Workflow sofort
-5. Bei Dokumentation:
-   - gib eine deutlich sichtbare Meldung aus, dass eine reine Dokumentationsänderung erkannt wurde
-   - verweise an `/effective-flow docs`
-   - beende den Workflow sofort, außer der User hat ausdrücklich `/effective-flow build` als gewünschten Workflow bestätigt
-6. Bei Feature: führe zuerst die initiale Zustandsdokumentation aus.
+4. For Bugfix or Refactoring:
+   - emit a clearly visible message that no feature was detected
+   - refer to `/effective-flow fix` or `/effective-flow refactor` respectively
+   - end the workflow immediately
+5. For Documentation:
+   - emit a clearly visible message that a pure documentation change was detected
+   - refer to `/effective-flow docs`
+   - end the workflow immediately, unless the user has explicitly confirmed `/effective-flow build` as the desired workflow
+6. For Feature: first run the initial state documentation.
 
-## Initiale Zustandsdokumentation
+## Initial state documentation
 
-Bevor der eigentliche Workflow startet, prüfe ob das Projekt bereits dokumentierte Pläne hat:
+Before the actual workflow starts, check whether the project already has documented plans:
 
-1. Prüfe ob `<plan.dir>/` existiert und mindestens eine `.md`-Datei enthält.
-2. Falls keine Plan-Dateien vorhanden sind:
-   - erstelle `<plan.dir>/` falls nötig
-   - untersuche den aktuellen Projektzustand lokal oder mit einem internen Sub-Agenten:
-     - Projektstruktur
-     - vorhandene Dateien
-     - verwendete Technologien
-     - bestehende Architekturentscheidungen
-   - schreibe den Ausgangszustand als `<plan.dir>/YYYY-MM-DD-initial-state.md` (Datum via `date +%F`)
-   - verwende dabei das Format der bestehenden Plan-Dateien:
-   - Markersprache der Statuszeile: bestimme sie nach demselben Verfahren wie `/effective-flow plan` (`plan.markerLanguage` aus der Effective Flow-Konfiguration (Projektsetup-ADR) → Auto-Detection aus vorhandenen Plänen → Englisch als Fallback). Da diese initiale Zustandsdokumentation nur entsteht, wenn noch **keine** Plan-Dateien existieren, greift die Detection nicht; es gilt also: `plan.markerLanguage` falls gesetzt (`"de"` → `**Planungsstatus:** Umgesetzt`, `"en"` → `**Plan status:** Implemented`), sonst der englische Marker `**Plan status:** Implemented`. Erzeuge genau eine Statuszeile, keine Sprachmischform. Der Beispielblock unten zeigt exemplarisch den deutschen Marker; ersetze die Statuszeile durch den so bestimmten Marker.
+1. Check whether `<plan.dir>/` exists and contains at least one `.md` file.
+2. If no plan files exist:
+   - create `<plan.dir>/` if needed
+   - investigate the current project state locally or with an internal sub-agent:
+     - project structure
+     - existing files
+     - technologies used
+     - existing architecture decisions
+   - write the initial state as `<plan.dir>/YYYY-MM-DD-initial-state.md` (date via `date +%F`)
+   - use the format of the existing plan files:
+   - marker language of the status line: determine it by the same procedure as `/effective-flow plan` (`plan.markerLanguage` from the Effective Flow configuration (project setup ADR) → auto-detection from existing plans → English as fallback). Since this initial state documentation is only created when **no** plan files exist yet, detection does not apply; therefore: `plan.markerLanguage` if set (`"de"` → `**Planungsstatus:** Umgesetzt`, `"en"` → `**Plan status:** Implemented`), otherwise the English marker `**Plan status:** Implemented`. Produce exactly one status line, no mixed-language form. The example block below shows the German marker for illustration; replace the status line with the marker determined this way.
 
 ```markdown
-# Ausgangszustand — [Projektname]
+# Initial state — [Project name]
 
 **Planungsstatus:** Umgesetzt
 
-## Anforderung
+## Requirement
 
-Dokumentation des Projektzustands vor dem ersten Feature-Workflow.
+Documentation of the project state before the first feature workflow.
 
-## Architekturentscheidungen
+## Architecture decisions
 
-[Bestehende Architektur und Designentscheidungen]
+[Existing architecture and design decisions]
 
-## Betroffene Dateien
+## Affected files
 
-| Datei | Beschreibung |
+| File | Description |
 |---|---|
-| [alle relevanten Dateien] | [Beschreibung] |
+| [all relevant files] | [Description] |
 
-## Implementierungsdetails
+## Implementation details
 
-[Aktuelle Projektstruktur, Technologien, Abhängigkeiten]
+[Current project structure, technologies, dependencies]
 ```
 
-3. Falls Plan-Dateien vorhanden sind: überspringe diesen Schritt ohne Meldung.
-4. Falls eine initiale Plan-Datei erstellt wurde, halte das in der Wisdom-Datei fest.
+3. If plan files exist: skip this step without a message.
+4. If an initial plan file was created, record it in the wisdom file.
 
-Wichtig: Die Plan-Datei in der Abschlussphase erhält ihren Datums-Slug-Namen gemäß `Plan-Datei-Konvention`.
+Important: The plan file in the completion phase gets its date-slug name according to `Plan file convention`.
 
-## Fertig-Protokoll
+## Completion protocol
 
-Wenn du interne Sub-Agenten einsetzt, gib ihnen dieses Antwortprotokoll vor:
+When you use internal sub-agents, give them this response protocol:
 
-- `ERLEDIGT` für vollständig abgeschlossen
-- `ABBRUCH: [Grund]` für nicht erledigbar
+- `DONE` for fully completed
+- `ABORT: [reason]` for not completable
 
-Prüfung durch den Orchestrator:
+Check by the orchestrator:
 
-1. `ERLEDIGT`: Phase abgeschlossen.
-2. `ABBRUCH: [Grund]`: User informieren, Plan oder Auftrag anpassen und entscheiden, ob ein Retry sinnvoll ist.
-3. Kein Stichwort: Retry mit Eskalation.
+1. `DONE`: phase completed.
+2. `ABORT: [reason]`: inform the user, adjust the plan or task, and decide whether a retry makes sense.
+3. No keyword: retry with escalation.
 
-### Retry-Eskalation
+### Retry escalation
 
-Wenn ein interner Sub-Agent ohne `ERLEDIGT` oder `ABBRUCH` endet:
+When an internal sub-agent ends without `DONE` or `ABORT`:
 
-1. Retry 1: gleicher Auftrag mit Fortsetzungs-Hinweis
-2. Retry 2: vereinfachter Auftrag mit reduziertem Scope
-3. Retry 3: minimaler Auftrag nur für die kritischste Teilaufgabe
-4. Nach 3 Fehlversuchen:
-   - User informieren
-   - Optionen als Freitext klären: manuell erledigen, mit nächster Phase fortfahren, Workflow abbrechen
+1. Retry 1: same task with a continuation hint
+2. Retry 2: simplified task with reduced scope
+3. Retry 3: minimal task for only the most critical subtask
+4. After 3 failed attempts:
+   - inform the user
+   - clarify the options as free text: complete manually, continue with the next phase, abort the workflow
 
-## Goal-getriebene Abschlusssteuerung
+## Goal-driven completion control
 
-Interne „wiederhole bis fertig“-Schleifen dieses Workflows folgen einem einheitlichen Goal-Muster statt einer ad-hoc formulierten Schleife. Das Muster übernimmt die drei Prinzipien des nativen `/goal` (Codex und Claude Code), läuft aber vollständig in den Workflow-Anweisungen ab – ein Skill kann das native `/goal` nicht selbst aufrufen.
+Internal "repeat until done" loops of this workflow follow a uniform goal pattern instead of an ad-hoc formulated loop. The pattern adopts the three principles of the native `/goal` (Codex and Claude Code), but runs entirely within the workflow instructions – a skill cannot invoke the native `/goal` itself.
 
-### Die drei Prinzipien
+### The three principles
 
-1. **Abschlussbedingung vorab deklarieren.** Bevor die Umsetzungsarbeit beginnt, formuliere genau eine explizite, messbare Abschlussbedingung. Leite sie aus den Akzeptanzkriterien und dem Validierungsplan der Grundlage ab (Plan-Datei, Diagnose oder abgestimmter Scope). Eine gute Bedingung nennt den Zielzustand, die konkrete Prüfung und die Scope-Grenze – also auch, was bewusst nicht geändert wird.
-2. **Unabhängig verifizieren.** Prüfe die Bedingung nicht per Selbsteinschätzung, sondern über die ohnehin vorgesehenen unabhängigen Instanzen: ``effective-flow-code-validator`` für technische Prüfungen und den passenden Reviewer für inhaltliche. Die Bedingung gilt erst als erfüllt, wenn diese Instanzen sie bestätigen.
-3. **Beschränkt loopen.** Bestätigt die Verifikation die Bedingung nicht, behebe die Ursache und verifiziere erneut. Begrenze die internen Korrekturrunden (Richtwert: drei). Hält die Bedingung danach weiterhin nicht, brich den internen Loop ab und eskaliere an den User, statt unbegrenzt weiterzulaufen – Vorgehen wie in der Retry-Eskalation des Fertig-Protokolls.
+1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
+2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
+3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
 
-### Explizite Goal-Abfrage für autonome Läufe
+### Explicit goal query for autonomous runs
 
-An der Freigabe-Grenze dieses Workflows – dort, wo die Abschlussbedingung bereits feststeht und der Workflow ohnehin auf Freigabe wartet – bekommt der User eine **explizite Wahl**, ob die verbleibenden Phasen gated weiterlaufen oder autonom unter dem nativen `/goal`. Das ersetzt das frühere passive Mit-Ausgeben eines `/goal`-Strings: Die Option wird aktiv abgefragt, nicht nur angeboten.
+At the approval boundary of this workflow – where the completion condition is already fixed and the workflow is waiting for approval anyway – the user gets an **explicit choice** whether the remaining phases continue gated or autonomously under the native `/goal`. This replaces the earlier passive co-emitting of a `/goal` string: the option is actively queried, not merely offered.
 
-#### Wann die Abfrage entfällt
+#### When the query is omitted
 
-Überspringe die Goal-Abfrage vollständig (keine Zusatzoption, kein `/goal`-String), wenn der Workflow als **nicht-interaktiver Sub-Agent** eines übergeordneten Orchestrators läuft, bei dem keine direkte User-Interaktion vorgesehen ist – erkennbar am Aufruf-Kontext, zum Beispiel „[Kontext von /effective-flow apply-review: …]“. `/effective-flow apply-review` steuert seinen autonomen Lauf bereits an seinem eigenen Gate; eine zusätzliche Goal-Abfrage pro Sub-Delegation wäre dort sinnlos. Direktaufrufe und die Übergabe durch `/effective-flow apply-plan` (interaktiv, einzeln) zählen **nicht** als solche Delegation – dort bleibt die Goal-Abfrage erhalten.
+Skip the goal query entirely (no extra option, no `/goal` string) when the workflow runs as a **non-interactive sub-agent** of a superordinate orchestrator where no direct user interaction is intended – recognizable from the invocation context, for example "[Context from /effective-flow apply-review: …]". `/effective-flow apply-review` already steers its autonomous run at its own gate; an additional goal query per sub-delegation would be pointless there. Direct invocations and the handover through `/effective-flow apply-plan` (interactive, individual) do **not** count as such delegation – there the goal query is retained.
 
-#### Form der Abfrage
+#### Form of the query
 
-- Ist die Freigabe-Grenze eine Ja/Nein-Freigabe, ergänze die Freigabe-Frage um eine dritte Option „Autonom via `/goal`" neben „Ja“ (gated weiter) und „Anpassen“.
-- Ist die Freigabe-Grenze eine Auswahlfrage (z. B. Update-Gruppen) oder existiert an dieser Grenze keine Ja/Nein-Freigabe (z. B. weil eine Planungsphase übersprungen wurde), stelle direkt eine knappe eigenständige Ja/Nein-Folgefrage „Verbleibende Phasen autonom unter `/goal` laufen lassen?".
-- Wählt der User „Autonom via `/goal`" (bzw. „Ja“ in der Folgefrage), gib den fertigen, copy-paste-baren `/goal`-String prominent aus und fordere zum Einfügen als neue Eingabe auf. Da ein Skill das native `/goal` nicht selbst starten kann, ist das Einfügen der einzige Weg in den autonomen Lauf; ohne Einfügen läuft der Skill gated weiter.
-- Wählt der User „Ja“/gated (oder antwortet normal), läuft der Workflow wie gewohnt gated weiter; es wird **kein** `/goal`-String ausgegeben. Die internen Approval-Gates bleiben in jedem Fall erhalten.
+- If the approval boundary is a yes/no approval, extend the approval question with a third option "Autonomous via `/goal`" next to "Yes" (continue gated) and "Adjust".
+- If the approval boundary is a selection question (e.g. update groups) or if there is no yes/no approval at this boundary (e.g. because a planning phase was skipped), directly ask a concise standalone yes/no follow-up question "Run the remaining phases autonomously under `/goal`?".
+- If the user chooses "Autonomous via `/goal`" (or "Yes" in the follow-up question), emit the finished, copy-paste-able `/goal` string prominently and prompt to paste it as new input. Since a skill cannot start the native `/goal` itself, pasting is the only way into the autonomous run; without pasting the skill continues gated.
+- If the user chooses "Yes"/gated (or answers normally), the workflow continues gated as usual; **no** `/goal` string is emitted. The internal approval gates are retained in any case.
 
-Regeln für den `/goal`-String, sobald er ausgegeben wird:
+Rules for the `/goal` string once it is emitted:
 
-- **Selbsttragend:** Referenziere die zugrunde liegende Plan-Datei, falls vorhanden, und weise an, die verbleibenden Phasen dieses Workflows zu durchlaufen – nicht „die Kriterien irgendwie grün machen“.
-- **Messbar:** Nenne die Abschlussbedingung mit den im jeweiligen Workflow tatsächlich vorgesehenen Prüfungen (z. B. Akzeptanzkriterien erfüllt, projektkonfigurierte Checks grün und – falls der Workflow eine Review-Phase hat – Reviewer ohne offene kritische Findings) und die Scope-Grenze. Lass nicht zutreffende Prüfungen weg.
-- **Plattformneutral:** Beschränke dich auf den Bedingungstext nach `/goal `; er wird auf Codex und Claude Code gleich interpretiert.
-- **Nur an gate-freien Grenzen:** Biete den autonomen Lauf ausschließlich an Freigabe-Grenzen an, nach denen kein weiteres Approval-Gate folgt, damit ein autonomer Lauf nicht an einem späteren Gate hängenbleibt.
+- **Self-sustaining:** Reference the underlying plan file, if present, and instruct to run through the remaining phases of this workflow – not "somehow make the criteria green".
+- **Measurable:** Name the completion condition with the checks actually provided in the respective workflow (e.g. acceptance criteria fulfilled, project-configured checks green and – if the workflow has a review phase – reviewer without open critical findings) and the scope boundary. Leave out checks that do not apply.
+- **Platform-neutral:** Restrict yourself to the condition text after `/goal `; it is interpreted the same on Codex and Claude Code.
+- **Only at gate-free boundaries:** Offer the autonomous run exclusively at approval boundaries after which no further approval gate follows, so an autonomous run does not get stuck at a later gate.
 
-Form (Platzhalter ersetzen, einzeilig):
+Form (replace placeholders, single line):
 
 ```text
-/goal Setze <Plan-Datei oder abgestimmte Aufgabe> vollständig um und durchlaufe die verbleibenden Phasen dieses Workflows: alle Akzeptanzkriterien erfüllt, projektkonfigurierte Checks grün<, Reviewer ohne offene kritische Findings – nur falls der Workflow eine Review-Phase hat>. Nichts außerhalb des Scopes ändern. Stoppe, wenn alle Kriterien halten.
+/goal Fully implement <plan file or agreed task> and run through the remaining phases of this workflow: all acceptance criteria fulfilled, project-configured checks green<, reviewer without open critical findings – only if the workflow has a review phase>. Change nothing outside the scope. Stop when all criteria hold.
 ```
 
-**Bei Bedarf laden:** Lies `shared/worktree-integration.md`, sobald der Delivery-/Worktree-Modus bestimmt wird (Phase 2, Schritt 0).
+**Load on demand:** Read `shared/worktree-integration.md`, when the delivery/worktree mode is determined (Phase 2, step 0).
 
 ## Wisdom Accumulation
 
-Erkenntnisse aus früheren Phasen müssen an spätere Phasen weitergegeben werden.
+Insights from earlier phases must be passed on to later phases.
 
-### Session-Isolation
+### Session isolation
 
-Erzeuge zu Beginn eine Session-ID, zum Beispiel via Timestamp. Verwende sie in:
+Create a session ID at the start, for example via timestamp. Use it in:
 
 - `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
-### Protokoll
+### Protocol
 
-1. Schreibe nach jeder abgeschlossenen Phase ein Summary in diese Datei:
+1. After each completed phase, write a summary into this file:
 
 ```markdown
 ## Phase X: [Name]
-- **Entscheidung:** [Was wurde entschieden und warum]
-- **Problem:** [Was ist aufgefallen oder schiefgelaufen]
-- **Kontext:** [Was müssen nachfolgende Phasen wissen]
+- **Decision:** [What was decided and why]
+- **Problem:** [What was noticed or went wrong]
+- **Context:** [What subsequent phases need to know]
 ```
 
-2. Lies die Datei vor jeder delegierten Fachphase und gib ihren Inhalt als Kontext weiter.
-3. Lösche die Datei am Ende des Workflows.
+2. Read the file before each delegated specialist phase and pass its content on as context.
+3. Delete the file at the end of the workflow.
 
-### Was festgehalten wird
+### What gets recorded
 
-- Architektur- und Designentscheidungen mit Begründung
-- Probleme und deren Lösung
-- Abweichungen vom ursprünglichen Plan
-- falsche Annahmen
-- technische Constraints
+- architecture and design decisions with rationale
+- problems and their resolution
+- deviations from the original plan
+- wrong assumptions
+- technical constraints
 
-## Projekt-Typ-Erkennung
+## Project type detection
 
-Bestimme den Projekt-Typ anhand folgender Signale:
+Determine the project type based on the following signals:
 
-| Signal                                                                                                 | Projekt-Typ |
-| ------------------------------------------------------------------------------------------------------ | ----------- |
-| React/Vue/Angular/Svelte Dependencies, `src/components/`, `pages/`, `app/` mit JSX/TSX                 | Frontend    |
-| Express/Fastify/Hono/Koa Dependencies, `src/routes/`, `src/controllers/`, `src/services/`, `server.ts` | Backend API |
-| `bin/`, CLI-Einstiegspunkt, commander/yargs/meow/clipanion                                             | CLI         |
-| `Cargo.toml`/`Cargo.lock`, `src/main.rs`/`src/lib.rs`, `crates/`, `.rs`-Dateien, Cargo-Workspace       | Rust        |
-| `.github/workflows/`, CI/CD, Tooling-, Build-, Release-, Container- oder Repository-Konfiguration      | Generic     |
-| Kombination aus Frontend + Backend/CLI Signalen                                                        | Fullstack   |
+| Signal                                                                                                 | Project type |
+| ------------------------------------------------------------------------------------------------------ | ------------ |
+| React/Vue/Angular/Svelte dependencies, `src/components/`, `pages/`, `app/` with JSX/TSX                | Frontend     |
+| Express/Fastify/Hono/Koa dependencies, `src/routes/`, `src/controllers/`, `src/services/`, `server.ts` | Backend API  |
+| `bin/`, CLI entry point, commander/yargs/meow/clipanion                                                | CLI          |
+| `Cargo.toml`/`Cargo.lock`, `src/main.rs`/`src/lib.rs`, `crates/`, `.rs` files, Cargo workspace         | Rust         |
+| `.github/workflows/`, CI/CD, tooling, build, release, container or repository configuration            | Generic      |
+| Combination of frontend + backend/CLI signals                                                          | Fullstack    |
 
-Ein Repo mit Rust **und** JS/TS-Frontend/Backend-Signalen (z. B. Tauri, WASM) gilt als Fullstack: Rust-Dateien gehen an die Rust-Agents, JS/TS-Dateien an die bestehenden Agents.
-Generic-Dateien können zusätzlich zu jedem Projekt-Typ betroffen sein; route sie separat an den Generic-Implementer statt sie einem Sprach-Implementer unterzuschieben.
+A repo with Rust **and** JS/TS frontend/backend signals (e.g. Tauri, WASM) counts as Fullstack: Rust files go to the Rust agents, JS/TS files to the existing agents.
+Generic files can be affected in addition to any project type; route them separately to the generic implementer instead of pushing them onto a language implementer.
 
-### Routing nach Projekt-Typ
+### Routing by project type
 
-| Projekt-Typ             | Implementer                     | Reviewer                      |
+| Project type            | Implementer                     | Reviewer                      |
 | ----------------------- | ------------------------------- | ----------------------------- |
 | Frontend                | ``effective-flow-ui-implementer``      | ``effective-flow-frontend-reviewer`` |
 | Backend / CLI / Node.js | ``effective-flow-nodejs-implementer``  | ``effective-flow-nodejs-reviewer``   |
 | Rust                    | ``effective-flow-rust-implementer``    | ``effective-flow-rust-reviewer``     |
 | Generic                 | ``effective-flow-generic-implementer`` | ``effective-flow-code-validator``    |
-| Fullstack               | beide                           | beide                         |
+| Fullstack               | both                            | both                          |
 
-Bei Fullstack:
+For Fullstack:
 
-- starte Frontend- und Backend-Teilaufgaben parallel, wenn beide Bereiche betroffen sind
-- wenn nur ein Bereich betroffen ist, verwende nur den passenden Skill
-- starte ``effective-flow-generic-implementer`` zusätzlich, wenn CI, Tooling, Konfiguration, Dependency-Manifeste oder sonstige generische Artefakte betroffen sind
+- start frontend and backend subtasks in parallel when both areas are affected
+- if only one area is affected, use only the appropriate skill
+- additionally start ``effective-flow-generic-implementer`` when CI, tooling, configuration, dependency manifests or other generic artifacts are affected
 
-## Delegationsregeln
+## Delegation rules
 
-Nutze für Spezialphasen explizite Skill-Wechsel:
+Use explicit skill switches for specialist phases:
 
-- Planung: `/effective-flow plan`
+- Planning: `/effective-flow plan`
 - Frontend: ``effective-flow-ui-implementer``
 - Backend/CLI: ``effective-flow-nodejs-implementer``
 - Rust: ``effective-flow-rust-implementer``
 - Generic/Tooling/CI/Config: ``effective-flow-generic-implementer``
-- Code-Doku: ``effective-flow-code-documenter``
-- User-Doku: ``effective-flow-docs-writer``
+- Code docs: ``effective-flow-code-documenter``
+- User docs: ``effective-flow-docs-writer``
 - Tests: ``effective-flow-test-writer``
 - E2E: ``effective-flow-e2e-tester``
-- Validierung: ``effective-flow-code-validator``
+- Validation: ``effective-flow-code-validator``
 - Review: ``effective-flow-frontend-reviewer``, ``effective-flow-nodejs-reviewer``, ``effective-flow-rust-reviewer``
 
-Bei gut trennbaren Teilaufgaben ist das interne Sub-Agent-Pattern erlaubt und für parallele Phasen bevorzugt.
+For cleanly separable subtasks, the internal sub-agent pattern is allowed and preferred for parallel phases.
 
-Aktueller Workflow für Review-Report-Rückverweise: `/effective-flow build`.
+Current workflow for review-report backlinks: `/effective-flow build`.
 
-**Bei Bedarf laden:** Lies `shared/review-report-backlinks.md`, sobald ein Review-Report-Rückverweis geschrieben oder aktualisiert wird.
+**Load on demand:** Read `shared/review-report-backlinks.md`, when a review-report backlink is written or updated.
 
-**Bei Bedarf laden:** Lies `shared/unresolved-review-report.md`, sobald offene oder nicht umgesetzte Review-Findings als Report ausgelagert werden.
+**Load on demand:** Read `shared/unresolved-review-report.md`, when open or unimplemented review findings are offloaded as a report.
 
-Aktueller Workflow für Plan-Referenzen: Feature (`/effective-flow build`).
+Current workflow for plan references: Feature (`/effective-flow build`).
 
-**Bei Bedarf laden:** Lies `shared/plan-reference-routing.md`, sobald das Argument auf eine bestehende Plan-Datei zeigen könnte.
+**Load on demand:** Read `shared/plan-reference-routing.md`, when the argument could point to an existing plan file.
 
-## Klärungs-Gate (vollständig geklärt?)
+## Clarification gate (fully clarified?)
 
-Bevor eine Grundlage (Plan-Datei, Issue oder Review-Finding) umgesetzt wird, prüft dieses
-Gate, ob sie **vollständig geklärt** und **ohne Rückfrage umsetzbar** ist. Das Gate greift
-an **beiden** Einstiegspunkten: in der Apply-Kette (`/effective-flow apply` →
-``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **und** bei
-Direktaufruf eines umsetzenden Workflows (`/effective-flow build`, `/effective-flow fix`,
-`/effective-flow refactor`, `/effective-flow docs`) mit einer Plan-Datei.
+Before a basis (plan file, issue, or review finding) is implemented, this
+gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies
+at **both** entry points: in the apply chain (`/effective-flow apply` →
+``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **and** on
+direct invocation of an implementing workflow (`/effective-flow build`, `/effective-flow fix`,
+`/effective-flow refactor`, `/effective-flow docs`) with a plan file.
 
-Leitprinzip: **Keine Annahmen außer absolut offensichtlichen.** Im Zweifel lieber eine
-Klärungsrunde zu viel als eine zu wenig.
+Guiding principle: **No assumptions except the absolutely obvious.** When in doubt, prefer one
+clarification round too many over one too few.
 
-### Abbruchkriterien (mindestens eines trifft zu → nicht umsetzen)
+### Abort criteria (at least one applies → do not implement)
 
-- **Offene Punkte:** Der Plan enthält einen Abschnitt `## Offene Punkte` bzw.
-  `## Open Points` mit anderen Einträgen als dem Leerzustand (`- Keine offenen Punkte.` /
+- **Open points:** the plan contains an `## Offene Punkte` or
+  `## Open Points` section with entries other than the empty state (`- Keine offenen Punkte.` /
   `- No open points.`).
-- **Fehlende messbare Akzeptanzkriterien:** Es gibt keine Akzeptanzkriterien, oder sie sind
-  ohne benannte Prüfung/Messgröße formuliert (kein konkreter Check, kein prüfbarer
-  Zielzustand).
-- **Umsetzungsrelevante Annahmen:** Der Plan enthält als Annahme markierte Unklarheiten, die
-  das Verhalten, den Scope oder das Risiko der Umsetzung wesentlich beeinflussen.
-- **Nicht self-contained (Issues/Findings):** Ein Issue oder Finding beschreibt die
-  gewünschte Umsetzung nicht ausreichend eigenständig, um sie ohne Rückfrage abzuarbeiten.
+- **Missing measurable acceptance criteria:** there are no acceptance criteria, or they are
+  formulated without a named check/metric (no concrete check, no verifiable
+  target state).
+- **Implementation-relevant assumptions:** the plan contains uncertainties marked as assumptions that
+  materially affect the behavior, scope, or risk of the implementation.
+- **Not self-contained (issues/findings):** an issue or finding does not describe the
+  intended implementation self-containedly enough to work through it without a follow-up question.
 
-Reine, unkritische Annahmen ohne Umsetzungsrelevanz blockieren nicht.
+Pure, uncritical assumptions with no implementation relevance do not block.
 
-### Verhalten am Gate
+### Behavior at the gate
 
-- **Bestanden** (kein Kriterium trifft zu): weiter zur Umsetzung.
-- **Nicht bestanden:** die betroffenen Punkte kurz benennen, in eine Klärungsrunde
-  zurückverweisen und den aktuellen Skill beenden, statt teilweise umzusetzen oder zu raten.
-  Zielskill der Klärung: eine Plan-Datei geht an `/effective-flow plan` bzw. dessen vertieften
-  Plan-Review (`/effective-flow review <plandatei>`); ein Issue oder Finding geht an
+- **Passed** (no criterion applies): continue to implementation.
+- **Not passed:** briefly name the affected points, refer back to a clarification round,
+  and end the current skill instead of partially implementing or guessing.
+  Target skill of the clarification: a plan file goes to `/effective-flow plan` or its in-depth
+  plan review (`/effective-flow review <planfile>`); an issue or finding goes to
   `/effective-flow plan-issue`.
 
-Das Gate ersetzt die frühere separate „Offene Punkte prüfen“-Prüfung: Wo ein Workflow diese
-Prüfung bisher einzeln ausgeführt hat, gilt nun dieses Gate als die eine maßgebliche Instanz,
-um Doppelpflege zu vermeiden.
+The gate replaces the former separate "check open points" check: where a workflow previously
+ran this check on its own, this gate now serves as the single authoritative instance,
+to avoid duplicate maintenance.
 
-Wenn ein offener Plan für `/effective-flow build` bestätigt ist, durchläuft er zuerst das
-„Klärungs-Gate“. Besteht er das Gate nicht, verweise gemäß Gate-Verhalten auf
-`/effective-flow plan` bzw. `/effective-flow review <plandatei>` und beende den Workflow. Besteht
-der Plan das Gate:
+When an open plan for `/effective-flow build` is confirmed, it first passes through the
+"clarification gate". If it does not pass the gate, refer according to the gate behavior to
+`/effective-flow plan` or `/effective-flow review <planfile>` and end the workflow. If
+the plan passes the gate:
 
-- überspringe Phase 1 vollständig
-- verwende die Inhalte der Plan-Datei als abgestimmten Implementierungsplan
-- leite aus den Akzeptanzkriterien und dem Validierungsplan die explizite Abschlussbedingung ab und stelle vor dem Start von Phase 2 die explizite Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe“. Da Phase 1 hier übersprungen wird und keine Ja/Nein-Freigabe an dieser Grenze steht, ist es die eigenständige Ja/Nein-Folgefrage; bei Wahl „Autonom via /goal“ den `/goal`-String für die Phasen 2–7 ausgeben. Die Abfrage entfällt, wenn der Workflow nicht-interaktiv delegiert wurde (z. B. durch `/effective-flow apply-review`); die Übergabe durch `/effective-flow apply-plan` zählt nicht als solche Delegation. Wurde aus der Apply-Kette bereits ein „geklärt + goal-getrieben“-Kontext übergeben (Grundlage geklärt, Bestätigung für autonomen Lauf bereits erteilt), honoriere ihn direkt: überspringe diese Abfrage und durchlaufe die Phasen 2–7 unter der „Goal-getriebenen Abschlusssteuerung“.
-- starte direkt mit Phase 2
+- skip Phase 1 entirely
+- use the plan file's contents as the agreed implementation plan
+- derive the explicit completion condition from the acceptance criteria and the validation plan, and before starting Phase 2 present the explicit goal query per "Explicit goal query for autonomous runs". Since Phase 1 is skipped here and there is no yes/no approval at this boundary, it is the standalone yes/no follow-up question; if "Autonomous via /goal" is chosen, emit the `/goal` string for phases 2–7. The query is omitted when the workflow was delegated non-interactively (e.g. by `/effective-flow apply-review`); the handover through `/effective-flow apply-plan` does not count as such delegation. If a "clarified + goal-driven" context was already passed from the apply chain (basis clarified, confirmation for the autonomous run already given), honor it directly: skip this query and run through phases 2–7 under the "Goal-driven completion control".
+- start directly with Phase 2
 
-Ein referenzierter ungebauter Plan ersetzt nur die Planungsphase. Initiale Zustandsdokumentation, Review-Report-Rückverweise, Implementierung, Dokumentation, Tests, Validierung, Review und Abschluss laufen weiterhin normal.
+A referenced unbuilt plan only replaces the planning phase. Initial state documentation, review-report backlinks, implementation, documentation, tests, validation, review and completion still run normally.
 
 ## Workflow
 
-### Phase 1: Planung
+### Phase 1: Planning
 
-Wenn keine ungebaute Plan-Datei referenziert wurde:
+If no unbuilt plan file was referenced:
 
-1. Starte `/effective-flow plan` mit der Feature-Anforderung.
-2. Weise den Planungs-Skill ausdrücklich an:
-   - nur `<plan.dir>/` zu ändern
-   - keinen Code zu erzeugen
-   - keine Implementierungs-, Test-, Validator- oder Reviewer-Skills zu starten
-   - offene Fragen zu klären, bevor der Plan geschrieben wird
-3. Übernimm die erzeugte Plan-Datei als abgestimmten Implementierungsplan.
-4. Lies die Plan-Datei vollständig und prüfe:
-   - genau eine kanonische Statuszeile `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented` ist vorhanden
-   - Akzeptanzkriterien sind messbar
-   - Validierungsplan ist vorhanden
-   - betroffene Dateien sind konkret genug für Phase 2
-5. Präsentiere dem User die Plan-Datei mit kurzer Validierungs-Scorecard.
-6. Leite aus den Akzeptanzkriterien und dem Validierungsplan die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung“); sie deckt die Phasen 2–7 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten.
-7. Hole explizite Freigabe ein. Die Freigabe-Frage enthält die explizite Goal-Abfrage (Option „Autonom via /goal“); behandle sie gemäß „Explizite Goal-Abfrage für autonome Läufe“: Bei Wahl „Autonom via /goal“ gib den `/goal`-String für die Phasen 2–7 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde. Starte Phase 2 nicht ohne diese Freigabe.
+1. Start `/effective-flow plan` with the feature requirement.
+2. Explicitly instruct the planning skill:
+   - to change only `<plan.dir>/`
+   - to produce no code
+   - to start no implementation, test, validator or reviewer skills
+   - to clarify open questions before the plan is written
+3. Adopt the generated plan file as the agreed implementation plan.
+4. Read the plan file in full and check:
+   - exactly one canonical status line `**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented` is present
+   - acceptance criteria are measurable
+   - a validation plan is present
+   - affected files are concrete enough for Phase 2
+5. Present the plan file to the user with a short validation scorecard.
+6. Derive the explicit completion condition from the acceptance criteria and the validation plan (see "Goal-driven completion control"); it covers phases 2–7 and feeds the explicit goal query in the approval question below.
+7. Obtain explicit approval. The approval question contains the explicit goal query (option "Autonomous via /goal"); handle it per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, emit the `/goal` string for phases 2–7; the option is omitted when the workflow was delegated non-interactively. Do not start Phase 2 without this approval.
 
-Wenn `/effective-flow plan` wegen fehlender Informationen abbricht, frage den User nach den offenen Punkten und starte die Planung danach erneut.
+If `/effective-flow plan` aborts due to missing information, ask the user about the open points and then restart the planning.
 
 Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
-- header: "Freigabe"
-- question: "Implementierungsplan freigegeben?"
+- header: "Approval"
+- question: "Implementation plan approved?"
 - multiSelect: false
 - options:
-  - label: "Ja", description: "Freigabe erteilt, Workflow läuft gated weiter"
-  - label: "Autonom via /goal", description: "Verbleibende Phasen autonom unter nativem /goal — der Skill gibt den einzufügenden /goal-String aus (entfällt bei nicht-interaktiver Delegation)"
-  - label: "Anpassen", description: "Feedback als Freitext eingeben"
+  - label: "Yes", description: "Approval granted, workflow continues gated"
+  - label: "Autonomous via /goal", description: "Remaining phases autonomous under the native /goal — the skill emits the /goal string to paste (omitted for non-interactive delegation)"
+  - label: "Adjust", description: "Enter feedback as free text"
 
-## Skill-Discovery
+## Skill discovery
 
-Bevor du mit der eigentlichen Umsetzung, Planung bzw. Prüfung beginnst, sichte die in der
-Umgebung verfügbaren Skills und binde die für die konkrete Aufgabe nützlichen ein. Stellt
-die Umgebung kein Skill-Verzeichnis bereit oder passt keiner, ist dieser Schritt ein No-Op —
-fahre ohne Fehler oder Blockade fort.
+Before you start the actual implementation, planning, or review, survey the skills available in
+the environment and pull in the ones useful for the concrete task. If the environment provides
+no skill directory or none fits, this step is a no-op — continue without an error or a block.
 
-### Vorgehen
+### Approach
 
-1. **Empfohlene Skills bevorzugen:** Wende die weiter oben unter „Empfohlene Skills"
-   genannten Skills bevorzugt an, sofern sie verfügbar und für die konkrete Aufgabe relevant
-   sind. „Bevorzugen" ist die Auswahl; über die **Autorität** entscheidet der Vertrag in
-   Punkt 5 (ist ein empfohlener Skill der deklarierte Domänen-Owner, ist seine Guidance
-   maßgeblich, nicht nur optional). Eine Fallback-Notation `A › B` ist eine geordnete Präferenz: nimm den ersten
-   verfügbaren, nicht ausgeschlossenen Skill der Gruppe, nie beide. Fehlt ein solcher
-   Abschnitt (z. B. bei Tools), entfällt dieser Punkt.
-2. **Relevanz beurteilen:** Prüfe jeden Skill gegen die **konkrete** Aufgabe und binde nur
-   klar passende ein (typisch 0–2). Lade keine Skills „auf Verdacht" — Token-Sparsamkeit.
-3. **Config berücksichtigen:** Lies, falls vorhanden, den `skills`-Block aus der
-   Effective Flow-Konfiguration (Projektsetup-ADR) best-effort — die globalen Felder plus deinen
-   eigenen Scope-Eintrag (ein Agent liest `agents.<eigener-name>`, ein Tool liest
-   `tools.<eigener-name>`).
-   - `enabled: false` → überspringe die gesamte dynamische Skill-Nutzung.
-   - `exclude` (global oder Scope) → diese Skills nie anwenden; ein ausgeschlossenes
-     Fallback-Mitglied wird zugunsten des nächsten Fallbacks übersprungen.
-   - `include` (global oder Scope) → diese Skills zusätzlich bevorzugt berücksichtigen; ein
-     nicht installierter Skill wird still ignoriert.
-   - Fehlt der Block oder die Datei, gilt der Default (`enabled` an, keine Zusatz-Listen).
-     Lies die Config nur; migriere oder schreibe sie hier nicht.
-4. **Library-Doku:** Wird gegen eine unbekannte oder aktuelle Library bzw. ein Framework
-   gearbeitet, nutze bei Bedarf aktuelle-Doku-Skills (z. B. `context7`), falls verfügbar,
-   statt aus Erinnerung zu raten. Nur bei Bedarf, kein Zwang.
-5. **Autoritäts-Vertrag (Orchestrierung vs. Domänen-Expertise):** Effective Flow und die zentralen
-   Skills teilen sich die Verantwortung **geschichtet** — nicht „Effective Flow gewinnt immer":
-   - **Effective Flow besitzt die Orchestrierung** (das **Was/Wann**): Routing und User-Interaktion,
-     Plan-/Report-State, Finding-IDs, Backlinks, Tracker-Integration, Resumability,
-     Agent-Auswahl und Parallelisierung, Baseline-Vergleich, Worktrees, Commits, Delivery,
-     Harness-Transform und Config. Diese Regeln, `AGENTS.md`/Projektkonventionen sowie die
-     eigenen Sprach-, Commit- und Scope-Regeln haben **immer** Vorrang; kein Skill darf Scope
-     erweitern, neue Dependencies einführen oder den abgestimmten Plan verletzen. In
-     Analyse-/Planungs-Tools bleibt die No-Code-Grenze strikt.
-   - **Zentrale Skills besitzen wiederverwendbare Expertise** (das **Wie**): Domänen-Checklisten,
-     Heuristiken, Standards, Research-Prozeduren und Spezialisten-Guidance. Ist ein empfohlener
-     Skill der **deklarierte Domänen-Owner** für die anstehende Fachfrage **und** deckt er sie
-     ab, ist seine Guidance **maßgeblich** — nicht optionaler Rat. Das eigene Source trägt dann
-     **keine zweite Kopie** dieses Playbooks, sondern nur Scope-/Output-/Lifecycle-Constraints
-     plus einen minimalen Fallback (Punkt 6).
-   - **Grenzfälle:** Deckt ein Skill nur einen Spezialzweig ab (_route-when-relevant_) oder
-     divergiert Effective Flows Produktverhalten bewusst (_no-overlap_), bleibt die Effective Flow-Guidance
-     führend. Die verbindliche Zuordnung je Skill/Intersection steht im Ownership-Inventar im
-     Developer-Guide (`docs/developer-guide/skill-ownership.md`).
-6. **Fehlender maßgeblicher Skill (minimaler Fallback):** Ist der maßgebliche Skill nicht
-   verfügbar (nicht installiert, `skills.enabled: false` oder via `exclude` deaktiviert),
-   greift der im Source belassene **minimale generische Fallback** — eine kurze essentielle
-   Kern-Guidance, damit das Tool funktionsfähig bleibt und sauber degradiert. Es wird **kein**
-   zweites vollständiges Domänen-Handbuch vorgehalten; volle Tiefe kommt nur mit dem zentralen
-   Skill.
-7. **Melden:** Nenne kurz, welche Skills genutzt wurden (bzw. dass keiner passte). Hat dir
-   ein Orchestrator-Tool bereits relevante Skills mitgegeben, wende sie an und führe keine
-   redundante Voll-Discovery durch.
+1. **Prefer recommended skills:** Preferentially apply the skills listed further above under
+   "Recommended skills", provided they are available and relevant to the concrete task.
+   "Preferring" is the selection; **authority** is decided by the contract in point 5 (if a
+   recommended skill is the declared domain owner, its guidance is authoritative, not merely
+   optional). A fallback notation `A › B` is an ordered preference: take the first available,
+   non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
+   this point does not apply.
+2. **Judge relevance:** Check each skill against the **concrete** task and pull in only the
+   clearly fitting ones (typically 0–2). Do not load skills "on suspicion" — be token-frugal.
+3. **Take config into account:** If present, read the `skills` block from the Effective Flow
+   configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
+   scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
+   - `enabled: false` → skip the entire dynamic skill usage.
+   - `exclude` (global or scope) → never apply these skills; an excluded fallback member is
+     skipped in favor of the next fallback.
+   - `include` (global or scope) → additionally consider these skills as preferred; a
+     skill that is not installed is silently ignored.
+   - If the block or the file is missing, the default applies (`enabled` on, no additional
+     lists). Only read the config; do not migrate or write it here.
+4. **Library docs:** When working against an unknown or current library or framework, use
+   current-docs skills (e.g. `context7`) as needed, if available, instead of guessing from
+   memory. Only when needed, never mandatory.
+5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
+   skills share the responsibility in a **layered** way — not "Effective Flow always wins":
+   - **Effective Flow owns the orchestration** (the **what/when**): routing and user
+     interaction, plan/report state, finding IDs, backlinks, tracker integration, resumability,
+     agent selection and parallelization, baseline comparison, worktrees, commits, delivery,
+     harness transform, and config. These rules, `AGENTS.md`/project conventions, plus its own
+     language, commit, and scope rules **always** take precedence; no skill may widen scope,
+     introduce new dependencies, or violate the agreed plan. In analysis/planning tools the
+     no-code boundary stays strict.
+   - **Central skills own reusable expertise** (the **how**): domain checklists, heuristics,
+     standards, research procedures, and specialist guidance. If a recommended skill is the
+     **declared domain owner** for the technical question at hand **and** covers it, its
+     guidance is **authoritative** — not optional advice. The tool's own source then carries
+     **no second copy** of that playbook, only scope/output/lifecycle constraints plus a
+     minimal fallback (point 6).
+   - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
+     Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
+     guidance stays leading. The binding assignment per skill/intersection is in the ownership
+     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
+   available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
+   **minimal generic fallback** left in the source applies — a short, essential core guidance
+   so the tool stays functional and degrades cleanly. **No** second full domain handbook is
+   kept on hand; full depth comes only with the central skill.
+7. **Report:** Briefly name which skills were used (or that none fit). If an orchestrator tool
+   already handed you relevant skills, apply them and do not run a redundant full discovery.
 
-### Phase 2: Implementierung
+### Phase 2: Implementation
 
-0. Bestimme gemäß „Delivery- und Worktree-Integration“ den effektiven Delivery-/Worktree-Modus und führe bei aktivem Modus zuerst das passende Setup aus: Worktree-Setup bei Worktree-Ausführung oder Liefer-Branch-Setup im Haupt-Repo bei In-Place-Delivery. Alle folgenden Phasen 2–6 (Implementierung, Doku, Tests, Validierung, Review) laufen dann im Liefer-Arbeitsverzeichnis.
-1. Starte den passenden Implementer-Skill mit dem abgestimmten Plan:
-   - Frontend: `Verwende den Skill `effective-flow-ui-implementer` für diese Phase.`
-   - Backend/CLI: `Verwende den Skill `effective-flow-nodejs-implementer` für diese Phase.`
-   - Rust: `Verwende den Skill `effective-flow-rust-implementer` für diese Phase.`
-   - Generic/Tooling/CI/Config: `Verwende den Skill `effective-flow-generic-implementer` für diese Phase.`
-   - Fullstack: beide parallel oder in klar getrennten Teilphasen
-2. Prüfe auf Fertig-Protokoll, wenn intern delegiert wurde.
-3. Prüfe das Ergebnis gegen die Anforderungen.
+0. Per "Delivery and worktree integration", determine the effective delivery/worktree mode and, when a mode is active, first run the appropriate setup: worktree setup for worktree execution or delivery-branch setup in the main repo for in-place delivery. All following phases 2–6 (implementation, docs, tests, validation, review) then run in the delivery working directory.
+1. Start the appropriate implementer skill with the agreed plan:
+   - Frontend: `Use the `effective-flow-ui-implementer` skill for this phase.`
+   - Backend/CLI: `Use the `effective-flow-nodejs-implementer` skill for this phase.`
+   - Rust: `Use the `effective-flow-rust-implementer` skill for this phase.`
+   - Generic/Tooling/CI/Config: `Use the `effective-flow-generic-implementer` skill for this phase.`
+   - Fullstack: both in parallel or in clearly separated subphases
+2. Check for the done protocol when delegating internally.
+3. Check the result against the requirements.
 
-### Phase 3: Dokumentation
+### Phase 3: Documentation
 
-Starte wenn möglich parallel:
+Start in parallel if possible:
 
-1. ``effective-flow-code-documenter`` für In-Code-Dokumentation aller neuen oder geänderten Exports – JSDoc/TSDoc bei JS/TS, rustdoc-Doc-Comments (`///`/`//!`) bei Rust
-2. ``effective-flow-docs-writer`` für README/Guide-Updates, falls die Änderung nutzerrelevant ist (bei Rust inkl. Crate-/Modul-Doku)
+1. ``effective-flow-code-documenter`` for in-code documentation of all new or changed exports – JSDoc/TSDoc for JS/TS, rustdoc doc comments (`///`/`//!`) for Rust
+2. ``effective-flow-docs-writer`` for README/guide updates if the change is user-relevant (for Rust incl. crate/module docs)
 
-Weise die Doku-Phase nach demselben Projekt-Typ an wie Implementierung und Review (siehe „Routing nach Projekt-Typ“). In gemischten Rust/JS-Repos (Projekt-Typ Fullstack) routet die Doku **per Datei/Domäne**: Rust-Dateien mit rustdoc-Konventionen, JS/TS-Dateien wie bisher.
+Assign the documentation phase by the same project type as implementation and review (see "Routing by project type"). In mixed Rust/JS repos (project type Fullstack), documentation routes **per file/domain**: Rust files with rustdoc conventions, JS/TS files as before.
 
-Überspringe User-Doku nur mit kurzer Begründung.
+Skip user docs only with a short justification.
 
 ### Phase 4: Tests
 
-Starte wenn möglich parallel:
+Start in parallel if possible:
 
-1. ``effective-flow-test-writer`` für Unit-Tests und Komponententests
-2. ``effective-flow-e2e-tester`` für neue User-Flows, falls ein echter Flow dazugekommen ist
+1. ``effective-flow-test-writer`` for unit tests and component tests
+2. ``effective-flow-e2e-tester`` for new user flows if a real flow was added
 
-### Phase 5: Validierung
+### Phase 5: Validation
 
-1. Starte ``effective-flow-code-validator``.
-2. Gib dem User die vollständige Liste aller gefundenen Fehler und Warnungen aus.
-3. Wenn Fehler gefunden werden: behebe sie direkt oder delegiere erneut an den passenden Implementer.
-4. Behebe und verifiziere erneut gemäß „Goal-getriebene Abschlusssteuerung“: begrenze die internen Korrekturrunden und eskaliere an den User, falls der Validator danach weiterhin nicht besteht, statt unbegrenzt zu wiederholen.
+1. Start ``effective-flow-code-validator``.
+2. Give the user the complete list of all errors and warnings found.
+3. If errors are found: fix them directly or delegate again to the appropriate implementer.
+4. Fix and re-verify per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the validator still does not pass afterwards, instead of repeating indefinitely.
 
 ### Phase 6: Review
 
-1. Starte den passenden Reviewer-Skill für die geänderten Dateien. Weise den Reviewer ausdrücklich an, **alle Schweregrade** zu liefern (Kritisch + Wichtig + Hinweis), damit der spätere Plan-Datei-Bericht als vollständiger Audit-Trail dient — abweichend vom `/effective-flow review`-Standard, der nur Kritisch + Wichtig liefert.
-2. Aggregiere alle Review-Findings und klassifiziere sie:
-   - Kritisch: muss vor Abschluss behoben werden
-   - Wichtig: sollte behoben werden, kann als Follow-up behandelt werden
-   - Hinweis: optional
-3. Vergib jedem Finding eine lokale ID in der Reihenfolge der Aggregation: `F1`, `F2`, `F3`, ... Diese IDs gelten nur innerhalb dieses Workflow-Laufs und werden später in der Plan-Datei wiederverwendet.
-4. Behebe alle kritischen Findings vor dem Abschluss.
-5. Präsentiere die Review-Ergebnisse in diesem Format. Aggregiere zusätzlich die Komplexität-Zähler, damit Phase 7 sie ohne erneute Ableitung übernehmen kann:
+1. Start the appropriate reviewer skill for the changed files. Explicitly instruct the reviewer to deliver **all severities** (Critical + Important + Note), so the later plan-file report serves as a complete audit trail — deviating from the `/effective-flow review` default, which delivers only Critical + Important.
+2. Aggregate all review findings and classify them:
+   - Critical: must be fixed before completion
+   - Important: should be fixed, can be handled as a follow-up
+   - Note: optional
+3. Assign each finding a local ID in the order of aggregation: `F1`, `F2`, `F3`, ... These IDs apply only within this workflow run and are reused later in the plan file.
+4. Fix all critical findings before completion.
+5. Present the review results in this format. Additionally aggregate the Complexity counters so Phase 7 can adopt them without deriving them again:
 
 ```markdown
-**Review-Ergebnisse**
+**Review results**
 
-Zusammenfassung:
-| Schweregrad | Anzahl | Behoben | Offen |
+Summary:
+| Severity | Count | Fixed | Open |
 |---|---|---|---|
-| Kritisch | X | X | X |
-| Wichtig | X | X | X |
-| Hinweis | X | X | X |
+| Critical | X | X | X |
+| Important | X | X | X |
+| Note | X | X | X |
 
-| Komplexität | Anzahl |
+| Complexity | Count |
 |---|---|
-| Leicht | X |
-| Mittel | Y |
-| Schwer | Z |
+| Low | X |
+| Medium | Y |
+| High | Z |
 ```
 
-Hinweis: Vor Abschluss muss die Spalte „Offen“ für „Kritisch“ 0 sein.
+Note: Before completion, the "Open" column for "Critical" must be 0.
 
-6. Falls Findings nicht umgesetzt wurden, liste sie direkt in der Zusammenfassung mit Prompt-Vorschlägen für spätere Umsetzung auf.
-7. Dokumentiere jedes Finding strukturiert, damit offene oder nicht umgesetzte Findings in einen externen Review-Report übernommen werden können:
-   - lokale ID (`F1`, `F2`, ...)
-   - Titel
-   - Schweregrad (Kritisch / Wichtig / Hinweis)
-   - Komplexität (Leicht / Mittel / Schwer)
-   - Bereich
-   - Datei + Zeile
+6. If findings were not implemented, list them directly in the summary with prompt suggestions for later implementation.
+7. Document each finding in a structured way so open or unimplemented findings can be carried over into an external review report:
+   - local ID (`F1`, `F2`, ...)
+   - Title
+   - Severity (Critical / Important / Note)
+   - Complexity (Low / Medium / High)
+   - Area
+   - File + line
    - Problem
-   - Empfehlung
-   - Status (Behoben / Offen / Nicht umgesetzt)
-   - Begründung bei Nicht-Umsetzung (inkl. ADR-Referenz als Slug, falls vorhanden, z. B. `(ADR: <slug>)`)
-8. Lege in diesem Workflow niemals ein ADR an und frage auch nicht danach. Bewusst nicht umgesetzte Findings werden ausschließlich im Review-Report dokumentiert. Über die spätere Umsetzung oder über ein ADR für eine bewusste Nicht-Umsetzung entscheidet der Entwickler beim Durchgehen der Findings-Datei, typischerweise via `tools/apply-review.md`.
-9. Wenn nach Review Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
-   - schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.effective-flow/review/`
-   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-<slug>.md`
-   - halte den erzeugten Reportpfad für Phase 7 fest
-10. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.effective-flow/review/` umgesetzt hat:
+   - Recommendation
+   - Status (Fixed / Open / Not implemented)
+   - rationale for non-implementation (incl. ADR reference as slug, if present, e.g. `(ADR: <slug>)`)
+8. Never create an ADR in this workflow and do not ask for one either. Deliberately unimplemented findings are documented exclusively in the review report. The developer decides on later implementation or on an ADR for a deliberate non-implementation when going through the findings file, typically via `tools/apply-review.md`.
+9. If after review there remain findings with status `Open` or `Not implemented`:
+   - write them into a new file under `.effective-flow/review/` per "Open review-finding reports"
+   - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
+   - record the generated report path for Phase 7
+10. If this phase implemented a finding from an existing review-report file in `.effective-flow/review/`:
 
-- ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
-- beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
+- add a short implementation note as the last entry directly in the affected finding
+- begin the note with `✅` and name at least the date and workflow
 
-### Phase 7: Abschluss
+### Phase 7: Completion
 
-1. Führe ``effective-flow-code-validator`` ein letztes Mal als Final-Check aus.
-2. Dokumentiere den abgeschlossenen Workflow in der Plan-Datei, ohne den Statusmarker vorab zu ändern:
-   - wenn Phase 1 eine neue Plan-Datei via `/effective-flow plan` erzeugt hat: aktualisiere diese Datei.
-   - wenn der User eine ungebaute Plan-Datei referenziert hat: aktualisiere die referenzierte Datei.
-   - wenn ausnahmsweise keine Plan-Datei existiert: erstelle `<plan.dir>/` und vergib den Datums-Slug-Namen gemäß `Plan-Datei-Konvention`.
-   - der Statusmarker bleibt an dieser Stelle unverändert (`**Planungsstatus:** Nicht umgesetzt` bzw. `**Plan status:** Not implemented`): Statuswechsel auf `Umgesetzt`/`Implemented` sowie die Archivierung nach `<plan.dir>/archive/` übernimmt Schritt 6 unten am Delivery-Punkt gemäß „Delivery- und Worktree-Integration“ (Ausnahme: In-Place ohne Delivery, siehe dort).
-   - Inhalt:
-     - Anforderung
-     - Architekturentscheidungen
-     - betroffene Dateien
-     - Implementierungsdetails
-     - Testergebnisse
-     - Review-Ergebnis und Verweis auf externe Review-Reports, falls offene Findings ausgelagert wurden
-3. **Plan-Datei-Findings-Zusammenfassung:** Schreibe in der Plan-Datei nur eine kompakte Zusammenfassung. Offene oder nicht umgesetzte Findings werden nicht vollständig in die Plan-Datei kopiert, sondern in den externen Review-Report aus Phase 6 geschrieben.
+1. Run ``effective-flow-code-validator`` one last time as a final check.
+2. Document the completed workflow in the plan file, without changing the status marker beforehand:
+   - if Phase 1 created a new plan file via `/effective-flow plan`: update that file.
+   - if the user referenced an unbuilt plan file: update the referenced file.
+   - if, exceptionally, no plan file exists: create `<plan.dir>/` and assign the date-slug name per `Plan file convention`.
+   - the status marker stays unchanged here (`**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented`): the status switch to `Umgesetzt`/`Implemented` and the archiving to `<plan.dir>/archive/` are handled by step 6 below at the delivery point per "Delivery and worktree integration" (exception: in-place without delivery, see there).
+   - Content:
+     - requirement
+     - architecture decisions
+     - affected files
+     - implementation details
+     - test results
+     - review result and reference to external review reports if open findings were offloaded
+3. **Plan-file findings summary:** Write only a compact summary in the plan file. Open or unimplemented findings are not copied in full into the plan file, but written into the external review report from Phase 6.
 
-   Verwende dieses Template:
+   Use this template:
 
 ```markdown
-## Review-Findings
+## Review findings
 
-**Datum:** YYYY-MM-DD
-**Reviewer:** [frontend-reviewer / nodejs-reviewer / beide / keiner]
+**Date:** YYYY-MM-DD
+**Reviewer:** [frontend-reviewer / nodejs-reviewer / both / none]
 
-### Zusammenfassung
+### Summary
 
-| Status | Anzahl |
+| Status | Count |
 |---|---:|
-| Behoben | X |
-| Offen / Nicht umgesetzt | Y |
+| Fixed | X |
+| Open / Not implemented | Y |
 
-**Externer Review-Report:** `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>.md` <!-- nur ausgeben, wenn offene Findings ausgelagert wurden -->
+**External review report:** `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>.md` <!-- only output if open findings were offloaded -->
 
-Keine Findings gefunden. <!-- nur ausgeben, wenn keine Findings aufgekommen sind -->
+No findings found. <!-- only output if no findings arose -->
 ```
 
-Regeln für den Findings-Bericht:
+Rules for the findings report:
 
-- Kopiere offene oder nicht umgesetzte Findings nicht vollständig in die Plan-Datei.
-- Wenn offene oder nicht umgesetzte Findings existieren, nenne den externen Review-Report aus Phase 6.
-- Behobene Findings dürfen knapp gezählt werden; vollständige behobene Finding-Details sind in der Plan-Datei nicht erforderlich.
-- Falls keine Findings aufgekommen sind: schreibe in die Sektion „Keine Findings gefunden.“ statt der Tabellen.
-- Falls in Phase 6 keine Reviewer gestartet wurden (z. B. weil die Änderung kein Review erforderte): schreibe stattdessen einen kurzen Hinweis mit Begründung in die Sektion.
+- Do not copy open or unimplemented findings in full into the plan file.
+- If open or unimplemented findings exist, name the external review report from Phase 6.
+- Fixed findings may be counted briefly; full details of fixed findings are not required in the plan file.
+- If no findings arose: write "No findings found." in the section instead of the tables.
+- If no reviewers were started in Phase 6 (e.g. because the change required no review): write a short note with justification in the section instead.
 
-4. Lösche die Wisdom-Datei.
-5. Prüfe ob ein Formatter konfiguriert ist und formatiere alle geänderten Dateien inklusive Plan-Datei einmal einheitlich.
-6. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus (Plan-Statuswechsel auf `Umgesetzt`/`Implemented` und Archiv-Move nach `<plan.dir>/archive/` am Delivery-Punkt, Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen). Läuft der Workflow ausnahmsweise In-Place ohne Delivery, führe denselben Statuswechsel und Archiv-Move direkt im Arbeitsbaum aus.
-7. Fasse zusammen, was implementiert, getestet und dokumentiert wurde; nenne bei aktivem Delivery-/Worktree-Modus zusätzlich den Liefer-Branch, den finalen Checkout-Zustand und das Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch).
+4. Delete the wisdom file.
+5. Check whether a formatter is configured and format all changed files including the plan file once, consistently.
+6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, retract the worktree if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
+7. Summarize what was implemented, tested and documented; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch).
 
-## Regeln
+## Rules
 
-## Pre-Commit-Gate
+## Pre-commit gate
 
-Vor jedem Commit müssen die im Projekt konfigurierten Prüfungen fehlerfrei durchlaufen. Typische Prüfungen sind Type-Checking, Linting und Tests — verwende die im Projekt definierten Scripts (z. B. `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm agent:check`).
+Before every commit, the checks configured in the project must pass without errors. Typical checks are type-checking, linting, and tests — use the scripts defined in the project (e.g. `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm agent:check`).
 
-- Wenn eine Prüfung Fehler meldet: behebe die Fehler zuerst, dann prüfe erneut.
-- Committe niemals Code, der diese Prüfungen nicht besteht.
-- Diese Regel gilt auch dann, wenn eine separate Verifikationsphase existiert — sie ist eine zusätzliche Absicherung, kein Ersatz.
+- If a check reports errors: fix the errors first, then check again.
+- Never commit code that does not pass these checks.
+- This rule applies even when a separate verification phase exists — it is an additional safeguard, not a replacement.
 
-## Commit-Message-Regeln
+## Commit message rules
 
-- **Setze niemals `Co-Authored-By`-Trailer in Commit-Messages**, unabhängig davon, ob ein LLM (Claude, Codex, GPT, …) oder ein anderes Tool die Zeile vorschlägt oder als Default einfügt.
-- Falls eine `Co-Authored-By`-Zeile in einem Commit-Template, `commit.template`, `--trailer`-Aufruf oder einer Draft-Message bereits vorhanden ist: entferne sie vor dem Commit.
-- **Füge keine KI-Attribution an:** keine „Generated with Claude Code/Codex"-Footer und keine Agent-Session-Links (z. B. `https://claude.ai/code/…`) in Commit-Messages – auch dann nicht, wenn der Harness sie als Default anhängt. Sachliche Erwähnungen von Claude Code oder Codex bleiben erlaubt, Generierungs-Attribution nicht.
-- Vermeide generische Messages wie `update files` oder `misc changes`.
-- Beschreibe konkret, was geändert wurde und warum.
-- Nutze Conventional-Commit-Präfixe: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
-- Wähle den Commit-Typ nach der **Wirkung**, nicht nach der Dateiart: verhaltensändernde Änderungen – auch reine **Config/Env/Secrets/CI** mit Deployment- oder Laufzeitwirkung (z. B. korrigierte Werte in Env-/Secret-Artefakten, die per Sync remote wirken) – sind `fix:` (bzw. `feat:` bei neuer Funktionalität). `chore:` nur für **deploy-neutrale** Änderungen ohne Verhaltenswirkung (reine Wartung, Formatting, Tooling ohne Laufzeitwirkung). Das gilt auch für den **Squash-PR-Titel**, der bei Squash-Merge den release-please-Bump bestimmt.
-- Exponiere keine internen Tracking-IDs in Commit-Messages, z. B. Review-Finding-IDs wie `R-0000001`, lokale Plan-/Review-IDs wie `F1` oder Platzhalter wie `[Finding-ID]`. Solche IDs gehören in Wisdom-/Report-Kontext, nicht in die Git-Historie.
+- **Never set `Co-Authored-By` trailers in commit messages**, regardless of whether an LLM (Claude, Codex, GPT, …) or another tool suggests the line or inserts it as a default.
+- If a `Co-Authored-By` line is already present in a commit template, `commit.template`, a `--trailer` invocation, or a draft message: remove it before committing.
+- **Do not add AI attribution:** no „Generated with Claude Code/Codex" footers and no agent session links (e.g. `https://claude.ai/code/…`) in commit messages – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex remain allowed, generation attribution does not.
+- Avoid generic messages like `update files` or `misc changes`.
+- Describe concretely what was changed and why.
+- Use Conventional Commit prefixes: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
+- Choose the commit type by **effect**, not by file type: behavior-changing changes – including pure **config/env/secrets/CI** with deployment or runtime effect (e.g. corrected values in env/secret artifacts that take effect remotely via sync) – are `fix:` (or `feat:` for new functionality). `chore:` only for **deploy-neutral** changes without behavioral effect (pure maintenance, formatting, tooling without runtime effect). This also applies to the **squash PR title**, which determines the release-please bump on a squash merge.
+- Do not expose internal tracking IDs in commit messages, e.g. review finding IDs like `R-0000001`, local plan/review IDs like `F1`, or placeholders like `[Finding-ID]`. Such IDs belong in wisdom/report context, not in the Git history.
 
-- Starte unabhängige Fachphasen immer parallel, wenn sie wirklich unabhängig sind
-- Gib dem User nach jeder Phase eine kurze Statusmeldung
-- Wenn eine Phase Fehler meldet, behebe sie vor dem Fortfahren
-- Überspringe optionale Schritte nur mit kurzer Begründung
-- Gib internen Sub-Agenten den Hinweis:
-  - Aufgabe zuerst in 2-3 Sätzen zusammenfassen
-  - mit `ERLEDIGT` oder `ABBRUCH: [Grund]` beenden
-- Schreibe nach jeder abgeschlossenen Phase ein Wisdom-Summary
-- Gib jeder delegierten Phase die bisherigen Erkenntnisse aus der Wisdom-Datei mit
+- Always start independent specialist phases in parallel when they are truly independent
+- Give the user a short status update after each phase
+- If a phase reports errors, fix them before continuing
+- Skip optional steps only with a short justification
+- Give internal sub-agents the instruction:
+  - first summarize the task in 2-3 sentences
+  - end with `DONE` or `ABORT: [reason]`
+- Write a wisdom summary after each completed phase
+- Pass the accumulated insights from the wisdom file to each delegated phase

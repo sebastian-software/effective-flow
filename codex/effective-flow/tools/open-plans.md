@@ -1,118 +1,121 @@
 
 # Effective Flow Open Plans
 
-Du listest offene Implementierungspläne aus `<plan.dir>/`.
+You list open implementation plans from `<plan.dir>/`.
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
+`<plan.dir>` is the plan directory from the Effective Flow configuration (project setup ADR) `plan.dir` (default
 `docs/plan`).
 
-## Ziel
+## Goal
 
-- alle Plan-Dateien mit kanonischem offenem Status finden — sowohl `**Planungsstatus:** Nicht umgesetzt` als auch `**Plan status:** Not implemented`
-- pro offenem Plan eine kurze, hilfreiche Zusammenfassung ausgeben
-- Pläne mit fehlendem oder unklarem Status nicht als offen ausgeben, sondern separat als „Status unklar“ melden
-- keine Dateien ändern
-- keine Tests, Builds oder Validierungen ausführen
+- find all plan files with a canonical open status — both `**Planungsstatus:** Nicht umgesetzt` and `**Plan status:** Not implemented`
+- output a short, helpful summary per open plan
+- do not report plans with a missing or unclear status as open; instead report them separately as "status unclear"
+- do not modify any files
+- do not run tests, builds, or validations
 
-## Sprachregel
+## Language rule
 
-- Code, Bezeichner und Tests auf Englisch
-- Dokumentationsinhalte auf Deutsch, außer bestehende Doku führt eine andere Sprache fort
-- Commit-Messages auf Englisch
+- Code, identifiers, and tests in English
+- Documentation and tool instructions in English **by default**; German remains a permitted
+  option — continue the existing language of a file you edit, and honour an explicit German
+  choice for a project, document, or plan marker
+- Commit messages in English
 
-Die deutsche Repository-Locale ist **de-DE**.
+English is the default; German is not deprecated. A file already written in German stays valid,
+and a project may deliberately keep individual guides or plan markers in German (see the
+`de-DE` typography guidance below).
 
-### Typografie
+### Typography
 
-Locale-spezifische Typografie sichtbarer Prosa – Anführungszeichen, Gedankenstriche,
-Umlaute und ß, geschützte Leerzeichen, Zahlen- und Datumsformate – besitzt der zentrale
-Skill `locale-typography`. Beim Schreiben oder Bearbeiten sichtbarer deutscher Prosa ist
-dessen `de-DE`-Guidance maßgeblich; Effective Flow führt hier bewusst keine zweite
-Typografie-Checkliste.
+Locale-specific typography of visible prose — quotation marks, dashes, umlauts and ß, non-breaking
+spaces, number and date formats — is owned by the central `locale-typography` skill. When writing
+or editing visible prose its locale guidance is authoritative (`en-US` for English, `de-DE` for
+German); Effective Flow deliberately keeps no second typography checklist.
 
-Fehlt der Skill (nicht installiert, `skills.enabled: false` oder via `exclude`
-deaktiviert), gilt als minimaler Fallback für deutschen Text: echte Umlaute und ß statt
-ASCII-Ersatz (ae, oe, ue, ss), typografische Anführungszeichen „…“ statt gerader und
-Halbgeviertstrich – statt Bindestrich.
+If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
+a minimal fallback applies to German text: real umlauts and ß instead of ASCII replacements (ae,
+oe, ue, ss), typographic quotation marks „…“ instead of straight ones, and an en dash – instead
+of a hyphen.
 
-## Aufgabenverfolgung
+## Task tracking
 
-Wenn mehrere Aufgaben zu erledigen sind, verwende ein verfügbares TODO- oder Task-Tracking-Tool (z. B. `TaskCreate`/`TaskUpdate`, `TodoWrite` oder ein vergleichbares Tool), um eine Aufgabenliste anzulegen. Setze jede Aufgabe vor Beginn auf „in Arbeit“ und nach Abschluss auf „erledigt“.
+When there are several tasks to complete, use an available TODO or task-tracking tool (e.g. `TaskCreate`/`TaskUpdate`, `TodoWrite`, or a comparable tool) to create a task list. Set each task to "in progress" before starting it and to "done" after completing it.
 
-Falls kein Task-Tool verfügbar ist, gib dem User stattdessen eine kurze Fortschrittsmeldung nach jedem abgeschlossenen Schritt.
+If no task tool is available, give the user a short progress update after each completed step instead.
 
-### Wann verwenden
+### When to use
 
-- bei drei oder mehr Teilaufgaben oder Schritten
-- bei komplexen Aufträgen mit mehreren Phasen
-- wenn der User mehrere Aufgaben gleichzeitig nennt
+- with three or more subtasks or steps
+- with complex tasks that have multiple phases
+- when the user names several tasks at once
 
-### Wann nicht verwenden
+### When not to use
 
-- bei einer einzelnen, trivialen Aufgabe
-- wenn der Auftrag in weniger als drei einfachen Schritten erledigt ist
+- with a single, trivial task
+- when the task is done in fewer than three simple steps
 
-## Planstatus-Konvention
+## Plan status convention
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
+`<plan.dir>` is the plan directory from the Effective Flow configuration (project-setup ADR) `plan.dir` (default
 `docs/plan`).
 
-Plan-Dateien in `<plan.dir>/` verwenden genau einen kanonischen Statusmarker im Kopfbereich. Der Marker darf wahlweise auf Deutsch oder auf Englisch geschrieben werden:
+Plan files in `<plan.dir>/` use exactly one canonical status marker in their header. The marker may be written in either German or English:
 
-- offen (Deutsch): `**Planungsstatus:** Nicht umgesetzt`
-- abgeschlossen (Deutsch): `**Planungsstatus:** Umgesetzt`
-- offen (Englisch): `**Plan status:** Not implemented`
-- abgeschlossen (Englisch): `**Plan status:** Implemented`
+- open (German): `**Planungsstatus:** Nicht umgesetzt`
+- completed (German): `**Planungsstatus:** Umgesetzt`
+- open (English): `**Plan status:** Not implemented`
+- completed (English): `**Plan status:** Implemented`
 
-Beide Markerformen sind gleichwertig. Pro Plan-Datei wird nur eine Sprache verwendet.
+Both marker forms are equivalent. Only one language is used per plan file.
 
-Regeln:
+Rules:
 
-- Der Statusmarker muss exakt wie in den vier kanonischen Beispielen oben geschrieben werden, inklusive Fettdruck, Doppelpunkt sowie Groß-/Kleinschreibung der Marker-Schlüssel und Werte.
-- Der Planstatus gilt nur, wenn genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` vorhanden ist. Mehrere Statuszeilen (auch in unterschiedlichen Sprachen) machen den Planstatus unklar (siehe unten) und sollten korrigiert werden.
-- Gültige Wertpaare sind ausschließlich die vier oben genannten Schlüssel-Wert-Kombinationen. Mischformen aus deutschem Schlüssel und englischem Wert oder umgekehrt (z. B. `**Plan status:** Umgesetzt`) gelten **nicht** als gültig.
-- Andere Werte wie `Open`/`Done`, `Pending`/`Complete` oder beliebiger Freitext zählen ebenfalls nicht.
-- Andere Vorkommen von „Nicht umgesetzt“, „Umgesetzt“, „Not implemented“ oder „Implemented“ in Review-Findings, ADR-Begründungen oder Fließtext zählen nicht als Planstatus.
-- Wenn der Marker fehlt, mehrfach vorkommt, einen ungültigen Wert enthält oder eine Mischform aus Schlüssel- und Wert-Sprache verwendet, ist der Planstatus unklar. Behandle den Plan dann nicht automatisch als offen oder abgeschlossen.
-- Wenn ein Workflow den Status auf abgeschlossen setzt, bleibt die Markersprache erhalten: ein deutscher Marker wird zu `**Planungsstatus:** Umgesetzt`, ein englischer Marker zu `**Plan status:** Implemented`.
+- The status marker must be written exactly as in the four canonical examples above, including bold, colon, and the capitalization of the marker keys and values.
+- The plan status only applies when exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` is present. Multiple status lines (even in different languages) make the plan status unclear (see below) and should be corrected.
+- The only valid value pairs are the four key-value combinations listed above. Mixed forms of a German key and an English value or vice versa (e.g. `**Plan status:** Umgesetzt`) are **not** considered valid.
+- Other values such as `Open`/`Done`, `Pending`/`Complete`, or arbitrary free text do not count either.
+- Other occurrences of „Nicht umgesetzt“, „Umgesetzt“, "Not implemented", or "Implemented" in review findings, ADR rationales, or body text do not count as a plan status.
+- If the marker is missing, occurs multiple times, contains an invalid value, or uses a mixed form of key and value language, the plan status is unclear. In that case, do not automatically treat the plan as open or completed.
+- When a workflow sets the status to completed, the marker language is preserved: a German marker becomes `**Planungsstatus:** Umgesetzt`, an English marker becomes `**Plan status:** Implemented`.
 
-## Vorgehen
+## Approach
 
-1. Prüfe, ob `<plan.dir>/` existiert.
-2. Lies alle Markdown-Dateien auf der obersten Ebene von `<plan.dir>/` in lexikografischer Reihenfolge (Datums-Slug-Namen sortieren dadurch chronologisch). Schließe `<plan.dir>/archive/` aus.
-3. Bestimme pro Datei den Planstatus über die kanonische Ein-Marker-Regel der Planstatus-Konvention: genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` und gültigem Wert.
-4. Klassifiziere (beide Markersprachen sind gleichwertig):
-   - **Offen:** genau `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented`
-   - **Abgeschlossen:** genau `**Planungsstatus:** Umgesetzt` oder `**Plan status:** Implemented`
-   - **Status unklar:** keine Statuszeile, mehrere Statuszeilen oder anderer Wert
-5. Ermittle für offene Pläne:
-   - Titel aus der ersten H1-Zeile (bei migrierten Legacy-Plänen inklusive der dort erhaltenen Nummer, z. B. `# 0030: Titel`)
-   - Pfad
-   - empfohlener Workflow aus `**Empfohlener Workflow:** ...`
-   - bei Doku-Plänen zusätzlich die Doku-Kategorie aus `**Doku-Kategorie:** ...`, falls vorhanden
-   - kurze Zusammenfassung aus `## Anforderung`
-   - optional wichtigste betroffene Dateien aus `## Betroffene Dateien`, falls kurz genug
-6. Ausgabe:
-   - Wenn offene Pläne existieren: Tabelle mit `Plan`, `Titel`, `Workflow`, `Kategorie`, `Pfad`, `Kurzfassung`
-     - bei nicht-Doku-Plänen zeige in der Spalte `Kategorie` einen Bindestrich
-     - bei Doku-Plänen ohne `**Doku-Kategorie:**`-Zeile zeige `unbekannt`
-   - Danach eine kurze Liste mit Status-unklaren Plänen, falls vorhanden
-   - Wenn mehrere Plan-Dateien denselben Datums-Slug-Namen tragen, weise gesondert darauf hin (diese Dublette verletzt die `Plan-Datei-Konvention` und sollte über den passenden Workflow aufgelöst werden)
-   - Wenn keine offenen Pläne existieren: klare Meldung „Keine offenen Pläne gefunden.“
+1. Check whether `<plan.dir>/` exists.
+2. Read all Markdown files at the top level of `<plan.dir>/` in lexicographic order (date-slug names thereby sort chronologically). Exclude `<plan.dir>/archive/`.
+3. Determine each file's plan status via the canonical single-marker rule of the Plan status convention: exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` and a valid value.
+4. Classify (both marker languages are equivalent):
+   - **Open:** exactly `**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented`
+   - **Completed:** exactly `**Planungsstatus:** Umgesetzt` or `**Plan status:** Implemented`
+   - **Status unclear:** no status line, multiple status lines, or a different value
+5. For open plans, determine:
+   - the title from the first H1 line (for migrated legacy plans including the number preserved there, e.g. `# 0030: Title`)
+   - the path
+   - the recommended workflow from `**Recommended workflow:** ...`
+   - for doc plans additionally the doc category from `**Doc category:** ...`, if present
+   - a short summary from `## Requirement`
+   - optionally the most important affected files from `## Affected files`, if short enough
+6. Output:
+   - If open plans exist: a table with `Plan`, `Title`, `Workflow`, `Category`, `Path`, `Summary`
+     - for non-doc plans, show a dash in the `Category` column
+     - for doc plans without a `**Doc category:**` line, show `unknown`
+   - Then a short list of status-unclear plans, if present
+   - If multiple plan files carry the same date-slug name, point this out separately (this duplicate violates the `Plan file convention` and should be resolved via the appropriate workflow)
+   - If no open plans exist: a clear message "No open plans found."
 
-## Zusammenfassungsregeln
+## Summary rules
 
-- Fasse die Anforderung in einem Satz zusammen.
-- Nutze bevorzugt den ersten inhaltlichen Absatz unter `## Anforderung`.
-- Wenn der Abschnitt fehlt, nutze den H1-Titel als Fallback.
-- Entferne reine Meta-Sätze wie „Verifizierter Code-Kontext:“ aus der Kurzfassung.
-- Kürze lange Zusammenfassungen auf etwa 160 Zeichen.
-- Erfinde keine Inhalte, die nicht in der Plan-Datei stehen.
+- Summarize the requirement in one sentence.
+- Prefer the first substantive paragraph under `## Requirement`.
+- If the section is missing, use the H1 title as a fallback.
+- Remove pure meta sentences like "Verified code context:" from the summary.
+- Shorten long summaries to about 160 characters.
+- Do not invent content that is not in the plan file.
 
-## Regeln
+## Rules
 
-- Ändere keine Dateien.
-- Starte keine Implementierung und keine Validierung.
-- Zähle Review-Finding-Status wie `Nicht umgesetzt` oder `Not implemented` nicht als Planstatus.
-- Gib Pfade relativ zum Projekt-Root aus.
-- Wenn `<plan.dir>/` fehlt oder keine Markdown-Dateien enthält, melde das knapp.
+- Do not modify any files.
+- Do not start any implementation or validation.
+- Do not count review-finding statuses like `Not implemented` or `Not implemented` as a plan status.
+- Output paths relative to the project root.
+- If `<plan.dir>/` is missing or contains no Markdown files, report that briefly.

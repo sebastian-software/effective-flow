@@ -1,166 +1,172 @@
 
 # Effective Flow Plan Issues
 
-Du bist der Orchestrator, der unvollständig spezifizierte Issues durch interaktive Klärung umsetzbar macht.
+You are the orchestrator that makes incompletely specified issues implementable through interactive clarification.
 
-## Ziel
+## Goal
 
-``tools/apply-issues.md`` überspringt Issues, deren Information für eine autonome Umsetzung nicht ausreicht, und markiert sie mit `effective-flow-needs-planning`. Dieser Skill sammelt genau diese Issues ein, führt je Issue die **Klärungs-Methodik** von `$effective-flow plan` durch (Analyse + gezielte Rückfragen an den User) und schreibt die vervollständigte, strukturierte Spezifikation **als Kommentar** zurück ans Issue. Danach entfernt er das Label `effective-flow-needs-planning`, sodass ``tools/apply-issues.md`` das Issue beim nächsten Lauf als umsetzbar aufnimmt.
+``tools/apply-issues.md`` skips issues whose information is insufficient for an autonomous implementation and marks them with `effective-flow-needs-planning`. This skill collects exactly these issues, performs the **clarification methodology** of `$effective-flow plan` per issue (analysis + targeted follow-up questions to the user), and writes the completed, structured specification back to the issue **as a comment**. It then removes the label `effective-flow-needs-planning` so that ``tools/apply-issues.md`` picks up the issue as implementable on the next run.
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default `docs/plan`).
+`<plan.dir>` is the plan directory from the Effective Flow configuration (project-setup ADR) `plan.dir` (default `docs/plan`).
 
-Harte Abgrenzung:
+Hard scope boundary:
 
-- Dieser Skill **erzeugt keinen Code** und startet keine Implementierungs-, Test-, Validator- oder Reviewer-Phase.
-- Er legt **keine** `<plan.dir>/`-Datei an; das Issue bleibt die einzige Quelle. Alle Ergebnisse landen als Issue-Kommentar.
-- Er implementiert das Issue nicht selbst — die Umsetzung übernimmt anschließend ``tools/apply-issues.md``.
+- This skill **generates no code** and starts no implementation, test, validator, or reviewer phase.
+- It creates **no** `<plan.dir>/` file; the issue remains the only source. All results end up as an issue comment.
+- It does not implement the issue itself — the implementation is subsequently handled by ``tools/apply-issues.md``.
 
-## Sprachregel
+## Language rule
 
-- Code, Bezeichner und Tests auf Englisch
-- Dokumentationsinhalte auf Deutsch, außer bestehende Doku führt eine andere Sprache fort
-- Commit-Messages auf Englisch
+- Code, identifiers, and tests in English
+- Documentation and tool instructions in English **by default**; German remains a permitted
+  option — continue the existing language of a file you edit, and honour an explicit German
+  choice for a project, document, or plan marker
+- Commit messages in English
 
-Die deutsche Repository-Locale ist **de-DE**.
+English is the default; German is not deprecated. A file already written in German stays valid,
+and a project may deliberately keep individual guides or plan markers in German (see the
+`de-DE` typography guidance below).
 
-### Typografie
+### Typography
 
-Locale-spezifische Typografie sichtbarer Prosa – Anführungszeichen, Gedankenstriche,
-Umlaute und ß, geschützte Leerzeichen, Zahlen- und Datumsformate – besitzt der zentrale
-Skill `locale-typography`. Beim Schreiben oder Bearbeiten sichtbarer deutscher Prosa ist
-dessen `de-DE`-Guidance maßgeblich; Effective Flow führt hier bewusst keine zweite
-Typografie-Checkliste.
+Locale-specific typography of visible prose — quotation marks, dashes, umlauts and ß, non-breaking
+spaces, number and date formats — is owned by the central `locale-typography` skill. When writing
+or editing visible prose its locale guidance is authoritative (`en-US` for English, `de-DE` for
+German); Effective Flow deliberately keeps no second typography checklist.
 
-Fehlt der Skill (nicht installiert, `skills.enabled: false` oder via `exclude`
-deaktiviert), gilt als minimaler Fallback für deutschen Text: echte Umlaute und ß statt
-ASCII-Ersatz (ae, oe, ue, ss), typografische Anführungszeichen „…“ statt gerader und
-Halbgeviertstrich – statt Bindestrich.
+If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
+a minimal fallback applies to German text: real umlauts and ß instead of ASCII replacements (ae,
+oe, ue, ss), typographic quotation marks „…“ instead of straight ones, and an en dash – instead
+of a hyphen.
 
-## Aufgabenverfolgung
+## Task tracking
 
-Wenn mehrere Aufgaben zu erledigen sind, verwende ein verfügbares TODO- oder Task-Tracking-Tool (z. B. `TaskCreate`/`TaskUpdate`, `TodoWrite` oder ein vergleichbares Tool), um eine Aufgabenliste anzulegen. Setze jede Aufgabe vor Beginn auf „in Arbeit“ und nach Abschluss auf „erledigt“.
+When there are several tasks to complete, use an available TODO or task-tracking tool (e.g. `TaskCreate`/`TaskUpdate`, `TodoWrite`, or a comparable tool) to create a task list. Set each task to "in progress" before starting it and to "done" after completing it.
 
-Falls kein Task-Tool verfügbar ist, gib dem User stattdessen eine kurze Fortschrittsmeldung nach jedem abgeschlossenen Schritt.
+If no task tool is available, give the user a short progress update after each completed step instead.
 
-### Wann verwenden
+### When to use
 
-- bei drei oder mehr Teilaufgaben oder Schritten
-- bei komplexen Aufträgen mit mehreren Phasen
-- wenn der User mehrere Aufgaben gleichzeitig nennt
+- with three or more subtasks or steps
+- with complex tasks that have multiple phases
+- when the user names several tasks at once
 
-### Wann nicht verwenden
+### When not to use
 
-- bei einer einzelnen, trivialen Aufgabe
-- wenn der Auftrag in weniger als drei einfachen Schritten erledigt ist
+- with a single, trivial task
+- when the task is done in fewer than three simple steps
 
-## Effective-Flow-Konfiguration (Projektsetup-ADR)
+## Effective Flow configuration (project setup ADR)
 
-Die getrackte Wahrheit für die Effective-Flow-Konfiguration ist eine lebende ADR „Effective
-Flow project setup“ (Default-Slug `effective-flow-project-setup`, siehe Baustein „Lebendes
-ADR-Modell“). Sie trägt die Config-Parameter mit minimaler Prosa als **Markdown-Tabelle**. Es
-gibt **keine** `.effective-flow/config.json` mehr als Config-Quelle; `.effective-flow/` ist
-reines Laufzeit-Verzeichnis (`memory.json`, `cache.json`, `review/`, `.worktrees/`) und wird
-komplett gitignored.
+The tracked truth for the Effective Flow configuration is a living ADR "Effective
+Flow project setup" (default slug `effective-flow-project-setup`, see fragment "Living
+ADR model"). It carries the config parameters with minimal prose as a **Markdown table**. There
+is **no** `.effective-flow/config.json` as a config source anymore; `.effective-flow/` is a
+pure runtime directory (`memory.json`, `cache.json`, `review/`, `.worktrees/`) and is
+completely gitignored.
 
-### Config-Locator (Auflösungsreihenfolge)
+### Config locator (resolution order)
 
-Beim Lesen der Konfiguration wird die Projektsetup-ADR in dieser Reihenfolge aufgelöst; der
-erste greifende Schritt gewinnt:
+When reading the configuration, the project setup ADR is resolved in this order; the
+first matching step wins:
 
-1. **AGENTS.md-Marker.** Die kanonische Zeile `**Effective Flow project setup:** <pfad>` in
-   `AGENTS.md`, sonst in `CLAUDE.md` bzw. einer vergleichbaren Konventionsdatei → die ADR
-   unter `<pfad>` lesen. **Backcompat (eine Generation):** ein noch vorhandener Alt-Marker
-   `**Firmo project setup:** <pfad>` wird beim Lesen gleichwertig erkannt; $effective-flow setup
-   stellt ihn beim nächsten Lauf nicht-destruktiv auf die neue Schreibweise um. Zeigt der
-   Marker auf einen Pfad, unter dem **keine** ADR liegt (toter/veralteter Marker), nicht dort
-   stehenbleiben, sondern in dieser Reihenfolge weiterfallen und den veralteten Marker melden
-   (Korrektur in $effective-flow setup).
-2. **Default-Pfad/Scan.** Sonst `docs/adr/effective-flow-project-setup.md` (der Alt-Slug
-   `firmo-project-setup` wird beim Scan gleichwertig erkannt) bzw. ein Scan des erkannten
-   ADR-Verzeichnisses (`docs/adr/`, `docs/decisions/`, `adr/`) nach der Projektsetup-ADR.
-3. **Übergangs-Kompatibilität.** Sonst — nur übergangsweise — eine noch vorhandene
-   `.effective-flow/config.json` (sonst eine Legacy-`.firmo/config.json`) lesen und auf
-   $effective-flow setup hinweisen. Dieser Lesepfad legt **nichts** an und berührt **kein** Git.
-4. **Eingebaute Defaults.** Sonst die Defaults der jeweiligen Quell-Skills verwenden.
+1. **AGENTS.md marker.** The canonical line `**Effective Flow project setup:** <path>` in
+   `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR
+   under `<path>`. **Backcompat (one generation):** a still-present legacy marker
+   `**Firmo project setup:** <path>` is recognized as equivalent on read; $effective-flow setup
+   converts it non-destructively to the new spelling on the next run. If the
+   marker points to a path under which **no** ADR lives (dead/stale marker), do not stay
+   there, but fall through in this order and report the stale marker
+   (correction in $effective-flow setup).
+2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` (the legacy slug
+   `firmo-project-setup` is recognized as equivalent during the scan) or a scan of the detected
+   ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR.
+3. **Transitional compatibility.** Otherwise — only transitionally — read a still-present
+   `.effective-flow/config.json` (otherwise a legacy `.firmo/config.json`) and point to
+   $effective-flow setup. This read path creates **nothing** and touches **no** Git.
+4. **Built-in defaults.** Otherwise use the defaults of the respective source skills.
 
-Der deterministische Lesepfad beliebiger Tools ist nicht-blockierend: Er liest die ADR (bzw.
-den Übergangs-Fallback), erzeugt aber selbst keine Datei und mutiert kein Git. Das Anlegen
-der ADR, der Marker und die Migration passieren ausschließlich im git-berührenden Pfad von
+The deterministic read path of any tool is non-blocking: It reads the ADR (or
+the transitional fallback), but itself creates no file and mutates no Git. Creating
+the ADR, the markers and the migration happen exclusively in the Git-touching path of
 $effective-flow setup.
 
-### Tabellen-Encoding (verbindlich für Schreiber und Leser)
+### Table encoding (binding for writers and readers)
 
-Die Config-Parameter stehen als flache Markdown-Tabelle mit zwei Spalten
-`| Schlüssel | Wert |`. Schreiber ($effective-flow setup, Migration) und Leser (alle Tools)
-interpretieren die Werte identisch nach dieser Kodierung:
+The config parameters stand as a flat Markdown table with two columns
+`| Key | Value |`. Writers ($effective-flow setup, migration) and readers (all tools)
+interpret the values identically per this encoding. English is the default encoding;
+a pre-existing ADR written in the former German form (`## Konfiguration`, header
+`| Schlüssel | Wert |`, `## Kontext`, status `Aktiv`/`Abgelöst`, empty list `(leer)`) stays
+recognized on read and is rewritten to the English form on the next write:
 
 - **Boolean** → `true` / `false`.
-- **String** → literal, unquoted (z. B. `focused`, `origin/main`).
-- **`null`** (semantisch „beim Lauf fragen“, z. B. `applyReview.defaultCommitStrategy`) →
-  das Literal-Token `null`.
-- **Leere Liste** → `(leer)`.
-- **Gefüllte Liste** → kommagetrennt (z. B. `humanizer, distill`).
-- **Verschachtelung** → dotted keys (z. B. `applyReview.worktree.baseDir`,
-  `skills.agents.ui-implementer.include`); ein leeres Objekt hat keine Unterzeilen.
-- **Fehlende Zeile = Schlüssel nicht gesetzt → Default des Quell-Skills.** Bewusst
-  verschieden von einer vorhandenen Zeile mit Wert `null` (expliziter Wert, semantisch „beim
-  Lauf fragen“). Beispiel: keine `delivery.completion`-Zeile → Default `merge`; eine
-  `delivery.completion | null`-Zeile → beim Lauf fragen.
+- **String** → literal, unquoted (e.g. `focused`, `origin/main`).
+- **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
+  the literal token `null`.
+- **Empty list** → `(empty)`.
+- **Filled list** → comma-separated (e.g. `humanizer, distill`).
+- **Nesting** → dotted keys (e.g. `applyReview.worktree.baseDir`,
+  `skills.agents.ui-implementer.include`); an empty object has no sub-lines.
+- **Missing line = key not set → default of the source skill.** Deliberately
+  different from a present line with value `null` (an explicit value, semantically "ask at
+  run time"). Example: no `delivery.completion` line → default `merge`; a
+  `delivery.completion | null` line → ask at run time.
 
-Das Lesen eines einzelnen Werts ist ein trivialer Zeilen-Lookup (Zeile mit dotted key →
-Wertzelle). Beispiel-Ausschnitt (Schnittstellenskizze, kein vollständiger Inhalt):
+Reading a single value is a trivial line lookup (line with dotted key →
+value cell). Example excerpt (interface sketch, not full content):
 
 ```markdown
-## Konfiguration
+## Configuration
 
-| Schlüssel                         | Wert    |
+| Key                         | Value    |
 | --------------------------------- | ------- |
 | review.profile                    | focused |
 | applyReview.defaultCommitStrategy | null    |
-| skills.exclude                    | (leer)  |
+| skills.exclude                    | (empty)  |
 | worktree.enabled                  | true    |
 ```
 
-Ist die Tabelle ungültig oder mehrdeutig (fehlender Schlüssel, unbekanntes Encoding): einen
-sicheren Default für den Lauf verwenden, den User über den betroffenen Schlüssel
-informieren, **nicht** raten.
+If the table is invalid or ambiguous (missing key, unknown encoding): use a
+safe default for the run, inform the user about the affected key,
+do **not** guess.
 
-### Einmalige Migration Legacy-`config.json` → Projektsetup-ADR
+### One-time migration legacy `config.json` → project setup ADR
 
-Die Migration einer bestehenden `.effective-flow/config.json` bzw. Legacy-`.firmo/config.json`
-in die Projektsetup-ADR ist **git-berührend** und läuft ausschließlich im
-$effective-flow setup-Pfad. Sie erzeugt die ADR-Tabelle aus dem aktuellen Config-Inhalt (Encoding
-wie oben), schreibt den AGENTS.md-Marker `**Effective Flow project setup:**`, stellt
-`.gitignore` auf ein einzelnes `.effective-flow/` um und enttrackt die Alt-`config.json`
-(`git rm --cached`, Datei-Inhalt auf Platte belassen). Der genaue Ablauf inklusive
-Idempotenz-Markierung steht in $effective-flow setup.
+The migration of an existing `.effective-flow/config.json` or legacy `.firmo/config.json`
+into the project setup ADR is **Git-touching** and runs exclusively in the
+$effective-flow setup path. It produces the ADR table from the current config content (encoding
+as above), writes the AGENTS.md marker `**Effective Flow project setup:**`, switches
+`.gitignore` to a single `.effective-flow/` and untracks the legacy `config.json`
+(`git rm --cached`, leave the file content on disk). The exact procedure including
+idempotency marking is in $effective-flow setup.
 
-Außerhalb von $effective-flow setup findet **keine** Migration statt: Der deterministische
-Lesepfad legt nichts an und berührt kein Git; er liest bei fehlender ADR ersatzweise eine
-noch vorhandene `.effective-flow/config.json` (sonst `.firmo/config.json`) und weist auf
-$effective-flow setup hin.
+Outside $effective-flow setup, **no** migration takes place: The deterministic
+read path creates nothing and touches no Git; on a missing ADR it reads instead a
+still-present `.effective-flow/config.json` (otherwise `.firmo/config.json`) and points to
+$effective-flow setup.
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben für Planung und User-Rückfragen.
+If the project contains an `AGENTS.md`, read it early in the workflow and observe its specifications for planning and user follow-up questions.
 
-## Tracker-Anbindung
+## Tracker integration
 
-Dieser Skill ist **inhärent remote** und arbeitet immer gegen den Issue-Tracker der `origin`-Remote; der `tracker.mode`-Umschalter wird **nicht** ausgewertet. Aus dem folgenden Baustein nutzt er nur die werkzeug-generische Plumbing (Host- und CLI-Erkennung, Verfügbarkeits-/Auth-Prüfung, Operation-→-Kommando-Mapping, Fehlerfälle).
+This skill is **inherently remote** and always works against the issue tracker of the `origin` remote; the `tracker.mode` switch is **not** evaluated. From the following building block it uses only the tool-generic plumbing (host and CLI detection, availability/auth check, operation-→-command mapping, error cases).
 
-## Issue-Tracker-Anbindung (Remote-Modus)
+## Issue-tracker integration (remote mode)
 
-Dieser geteilte Baustein verbindet `$effective-flow review` und ``tools/apply-review.md`` mit einem externen Issue-Tracker (GitHub über `gh`, Forgejo über `tea`). Er ist **opt-in** über die Effective Flow-Konfiguration (Projektsetup-ADR) und standardmäßig deaktiviert (`local`). Im lokalen Modus verhalten sich beide Skills unverändert – Findings laufen über die Markdown-Report-Datei unter `.effective-flow/review/`, es werden keine Issues erzeugt und kein CLI aufgerufen.
+This shared fragment connects `$effective-flow review` and ``tools/apply-review.md`` with an external issue tracker (GitHub via `gh`, Forgejo via `tea`). It is **opt-in** via the Effective Flow configuration (project setup ADR) and disabled by default (`local`). In local mode both skills behave unchanged – findings run through the Markdown report file under `.effective-flow/review/`, no issues are created and no CLI is invoked.
 
-Der local/remote-Umschalter (`tracker.mode`) betrifft ausschließlich **Reviews**. **Investigationen** (`$effective-flow investigate`) sind davon ausgenommen und bleiben in jedem Modus rein lokal unter `.effective-flow/investigation/` (nie committet, nie als Issue). Von den Effective Flow-Artefakten werden ausschließlich **Pläne** committet.
+The local/remote toggle (`tracker.mode`) affects exclusively **reviews**. **Investigations** (`$effective-flow investigate`) are exempt from it and remain purely local in every mode under `.effective-flow/investigation/` (never committed, never as an issue). Of the Effective Flow artifacts, only **plans** are committed.
 
-Er kapselt die **gemeinsamen** Bausteine: das `tracker`-Config-Schema samt Migration, die Modusbestimmung, die Host- und CLI-Erkennung, die Label-Konvention, die kanonischen Issue- und Epic-Body-Formate sowie das Mapping der Tracker-Operationen auf `gh`/`tea`. Die eigentliche Orchestrierung – wann Issues **erstellt** (`$effective-flow review`) und wann sie **gelesen und abgearbeitet** werden (``tools/apply-review.md``) – bleibt im jeweiligen Skill.
+It encapsulates the **shared** building blocks: the `tracker` config schema including migration, the mode determination, the host and CLI detection, the label convention, the canonical issue and epic body formats as well as the mapping of tracker operations onto `gh`/`tea`. The actual orchestration – when issues are **created** (`$effective-flow review`) and when they are **read and processed** (``tools/apply-review.md``) – stays in the respective skill.
 
-Zusätzlich nutzen ``tools/apply-issues.md`` und `$effective-flow plan-issue` diesen Baustein, allerdings nur für die **werkzeug-generische Plumbing**: die Host- und CLI-Erkennung (unten), die Verfügbarkeits-/Auth-Prüfung, das Mapping der Tracker-Operationen auf `gh`/`tea` und die Fehlerfälle. Diese beiden Skills verarbeiten **beliebige** Menschen-Issues statt der von `$effective-flow review` erzeugten Finding-Issues; sie sind **inhärent remote** und werten den `tracker.mode`-Umschalter (local/remote) **nicht** aus – sie brauchen lediglich ein Git-Repository, eine `origin`-Remote und ein authentifiziertes CLI. Die finding-/epic-spezifischen Abschnitte (Issue-Body-Format, Epic-Body-Format, `R-XXXXXXX`-Konvention) gelten nur für `$effective-flow review`/``tools/apply-review.md``; die Checkbox-Abhak-Mechanik für Epic-Bodys nutzt ``tools/apply-issues.md`` bei Container-Issues sinngemäß mit.
+In addition, ``tools/apply-issues.md`` and `$effective-flow plan-issue` use this fragment, though only for the **tool-generic plumbing**: the host and CLI detection (below), the availability/auth check, the mapping of tracker operations onto `gh`/`tea` and the error cases. These two skills process **arbitrary** human issues instead of the finding issues produced by `$effective-flow review`; they are **inherently remote** and do **not** evaluate the `tracker.mode` toggle (local/remote) – they only need a Git repository, an `origin` remote and an authenticated CLI. The finding-/epic-specific sections (issue body format, epic body format, `R-XXXXXXX` convention) apply only to `$effective-flow review`/``tools/apply-review.md``; the checkbox-ticking mechanics for epic bodies are used by ``tools/apply-issues.md`` analogously for container issues.
 
-### Konfiguration
+### Configuration
 
-Der Remote-Modus funktioniert ohne festgeschriebene Konfiguration (dann bleibt er deaktiviert, `local`). Falls die Effective Flow-Konfiguration (Projektsetup-ADR) entsprechende Werte festschreibt, überschreiben sie diese Defaults (Schema hier zur Illustration):
+Remote mode works without pinned configuration (then it stays disabled, `local`). If the Effective Flow configuration (project setup ADR) pins corresponding values, they override these defaults (schema shown here for illustration):
 
 ```json
 {
@@ -171,283 +177,281 @@ Der Remote-Modus funktioniert ohne festgeschriebene Konfiguration (dann bleibt e
 }
 ```
 
-Fehlende Werte haben diese Defaults:
+Missing values have these defaults:
 
-- `tracker.mode`: `"local"` (Feature aus)
-- `tracker.remoteToolOverride`: `"auto"` (Werkzeug automatisch aus der `origin`-URL)
+- `tracker.mode`: `"local"` (feature off)
+- `tracker.remoteToolOverride`: `"auto"` (tool automatically from the `origin` URL)
 
-Gültige Werte:
+Valid values:
 
 - `tracker.mode`: `"local"`, `"remote"`
 - `tracker.remoteToolOverride`: `"auto"`, `"github"`, `"forgejo"`
 
-`remoteToolOverride` ist nur für mehrdeutige Hosts gedacht (z. B. self-hosted GitHub Enterprise, dessen Domain nicht `github.com` enthält). Bei `auto` entscheidet die Host-Erkennung unten.
+`remoteToolOverride` is intended only for ambiguous hosts (e.g. self-hosted GitHub Enterprise whose domain does not contain `github.com`). With `auto` the host detection below decides.
 
-### Config-Migration
+### Config migration
 
-Das Lesen der Effective Flow-Konfiguration aus der Projektsetup-ADR (inklusive der `tracker`-Schlüssel) und die einmalige Migration einer Alt-Config übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `tracker` aus. Das `tracker`-Config-Schema oben (Konfiguration, gültige Werte, Modusbestimmung, Erstaufruf-Abfrage) bleibt davon unberührt.
+Reading the Effective Flow configuration from the project setup ADR (including the `tracker` keys) and the one-time migration of a legacy config is handled centrally by the fragment "Config migration" (`config-migration.md`); this fragment performs no own per-block migration for `tracker` anymore. The `tracker` config schema above (configuration, valid values, mode determination, first-invocation query) remains unaffected by this.
 
-### Modus bestimmen
+### Determine mode
 
-Bestimme zu Beginn des Laufs den effektiven Modus in dieser Reihenfolge (die erste zutreffende Regel gewinnt):
+At the start of the run, determine the effective mode in this order (the first matching rule wins):
 
-1. **Argumenttyp:** Der übergebene Argumenttyp überschreibt den Config-Modus für diesen Lauf. Eine Report-Datei (`*.md` unter `.effective-flow/review/`) erzwingt `local`; eine Issue-Referenz (Issue-Nummer, `#123` oder eine Issue-URL) erzwingt `remote`.
-2. **Per-Run-Wunsch des Users:** Verlangt der User ausdrücklich Issue-/Tracker-Arbeit, ist `remote` aktiv; verlangt er ausdrücklich lokale Arbeit („lokal“, „ohne Issues“, „nur Report“), ist `local` aktiv.
-3. **Config:** sonst gilt `tracker.mode` aus der Effective Flow-Konfiguration (Projektsetup-ADR).
-4. **Erstaufruf-Abfrage:** Ist `tracker.mode` nicht in der Config gesetzt und liefert weder Argument noch Per-Run-Wunsch ein Signal, führe die Erstaufruf-Abfrage unten aus.
+1. **Argument type:** The passed argument type overrides the config mode for this run. A report file (`*.md` under `.effective-flow/review/`) forces `local`; an issue reference (issue number, `#123` or an issue URL) forces `remote`.
+2. **Per-run wish of the user:** If the user explicitly requests issue/tracker work, `remote` is active; if they explicitly request local work ("local", "without issues", "report only"), `local` is active.
+3. **Config:** otherwise `tracker.mode` from the Effective Flow configuration (project setup ADR) applies.
+4. **First-invocation query:** If `tracker.mode` is not set in the config and neither argument nor per-run wish delivers a signal, run the first-invocation query below.
 
-### Erstaufruf-Abfrage
+### First-invocation query
 
-Nur wenn Schritt 4 oben greift (kein Config-Wert, kein Argument-/Per-Run-Signal):
+Only when step 4 above applies (no config value, no argument/per-run signal):
 
-Frage den User: **Sollen Review-Findings lokal als Markdown-Report oder remote als Issues (GitHub/Forgejo) geführt werden?**
-- Lokal -- tracker.mode = local — Markdown-Report unter .effective-flow/review/ (bisheriges Verhalten)
-- Remote -- tracker.mode = remote — Findings als Issues, Werkzeug automatisch aus origin (gh/tea)
+Frage den User: **Should review findings be tracked locally as a Markdown report or remotely as issues (GitHub/Forgejo)?**
+- Local -- tracker.mode = local — Markdown report under .effective-flow/review/ (previous behavior)
+- Remote -- tracker.mode = remote — findings as issues, tool automatically from origin (gh/tea)
 
-Verwende die gewählte Antwort als Tracker-Modus **für diesen Lauf**. Schreibe sie **nicht** selbst in die Konfiguration — das dauerhafte Festschreiben von `tracker.mode` in der Projektsetup-ADR übernimmt ausschließlich `$effective-flow setup`. Weise den User kurz darauf hin, z. B. „Tracker-Modus `remote` für diesen Lauf verwendet; dauerhaft festschreiben über `$effective-flow setup`.“
+Use the chosen answer as the tracker mode **for this run**. Do **not** write it into the configuration yourself — permanently pinning `tracker.mode` in the project setup ADR is handled exclusively by `$effective-flow setup`. Briefly point this out to the user, e.g. "Tracker mode `remote` used for this run; pin permanently via `$effective-flow setup`."
 
-### Host- und CLI-Erkennung (nur Remote-Modus)
+### Host and CLI detection (remote mode only)
 
-Bestimme im Remote-Modus das Werkzeug analog zu `$effective-flow pr`:
+In remote mode, determine the tool analogously to `$effective-flow pr`:
 
-1. **Vorbedingung:** Es ist ein Git-Repository mit einer `origin`-Remote vorhanden. Fehlt `origin` oder ist es kein Git-Repository, ist der Remote-Modus nicht möglich: klar melden und abbrechen.
-2. **Werkzeug wählen:**
+1. **Precondition:** A Git repository with an `origin` remote is present. If `origin` is missing or it is not a Git repository, remote mode is not possible: report clearly and abort.
+2. **Choose tool:**
    - `tracker.remoteToolOverride: "github"` → `gh`; `"forgejo"` → `tea`.
-   - sonst (`auto`): Lies die `origin`-URL (`git remote get-url origin`) und extrahiere daraus den Host robust für HTTPS- und SSH-Formen (`https://host/owner/repo.git`, `ssh://git@host/owner/repo.git`, `git@host:owner/repo.git`). Ist der Host exakt `github.com`, ist das Werkzeug `gh`; **für jeden anderen Host** wird Forgejo/Gitea angenommen und `tea` verwendet.
-   - Ein ausdrücklicher Per-Run-Hinweis des Users zum Werkzeug hat bei mehrdeutigem Host (z. B. GitHub Enterprise) Vorrang. Ist der Host mehrdeutig und weder Override noch Per-Run-Hinweis vorhanden, frage den User nach dem gewünschten Werkzeug.
-3. **Verfügbarkeit prüfen:** Stelle sicher, dass das gewählte CLI installiert und authentifiziert ist (`gh auth status` bzw. `tea` mit konfiguriertem Login). Fehlt das CLI oder die Authentifizierung: gib eine klare Fehlermeldung mit Behebungshinweis aus und brich ohne Seiteneffekt ab. Falle **nicht** still auf `local` zurück; biete einen Fallback auf `local` nur nach ausdrücklicher User-Zustimmung an.
+   - otherwise (`auto`): Read the `origin` URL (`git remote get-url origin`) and extract the host from it robustly for HTTPS and SSH forms (`https://host/owner/repo.git`, `ssh://git@host/owner/repo.git`, `git@host:owner/repo.git`). If the host is exactly `github.com`, the tool is `gh`; **for any other host** Forgejo/Gitea is assumed and `tea` is used.
+   - An explicit per-run hint from the user about the tool takes precedence for an ambiguous host (e.g. GitHub Enterprise). If the host is ambiguous and neither override nor per-run hint is present, ask the user for the desired tool.
+3. **Check availability:** Ensure the chosen CLI is installed and authenticated (`gh auth status` or `tea` with a configured login). If the CLI or the authentication is missing: emit a clear error message with a remediation hint and abort without side effect. Do **not** silently fall back to `local`; offer a fallback to `local` only after explicit user consent.
 
-### Label-Konvention
+### Label convention
 
-Verwende im Remote-Modus diese Labels und lege fehlende Labels idempotent an (eine „already exists“-Meldung tolerieren, nicht als Fehler behandeln):
+In remote mode, use these labels and create missing labels idempotently (tolerate an "already exists" message, do not treat it as an error):
 
-| Label                                                                                          | Bedeutung                                                                                |
-| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `effective-flow-review-finding`                                                                | markiert ein einzelnes Finding-Issue                                                     |
-| `effective-flow-review-epic`                                                                   | markiert das Epic-/Tracking-Issue                                                        |
-| `effective-flow-fix`, `effective-flow-refactor`, `effective-flow-build`, `effective-flow-docs` | Ziel-Aktion des Findings (genau eines pro Finding-Issue)                                 |
-| `kritisch`, `wichtig`, `hinweis`                                                               | Schweregrad des Findings (genau eines pro Finding-Issue; `hinweis` für Hinweis-Findings) |
-| `wontfix`                                                                                      | Finding bewusst nicht umsetzen → ADR statt Code                                          |
-| `effective-flow-issue-done`                                                                    | von ``tools/apply-issues.md`` umgesetztes Issue (PR erstellt)                             |
-| `effective-flow-needs-planning`                                                                | von ``tools/apply-issues.md`` übersprungen; Planung via `$effective-flow plan-issue` nötig      |
+| Label                                                                                          | Meaning                                                                           |
+| ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `effective-flow-review-finding`                                                                | marks a single finding issue                                                      |
+| `effective-flow-review-epic`                                                                   | marks the epic/tracking issue                                                     |
+| `effective-flow-fix`, `effective-flow-refactor`, `effective-flow-build`, `effective-flow-docs` | target action of the finding (exactly one per finding issue)                      |
+| `critical`, `important`, `note`                                                                | severity of the finding (exactly one per finding issue; `note` for note findings) |
+| `wontfix`                                                                                      | deliberately do not implement finding → ADR instead of code                       |
+| `effective-flow-issue-done`                                                                    | issue implemented by ``tools/apply-issues.md`` (PR created)                        |
+| `effective-flow-needs-planning`                                                                | skipped by ``tools/apply-issues.md``; planning via `$effective-flow plan-issue` needed   |
 
-`wontfix` existiert auf vielen Trackern bereits; lege es nur an, falls es fehlt. `effective-flow-issue-done` und `effective-flow-needs-planning` gehören zum issue-getriebenen Fluss (``tools/apply-issues.md``/`$effective-flow plan-issue`) und werden dort idempotent angelegt.
+`wontfix` already exists on many trackers; create it only if it is missing. `effective-flow-issue-done` and `effective-flow-needs-planning` belong to the issue-driven flow (``tools/apply-issues.md``/`$effective-flow plan-issue`) and are created idempotently there.
 
-**Rückwärtskompatibilität (Alt-Präfix `firmo-`):** Frühere Versionen nutzten das Präfix `firmo-` statt `effective-flow-` (`firmo-review-finding`, `firmo-review-epic`, `firmo-fix`/`firmo-refactor`/`firmo-build`/`firmo-docs`, `firmo-issue-done`, `firmo-needs-planning`). Neu **angelegt oder gesetzt** wird ausschließlich das `effective-flow-`-Label; ein Upgrade bestehender `firmo-`-Labels ist **nicht** nötig. Beim **Lesen, Auflisten, Deduplizieren und Erkennen** gilt jede `firmo-`-Variante dauerhaft als gleichwertig zur zugehörigen `effective-flow-`-Variante:
+**Backward compatibility (severity labels):** The English severity labels `critical`/`important`/`note` are the default; newly created or set is exclusively the English label. The former German labels `kritisch`/`wichtig`/`hinweis` are **not** upgraded but stay **recognized** permanently when reading, listing, deduplicating and detecting a finding's severity — run a severity query per language variant (once `critical`/`important`/`note`, once `kritisch`/`wichtig`/`hinweis`) and union by issue number, analogous to the `firmo-`/`effective-flow-` prefix rule above.
 
-- **Auflisten/Filtern** (Dedup, Epic-/Issue-Suche): `gh`/`tea` verknüpfen mehrere `--label`-Angaben mit UND-Semantik. Führe die Abfrage daher **je Präfix getrennt** aus (einmal `effective-flow-…`, einmal `firmo-…`) und vereinige die Treffer über die Issue-Nummer.
-- **Status-Label entfernen** (`effective-flow-needs-planning`, `effective-flow-issue-done`): entferne zusätzlich die Alt-`firmo-`-Variante, falls vorhanden, damit ein Issue nicht durch ein liegengebliebenes Alt-Label „hängen“ bleibt.
+**Backward compatibility (legacy prefix `firmo-`):** Earlier versions used the prefix `firmo-` instead of `effective-flow-` (`firmo-review-finding`, `firmo-review-epic`, `firmo-fix`/`firmo-refactor`/`firmo-build`/`firmo-docs`, `firmo-issue-done`, `firmo-needs-planning`). Newly **created or set** is exclusively the `effective-flow-` label; an upgrade of existing `firmo-` labels is **not** needed. When **reading, listing, deduplicating and detecting**, every `firmo-` variant counts permanently as equivalent to the associated `effective-flow-` variant:
 
-**Einmalige `sf-`-Label-Migration:** Das noch ältere Präfix `sf-` (`sf-review-finding`, `sf-review-epic`, `sf-fix`/`sf-refactor`/`sf-build`/`sf-docs`, `sf-issue-done`, `sf-needs-planning`) wird **nicht** mehr laufend erkannt, sondern **einmal pro Repo migriert**. Beim **ersten** Remote-Tracker-Zugriff — sofern der Marker `labelMigration.sf.done` in `.effective-flow/memory.json` fehlt und ein authentifiziertes CLI vorliegt — zieht eine idempotente Migration jedes noch vorhandene `sf-<x>`-Label auf `effective-flow-<x>` um: erst `effective-flow-<x>` am Issue ergänzen, dann `sf-<x>` entfernen (nicht umgekehrt, damit ein Abbruch kein Issue unklassifiziert zurücklässt). Danach den Marker setzen. Findet die Migration keine `sf-`-Labels, ist sie ein geräuschloser No-Op. Ist der Marker gesetzt, entfällt jeder weitere Scan — laufende Operationen kennen nur `effective-flow-` und `firmo-`. `sf-` wird ausschließlich in dieser Migration referenziert.
+- **Listing/filtering** (dedup, epic/issue search): `gh`/`tea` combine multiple `--label` specifications with AND semantics. Therefore run the query **separately per prefix** (once `effective-flow-…`, once `firmo-…`) and union the matches by the issue number.
+- **Removing a status label** (`effective-flow-needs-planning`, `effective-flow-issue-done`): additionally remove the legacy `firmo-` variant, if present, so an issue does not stay "stuck" through a leftover legacy label.
 
-### Keine KI-Attribution in Issue-Bodys und -Kommentaren
+**One-time `sf-` label migration:** The even older prefix `sf-` (`sf-review-finding`, `sf-review-epic`, `sf-fix`/`sf-refactor`/`sf-build`/`sf-docs`, `sf-issue-done`, `sf-needs-planning`) is **no longer** detected continuously, but **migrated once per repo**. On the **first** remote tracker access — provided the marker `labelMigration.sf.done` in `.effective-flow/memory.json` is missing and an authenticated CLI is present — an idempotent migration moves every still-present `sf-<x>` label to `effective-flow-<x>`: first add `effective-flow-<x>` on the issue, then remove `sf-<x>` (not the other way around, so an abort leaves no issue unclassified). Afterwards set the marker. If the migration finds no `sf-` labels, it is a silent no-op. If the marker is set, any further scan is skipped — ongoing operations know only `effective-flow-` and `firmo-`. `sf-` is referenced exclusively in this migration.
 
-Füge Issue-Bodys, Epic-Bodys und Kommentaren keine KI-Attribution hinzu: keine „Generated with Claude Code/Codex"-Footer, keine Agent-Session-Links (z. B. `https://claude.ai/code/…`) und keine `Co-Authored-By`-Trailer – auch dann nicht, wenn der Harness sie als Default anhängt. Sachliche Erwähnungen von Claude Code oder Codex als Ziel-Harness sind erlaubt, Generierungs-Attribution nicht.
+### No AI attribution in issue bodies and comments
 
-### Issue-Body-Format (Finding-Issue)
+Do not add AI attribution to issue bodies, epic bodies and comments: no "Generated with Claude Code/Codex" footers, no agent session links (e.g. `https://claude.ai/code/…`) and no `Co-Authored-By` trailers – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex as the target harness are allowed, generation attribution is not.
 
-Ein Finding-Issue muss **self-contained** sein: eine fremde LLM-Session muss es ohne Zugriff auf die erzeugende Session abarbeiten können. Es enthält dieselben inhaltlichen Felder wie ein Finding-Block des lokalen Report-Formats (siehe `$effective-flow review`, „Bericht-Format“).
+### Issue body format (finding issue)
 
-- **Titel:** `[R-XXXXXXX] <Kurztitel>`
-- **Labels:** `effective-flow-review-finding`, das Aktions-Label und das Schweregrad-Label.
-- **Body** (kanonisches Template):
+A finding issue must be **self-contained**: a foreign LLM session must be able to process it without access to the producing session. It contains the same content fields as a finding block of the local report format (see `$effective-flow review`, "Report format").
+
+- **Title:** `[R-XXXXXXX] <short title>`
+- **Labels:** `effective-flow-review-finding`, the action label and the severity label.
+- **Body** (canonical template):
 
 ```markdown
-- **Schweregrad**: Kritisch / Wichtig / Hinweis
-- **Komplexität**: Leicht / Mittel / Schwer
-- **Bereich**: [...]
-- **Datei**: [pfad:zeile]
+- **Severity**: Critical / Important / Note
+- **Complexity**: Low / Medium / High
+- **Area**: [...]
+- **File**: [path:line]
 - **Problem**: [...]
-- **Empfehlung**: [...]
-- **Aktion**: effective-flow-fix | effective-flow-refactor | effective-flow-build | effective-flow-docs
-- **Prompt-Vorschlag**: [direkt kopierbarer Klartext, ohne umschließende Anführungszeichen, ohne Escape-Sequenzen]
-- **Epic**: #<Epic-Nummer> (leer, falls kein Epic)
-- **Signatur**: [pfad:zeile] · [Bereich] · [Kurzfassung des Problems]  <!-- Dedup-Schlüssel -->
+- **Recommendation**: [...]
+- **Action**: effective-flow-fix | effective-flow-refactor | effective-flow-build | effective-flow-docs
+- **Prompt suggestion**: [directly copy-pasteable plain text, without enclosing quotation marks, without escape sequences]
+- **Epic**: #<epic number> (empty if no epic)
+- **Signature**: [path:line] · [Area] · [short summary of the problem]  <!-- Dedup key -->
 ```
 
-Das Feld **Signatur** fixiert den inhaltlichen Dedup-Schlüssel (Datei+Zeile, Bereich, Problem). Es ist bewusst **nicht** die `R-XXXXXXX`-ID, weil diese pro Lauf frisch vergeben wird.
+The **Signature** field fixes the content dedup key (file+line, area, problem). It is deliberately **not** the `R-XXXXXXX` ID, because that is assigned freshly per run.
 
-### Epic-Body-Format (Tracking-Issue)
+### Epic body format (tracking issue)
 
-- **Titel:** `Code-Review YYYY-MM-DD[-N]`
+- **Title:** `Code review YYYY-MM-DD[-N]`
 - **Labels:** `effective-flow-review-epic`
-- **Body** (kanonisches Template):
+- **Body** (canonical template):
 
 ```markdown
-Code-Review vom YYYY-MM-DD · Scope: [Gesamter Code / Beschriebener Bereich] · Projekt-Typ: [...]
+Code review of YYYY-MM-DD · Scope: [Entire code / Described area] · Project type: [...]
 
 ## Findings
 
-- [ ] #<nr> [R-0000001] <Kurztitel> — Aktion: effective-flow-fix
-- [ ] #<nr> [R-0000002] <Kurztitel> — Aktion: effective-flow-refactor
+- [ ] #<nr> [R-0000001] <short title> — Action: effective-flow-fix
+- [ ] #<nr> [R-0000002] <short title> — Action: effective-flow-refactor
 
-## Übersprungen (Designentscheidungen)
+## Skipped (design decisions)
 
-- #<nr-oder-keine> [R-XXXXXXX] <Kurztitel> — abgedeckt durch [DD-XXX] ([Quelle])
+- #<nr-or-none> [R-XXXXXXX] <short title> — covered by [DD-XXX] ([Source])
 ```
 
-Regeln für die Task-Liste:
+Rules for the task list:
 
-- Jeder Eintrag unter `## Findings` referenziert genau ein Finding-Issue über seine Nummer und trägt die `R-XXXXXXX`-ID sowie die Aktion.
-- Die Sektion `## Übersprungen (Designentscheidungen)` verwendet **keine** Checkboxen und listet nur durch Designentscheidungen gefilterte Findings. Sie entfällt, wenn keine solchen Findings vorhanden sind.
-- Das Abhaken erfolgt durch Umschalten `- [ ]` → `- [x]` und optionales Anhängen des PR-Links am Eintrag; ein bewusst nicht umgesetztes Finding wird per Slug-Referenz als `- [x] … — nicht umgesetzt (ADR: <slug>)` markiert.
+- Each entry under `## Findings` references exactly one finding issue via its number and carries the `R-XXXXXXX` ID as well as the action.
+- The section `## Skipped (design decisions)` uses **no** checkboxes and lists only findings filtered out by design decisions. It is omitted when no such findings are present.
+- Ticking off is done by toggling `- [ ]` → `- [x]` and optionally appending the PR link on the entry; a finding deliberately not implemented is marked via a slug reference as `- [x] … — nicht umgesetzt (ADR: <slug>)`.
 
-### Tracker-Operationen (Werkzeug-Mapping)
+### Tracker operations (tool mapping)
 
-Beschreibe alle Tracker-Zugriffe abstrakt als Operation und wähle das Kommando nach dem erkannten Werkzeug. Prüfe bei Forgejo die genauen Flagnamen gegen die installierte `tea`-Version, falls ein Aufruf fehlschlägt (wie in `$effective-flow pr` vermerkt).
+Describe all tracker accesses abstractly as an operation and choose the command by the detected tool. For Forgejo, check the exact flag names against the installed `tea` version if a call fails (as noted in `$effective-flow pr`).
 
-| Operation                                | GitHub (`gh`)                                                                              | Forgejo (`tea`)                                                                                      |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| Label anlegen (idempotent)               | `gh label create <name> --force`                                                           | `tea labels create --name <name>`                                                                    |
-| Issue anlegen                            | `gh issue create --title … --body-file … --label …`                                        | `tea issue create --title … --body … --labels …`                                                     |
-| Issue lesen (Body + Labels + Status)     | `gh issue view <nr> --json title,body,labels,state`                                        | `tea issue <nr>` bzw. `tea issue view <nr>`                                                          |
-| Kommentare lesen (Klärungen, Idempotenz) | `gh issue view <nr> --json comments`                                                       | `tea issue view <nr> --comments`, sonst Forgejo-API `GET /repos/<owner>/<repo>/issues/<nr>/comments` |
-| Finding-Issues auflisten (für Dedup)     | `gh issue list --label effective-flow-review-finding --state all --json number,title,body` | `tea issues list --labels effective-flow-review-finding --state all`                                 |
-| Offene Epics auflisten                   | `gh issue list --label effective-flow-review-epic --state open`                            | `tea issues list --labels effective-flow-review-epic --state open`                                   |
-| Issue-Body aktualisieren (Epic abhaken)  | `gh issue edit <nr> --body-file …`                                                         | `tea issue edit <nr> --body …`                                                                       |
-| Kommentar hinzufügen (z. B. PR-Link)     | `gh issue comment <nr> --body …`                                                           | `tea comment <nr> …`                                                                                 |
-| Label setzen/entfernen                   | `gh issue edit <nr> --add-label … --remove-label …`                                        | `tea issue edit <nr> --labels …`                                                                     |
-| Pull-Request erstellen                   | über `$effective-flow pr`                                                                        | über `$effective-flow pr`                                                                                  |
+| Operation                                   | GitHub (`gh`)                                                                              | Forgejo (`tea`)                                                                                          |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Create label (idempotent)                   | `gh label create <name> --force`                                                           | `tea labels create --name <name>`                                                                        |
+| Create issue                                | `gh issue create --title … --body-file … --label …`                                        | `tea issue create --title … --body … --labels …`                                                         |
+| Read issue (body + labels + status)         | `gh issue view <nr> --json title,body,labels,state`                                        | `tea issue <nr>` or `tea issue view <nr>`                                                                |
+| Read comments (clarifications, idempotency) | `gh issue view <nr> --json comments`                                                       | `tea issue view <nr> --comments`, otherwise Forgejo API `GET /repos/<owner>/<repo>/issues/<nr>/comments` |
+| List finding issues (for dedup)             | `gh issue list --label effective-flow-review-finding --state all --json number,title,body` | `tea issues list --labels effective-flow-review-finding --state all`                                     |
+| List open epics                             | `gh issue list --label effective-flow-review-epic --state open`                            | `tea issues list --labels effective-flow-review-epic --state open`                                       |
+| Update issue body (tick off epic)           | `gh issue edit <nr> --body-file …`                                                         | `tea issue edit <nr> --body …`                                                                           |
+| Add comment (e.g. PR link)                  | `gh issue comment <nr> --body …`                                                           | `tea comment <nr> …`                                                                                     |
+| Set/remove label                            | `gh issue edit <nr> --add-label … --remove-label …`                                        | `tea issue edit <nr> --labels …`                                                                         |
+| Create pull request                         | via `$effective-flow pr`                                                                         | via `$effective-flow pr`                                                                                       |
 
-Beim Epic-Body-Update gilt: Body vor dem Ändern frisch lesen, gezielt nur die betroffene Zeile umschalten und zurückschreiben, damit parallele Änderungen nicht verloren gehen.
+For the epic body update it applies: read the body freshly before changing, toggle only the affected line specifically and write it back, so parallel changes are not lost.
 
-Für die auflistenden Operationen (Dedup, Offene Epics) gilt die Rückwärtskompatibilität aus „Label-Konvention“: Abfrage je Präfix (`effective-flow-…` **und** `firmo-…`) getrennt ausführen und über die Issue-Nummer vereinigen.
+For the listing operations (dedup, open epics) the backward compatibility from "Label convention" applies: run the query separately per prefix (`effective-flow-…` **and** `firmo-…`) and union by the issue number.
 
-### Fehler- und Randfälle
+### Error and edge cases
 
-- **Fehlendes/nicht authentifiziertes CLI:** klar abbrechen, Behebungshinweis geben, keinen Teilzustand hinterlassen; kein stiller Fallback auf `local`.
-- **Kein Git-Repository / keine `origin`-Remote:** Remote-Modus nicht möglich; melden.
-- **Mehrdeutiger Host:** `remoteToolOverride` bzw. Per-Run-Hinweis nutzen; ist beides unklar, den User fragen.
-- **Argumenttyp widerspricht `tracker.mode`:** Der Argumenttyp überschreibt den Config-Modus für diesen Lauf (siehe „Modus bestimmen“).
+- **Missing/unauthenticated CLI:** abort clearly, give a remediation hint, leave no partial state; no silent fallback to `local`.
+- **No Git repository / no `origin` remote:** remote mode not possible; report.
+- **Ambiguous host:** use `remoteToolOverride` or a per-run hint; if both are unclear, ask the user.
+- **Argument type contradicts `tracker.mode`:** The argument type overrides the config mode for this run (see "Determine mode").
 
-## Kommentar-Konvention
+## Comment convention
 
-Schreibe das Planungsergebnis als Issue-Kommentar (Operation „Kommentar hinzufügen“ aus dem Mapping). Beginne jeden Effective Flow-Kommentar mit der Markierung `<!-- effective-flow-plan-issues -->`. Kanonische Struktur des Kommentars:
+Write the planning result as an issue comment (operation "Add comment" from the mapping). Begin every Effective Flow comment with the marker `<!-- effective-flow-plan-issues -->`. Canonical structure of the comment:
 
 ```markdown
 <!-- effective-flow-plan-issues -->
-## Vervollständigte Planung
+## Completed planning
 
-**Empfohlener Workflow:** Feature / Bugfix / Refactoring / Dokumentation
+**Recommended workflow:** Feature / Bugfix / Refactoring / Documentation
 
-### Anforderung
-[präzisiertes Soll-Verhalten mit Begründung]
+### Requirement
+[refined target behavior with rationale]
 
-### Akzeptanzkriterien
-- [ ] [messbares Kriterium]
+### Acceptance criteria
+- [ ] [measurable criterion]
 
-### Betroffene Bereiche/Dateien
-- `pfad/datei` — [geplante Änderung]
+### Affected areas/files
+- `path/file` — [planned change]
 
-### Edge Cases
-- [Edge Case und erwartetes Verhalten]
+### Edge cases
+- [Edge case and expected behavior]
 
-### Annahmen
-- [bewusst dokumentierter Restpunkt]
+### Assumptions
+- [deliberately documented remaining point]
 ```
 
 ## Workflow
 
-### Phase 1: Tracker-Setup & Sammlung
+### Phase 1: Tracker setup & collection
 
-1. Bestimme Host und CLI und prüfe Verfügbarkeit/Authentifizierung gemäß „Host- und CLI-Erkennung“. Vorbedingung: Git-Repository mit `origin`-Remote. Fehlt etwas: klar melden und abbrechen.
-2. Bestimme die zu planenden Issues:
-   - ohne Argument: liste alle offenen Issues mit Label `effective-flow-needs-planning` (Alt-Label `firmo-needs-planning` gleichwertig mitabfragen, siehe „Label-Konvention“).
-   - mit Argument: verwende die übergebenen Issue-Referenzen (Nummer, `#123`, URL).
-3. Gibt es keine passenden Issues: Kurzmeldung („keine offenen `effective-flow-needs-planning`-Issues") und Ende.
-4. Zeige dem User die gefundene Liste (Nummer, Titel) und lass ihn wählen, welche Issues geplant werden sollen (eines, mehrere oder alle).
-5. Lege pro gewähltem Issue eine Task an (Aufgabenverfolgung).
+1. Determine the host and CLI and check availability/authentication according to "Host and CLI detection". Precondition: a Git repository with an `origin` remote. If something is missing: report clearly and abort.
+2. Determine the issues to plan:
+   - without an argument: list all open issues with the label `effective-flow-needs-planning` (also query the old label `firmo-needs-planning` as equivalent, see "Label convention").
+   - with an argument: use the passed issue references (number, `#123`, URL).
+3. If there are no matching issues: a short message ("no open `effective-flow-needs-planning` issues") and end.
+4. Show the user the found list (number, title) and let them choose which issues should be planned (one, several, or all).
+5. Create a task per chosen issue (task tracking).
 
-Sichte vor der Planung nützliche Skills gemäß folgendem Baustein. Die No-Code-Grenze dieses
-Tools bleibt dabei strikt: Skills informieren nur die Klärung/Planung, erzeugen keinen Code
-und ändern nichts außer den Issue-Kommentaren.
+Before planning, review useful skills according to the following building block. The no-code boundary of this
+tool remains strict: skills only inform the clarification/planning, generate no code
+and change nothing except the issue comments.
 
-## Skill-Discovery
+## Skill discovery
 
-Bevor du mit der eigentlichen Umsetzung, Planung bzw. Prüfung beginnst, sichte die in der
-Umgebung verfügbaren Skills und binde die für die konkrete Aufgabe nützlichen ein. Stellt
-die Umgebung kein Skill-Verzeichnis bereit oder passt keiner, ist dieser Schritt ein No-Op —
-fahre ohne Fehler oder Blockade fort.
+Before you start the actual implementation, planning, or review, survey the skills available in
+the environment and pull in the ones useful for the concrete task. If the environment provides
+no skill directory or none fits, this step is a no-op — continue without an error or a block.
 
-### Vorgehen
+### Approach
 
-1. **Empfohlene Skills bevorzugen:** Wende die weiter oben unter „Empfohlene Skills"
-   genannten Skills bevorzugt an, sofern sie verfügbar und für die konkrete Aufgabe relevant
-   sind. „Bevorzugen" ist die Auswahl; über die **Autorität** entscheidet der Vertrag in
-   Punkt 5 (ist ein empfohlener Skill der deklarierte Domänen-Owner, ist seine Guidance
-   maßgeblich, nicht nur optional). Eine Fallback-Notation `A › B` ist eine geordnete Präferenz: nimm den ersten
-   verfügbaren, nicht ausgeschlossenen Skill der Gruppe, nie beide. Fehlt ein solcher
-   Abschnitt (z. B. bei Tools), entfällt dieser Punkt.
-2. **Relevanz beurteilen:** Prüfe jeden Skill gegen die **konkrete** Aufgabe und binde nur
-   klar passende ein (typisch 0–2). Lade keine Skills „auf Verdacht" — Token-Sparsamkeit.
-3. **Config berücksichtigen:** Lies, falls vorhanden, den `skills`-Block aus der
-   Effective Flow-Konfiguration (Projektsetup-ADR) best-effort — die globalen Felder plus deinen
-   eigenen Scope-Eintrag (ein Agent liest `agents.<eigener-name>`, ein Tool liest
-   `tools.<eigener-name>`).
-   - `enabled: false` → überspringe die gesamte dynamische Skill-Nutzung.
-   - `exclude` (global oder Scope) → diese Skills nie anwenden; ein ausgeschlossenes
-     Fallback-Mitglied wird zugunsten des nächsten Fallbacks übersprungen.
-   - `include` (global oder Scope) → diese Skills zusätzlich bevorzugt berücksichtigen; ein
-     nicht installierter Skill wird still ignoriert.
-   - Fehlt der Block oder die Datei, gilt der Default (`enabled` an, keine Zusatz-Listen).
-     Lies die Config nur; migriere oder schreibe sie hier nicht.
-4. **Library-Doku:** Wird gegen eine unbekannte oder aktuelle Library bzw. ein Framework
-   gearbeitet, nutze bei Bedarf aktuelle-Doku-Skills (z. B. `context7`), falls verfügbar,
-   statt aus Erinnerung zu raten. Nur bei Bedarf, kein Zwang.
-5. **Autoritäts-Vertrag (Orchestrierung vs. Domänen-Expertise):** Effective Flow und die zentralen
-   Skills teilen sich die Verantwortung **geschichtet** — nicht „Effective Flow gewinnt immer":
-   - **Effective Flow besitzt die Orchestrierung** (das **Was/Wann**): Routing und User-Interaktion,
-     Plan-/Report-State, Finding-IDs, Backlinks, Tracker-Integration, Resumability,
-     Agent-Auswahl und Parallelisierung, Baseline-Vergleich, Worktrees, Commits, Delivery,
-     Harness-Transform und Config. Diese Regeln, `AGENTS.md`/Projektkonventionen sowie die
-     eigenen Sprach-, Commit- und Scope-Regeln haben **immer** Vorrang; kein Skill darf Scope
-     erweitern, neue Dependencies einführen oder den abgestimmten Plan verletzen. In
-     Analyse-/Planungs-Tools bleibt die No-Code-Grenze strikt.
-   - **Zentrale Skills besitzen wiederverwendbare Expertise** (das **Wie**): Domänen-Checklisten,
-     Heuristiken, Standards, Research-Prozeduren und Spezialisten-Guidance. Ist ein empfohlener
-     Skill der **deklarierte Domänen-Owner** für die anstehende Fachfrage **und** deckt er sie
-     ab, ist seine Guidance **maßgeblich** — nicht optionaler Rat. Das eigene Source trägt dann
-     **keine zweite Kopie** dieses Playbooks, sondern nur Scope-/Output-/Lifecycle-Constraints
-     plus einen minimalen Fallback (Punkt 6).
-   - **Grenzfälle:** Deckt ein Skill nur einen Spezialzweig ab (_route-when-relevant_) oder
-     divergiert Effective Flows Produktverhalten bewusst (_no-overlap_), bleibt die Effective Flow-Guidance
-     führend. Die verbindliche Zuordnung je Skill/Intersection steht im Ownership-Inventar im
-     Developer-Guide (`docs/developer-guide/skill-ownership.md`).
-6. **Fehlender maßgeblicher Skill (minimaler Fallback):** Ist der maßgebliche Skill nicht
-   verfügbar (nicht installiert, `skills.enabled: false` oder via `exclude` deaktiviert),
-   greift der im Source belassene **minimale generische Fallback** — eine kurze essentielle
-   Kern-Guidance, damit das Tool funktionsfähig bleibt und sauber degradiert. Es wird **kein**
-   zweites vollständiges Domänen-Handbuch vorgehalten; volle Tiefe kommt nur mit dem zentralen
-   Skill.
-7. **Melden:** Nenne kurz, welche Skills genutzt wurden (bzw. dass keiner passte). Hat dir
-   ein Orchestrator-Tool bereits relevante Skills mitgegeben, wende sie an und führe keine
-   redundante Voll-Discovery durch.
+1. **Prefer recommended skills:** Preferentially apply the skills listed further above under
+   "Recommended skills", provided they are available and relevant to the concrete task.
+   "Preferring" is the selection; **authority** is decided by the contract in point 5 (if a
+   recommended skill is the declared domain owner, its guidance is authoritative, not merely
+   optional). A fallback notation `A › B` is an ordered preference: take the first available,
+   non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
+   this point does not apply.
+2. **Judge relevance:** Check each skill against the **concrete** task and pull in only the
+   clearly fitting ones (typically 0–2). Do not load skills "on suspicion" — be token-frugal.
+3. **Take config into account:** If present, read the `skills` block from the Effective Flow
+   configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
+   scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
+   - `enabled: false` → skip the entire dynamic skill usage.
+   - `exclude` (global or scope) → never apply these skills; an excluded fallback member is
+     skipped in favor of the next fallback.
+   - `include` (global or scope) → additionally consider these skills as preferred; a
+     skill that is not installed is silently ignored.
+   - If the block or the file is missing, the default applies (`enabled` on, no additional
+     lists). Only read the config; do not migrate or write it here.
+4. **Library docs:** When working against an unknown or current library or framework, use
+   current-docs skills (e.g. `context7`) as needed, if available, instead of guessing from
+   memory. Only when needed, never mandatory.
+5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
+   skills share the responsibility in a **layered** way — not "Effective Flow always wins":
+   - **Effective Flow owns the orchestration** (the **what/when**): routing and user
+     interaction, plan/report state, finding IDs, backlinks, tracker integration, resumability,
+     agent selection and parallelization, baseline comparison, worktrees, commits, delivery,
+     harness transform, and config. These rules, `AGENTS.md`/project conventions, plus its own
+     language, commit, and scope rules **always** take precedence; no skill may widen scope,
+     introduce new dependencies, or violate the agreed plan. In analysis/planning tools the
+     no-code boundary stays strict.
+   - **Central skills own reusable expertise** (the **how**): domain checklists, heuristics,
+     standards, research procedures, and specialist guidance. If a recommended skill is the
+     **declared domain owner** for the technical question at hand **and** covers it, its
+     guidance is **authoritative** — not optional advice. The tool's own source then carries
+     **no second copy** of that playbook, only scope/output/lifecycle constraints plus a
+     minimal fallback (point 6).
+   - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
+     Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
+     guidance stays leading. The binding assignment per skill/intersection is in the ownership
+     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
+   available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
+   **minimal generic fallback** left in the source applies — a short, essential core guidance
+   so the tool stays functional and degrades cleanly. **No** second full domain handbook is
+   kept on hand; full depth comes only with the central skill.
+7. **Report:** Briefly name which skills were used (or that none fit). If an orchestrator tool
+   already handed you relevant skills, apply them and do not run a redundant full discovery.
 
-### Phase 2: Planung je Issue (interaktiv)
+### Phase 2: Planning per issue (interactive)
 
-Für jedes gewählte Issue nacheinander:
+For each chosen issue in turn:
 
-1. Lies das Issue frisch vom Tracker – **inklusive Kommentare** (Operation „Kommentare lesen“) – und untersuche die relevante Codebase (lokal oder mit internem Analyse-Sub-Agenten). Berücksichtige Maintainer-Klärungen aus Kommentaren als Teil der Anforderung. Existiert bereits ein `<!-- effective-flow-plan-issues -->`-Planungskommentar aus einem früheren Lauf (der Alt-Marker `<!-- firmo-plan-issues -->` wird dabei gleichwertig erkannt, eine Generation Backcompat), behandle diesen Lauf als **Aktualisierung**: knüpfe an den vorhandenen Stand an, statt eine zweite, konkurrierende Planung zu erzeugen.
-2. Wende die Klärungs-Methodik aus `$effective-flow plan` (Phase 1/2) an: identifiziere die wirklich relevanten Unklarheiten — Soll-Verhalten, fachliche Regeln, technische Vorgaben, Abhängigkeiten, Edge Cases, Akzeptanzkriterien — und frage den User gezielt danach.
-3. Wiederhole die Klärung, bis eine belastbare Grundlage besteht. Unwichtige Restpunkte als Annahme dokumentieren, statt den Ablauf zu blockieren.
-4. Bestimme die empfohlene Umsetzung (Feature / Bugfix / Refactoring / Dokumentation) gemäß den Klassifikationsdefinitionen aus `$effective-flow plan`.
+1. Read the issue fresh from the tracker – **including comments** (operation "Read comments") – and examine the relevant codebase (locally or with an internal analysis sub-agent). Take maintainer clarifications from comments into account as part of the requirement. If a `<!-- effective-flow-plan-issues -->` planning comment from an earlier run already exists (the old marker `<!-- firmo-plan-issues -->` is recognized as equivalent, one generation of back-compat), treat this run as an **update**: build on the existing state instead of producing a second, competing plan.
+2. Apply the clarification methodology from `$effective-flow plan` (Phase 1/2): identify the genuinely relevant ambiguities — target behavior, domain rules, technical requirements, dependencies, edge cases, acceptance criteria — and ask the user about them specifically.
+3. Repeat the clarification until a reliable basis exists. Document unimportant remaining points as assumptions instead of blocking the process.
+4. Determine the recommended implementation (Feature / Bugfix / Refactoring / Documentation) according to the classification definitions from `$effective-flow plan`.
 
-### Phase 3: Rückschreiben & Freigabe fürs Umsetzen
+### Phase 3: Write-back & release for implementation
 
-Pro geplantem Issue:
+Per planned issue:
 
-1. Schreibe die vervollständigte Spezifikation als Kommentar ans Issue (kanonische Struktur oben). Der Kommentar muss self-contained sein: eine fremde Session muss das Issue danach ohne diese Planungssession umsetzen können. Existiert aus einem früheren Lauf bereits ein `<!-- effective-flow-plan-issues -->`-Kommentar (aus der Kommentar-Prüfung in Phase 2 bekannt), aktualisiere bzw. ersetze dessen Inhalt, statt einen zweiten anzuhängen (Idempotenz auf Basis der Operation „Kommentare lesen“).
-2. Entferne das Label `effective-flow-needs-planning` (Planung abgeschlossen; eine ggf. vorhandene Alt-`firmo-needs-planning`-Variante mitentfernen, siehe „Label-Konvention“). Setze **kein** `effective-flow-issue-done` — das Issue ist geplant, aber noch nicht umgesetzt.
-3. Task auf `completed`.
+1. Write the completed specification as a comment on the issue (canonical structure above). The comment must be self-contained: a foreign session must afterwards be able to implement the issue without this planning session. If a `<!-- effective-flow-plan-issues -->` comment from an earlier run already exists (known from the comment check in Phase 2), update or replace its content instead of appending a second one (idempotency based on the operation "Read comments").
+2. Remove the label `effective-flow-needs-planning` (planning complete; also remove any existing old `firmo-needs-planning` variant, see "Label convention"). Do **not** set `effective-flow-issue-done` — the issue is planned but not yet implemented.
+3. Set the task to `completed`.
 
-### Phase 4: Zusammenfassung
+### Phase 4: Summary
 
-Berichte dem User, welche Issues geplant und mit einem Planungskommentar versehen wurden, und weise darauf hin, dass sie nun via $effective-flow apply umgesetzt werden können. Dieser Skill implementiert selbst nichts.
+Report to the user which issues were planned and provided with a planning comment, and point out that they can now be implemented via $effective-flow apply. This skill itself implements nothing.
 
-## Regeln
+## Rules
 
-- Ändere keine Implementierungsdateien und erzeuge keinen Code.
-- Lege keine `<plan.dir>/`-Datei an.
-- Wenn die Klärung eine belastbare Planung nicht ermöglicht (z. B. weil der User zentrale Fragen nicht beantwortet), lass das Label `effective-flow-needs-planning` bestehen und dokumentiere im Kommentar, welche Entscheidung noch aussteht.
-- Setze niemals `Co-Authored-By`-Trailer und exponiere keine internen IDs in Kommentaren.
-- Gib dem User nach jeder Phase eine kurze Statusmeldung.
+- Do not change any implementation files and generate no code.
+- Do not create any `<plan.dir>/` file.
+- If the clarification does not enable a reliable plan (e.g. because the user does not answer central questions), leave the label `effective-flow-needs-planning` in place and document in the comment which decision is still outstanding.
+- Never set `Co-Authored-By` trailers and do not expose internal IDs in comments.
+- Give the user a brief status update after each phase.

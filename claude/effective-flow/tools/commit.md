@@ -1,59 +1,59 @@
 
 # Effective Flow Commit
 
-Du erstellst eine Commit-Message für die aktuell gestagten Änderungen und führst den Commit aus.
+You create a commit message for the currently staged changes and run the commit.
 
-## Ziel
+## Goal
 
-- nur bereits gestagte Dateien committen
-- eine klare, beschreibende Conventional-Commit-Message wählen
-- Commit-Message auf Englisch formulieren
-- keine Projektvalidation wie Linting, Tests oder Build-Checks ausführen
+- commit only files that are already staged
+- choose a clear, descriptive Conventional Commit message
+- write the commit message in English
+- do not run project validation such as linting, tests, or build checks
 
-## Aufgabenverfolgung
+## Task tracking
 
-Wenn mehrere Aufgaben zu erledigen sind, verwende ein verfügbares TODO- oder Task-Tracking-Tool (z. B. `TaskCreate`/`TaskUpdate`, `TodoWrite` oder ein vergleichbares Tool), um eine Aufgabenliste anzulegen. Setze jede Aufgabe vor Beginn auf „in Arbeit“ und nach Abschluss auf „erledigt“.
+When there are several tasks to complete, use an available TODO or task-tracking tool (e.g. `TaskCreate`/`TaskUpdate`, `TodoWrite`, or a comparable tool) to create a task list. Set each task to "in progress" before starting it and to "done" after completing it.
 
-Falls kein Task-Tool verfügbar ist, gib dem User stattdessen eine kurze Fortschrittsmeldung nach jedem abgeschlossenen Schritt.
+If no task tool is available, give the user a short progress update after each completed step instead.
 
-### Wann verwenden
+### When to use
 
-- bei drei oder mehr Teilaufgaben oder Schritten
-- bei komplexen Aufträgen mit mehreren Phasen
-- wenn der User mehrere Aufgaben gleichzeitig nennt
+- with three or more subtasks or steps
+- with complex tasks that have multiple phases
+- when the user names several tasks at once
 
-### Wann nicht verwenden
+### When not to use
 
-- bei einer einzelnen, trivialen Aufgabe
-- wenn der Auftrag in weniger als drei einfachen Schritten erledigt ist
+- with a single, trivial task
+- when the task is done in fewer than three simple steps
 
-## Commit-Message-Regeln
+## Commit message rules
 
-- **Setze niemals `Co-Authored-By`-Trailer in Commit-Messages**, unabhängig davon, ob ein LLM (Claude, Codex, GPT, …) oder ein anderes Tool die Zeile vorschlägt oder als Default einfügt.
-- Falls eine `Co-Authored-By`-Zeile in einem Commit-Template, `commit.template`, `--trailer`-Aufruf oder einer Draft-Message bereits vorhanden ist: entferne sie vor dem Commit.
-- **Füge keine KI-Attribution an:** keine „Generated with Claude Code/Codex"-Footer und keine Agent-Session-Links (z. B. `https://claude.ai/code/…`) in Commit-Messages – auch dann nicht, wenn der Harness sie als Default anhängt. Sachliche Erwähnungen von Claude Code oder Codex bleiben erlaubt, Generierungs-Attribution nicht.
-- Vermeide generische Messages wie `update files` oder `misc changes`.
-- Beschreibe konkret, was geändert wurde und warum.
-- Nutze Conventional-Commit-Präfixe: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
-- Wähle den Commit-Typ nach der **Wirkung**, nicht nach der Dateiart: verhaltensändernde Änderungen – auch reine **Config/Env/Secrets/CI** mit Deployment- oder Laufzeitwirkung (z. B. korrigierte Werte in Env-/Secret-Artefakten, die per Sync remote wirken) – sind `fix:` (bzw. `feat:` bei neuer Funktionalität). `chore:` nur für **deploy-neutrale** Änderungen ohne Verhaltenswirkung (reine Wartung, Formatting, Tooling ohne Laufzeitwirkung). Das gilt auch für den **Squash-PR-Titel**, der bei Squash-Merge den release-please-Bump bestimmt.
-- Exponiere keine internen Tracking-IDs in Commit-Messages, z. B. Review-Finding-IDs wie `R-0000001`, lokale Plan-/Review-IDs wie `F1` oder Platzhalter wie `[Finding-ID]`. Solche IDs gehören in Wisdom-/Report-Kontext, nicht in die Git-Historie.
+- **Never set `Co-Authored-By` trailers in commit messages**, regardless of whether an LLM (Claude, Codex, GPT, …) or another tool suggests the line or inserts it as a default.
+- If a `Co-Authored-By` line is already present in a commit template, `commit.template`, a `--trailer` invocation, or a draft message: remove it before committing.
+- **Do not add AI attribution:** no „Generated with Claude Code/Codex" footers and no agent session links (e.g. `https://claude.ai/code/…`) in commit messages – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex remain allowed, generation attribution does not.
+- Avoid generic messages like `update files` or `misc changes`.
+- Describe concretely what was changed and why.
+- Use Conventional Commit prefixes: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
+- Choose the commit type by **effect**, not by file type: behavior-changing changes – including pure **config/env/secrets/CI** with deployment or runtime effect (e.g. corrected values in env/secret artifacts that take effect remotely via sync) – are `fix:` (or `feat:` for new functionality). `chore:` only for **deploy-neutral** changes without behavioral effect (pure maintenance, formatting, tooling without runtime effect). This also applies to the **squash PR title**, which determines the release-please bump on a squash merge.
+- Do not expose internal tracking IDs in commit messages, e.g. review finding IDs like `R-0000001`, local plan/review IDs like `F1`, or placeholders like `[Finding-ID]`. Such IDs belong in wisdom/report context, not in the Git history.
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Commit und beachte ihre Vorgaben für Commit-Stil, Scope, Arbeitsweise und projektweite Konventionen.
+If the project has an `AGENTS.md`, read it before committing and follow its guidance on commit style, scope, way of working, and project-wide conventions.
 
-## Vorgehen
+## Approach
 
-1. Prüfe, ob es gestagte Änderungen gibt.
-2. Lies nur die staged Diff und leite daraus den passenden Conventional-Commit-Typ gemäß den Commit-Message-Regeln oben ab. Kurzbedeutung der Präfixe: `feat:` (neue Funktionalität), `fix:` (Fehlerbehebung), `chore:` (Wartung), `docs:` (Dokumentation), `refactor:` (Strukturverbesserung ohne Verhaltensänderung), `test:` (Teständerung).
-3. Formuliere eine kurze, konkrete Summary-Zeile, die den inhaltlichen Kern der staged changes beschreibt.
-4. Führe keine eigenständige Projektvalidation aus; Linting, Tests und andere Qualitätsprüfungen sind Aufgabe anderer Skills wie ``effective-flow-code-validator`` und ``effective-flow-test-writer``.
-5. Führe `git commit` für genau diese staged changes aus.
+1. Check whether there are staged changes.
+2. Read only the staged diff and derive from it the appropriate Conventional Commit type per the commit message rules above. Short meaning of the prefixes: `feat:` (new functionality), `fix:` (bug fix), `chore:` (maintenance), `docs:` (documentation), `refactor:` (structural improvement without behavior change), `test:` (test change).
+3. Write a short, concrete summary line that describes the substantive core of the staged changes.
+4. Do not run any standalone project validation; linting, tests, and other quality checks are the job of other skills such as ``effective-flow-code-validator`` and ``effective-flow-test-writer``.
+5. Run `git commit` for exactly these staged changes.
 
-## Regeln
+## Rules
 
-- Erfinde keine Änderungen, die nicht im staged Diff stehen.
-- Starte keine Projektvalidation wie Linting, Tests oder Build-Checks; diese Verantwortung liegt bei anderen Skills.
-- Respektiere bestehende Husky-Hooks; commitlint, prettier und lint dürfen den Commit blockieren.
-- Wenn Hooks fehlschlagen, gib die relevante Ursache knapp wieder statt die Hooks zu umgehen oder selbst zusätzliche Validierung zu starten.
-- Wenn die staged changes mehrere unverbundene Themen enthalten, weise auf den gemischten Scope hin und schlage Splitten vor, bevor committed wird.
+- Do not invent changes that are not in the staged diff.
+- Do not start project validation such as linting, tests, or build checks; that responsibility lies with other skills.
+- Respect existing Husky hooks; commitlint, prettier, and lint may block the commit.
+- If hooks fail, report the relevant cause briefly instead of bypassing the hooks or starting additional validation yourself.
+- If the staged changes contain several unrelated topics, point out the mixed scope and suggest splitting before committing.

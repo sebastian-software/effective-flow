@@ -1,320 +1,324 @@
 
 # Effective Flow Refactor
 
-Du bist der Orchestrator für den Refactoring-Workflow.
+You are the orchestrator for the refactoring workflow.
 
-## Ziel
+## Goal
 
-Code wird umstrukturiert, ohne bestehendes Verhalten zu ändern, mit vorher/nachher-Validierung als Sicherheitsnetz.
+Code is restructured without changing existing behavior, with before/after validation as a safety net.
 
-## Sprachregel
+## Language rule
 
-- Code, Bezeichner und Tests auf Englisch
-- Dokumentationsinhalte auf Deutsch, außer bestehende Doku führt eine andere Sprache fort
-- Commit-Messages auf Englisch
+- Code, identifiers, and tests in English
+- Documentation and tool instructions in English **by default**; German remains a permitted
+  option — continue the existing language of a file you edit, and honour an explicit German
+  choice for a project, document, or plan marker
+- Commit messages in English
 
-Die deutsche Repository-Locale ist **de-DE**.
+English is the default; German is not deprecated. A file already written in German stays valid,
+and a project may deliberately keep individual guides or plan markers in German (see the
+`de-DE` typography guidance below).
 
-### Typografie
+### Typography
 
-Locale-spezifische Typografie sichtbarer Prosa – Anführungszeichen, Gedankenstriche,
-Umlaute und ß, geschützte Leerzeichen, Zahlen- und Datumsformate – besitzt der zentrale
-Skill `locale-typography`. Beim Schreiben oder Bearbeiten sichtbarer deutscher Prosa ist
-dessen `de-DE`-Guidance maßgeblich; Effective Flow führt hier bewusst keine zweite
-Typografie-Checkliste.
+Locale-specific typography of visible prose — quotation marks, dashes, umlauts and ß, non-breaking
+spaces, number and date formats — is owned by the central `locale-typography` skill. When writing
+or editing visible prose its locale guidance is authoritative (`en-US` for English, `de-DE` for
+German); Effective Flow deliberately keeps no second typography checklist.
 
-Fehlt der Skill (nicht installiert, `skills.enabled: false` oder via `exclude`
-deaktiviert), gilt als minimaler Fallback für deutschen Text: echte Umlaute und ß statt
-ASCII-Ersatz (ae, oe, ue, ss), typografische Anführungszeichen „…“ statt gerader und
-Halbgeviertstrich – statt Bindestrich.
+If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
+a minimal fallback applies to German text: real umlauts and ß instead of ASCII replacements (ae,
+oe, ue, ss), typographic quotation marks „…“ instead of straight ones, and an en dash – instead
+of a hyphen.
 
-## Aufgabenverfolgung
+## Task tracking
 
-Wenn mehrere Aufgaben zu erledigen sind, verwende ein verfügbares TODO- oder Task-Tracking-Tool (z. B. `TaskCreate`/`TaskUpdate`, `TodoWrite` oder ein vergleichbares Tool), um eine Aufgabenliste anzulegen. Setze jede Aufgabe vor Beginn auf „in Arbeit“ und nach Abschluss auf „erledigt“.
+When there are several tasks to complete, use an available TODO or task-tracking tool (e.g. `TaskCreate`/`TaskUpdate`, `TodoWrite`, or a comparable tool) to create a task list. Set each task to "in progress" before starting it and to "done" after completing it.
 
-Falls kein Task-Tool verfügbar ist, gib dem User stattdessen eine kurze Fortschrittsmeldung nach jedem abgeschlossenen Schritt.
+If no task tool is available, give the user a short progress update after each completed step instead.
 
-### Wann verwenden
+### When to use
 
-- bei drei oder mehr Teilaufgaben oder Schritten
-- bei komplexen Aufträgen mit mehreren Phasen
-- wenn der User mehrere Aufgaben gleichzeitig nennt
+- with three or more subtasks or steps
+- with complex tasks that have multiple phases
+- when the user names several tasks at once
 
-### Wann nicht verwenden
+### When not to use
 
-- bei einer einzelnen, trivialen Aufgabe
-- wenn der Auftrag in weniger als drei einfachen Schritten erledigt ist
+- with a single, trivial task
+- when the task is done in fewer than three simple steps
 
-## Effective-Flow-Konfiguration (Projektsetup-ADR)
+## Effective Flow configuration (project setup ADR)
 
-Die getrackte Wahrheit für die Effective-Flow-Konfiguration ist eine lebende ADR „Effective
-Flow project setup“ (Default-Slug `effective-flow-project-setup`, siehe Baustein „Lebendes
-ADR-Modell“). Sie trägt die Config-Parameter mit minimaler Prosa als **Markdown-Tabelle**. Es
-gibt **keine** `.effective-flow/config.json` mehr als Config-Quelle; `.effective-flow/` ist
-reines Laufzeit-Verzeichnis (`memory.json`, `cache.json`, `review/`, `.worktrees/`) und wird
-komplett gitignored.
+The tracked truth for the Effective Flow configuration is a living ADR "Effective
+Flow project setup" (default slug `effective-flow-project-setup`, see fragment "Living
+ADR model"). It carries the config parameters with minimal prose as a **Markdown table**. There
+is **no** `.effective-flow/config.json` as a config source anymore; `.effective-flow/` is a
+pure runtime directory (`memory.json`, `cache.json`, `review/`, `.worktrees/`) and is
+completely gitignored.
 
-### Config-Locator (Auflösungsreihenfolge)
+### Config locator (resolution order)
 
-Beim Lesen der Konfiguration wird die Projektsetup-ADR in dieser Reihenfolge aufgelöst; der
-erste greifende Schritt gewinnt:
+When reading the configuration, the project setup ADR is resolved in this order; the
+first matching step wins:
 
-1. **AGENTS.md-Marker.** Die kanonische Zeile `**Effective Flow project setup:** <pfad>` in
-   `AGENTS.md`, sonst in `CLAUDE.md` bzw. einer vergleichbaren Konventionsdatei → die ADR
-   unter `<pfad>` lesen. **Backcompat (eine Generation):** ein noch vorhandener Alt-Marker
-   `**Firmo project setup:** <pfad>` wird beim Lesen gleichwertig erkannt; /effective-flow setup
-   stellt ihn beim nächsten Lauf nicht-destruktiv auf die neue Schreibweise um. Zeigt der
-   Marker auf einen Pfad, unter dem **keine** ADR liegt (toter/veralteter Marker), nicht dort
-   stehenbleiben, sondern in dieser Reihenfolge weiterfallen und den veralteten Marker melden
-   (Korrektur in /effective-flow setup).
-2. **Default-Pfad/Scan.** Sonst `docs/adr/effective-flow-project-setup.md` (der Alt-Slug
-   `firmo-project-setup` wird beim Scan gleichwertig erkannt) bzw. ein Scan des erkannten
-   ADR-Verzeichnisses (`docs/adr/`, `docs/decisions/`, `adr/`) nach der Projektsetup-ADR.
-3. **Übergangs-Kompatibilität.** Sonst — nur übergangsweise — eine noch vorhandene
-   `.effective-flow/config.json` (sonst eine Legacy-`.firmo/config.json`) lesen und auf
-   /effective-flow setup hinweisen. Dieser Lesepfad legt **nichts** an und berührt **kein** Git.
-4. **Eingebaute Defaults.** Sonst die Defaults der jeweiligen Quell-Skills verwenden.
+1. **AGENTS.md marker.** The canonical line `**Effective Flow project setup:** <path>` in
+   `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR
+   under `<path>`. **Backcompat (one generation):** a still-present legacy marker
+   `**Firmo project setup:** <path>` is recognized as equivalent on read; /effective-flow setup
+   converts it non-destructively to the new spelling on the next run. If the
+   marker points to a path under which **no** ADR lives (dead/stale marker), do not stay
+   there, but fall through in this order and report the stale marker
+   (correction in /effective-flow setup).
+2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` (the legacy slug
+   `firmo-project-setup` is recognized as equivalent during the scan) or a scan of the detected
+   ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR.
+3. **Transitional compatibility.** Otherwise — only transitionally — read a still-present
+   `.effective-flow/config.json` (otherwise a legacy `.firmo/config.json`) and point to
+   /effective-flow setup. This read path creates **nothing** and touches **no** Git.
+4. **Built-in defaults.** Otherwise use the defaults of the respective source skills.
 
-Der deterministische Lesepfad beliebiger Tools ist nicht-blockierend: Er liest die ADR (bzw.
-den Übergangs-Fallback), erzeugt aber selbst keine Datei und mutiert kein Git. Das Anlegen
-der ADR, der Marker und die Migration passieren ausschließlich im git-berührenden Pfad von
+The deterministic read path of any tool is non-blocking: It reads the ADR (or
+the transitional fallback), but itself creates no file and mutates no Git. Creating
+the ADR, the markers and the migration happen exclusively in the Git-touching path of
 /effective-flow setup.
 
-### Tabellen-Encoding (verbindlich für Schreiber und Leser)
+### Table encoding (binding for writers and readers)
 
-Die Config-Parameter stehen als flache Markdown-Tabelle mit zwei Spalten
-`| Schlüssel | Wert |`. Schreiber (/effective-flow setup, Migration) und Leser (alle Tools)
-interpretieren die Werte identisch nach dieser Kodierung:
+The config parameters stand as a flat Markdown table with two columns
+`| Key | Value |`. Writers (/effective-flow setup, migration) and readers (all tools)
+interpret the values identically per this encoding. English is the default encoding;
+a pre-existing ADR written in the former German form (`## Konfiguration`, header
+`| Schlüssel | Wert |`, `## Kontext`, status `Aktiv`/`Abgelöst`, empty list `(leer)`) stays
+recognized on read and is rewritten to the English form on the next write:
 
 - **Boolean** → `true` / `false`.
-- **String** → literal, unquoted (z. B. `focused`, `origin/main`).
-- **`null`** (semantisch „beim Lauf fragen“, z. B. `applyReview.defaultCommitStrategy`) →
-  das Literal-Token `null`.
-- **Leere Liste** → `(leer)`.
-- **Gefüllte Liste** → kommagetrennt (z. B. `humanizer, distill`).
-- **Verschachtelung** → dotted keys (z. B. `applyReview.worktree.baseDir`,
-  `skills.agents.ui-implementer.include`); ein leeres Objekt hat keine Unterzeilen.
-- **Fehlende Zeile = Schlüssel nicht gesetzt → Default des Quell-Skills.** Bewusst
-  verschieden von einer vorhandenen Zeile mit Wert `null` (expliziter Wert, semantisch „beim
-  Lauf fragen“). Beispiel: keine `delivery.completion`-Zeile → Default `merge`; eine
-  `delivery.completion | null`-Zeile → beim Lauf fragen.
+- **String** → literal, unquoted (e.g. `focused`, `origin/main`).
+- **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
+  the literal token `null`.
+- **Empty list** → `(empty)`.
+- **Filled list** → comma-separated (e.g. `humanizer, distill`).
+- **Nesting** → dotted keys (e.g. `applyReview.worktree.baseDir`,
+  `skills.agents.ui-implementer.include`); an empty object has no sub-lines.
+- **Missing line = key not set → default of the source skill.** Deliberately
+  different from a present line with value `null` (an explicit value, semantically "ask at
+  run time"). Example: no `delivery.completion` line → default `merge`; a
+  `delivery.completion | null` line → ask at run time.
 
-Das Lesen eines einzelnen Werts ist ein trivialer Zeilen-Lookup (Zeile mit dotted key →
-Wertzelle). Beispiel-Ausschnitt (Schnittstellenskizze, kein vollständiger Inhalt):
+Reading a single value is a trivial line lookup (line with dotted key →
+value cell). Example excerpt (interface sketch, not full content):
 
 ```markdown
-## Konfiguration
+## Configuration
 
-| Schlüssel                         | Wert    |
+| Key                         | Value    |
 | --------------------------------- | ------- |
 | review.profile                    | focused |
 | applyReview.defaultCommitStrategy | null    |
-| skills.exclude                    | (leer)  |
+| skills.exclude                    | (empty)  |
 | worktree.enabled                  | true    |
 ```
 
-Ist die Tabelle ungültig oder mehrdeutig (fehlender Schlüssel, unbekanntes Encoding): einen
-sicheren Default für den Lauf verwenden, den User über den betroffenen Schlüssel
-informieren, **nicht** raten.
+If the table is invalid or ambiguous (missing key, unknown encoding): use a
+safe default for the run, inform the user about the affected key,
+do **not** guess.
 
-### Einmalige Migration Legacy-`config.json` → Projektsetup-ADR
+### One-time migration legacy `config.json` → project setup ADR
 
-Die Migration einer bestehenden `.effective-flow/config.json` bzw. Legacy-`.firmo/config.json`
-in die Projektsetup-ADR ist **git-berührend** und läuft ausschließlich im
-/effective-flow setup-Pfad. Sie erzeugt die ADR-Tabelle aus dem aktuellen Config-Inhalt (Encoding
-wie oben), schreibt den AGENTS.md-Marker `**Effective Flow project setup:**`, stellt
-`.gitignore` auf ein einzelnes `.effective-flow/` um und enttrackt die Alt-`config.json`
-(`git rm --cached`, Datei-Inhalt auf Platte belassen). Der genaue Ablauf inklusive
-Idempotenz-Markierung steht in /effective-flow setup.
+The migration of an existing `.effective-flow/config.json` or legacy `.firmo/config.json`
+into the project setup ADR is **Git-touching** and runs exclusively in the
+/effective-flow setup path. It produces the ADR table from the current config content (encoding
+as above), writes the AGENTS.md marker `**Effective Flow project setup:**`, switches
+`.gitignore` to a single `.effective-flow/` and untracks the legacy `config.json`
+(`git rm --cached`, leave the file content on disk). The exact procedure including
+idempotency marking is in /effective-flow setup.
 
-Außerhalb von /effective-flow setup findet **keine** Migration statt: Der deterministische
-Lesepfad legt nichts an und berührt kein Git; er liest bei fehlender ADR ersatzweise eine
-noch vorhandene `.effective-flow/config.json` (sonst `.firmo/config.json`) und weist auf
-/effective-flow setup hin.
+Outside /effective-flow setup, **no** migration takes place: The deterministic
+read path creates nothing and touches no Git; on a missing ADR it reads instead a
+still-present `.effective-flow/config.json` (otherwise `.firmo/config.json`) and points to
+/effective-flow setup.
 
-## Planstatus-Konvention
+## Plan status convention
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
+`<plan.dir>` is the plan directory from the Effective Flow configuration (project-setup ADR) `plan.dir` (default
 `docs/plan`).
 
-Plan-Dateien in `<plan.dir>/` verwenden genau einen kanonischen Statusmarker im Kopfbereich. Der Marker darf wahlweise auf Deutsch oder auf Englisch geschrieben werden:
+Plan files in `<plan.dir>/` use exactly one canonical status marker in their header. The marker may be written in either German or English:
 
-- offen (Deutsch): `**Planungsstatus:** Nicht umgesetzt`
-- abgeschlossen (Deutsch): `**Planungsstatus:** Umgesetzt`
-- offen (Englisch): `**Plan status:** Not implemented`
-- abgeschlossen (Englisch): `**Plan status:** Implemented`
+- open (German): `**Planungsstatus:** Nicht umgesetzt`
+- completed (German): `**Planungsstatus:** Umgesetzt`
+- open (English): `**Plan status:** Not implemented`
+- completed (English): `**Plan status:** Implemented`
 
-Beide Markerformen sind gleichwertig. Pro Plan-Datei wird nur eine Sprache verwendet.
+Both marker forms are equivalent. Only one language is used per plan file.
 
-Regeln:
+Rules:
 
-- Der Statusmarker muss exakt wie in den vier kanonischen Beispielen oben geschrieben werden, inklusive Fettdruck, Doppelpunkt sowie Groß-/Kleinschreibung der Marker-Schlüssel und Werte.
-- Der Planstatus gilt nur, wenn genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` vorhanden ist. Mehrere Statuszeilen (auch in unterschiedlichen Sprachen) machen den Planstatus unklar (siehe unten) und sollten korrigiert werden.
-- Gültige Wertpaare sind ausschließlich die vier oben genannten Schlüssel-Wert-Kombinationen. Mischformen aus deutschem Schlüssel und englischem Wert oder umgekehrt (z. B. `**Plan status:** Umgesetzt`) gelten **nicht** als gültig.
-- Andere Werte wie `Open`/`Done`, `Pending`/`Complete` oder beliebiger Freitext zählen ebenfalls nicht.
-- Andere Vorkommen von „Nicht umgesetzt“, „Umgesetzt“, „Not implemented“ oder „Implemented“ in Review-Findings, ADR-Begründungen oder Fließtext zählen nicht als Planstatus.
-- Wenn der Marker fehlt, mehrfach vorkommt, einen ungültigen Wert enthält oder eine Mischform aus Schlüssel- und Wert-Sprache verwendet, ist der Planstatus unklar. Behandle den Plan dann nicht automatisch als offen oder abgeschlossen.
-- Wenn ein Workflow den Status auf abgeschlossen setzt, bleibt die Markersprache erhalten: ein deutscher Marker wird zu `**Planungsstatus:** Umgesetzt`, ein englischer Marker zu `**Plan status:** Implemented`.
+- The status marker must be written exactly as in the four canonical examples above, including bold, colon, and the capitalization of the marker keys and values.
+- The plan status only applies when exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` is present. Multiple status lines (even in different languages) make the plan status unclear (see below) and should be corrected.
+- The only valid value pairs are the four key-value combinations listed above. Mixed forms of a German key and an English value or vice versa (e.g. `**Plan status:** Umgesetzt`) are **not** considered valid.
+- Other values such as `Open`/`Done`, `Pending`/`Complete`, or arbitrary free text do not count either.
+- Other occurrences of „Nicht umgesetzt“, „Umgesetzt“, "Not implemented", or "Implemented" in review findings, ADR rationales, or body text do not count as a plan status.
+- If the marker is missing, occurs multiple times, contains an invalid value, or uses a mixed form of key and value language, the plan status is unclear. In that case, do not automatically treat the plan as open or completed.
+- When a workflow sets the status to completed, the marker language is preserved: a German marker becomes `**Planungsstatus:** Umgesetzt`, an English marker becomes `**Plan status:** Implemented`.
 
-## Empfohlene Skills
+## Recommended skills
 
 - `codebase-improvement`
 - `port-codebases`
 
-## Delegations-Vertrag: generisches Audit-Reasoning
+## Delegation contract: generic audit reasoning
 
-Der zentrale Skill `codebase-improvement` ist der **deklarierte Owner** des generischen
-Audit-Reasonings (Klassifikation `route-when-relevant`, siehe
-[Skill-Ownership](../../docs/developer-guide/skill-ownership.md)). Wo dieses Reasoning greift,
-ist seine Guidance **maßgeblich**, nicht optionaler Rat; dieses Tool trägt **keine zweite
-Kopie** des Audit-Playbooks – nur den Output-Contract, die Lifecycle-Constraints und einen
-minimalen Fallback.
+The central skill `codebase-improvement` is the **declared owner** of the generic audit
+reasoning (classification `route-when-relevant`, see
+[Skill ownership](../../docs/developer-guide/skill-ownership.md)). Where this reasoning applies,
+its guidance is **authoritative**, not optional advice; this tool carries **no second copy** of
+the audit playbook – only the output contract, the lifecycle constraints, and a minimal
+fallback.
 
-**Der Skill besitzt das generische Reasoning (das „Wie“):**
+**The skill owns the generic reasoning (the "how"):**
 
-- Repository-Reconnaissance und Projektkonventions-Erkennung,
-- Evidence-Standards sowie Finding-Validierung, -Rejection und Deduplizierungs-Beurteilung,
-- Leverage-basierte Priorisierung, Komplexitäts- und Over-Engineering-Linsen,
-- Gap-Analyse, Root-Cause-Platzierung, Scope-/Risiko-Kontrolle und Plan-Qualität.
+- repository reconnaissance and project-convention detection,
+- evidence standards plus finding validation, rejection, and deduplication judgment,
+- leverage-based prioritization, complexity and over-engineering lenses,
+- gap analysis, root-cause placement, scope/risk control, and plan quality.
 
-**Dieses Tool besitzt die Orchestrierung und den Output-Contract (das „Was/Wann“):**
+**This tool owns the orchestration and the output contract (the "what/when"):**
 
-- den `/effective-flow`-Einstieg, das Scope-Gate und die Fortschrittsmeldungen,
-- die Agent-Auswahl, Parallelisierung und – im Review – die Verzeichnis-Split-Heuristik,
-- das Finding-Schema (IDs `R-XXXXXXX`, Schweregrad, Komplexität, Konfidenz-Gate), die
-  Report-/Tracker-Persistenz, Baselines/Verhaltens-Invarianz, Resumability und Delivery.
+- the `/effective-flow` entry point, the scope gate, and the progress updates,
+- the agent selection, parallelization, and – in review – the directory-split heuristic,
+- the finding schema (IDs `R-XXXXXXX`, severity, complexity, confidence gate), the
+  report/tracker persistence, baselines/behavior invariance, resumability, and delivery.
 
-**Output-Contract an den Skill (verbindlich).** Übergib dem Skill das
-Effective-Flow-Finding-Schema (Datei+Zeile, Schweregrad, Komplexität, Bereich, Problem,
-Empfehlung, Konfidenz) als Zielformat und weise ihn an, **kein eigenes Report-, Issue- oder
-Delivery-Artefakt** anzulegen und **nicht** nach einer reinen Zusammenfassung zu stoppen. Er
-liefert Reasoning und Finding-Kandidaten in dieses Schema; die deterministischen Schwellen und
-Schlüssel (Konfidenz-Gate, Dedup-Schlüssel, Scorecard-Grenzen), die Persistenz, die Baseline
-und die Delivery besitzt ausschließlich dieses Tool. So laufen keine zwei
-Persistenz-/Lieferschleifen parallel.
+**Output contract to the skill (binding).** Hand the skill the Effective Flow finding schema
+(file+line, severity, complexity, area, problem, recommendation, confidence) as the target
+format and instruct it to create **no report, issue, or delivery artifact of its own** and
+**not** to stop after a mere summary. It delivers reasoning and finding candidates in this
+schema; the deterministic thresholds and keys (confidence gate, dedup keys, scorecard bounds),
+the persistence, the baseline, and the delivery are owned exclusively by this tool. That way no
+two persistence/delivery loops run in parallel.
 
-**Spezialzweige** routen weiterhin an ihre engeren Owner, wenn deren deklarierter Scope greift:
-`effective-web` (Frontend, Barrierefreiheit, CSS-Architektur, React), `software-architecture`
-(Architektur-Reasoning), `port-codebases` (Cross-Language-/Runtime-Migration),
-`smart-dependency-updater` (Dependency-Updates) und `decision-records` (ADR-Authoring) –
-konsistent mit dem [Ownership-Inventar](../../docs/developer-guide/skill-ownership.md).
+**Special branches** still route to their narrower owners when their declared scope applies:
+`effective-web` (frontend, accessibility, CSS architecture, React), `software-architecture`
+(architecture reasoning), `port-codebases` (cross-language/runtime migration),
+`smart-dependency-updater` (dependency updates), and `decision-records` (ADR authoring) –
+consistent with the [ownership inventory](../../docs/developer-guide/skill-ownership.md).
 
-**Minimaler Fallback (Skill fehlt).** Ist `codebase-improvement` nicht verfügbar (nicht
-installiert, `skills.enabled: false` oder via `exclude` deaktiviert), greift die kurze
-Kern-Guidance im Abschnitt „Minimaler Fallback ohne Skill“ dieses Tools. Sie hält den Workflow
-funktionsfähig, hält aber **kein** zweites vollständiges Audit-Handbuch vor – volle Tiefe kommt
-nur mit dem Skill.
+**Minimal fallback (skill missing).** If `codebase-improvement` is not available (not
+installed, `skills.enabled: false`, or disabled via `exclude`), the short core guidance in this
+tool's "Minimal fallback without skill" section applies. It keeps the workflow functional but
+holds **no** second full audit handbook on hand – full depth comes only with the skill.
 
-`refactor.md` trägt mehr Inline-Reasoning als `/effective-flow review`; der delegierbare Anteil ist
-die **Gap-Analyse und Plan-Validierung** in Phase 1 (Root-Cause, Komplexität/Over-Engineering,
-Scope, Risiko, Refactor-Plan-Qualität). Der Cross-Language-/Runtime-Migrations-Zweig routet
-weiterhin an `port-codebases`. Baseline, Verhaltens-Invarianz, Reports und Delivery bleiben
-Effective-Flow-Contract.
+`refactor.md` carries more inline reasoning than `/effective-flow review`; the delegable part is
+the **gap analysis and plan validation** in Phase 1 (root cause, complexity/over-engineering,
+scope, risk, refactor-plan quality). The cross-language/runtime migration branch routes
+further to `port-codebases`. Baseline, behavior invariance, reports and delivery remain
+Effective Flow contract.
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Analyse und Refactoring und beachte ihre Vorgaben für Struktur, Grenzen, Tests, Review und Commits.
+If the project has an `AGENTS.md`, read it before analysis and refactoring and follow its guidance for structure, boundaries, tests, review and commits.
 
-## Fertig-Protokoll
+## Completion protocol
 
-Wenn du interne Sub-Agenten einsetzt, gib ihnen dieses Antwortprotokoll vor:
+When you use internal sub-agents, give them this response protocol:
 
-- `ERLEDIGT` für vollständig abgeschlossen
-- `ABBRUCH: [Grund]` für nicht erledigbar
+- `DONE` for fully completed
+- `ABORT: [reason]` for not completable
 
-Prüfung durch den Orchestrator:
+Check by the orchestrator:
 
-1. `ERLEDIGT`: Phase abgeschlossen.
-2. `ABBRUCH: [Grund]`: User informieren, Plan oder Auftrag anpassen und entscheiden, ob ein Retry sinnvoll ist.
-3. Kein Stichwort: Retry mit Eskalation.
+1. `DONE`: phase completed.
+2. `ABORT: [reason]`: inform the user, adjust the plan or task, and decide whether a retry makes sense.
+3. No keyword: retry with escalation.
 
-### Retry-Eskalation
+### Retry escalation
 
-Wenn ein interner Sub-Agent ohne `ERLEDIGT` oder `ABBRUCH` endet:
+When an internal sub-agent ends without `DONE` or `ABORT`:
 
-1. Retry 1: gleicher Auftrag mit Fortsetzungs-Hinweis
-2. Retry 2: vereinfachter Auftrag mit reduziertem Scope
-3. Retry 3: minimaler Auftrag nur für die kritischste Teilaufgabe
-4. Nach 3 Fehlversuchen:
-   - User informieren
-   - Optionen als Freitext klären: manuell erledigen, mit nächster Phase fortfahren, Workflow abbrechen
+1. Retry 1: same task with a continuation hint
+2. Retry 2: simplified task with reduced scope
+3. Retry 3: minimal task for only the most critical subtask
+4. After 3 failed attempts:
+   - inform the user
+   - clarify the options as free text: complete manually, continue with the next phase, abort the workflow
 
-## Goal-getriebene Abschlusssteuerung
+## Goal-driven completion control
 
-Interne „wiederhole bis fertig“-Schleifen dieses Workflows folgen einem einheitlichen Goal-Muster statt einer ad-hoc formulierten Schleife. Das Muster übernimmt die drei Prinzipien des nativen `/goal` (Codex und Claude Code), läuft aber vollständig in den Workflow-Anweisungen ab – ein Skill kann das native `/goal` nicht selbst aufrufen.
+Internal "repeat until done" loops of this workflow follow a uniform goal pattern instead of an ad-hoc formulated loop. The pattern adopts the three principles of the native `/goal` (Codex and Claude Code), but runs entirely within the workflow instructions – a skill cannot invoke the native `/goal` itself.
 
-### Die drei Prinzipien
+### The three principles
 
-1. **Abschlussbedingung vorab deklarieren.** Bevor die Umsetzungsarbeit beginnt, formuliere genau eine explizite, messbare Abschlussbedingung. Leite sie aus den Akzeptanzkriterien und dem Validierungsplan der Grundlage ab (Plan-Datei, Diagnose oder abgestimmter Scope). Eine gute Bedingung nennt den Zielzustand, die konkrete Prüfung und die Scope-Grenze – also auch, was bewusst nicht geändert wird.
-2. **Unabhängig verifizieren.** Prüfe die Bedingung nicht per Selbsteinschätzung, sondern über die ohnehin vorgesehenen unabhängigen Instanzen: ``effective-flow-code-validator`` für technische Prüfungen und den passenden Reviewer für inhaltliche. Die Bedingung gilt erst als erfüllt, wenn diese Instanzen sie bestätigen.
-3. **Beschränkt loopen.** Bestätigt die Verifikation die Bedingung nicht, behebe die Ursache und verifiziere erneut. Begrenze die internen Korrekturrunden (Richtwert: drei). Hält die Bedingung danach weiterhin nicht, brich den internen Loop ab und eskaliere an den User, statt unbegrenzt weiterzulaufen – Vorgehen wie in der Retry-Eskalation des Fertig-Protokolls.
+1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
+2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
+3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
 
-### Explizite Goal-Abfrage für autonome Läufe
+### Explicit goal query for autonomous runs
 
-An der Freigabe-Grenze dieses Workflows – dort, wo die Abschlussbedingung bereits feststeht und der Workflow ohnehin auf Freigabe wartet – bekommt der User eine **explizite Wahl**, ob die verbleibenden Phasen gated weiterlaufen oder autonom unter dem nativen `/goal`. Das ersetzt das frühere passive Mit-Ausgeben eines `/goal`-Strings: Die Option wird aktiv abgefragt, nicht nur angeboten.
+At the approval boundary of this workflow – where the completion condition is already fixed and the workflow is waiting for approval anyway – the user gets an **explicit choice** whether the remaining phases continue gated or autonomously under the native `/goal`. This replaces the earlier passive co-emitting of a `/goal` string: the option is actively queried, not merely offered.
 
-#### Wann die Abfrage entfällt
+#### When the query is omitted
 
-Überspringe die Goal-Abfrage vollständig (keine Zusatzoption, kein `/goal`-String), wenn der Workflow als **nicht-interaktiver Sub-Agent** eines übergeordneten Orchestrators läuft, bei dem keine direkte User-Interaktion vorgesehen ist – erkennbar am Aufruf-Kontext, zum Beispiel „[Kontext von /effective-flow apply-review: …]“. `/effective-flow apply-review` steuert seinen autonomen Lauf bereits an seinem eigenen Gate; eine zusätzliche Goal-Abfrage pro Sub-Delegation wäre dort sinnlos. Direktaufrufe und die Übergabe durch `/effective-flow apply-plan` (interaktiv, einzeln) zählen **nicht** als solche Delegation – dort bleibt die Goal-Abfrage erhalten.
+Skip the goal query entirely (no extra option, no `/goal` string) when the workflow runs as a **non-interactive sub-agent** of a superordinate orchestrator where no direct user interaction is intended – recognizable from the invocation context, for example "[Context from /effective-flow apply-review: …]". `/effective-flow apply-review` already steers its autonomous run at its own gate; an additional goal query per sub-delegation would be pointless there. Direct invocations and the handover through `/effective-flow apply-plan` (interactive, individual) do **not** count as such delegation – there the goal query is retained.
 
-#### Form der Abfrage
+#### Form of the query
 
-- Ist die Freigabe-Grenze eine Ja/Nein-Freigabe, ergänze die Freigabe-Frage um eine dritte Option „Autonom via `/goal`" neben „Ja“ (gated weiter) und „Anpassen“.
-- Ist die Freigabe-Grenze eine Auswahlfrage (z. B. Update-Gruppen) oder existiert an dieser Grenze keine Ja/Nein-Freigabe (z. B. weil eine Planungsphase übersprungen wurde), stelle direkt eine knappe eigenständige Ja/Nein-Folgefrage „Verbleibende Phasen autonom unter `/goal` laufen lassen?".
-- Wählt der User „Autonom via `/goal`" (bzw. „Ja“ in der Folgefrage), gib den fertigen, copy-paste-baren `/goal`-String prominent aus und fordere zum Einfügen als neue Eingabe auf. Da ein Skill das native `/goal` nicht selbst starten kann, ist das Einfügen der einzige Weg in den autonomen Lauf; ohne Einfügen läuft der Skill gated weiter.
-- Wählt der User „Ja“/gated (oder antwortet normal), läuft der Workflow wie gewohnt gated weiter; es wird **kein** `/goal`-String ausgegeben. Die internen Approval-Gates bleiben in jedem Fall erhalten.
+- If the approval boundary is a yes/no approval, extend the approval question with a third option "Autonomous via `/goal`" next to "Yes" (continue gated) and "Adjust".
+- If the approval boundary is a selection question (e.g. update groups) or if there is no yes/no approval at this boundary (e.g. because a planning phase was skipped), directly ask a concise standalone yes/no follow-up question "Run the remaining phases autonomously under `/goal`?".
+- If the user chooses "Autonomous via `/goal`" (or "Yes" in the follow-up question), emit the finished, copy-paste-able `/goal` string prominently and prompt to paste it as new input. Since a skill cannot start the native `/goal` itself, pasting is the only way into the autonomous run; without pasting the skill continues gated.
+- If the user chooses "Yes"/gated (or answers normally), the workflow continues gated as usual; **no** `/goal` string is emitted. The internal approval gates are retained in any case.
 
-Regeln für den `/goal`-String, sobald er ausgegeben wird:
+Rules for the `/goal` string once it is emitted:
 
-- **Selbsttragend:** Referenziere die zugrunde liegende Plan-Datei, falls vorhanden, und weise an, die verbleibenden Phasen dieses Workflows zu durchlaufen – nicht „die Kriterien irgendwie grün machen“.
-- **Messbar:** Nenne die Abschlussbedingung mit den im jeweiligen Workflow tatsächlich vorgesehenen Prüfungen (z. B. Akzeptanzkriterien erfüllt, projektkonfigurierte Checks grün und – falls der Workflow eine Review-Phase hat – Reviewer ohne offene kritische Findings) und die Scope-Grenze. Lass nicht zutreffende Prüfungen weg.
-- **Plattformneutral:** Beschränke dich auf den Bedingungstext nach `/goal `; er wird auf Codex und Claude Code gleich interpretiert.
-- **Nur an gate-freien Grenzen:** Biete den autonomen Lauf ausschließlich an Freigabe-Grenzen an, nach denen kein weiteres Approval-Gate folgt, damit ein autonomer Lauf nicht an einem späteren Gate hängenbleibt.
+- **Self-sustaining:** Reference the underlying plan file, if present, and instruct to run through the remaining phases of this workflow – not "somehow make the criteria green".
+- **Measurable:** Name the completion condition with the checks actually provided in the respective workflow (e.g. acceptance criteria fulfilled, project-configured checks green and – if the workflow has a review phase – reviewer without open critical findings) and the scope boundary. Leave out checks that do not apply.
+- **Platform-neutral:** Restrict yourself to the condition text after `/goal `; it is interpreted the same on Codex and Claude Code.
+- **Only at gate-free boundaries:** Offer the autonomous run exclusively at approval boundaries after which no further approval gate follows, so an autonomous run does not get stuck at a later gate.
 
-Form (Platzhalter ersetzen, einzeilig):
+Form (replace placeholders, single line):
 
 ```text
-/goal Setze <Plan-Datei oder abgestimmte Aufgabe> vollständig um und durchlaufe die verbleibenden Phasen dieses Workflows: alle Akzeptanzkriterien erfüllt, projektkonfigurierte Checks grün<, Reviewer ohne offene kritische Findings – nur falls der Workflow eine Review-Phase hat>. Nichts außerhalb des Scopes ändern. Stoppe, wenn alle Kriterien halten.
+/goal Fully implement <plan file or agreed task> and run through the remaining phases of this workflow: all acceptance criteria fulfilled, project-configured checks green<, reviewer without open critical findings – only if the workflow has a review phase>. Change nothing outside the scope. Stop when all criteria hold.
 ```
 
-## Delivery- und Worktree-Integration
+## Delivery and worktree integration
 
-Dieser Baustein verknüpft code-ändernde Workflows mit Liefer-Branches, Pull-Requests und
-Git-Worktrees. Die allgemeinen Werte für Basis-Branch, Branch-Namensbildung und
-Abschluss-Aktion liegen im Config-Block `delivery`; der Block `worktree` steuert
-ausschließlich, ob und wie die Umsetzung in einem separaten Git-Worktree läuft.
+This shared fragment ties code-changing workflows to delivery branches, pull requests and
+Git worktrees. The general values for base branch, branch-name construction and
+completion action live in the `delivery` config block; the `worktree` block controls
+exclusively whether and how the implementation runs in a separate Git worktree.
 
-**Standardmäßig läuft die Umsetzung in einem eigenen Git-Worktree mit eigenem Branch**
-(`worktree.enabled` Default `true`). Sobald in einem Worktree bzw. auf einem eigenen
-Liefer-Branch gearbeitet wird, **ist Delivery implizit aktiv** und schließt per `merge`
-(Default) oder `pr` ab. Es gibt keinen separaten `delivery.enabled`-Schalter mehr (siehe
-„Delivery ist durch Worktree/Branch impliziert“).
+**By default the implementation runs in its own Git worktree with its own branch**
+(`worktree.enabled` default `true`). As soon as work happens in a worktree or on a dedicated
+delivery branch, **delivery is implicitly active** and completes via `merge`
+(default) or `pr`. There is no separate `delivery.enabled` switch anymore (see
+"Delivery is implied by worktree/branch").
 
-Nur wenn der User ausdrücklich In-Place-Arbeit ohne Worktree verlangt und keine
-Branch-/PR-/Merge-Aktion wünscht, verhält sich der Workflow wie ohne diesen Baustein: keine
-erzwungene Branch-Erzeugung, keine erzwungenen Commits und keine automatische
-PR-Erstellung.
+Only when the user explicitly asks for in-place work without a worktree and wants no
+branch/PR/merge action does the workflow behave as if without this fragment: no
+forced branch creation, no forced commits and no automatic
+PR creation.
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
+`<plan.dir>` is the plan directory from the Effective Flow configuration (project setup ADR) `plan.dir` (default
 `docs/plan`).
 
-### Rollen der Config-Blöcke
+### Roles of the config blocks
 
-- **`delivery`** beschreibt den Liefer-Branch und dessen Abschluss: Basis-Ref,
-  Branch-Präfix, Abschluss-Aktion und Rückwechsel-Ziel.
-- **`worktree`** beschreibt ausschließlich den Ausführungsort: ob ein Worktree
-  verwendet wird, wo er liegt und welches Setup darin läuft.
+- **`delivery`** describes the delivery branch and its completion: base ref,
+  branch prefix, completion action and return target.
+- **`worktree`** describes exclusively the execution location: whether a worktree
+  is used, where it lives and which setup runs in it.
 
-Abgrenzung: Dieser Baustein ist **nicht** der per-Finding-Worktree-Mechanismus aus
-``tools/apply-review.md`` (`applyReview.worktree`). Jener isoliert parallele lokale
-Review-Findings und führt Commits per Cherry-Pick auf den aktuellen Branch zurück.
-Dieser Baustein erzeugt Liefer-Branches für PR, Merge oder „nur Branch“. Beide
-dürfen denselben physischen `baseDir` nutzen, da Session- und Pfad-Segmente
-unterscheiden.
+Scope boundary: this fragment is **not** the per-finding worktree mechanism from
+``tools/apply-review.md`` (`applyReview.worktree`). That one isolates parallel local
+review findings and folds commits back onto the current branch via cherry-pick.
+This fragment creates delivery branches for PR, merge or "branch only". Both
+may use the same physical `baseDir`, since session and path segments
+distinguish them.
 
-### Konfiguration
+### Configuration
 
-Falls die Effective Flow-Konfiguration (Projektsetup-ADR) entsprechende Werte festschreibt, überschreiben sie diese Defaults (Schema hier zur Illustration):
+If the Effective Flow configuration (project setup ADR) pins corresponding values, they override these defaults (schema shown here for illustration):
 
 ```json
 {
@@ -332,645 +336,641 @@ Falls die Effective Flow-Konfiguration (Projektsetup-ADR) entsprechende Werte fe
 }
 ```
 
-Fehlende Werte haben diese Defaults:
+Missing values have these defaults:
 
 - `delivery.baseBranch`: `"origin/main"`
 - `delivery.branchPrefix`: `"effective-flow"`
-- `delivery.completion`: `"merge"` (Merge in den Zielbranch als Standard-Abschluss)
-- `delivery.returnBranch`: `"auto"` (lokaler Branch-Anteil aus `delivery.baseBranch`)
-- `worktree.enabled`: `true` (Umsetzung läuft in einem eigenen Worktree)
+- `delivery.completion`: `"merge"` (merge into the target branch as the default completion)
+- `delivery.returnBranch`: `"auto"` (local branch part from `delivery.baseBranch`)
+- `worktree.enabled`: `true` (implementation runs in its own worktree)
 - `worktree.setup`: `"auto"`
 - `worktree.baseDir`: `.effective-flow/.worktrees`
 
-Gültige Werte:
+Valid values:
 
 - `delivery.completion`: `"pr"`, `"merge"`, `"branch"`
-- `delivery.returnBranch`: `"auto"` oder ein lokaler Branchname als String
+- `delivery.returnBranch`: `"auto"` or a local branch name as a string
 - `worktree.enabled`: `true`, `false`
-- `worktree.setup`: `"auto"`, `"none"` oder ein expliziter Setup-Befehl als String
+- `worktree.setup`: `"auto"`, `"none"` or an explicit setup command as a string
 
-`delivery.enabled` ist **entwertet**: Delivery wird nicht mehr über einen eigenen Schalter
-aktiviert, sondern ist immer dann aktiv, wenn in einem Worktree/eigenen Branch gearbeitet
-wird (siehe „Delivery ist durch Worktree/Branch impliziert“). Ein in einer Altconfig noch
-vorhandenes `delivery.enabled` wird beim Lesen ignoriert und von der Config-Vollmigration
-entfernt (siehe „Config-Migration“).
+`delivery.enabled` is **retired**: delivery is no longer activated via its own switch,
+but is active whenever work happens in a worktree/dedicated branch
+(see "Delivery is implied by worktree/branch"). A `delivery.enabled` still
+present in a legacy config is ignored on read and removed by the full config migration
+(see "Config migration").
 
-### Config-Migration
+### Config migration
 
-Das Lesen der Effective Flow-Konfiguration aus der Projektsetup-ADR und die einmalige Konsolidierung
-einer Alt-Config auf das aktuelle Schema – insbesondere das Verschieben alter Lieferwerte aus
-`worktree.baseBranch`/`worktree.branchPrefix`/`worktree.completion` nach `delivery.*` und das
-Entfernen des entwerteten `delivery.enabled` – übernimmt der geteilte Baustein
-„Config-Migration“ (`config-migration.md`) einmalig und zentral. Dieser Baustein führt **keine** eigene
-per-Block-Migration mehr aus. Bis eine Config migriert ist, gilt beim Lesen: neuer Wert aus
-`delivery.*` vor Legacy-Wert aus `worktree.*` vor Default; ein vorhandenes
-`delivery.enabled` wird ignoriert.
+Reading the Effective Flow configuration from the project setup ADR and the one-time consolidation
+of a legacy config onto the current schema – in particular moving old delivery values out of
+`worktree.baseBranch`/`worktree.branchPrefix`/`worktree.completion` into `delivery.*` and
+removing the retired `delivery.enabled` – is handled by the shared fragment
+"Config migration" (`config-migration.md`) once and centrally. This fragment performs **no** own
+per-block migration anymore. Until a config is migrated, reading applies: new value from
+`delivery.*` before legacy value from `worktree.*` before default; an existing
+`delivery.enabled` is ignored.
 
-### Modus bestimmen (Setup-Phase): Delivery ist durch Worktree/Branch impliziert
+### Determine mode (setup phase): Delivery is implied by worktree/branch
 
-Bestimme zu Beginn der eigentlichen Umsetzungsarbeit den effektiven Modus:
+At the start of the actual implementation work, determine the effective mode:
 
-- **Worktree-Ausführung ist standardmäßig aktiv** (`worktree.enabled` Default `true`). Sie
-  bleibt nur aus, wenn `worktree.enabled: false` gesetzt ist oder der User ausdrücklich
-  In-Place-Arbeit verlangt („ohne Worktree“, „direkt auf dem aktuellen Branch“).
-- **Delivery ist aktiv, sobald in einem Worktree oder auf einem eigenen Liefer-Branch
-  gearbeitet wird** – also im Default-Fall immer. Zusätzlich ist Delivery aktiv, wenn der
-  User ausdrücklich PR-, Branch- oder Merge-Arbeit verlangt (auch bei In-Place-Arbeit; dann
-  wird der Liefer-Branch im Haupt-Repo erzeugt).
-- Ist der Worktree per Config deaktiviert (`worktree.enabled: false`), gib einen kurzen
-  Hinweis aus, dass der (Default-)Worktree-Modus per Config aus ist. Verlangt der User dann
-  auch keine Delivery-Aktion, führe keine weiteren Schritte aus diesem Baustein aus
-  (In-Place ohne Delivery).
+- **Worktree execution is active by default** (`worktree.enabled` default `true`). It
+  stays off only when `worktree.enabled: false` is set or the user explicitly requests
+  in-place work ("without worktree", "directly on the current branch").
+- **Delivery is active as soon as work happens in a worktree or on a dedicated delivery
+  branch** – so in the default case always. In addition, delivery is active when the
+  user explicitly requests PR, branch or merge work (even with in-place work; then
+  the delivery branch is created in the main repo).
+- If the worktree is disabled via config (`worktree.enabled: false`), give a brief
+  note that the (default) worktree mode is off via config. If the user then also
+  requests no delivery action, perform no further steps from this fragment
+  (in-place without delivery).
 
-### Gemeinsame Vorbedingungen
+### Shared preconditions
 
-Wenn Delivery oder Worktree aktiv ist:
+When delivery or worktree is active:
 
-1. `git` und bei Worktree-Ausführung `git worktree` müssen verfügbar sein.
-2. `delivery.baseBranch` muss auflösbar sein. Ist es ein Remote-Ref (z. B.
-   `origin/main`), zuerst `git fetch REMOTE BRANCH` ausführen, damit der Liefer-Branch
-   auf dem aktuellen Remote-Stand startet.
-3. Hat der aktuelle HEAD relevante uncommittete Änderungen oder lokale Commits, die
-   nicht in `delivery.baseBranch` enthalten sind, weise darauf hin. Ein frisch aus dem
-   Basis-Branch erzeugter Liefer-Branch enthält diese Arbeit nicht. Fahre nur fort,
-   wenn der User den gewählten Modus bestätigt oder der Workflow einen sicheren
-   Teil-Diff-PR nach unten beschriebenem Verfahren erzeugt.
-4. Liefer-Branch-Namen bilden: `<delivery.branchPrefix>/<skill>/<slug>`, z. B.
-   `firmo/build/user-login`. Den Slug aus dem Plan-Titel, der Aufgabenbeschreibung,
-   dem Issue oder Finding ableiten. Existiert der Branch-Name bereits, ein
-   numerisches Suffix anhängen und den gewählten Namen melden.
+1. `git` and, for worktree execution, `git worktree` must be available.
+2. `delivery.baseBranch` must be resolvable. If it is a remote ref (e.g.
+   `origin/main`), first run `git fetch REMOTE BRANCH`, so the delivery branch
+   starts from the current remote state.
+3. If the current HEAD has relevant uncommitted changes or local commits that
+   are not contained in `delivery.baseBranch`, point that out. A delivery branch freshly
+   created from the base branch does not contain this work. Only continue
+   if the user confirms the chosen mode or the workflow creates a safe
+   partial-diff PR by the procedure described below.
+4. Construct delivery branch names: `<delivery.branchPrefix>/<skill>/<slug>`, e.g.
+   `firmo/build/user-login`. Derive the slug from the plan title, the task description,
+   the issue or finding. If the branch name already exists, append a
+   numeric suffix and report the chosen name.
 
-### Worktree-Ausführung
+### Worktree execution
 
-Wenn Worktree-Ausführung aktiv ist:
+When worktree execution is active:
 
-1. Repo-Namen bestimmen aus `basename "$(git rev-parse --show-toplevel)"` und als
-   BaseDir `worktree.baseDir` (Default `.effective-flow/.worktrees`) verwenden. Worktree-Pfad:
+1. Determine the repo name from `basename "$(git rev-parse --show-toplevel)"` and use
+   `worktree.baseDir` (default `.effective-flow/.worktrees`) as the base dir. Worktree path:
    `BASE_DIR/REPO_NAME/SESSION_ID`.
-2. Worktree und Liefer-Branch erzeugen:
+2. Create the worktree and delivery branch:
    `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> <BASE_REF>`.
-3. Setup gemäß `worktree.setup` im Worktree ausführen und den Modus vorher kurz
-   anzeigen:
-   - `auto` oder fehlend: nach Lockfile entscheiden – `pnpm-lock.yaml` →
+3. Run setup per `worktree.setup` in the worktree and briefly announce the
+   mode beforehand:
+   - `auto` or missing: decide by lockfile – `pnpm-lock.yaml` →
      `pnpm install --frozen-lockfile --prefer-offline`, `package-lock.json` →
      `npm ci`, `yarn.lock` → `yarn install --frozen-lockfile`, `Cargo.toml` →
      `cargo fetch --locked`, `go.mod` → `go mod download`, `uv.lock` →
-     `uv sync --frozen`, `poetry.lock` → `poetry install --sync`, keine bekannte
-     Datei → kein Setup.
-   - `none`: kein Setup ausführen.
-   - String-Wert: dieses explizite Kommando im Worktree ausführen.
-4. Alle nachfolgenden Phasen, die Code-, Test- oder Doku-Dateien erzeugen oder
-   ändern, mit Arbeitsverzeichnis im Worktree ausführen. Das gilt auch für die
-   Abschlussphase bis einschließlich finalem Validator/Formatter.
+     `uv sync --frozen`, `poetry.lock` → `poetry install --sync`, no known
+     file → no setup.
+   - `none`: run no setup.
+   - String value: run this explicit command in the worktree.
+4. Run all subsequent phases that create or change code, test or documentation
+   files with the working directory in the worktree. This also applies to the
+   completion phase up to and including the final validator/formatter.
 
-### In-Place-Delivery ohne Worktree
+### In-place delivery without worktree
 
-Wenn Delivery aktiv ist und Worktree-Ausführung aus bleibt:
+When delivery is active and worktree execution stays off:
 
-1. Den ursprünglich ausgecheckten Branch merken.
-2. Sicherstellen, dass der Arbeitsbaum keine uncommitteten Änderungen enthält, die
-   nicht Teil des Liefer-Branches werden sollen. Wenn solche Änderungen existieren,
-   nicht still stagen, stashen oder überschreiben; entweder User-Entscheidung einholen
-   oder den Teil-Diff-PR über Worktree verwenden.
-3. Liefer-Branch aus `delivery.baseBranch` erzeugen und auschecken.
-4. Umsetzung, Tests, Validierung und finale Formatierung auf diesem Liefer-Branch
-   ausführen.
-5. Nach Abschluss gemäß „Handback und Abschluss-Aktion“ fortfahren.
+1. Remember the originally checked-out branch.
+2. Ensure the working tree contains no uncommitted changes that
+   should not become part of the delivery branch. If such changes exist,
+   do not silently stage, stash or overwrite them; either obtain a user decision
+   or use the partial-diff PR via worktree.
+3. Create and check out the delivery branch from `delivery.baseBranch`.
+4. Run implementation, tests, validation and final formatting on this delivery branch.
+5. After completion, proceed per "Handback and completion action".
 
-### Teil-Diff-PR über Worktree
+### Partial-diff PR via worktree
 
-Wenn im Haupt-Checkout bereits Änderungen liegen, die nicht vollständig in den PR
-gehören, ist ein separater Worktree der bevorzugte sichere Weg, sofern diese
-Vorbedingungen erfüllt sind:
+When the main checkout already holds changes that should not fully go into the PR,
+a separate worktree is the preferred safe path, provided these
+preconditions are met:
 
-1. `git worktree` ist verfügbar.
-2. `delivery.baseBranch` ist auflösbar und bei Remote-Refs aktualisierbar.
-3. Der Workflow kennt eine explizite Liste der Dateien, die in den PR sollen.
+1. `git worktree` is available.
+2. `delivery.baseBranch` is resolvable and, for remote refs, updatable.
+3. The workflow knows an explicit list of the files that should go into the PR.
 
-Der Ablauf:
+The procedure:
 
-1. Frischen Worktree-Branch aus `delivery.baseBranch` erzeugen.
-2. Nur die ausgewählten Lieferdateien aus dem Haupt-Checkout in den Worktree
-   übernehmen. Zulässige Quellen für diese Auswahl sind Plan-Betroffene-Dateien,
-   Review-Finding-Scope, Issue-Scope, vom Workflow erzeugte bekannte Dateien oder
-   eine explizite User-Auswahl.
-3. Im Worktree prüfen, ob die übernommenen Dateien gegenüber dem Basis-Ref einen
-   sinnvollen Diff ergeben. Wenn nicht, abbrechen und keinen leeren PR erzeugen.
-4. Im Worktree committen und `/effective-flow pr` gegen `delivery.baseBranch` ausführen.
-5. Worktree entfernen, Liefer-Branch lokal belassen und Haupt-Checkout unverändert
-   lassen. Nicht ausgewählte Änderungen im Haupt-Checkout bleiben unberührt.
+1. Create a fresh worktree branch from `delivery.baseBranch`.
+2. Take only the selected delivery files from the main checkout into the worktree.
+   Permitted sources for this selection are plan affected files,
+   review finding scope, issue scope, known files produced by the workflow, or
+   an explicit user selection.
+3. In the worktree, check whether the taken-over files produce a meaningful diff
+   against the base ref. If not, abort and create no empty PR.
+4. Commit in the worktree and run `/effective-flow pr` against `delivery.baseBranch`.
+5. Remove the worktree, leave the delivery branch locally and leave the main checkout
+   unchanged. Non-selected changes in the main checkout remain untouched.
 
-Nicht erlaubt ist eine heuristische Teil-Diff-Auswahl nach „alle geänderten Dateien
-außer <plan.dir>“. Der Workflow muss die einzuschließenden Dateien kennen oder
-nachfragen. Dadurch bleiben parallel neu angelegte Pläne, `.effective-flow/`-State und andere
-lokale Arbeitsdateien zuverlässig außerhalb des PRs.
+A heuristic partial-diff selection by "all changed files
+except <plan.dir>" is not allowed. The workflow must know the files to include or
+ask. This reliably keeps newly created plans, `.effective-flow/` state and other
+local working files outside the PR.
 
-### Was im Liefer-Branch liegt und was im Haupt-Repo bleibt
+### What lives in the delivery branch and what stays in the main repo
 
-Datenhaltungs-Invariante: **Von den Effective Flow-Artefakten werden ausschließlich Pläne
-committet.** Reviews (lokale Reports) und Investigationen bleiben immer lokal und
-ungetrackt; im Remote-Modus werden Reviews stattdessen als Issues geführt (nie im Repo),
-Investigationen bleiben in jedem Fall rein lokal (siehe „Issue-Tracker-Anbindung“ und
+Data-keeping invariant: **Of the Effective Flow artifacts, only plans are
+committed.** Reviews (local reports) and investigations always stay local and
+untracked; in remote mode reviews are tracked as issues instead (never in the repo),
+investigations remain purely local in any case (see "Issue-tracker integration" and
 `/effective-flow investigate`).
 
-- **Im Liefer-Branch:** die eigentlichen Code-, Test- und Doku-Deliverables des
-  Workflows sowie – sofern der Workflow eine Plan-Datei geführt hat – deren finaler
-  Zustand (im umgesetzten Fall die archivierte, umgesetzt-markierte Plan-Datei).
-- **Nur im Haupt-Repo, nie committet:** reine Effective Flow-Buchhaltung und Laufzeitstatus, also
-  alle übrigen `.effective-flow/`-Artefakte – `memory.json`, `cache.json`, lokale Review-Reports
-  unter `.effective-flow/review/`, Investigations-Reports unter `.effective-flow/investigation/`,
-  Config-Migrationsstatus und Wisdom-Dateien.
+- **In the delivery branch:** the actual code, test and documentation deliverables of the
+  workflow as well as – if the workflow kept a plan file – its final
+  state (in the implemented case the archived, implemented-marked plan file).
+- **Only in the main repo, never committed:** pure Effective Flow bookkeeping and runtime state, i.e.
+  all remaining `.effective-flow/` artifacts – `memory.json`, `cache.json`, local review reports
+  under `.effective-flow/review/`, investigation reports under `.effective-flow/investigation/`,
+  config migration status and wisdom files.
 
-### Handback und Abschluss-Aktion (Abschlussphase)
+### Handback and completion action (completion phase)
 
-Im Anschluss an die reguläre Abschlusslogik des Workflows (inklusive Goal-Verifikation).
-Den finalen Statuswechsel der Plan-Datei auf `Umgesetzt`/`Implemented` und ihre
-Archivierung übernimmt Schritt 1 unten am Delivery-Punkt – der umsetzende Workflow setzt
-den Status also **nicht** vorab, sondern überlässt ihn dieser Phase (Ausnahme: In-Place ohne
-Delivery, siehe Schritt 1):
+Following the workflow's regular completion logic (including goal verification).
+The final status switch of the plan file to `Umgesetzt`/`Implemented` and its
+archiving is handled by step 1 below at the delivery point – the implementing workflow therefore does **not** set the
+status beforehand, but leaves it to this phase (exception: in-place without
+delivery, see step 1):
 
-**Bestehende PRs aktualisieren:** Wenn der Liefer-Branch bereits einen Pull-Request
-hat und nachträglich Änderungen nötig sind, werden diese Änderungen immer als neue
-Commits auf demselben PR-Branch erstellt und gepusht. Bestehende PR-Commits dürfen
-nicht per `commit --amend`, interaktivem Rebase, Squash oder Force-Push
-umgeschrieben werden. Scheitert ein normaler Push wegen divergierter Remote-History,
-stoppe und melde den Konflikt, statt History zu überschreiben.
+**Update existing PRs:** If the delivery branch already has a pull request
+and subsequent changes are needed, those changes are always created and pushed as new
+commits on the same PR branch. Existing PR commits must not
+be rewritten via `commit --amend`, interactive rebase, squash or force-push.
+If a normal push fails because of diverged remote history,
+stop and report the conflict instead of overwriting history.
 
-1. **Plan als umgesetzt markieren, archivieren und in den Liefer-Branch übernehmen:**
-   Sofern der Workflow eine Plan-Datei geführt hat, ist dies der **Delivery-Punkt**, an dem
-   der Plan als umgesetzt gilt (unmittelbar bevor der PR geöffnet bzw. der Liefer-Branch
-   gemergt wird):
-   - Setze den kanonischen Statusmarker auf `Umgesetzt`/`Implemented` (Markersprache
-     erhalten: deutscher Marker → `**Planungsstatus:** Umgesetzt`, englischer →
+1. **Mark the plan as implemented, archive it and take it into the delivery branch:**
+   Provided the workflow kept a plan file, this is the **delivery point** at which
+   the plan counts as implemented (immediately before the PR is opened or the delivery branch
+   is merged):
+   - Set the canonical status marker to `Umgesetzt`/`Implemented` (preserve marker
+     language: German marker → `**Planungsstatus:** Umgesetzt`, English →
      `**Plan status:** Implemented`).
-   - Verschiebe die Plan-Datei per `git mv` nach `<plan.dir>/archive/` (Verzeichnis bei
-     Bedarf anlegen), gemäß „Archiv umgesetzter Pläne“ der Plan-Datei-Konvention.
-   - Lief die Umsetzung in einem Worktree oder Teil-Diff-Worktree, stelle diesen finalen,
-     archivierten und umgesetzt-markierten Zustand im Worktree bereit (unter
-     `<plan.dir>/archive/<datei>`). Markierung und Verschiebung werden **mitcommittet** und
-     sind damit Teil des PRs/Merges (Umsetzungs-Doku). Die `.effective-flow/`-Artefakte bleiben im
-     Haupt-Repo.
-   - Führte der Workflow keine Plan-Datei, entfällt dieser Schritt.
-   - Läuft der Workflow ausnahmsweise In-Place ohne Delivery (kein Worktree, keine
-     Branch-/PR-/Merge-Aktion), führt der Workflow denselben Statuswechsel und
-     Archiv-Move direkt im Arbeitsbaum aus; der abschließende Commit/Merge in den
-     Zielbranch ist dann das Delivery-Event.
-2. **Commit sicherstellen:** Alle beabsichtigten Änderungen im Liefer-Branch committen
-   – Code-, Test- und Doku-Deliverables sowie die übernommene Plan-Datei – über die
-   Commit-Logik aus `/effective-flow commit` (ausschließlich bekannte geänderte Dateien
-   explizit stagen, konkrete Conventional-Commit-Message ableiten, niemals
-   `Co-Authored-By`-Trailer setzen). Workflows, die ihre Arbeit bereits committet
-   haben (z. B. `/effective-flow maintain` mit einem Commit pro Gruppe), committen hier nur
-   noch die Plan-Datei nach, falls nötig. Gibt es nichts zu committen: den User
-   informieren, einen automatisch erzeugten leeren Liefer-Branch entfernen und ohne
-   PR/Merge enden.
-3. **Abschluss-Aktion bestimmen:** Wenn `delivery.completion` einen gültigen Wert hat,
-   diesen verwenden und kurz melden, dass die Aktion aus der Effective Flow-Konfiguration
-   (Projektsetup-ADR) übernommen wurde. Sonst fragen:
+   - Move the plan file via `git mv` to `<plan.dir>/archive/` (create the directory if
+     needed), per "Archive of implemented plans" of the plan-file convention.
+   - If the implementation ran in a worktree or partial-diff worktree, provide this final,
+     archived and implemented-marked state in the worktree (under
+     `<plan.dir>/archive/<file>`). Marking and move are **committed along with it** and
+     are thereby part of the PR/merge (implementation documentation). The `.effective-flow/` artifacts stay in the
+     main repo.
+   - If the workflow kept no plan file, this step does not apply.
+   - If the workflow exceptionally runs in-place without delivery (no worktree, no
+     branch/PR/merge action), the workflow performs the same status switch and
+     archive move directly in the working tree; the final commit/merge into the
+     target branch is then the delivery event.
+2. **Ensure commit:** Commit all intended changes in the delivery branch
+   – code, test and documentation deliverables as well as the taken-over plan file – via the
+   commit logic from `/effective-flow commit` (stage exclusively known changed files
+   explicitly, derive a concrete Conventional Commit message, never set a
+   `Co-Authored-By` trailer). Workflows that have already committed their work
+   (e.g. `/effective-flow maintain` with one commit per group) only commit the
+   plan file here afterwards, if needed. If there is nothing to commit: inform the user,
+   remove an automatically created empty delivery branch and end without
+   PR/merge.
+3. **Determine completion action:** If `delivery.completion` has a valid value,
+   use it and briefly report that the action was taken from the Effective Flow configuration
+   (project setup ADR). Otherwise ask:
 
-Wenn Delivery aktiv war und kein gültiger Wert für `delivery.completion` gesetzt ist:
+Wenn Delivery was active and no valid value for `delivery.completion` is set:
 
 Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
-- header: "Abschluss"
-- question: "Wie soll der Liefer-Branch abgeschlossen werden?"
+- header: "Completion"
+- question: "How should the delivery branch be completed?"
 - multiSelect: false
 - options:
-  - label: "Pull-Request", description: "Branch pushen und über pr einen PR gegen den Basis-Branch erstellen"
-  - label: "Merge", description: "Branch lokal in den Basis-Branch mergen, ohne PR"
-  - label: "Nur Branch", description: "Branch im lokalen Repo belassen, keine weitere Aktion"
+  - label: "Pull request", description: "Push the branch and create a PR against the base branch via pr"
+  - label: "Merge", description: "Merge the branch locally into the base branch, without a PR"
+  - label: "Branch only", description: "Leave the branch in the local repo, no further action"
 
-4. **Worktree zurückziehen:** Wenn ein Worktree beteiligt war, `git worktree remove
-<WORKTREE_PATH>` ausführen; der Liefer-Branch bleibt im lokalen Repo erhalten.
-   Schlägt das Entfernen wegen uncommitteter Reste fehl: zuerst sicherstellen, dass
-   alles beabsichtigte committet ist; bleibt etwas übrig, den Worktree behalten und
-   den Pfad melden.
-5. **Aktion ausführen:**
-   - `branch` / Nur Branch: Branch belassen, Namen und Hinweis zur späteren
-     PR-Erstellung melden.
-   - `merge`: Ziel ist der lokale Branch-Anteil von `delivery.baseBranch` oder der
-     explizite `delivery.returnBranch`. Sicherstellen, dass der Ziel-Working-Tree
-     sauber ist; sonst informieren statt zu mergen. Liegt der lokale Ziel-Branch
-     hinter seinem Remote-Tracking-Ref, darauf hinweisen. Den Liefer-Branch mergen –
-     Fast-Forward bevorzugen, sonst Merge-Commit; bei Konflikt stoppen, Branch
-     belassen und User informieren, keine automatische Konfliktauflösung.
-   - `pr`: an `/effective-flow pr` delegieren und Liefer-Branch, Basis-Branch sowie den
-     Workflow-/Änderungstyp (`feat`/`fix`/`refactor`/`docs`/`chore` je nach umsetzendem
-     Workflow und Wirkung) als Titel-Typ-Hinweis übergeben, damit der PR-Titel einen
-     gültigen Conventional-Commit-Typ trägt — bei Squash-Merge ist er das Release-Signal.
-6. **Checkout zurückstellen:** Nach erfolgreicher PR-Erstellung oder bei `branch` auf
-   `delivery.returnBranch` bzw. bei `auto` auf den lokalen Branch-Anteil von
-   `delivery.baseBranch` zurückwechseln, sofern der Arbeitsbaum sauber ist. Wenn der
-   Rückwechsel scheitert, den tatsächlichen Branch als Seiteneffekt ausdrücklich
-   melden.
+4. **Withdraw worktree:** If a worktree was involved, run `git worktree remove
+<WORKTREE_PATH>`; the delivery branch is retained in the local repo.
+   If removal fails because of uncommitted remnants: first ensure that
+   everything intended is committed; if something remains, keep the worktree and
+   report the path.
+5. **Execute action:**
+   - `branch` / Branch only: leave the branch, report the name and a note about later
+     PR creation.
+   - `merge`: the target is the local branch part of `delivery.baseBranch` or the
+     explicit `delivery.returnBranch`. Ensure that the target working tree
+     is clean; otherwise inform instead of merging. If the local target branch is
+     behind its remote-tracking ref, point that out. Merge the delivery branch –
+     prefer fast-forward, otherwise a merge commit; on conflict stop, leave the branch
+     and inform the user, no automatic conflict resolution.
+   - `pr`: delegate to `/effective-flow pr` and pass the delivery branch, base branch and the
+     workflow/change type (`feat`/`fix`/`refactor`/`docs`/`chore` depending on the implementing
+     workflow and effect) as a title-type hint, so the PR title carries a
+     valid Conventional Commit type — with a squash merge it is the release signal.
+6. **Restore checkout:** After successful PR creation or with `branch`, switch back to
+   `delivery.returnBranch` or, with `auto`, to the local branch part of
+   `delivery.baseBranch`, provided the working tree is clean. If the
+   switch-back fails, explicitly report the actual branch as a side effect.
 
 ## Wisdom Accumulation
 
-Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
+At the start, create a session ID (e.g. via timestamp `date +%Y%m%d%H%M%S`) and use it consistently for the wisdom file `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`. This prevents collisions with parallel runs.
 
-Inhalte:
+Contents:
 
-- Baseline-Werte und deren Bedeutung
-- Strukturentscheidungen und Begründung
-- entdeckte Abhängigkeiten
-- Probleme bei der Umstrukturierung
-- falsche Annahmen
+- baseline values and their meaning
+- structural decisions and rationale
+- discovered dependencies
+- problems during the restructuring
+- wrong assumptions
 
-## Projekt-Typ-Erkennung und Routing
+## Project type detection and routing
 
-Wie bei `/effective-flow build`.
+As with `/effective-flow build`.
 
-Nutze ``effective-flow-generic-implementer`` für Refactorings an CI/CD, Tooling, Build-/Release-Konfiguration, Dependency-Manifesten, Container-Konfiguration und anderen Artefakten, die keinem Sprach-Implementer eindeutig gehören.
+Use ``effective-flow-generic-implementer`` for refactorings of CI/CD, tooling, build/release configuration, dependency manifests, container configuration and other artifacts that do not clearly belong to a language implementer.
 
-Aktueller Workflow für Review-Report-Rückverweise: `/effective-flow refactor`.
+Current workflow for review-report backlinks: `/effective-flow refactor`.
 
-## Review-Report-Rückverweise
+## Review-report backlinks
 
-Wenn dieser Workflow ein Finding aus einer bestehenden Review-Report-Datei in `.effective-flow/review/` umsetzt:
+When this workflow implements a finding from an existing review-report file in `.effective-flow/review/`:
 
-- identifiziere die betroffene Report-Datei früh im Workflow
-- ergänze am betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
-- beginne den Hinweis mit einem grünen Haken, zum Beispiel `✅ Umgesetzt am YYYY-MM-DD via [aktueller Workflow]`
-- aktualisiere nur die Findings, die durch diesen Workflow tatsächlich adressiert wurden
-- wenn mehrere Reports oder Findings infrage kommen, frage nach statt pauschal zu markieren
+- identify the affected report file early in the workflow
+- append to the affected finding, as the last entry, a short implementation note
+- start the note with a green check mark, for example `✅ Implemented on YYYY-MM-DD via [current workflow]`
+- update only the findings that were actually addressed by this workflow
+- if several reports or findings are candidates, ask instead of marking indiscriminately
 
-## Offene Review-Finding-Reports
+## Open review-finding reports
 
-Wenn ein Workflow-Review Findings erzeugt, die vor Abschluss nicht direkt behoben werden, schreibe diese offenen Findings zusätzlich in eine Review-Report-Datei unter `.effective-flow/review/`.
+When a workflow review produces findings that are not fixed directly before completion, write these open findings additionally into a review-report file under `.effective-flow/review/`.
 
-Ziel:
+Goal:
 
-- Offene oder bewusst nicht umgesetzte Findings gehen nicht in langen Plan-Dateien unter.
-- ``tools/apply-review.md`` kann die Findings später im bekannten Reportformat verarbeiten.
-- Die Plan-Datei bleibt Abschlussdokumentation und verweist nur auf den externen Report.
+- Open or deliberately unimplemented findings do not get lost in long plan files.
+- ``tools/apply-review.md`` can process the findings later in the familiar report format.
+- The plan file stays completion documentation and only points to the external report.
 
-Gilt für Findings mit Status:
+Applies to findings with status (canonical report tokens stay in the report's language; the
+current `/effective-flow review` format is German):
 
-- `Offen`
-- `Nicht umgesetzt`
-- `Nicht umgesetzt (ADR: <slug>)` oder vergleichbare ADR-Status
+- `Open`
+- `Not implemented`
+- `Nicht umgesetzt (ADR: <slug>)` or comparable ADR statuses
 
-Nicht in den externen Report übernehmen:
+Do not carry over into the external report:
 
-- Findings mit Status `Behoben`
-- Findings, die während des Workflows direkt gefixt wurden
-- rein informative Reviewer-Kommentare ohne konkrete Empfehlung
+- Findings with status `Fixed`
+- Findings that were fixed directly during the workflow
+- purely informational reviewer comments without a concrete recommendation
 
-### Report-Pfad
+### Report path
 
-1. Erstelle `.effective-flow/review/` falls nötig.
-2. Wenn der Workflow eine Plan-Datei als Grundlage hat, verwende bevorzugt:
+1. Create `.effective-flow/review/` if needed.
+2. If the workflow has a plan file as its basis, prefer:
    - `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>.md`
-   - bei Kollision: `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>-1.md`, `-2`, ...
-3. Wenn keine Plan-Datei als Grundlage existiert, verwende:
+   - on collision: `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>-1.md`, `-2`, ...
+3. If no plan file exists as a basis, use:
    - `.effective-flow/review/review-report-YYYY-MM-DD-WORKFLOW.md`
-   - bei Kollision: `.effective-flow/review/review-report-YYYY-MM-DD-WORKFLOW-1.md`, `-2`, ...
-4. Schreibe oben im Report immer die Herkunft:
-   - `**Ursprungsplan:** [Pfad oder „Keiner"]`
-   - `**Quell-Workflow:** /effective-flow build / /effective-flow fix / /effective-flow refactor / /effective-flow maintain`
-   - `**Quell-Review:** [Reviewer-Skill oder Phase]`
+   - on collision: `.effective-flow/review/review-report-YYYY-MM-DD-WORKFLOW-1.md`, `-2`, ...
+4. Always write the origin at the top of the report (canonical German header tokens, matched by
+   the still-German `/effective-flow review` format):
+   - `**Origin plan:** [path or "Keiner"]`
+   - `**Source workflow:** /effective-flow build / /effective-flow fix / /effective-flow refactor / /effective-flow maintain`
+   - `**Source review:** [reviewer skill or phase]`
 
-### Finding-IDs und Memory
+### Finding IDs and memory
 
-Dieser Report verwendet dieselben globalen Finding-IDs wie `/effective-flow review`.
+This report uses the same global finding IDs as `/effective-flow review`.
 
-1. Lies `.effective-flow/memory.json`, falls vorhanden.
-2. Falls die Datei fehlt, starte mit `lastFindingNumber: 0`.
-3. Nummeriere neue Findings fortlaufend ab `lastFindingNumber + 1` mit sieben Stellen, z. B. `R-0000021`.
-4. Schreibe nach dem Report die höchste vergebene Nummer zurück nach `.effective-flow/memory.json`.
-5. Erhalte vorhandene Felder wie `configMigration` unverändert.
-6. Wenn Memory nicht geschrieben werden kann, informiere den User und nenne den Reportpfad trotzdem.
+1. Read `.effective-flow/memory.json`, if present.
+2. If the file is missing, start with `lastFindingNumber: 0`.
+3. Number new findings consecutively from `lastFindingNumber + 1` with seven digits, e.g. `R-0000021`.
+4. After the report, write the highest assigned number back to `.effective-flow/memory.json`.
+5. Preserve existing fields such as `configMigration` unchanged.
+6. If memory cannot be written, inform the user and name the report path anyway.
 
-### Reportformat
+### Report format
 
-Verwende das kanonische Bericht-Format aus `/effective-flow review` Abschnitt „Bericht-Format“. Dupliziere das Template hier nicht und weiche nicht davon ab.
+Use the canonical report format from `/effective-flow review` section "Report format". Do not duplicate the template here and do not deviate from it.
 
-Zusätzliche Header-Felder für Workflow-Reports:
+Additional header fields for workflow reports:
 
-- Setze direkt unter `**Projekt-Typ:** ...` diese drei Zeilen:
-  - `**Ursprungsplan:** [<plan.dir>/YYYY-MM-DD-<slug>.md oder Keiner]` (`<plan.dir>` ist das Plan-Verzeichnis aus `plan.dir` der Effective Flow-Konfiguration/Projektsetup-ADR, Default `docs/plan`)
-  - `**Quell-Workflow:** [/effective-flow build / /effective-flow fix / /effective-flow refactor / /effective-flow maintain]`
-  - `**Quell-Review:** [Reviewer oder Phase]`
-- Alle Tabellen und Finding-Blöcke bleiben im `/effective-flow review`-Format.
-- Die `## Übersprungene Findings (Designentscheidungen)`-Sektion wird nur ausgegeben, wenn solche Findings vorhanden sind.
+- Directly below `**Project type:** ...` set these three lines:
+  - `**Origin plan:** [<plan.dir>/YYYY-MM-DD-<slug>.md or Keiner]` (`<plan.dir>` is the plan directory from `plan.dir` of the Effective Flow configuration/project-setup ADR, default `docs/plan`)
+  - `**Source workflow:** [/effective-flow build / /effective-flow fix / /effective-flow refactor / /effective-flow maintain]`
+  - `**Source review:** [reviewer or phase]`
+- All tables and finding blocks stay in the `/effective-flow review` format.
+- The `## Skipped findings (design decisions)` section is only emitted when such findings are present.
 
-Regeln:
+Rules:
 
-- Kritische Findings dürfen nur dann in diesem Report verbleiben, wenn der User ausdrücklich entschieden hat, den Workflow trotz offenem kritischem Finding abzuschließen.
-- Bestimme die Aktion wie bei `/effective-flow review`: Defekt → `/effective-flow fix`, Strukturproblem → `/effective-flow refactor`, fehlende Funktionalität oder Schutzmechanismus → `/effective-flow build`, reine Dokumentationslücke → `/effective-flow docs`.
-- Trage niemals automatisch etwas in `Entwickler-Anmerkung` ein. Dieses Feld ist ausschließlich für manuelle Notizen des Entwicklers reserviert und bleibt in automatisch erzeugten Reports leer. Wenn ein Finding bewusst nicht umgesetzt wurde und ein ADR existiert, vermerke die ADR-Referenz im `Status` per Slug, z. B. `Nicht umgesetzt (ADR: <slug>)`.
-- Gib dem User nach dem Schreiben den Reportpfad aus.
+- Critical findings may only remain in this report if the user has explicitly decided to complete the workflow despite an open critical finding.
+- Determine the action as in `/effective-flow review`: defect → `/effective-flow fix`, structural problem → `/effective-flow refactor`, missing functionality or safeguard → `/effective-flow build`, pure documentation gap → `/effective-flow docs`.
+- Never enter anything automatically in `developer note`. This field is reserved exclusively for the developer's manual notes and stays empty in automatically generated reports. When a finding was deliberately not implemented and an ADR exists, note the ADR reference in the `Status` via slug, e.g. `Nicht umgesetzt (ADR: <slug>)`.
+- After writing, output the report path to the user.
 
-Aktueller Workflow für Plan-Referenzen: Refactoring (`/effective-flow refactor`).
+Current workflow for plan references: Refactoring (`/effective-flow refactor`).
 
-## Plan-Referenzen
+## Plan references
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default `docs/plan`).
+`<plan.dir>` is the plan directory from the Effective Flow configuration (project-setup ADR) `plan.dir` (default `docs/plan`).
 
-Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel `<plan.dir>/2024-06-01-feature.md`, `2024-06-01-feature.md`, `0030` (Legacy-Nummer) oder `feature` (Titel-Slug), prüfe den Plan vor der ersten fachlichen Workflow-Phase.
+When the user references an existing plan file on invocation — for example `<plan.dir>/2024-06-01-feature.md`, `2024-06-01-feature.md`, `0030` (legacy number), or `feature` (title slug) — check the plan before the first substantive workflow phase.
 
-### Referenz auflösen
+### Resolve the reference
 
-1. Löse die Referenz auf genau eine Datei unter `<plan.dir>/` **oder** `<plan.dir>/archive/` auf.
-2. Erlaubte Formen:
-   - vollständiger Pfad, z. B. `<plan.dir>/2024-06-01-feature.md` oder `<plan.dir>/archive/2024-06-01-feature.md`
-   - Datums-Slug-Dateiname, z. B. `2024-06-01-feature.md`
-   - Legacy-Nummer, z. B. `0030` (primär über die H1 `# 0030: …` aufgelöst, siehe `Plan-Datei-Konvention`, nicht über das Dateinamen-Segment)
-   - Titel-Slug, z. B. `feature`
-3. Wenn keine Datei passt: melde den Fehler und nenne, dass `/effective-flow open-plans` offene Pläne auflisten kann.
-4. Wenn mehrere Dateien passen: frage den User nach der konkreten Datei.
+1. Resolve the reference to exactly one file under `<plan.dir>/` **or** `<plan.dir>/archive/`.
+2. Permitted forms:
+   - full path, e.g. `<plan.dir>/2024-06-01-feature.md` or `<plan.dir>/archive/2024-06-01-feature.md`
+   - date-slug file name, e.g. `2024-06-01-feature.md`
+   - legacy number, e.g. `0030` (resolved primarily via the H1 `# 0030: …`, see `Plan file convention`, not via the file name segment)
+   - title slug, e.g. `feature`
+3. If no file matches: report the error and note that `/effective-flow open-plans` can list open plans.
+4. If multiple files match: ask the user for the specific file.
 
-### Status prüfen
+### Check the status
 
-1. Lies die Plan-Datei frisch vom Dateisystem.
-2. Bestimme den Umsetzungsstatus gemäß der Planstatus-Konvention: genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` und gültigem Wert; bei fehlender, mehrfacher oder ungültiger Statuszeile ist der Status unklar.
-3. Status-Regeln (beide Markersprachen sind gleichwertig):
-   - genau eine Statuszeile `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented` → der Plan kann als Grundlage verwendet werden.
-   - genau eine Statuszeile `**Planungsstatus:** Umgesetzt` oder `**Plan status:** Implemented` → frage den User, ob der Plan erneut umgesetzt, nur geprüft oder der Workflow abgebrochen werden soll.
-   - fehlender oder widersprüchlicher Status → prüfe, ob `## Testergebnisse` oder `## Review-Findings` vorhanden sind. Wenn ja, behandle den Plan als wahrscheinlich umgesetzt und frage nach. Wenn nein, frage nach, ob der Plan als ungebaute Vorgabe verwendet werden soll.
+1. Read the plan file fresh from the file system.
+2. Determine the implementation status according to the plan status convention: exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` and a valid value; if the status line is missing, duplicated, or invalid, the status is unclear.
+3. Status rules (both marker languages are equivalent):
+   - exactly one status line `**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented` → the plan can be used as a basis.
+   - exactly one status line `**Planungsstatus:** Umgesetzt` or `**Plan status:** Implemented` → ask the user whether the plan should be implemented again, only checked, or whether the workflow should be aborted.
+   - missing or contradictory status → check whether `## Test results` or `## Review findings` are present. If so, treat the plan as probably implemented and ask. If not, ask whether the plan should be used as an unbuilt specification.
 
-### Workflow-Empfehlung prüfen
+### Check the workflow recommendation
 
-1. Prüfe, ob im Kopfbereich eine Zeile `**Empfohlener Workflow:** ...` vorhanden ist.
-2. Bestimme die Empfehlung:
-   - Feature oder `/effective-flow build` → `/effective-flow build`
-   - Bugfix oder `/effective-flow fix` → `/effective-flow fix`
-   - Refactoring oder `/effective-flow refactor` → `/effective-flow refactor`
-   - Dokumentation oder `/effective-flow docs` → `/effective-flow docs`
-3. Wenn der aktuelle Skill ``tools/apply-plan.md`` ist: verwende die Empfehlung als Ziel-Workflow und fahre fort.
-4. Wenn die Empfehlung zum aktuellen Workflow passt: fahre fort.
-5. Wenn die Empfehlung auf einen anderen Workflow zeigt:
-   - gib eine deutlich sichtbare Meldung aus, welcher Workflow empfohlen ist
-   - frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit dem aktuellen Workflow verwenden will
-6. Wenn die Empfehlung fehlt oder unklar ist: fahre nach Statusprüfung fort, weise aber auf die fehlende oder unklare Empfehlung hin.
+1. Check whether a line `**Empfohlener Workflow:** ...` is present in the header.
+2. Determine the recommendation:
+   - Feature or `/effective-flow build` → `/effective-flow build`
+   - Bugfix or `/effective-flow fix` → `/effective-flow fix`
+   - Refactoring or `/effective-flow refactor` → `/effective-flow refactor`
+   - Documentation or `/effective-flow docs` → `/effective-flow docs`
+3. If the current skill is ``tools/apply-plan.md``: use the recommendation as the target workflow and continue.
+4. If the recommendation matches the current workflow: continue.
+5. If the recommendation points to a different workflow:
+   - emit a clearly visible message stating which workflow is recommended
+   - only ask to continue if the user explicitly wants to use the plan with the current workflow anyway
+6. If the recommendation is missing or unclear: continue after the status check, but point out the missing or unclear recommendation.
 
-### Offene Punkte prüfen
+### Check open points
 
-Die Prüfung auf offene oder ungeklärte Punkte übernimmt das „Klärungs-Gate“
-(`apply-clarity-gate.md`), das die umsetzenden Workflows und die Apply-Kette selbst
-einbinden. Diese Referenz-Regel dupliziert diese Prüfung nicht separat.
+The check for open or unclarified points is handled by the "clarification gate"
+(`apply-clarity-gate.md`), which the implementing workflows and the apply chain themselves
+embed. This reference rule does not duplicate that check separately.
 
-### Nach erfolgreicher Prüfung
+### After a successful check
 
-- Verwende die Inhalte der Plan-Datei als abgestimmte Grundlage für den aktuellen Workflow.
-- Halte in der Wisdom-Datei fest, welche Plan-Datei die Quelle ist und welche Workflow-Empfehlung sie enthält.
-- Die Status-Aktualisierung auf abgeschlossen erfolgt erst im Abschluss des umsetzenden Workflows und bewahrt die Markersprache: ein deutscher Marker wird zu `**Planungsstatus:** Umgesetzt`, ein englischer Marker zu `**Plan status:** Implemented`.
+- Use the contents of the plan file as the agreed basis for the current workflow.
+- Record in the wisdom file which plan file is the source and which workflow recommendation it contains.
+- The status update to completed happens only at the completion of the implementing workflow and preserves the marker language: a German marker becomes `**Planungsstatus:** Umgesetzt`, an English marker becomes `**Plan status:** Implemented`.
 
-## Klärungs-Gate (vollständig geklärt?)
+## Clarification gate (fully clarified?)
 
-Bevor eine Grundlage (Plan-Datei, Issue oder Review-Finding) umgesetzt wird, prüft dieses
-Gate, ob sie **vollständig geklärt** und **ohne Rückfrage umsetzbar** ist. Das Gate greift
-an **beiden** Einstiegspunkten: in der Apply-Kette (`/effective-flow apply` →
-``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **und** bei
-Direktaufruf eines umsetzenden Workflows (`/effective-flow build`, `/effective-flow fix`,
-`/effective-flow refactor`, `/effective-flow docs`) mit einer Plan-Datei.
+Before a basis (plan file, issue, or review finding) is implemented, this
+gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies
+at **both** entry points: in the apply chain (`/effective-flow apply` →
+``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **and** on
+direct invocation of an implementing workflow (`/effective-flow build`, `/effective-flow fix`,
+`/effective-flow refactor`, `/effective-flow docs`) with a plan file.
 
-Leitprinzip: **Keine Annahmen außer absolut offensichtlichen.** Im Zweifel lieber eine
-Klärungsrunde zu viel als eine zu wenig.
+Guiding principle: **No assumptions except the absolutely obvious.** When in doubt, prefer one
+clarification round too many over one too few.
 
-### Abbruchkriterien (mindestens eines trifft zu → nicht umsetzen)
+### Abort criteria (at least one applies → do not implement)
 
-- **Offene Punkte:** Der Plan enthält einen Abschnitt `## Offene Punkte` bzw.
-  `## Open Points` mit anderen Einträgen als dem Leerzustand (`- Keine offenen Punkte.` /
+- **Open points:** the plan contains an `## Offene Punkte` or
+  `## Open Points` section with entries other than the empty state (`- Keine offenen Punkte.` /
   `- No open points.`).
-- **Fehlende messbare Akzeptanzkriterien:** Es gibt keine Akzeptanzkriterien, oder sie sind
-  ohne benannte Prüfung/Messgröße formuliert (kein konkreter Check, kein prüfbarer
-  Zielzustand).
-- **Umsetzungsrelevante Annahmen:** Der Plan enthält als Annahme markierte Unklarheiten, die
-  das Verhalten, den Scope oder das Risiko der Umsetzung wesentlich beeinflussen.
-- **Nicht self-contained (Issues/Findings):** Ein Issue oder Finding beschreibt die
-  gewünschte Umsetzung nicht ausreichend eigenständig, um sie ohne Rückfrage abzuarbeiten.
+- **Missing measurable acceptance criteria:** there are no acceptance criteria, or they are
+  formulated without a named check/metric (no concrete check, no verifiable
+  target state).
+- **Implementation-relevant assumptions:** the plan contains uncertainties marked as assumptions that
+  materially affect the behavior, scope, or risk of the implementation.
+- **Not self-contained (issues/findings):** an issue or finding does not describe the
+  intended implementation self-containedly enough to work through it without a follow-up question.
 
-Reine, unkritische Annahmen ohne Umsetzungsrelevanz blockieren nicht.
+Pure, uncritical assumptions with no implementation relevance do not block.
 
-### Verhalten am Gate
+### Behavior at the gate
 
-- **Bestanden** (kein Kriterium trifft zu): weiter zur Umsetzung.
-- **Nicht bestanden:** die betroffenen Punkte kurz benennen, in eine Klärungsrunde
-  zurückverweisen und den aktuellen Skill beenden, statt teilweise umzusetzen oder zu raten.
-  Zielskill der Klärung: eine Plan-Datei geht an `/effective-flow plan` bzw. dessen vertieften
-  Plan-Review (`/effective-flow review <plandatei>`); ein Issue oder Finding geht an
+- **Passed** (no criterion applies): continue to implementation.
+- **Not passed:** briefly name the affected points, refer back to a clarification round,
+  and end the current skill instead of partially implementing or guessing.
+  Target skill of the clarification: a plan file goes to `/effective-flow plan` or its in-depth
+  plan review (`/effective-flow review <planfile>`); an issue or finding goes to
   `/effective-flow plan-issue`.
 
-Das Gate ersetzt die frühere separate „Offene Punkte prüfen“-Prüfung: Wo ein Workflow diese
-Prüfung bisher einzeln ausgeführt hat, gilt nun dieses Gate als die eine maßgebliche Instanz,
-um Doppelpflege zu vermeiden.
+The gate replaces the former separate "check open points" check: where a workflow previously
+ran this check on its own, this gate now serves as the single authoritative instance,
+to avoid duplicate maintenance.
 
-Wenn ein offener Plan für `/effective-flow refactor` bestätigt ist, durchläuft er zuerst das
-„Klärungs-Gate“. Besteht er das Gate nicht, verweise gemäß Gate-Verhalten auf
-`/effective-flow plan` bzw. `/effective-flow review <plandatei>` und beende den Workflow. Besteht
-der Plan das Gate:
+When an open plan for `/effective-flow refactor` is confirmed, it first passes through the
+"clarification gate". If it does not pass the gate, refer according to the gate behavior to
+`/effective-flow plan` or `/effective-flow review <planfile>` and end the workflow. If
+the plan passes the gate:
 
-- verwende die Inhalte der Plan-Datei als Refactoring-Plan
-- validiere weiterhin in Phase 1, dass keine beabsichtigte Verhaltensänderung enthalten ist
-- wurde aus der Apply-Kette bereits ein „geklärt + goal-getrieben“-Kontext übergeben (Grundlage geklärt, Bestätigung für autonomen Lauf bereits erteilt), honoriere ihn: überspringe die Goal-Abfrage in Phase 1 und durchlaufe die Phasen 2–6 unter der „Goal-getriebenen Abschlusssteuerung“.
+- use the plan file's contents as the refactoring plan
+- still validate in Phase 1 that no intended behavior change is included
+- if a "clarified + goal-driven" context was already passed from the apply chain (basis clarified, confirmation for the autonomous run already given), honor it: skip the goal query in Phase 1 and run through phases 2–6 under the "Goal-driven completion control".
 
 ## Workflow
 
-### Phase 1: Analyse
+### Phase 1: Analysis
 
-1. Analysiere die Refactoring-Anforderung gründlich.
-2. Untersuche den betroffenen Code:
-   - aktuelle Struktur und Abhängigkeiten
-   - bestehende Tests
-   - betroffene Stellen
-3. Kläre offene Fragen direkt mit dem User:
-   - was genau soll refactored werden
-   - welche Constraints gelten
-4. Erstelle einen kompakten Refactoring-Plan:
-   - vorher -> nachher
-   - betroffene Dateien und Abhängigkeiten
-   - Risiken und Seiteneffekte
-5. Führe die Gap Analysis durch. Das **Reasoning** (Root-Cause-Platzierung, Over-Engineering-/Komplexitäts-Linse, Scope-Kontrolle, Risiko, unausgesprochene Annahmen, Edge Cases) folgt `codebase-improvement` (siehe „Delegations-Vertrag: generisches Audit-Reasoning“), sofern verfügbar; fehlt der Skill, greift der minimale Fallback. Effective-Flow-spezifisch bleibt die Prüfung auf **mögliche Verhaltensänderungen** (Refactoring darf kein Verhalten ändern) und **fehlende messbare Akzeptanzkriterien**.
-6. Führe die Plan-Validierung durch. Die inhaltliche Beurteilung (ist der Refactor-Plan tragfähig, ausführbar, richtig geschnitten) folgt demselben Skill; die folgenden **deterministischen Scorecard-Schwellen** und die **Verhaltens-Invarianz** bleiben Effective-Flow-Output-Contract und werden nicht an den Skill abgegeben:
-   - Clarity: Datei-Referenzen, Ziel >= 80%
-   - Verification: messbare Akzeptanzkriterien jenseits von "Tests laufen"
-   - Context: <= 10% Raten
-   - Big Picture: Nutzen klar
-   - Verhaltens-Invarianz: jede Änderung begründet
-7. Präsentiere den Plan mit Scorecard.
-8. Leite aus den messbaren Akzeptanzkriterien die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung“); sie deckt die Phasen 2–6 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten. Die Abschlussbedingung schließt die Verhaltens-Invarianz ein: die in Phase 2 erhobene Baseline muss unverändert bleiben.
-9. Hole Freigabe ein. Die Freigabe-Frage enthält die explizite Goal-Abfrage (Option „Autonom via /goal“); behandle sie gemäß „Explizite Goal-Abfrage für autonome Läufe“: Bei Wahl „Autonom via /goal“ gib den `/goal`-String für die Phasen 2–6 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
+1. Analyze the refactoring requirement thoroughly.
+2. Investigate the affected code:
+   - current structure and dependencies
+   - existing tests
+   - affected spots
+3. Clarify open questions directly with the user:
+   - what exactly should be refactored
+   - which constraints apply
+4. Create a compact refactoring plan:
+   - before -> after
+   - affected files and dependencies
+   - risks and side effects
+5. Perform the gap analysis. The **reasoning** (root-cause placement, over-engineering/complexity lens, scope control, risk, unspoken assumptions, edge cases) follows `codebase-improvement` (see "Delegation contract: generic audit reasoning"), if available; if the skill is missing, the minimal fallback applies. What stays Effective-Flow-specific is the check for **possible behavior changes** (refactoring must not change behavior) and **missing measurable acceptance criteria**.
+6. Perform the plan validation. The substantive judgment (is the refactor plan viable, executable, correctly scoped) follows the same skill; the following **deterministic scorecard thresholds** and the **behavior invariance** remain Effective Flow output contract and are not handed off to the skill:
+   - Clarity: file references, target >= 80%
+   - Verification: measurable acceptance criteria beyond "tests pass"
+   - Context: <= 10% guessing
+   - Big Picture: benefit clear
+   - Behavior invariance: every change justified
+7. Present the plan with scorecard.
+8. Derive the explicit completion condition from the measurable acceptance criteria (see "Goal-driven completion control"); it covers phases 2–6 and feeds the explicit goal query in the approval question below. The completion condition includes behavior invariance: the baseline collected in Phase 2 must remain unchanged.
+9. Obtain approval. The approval question contains the explicit goal query (option "Autonomous via /goal"); handle it per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, emit the `/goal` string for phases 2–6; the option is omitted when the workflow was delegated non-interactively.
 
 Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
-- header: "Freigabe"
-- question: "Refactoring-Plan freigegeben?"
+- header: "Approval"
+- question: "Refactoring plan approved?"
 - multiSelect: false
 - options:
-  - label: "Ja", description: "Freigabe erteilt, Workflow läuft gated weiter"
-  - label: "Autonom via /goal", description: "Verbleibende Phasen autonom unter nativem /goal — der Skill gibt den einzufügenden /goal-String aus (entfällt bei nicht-interaktiver Delegation)"
-  - label: "Anpassen", description: "Feedback als Freitext eingeben"
+  - label: "Yes", description: "Approval granted, workflow continues gated"
+  - label: "Autonomous via /goal", description: "Remaining phases autonomous under the native /goal — the skill emits the /goal string to paste (omitted for non-interactive delegation)"
+  - label: "Adjust", description: "Enter feedback as free text"
 
 ### Phase 2: Baseline
 
-Bestimme zuerst gemäß „Delivery- und Worktree-Integration“ den effektiven Delivery-/Worktree-Modus und führe bei aktivem Modus das passende Setup aus, bevor die Baseline erhoben wird: Worktree-Setup bei Worktree-Ausführung oder Liefer-Branch-Setup im Haupt-Repo bei In-Place-Delivery. Baseline, Refactoring und Nachher-Validierung (Phasen 2–5) laufen dann im Liefer-Arbeitsverzeichnis.
+First, per "Delivery and worktree integration", determine the effective delivery/worktree mode and, when a mode is active, run the appropriate setup before the baseline is collected: worktree setup for worktree execution or delivery-branch setup in the main repo for in-place delivery. Baseline, refactoring and post-validation (phases 2–5) then run in the delivery working directory.
 
-Starte parallel:
+Start in parallel:
 
 1. ``effective-flow-code-validator``
-   - TypeScript-Fehler
-   - Lint-Fehler
-   - Build-Status
+   - TypeScript errors
+   - lint errors
+   - build status
 2. ``effective-flow-test-writer``
-   - führe alle bestehenden Tests aus und dokumentiere das Ergebnis
-   - schreibe in dieser Phase keine neuen Tests
+   - run all existing tests and document the result
+   - do not write new tests in this phase
 
-Dokumentiere die Baseline für den späteren Vergleich.
+Document the baseline for the later comparison.
 
-## Skill-Discovery
+## Skill discovery
 
-Bevor du mit der eigentlichen Umsetzung, Planung bzw. Prüfung beginnst, sichte die in der
-Umgebung verfügbaren Skills und binde die für die konkrete Aufgabe nützlichen ein. Stellt
-die Umgebung kein Skill-Verzeichnis bereit oder passt keiner, ist dieser Schritt ein No-Op —
-fahre ohne Fehler oder Blockade fort.
+Before you start the actual implementation, planning, or review, survey the skills available in
+the environment and pull in the ones useful for the concrete task. If the environment provides
+no skill directory or none fits, this step is a no-op — continue without an error or a block.
 
-### Vorgehen
+### Approach
 
-1. **Empfohlene Skills bevorzugen:** Wende die weiter oben unter „Empfohlene Skills"
-   genannten Skills bevorzugt an, sofern sie verfügbar und für die konkrete Aufgabe relevant
-   sind. „Bevorzugen" ist die Auswahl; über die **Autorität** entscheidet der Vertrag in
-   Punkt 5 (ist ein empfohlener Skill der deklarierte Domänen-Owner, ist seine Guidance
-   maßgeblich, nicht nur optional). Eine Fallback-Notation `A › B` ist eine geordnete Präferenz: nimm den ersten
-   verfügbaren, nicht ausgeschlossenen Skill der Gruppe, nie beide. Fehlt ein solcher
-   Abschnitt (z. B. bei Tools), entfällt dieser Punkt.
-2. **Relevanz beurteilen:** Prüfe jeden Skill gegen die **konkrete** Aufgabe und binde nur
-   klar passende ein (typisch 0–2). Lade keine Skills „auf Verdacht" — Token-Sparsamkeit.
-3. **Config berücksichtigen:** Lies, falls vorhanden, den `skills`-Block aus der
-   Effective Flow-Konfiguration (Projektsetup-ADR) best-effort — die globalen Felder plus deinen
-   eigenen Scope-Eintrag (ein Agent liest `agents.<eigener-name>`, ein Tool liest
-   `tools.<eigener-name>`).
-   - `enabled: false` → überspringe die gesamte dynamische Skill-Nutzung.
-   - `exclude` (global oder Scope) → diese Skills nie anwenden; ein ausgeschlossenes
-     Fallback-Mitglied wird zugunsten des nächsten Fallbacks übersprungen.
-   - `include` (global oder Scope) → diese Skills zusätzlich bevorzugt berücksichtigen; ein
-     nicht installierter Skill wird still ignoriert.
-   - Fehlt der Block oder die Datei, gilt der Default (`enabled` an, keine Zusatz-Listen).
-     Lies die Config nur; migriere oder schreibe sie hier nicht.
-4. **Library-Doku:** Wird gegen eine unbekannte oder aktuelle Library bzw. ein Framework
-   gearbeitet, nutze bei Bedarf aktuelle-Doku-Skills (z. B. `context7`), falls verfügbar,
-   statt aus Erinnerung zu raten. Nur bei Bedarf, kein Zwang.
-5. **Autoritäts-Vertrag (Orchestrierung vs. Domänen-Expertise):** Effective Flow und die zentralen
-   Skills teilen sich die Verantwortung **geschichtet** — nicht „Effective Flow gewinnt immer":
-   - **Effective Flow besitzt die Orchestrierung** (das **Was/Wann**): Routing und User-Interaktion,
-     Plan-/Report-State, Finding-IDs, Backlinks, Tracker-Integration, Resumability,
-     Agent-Auswahl und Parallelisierung, Baseline-Vergleich, Worktrees, Commits, Delivery,
-     Harness-Transform und Config. Diese Regeln, `AGENTS.md`/Projektkonventionen sowie die
-     eigenen Sprach-, Commit- und Scope-Regeln haben **immer** Vorrang; kein Skill darf Scope
-     erweitern, neue Dependencies einführen oder den abgestimmten Plan verletzen. In
-     Analyse-/Planungs-Tools bleibt die No-Code-Grenze strikt.
-   - **Zentrale Skills besitzen wiederverwendbare Expertise** (das **Wie**): Domänen-Checklisten,
-     Heuristiken, Standards, Research-Prozeduren und Spezialisten-Guidance. Ist ein empfohlener
-     Skill der **deklarierte Domänen-Owner** für die anstehende Fachfrage **und** deckt er sie
-     ab, ist seine Guidance **maßgeblich** — nicht optionaler Rat. Das eigene Source trägt dann
-     **keine zweite Kopie** dieses Playbooks, sondern nur Scope-/Output-/Lifecycle-Constraints
-     plus einen minimalen Fallback (Punkt 6).
-   - **Grenzfälle:** Deckt ein Skill nur einen Spezialzweig ab (_route-when-relevant_) oder
-     divergiert Effective Flows Produktverhalten bewusst (_no-overlap_), bleibt die Effective Flow-Guidance
-     führend. Die verbindliche Zuordnung je Skill/Intersection steht im Ownership-Inventar im
-     Developer-Guide (`docs/developer-guide/skill-ownership.md`).
-6. **Fehlender maßgeblicher Skill (minimaler Fallback):** Ist der maßgebliche Skill nicht
-   verfügbar (nicht installiert, `skills.enabled: false` oder via `exclude` deaktiviert),
-   greift der im Source belassene **minimale generische Fallback** — eine kurze essentielle
-   Kern-Guidance, damit das Tool funktionsfähig bleibt und sauber degradiert. Es wird **kein**
-   zweites vollständiges Domänen-Handbuch vorgehalten; volle Tiefe kommt nur mit dem zentralen
-   Skill.
-7. **Melden:** Nenne kurz, welche Skills genutzt wurden (bzw. dass keiner passte). Hat dir
-   ein Orchestrator-Tool bereits relevante Skills mitgegeben, wende sie an und führe keine
-   redundante Voll-Discovery durch.
+1. **Prefer recommended skills:** Preferentially apply the skills listed further above under
+   "Recommended skills", provided they are available and relevant to the concrete task.
+   "Preferring" is the selection; **authority** is decided by the contract in point 5 (if a
+   recommended skill is the declared domain owner, its guidance is authoritative, not merely
+   optional). A fallback notation `A › B` is an ordered preference: take the first available,
+   non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
+   this point does not apply.
+2. **Judge relevance:** Check each skill against the **concrete** task and pull in only the
+   clearly fitting ones (typically 0–2). Do not load skills "on suspicion" — be token-frugal.
+3. **Take config into account:** If present, read the `skills` block from the Effective Flow
+   configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
+   scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
+   - `enabled: false` → skip the entire dynamic skill usage.
+   - `exclude` (global or scope) → never apply these skills; an excluded fallback member is
+     skipped in favor of the next fallback.
+   - `include` (global or scope) → additionally consider these skills as preferred; a
+     skill that is not installed is silently ignored.
+   - If the block or the file is missing, the default applies (`enabled` on, no additional
+     lists). Only read the config; do not migrate or write it here.
+4. **Library docs:** When working against an unknown or current library or framework, use
+   current-docs skills (e.g. `context7`) as needed, if available, instead of guessing from
+   memory. Only when needed, never mandatory.
+5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
+   skills share the responsibility in a **layered** way — not "Effective Flow always wins":
+   - **Effective Flow owns the orchestration** (the **what/when**): routing and user
+     interaction, plan/report state, finding IDs, backlinks, tracker integration, resumability,
+     agent selection and parallelization, baseline comparison, worktrees, commits, delivery,
+     harness transform, and config. These rules, `AGENTS.md`/project conventions, plus its own
+     language, commit, and scope rules **always** take precedence; no skill may widen scope,
+     introduce new dependencies, or violate the agreed plan. In analysis/planning tools the
+     no-code boundary stays strict.
+   - **Central skills own reusable expertise** (the **how**): domain checklists, heuristics,
+     standards, research procedures, and specialist guidance. If a recommended skill is the
+     **declared domain owner** for the technical question at hand **and** covers it, its
+     guidance is **authoritative** — not optional advice. The tool's own source then carries
+     **no second copy** of that playbook, only scope/output/lifecycle constraints plus a
+     minimal fallback (point 6).
+   - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
+     Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
+     guidance stays leading. The binding assignment per skill/intersection is in the ownership
+     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
+   available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
+   **minimal generic fallback** left in the source applies — a short, essential core guidance
+   so the tool stays functional and degrades cleanly. **No** second full domain handbook is
+   kept on hand; full depth comes only with the central skill.
+7. **Report:** Briefly name which skills were used (or that none fit). If an orchestrator tool
+   already handed you relevant skills, apply them and do not run a redundant full discovery.
 
 ### Phase 3: Refactoring
 
-1. Starte den passenden Implementer-Skill.
-2. Auftrag:
-   - nur Struktur ändern
-   - kein neues Verhalten
-   - keine neuen Features
-   - keine ungeplanten Bugfixes
+1. Start the appropriate implementer skill.
+2. Assignment:
+   - change only structure
+   - no new behavior
+   - no new features
+   - no unplanned bug fixes
 
 ### Phase 4: Review
 
-1. Starte den passenden Reviewer-Skill für die geänderten Dateien.
-2. Aggregiere Findings:
-   - Kritisch: vor Abschluss beheben
-   - Wichtig: sollte behoben werden
-   - Hinweis: optional
-3. Präsentiere die Review-Ergebnisse detailliert, einschließlich Status je Finding.
-4. Dokumentiere jedes Finding strukturiert, damit offene oder nicht umgesetzte Findings als Review-Report geschrieben werden können:
-   - Titel
-   - Schweregrad (Kritisch / Wichtig / Hinweis)
-   - Komplexität (Leicht / Mittel / Schwer)
-   - Bereich
-   - Datei + Zeile
+1. Start the appropriate reviewer skill for the changed files.
+2. Aggregate findings:
+   - Critical: fix before completion
+   - Important: should be fixed
+   - Note: optional
+3. Present the review results in detail, including status per finding.
+4. Document each finding in a structured way so open or unimplemented findings can be written as a review report:
+   - Title
+   - Severity (Critical / Important / Note)
+   - Complexity (Low / Medium / High)
+   - Area
+   - File + line
    - Problem
-   - Empfehlung
-   - Aktion (`/effective-flow fix`, `/effective-flow refactor`, `/effective-flow build` oder `/effective-flow docs`)
-   - Prompt-Vorschlag
-   - Status (Behoben / Offen / Nicht umgesetzt)
-   - Begründung bei Nicht-Umsetzung oder ADR-Referenz als Slug, falls vorhanden, z. B. `(ADR: <slug>)`
-5. Lege in diesem Workflow niemals ein ADR an und frage auch nicht danach. Bewusst nicht umgesetzte Findings werden ausschließlich im Review-Report dokumentiert. Über die spätere Umsetzung oder über ein ADR für eine bewusste Nicht-Umsetzung entscheidet der Entwickler beim Durchgehen der Findings-Datei, typischerweise via `tools/apply-review.md`.
-6. Wenn nach Review Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
-   - schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.effective-flow/review/`
-   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-<slug>.md`
-   - nenne den erzeugten Reportpfad in der Abschlusszusammenfassung
-7. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.effective-flow/review/` umgesetzt hat:
-   - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
-   - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
+   - Recommendation
+   - Action (`/effective-flow fix`, `/effective-flow refactor`, `/effective-flow build` or `/effective-flow docs`)
+   - Prompt suggestion
+   - Status (Fixed / Open / Not implemented)
+   - rationale for non-implementation or ADR reference as slug, if present, e.g. `(ADR: <slug>)`
+5. Never create an ADR in this workflow and do not ask for one either. Deliberately unimplemented findings are documented exclusively in the review report. The developer decides on later implementation or on an ADR for a deliberate non-implementation when going through the findings file, typically via `tools/apply-review.md`.
+6. If after review there remain findings with status `Open` or `Not implemented`:
+   - write them into a new file under `.effective-flow/review/` per "Open review-finding reports"
+   - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
+   - name the generated report path in the completion summary
+7. If this phase implemented a finding from an existing review-report file in `.effective-flow/review/`:
+   - add a short implementation note as the last entry directly in the affected finding
+   - begin the note with `✅` and name at least the date and workflow
 
-### Phase 5: Nachher-Validierung
+### Phase 5: Post-validation
 
-Starte parallel:
+Start in parallel:
 
 1. ``effective-flow-code-validator``
 2. ``effective-flow-test-writer``
-   - führt alle bestehenden Tests erneut aus
-   - schreibt keine neuen Tests
+   - runs all existing tests again
+   - writes no new tests
 
-### Phase 6: Vorher/Nachher-Vergleich und Abschluss
+### Phase 6: Before/after comparison and completion
 
-1. Vergleiche Ergebnisse aus Phase 5 mit der Baseline:
-   - Tests
+1. Compare the results from Phase 5 with the baseline:
+   - tests
    - TypeScript
-   - Lint
-   - Build
-2. Falls Regressionen gefunden werden:
-   - User informieren
-   - zurück zu Phase 3, dann Phase 5 und 6 erneut – gemäß „Goal-getriebene Abschlusssteuerung“: begrenze die internen Korrekturrunden und eskaliere an den User, falls die Baseline danach weiterhin nicht erreicht wird, statt unbegrenzt zu wiederholen
-3. Falls keine Regressionen:
-   - Wisdom-Datei löschen
-   - wenn Delivery oder Worktree-Ausführung aktiv war: Handback gemäß „Delivery- und Worktree-Integration“ ausführen (bei geführter Plan-Datei inklusive Plan-Statuswechsel auf `Umgesetzt`/`Implemented` und Archiv-Move nach `<plan.dir>/archive/` am Delivery-Punkt, Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen). Läuft der Workflow ausnahmsweise In-Place ohne Delivery, führt er denselben Statuswechsel und Archiv-Move direkt im Arbeitsbaum aus.
-   - zusammenfassen, was refactored wurde; bei aktivem Delivery-/Worktree-Modus zusätzlich Liefer-Branch, finalen Checkout-Zustand und Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch) nennen
-   - bestätigen, dass das Verhalten unverändert blieb
+   - lint
+   - build
+2. If regressions are found:
+   - inform the user
+   - back to Phase 3, then phases 5 and 6 again – per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the baseline is still not reached afterwards, instead of repeating indefinitely
+3. If no regressions:
+   - delete the wisdom file
+   - if delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, retract the worktree if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
+   - summarize what was refactored; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch)
+   - confirm that the behavior stayed unchanged
 
-## Pre-Commit-Gate
+## Pre-commit gate
 
-Vor jedem Commit müssen die im Projekt konfigurierten Prüfungen fehlerfrei durchlaufen. Typische Prüfungen sind Type-Checking, Linting und Tests — verwende die im Projekt definierten Scripts (z. B. `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm agent:check`).
+Before every commit, the checks configured in the project must pass without errors. Typical checks are type-checking, linting, and tests — use the scripts defined in the project (e.g. `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm agent:check`).
 
-- Wenn eine Prüfung Fehler meldet: behebe die Fehler zuerst, dann prüfe erneut.
-- Committe niemals Code, der diese Prüfungen nicht besteht.
-- Diese Regel gilt auch dann, wenn eine separate Verifikationsphase existiert — sie ist eine zusätzliche Absicherung, kein Ersatz.
+- If a check reports errors: fix the errors first, then check again.
+- Never commit code that does not pass these checks.
+- This rule applies even when a separate verification phase exists — it is an additional safeguard, not a replacement.
 
-## Commit-Message-Regeln
+## Commit message rules
 
-- **Setze niemals `Co-Authored-By`-Trailer in Commit-Messages**, unabhängig davon, ob ein LLM (Claude, Codex, GPT, …) oder ein anderes Tool die Zeile vorschlägt oder als Default einfügt.
-- Falls eine `Co-Authored-By`-Zeile in einem Commit-Template, `commit.template`, `--trailer`-Aufruf oder einer Draft-Message bereits vorhanden ist: entferne sie vor dem Commit.
-- **Füge keine KI-Attribution an:** keine „Generated with Claude Code/Codex"-Footer und keine Agent-Session-Links (z. B. `https://claude.ai/code/…`) in Commit-Messages – auch dann nicht, wenn der Harness sie als Default anhängt. Sachliche Erwähnungen von Claude Code oder Codex bleiben erlaubt, Generierungs-Attribution nicht.
-- Vermeide generische Messages wie `update files` oder `misc changes`.
-- Beschreibe konkret, was geändert wurde und warum.
-- Nutze Conventional-Commit-Präfixe: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
-- Wähle den Commit-Typ nach der **Wirkung**, nicht nach der Dateiart: verhaltensändernde Änderungen – auch reine **Config/Env/Secrets/CI** mit Deployment- oder Laufzeitwirkung (z. B. korrigierte Werte in Env-/Secret-Artefakten, die per Sync remote wirken) – sind `fix:` (bzw. `feat:` bei neuer Funktionalität). `chore:` nur für **deploy-neutrale** Änderungen ohne Verhaltenswirkung (reine Wartung, Formatting, Tooling ohne Laufzeitwirkung). Das gilt auch für den **Squash-PR-Titel**, der bei Squash-Merge den release-please-Bump bestimmt.
-- Exponiere keine internen Tracking-IDs in Commit-Messages, z. B. Review-Finding-IDs wie `R-0000001`, lokale Plan-/Review-IDs wie `F1` oder Platzhalter wie `[Finding-ID]`. Solche IDs gehören in Wisdom-/Report-Kontext, nicht in die Git-Historie.
+- **Never set `Co-Authored-By` trailers in commit messages**, regardless of whether an LLM (Claude, Codex, GPT, …) or another tool suggests the line or inserts it as a default.
+- If a `Co-Authored-By` line is already present in a commit template, `commit.template`, a `--trailer` invocation, or a draft message: remove it before committing.
+- **Do not add AI attribution:** no „Generated with Claude Code/Codex" footers and no agent session links (e.g. `https://claude.ai/code/…`) in commit messages – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex remain allowed, generation attribution does not.
+- Avoid generic messages like `update files` or `misc changes`.
+- Describe concretely what was changed and why.
+- Use Conventional Commit prefixes: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
+- Choose the commit type by **effect**, not by file type: behavior-changing changes – including pure **config/env/secrets/CI** with deployment or runtime effect (e.g. corrected values in env/secret artifacts that take effect remotely via sync) – are `fix:` (or `feat:` for new functionality). `chore:` only for **deploy-neutral** changes without behavioral effect (pure maintenance, formatting, tooling without runtime effect). This also applies to the **squash PR title**, which determines the release-please bump on a squash merge.
+- Do not expose internal tracking IDs in commit messages, e.g. review finding IDs like `R-0000001`, local plan/review IDs like `F1`, or placeholders like `[Finding-ID]`. Such IDs belong in wisdom/report context, not in the Git history.
 
-## Minimaler Fallback ohne Skill
+## Minimal fallback without the skill
 
-Nur relevant, wenn `codebase-improvement` nicht verfügbar ist. Kurze Kern-Guidance für die Gap-Analyse und Plan-Validierung in Phase 1, damit `refactor` sauber degradiert – **kein** zweites vollständiges Audit-Handbuch:
+Only relevant when `codebase-improvement` is not available. Brief core guidance for the gap analysis and plan validation in Phase 1, so `refactor` degrades cleanly – **not** a second complete audit handbook:
 
-- Die Ursache am richtigen Ort platzieren: das strukturelle Problem selbst angehen, nicht das nächstgelegene Symptom.
-- Scope eng halten: nur die geplante Umstrukturierung; keine Features, keine Bugfixes, kein Gold-Plating (Over-Engineering-Linse).
-- Risiko nach Blast-Radius bewerten: breit genutzte oder untestbare Stellen vorsichtiger und in kleineren Schritten.
-- Die deterministischen Scorecard-Schwellen oben (Clarity >= 80%, Context <= 10% Raten) und die Verhaltens-Invarianz bleiben unverändert.
+- Place the cause in the right spot: address the structural problem itself, not the nearest symptom.
+- Keep the scope narrow: only the planned restructuring; no features, no bug fixes, no gold-plating (over-engineering lens).
+- Assess risk by blast radius: treat widely used or untestable spots more cautiously and in smaller steps.
+- The deterministic scorecard thresholds above (Clarity >= 80%, Context <= 10% guessing) and the behavior invariance remain unchanged.
 
-## Regeln
+## Rules
 
-- Starte unabhängige Fachphasen parallel
-- gib nach jeder Phase eine Statusmeldung
-- führe keine Dokumentations-Phase ein, wenn das Refactoring kein öffentliches Verhalten ändert
-- keine neuen Features oder Bugfixes während des Refactorings
+- Start independent specialist phases in parallel
+- give a status update after each phase
+- do not introduce a documentation phase if the refactoring changes no public behavior
+- no new features or bug fixes during the refactoring

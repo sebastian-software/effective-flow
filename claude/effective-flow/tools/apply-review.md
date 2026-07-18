@@ -1,388 +1,395 @@
 
 # Effective Flow Apply Review
 
-Du bist der Orchestrator für die automatisierte Umsetzung von Review-Report-Findings.
+You are the orchestrator for the automated implementation of review report findings.
 
-## Ziel
+## Goal
 
-Dieser Workflow liest eine bestehende Review-Report-Datei aus `.effective-flow/review/` ein, wertet die Entwickler-Anmerkungen pro Finding aus und delegiert die Umsetzung an die passenden Workflows. Findings, die bewusst nicht umgesetzt werden sollen, übergibt der Workflow als Entscheidungs-Kandidaten an den `decision-records`-Skill; nur dauerhafte Entscheidungen werden als ADR dokumentiert, nicht-dauerhafte Ablehnungen bleiben im Report bzw. Tracker-Artefakt.
+This workflow reads an existing review report file from `.effective-flow/review/`, evaluates the developer notes per finding and delegates the implementation to the matching workflows. Findings that should deliberately not be implemented are handed by the workflow as decision candidates to the `decision-records` skill; only permanent decisions are documented as an ADR, non-permanent rejections stay in the report or tracker artifact.
 
-Im **Remote-Modus** (Tracker-Modus `remote`) liest der Workflow die Findings stattdessen aus einem Issue-Tracker: übergeben wird ein Epic-Issue oder eine Liste konkreter Finding-Issues, pro Finding entsteht ein PR, und der Epic-Eintrag wird nach PR-Erstellung abgehakt. Die Abweichungen sind in „Remote-Modus (Issue-Tracker)“ gebündelt; `wontfix`-Findings ersetzen dort die ablehnende Entwickler-Anmerkung.
+In **remote mode** (tracker mode `remote`) the workflow reads the findings from an issue tracker instead: it is passed an epic issue or a list of concrete finding issues, one PR is created per finding, and the epic entry is checked off after PR creation. The deviations are bundled in "Remote mode (issue tracker)"; there, `wontfix` findings replace the rejecting developer note.
 
-## Sprachregel
+## Language rule
 
-- Code, Bezeichner und Tests auf Englisch
-- Dokumentationsinhalte auf Deutsch, außer bestehende Doku führt eine andere Sprache fort
-- Commit-Messages auf Englisch
+- Code, identifiers, and tests in English
+- Documentation and tool instructions in English **by default**; German remains a permitted
+  option — continue the existing language of a file you edit, and honour an explicit German
+  choice for a project, document, or plan marker
+- Commit messages in English
 
-Die deutsche Repository-Locale ist **de-DE**.
+English is the default; German is not deprecated. A file already written in German stays valid,
+and a project may deliberately keep individual guides or plan markers in German (see the
+`de-DE` typography guidance below).
 
-### Typografie
+### Typography
 
-Locale-spezifische Typografie sichtbarer Prosa – Anführungszeichen, Gedankenstriche,
-Umlaute und ß, geschützte Leerzeichen, Zahlen- und Datumsformate – besitzt der zentrale
-Skill `locale-typography`. Beim Schreiben oder Bearbeiten sichtbarer deutscher Prosa ist
-dessen `de-DE`-Guidance maßgeblich; Effective Flow führt hier bewusst keine zweite
-Typografie-Checkliste.
+Locale-specific typography of visible prose — quotation marks, dashes, umlauts and ß, non-breaking
+spaces, number and date formats — is owned by the central `locale-typography` skill. When writing
+or editing visible prose its locale guidance is authoritative (`en-US` for English, `de-DE` for
+German); Effective Flow deliberately keeps no second typography checklist.
 
-Fehlt der Skill (nicht installiert, `skills.enabled: false` oder via `exclude`
-deaktiviert), gilt als minimaler Fallback für deutschen Text: echte Umlaute und ß statt
-ASCII-Ersatz (ae, oe, ue, ss), typografische Anführungszeichen „…“ statt gerader und
-Halbgeviertstrich – statt Bindestrich.
+If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
+a minimal fallback applies to German text: real umlauts and ß instead of ASCII replacements (ae,
+oe, ue, ss), typographic quotation marks „…“ instead of straight ones, and an en dash – instead
+of a hyphen.
 
-## Aufgabenverfolgung
+## Task tracking
 
-Wenn mehrere Aufgaben zu erledigen sind, verwende ein verfügbares TODO- oder Task-Tracking-Tool (z. B. `TaskCreate`/`TaskUpdate`, `TodoWrite` oder ein vergleichbares Tool), um eine Aufgabenliste anzulegen. Setze jede Aufgabe vor Beginn auf „in Arbeit“ und nach Abschluss auf „erledigt“.
+When there are several tasks to complete, use an available TODO or task-tracking tool (e.g. `TaskCreate`/`TaskUpdate`, `TodoWrite`, or a comparable tool) to create a task list. Set each task to "in progress" before starting it and to "done" after completing it.
 
-Falls kein Task-Tool verfügbar ist, gib dem User stattdessen eine kurze Fortschrittsmeldung nach jedem abgeschlossenen Schritt.
+If no task tool is available, give the user a short progress update after each completed step instead.
 
-### Wann verwenden
+### When to use
 
-- bei drei oder mehr Teilaufgaben oder Schritten
-- bei komplexen Aufträgen mit mehreren Phasen
-- wenn der User mehrere Aufgaben gleichzeitig nennt
+- with three or more subtasks or steps
+- with complex tasks that have multiple phases
+- when the user names several tasks at once
 
-### Wann nicht verwenden
+### When not to use
 
-- bei einer einzelnen, trivialen Aufgabe
-- wenn der Auftrag in weniger als drei einfachen Schritten erledigt ist
+- with a single, trivial task
+- when the task is done in fewer than three simple steps
 
-## Effective-Flow-Konfiguration (Projektsetup-ADR)
+## Effective Flow configuration (project setup ADR)
 
-Die getrackte Wahrheit für die Effective-Flow-Konfiguration ist eine lebende ADR „Effective
-Flow project setup“ (Default-Slug `effective-flow-project-setup`, siehe Baustein „Lebendes
-ADR-Modell“). Sie trägt die Config-Parameter mit minimaler Prosa als **Markdown-Tabelle**. Es
-gibt **keine** `.effective-flow/config.json` mehr als Config-Quelle; `.effective-flow/` ist
-reines Laufzeit-Verzeichnis (`memory.json`, `cache.json`, `review/`, `.worktrees/`) und wird
-komplett gitignored.
+The tracked truth for the Effective Flow configuration is a living ADR "Effective
+Flow project setup" (default slug `effective-flow-project-setup`, see fragment "Living
+ADR model"). It carries the config parameters with minimal prose as a **Markdown table**. There
+is **no** `.effective-flow/config.json` as a config source anymore; `.effective-flow/` is a
+pure runtime directory (`memory.json`, `cache.json`, `review/`, `.worktrees/`) and is
+completely gitignored.
 
-### Config-Locator (Auflösungsreihenfolge)
+### Config locator (resolution order)
 
-Beim Lesen der Konfiguration wird die Projektsetup-ADR in dieser Reihenfolge aufgelöst; der
-erste greifende Schritt gewinnt:
+When reading the configuration, the project setup ADR is resolved in this order; the
+first matching step wins:
 
-1. **AGENTS.md-Marker.** Die kanonische Zeile `**Effective Flow project setup:** <pfad>` in
-   `AGENTS.md`, sonst in `CLAUDE.md` bzw. einer vergleichbaren Konventionsdatei → die ADR
-   unter `<pfad>` lesen. **Backcompat (eine Generation):** ein noch vorhandener Alt-Marker
-   `**Firmo project setup:** <pfad>` wird beim Lesen gleichwertig erkannt; /effective-flow setup
-   stellt ihn beim nächsten Lauf nicht-destruktiv auf die neue Schreibweise um. Zeigt der
-   Marker auf einen Pfad, unter dem **keine** ADR liegt (toter/veralteter Marker), nicht dort
-   stehenbleiben, sondern in dieser Reihenfolge weiterfallen und den veralteten Marker melden
-   (Korrektur in /effective-flow setup).
-2. **Default-Pfad/Scan.** Sonst `docs/adr/effective-flow-project-setup.md` (der Alt-Slug
-   `firmo-project-setup` wird beim Scan gleichwertig erkannt) bzw. ein Scan des erkannten
-   ADR-Verzeichnisses (`docs/adr/`, `docs/decisions/`, `adr/`) nach der Projektsetup-ADR.
-3. **Übergangs-Kompatibilität.** Sonst — nur übergangsweise — eine noch vorhandene
-   `.effective-flow/config.json` (sonst eine Legacy-`.firmo/config.json`) lesen und auf
-   /effective-flow setup hinweisen. Dieser Lesepfad legt **nichts** an und berührt **kein** Git.
-4. **Eingebaute Defaults.** Sonst die Defaults der jeweiligen Quell-Skills verwenden.
+1. **AGENTS.md marker.** The canonical line `**Effective Flow project setup:** <path>` in
+   `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR
+   under `<path>`. **Backcompat (one generation):** a still-present legacy marker
+   `**Firmo project setup:** <path>` is recognized as equivalent on read; /effective-flow setup
+   converts it non-destructively to the new spelling on the next run. If the
+   marker points to a path under which **no** ADR lives (dead/stale marker), do not stay
+   there, but fall through in this order and report the stale marker
+   (correction in /effective-flow setup).
+2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` (the legacy slug
+   `firmo-project-setup` is recognized as equivalent during the scan) or a scan of the detected
+   ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR.
+3. **Transitional compatibility.** Otherwise — only transitionally — read a still-present
+   `.effective-flow/config.json` (otherwise a legacy `.firmo/config.json`) and point to
+   /effective-flow setup. This read path creates **nothing** and touches **no** Git.
+4. **Built-in defaults.** Otherwise use the defaults of the respective source skills.
 
-Der deterministische Lesepfad beliebiger Tools ist nicht-blockierend: Er liest die ADR (bzw.
-den Übergangs-Fallback), erzeugt aber selbst keine Datei und mutiert kein Git. Das Anlegen
-der ADR, der Marker und die Migration passieren ausschließlich im git-berührenden Pfad von
+The deterministic read path of any tool is non-blocking: It reads the ADR (or
+the transitional fallback), but itself creates no file and mutates no Git. Creating
+the ADR, the markers and the migration happen exclusively in the Git-touching path of
 /effective-flow setup.
 
-### Tabellen-Encoding (verbindlich für Schreiber und Leser)
+### Table encoding (binding for writers and readers)
 
-Die Config-Parameter stehen als flache Markdown-Tabelle mit zwei Spalten
-`| Schlüssel | Wert |`. Schreiber (/effective-flow setup, Migration) und Leser (alle Tools)
-interpretieren die Werte identisch nach dieser Kodierung:
+The config parameters stand as a flat Markdown table with two columns
+`| Key | Value |`. Writers (/effective-flow setup, migration) and readers (all tools)
+interpret the values identically per this encoding. English is the default encoding;
+a pre-existing ADR written in the former German form (`## Konfiguration`, header
+`| Schlüssel | Wert |`, `## Kontext`, status `Aktiv`/`Abgelöst`, empty list `(leer)`) stays
+recognized on read and is rewritten to the English form on the next write:
 
 - **Boolean** → `true` / `false`.
-- **String** → literal, unquoted (z. B. `focused`, `origin/main`).
-- **`null`** (semantisch „beim Lauf fragen“, z. B. `applyReview.defaultCommitStrategy`) →
-  das Literal-Token `null`.
-- **Leere Liste** → `(leer)`.
-- **Gefüllte Liste** → kommagetrennt (z. B. `humanizer, distill`).
-- **Verschachtelung** → dotted keys (z. B. `applyReview.worktree.baseDir`,
-  `skills.agents.ui-implementer.include`); ein leeres Objekt hat keine Unterzeilen.
-- **Fehlende Zeile = Schlüssel nicht gesetzt → Default des Quell-Skills.** Bewusst
-  verschieden von einer vorhandenen Zeile mit Wert `null` (expliziter Wert, semantisch „beim
-  Lauf fragen“). Beispiel: keine `delivery.completion`-Zeile → Default `merge`; eine
-  `delivery.completion | null`-Zeile → beim Lauf fragen.
+- **String** → literal, unquoted (e.g. `focused`, `origin/main`).
+- **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
+  the literal token `null`.
+- **Empty list** → `(empty)`.
+- **Filled list** → comma-separated (e.g. `humanizer, distill`).
+- **Nesting** → dotted keys (e.g. `applyReview.worktree.baseDir`,
+  `skills.agents.ui-implementer.include`); an empty object has no sub-lines.
+- **Missing line = key not set → default of the source skill.** Deliberately
+  different from a present line with value `null` (an explicit value, semantically "ask at
+  run time"). Example: no `delivery.completion` line → default `merge`; a
+  `delivery.completion | null` line → ask at run time.
 
-Das Lesen eines einzelnen Werts ist ein trivialer Zeilen-Lookup (Zeile mit dotted key →
-Wertzelle). Beispiel-Ausschnitt (Schnittstellenskizze, kein vollständiger Inhalt):
+Reading a single value is a trivial line lookup (line with dotted key →
+value cell). Example excerpt (interface sketch, not full content):
 
 ```markdown
-## Konfiguration
+## Configuration
 
-| Schlüssel                         | Wert    |
+| Key                         | Value    |
 | --------------------------------- | ------- |
 | review.profile                    | focused |
 | applyReview.defaultCommitStrategy | null    |
-| skills.exclude                    | (leer)  |
+| skills.exclude                    | (empty)  |
 | worktree.enabled                  | true    |
 ```
 
-Ist die Tabelle ungültig oder mehrdeutig (fehlender Schlüssel, unbekanntes Encoding): einen
-sicheren Default für den Lauf verwenden, den User über den betroffenen Schlüssel
-informieren, **nicht** raten.
+If the table is invalid or ambiguous (missing key, unknown encoding): use a
+safe default for the run, inform the user about the affected key,
+do **not** guess.
 
-### Einmalige Migration Legacy-`config.json` → Projektsetup-ADR
+### One-time migration legacy `config.json` → project setup ADR
 
-Die Migration einer bestehenden `.effective-flow/config.json` bzw. Legacy-`.firmo/config.json`
-in die Projektsetup-ADR ist **git-berührend** und läuft ausschließlich im
-/effective-flow setup-Pfad. Sie erzeugt die ADR-Tabelle aus dem aktuellen Config-Inhalt (Encoding
-wie oben), schreibt den AGENTS.md-Marker `**Effective Flow project setup:**`, stellt
-`.gitignore` auf ein einzelnes `.effective-flow/` um und enttrackt die Alt-`config.json`
-(`git rm --cached`, Datei-Inhalt auf Platte belassen). Der genaue Ablauf inklusive
-Idempotenz-Markierung steht in /effective-flow setup.
+The migration of an existing `.effective-flow/config.json` or legacy `.firmo/config.json`
+into the project setup ADR is **Git-touching** and runs exclusively in the
+/effective-flow setup path. It produces the ADR table from the current config content (encoding
+as above), writes the AGENTS.md marker `**Effective Flow project setup:**`, switches
+`.gitignore` to a single `.effective-flow/` and untracks the legacy `config.json`
+(`git rm --cached`, leave the file content on disk). The exact procedure including
+idempotency marking is in /effective-flow setup.
 
-Außerhalb von /effective-flow setup findet **keine** Migration statt: Der deterministische
-Lesepfad legt nichts an und berührt kein Git; er liest bei fehlender ADR ersatzweise eine
-noch vorhandene `.effective-flow/config.json` (sonst `.firmo/config.json`) und weist auf
-/effective-flow setup hin.
+Outside /effective-flow setup, **no** migration takes place: The deterministic
+read path creates nothing and touches no Git; on a missing ADR it reads instead a
+still-present `.effective-flow/config.json` (otherwise `.firmo/config.json`) and points to
+/effective-flow setup.
 
-## Lebendes ADR-Modell
+## Living ADR model
 
-Effective Flow führt Architekturentscheidungen (ADRs) als **lebende Dokumente**: mutable
-Markdown-Dateien, die stets den aktuell gültigen Stand einer Entscheidung tragen. Es gibt
-keine Nummerierung und keine Supersede-Kette; die aktuelle Datei ist die Wahrheit. Dieser
-Baustein ist die maßgebliche Konvention für alle **von Effective Flow erzeugten** ADRs.
+Effective Flow keeps architecture decisions (ADRs) as **living documents**: mutable
+Markdown files that always carry the currently valid state of a decision. There is
+no numbering and no supersede chain; the current file is the truth. This
+building block is the authoritative convention for all ADRs **produced by Effective Flow**.
 
-### Form und Ort
+### Form and location
 
-- **Ort:** ADRs liegen im erkannten ADR-Verzeichnis des Projekts, Default `docs/adr/`.
-- **Dateiname:** nummernlos, kebab-case-Slug — `docs/adr/<slug>.md` (z. B.
+- **Location:** ADRs live in the project's detected ADR directory, default `docs/adr/`.
+- **File name:** numberless, kebab-case slug — `docs/adr/<slug>.md` (e.g.
   `docs/adr/effective-flow-project-setup.md`).
-- **Titel:** eine H1 mit dem sprechenden Titel — `# <Titel>` (kein `NNNN`-Präfix).
-- **Status:** ein `## Status`-Abschnitt hält den aktuellen Zustand. Kanonische Werte:
-  `Aktiv`, `Abgelöst`, `Nicht umgesetzt`.
-- **Mutabilität:** eine bestehende ADR wird bei Änderung der Entscheidung **in-place**
-  aktualisiert (Inhalt und `## Status`), nicht dupliziert oder per Nachfolge-Record ersetzt.
-- **Nebenläufigkeit:** die Datei direkt vor dem Schreiben frisch einlesen.
+- **Title:** an H1 with the descriptive title — `# <Title>` (no `NNNN` prefix).
+- **Status:** a `## Status` section holds the current state. Canonical values (English by
+  default): `Active`, `Superseded`, `Not implemented`. The former German values `Aktiv`,
+  `Abgelöst`, `Nicht umgesetzt` stay recognized when reading an existing ADR.
+- **Mutability:** an existing ADR is updated **in place** when the decision changes
+  (content and `## Status`), not duplicated or replaced by a successor record.
+- **Concurrency:** read the file fresh immediately before writing.
 
-### Referenzierung
+### Referencing
 
-Referenzen auf ADRs erfolgen über **Slug oder Titel**, nicht über eine Nummer, z. B.
-`(ADR: <slug>)`. Slug-Referenzen bleiben über Inhaltsänderungen hinweg stabil.
+References to ADRs use the **slug or title**, not a number, e.g.
+`(ADR: <slug>)`. Slug references stay stable across content changes.
 
-### Rückwärts-Lese-Kompatibilität für nummerierte Alt-ADRs
+### Backward read compatibility for numbered legacy ADRs
 
-Vorhandene nummerierte Alt-ADRs (`NNNN-*.md`, H1 `# NNNN — Titel`) bleiben **lesbar und per
-Nummer auflösbar**. Es gibt **keine** verpflichtende Bulk-Umbenennung; Alt-ADRs werden nicht
-angetastet. Neue ADRs entstehen ausschließlich im lebenden Slug-Format. Das spiegelt Effective Flows
-etablierte Kompatibilitätslinie (Plan-Nummern per H1, `firmo-`/`effective-flow-`-Labels).
+Existing numbered legacy ADRs (`NNNN-*.md`, H1 `# NNNN — Title`) remain **readable and
+resolvable by number**. There is **no** mandatory bulk rename; legacy ADRs are not
+touched. New ADRs are created exclusively in the living slug format. This mirrors Effective Flow's
+established compatibility line (plan numbers via H1, `firmo-`/`effective-flow-` labels).
 
-### Verhältnis zum `decision-records`-Skill (deklarierte Konvention + Fallback)
+### Relationship to the `decision-records` skill (declared convention + fallback)
 
-Das oben beschriebene lebende Slug-Modell ist die **deklarierte ADR-Konvention dieses
-Repos**. Der Host-Skill `decision-records` ist der Domänen-Owner für die ADR-Craft (ob eine
-Entscheidung überhaupt ADR-würdig ist, Lifecycle, Supersession, Index); seine erste
-Operating-Regel ist, **die vorhandene Repo-Konvention zu entdecken und ihr zu folgen**, statt
-eine eigene zu erzwingen. Genau dieser Baustein ist diese Konvention — der Skill autort
-Effective-Flow-ADRs also im lebenden Slug-Format (Ort/Dateiname/Titel/Status/Mutabilität wie
-oben), nicht in einem immutabel-nummerierten.
+The living slug model described above is the **declared ADR convention of this
+repo**. The host skill `decision-records` is the domain owner for ADR craft (whether a
+decision is even ADR-worthy, lifecycle, supersession, index); its first
+operating rule is to **discover the existing repo convention and follow it**, rather than
+enforcing its own. This very building block is that convention — so the skill authors
+Effective Flow ADRs in the living slug format (location/file name/title/status/mutability as
+above), not in an immutably numbered one.
 
-Damit gilt der geschichtete Vertrag (siehe `skill-discovery.md`):
+The layered contract therefore applies (see `skill-discovery.md`):
 
-- **`decision-records` maßgeblich, wenn vorhanden.** Der Skill entscheidet, **ob** ein Finding
-  eine dauerhafte Entscheidung ist, und autort — falls ja — nach der hier deklarierten
-  Konvention. Deklariert das Zielrepo eine **eigene** ADR-Konvention (anderes Verzeichnis,
-  Titel-/Status-Format, Index), folgt der Skill dieser; das lebende Slug-Modell ist nur der
-  Default, wenn das Repo nichts anderes deklariert.
-- **Minimaler Fallback, wenn der Skill fehlt.** Ist `decision-records` nicht verfügbar (nicht
-  installiert, `skills.enabled: false` oder via `exclude` deaktiviert), autort das
-  aufrufende Tool selbst nach der **minimalen Fallback-Struktur** unten — **kein** stilles
-  Erfinden einer zweiten Konvention.
+- **`decision-records` is authoritative when present.** The skill decides **whether** a finding
+  is a durable decision and — if so — authors it according to the convention declared here.
+  If the target repo declares its **own** ADR convention (different directory,
+  title/status format, index), the skill follows that; the living slug model is only the
+  default when the repo declares nothing else.
+- **Minimal fallback when the skill is absent.** If `decision-records` is unavailable (not
+  installed, `skills.enabled: false`, or disabled via `exclude`), the
+  calling tool itself authors according to the **minimal fallback structure**
+  below — **no** silent invention of a second convention.
 
-Frühere Fassungen dieses Bausteins beschrieben das Slug-Modell als **bewusste Abweichung**
-gegenüber einem angeblich immutabel/nummerierten `decision-records`-Skill. Diese Prämisse ist
-überholt: `decision-records` unterstützt inzwischen ein deklariert-lebendes/mutables Modell
-(opt-in) und folgt ohnehin der Repo-Konvention. Das lebende Slug-Modell ist deshalb keine
-Divergenz mehr, sondern die vom Skill befolgte deklarierte Konvention.
+Earlier versions of this building block described the slug model as a **deliberate divergence**
+from an allegedly immutable/numbered `decision-records` skill. That premise is
+outdated: `decision-records` now supports a declared living/mutable model (opt-in)
+and follows the repo convention anyway. The living slug model is therefore no longer a
+divergence but the declared convention the skill follows.
 
-**Koexistenz.** Wo ein Projekt lieber ein anderes ADR-Modell fährt, deklariert es dessen
-Konvention im Zielrepo (der Skill folgt ihr) oder schaltet `decision-records` gezielt über die
-`skills`-Config (`include`/`exclude`, auch per-Agent/-Tool) zu oder ab.
+**Coexistence.** Where a project prefers to run a different ADR model, it declares that
+convention in the target repo (the skill follows it) or toggles `decision-records` deliberately via the
+`skills` config (`include`/`exclude`, also per-agent/-tool) on or off.
 
-### Minimale Fallback-Struktur (nur ohne `decision-records`)
+### Minimal fallback structure (only without `decision-records`)
 
-Kurze Kern-Struktur, damit ein aufrufendes Tool eine abgelehnte Entscheidung auch ohne den
-Skill als lebende Slug-ADR festhalten kann — **kein** zweites vollständiges ADR-Handbuch. Ort
-und Form wie unter „Form und Ort“; die Datei vor dem Schreiben frisch einlesen und eine
-thematisch passende bestehende ADR in-place aktualisieren statt zu duplizieren:
+A short core structure so that a calling tool can record a rejected decision as a living
+slug ADR even without the skill — **not** a second full ADR handbook. Location
+and form as under "Form and location"; read the file fresh before writing and update a
+thematically fitting existing ADR in place instead of duplicating:
 
 ```markdown
-# [Titel der Entscheidung]
+# [Title of the decision]
 
 ## Status
 
-Nicht umgesetzt
+Not implemented
 
-## Kontext
+## Context
 
-[Herkunft: Review-Report + Finding-ID, bzw. Issue-/Epic-Nummer im Remote-Modus]
+[Origin: review report + finding ID, or issue/epic number in remote mode]
 
-## Entscheidung
+## Decision
 
-[Kurzbegründung, warum nicht umgesetzt wird]
+[Short rationale for why it is not implemented]
 
-## Begründung
+## Rationale
 
-[Vollständige Entwickler-Anmerkung bzw. `wontfix`-Begründung]
+[Full developer note or `wontfix` rationale]
 
-## Quell-Finding
+## Source finding
 
-[Finding-ID] aus [Quelle]: [Kurzfassung des Problems]  <!-- nachverfolgbarer Backlink -->
+[Finding ID] from [source]: [short version of the problem]  <!-- traceable backlink -->
 ```
 
-Nur **dauerhafte** Entscheidungen werden so festgehalten; eine reine Delivery-Ablehnung ohne
-dauerhafte Architektur-Wirkung bleibt im Review-Report bzw. Tracker-Artefakt und wird nicht in
-eine ADR gezwungen.
+Only **durable** decisions are recorded this way; a pure delivery rejection without a
+durable architectural effect stays in the review report or tracker artifact and is not forced into
+an ADR.
 
-## Commit-Message-Regeln
+## Commit message rules
 
-- **Setze niemals `Co-Authored-By`-Trailer in Commit-Messages**, unabhängig davon, ob ein LLM (Claude, Codex, GPT, …) oder ein anderes Tool die Zeile vorschlägt oder als Default einfügt.
-- Falls eine `Co-Authored-By`-Zeile in einem Commit-Template, `commit.template`, `--trailer`-Aufruf oder einer Draft-Message bereits vorhanden ist: entferne sie vor dem Commit.
-- **Füge keine KI-Attribution an:** keine „Generated with Claude Code/Codex"-Footer und keine Agent-Session-Links (z. B. `https://claude.ai/code/…`) in Commit-Messages – auch dann nicht, wenn der Harness sie als Default anhängt. Sachliche Erwähnungen von Claude Code oder Codex bleiben erlaubt, Generierungs-Attribution nicht.
-- Vermeide generische Messages wie `update files` oder `misc changes`.
-- Beschreibe konkret, was geändert wurde und warum.
-- Nutze Conventional-Commit-Präfixe: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
-- Wähle den Commit-Typ nach der **Wirkung**, nicht nach der Dateiart: verhaltensändernde Änderungen – auch reine **Config/Env/Secrets/CI** mit Deployment- oder Laufzeitwirkung (z. B. korrigierte Werte in Env-/Secret-Artefakten, die per Sync remote wirken) – sind `fix:` (bzw. `feat:` bei neuer Funktionalität). `chore:` nur für **deploy-neutrale** Änderungen ohne Verhaltenswirkung (reine Wartung, Formatting, Tooling ohne Laufzeitwirkung). Das gilt auch für den **Squash-PR-Titel**, der bei Squash-Merge den release-please-Bump bestimmt.
-- Exponiere keine internen Tracking-IDs in Commit-Messages, z. B. Review-Finding-IDs wie `R-0000001`, lokale Plan-/Review-IDs wie `F1` oder Platzhalter wie `[Finding-ID]`. Solche IDs gehören in Wisdom-/Report-Kontext, nicht in die Git-Historie.
+- **Never set `Co-Authored-By` trailers in commit messages**, regardless of whether an LLM (Claude, Codex, GPT, …) or another tool suggests the line or inserts it as a default.
+- If a `Co-Authored-By` line is already present in a commit template, `commit.template`, a `--trailer` invocation, or a draft message: remove it before committing.
+- **Do not add AI attribution:** no „Generated with Claude Code/Codex" footers and no agent session links (e.g. `https://claude.ai/code/…`) in commit messages – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex remain allowed, generation attribution does not.
+- Avoid generic messages like `update files` or `misc changes`.
+- Describe concretely what was changed and why.
+- Use Conventional Commit prefixes: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
+- Choose the commit type by **effect**, not by file type: behavior-changing changes – including pure **config/env/secrets/CI** with deployment or runtime effect (e.g. corrected values in env/secret artifacts that take effect remotely via sync) – are `fix:` (or `feat:` for new functionality). `chore:` only for **deploy-neutral** changes without behavioral effect (pure maintenance, formatting, tooling without runtime effect). This also applies to the **squash PR title**, which determines the release-please bump on a squash merge.
+- Do not expose internal tracking IDs in commit messages, e.g. review finding IDs like `R-0000001`, local plan/review IDs like `F1`, or placeholders like `[Finding-ID]`. Such IDs belong in wisdom/report context, not in the Git history.
 
-## Empfohlene Skills
+## Recommended skills
 
 - `decision-records`
 
-## Aufgabenverfolgung im Detail
+## Task tracking in detail
 
-Zusätzlich zur generischen Regel im obigen Include verlangt dieser Skill **per-Finding-Granularität**, damit der User während des Workflows live sieht, wie viele Findings noch offen sind.
+In addition to the generic rule in the include above, this skill requires **per-finding granularity** so that the user sees live during the workflow how many findings are still open.
 
-### Task-Struktur
+### Task structure
 
-Lege gleich zu Beginn von Phase 1 (nach erfolgreicher Report-Klassifikation) folgende Tasks an:
+Right at the start of Phase 1 (after a successful report classification), create the following tasks:
 
-1. **Phase-Level-Tasks** für jede Workflow-Phase, in der Reihenfolge:
-   - „Phase 1: Report einlesen und validieren“
-   - „Phase 2: Commit- und Stash-Strategie festlegen“
-   - „Phase 3: Abgelehnte Findings an decision-records übergeben“
-   - „Phase 4: Vorabanalyse und parallele Delegation“
-   - „Phase 5: Report aktualisieren“
-   - „Phase 6: Stash-Bereinigung“
-   - „Phase 7: Finale Validierung“
-   - „Phase 8: Zusammenfassung“
-2. **Per-Finding-Tasks** für jedes umsetzbare Finding aus der Klassifikation in Phase 1 (nicht für „Bereits umgesetzt“ oder „Nicht umsetzen“-Findings):
-   - Subject: `Finding R-XXXXXXX umsetzen` (mit konkreter Finding-ID)
-   - Status initial: `pending`
+1. **Phase-level tasks** for each workflow phase, in order:
+   - "Phase 1: Read and validate the report"
+   - "Phase 2: Determine commit and stash strategy"
+   - "Phase 3: Hand rejected findings to decision-records"
+   - "Phase 4: Pre-analysis and parallel delegation"
+   - "Phase 5: Update the report"
+   - "Phase 6: Stash cleanup"
+   - "Phase 7: Final validation"
+   - "Phase 8: Summary"
+2. **Per-finding tasks** for each implementable finding from the classification in Phase 1 (not for "Already implemented" or "Do not implement" findings):
+   - Subject: `Implement finding R-XXXXXXX` (with the concrete finding ID)
+   - Initial status: `pending`
 
-### Lifecycle der Tasks
+### Task lifecycle
 
-- **Phase-Level-Tasks:** vor Phase-Start auf `in_progress`, nach Abschluss auf `completed`. Phase 1 ist beim Anlegen der Tasks bereits aktiv → setze sie direkt nach dem Anlegen auf `in_progress` und nach Abschluss von Phase 1 auf `completed`.
-- **Per-Finding-Tasks:**
-  - `in_progress`: sobald die Vorabanalyse für dieses Finding in Phase 4.1 startet.
-  - `completed`: sobald die Delegation in Phase 4.3 für dieses Finding `ERLEDIGT` meldet.
-  - **Bei `ABBRUCH` in Phase 4.1 oder 4.3:** trotzdem auf `completed` setzen (eine offene Task-Zeile würde die Liste blockieren), aber das Subject um `[fehlgeschlagen]` ergänzen, damit der User den Status erkennt.
-- **Bei vorzeitigem Gesamt-Abbruch** (z. B. keine umsetzbaren Findings in Phase 1, Report nicht gefunden): alle noch offenen `pending`- und `in_progress`-Tasks auf `completed` setzen und ihre Subjects mit `[abgebrochen]` ergänzen, bevor der Skill mit `ERLEDIGT` endet.
+- **Phase-level tasks:** to `in_progress` before the phase starts, to `completed` after completion. Phase 1 is already active when the tasks are created → set it to `in_progress` directly after creating them and to `completed` after Phase 1 is complete.
+- **Per-finding tasks:**
+  - `in_progress`: as soon as the pre-analysis for this finding starts in Phase 4.1.
+  - `completed`: as soon as the delegation in Phase 4.3 reports `DONE` for this finding.
+  - **On `ABORT` in Phase 4.1 or 4.3:** set to `completed` anyway (an open task line would block the list), but extend the subject with `[failed]` so the user recognizes the status.
+- **On an early overall abort** (e.g. no implementable findings in Phase 1, report not found): set all still-open `pending` and `in_progress` tasks to `completed` and extend their subjects with `[aborted]` before the skill ends with `DONE`.
 
-### Wichtig
+### Important
 
-- Lege **alle** Tasks (Phase-Level und Per-Finding) am Ende von Phase 1, direkt nach erfolgreicher Klassifikation, an. Damit sieht der User die volle Liste, bevor irgendwelche parallelen Sub-Agenten starten.
-- Aktualisiere Tasks zeitnah: jeder Lifecycle-Wechsel direkt nach dem Ereignis (nicht gebatched am Phasen-Ende).
+- Create **all** tasks (phase-level and per-finding) at the end of Phase 1, directly after a successful classification. That way the user sees the full list before any parallel sub-agents start.
+- Update tasks promptly: each lifecycle change directly after the event (not batched at the phase end).
 
-## Laufzeitverzeichnis `.effective-flow/` und Migration von `.firmo/`/`.sf-plugin/`
+## Runtime directory `.effective-flow/` and migration from `.firmo/`/`.sf-plugin/`
 
-Effective Flow hält projektlokale Laufzeitdaten unter `.effective-flow/` (`memory.json`, `cache.json`, `review/`, `investigation/`, `.worktrees/`, Wisdom-Dateien; eine Legacy-`config.json` kann noch als Übergangs-Fallback vorliegen, ist aber keine Primärquelle mehr — die Konfiguration lebt in der Projektsetup-ADR). Frühere Versionen nutzten `.firmo/`, noch ältere `.sf-plugin/`. Wenn dieser Skill `.effective-flow/`-Daten liest oder schreibt, gelten diese Regeln:
+Effective Flow keeps project-local runtime data under `.effective-flow/` (`memory.json`, `cache.json`, `review/`, `investigation/`, `.worktrees/`, wisdom files; a legacy `config.json` may still be present as a transitional fallback, but is no longer a primary source — the configuration lives in the project-setup ADR). Earlier versions used `.firmo/`, still older ones `.sf-plugin/`. When this skill reads or writes `.effective-flow/` data, these rules apply:
 
-1. **Kein ungefragter Footprint:** Lege `.effective-flow/` nur an, wenn tatsächlich Laufzeitdaten geschrieben werden. Ein Lauf ohne zu speichernde Daten erzeugt kein `.effective-flow/`.
-2. **Fallback-Lesen:** Fehlt `.effective-flow/`, existiert aber ein älteres Laufzeitverzeichnis, lies die benötigten Dateien (`config.json`, `memory.json`, Report-/Investigation-Dateien …) aus dem jeweils vorhandenen Legacy-Verzeichnis — bevorzugt `.firmo/`, sonst `.sf-plugin/` —, solange noch nicht migriert wurde.
-3. **Einmalige, nicht-destruktive Migration:** Sobald nach `.effective-flow/` geschrieben würde und noch kein `.effective-flow/` existiert, ein `.firmo/` oder `.sf-plugin/` aber vorhanden ist: lege `.effective-flow/` an und übernimm den vorhandenen Inhalt aus dem Legacy-Verzeichnis (bevorzugt `.firmo/` vor `.sf-plugin/`; kopieren, nicht verschieben), dann schreibe die Änderung in `.effective-flow/`. Existiert `.effective-flow/` bereits, findet **keine** erneute Migration statt (idempotent). Parallel-sicher: eine im Ziel bereits vorhandene Datei wird nicht überschrieben.
-4. **Keine stille Löschung:** `.firmo/` und `.sf-plugin/` bleiben erhalten; das Aufräumen überlässt Effective Flow dem User.
+1. **No unrequested footprint:** Create `.effective-flow/` only when runtime data is actually written. A run with no data to save produces no `.effective-flow/`.
+2. **Fallback reading:** If `.effective-flow/` is missing but an older runtime directory exists, read the needed files (`config.json`, `memory.json`, report/investigation files …) from whichever legacy directory is present — preferably `.firmo/`, otherwise `.sf-plugin/` — as long as migration has not yet happened.
+3. **One-time, non-destructive migration:** As soon as a write to `.effective-flow/` would occur and no `.effective-flow/` exists yet, but a `.firmo/` or `.sf-plugin/` is present: create `.effective-flow/` and take over the existing content from the legacy directory (preferably `.firmo/` over `.sf-plugin/`; copy, do not move), then write the change into `.effective-flow/`. If `.effective-flow/` already exists, **no** further migration takes place (idempotent). Parallel-safe: a file already present in the target is not overwritten.
+4. **No silent deletion:** `.firmo/` and `.sf-plugin/` are preserved; Effective Flow leaves the cleanup to the user.
 
-Die `.gitignore`-Umstellung auf ein einzelnes `.effective-flow/` (inklusive Migration des früheren Zwei-Zeilen-Patterns `.effective-flow/*` plus `!.effective-flow/config.json` sowie einer pauschalen `.firmo/`- oder `.sf-plugin/`-Ignore-Zeile) übernimmt `/effective-flow setup`.
+The `.gitignore` switch to a single `.effective-flow/` (including migration of the earlier two-line pattern `.effective-flow/*` plus `!.effective-flow/config.json` as well as a blanket `.firmo/` or `.sf-plugin/` ignore line) is handled by `/effective-flow setup`.
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben.
+If the project has an `AGENTS.md`, read it early in the workflow and honor its rules.
 
-## Fertig-Protokoll
+## Completion protocol
 
-Wenn du interne Sub-Agenten einsetzt, gib ihnen dieses Antwortprotokoll vor:
+When you use internal sub-agents, give them this response protocol:
 
-- `ERLEDIGT` für vollständig abgeschlossen
-- `ABBRUCH: [Grund]` für nicht erledigbar
+- `DONE` for fully completed
+- `ABORT: [reason]` for not completable
 
-Prüfung durch den Orchestrator:
+Check by the orchestrator:
 
-1. `ERLEDIGT`: Phase abgeschlossen.
-2. `ABBRUCH: [Grund]`: User informieren, Plan oder Auftrag anpassen und entscheiden, ob ein Retry sinnvoll ist.
-3. Kein Stichwort: Retry mit Eskalation.
+1. `DONE`: phase completed.
+2. `ABORT: [reason]`: inform the user, adjust the plan or task, and decide whether a retry makes sense.
+3. No keyword: retry with escalation.
 
-### Retry-Eskalation
+### Retry escalation
 
-Wenn ein interner Sub-Agent ohne `ERLEDIGT` oder `ABBRUCH` endet:
+When an internal sub-agent ends without `DONE` or `ABORT`:
 
-1. Retry 1: gleicher Auftrag mit Fortsetzungs-Hinweis
-2. Retry 2: vereinfachter Auftrag mit reduziertem Scope
-3. Retry 3: minimaler Auftrag nur für die kritischste Teilaufgabe
-4. Nach 3 Fehlversuchen:
-   - User informieren
-   - Optionen als Freitext klären: manuell erledigen, mit nächster Phase fortfahren, Workflow abbrechen
+1. Retry 1: same task with a continuation hint
+2. Retry 2: simplified task with reduced scope
+3. Retry 3: minimal task for only the most critical subtask
+4. After 3 failed attempts:
+   - inform the user
+   - clarify the options as free text: complete manually, continue with the next phase, abort the workflow
 
-## Goal-getriebene Abschlusssteuerung
+## Goal-driven completion control
 
-Interne „wiederhole bis fertig“-Schleifen dieses Workflows folgen einem einheitlichen Goal-Muster statt einer ad-hoc formulierten Schleife. Das Muster übernimmt die drei Prinzipien des nativen `/goal` (Codex und Claude Code), läuft aber vollständig in den Workflow-Anweisungen ab – ein Skill kann das native `/goal` nicht selbst aufrufen.
+Internal "repeat until done" loops of this workflow follow a uniform goal pattern instead of an ad-hoc formulated loop. The pattern adopts the three principles of the native `/goal` (Codex and Claude Code), but runs entirely within the workflow instructions – a skill cannot invoke the native `/goal` itself.
 
-### Die drei Prinzipien
+### The three principles
 
-1. **Abschlussbedingung vorab deklarieren.** Bevor die Umsetzungsarbeit beginnt, formuliere genau eine explizite, messbare Abschlussbedingung. Leite sie aus den Akzeptanzkriterien und dem Validierungsplan der Grundlage ab (Plan-Datei, Diagnose oder abgestimmter Scope). Eine gute Bedingung nennt den Zielzustand, die konkrete Prüfung und die Scope-Grenze – also auch, was bewusst nicht geändert wird.
-2. **Unabhängig verifizieren.** Prüfe die Bedingung nicht per Selbsteinschätzung, sondern über die ohnehin vorgesehenen unabhängigen Instanzen: ``effective-flow-code-validator`` für technische Prüfungen und den passenden Reviewer für inhaltliche. Die Bedingung gilt erst als erfüllt, wenn diese Instanzen sie bestätigen.
-3. **Beschränkt loopen.** Bestätigt die Verifikation die Bedingung nicht, behebe die Ursache und verifiziere erneut. Begrenze die internen Korrekturrunden (Richtwert: drei). Hält die Bedingung danach weiterhin nicht, brich den internen Loop ab und eskaliere an den User, statt unbegrenzt weiterzulaufen – Vorgehen wie in der Retry-Eskalation des Fertig-Protokolls.
+1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
+2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
+3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
 
-### Explizite Goal-Abfrage für autonome Läufe
+### Explicit goal query for autonomous runs
 
-An der Freigabe-Grenze dieses Workflows – dort, wo die Abschlussbedingung bereits feststeht und der Workflow ohnehin auf Freigabe wartet – bekommt der User eine **explizite Wahl**, ob die verbleibenden Phasen gated weiterlaufen oder autonom unter dem nativen `/goal`. Das ersetzt das frühere passive Mit-Ausgeben eines `/goal`-Strings: Die Option wird aktiv abgefragt, nicht nur angeboten.
+At the approval boundary of this workflow – where the completion condition is already fixed and the workflow is waiting for approval anyway – the user gets an **explicit choice** whether the remaining phases continue gated or autonomously under the native `/goal`. This replaces the earlier passive co-emitting of a `/goal` string: the option is actively queried, not merely offered.
 
-#### Wann die Abfrage entfällt
+#### When the query is omitted
 
-Überspringe die Goal-Abfrage vollständig (keine Zusatzoption, kein `/goal`-String), wenn der Workflow als **nicht-interaktiver Sub-Agent** eines übergeordneten Orchestrators läuft, bei dem keine direkte User-Interaktion vorgesehen ist – erkennbar am Aufruf-Kontext, zum Beispiel „[Kontext von /effective-flow apply-review: …]“. `/effective-flow apply-review` steuert seinen autonomen Lauf bereits an seinem eigenen Gate; eine zusätzliche Goal-Abfrage pro Sub-Delegation wäre dort sinnlos. Direktaufrufe und die Übergabe durch `/effective-flow apply-plan` (interaktiv, einzeln) zählen **nicht** als solche Delegation – dort bleibt die Goal-Abfrage erhalten.
+Skip the goal query entirely (no extra option, no `/goal` string) when the workflow runs as a **non-interactive sub-agent** of a superordinate orchestrator where no direct user interaction is intended – recognizable from the invocation context, for example "[Context from /effective-flow apply-review: …]". `/effective-flow apply-review` already steers its autonomous run at its own gate; an additional goal query per sub-delegation would be pointless there. Direct invocations and the handover through `/effective-flow apply-plan` (interactive, individual) do **not** count as such delegation – there the goal query is retained.
 
-#### Form der Abfrage
+#### Form of the query
 
-- Ist die Freigabe-Grenze eine Ja/Nein-Freigabe, ergänze die Freigabe-Frage um eine dritte Option „Autonom via `/goal`" neben „Ja“ (gated weiter) und „Anpassen“.
-- Ist die Freigabe-Grenze eine Auswahlfrage (z. B. Update-Gruppen) oder existiert an dieser Grenze keine Ja/Nein-Freigabe (z. B. weil eine Planungsphase übersprungen wurde), stelle direkt eine knappe eigenständige Ja/Nein-Folgefrage „Verbleibende Phasen autonom unter `/goal` laufen lassen?".
-- Wählt der User „Autonom via `/goal`" (bzw. „Ja“ in der Folgefrage), gib den fertigen, copy-paste-baren `/goal`-String prominent aus und fordere zum Einfügen als neue Eingabe auf. Da ein Skill das native `/goal` nicht selbst starten kann, ist das Einfügen der einzige Weg in den autonomen Lauf; ohne Einfügen läuft der Skill gated weiter.
-- Wählt der User „Ja“/gated (oder antwortet normal), läuft der Workflow wie gewohnt gated weiter; es wird **kein** `/goal`-String ausgegeben. Die internen Approval-Gates bleiben in jedem Fall erhalten.
+- If the approval boundary is a yes/no approval, extend the approval question with a third option "Autonomous via `/goal`" next to "Yes" (continue gated) and "Adjust".
+- If the approval boundary is a selection question (e.g. update groups) or if there is no yes/no approval at this boundary (e.g. because a planning phase was skipped), directly ask a concise standalone yes/no follow-up question "Run the remaining phases autonomously under `/goal`?".
+- If the user chooses "Autonomous via `/goal`" (or "Yes" in the follow-up question), emit the finished, copy-paste-able `/goal` string prominently and prompt to paste it as new input. Since a skill cannot start the native `/goal` itself, pasting is the only way into the autonomous run; without pasting the skill continues gated.
+- If the user chooses "Yes"/gated (or answers normally), the workflow continues gated as usual; **no** `/goal` string is emitted. The internal approval gates are retained in any case.
 
-Regeln für den `/goal`-String, sobald er ausgegeben wird:
+Rules for the `/goal` string once it is emitted:
 
-- **Selbsttragend:** Referenziere die zugrunde liegende Plan-Datei, falls vorhanden, und weise an, die verbleibenden Phasen dieses Workflows zu durchlaufen – nicht „die Kriterien irgendwie grün machen“.
-- **Messbar:** Nenne die Abschlussbedingung mit den im jeweiligen Workflow tatsächlich vorgesehenen Prüfungen (z. B. Akzeptanzkriterien erfüllt, projektkonfigurierte Checks grün und – falls der Workflow eine Review-Phase hat – Reviewer ohne offene kritische Findings) und die Scope-Grenze. Lass nicht zutreffende Prüfungen weg.
-- **Plattformneutral:** Beschränke dich auf den Bedingungstext nach `/goal `; er wird auf Codex und Claude Code gleich interpretiert.
-- **Nur an gate-freien Grenzen:** Biete den autonomen Lauf ausschließlich an Freigabe-Grenzen an, nach denen kein weiteres Approval-Gate folgt, damit ein autonomer Lauf nicht an einem späteren Gate hängenbleibt.
+- **Self-sustaining:** Reference the underlying plan file, if present, and instruct to run through the remaining phases of this workflow – not "somehow make the criteria green".
+- **Measurable:** Name the completion condition with the checks actually provided in the respective workflow (e.g. acceptance criteria fulfilled, project-configured checks green and – if the workflow has a review phase – reviewer without open critical findings) and the scope boundary. Leave out checks that do not apply.
+- **Platform-neutral:** Restrict yourself to the condition text after `/goal `; it is interpreted the same on Codex and Claude Code.
+- **Only at gate-free boundaries:** Offer the autonomous run exclusively at approval boundaries after which no further approval gate follows, so an autonomous run does not get stuck at a later gate.
 
-Form (Platzhalter ersetzen, einzeilig):
+Form (replace placeholders, single line):
 
 ```text
-/goal Setze <Plan-Datei oder abgestimmte Aufgabe> vollständig um und durchlaufe die verbleibenden Phasen dieses Workflows: alle Akzeptanzkriterien erfüllt, projektkonfigurierte Checks grün<, Reviewer ohne offene kritische Findings – nur falls der Workflow eine Review-Phase hat>. Nichts außerhalb des Scopes ändern. Stoppe, wenn alle Kriterien halten.
+/goal Fully implement <plan file or agreed task> and run through the remaining phases of this workflow: all acceptance criteria fulfilled, project-configured checks green<, reviewer without open critical findings – only if the workflow has a review phase>. Change nothing outside the scope. Stop when all criteria hold.
 ```
 
 ## Wisdom Accumulation
 
-Verwende `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
+Use `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` for:
 
-- Stash-Baseline aus Phase 1 (Liste der bereits vorhandenen Stash-Referenzen mit Beschreibungen und Commit-Hashes)
-- Vorabanalyse pro Finding aus Phase 4.1 (betroffene Dateien, Root Cause / Anforderung, Implementierungsskizze, Risiken, Konfidenz)
-- berechnete Komponenten aus Phase 4.2
-- umgesetzte Findings und deren Ergebnis
-- fehlgeschlagene Delegationen
-- abgelehnte Findings und ihr Ergebnis (dauerhafte Entscheidung mit ADR-Slug bzw. nicht-dauerhaft ohne ADR)
+- the stash baseline from Phase 1 (list of already-existing stash references with descriptions and commit hashes)
+- the pre-analysis per finding from Phase 4.1 (affected files, root cause / requirement, implementation sketch, risks, confidence)
+- the computed components from Phase 4.2
+- implemented findings and their result
+- failed delegations
+- rejected findings and their result (permanent decision with ADR slug or non-permanent without ADR)
 
-Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lösche die Datei am Ende.
+Write a summary after each phase and pass it to later phases. Delete the file at the end.
 
-## Effective Flow-Konfiguration
+## Effective Flow configuration
 
-Effective Flow-interne Dateien liegen unter `.effective-flow/` im Projekt-Root.
+Effective Flow-internal files live under `.effective-flow/` in the project root.
 
-- Konfiguration: Effective Flow-Konfiguration aus der Projektsetup-ADR (siehe Baustein „Config-Migration“)
-- Memory-Datei: `.effective-flow/memory.json`
-- Cache-Datei: `.effective-flow/cache.json`
-- Review-Reports: `.effective-flow/review/`
-- Temporäre Wisdom-Dateien: `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`
+- Configuration: Effective Flow configuration from the project-setup ADR (see building block "Config migration")
+- Memory file: `.effective-flow/memory.json`
+- Cache file: `.effective-flow/cache.json`
+- Review reports: `.effective-flow/review/`
+- Temporary wisdom files: `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
-`apply-review` funktioniert ohne festgeschriebene Konfiguration. Falls die Effective Flow-Konfiguration (Projektsetup-ADR) Apply-Review-Werte festschreibt, überschreiben sie die Defaults (Schema hier zur Illustration):
+`apply-review` works without a fixed configuration. If the Effective Flow configuration (project-setup ADR) fixes apply-review values, they override the defaults (schema shown here for illustration):
 
 ```json
 {
@@ -398,598 +405,594 @@ Effective Flow-interne Dateien liegen unter `.effective-flow/` im Projekt-Root.
 }
 ```
 
-Fehlende Werte haben diese Defaults:
+Missing values have these defaults:
 
-- `applyReview.defaultCommitStrategy`: nicht gesetzt (Commit-Strategie wird gefragt)
+- `applyReview.defaultCommitStrategy`: not set (the commit strategy is asked)
 - `applyReview.finalValidation`: `full`
-- `applyReview.stashPolicy`: `interactive` (heutiges interaktives Pro-Stash-Nachfragen)
+- `applyReview.stashPolicy`: `interactive` (today's interactive per-stash prompt)
 - `applyReview.worktree.baseDir`: `.effective-flow/.worktrees`
 - `applyReview.worktree.setup`: `auto`
 
-Gültige Werte:
+Valid values:
 
 - `applyReview.defaultCommitStrategy`: `worktrees`, `single`, `none`
 - `applyReview.finalValidation`: `full`, `changedScope`, `off`
 - `applyReview.stashPolicy`: `interactive`, `keep`, `discard`, `apply`
-- `applyReview.worktree.setup`: `auto`, `none` oder ein expliziter Setup-Befehl als String
+- `applyReview.worktree.setup`: `auto`, `none` or an explicit setup command as a string
 
-### Config-Migration
+### Config migration
 
-Das Lesen der Effective Flow-Konfiguration aus der Projektsetup-ADR (inklusive der `applyReview`-Schlüssel) und die einmalige Migration einer Alt-Config übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `applyReview` aus. Das `applyReview`-Config-Schema oben (Konfiguration, gültige Werte) bleibt davon unberührt.
+Reading the Effective Flow configuration from the project-setup ADR (including the `applyReview` keys) and the one-time migration of a legacy config are handled centrally by the building block "Config migration" (`config-migration.md`); this building block no longer runs its own per-block migration for `applyReview`. The `applyReview` config schema above (configuration, valid values) remains unaffected by this.
 
-### Cache-Datei
+### Cache file
 
-Persistente Cache-Daten liegen ausschließlich in `.effective-flow/cache.json`, nicht in `.effective-flow/memory.json` und nicht dauerhaft in Wisdom-Dateien.
+Persistent cache data lives exclusively in `.effective-flow/cache.json`, not in `.effective-flow/memory.json` and not permanently in wisdom files.
 
-`apply-review` darf diesen Cache-Bereich verwenden:
+`apply-review` may use this cache area:
 
-| Bereich               | Inhalt                                                                                           | Invalidierung                                              |
-| --------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
-| `applyReviewAnalysis` | Vorabanalyse-Ergebnisse pro Report-Finding für unterbrochene oder wiederholte Apply-Review-Läufe | Report-Datei-Hash, Finding-ID, relevante Code-Datei-Hashes |
+| Area                  | Content                                                                               | Invalidation                                            |
+| --------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `applyReviewAnalysis` | Pre-analysis results per report finding for interrupted or repeated apply-review runs | Report file hash, finding ID, relevant code file hashes |
 
-Regeln:
+Rules:
 
-- Jeder Cache-Eintrag braucht `version`, `createdAt` und `sourceHash` oder gleichwertige Invalidierungsdaten.
-- Bei Unsicherheit, fehlender Datei, ungültigem JSON, Versionswechsel oder nicht eindeutig prüfbarer Invalidierung: Cache ignorieren und normal neu berechnen.
-- Ungültige Cache-Dateien nicht überschreiben; User kurz informieren und ohne Cache fortfahren.
-- User-Entscheidungen zu Konflikten, Stashes oder ADR-Ablehnungen nicht cachen.
-- Outputs fehlgeschlagener Delegationen nicht als Grundlage für spätere erfolgreiche Läufe verwenden.
-- Wisdom-Dateien bleiben temporäre In-Run-Speicher und werden am Ende gelöscht.
+- Each cache entry needs `version`, `createdAt` and `sourceHash` or equivalent invalidation data.
+- On uncertainty, a missing file, invalid JSON, a version change or invalidation that cannot be checked unambiguously: ignore the cache and recompute normally.
+- Do not overwrite invalid cache files; briefly inform the user and continue without the cache.
+- Do not cache user decisions about conflicts, stashes or ADR rejections.
+- Do not use outputs of failed delegations as a basis for later successful runs.
+- Wisdom files remain temporary in-run storage and are deleted at the end.
 
-## Apply-Quellen-Erkennung
+## Apply source detection
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
+`<plan.dir>` is the plan directory from the Effective Flow configuration (project-setup ADR) `plan.dir` (default
 `docs/plan`).
 
-Dieser geteilte Baustein ist die einzige Quelle der Wahrheit dafür, **welcher
-Apply-Quelltyp** ein übergebenes Argument ist. Er wird von `/effective-flow apply`
-(Router) sowie von ``tools/apply-plan.md``, ``tools/apply-review.md`` und
-``tools/apply-issues.md`` für die vorgelagerte Argument-Klassifikation genutzt.
+This shared building block is the single source of truth for **which
+apply source type** a given argument is. It is used by `/effective-flow apply`
+(router) as well as by ``tools/apply-plan.md``, ``tools/apply-review.md``, and
+``tools/apply-issues.md`` for the upstream argument classification.
 
-Der Baustein klassifiziert nur und löst die Referenz auf ein Handle (Dateipfad bzw.
-Issue-Nummer(n)) auf. Er trifft **keine** Umsetzungsentscheidung, ändert nichts und
-liest keine Findings/Container-Inhalte tiefer als für die Klassifikation nötig. Die
-type-spezifische Tiefenlogik (Planstatus, Finding-Parsing, Container-Expansion) bleibt
-im jeweiligen Skill.
+The building block only classifies and resolves the reference to a handle (file path or
+issue number(s)). It makes **no** implementation decision, changes nothing, and
+does not read findings/container contents deeper than necessary for classification. The
+type-specific depth logic (plan status, finding parsing, container expansion) stays
+in the respective skill.
 
-### Kanonische Quelltypen
+### Canonical source types
 
-| Typ               | Bedeutung                                                                                                  | Zuständiger Skill                              |
-| ----------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `plan`            | Plan-Datei unter `<plan.dir>/`                                                                             | ``tools/apply-plan.md``                         |
-| `review-report`   | Review-Report-Datei unter `.effective-flow/review/`                                                        | ``tools/apply-review.md`` (lokal)               |
-| `review-epic`     | Tracking-/Epic-Issue eines `/effective-flow review`-Laufs                                                        | ``tools/apply-review.md`` (remote, Epic)        |
-| `review-finding`  | einzelnes Finding-Issue eines `/effective-flow review`-Laufs                                                     | ``tools/apply-review.md`` (remote, Issue-Liste) |
-| `container-issue` | generisches Issue mit Sub-Issue-Checkliste, ohne Review-Label (`effective-flow-review-*`/`firmo-review-*`) | ``tools/apply-issues.md``                       |
-| `plain-issue`     | frei geschriebenes Menschen-Issue                                                                          | ``tools/apply-issues.md``                       |
+| Type              | Meaning                                                                                                       | Responsible skill                             |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `plan`            | plan file under `<plan.dir>/`                                                                                 | ``tools/apply-plan.md``                        |
+| `review-report`   | review report file under `.effective-flow/review/`                                                            | ``tools/apply-review.md`` (local)              |
+| `review-epic`     | tracking/epic issue of a `/effective-flow review` run                                                               | ``tools/apply-review.md`` (remote, epic)       |
+| `review-finding`  | single finding issue of a `/effective-flow review` run                                                              | ``tools/apply-review.md`` (remote, issue list) |
+| `container-issue` | generic issue with a sub-issue checklist, without a review label (`effective-flow-review-*`/`firmo-review-*`) | ``tools/apply-issues.md``                      |
+| `plain-issue`     | freely written human issue                                                                                    | ``tools/apply-issues.md``                      |
 
-Sonderergebnisse: `none` (kein/leeres Argument) und `ambiguous` (nicht eindeutig
-auflösbar). `issue-reference` ist ein **Zwischenergebnis** aus Stufe A für eine noch
-nicht in den Subtyp aufgelöste Issue-Referenz; Stufe B verfeinert es.
+Special results: `none` (empty/no argument) and `ambiguous` (not uniquely
+resolvable). `issue-reference` is an **intermediate result** from stage A for an issue reference
+not yet resolved into its subtype; stage B refines it.
 
-### Stufe A: syntaktische Klassifikation (nur Dateisystem)
+### Stage A: syntactic classification (file system only)
 
-Stufe A benötigt keine Tracker-I/O und steht jedem Skill zur Verfügung. Bestimme den
-Typ in dieser Reihenfolge (erste zutreffende Regel gewinnt):
+Stage A needs no tracker I/O and is available to every skill. Determine the
+type in this order (first matching rule wins):
 
-1. **Leeres/kein Argument** → `none`.
-2. **Plan-Referenz** → `plan`, wenn sich das Argument auf genau eine Datei unter
-   `<plan.dir>/` oder `<plan.dir>/archive/` auflöst. Erlaubte Formen wie in
-   `plan-reference-routing`: vollständiger Pfad (`<plan.dir>/YYYY-MM-DD-…md`),
-   Datums-Slug-Dateiname (`YYYY-MM-DD-…md`), Legacy-Nummer ohne Pfad (`NNNN`, primär
-   über die H1 aufgelöst) oder – als Fallback – der Titel-Slug.
-3. **Review-Report** → `review-report`, wenn das Argument ein `*.md`-Pfad unter
-   `.effective-flow/review/` ist (bzw. ein Dateiname, der sich dort auflöst).
-4. **Issue-Referenz** → `issue-reference` (weiter mit Stufe B), wenn das Argument eine
-   bare Issue-Nummer (`123`), ein `#123` oder eine Issue-URL ist. Issue-URLs sind
-   hostneutral: erkenne `https://<host>/<owner>/<repo>/issues/<nr>` und vergleichbare
-   Forgejo-/Gitea-URL-Formen genauso wie GitHub-URLs. Mehrere solcher Referenzen werden
-   als Liste behandelt und einzeln in Stufe B klassifiziert.
-5. **Sonst** → `ambiguous`: das Argument löst sich zu keiner Kategorie auf oder passt
-   gleichzeitig zu einer Plan- **und** einer Review-Datei. Nicht raten – der Aufrufer
-   fragt nach (siehe „Mehrdeutigkeit und Fallbacks“).
+1. **Empty/no argument** → `none`.
+2. **Plan reference** → `plan`, if the argument resolves to exactly one file under
+   `<plan.dir>/` or `<plan.dir>/archive/`. Permitted forms as in
+   `plan-reference-routing`: full path (`<plan.dir>/YYYY-MM-DD-…md`),
+   date-slug file name (`YYYY-MM-DD-…md`), legacy number without path (`NNNN`, resolved primarily
+   via the H1) or — as a fallback — the title slug.
+3. **Review report** → `review-report`, if the argument is a `*.md` path under
+   `.effective-flow/review/` (or a file name that resolves there).
+4. **Issue reference** → `issue-reference` (continue with stage B), if the argument is a
+   bare issue number (`123`), a `#123`, or an issue URL. Issue URLs are
+   host-neutral: recognize `https://<host>/<owner>/<repo>/issues/<nr>` and comparable
+   Forgejo/Gitea URL forms just like GitHub URLs. Multiple such references are
+   treated as a list and classified individually in stage B.
+5. **Otherwise** → `ambiguous`: the argument resolves to no category or matches
+   both a plan **and** a review file at the same time. Do not guess — the caller
+   asks (see "Ambiguity and fallbacks").
 
-Trennschärfe Plan vs. Report: primär über das Verzeichnis (`<plan.dir>/` bzw.
-`<plan.dir>/archive/` vs. `.effective-flow/review/`), sekundär über den Kopf-Inhalt
-(Planstatus-Marker `**Planungsstatus:**` / `**Plan status:**` vs.
-`### [R-XXXXXXX]`-Finding-Blöcke). Eine vierstellige Nummer ohne Pfad ist immer eine
-(Legacy-)Plan-Referenz, nie eine Issue-Referenz.
+Distinguishing plan vs. report: primarily via the directory (`<plan.dir>/` or
+`<plan.dir>/archive/` vs. `.effective-flow/review/`), secondarily via the header content
+(plan status marker `**Planungsstatus:**` / `**Plan status:**` vs.
+`### [R-XXXXXXX]` finding blocks). A four-digit number without a path is always a
+(legacy) plan reference, never an issue reference.
 
-### Stufe B: Issue-Subtyp (Tracker)
+### Stage B: issue subtype (tracker)
 
-Stufe B verfeinert eine `issue-reference` aus Stufe A in den konkreten Subtyp. Sie
-setzt die Host-/CLI-Erkennung und Verfügbarkeitsprüfung aus `issue-tracker.md`
-voraus; ein Skill, der Stufe B nutzt, bindet daher auch `issue-tracker.md` ein.
-``tools/apply-plan.md`` braucht Stufe B nicht – für einen Plan-Skill genügt Stufe A,
-um eine Issue-Referenz als Fremdtyp zu erkennen und weiterzuleiten.
+Stage B refines an `issue-reference` from stage A into the concrete subtype. It
+requires the host/CLI detection and availability check from `issue-tracker.md`;
+a skill that uses stage B therefore also embeds `issue-tracker.md`.
+``tools/apply-plan.md`` does not need stage B — for a plan skill, stage A is enough
+to recognize an issue reference as a foreign type and forward it.
 
-Lies je Issue Labels und Body **einmal frisch** vom Tracker und bestimme den Subtyp in
-dieser Präzedenz – **Label vor Body-Struktur**:
+Per issue, read labels and body **once fresh** from the tracker and determine the subtype in
+this precedence — **label before body structure**:
 
-1. Label `effective-flow-review-epic` (oder Alt `firmo-review-epic`) → `review-epic`.
-2. Label `effective-flow-review-finding` (oder Alt `firmo-review-finding`) → `review-finding`.
-3. kein Review-Label, aber der Body enthält eine Sub-Issue-Checkliste
+1. Label `effective-flow-review-epic` (or old `firmo-review-epic`) → `review-epic`.
+2. Label `effective-flow-review-finding` (or old `firmo-review-finding`) → `review-finding`.
+3. no review label, but the body contains a sub-issue checklist
    (`- [ ] #NNN …` / `- [x] #NNN …`) → `container-issue`.
-4. sonst → `plain-issue`.
+4. otherwise → `plain-issue`.
 
-Sekundärsignal bei fehlendem Label (z. B. manuell entfernt): ein Titel im Format
-`[R-XXXXXXX] …` zusammen mit einem `**Signatur**`-Feld im Body wird wie
-`review-finding` behandelt. Bleibt der Subtyp danach unklar → `ambiguous`.
+Secondary signal when a label is missing (e.g. removed manually): a title in the format
+`[R-XXXXXXX] …` together with a `**Signature**` field in the body is treated like
+`review-finding`. If the subtype remains unclear afterwards → `ambiguous`.
 
-Warum Label vor Body: Ein `review-epic` trägt – wie ein generisches
-`container-issue` – eine `- [ ] #NNN`-Checkliste. Das Label `effective-flow-review-epic` bzw.
-`effective-flow-review-finding` (Alt-Präfix `firmo-` gleichwertig, siehe „Label-Konvention“ in
-`issue-tracker.md`) ist der sichere Diskriminator und hat Vorrang vor der
-Body-Struktur.
+Why label before body: a `review-epic` carries — like a generic
+`container-issue` — a `- [ ] #NNN` checklist. The label `effective-flow-review-epic` or
+`effective-flow-review-finding` (old prefix `firmo-` equivalent, see "Label convention" in
+`issue-tracker.md`) is the reliable discriminator and takes precedence over the
+body structure.
 
-### Ownership und Modus
+### Ownership and mode
 
-Aus dem finalen Quelltyp folgt genau ein zuständiger Skill und – bei
-``tools/apply-review.md`` – der Modus:
+From the final source type follows exactly one responsible skill and — for
+``tools/apply-review.md`` — the mode:
 
-| Quelltyp          | Zuständiger Skill        | Modus / Hinweis                  |
+| Source type       | Responsible skill        | Mode / note                      |
 | ----------------- | ------------------------ | -------------------------------- |
 | `plan`            | ``tools/apply-plan.md``   | –                                |
-| `review-report`   | ``tools/apply-review.md`` | lokaler Report-Fluss             |
-| `review-epic`     | ``tools/apply-review.md`` | Remote-Modus, Epic-Modus         |
-| `review-finding`  | ``tools/apply-review.md`` | Remote-Modus, Issue-Listen-Modus |
-| `container-issue` | ``tools/apply-issues.md`` | Container-Expansion im Skill     |
-| `plain-issue`     | ``tools/apply-issues.md`` | Einzel-Arbeitsitem               |
+| `review-report`   | ``tools/apply-review.md`` | local report flow                |
+| `review-epic`     | ``tools/apply-review.md`` | remote mode, epic mode           |
+| `review-finding`  | ``tools/apply-review.md`` | remote mode, issue-list mode     |
+| `container-issue` | ``tools/apply-issues.md`` | container expansion in the skill |
+| `plain-issue`     | ``tools/apply-issues.md`` | single work item                 |
 
-Konsistenz mit `issue-tracker.md`: Die dortige Regel „Argumenttyp überschreibt den
-Config-Modus" bleibt gültig – ein `review-report` erzwingt `local`, ein
-`review-epic`/`review-finding` erzwingt `remote`. Dieser Baustein liefert genau diesen
-Argumenttyp.
+Consistency with `issue-tracker.md`: the rule there, "argument type overrides the
+config mode", stays valid — a `review-report` forces `local`, a
+`review-epic`/`review-finding` forces `remote`. This building block delivers exactly that
+argument type.
 
-### Mehrdeutigkeit und Fallbacks
+### Ambiguity and fallbacks
 
-- **`none` (kein Argument):** nicht heuristisch das „neueste“ wählen. Der Aufrufer
-  listet lokale Kandidaten (offene Pläne aus `<plan.dir>/`, Report-Dateien unter
-  `.effective-flow/review/`) und fragt nach der konkreten Quelle. Ist der effektive
-  Tracker-Modus `remote`, listet er zusätzlich offene Review-Epics (Label
-  `effective-flow-review-epic`, inkl. Alt `firmo-review-epic`) als Kandidaten, da im
-  Remote-Modus keine lokalen Report-Dateien existieren.
-- **`ambiguous`:** die konkurrierenden Deutungen benennen und nachfragen, statt zu
-  raten.
-- **Gemischte Issue-Liste** (verschiedene Subtypen in einem Aufruf, z. B. `review-finding`
-  und `plain-issue`): nicht raten. Den User bitten, die Liste nach Zieltyp zu trennen,
-  bzw. – im Router – pro Issue routen. Konservativ: nachfragen.
-- **Issue-Referenz, aber Tracker-CLI fehlt/nicht authentifiziert:** Stufe B kann nicht
-  laufen → klare Fehlermeldung mit Behebungshinweis gemäß „Fehler- und Randfälle“ in
-  `issue-tracker.md`; kein stiller Fallback auf einen lokalen Typ.
-- **Nicht auflösbarer Pfad:** `ambiguous` → nachfragen bzw. Fehlermeldung; nenne, dass
-  `/effective-flow open-plans` offene Pläne auflisten kann.
+- **`none` (no argument):** do not heuristically pick the "newest". The caller
+  lists local candidates (open plans from `<plan.dir>/`, report files under
+  `.effective-flow/review/`) and asks for the specific source. If the effective
+  tracker mode is `remote`, it additionally lists open review epics (label
+  `effective-flow-review-epic`, incl. old `firmo-review-epic`) as candidates, since in
+  remote mode no local report files exist.
+- **`ambiguous`:** name the competing interpretations and ask, instead of
+  guessing.
+- **Mixed issue list** (different subtypes in one call, e.g. `review-finding`
+  and `plain-issue`): do not guess. Ask the user to split the list by target type,
+  or — in the router — route per issue. Conservative: ask.
+- **Issue reference, but tracker CLI missing/not authenticated:** stage B cannot
+  run → clear error message with a remediation hint per "Errors and edge cases" in
+  `issue-tracker.md`; no silent fallback to a local type.
+- **Unresolvable path:** `ambiguous` → ask or error message; note that
+  `/effective-flow open-plans` can list open plans.
 
-### Verwendung durch die Skills
+### Use by the skills
 
-- **Router (`/effective-flow apply`):** führt Stufe A und – für Issue-Referenzen –
-  Stufe B aus, meldet den erkannten Typ und delegiert an den zuständigen Skill mit dem
-  Original-Argument. Bei `none`/`ambiguous`/gemischter Liste: nachfragen.
-- **Zuständigkeits-Skill (jeder der drei Apply-Skills):** klassifiziert das Argument
-  früh über diesen Baustein. Passt der Typ zur eigenen Zuständigkeit → weiter mit der
-  eigenen Tiefenlogik. Passt er nicht:
-  - **Direktaufruf durch den User:** klar auf den zuständigen Skill (oder
-    `/effective-flow apply`) verweisen und beenden.
-  - **Delegation aus `/effective-flow apply`:** sollte nicht auftreten, da der Router
-    korrekt geroutet hat; die Weiche bleibt als Schutz bestehen.
+- **Router (`/effective-flow apply`):** runs stage A and — for issue references —
+  stage B, reports the detected type, and delegates to the responsible skill with the
+  original argument. On `none`/`ambiguous`/mixed list: ask.
+- **Responsibility skill (each of the three apply skills):** classifies the argument
+  early via this building block. If the type matches its own responsibility → continue with its
+  own depth logic. If it does not match:
+  - **Direct invocation by the user:** clearly point to the responsible skill (or
+    `/effective-flow apply`) and end.
+  - **Delegation from `/effective-flow apply`:** should not occur, since the router
+    routed correctly; the switch remains as a safeguard.
 
-## Remote-Modus (Issue-Tracker)
+## Remote mode (issue tracker)
 
-Ist der Tracker-Modus `remote` (das Argument ist ein Epic- oder Finding-Issue), lies **vor** dem lokalen Report-Fluss die interne Teil-Datei `tools/apply-review-remote.md` und befolge sie. Sie enthält die Issue-Tracker-Anbindung sowie den kompletten Remote-Ablauf (Phase 1–8 remote) und ersetzt bzw. ergänzt die entsprechenden lokalen Schritte. Im lokalen Modus (Report-Datei unter `.effective-flow/review/`) wird sie nicht geladen.
+If the tracker mode is `remote` (the argument is an epic or finding issue), read and follow the internal sub-file `tools/apply-review-remote.md` **before** the local report flow. It contains the issue-tracker integration as well as the complete remote flow (phase 1–8 remote) and replaces or supplements the corresponding local steps. In local mode (report file under `.effective-flow/review/`) it is not loaded.
 
 ## Workflow
 
-### Phase 1: Report einlesen und validieren
+### Phase 1: Read and validate the report
 
-Bestimme zuerst den Tracker-Modus über die „Apply-Quellen-Erkennung“ (Report-Datei unter `.effective-flow/review/` → `local`; Epic-/Finding-Issue → `remote`). Ist er `remote`, lies und befolge die interne Teil-Datei `tools/apply-review-remote.md` (Phase 1 remote und folgende) statt der Report-Datei-Schritte 4–7 unten; die Config-, Stash- und Cache-Schritte gelten weiterhin.
+First determine the tracker mode via the "apply-source detection" (report file under `.effective-flow/review/` → `local`; epic/finding issue → `remote`). If it is `remote`, read and follow the internal sub-file `tools/apply-review-remote.md` (phase 1 remote and following) instead of the report-file steps 4–7 below; the config, stash and cache steps still apply.
 
-1. Lade Effective Flow-Konfiguration, migriere sie falls nötig und bestimme Commit-Strategie-Default, Stash-Policy, Worktree-Defaults und finales Validierungsprofil.
-2. Lies `.effective-flow/cache.json`, falls vorhanden und gültig. Verwende nur valide `applyReviewAnalysis`-Einträge.
-3. **Stash-Baseline erfassen:** Führe `git stash list` aus und merke dir die vollständige Liste der bereits vorhandenen Stash-Referenzen (z. B. `stash@{0}`, `stash@{1}`, ... mit ihren Beschreibungen). Halte die Baseline in der Wisdom-Datei fest, damit Phase 6 (Stash-Bereinigung) später neue, durch diesen Workflow entstandene Stashes davon abgrenzen kann. Falls `git stash list` leer ist: notiere „keine Baseline-Stashes“.
-4. Bestimme die Report-Datei:
-   - falls als Argument übergeben: verwende diese Datei
-   - sonst: suche nach `.effective-flow/review/review-report-*.md` in `.effective-flow/review/`
-   - bei mehreren Reports: frage den User welcher verwendet werden soll
-   - falls kein Report gefunden: Fehlermeldung und Abbruch
-5. **Lies die Datei frisch ein.** Da die Datei zwischen Konversationen gelöscht und neu erstellt werden kann, darf kein zuvor eingelesener Inhalt verwendet werden. Lies die Datei immer direkt vom Dateisystem.
-6. Parse alle Findings (`### [R-XXXXXXX] ...`-Blöcke) mit:
-   - Finding-ID und Titel
-   - Schweregrad
-   - Komplexität
-   - Aktion (`/effective-flow fix`, `/effective-flow refactor`, `/effective-flow build`, `/effective-flow docs`)
-   - Prompt-Vorschlag
-   - Entwickler-Anmerkung (falls vorhanden)
-   - Bereits vorhandene Umsetzungshinweise (✅)
-7. Klassifiziere jedes Finding:
-   - **Bereits umgesetzt:** Finding hat bereits einen ✅-Hinweis → überspringen
-   - **Nicht umsetzen:** Entwickler-Anmerkung beginnt mit „Nicht umsetzen“ → als Entscheidungs-Kandidat an `decision-records` (ADR nur bei dauerhafter Entscheidung)
-   - **Umsetzen:** Kein ✅-Hinweis und keine ablehnende Anmerkung → an Skill delegieren
-   - **Umsetzen mit Kontext:** Entwickler-Anmerkung vorhanden, die nicht mit „Nicht umsetzen“ beginnt → an Skill delegieren, Anmerkung als zusätzlichen Kontext mitgeben
-8. Gib dem User eine Übersicht:
+1. Load the Effective Flow configuration, migrate it if necessary and determine the commit-strategy default, stash policy, worktree defaults and final validation profile.
+2. Read `.effective-flow/cache.json`, if present and valid. Use only valid `applyReviewAnalysis` entries.
+3. **Capture the stash baseline:** run `git stash list` and remember the full list of already-existing stash references (e.g. `stash@{0}`, `stash@{1}`, ... with their descriptions). Record the baseline in the wisdom file so that Phase 6 (stash cleanup) can later distinguish new stashes created by this workflow from it. If `git stash list` is empty: note "no baseline stashes".
+4. Determine the report file:
+   - if passed as an argument: use this file
+   - otherwise: search for `.effective-flow/review/review-report-*.md` in `.effective-flow/review/`
+   - with multiple reports: ask the user which one to use
+   - if no report is found: error message and abort
+5. **Read the file fresh.** Since the file can be deleted and recreated between conversations, no previously read content may be used. Always read the file directly from the file system.
+6. Parse all findings (`### [R-XXXXXXX] ...` blocks) with:
+   - finding ID and title
+   - Severity
+   - Complexity
+   - action (`/effective-flow fix`, `/effective-flow refactor`, `/effective-flow build`, `/effective-flow docs`)
+   - Prompt suggestion
+   - developer note (if present)
+   - already present implementation hints (✅)
+7. Classify each finding:
+   - **Already implemented:** the finding already has a ✅ hint → skip
+   - **Do not implement:** the developer note begins with "Do not implement" (the German form "Nicht umsetzen" is also recognized) → hand to `decision-records` as a decision candidate (ADR only for a permanent decision)
+   - **Implement:** no ✅ hint and no rejecting note → delegate to a skill
+   - **Implement with context:** a developer note is present that does not begin with "Do not implement" / "Nicht umsetzen" → delegate to a skill, passing the note as additional context
+8. Give the user an overview:
 
 ```markdown
-**Report:** [Dateiname]
-**Datum:** [Datum aus Report]
+**Report:** [filename]
+**Date:** [date from report]
 
-| Status | Anzahl |
+| Status | Count |
 |---|---|
-| Umzusetzen | X |
-| Nicht umsetzen (→ decision-records) | Y |
-| Bereits umgesetzt | Z |
-| Gesamt | N |
+| To implement | X |
+| Do not implement (→ decision-records) | Y |
+| Already implemented | Z |
+| Total | N |
 ```
 
-9. Falls keine umsetzbaren Findings vorhanden sind und keine abgelehnten Findings zu behandeln sind: Kurzmeldung und Abbruch.
+9. If there are no implementable findings and no rejected findings to handle: short message and abort.
 
-### Phase 2: Commit- und Stash-Strategie
+### Phase 2: Commit and stash strategy
 
-Diese Phase ist das einzige Up-front-Strategie-Gate des Workflows: Commit-Strategie und Stash-Policy werden hier gemeinsam festgelegt, bevor die Findings abgearbeitet werden. Danach folgt kein weiteres **reguläres** Approval-Gate; verbleibende Stopps sind ausschließlich konfliktbedingte Datenintegritäts-Eskalationen: ein `apply`-Merge-Konflikt in Phase 6, ein risikoreicher Cherry-Pick-Konflikt in Phase 4.3 bei der Strategie „Einzeln mit Worktrees“ und – selten – ein verwaister Commit-Lock bei der Strategie „Einzeln“. Tritt keine solche Eskalation auf, laufen die Phasen 3–8 unter nativem `/goal` autonom.
+This phase is the workflow's only up-front strategy gate: the commit strategy and stash policy are determined here together, before the findings are worked through. After that no further **regular** approval gate follows; the remaining stops are exclusively conflict-driven data-integrity escalations: an `apply` merge conflict in Phase 6, a high-risk cherry-pick conflict in Phase 4.3 under the "Individually with worktrees" strategy and — rarely — an orphaned commit lock under the "Individually" strategy. If no such escalation occurs, phases 3–8 run autonomously under native `/goal`.
 
-Wenn `applyReview.defaultCommitStrategy` gültig gesetzt ist, überspringe die ASK-Frage und verwende die konfigurierte Strategie:
+If `applyReview.defaultCommitStrategy` is validly set, skip the ASK question and use the configured strategy:
 
-- `worktrees` → **Einzeln mit Worktrees**
-- `single` → **Einzeln**
-- `none` → **Keine Commits**
+- `worktrees` → **Individually with worktrees**
+- `single` → **Individually**
+- `none` → **No commits**
 
-Melde kurz, dass die Commit-Strategie aus der Effective Flow-Konfiguration (Projektsetup-ADR) übernommen wurde. Wenn kein gültiger Wert gesetzt ist, frage wie bisher:
+Briefly report that the commit strategy was taken from the Effective Flow configuration (project-setup ADR). If no valid value is set, ask as before:
 
-Wenn kein gültiger Wert für `applyReview.defaultCommitStrategy` gesetzt ist:
+Wenn no valid value is set for `applyReview.defaultCommitStrategy`:
 
 Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
 - header: "Commits"
-- question: "Welche Commit-Strategie soll für die Findings verwendet werden?"
+- question: "Which commit strategy should be used for the findings?"
 - multiSelect: false
 - options:
-  - label: "Einzeln mit Worktrees", description: "Parallele Komponenten laufen in isolierten Git-Worktrees und werden anschließend zurückgeführt (häufigste Wahl)"
-  - label: "Einzeln", description: "Jedes Finding wird nach Umsetzung einzeln committet"
-  - label: "Keine Commits", description: "Alle Änderungen werden ohne automatische Commits durchgeführt"
+  - label: "Individually with worktrees", description: "Parallel components run in isolated git worktrees and are integrated back afterwards (most common choice)"
+  - label: "Individually", description: "Each finding is committed individually after implementation"
+  - label: "No commits", description: "All changes are made without automatic commits"
 
-Halte die Antwort fest und gib sie an jeden delegierten Skill als Anweisung weiter:
+Record the answer and pass it to each delegated skill as an instruction:
 
-- **Einzeln mit Worktrees:** Jede parallele Komponente arbeitet in einem eigenen Git-Worktree, committet dort die Findings einzeln und der Orchestrator führt die Commits danach sequenziell per `git cherry-pick` in den ursprünglichen Branch zurück. Commit-Messages folgen denselben Regeln wie bei `Einzeln`: konkrete Conventional-Commit-Message, keine internen Finding-IDs, kein `Co-Authored-By`.
-- **Einzeln:** Nach jedem abgeschlossenen Finding die Änderungen committen. Verwende eine konkrete Conventional-Commit-Message ohne interne Finding-ID, z. B. `fix: clarify review decision filtering`. Setze **niemals** `Co-Authored-By`-Trailer (auch nicht für LLMs); das gilt für jeden Commit, der durch diesen Workflow oder einen delegierten Sub-Agenten erzeugt wird. Protokolliere die Zuordnung von Finding-ID zu Commit-Hash direkt nach jedem erfolgreichen Commit in der Wisdom-Datei.
-- **Keine Commits:** Keine automatischen Commits, der User committet selbst.
+- **Individually with worktrees:** each parallel component works in its own git worktree, commits the findings individually there, and the orchestrator then integrates the commits back into the original branch sequentially via `git cherry-pick`. Commit messages follow the same rules as for "Individually": a concrete Conventional Commit message, no internal finding IDs, no `Co-Authored-By`.
+- **Individually:** commit the changes after each completed finding. Use a concrete Conventional Commit message without an internal finding ID, e.g. `fix: clarify review decision filtering`. **Never** set a `Co-Authored-By` trailer (not even for LLMs); this applies to every commit created by this workflow or a delegated sub-agent. Log the mapping of finding ID to commit hash in the wisdom file directly after each successful commit.
+- **No commits:** no automatic commits, the user commits themselves.
 
-#### Stash-Policy
+#### Stash policy
 
-Teil desselben Up-front-Gates: Die Stash-Policy legt vorab fest, wie die Stash-Bereinigung in Phase 6 (Klassen B/C/D) und das Abbruch-Aufräumen in Phase 4.3 mit hinterlassenen Stashes umgehen – ohne spätere Rückfrage. Konkrete Stashes existieren zu Beginn noch nicht; entschieden wird daher die Policy, nicht der Einzelfall.
+Part of the same up-front gate: the stash policy determines in advance how the stash cleanup in Phase 6 (classes B/C/D) and the abort cleanup in Phase 4.3 handle stashes left behind — without a later follow-up question. Concrete stashes do not yet exist at the start; therefore the policy is decided, not the individual case.
 
-Wenn `applyReview.stashPolicy` gültig gesetzt ist, überspringe die ASK-Frage und verwende den Wert; melde kurz, dass die Stash-Policy aus der Effective Flow-Konfiguration (Projektsetup-ADR) übernommen wurde. Wenn kein gültiger Wert gesetzt ist, frage am selben Gate wie die Commit-Strategie:
+If `applyReview.stashPolicy` is validly set, skip the ASK question and use the value; briefly report that the stash policy was taken from the Effective Flow configuration (project-setup ADR). If no valid value is set, ask at the same gate as the commit strategy:
 
-Wenn kein gültiger Wert für `applyReview.stashPolicy` gesetzt ist:
+Wenn no valid value is set for `applyReview.stashPolicy`:
 
 Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
 - header: "Stashes"
-- question: "Wie sollen während des Laufs hinterlassene Stashes behandelt werden, wenn eine Entscheidung nötig ist?"
+- question: "How should stashes left behind during the run be handled when a decision is needed?"
 - multiSelect: false
 - options:
-  - label: "Interaktiv", description: "Pro betroffenem Stash nachfragen (heutiges Verhalten, blockiert autonome Läufe)"
-  - label: "Behalten", description: "Unklare Stashes unverändert behalten und am Ende berichten (sicher für autonome Läufe)"
-  - label: "Verwerfen", description: "Unklare Stashes verwerfen (git stash drop) – möglicher Datenverlust"
-  - label: "Anwenden", description: "Unklare Stashes anwenden (git stash pop); bei Merge-Konflikt wird trotzdem nachgefragt"
+  - label: "Interactive", description: "Ask per affected stash (today's behavior, blocks autonomous runs)"
+  - label: "Keep", description: "Keep unclear stashes unchanged and report at the end (safe for autonomous runs)"
+  - label: "Discard", description: "Discard unclear stashes (git stash drop) — possible data loss"
+  - label: "Apply", description: "Apply unclear stashes (git stash pop); on a merge conflict it still asks"
 
-Werte-Zuordnung: Interaktiv → `interactive`, Behalten → `keep`, Verwerfen → `discard`, Anwenden → `apply`. Halte die gewählte Policy in der Wisdom-Datei fest. Für unbeaufsichtigte `/goal`-Läufe ist `keep` der sichere Wert; `interactive` blockiert solche Läufe an Phase 6 und Phase 4.3.
+Value mapping: Interactive → `interactive`, Keep → `keep`, Discard → `discard`, Apply → `apply`. Record the chosen policy in the wisdom file. For unattended `/goal` runs, `keep` is the safe value; `interactive` blocks such runs at Phase 6 and Phase 4.3.
 
-#### Optionaler `/goal`-String
+#### Optional `/goal` string
 
-Nachdem Commit-Strategie und Stash-Policy feststehen, gib gemäß „Goal-getriebene Abschlusssteuerung“ den optionalen `/goal`-String aus; er deckt die Phasen 3–8 ab. Der String referenziert die Report-Datei und weist an, die verbleibenden Phasen zu durchlaufen. Bei `stashPolicy != interactive` (empfohlen `keep`) laufen diese Phasen ohne reguläres Approval-Gate; verbleibende Stopps sind nur die konfliktbedingten Eskalationen aus der Phase-Einleitung (`apply`-Merge-Konflikt, risikoreicher Cherry-Pick-Konflikt bei Worktrees, selten ein verwaister Lock).
+Once the commit strategy and stash policy are fixed, output the optional `/goal` string per "Goal-driven completion control"; it covers phases 3–8. The string references the report file and instructs the user to run through the remaining phases. With `stashPolicy != interactive` (recommended `keep`), these phases run without a regular approval gate; the remaining stops are only the conflict-driven escalations from the phase intro (`apply` merge conflict, high-risk cherry-pick conflict with worktrees, rarely an orphaned lock).
 
-#### Commit-Mechanik je Strategie
+#### Commit mechanics per strategy
 
-Die detaillierte Mechanik der committenden Strategien – **Einzeln** (Git-Commit-Mutex) und **Einzeln mit Worktrees** (Worktree-Isolation samt Cherry-Pick-Konfliktbewertung) – steht in der internen Teil-Datei `tools/apply-review-commit-mechanics.md`. Lies sie, sobald in Phase 2 die Strategie feststeht und Commits erzeugt werden; bei **Keine Commits** entfällt sie. Die späteren Phasen verweisen für die Detailregeln auf diese Teil-Datei.
+The detailed mechanics of the committing strategies — **Individually** (git commit mutex) and **Individually with worktrees** (worktree isolation including cherry-pick conflict assessment) — are in the internal sub-file `tools/apply-review-commit-mechanics.md`. Read it once the strategy is fixed in Phase 2 and commits are created; with **No commits** it is omitted. The later phases refer to this sub-file for the detailed rules.
 
-### Phase 3: Abgelehnte Findings → Entscheidungs-Kandidat (Delegation an `decision-records`)
+### Phase 3: Rejected findings → decision candidate (delegation to `decision-records`)
 
-Das ADR-Authoring besitzt der Host-Skill `decision-records` (Domänen-Owner: ADR-Würdigung, Repo-Konventions-Erkennung, Lifecycle, Supersession, Index). Dieser Workflow **autort kein ADR mehr selbst** und kodiert weder `docs/adr/`, noch Nummerierung, Status-Text oder ein festes Template. Firmo behält das **Mapping** (Finding + Entwickler-Anmerkung → Entscheidungs-Kandidat), den Approval-/Status-Fluss, den **Backlink** zu Report/Remote-Issue und das Tracking des Ergebnis-Artefakts in der Zusammenfassung.
+The ADR authoring is owned by the host skill `decision-records` (domain owner: ADR merit, repo-convention detection, lifecycle, supersession, index). This workflow **no longer authors an ADR itself** and encodes neither `docs/adr/`, nor numbering, status text or a fixed template. Firmo keeps the **mapping** (finding + developer note → decision candidate), the approval/status flow, the **backlink** to the report/remote issue and the tracking of the result artifact in the summary.
 
-Sichte zunächst die verfügbaren Skills:
+First survey the available skills:
 
-## Skill-Discovery
+## Skill discovery
 
-Bevor du mit der eigentlichen Umsetzung, Planung bzw. Prüfung beginnst, sichte die in der
-Umgebung verfügbaren Skills und binde die für die konkrete Aufgabe nützlichen ein. Stellt
-die Umgebung kein Skill-Verzeichnis bereit oder passt keiner, ist dieser Schritt ein No-Op —
-fahre ohne Fehler oder Blockade fort.
+Before you start the actual implementation, planning, or review, survey the skills available in
+the environment and pull in the ones useful for the concrete task. If the environment provides
+no skill directory or none fits, this step is a no-op — continue without an error or a block.
 
-### Vorgehen
+### Approach
 
-1. **Empfohlene Skills bevorzugen:** Wende die weiter oben unter „Empfohlene Skills"
-   genannten Skills bevorzugt an, sofern sie verfügbar und für die konkrete Aufgabe relevant
-   sind. „Bevorzugen" ist die Auswahl; über die **Autorität** entscheidet der Vertrag in
-   Punkt 5 (ist ein empfohlener Skill der deklarierte Domänen-Owner, ist seine Guidance
-   maßgeblich, nicht nur optional). Eine Fallback-Notation `A › B` ist eine geordnete Präferenz: nimm den ersten
-   verfügbaren, nicht ausgeschlossenen Skill der Gruppe, nie beide. Fehlt ein solcher
-   Abschnitt (z. B. bei Tools), entfällt dieser Punkt.
-2. **Relevanz beurteilen:** Prüfe jeden Skill gegen die **konkrete** Aufgabe und binde nur
-   klar passende ein (typisch 0–2). Lade keine Skills „auf Verdacht" — Token-Sparsamkeit.
-3. **Config berücksichtigen:** Lies, falls vorhanden, den `skills`-Block aus der
-   Effective Flow-Konfiguration (Projektsetup-ADR) best-effort — die globalen Felder plus deinen
-   eigenen Scope-Eintrag (ein Agent liest `agents.<eigener-name>`, ein Tool liest
-   `tools.<eigener-name>`).
-   - `enabled: false` → überspringe die gesamte dynamische Skill-Nutzung.
-   - `exclude` (global oder Scope) → diese Skills nie anwenden; ein ausgeschlossenes
-     Fallback-Mitglied wird zugunsten des nächsten Fallbacks übersprungen.
-   - `include` (global oder Scope) → diese Skills zusätzlich bevorzugt berücksichtigen; ein
-     nicht installierter Skill wird still ignoriert.
-   - Fehlt der Block oder die Datei, gilt der Default (`enabled` an, keine Zusatz-Listen).
-     Lies die Config nur; migriere oder schreibe sie hier nicht.
-4. **Library-Doku:** Wird gegen eine unbekannte oder aktuelle Library bzw. ein Framework
-   gearbeitet, nutze bei Bedarf aktuelle-Doku-Skills (z. B. `context7`), falls verfügbar,
-   statt aus Erinnerung zu raten. Nur bei Bedarf, kein Zwang.
-5. **Autoritäts-Vertrag (Orchestrierung vs. Domänen-Expertise):** Effective Flow und die zentralen
-   Skills teilen sich die Verantwortung **geschichtet** — nicht „Effective Flow gewinnt immer":
-   - **Effective Flow besitzt die Orchestrierung** (das **Was/Wann**): Routing und User-Interaktion,
-     Plan-/Report-State, Finding-IDs, Backlinks, Tracker-Integration, Resumability,
-     Agent-Auswahl und Parallelisierung, Baseline-Vergleich, Worktrees, Commits, Delivery,
-     Harness-Transform und Config. Diese Regeln, `AGENTS.md`/Projektkonventionen sowie die
-     eigenen Sprach-, Commit- und Scope-Regeln haben **immer** Vorrang; kein Skill darf Scope
-     erweitern, neue Dependencies einführen oder den abgestimmten Plan verletzen. In
-     Analyse-/Planungs-Tools bleibt die No-Code-Grenze strikt.
-   - **Zentrale Skills besitzen wiederverwendbare Expertise** (das **Wie**): Domänen-Checklisten,
-     Heuristiken, Standards, Research-Prozeduren und Spezialisten-Guidance. Ist ein empfohlener
-     Skill der **deklarierte Domänen-Owner** für die anstehende Fachfrage **und** deckt er sie
-     ab, ist seine Guidance **maßgeblich** — nicht optionaler Rat. Das eigene Source trägt dann
-     **keine zweite Kopie** dieses Playbooks, sondern nur Scope-/Output-/Lifecycle-Constraints
-     plus einen minimalen Fallback (Punkt 6).
-   - **Grenzfälle:** Deckt ein Skill nur einen Spezialzweig ab (_route-when-relevant_) oder
-     divergiert Effective Flows Produktverhalten bewusst (_no-overlap_), bleibt die Effective Flow-Guidance
-     führend. Die verbindliche Zuordnung je Skill/Intersection steht im Ownership-Inventar im
-     Developer-Guide (`docs/developer-guide/skill-ownership.md`).
-6. **Fehlender maßgeblicher Skill (minimaler Fallback):** Ist der maßgebliche Skill nicht
-   verfügbar (nicht installiert, `skills.enabled: false` oder via `exclude` deaktiviert),
-   greift der im Source belassene **minimale generische Fallback** — eine kurze essentielle
-   Kern-Guidance, damit das Tool funktionsfähig bleibt und sauber degradiert. Es wird **kein**
-   zweites vollständiges Domänen-Handbuch vorgehalten; volle Tiefe kommt nur mit dem zentralen
-   Skill.
-7. **Melden:** Nenne kurz, welche Skills genutzt wurden (bzw. dass keiner passte). Hat dir
-   ein Orchestrator-Tool bereits relevante Skills mitgegeben, wende sie an und führe keine
-   redundante Voll-Discovery durch.
+1. **Prefer recommended skills:** Preferentially apply the skills listed further above under
+   "Recommended skills", provided they are available and relevant to the concrete task.
+   "Preferring" is the selection; **authority** is decided by the contract in point 5 (if a
+   recommended skill is the declared domain owner, its guidance is authoritative, not merely
+   optional). A fallback notation `A › B` is an ordered preference: take the first available,
+   non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
+   this point does not apply.
+2. **Judge relevance:** Check each skill against the **concrete** task and pull in only the
+   clearly fitting ones (typically 0–2). Do not load skills "on suspicion" — be token-frugal.
+3. **Take config into account:** If present, read the `skills` block from the Effective Flow
+   configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
+   scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
+   - `enabled: false` → skip the entire dynamic skill usage.
+   - `exclude` (global or scope) → never apply these skills; an excluded fallback member is
+     skipped in favor of the next fallback.
+   - `include` (global or scope) → additionally consider these skills as preferred; a
+     skill that is not installed is silently ignored.
+   - If the block or the file is missing, the default applies (`enabled` on, no additional
+     lists). Only read the config; do not migrate or write it here.
+4. **Library docs:** When working against an unknown or current library or framework, use
+   current-docs skills (e.g. `context7`) as needed, if available, instead of guessing from
+   memory. Only when needed, never mandatory.
+5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
+   skills share the responsibility in a **layered** way — not "Effective Flow always wins":
+   - **Effective Flow owns the orchestration** (the **what/when**): routing and user
+     interaction, plan/report state, finding IDs, backlinks, tracker integration, resumability,
+     agent selection and parallelization, baseline comparison, worktrees, commits, delivery,
+     harness transform, and config. These rules, `AGENTS.md`/project conventions, plus its own
+     language, commit, and scope rules **always** take precedence; no skill may widen scope,
+     introduce new dependencies, or violate the agreed plan. In analysis/planning tools the
+     no-code boundary stays strict.
+   - **Central skills own reusable expertise** (the **how**): domain checklists, heuristics,
+     standards, research procedures, and specialist guidance. If a recommended skill is the
+     **declared domain owner** for the technical question at hand **and** covers it, its
+     guidance is **authoritative** — not optional advice. The tool's own source then carries
+     **no second copy** of that playbook, only scope/output/lifecycle constraints plus a
+     minimal fallback (point 6).
+   - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
+     Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
+     guidance stays leading. The binding assignment per skill/intersection is in the ownership
+     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
+   available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
+   **minimal generic fallback** left in the source applies — a short, essential core guidance
+   so the tool stays functional and degrades cleanly. **No** second full domain handbook is
+   kept on hand; full depth comes only with the central skill.
+7. **Report:** Briefly name which skills were used (or that none fit). If an orchestrator tool
+   already handed you relevant skills, apply them and do not run a redundant full discovery.
 
-Für jedes Finding mit „Nicht umsetzen“-Anmerkung (im Remote-Modus: `wontfix`-Finding, mit `wontfix`-Begründung statt Entwickler-Anmerkung):
+For each finding with a "Do not implement" note (German "Nicht umsetzen" also recognized; in remote mode: `wontfix` finding, with a `wontfix` rationale instead of a developer note):
 
-1. **Entscheidungs-Kandidat bilden.** Fasse aus dem Finding und der Entwickler-Anmerkung einen Kandidaten zusammen: sprechender Titel, Kontext (Report-Dateiname + Finding-ID bzw. Issue-/Epic-Nummer), die Ablehnungs-Begründung (vollständige Anmerkung/`wontfix`-Text) und einen nachverfolgbaren **Backlink** zum Quell-Finding.
-2. **An `decision-records` delegieren.** Übergib den Kandidaten an den Skill mit dem Auftrag, (a) zu **entscheiden, ob** eine dauerhafte Architektur-/Grundsatzentscheidung vorliegt, die eine ADR rechtfertigt, und (b) sie, falls ja, nach der **entdeckten Repo-Konvention** zu autoren. Die für dieses Repo deklarierte Konvention ist das lebende Slug-Modell aus `adr-convention.md` (Ort/Dateiname/Titel/Status/Mutabilität); deklariert das Zielprojekt eine eigene ADR-Konvention, folgt der Skill dieser. Constraint an den Skill: die ADR trägt den Backlink zum Finding und wird **nicht** zu einem Task-Status-Ledger; eine bestehende thematisch passende lebende ADR wird **in-place** aktualisiert statt dupliziert.
-3. **Nicht-dauerhafte Ablehnung.** Stuft `decision-records` den Kandidaten als reine Delivery-Historie ohne dauerhafte Wirkung ein (kein ADR gerechtfertigt), wird **keine** ADR erzwungen — die Ablehnung bleibt im Review-Report bzw. (Remote-Modus) am Issue/Epic dokumentiert (siehe Phase 5).
-4. **Minimaler Fallback (Skill fehlt).** Ist `decision-records` nicht verfügbar (nicht installiert, `skills.enabled: false` oder via `exclude` deaktiviert), autort dieser Workflow die dauerhafte Entscheidung selbst nach der **minimalen Fallback-Struktur** aus `adr-convention.md` (lebende Slug-ADR unter dem erkannten ADR-Verzeichnis, Default `docs/adr/<slug>.md`; bestehende thematisch passende ADR in-place aktualisieren, Datei vorher frisch einlesen). **Kein** Erfinden einer zweiten Konvention.
-5. Gib dem User eine Statusmeldung über die erzeugten bzw. aktualisierten Records und referenziere jeden per Slug, z. B. `(ADR: <slug>)`; nenne die als nicht-dauerhaft eingestuften Ablehnungen separat.
+1. **Form the decision candidate.** From the finding and the developer note, summarize a candidate: a descriptive title, context (report filename + finding ID or issue/epic number), the rejection rationale (full note/`wontfix` text) and a traceable **backlink** to the source finding.
+2. **Delegate to `decision-records`.** Hand the candidate to the skill with the task to (a) **decide whether** a permanent architecture/principle decision exists that justifies an ADR, and (b) if so, author it per the **discovered repo convention**. The convention declared for this repo is the living slug model from `adr-convention.md` (location/filename/title/status/mutability); if the target project declares its own ADR convention, the skill follows that one. Constraint on the skill: the ADR carries the backlink to the finding and does **not** become a task-status ledger; an existing thematically matching living ADR is updated **in place** rather than duplicated.
+3. **Non-permanent rejection.** If `decision-records` classifies the candidate as pure delivery history without permanent effect (no ADR justified), **no** ADR is forced — the rejection stays documented in the review report or (remote mode) on the issue/epic (see Phase 5).
+4. **Minimal fallback (skill missing).** If `decision-records` is unavailable (not installed, `skills.enabled: false` or disabled via `exclude`), this workflow authors the permanent decision itself per the **minimal fallback structure** from `adr-convention.md` (living slug ADR under the detected ADR directory, default `docs/adr/<slug>.md`; update an existing thematically matching ADR in place, reading the file fresh first). **Do not** invent a second convention.
+5. Give the user a status update about the created or updated records and reference each by slug, e.g. `(ADR: <slug>)`; name the rejections classified as non-permanent separately.
 
-### Phase 4: Vorabanalyse und parallele Delegation
+### Phase 4: Pre-analysis and parallel delegation
 
-Diese Phase besteht aus drei Teilschritten. Ziel: Maximierung der Parallelität, ohne den 1-Commit-pro-Finding-Vertrag zu brechen.
+This phase consists of three sub-steps. Goal: maximize parallelism without breaking the 1-commit-per-finding contract.
 
-#### Phase 4.1: Vorabanalyse (parallel pro Finding)
+#### Phase 4.1: Pre-analysis (in parallel per finding)
 
-Starte für **jedes umsetzbare Finding** einen Vorabanalyse-Sub-Agenten parallel. Diese Sub-Agenten implementieren nichts und ändern keine Dateien — sie analysieren nur.
+Start a pre-analysis sub-agent in parallel for **each implementable finding**. These sub-agents implement nothing and change no files — they only analyze.
 
-Jeder Vorabanalyse-Sub-Agent erhält:
+Each pre-analysis sub-agent receives:
 
-- die Finding-Details aus dem Report (ID, Problem, Empfehlung, Datei, Aktion)
-- die Entwickler-Anmerkung (falls vorhanden)
-- den Auftrag, den Code zu untersuchen und ein strukturiertes Analyse-Ergebnis zu liefern:
-  - **Betroffene Dateien:** vollständige Liste aller Dateien, die wahrscheinlich angefasst werden (mehr als nur die im Report genannte primäre Datei).
-  - **Root Cause / aktuelles Verhalten** (für `/effective-flow fix` und `/effective-flow refactor`), **Anforderung** (für `/effective-flow build`) bzw. **Dokumentationslücke und Zielgruppe** (für `/effective-flow docs`).
-  - **Implementierungsskizze:** kurzer Plan in 2-5 Bullet-Points.
-  - **Risiken und Datei-Abhängigkeiten:** mögliche Nebenwirkungen, Kollisionen mit anderen Findings.
-  - **Konfidenz:** `Hoch` (Datei-Liste sicher), `Mittel` (Datei-Liste plausibel), `Niedrig` (File-Scope unsicher, z. B. großes Refactoring oder unklare Dependency).
-- das Fertig-Protokoll
+- the finding details from the report (ID, Problem, Empfehlung, Datei, action)
+- the developer note (if present)
+- the task to investigate the code and deliver a structured analysis result:
+  - **Affected files:** complete list of all files that will likely be touched (more than just the primary file named in the report).
+  - **Root cause / current behavior** (for `/effective-flow fix` and `/effective-flow refactor`), **requirement** (for `/effective-flow build`) or **documentation gap and audience** (for `/effective-flow docs`).
+  - **Implementation sketch:** short plan in 2–5 bullet points.
+  - **Risks and file dependencies:** possible side effects, collisions with other findings.
+  - **Confidence:** `High` (file list certain), `Medium` (file list plausible), `Low` (file scope uncertain, e.g. large refactoring or unclear dependency).
+- the completion protocol
 
-Schreibe das Ergebnis pro Finding in die Wisdom-Datei unter `## Vorabanalyse [R-XXXXXXX]`. Bei `ABBRUCH` markiere das Finding mit dem Status `fehlgeschlagen (Vorabanalyse)` in der Wisdom-Datei und überspringe es bei den folgenden Schritten. Diese Kennzeichnung erlaubt Phase 6 (Stash-Bereinigung), zwischen Vorabanalyse-Abbrüchen (kein Stash möglich, da nichts implementiert wurde) und Delegations-Abbrüchen (Stash kann existieren) zu unterscheiden.
+Write the result per finding into the wisdom file under `## Pre-analysis [R-XXXXXXX]`. On `ABORT`, mark the finding with the status `failed (pre-analysis)` in the wisdom file and skip it in the following steps. This marking allows Phase 6 (stash cleanup) to distinguish pre-analysis aborts (no stash possible, since nothing was implemented) from delegation aborts (a stash may exist).
 
-Verwende einen validen `applyReviewAnalysis`-Cache-Eintrag nur dann, wenn Report-Datei-Hash, Finding-ID und relevante Code-Datei-Hashes zur aktuellen Situation passen. Wenn der Cache nicht eindeutig valide ist, führe die Vorabanalyse neu aus. Aktualisiere den Cache nur nach erfolgreicher Vorabanalyse; schreibe keine User-Entscheidungen oder fehlgeschlagenen Delegationsoutputs in den Cache.
+Use a valid `applyReviewAnalysis` cache entry only if the report file hash, finding ID and relevant code file hashes match the current situation. If the cache is not unambiguously valid, run the pre-analysis anew. Update the cache only after a successful pre-analysis; do not write user decisions or failed delegation outputs into the cache.
 
-#### Phase 4.2: Überlappungs-Komponenten bilden (lokal im Orchestrator)
+#### Phase 4.2: Form overlap components (locally in the orchestrator)
 
-Bilde die Parallelisierungs-Einheiten **global über alle umsetzbaren Findings aller Aktionsgruppen hinweg** (`/effective-flow fix`, `/effective-flow refactor`, `/effective-flow build`, `/effective-flow docs`), anhand der Datei-Listen aus Phase 4.1. Die Aktionsgruppe eines Findings bestimmt später nur, welcher Skill es umsetzt (Phase 4.3), **nicht** die Gruppierung: Zwei Findings, die dieselbe Datei anfassen, dürfen nie gleichzeitig laufen — auch dann nicht, wenn ihre Aktionen unterschiedlich sind. Vorgehen explizit zweistufig:
+Form the parallelization units **globally across all implementable findings of all action groups** (`/effective-flow fix`, `/effective-flow refactor`, `/effective-flow build`, `/effective-flow docs`), based on the file lists from Phase 4.1. A finding's action group later only determines which skill implements it (Phase 4.3), **not** the grouping: two findings that touch the same file may never run at the same time — not even if their actions differ. The approach is explicitly two-stage:
 
-1. **Partitioniere** alle Findings (aktionsübergreifend) in zwei Mengen:
-   - **Konfidenz-Niedrig-Menge:** Findings mit Konfidenz `Niedrig` (File-Scope unsicher).
-   - **Rest-Menge:** Findings mit Konfidenz `Hoch` oder `Mittel`.
-2. Wende **Union-Find auf die Rest-Menge aller Aktionsgruppen gemeinsam** an:
-   - Initialisiere jedes Finding der Rest-Menge als eigene Komponente.
-   - Für jeden Datei-Pfad, der von mehr als einem Finding der Rest-Menge genannt wird: vereinige die Komponenten der beteiligten Findings — unabhängig von deren Aktionsgruppe.
-   - Ergebnis: zwei Findings sind genau dann in derselben Komponente, wenn sie über eine Kette von Datei-Überlappungen verbunden sind (auch transitiv: teilen A–B und B–C je eine Datei, ohne dass A–C direkt überlappen, landen A, B, C in derselben Komponente; auch sternförmig: teilt A je eine Datei mit B und mit C, ohne dass B–C überlappen, landen ebenfalls alle drei in derselben Komponente). Eine Komponente darf Findings mehrerer Aktionsgruppen enthalten.
-3. Füge die **Konfidenz-Niedrig-Menge als eine gemeinsame Safety-Komponente** zum Ergebnis hinzu. Diese Komponente läuft intern sequenziell, weil der File-Scope unsicher ist und parallele Singleton-Streams sonst dieselbe Datei verändern könnten, ohne dass Union-Find den Konflikt erkennt.
-4. Reihenfolge innerhalb einer Komponente: Reihenfolge wie im Report (deterministisch). Keine Schweregrad-Sortierung — Schweregrade können Abhängigkeiten implizieren. Jedes Finding behält seine Aktionsgruppe; sie entscheidet in Phase 4.3 den Ziel-Skill.
-5. Reihenfolge **der Komponenten** untereinander: deterministisch nach der Report-Position ihres ersten Findings. Diese Reihenfolge ist zugleich die Integrationsreihenfolge im Worktree-Modus (Phase 4.3, Schritt 7).
-6. Ergebnis: eine globale Liste von Überlappungs-Komponenten, jede mit 1-N Findings (ggf. gemischter Aktion).
+1. **Partition** all findings (across actions) into two sets:
+   - **Low-confidence set:** findings with confidence `Low` (file scope uncertain).
+   - **Rest set:** findings with confidence `High` or `Medium`.
+2. Apply **union-find to the rest set of all action groups together**:
+   - Initialize each finding of the rest set as its own component.
+   - For each file path named by more than one finding of the rest set: union the components of the involved findings — regardless of their action group.
+   - Result: two findings are in the same component exactly when they are connected via a chain of file overlaps (also transitively: if A–B and B–C each share a file without A–C overlapping directly, A, B, C land in the same component; also star-shaped: if A shares a file each with B and with C without B–C overlapping, all three land in the same component too). A component may contain findings of multiple action groups.
+3. Add the **low-confidence set as one shared safety component** to the result. This component runs internally sequentially because the file scope is uncertain and parallel singleton streams could otherwise modify the same file without union-find recognizing the conflict.
+4. Order within a component: order as in the report (deterministic). No severity sorting — severities can imply dependencies. Each finding keeps its action group; it decides the target skill in Phase 4.3.
+5. Order **of the components** relative to each other: deterministic by the report position of their first finding. This order is at the same time the integration order in worktree mode (Phase 4.3, step 7).
+6. Result: a global list of overlap components, each with 1–N findings (possibly of mixed action).
 
-Edge Cases:
+Edge cases:
 
-- Sind alle Findings Konfidenz `Niedrig`, entsteht eine einzelne Safety-Komponente mit allen Findings; der Union-Find-Schritt entfällt.
-- Gibt es genau ein umsetzbares Finding, ist das Ergebnis immer eine einzelne Komponente.
-- Ein Finding, das mit keinem anderen Finding eine Datei teilt, bleibt eine eigene Komponente und läuft parallel zu den übrigen.
+- If all findings are confidence `Low`, a single safety component with all findings arises; the union-find step is omitted.
+- If there is exactly one implementable finding, the result is always a single component.
+- A finding that shares a file with no other finding remains its own component and runs in parallel with the rest.
 
-Beispiel (aktionsübergreifend) mit fünf Findings über mehrere Aktionen:
+Example (across actions) with five findings over multiple actions:
 
-- F1 `[fix] src/auth.ts` und F2 `[refactor] src/auth.ts` → Komponente A (sequenziell, gemischte Aktion: F1 via `/effective-flow fix`, F2 via `/effective-flow refactor`)
-- F3 `[fix] src/billing.ts` → Komponente B (parallel zu A)
-- F4 `[docs] docs/guide.md` und F5 `[build] docs/guide.md` → Komponente C (parallel zu A und B, intern sequenziell)
-  Drei parallele Streams. Die frühere getrennt-pro-Aktion-Gruppierung hätte F1 und F2 in verschiedene Streams gelegt und beide gleichzeitig auf `src/auth.ts` schreiben lassen.
+- F1 `[fix] src/auth.ts` and F2 `[refactor] src/auth.ts` → component A (sequential, mixed action: F1 via `/effective-flow fix`, F2 via `/effective-flow refactor`)
+- F3 `[fix] src/billing.ts` → component B (parallel to A)
+- F4 `[docs] docs/guide.md` and F5 `[build] docs/guide.md` → component C (parallel to A and B, internally sequential)
+  Three parallel streams. The earlier separate-per-action grouping would have put F1 and F2 into different streams and let both write to `src/auth.ts` at the same time.
 
-#### Phase 4.3: Parallele Delegation
+#### Phase 4.3: Parallel delegation
 
-1. Starte für jede **Überlappungs-Komponente** aus Phase 4.2 einen Delegations-Sub-Agenten. Alle Komponenten laufen parallel (sie teilen sich per Konstruktion keine Datei); innerhalb eines Sub-Agenten werden seine Findings **sequenziell** in Komponenten-Reihenfolge abgearbeitet — auch wenn die Komponente Findings mehrerer Aktionsgruppen enthält.
-   - Bei Commit-Strategie `Einzeln mit Worktrees`: erstelle vorher pro Komponente den Worktree gemäß der Worktree-Regeln und starte den Sub-Agenten mit diesem Worktree als Arbeitsverzeichnis.
-2. Jeder Delegations-Sub-Agent erhält im Prompt direkt eingebettet:
-   - die Finding-Details (ID, Problem, Empfehlung, Prompt-Vorschlag, Datei)
-   - die zugehörige Vorabanalyse aus Phase 4.1 als **inline-Kontext-Block** im Prompt — nicht als Verweis auf die Wisdom-Datei. Die Sub-Skills lesen die Wisdom-Datei nicht; sie verarbeiten nur den Prompt-Inhalt. Bette die Vorabanalyse vollständig ein, etwa unter der Überschrift `Vorabanalyse für dieses Finding:`.
-   - die Entwickler-Anmerkung (falls vorhanden)
-   - die Commit-Strategie aus Phase 2
-   - **Bei Commit-Strategie „Einzeln“:** die vollständige Git-Commit-Mutex-Regel aus `tools/apply-review-commit-mechanics.md`. Der Sub-Agent muss jeden Finding-Commit unter `.effective-flow/apply-review-commit.lock` ausführen, darf nur Finding-eigene Dateien stage-en und darf niemals `git add .`, `git add -A` oder `git commit -a` verwenden.
-   - **Bei Commit-Strategie „Einzeln mit Worktrees“:** die vollständige Git-Worktree-Isolation-Regel aus `tools/apply-review-commit-mechanics.md`. Der Sub-Agent arbeitet ausschließlich im zugewiesenen Worktree, committet dort jedes Finding einzeln und protokolliert Commit-Hashes in der Wisdom-Datei. Der Sub-Agent darf nicht in den ursprünglichen Worktree wechseln.
-   - den Auftrag, für **jedes** Finding den zu seiner Aktionsgruppe passenden Skill aufzurufen (bei gemischten Komponenten also pro Finding neu bestimmt):
-     - Aktion fix: `Verwende den Skill /effective-flow fix für dieses Finding.`
-     - Aktion refactor: `Verwende den Skill /effective-flow refactor für dieses Finding.`
-     - Aktion build: `Verwende den Skill /effective-flow build für dieses Finding.`
-     - Aktion docs: `Verwende den Skill /effective-flow docs für dieses Finding.`
-   - den Prompt-Vorschlag aus dem Report als Aufgabenbeschreibung
-   - **Stash-Konvention:** Falls während der Umsetzung dieses Findings irgendein Stash entsteht (durch einen Pre-Commit-Hook, einen manuellen `git stash` im Sub-Skill oder einen Tool-getriggerten Stash), **muss die Stash-Message die Finding-ID enthalten**, z. B. `apply-review R-XXXXXXX <kurze Beschreibung>`. Das ermöglicht der Stash-Bereinigung in Phase 6, den Stash zuverlässig dem Finding zuzuordnen.
-   - den Hinweis, dass der Sub-Agent als **nicht-interaktiver** Delegations-Sub-Agent von `/effective-flow apply-review` läuft und daher die explizite Goal-Abfrage gemäß „Explizite Goal-Abfrage für autonome Läufe“ überspringt: keine Zusatzoption „Autonom via /goal“, kein `/goal`-String. `/effective-flow apply-review` steuert den autonomen Lauf an seinem eigenen Gate.
-   - das Fertig-Protokoll
-3. Prüfe jeden Sub-Agenten auf `ERLEDIGT` oder `ABBRUCH`.
-4. Bei `ABBRUCH`:
-   - User informieren, Finding als `fehlgeschlagen (Delegation)` in der Wisdom-Datei markieren.
-   - **Vor dem nächsten Finding derselben Komponente:** prüfe via `git status`, ob der Arbeitsbaum sauber ist. Falls uncommittete Änderungen vorhanden sind (halbfertige Datei vom abgebrochenen Finding), räume den Arbeitsbaum gemäß der in Phase 2 festgelegten `stashPolicy` auf, bevor das nächste Finding startet – sonst arbeitet es auf inkonsistentem Zustand:
-     - `interactive` → den User fragen, ob die Änderungen gestasht oder verworfen werden sollen.
-     - `keep` und `apply` → mit Finding-ID stashen (`git stash push -m "apply-review abort R-XXXXXXX"`); `apply` ist hier nicht sinnvoll, da es ums Saubermachen vor dem nächsten Finding geht, und wird daher wie `keep` behandelt.
-     - `discard` → die Änderungen verwerfen.
+1. Start a delegation sub-agent for each **overlap component** from Phase 4.2. All components run in parallel (by construction they share no file); within a sub-agent its findings are worked through **sequentially** in component order — even if the component contains findings of multiple action groups.
+   - With commit strategy `Individually with worktrees`: create the worktree per component beforehand per the worktree rules and start the sub-agent with this worktree as the working directory.
+2. Each delegation sub-agent receives directly embedded in the prompt:
+   - the finding details (ID, Problem, Empfehlung, Prompt-Vorschlag, Datei)
+   - the corresponding pre-analysis from Phase 4.1 as an **inline context block** in the prompt — not as a reference to the wisdom file. The sub-skills do not read the wisdom file; they only process the prompt content. Embed the pre-analysis in full, for example under the heading `Pre-analysis for this finding:`.
+   - the developer note (if present)
+   - the commit strategy from Phase 2
+   - **With commit strategy "Individually":** the full git commit mutex rule from `tools/apply-review-commit-mechanics.md`. The sub-agent must run every finding commit under `.effective-flow/apply-review-commit.lock`, may only stage finding-owned files and may never use `git add .`, `git add -A` or `git commit -a`.
+   - **With commit strategy "Individually with worktrees":** the full git worktree isolation rule from `tools/apply-review-commit-mechanics.md`. The sub-agent works exclusively in the assigned worktree, commits each finding individually there and logs commit hashes in the wisdom file. The sub-agent must not switch into the original worktree.
+   - the task to call, for **each** finding, the skill matching its action group (in mixed components thus determined anew per finding):
+     - action fix: `Use the skill /effective-flow fix for this finding.`
+     - action refactor: `Use the skill /effective-flow refactor for this finding.`
+     - action build: `Use the skill /effective-flow build for this finding.`
+     - action docs: `Use the skill /effective-flow docs for this finding.`
+   - the prompt suggestion from the report as the task description
+   - **Stash convention:** if any stash arises during the implementation of this finding (through a pre-commit hook, a manual `git stash` in the sub-skill or a tool-triggered stash), **the stash message must contain the finding ID**, e.g. `apply-review R-XXXXXXX <short description>`. This allows the stash cleanup in Phase 6 to reliably assign the stash to the finding.
+   - the note that the sub-agent runs as a **non-interactive** delegation sub-agent of `/effective-flow apply-review` and therefore skips the explicit goal query per "Explicit goal query for autonomous runs": no extra option "Autonomous via /goal", no `/goal` string. `/effective-flow apply-review` steers the autonomous run at its own gate.
+   - the completion protocol
+3. Check each sub-agent for `DONE` or `ABORT`.
+4. On `ABORT`:
+   - inform the user, mark the finding as `failed (delegation)` in the wisdom file.
+   - **Before the next finding of the same component:** check via `git status` whether the working tree is clean. If uncommitted changes are present (a half-finished file from the aborted finding), clean the working tree per the `stashPolicy` fixed in Phase 2 before the next finding starts — otherwise it works on an inconsistent state:
+     - `interactive` → ask the user whether to stash or discard the changes.
+     - `keep` and `apply` → stash with the finding ID (`git stash push -m "apply-review abort R-XXXXXXX"`); `apply` makes no sense here, since this is about cleaning up before the next finding, and is therefore treated like `keep`.
+     - `discard` → discard the changes.
 
-     Stashe in jedem Fall mit der Finding-ID in der Message, damit Phase 6 den Stash zuordnen kann.
+     In every case, stash with the finding ID in the message so that Phase 6 can assign the stash.
 
-   - Mit dem nächsten Finding innerhalb derselben Komponente fortfahren. Andere Komponenten laufen unabhängig weiter.
+   - Continue with the next finding within the same component. Other components keep running independently.
 
-5. Gib dem User nach jeder abgeschlossenen Komponente eine Statusmeldung mit dem Ergebnis pro Finding.
-6. **Synchronisationsbarriere vor Phase 5:** Starte Phase 5 erst, wenn **alle** in Phase 4.3 gestarteten Delegations-Sub-Agenten einen Endstatus geliefert haben (`ERLEDIGT` oder `ABBRUCH`).
-7. Bei Commit-Strategie `Einzeln mit Worktrees`: integriere nach der Synchronisationsbarriere alle erfolgreichen Worktree-Branches sequenziell per `git cherry-pick` in den ursprünglichen Branch, und zwar in der **deterministischen Komponenten-Reihenfolge aus Phase 4.2, Schritt 5** (Komponenten nach Report-Position ihres ersten Findings; innerhalb einer Komponente die Finding-Commits in Komponenten-Reihenfolge). Diese feste Reihenfolge macht das Integrationsergebnis reproduzierbar. Phase 5 darf erst starten, wenn diese Integration abgeschlossen ist oder der Workflow wegen Konflikt/User-Entscheidung angehalten wurde.
-8. Eine Statusmeldung nach einer abgeschlossenen Komponente ist **keine** Abschlussmeldung des Gesamt-Workflows und **kein** Halt. Nach jeder Statusmeldung prüfst du aktiv, welche Delegations-Komponenten noch laufen, wartest auf deren Endstatus und setzt Phase 4.3 fort, bis keine Komponente mehr offen ist.
+5. Give the user a status update after each completed component with the result per finding.
+6. **Synchronization barrier before Phase 5:** start Phase 5 only when **all** delegation sub-agents started in Phase 4.3 have delivered a final status (`DONE` or `ABORT`).
+7. With commit strategy `Individually with worktrees`: after the synchronization barrier, integrate all successful worktree branches sequentially via `git cherry-pick` into the original branch, in the **deterministic component order from Phase 4.2, step 5** (components by report position of their first finding; within a component the finding commits in component order). This fixed order makes the integration result reproducible. Phase 5 may only start once this integration is complete or the workflow has been halted due to a conflict/user decision.
+8. A status update after a completed component is **not** a completion message of the overall workflow and **not** a halt. After each status update you actively check which delegation components are still running, wait for their final status and continue Phase 4.3 until no component is open anymore.
 
-#### Bekannte Einschränkungen
+#### Known limitations
 
-- **Cross-Action-Datei-Konflikte werden erkannt:** Die Überlappungs-Komponenten aus Phase 4.2 entstehen global über alle Aktionsgruppen. Findings, die dieselbe Datei betreffen, landen daher in derselben Komponente und laufen sequenziell — auch bei unterschiedlichen Aktionen schreiben sie nie gleichzeitig in einen Arbeitsbaum. Verbleibende Einschränkung: Die Erkennung ist nur so genau wie die Datei-Listen der Vorabanalyse (Phase 4.1). Fasst ein Finding zur Laufzeit eine in seiner Analyse nicht genannte Datei an, kann eine Überlappung unentdeckt bleiben; Konfidenz-Niedrig-Findings mit unsicherem File-Scope deckt hierfür die gemeinsame Safety-Komponente ab.
-- **Konfidenz-Niedrig-Findings** laufen aktionsübergreifend in einer gemeinsamen Safety-Komponente sequenziell, weil ihr File-Scope unsicher ist.
-- Der Git-Commit-Mutex isoliert nur Staging und Commit im ursprünglichen Worktree. Der Worktree-Modus isoliert zusätzlich Arbeitsbaum und Git-Index, verschiebt mögliche Konflikte aber in die sequenzielle Cherry-Pick-Integration (in deterministischer Komponenten-Reihenfolge).
+- **Cross-action file conflicts are detected:** the overlap components from Phase 4.2 are formed globally across all action groups. Findings that affect the same file therefore land in the same component and run sequentially — even with different actions they never write to a working tree at the same time. Remaining limitation: the detection is only as accurate as the file lists of the pre-analysis (Phase 4.1). If a finding touches a file at runtime that its analysis did not name, an overlap may go undetected; low-confidence findings with an uncertain file scope are covered here by the shared safety component.
+- **Low-confidence findings** run across actions in a shared safety component sequentially, because their file scope is uncertain.
+- The git commit mutex only isolates staging and commit in the original worktree. Worktree mode additionally isolates the working tree and git index, but shifts possible conflicts into the sequential cherry-pick integration (in deterministic component order).
 
-### Phase 5: Report aktualisieren
+### Phase 5: Update the report
 
-**Vorbedingung:** Phase 5 darf erst starten, wenn die Synchronisationsbarriere aus Phase 4.3 erfüllt ist, also keine Delegations-Komponente mehr offen ist.
+**Precondition:** Phase 5 may only start once the synchronization barrier from Phase 4.3 is satisfied, i.e. no delegation component is open anymore.
 
-1. Lies die Report-Datei erneut frisch vom Dateisystem ein. Die Datei könnte sich während der Umsetzung geändert haben.
-2. Ergänze an jedem erfolgreich umgesetzten Finding als letzten Eintrag:
-   `✅ Umgesetzt am YYYY-MM-DD via Effective Flow Apply-Review`
-3. Ergänze an jedem abgelehnten Finding als letzten Eintrag – je nach Einstufung durch `decision-records`:
-   - dauerhafte Entscheidung mit ADR: `📋 ADR am YYYY-MM-DD angelegt/aktualisiert: nicht umgesetzt (ADR: <slug>)`
-   - nicht-dauerhafte Ablehnung ohne ADR: `⏭️ Am YYYY-MM-DD als nicht umgesetzt dokumentiert (keine dauerhafte Entscheidung, kein ADR)`
-4. Speichere die aktualisierte Report-Datei.
+1. Read the report file again fresh from the file system. The file could have changed during implementation.
+2. Append to each successfully implemented finding as the last entry:
+   `✅ Implemented on YYYY-MM-DD via Effective Flow Apply-Review`
+3. Append to each rejected finding as the last entry — depending on the classification by `decision-records`:
+   - permanent decision with ADR: `📋 ADR created/updated on YYYY-MM-DD: not implemented (ADR: <slug>)`
+   - non-permanent rejection without ADR: `⏭️ Documented on YYYY-MM-DD as not implemented (no permanent decision, no ADR)`
+4. Save the updated report file.
 
-### Phase 6: Stash-Bereinigung
+### Phase 6: Stash cleanup
 
-Während der Delegation in Phase 4 können die aufgerufenen Sub-Skills oder Pre-Commit-Hooks neue Stashes anlegen, die ohne Bereinigung zurückbleiben. Diese Phase findet und behandelt sie.
+During the delegation in Phase 4, the called sub-skills or pre-commit hooks may create new stashes that remain without cleanup. This phase finds and handles them.
 
-1. Führe `git stash list` aus und vergleiche das Ergebnis mit der in Phase 1 erfassten Baseline.
-2. Bestimme die **neuen Stashes** als alle Einträge, die in der aktuellen Liste, aber nicht in der Baseline vorhanden sind. Vergleiche dabei nicht über `stash@{N}`-Indizes (verschieben sich), sondern über die vollständige Beschreibung (Branch + Commit-Hash + Subject) und idealerweise zusätzlich über die Stash-Commit-Hashes (`git stash list --format='%H %gs'`).
-3. Falls keine neuen Stashes gefunden werden: gib kurz „Keine offenen Stashes aus diesem Lauf.“ aus und gehe zur nächsten Phase.
-4. **Stash-Finding-Zuordnung:** Bestimme für jeden neuen Stash das zugehörige Finding über die folgenden Heuristiken — in dieser Priorität:
+1. Run `git stash list` and compare the result with the baseline captured in Phase 1.
+2. Determine the **new stashes** as all entries present in the current list but not in the baseline. Do not compare via `stash@{N}` indices (they shift), but via the full description (branch + commit hash + subject) and ideally additionally via the stash commit hashes (`git stash list --format='%H %gs'`).
+3. If no new stashes are found: briefly output "No open stashes from this run." and go to the next phase.
+4. **Stash-finding assignment:** determine for each new stash the corresponding finding via the following heuristics — in this priority:
 
-   1. **Stash-Message-Match (primär):** suche per Regex `R-\d{7}` in der Stash-Message. Bei Treffer ist die Zuordnung eindeutig.
-   2. **Datei-Überlappung (Fallback):** falls keine ID in der Message: vergleiche die geänderten Dateien des Stashes (`git stash show --name-only stash@{N}`) mit den in der Wisdom-Datei je Finding protokollierten Dateien. Eine signifikante Überlappung gilt als Zuordnung.
-   3. **Keine Zuordnung:** falls weder Message-Match noch klare Datei-Überlappung → der Stash gehört zu keinem Finding aus diesem Lauf (z. B. aus einem externen Pre-Commit-Hook).
+   1. **Stash-message match (primary):** search via regex `R-\d{7}` in the stash message. On a match the assignment is unambiguous.
+   2. **File overlap (fallback):** if no ID in the message: compare the changed files of the stash (`git stash show --name-only stash@{N}`) with the files logged per finding in the wisdom file. A significant overlap counts as an assignment.
+   3. **No assignment:** if neither a message match nor a clear file overlap → the stash belongs to no finding from this run (e.g. from an external pre-commit hook).
 
-5. **Klassifiziere jeden Stash:**
+5. **Classify each stash:**
 
-   **A. Finding komplett umgesetzt UND Stash-Inhalt vollständig im Commit für das Finding enthalten:**
-   - Lies aus der Wisdom-Datei den Status des zugeordneten Findings. „Komplett umgesetzt“ bedeutet: Status `ERLEDIGT` aus Phase 4.3.
-   - Hole die Commits, die zu diesem Finding gehören, aus der in Phase 4.3 protokollierten Wisdom-Zuordnung `Finding-ID -> Commit-Hash`; bei „Keine Commits“ entfällt dieser Pfad — siehe Klassifikation D unten.
-   - Vergleiche `git stash show -p stash@{N}` mit `git show <commit>` für die geänderten Dateien. Wenn der Stash-Diff inhaltlich vollständig im Finding-Commit aufgegangen ist (Stash-Inhalt ist eine Teilmenge der Commit-Änderungen) → **Stash ist Zwischenstand, nicht mehr benötigt**.
+   **A. Finding fully implemented AND stash content fully contained in the commit for the finding:**
+   - Read the status of the assigned finding from the wisdom file. "Fully implemented" means: status `DONE` from Phase 4.3.
+   - Fetch the commits belonging to this finding from the `finding ID -> commit hash` mapping logged in Phase 4.3; with "No commits" this path is omitted — see classification D below.
+   - Compare `git stash show -p stash@{N}` with `git show <commit>` for the changed files. If the stash diff has been fully absorbed into the finding commit content-wise (the stash content is a subset of the commit changes) → **stash is an intermediate state, no longer needed**.
 
-   **B. Finding komplett umgesetzt, aber Stash enthält Änderungen, die NICHT im Finding-Commit sind:**
-   - Stash könnte vergessenen Teilfix oder ungenutzten Zwischenstand enthalten — User-Entscheidung erforderlich.
+   **B. Finding fully implemented, but the stash contains changes that are NOT in the finding commit:**
+   - The stash could contain a forgotten partial fix or unused intermediate state — user decision required.
 
-   **C. Finding fehlgeschlagen (Status `fehlgeschlagen (Delegation)` oder `fehlgeschlagen (Vorabanalyse)`):**
-   - Stash ist potenziell die einzige Spur der Teilarbeit — User-Entscheidung erforderlich.
+   **C. Finding failed (status `failed (delegation)` or `failed (pre-analysis)`):**
+   - The stash is potentially the only trace of the partial work — user decision required.
 
-   **D. Kein Finding zugeordnet ODER Commit-Strategie „Keine Commits“:**
-   - Bei „Keine Commits“ gibt es keinen Commit zum Vergleich → kein Auto-Drop möglich.
-   - User-Entscheidung erforderlich.
+   **D. No finding assigned OR commit strategy "No commits":**
+   - With "No commits" there is no commit to compare against → no auto-drop possible.
+   - User decision required.
 
-6. **Behandle jeden Stash anhand seiner Klassifikation:**
+6. **Handle each stash based on its classification:**
 
-   **Stash-Policy aus Phase 2 anwenden:** Klasse A bleibt in allen Policies Auto-Drop. Die Klassen B/C/D folgen der `stashPolicy`. Die untenstehenden Klassen-Schritte beschreiben den Fall `stashPolicy = interactive` (Default), der pro Stash die Stash-Frage stellt. Bei den anderen Werten entfällt die Frage und du handelst direkt: `keep` → Stash unverändert behalten und für die Phase-8-Zusammenfassung als „behalten“ vermerken; `discard` → `git stash drop`; `apply` → `git stash pop` und bei Merge-Konflikt **nicht** droppen, sondern an den User eskalieren (einziger verbleibender Stopp im Autonom-Lauf).
+   **Apply the stash policy from Phase 2:** class A remains auto-drop in all policies. Classes B/C/D follow the `stashPolicy`. The class steps below describe the case `stashPolicy = interactive` (default), which asks the stash question per stash. With the other values the question is omitted and you act directly: `keep` → keep the stash unchanged and note it as "kept" for the Phase 8 summary; `discard` → `git stash drop`; `apply` → `git stash pop` and on a merge conflict do **not** drop, but escalate to the user (the only remaining stop in the autonomous run).
 
-   - **Klasse A:** Drop ohne Nachfrage.
+   - **Class A:** drop without asking.
      - `git stash drop stash@{N}`
-     - Logge dem User: „Stash für `[R-XXXXXXX]` verworfen — Finding vollständig umgesetzt, Zwischenstand nicht mehr benötigt."
+     - Log to the user: "Stash for `[R-XXXXXXX]` discarded — finding fully implemented, intermediate state no longer needed."
 
-   - **Klasse B:** User informieren und nachfragen.
-     - Zeige Stash-Beschreibung, betroffene Dateien und Hinweis: „Finding `[R-XXXXXXX]` wurde umgesetzt, der Stash enthält jedoch Änderungen, die nicht in den Commit eingeflossen sind — möglicherweise ein vergessener Teilfix."
-     - Stelle die untenstehende Stash-Frage.
+   - **Class B:** inform the user and ask.
+     - Show the stash description, affected files and the note: "Finding `[R-XXXXXXX]` was implemented, but the stash contains changes that did not flow into the commit — possibly a forgotten partial fix."
+     - Ask the stash question below.
 
-   - **Klasse C:** User informieren und nachfragen.
-     - Zeige Stash-Beschreibung, betroffene Dateien und Hinweis: „Finding `[R-XXXXXXX]` ist fehlgeschlagen, der Stash könnte ein unvollständiger Versuch sein."
-     - Stelle die untenstehende Stash-Frage.
+   - **Class C:** inform the user and ask.
+     - Show the stash description, affected files and the note: "Finding `[R-XXXXXXX]` failed, the stash could be an incomplete attempt."
+     - Ask the stash question below.
 
-   - **Klasse D:** User informieren und nachfragen.
-     - Zeige Beschreibung und Inhalt (`git stash show -p stash@{N}`).
-     - Stelle die untenstehende Stash-Frage ohne Finding-Bezug.
+   - **Class D:** inform the user and ask.
+     - Show the description and content (`git stash show -p stash@{N}`).
+     - Ask the stash question below without a finding reference.
 
-   Stash-Frage (für die Klassen B, C und D; nur bei `stashPolicy = interactive`):
+   Stash question (for classes B, C and D; only with `stashPolicy = interactive`):
 
 Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
 - header: "Stash"
-- question: "Wie soll dieser Stash behandelt werden?"
+- question: "How should this stash be handled?"
 - multiSelect: false
 - options:
-  - label: "Anwenden und löschen", description: "`git stash pop` ausführen und Inhalt in den Branch übernehmen"
-  - label: "Verwerfen", description: "`git stash drop` ausführen, Inhalt geht verloren"
-  - label: "Behalten", description: "Stash unverändert lassen"
+  - label: "Apply and delete", description: "Run `git stash pop` and take the content into the branch"
+  - label: "Discard", description: "Run `git stash drop`, the content is lost"
+  - label: "Keep", description: "Leave the stash unchanged"
 
-7. Führe die Entscheidung aus – die interaktive Antwort bei `stashPolicy = interactive`, sonst die Policy-Aktion aus Schritt 6:
-   - **Anwenden und löschen:** `git stash pop stash@{N}`. Bei Konflikten: User informieren, manuelle Auflösung anbieten, Stash nicht automatisch droppen, bis der Konflikt aufgelöst ist.
-   - **Verwerfen:** `git stash drop stash@{N}`.
-   - **Behalten:** keine Aktion.
-8. Wichtig: nach jeder `pop`/`drop`-Aktion verschieben sich die `stash@{N}`-Indizes. Lies die Liste daher nach jeder Aktion neu und matche über die in Schritt 2 erfasste Beschreibung/den Commit-Hash, nicht über alte Indizes.
-9. Gib dem User eine kurze Statusmeldung über alle behandelten Stashes (automatisch verworfen, manuell behandelt, behalten). Halte die Liste der behaltenen Stashes (Referenz und Beschreibung) für die Phase-8-Zusammenfassung fest.
+7. Execute the decision — the interactive answer with `stashPolicy = interactive`, otherwise the policy action from step 6:
+   - **Apply and delete:** `git stash pop stash@{N}`. On conflicts: inform the user, offer manual resolution, do not automatically drop the stash until the conflict is resolved.
+   - **Discard:** `git stash drop stash@{N}`.
+   - **Keep:** no action.
+8. Important: after each `pop`/`drop` action the `stash@{N}` indices shift. Therefore read the list anew after each action and match via the description/commit hash captured in step 2, not via old indices.
+9. Give the user a short status update about all handled stashes (automatically discarded, manually handled, kept). Record the list of kept stashes (reference and description) for the Phase 8 summary.
 
-### Phase 7: Finale Validierung
+### Phase 7: Final validation
 
-1. Beachte `applyReview.finalValidation`:
-   - `full`: aktuelles projektweites Qualitäts-Gate.
-   - `changedScope`: verwende nur vorhandene schnelle oder scope-bewusste Checks, wenn das Projekt sie anbietet; erfinde keine eigenen Tool-Argumente. Falls kein solcher Check existiert, führe einen einmaligen Standard-Check aus und starte keine globale Fix-Schleife.
-   - `off`: überspringe finale Validierung ausdrücklich, erstelle keinen Validierungsfix-Commit und nenne das Restrisiko in der Zusammenfassung.
-2. Falls `off` aktiv ist: gehe nach kurzer Meldung zu Phase 8.
-3. Prüfe ob im Projekt ein Validierungs-Script konfiguriert ist (z. B. `agent:check`, `typecheck`, `lint` in `package.json`).
-4. Falls vorhanden: führe die verfügbaren Prüfungen gemäß Validierungsprofil aus (z. B. `pnpm agent:check`, `pnpm typecheck`, `pnpm lint`).
-5. Falls Errors oder Warnings gefunden werden:
-   - behebe alle Errors und Warnings, auch wenn sie nicht direkt aus den Findings dieses Laufs stammen. Die finale Validierung ist ein projektweiter Qualitäts-Gate, keine reine Finding-Scope-Prüfung.
-   - Bei `changedScope`: behebe nur Fehler, die im geänderten Scope oder im einmaligen Standard-Check eindeutig durch diesen Lauf entstanden sind; wenn die Zuordnung unklar ist, informiere den User statt unrelated Fixes breit umzusetzen.
-   - protokolliere in der Wisdom-Datei, welche Dateien durch finale Validierungsfixes geändert wurden und ob sie direkt zu Findings gehören oder unrelated Validation-Fixes sind.
-   - führe die Prüfungen erneut aus
-   - bei `full`: behebe und prüfe erneut gemäß „Goal-getriebene Abschlusssteuerung“; begrenze die internen Korrekturrunden und eskaliere an den User, falls die Prüfungen danach weiterhin fehlschlagen, statt unbegrenzt zu wiederholen
-   - bei `changedScope`: wiederhole nur, wenn die betroffene Prüfung scope-bewusst oder schnell genug ist; andernfalls dokumentiere das Ergebnis und frage bei unklaren Restfehlern den User
-6. Falls in Phase 2 die Commit-Strategie „Einzeln“ gewählt wurde und Fixes nötig waren:
-   - verwende den Git-Commit-Mutex aus `tools/apply-review-commit-mechanics.md` für die gesamte finale Staging-/Commit-Sektion.
-   - führe vor dem Staging `git status --porcelain` aus und unterscheide finale Validierungsfixes von bereits vorhandenen User-Änderungen.
-   - stage ausschließlich Dateien, die durch die finale Validierungsfix-Schleife geändert wurden. Verwende keine pauschalen Befehle wie `git add .`, `git add -A` oder `git commit -a`.
-   - prüfe `git diff --cached --name-only` und `git diff --cached`.
-   - committe die Fixes mit einer Commit-Message wie `fix: resolve validation errors from final check`. Wenn unrelated Validation-Fixes enthalten sind, erwähne das konkret in der Commit-Message, z. B. `fix: resolve final validation errors including unrelated warnings`.
-7. Falls kein Validierungs-Script vorhanden ist: überspringe diese Phase mit kurzer Meldung.
-8. Gib dem User eine kurze Statusmeldung über das Ergebnis.
+1. Observe `applyReview.finalValidation`:
+   - `full`: the current project-wide quality gate.
+   - `changedScope`: use only existing fast or scope-aware checks if the project offers them; do not invent your own tool arguments. If no such check exists, run a one-time standard check and do not start a global fix loop.
+   - `off`: explicitly skip final validation, create no validation-fix commit and name the residual risk in the summary.
+2. If `off` is active: after a short message go to Phase 8.
+3. Check whether a validation script is configured in the project (e.g. `agent:check`, `typecheck`, `lint` in `package.json`).
+4. If present: run the available checks per the validation profile (e.g. `pnpm agent:check`, `pnpm typecheck`, `pnpm lint`).
+5. If errors or warnings are found:
+   - fix all errors and warnings, even if they do not stem directly from the findings of this run. The final validation is a project-wide quality gate, not merely a finding-scope check.
+   - With `changedScope`: fix only errors that clearly arose from this run in the changed scope or the one-time standard check; if the assignment is unclear, inform the user instead of broadly implementing unrelated fixes.
+   - log in the wisdom file which files were changed by final validation fixes and whether they belong directly to findings or are unrelated validation fixes.
+   - run the checks again
+   - with `full`: fix and re-check per "Goal-driven completion control"; limit the internal correction rounds and escalate to the user if the checks still fail afterwards, instead of repeating without limit
+   - with `changedScope`: repeat only if the affected check is scope-aware or fast enough; otherwise document the result and ask the user on unclear residual errors
+6. If the commit strategy "Individually" was chosen in Phase 2 and fixes were necessary:
+   - use the git commit mutex from `tools/apply-review-commit-mechanics.md` for the entire final staging/commit section.
+   - run `git status --porcelain` before staging and distinguish final validation fixes from already-present user changes.
+   - stage exclusively files changed by the final validation fix loop. Do not use blanket commands like `git add .`, `git add -A` or `git commit -a`.
+   - check `git diff --cached --name-only` and `git diff --cached`.
+   - commit the fixes with a commit message like `fix: resolve validation errors from final check`. If unrelated validation fixes are included, mention that concretely in the commit message, e.g. `fix: resolve final validation errors including unrelated warnings`.
+7. If no validation script is present: skip this phase with a short message.
+8. Give the user a short status update about the result.
 
-### Phase 8: Zusammenfassung
+### Phase 8: Summary
 
-**Vorbedingung:** Phase 8 darf erst starten, wenn Phase 5 bis 7 vollständig abgeschlossen wurden. Eine frühere Zwischenmeldung beendet den Workflow nicht.
+**Precondition:** Phase 8 may only start once phases 5 through 7 are fully complete. An earlier interim message does not end the workflow.
 
-1. Lösche die Wisdom-Datei.
-2. Gib dem User eine Zusammenfassung:
+1. Delete the wisdom file.
+2. Give the user a summary:
 
 ```markdown
-**Apply-Review abgeschlossen**
+**Apply-Review complete**
 
-| Status | Anzahl |
+| Status | Count |
 |---|---|
-| Erfolgreich umgesetzt | X |
-| ADR erstellt (dauerhafte Entscheidung) | Y |
-| Abgelehnt ohne ADR (nicht-dauerhaft) | V |
-| Fehlgeschlagen | Z |
-| Übersprungen (bereits umgesetzt) | W |
+| Successfully implemented | X |
+| ADR created (permanent decision) | Y |
+| Rejected without ADR (non-permanent) | V |
+| Failed | Z |
+| Skipped (already implemented) | W |
 
-[Falls Findings fehlgeschlagen sind:]
-**Fehlgeschlagene Findings:**
-- [R-XXXXXXX] [Titel]: [Grund]
+[If findings failed:]
+**Failed findings:**
+- [R-XXXXXXX] [title]: [reason]
 
-[Falls Stashes behalten wurden (z. B. stashPolicy keep):]
-**Behaltene Stashes:**
-- `stash@{N}` [Beschreibung] — bitte manuell prüfen
+[If stashes were kept (e.g. stashPolicy keep):]
+**Kept stashes:**
+- `stash@{N}` [description] — please check manually
 ```
 
-## Regeln
+## Rules
 
-- Vorabanalyse (Phase 4.1) immer parallel pro Finding
-- Delegation (Phase 4.3) parallel pro **Überlappungs-Komponente** (global über alle Aktionsgruppen gebildet); innerhalb einer Komponente sequenziell, damit gleiche-Datei-Findings — auch aktionsübergreifend — nie gleichzeitig schreiben und die Commit-Reihenfolge sauber bleibt
-- Nach dem Start der Delegation in Phase 4.3 aktiv auf **alle** Komponenten-Endstatus warten, bevor Phase 5 beginnt oder der Workflow endet
-- Die Report-Datei muss beim Start des Skills frisch vom Dateisystem gelesen werden
-- Gib dem User nach jeder Phase eine kurze Statusmeldung
-- Wenn ein delegierter Skill fehlschlägt: User informieren, nächstes Finding fortsetzen
-- Überspringe bereits umgesetzte Findings (mit ✅) ohne Meldung
-- Gib internen Sub-Agenten das Fertig-Protokoll vor
-- Schreibe nach jeder abgeschlossenen Phase ein Wisdom-Summary
-- Dieser Skill vergibt keine neuen Finding-IDs. Falls zukünftig neue Findings erstellt werden sollen, muss `.effective-flow/memory.json` gelesen und aktualisiert werden (siehe `/effective-flow review`)
+- Pre-analysis (Phase 4.1) always in parallel per finding
+- Delegation (Phase 4.3) in parallel per **overlap component** (formed globally across all action groups); sequential within a component so that same-file findings — even across actions — never write at the same time and the commit order stays clean
+- After starting the delegation in Phase 4.3, actively wait for **all** component final statuses before Phase 5 begins or the workflow ends
+- The report file must be read fresh from the file system when the skill starts
+- Give the user a short status update after each phase
+- If a delegated skill fails: inform the user, continue with the next finding
+- Skip already-implemented findings (with ✅) without a message
+- Prescribe the completion protocol to internal sub-agents
+- Write a wisdom summary after each completed phase
+- This skill does not assign new finding IDs. If new findings should be created in the future, `.effective-flow/memory.json` must be read and updated (see `/effective-flow review`)

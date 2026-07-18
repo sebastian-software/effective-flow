@@ -1,52 +1,52 @@
-## Plan-Referenzen
+## Plan references
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default `docs/plan`).
+`<plan.dir>` is the plan directory from the Effective Flow configuration (project-setup ADR) `plan.dir` (default `docs/plan`).
 
-Wenn der User beim Aufruf eine vorhandene Plan-Datei referenziert, zum Beispiel `<plan.dir>/2024-06-01-feature.md`, `2024-06-01-feature.md`, `0030` (Legacy-Nummer) oder `feature` (Titel-Slug), prüfe den Plan vor der ersten fachlichen Workflow-Phase.
+When the user references an existing plan file on invocation — for example `<plan.dir>/2024-06-01-feature.md`, `2024-06-01-feature.md`, `0030` (legacy number), or `feature` (title slug) — check the plan before the first substantive workflow phase.
 
-### Referenz auflösen
+### Resolve the reference
 
-1. Löse die Referenz auf genau eine Datei unter `<plan.dir>/` **oder** `<plan.dir>/archive/` auf.
-2. Erlaubte Formen:
-   - vollständiger Pfad, z. B. `<plan.dir>/2024-06-01-feature.md` oder `<plan.dir>/archive/2024-06-01-feature.md`
-   - Datums-Slug-Dateiname, z. B. `2024-06-01-feature.md`
-   - Legacy-Nummer, z. B. `0030` (primär über die H1 `# 0030: …` aufgelöst, siehe `Plan-Datei-Konvention`, nicht über das Dateinamen-Segment)
-   - Titel-Slug, z. B. `feature`
-3. Wenn keine Datei passt: melde den Fehler und nenne, dass `/effective-flow open-plans` offene Pläne auflisten kann.
-4. Wenn mehrere Dateien passen: frage den User nach der konkreten Datei.
+1. Resolve the reference to exactly one file under `<plan.dir>/` **or** `<plan.dir>/archive/`.
+2. Permitted forms:
+   - full path, e.g. `<plan.dir>/2024-06-01-feature.md` or `<plan.dir>/archive/2024-06-01-feature.md`
+   - date-slug file name, e.g. `2024-06-01-feature.md`
+   - legacy number, e.g. `0030` (resolved primarily via the H1 `# 0030: …`, see `Plan file convention`, not via the file name segment)
+   - title slug, e.g. `feature`
+3. If no file matches: report the error and note that `/effective-flow open-plans` can list open plans.
+4. If multiple files match: ask the user for the specific file.
 
-### Status prüfen
+### Check the status
 
-1. Lies die Plan-Datei frisch vom Dateisystem.
-2. Bestimme den Umsetzungsstatus gemäß der Planstatus-Konvention: genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` und gültigem Wert; bei fehlender, mehrfacher oder ungültiger Statuszeile ist der Status unklar.
-3. Status-Regeln (beide Markersprachen sind gleichwertig):
-   - genau eine Statuszeile `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented` → der Plan kann als Grundlage verwendet werden.
-   - genau eine Statuszeile `**Planungsstatus:** Umgesetzt` oder `**Plan status:** Implemented` → frage den User, ob der Plan erneut umgesetzt, nur geprüft oder der Workflow abgebrochen werden soll.
-   - fehlender oder widersprüchlicher Status → prüfe, ob `## Testergebnisse` oder `## Review-Findings` vorhanden sind. Wenn ja, behandle den Plan als wahrscheinlich umgesetzt und frage nach. Wenn nein, frage nach, ob der Plan als ungebaute Vorgabe verwendet werden soll.
+1. Read the plan file fresh from the file system.
+2. Determine the implementation status according to the plan status convention: exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` and a valid value; if the status line is missing, duplicated, or invalid, the status is unclear.
+3. Status rules (both marker languages are equivalent):
+   - exactly one status line `**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented` → the plan can be used as a basis.
+   - exactly one status line `**Planungsstatus:** Umgesetzt` or `**Plan status:** Implemented` → ask the user whether the plan should be implemented again, only checked, or whether the workflow should be aborted.
+   - missing or contradictory status → check whether `## Test results` or `## Review findings` are present. If so, treat the plan as probably implemented and ask. If not, ask whether the plan should be used as an unbuilt specification.
 
-### Workflow-Empfehlung prüfen
+### Check the workflow recommendation
 
-1. Prüfe, ob im Kopfbereich eine Zeile `**Empfohlener Workflow:** ...` vorhanden ist.
-2. Bestimme die Empfehlung:
-   - Feature oder `/effective-flow build` → `/effective-flow build`
-   - Bugfix oder `/effective-flow fix` → `/effective-flow fix`
-   - Refactoring oder `/effective-flow refactor` → `/effective-flow refactor`
-   - Dokumentation oder `/effective-flow docs` → `/effective-flow docs`
-3. Wenn der aktuelle Skill ``tools/apply-plan.md`` ist: verwende die Empfehlung als Ziel-Workflow und fahre fort.
-4. Wenn die Empfehlung zum aktuellen Workflow passt: fahre fort.
-5. Wenn die Empfehlung auf einen anderen Workflow zeigt:
-   - gib eine deutlich sichtbare Meldung aus, welcher Workflow empfohlen ist
-   - frage nur weiter, wenn der User den Plan ausdrücklich trotzdem mit dem aktuellen Workflow verwenden will
-6. Wenn die Empfehlung fehlt oder unklar ist: fahre nach Statusprüfung fort, weise aber auf die fehlende oder unklare Empfehlung hin.
+1. Check whether a line `**Empfohlener Workflow:** ...` is present in the header.
+2. Determine the recommendation:
+   - Feature or `/effective-flow build` → `/effective-flow build`
+   - Bugfix or `/effective-flow fix` → `/effective-flow fix`
+   - Refactoring or `/effective-flow refactor` → `/effective-flow refactor`
+   - Documentation or `/effective-flow docs` → `/effective-flow docs`
+3. If the current skill is ``tools/apply-plan.md``: use the recommendation as the target workflow and continue.
+4. If the recommendation matches the current workflow: continue.
+5. If the recommendation points to a different workflow:
+   - emit a clearly visible message stating which workflow is recommended
+   - only ask to continue if the user explicitly wants to use the plan with the current workflow anyway
+6. If the recommendation is missing or unclear: continue after the status check, but point out the missing or unclear recommendation.
 
-### Offene Punkte prüfen
+### Check open points
 
-Die Prüfung auf offene oder ungeklärte Punkte übernimmt das „Klärungs-Gate“
-(`apply-clarity-gate.md`), das die umsetzenden Workflows und die Apply-Kette selbst
-einbinden. Diese Referenz-Regel dupliziert diese Prüfung nicht separat.
+The check for open or unclarified points is handled by the "clarification gate"
+(`apply-clarity-gate.md`), which the implementing workflows and the apply chain themselves
+embed. This reference rule does not duplicate that check separately.
 
-### Nach erfolgreicher Prüfung
+### After a successful check
 
-- Verwende die Inhalte der Plan-Datei als abgestimmte Grundlage für den aktuellen Workflow.
-- Halte in der Wisdom-Datei fest, welche Plan-Datei die Quelle ist und welche Workflow-Empfehlung sie enthält.
-- Die Status-Aktualisierung auf abgeschlossen erfolgt erst im Abschluss des umsetzenden Workflows und bewahrt die Markersprache: ein deutscher Marker wird zu `**Planungsstatus:** Umgesetzt`, ein englischer Marker zu `**Plan status:** Implemented`.
+- Use the contents of the plan file as the agreed basis for the current workflow.
+- Record in the wisdom file which plan file is the source and which workflow recommendation it contains.
+- The status update to completed happens only at the completion of the implementing workflow and preserves the marker language: a German marker becomes `**Planungsstatus:** Umgesetzt`, an English marker becomes `**Plan status:** Implemented`.

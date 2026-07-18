@@ -1,167 +1,173 @@
 
 # Effective Flow Cleanup
 
-Du räumst die Altlasten auf, die Effective Flows Migrationen bewusst hinterlassen. Alle Migrationen sind **non-destruktiv** und verweisen das eigentliche Löschen ausdrücklich an den User (siehe `effective-flow-dir-migration.md`: „das Aufräumen überlässt Effective Flow dem User"; `$effective-flow setup`: die enttrackte Alt-`config.json` bleibt „auf Platte belassen"). Dieser Skill ist der sanktionierte, user-gesteuerte Pfad, der diese Finalisierung übernimmt — und die **einzige** Stelle, die Altdaten tatsächlich löscht.
+You clean up the legacy remnants that Effective Flow's migrations deliberately leave behind. All migrations are **non-destructive** and explicitly defer the actual deletion to the user (see `effective-flow-dir-migration.md`: "Effective Flow leaves the cleanup to the user"; `$effective-flow setup`: the untracked old `config.json` is "left on disk"). This skill is the sanctioned, user-driven path that handles this finalization — and the **only** place that actually deletes old data.
 
-## Ziel
+## Goal
 
-- alle veralteten Migrations-Artefakte im aktuellen Projekt erfassen (Discovery)
-- sie gegen ihr neues Gegenstück prüfen und feststellen, ob noch etwas übernommen werden soll (Carry-over)
-- jeden Übernahme-Kandidaten vom User bestätigen lassen und Bestätigtes übernehmen
-- die Altdaten anschließend **git-aware** und nur nach expliziter Bestätigung löschen (Dry-Run zuerst)
-- niemals löschen, bevor das neue Gegenstück existiert und der Carry-over abgeschlossen bzw. bewusst verworfen ist
-- keinen Commit erstellen und kein Backup-Verzeichnis anlegen
-- ein No-Op mit klarer Meldung sein, wenn keine Altlasten vorhanden sind
+- capture all outdated migration artifacts in the current project (discovery)
+- check them against their new counterpart and determine whether anything still needs to be carried over (carry-over)
+- have the user confirm every carry-over candidate and carry over what is confirmed
+- then delete the old data **git-aware** and only after explicit confirmation (dry run first)
+- never delete before the new counterpart exists and the carry-over is complete or deliberately discarded
+- do not create a commit and do not create a backup directory
+- be a no-op with a clear message when no legacy remnants are present
 
-## Sprachregel
+## Language rule
 
-- Code, Bezeichner und Tests auf Englisch
-- Dokumentationsinhalte auf Deutsch, außer bestehende Doku führt eine andere Sprache fort
-- Commit-Messages auf Englisch
+- Code, identifiers, and tests in English
+- Documentation and tool instructions in English **by default**; German remains a permitted
+  option — continue the existing language of a file you edit, and honour an explicit German
+  choice for a project, document, or plan marker
+- Commit messages in English
 
-Die deutsche Repository-Locale ist **de-DE**.
+English is the default; German is not deprecated. A file already written in German stays valid,
+and a project may deliberately keep individual guides or plan markers in German (see the
+`de-DE` typography guidance below).
 
-### Typografie
+### Typography
 
-Locale-spezifische Typografie sichtbarer Prosa – Anführungszeichen, Gedankenstriche,
-Umlaute und ß, geschützte Leerzeichen, Zahlen- und Datumsformate – besitzt der zentrale
-Skill `locale-typography`. Beim Schreiben oder Bearbeiten sichtbarer deutscher Prosa ist
-dessen `de-DE`-Guidance maßgeblich; Effective Flow führt hier bewusst keine zweite
-Typografie-Checkliste.
+Locale-specific typography of visible prose — quotation marks, dashes, umlauts and ß, non-breaking
+spaces, number and date formats — is owned by the central `locale-typography` skill. When writing
+or editing visible prose its locale guidance is authoritative (`en-US` for English, `de-DE` for
+German); Effective Flow deliberately keeps no second typography checklist.
 
-Fehlt der Skill (nicht installiert, `skills.enabled: false` oder via `exclude`
-deaktiviert), gilt als minimaler Fallback für deutschen Text: echte Umlaute und ß statt
-ASCII-Ersatz (ae, oe, ue, ss), typografische Anführungszeichen „…“ statt gerader und
-Halbgeviertstrich – statt Bindestrich.
+If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
+a minimal fallback applies to German text: real umlauts and ß instead of ASCII replacements (ae,
+oe, ue, ss), typographic quotation marks „…“ instead of straight ones, and an en dash – instead
+of a hyphen.
 
-## Aufgabenverfolgung
+## Task tracking
 
-Wenn mehrere Aufgaben zu erledigen sind, verwende ein verfügbares TODO- oder Task-Tracking-Tool (z. B. `TaskCreate`/`TaskUpdate`, `TodoWrite` oder ein vergleichbares Tool), um eine Aufgabenliste anzulegen. Setze jede Aufgabe vor Beginn auf „in Arbeit“ und nach Abschluss auf „erledigt“.
+When there are several tasks to complete, use an available TODO or task-tracking tool (e.g. `TaskCreate`/`TaskUpdate`, `TodoWrite`, or a comparable tool) to create a task list. Set each task to "in progress" before starting it and to "done" after completing it.
 
-Falls kein Task-Tool verfügbar ist, gib dem User stattdessen eine kurze Fortschrittsmeldung nach jedem abgeschlossenen Schritt.
+If no task tool is available, give the user a short progress update after each completed step instead.
 
-### Wann verwenden
+### When to use
 
-- bei drei oder mehr Teilaufgaben oder Schritten
-- bei komplexen Aufträgen mit mehreren Phasen
-- wenn der User mehrere Aufgaben gleichzeitig nennt
+- with three or more subtasks or steps
+- with complex tasks that have multiple phases
+- when the user names several tasks at once
 
-### Wann nicht verwenden
+### When not to use
 
-- bei einer einzelnen, trivialen Aufgabe
-- wenn der Auftrag in weniger als drei einfachen Schritten erledigt ist
+- with a single, trivial task
+- when the task is done in fewer than three simple steps
 
-## Laufzeitverzeichnis `.effective-flow/` und Migration von `.firmo/`/`.sf-plugin/`
+## Runtime directory `.effective-flow/` and migration from `.firmo/`/`.sf-plugin/`
 
-Effective Flow hält projektlokale Laufzeitdaten unter `.effective-flow/` (`memory.json`, `cache.json`, `review/`, `investigation/`, `.worktrees/`, Wisdom-Dateien; eine Legacy-`config.json` kann noch als Übergangs-Fallback vorliegen, ist aber keine Primärquelle mehr — die Konfiguration lebt in der Projektsetup-ADR). Frühere Versionen nutzten `.firmo/`, noch ältere `.sf-plugin/`. Wenn dieser Skill `.effective-flow/`-Daten liest oder schreibt, gelten diese Regeln:
+Effective Flow keeps project-local runtime data under `.effective-flow/` (`memory.json`, `cache.json`, `review/`, `investigation/`, `.worktrees/`, wisdom files; a legacy `config.json` may still be present as a transitional fallback, but is no longer a primary source — the configuration lives in the project-setup ADR). Earlier versions used `.firmo/`, still older ones `.sf-plugin/`. When this skill reads or writes `.effective-flow/` data, these rules apply:
 
-1. **Kein ungefragter Footprint:** Lege `.effective-flow/` nur an, wenn tatsächlich Laufzeitdaten geschrieben werden. Ein Lauf ohne zu speichernde Daten erzeugt kein `.effective-flow/`.
-2. **Fallback-Lesen:** Fehlt `.effective-flow/`, existiert aber ein älteres Laufzeitverzeichnis, lies die benötigten Dateien (`config.json`, `memory.json`, Report-/Investigation-Dateien …) aus dem jeweils vorhandenen Legacy-Verzeichnis — bevorzugt `.firmo/`, sonst `.sf-plugin/` —, solange noch nicht migriert wurde.
-3. **Einmalige, nicht-destruktive Migration:** Sobald nach `.effective-flow/` geschrieben würde und noch kein `.effective-flow/` existiert, ein `.firmo/` oder `.sf-plugin/` aber vorhanden ist: lege `.effective-flow/` an und übernimm den vorhandenen Inhalt aus dem Legacy-Verzeichnis (bevorzugt `.firmo/` vor `.sf-plugin/`; kopieren, nicht verschieben), dann schreibe die Änderung in `.effective-flow/`. Existiert `.effective-flow/` bereits, findet **keine** erneute Migration statt (idempotent). Parallel-sicher: eine im Ziel bereits vorhandene Datei wird nicht überschrieben.
-4. **Keine stille Löschung:** `.firmo/` und `.sf-plugin/` bleiben erhalten; das Aufräumen überlässt Effective Flow dem User.
+1. **No unrequested footprint:** Create `.effective-flow/` only when runtime data is actually written. A run with no data to save produces no `.effective-flow/`.
+2. **Fallback reading:** If `.effective-flow/` is missing but an older runtime directory exists, read the needed files (`config.json`, `memory.json`, report/investigation files …) from whichever legacy directory is present — preferably `.firmo/`, otherwise `.sf-plugin/` — as long as migration has not yet happened.
+3. **One-time, non-destructive migration:** As soon as a write to `.effective-flow/` would occur and no `.effective-flow/` exists yet, but a `.firmo/` or `.sf-plugin/` is present: create `.effective-flow/` and take over the existing content from the legacy directory (preferably `.firmo/` over `.sf-plugin/`; copy, do not move), then write the change into `.effective-flow/`. If `.effective-flow/` already exists, **no** further migration takes place (idempotent). Parallel-safe: a file already present in the target is not overwritten.
+4. **No silent deletion:** `.firmo/` and `.sf-plugin/` are preserved; Effective Flow leaves the cleanup to the user.
 
-Die `.gitignore`-Umstellung auf ein einzelnes `.effective-flow/` (inklusive Migration des früheren Zwei-Zeilen-Patterns `.effective-flow/*` plus `!.effective-flow/config.json` sowie einer pauschalen `.firmo/`- oder `.sf-plugin/`-Ignore-Zeile) übernimmt `$effective-flow setup`.
+The `.gitignore` switch to a single `.effective-flow/` (including migration of the earlier two-line pattern `.effective-flow/*` plus `!.effective-flow/config.json` as well as a blanket `.firmo/` or `.sf-plugin/` ignore line) is handled by `$effective-flow setup`.
 
-## Effective-Flow-Konfiguration (Projektsetup-ADR)
+## Effective Flow configuration (project setup ADR)
 
-Die getrackte Wahrheit für die Effective-Flow-Konfiguration ist eine lebende ADR „Effective
-Flow project setup“ (Default-Slug `effective-flow-project-setup`, siehe Baustein „Lebendes
-ADR-Modell“). Sie trägt die Config-Parameter mit minimaler Prosa als **Markdown-Tabelle**. Es
-gibt **keine** `.effective-flow/config.json` mehr als Config-Quelle; `.effective-flow/` ist
-reines Laufzeit-Verzeichnis (`memory.json`, `cache.json`, `review/`, `.worktrees/`) und wird
-komplett gitignored.
+The tracked truth for the Effective Flow configuration is a living ADR "Effective
+Flow project setup" (default slug `effective-flow-project-setup`, see fragment "Living
+ADR model"). It carries the config parameters with minimal prose as a **Markdown table**. There
+is **no** `.effective-flow/config.json` as a config source anymore; `.effective-flow/` is a
+pure runtime directory (`memory.json`, `cache.json`, `review/`, `.worktrees/`) and is
+completely gitignored.
 
-### Config-Locator (Auflösungsreihenfolge)
+### Config locator (resolution order)
 
-Beim Lesen der Konfiguration wird die Projektsetup-ADR in dieser Reihenfolge aufgelöst; der
-erste greifende Schritt gewinnt:
+When reading the configuration, the project setup ADR is resolved in this order; the
+first matching step wins:
 
-1. **AGENTS.md-Marker.** Die kanonische Zeile `**Effective Flow project setup:** <pfad>` in
-   `AGENTS.md`, sonst in `CLAUDE.md` bzw. einer vergleichbaren Konventionsdatei → die ADR
-   unter `<pfad>` lesen. **Backcompat (eine Generation):** ein noch vorhandener Alt-Marker
-   `**Firmo project setup:** <pfad>` wird beim Lesen gleichwertig erkannt; $effective-flow setup
-   stellt ihn beim nächsten Lauf nicht-destruktiv auf die neue Schreibweise um. Zeigt der
-   Marker auf einen Pfad, unter dem **keine** ADR liegt (toter/veralteter Marker), nicht dort
-   stehenbleiben, sondern in dieser Reihenfolge weiterfallen und den veralteten Marker melden
-   (Korrektur in $effective-flow setup).
-2. **Default-Pfad/Scan.** Sonst `docs/adr/effective-flow-project-setup.md` (der Alt-Slug
-   `firmo-project-setup` wird beim Scan gleichwertig erkannt) bzw. ein Scan des erkannten
-   ADR-Verzeichnisses (`docs/adr/`, `docs/decisions/`, `adr/`) nach der Projektsetup-ADR.
-3. **Übergangs-Kompatibilität.** Sonst — nur übergangsweise — eine noch vorhandene
-   `.effective-flow/config.json` (sonst eine Legacy-`.firmo/config.json`) lesen und auf
-   $effective-flow setup hinweisen. Dieser Lesepfad legt **nichts** an und berührt **kein** Git.
-4. **Eingebaute Defaults.** Sonst die Defaults der jeweiligen Quell-Skills verwenden.
+1. **AGENTS.md marker.** The canonical line `**Effective Flow project setup:** <path>` in
+   `AGENTS.md`, otherwise in `CLAUDE.md` or a comparable convention file → read the ADR
+   under `<path>`. **Backcompat (one generation):** a still-present legacy marker
+   `**Firmo project setup:** <path>` is recognized as equivalent on read; $effective-flow setup
+   converts it non-destructively to the new spelling on the next run. If the
+   marker points to a path under which **no** ADR lives (dead/stale marker), do not stay
+   there, but fall through in this order and report the stale marker
+   (correction in $effective-flow setup).
+2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` (the legacy slug
+   `firmo-project-setup` is recognized as equivalent during the scan) or a scan of the detected
+   ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR.
+3. **Transitional compatibility.** Otherwise — only transitionally — read a still-present
+   `.effective-flow/config.json` (otherwise a legacy `.firmo/config.json`) and point to
+   $effective-flow setup. This read path creates **nothing** and touches **no** Git.
+4. **Built-in defaults.** Otherwise use the defaults of the respective source skills.
 
-Der deterministische Lesepfad beliebiger Tools ist nicht-blockierend: Er liest die ADR (bzw.
-den Übergangs-Fallback), erzeugt aber selbst keine Datei und mutiert kein Git. Das Anlegen
-der ADR, der Marker und die Migration passieren ausschließlich im git-berührenden Pfad von
+The deterministic read path of any tool is non-blocking: It reads the ADR (or
+the transitional fallback), but itself creates no file and mutates no Git. Creating
+the ADR, the markers and the migration happen exclusively in the Git-touching path of
 $effective-flow setup.
 
-### Tabellen-Encoding (verbindlich für Schreiber und Leser)
+### Table encoding (binding for writers and readers)
 
-Die Config-Parameter stehen als flache Markdown-Tabelle mit zwei Spalten
-`| Schlüssel | Wert |`. Schreiber ($effective-flow setup, Migration) und Leser (alle Tools)
-interpretieren die Werte identisch nach dieser Kodierung:
+The config parameters stand as a flat Markdown table with two columns
+`| Key | Value |`. Writers ($effective-flow setup, migration) and readers (all tools)
+interpret the values identically per this encoding. English is the default encoding;
+a pre-existing ADR written in the former German form (`## Konfiguration`, header
+`| Schlüssel | Wert |`, `## Kontext`, status `Aktiv`/`Abgelöst`, empty list `(leer)`) stays
+recognized on read and is rewritten to the English form on the next write:
 
 - **Boolean** → `true` / `false`.
-- **String** → literal, unquoted (z. B. `focused`, `origin/main`).
-- **`null`** (semantisch „beim Lauf fragen“, z. B. `applyReview.defaultCommitStrategy`) →
-  das Literal-Token `null`.
-- **Leere Liste** → `(leer)`.
-- **Gefüllte Liste** → kommagetrennt (z. B. `humanizer, distill`).
-- **Verschachtelung** → dotted keys (z. B. `applyReview.worktree.baseDir`,
-  `skills.agents.ui-implementer.include`); ein leeres Objekt hat keine Unterzeilen.
-- **Fehlende Zeile = Schlüssel nicht gesetzt → Default des Quell-Skills.** Bewusst
-  verschieden von einer vorhandenen Zeile mit Wert `null` (expliziter Wert, semantisch „beim
-  Lauf fragen“). Beispiel: keine `delivery.completion`-Zeile → Default `merge`; eine
-  `delivery.completion | null`-Zeile → beim Lauf fragen.
+- **String** → literal, unquoted (e.g. `focused`, `origin/main`).
+- **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
+  the literal token `null`.
+- **Empty list** → `(empty)`.
+- **Filled list** → comma-separated (e.g. `humanizer, distill`).
+- **Nesting** → dotted keys (e.g. `applyReview.worktree.baseDir`,
+  `skills.agents.ui-implementer.include`); an empty object has no sub-lines.
+- **Missing line = key not set → default of the source skill.** Deliberately
+  different from a present line with value `null` (an explicit value, semantically "ask at
+  run time"). Example: no `delivery.completion` line → default `merge`; a
+  `delivery.completion | null` line → ask at run time.
 
-Das Lesen eines einzelnen Werts ist ein trivialer Zeilen-Lookup (Zeile mit dotted key →
-Wertzelle). Beispiel-Ausschnitt (Schnittstellenskizze, kein vollständiger Inhalt):
+Reading a single value is a trivial line lookup (line with dotted key →
+value cell). Example excerpt (interface sketch, not full content):
 
 ```markdown
-## Konfiguration
+## Configuration
 
-| Schlüssel                         | Wert    |
+| Key                         | Value    |
 | --------------------------------- | ------- |
 | review.profile                    | focused |
 | applyReview.defaultCommitStrategy | null    |
-| skills.exclude                    | (leer)  |
+| skills.exclude                    | (empty)  |
 | worktree.enabled                  | true    |
 ```
 
-Ist die Tabelle ungültig oder mehrdeutig (fehlender Schlüssel, unbekanntes Encoding): einen
-sicheren Default für den Lauf verwenden, den User über den betroffenen Schlüssel
-informieren, **nicht** raten.
+If the table is invalid or ambiguous (missing key, unknown encoding): use a
+safe default for the run, inform the user about the affected key,
+do **not** guess.
 
-### Einmalige Migration Legacy-`config.json` → Projektsetup-ADR
+### One-time migration legacy `config.json` → project setup ADR
 
-Die Migration einer bestehenden `.effective-flow/config.json` bzw. Legacy-`.firmo/config.json`
-in die Projektsetup-ADR ist **git-berührend** und läuft ausschließlich im
-$effective-flow setup-Pfad. Sie erzeugt die ADR-Tabelle aus dem aktuellen Config-Inhalt (Encoding
-wie oben), schreibt den AGENTS.md-Marker `**Effective Flow project setup:**`, stellt
-`.gitignore` auf ein einzelnes `.effective-flow/` um und enttrackt die Alt-`config.json`
-(`git rm --cached`, Datei-Inhalt auf Platte belassen). Der genaue Ablauf inklusive
-Idempotenz-Markierung steht in $effective-flow setup.
+The migration of an existing `.effective-flow/config.json` or legacy `.firmo/config.json`
+into the project setup ADR is **Git-touching** and runs exclusively in the
+$effective-flow setup path. It produces the ADR table from the current config content (encoding
+as above), writes the AGENTS.md marker `**Effective Flow project setup:**`, switches
+`.gitignore` to a single `.effective-flow/` and untracks the legacy `config.json`
+(`git rm --cached`, leave the file content on disk). The exact procedure including
+idempotency marking is in $effective-flow setup.
 
-Außerhalb von $effective-flow setup findet **keine** Migration statt: Der deterministische
-Lesepfad legt nichts an und berührt kein Git; er liest bei fehlender ADR ersatzweise eine
-noch vorhandene `.effective-flow/config.json` (sonst `.firmo/config.json`) und weist auf
-$effective-flow setup hin.
+Outside $effective-flow setup, **no** migration takes place: The deterministic
+read path creates nothing and touches no Git; on a missing ADR it reads instead a
+still-present `.effective-flow/config.json` (otherwise `.firmo/config.json`) and points to
+$effective-flow setup.
 
-## Issue-Tracker-Anbindung (Remote-Modus)
+## Issue-tracker integration (remote mode)
 
-Dieser geteilte Baustein verbindet `$effective-flow review` und ``tools/apply-review.md`` mit einem externen Issue-Tracker (GitHub über `gh`, Forgejo über `tea`). Er ist **opt-in** über die Effective Flow-Konfiguration (Projektsetup-ADR) und standardmäßig deaktiviert (`local`). Im lokalen Modus verhalten sich beide Skills unverändert – Findings laufen über die Markdown-Report-Datei unter `.effective-flow/review/`, es werden keine Issues erzeugt und kein CLI aufgerufen.
+This shared fragment connects `$effective-flow review` and ``tools/apply-review.md`` with an external issue tracker (GitHub via `gh`, Forgejo via `tea`). It is **opt-in** via the Effective Flow configuration (project setup ADR) and disabled by default (`local`). In local mode both skills behave unchanged – findings run through the Markdown report file under `.effective-flow/review/`, no issues are created and no CLI is invoked.
 
-Der local/remote-Umschalter (`tracker.mode`) betrifft ausschließlich **Reviews**. **Investigationen** (`$effective-flow investigate`) sind davon ausgenommen und bleiben in jedem Modus rein lokal unter `.effective-flow/investigation/` (nie committet, nie als Issue). Von den Effective Flow-Artefakten werden ausschließlich **Pläne** committet.
+The local/remote toggle (`tracker.mode`) affects exclusively **reviews**. **Investigations** (`$effective-flow investigate`) are exempt from it and remain purely local in every mode under `.effective-flow/investigation/` (never committed, never as an issue). Of the Effective Flow artifacts, only **plans** are committed.
 
-Er kapselt die **gemeinsamen** Bausteine: das `tracker`-Config-Schema samt Migration, die Modusbestimmung, die Host- und CLI-Erkennung, die Label-Konvention, die kanonischen Issue- und Epic-Body-Formate sowie das Mapping der Tracker-Operationen auf `gh`/`tea`. Die eigentliche Orchestrierung – wann Issues **erstellt** (`$effective-flow review`) und wann sie **gelesen und abgearbeitet** werden (``tools/apply-review.md``) – bleibt im jeweiligen Skill.
+It encapsulates the **shared** building blocks: the `tracker` config schema including migration, the mode determination, the host and CLI detection, the label convention, the canonical issue and epic body formats as well as the mapping of tracker operations onto `gh`/`tea`. The actual orchestration – when issues are **created** (`$effective-flow review`) and when they are **read and processed** (``tools/apply-review.md``) – stays in the respective skill.
 
-Zusätzlich nutzen ``tools/apply-issues.md`` und `$effective-flow plan-issue` diesen Baustein, allerdings nur für die **werkzeug-generische Plumbing**: die Host- und CLI-Erkennung (unten), die Verfügbarkeits-/Auth-Prüfung, das Mapping der Tracker-Operationen auf `gh`/`tea` und die Fehlerfälle. Diese beiden Skills verarbeiten **beliebige** Menschen-Issues statt der von `$effective-flow review` erzeugten Finding-Issues; sie sind **inhärent remote** und werten den `tracker.mode`-Umschalter (local/remote) **nicht** aus – sie brauchen lediglich ein Git-Repository, eine `origin`-Remote und ein authentifiziertes CLI. Die finding-/epic-spezifischen Abschnitte (Issue-Body-Format, Epic-Body-Format, `R-XXXXXXX`-Konvention) gelten nur für `$effective-flow review`/``tools/apply-review.md``; die Checkbox-Abhak-Mechanik für Epic-Bodys nutzt ``tools/apply-issues.md`` bei Container-Issues sinngemäß mit.
+In addition, ``tools/apply-issues.md`` and `$effective-flow plan-issue` use this fragment, though only for the **tool-generic plumbing**: the host and CLI detection (below), the availability/auth check, the mapping of tracker operations onto `gh`/`tea` and the error cases. These two skills process **arbitrary** human issues instead of the finding issues produced by `$effective-flow review`; they are **inherently remote** and do **not** evaluate the `tracker.mode` toggle (local/remote) – they only need a Git repository, an `origin` remote and an authenticated CLI. The finding-/epic-specific sections (issue body format, epic body format, `R-XXXXXXX` convention) apply only to `$effective-flow review`/``tools/apply-review.md``; the checkbox-ticking mechanics for epic bodies are used by ``tools/apply-issues.md`` analogously for container issues.
 
-### Konfiguration
+### Configuration
 
-Der Remote-Modus funktioniert ohne festgeschriebene Konfiguration (dann bleibt er deaktiviert, `local`). Falls die Effective Flow-Konfiguration (Projektsetup-ADR) entsprechende Werte festschreibt, überschreiben sie diese Defaults (Schema hier zur Illustration):
+Remote mode works without pinned configuration (then it stays disabled, `local`). If the Effective Flow configuration (project setup ADR) pins corresponding values, they override these defaults (schema shown here for illustration):
 
 ```json
 {
@@ -172,262 +178,264 @@ Der Remote-Modus funktioniert ohne festgeschriebene Konfiguration (dann bleibt e
 }
 ```
 
-Fehlende Werte haben diese Defaults:
+Missing values have these defaults:
 
-- `tracker.mode`: `"local"` (Feature aus)
-- `tracker.remoteToolOverride`: `"auto"` (Werkzeug automatisch aus der `origin`-URL)
+- `tracker.mode`: `"local"` (feature off)
+- `tracker.remoteToolOverride`: `"auto"` (tool automatically from the `origin` URL)
 
-Gültige Werte:
+Valid values:
 
 - `tracker.mode`: `"local"`, `"remote"`
 - `tracker.remoteToolOverride`: `"auto"`, `"github"`, `"forgejo"`
 
-`remoteToolOverride` ist nur für mehrdeutige Hosts gedacht (z. B. self-hosted GitHub Enterprise, dessen Domain nicht `github.com` enthält). Bei `auto` entscheidet die Host-Erkennung unten.
+`remoteToolOverride` is intended only for ambiguous hosts (e.g. self-hosted GitHub Enterprise whose domain does not contain `github.com`). With `auto` the host detection below decides.
 
-### Config-Migration
+### Config migration
 
-Das Lesen der Effective Flow-Konfiguration aus der Projektsetup-ADR (inklusive der `tracker`-Schlüssel) und die einmalige Migration einer Alt-Config übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `tracker` aus. Das `tracker`-Config-Schema oben (Konfiguration, gültige Werte, Modusbestimmung, Erstaufruf-Abfrage) bleibt davon unberührt.
+Reading the Effective Flow configuration from the project setup ADR (including the `tracker` keys) and the one-time migration of a legacy config is handled centrally by the fragment "Config migration" (`config-migration.md`); this fragment performs no own per-block migration for `tracker` anymore. The `tracker` config schema above (configuration, valid values, mode determination, first-invocation query) remains unaffected by this.
 
-### Modus bestimmen
+### Determine mode
 
-Bestimme zu Beginn des Laufs den effektiven Modus in dieser Reihenfolge (die erste zutreffende Regel gewinnt):
+At the start of the run, determine the effective mode in this order (the first matching rule wins):
 
-1. **Argumenttyp:** Der übergebene Argumenttyp überschreibt den Config-Modus für diesen Lauf. Eine Report-Datei (`*.md` unter `.effective-flow/review/`) erzwingt `local`; eine Issue-Referenz (Issue-Nummer, `#123` oder eine Issue-URL) erzwingt `remote`.
-2. **Per-Run-Wunsch des Users:** Verlangt der User ausdrücklich Issue-/Tracker-Arbeit, ist `remote` aktiv; verlangt er ausdrücklich lokale Arbeit („lokal“, „ohne Issues“, „nur Report“), ist `local` aktiv.
-3. **Config:** sonst gilt `tracker.mode` aus der Effective Flow-Konfiguration (Projektsetup-ADR).
-4. **Erstaufruf-Abfrage:** Ist `tracker.mode` nicht in der Config gesetzt und liefert weder Argument noch Per-Run-Wunsch ein Signal, führe die Erstaufruf-Abfrage unten aus.
+1. **Argument type:** The passed argument type overrides the config mode for this run. A report file (`*.md` under `.effective-flow/review/`) forces `local`; an issue reference (issue number, `#123` or an issue URL) forces `remote`.
+2. **Per-run wish of the user:** If the user explicitly requests issue/tracker work, `remote` is active; if they explicitly request local work ("local", "without issues", "report only"), `local` is active.
+3. **Config:** otherwise `tracker.mode` from the Effective Flow configuration (project setup ADR) applies.
+4. **First-invocation query:** If `tracker.mode` is not set in the config and neither argument nor per-run wish delivers a signal, run the first-invocation query below.
 
-### Erstaufruf-Abfrage
+### First-invocation query
 
-Nur wenn Schritt 4 oben greift (kein Config-Wert, kein Argument-/Per-Run-Signal):
+Only when step 4 above applies (no config value, no argument/per-run signal):
 
-Frage den User: **Sollen Review-Findings lokal als Markdown-Report oder remote als Issues (GitHub/Forgejo) geführt werden?**
-- Lokal -- tracker.mode = local — Markdown-Report unter .effective-flow/review/ (bisheriges Verhalten)
-- Remote -- tracker.mode = remote — Findings als Issues, Werkzeug automatisch aus origin (gh/tea)
+Frage den User: **Should review findings be tracked locally as a Markdown report or remotely as issues (GitHub/Forgejo)?**
+- Local -- tracker.mode = local — Markdown report under .effective-flow/review/ (previous behavior)
+- Remote -- tracker.mode = remote — findings as issues, tool automatically from origin (gh/tea)
 
-Verwende die gewählte Antwort als Tracker-Modus **für diesen Lauf**. Schreibe sie **nicht** selbst in die Konfiguration — das dauerhafte Festschreiben von `tracker.mode` in der Projektsetup-ADR übernimmt ausschließlich `$effective-flow setup`. Weise den User kurz darauf hin, z. B. „Tracker-Modus `remote` für diesen Lauf verwendet; dauerhaft festschreiben über `$effective-flow setup`.“
+Use the chosen answer as the tracker mode **for this run**. Do **not** write it into the configuration yourself — permanently pinning `tracker.mode` in the project setup ADR is handled exclusively by `$effective-flow setup`. Briefly point this out to the user, e.g. "Tracker mode `remote` used for this run; pin permanently via `$effective-flow setup`."
 
-### Host- und CLI-Erkennung (nur Remote-Modus)
+### Host and CLI detection (remote mode only)
 
-Bestimme im Remote-Modus das Werkzeug analog zu `$effective-flow pr`:
+In remote mode, determine the tool analogously to `$effective-flow pr`:
 
-1. **Vorbedingung:** Es ist ein Git-Repository mit einer `origin`-Remote vorhanden. Fehlt `origin` oder ist es kein Git-Repository, ist der Remote-Modus nicht möglich: klar melden und abbrechen.
-2. **Werkzeug wählen:**
+1. **Precondition:** A Git repository with an `origin` remote is present. If `origin` is missing or it is not a Git repository, remote mode is not possible: report clearly and abort.
+2. **Choose tool:**
    - `tracker.remoteToolOverride: "github"` → `gh`; `"forgejo"` → `tea`.
-   - sonst (`auto`): Lies die `origin`-URL (`git remote get-url origin`) und extrahiere daraus den Host robust für HTTPS- und SSH-Formen (`https://host/owner/repo.git`, `ssh://git@host/owner/repo.git`, `git@host:owner/repo.git`). Ist der Host exakt `github.com`, ist das Werkzeug `gh`; **für jeden anderen Host** wird Forgejo/Gitea angenommen und `tea` verwendet.
-   - Ein ausdrücklicher Per-Run-Hinweis des Users zum Werkzeug hat bei mehrdeutigem Host (z. B. GitHub Enterprise) Vorrang. Ist der Host mehrdeutig und weder Override noch Per-Run-Hinweis vorhanden, frage den User nach dem gewünschten Werkzeug.
-3. **Verfügbarkeit prüfen:** Stelle sicher, dass das gewählte CLI installiert und authentifiziert ist (`gh auth status` bzw. `tea` mit konfiguriertem Login). Fehlt das CLI oder die Authentifizierung: gib eine klare Fehlermeldung mit Behebungshinweis aus und brich ohne Seiteneffekt ab. Falle **nicht** still auf `local` zurück; biete einen Fallback auf `local` nur nach ausdrücklicher User-Zustimmung an.
+   - otherwise (`auto`): Read the `origin` URL (`git remote get-url origin`) and extract the host from it robustly for HTTPS and SSH forms (`https://host/owner/repo.git`, `ssh://git@host/owner/repo.git`, `git@host:owner/repo.git`). If the host is exactly `github.com`, the tool is `gh`; **for any other host** Forgejo/Gitea is assumed and `tea` is used.
+   - An explicit per-run hint from the user about the tool takes precedence for an ambiguous host (e.g. GitHub Enterprise). If the host is ambiguous and neither override nor per-run hint is present, ask the user for the desired tool.
+3. **Check availability:** Ensure the chosen CLI is installed and authenticated (`gh auth status` or `tea` with a configured login). If the CLI or the authentication is missing: emit a clear error message with a remediation hint and abort without side effect. Do **not** silently fall back to `local`; offer a fallback to `local` only after explicit user consent.
 
-### Label-Konvention
+### Label convention
 
-Verwende im Remote-Modus diese Labels und lege fehlende Labels idempotent an (eine „already exists“-Meldung tolerieren, nicht als Fehler behandeln):
+In remote mode, use these labels and create missing labels idempotently (tolerate an "already exists" message, do not treat it as an error):
 
-| Label                                                                                          | Bedeutung                                                                                |
-| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `effective-flow-review-finding`                                                                | markiert ein einzelnes Finding-Issue                                                     |
-| `effective-flow-review-epic`                                                                   | markiert das Epic-/Tracking-Issue                                                        |
-| `effective-flow-fix`, `effective-flow-refactor`, `effective-flow-build`, `effective-flow-docs` | Ziel-Aktion des Findings (genau eines pro Finding-Issue)                                 |
-| `kritisch`, `wichtig`, `hinweis`                                                               | Schweregrad des Findings (genau eines pro Finding-Issue; `hinweis` für Hinweis-Findings) |
-| `wontfix`                                                                                      | Finding bewusst nicht umsetzen → ADR statt Code                                          |
-| `effective-flow-issue-done`                                                                    | von ``tools/apply-issues.md`` umgesetztes Issue (PR erstellt)                             |
-| `effective-flow-needs-planning`                                                                | von ``tools/apply-issues.md`` übersprungen; Planung via `$effective-flow plan-issue` nötig      |
+| Label                                                                                          | Meaning                                                                           |
+| ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `effective-flow-review-finding`                                                                | marks a single finding issue                                                      |
+| `effective-flow-review-epic`                                                                   | marks the epic/tracking issue                                                     |
+| `effective-flow-fix`, `effective-flow-refactor`, `effective-flow-build`, `effective-flow-docs` | target action of the finding (exactly one per finding issue)                      |
+| `critical`, `important`, `note`                                                                | severity of the finding (exactly one per finding issue; `note` for note findings) |
+| `wontfix`                                                                                      | deliberately do not implement finding → ADR instead of code                       |
+| `effective-flow-issue-done`                                                                    | issue implemented by ``tools/apply-issues.md`` (PR created)                        |
+| `effective-flow-needs-planning`                                                                | skipped by ``tools/apply-issues.md``; planning via `$effective-flow plan-issue` needed   |
 
-`wontfix` existiert auf vielen Trackern bereits; lege es nur an, falls es fehlt. `effective-flow-issue-done` und `effective-flow-needs-planning` gehören zum issue-getriebenen Fluss (``tools/apply-issues.md``/`$effective-flow plan-issue`) und werden dort idempotent angelegt.
+`wontfix` already exists on many trackers; create it only if it is missing. `effective-flow-issue-done` and `effective-flow-needs-planning` belong to the issue-driven flow (``tools/apply-issues.md``/`$effective-flow plan-issue`) and are created idempotently there.
 
-**Rückwärtskompatibilität (Alt-Präfix `firmo-`):** Frühere Versionen nutzten das Präfix `firmo-` statt `effective-flow-` (`firmo-review-finding`, `firmo-review-epic`, `firmo-fix`/`firmo-refactor`/`firmo-build`/`firmo-docs`, `firmo-issue-done`, `firmo-needs-planning`). Neu **angelegt oder gesetzt** wird ausschließlich das `effective-flow-`-Label; ein Upgrade bestehender `firmo-`-Labels ist **nicht** nötig. Beim **Lesen, Auflisten, Deduplizieren und Erkennen** gilt jede `firmo-`-Variante dauerhaft als gleichwertig zur zugehörigen `effective-flow-`-Variante:
+**Backward compatibility (severity labels):** The English severity labels `critical`/`important`/`note` are the default; newly created or set is exclusively the English label. The former German labels `kritisch`/`wichtig`/`hinweis` are **not** upgraded but stay **recognized** permanently when reading, listing, deduplicating and detecting a finding's severity — run a severity query per language variant (once `critical`/`important`/`note`, once `kritisch`/`wichtig`/`hinweis`) and union by issue number, analogous to the `firmo-`/`effective-flow-` prefix rule above.
 
-- **Auflisten/Filtern** (Dedup, Epic-/Issue-Suche): `gh`/`tea` verknüpfen mehrere `--label`-Angaben mit UND-Semantik. Führe die Abfrage daher **je Präfix getrennt** aus (einmal `effective-flow-…`, einmal `firmo-…`) und vereinige die Treffer über die Issue-Nummer.
-- **Status-Label entfernen** (`effective-flow-needs-planning`, `effective-flow-issue-done`): entferne zusätzlich die Alt-`firmo-`-Variante, falls vorhanden, damit ein Issue nicht durch ein liegengebliebenes Alt-Label „hängen“ bleibt.
+**Backward compatibility (legacy prefix `firmo-`):** Earlier versions used the prefix `firmo-` instead of `effective-flow-` (`firmo-review-finding`, `firmo-review-epic`, `firmo-fix`/`firmo-refactor`/`firmo-build`/`firmo-docs`, `firmo-issue-done`, `firmo-needs-planning`). Newly **created or set** is exclusively the `effective-flow-` label; an upgrade of existing `firmo-` labels is **not** needed. When **reading, listing, deduplicating and detecting**, every `firmo-` variant counts permanently as equivalent to the associated `effective-flow-` variant:
 
-**Einmalige `sf-`-Label-Migration:** Das noch ältere Präfix `sf-` (`sf-review-finding`, `sf-review-epic`, `sf-fix`/`sf-refactor`/`sf-build`/`sf-docs`, `sf-issue-done`, `sf-needs-planning`) wird **nicht** mehr laufend erkannt, sondern **einmal pro Repo migriert**. Beim **ersten** Remote-Tracker-Zugriff — sofern der Marker `labelMigration.sf.done` in `.effective-flow/memory.json` fehlt und ein authentifiziertes CLI vorliegt — zieht eine idempotente Migration jedes noch vorhandene `sf-<x>`-Label auf `effective-flow-<x>` um: erst `effective-flow-<x>` am Issue ergänzen, dann `sf-<x>` entfernen (nicht umgekehrt, damit ein Abbruch kein Issue unklassifiziert zurücklässt). Danach den Marker setzen. Findet die Migration keine `sf-`-Labels, ist sie ein geräuschloser No-Op. Ist der Marker gesetzt, entfällt jeder weitere Scan — laufende Operationen kennen nur `effective-flow-` und `firmo-`. `sf-` wird ausschließlich in dieser Migration referenziert.
+- **Listing/filtering** (dedup, epic/issue search): `gh`/`tea` combine multiple `--label` specifications with AND semantics. Therefore run the query **separately per prefix** (once `effective-flow-…`, once `firmo-…`) and union the matches by the issue number.
+- **Removing a status label** (`effective-flow-needs-planning`, `effective-flow-issue-done`): additionally remove the legacy `firmo-` variant, if present, so an issue does not stay "stuck" through a leftover legacy label.
 
-### Keine KI-Attribution in Issue-Bodys und -Kommentaren
+**One-time `sf-` label migration:** The even older prefix `sf-` (`sf-review-finding`, `sf-review-epic`, `sf-fix`/`sf-refactor`/`sf-build`/`sf-docs`, `sf-issue-done`, `sf-needs-planning`) is **no longer** detected continuously, but **migrated once per repo**. On the **first** remote tracker access — provided the marker `labelMigration.sf.done` in `.effective-flow/memory.json` is missing and an authenticated CLI is present — an idempotent migration moves every still-present `sf-<x>` label to `effective-flow-<x>`: first add `effective-flow-<x>` on the issue, then remove `sf-<x>` (not the other way around, so an abort leaves no issue unclassified). Afterwards set the marker. If the migration finds no `sf-` labels, it is a silent no-op. If the marker is set, any further scan is skipped — ongoing operations know only `effective-flow-` and `firmo-`. `sf-` is referenced exclusively in this migration.
 
-Füge Issue-Bodys, Epic-Bodys und Kommentaren keine KI-Attribution hinzu: keine „Generated with Claude Code/Codex"-Footer, keine Agent-Session-Links (z. B. `https://claude.ai/code/…`) und keine `Co-Authored-By`-Trailer – auch dann nicht, wenn der Harness sie als Default anhängt. Sachliche Erwähnungen von Claude Code oder Codex als Ziel-Harness sind erlaubt, Generierungs-Attribution nicht.
+### No AI attribution in issue bodies and comments
 
-### Issue-Body-Format (Finding-Issue)
+Do not add AI attribution to issue bodies, epic bodies and comments: no "Generated with Claude Code/Codex" footers, no agent session links (e.g. `https://claude.ai/code/…`) and no `Co-Authored-By` trailers – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex as the target harness are allowed, generation attribution is not.
 
-Ein Finding-Issue muss **self-contained** sein: eine fremde LLM-Session muss es ohne Zugriff auf die erzeugende Session abarbeiten können. Es enthält dieselben inhaltlichen Felder wie ein Finding-Block des lokalen Report-Formats (siehe `$effective-flow review`, „Bericht-Format“).
+### Issue body format (finding issue)
 
-- **Titel:** `[R-XXXXXXX] <Kurztitel>`
-- **Labels:** `effective-flow-review-finding`, das Aktions-Label und das Schweregrad-Label.
-- **Body** (kanonisches Template):
+A finding issue must be **self-contained**: a foreign LLM session must be able to process it without access to the producing session. It contains the same content fields as a finding block of the local report format (see `$effective-flow review`, "Report format").
+
+- **Title:** `[R-XXXXXXX] <short title>`
+- **Labels:** `effective-flow-review-finding`, the action label and the severity label.
+- **Body** (canonical template):
 
 ```markdown
-- **Schweregrad**: Kritisch / Wichtig / Hinweis
-- **Komplexität**: Leicht / Mittel / Schwer
-- **Bereich**: [...]
-- **Datei**: [pfad:zeile]
+- **Severity**: Critical / Important / Note
+- **Complexity**: Low / Medium / High
+- **Area**: [...]
+- **File**: [path:line]
 - **Problem**: [...]
-- **Empfehlung**: [...]
-- **Aktion**: effective-flow-fix | effective-flow-refactor | effective-flow-build | effective-flow-docs
-- **Prompt-Vorschlag**: [direkt kopierbarer Klartext, ohne umschließende Anführungszeichen, ohne Escape-Sequenzen]
-- **Epic**: #<Epic-Nummer> (leer, falls kein Epic)
-- **Signatur**: [pfad:zeile] · [Bereich] · [Kurzfassung des Problems]  <!-- Dedup-Schlüssel -->
+- **Recommendation**: [...]
+- **Action**: effective-flow-fix | effective-flow-refactor | effective-flow-build | effective-flow-docs
+- **Prompt suggestion**: [directly copy-pasteable plain text, without enclosing quotation marks, without escape sequences]
+- **Epic**: #<epic number> (empty if no epic)
+- **Signature**: [path:line] · [Area] · [short summary of the problem]  <!-- Dedup key -->
 ```
 
-Das Feld **Signatur** fixiert den inhaltlichen Dedup-Schlüssel (Datei+Zeile, Bereich, Problem). Es ist bewusst **nicht** die `R-XXXXXXX`-ID, weil diese pro Lauf frisch vergeben wird.
+The **Signature** field fixes the content dedup key (file+line, area, problem). It is deliberately **not** the `R-XXXXXXX` ID, because that is assigned freshly per run.
 
-### Epic-Body-Format (Tracking-Issue)
+### Epic body format (tracking issue)
 
-- **Titel:** `Code-Review YYYY-MM-DD[-N]`
+- **Title:** `Code review YYYY-MM-DD[-N]`
 - **Labels:** `effective-flow-review-epic`
-- **Body** (kanonisches Template):
+- **Body** (canonical template):
 
 ```markdown
-Code-Review vom YYYY-MM-DD · Scope: [Gesamter Code / Beschriebener Bereich] · Projekt-Typ: [...]
+Code review of YYYY-MM-DD · Scope: [Entire code / Described area] · Project type: [...]
 
 ## Findings
 
-- [ ] #<nr> [R-0000001] <Kurztitel> — Aktion: effective-flow-fix
-- [ ] #<nr> [R-0000002] <Kurztitel> — Aktion: effective-flow-refactor
+- [ ] #<nr> [R-0000001] <short title> — Action: effective-flow-fix
+- [ ] #<nr> [R-0000002] <short title> — Action: effective-flow-refactor
 
-## Übersprungen (Designentscheidungen)
+## Skipped (design decisions)
 
-- #<nr-oder-keine> [R-XXXXXXX] <Kurztitel> — abgedeckt durch [DD-XXX] ([Quelle])
+- #<nr-or-none> [R-XXXXXXX] <short title> — covered by [DD-XXX] ([Source])
 ```
 
-Regeln für die Task-Liste:
+Rules for the task list:
 
-- Jeder Eintrag unter `## Findings` referenziert genau ein Finding-Issue über seine Nummer und trägt die `R-XXXXXXX`-ID sowie die Aktion.
-- Die Sektion `## Übersprungen (Designentscheidungen)` verwendet **keine** Checkboxen und listet nur durch Designentscheidungen gefilterte Findings. Sie entfällt, wenn keine solchen Findings vorhanden sind.
-- Das Abhaken erfolgt durch Umschalten `- [ ]` → `- [x]` und optionales Anhängen des PR-Links am Eintrag; ein bewusst nicht umgesetztes Finding wird per Slug-Referenz als `- [x] … — nicht umgesetzt (ADR: <slug>)` markiert.
+- Each entry under `## Findings` references exactly one finding issue via its number and carries the `R-XXXXXXX` ID as well as the action.
+- The section `## Skipped (design decisions)` uses **no** checkboxes and lists only findings filtered out by design decisions. It is omitted when no such findings are present.
+- Ticking off is done by toggling `- [ ]` → `- [x]` and optionally appending the PR link on the entry; a finding deliberately not implemented is marked via a slug reference as `- [x] … — nicht umgesetzt (ADR: <slug>)`.
 
-### Tracker-Operationen (Werkzeug-Mapping)
+### Tracker operations (tool mapping)
 
-Beschreibe alle Tracker-Zugriffe abstrakt als Operation und wähle das Kommando nach dem erkannten Werkzeug. Prüfe bei Forgejo die genauen Flagnamen gegen die installierte `tea`-Version, falls ein Aufruf fehlschlägt (wie in `$effective-flow pr` vermerkt).
+Describe all tracker accesses abstractly as an operation and choose the command by the detected tool. For Forgejo, check the exact flag names against the installed `tea` version if a call fails (as noted in `$effective-flow pr`).
 
-| Operation                                | GitHub (`gh`)                                                                              | Forgejo (`tea`)                                                                                      |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| Label anlegen (idempotent)               | `gh label create <name> --force`                                                           | `tea labels create --name <name>`                                                                    |
-| Issue anlegen                            | `gh issue create --title … --body-file … --label …`                                        | `tea issue create --title … --body … --labels …`                                                     |
-| Issue lesen (Body + Labels + Status)     | `gh issue view <nr> --json title,body,labels,state`                                        | `tea issue <nr>` bzw. `tea issue view <nr>`                                                          |
-| Kommentare lesen (Klärungen, Idempotenz) | `gh issue view <nr> --json comments`                                                       | `tea issue view <nr> --comments`, sonst Forgejo-API `GET /repos/<owner>/<repo>/issues/<nr>/comments` |
-| Finding-Issues auflisten (für Dedup)     | `gh issue list --label effective-flow-review-finding --state all --json number,title,body` | `tea issues list --labels effective-flow-review-finding --state all`                                 |
-| Offene Epics auflisten                   | `gh issue list --label effective-flow-review-epic --state open`                            | `tea issues list --labels effective-flow-review-epic --state open`                                   |
-| Issue-Body aktualisieren (Epic abhaken)  | `gh issue edit <nr> --body-file …`                                                         | `tea issue edit <nr> --body …`                                                                       |
-| Kommentar hinzufügen (z. B. PR-Link)     | `gh issue comment <nr> --body …`                                                           | `tea comment <nr> …`                                                                                 |
-| Label setzen/entfernen                   | `gh issue edit <nr> --add-label … --remove-label …`                                        | `tea issue edit <nr> --labels …`                                                                     |
-| Pull-Request erstellen                   | über `$effective-flow pr`                                                                        | über `$effective-flow pr`                                                                                  |
+| Operation                                   | GitHub (`gh`)                                                                              | Forgejo (`tea`)                                                                                          |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Create label (idempotent)                   | `gh label create <name> --force`                                                           | `tea labels create --name <name>`                                                                        |
+| Create issue                                | `gh issue create --title … --body-file … --label …`                                        | `tea issue create --title … --body … --labels …`                                                         |
+| Read issue (body + labels + status)         | `gh issue view <nr> --json title,body,labels,state`                                        | `tea issue <nr>` or `tea issue view <nr>`                                                                |
+| Read comments (clarifications, idempotency) | `gh issue view <nr> --json comments`                                                       | `tea issue view <nr> --comments`, otherwise Forgejo API `GET /repos/<owner>/<repo>/issues/<nr>/comments` |
+| List finding issues (for dedup)             | `gh issue list --label effective-flow-review-finding --state all --json number,title,body` | `tea issues list --labels effective-flow-review-finding --state all`                                     |
+| List open epics                             | `gh issue list --label effective-flow-review-epic --state open`                            | `tea issues list --labels effective-flow-review-epic --state open`                                       |
+| Update issue body (tick off epic)           | `gh issue edit <nr> --body-file …`                                                         | `tea issue edit <nr> --body …`                                                                           |
+| Add comment (e.g. PR link)                  | `gh issue comment <nr> --body …`                                                           | `tea comment <nr> …`                                                                                     |
+| Set/remove label                            | `gh issue edit <nr> --add-label … --remove-label …`                                        | `tea issue edit <nr> --labels …`                                                                         |
+| Create pull request                         | via `$effective-flow pr`                                                                         | via `$effective-flow pr`                                                                                       |
 
-Beim Epic-Body-Update gilt: Body vor dem Ändern frisch lesen, gezielt nur die betroffene Zeile umschalten und zurückschreiben, damit parallele Änderungen nicht verloren gehen.
+For the epic body update it applies: read the body freshly before changing, toggle only the affected line specifically and write it back, so parallel changes are not lost.
 
-Für die auflistenden Operationen (Dedup, Offene Epics) gilt die Rückwärtskompatibilität aus „Label-Konvention“: Abfrage je Präfix (`effective-flow-…` **und** `firmo-…`) getrennt ausführen und über die Issue-Nummer vereinigen.
+For the listing operations (dedup, open epics) the backward compatibility from "Label convention" applies: run the query separately per prefix (`effective-flow-…` **and** `firmo-…`) and union by the issue number.
 
-### Fehler- und Randfälle
+### Error and edge cases
 
-- **Fehlendes/nicht authentifiziertes CLI:** klar abbrechen, Behebungshinweis geben, keinen Teilzustand hinterlassen; kein stiller Fallback auf `local`.
-- **Kein Git-Repository / keine `origin`-Remote:** Remote-Modus nicht möglich; melden.
-- **Mehrdeutiger Host:** `remoteToolOverride` bzw. Per-Run-Hinweis nutzen; ist beides unklar, den User fragen.
-- **Argumenttyp widerspricht `tracker.mode`:** Der Argumenttyp überschreibt den Config-Modus für diesen Lauf (siehe „Modus bestimmen“).
+- **Missing/unauthenticated CLI:** abort clearly, give a remediation hint, leave no partial state; no silent fallback to `local`.
+- **No Git repository / no `origin` remote:** remote mode not possible; report.
+- **Ambiguous host:** use `remoteToolOverride` or a per-run hint; if both are unclear, ask the user.
+- **Argument type contradicts `tracker.mode`:** The argument type overrides the config mode for this run (see "Determine mode").
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Aufräumen und beachte ihre Vorgaben für Dateiformate, Konfiguration und projektweite Konventionen.
+If the project has an `AGENTS.md`, read it before cleaning up and follow its guidance on file formats, configuration, and project-wide conventions.
 
-## Harte Abgrenzung
+## Hard scope boundary
 
-- **Nur das aktuelle Projekt.** Dieser Skill fasst **keine** globale Skill-Installation an (z. B. `~/.claude/skills/effective-flow` oder `~/.claude/skills/firmo`, `firmo-*`/`effective-flow-*`-Agents). Das Entfernen alter installierter Skills/Agents erledigen die Deploy-Skripte, nicht dieses Tool.
-- **Neues nie löschen.** Das aktive Laufzeitverzeichnis `.effective-flow/` (bis auf einen ausdrücklich als veraltet erkannten Legacy-Inhalt darin, siehe Altlast-Klassen) und die Projektsetup-ADR werden **nie** gelöscht.
-- **Kein Auto-Commit.** Der Skill staged höchstens `git rm`-Änderungen und entfernt ungetrackte Dateien physisch; er committet nicht. Das Committen übernimmt der User oder `$effective-flow commit`.
-- **Kein Backup.** Für nicht git-wiederherstellbare Artefakte wird bewusst kein Backup-Verzeichnis angelegt; das Sicherheitsnetz ist die explizite Bestätigung.
-- **Keine Config schreiben.** Übernahme von Config-Werten schreibt dieser Skill nicht selbst in die Projektsetup-ADR — dafür ist `$effective-flow setup` zuständig (siehe Phase 3).
-- **Nur mit Zustimmung löschen.** Jede Löschung erfolgt erst nach Dry-Run und ausdrücklicher Bestätigung.
+- **Only the current project.** This skill does **not** touch any global skill installation (e.g. `~/.claude/skills/effective-flow` or `~/.claude/skills/firmo`, `firmo-*`/`effective-flow-*` agents). Removing old installed skills/agents is done by the deploy scripts, not this tool.
+- **Never delete the new.** The active runtime directory `.effective-flow/` (except for legacy content within it that is explicitly recognized as outdated, see legacy classes) and the project setup ADR are **never** deleted.
+- **No auto-commit.** The skill at most stages `git rm` changes and removes untracked files physically; it does not commit. Committing is done by the user or `$effective-flow commit`.
+- **No backup.** For artifacts that are not git-recoverable, no backup directory is deliberately created; the safety net is the explicit confirmation.
+- **Do not write config.** This skill does not itself write carried-over config values into the project setup ADR — `$effective-flow setup` is responsible for that (see Phase 3).
+- **Delete only with consent.** Every deletion happens only after a dry run and explicit confirmation.
 
-## Altlast-Klassen
+## Legacy classes
 
-Der Skill kennt genau diese vier Klassen von Migrations-Altlasten und je ihr neues Gegenstück:
+The skill knows exactly these four classes of migration remnants, each with its new counterpart:
 
-| Klasse                       | Altlast                                                                                                                                    | Neues Gegenstück                               |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
-| Runtime-Verzeichnisse        | `.firmo/`, `.sf-plugin/` (nach Migration bewusst belassen)                                                                                 | `.effective-flow/`                             |
-| Legacy-`config.json`         | enttrackte `.firmo/config.json` bzw. eine Legacy-`config.json` in einem Runtime-Verzeichnis                                                | Projektsetup-ADR (siehe `$effective-flow setup`)     |
-| Legacy-`.gitignore`-Einträge | veraltete Ignore-Zeilen für `.firmo/`/`.sf-plugin/` bzw. das alte Zwei-Zeilen-Pattern `.effective-flow/*` + `!.effective-flow/config.json` | die eine Zeile `.effective-flow/`              |
-| `firmo-`-Labels              | `firmo-review-finding`, `firmo-review-epic`, `firmo-fix`/`-refactor`/`-build`/`-docs`, `firmo-issue-done`, `firmo-needs-planning` am Issue | die `effective-flow-`-Variante am selben Issue |
+| Class                       | Legacy remnant                                                                                                                                 | New counterpart                                 |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Runtime directories         | `.firmo/`, `.sf-plugin/` (deliberately left after migration)                                                                                   | `.effective-flow/`                              |
+| Legacy `config.json`        | untracked `.firmo/config.json` or a legacy `config.json` in a runtime directory                                                                | project setup ADR (see `$effective-flow setup`)       |
+| Legacy `.gitignore` entries | outdated ignore lines for `.firmo/`/`.sf-plugin/` or the old two-line pattern `.effective-flow/*` + `!.effective-flow/config.json`             | the single line `.effective-flow/`              |
+| `firmo-` labels             | `firmo-review-finding`, `firmo-review-epic`, `firmo-fix`/`-refactor`/`-build`/`-docs`, `firmo-issue-done`, `firmo-needs-planning` on the issue | the `effective-flow-` variant on the same issue |
 
-`sf-`-Labels sind **kein** eigenständiges Ziel: Sie werden bereits durch die einmalige `sf-`-Label-Migration (siehe „Label-Konvention" in `issue-tracker.md`) auf `effective-flow-` gezogen. Dieser Skill räumt nur noch verbliebene `firmo-`-Labels ab.
+`sf-` labels are **not** a standalone target: they are already moved to `effective-flow-` by the one-time `sf-` label migration (see "Label convention" in `issue-tracker.md`). This skill only clears up remaining `firmo-` labels.
 
 ## Workflow
 
-### Phase 1: Discovery / Bestandsaufnahme
+### Phase 1: Discovery / inventory
 
-1. Erfasse die vorhandenen Altlasten im Projekt-Root:
-   - **Runtime-Verzeichnisse:** existiert `.firmo/` und/oder `.sf-plugin/`?
-   - **Legacy-`config.json`:** existiert `.firmo/config.json`, `.sf-plugin/config.json` oder eine als veraltet erkennbare `config.json` in `.effective-flow/` (Übergangs-Fallback, dessen Werte in die ADR gehören)?
-   - **`.gitignore`:** enthält sie veraltete Zeilen für `.firmo/`/`.sf-plugin/` oder das alte Zwei-Zeilen-Pattern?
-   - **`firmo-`-Labels:** nur im Remote-Modus mit authentifiziertem CLI (siehe „Host- und CLI-Erkennung" in `issue-tracker.md`) — liste Issues mit `firmo-`-Labels je Präfix getrennt auf. Fehlt Remote-Modus, Git-Repository, `origin` oder ein authentifiziertes CLI, überspringe diese Klasse und melde das knapp.
-2. Bestimme je vorhandener Altlast, ob ihr **neues Gegenstück** existiert (`.effective-flow/`, Projektsetup-ADR bzw. `effective-flow-`-Labels).
-3. Sind keine Altlasten vorhanden, ist der Lauf ein **No-Op**: melde das klar und beende.
-4. Gib dem User eine kompakte Bestandsaufnahme aus (Klasse → gefundene Artefakte → ob ein neues Gegenstück existiert).
+1. Capture the existing legacy remnants in the project root:
+   - **Runtime directories:** do `.firmo/` and/or `.sf-plugin/` exist?
+   - **Legacy `config.json`:** does `.firmo/config.json`, `.sf-plugin/config.json`, or a `config.json` recognizable as outdated in `.effective-flow/` (transitional fallback whose values belong in the ADR) exist?
+   - **`.gitignore`:** does it contain outdated lines for `.firmo/`/`.sf-plugin/` or the old two-line pattern?
+   - **`firmo-` labels:** only in remote mode with an authenticated CLI (see "Host and CLI detection" in `issue-tracker.md`) — list issues with `firmo-` labels separately per prefix. If remote mode, a Git repository, `origin`, or an authenticated CLI is missing, skip this class and report that briefly.
+2. For each existing legacy remnant, determine whether its **new counterpart** exists (`.effective-flow/`, project setup ADR, or `effective-flow-` labels).
+3. If no legacy remnants are present, the run is a **no-op**: report that clearly and end.
+4. Give the user a compact inventory (class → artifacts found → whether a new counterpart exists).
 
-### Phase 2: Carry-over-Prüfung (lesen + vergleichen)
+### Phase 2: Carry-over check (read + compare)
 
-Lies die Altlasten und ermittle, ob noch etwas übernommen werden muss, bevor gelöscht wird:
+Read the legacy remnants and determine whether anything still needs to be carried over before deleting:
 
-- **Runtime-Verzeichnisse:** Vergleiche den Inhalt des Legacy-Verzeichnisses (bevorzugt `.firmo/` vor `.sf-plugin/`) mit `.effective-flow/`. Sammle Dateien, die im Legacy-Verzeichnis vorhanden sind, in `.effective-flow/` aber **fehlen** (oder inhaltlich abweichen/neuer sind), als Übernahme-Kandidaten. Reine Laufzeit-Artefakte (`cache.json`, `.worktrees/`) sind in der Regel verzichtbar; benenne sie als solche.
-- **Legacy-`config.json`:** Parse sie. Ist sie kein gültiges JSON, ist sie **keine** Carry-over-Quelle: melde Pfad und Fehler und behandle die Datei nur als Löschkandidat (nach Bestätigung). Bei gültigem JSON vergleiche jeden gesetzten Wert mit der Projektsetup-ADR; nicht abgebildete Werte sind Übernahme-Kandidaten.
-- **`.gitignore`/Labels:** kein Datei-Carry-over. Für Labels gilt der add-before-remove-Schritt in Phase 5.
+- **Runtime directories:** Compare the content of the legacy directory (preferring `.firmo/` over `.sf-plugin/`) with `.effective-flow/`. Collect files that are present in the legacy directory but **missing** in `.effective-flow/` (or differ in content / are newer) as carry-over candidates. Pure runtime artifacts (`cache.json`, `.worktrees/`) are usually dispensable; name them as such.
+- **Legacy `config.json`:** Parse it. If it is not valid JSON, it is **not** a carry-over source: report the path and error and treat the file only as a deletion candidate (after confirmation). For valid JSON, compare each set value with the project setup ADR; values not represented there are carry-over candidates.
+- **`.gitignore`/labels:** no file carry-over. For labels, the add-before-remove step in Phase 5 applies.
 
-### Phase 3: Carry-over bestätigen und übernehmen
+### Phase 3: Confirm and perform carry-over
 
-Lege dem User die Übernahme-Kandidaten gruppiert vor und hole je Gruppe die Entscheidung ein. Übernimm nur ausdrücklich bestätigte Kandidaten.
+Present the carry-over candidates to the user grouped and obtain a decision per group. Carry over only explicitly confirmed candidates.
 
-Wenn es gibt Runtime-Datei-Kandidaten, die in `.effective-flow/` fehlen oder abweichen: Frage den User: **Welche Dateien aus dem Alt-Laufzeitverzeichnis sollen nach `.effective-flow/` übernommen werden, bevor es gelöscht wird?**
-- Alle übernehmen -- Jede aufgelistete Datei nach .effective-flow/ kopieren (vorhandene Dateien im Ziel nicht überschreiben)
-- Einzeln auswählen -- Pro Datei entscheiden, welche übernommen und welche verworfen wird
-- Nichts übernehmen -- Keine Datei übernehmen — der gesamte Alt-Inhalt wird zur Löschung freigegeben
+Wenn there are runtime file candidates that are missing in `.effective-flow/` or differ: Frage den User: **Which files from the old runtime directory should be carried over to `.effective-flow/` before it is deleted?**
+- Carry over all -- Copy every listed file to .effective-flow/ (do not overwrite existing files in the target)
+- Select individually -- Decide per file which is carried over and which is discarded
+- Carry over nothing -- Carry over no file — the entire old content is released for deletion
 
-- **Runtime-Dateien:** Bestätigtes nach `.effective-flow/` kopieren (nicht verschieben); eine im Ziel bereits vorhandene Datei **nicht** überschreiben. Abgelehntes bleibt Löschkandidat.
-- **Config-Werte:** Schreibe abweichende Werte **nicht selbst** in die ADR. Lege sie offen und verweise auf `$effective-flow setup` zur Übernahme. Gib die betroffenen Schlüssel konkret aus, damit der User sie in `$effective-flow setup` bestätigen kann. Erst wenn die Werte in der ADR stehen oder der User sie ausdrücklich verwirft, gilt die Legacy-`config.json` als übernahmefrei und damit löschbar.
-- **Labels:** kein Datei-Carry-over; die Übernahme erfolgt in Phase 5 als add-`effective-flow-`-vor-remove-`firmo-`.
+- **Runtime files:** Copy confirmed items to `.effective-flow/` (do not move); do **not** overwrite a file already present in the target. Rejected items remain deletion candidates.
+- **Config values:** Do **not** write differing values into the ADR yourself. Disclose them and refer to `$effective-flow setup` for the carry-over. Output the affected keys concretely so the user can confirm them in `$effective-flow setup`. Only once the values are in the ADR or the user explicitly discards them is the legacy `config.json` considered free of carry-over and thus deletable.
+- **Labels:** no file carry-over; the carry-over happens in Phase 5 as add-`effective-flow-`-before-remove-`firmo-`.
 
-### Phase 4: Dry-Run-Vorschau
+### Phase 4: Dry-run preview
 
-Liste vor jeder Löschung genau auf, was entfernt wird — **ohne** schon zu löschen:
+Before any deletion, list exactly what will be removed — **without** deleting yet:
 
-1. Je Artefakt: Pfad bzw. Label und die Klasse.
-2. Je Datei/Verzeichnis den Git-Status: **getrackt**, **ungetrackt** oder **gitignored**. Getrackte sind über die Git-Historie wiederherstellbar; ungetrackte/gitignorte Artefakte (`.effective-flow/`, `.firmo/`, `.sf-plugin/` sind gitignored) sind **nicht** über Git wiederherstellbar.
-3. Warne bei dirty Working Tree und empfehle, vorher zu committen/stashen, damit ein `git rm`-Staging sauber ist.
-4. Weise für jede Altlast nach, dass ihr neues Gegenstück existiert und der Carry-over abgeschlossen bzw. bewusst verworfen ist. Fehlt das neue Gegenstück (z. B. `.effective-flow/` existiert nicht, weil die Migration noch nicht lief), biete diese Altlast **nicht** zur Löschung an: melde das und verweise darauf, dass ein normaler Tool-Lauf die Migration nach `.effective-flow/` auslöst.
-5. **Verschachtelte Klassen koppeln:** Eine Legacy-`config.json` liegt physisch **innerhalb** eines Runtime-Verzeichnisses (z. B. `.firmo/config.json` in `.firmo/`). Biete das enthaltende Runtime-Verzeichnis (Klasse „Runtime-Verzeichnisse") **nicht** zur Löschung an, solange die enthaltene Legacy-`config.json` (Klasse „Legacy-`config.json`") noch offenen Carry-over hat — sonst nähme das Löschen des Verzeichnisses die noch nicht übernommene `config.json` mit. Erst wenn deren Werte in der ADR stehen oder ausdrücklich verworfen sind, gilt auch das enthaltende Verzeichnis als löschbar.
+1. Per artifact: path or label and the class.
+2. Per file/directory, the Git status: **tracked**, **untracked**, or **gitignored**. Tracked ones are recoverable via the Git history; untracked/gitignored artifacts (`.effective-flow/`, `.firmo/`, `.sf-plugin/` are gitignored) are **not** recoverable via Git.
+3. Warn on a dirty working tree and recommend committing/stashing first, so that a `git rm` staging is clean.
+4. For each legacy remnant, demonstrate that its new counterpart exists and the carry-over is complete or deliberately discarded. If the new counterpart is missing (e.g. `.effective-flow/` does not exist because the migration has not run yet), do **not** offer this remnant for deletion: report that and point out that a normal tool run triggers the migration to `.effective-flow/`.
+5. **Couple nested classes:** A legacy `config.json` lies physically **inside** a runtime directory (e.g. `.firmo/config.json` in `.firmo/`). Do **not** offer the containing runtime directory (class "Runtime directories") for deletion while the contained legacy `config.json` (class "Legacy `config.json`") still has open carry-over — otherwise deleting the directory would take the not-yet-carried-over `config.json` with it. Only once its values are in the ADR or explicitly discarded is the containing directory also considered deletable.
 
-### Phase 5: Löschung bestätigen und git-aware ausführen
+### Phase 5: Confirm deletion and execute git-aware
 
-Hole die Bestätigung **artefakt-klassen-weise** ein und führe die Löschung erst danach aus.
+Obtain confirmation **per artifact class** and only then execute the deletion.
 
-Frage den User: **Die oben gelisteten Altlasten jetzt entfernen? Getrackte Dateien via `git rm` (über die Historie wiederherstellbar), ungetrackte/gitignorte Verzeichnisse werden physisch und unwiderruflich entfernt.**
-- Ja, wie gelistet entfernen -- Getrackte via git rm (gestaged, kein Commit); ungetrackte/gitignorte physisch löschen; firmo-Labels vom Issue lösen
-- Nur getrackte entfernen -- Nur die git-wiederherstellbaren, getrackten Artefakte via git rm; ungetrackte Verzeichnisse und Labels vorerst behalten
-- Abbrechen -- Nichts löschen; die Bestandsaufnahme bleibt bestehen
+Frage den User: **Remove the legacy remnants listed above now? Tracked files via `git rm` (recoverable via the history); untracked/gitignored directories are removed physically and irreversibly.**
+- Yes, remove as listed -- Tracked via git rm (staged, no commit); untracked/gitignored deleted physically; firmo labels detached from the issue
+- Remove tracked only -- Only the git-recoverable, tracked artifacts via git rm; keep untracked directories and labels for now
+- Cancel -- Delete nothing; the inventory remains
 
-Führe je Klasse aus:
+Execute per class:
 
-- **Getrackte Dateien:** via `git rm` entfernen (staged, **kein** Commit). Bei ungetrackt/gitignored greift `git rm` nicht.
-- **Ungetrackte/gitignorte Verzeichnisse** (`.firmo/`, `.sf-plugin/`, eine gitignorte Legacy-`config.json`): physisch entfernen — nur nach der ausdrücklichen „unwiderruflich"-Bestätigung oben, ohne Backup.
-- **`.gitignore`:** entferne nur eindeutig veraltete Zeilen (`.firmo/`, `.sf-plugin/`, altes Zwei-Zeilen-Pattern). Stelle sicher, dass `.effective-flow/` weiterhin ignoriert bleibt; Fremdzeilen unangetastet lassen. Die kanonische `.gitignore`-Normalisierung ist Sache von `$effective-flow setup`; entferne hier nur die Alt-Reste.
-- **`firmo-`-Labels:** nur im Remote-Modus mit CLI. Ergänze zuerst `effective-flow-<x>` am Issue, **dann** löse `firmo-<x>` vom Issue (add-new vor remove-old, damit bei Abbruch kein Issue unklassifiziert bleibt). Die Label-**Definition** im Tracker bleibt bestehen — führe **kein** `label delete` aus. Nutze das Werkzeug-Mapping aus `issue-tracker.md` (`--add-label`/`--remove-label` bzw. `tea issue edit`).
+- **Tracked files:** remove via `git rm` (staged, **no** commit). For untracked/gitignored, `git rm` does not apply.
+- **Untracked/gitignored directories** (`.firmo/`, `.sf-plugin/`, a gitignored legacy `config.json`): remove physically — only after the explicit "irreversible" confirmation above, without a backup.
+- **`.gitignore`:** remove only clearly outdated lines (`.firmo/`, `.sf-plugin/`, old two-line pattern). Ensure that `.effective-flow/` remains ignored; leave foreign lines untouched. The canonical `.gitignore` normalization is the job of `$effective-flow setup`; here only remove the old remnants.
+- **`firmo-` labels:** only in remote mode with a CLI. First add `effective-flow-<x>` on the issue, **then** detach `firmo-<x>` from the issue (add-new before remove-old, so an abort leaves no issue unclassified). The label **definition** in the tracker remains — do **not** run `label delete`. Use the tool mapping from `issue-tracker.md` (`--add-label`/`--remove-label`, or `tea issue edit`).
 
-Brich bei jedem Fehler (z. B. `git rm` scheitert, Tracker nicht erreichbar) kontrolliert ab: melde den Teilzustand und lösche nichts, dessen neues Gegenstück nicht gesichert ist.
+On any error (e.g. `git rm` fails, tracker unreachable), abort in a controlled manner: report the partial state and delete nothing whose new counterpart is not secured.
 
-### Phase 6: Abschluss
+### Phase 6: Completion
 
-Melde dem User:
+Report to the user:
 
-- was übernommen wurde (Dateien nach `.effective-flow/`) und welche Config-Werte an `$effective-flow setup` verwiesen wurden
-- was gelöscht wurde, getrennt nach getrackt (via `git rm`, gestaged) und physisch entfernt
-- welche `.gitignore`-Zeilen entfernt wurden
-- welche `firmo-`-Labels von wie vielen Issues gelöst wurden (bzw. dass die Label-Klasse übersprungen wurde)
-- was bewusst verbleibt und warum
-- dass **kein** Commit erstellt wurde; verweise für die gestageten Änderungen auf `$effective-flow commit`
+- what was carried over (files to `.effective-flow/`) and which config values were referred to `$effective-flow setup`
+- what was deleted, separated into tracked (via `git rm`, staged) and physically removed
+- which `.gitignore` lines were removed
+- which `firmo-` labels were detached from how many issues (or that the label class was skipped)
+- what deliberately remains and why
+- that **no** commit was created; refer to `$effective-flow commit` for the staged changes
 
-## Regeln
+## Rules
 
-- Lösche niemals ohne Dry-Run und ausdrückliche Bestätigung.
-- Lösche kein Artefakt, bevor sein neues Gegenstück existiert und der Carry-over abgeschlossen bzw. bewusst verworfen ist.
-- Lösche ein Runtime-Verzeichnis nicht, solange es eine Legacy-`config.json` mit offenem Carry-over enthält; erst nach Übernahme in die ADR oder bewusstem Verwerfen ist es löschbar.
-- Fasse `.effective-flow/` (aktives Verzeichnis) und die Projektsetup-ADR nicht an, ebenso wenig eine globale Skill-Installation.
-- Erstelle keine Commits und keine Backup-Verzeichnisse.
-- Schreibe keine Config selbst; Config-Übernahme läuft über `$effective-flow setup`.
-- Beim Label-Cleanup zuerst `effective-flow-` ergänzen, dann `firmo-` vom Issue lösen; die Label-Definition bleibt bestehen.
-- Ist keine Altlast vorhanden, ist der Lauf ein No-Op.
-- Gib Pfade relativ zum Projekt-Root aus.
+- Never delete without a dry run and explicit confirmation.
+- Do not delete any artifact before its new counterpart exists and the carry-over is complete or deliberately discarded.
+- Do not delete a runtime directory while it contains a legacy `config.json` with open carry-over; only after carry-over into the ADR or deliberate discard is it deletable.
+- Do not touch `.effective-flow/` (the active directory) or the project setup ADR, nor a global skill installation.
+- Do not create commits or backup directories.
+- Do not write config yourself; config carry-over runs through `$effective-flow setup`.
+- For label cleanup, first add `effective-flow-`, then detach `firmo-` from the issue; the label definition remains.
+- If no legacy remnant is present, the run is a no-op.
+- Output paths relative to the project root.
