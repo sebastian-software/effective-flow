@@ -1,20 +1,19 @@
 ---
-description: "Interne Anweisung für vertieften interaktiven Plan-Review: prüft Plan-Dateien auf Logik, Datensicherheit, Umsetzbarkeit, UI/UX, offene Punkte und pflegt Entscheidungen direkt im Plan."
+description: "Internal instruction for the deep interactive plan review: checks plan files for logic, data security, feasibility, UI/UX, and open points, and maintains decisions directly in the plan."
 ---
 
 # Effective Flow Plan Review
 
-Du bist der Orchestrator für vertieften interaktiven Review vorhandener Plan-Dateien.
+You are the orchestrator for the deep interactive review of existing plan files.
 
-## Ziel
+## Goal
 
-Dieser interne Skill prüft eine vorhandene Plan-Datei unter `<plan.dir>/` auf noch
-Unbekanntes, ungenaue Formulierungen, logische Widersprüche, Umsetzungsrisiken und
-fehlende Entscheidungen. Er führt entscheidungsbedürftige Punkte einzeln mit dem
-User durch, arbeitet getroffene Entscheidungen direkt in den Plan ein und hält den
-Abschnitt für offene Punkte aktuell.
+This internal skill checks an existing plan file under `<plan.dir>/` for what is still
+unknown, imprecise wording, logical contradictions, implementation risks, and missing
+decisions. It walks through decision-requiring points one by one with the user, incorporates
+the decisions made directly into the plan, and keeps the open-points section up to date.
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
+`<plan.dir>` is the plan directory from the Effective Flow configuration (project-setup ADR) `plan.dir` (default
 `docs/plan`).
 
 ```include
@@ -29,168 +28,167 @@ task-tracking
 plan-status
 ```
 
-## Empfohlene Skills
+## Recommended skills
 
 - `codebase-improvement`
 
-## Harte Abgrenzung
+## Hard scope boundary
 
-- Erlaubt sind ausschließlich Analyse, User-Rückfragen und Änderungen an der
-  referenzierten Plan-Datei unter `<plan.dir>/`.
-- Verboten sind Änderungen an Source-Code, Tests, Konfiguration, Build-Dateien,
-  README-Dateien, ADRs, Review-Reports und sonstigen Projektdateien.
-- Starte keine Implementer-, Test-, Validator-, Code-Review- oder
-  Dokumentations-Spezialisten.
-- Erzeuge keine Commits.
-- Der Review ist ein Plan-Review, kein Code-Review. Er darf Code-Kontext lesen,
-  aber keine Code-Änderungen vorschlagen, die über Planungsdetails hinausgehen.
+- Only analysis, user follow-up questions, and changes to the
+  referenced plan file under `<plan.dir>/` are allowed.
+- Changes to source code, tests, configuration, build files,
+  README files, ADRs, review reports, and other project files are forbidden.
+- Do not start any implementer, test, validator, code-review, or
+  documentation specialists.
+- Do not create any commits.
+- The review is a plan review, not a code review. It may read code context
+  but must not propose code changes that go beyond planning details.
 
-## Eingabe
+## Input
 
-Erwarte genau eine Plan-Referenz unter `<plan.dir>/`, zum Beispiel:
+Expect exactly one plan reference under `<plan.dir>/`, for example:
 
 - `<plan.dir>/2024-06-01-interaktive-plan-review-iteration.md`
 - `2024-06-01-interaktive-plan-review-iteration.md`
-- `interaktive-plan-review-iteration` (Titel-Slug)
-- `0066` (Legacy-Nummer eines migrierten Altplans, primär über die H1 aufgelöst)
+- `interaktive-plan-review-iteration` (title slug)
+- `0066` (legacy number of a migrated old plan, resolved primarily via the H1)
 
-Wenn die Referenz fehlt, mehrdeutig ist oder nicht auf eine Plan-Datei zeigt, frage
-nach der konkreten Plan-Datei. Wähle niemals heuristisch den neuesten Plan.
+If the reference is missing, ambiguous, or does not point to a plan file, ask
+for the specific plan file. Never heuristically pick the newest plan.
 
 ## Workflow
 
-Sichte vor der Analyse nützliche Skills gemäß folgendem Baustein. Die Grenze dieses Tools
-bleibt strikt: Skills informieren nur das Review-Urteil, ändern nichts außer der referenzierten
-Plan-Datei und erzeugen keinen Code.
+Before the analysis, review useful skills according to the following building block. The boundary
+of this tool remains strict: skills only inform the review judgment, change nothing except the
+referenced plan file, and generate no code.
 
 ```include
 skill-discovery
 ```
 
-Das generische Plan-Review-**Urteil** dieses Tools (Phase 2) stammt aus dem zentralen Skill
-`codebase-improvement`; Effective Flow bleibt der Plan-Artefakt-Orchestrator (interaktiver Loop,
-edit-only, Status- und Offene-Punkte-Normalisierung). Es gilt der folgende Baustein:
+The generic plan-review **judgment** of this tool (Phase 2) comes from the central skill
+`codebase-improvement`; Effective Flow remains the plan-artifact orchestrator (interactive loop,
+edit-only, status and open-points normalization). The following building block applies:
 
 ```include
 central-reasoning-delegation
 ```
 
-### Phase 1: Plan laden und normalisieren
+### Phase 1: Load and normalize the plan
 
-1. Löse die Plan-Referenz auf genau eine Datei unter `<plan.dir>/` auf.
-2. Lies die Plan-Datei frisch vom Dateisystem.
-3. Prüfe den Planstatus nach der Planstatus-Konvention.
-4. Wenn der Plan bereits umgesetzt ist, frage, ob er nur nachträglich geprüft, für
-   eine Folgeänderung wieder geöffnet oder der Review abgebrochen werden soll. Ändere
-   den Status nicht ohne ausdrückliche Entscheidung.
-5. Stelle sicher, dass am Ende ein Abschnitt für offene Punkte existiert:
-   - Deutschsprachige Pläne nutzen `## Offene Punkte` mit `- Keine offenen Punkte.`
-   - Englischsprachige Pläne nutzen `## Open Points` mit `- No open points.`
-   - Wenn bereits einer der beiden Abschnitte existiert, behalte dessen Sprache bei.
-   - Wenn ein kombinierter Abschnitt `## Annahmen und offene Punkte` existiert:
-     überführe entscheidungsbedürftige Punkte nach `## Offene Punkte`; belasse
-     reine Annahmen im bestehenden Abschnitt.
-   - Wenn ein kombinierter Abschnitt `## Assumptions and open points` existiert:
-     überführe entscheidungsbedürftige Punkte nach `## Open Points`; belasse reine
-     Annahmen im bestehenden Abschnitt.
-6. Erhalte vorhandene Planinhalte, Reihenfolge und Markersprache soweit möglich.
+1. Resolve the plan reference to exactly one file under `<plan.dir>/`.
+2. Read the plan file fresh from the file system.
+3. Check the plan status according to the plan-status convention.
+4. If the plan is already implemented, ask whether it should only be reviewed retrospectively, reopened
+   for a follow-up change, or the review aborted. Do not change
+   the status without an explicit decision.
+5. Ensure that a section for open points exists at the end:
+   - German-language plans use `## Offene Punkte` with `- Keine offenen Punkte.`
+   - English-language plans use `## Open Points` with `- No open points.`
+   - If one of the two sections already exists, keep its language.
+   - If a combined section `## Annahmen und offene Punkte` exists:
+     move decision-requiring points to `## Offene Punkte`; leave
+     pure assumptions in the existing section.
+   - If a combined section `## Assumptions and open points` exists:
+     move decision-requiring points to `## Open Points`; leave pure
+     assumptions in the existing section.
+6. Preserve existing plan content, order, and marker language as far as possible.
 
-### Phase 2: Befunde identifizieren
+### Phase 2: Identify findings
 
-Das fachliche Review-**Urteil** liefert `codebase-improvement` (siehe „Delegation des
-Domänen-Urteils an zentrale Skills“): Wende den Skill auf die geladene Plan-Datei an, damit er
-die Befunde beurteilt — u. a. logische Widersprüche zwischen Anforderung,
-Architekturentscheidungen, Vorgehen, Edge Cases, Akzeptanzkriterien und Validierungsplan;
-Datensicherheit/Datenschutz; Security; Umsetzbarkeit; Fehlerfälle; Testbarkeit; Scope und
-Wartbarkeit. Kreuzt der Plan eine deklarierte Spezialisten-Boundary, ziehe den zuständigen Owner
-über das Relevanz-Gate hinzu — Browser-/UI-/Barrierefreiheits-Detail an `effective-web`,
-Product-/Design-Fragen an `product-management`/`product-design`, weitere Owner analog; ein
-schmaler Plan bleibt schmal. Fehlt `codebase-improvement`, greift der minimale generische
-Fallback aus dem Baustein statt einer lokalen Voll-Checkliste.
+The domain review **judgment** is provided by `codebase-improvement` (see "Delegating the
+domain judgment to central skills"): apply the skill to the loaded plan file so that it
+assesses the findings — among others logical contradictions between requirement,
+architecture decisions, approach, edge cases, acceptance criteria, and validation plan;
+data security/data protection; security; feasibility; error cases; testability; scope and
+maintainability. If the plan crosses a declared specialist boundary, bring in the responsible owner
+via the relevance gate — browser/UI/accessibility detail to `effective-web`,
+product/design questions to `product-management`/`product-design`, further owners analogously; a
+narrow plan stays narrow. If `codebase-improvement` is missing, the minimal generic
+fallback from the building block applies instead of a local full checklist.
 
-Teile die gemeldeten Befunde in zwei Gruppen (Effective-Flow-Artefakt-Handling):
+Split the reported findings into two groups (Effective Flow artifact handling):
 
-- **Direkt einarbeitbar:** Klarer Planmangel, der ohne fachliche Entscheidung
-  korrigiert werden kann. Arbeite ihn direkt ein und dokumentiere ihn im
-  `## Plan-Review`.
-- **Entscheidungsbedürftig:** Eine Entscheidung beeinflusst Verhalten, Scope,
-  Risiko oder spätere Umsetzung wesentlich. Kläre den Punkt in Phase 3.
+- **Directly incorporable:** a clear plan deficiency that can be
+  corrected without a domain decision. Incorporate it directly and document it in the
+  `## Plan review`.
+- **Decision-requiring:** a decision significantly affects behavior, scope,
+  risk, or later implementation. Clarify the point in Phase 3.
 
-### Phase 3: Entscheidungen klären
+### Phase 3: Clarify decisions
 
-Gehe entscheidungsbedürftige Punkte einzeln durch.
+Go through decision-requiring points one by one.
 
-Für jeden Punkt:
+For each point:
 
-1. Formuliere das konkrete Risiko oder die Unklarheit.
-2. Biete, wenn fachlich sinnvoll, genau drei Lösungsoptionen an. Jede Option nennt:
-   - Beschreibung
-   - Vorteile
-   - Nachteile
-   - ob sie empfohlen ist und warum
-3. Biete zusätzlich immer „Später entscheiden“ an.
-4. Wenn weniger als drei sinnvolle fachliche Optionen existieren, erfinde keine
-   künstlichen Optionen. Nenne die vorhandenen Optionen und trotzdem „Später
-   entscheiden“.
-5. Wenn ein Harness-Ask-Format nur drei Auswahloptionen unterstützt, stehen die
-   fachlichen Optionen im Fragetext und „Später entscheiden“ bleibt als explizite
-   Auswahl- oder Freitextantwort zulässig.
+1. Formulate the concrete risk or ambiguity.
+2. Offer, when it makes sense, exactly three solution options. Each option names:
+   - description
+   - advantages
+   - disadvantages
+   - whether it is recommended and why
+3. Additionally, always offer "Decide later".
+4. If fewer than three meaningful domain options exist, do not invent
+   artificial options. Name the existing options and still "Decide
+   later".
+5. If a harness ask format supports only three choice options, the
+   domain options go in the question text and "Decide later" remains permissible
+   as an explicit choice or free-text answer.
 
-Nach der User-Antwort:
+After the user's answer:
 
-- Bei fachlicher Entscheidung: Arbeite sie in den passenden Planabschnitt ein,
-  zum Beispiel Architekturentscheidungen, Vorgehen, Edge Cases,
-  Akzeptanzkriterien oder Validierungsplan. Entferne den zugehörigen Eintrag aus
-  `## Offene Punkte` bzw. `## Open Points`.
-- Bei „Später entscheiden“: Ergänze oder aktualisiere einen präzisen Eintrag in
-  `## Offene Punkte` bzw. `## Open Points` mit Wiedereinstiegshinweis.
-- Aktualisiere `## Plan-Review` sofort.
+- For a domain decision: incorporate it into the appropriate plan section,
+  for example architecture decisions, approach, edge cases,
+  acceptance criteria, or validation plan. Remove the corresponding entry from
+  `## Offene Punkte` or `## Open Points`.
+- For "Decide later": add or update a precise entry in
+  `## Offene Punkte` or `## Open Points` with a re-entry note.
+- Update the `## Plan review` immediately.
 
-### Phase 4: Plan aktualisieren
+### Phase 4: Update the plan
 
-Nach jeder Entscheidung oder direkten Korrektur:
+After each decision or direct correction:
 
-1. Schreibe die Plan-Datei zurück.
-2. Halte den Abschnitt für offene Punkte aktuell:
-   - Deutsch: `## Offene Punkte` mit leerem Zustand `- Keine offenen Punkte.`
-   - Englisch: `## Open Points` mit leerem Zustand `- No open points.`
-   - Offene Punkte → jeweils entscheidungsorientiert, konkret und mit Hinweis,
-     wie der Review später fortgesetzt wird.
-3. Aktualisiere `## Plan-Review`:
-   - `**Ergebnis:** Freigegeben`, wenn keine kritischen Befunde und keine
-     umsetzungsblockierenden offenen Punkte verbleiben.
-   - `**Ergebnis:** Überarbeiten`, wenn kritische Befunde oder
-     umsetzungsblockierende offene Punkte verbleiben.
-   - Zusammenfassungstabelle mit den Bereichen Architektur, Security,
-     Datenschutz, Fehlerfälle, Testbarkeit, Scope und Wartbarkeit.
-   - Befunde mit Schweregrad, Problem und eingearbeiteter Anpassung bzw. offenem
-     Entscheidungsbedarf.
+1. Write the plan file back.
+2. Keep the open-points section up to date:
+   - German: `## Offene Punkte` with the empty state `- Keine offenen Punkte.`
+   - English: `## Open Points` with the empty state `- No open points.`
+   - Open points → each decision-oriented, concrete, and with a note on
+     how the review is continued later.
+3. Update the `## Plan review`:
+   - `**Result:** Approved` if no critical findings and no
+     implementation-blocking open points remain.
+   - `**Result:** Revise` if critical findings or
+     implementation-blocking open points remain.
+   - a summary table with the areas Architecture, Security,
+     Data protection, Error cases, Testability, Scope, and Maintainability.
+   - findings with severity, problem, and the incorporated adjustment or open
+     decision need.
 
-### Phase 5: Abschluss oder Wiedereinstieg
+### Phase 5: Completion or re-entry
 
-Der Loop endet, wenn einer dieser Zustände erreicht ist:
+The loop ends when one of these states is reached:
 
-- Keine kritischen Befunde und keine umsetzungsblockierenden offenen Punkte
-  verbleiben.
-- Der User beendet den Loop.
-- Die nächste Entscheidung braucht externe Recherche, Produktabstimmung oder
-  andere aktuell nicht verfügbare Information.
+- No critical findings and no implementation-blocking open points
+  remain.
+- The user ends the loop.
+- The next decision needs external research, product coordination, or
+  other information not currently available.
 
-Wenn offene Punkte verbleiben, melde klar:
+If open points remain, report clearly:
 
-- den Planpfad,
-- die Anzahl offener Punkte,
-- dass der Wiedereinstieg über `{{SKILL:review}} <plandatei>` erfolgt.
+- the plan path,
+- the number of open points,
+- that the re-entry happens via `{{SKILL:review}} <plan-file>`.
 
-Wenn keine offenen Punkte verbleiben, melde den Planpfad und dass der Plan für den
-empfohlenen Umsetzungsworkflow bereit ist.
+If no open points remain, report the plan path and that the plan is ready for the
+recommended implementation workflow.
 
-## Regeln
+## Rules
 
-- Ändere nur die referenzierte Plan-Datei.
-- Frage nach statt zu raten, wenn eine Entscheidung die spätere Umsetzung
-  wesentlich beeinflusst.
-- Direkt behebbare Planlücken ohne Produktentscheidung dürfen ohne Rückfrage
-  korrigiert werden.
-- Halte die Plan-Datei nach jedem Schritt als verlässlichen Wiedereinstiegspunkt
-  aktuell.
+- Change only the referenced plan file.
+- Ask instead of guessing when a decision significantly affects the later
+  implementation.
+- Directly fixable plan gaps without a product decision may be corrected
+  without a follow-up question.
+- Keep the plan file up to date after each step as a reliable re-entry point.

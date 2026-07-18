@@ -1,21 +1,21 @@
 ---
-description: "Räumt die von Effective Flows Migrationen bewusst hinterlassenen Altlasten in einem Zielprojekt auf: Alt-Laufzeitverzeichnisse `.firmo/`/`.sf-plugin/`, eine enttrackte oder Legacy-`config.json`, veraltete `.gitignore`-Zeilen und `firmo-`-Labels im Remote-Issue-Tracker. Liest alle veralteten Artefakte, prüft gegen ihr neues Gegenstück, ob noch etwas übernommen werden soll, lässt jeden Übernahme-Kandidaten vom User bestätigen und löscht danach die Altdaten git-aware und nur nach expliziter Bestätigung (getrackt via `git rm`, ungetrackt/gitignored nur nach „unwiderruflich"-Bestätigung, kein Backup, kein Auto-Commit). Ist idempotent und ein No-Op, wenn keine Altlasten vorhanden sind. Verwende diesen Skill, um eine abgeschlossene Migration endgültig zu finalisieren und die Altdaten loszuwerden."
-catalogHint: "Räumt Migrations-Altlasten (`.firmo/`, alte Config, `firmo-`-Labels) nach Bestätigung auf."
+description: "Cleans up the legacy remnants that Effective Flow's migrations deliberately leave behind in a target project: old runtime directories `.firmo/`/`.sf-plugin/`, an untracked or legacy `config.json`, outdated `.gitignore` lines, and `firmo-` labels in the remote issue tracker. Reads all outdated artifacts, checks against their new counterpart whether anything still needs to be carried over, has the user confirm every carry-over candidate, and then deletes the old data git-aware and only after explicit confirmation (tracked via `git rm`, untracked/gitignored only after an \"irreversible\" confirmation, no backup, no auto-commit). Is idempotent and a no-op when no legacy remnants are present. Use this skill to conclusively finalize a completed migration and get rid of the old data."
+catalogHint: "Cleans up migration remnants (`.firmo/`, old config, `firmo-` labels) after confirmation."
 ---
 
 # Effective Flow Cleanup
 
-Du räumst die Altlasten auf, die Effective Flows Migrationen bewusst hinterlassen. Alle Migrationen sind **non-destruktiv** und verweisen das eigentliche Löschen ausdrücklich an den User (siehe `effective-flow-dir-migration.md`: „das Aufräumen überlässt Effective Flow dem User"; `{{SKILL:setup}}`: die enttrackte Alt-`config.json` bleibt „auf Platte belassen"). Dieser Skill ist der sanktionierte, user-gesteuerte Pfad, der diese Finalisierung übernimmt — und die **einzige** Stelle, die Altdaten tatsächlich löscht.
+You clean up the legacy remnants that Effective Flow's migrations deliberately leave behind. All migrations are **non-destructive** and explicitly defer the actual deletion to the user (see `effective-flow-dir-migration.md`: "Effective Flow leaves the cleanup to the user"; `{{SKILL:setup}}`: the untracked old `config.json` is "left on disk"). This skill is the sanctioned, user-driven path that handles this finalization — and the **only** place that actually deletes old data.
 
-## Ziel
+## Goal
 
-- alle veralteten Migrations-Artefakte im aktuellen Projekt erfassen (Discovery)
-- sie gegen ihr neues Gegenstück prüfen und feststellen, ob noch etwas übernommen werden soll (Carry-over)
-- jeden Übernahme-Kandidaten vom User bestätigen lassen und Bestätigtes übernehmen
-- die Altdaten anschließend **git-aware** und nur nach expliziter Bestätigung löschen (Dry-Run zuerst)
-- niemals löschen, bevor das neue Gegenstück existiert und der Carry-over abgeschlossen bzw. bewusst verworfen ist
-- keinen Commit erstellen und kein Backup-Verzeichnis anlegen
-- ein No-Op mit klarer Meldung sein, wenn keine Altlasten vorhanden sind
+- capture all outdated migration artifacts in the current project (discovery)
+- check them against their new counterpart and determine whether anything still needs to be carried over (carry-over)
+- have the user confirm every carry-over candidate and carry over what is confirmed
+- then delete the old data **git-aware** and only after explicit confirmation (dry run first)
+- never delete before the new counterpart exists and the carry-over is complete or deliberately discarded
+- do not create a commit and do not create a backup directory
+- be a no-op with a clear message when no legacy remnants are present
 
 ```include
 language-rules
@@ -37,128 +37,128 @@ config-migration
 issue-tracker
 ```
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Aufräumen und beachte ihre Vorgaben für Dateiformate, Konfiguration und projektweite Konventionen.
+If the project has an `AGENTS.md`, read it before cleaning up and follow its guidance on file formats, configuration, and project-wide conventions.
 
-## Harte Abgrenzung
+## Hard scope boundary
 
-- **Nur das aktuelle Projekt.** Dieser Skill fasst **keine** globale Skill-Installation an (z. B. `~/.claude/skills/effective-flow` oder `~/.claude/skills/firmo`, `firmo-*`/`effective-flow-*`-Agents). Das Entfernen alter installierter Skills/Agents erledigen die Deploy-Skripte, nicht dieses Tool.
-- **Neues nie löschen.** Das aktive Laufzeitverzeichnis `.effective-flow/` (bis auf einen ausdrücklich als veraltet erkannten Legacy-Inhalt darin, siehe Altlast-Klassen) und die Projektsetup-ADR werden **nie** gelöscht.
-- **Kein Auto-Commit.** Der Skill staged höchstens `git rm`-Änderungen und entfernt ungetrackte Dateien physisch; er committet nicht. Das Committen übernimmt der User oder `{{SKILL:commit}}`.
-- **Kein Backup.** Für nicht git-wiederherstellbare Artefakte wird bewusst kein Backup-Verzeichnis angelegt; das Sicherheitsnetz ist die explizite Bestätigung.
-- **Keine Config schreiben.** Übernahme von Config-Werten schreibt dieser Skill nicht selbst in die Projektsetup-ADR — dafür ist `{{SKILL:setup}}` zuständig (siehe Phase 3).
-- **Nur mit Zustimmung löschen.** Jede Löschung erfolgt erst nach Dry-Run und ausdrücklicher Bestätigung.
+- **Only the current project.** This skill does **not** touch any global skill installation (e.g. `~/.claude/skills/effective-flow` or `~/.claude/skills/firmo`, `firmo-*`/`effective-flow-*` agents). Removing old installed skills/agents is done by the deploy scripts, not this tool.
+- **Never delete the new.** The active runtime directory `.effective-flow/` (except for legacy content within it that is explicitly recognized as outdated, see legacy classes) and the project setup ADR are **never** deleted.
+- **No auto-commit.** The skill at most stages `git rm` changes and removes untracked files physically; it does not commit. Committing is done by the user or `{{SKILL:commit}}`.
+- **No backup.** For artifacts that are not git-recoverable, no backup directory is deliberately created; the safety net is the explicit confirmation.
+- **Do not write config.** This skill does not itself write carried-over config values into the project setup ADR — `{{SKILL:setup}}` is responsible for that (see Phase 3).
+- **Delete only with consent.** Every deletion happens only after a dry run and explicit confirmation.
 
-## Altlast-Klassen
+## Legacy classes
 
-Der Skill kennt genau diese vier Klassen von Migrations-Altlasten und je ihr neues Gegenstück:
+The skill knows exactly these four classes of migration remnants, each with its new counterpart:
 
-| Klasse                       | Altlast                                                                                                                                    | Neues Gegenstück                               |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
-| Runtime-Verzeichnisse        | `.firmo/`, `.sf-plugin/` (nach Migration bewusst belassen)                                                                                 | `.effective-flow/`                             |
-| Legacy-`config.json`         | enttrackte `.firmo/config.json` bzw. eine Legacy-`config.json` in einem Runtime-Verzeichnis                                                | Projektsetup-ADR (siehe `{{SKILL:setup}}`)     |
-| Legacy-`.gitignore`-Einträge | veraltete Ignore-Zeilen für `.firmo/`/`.sf-plugin/` bzw. das alte Zwei-Zeilen-Pattern `.effective-flow/*` + `!.effective-flow/config.json` | die eine Zeile `.effective-flow/`              |
-| `firmo-`-Labels              | `firmo-review-finding`, `firmo-review-epic`, `firmo-fix`/`-refactor`/`-build`/`-docs`, `firmo-issue-done`, `firmo-needs-planning` am Issue | die `effective-flow-`-Variante am selben Issue |
+| Class                       | Legacy remnant                                                                                                                                 | New counterpart                                 |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Runtime directories         | `.firmo/`, `.sf-plugin/` (deliberately left after migration)                                                                                   | `.effective-flow/`                              |
+| Legacy `config.json`        | untracked `.firmo/config.json` or a legacy `config.json` in a runtime directory                                                                | project setup ADR (see `{{SKILL:setup}}`)       |
+| Legacy `.gitignore` entries | outdated ignore lines for `.firmo/`/`.sf-plugin/` or the old two-line pattern `.effective-flow/*` + `!.effective-flow/config.json`             | the single line `.effective-flow/`              |
+| `firmo-` labels             | `firmo-review-finding`, `firmo-review-epic`, `firmo-fix`/`-refactor`/`-build`/`-docs`, `firmo-issue-done`, `firmo-needs-planning` on the issue | the `effective-flow-` variant on the same issue |
 
-`sf-`-Labels sind **kein** eigenständiges Ziel: Sie werden bereits durch die einmalige `sf-`-Label-Migration (siehe „Label-Konvention" in `issue-tracker.md`) auf `effective-flow-` gezogen. Dieser Skill räumt nur noch verbliebene `firmo-`-Labels ab.
+`sf-` labels are **not** a standalone target: they are already moved to `effective-flow-` by the one-time `sf-` label migration (see "Label convention" in `issue-tracker.md`). This skill only clears up remaining `firmo-` labels.
 
 ## Workflow
 
-### Phase 1: Discovery / Bestandsaufnahme
+### Phase 1: Discovery / inventory
 
-1. Erfasse die vorhandenen Altlasten im Projekt-Root:
-   - **Runtime-Verzeichnisse:** existiert `.firmo/` und/oder `.sf-plugin/`?
-   - **Legacy-`config.json`:** existiert `.firmo/config.json`, `.sf-plugin/config.json` oder eine als veraltet erkennbare `config.json` in `.effective-flow/` (Übergangs-Fallback, dessen Werte in die ADR gehören)?
-   - **`.gitignore`:** enthält sie veraltete Zeilen für `.firmo/`/`.sf-plugin/` oder das alte Zwei-Zeilen-Pattern?
-   - **`firmo-`-Labels:** nur im Remote-Modus mit authentifiziertem CLI (siehe „Host- und CLI-Erkennung" in `issue-tracker.md`) — liste Issues mit `firmo-`-Labels je Präfix getrennt auf. Fehlt Remote-Modus, Git-Repository, `origin` oder ein authentifiziertes CLI, überspringe diese Klasse und melde das knapp.
-2. Bestimme je vorhandener Altlast, ob ihr **neues Gegenstück** existiert (`.effective-flow/`, Projektsetup-ADR bzw. `effective-flow-`-Labels).
-3. Sind keine Altlasten vorhanden, ist der Lauf ein **No-Op**: melde das klar und beende.
-4. Gib dem User eine kompakte Bestandsaufnahme aus (Klasse → gefundene Artefakte → ob ein neues Gegenstück existiert).
+1. Capture the existing legacy remnants in the project root:
+   - **Runtime directories:** do `.firmo/` and/or `.sf-plugin/` exist?
+   - **Legacy `config.json`:** does `.firmo/config.json`, `.sf-plugin/config.json`, or a `config.json` recognizable as outdated in `.effective-flow/` (transitional fallback whose values belong in the ADR) exist?
+   - **`.gitignore`:** does it contain outdated lines for `.firmo/`/`.sf-plugin/` or the old two-line pattern?
+   - **`firmo-` labels:** only in remote mode with an authenticated CLI (see "Host and CLI detection" in `issue-tracker.md`) — list issues with `firmo-` labels separately per prefix. If remote mode, a Git repository, `origin`, or an authenticated CLI is missing, skip this class and report that briefly.
+2. For each existing legacy remnant, determine whether its **new counterpart** exists (`.effective-flow/`, project setup ADR, or `effective-flow-` labels).
+3. If no legacy remnants are present, the run is a **no-op**: report that clearly and end.
+4. Give the user a compact inventory (class → artifacts found → whether a new counterpart exists).
 
-### Phase 2: Carry-over-Prüfung (lesen + vergleichen)
+### Phase 2: Carry-over check (read + compare)
 
-Lies die Altlasten und ermittle, ob noch etwas übernommen werden muss, bevor gelöscht wird:
+Read the legacy remnants and determine whether anything still needs to be carried over before deleting:
 
-- **Runtime-Verzeichnisse:** Vergleiche den Inhalt des Legacy-Verzeichnisses (bevorzugt `.firmo/` vor `.sf-plugin/`) mit `.effective-flow/`. Sammle Dateien, die im Legacy-Verzeichnis vorhanden sind, in `.effective-flow/` aber **fehlen** (oder inhaltlich abweichen/neuer sind), als Übernahme-Kandidaten. Reine Laufzeit-Artefakte (`cache.json`, `.worktrees/`) sind in der Regel verzichtbar; benenne sie als solche.
-- **Legacy-`config.json`:** Parse sie. Ist sie kein gültiges JSON, ist sie **keine** Carry-over-Quelle: melde Pfad und Fehler und behandle die Datei nur als Löschkandidat (nach Bestätigung). Bei gültigem JSON vergleiche jeden gesetzten Wert mit der Projektsetup-ADR; nicht abgebildete Werte sind Übernahme-Kandidaten.
-- **`.gitignore`/Labels:** kein Datei-Carry-over. Für Labels gilt der add-before-remove-Schritt in Phase 5.
+- **Runtime directories:** Compare the content of the legacy directory (preferring `.firmo/` over `.sf-plugin/`) with `.effective-flow/`. Collect files that are present in the legacy directory but **missing** in `.effective-flow/` (or differ in content / are newer) as carry-over candidates. Pure runtime artifacts (`cache.json`, `.worktrees/`) are usually dispensable; name them as such.
+- **Legacy `config.json`:** Parse it. If it is not valid JSON, it is **not** a carry-over source: report the path and error and treat the file only as a deletion candidate (after confirmation). For valid JSON, compare each set value with the project setup ADR; values not represented there are carry-over candidates.
+- **`.gitignore`/labels:** no file carry-over. For labels, the add-before-remove step in Phase 5 applies.
 
-### Phase 3: Carry-over bestätigen und übernehmen
+### Phase 3: Confirm and perform carry-over
 
-Lege dem User die Übernahme-Kandidaten gruppiert vor und hole je Gruppe die Entscheidung ein. Übernimm nur ausdrücklich bestätigte Kandidaten.
-
-```ask
-when: es gibt Runtime-Datei-Kandidaten, die in `.effective-flow/` fehlen oder abweichen
-header: Übernehmen
-question: Welche Dateien aus dem Alt-Laufzeitverzeichnis sollen nach `.effective-flow/` übernommen werden, bevor es gelöscht wird?
-options:
-  - label: Alle übernehmen
-    description: Jede aufgelistete Datei nach .effective-flow/ kopieren (vorhandene Dateien im Ziel nicht überschreiben)
-  - label: Einzeln auswählen
-    description: Pro Datei entscheiden, welche übernommen und welche verworfen wird
-  - label: Nichts übernehmen
-    description: Keine Datei übernehmen — der gesamte Alt-Inhalt wird zur Löschung freigegeben
-```
-
-- **Runtime-Dateien:** Bestätigtes nach `.effective-flow/` kopieren (nicht verschieben); eine im Ziel bereits vorhandene Datei **nicht** überschreiben. Abgelehntes bleibt Löschkandidat.
-- **Config-Werte:** Schreibe abweichende Werte **nicht selbst** in die ADR. Lege sie offen und verweise auf `{{SKILL:setup}}` zur Übernahme. Gib die betroffenen Schlüssel konkret aus, damit der User sie in `{{SKILL:setup}}` bestätigen kann. Erst wenn die Werte in der ADR stehen oder der User sie ausdrücklich verwirft, gilt die Legacy-`config.json` als übernahmefrei und damit löschbar.
-- **Labels:** kein Datei-Carry-over; die Übernahme erfolgt in Phase 5 als add-`effective-flow-`-vor-remove-`firmo-`.
-
-### Phase 4: Dry-Run-Vorschau
-
-Liste vor jeder Löschung genau auf, was entfernt wird — **ohne** schon zu löschen:
-
-1. Je Artefakt: Pfad bzw. Label und die Klasse.
-2. Je Datei/Verzeichnis den Git-Status: **getrackt**, **ungetrackt** oder **gitignored**. Getrackte sind über die Git-Historie wiederherstellbar; ungetrackte/gitignorte Artefakte (`.effective-flow/`, `.firmo/`, `.sf-plugin/` sind gitignored) sind **nicht** über Git wiederherstellbar.
-3. Warne bei dirty Working Tree und empfehle, vorher zu committen/stashen, damit ein `git rm`-Staging sauber ist.
-4. Weise für jede Altlast nach, dass ihr neues Gegenstück existiert und der Carry-over abgeschlossen bzw. bewusst verworfen ist. Fehlt das neue Gegenstück (z. B. `.effective-flow/` existiert nicht, weil die Migration noch nicht lief), biete diese Altlast **nicht** zur Löschung an: melde das und verweise darauf, dass ein normaler Tool-Lauf die Migration nach `.effective-flow/` auslöst.
-5. **Verschachtelte Klassen koppeln:** Eine Legacy-`config.json` liegt physisch **innerhalb** eines Runtime-Verzeichnisses (z. B. `.firmo/config.json` in `.firmo/`). Biete das enthaltende Runtime-Verzeichnis (Klasse „Runtime-Verzeichnisse") **nicht** zur Löschung an, solange die enthaltene Legacy-`config.json` (Klasse „Legacy-`config.json`") noch offenen Carry-over hat — sonst nähme das Löschen des Verzeichnisses die noch nicht übernommene `config.json` mit. Erst wenn deren Werte in der ADR stehen oder ausdrücklich verworfen sind, gilt auch das enthaltende Verzeichnis als löschbar.
-
-### Phase 5: Löschung bestätigen und git-aware ausführen
-
-Hole die Bestätigung **artefakt-klassen-weise** ein und führe die Löschung erst danach aus.
+Present the carry-over candidates to the user grouped and obtain a decision per group. Carry over only explicitly confirmed candidates.
 
 ```ask
-header: Löschen
-question: Die oben gelisteten Altlasten jetzt entfernen? Getrackte Dateien via `git rm` (über die Historie wiederherstellbar), ungetrackte/gitignorte Verzeichnisse werden physisch und unwiderruflich entfernt.
+when: there are runtime file candidates that are missing in `.effective-flow/` or differ
+header: Carry over
+question: Which files from the old runtime directory should be carried over to `.effective-flow/` before it is deleted?
 options:
-  - label: Ja, wie gelistet entfernen
-    description: Getrackte via git rm (gestaged, kein Commit); ungetrackte/gitignorte physisch löschen; firmo-Labels vom Issue lösen
-  - label: Nur getrackte entfernen
-    description: Nur die git-wiederherstellbaren, getrackten Artefakte via git rm; ungetrackte Verzeichnisse und Labels vorerst behalten
-  - label: Abbrechen
-    description: Nichts löschen; die Bestandsaufnahme bleibt bestehen
+  - label: Carry over all
+    description: Copy every listed file to .effective-flow/ (do not overwrite existing files in the target)
+  - label: Select individually
+    description: Decide per file which is carried over and which is discarded
+  - label: Carry over nothing
+    description: Carry over no file — the entire old content is released for deletion
 ```
 
-Führe je Klasse aus:
+- **Runtime files:** Copy confirmed items to `.effective-flow/` (do not move); do **not** overwrite a file already present in the target. Rejected items remain deletion candidates.
+- **Config values:** Do **not** write differing values into the ADR yourself. Disclose them and refer to `{{SKILL:setup}}` for the carry-over. Output the affected keys concretely so the user can confirm them in `{{SKILL:setup}}`. Only once the values are in the ADR or the user explicitly discards them is the legacy `config.json` considered free of carry-over and thus deletable.
+- **Labels:** no file carry-over; the carry-over happens in Phase 5 as add-`effective-flow-`-before-remove-`firmo-`.
 
-- **Getrackte Dateien:** via `git rm` entfernen (staged, **kein** Commit). Bei ungetrackt/gitignored greift `git rm` nicht.
-- **Ungetrackte/gitignorte Verzeichnisse** (`.firmo/`, `.sf-plugin/`, eine gitignorte Legacy-`config.json`): physisch entfernen — nur nach der ausdrücklichen „unwiderruflich"-Bestätigung oben, ohne Backup.
-- **`.gitignore`:** entferne nur eindeutig veraltete Zeilen (`.firmo/`, `.sf-plugin/`, altes Zwei-Zeilen-Pattern). Stelle sicher, dass `.effective-flow/` weiterhin ignoriert bleibt; Fremdzeilen unangetastet lassen. Die kanonische `.gitignore`-Normalisierung ist Sache von `{{SKILL:setup}}`; entferne hier nur die Alt-Reste.
-- **`firmo-`-Labels:** nur im Remote-Modus mit CLI. Ergänze zuerst `effective-flow-<x>` am Issue, **dann** löse `firmo-<x>` vom Issue (add-new vor remove-old, damit bei Abbruch kein Issue unklassifiziert bleibt). Die Label-**Definition** im Tracker bleibt bestehen — führe **kein** `label delete` aus. Nutze das Werkzeug-Mapping aus `issue-tracker.md` (`--add-label`/`--remove-label` bzw. `tea issue edit`).
+### Phase 4: Dry-run preview
 
-Brich bei jedem Fehler (z. B. `git rm` scheitert, Tracker nicht erreichbar) kontrolliert ab: melde den Teilzustand und lösche nichts, dessen neues Gegenstück nicht gesichert ist.
+Before any deletion, list exactly what will be removed — **without** deleting yet:
 
-### Phase 6: Abschluss
+1. Per artifact: path or label and the class.
+2. Per file/directory, the Git status: **tracked**, **untracked**, or **gitignored**. Tracked ones are recoverable via the Git history; untracked/gitignored artifacts (`.effective-flow/`, `.firmo/`, `.sf-plugin/` are gitignored) are **not** recoverable via Git.
+3. Warn on a dirty working tree and recommend committing/stashing first, so that a `git rm` staging is clean.
+4. For each legacy remnant, demonstrate that its new counterpart exists and the carry-over is complete or deliberately discarded. If the new counterpart is missing (e.g. `.effective-flow/` does not exist because the migration has not run yet), do **not** offer this remnant for deletion: report that and point out that a normal tool run triggers the migration to `.effective-flow/`.
+5. **Couple nested classes:** A legacy `config.json` lies physically **inside** a runtime directory (e.g. `.firmo/config.json` in `.firmo/`). Do **not** offer the containing runtime directory (class "Runtime directories") for deletion while the contained legacy `config.json` (class "Legacy `config.json`") still has open carry-over — otherwise deleting the directory would take the not-yet-carried-over `config.json` with it. Only once its values are in the ADR or explicitly discarded is the containing directory also considered deletable.
 
-Melde dem User:
+### Phase 5: Confirm deletion and execute git-aware
 
-- was übernommen wurde (Dateien nach `.effective-flow/`) und welche Config-Werte an `{{SKILL:setup}}` verwiesen wurden
-- was gelöscht wurde, getrennt nach getrackt (via `git rm`, gestaged) und physisch entfernt
-- welche `.gitignore`-Zeilen entfernt wurden
-- welche `firmo-`-Labels von wie vielen Issues gelöst wurden (bzw. dass die Label-Klasse übersprungen wurde)
-- was bewusst verbleibt und warum
-- dass **kein** Commit erstellt wurde; verweise für die gestageten Änderungen auf `{{SKILL:commit}}`
+Obtain confirmation **per artifact class** and only then execute the deletion.
 
-## Regeln
+```ask
+header: Delete
+question: Remove the legacy remnants listed above now? Tracked files via `git rm` (recoverable via the history); untracked/gitignored directories are removed physically and irreversibly.
+options:
+  - label: Yes, remove as listed
+    description: Tracked via git rm (staged, no commit); untracked/gitignored deleted physically; firmo labels detached from the issue
+  - label: Remove tracked only
+    description: Only the git-recoverable, tracked artifacts via git rm; keep untracked directories and labels for now
+  - label: Cancel
+    description: Delete nothing; the inventory remains
+```
 
-- Lösche niemals ohne Dry-Run und ausdrückliche Bestätigung.
-- Lösche kein Artefakt, bevor sein neues Gegenstück existiert und der Carry-over abgeschlossen bzw. bewusst verworfen ist.
-- Lösche ein Runtime-Verzeichnis nicht, solange es eine Legacy-`config.json` mit offenem Carry-over enthält; erst nach Übernahme in die ADR oder bewusstem Verwerfen ist es löschbar.
-- Fasse `.effective-flow/` (aktives Verzeichnis) und die Projektsetup-ADR nicht an, ebenso wenig eine globale Skill-Installation.
-- Erstelle keine Commits und keine Backup-Verzeichnisse.
-- Schreibe keine Config selbst; Config-Übernahme läuft über `{{SKILL:setup}}`.
-- Beim Label-Cleanup zuerst `effective-flow-` ergänzen, dann `firmo-` vom Issue lösen; die Label-Definition bleibt bestehen.
-- Ist keine Altlast vorhanden, ist der Lauf ein No-Op.
-- Gib Pfade relativ zum Projekt-Root aus.
+Execute per class:
+
+- **Tracked files:** remove via `git rm` (staged, **no** commit). For untracked/gitignored, `git rm` does not apply.
+- **Untracked/gitignored directories** (`.firmo/`, `.sf-plugin/`, a gitignored legacy `config.json`): remove physically — only after the explicit "irreversible" confirmation above, without a backup.
+- **`.gitignore`:** remove only clearly outdated lines (`.firmo/`, `.sf-plugin/`, old two-line pattern). Ensure that `.effective-flow/` remains ignored; leave foreign lines untouched. The canonical `.gitignore` normalization is the job of `{{SKILL:setup}}`; here only remove the old remnants.
+- **`firmo-` labels:** only in remote mode with a CLI. First add `effective-flow-<x>` on the issue, **then** detach `firmo-<x>` from the issue (add-new before remove-old, so an abort leaves no issue unclassified). The label **definition** in the tracker remains — do **not** run `label delete`. Use the tool mapping from `issue-tracker.md` (`--add-label`/`--remove-label`, or `tea issue edit`).
+
+On any error (e.g. `git rm` fails, tracker unreachable), abort in a controlled manner: report the partial state and delete nothing whose new counterpart is not secured.
+
+### Phase 6: Completion
+
+Report to the user:
+
+- what was carried over (files to `.effective-flow/`) and which config values were referred to `{{SKILL:setup}}`
+- what was deleted, separated into tracked (via `git rm`, staged) and physically removed
+- which `.gitignore` lines were removed
+- which `firmo-` labels were detached from how many issues (or that the label class was skipped)
+- what deliberately remains and why
+- that **no** commit was created; refer to `{{SKILL:commit}}` for the staged changes
+
+## Rules
+
+- Never delete without a dry run and explicit confirmation.
+- Do not delete any artifact before its new counterpart exists and the carry-over is complete or deliberately discarded.
+- Do not delete a runtime directory while it contains a legacy `config.json` with open carry-over; only after carry-over into the ADR or deliberate discard is it deletable.
+- Do not touch `.effective-flow/` (the active directory) or the project setup ADR, nor a global skill installation.
+- Do not create commits or backup directories.
+- Do not write config yourself; config carry-over runs through `{{SKILL:setup}}`.
+- For label cleanup, first add `effective-flow-`, then detach `firmo-` from the issue; the label definition remains.
+- If no legacy remnant is present, the run is a no-op.
+- Output paths relative to the project root.

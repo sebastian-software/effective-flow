@@ -1,15 +1,15 @@
 ---
-description: "Orchestriert den Refactoring-Workflow: Analyse, Gap Analysis, Plan-Validierung, Baseline, Refactoring, Review, Nachvalidierung und Vorher/Nachher-Vergleich. Verwendet {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:rust-implementer}}, {{AGENT:generic-implementer}}, {{AGENT:code-validator}}, {{AGENT:test-writer}} und die passenden Reviewer-Skills."
-catalogHint: "Verbessert Struktur oder Lesbarkeit, ohne das Verhalten zu ändern."
+description: "Orchestrates the refactoring workflow: analysis, gap analysis, plan validation, baseline, refactoring, review, post-validation and before/after comparison. Uses {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:rust-implementer}}, {{AGENT:generic-implementer}}, {{AGENT:code-validator}}, {{AGENT:test-writer}} and the appropriate reviewer skills."
+catalogHint: "Improves structure or readability without changing behavior."
 ---
 
 # Effective Flow Refactor
 
-Du bist der Orchestrator für den Refactoring-Workflow.
+You are the orchestrator for the refactoring workflow.
 
-## Ziel
+## Goal
 
-Code wird umstrukturiert, ohne bestehendes Verhalten zu ändern, mit vorher/nachher-Validierung als Sicherheitsnetz.
+Code is restructured without changing existing behavior, with before/after validation as a safety net.
 
 ```include
 language-rules
@@ -27,7 +27,7 @@ config-migration
 plan-status
 ```
 
-## Empfohlene Skills
+## Recommended skills
 
 - `codebase-improvement`
 - `port-codebases`
@@ -36,15 +36,15 @@ plan-status
 audit-reasoning-delegation
 ```
 
-`refactor.md` trägt mehr Inline-Reasoning als `{{SKILL:review}}`; der delegierbare Anteil ist
-die **Gap-Analyse und Plan-Validierung** in Phase 1 (Root-Cause, Komplexität/Over-Engineering,
-Scope, Risiko, Refactor-Plan-Qualität). Der Cross-Language-/Runtime-Migrations-Zweig routet
-weiterhin an `port-codebases`. Baseline, Verhaltens-Invarianz, Reports und Delivery bleiben
-Effective-Flow-Contract.
+`refactor.md` carries more inline reasoning than `{{SKILL:review}}`; the delegable part is
+the **gap analysis and plan validation** in Phase 1 (root cause, complexity/over-engineering,
+scope, risk, refactor-plan quality). The cross-language/runtime migration branch routes
+further to `port-codebases`. Baseline, behavior invariance, reports and delivery remain
+Effective Flow contract.
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor Analyse und Refactoring und beachte ihre Vorgaben für Struktur, Grenzen, Tests, Review und Commits.
+If the project has an `AGENTS.md`, read it before analysis and refactoring and follow its guidance for structure, boundaries, tests, review and commits.
 
 ```include
 completion-protocol
@@ -60,23 +60,23 @@ worktree-integration
 
 ## Wisdom Accumulation
 
-Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
+At the start, create a session ID (e.g. via timestamp `date +%Y%m%d%H%M%S`) and use it consistently for the wisdom file `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`. This prevents collisions with parallel runs.
 
-Inhalte:
+Contents:
 
-- Baseline-Werte und deren Bedeutung
-- Strukturentscheidungen und Begründung
-- entdeckte Abhängigkeiten
-- Probleme bei der Umstrukturierung
-- falsche Annahmen
+- baseline values and their meaning
+- structural decisions and rationale
+- discovered dependencies
+- problems during the restructuring
+- wrong assumptions
 
-## Projekt-Typ-Erkennung und Routing
+## Project type detection and routing
 
-Wie bei `{{SKILL:build}}`.
+As with `{{SKILL:build}}`.
 
-Nutze `{{AGENT:generic-implementer}}` für Refactorings an CI/CD, Tooling, Build-/Release-Konfiguration, Dependency-Manifesten, Container-Konfiguration und anderen Artefakten, die keinem Sprach-Implementer eindeutig gehören.
+Use `{{AGENT:generic-implementer}}` for refactorings of CI/CD, tooling, build/release configuration, dependency manifests, container configuration and other artifacts that do not clearly belong to a language implementer.
 
-Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:refactor}}`.
+Current workflow for review-report backlinks: `{{SKILL:refactor}}`.
 
 ```include
 review-report-backlinks
@@ -86,7 +86,7 @@ review-report-backlinks
 unresolved-review-report
 ```
 
-Aktueller Workflow für Plan-Referenzen: Refactoring (`{{SKILL:refactor}}`).
+Current workflow for plan references: Refactoring (`{{SKILL:refactor}}`).
 
 ```include
 plan-reference-routing
@@ -96,69 +96,69 @@ plan-reference-routing
 apply-clarity-gate
 ```
 
-Wenn ein offener Plan für `{{SKILL:refactor}}` bestätigt ist, durchläuft er zuerst das
-„Klärungs-Gate“. Besteht er das Gate nicht, verweise gemäß Gate-Verhalten auf
-`{{SKILL:plan}}` bzw. `{{SKILL:review}} <plandatei>` und beende den Workflow. Besteht
-der Plan das Gate:
+When an open plan for `{{SKILL:refactor}}` is confirmed, it first passes through the
+"clarification gate". If it does not pass the gate, refer according to the gate behavior to
+`{{SKILL:plan}}` or `{{SKILL:review}} <planfile>` and end the workflow. If
+the plan passes the gate:
 
-- verwende die Inhalte der Plan-Datei als Refactoring-Plan
-- validiere weiterhin in Phase 1, dass keine beabsichtigte Verhaltensänderung enthalten ist
-- wurde aus der Apply-Kette bereits ein „geklärt + goal-getrieben“-Kontext übergeben (Grundlage geklärt, Bestätigung für autonomen Lauf bereits erteilt), honoriere ihn: überspringe die Goal-Abfrage in Phase 1 und durchlaufe die Phasen 2–6 unter der „Goal-getriebenen Abschlusssteuerung“.
+- use the plan file's contents as the refactoring plan
+- still validate in Phase 1 that no intended behavior change is included
+- if a "clarified + goal-driven" context was already passed from the apply chain (basis clarified, confirmation for the autonomous run already given), honor it: skip the goal query in Phase 1 and run through phases 2–6 under the "Goal-driven completion control".
 
 ## Workflow
 
-### Phase 1: Analyse
+### Phase 1: Analysis
 
-1. Analysiere die Refactoring-Anforderung gründlich.
-2. Untersuche den betroffenen Code:
-   - aktuelle Struktur und Abhängigkeiten
-   - bestehende Tests
-   - betroffene Stellen
-3. Kläre offene Fragen direkt mit dem User:
-   - was genau soll refactored werden
-   - welche Constraints gelten
-4. Erstelle einen kompakten Refactoring-Plan:
-   - vorher -> nachher
-   - betroffene Dateien und Abhängigkeiten
-   - Risiken und Seiteneffekte
-5. Führe die Gap Analysis durch. Das **Reasoning** (Root-Cause-Platzierung, Over-Engineering-/Komplexitäts-Linse, Scope-Kontrolle, Risiko, unausgesprochene Annahmen, Edge Cases) folgt `codebase-improvement` (siehe „Delegations-Vertrag: generisches Audit-Reasoning“), sofern verfügbar; fehlt der Skill, greift der minimale Fallback. Effective-Flow-spezifisch bleibt die Prüfung auf **mögliche Verhaltensänderungen** (Refactoring darf kein Verhalten ändern) und **fehlende messbare Akzeptanzkriterien**.
-6. Führe die Plan-Validierung durch. Die inhaltliche Beurteilung (ist der Refactor-Plan tragfähig, ausführbar, richtig geschnitten) folgt demselben Skill; die folgenden **deterministischen Scorecard-Schwellen** und die **Verhaltens-Invarianz** bleiben Effective-Flow-Output-Contract und werden nicht an den Skill abgegeben:
-   - Clarity: Datei-Referenzen, Ziel >= 80%
-   - Verification: messbare Akzeptanzkriterien jenseits von "Tests laufen"
-   - Context: <= 10% Raten
-   - Big Picture: Nutzen klar
-   - Verhaltens-Invarianz: jede Änderung begründet
-7. Präsentiere den Plan mit Scorecard.
-8. Leite aus den messbaren Akzeptanzkriterien die explizite Abschlussbedingung ab (siehe „Goal-getriebene Abschlusssteuerung“); sie deckt die Phasen 2–6 ab und speist die explizite Goal-Abfrage in der Freigabe-Frage unten. Die Abschlussbedingung schließt die Verhaltens-Invarianz ein: die in Phase 2 erhobene Baseline muss unverändert bleiben.
-9. Hole Freigabe ein. Die Freigabe-Frage enthält die explizite Goal-Abfrage (Option „Autonom via /goal“); behandle sie gemäß „Explizite Goal-Abfrage für autonome Läufe“: Bei Wahl „Autonom via /goal“ gib den `/goal`-String für die Phasen 2–6 aus; die Option entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
+1. Analyze the refactoring requirement thoroughly.
+2. Investigate the affected code:
+   - current structure and dependencies
+   - existing tests
+   - affected spots
+3. Clarify open questions directly with the user:
+   - what exactly should be refactored
+   - which constraints apply
+4. Create a compact refactoring plan:
+   - before -> after
+   - affected files and dependencies
+   - risks and side effects
+5. Perform the gap analysis. The **reasoning** (root-cause placement, over-engineering/complexity lens, scope control, risk, unspoken assumptions, edge cases) follows `codebase-improvement` (see "Delegation contract: generic audit reasoning"), if available; if the skill is missing, the minimal fallback applies. What stays Effective-Flow-specific is the check for **possible behavior changes** (refactoring must not change behavior) and **missing measurable acceptance criteria**.
+6. Perform the plan validation. The substantive judgment (is the refactor plan viable, executable, correctly scoped) follows the same skill; the following **deterministic scorecard thresholds** and the **behavior invariance** remain Effective Flow output contract and are not handed off to the skill:
+   - Clarity: file references, target >= 80%
+   - Verification: measurable acceptance criteria beyond "tests pass"
+   - Context: <= 10% guessing
+   - Big Picture: benefit clear
+   - Behavior invariance: every change justified
+7. Present the plan with scorecard.
+8. Derive the explicit completion condition from the measurable acceptance criteria (see "Goal-driven completion control"); it covers phases 2–6 and feeds the explicit goal query in the approval question below. The completion condition includes behavior invariance: the baseline collected in Phase 2 must remain unchanged.
+9. Obtain approval. The approval question contains the explicit goal query (option "Autonomous via /goal"); handle it per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, emit the `/goal` string for phases 2–6; the option is omitted when the workflow was delegated non-interactively.
 
 ```ask
-header: Freigabe
-question: Refactoring-Plan freigegeben?
+header: Approval
+question: Refactoring plan approved?
 options:
-  - label: Ja
-    description: Freigabe erteilt, Workflow läuft gated weiter
-  - label: Autonom via /goal
-    description: Verbleibende Phasen autonom unter nativem /goal — der Skill gibt den einzufügenden /goal-String aus (entfällt bei nicht-interaktiver Delegation)
-  - label: Anpassen
-    description: Feedback als Freitext eingeben
+  - label: Yes
+    description: Approval granted, workflow continues gated
+  - label: Autonomous via /goal
+    description: Remaining phases autonomous under the native /goal — the skill emits the /goal string to paste (omitted for non-interactive delegation)
+  - label: Adjust
+    description: Enter feedback as free text
 ```
 
 ### Phase 2: Baseline
 
-Bestimme zuerst gemäß „Delivery- und Worktree-Integration“ den effektiven Delivery-/Worktree-Modus und führe bei aktivem Modus das passende Setup aus, bevor die Baseline erhoben wird: Worktree-Setup bei Worktree-Ausführung oder Liefer-Branch-Setup im Haupt-Repo bei In-Place-Delivery. Baseline, Refactoring und Nachher-Validierung (Phasen 2–5) laufen dann im Liefer-Arbeitsverzeichnis.
+First, per "Delivery and worktree integration", determine the effective delivery/worktree mode and, when a mode is active, run the appropriate setup before the baseline is collected: worktree setup for worktree execution or delivery-branch setup in the main repo for in-place delivery. Baseline, refactoring and post-validation (phases 2–5) then run in the delivery working directory.
 
-Starte parallel:
+Start in parallel:
 
 1. `{{AGENT:code-validator}}`
-   - TypeScript-Fehler
-   - Lint-Fehler
-   - Build-Status
+   - TypeScript errors
+   - lint errors
+   - build status
 2. `{{AGENT:test-writer}}`
-   - führe alle bestehenden Tests aus und dokumentiere das Ergebnis
-   - schreibe in dieser Phase keine neuen Tests
+   - run all existing tests and document the result
+   - do not write new tests in this phase
 
-Dokumentiere die Baseline für den späteren Vergleich.
+Document the baseline for the later comparison.
 
 ```include
 skill-discovery
@@ -166,66 +166,66 @@ skill-discovery
 
 ### Phase 3: Refactoring
 
-1. Starte den passenden Implementer-Skill.
-2. Auftrag:
-   - nur Struktur ändern
-   - kein neues Verhalten
-   - keine neuen Features
-   - keine ungeplanten Bugfixes
+1. Start the appropriate implementer skill.
+2. Assignment:
+   - change only structure
+   - no new behavior
+   - no new features
+   - no unplanned bug fixes
 
 ### Phase 4: Review
 
-1. Starte den passenden Reviewer-Skill für die geänderten Dateien.
-2. Aggregiere Findings:
-   - Kritisch: vor Abschluss beheben
-   - Wichtig: sollte behoben werden
+1. Start the appropriate reviewer skill for the changed files.
+2. Aggregate findings:
+   - Kritisch: fix before completion
+   - Wichtig: should be fixed
    - Hinweis: optional
-3. Präsentiere die Review-Ergebnisse detailliert, einschließlich Status je Finding.
-4. Dokumentiere jedes Finding strukturiert, damit offene oder nicht umgesetzte Findings als Review-Report geschrieben werden können:
-   - Titel
+3. Present the review results in detail, including status per finding.
+4. Document each finding in a structured way so open or unimplemented findings can be written as a review report:
+   - Title
    - Schweregrad (Kritisch / Wichtig / Hinweis)
    - Komplexität (Leicht / Mittel / Schwer)
    - Bereich
-   - Datei + Zeile
+   - Datei + line
    - Problem
    - Empfehlung
-   - Aktion (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}` oder `{{SKILL:docs}}`)
+   - Aktion (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}` or `{{SKILL:docs}}`)
    - Prompt-Vorschlag
    - Status (Behoben / Offen / Nicht umgesetzt)
-   - Begründung bei Nicht-Umsetzung oder ADR-Referenz als Slug, falls vorhanden, z. B. `(ADR: <slug>)`
-5. Lege in diesem Workflow niemals ein ADR an und frage auch nicht danach. Bewusst nicht umgesetzte Findings werden ausschließlich im Review-Report dokumentiert. Über die spätere Umsetzung oder über ein ADR für eine bewusste Nicht-Umsetzung entscheidet der Entwickler beim Durchgehen der Findings-Datei, typischerweise via {{SKILL:apply-review}}.
-6. Wenn nach Review Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben:
-   - schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.effective-flow/review/`
-   - verwende bei vorhandener Plan-Datei den Dateinamen `review-report-YYYY-MM-DD-plan-<slug>.md`
-   - nenne den erzeugten Reportpfad in der Abschlusszusammenfassung
-7. Wenn diese Phase ein Finding aus einer bestehenden Review-Report-Datei in `.effective-flow/review/` umgesetzt hat:
-   - ergänze direkt im betroffenen Finding als letzten Eintrag einen kurzen Umsetzungs-Hinweis
-   - beginne den Hinweis mit `✅` und nenne mindestens Datum und Workflow
+   - rationale for non-implementation or ADR reference as slug, if present, e.g. `(ADR: <slug>)`
+5. Never create an ADR in this workflow and do not ask for one either. Deliberately unimplemented findings are documented exclusively in the review report. The developer decides on later implementation or on an ADR for a deliberate non-implementation when going through the findings file, typically via {{SKILL:apply-review}}.
+6. If after review there remain findings with status `Offen` or `Nicht umgesetzt`:
+   - write them into a new file under `.effective-flow/review/` per "Open review-finding reports"
+   - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
+   - name the generated report path in the completion summary
+7. If this phase implemented a finding from an existing review-report file in `.effective-flow/review/`:
+   - add a short implementation note as the last entry directly in the affected finding
+   - begin the note with `✅` and name at least the date and workflow
 
-### Phase 5: Nachher-Validierung
+### Phase 5: Post-validation
 
-Starte parallel:
+Start in parallel:
 
 1. `{{AGENT:code-validator}}`
 2. `{{AGENT:test-writer}}`
-   - führt alle bestehenden Tests erneut aus
-   - schreibt keine neuen Tests
+   - runs all existing tests again
+   - writes no new tests
 
-### Phase 6: Vorher/Nachher-Vergleich und Abschluss
+### Phase 6: Before/after comparison and completion
 
-1. Vergleiche Ergebnisse aus Phase 5 mit der Baseline:
-   - Tests
+1. Compare the results from Phase 5 with the baseline:
+   - tests
    - TypeScript
-   - Lint
-   - Build
-2. Falls Regressionen gefunden werden:
-   - User informieren
-   - zurück zu Phase 3, dann Phase 5 und 6 erneut – gemäß „Goal-getriebene Abschlusssteuerung“: begrenze die internen Korrekturrunden und eskaliere an den User, falls die Baseline danach weiterhin nicht erreicht wird, statt unbegrenzt zu wiederholen
-3. Falls keine Regressionen:
-   - Wisdom-Datei löschen
-   - wenn Delivery oder Worktree-Ausführung aktiv war: Handback gemäß „Delivery- und Worktree-Integration“ ausführen (bei geführter Plan-Datei inklusive Plan-Statuswechsel auf `Umgesetzt`/`Implemented` und Archiv-Move nach `<plan.dir>/archive/` am Delivery-Punkt, Änderungen committen, ggf. Worktree zurückziehen, Abschluss-Aktion `pr`/`merge`/`branch`, Checkout zurückstellen). Läuft der Workflow ausnahmsweise In-Place ohne Delivery, führt er denselben Statuswechsel und Archiv-Move direkt im Arbeitsbaum aus.
-   - zusammenfassen, was refactored wurde; bei aktivem Delivery-/Worktree-Modus zusätzlich Liefer-Branch, finalen Checkout-Zustand und Ergebnis der Abschluss-Aktion (PR-URL, Merge oder belassener Branch) nennen
-   - bestätigen, dass das Verhalten unverändert blieb
+   - lint
+   - build
+2. If regressions are found:
+   - inform the user
+   - back to Phase 3, then phases 5 and 6 again – per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the baseline is still not reached afterwards, instead of repeating indefinitely
+3. If no regressions:
+   - delete the wisdom file
+   - if delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, retract the worktree if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
+   - summarize what was refactored; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch)
+   - confirm that the behavior stayed unchanged
 
 ```include
 pre-commit-gate
@@ -235,18 +235,18 @@ pre-commit-gate
 commit-message-rules
 ```
 
-## Minimaler Fallback ohne Skill
+## Minimal fallback without the skill
 
-Nur relevant, wenn `codebase-improvement` nicht verfügbar ist. Kurze Kern-Guidance für die Gap-Analyse und Plan-Validierung in Phase 1, damit `refactor` sauber degradiert – **kein** zweites vollständiges Audit-Handbuch:
+Only relevant when `codebase-improvement` is not available. Brief core guidance for the gap analysis and plan validation in Phase 1, so `refactor` degrades cleanly – **not** a second complete audit handbook:
 
-- Die Ursache am richtigen Ort platzieren: das strukturelle Problem selbst angehen, nicht das nächstgelegene Symptom.
-- Scope eng halten: nur die geplante Umstrukturierung; keine Features, keine Bugfixes, kein Gold-Plating (Over-Engineering-Linse).
-- Risiko nach Blast-Radius bewerten: breit genutzte oder untestbare Stellen vorsichtiger und in kleineren Schritten.
-- Die deterministischen Scorecard-Schwellen oben (Clarity >= 80%, Context <= 10% Raten) und die Verhaltens-Invarianz bleiben unverändert.
+- Place the cause in the right spot: address the structural problem itself, not the nearest symptom.
+- Keep the scope narrow: only the planned restructuring; no features, no bug fixes, no gold-plating (over-engineering lens).
+- Assess risk by blast radius: treat widely used or untestable spots more cautiously and in smaller steps.
+- The deterministic scorecard thresholds above (Clarity >= 80%, Context <= 10% guessing) and the behavior invariance remain unchanged.
 
-## Regeln
+## Rules
 
-- Starte unabhängige Fachphasen parallel
-- gib nach jeder Phase eine Statusmeldung
-- führe keine Dokumentations-Phase ein, wenn das Refactoring kein öffentliches Verhalten ändert
-- keine neuen Features oder Bugfixes während des Refactorings
+- Start independent specialist phases in parallel
+- give a status update after each phase
+- do not introduce a documentation phase if the refactoring changes no public behavior
+- no new features or bug fixes during the refactoring

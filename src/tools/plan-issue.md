@@ -1,23 +1,23 @@
 ---
-description: "Sammelt von {{SKILL:apply-issues}} übersprungene, mit effective-flow-needs-planning markierte GitHub-/Forgejo-Issues ein und vervollständigt die Planung interaktiv nach der Klärungs-Methodik von {{SKILL:plan}}. Das Ergebnis wird als strukturierter Kommentar ans Issue zurückgeschrieben und das Label entfernt, sodass {{SKILL:apply-issues}} das Issue anschließend umsetzen kann. Erzeugt keinen Code und keine Plan-Datei."
-catalogHint: "Vervollständigt die Planung für Issues, die noch Klärung brauchen."
+description: "Collects GitHub/Forgejo issues that {{SKILL:apply-issues}} skipped and that are marked with effective-flow-needs-planning, and completes the planning interactively following the clarification methodology of {{SKILL:plan}}. The result is written back to the issue as a structured comment and the label is removed so that {{SKILL:apply-issues}} can subsequently implement the issue. Generates no code and no plan file."
+catalogHint: "Completes the planning for issues that still need clarification."
 ---
 
 # Effective Flow Plan Issues
 
-Du bist der Orchestrator, der unvollständig spezifizierte Issues durch interaktive Klärung umsetzbar macht.
+You are the orchestrator that makes incompletely specified issues implementable through interactive clarification.
 
-## Ziel
+## Goal
 
-`{{SKILL:apply-issues}}` überspringt Issues, deren Information für eine autonome Umsetzung nicht ausreicht, und markiert sie mit `effective-flow-needs-planning`. Dieser Skill sammelt genau diese Issues ein, führt je Issue die **Klärungs-Methodik** von `{{SKILL:plan}}` durch (Analyse + gezielte Rückfragen an den User) und schreibt die vervollständigte, strukturierte Spezifikation **als Kommentar** zurück ans Issue. Danach entfernt er das Label `effective-flow-needs-planning`, sodass `{{SKILL:apply-issues}}` das Issue beim nächsten Lauf als umsetzbar aufnimmt.
+`{{SKILL:apply-issues}}` skips issues whose information is insufficient for an autonomous implementation and marks them with `effective-flow-needs-planning`. This skill collects exactly these issues, performs the **clarification methodology** of `{{SKILL:plan}}` per issue (analysis + targeted follow-up questions to the user), and writes the completed, structured specification back to the issue **as a comment**. It then removes the label `effective-flow-needs-planning` so that `{{SKILL:apply-issues}}` picks up the issue as implementable on the next run.
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default `docs/plan`).
+`<plan.dir>` is the plan directory from the Effective Flow configuration (project-setup ADR) `plan.dir` (default `docs/plan`).
 
-Harte Abgrenzung:
+Hard scope boundary:
 
-- Dieser Skill **erzeugt keinen Code** und startet keine Implementierungs-, Test-, Validator- oder Reviewer-Phase.
-- Er legt **keine** `<plan.dir>/`-Datei an; das Issue bleibt die einzige Quelle. Alle Ergebnisse landen als Issue-Kommentar.
-- Er implementiert das Issue nicht selbst — die Umsetzung übernimmt anschließend `{{SKILL:apply-issues}}`.
+- This skill **generates no code** and starts no implementation, test, validator, or reviewer phase.
+- It creates **no** `<plan.dir>/` file; the issue remains the only source. All results end up as an issue comment.
+- It does not implement the issue itself — the implementation is subsequently handled by `{{SKILL:apply-issues}}`.
 
 ```include
 language-rules
@@ -31,89 +31,89 @@ task-tracking
 config-migration
 ```
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben für Planung und User-Rückfragen.
+If the project contains an `AGENTS.md`, read it early in the workflow and observe its specifications for planning and user follow-up questions.
 
-## Tracker-Anbindung
+## Tracker integration
 
-Dieser Skill ist **inhärent remote** und arbeitet immer gegen den Issue-Tracker der `origin`-Remote; der `tracker.mode`-Umschalter wird **nicht** ausgewertet. Aus dem folgenden Baustein nutzt er nur die werkzeug-generische Plumbing (Host- und CLI-Erkennung, Verfügbarkeits-/Auth-Prüfung, Operation-→-Kommando-Mapping, Fehlerfälle).
+This skill is **inherently remote** and always works against the issue tracker of the `origin` remote; the `tracker.mode` switch is **not** evaluated. From the following building block it uses only the tool-generic plumbing (host and CLI detection, availability/auth check, operation-→-command mapping, error cases).
 
 ```include
 issue-tracker
 ```
 
-## Kommentar-Konvention
+## Comment convention
 
-Schreibe das Planungsergebnis als Issue-Kommentar (Operation „Kommentar hinzufügen“ aus dem Mapping). Beginne jeden Effective Flow-Kommentar mit der Markierung `<!-- effective-flow-plan-issues -->`. Kanonische Struktur des Kommentars:
+Write the planning result as an issue comment (operation "Add comment" from the mapping). Begin every Effective Flow comment with the marker `<!-- effective-flow-plan-issues -->`. Canonical structure of the comment:
 
 ```markdown
 <!-- effective-flow-plan-issues -->
-## Vervollständigte Planung
+## Completed planning
 
-**Empfohlener Workflow:** Feature / Bugfix / Refactoring / Dokumentation
+**Recommended workflow:** Feature / Bugfix / Refactoring / Documentation
 
-### Anforderung
-[präzisiertes Soll-Verhalten mit Begründung]
+### Requirement
+[refined target behavior with rationale]
 
-### Akzeptanzkriterien
-- [ ] [messbares Kriterium]
+### Acceptance criteria
+- [ ] [measurable criterion]
 
-### Betroffene Bereiche/Dateien
-- `pfad/datei` — [geplante Änderung]
+### Affected areas/files
+- `path/file` — [planned change]
 
-### Edge Cases
-- [Edge Case und erwartetes Verhalten]
+### Edge cases
+- [Edge case and expected behavior]
 
-### Annahmen
-- [bewusst dokumentierter Restpunkt]
+### Assumptions
+- [deliberately documented remaining point]
 ```
 
 ## Workflow
 
-### Phase 1: Tracker-Setup & Sammlung
+### Phase 1: Tracker setup & collection
 
-1. Bestimme Host und CLI und prüfe Verfügbarkeit/Authentifizierung gemäß „Host- und CLI-Erkennung“. Vorbedingung: Git-Repository mit `origin`-Remote. Fehlt etwas: klar melden und abbrechen.
-2. Bestimme die zu planenden Issues:
-   - ohne Argument: liste alle offenen Issues mit Label `effective-flow-needs-planning` (Alt-Label `firmo-needs-planning` gleichwertig mitabfragen, siehe „Label-Konvention“).
-   - mit Argument: verwende die übergebenen Issue-Referenzen (Nummer, `#123`, URL).
-3. Gibt es keine passenden Issues: Kurzmeldung („keine offenen `effective-flow-needs-planning`-Issues") und Ende.
-4. Zeige dem User die gefundene Liste (Nummer, Titel) und lass ihn wählen, welche Issues geplant werden sollen (eines, mehrere oder alle).
-5. Lege pro gewähltem Issue eine Task an (Aufgabenverfolgung).
+1. Determine the host and CLI and check availability/authentication according to "Host and CLI detection". Precondition: a Git repository with an `origin` remote. If something is missing: report clearly and abort.
+2. Determine the issues to plan:
+   - without an argument: list all open issues with the label `effective-flow-needs-planning` (also query the old label `firmo-needs-planning` as equivalent, see "Label convention").
+   - with an argument: use the passed issue references (number, `#123`, URL).
+3. If there are no matching issues: a short message ("no open `effective-flow-needs-planning` issues") and end.
+4. Show the user the found list (number, title) and let them choose which issues should be planned (one, several, or all).
+5. Create a task per chosen issue (task tracking).
 
-Sichte vor der Planung nützliche Skills gemäß folgendem Baustein. Die No-Code-Grenze dieses
-Tools bleibt dabei strikt: Skills informieren nur die Klärung/Planung, erzeugen keinen Code
-und ändern nichts außer den Issue-Kommentaren.
+Before planning, review useful skills according to the following building block. The no-code boundary of this
+tool remains strict: skills only inform the clarification/planning, generate no code
+and change nothing except the issue comments.
 
 ```include
 skill-discovery
 ```
 
-### Phase 2: Planung je Issue (interaktiv)
+### Phase 2: Planning per issue (interactive)
 
-Für jedes gewählte Issue nacheinander:
+For each chosen issue in turn:
 
-1. Lies das Issue frisch vom Tracker – **inklusive Kommentare** (Operation „Kommentare lesen“) – und untersuche die relevante Codebase (lokal oder mit internem Analyse-Sub-Agenten). Berücksichtige Maintainer-Klärungen aus Kommentaren als Teil der Anforderung. Existiert bereits ein `<!-- effective-flow-plan-issues -->`-Planungskommentar aus einem früheren Lauf (der Alt-Marker `<!-- firmo-plan-issues -->` wird dabei gleichwertig erkannt, eine Generation Backcompat), behandle diesen Lauf als **Aktualisierung**: knüpfe an den vorhandenen Stand an, statt eine zweite, konkurrierende Planung zu erzeugen.
-2. Wende die Klärungs-Methodik aus `{{SKILL:plan}}` (Phase 1/2) an: identifiziere die wirklich relevanten Unklarheiten — Soll-Verhalten, fachliche Regeln, technische Vorgaben, Abhängigkeiten, Edge Cases, Akzeptanzkriterien — und frage den User gezielt danach.
-3. Wiederhole die Klärung, bis eine belastbare Grundlage besteht. Unwichtige Restpunkte als Annahme dokumentieren, statt den Ablauf zu blockieren.
-4. Bestimme die empfohlene Umsetzung (Feature / Bugfix / Refactoring / Dokumentation) gemäß den Klassifikationsdefinitionen aus `{{SKILL:plan}}`.
+1. Read the issue fresh from the tracker – **including comments** (operation "Read comments") – and examine the relevant codebase (locally or with an internal analysis sub-agent). Take maintainer clarifications from comments into account as part of the requirement. If a `<!-- effective-flow-plan-issues -->` planning comment from an earlier run already exists (the old marker `<!-- firmo-plan-issues -->` is recognized as equivalent, one generation of back-compat), treat this run as an **update**: build on the existing state instead of producing a second, competing plan.
+2. Apply the clarification methodology from `{{SKILL:plan}}` (Phase 1/2): identify the genuinely relevant ambiguities — target behavior, domain rules, technical requirements, dependencies, edge cases, acceptance criteria — and ask the user about them specifically.
+3. Repeat the clarification until a reliable basis exists. Document unimportant remaining points as assumptions instead of blocking the process.
+4. Determine the recommended implementation (Feature / Bugfix / Refactoring / Documentation) according to the classification definitions from `{{SKILL:plan}}`.
 
-### Phase 3: Rückschreiben & Freigabe fürs Umsetzen
+### Phase 3: Write-back & release for implementation
 
-Pro geplantem Issue:
+Per planned issue:
 
-1. Schreibe die vervollständigte Spezifikation als Kommentar ans Issue (kanonische Struktur oben). Der Kommentar muss self-contained sein: eine fremde Session muss das Issue danach ohne diese Planungssession umsetzen können. Existiert aus einem früheren Lauf bereits ein `<!-- effective-flow-plan-issues -->`-Kommentar (aus der Kommentar-Prüfung in Phase 2 bekannt), aktualisiere bzw. ersetze dessen Inhalt, statt einen zweiten anzuhängen (Idempotenz auf Basis der Operation „Kommentare lesen“).
-2. Entferne das Label `effective-flow-needs-planning` (Planung abgeschlossen; eine ggf. vorhandene Alt-`firmo-needs-planning`-Variante mitentfernen, siehe „Label-Konvention“). Setze **kein** `effective-flow-issue-done` — das Issue ist geplant, aber noch nicht umgesetzt.
-3. Task auf `completed`.
+1. Write the completed specification as a comment on the issue (canonical structure above). The comment must be self-contained: a foreign session must afterwards be able to implement the issue without this planning session. If a `<!-- effective-flow-plan-issues -->` comment from an earlier run already exists (known from the comment check in Phase 2), update or replace its content instead of appending a second one (idempotency based on the operation "Read comments").
+2. Remove the label `effective-flow-needs-planning` (planning complete; also remove any existing old `firmo-needs-planning` variant, see "Label convention"). Do **not** set `effective-flow-issue-done` — the issue is planned but not yet implemented.
+3. Set the task to `completed`.
 
-### Phase 4: Zusammenfassung
+### Phase 4: Summary
 
-Berichte dem User, welche Issues geplant und mit einem Planungskommentar versehen wurden, und weise darauf hin, dass sie nun via {{SKILL:apply}} umgesetzt werden können. Dieser Skill implementiert selbst nichts.
+Report to the user which issues were planned and provided with a planning comment, and point out that they can now be implemented via {{SKILL:apply}}. This skill itself implements nothing.
 
-## Regeln
+## Rules
 
-- Ändere keine Implementierungsdateien und erzeuge keinen Code.
-- Lege keine `<plan.dir>/`-Datei an.
-- Wenn die Klärung eine belastbare Planung nicht ermöglicht (z. B. weil der User zentrale Fragen nicht beantwortet), lass das Label `effective-flow-needs-planning` bestehen und dokumentiere im Kommentar, welche Entscheidung noch aussteht.
-- Setze niemals `Co-Authored-By`-Trailer und exponiere keine internen IDs in Kommentaren.
-- Gib dem User nach jeder Phase eine kurze Statusmeldung.
+- Do not change any implementation files and generate no code.
+- Do not create any `<plan.dir>/` file.
+- If the clarification does not enable a reliable plan (e.g. because the user does not answer central questions), leave the label `effective-flow-needs-planning` in place and document in the comment which decision is still outstanding.
+- Never set `Co-Authored-By` trailers and do not expose internal IDs in comments.
+- Give the user a brief status update after each phase.

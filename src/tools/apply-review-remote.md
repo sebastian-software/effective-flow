@@ -1,80 +1,80 @@
 ---
-description: "Interne Teil-Datei von apply-review: Issue-Tracker-Anbindung und kompletter Remote-Ablauf. Wird von tools/apply-review.md nur geladen, wenn der Tracker-Modus remote ist."
+description: "Internal sub-file of apply-review: issue-tracker integration and the complete remote flow. Loaded by tools/apply-review.md only when the tracker mode is remote."
 ---
 
-# Effective Flow Apply Review – Remote-Modus
+# Effective Flow Apply Review – Remote mode
 
-Diese interne Teil-Datei wird von `tools/apply-review.md` geladen, sobald der Tracker-Modus `remote` ist (das Argument ist ein Epic- oder Finding-Issue). Sie enthält die vollständige Issue-Tracker-Anbindung und den Remote-Ablauf; im lokalen Modus wird sie nie geladen.
+This internal sub-file is loaded by `tools/apply-review.md` as soon as the tracker mode is `remote` (the argument is an epic or finding issue). It contains the full issue-tracker integration and the remote flow; in local mode it is never loaded.
 
 ```include
 issue-tracker
 ```
 
-## Remote-Modus (Issue-Tracker)
+## Remote mode (issue tracker)
 
-Wenn der Tracker-Modus `remote` ist (siehe „Issue-Tracker-Anbindung (Remote-Modus)“), gelten die folgenden Anpassungen **zusätzlich** zum bzw. anstelle des lokalen Report-Flusses. Bestimme den Modus zu Beginn von Phase 1; der Argumenttyp hat dabei Vorrang vor der Config.
+When the tracker mode is `remote` (see "Issue-Tracker Integration (remote mode)"), the following adjustments apply **in addition to** or **instead of** the local report flow. Determine the mode at the start of Phase 1; the argument type takes precedence over the config.
 
-### Argument-Erkennung und Modusbestimmung
+### Argument detection and mode determination
 
-Klassifiziere das übergebene Argument über die „Apply-Quellen-Erkennung“ (Stufe A und – für Issue-Referenzen – Stufe B) und leite Modus und Sub-Modus aus dem Quelltyp ab:
+Classify the passed argument via the "apply-source detection" (stage A and — for issue references — stage B) and derive mode and sub-mode from the source type:
 
-- **`review-report`** (Report-Datei unter `.effective-flow/review/`) → `local` (bisheriges Verhalten, unverändert).
-- **`review-epic`** (Issue mit `effective-flow-review-epic`-Label, Alt `firmo-review-epic` gleichwertig) → `remote`, **Epic-Modus**: alle im Epic verlinkten Finding-Issues abarbeiten.
-- **`review-finding`** (ein einzelnes Finding-Issue oder eine Liste von Finding-Issue-Referenzen) → `remote`, **Issue-Listen-Modus**: nur genau diese Findings abarbeiten. Das zugehörige Epic je Finding wird für das spätere Abhaken aus dem Sub-Issue ermittelt (`Epic`-Feld/Referenz), sofern vorhanden.
-- **`remote` ohne Argument** → offene Epics auflisten und den User wählen lassen.
-- **`plan`, `container-issue` oder `plain-issue`** → gehört nicht zu `{{SKILL:apply-review}}`: auf den zuständigen Skill verweisen (`{{SKILL:apply-plan}}` für Plan-Dateien, `{{SKILL:apply-issues}}` für sonstige Issues, oder `{{SKILL:apply}}` zum automatischen Routen) und beenden. Bei Delegation aus `{{SKILL:apply}}` sollte dieser Fall nicht auftreten; die Weiche bleibt als Schutz.
+- **`review-report`** (report file under `.effective-flow/review/`) → `local` (existing behavior, unchanged).
+- **`review-epic`** (issue with `effective-flow-review-epic` label, legacy `firmo-review-epic` equivalent) → `remote`, **epic mode**: work through all finding issues linked in the epic.
+- **`review-finding`** (a single finding issue or a list of finding-issue references) → `remote`, **issue-list mode**: work through exactly these findings only. The corresponding epic per finding is determined for the later check-off from the sub-issue (`Epic` field/reference), if present.
+- **`remote` without argument** → list open epics and let the user choose.
+- **`plan`, `container-issue` or `plain-issue`** → does not belong to `{{SKILL:apply-review}}`: point to the responsible skill (`{{SKILL:apply-plan}}` for plan files, `{{SKILL:apply-issues}}` for other issues, or `{{SKILL:apply}}` for automatic routing) and end. When delegating from `{{SKILL:apply}}` this case should not occur; the switch remains as a safeguard.
 
-Der Argumenttyp hat Vorrang vor der Config (siehe „Modus bestimmen“ in der Tracker-Anbindung): `review-report` erzwingt `local`, `review-epic`/`review-finding` erzwingen `remote`. Bei `remote` vorab Host und CLI erkennen und die CLI-Verfügbarkeit prüfen; fehlt das CLI, klar abbrechen (kein stiller Fallback auf `local`).
+The argument type takes precedence over the config (see "Determine mode" in the tracker integration): `review-report` forces `local`, `review-epic`/`review-finding` force `remote`. With `remote`, detect host and CLI beforehand and check CLI availability; if the CLI is missing, abort clearly (no silent fallback to `local`).
 
-### Phase 1 remote: Findings aus Issues lesen
+### Phase 1 remote: Read findings from issues
 
-Ersetzt das Einlesen der Report-Datei. Bestimme die abzuarbeitenden Finding-Issues (Epic-Task-Liste parsen bzw. übergebene Liste verwenden). Lies je Finding-Issue den vollständigen Body **und die Kommentare frisch vom Tracker** (Operation „Kommentare lesen“) und klassifiziere:
+Replaces reading the report file. Determine the finding issues to work through (parse the epic task list or use the passed list). Read for each finding issue the full body **and the comments fresh from the tracker** ("read comments" operation) and classify:
 
-- **Ziel-PR vorhanden:** Wenn Body oder Nicht-Effective Flow-Kommentar einen Ziel-PR nennt
-  (`Ziel-PR: #<nr>`, `Target PR: #<nr>` oder eine PR-URL), notiere PR-Nummer, URL,
-  Head-Branch und Basis-Branch des PRs. Ein Ziel-PR überschreibt die
-  Standard-Strategie „ein PR pro Finding“ für dieses Finding.
-- **Label `wontfix`** → nicht umsetzen, ADR erstellen (Phase 3 remote).
-- **bereits abgehakt/geschlossen** → überspringen.
-- **Sub-Issue ohne Ziel-Aktion oder Prompt** (manuell verändert) → als nicht umsetzbar melden, nicht raten.
-- **Entwicklerkommentar (Nicht-Effective Flow) vorhanden** → umsetzen **mit Kontext**: den Kommentartext als zusätzlichen Kontext an den Delegations-Skill mitgeben. Das ist das Remote-Äquivalent der lokalen „Entwickler-Anmerkung“ im Fall „Umsetzen mit Kontext“. Die bewusste Ablehnung läuft im Remote-Modus weiterhin **ausschließlich** über das Label `wontfix`, nicht über Kommentartext; Effective Flow-Kommentare (z. B. `<!-- … -->`-markierte Status- oder PR-Link-Kommentare) zählen nicht als Entwickler-Anmerkung.
-- **sonst** → umsetzen.
+- **Target PR present:** if the body or a non-Effective Flow comment names a target PR
+  (`Ziel-PR: #<nr>`, `Target PR: #<nr>` or a PR URL), note the PR number, URL,
+  head branch and base branch of the PR. A target PR overrides the
+  default strategy "one PR per finding" for this finding.
+- **Label `wontfix`** → do not implement, create an ADR (Phase 3 remote).
+- **already checked off/closed** → skip.
+- **Sub-issue without target action or prompt** (manually altered) → report as not implementable, do not guess.
+- **Developer comment (non-Effective Flow) present** → implement **with context**: pass the comment text as additional context to the delegation skill. This is the remote equivalent of the local "Entwickler-Anmerkung" in the "Implement with context" case. Deliberate rejection in remote mode still runs **exclusively** via the label `wontfix`, not via comment text; Effective Flow comments (e.g. `<!-- … -->`-marked status or PR-link comments) do not count as a developer note.
+- **otherwise** → implement.
 
-Lege die Per-Finding-Tasks wie im lokalen Modus an; die Finding-ID ist die `R-XXXXXXX`-ID aus dem Issue-Titel.
+Create the per-finding tasks as in local mode; the finding ID is the `R-XXXXXXX` ID from the issue title.
 
-### Phase 2 remote: Commit- und PR-Strategie
+### Phase 2 remote: Commit and PR strategy
 
-Die Commit-/PR-Strategie ist im Remote-Modus standardmäßig **„ein PR pro Finding“** — die lokale Commit-Strategie-Frage entfällt. Jedes umsetzbare Finding ohne Ziel-PR ist eine **eigene Komponente** in einem eigenen Liefer-Branch, bevorzugt mit Worktree-Isolation. Basis-Branch und Branch-Namensbildung stützen sich auf den `delivery`-Config-Block: Branch `<delivery.branchPrefix>/apply-review/<R-ID-oder-slug>` ab `delivery.baseBranch` (Legacy-Fallback: alte `worktree.baseBranch`/`worktree.branchPrefix`-Werte). Dateiüberlappende Findings laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden.
+In remote mode the commit/PR strategy is by default **"one PR per finding"** — the local commit-strategy question is omitted. Every implementable finding without a target PR is its **own component** in its own delivery branch, preferably with worktree isolation. Base branch and branch naming rely on the `delivery` config block: branch `<delivery.branchPrefix>/apply-review/<R-ID-or-slug>` off `delivery.baseBranch` (legacy fallback: old `worktree.baseBranch`/`worktree.branchPrefix` values). File-overlapping findings run sequentially to avoid working-tree conflicts.
 
-Hat ein Finding einen Ziel-PR aus Phase 1 remote, gilt stattdessen **„neuer Commit auf existierendem PR“**:
+If a finding has a target PR from Phase 1 remote, **"new commit on existing PR"** applies instead:
 
-1. Erstelle keinen neuen Liefer-Branch und keinen neuen PR.
-2. Hole den Head-Branch des Ziel-PRs, checke ihn in einem isolierten Worktree oder im sauberen aktuellen Checkout aus und aktualisiere ihn per normalem Pull/Fetch ohne Rebase- oder Force-Operation.
-3. Setze das Finding dort um und committe die Änderung als neuen Commit auf dem PR-Branch. Bestehende PR-Commits dürfen nicht per `commit --amend`, Rebase, Squash oder Force-Push umgeschrieben werden.
-4. Pushe den PR-Branch normal. Wird der Push wegen divergierter Remote-History abgelehnt, markiere das Finding als fehlgeschlagen und melde den Konflikt, statt History zu überschreiben.
-5. Verwende die URL des bestehenden PRs als Ergebnis-PR-Link für Issue-Kommentar, Epic-Eintrag und Zusammenfassung.
+1. Do not create a new delivery branch and no new PR.
+2. Fetch the head branch of the target PR, check it out in an isolated worktree or in the clean current checkout, and update it via a normal pull/fetch without any rebase or force operation.
+3. Implement the finding there and commit the change as a new commit on the PR branch. Existing PR commits must not be rewritten via `commit --amend`, rebase, squash or force-push.
+4. Push the PR branch normally. If the push is rejected due to diverged remote history, mark the finding as failed and report the conflict instead of overwriting history.
+5. Use the URL of the existing PR as the result PR link for the issue comment, epic entry and summary.
 
-Findings mit demselben Ziel-PR laufen sequenziell, damit neue Commits geordnet auf demselben PR-Branch entstehen. Findings ohne Ziel-PR behalten die Standard-Strategie „ein PR pro Finding“. Die Stash-Policy und der `/goal`-String werden wie im lokalen Modus behandelt.
+Findings with the same target PR run sequentially so that new commits are created in order on the same PR branch. Findings without a target PR keep the default strategy "one PR per finding". The stash policy and the `/goal` string are handled as in local mode.
 
-### Phase 3 remote: Abgelehntes Finding → Entscheidungs-Kandidat
+### Phase 3 remote: Rejected finding → decision candidate
 
-Für jedes `wontfix`-Finding gilt dieselbe Ownership-Regel wie in Phase 3 (lokal): den Kandidaten an `decision-records` delegieren (Skill entscheidet, ob ein ADR gerechtfertigt ist, und autort nach der entdeckten Repo-Konvention; minimaler living-slug-Fallback aus `adr-convention.md`, wenn der Skill fehlt). Der Kontext des Kandidaten referenziert hier **Issue-Nummer und Epic** (`Issue #<nr>` und `Epic #<nr>`) statt eines Report-Findings; die `wontfix`-Begründung ersetzt die Entwickler-Anmerkung. Es wird **kein** nummeriertes ADR angelegt. Entsteht eine dauerhafte ADR, markiere das Finding im Epic später per Slug-Referenz als `- [x] … — nicht umgesetzt (ADR: <slug>)`; stuft der Skill die Ablehnung als nicht-dauerhaft ein, bleibt sie ohne ADR am Issue/Epic dokumentiert (`- [x] … — nicht umgesetzt (siehe Issue-Begründung)`).
+For each `wontfix` finding, the same ownership rule as in Phase 3 (local) applies: delegate the candidate to `decision-records` (the skill decides whether an ADR is justified and authors it per the discovered repo convention; minimal living-slug fallback from `adr-convention.md` if the skill is missing). The candidate's context here references the **issue number and epic** (`Issue #<nr>` and `Epic #<nr>`) instead of a report finding; the `wontfix` rationale replaces the developer note. **No** numbered ADR is created. If a permanent ADR arises, mark the finding in the epic later via slug reference as `- [x] … — not implemented (ADR: <slug>)`; if the skill classifies the rejection as non-permanent, it stays documented without an ADR on the issue/epic (`- [x] … — not implemented (see issue rationale)`).
 
-### Phase 4 remote: Umsetzung, PR und Epic-Abhaken
+### Phase 4 remote: Implementation, PR and epic check-off
 
-Pro umsetzbarem Finding, in dessen Worktree:
+Per implementable finding, in its worktree:
 
-1. Vorabanalyse und Umsetzung wie in Phase 4.1/4.3 über den passenden Delegations-Skill (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}`, `{{SKILL:docs}}`). Gib einen in Phase 1 remote erkannten Entwicklerkommentar als zusätzlichen Kontext an den Delegations-Skill mit.
-2. Änderungen committen (Conventional-Commit-Message, keine internen Finding-IDs, kein `Co-Authored-By`), Branch pushen.
-3. Wenn ein Ziel-PR vorhanden ist: **keinen neuen PR erstellen**, sondern den bestehenden PR-Link verwenden und optional den PR-Body nur nicht-destruktiv um `Closes #<Sub-Issue>` oder `Refs #<Sub-Issue>` ergänzen, falls das ohne Überschreiben fremder Änderungen möglich ist. Wenn kein Ziel-PR vorhanden ist: über `{{SKILL:pr}}` genau einen PR gegen den Basis-Branch erstellen; im PR-Body `Closes #<Sub-Issue>` setzen.
-4. **Direkt nach erfolgreichem Push bzw. PR-Erstellung** den zugehörigen Eintrag im Epic-Body abhaken (`- [ ]` → `- [x]`, PR-Link anhängen) und optional den PR-Link als Kommentar ans Sub-Issue schreiben. Body vor dem Ändern frisch lesen und nur die betroffene Zeile umschalten.
-5. **Schlägt Push oder PR-Erstellung fehl** (Push abgelehnt, kein Commit): Finding als fehlgeschlagen markieren, Epic-Eintrag **nicht** abhaken, nächstes Finding fortsetzen.
-6. **Fehlt ein zugeordnetes Epic** (Issue-Listen-Modus): Finding trotzdem umsetzen und PR erstellen; das Abhaken entfällt und wird dem User gemeldet.
+1. Pre-analysis and implementation as in Phase 4.1/4.3 via the matching delegation skill (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}`, `{{SKILL:docs}}`). Pass a developer comment detected in Phase 1 remote as additional context to the delegation skill.
+2. Commit the changes (Conventional Commit message, no internal finding IDs, no `Co-Authored-By`), push the branch.
+3. If a target PR is present: **do not create a new PR**, but use the existing PR link and optionally extend the PR body non-destructively by `Closes #<sub-issue>` or `Refs #<sub-issue>`, if that is possible without overwriting others' changes. If no target PR is present: create exactly one PR against the base branch via `{{SKILL:pr}}`; set `Closes #<sub-issue>` in the PR body.
+4. **Immediately after a successful push or PR creation** check off the corresponding entry in the epic body (`- [ ]` → `- [x]`, append the PR link) and optionally write the PR link as a comment on the sub-issue. Read the body fresh before changing it and toggle only the affected line.
+5. **If push or PR creation fails** (push rejected, no commit): mark the finding as failed, do **not** check off the epic entry, continue with the next finding.
+6. **If an assigned epic is missing** (issue-list mode): implement the finding anyway and create a PR; the check-off is omitted and reported to the user.
 
-### Phase 5 remote: Tracking-Oberfläche statt Report
+### Phase 5 remote: Tracking surface instead of report
 
-Es wird keine Report-Datei aktualisiert. Stelle stattdessen sicher, dass alle Epic-Checkboxen und Sub-Issue-Kommentare/Labels den Endstand widerspiegeln (umgesetzt → abgehakt mit PR-Link; `wontfix` mit dauerhafter Entscheidung → abgehakt mit ADR-Referenz; `wontfix` ohne dauerhafte Entscheidung → abgehakt mit Verweis auf die Issue-Begründung, ohne ADR).
+No report file is updated. Instead, ensure that all epic checkboxes and sub-issue comments/labels reflect the final state (implemented → checked off with PR link; `wontfix` with permanent decision → checked off with ADR reference; `wontfix` without permanent decision → checked off with a reference to the issue rationale, without an ADR).
 
 ### Phase 7/8 remote
 
-Finale Validierung und Zusammenfassung wie im lokalen Modus; die Zusammenfassung nennt zusätzlich Epic-URL, die erstellten PRs und die abgehakten Findings.
+Final validation and summary as in local mode; the summary additionally names the epic URL, the created PRs and the checked-off findings.

@@ -1,6 +1,6 @@
 ---
-description: "Zeigt die aktuelle Effective Flow-Version inklusive Git-Kurzhash an."
-catalogHint: "Zeigt die installierte Effective Flow-Version."
+description: "Shows the current Effective Flow version including the short git hash."
+catalogHint: "Shows the installed Effective Flow version."
 ---
 
 # Effective Flow Version
@@ -9,10 +9,10 @@ catalogHint: "Zeigt die installierte Effective Flow-Version."
 task-tracking
 ```
 
-Gib die folgende Effective Flow-Version aus:
+Output the following Effective Flow version:
 
 **{{VERSION}}**
 
-## Versionspflege
+## Version maintenance
 
-Die angezeigte Version stammt aus `.release-please-manifest.json`. Versionen und `CHANGELOG.md` werden über release-please gepflegt; ändere die Version nicht manuell in Feature- oder Fix-Commits. Verwende aussagekräftige Conventional-Commit-Messages, damit release-please den nächsten Release-PR samt Changelog korrekt erzeugt.
+The displayed version comes from `.release-please-manifest.json`. Versions and `CHANGELOG.md` are maintained via release-please; do not change the version manually in feature or fix commits. Use meaningful Conventional Commit messages so that release-please generates the next release PR and changelog correctly.

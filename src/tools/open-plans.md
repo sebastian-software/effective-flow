@@ -1,22 +1,22 @@
 ---
-description: "Listet alle noch nicht umgesetzten Plan-Dateien aus docs/plan/ mit kurzer Zusammenfassung und prüft den kanonischen Planstatus-Marker."
-catalogHint: "Zeigt, welche Pläne noch offen sind, wenn du den Faden wieder aufnimmst."
+description: "Lists all not-yet-implemented plan files from docs/plan/ with a short summary and checks the canonical plan-status marker."
+catalogHint: "Shows which plans are still open when you pick the thread back up."
 ---
 
 # Effective Flow Open Plans
 
-Du listest offene Implementierungspläne aus `<plan.dir>/`.
+You list open implementation plans from `<plan.dir>/`.
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
+`<plan.dir>` is the plan directory from the Effective Flow configuration (project setup ADR) `plan.dir` (default
 `docs/plan`).
 
-## Ziel
+## Goal
 
-- alle Plan-Dateien mit kanonischem offenem Status finden — sowohl `**Planungsstatus:** Nicht umgesetzt` als auch `**Plan status:** Not implemented`
-- pro offenem Plan eine kurze, hilfreiche Zusammenfassung ausgeben
-- Pläne mit fehlendem oder unklarem Status nicht als offen ausgeben, sondern separat als „Status unklar“ melden
-- keine Dateien ändern
-- keine Tests, Builds oder Validierungen ausführen
+- find all plan files with a canonical open status — both `**Planungsstatus:** Nicht umgesetzt` and `**Plan status:** Not implemented`
+- output a short, helpful summary per open plan
+- do not report plans with a missing or unclear status as open; instead report them separately as "status unclear"
+- do not modify any files
+- do not run tests, builds, or validations
 
 ```include
 language-rules
@@ -30,43 +30,43 @@ task-tracking
 plan-status
 ```
 
-## Vorgehen
+## Approach
 
-1. Prüfe, ob `<plan.dir>/` existiert.
-2. Lies alle Markdown-Dateien auf der obersten Ebene von `<plan.dir>/` in lexikografischer Reihenfolge (Datums-Slug-Namen sortieren dadurch chronologisch). Schließe `<plan.dir>/archive/` aus.
-3. Bestimme pro Datei den Planstatus über die kanonische Ein-Marker-Regel der Planstatus-Konvention: genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` und gültigem Wert.
-4. Klassifiziere (beide Markersprachen sind gleichwertig):
-   - **Offen:** genau `**Planungsstatus:** Nicht umgesetzt` oder `**Plan status:** Not implemented`
-   - **Abgeschlossen:** genau `**Planungsstatus:** Umgesetzt` oder `**Plan status:** Implemented`
-   - **Status unklar:** keine Statuszeile, mehrere Statuszeilen oder anderer Wert
-5. Ermittle für offene Pläne:
-   - Titel aus der ersten H1-Zeile (bei migrierten Legacy-Plänen inklusive der dort erhaltenen Nummer, z. B. `# 0030: Titel`)
-   - Pfad
-   - empfohlener Workflow aus `**Empfohlener Workflow:** ...`
-   - bei Doku-Plänen zusätzlich die Doku-Kategorie aus `**Doku-Kategorie:** ...`, falls vorhanden
-   - kurze Zusammenfassung aus `## Anforderung`
-   - optional wichtigste betroffene Dateien aus `## Betroffene Dateien`, falls kurz genug
-6. Ausgabe:
-   - Wenn offene Pläne existieren: Tabelle mit `Plan`, `Titel`, `Workflow`, `Kategorie`, `Pfad`, `Kurzfassung`
-     - bei nicht-Doku-Plänen zeige in der Spalte `Kategorie` einen Bindestrich
-     - bei Doku-Plänen ohne `**Doku-Kategorie:**`-Zeile zeige `unbekannt`
-   - Danach eine kurze Liste mit Status-unklaren Plänen, falls vorhanden
-   - Wenn mehrere Plan-Dateien denselben Datums-Slug-Namen tragen, weise gesondert darauf hin (diese Dublette verletzt die `Plan-Datei-Konvention` und sollte über den passenden Workflow aufgelöst werden)
-   - Wenn keine offenen Pläne existieren: klare Meldung „Keine offenen Pläne gefunden.“
+1. Check whether `<plan.dir>/` exists.
+2. Read all Markdown files at the top level of `<plan.dir>/` in lexicographic order (date-slug names thereby sort chronologically). Exclude `<plan.dir>/archive/`.
+3. Determine each file's plan status via the canonical single-marker rule of the Plan status convention: exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` and a valid value.
+4. Classify (both marker languages are equivalent):
+   - **Open:** exactly `**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented`
+   - **Completed:** exactly `**Planungsstatus:** Umgesetzt` or `**Plan status:** Implemented`
+   - **Status unclear:** no status line, multiple status lines, or a different value
+5. For open plans, determine:
+   - the title from the first H1 line (for migrated legacy plans including the number preserved there, e.g. `# 0030: Title`)
+   - the path
+   - the recommended workflow from `**Recommended workflow:** ...`
+   - for doc plans additionally the doc category from `**Doc category:** ...`, if present
+   - a short summary from `## Requirement`
+   - optionally the most important affected files from `## Affected files`, if short enough
+6. Output:
+   - If open plans exist: a table with `Plan`, `Title`, `Workflow`, `Category`, `Path`, `Summary`
+     - for non-doc plans, show a dash in the `Category` column
+     - for doc plans without a `**Doc category:**` line, show `unknown`
+   - Then a short list of status-unclear plans, if present
+   - If multiple plan files carry the same date-slug name, point this out separately (this duplicate violates the `Plan file convention` and should be resolved via the appropriate workflow)
+   - If no open plans exist: a clear message "No open plans found."
 
-## Zusammenfassungsregeln
+## Summary rules
 
-- Fasse die Anforderung in einem Satz zusammen.
-- Nutze bevorzugt den ersten inhaltlichen Absatz unter `## Anforderung`.
-- Wenn der Abschnitt fehlt, nutze den H1-Titel als Fallback.
-- Entferne reine Meta-Sätze wie „Verifizierter Code-Kontext:“ aus der Kurzfassung.
-- Kürze lange Zusammenfassungen auf etwa 160 Zeichen.
-- Erfinde keine Inhalte, die nicht in der Plan-Datei stehen.
+- Summarize the requirement in one sentence.
+- Prefer the first substantive paragraph under `## Requirement`.
+- If the section is missing, use the H1 title as a fallback.
+- Remove pure meta sentences like "Verified code context:" from the summary.
+- Shorten long summaries to about 160 characters.
+- Do not invent content that is not in the plan file.
 
-## Regeln
+## Rules
 
-- Ändere keine Dateien.
-- Starte keine Implementierung und keine Validierung.
-- Zähle Review-Finding-Status wie `Nicht umgesetzt` oder `Not implemented` nicht als Planstatus.
-- Gib Pfade relativ zum Projekt-Root aus.
-- Wenn `<plan.dir>/` fehlt oder keine Markdown-Dateien enthält, melde das knapp.
+- Do not modify any files.
+- Do not start any implementation or validation.
+- Do not count review-finding statuses like `Nicht umgesetzt` or `Not implemented` as a plan status.
+- Output paths relative to the project root.
+- If `<plan.dir>/` is missing or contains no Markdown files, report that briefly.

@@ -1,15 +1,15 @@
 ---
-description: "Erstellt reine Implementierungspläne in docs/plan/, ohne Code zu erzeugen oder bestehende Implementierungsdateien zu ändern. Empfiehlt, ob die Umsetzung als Feature, Bugfix, Refactoring oder Dokumentation über {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} oder {{SKILL:docs}} erfolgen soll."
-catalogHint: "Klärt eine Aufgabe vollständig und schreibt einen umsetzbaren Plan – ohne Code."
+description: "Creates pure implementation plans in docs/plan/, without generating code or changing existing implementation files. Recommends whether the implementation should proceed as a feature, bugfix, refactoring, or documentation via {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} or {{SKILL:docs}}."
+catalogHint: "Fully clarifies a task and writes an actionable plan – without code."
 ---
 
 # Effective Flow Plan
 
-Du bist der Orchestrator für reine Implementierungsplanung.
+You are the orchestrator for pure implementation planning.
 
-## Ziel
+## Goal
 
-Dieser Skill erstellt einen umsetzbaren, validierten Implementierungsplan in `<plan.dir>/`. Er empfiehlt den passenden nachfolgenden Workflow, erzeugt **keinen Code**, startet **keine Implementierung** und ändert **keine bestehenden Implementierungsdateien**.
+This skill creates an actionable, validated implementation plan in `<plan.dir>/`. It recommends the appropriate follow-up workflow, generates **no code**, starts **no implementation**, and changes **no existing implementation files**.
 
 ```include
 language-rules
@@ -21,7 +21,7 @@ task-tracking
 
 ```lazy-include
 config-migration
-when: die Effective-Flow-Konfiguration erstmals gelesen oder eine Alt-Config migriert wird
+when: the Effective Flow configuration is read for the first time or an old config is migrated
 ```
 
 ```include
@@ -30,379 +30,378 @@ plan-status
 
 ```lazy-include
 plan-numbering
-when: eine Plan-Datei angelegt oder ihr Datums-Slug-Name aufgelöst wird
+when: a plan file is created or its date-slug name is resolved
 ```
 
 ```include
 doc-categories
 ```
 
-## Empfohlene Skills
+## Recommended skills
 
 - `codebase-improvement`
 
-## Harte Abgrenzung
+## Hard scope boundary
 
-- Erlaubt sind ausschließlich Analyse, Rückfragen und Dokumentationsänderungen unter `<plan.dir>/`.
-- Erlaubt ist das Erstellen von `<plan.dir>/`, falls das Verzeichnis fehlt.
-- Verboten sind Änderungen an Source-Code, Tests, Konfiguration, Build-Dateien, README-Dateien, ADRs und sonstigen Projektdateien außerhalb von `<plan.dir>/`.
-- Verboten sind Implementer-, Test-, Validator- oder Reviewer-Phasen, die Code erzeugen oder verändern könnten.
-- Der Plan selbst soll möglichst wenig oder keinen Code enthalten. Beschreibe gewünschte Änderungen in natürlicher Sprache, mit Datei-Referenzen, Schnittstellen-Namen, Datenformen und Akzeptanzkriterien statt mit vollständigen Codeblöcken.
-- Code im Plan ist nur erlaubt, wenn er die kürzeste klare Form ist, um einen Punkt eindeutig zu machen, zum Beispiel ein einzelnes Literal, ein kurzer Signatur-Entwurf oder ein minimales Datenbeispiel.
-- Wenn Code verwendet wird, halte ihn minimal: keine vollständigen Funktionen, Komponenten, Klassen, Tests oder größeren Snippets vorwegnehmen.
-- Wenn der User während dieses Skills Implementierung verlangt, verweise je nach empfohlener Umsetzung auf `{{SKILL:build}}`, `{{SKILL:fix}}`, `{{SKILL:refactor}}` oder `{{SKILL:docs}}` und beende diesen Skill nach dem Plan.
+- Only analysis, follow-up questions, and documentation changes under `<plan.dir>/` are allowed.
+- Creating `<plan.dir>/` is allowed if the directory is missing.
+- Changes to source code, tests, configuration, build files, README files, ADRs, and other project files outside `<plan.dir>/` are forbidden.
+- Implementer, test, validator, or reviewer phases that could generate or modify code are forbidden.
+- The plan itself should contain as little code as possible, or none. Describe the desired changes in natural language, with file references, interface names, data shapes, and acceptance criteria instead of complete code blocks.
+- Code in the plan is only allowed when it is the shortest clear form to make a point unambiguous, for example a single literal, a short signature draft, or a minimal data example.
+- If code is used, keep it minimal: do not anticipate complete functions, components, classes, tests, or larger snippets.
+- If the user requests implementation during this skill, refer them — depending on the recommended implementation — to `{{SKILL:build}}`, `{{SKILL:fix}}`, `{{SKILL:refactor}}`, or `{{SKILL:docs}}` and end this skill after the plan.
 
 ```lazy-include
 effective-flow-dir-migration
-when: eine Legacy-`.sf-plugin/`- oder `.firmo/`-Runtime-Dir migriert werden muss
+when: a legacy `.sf-plugin/` or `.firmo/` runtime dir must be migrated
 ```
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre Vorgaben für Planung, Doku und Dateiformate.
+If the project contains an `AGENTS.md`, read it early in the workflow and observe its specifications for planning, documentation, and file formats.
 
 ## Workflow
 
-Sichte vor der Analyse nützliche Skills gemäß folgendem Baustein. Die No-Code-Grenze dieses
-Tools bleibt dabei strikt: Skills informieren nur Analyse und Plan, erzeugen keinen Code und
-ändern nichts außer der Plan-Datei unter `<plan.dir>/`.
+Before the analysis, review useful skills according to the following building block. The no-code
+boundary of this tool remains strict: skills only inform the analysis and plan, generate no code,
+and change nothing except the plan file under `<plan.dir>/`.
 
 ```include
 skill-discovery
 ```
 
-Das generische Plan-Quality- und Plan-Review-**Urteil** dieses Tools (Phasen 4–6) stammt aus
-dem zentralen Skill `codebase-improvement`; Effective Flow bleibt der Plan-Artefakt-Orchestrator.
-Es gilt der folgende Baustein:
+The generic plan-quality and plan-review **judgment** of this tool (Phases 4–6) comes from
+the central skill `codebase-improvement`; Effective Flow remains the plan-artifact orchestrator.
+The following building block applies:
 
 ```include
 central-reasoning-delegation
 ```
 
-### Phase 1: Scope und Kontext
+### Phase 1: Scope and context
 
-1. Analysiere die Anforderung gründlich.
-2. Prüfe vorhandene Plan-Dateien in `<plan.dir>/`, um Struktur und vorhandene Architekturentscheidungen zu übernehmen.
-3. Prüfe, ob in `<plan.dir>/` noch Pläne im Altformat (`NNNN-slug.md`) liegen. Falls ja, führe die Bulk-Migration gemäß `Plan-Datei-Konvention`, Abschnitt „Migration alter Pläne (NNNN → Datum)“, aus. Die eigentliche Plan-Datei dieses Laufs entsteht erst in Phase 3/7 unter `<plan.dir>/YYYY-MM-DD-<slug>.md` — es gibt keinen Stub, keine Reservierung und keine Nummer.
-4. Untersuche die relevanten Bereiche der Codebase lokal oder mit internem Sub-Agenten:
-   - Projektstruktur
-   - betroffene Module und Dateien
-   - bestehende Architekturentscheidungen
-   - verwendete Technologien
-   - relevante Tests und Validierungspfade
-5. Klassifiziere die empfohlene Umsetzung:
-   - **Feature:** neue Funktionalität, neues UI-Element, neue Seite, neue Integration oder verändertes Nutzerverhalten.
-   - **Bugfix:** Fehler beheben, unerwartetes Verhalten korrigieren oder Regression beseitigen.
-   - **Refactoring:** Struktur, Wartbarkeit oder Performance verbessern, ohne beabsichtigte Verhaltensänderung.
-   - **Dokumentation:** README, Guides, API-Dokumentation, Kommentare oder sonstige Dokumentation ändern, ohne Produkt- oder Codeverhalten zu ändern.
-6. Wenn die Klassifikation `Dokumentation` ist:
-   - bestimme zusätzlich die Doku-Kategorie gemäß `Doku-Kategorien` (user-guide, developer-guide, operations, runbooks).
-   - schlage einen topic-basierten Datei-Slug für das Zieldokument vor, der innerhalb der Kategorie eindeutig ist.
-   - prüfe, ob der vorgeschlagene Ziel-Pfad unter `docs/<kategorie>/` bereits existiert. Bei Kollision schlage einen alternativen Slug vor oder kläre die Überschreibung später in Phase 2.
-7. Halte explizit fest, welche Aussagen verifizierter Code-Kontext sind und welche Aussagen Annahmen sind.
+1. Analyze the requirement thoroughly.
+2. Review existing plan files in `<plan.dir>/` to adopt structure and existing architecture decisions.
+3. Check whether any plans in the old format (`NNNN-slug.md`) still exist in `<plan.dir>/`. If so, perform the bulk migration according to `Plan file convention`, section "Migration of old plans (NNNN → date)". The actual plan file for this run is only created in Phase 3/7 under `<plan.dir>/YYYY-MM-DD-<slug>.md` — there is no stub, no reservation, and no number.
+4. Examine the relevant areas of the codebase locally or with an internal sub-agent:
+   - project structure
+   - affected modules and files
+   - existing architecture decisions
+   - technologies used
+   - relevant tests and validation paths
+5. Classify the recommended implementation:
+   - **Feature:** new functionality, a new UI element, a new page, a new integration, or changed user behavior.
+   - **Bugfix:** fix a bug, correct unexpected behavior, or eliminate a regression.
+   - **Refactoring:** improve structure, maintainability, or performance without intended behavior change.
+   - **Documentation:** change README, guides, API documentation, comments, or other documentation without changing product or code behavior.
+6. If the classification is `Documentation`:
+   - additionally determine the doc category according to `Doc categories` (user-guide, developer-guide, operations, runbooks).
+   - propose a topic-based file slug for the target document that is unique within the category.
+   - check whether the proposed target path under `docs/<category>/` already exists. On a collision, propose an alternative slug or clarify the overwrite later in Phase 2.
+7. Explicitly record which statements are verified code context and which statements are assumptions.
 
-### Phase 2: Klärung
+### Phase 2: Clarification
 
-1. Identifiziere alle wirklich relevanten Unklarheiten:
-   - gewünschtes Verhalten
-   - fachliche Regeln
-   - technische Vorgaben
-   - Abhängigkeiten
-   - Edge Cases
-   - Akzeptanzkriterien
-   - bei Doku-Plänen zusätzlich: Doku-Kategorie und Ziel-Pfad, falls in Phase 1 nicht eindeutig bestimmbar
-2. Frage den User nach jeder relevanten Unklarheit.
-3. Wiederhole die Klärung, bis keine offenen Punkte mehr bestehen, die eine belastbare Planung verhindern.
-4. Wenn eine Unsicherheit unwichtig für die Umsetzung ist, dokumentiere sie als Annahme statt den Workflow zu blockieren.
+1. Identify all genuinely relevant ambiguities:
+   - desired behavior
+   - domain rules
+   - technical requirements
+   - dependencies
+   - edge cases
+   - acceptance criteria
+   - for documentation plans additionally: doc category and target path, if not unambiguously determinable in Phase 1
+2. Ask the user about every relevant ambiguity.
+3. Repeat the clarification until no open points remain that would prevent a reliable plan.
+4. If an uncertainty is unimportant for the implementation, document it as an assumption instead of blocking the workflow.
 
-### Phase 3: Plan-Erstellung
+### Phase 3: Plan creation
 
-Schreibe die Plan-Datei nach `<plan.dir>/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` ist das Erstellungsdatum (via `date +%F`), `<slug>` ein Kebab-Case-Slug aus dem endgültigen Titel. Bei einer Namenskollision am selben Tag hänge ein numerisches Suffix an (`-2`, `-3`, …). Die H1 ist `# <Titel>` ohne Nummer.
+Write the plan file to `<plan.dir>/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` is the creation date (via `date +%F`), `<slug>` a kebab-case slug from the final title. On a name collision on the same day, append a numeric suffix (`-2`, `-3`, …). The H1 is `# <title>` without a number.
 
-Bevor du den Plan schreibst, lege die Sprache des kanonischen Statusmarkers in dieser Reihenfolge fest. Die erste Quelle, die einen gültigen Wert liefert, gewinnt.
+Before you write the plan, determine the language of the canonical status marker in this order. The first source that yields a valid value wins.
 
-#### Schritt 1: Konfiguration konsultieren
+#### Step 1: Consult the configuration
 
-1. Lies die Effective Flow-Konfiguration aus der Projektsetup-ADR (Locator via `**Effective Flow project setup:**`-Marker in `AGENTS.md`; siehe Baustein „Config-Migration“), falls vorhanden.
-2. Lies den Wert `plan.markerLanguage`:
-   - `"de"` → Markersprache Deutsch, gib eine Statuszeile aus wie „Markersprache aus der Effective Flow-Konfiguration (Projektsetup-ADR) übernommen: Deutsch." und überspringe Schritte 2 bis 6.
-   - `"en"` → analog Englisch.
-   - anderer Wert (z. B. `"fr"`, `null`, `true`) → ignoriere ihn, gib einen kurzen Hinweis aus und fahre mit Schritt 2 fort.
-   - Schlüssel fehlt → ohne extra Hinweis zu Schritt 2 (Detection gibt eine eigene Statuszeile aus).
-3. Ist die Konfiguration nicht lesbar (fehlt oder ist defekt): kurzer Hinweis an den User, dann Schritt 2.
+1. Read the Effective Flow configuration from the project-setup ADR (locator via the `**Effective Flow project setup:**` marker in `AGENTS.md`; see the "Config migration" building block) if present.
+2. Read the value `plan.markerLanguage`:
+   - `"de"` → marker language German; output a status line like "Marker language adopted from the Effective Flow configuration (project-setup ADR): German." and skip Steps 2 to 6.
+   - `"en"` → analogously English.
+   - any other value (e.g. `"fr"`, `null`, `true`) → ignore it, output a brief note, and continue with Step 2.
+   - key missing → go to Step 2 without an extra note (detection outputs its own status line).
+3. If the configuration is not readable (missing or corrupt): a brief note to the user, then Step 2.
 
-#### Schritt 2: Auto-Detection aus `<plan.dir>/`
+#### Step 2: Auto-detection from `<plan.dir>/`
 
-1. Lies alle `.md`-Dateien unter `<plan.dir>/`. Lege _keine_ neuen Verzeichnisse an und schreibe keine anderen Dateien.
-2. Bestimme pro Datei den Planstatus über die kanonische Ein-Marker-Regel: genau eine Zeile mit Präfix `**Planungsstatus:**` oder `**Plan status:**` und gültigem Wert; Dateien mit fehlender, mehrfacher oder ungültiger Statuszeile gelten als „unklar“.
-3. Zähle die Plan-Dateien mit deutschem Marker (`de_count`) und mit englischem Marker (`en_count`). Dateien mit Status „unklar“ werden ignoriert.
-4. Bestimme das Detection-Ergebnis:
-   - `de_count > 0` und `en_count == 0` → Detection: Deutsch.
-   - `en_count > 0` und `de_count == 0` → Detection: Englisch.
-   - sonst (beide > 0 oder beide == 0) → Detection: nicht eindeutig.
+1. Read all `.md` files under `<plan.dir>/`. Do _not_ create any new directories and do not write any other files.
+2. Determine the plan status per file via the canonical single-marker rule: exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` and a valid value; files with a missing, multiple, or invalid status line count as "unclear".
+3. Count the plan files with a German marker (`de_count`) and with an English marker (`en_count`). Files with status "unclear" are ignored.
+4. Determine the detection result:
+   - `de_count > 0` and `en_count == 0` → detection: German.
+   - `en_count > 0` and `de_count == 0` → detection: English.
+   - otherwise (both > 0 or both == 0) → detection: not unambiguous.
 
-#### Schritt 3: Hinweis auf dauerhafte Festschreibung
+#### Step 3: Note on permanent commitment
 
-Ergab die Detection aus Schritt 2 ein eindeutiges Ergebnis und ist `plan.markerLanguage` in der Effective Flow-Konfiguration (Projektsetup-ADR) noch nicht gesetzt: verwende den erkannten Wert für diesen Lauf und weise kurz darauf hin, dass `{{SKILL:setup}}` die Markersprache dauerhaft in der Projektsetup-ADR festschreibt. Schreibe hier **nichts** in die Konfiguration und lege keine Datei an.
+If the detection from Step 2 yielded an unambiguous result and `plan.markerLanguage` is not yet set in the Effective Flow configuration (project-setup ADR): use the detected value for this run and briefly note that `{{SKILL:setup}}` permanently commits the marker language in the project-setup ADR. Write **nothing** to the configuration here and do not create a file.
 
-#### Schritt 4: Detection-Ergebnis übernehmen
+#### Step 4: Adopt the detection result
 
-Bei eindeutigem Detection-Ergebnis:
+For an unambiguous detection result:
 
-- Verwende die erkannte Sprache als Markersprache der neuen Plan-Datei.
-- Gib eine einzeilige Statusmeldung aus, z. B. „Markersprache aus 12 vorhandenen Plänen erkannt: Deutsch.“
-- Überspringe Schritte 5 und 6.
+- Use the detected language as the marker language of the new plan file.
+- Output a one-line status update, e.g. "Marker language detected from 12 existing plans: German."
+- Skip Steps 5 and 6.
 
-#### Schritt 5: Frage an den User
+#### Step 5: Question to the user
 
-Nur wenn weder Schritt 1 noch Schritt 4 die Sprache bestimmen konnten:
+Only if neither Step 1 nor Step 4 could determine the language:
 
 ```ask
 header: Marker
-question: In welcher Sprache soll der Statusmarker im Plan-Kopf stehen?
+question: In which language should the status marker in the plan header be written?
 options:
-  - label: Deutsch
-    description: Statuszeile **Planungsstatus:** Nicht umgesetzt
-  - label: Englisch
-    description: Statuszeile **Plan status:** Not implemented
+  - label: German
+    description: Status line **Planungsstatus:** Nicht umgesetzt
+  - label: English
+    description: Status line **Plan status:** Not implemented
 ```
 
-Nenne in der Begleitmeldung kurz, warum gefragt wird (Mischbestand, kein erkennbarer Marker oder Config nicht gesetzt).
+In the accompanying message, briefly state why the question is asked (mixed inventory, no recognizable marker, or config not set).
 
-#### Schritt 6: Hinweis nach Frage
+#### Step 6: Note after the question
 
-Nur wenn Schritt 5 ausgeführt wurde: Verwende die gewählte Markersprache für **diesen Plan**. Schreibe sie **nicht** in die Konfiguration — das dauerhafte Festschreiben von `plan.markerLanguage` in der Projektsetup-ADR übernimmt ausschließlich `{{SKILL:setup}}`. Weise den User kurz darauf hin, z. B. „Markersprache `de` für diesen Plan verwendet; dauerhaft festschreiben über `{{SKILL:setup}}`.“
+Only if Step 5 was executed: use the chosen marker language for **this plan**. Do **not** write it to the configuration — permanently committing `plan.markerLanguage` in the project-setup ADR is done exclusively by `{{SKILL:setup}}`. Briefly note this to the user, e.g. "Marker language `de` used for this plan; commit permanently via `{{SKILL:setup}}`."
 
-#### Konsistenzregeln
+#### Consistency rules
 
-Verwende die finale Markersprache konsistent: deutscher Marker mit deutschen Werten, englischer Marker mit englischen Werten. Mische Marker-Schlüssel und Wert nicht. Übernimm keine Sprach-Erklärungen oder HTML-Kommentare aus den Beispielblöcken unten in die finale Plan-Datei.
+Use the final marker language consistently: German marker with German values, English marker with English values. Do not mix the marker key and value. Do not carry over language explanations or HTML comments from the example blocks below into the final plan file.
 
-Der Plan muss mindestens diese Struktur verwenden. Verwende je nach gewählter Markersprache eine der beiden Statuszeilen, nicht beide:
+The plan must use at least this structure. Depending on the chosen marker language, use one of the two status lines, not both:
 
-Statuszeile Deutsch:
+German status line:
 
 ```markdown
 **Planungsstatus:** Nicht umgesetzt
 ```
 
-Statuszeile Englisch:
+English status line:
 
 ```markdown
 **Plan status:** Not implemented
 ```
 
-Vollständiges Plan-Template (Statuszeile gemäß gewählter Markersprache einsetzen):
+Complete plan template (insert the status line according to the chosen marker language):
 
 ```markdown
-# [Titel]
+# [Title]
 
-**Planungsstatus:** Nicht umgesetzt
-**Quelle:** {{SKILL:plan}}
-**Empfohlener Workflow:** Feature (`{{SKILL:build}}`) / Bugfix (`{{SKILL:fix}}`) / Refactoring (`{{SKILL:refactor}}`) / Dokumentation (`{{SKILL:docs}}`)
-<!-- Nur bei Empfohlenem Workflow: Dokumentation: -->
-**Doku-Kategorie:** user-guide | developer-guide | operations | runbooks
-**Ziel-Pfad:** docs/<kategorie>/<topic-slug>.md
+**Plan status:** Not implemented
+**Source:** {{SKILL:plan}}
+**Recommended workflow:** Feature (`{{SKILL:build}}`) / Bugfix (`{{SKILL:fix}}`) / Refactoring (`{{SKILL:refactor}}`) / Documentation (`{{SKILL:docs}}`)
+<!-- Only for Recommended workflow: Documentation: -->
+**Doc category:** user-guide | developer-guide | operations | runbooks
+**Target path:** docs/<category>/<topic-slug>.md
 
-## Anforderung
+## Requirement
 
-[Anforderung, Ziel und Begründung der Workflow-Empfehlung]
+[Requirement, goal, and rationale for the workflow recommendation]
 
-## Architekturentscheidungen
+## Architecture decisions
 
-- [Entscheidung mit Begründung]
+- [Decision with rationale]
 
-## Betroffene Dateien
+## Affected files
 
-| Datei | Beschreibung |
+| File | Description |
 |---|---|
-| `pfad/datei` | [geplante Änderung] |
+| `path/file` | [planned change] |
 
-## Implementierungsdetails
+## Implementation details
 
-### Vorgehen
+### Approach
 
-1. [konkreter Umsetzungsschritt]
+1. [concrete implementation step]
 
-### Komponenten-Struktur
+### Component structure
 
-[Nur falls relevant]
+[Only if relevant]
 
-### State-Management
+### State management
 
-[Nur falls relevant]
+[Only if relevant]
 
-### API-Anbindung
+### API integration
 
-[Nur falls relevant]
+[Only if relevant]
 
-### Styling-Ansatz
+### Styling approach
 
-[Nur falls relevant]
+[Only if relevant]
 
-### Barrierefreiheit
+### Accessibility
 
-[Nur falls relevant]
+[Only if relevant]
 
-### Edge Cases
+### Edge cases
 
-- [Edge Case und erwartetes Verhalten]
+- [Edge case and expected behavior]
 
-## Akzeptanzkriterien
+## Acceptance criteria
 
-- [ ] [messbares Kriterium]
+- [ ] [measurable criterion]
 
-## Validierungsplan
+## Validation plan
 
-- [geplanter Test, Check oder manuelle Prüfung]
+- [planned test, check, or manual verification]
 
-## Annahmen und offene Punkte
+## Assumptions and open points
 
-- [Annahme oder bewusst dokumentierter Restpunkt]
+- [Assumption or deliberately documented remaining point]
 
-## Plan-Review
+## Plan review
 
-**Ergebnis:** Freigegeben / Überarbeiten
+**Result:** Approved / Revise
 
-### Zusammenfassung
+### Summary
 
-| Bereich | Kritisch | Wichtig | Hinweis |
+| Area | Critical | Important | Note |
 |---|---:|---:|---:|
-| Architektur | 0 | 0 | 0 |
+| Architecture | 0 | 0 | 0 |
 | Security | 0 | 0 | 0 |
-| Datenschutz | 0 | 0 | 0 |
-| Fehlerfälle | 0 | 0 | 0 |
-| Testbarkeit | 0 | 0 | 0 |
+| Data protection | 0 | 0 | 0 |
+| Error cases | 0 | 0 | 0 |
+| Testability | 0 | 0 | 0 |
 | Scope | 0 | 0 | 0 |
-| Wartbarkeit | 0 | 0 | 0 |
+| Maintainability | 0 | 0 | 0 |
 
-### Befunde
+### Findings
 
-- Keine Befunde. / [Befund mit Bereich, Schweregrad, Problem und Anpassung]
+- No findings. / [Finding with area, severity, problem, and adjustment]
 
-## Offene Punkte
+## Open Points
 
-- Keine offenen Punkte.
+- No open points.
 ```
 
-Regeln:
+Rules:
 
-- Entferne nicht relevante optionale Unterabschnitte oder schreibe knapp „Nicht relevant“ mit Begründung.
-- Nutze konkrete Datei-Referenzen, sobald sie aus der Codebase ableitbar sind.
-- Formuliere die Akzeptanzkriterien so, dass sie zusammen genau eine messbare Abschlussbedingung ergeben. Der umsetzende Workflow leitet daraus seine Goal-Bedingung und den optionalen `/goal`-String ab; vermeide vage Kriterien ohne benannte Prüfung.
-- Schreibe den Plan als Umsetzungsanleitung, nicht als Vorab-Implementierung.
-- Vermeide Codeblöcke im Plan. Nutze sie nur, wenn eine kurze Codeformulierung klarer und kürzer ist als eine prose Beschreibung.
-- Wenn ein Codebeispiel nötig ist, begrenze es auf das kleinste aussagekräftige Fragment und dokumentiere, dass es ein Beispiel oder eine Schnittstellenskizze ist.
-- Ergänze einen Abschnitt `## Plan-Review` gemäß Template. Er enthält ausschließlich Befunde auf Plan-Ebene, keine Code-Review-Findings.
-- Ergänze am Ende des Plans einen Abschnitt für offene Punkte. Bei deutschsprachigen Plänen heißt er `## Offene Punkte` mit leerem Zustand `- Keine offenen Punkte.`; bei englischsprachigen Plänen heißt er `## Open Points` mit leerem Zustand `- No open points.`. Wenn der User eine Entscheidung später treffen will, dokumentiere den Punkt dort konkret mit Wiedereinstiegshinweis.
-- Schreibe keine `## Testergebnisse` und keine `## Review-Findings`, weil noch nichts implementiert wurde.
-- Setze den kanonischen offenen Planstatus exakt entsprechend der in Phase 3 gewählten Markersprache: deutsch auf `**Planungsstatus:** Nicht umgesetzt` oder englisch auf `**Plan status:** Not implemented`; `{{SKILL:build}}`, `{{SKILL:fix}}`, `{{SKILL:refactor}}` und `{{SKILL:docs}}` nutzen diesen Status später, um die Planungs- bzw. Analysegrundlage zu erkennen.
-- Setze genau eine Zeile `**Empfohlener Workflow:** ...` im Kopfbereich. Wähle eine der vier Kategorien Feature, Bugfix, Refactoring oder Dokumentation und nenne den passenden Skill in Klammern.
-- Bei `**Empfohlener Workflow:** Dokumentation (`{{SKILL:docs}}`)` setze direkt darunter die beiden zusätzlichen Zeilen `**Doku-Kategorie:** ...` und `**Ziel-Pfad:** ...` gemäß `Doku-Kategorien`. Lasse den HTML-Kommentar `<!-- Nur bei ... -->` und die beiden Zeilen für die anderen drei Workflows aus dem Kopfbereich weg.
+- Remove irrelevant optional subsections or write a brief "Not relevant" with a rationale.
+- Use concrete file references as soon as they can be derived from the codebase.
+- Formulate the acceptance criteria so that together they yield exactly one measurable completion condition. The implementing workflow derives its goal condition and the optional `/goal` string from them; avoid vague criteria without a named check.
+- Write the plan as an implementation guide, not as a pre-implementation.
+- Avoid code blocks in the plan. Use them only when a short code formulation is clearer and shorter than a prose description.
+- If a code example is necessary, limit it to the smallest meaningful fragment and document that it is an example or an interface sketch.
+- Add a `## Plan review` section per the template. It contains exclusively plan-level findings, no code-review findings.
+- Add a section for open points at the end of the plan. For German-language plans it is called `## Offene Punkte` with the empty state `- Keine offenen Punkte.`; for English-language plans it is called `## Open Points` with the empty state `- No open points.`. If the user wants to make a decision later, document the point there concretely with a re-entry note.
+- Do not write any `## Testergebnisse` or `## Review-Findings`, because nothing has been implemented yet.
+- Set the canonical open plan status exactly according to the marker language chosen in Phase 3: German to `**Planungsstatus:** Nicht umgesetzt` or English to `**Plan status:** Not implemented`; `{{SKILL:build}}`, `{{SKILL:fix}}`, `{{SKILL:refactor}}`, and `{{SKILL:docs}}` later use this status to recognize the planning or analysis basis.
+- Set exactly one line `**Recommended workflow:** ...` in the header area. Choose one of the four categories Feature, Bugfix, Refactoring, or Documentation and name the appropriate skill in parentheses.
+- For `**Recommended workflow:** Documentation (`{{SKILL:docs}}`)`, place the two additional lines `**Doc category:** ...` and `**Target path:** ...` directly below it per `Doc categories`. Omit the HTML comment `<!-- Only for ... -->` and the two lines for the other three workflows from the header area.
 
-### Phase 4: Gap Analysis
+### Phase 4: Gap analysis
 
-Das Gap-Urteil liegt bei `codebase-improvement` (siehe „Delegation des Domänen-Urteils an
-zentrale Skills“). Wende den Skill auf den Plan an und lass ihn die generischen Lücken
-beurteilen — Over-Engineering, Scope Creep, unausgesprochene Annahmen, fehlende oder nicht
-messbare Akzeptanzkriterien, Edge Cases, versteckte Intentionen, Umsetzungsrisiken, Evidenz vs.
-Raten. Kreuzt der konkrete Plan eine deklarierte Spezialisten-Boundary (Product, Design,
-Browser/Barrierefreiheit, Architektur, Legal …), ziehe den zuständigen Owner über das
-Relevanz-Gate hinzu; ein schmaler Engineering-Plan bleibt schmal.
+The gap judgment rests with `codebase-improvement` (see "Delegating the domain judgment to
+central skills"). Apply the skill to the plan and let it assess the generic gaps —
+over-engineering, scope creep, unspoken assumptions, missing or non-measurable acceptance
+criteria, edge cases, hidden intentions, implementation risks, evidence vs. guessing. If the
+concrete plan crosses a declared specialist boundary (product, design, browser/accessibility,
+architecture, legal …), bring in the responsible owner via the relevance gate; a narrow
+engineering plan stays narrow.
 
-Arbeite die gemeldeten Lücken in den Plan ein und bereinige ihn, bevor du ihn als abgeschlossen
-meldest. Fehlt `codebase-improvement`, greift der minimale generische Fallback aus dem Baustein
-(kurze Kern-Checkliste), **kein** zweites Plan-Quality-Handbuch.
+Incorporate the reported gaps into the plan and clean it up before you report it as complete. If
+`codebase-improvement` is missing, the minimal generic fallback from the building block applies
+(a short core checklist), **not** a second plan-quality handbook.
 
-### Phase 5: Plan-Validierung
+### Phase 5: Plan validation
 
-Normalisiere das Qualitätsurteil aus Phase 4 in die Effective-Flow-Scorecard (der Skill liefert
-das Urteil, Effective Flow die Artefakt-Form):
+Normalize the quality judgment from Phase 4 into the Effective Flow scorecard (the skill provides
+the judgment, Effective Flow the artifact form):
 
-| Kriterium           | Ziel                                                                                                      |
-| ------------------- | --------------------------------------------------------------------------------------------------------- |
-| Clarity             | konkrete Datei-Referenzen und klare Schritte, Ziel >= 80%                                                 |
-| Verification        | messbare Akzeptanzkriterien pro Anforderung                                                               |
-| Context             | verifizierter Code vs. Annahmen, Ziel <= 10% Raten                                                        |
-| Big Picture         | Zweck und Workflow explizit beschrieben                                                                   |
-| No-Code-Grenze      | keine Änderungen außerhalb `<plan.dir>/`                                                                  |
-| Code-Sparsamkeit    | kein Code im Plan, außer ein minimales Fragment ist die kürzeste klare Erklärung                          |
-| Workflow-Empfehlung | Feature, Bugfix, Refactoring oder Dokumentation ist begründet und zum Scope passend                       |
-| Doku-Ziel           | bei Doku-Plänen sind `**Doku-Kategorie:**` und `**Ziel-Pfad:**` gesetzt, gültig und konsistent zueinander |
+| Criterion               | Target                                                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Clarity                 | concrete file references and clear steps, target >= 80%                                                            |
+| Verification            | measurable acceptance criteria per requirement                                                                     |
+| Context                 | verified code vs. assumptions, target <= 10% guessing                                                              |
+| Big Picture             | purpose and workflow explicitly described                                                                          |
+| No-code boundary        | no changes outside `<plan.dir>/`                                                                                   |
+| Code frugality          | no code in the plan unless a minimal fragment is the shortest clear explanation                                    |
+| Workflow recommendation | Feature, Bugfix, Refactoring, or Documentation is justified and fits the scope                                     |
+| Doc target              | for documentation plans, `**Doc category:**` and `**Target path:**` are set, valid, and consistent with each other |
 
-Wenn ein Kriterium nicht erfüllt ist, überarbeite den Plan oder frage den User nach der fehlenden Information.
+If a criterion is not met, revise the plan or ask the user for the missing information.
 
-### Phase 6: Plan-Review
+### Phase 6: Plan review
 
-Führe vor dem Abschluss einen Review des Plans selbst durch. Dieser Review prüft die geplanten Änderungen auf Plan-Ebene und ist **kein Code-Review**.
+Before completion, perform a review of the plan itself. This review checks the planned changes at the plan level and is **not a code review**.
 
-Regeln:
+Rules:
 
-- Starte keine normalen Reviewer-Skills, Implementer, Test-Writer oder Validatoren.
-- Ändere weiterhin nur die Plan-Datei unter `<plan.dir>/`.
-- Prüfe die geplanten Änderungen gegen den verifizierten Code-Kontext aus Phase 1.
-- Gib keine vollständigen Codevorschläge aus; halte dich an die Code-Sparsamkeitsregel.
+- Do not start any normal reviewer skills, implementers, test writers, or validators.
+- Continue to change only the plan file under `<plan.dir>/`.
+- Check the planned changes against the verified code context from Phase 1.
+- Do not output complete code suggestions; adhere to the code-frugality rule.
 
-Das Review-**Urteil** liefert `codebase-improvement` (siehe „Delegation des Domänen-Urteils an
-zentrale Skills“): Wende den Skill auf den Plan an, damit er die Befunde auf Plan-Ebene
-beurteilt — u. a. Architektur-Passung, Security-Oberfläche, Datenschutz, Fehlerfälle,
-Testbarkeit, Scope und Wartbarkeit. Kreuzt der Plan eine deklarierte Spezialisten-Boundary
-(Product, Design, Browser/Barrierefreiheit, Architektur, Legal …), ziehe den zuständigen Owner
-über das Relevanz-Gate hinzu. Fehlt `codebase-improvement`, greift der minimale generische
-Fallback aus dem Baustein statt einer lokalen Voll-Checkliste.
+The review **judgment** is provided by `codebase-improvement` (see "Delegating the domain
+judgment to central skills"): apply the skill to the plan so that it assesses the findings at the
+plan level — among others architecture fit, security surface, data protection, error cases,
+testability, scope, and maintainability. If the plan crosses a declared specialist boundary
+(product, design, browser/accessibility, architecture, legal …), bring in the responsible owner
+via the relevance gate. If `codebase-improvement` is missing, the minimal generic fallback from
+the building block applies instead of a local full checklist.
 
-Klassifiziere die vom Skill gemeldeten Befunde in die Effective-Flow-Schwere (Artefakt-Form):
+Classify the findings reported by the skill into the Effective Flow severity (artifact form):
 
-- **Kritisch:** Plan darf nicht abgeschlossen werden, bevor der Befund eingearbeitet ist.
-- **Wichtig:** Befund soll eingearbeitet werden; wenn bewusst nicht, dokumentiere die Begründung im Plan.
-- **Hinweis:** Optionaler Verbesserungs- oder Prüfpunkt.
+- **Critical:** the plan may not be completed before the finding is incorporated.
+- **Important:** the finding should be incorporated; if deliberately not, document the rationale in the plan.
+- **Note:** optional improvement or check point.
 
-Vorgehen:
+Approach:
 
-1. Hole das Review-Urteil über `codebase-improvement` (plus relevante Spezialisten) ein.
-2. Arbeite alle kritischen Befunde direkt in den Plan ein.
-3. Arbeite wichtige Befunde ein oder dokumentiere im `## Plan-Review`, warum sie bewusst nicht umgesetzt werden.
-4. Aktualisiere den Abschnitt `## Plan-Review` mit Ergebnis, Zusammenfassung und Befunden.
-5. Wenn nach der Überarbeitung weiterhin kritische Befunde bestehen, frage den User nach der fehlenden Entscheidung und schließe den Plan nicht ab.
+1. Obtain the review judgment via `codebase-improvement` (plus relevant specialists).
+2. Incorporate all critical findings directly into the plan.
+3. Incorporate important findings or document in the `## Plan review` why they are deliberately not implemented.
+4. Update the `## Plan review` section with the result, summary, and findings.
+5. If critical findings still remain after the revision, ask the user for the missing decision and do not complete the plan.
 
-### Phase 6b: Vertiefter interaktiver Plan-Review
+### Phase 6b: Deep interactive plan review
 
-Wenn der interne Plan-Review aus Phase 6 keine kritischen Befunde mehr enthält,
-frage den User, ob der vertiefte interaktive Plan-Review jetzt gestartet werden
-soll.
+If the internal plan review from Phase 6 no longer contains any critical findings,
+ask the user whether the deep interactive plan review should be started now.
 
 ```ask
-header: Plan-Review
-question: Vertieften interaktiven Plan-Review jetzt starten?
+header: Plan review
+question: Start the deep interactive plan review now?
 options:
-  - label: Ja
-    description: Jetzt nach unbekannten, ungenauen und entscheidungsbedürftigen Punkten suchen
-  - label: Nein
-    description: Später über review <plandatei> fortsetzen
+  - label: Yes
+    description: Search now for unknown, imprecise, and decision-requiring points
+  - label: No
+    description: Continue later via review <plan-file>
 ```
 
-Bei `Ja`: Lies die interne Anweisung `{{SKILL:plan-review}}` und führe sie mit der
-gerade erzeugten Plan-Datei aus. Halte weiterhin die Schreibgrenze ein: nur die
-Plan-Datei unter `<plan.dir>/` darf geändert werden.
+On `Yes`: Read the internal instruction `{{SKILL:plan-review}}` and run it with the
+just-created plan file. Continue to observe the write boundary: only the
+plan file under `<plan.dir>/` may be changed.
 
-Bei `Nein`: Fahre mit Phase 7 fort und nenne im Abschluss den Wiedereinstieg über
-`{{SKILL:review}} <plandatei>`.
+On `No`: Continue with Phase 7 and name in the conclusion the re-entry via
+`{{SKILL:review}} <plan-file>`.
 
-### Phase 7: Abschluss
+### Phase 7: Completion
 
-1. Schreibe die Plan-Datei.
-2. Formatiere nur die neue Plan-Datei, falls ein Formatter für Markdown klar konfiguriert ist.
-3. Melde dem User:
-   - Pfad der erzeugten Plan-Datei
-   - kurze Zusammenfassung des geplanten Vorgehens
-   - empfohlener Workflow mit Begründung
-   - Scorecard-Ergebnis
-   - Hinweis, dass keine Code-Änderungen vorgenommen wurden
-   - Hinweis, welcher Skill-Aufruf den Plan später umsetzt, zum Beispiel `{{SKILL:build}} <plan.dir>/YYYY-MM-DD-<slug>.md`, `{{SKILL:fix}} <plan.dir>/YYYY-MM-DD-<slug>.md`, `{{SKILL:refactor}} <plan.dir>/YYYY-MM-DD-<slug>.md` oder `{{SKILL:docs}} <plan.dir>/YYYY-MM-DD-<slug>.md`
+1. Write the plan file.
+2. Format only the new plan file if a formatter for Markdown is clearly configured.
+3. Report to the user:
+   - the path of the created plan file
+   - a brief summary of the planned approach
+   - the recommended workflow with rationale
+   - the scorecard result
+   - a note that no code changes were made
+   - a note as to which skill call implements the plan later, for example `{{SKILL:build}} <plan.dir>/YYYY-MM-DD-<slug>.md`, `{{SKILL:fix}} <plan.dir>/YYYY-MM-DD-<slug>.md`, `{{SKILL:refactor}} <plan.dir>/YYYY-MM-DD-<slug>.md`, or `{{SKILL:docs}} <plan.dir>/YYYY-MM-DD-<slug>.md`
 
-## Regeln
+## Rules
 
-- Starte keine Implementierungsphase.
-- Führe keine Tests aus, die Projektdateien ändern könnten.
-- Erstelle keine Commits.
-- Gib dem User nach jeder Phase eine kurze Statusmeldung.
-- Wenn der Plan wegen fehlender Informationen nicht belastbar wäre, frage nach statt zu raten.
+- Do not start any implementation phase.
+- Do not run any tests that could change project files.
+- Do not create any commits.
+- Give the user a brief status update after each phase.
+- If the plan would not be reliable due to missing information, ask instead of guessing.

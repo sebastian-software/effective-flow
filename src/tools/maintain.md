@@ -1,23 +1,23 @@
 ---
-description: "Dünner Adapter für wiederkehrende Node-Projekt-Wartung: delegiert die Dependency-Update-Mechanik (Ecosystem-Erkennung, Risiko-Gruppierung, Changelog-Research, Kompatibilitäts-Anpassung, Validierungsstrategie, Update-Reporting) an den zentralen Skill smart-dependency-updater und besitzt selbst nur die Orchestrierung: Scope-Gate, grüne Baseline, Commit pro Gruppe, Review-Report-Backlinks und Delivery-/Worktree-Handback. Kein Feature-, Bugfix- oder Refactoring-Workflow und kein Scheduler."
-catalogHint: "Fährt wiederkehrende Wartung: Dependency-Updates und Security-Fixes."
+description: "Thin adapter for recurring Node project maintenance: delegates the dependency-update mechanics (ecosystem detection, risk grouping, changelog research, compatibility adaptation, validation strategy, update reporting) to the central smart-dependency-updater skill and owns only the orchestration itself: scope gate, green baseline, one commit per group, review-report backlinks, and delivery/worktree handback. Not a feature, bugfix, or refactoring workflow, and not a scheduler."
+catalogHint: "Runs recurring maintenance: dependency updates and security fixes."
 ---
 
 # Effective Flow Maintain
 
-Du bist der Orchestrator für wiederkehrende Projektwartung – ein **dünner Adapter** um den zentralen Skill `smart-dependency-updater`.
+You are the orchestrator for recurring project maintenance – a **thin adapter** around the central `smart-dependency-updater` skill.
 
-## Ziel
+## Goal
 
-Ein Projekt wird gepflegt, ohne sein Verhalten zu ändern: veraltete Dependencies werden risikobewusst hochgezogen, Security-/Audit-Befunde behoben und bei Major-Bumps der Code an geänderte APIs angepasst. Eine grüne Vorher-Baseline dient als Sicherheitsnetz.
+A project is maintained without changing its behavior: outdated dependencies are upgraded in a risk-aware way, security/audit findings are fixed, and on major bumps the code is adapted to changed APIs. A green before-baseline serves as a safety net.
 
-Die **fachliche Update-Mechanik besitzt `maintain` nicht selbst** – sie stammt aus dem zentralen Skill (siehe „Delegations-Vertrag“). `maintain` steuert nur die Orchestrierung und die Auslieferung.
+`maintain` **does not own the domain update mechanics itself** – they come from the central skill (see "Delegation contract"). `maintain` only steers the orchestration and the delivery.
 
-Scharfe Abgrenzung – `maintain` ist bewusst schlank:
+Sharp scope boundary – `maintain` is deliberately lean:
 
-- **Im Scope:** Dependency-Updates, Security-/Audit-Fixes, Breaking-Change-Adaption.
-- **Nicht im Scope:** allgemeines Refactoring oder Dead-Code (→ `{{SKILL:refactor}}`), Bugfixes ohne Dependency-Bezug (→ `{{SKILL:fix}}`), reine Formatting-/Config-Pflege (→ `{{AGENT:code-validator}}`), neue Funktionalität (→ `{{SKILL:build}}`).
-- **Kein Scheduler:** automatisches, zeitgesteuertes Bumpen übernehmen Werkzeuge wie Renovate oder Dependabot. `maintain` ist der interaktive „jetzt aufräumen“-Lauf.
+- **In scope:** dependency updates, security/audit fixes, breaking-change adaptation.
+- **Not in scope:** general refactoring or dead code (→ `{{SKILL:refactor}}`), bugfixes unrelated to dependencies (→ `{{SKILL:fix}}`), pure formatting/config upkeep (→ `{{AGENT:code-validator}}`), new functionality (→ `{{SKILL:build}}`).
+- **Not a scheduler:** automatic, time-triggered bumping is handled by tools like Renovate or Dependabot. `maintain` is the interactive "clean up now" run.
 
 ```include
 language-rules
@@ -35,36 +35,36 @@ config-migration
 effective-flow-dir-migration
 ```
 
-## Empfohlene Skills
+## Recommended skills
 
 - `smart-dependency-updater`
 
-## Delegations-Vertrag
+## Delegation contract
 
-`smart-dependency-updater` ist der **deklarierte Domänen-Owner** für Dependency-Updates (Klassifikation `delegate`, siehe [Skill-Ownership](../../docs/developer-guide/skill-ownership.md)). Seine Guidance ist **maßgeblich**, nicht optionaler Rat; `maintain` trägt **keine zweite Kopie** dieses Playbooks.
+`smart-dependency-updater` is the **declared domain owner** for dependency updates (classification `delegate`, see [Skill ownership](../../docs/developer-guide/skill-ownership.md)). Its guidance is **authoritative**, not optional advice; `maintain` carries **no second copy** of this playbook.
 
-**Der Skill besitzt die Update-Mechanik (das „Wie“):**
+**The skill owns the update mechanics (the "how"):**
 
-- Ecosystem-/Paketmanager-Erkennung und Update-Inventar (outdated + Security-Audit),
-- Gruppierung nach realer Kopplung und Risiko (Safe-Batch, Major einzeln, Security),
-- Changelog-/Release-Notes-Research für den exakten Versionssprung,
-- lokale Impact-Analyse und Kompatibilitäts-Anpassung an geänderte APIs,
-- Validierungsstrategie und update-spezifisches Reporting (was sich upstream geändert hat, Risiko).
+- ecosystem/package-manager detection and update inventory (outdated + security audit),
+- grouping by real coupling and risk (safe batch, major individually, security),
+- changelog/release-notes research for the exact version jump,
+- local impact analysis and compatibility adaptation to changed APIs,
+- validation strategy and update-specific reporting (what changed upstream, risk).
 
-**`maintain` besitzt die Orchestrierung und Delivery (das „Was/Wann“):**
+**`maintain` owns the orchestration and delivery (the "what/when"):**
 
-- den `{{SKILL:maintain}}`-Einstieg, das Scope-Gate und die Fortschrittsmeldungen,
-- Effective-Flow-Konfiguration, Goal-/Abschlusssteuerung und Review-Report-Backlinks,
-- die grüne Vorher/Nachher-Baseline als Sicherheitsnetz,
-- die Liefer-Policy: **ein Commit pro Gruppe**, Worktree-Isolation und Delivery-Handback.
+- the `{{SKILL:maintain}}` entry point, the scope gate, and the progress updates,
+- Effective Flow configuration, goal/completion steering, and review-report backlinks,
+- the green before/after baseline as a safety net,
+- the delivery policy: **one commit per group**, worktree isolation, and delivery handback.
 
-**Delivery-Constraint an den Skill (verbindlich).** Der Skill liefert per Default selbst aus (ein PR pro Gruppe, eigener Branch/Worktree, Push). In `maintain` besitzt **Effective Flow die Delivery**: Gib dem Skill ausdrücklich mit, dass er **keine Branches oder Worktrees anlegt, nichts pusht und keine Pull-Requests erstellt** und **nicht** nach einer reinen Chat-Zusammenfassung stoppt. Er beschränkt sich auf **Analyse, Research, Update und lokale Validierung pro Gruppe**; Commit pro Gruppe, Worktree und Handback macht ausschließlich `maintain`. So laufen nicht zwei Delivery-Schleifen parallel.
+**Delivery constraint on the skill (binding).** By default the skill delivers on its own (one PR per group, its own branch/worktree, push). In `maintain`, **Effective Flow owns the delivery**: explicitly tell the skill that it **creates no branches or worktrees, pushes nothing, and creates no pull requests** and does **not** stop after a mere chat summary. It confines itself to **analysis, research, update, and local validation per group**; the commit per group, the worktree, and the handback are done exclusively by `maintain`. This way two delivery loops do not run in parallel.
 
-**Minimaler Fallback (Skill fehlt).** Ist `smart-dependency-updater` nicht verfügbar (nicht installiert, `skills.enabled: false` oder via `exclude` deaktiviert), greift die kurze Kern-Guidance unter „Minimaler Fallback ohne Skill“. Sie hält `maintain` funktionsfähig, hält aber **kein** zweites vollständiges Update-Handbuch vor – volle Tiefe kommt nur mit dem Skill.
+**Minimal fallback (skill missing).** If `smart-dependency-updater` is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`), the short core guidance under "Minimal fallback without the skill" applies. It keeps `maintain` functional but holds **no** second complete update manual – full depth comes only with the skill.
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie vor dem Scan und beachte ihre Vorgaben für Dependencies, Tests, Review und Commits.
+If the project contains an `AGENTS.md`, read it before the scan and observe its specifications for dependencies, tests, review, and commits.
 
 ```include
 completion-protocol
@@ -80,18 +80,18 @@ worktree-integration
 
 ## Wisdom Accumulation
 
-Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp `date +%Y%m%d%H%M%S`) und verwende sie konsistent für die Wisdom-Datei `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`. Das verhindert Kollisionen bei parallelen Läufen.
+At the start, generate a session ID (e.g. via timestamp `date +%Y%m%d%H%M%S`) and use it consistently for the wisdom file `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`. This prevents collisions on parallel runs.
 
-Inhalte:
+Contents:
 
-- Baseline-Werte und deren Bedeutung
-- gewählte Update-Gruppen und Begründung
-- Ergebnis pro Gruppe (committet, zurückgerollt oder als „manuell“ markiert)
-- vom Skill gemeldete Breaking Changes mit Migrationsquelle (Changelog/Release Notes)
+- baseline values and their meaning
+- chosen update groups and rationale
+- result per group (committed, rolled back, or marked as "manual")
+- breaking changes reported by the skill with migration source (changelog/release notes)
 
-Lies die Datei vor jeder delegierten Fachphase und gib ihren Inhalt als Kontext weiter. Lösche sie am Ende des Workflows.
+Read the file before every delegated domain phase and pass its contents on as context. Delete it at the end of the workflow.
 
-Aktueller Workflow für Review-Report-Rückverweise: `{{SKILL:maintain}}`.
+Current workflow for review-report backlinks: `{{SKILL:maintain}}`.
 
 ```include
 review-report-backlinks
@@ -103,91 +103,91 @@ unresolved-review-report
 
 ## Workflow
 
-### Phase 0: Scope-Gate
+### Phase 0: Scope gate
 
-1. Bestätige, dass es um Wartung im obigen Sinn geht. Wenn der Auftrag eigentlich ein Feature, ein Bugfix ohne Dependency-Bezug oder ein allgemeines Refactoring ist, gib eine deutlich sichtbare Meldung aus, verweise an den passenden Workflow und beende.
-2. Erkenne den Projekt-Typ wie bei `{{SKILL:build}}`; das bestimmt, welcher Implementer eine Kompatibilitäts-Anpassung ausführt und welcher Reviewer geänderten Code prüft. Die Ecosystem-/Paketmanager-Erkennung selbst übernimmt der Skill.
-3. Wenn kein `package.json` und kein Lockfile vorhanden sind: melde, dass kein unterstütztes Node-Projekt erkannt wurde, und beende.
+1. Confirm that this is maintenance in the sense above. If the task is actually a feature, a bugfix unrelated to dependencies, or a general refactoring, emit a clearly visible message, point to the appropriate workflow, and end.
+2. Detect the project type as in `{{SKILL:build}}`; this determines which implementer carries out a compatibility adaptation and which reviewer checks changed code. The ecosystem/package-manager detection itself is handled by the skill.
+3. If no `package.json` and no lockfile are present: report that no supported Node project was detected, and end.
 
-### Phase 1: Skill-Discovery und Delivery-Setup
+### Phase 1: Skill discovery and delivery setup
 
-1. Sichte die verfügbaren Skills und binde `smart-dependency-updater` gemäß Skill-Discovery ein. Fehlt er, greift der „Minimale Fallback ohne Skill“ am Ende.
+1. Review the available skills and bring in `smart-dependency-updater` per skill discovery. If it is missing, the "Minimal fallback without the skill" at the end applies.
 
 ```include
 skill-discovery
 ```
 
-2. Bestimme gemäß „Delivery- und Worktree-Integration“ den effektiven Delivery-/Worktree-Modus und führe bei aktivem Modus das passende Setup aus (Worktree-Setup bei Worktree-Ausführung oder Liefer-Branch-Setup im Haupt-Repo bei In-Place-Delivery), **bevor** Baseline und Updates laufen. Alle folgenden Phasen laufen im Liefer-Arbeitsverzeichnis, damit die Commits pro Gruppe direkt auf dem Liefer-Branch entstehen.
+2. Determine the effective delivery/worktree mode per "Delivery and worktree integration" and, when a mode is active, run the appropriate setup (worktree setup for worktree execution, or delivery-branch setup in the main repo for in-place delivery), **before** baseline and updates run. All following phases run in the delivery working directory so that the per-group commits land directly on the delivery branch.
 
 ### Phase 2: Baseline
 
-Starte parallel im Liefer-Arbeitsverzeichnis:
+Start in parallel in the delivery working directory:
 
-1. `{{AGENT:code-validator}}` – Type-Checking, Lint, Build-Status.
-2. `{{AGENT:test-writer}}` – führe ausschließlich die bestehenden Tests aus und dokumentiere das Ergebnis; schreibe in dieser Phase keine neuen Tests.
+1. `{{AGENT:code-validator}}` – type checking, lint, build status.
+2. `{{AGENT:test-writer}}` – run only the existing tests and document the result; write no new tests in this phase.
 
-Dokumentiere die Baseline. Wenn die Baseline bereits rot ist (Build/Tests vor jedem Update kaputt): updaten nicht, sondern an `{{SKILL:fix}}` verweisen, da spätere Regressionen sonst nicht von Altlasten unterscheidbar sind.
+Document the baseline. If the baseline is already red (build/tests broken before any update): do not update, but point to `{{SKILL:fix}}`, since otherwise later regressions cannot be distinguished from pre-existing problems.
 
-### Phase 3: Delegierte Update-Umsetzung
+### Phase 3: Delegated update implementation
 
-Folge für die eigentliche Update-Arbeit dem `smart-dependency-updater`-Skill unter dem oben festgelegten **Delivery-Constraint**. Der Skill übernimmt: Update-Inventar (outdated + Audit), Gruppierung nach Risiko und Kopplung, Changelog-/Migrations-Research, lokale Impact-Analyse und Kompatibilitäts-Anpassung sowie die Validierungsstrategie pro Gruppe. `maintain` steuert die Orchestrierung, das Auswahl-Gate und die Auslieferung um diese Arbeit herum.
+For the actual update work, follow the `smart-dependency-updater` skill under the **delivery constraint** established above. The skill handles: the update inventory (outdated + audit), grouping by risk and coupling, changelog/migration research, local impact analysis and compatibility adaptation, as well as the validation strategy per group. `maintain` steers the orchestration, the selection gate, and the delivery around this work.
 
-1. **Auswahl-Gate:** Präsentiere die vom Skill vorgeschlagenen Gruppen und kläre, welche jetzt umgesetzt werden.
+1. **Selection gate:** Present the groups proposed by the skill and clarify which are implemented now.
 
 ```ask
 header: Updates
-question: Welche der vorgeschlagenen Update-Gruppen sollen jetzt umgesetzt werden?
+question: Which of the proposed update groups should be implemented now?
 options:
-  - label: Alle sicheren
-    description: Safe-Batch (Patch/Minor) und Security-Fixes automatisch, Major-Bumps überspringen
-  - label: Auch Major
-    description: Zusätzlich die Major-Bumps einzeln mit Breaking-Change-Adaption
-  - label: Nur Security
-    description: Ausschließlich Audit-/Security-Fixes anwenden
-  - label: Auswahl
-    description: Konkrete Gruppen als Freitext benennen
+  - label: All safe ones
+    description: Safe batch (patch/minor) and security fixes automatically, skip major bumps
+  - label: Major too
+    description: Additionally the major bumps individually with breaking-change adaptation
+  - label: Security only
+    description: Apply audit/security fixes exclusively
+  - label: Selection
+    description: Name specific groups as free text
 ```
 
-2. Leite aus der gewählten Update-Auswahl die explizite Abschlussbedingung ab (umgesetzte Gruppen, Baseline-Abgleich grün, Reviewer ohne offene kritische Findings bei Code-Anpassungen; siehe „Goal-getriebene Abschlusssteuerung“); sie deckt die Phasen 3–5 ab. Da das Update-Gate eine Auswahlfrage ist, stelle direkt nach der Auswahl die eigenständige Goal-Folgefrage gemäß „Explizite Goal-Abfrage für autonome Läufe“. Bei Wahl „Autonom via /goal“ gib den `/goal`-String für die Phasen 3–5 aus; die Folgefrage entfällt, wenn der Workflow nicht-interaktiv delegiert wurde.
+2. From the chosen update selection, derive the explicit completion condition (implemented groups, baseline comparison green, reviewer with no open critical findings on code adaptations; see "Goal-driven completion control"); it covers phases 3–5. Since the update gate is a selection question, ask the standalone goal follow-up question directly after the selection per "Explicit goal query for autonomous runs". If "Autonomous via /goal" is chosen, emit the `/goal` string for phases 3–5; the follow-up question is omitted if the workflow was delegated non-interactively.
 
 ```ask
-when: der Workflow interaktiv läuft und nicht als nicht-interaktiver Sub-Agent (z. B. durch {{FIRMO}} apply-review) delegiert wurde
+when: the workflow runs interactively and was not delegated as a non-interactive sub-agent (e.g. by {{FIRMO}} apply-review)
 header: Goal
-question: Verbleibende Phasen autonom unter /goal laufen lassen?
+question: Run the remaining phases autonomously under /goal?
 options:
-  - label: Gated weiter
-    description: Workflow läuft mit den üblichen Stopps weiter
-  - label: Autonom via /goal
-    description: Verbleibende Phasen autonom unter nativem /goal — der Skill gibt den einzufügenden /goal-String aus
+  - label: Continue gated
+    description: The workflow continues with the usual stops
+  - label: Autonomous via /goal
+    description: Remaining phases autonomously under native /goal — the skill emits the /goal string to paste
 ```
 
-3. Arbeite die freigegebenen Gruppen **nacheinander** ab. Für jede Gruppe wendet der Skill den Versionssprung an, aktualisiert das Lockfile über den erkannten Manager, recherchiert Breaking Changes und passt bei Bedarf lokalen Code an die geänderte API an – ausgeführt über den in Phase 0 bestimmten Implementer (`{{AGENT:ui-implementer}}`, `{{AGENT:nodejs-implementer}}`, `{{AGENT:rust-implementer}}` bzw. `{{AGENT:generic-implementer}}` für Tooling/CI/Config; Auftrag: nur an die geänderte API anpassen, kein neues Verhalten). Danach gleicht `maintain` gegen die Baseline ab:
-   - grün → **ein sauberer Commit pro Gruppe** (siehe Commit-Regeln), aussagekräftige Message, z. B. `chore(deps): …`.
-   - rot und reparabel → Anpassung über den Implementer nachziehen, erneut validieren – gemäß „Goal-getriebene Abschlusssteuerung“ die internen Korrekturrunden begrenzen; bleibt die Gruppe danach rot, wie „nicht sinnvoll reparabel“ behandeln statt unbegrenzt zu wiederholen.
-   - rot und nicht sinnvoll reparabel → Gruppe zurückrollen (Manifest und Lockfile auf den Stand vor der Gruppe) und als „manuell“ markieren.
-4. Halte Ergebnis und Begründung je Gruppe in der Wisdom-Datei fest.
+3. Work through the approved groups **one after another**. For each group the skill applies the version jump, updates the lockfile via the detected manager, researches breaking changes, and where needed adapts local code to the changed API – carried out via the implementer determined in phase 0 (`{{AGENT:ui-implementer}}`, `{{AGENT:nodejs-implementer}}`, `{{AGENT:rust-implementer}}`, or `{{AGENT:generic-implementer}}` for tooling/CI/config; task: only adapt to the changed API, no new behavior). Afterwards `maintain` compares against the baseline:
+   - green → **one clean commit per group** (see commit rules), a meaningful message, e.g. `chore(deps): …`.
+   - red and repairable → follow up with an adaptation via the implementer, validate again – limit the internal correction rounds per "Goal-driven completion control"; if the group stays red afterwards, treat it as "not sensibly repairable" instead of repeating indefinitely.
+   - red and not sensibly repairable → roll the group back (manifest and lockfile to the state before the group) and mark it as "manual".
+4. Record the result and rationale per group in the wisdom file.
 
 ### Phase 4: Review
 
-Nur wenn in Phase 3 Code für Breaking Changes angepasst wurde:
+Only if code was adapted for breaking changes in phase 3:
 
-1. Starte den passenden Reviewer für die geänderten Dateien (`{{AGENT:frontend-reviewer}}`, `{{AGENT:nodejs-reviewer}}` bzw. `{{AGENT:rust-reviewer}}`).
-2. Behebe kritische Findings vor dem Abschluss.
-3. Wenn Findings mit Status `Offen` oder `Nicht umgesetzt` verbleiben, schreibe sie gemäß „Offene Review-Finding-Reports“ in eine neue Datei unter `.effective-flow/review/` und nenne den Reportpfad in der Abschlusszusammenfassung.
+1. Start the appropriate reviewer for the changed files (`{{AGENT:frontend-reviewer}}`, `{{AGENT:nodejs-reviewer}}`, or `{{AGENT:rust-reviewer}}`).
+2. Fix critical findings before completion.
+3. If findings with status `Offen` or `Nicht umgesetzt` remain, write them per "Open review-finding reports" into a new file under `.effective-flow/review/` and name the report path in the completion summary.
 
-Reine Dependency-Bumps ohne Code-Anpassung brauchen kein Reviewer-Pass; vermerke das kurz.
+Pure dependency bumps without code adaptation need no reviewer pass; note that briefly.
 
-### Phase 5: Report und Abschluss
+### Phase 5: Report and completion
 
-1. Führe `{{AGENT:code-validator}}` ein letztes Mal als Final-Check aus.
-2. Fasse auf Basis des update-spezifischen Reportings aus dem Skill zusammen:
-   - welche Gruppen umgesetzt und committet wurden (mit Versionssprüngen),
-   - welche Audit-Befunde behoben wurden,
-   - welche Updates als „manuell“ zurückgestellt wurden und warum,
-   - Verweis auf einen ausgelagerten Review-Report, falls vorhanden.
-3. Bestätige, dass das Verhalten unverändert blieb (Baseline-Abgleich grün).
-4. Lösche die Wisdom-Datei.
-5. Wenn Delivery oder Worktree-Ausführung aktiv war: führe das Handback gemäß „Delivery- und Worktree-Integration“ aus. Die Commits pro Gruppe liegen bereits auf dem Liefer-Branch; das Handback zieht ggf. den Worktree zurück, führt die Abschluss-Aktion `pr`/`merge`/`branch` aus und stellt den Checkout zurück. Nenne Liefer-Branch, finalen Checkout-Zustand und Ergebnis in der Zusammenfassung.
+1. Run `{{AGENT:code-validator}}` one last time as a final check.
+2. Summarize based on the update-specific reporting from the skill:
+   - which groups were implemented and committed (with version jumps),
+   - which audit findings were fixed,
+   - which updates were deferred as "manual" and why,
+   - a reference to an offloaded review report, if present.
+3. Confirm that the behavior stayed unchanged (baseline comparison green).
+4. Delete the wisdom file.
+5. If delivery or worktree execution was active: run the handback per "Delivery and worktree integration". The per-group commits already sit on the delivery branch; the handback withdraws the worktree if applicable, runs the completion action `pr`/`merge`/`branch`, and restores the checkout. Name the delivery branch, the final checkout state, and the result in the summary.
 
 ```include
 pre-commit-gate
@@ -197,22 +197,22 @@ pre-commit-gate
 commit-message-rules
 ```
 
-## Minimaler Fallback ohne Skill
+## Minimal fallback without the skill
 
-Nur relevant, wenn `smart-dependency-updater` nicht verfügbar ist. Kurze Kern-Guidance, damit `maintain` sauber degradiert – **kein** zweites vollständiges Update-Handbuch:
+Only relevant when `smart-dependency-updater` is unavailable. Short core guidance so that `maintain` degrades cleanly – **not** a second complete update manual:
 
-- Paketmanager am Lockfile erkennen (`pnpm-lock.yaml` → pnpm, `yarn.lock` → yarn, `bun.lockb` → bun, sonst `package-lock.json`/npm) und alle Befehle daraus ableiten – nie auf npm hardcodieren.
-- Veraltete Dependencies (`outdated`) und Security-Befunde (`audit`) über den erkannten Manager sammeln.
-- Grob gruppieren: Safe-Batch (Patch/Minor ohne bekannte Breaking Changes), Major einzeln (mit Changelog-Hinweis), Security separat.
-- Pro Gruppe: Bump anwenden, Lockfile über den Manager aktualisieren, gegen die Baseline validieren; grün → ein Commit pro Gruppe, rot → zurückrollen und als „manuell“ markieren.
-- Bei Major-Bumps Changelog/Release Notes lesen und Code nur an die geänderte API anpassen (kein neues Verhalten).
+- Detect the package manager from the lockfile (`pnpm-lock.yaml` → pnpm, `yarn.lock` → yarn, `bun.lockb` → bun, otherwise `package-lock.json`/npm) and derive all commands from it – never hardcode npm.
+- Collect outdated dependencies (`outdated`) and security findings (`audit`) via the detected manager.
+- Group roughly: safe batch (patch/minor without known breaking changes), major individually (with a changelog note), security separately.
+- Per group: apply the bump, update the lockfile via the manager, validate against the baseline; green → one commit per group, red → roll back and mark as "manual".
+- On major bumps read the changelog/release notes and adapt code only to the changed API (no new behavior).
 
-## Regeln
+## Rules
 
-- Starte unabhängige Phasen (Baseline-Validierung und Tests) parallel.
-- Gib nach jeder Phase eine kurze Statusmeldung.
-- Ein Commit pro Gruppe, nicht ein Sammelcommit über alle Updates.
-- Niemals updaten, solange die Baseline rot ist.
-- Keine neuen Features, keine ungeplanten Bugfixes und kein allgemeines Refactoring im Wartungslauf.
-- Bei unklarem Risiko (Major ohne Tests im betroffenen Bereich) einzeln bestätigen lassen, statt im Batch durchzuwinken.
-- Delivery bleibt bei `maintain`: der delegierte Skill legt keine Branches/PRs an und pusht nicht.
+- Start independent phases (baseline validation and tests) in parallel.
+- Give a brief status update after each phase.
+- One commit per group, not a single collective commit across all updates.
+- Never update while the baseline is red.
+- No new features, no unplanned bugfixes, and no general refactoring in the maintenance run.
+- On unclear risk (major without tests in the affected area) get individual confirmation instead of waving it through in the batch.
+- Delivery stays with `maintain`: the delegated skill creates no branches/PRs and does not push.

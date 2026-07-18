@@ -1,33 +1,32 @@
 ---
-description: "Führt Review-Anmerkungen aus einem bestehenden Pull-Request (Bots wie Greptile und menschliche Reviewer) sowie zusätzliche Freitext-Instruktionen als neue Commits zurück in denselben PR – ein Mini-Build auf einer bereits gelieferten Änderung. Klassifiziert jeden Punkt und delegiert an {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}} oder {{SKILL:docs}}, antwortet und löst die adressierten Review-Threads auf. Ohne PR iteriert es lokal auf der letzten Branch-Änderung."
-catalogHint: "Führt PR-Review-Anmerkungen und Instruktionen als neue Commits zurück in einen bestehenden PR."
+description: "Feeds review notes from an existing pull request (bots like Greptile and human reviewers) as well as additional free-text instructions back into the same PR as new commits – a mini build on an already delivered change. Classifies each item and delegates to {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}}, or {{SKILL:docs}}, replies to and resolves the addressed review threads. Without a PR it iterates locally on the latest branch change."
+catalogHint: "Feeds PR review notes and instructions back into an existing PR as new commits."
 ---
 
 # Effective Flow Iterate
 
-Du bist der Orchestrator, der eine **bereits gelieferte Änderung weiter verändert**, statt bei
-null zu starten. Typischer Anlass: Ein Workflow wie {{SKILL:build}} hat einen Pull-Request
-erstellt, und anschließend hinterlässt ein Review-Bot wie Greptile oder ein menschlicher
-Reviewer Anmerkungen am PR, die wieder einfließen sollen. Das ist ein „Mini-Build": kleiner
-Zyklus aus Kontext-Einlesen, Umsetzung, Validierung und Rücklieferung als neue Commits auf
-demselben PR-Branch.
+You are the orchestrator that **further changes an already delivered change** instead of
+starting from scratch. Typical occasion: a workflow like {{SKILL:build}} created a pull request,
+and afterwards a review bot like Greptile or a human reviewer leaves notes on the PR that should
+flow back in. This is a "mini build": a small cycle of reading context, implementation,
+validation, and delivering back as new commits on the same PR branch.
 
-## Ziel
+## Goal
 
-`iterate` deckt zwei Ziel-Modi ab:
+`iterate` covers two target modes:
 
-1. **PR-Modus** (primär): ein bestehender PR, aufgelöst aus einer PR-Referenz (`#42`, Nummer,
-   PR-URL) oder aus dem aktuell ausgecheckten Branch. Quelle der umzusetzenden Punkte sind die
-   **PR-Review-Kommentare aller Reviewer** (Bots und Menschen) sowie optionale
-   **Freitext-Instruktionen**. Ergebnis: neue Commits auf dem PR-Head-Branch, Antworten auf die
-   adressierten Threads und ein Summary-Kommentar.
-2. **Local-Modus**: kein PR vorhanden oder gemeint. `iterate` iteriert auf der letzten
-   Änderung des aktuellen Branch (Diff gegenüber dem Basis-Branch) ausschließlich anhand der
-   Freitext-Instruktionen und committet neue Commits, ohne zu pushen oder Kommentare zu posten.
+1. **PR mode** (primary): an existing PR, resolved from a PR reference (`#42`, number,
+   PR URL) or from the currently checked-out branch. The source of the items to implement is the
+   **PR review comments of all reviewers** (bots and humans) plus optional
+   **free-text instructions**. Result: new commits on the PR head branch, replies to the
+   addressed threads, and a summary comment.
+2. **Local mode**: no PR present or intended. `iterate` iterates on the latest
+   change of the current branch (diff against the base branch) solely based on the
+   free-text instructions and creates new commits without pushing or posting comments.
 
-`iterate` implementiert nicht selbst, sondern klassifiziert jeden Punkt und delegiert an
-{{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}} bzw. {{SKILL:docs}}. Es schreibt niemals
-bestehende PR-History um.
+`iterate` does not implement itself but classifies each item and delegates to
+{{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}}, or {{SKILL:docs}}. It never rewrites
+existing PR history.
 
 ```include
 language-rules
@@ -41,18 +40,18 @@ task-tracking
 config-migration
 ```
 
-## Empfohlene Skills
+## Recommended skills
 
-- `metro-english › humanizer` (Fallback) – für die Thread-Antworten und den Summary-Kommentar
+- `metro-english › humanizer` (fallback) – for the thread replies and the summary comment
 
 ```include
 skill-discovery
 ```
 
-## Projektkonventionen
+## Project conventions
 
-Wenn im Projekt eine `AGENTS.md` vorhanden ist, lies sie früh im Workflow und beachte ihre
-Vorgaben für Implementierung, Commits, Branch-/PR-Konventionen und Qualitätskriterien.
+If the project contains an `AGENTS.md`, read it early in the workflow and observe its
+specifications for implementation, commits, branch/PR conventions, and quality criteria.
 
 ```include
 effective-flow-dir-migration
@@ -76,124 +75,124 @@ pr-review-comments
 
 ## Wisdom Accumulation
 
-Erzeuge zu Beginn eine Session-ID (z. B. via Timestamp) und verwende
-`.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` für:
+At the start, generate a session ID (e.g. via timestamp) and use
+`.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` for:
 
-- aufgelösten PR (Nummer, Head-/Basis-Branch, URL) bzw. den Local-Ziel-Diff
-- gelesene Review-Threads mit Autor, Datei/Zeile und Resolved-Status
-- Klassifikation pro Punkt (umsetzbar/nicht umsetzbar, Aktionstyp, bereits adressiert)
-- umgesetzte Punkte, erzeugte Commits, beantwortete/aufgelöste Threads
-- zurückgestellte reine Fragen und fehlgeschlagene Punkte
+- the resolved PR (number, head/base branch, URL) or the local target diff
+- the review threads read, with author, file/line, and resolved status
+- the classification per item (actionable/not actionable, action type, already addressed)
+- implemented items, commits created, threads replied to/resolved
+- deferred pure questions and failed items
 
-Schreibe nach jeder Phase ein Summary und gib es an spätere Phasen weiter. Lösche die Datei am
-Ende.
+Write a summary after each phase and pass it on to later phases. Delete the file at the
+end.
 
 ## Workflow
 
-### Phase 0: Ziel-Erkennung und Eingabe-Parsing
+### Phase 0: Target detection and input parsing
 
-1. Trenne das Argument in eine optionale führende **PR-Referenz** und den restlichen
-   **Freitext**. Eine PR-Referenz ist eine bare Nummer, `#42` oder eine PR-URL (Segment
-   `/pull/` bzw. `/pulls/`, nicht `/issues/`).
-2. Bestimme den Ziel-Modus:
-   - PR-Referenz vorhanden **oder** der aktuelle Branch hat einen offenen PR → **PR-Modus**.
-   - sonst → **Local-Modus**.
-3. Bei Mehrdeutigkeit (z. B. eine bare Nummer, die auch ein Issue sein könnte) frage nach,
-   statt zu raten.
-4. `iterate` setzt immer eine **bestehende** Änderung fort; es gibt kein volles Intent-Gate wie
+1. Split the argument into an optional leading **PR reference** and the remaining
+   **free text**. A PR reference is a bare number, `#42`, or a PR URL (segment
+   `/pull/` or `/pulls/`, not `/issues/`).
+2. Determine the target mode:
+   - PR reference present **or** the current branch has an open PR → **PR mode**.
+   - otherwise → **Local mode**.
+3. On ambiguity (e.g. a bare number that could also be an issue) ask,
+   instead of guessing.
+4. `iterate` always continues an **existing** change; there is no full intent gate as
    in {{SKILL:build}}.
 
-### Phase 1: Kontext sammeln
+### Phase 1: Gather context
 
-- **PR-Modus:** Erkenne Host und CLI und prüfe die Verfügbarkeit (siehe
-  „PR-Review-Kommentar-Anbindung"). Löse den PR auf und lies die Review-Threads **frisch**.
-  Nimm die Freitext-Instruktionen als zusätzliche Punkte auf. Beziehe den PR-Head-Branch und
-  stelle ihn in einem sauberen Checkout bzw. isolierten Worktree bereit (per Fetch/Pull ohne
-  Rebase oder Force aktualisieren). Ist der PR bereits gemergt/geschlossen, melde das und biete
-  optional den Local-Modus an.
-- **Local-Modus:** Nimm den kompletten offenen Diff des aktuellen Branch gegenüber
-  `delivery.baseBranch` (`git diff <base>...HEAD`) als Kontext. Quelle der umzusetzenden Punkte
-  ist nur der Freitext.
+- **PR mode:** Detect the host and CLI and check availability (see
+  "PR review comment integration"). Resolve the PR and read the review threads **fresh**.
+  Take the free-text instructions in as additional items. Fetch the PR head branch and
+  provide it in a clean checkout or isolated worktree (update via fetch/pull without
+  rebase or force). If the PR is already merged/closed, report that and optionally offer
+  local mode.
+- **Local mode:** Take the complete open diff of the current branch against
+  `delivery.baseBranch` (`git diff <base>...HEAD`) as context. The source of the items to
+  implement is only the free text.
 
-### Phase 2: Klassifikation
+### Phase 2: Classification
 
-Bestimme pro Punkt (Review-Thread bzw. Freitext-Instruktion):
+Determine per item (review thread or free-text instruction):
 
-1. **umsetzbar vs. nicht umsetzbar:**
-   - reine Lob-/Info-Kommentare zählen nicht als umsetzbar.
-   - **Nitpick- und niedrig-priorisierte Bot-Kommentare werden standardmäßig als umsetzbar
-     mitgenommen** – das Freigabe-Gate in Phase 2.5 erlaubt dem User, einzelne abzuwählen.
-   - **reine Fragen** ohne Codeänderungsbedarf werden nicht umgesetzt und **nicht automatisch
-     inhaltlich beantwortet**; sie werden in der Zusammenfassung als offen/zurückgestellt
-     gelistet, damit der User sie selbst beantwortet.
-2. **bereits adressiert:** Thread ist `resolved` oder trägt eine `<!-- effective-flow-iterate -->`-
-   Antwort → überspringen.
-3. **Aktionstyp** ableiten:
-   - {{SKILL:fix}} für Bug/Korrektur,
-   - {{SKILL:refactor}} für Struktur ohne Verhaltensänderung,
-   - {{SKILL:build}} für neue kleine Funktionalität,
-   - {{SKILL:docs}} für reine Doku.
-     Menschliche und Bot-Kommentare gleichwertig behandeln.
-4. Lege pro umsetzbarem Punkt eine Task an (per-Punkt-Granularität).
+1. **actionable vs. not actionable:**
+   - pure praise/info comments do not count as actionable.
+   - **Nitpick and low-priority bot comments are taken along as actionable by
+     default** – the approval gate in phase 2.5 lets the user deselect individual ones.
+   - **pure questions** without a need for code changes are not implemented and are **not
+     automatically answered in substance**; they are listed in the summary as open/deferred
+     so the user answers them themselves.
+2. **already addressed:** thread is `resolved` or carries a `<!-- effective-flow-iterate -->`
+   reply → skip.
+3. Derive the **action type**:
+   - {{SKILL:fix}} for a bug/correction,
+   - {{SKILL:refactor}} for structure without behavior change,
+   - {{SKILL:build}} for small new functionality,
+   - {{SKILL:docs}} for pure documentation.
+     Treat human and bot comments equally.
+4. Create a task per actionable item (per-item granularity).
 
-### Phase 2.5: Freigabe
+### Phase 2.5: Approval
 
-Zeige die klassifizierten Punkte (umsetzbar, übersprungen, zurückgestellte Fragen) und hole
-eine Freigabe ein. Ohne Freigabe erfolgt **keine** außenwirksame Aktion (kein Push, kein
-Kommentar). Behandle die Antwort gemäß „Explizite Goal-Abfrage für autonome Läufe": bei „Autonom
-via /goal" gib den `/goal`-String für die Phasen 3–6 aus. Die Abfrage entfällt, wenn `iterate`
-nicht-interaktiv delegiert wurde (z. B. durch {{FIRMO}} apply-review).
+Show the classified items (actionable, skipped, deferred questions) and obtain an
+approval. Without approval **no** externally visible action takes place (no push, no
+comment). Handle the response per "Explicit goal query for autonomous runs": on "Autonomous
+via /goal" emit the `/goal` string for phases 3–6. The query is omitted if `iterate`
+was delegated non-interactively (e.g. by {{FIRMO}} apply-review).
 
 ```ask
-header: Freigabe
-question: Klassifizierte Punkte freigeben und umsetzen?
+header: Approval
+question: Approve and implement the classified items?
 options:
-  - label: Ja
-    description: Freigabe erteilt, Umsetzung und Rücklieferung laufen gated weiter
-  - label: Autonom via /goal
-    description: Verbleibende Phasen autonom unter nativem /goal — der Skill gibt den einzufügenden /goal-String aus (entfällt bei nicht-interaktiver Delegation)
-  - label: Anpassen
-    description: Feedback als Freitext eingeben, z. B. einzelne Punkte abwählen
+  - label: Yes
+    description: Approval granted, implementation and delivery-back continue gated
+  - label: Autonomous via /goal
+    description: Remaining phases autonomously under native /goal — the skill emits the /goal string to paste (omitted for non-interactive delegation)
+  - label: Adjust
+    description: Enter feedback as free text, e.g. deselect individual items
 ```
 
-### Phase 3: Umsetzung
+### Phase 3: Implementation
 
-1. Delegiere jeden umsetzbaren Punkt an den passenden Skill ({{SKILL:fix}}, {{SKILL:refactor}},
-   {{SKILL:build}} oder {{SKILL:docs}}), auf dem PR-Head-Branch (PR-Modus) bzw. dem aktuellen
-   Branch (Local-Modus).
-2. **Ein Commit pro Thread/Punkt** mit einer sauberen Conventional-Commit-Message ohne interne
-   IDs oder Thread-Referenz und ohne `Co-Authored-By`. Dateiüberlappende Punkte laufen
-   sequenziell, damit die Commits geordnet bleiben; unabhängige Punkte dürfen parallel umgesetzt
-   werden.
-3. Gib internen Delegations-Sub-Agenten das Fertig-Protokoll vor und prüfe auf `ERLEDIGT` oder
-   `ABBRUCH`. Bei `ABBRUCH`: Punkt als fehlgeschlagen markieren und mit dem nächsten fortfahren.
+1. Delegate each actionable item to the appropriate skill ({{SKILL:fix}}, {{SKILL:refactor}},
+   {{SKILL:build}}, or {{SKILL:docs}}), on the PR head branch (PR mode) or the current
+   branch (local mode).
+2. **One commit per thread/item** with a clean conventional-commit message without internal
+   IDs or a thread reference and without `Co-Authored-By`. File-overlapping items run
+   sequentially so the commits stay ordered; independent items may be implemented in
+   parallel.
+3. Give internal delegation sub-agents the completion protocol and check for `ERLEDIGT` or
+   `ABBRUCH`. On `ABBRUCH`: mark the item as failed and continue with the next.
 
-### Phase 4: Validierung
+### Phase 4: Validation
 
-1. Starte {{AGENT:code-validator}} bzw. das projektweite Qualitäts-Gate.
-2. Behebe gefundene Fehler und verifiziere erneut gemäß „Goal-getriebene Abschlusssteuerung":
-   begrenze die internen Korrekturrunden und eskaliere an den User, falls die Prüfungen danach
-   weiterhin fehlschlagen.
+1. Start {{AGENT:code-validator}} or the project-wide quality gate.
+2. Fix errors found and verify again per "Goal-driven completion control":
+   limit the internal correction rounds and escalate to the user if the checks still fail
+   afterwards.
 
-### Phase 5: Rücklieferung (nur PR-Modus)
+### Phase 5: Delivery back (PR mode only)
 
-1. Pushe den Head-Branch normal (kein Force). Schlägt der Push wegen divergierter Remote-History
-   fehl: stoppe, melde den Konflikt, überschreibe keine History und löse keine Threads auf.
-2. Antworte pro adressiertem Thread kurz und löse ihn auf (GitHub via GraphQL; Forgejo
-   best-effort). Verwende den Marker `<!-- effective-flow-iterate -->`.
-3. Poste **einen** Summary-Kommentar am PR (Marker `<!-- effective-flow-iterate -->`): welche Punkte
-   umgesetzt bzw. übersprungen wurden und welche reinen Fragen offen/zurückgestellt sind (ohne
-   inhaltliche Auto-Antwort).
+1. Push the head branch normally (no force). If the push fails due to diverged remote history:
+   stop, report the conflict, overwrite no history, and resolve no threads.
+2. Reply briefly per addressed thread and resolve it (GitHub via GraphQL; Forgejo
+   best-effort). Use the marker `<!-- effective-flow-iterate -->`.
+3. Post **one** summary comment on the PR (marker `<!-- effective-flow-iterate -->`): which items
+   were implemented or skipped and which pure questions are open/deferred (without a
+   substantive auto-reply).
 
-### Phase 6: Zusammenfassung
+### Phase 6: Summary
 
-1. Lösche die Wisdom-Datei.
-2. Gib dem User eine Zusammenfassung:
-   - Tabelle: umgesetzt / übersprungen / zurückgestellte Fragen / fehlgeschlagen
-   - PR-URL, gepushte Commits, aufgelöste Threads, finaler Checkout-Zustand
-   - im Local-Modus: welche Commits auf welchem Branch entstanden sind
+1. Delete the wisdom file.
+2. Give the user a summary:
+   - table: implemented / skipped / deferred questions / failed
+   - PR URL, pushed commits, resolved threads, final checkout state
+   - in local mode: which commits were created on which branch
 
-## Regeln
+## Rules
 
 ```include
 pre-commit-gate
@@ -203,14 +202,14 @@ pre-commit-gate
 commit-message-rules
 ```
 
-- Lies die PR-Review-Kommentare beim Start und vor jedem Schreiben frisch vom Host.
-- Schreibe niemals bestehende PR-History um (kein `commit --amend`, Rebase, Squash oder
-  Force-Push); Änderungen gehen ausschließlich als neue Commits auf den PR-Head-Branch.
-- Erstelle im PR-Modus keinen neuen Liefer-Branch und keinen neuen PR.
-- Poste keine automatische inhaltliche Antwort auf reine Reviewer-Fragen; stelle sie zurück und
-  liste sie im Summary.
-- Setze niemals `Co-Authored-By`-Trailer und füge keine KI-Attribution in Commits,
-  Thread-Antworten, Summary-Kommentar oder PR-Body ein.
-- Gib dem User nach jeder Phase eine kurze Statusmeldung.
-- Bei fehlendem oder nicht authentifiziertem CLI: sauber abbrechen, keine lokale Umsetzung
-  heimlich pushen.
+- Read the PR review comments fresh from the host at the start and before every write.
+- Never rewrite existing PR history (no `commit --amend`, rebase, squash, or
+  force push); changes go exclusively as new commits onto the PR head branch.
+- In PR mode, create no new delivery branch and no new PR.
+- Post no automatic substantive reply to pure reviewer questions; defer them and
+  list them in the summary.
+- Never set a `Co-Authored-By` trailer and add no AI attribution in commits,
+  thread replies, the summary comment, or the PR body.
+- Give the user a brief status update after each phase.
+- On a missing or unauthenticated CLI: abort cleanly, do not secretly push a local
+  implementation.
