@@ -14,8 +14,10 @@ unter `src/` und erzeugt daraus zwei harness-spezifische Skill-Verzeichnisse unt
 - Bearbeitet wird ausschließlich `src/`. `dist/` ist generiert und gitignored – Änderungen dort
   gehen beim nächsten Build verloren.
 - Quelle und Auslieferung liegen auf **zwei Branches**: `develop` (Quelle, kein `dist/`) und
-  der Default-Branch `main` (trägt nur das gebaute `dist/`, maschinell vom Release-Workflow
-  geschrieben). Details siehe [Release und Installation](release-und-installation.md#quell-und-auslieferungs-branch).
+  der Default-Branch `main` (trägt den gebauten `dist/`-Payload **und** die
+  konsumentenorientierte Doku – `README.md` + `docs/user-guide/` –, aber **nicht** die
+  Entwickler-Doku `docs/developer-guide/`; maschinell vom Release-Workflow geschrieben). Details
+  siehe [Release und Installation](release-und-installation.md#quell-und-auslieferungs-branch).
 - Das Quell-Layout **spiegelt die Ausgabe**: Der Ordner bestimmt die Kategorie, der Dateiname
   ohne `.md` den Namen. Es gibt daher kein `name`- oder `type`-Feld im Frontmatter.
 - Details zum Build-Ablauf, den Platzhaltern und den Guards stehen in
@@ -85,8 +87,8 @@ effective-flow/                        (Repo)
 ├── src/                      # Quellen (siehe oben)
 ├── docs/                     # Projekt-Dokumentation
 │   ├── plan/                 # Implementierungspläne (ISO-Datum-Slug, siehe plan-konventionen.md)
-│   ├── user-guide/           # End-User-Dokumentation
-│   └── developer-guide/      # dieses Dokument und seine Nachbarn
+│   ├── user-guide/           # End-User-Dokumentation (wird nach main ausgeliefert)
+│   └── developer-guide/      # dieses Dokument und seine Nachbarn (nur develop)
 ├── dist/                     # Generiert, gitignored
 │   ├── claude/effective-flow/         # Router-SKILL.md + tools/*.md, Agenten separat unter dist/claude/agents/
 │   └── codex/effective-flow/          # Router-SKILL.md + tools/*.md + agents/*.toml

@@ -23,8 +23,10 @@ Quell-Branch `develop`:
 4. Bei einem tatsächlich erstellten Release wird `dist/` als `effective-flow-<tag>.tar.gz` gepackt und an
    das GitHub-Release angehängt.
 5. Ebenfalls nur bei einem erstellten Release wird der gebaute `dist/`-Output (beide Harnesses,
-   `claude/` und `codex/`) als **frischer Commit** auf den Auslieferungs-Branch `main` gepusht
-   (kein Force-Push, damit Konsumenten-Pins stabil bleiben).
+   `claude/` und `codex/`) **zusammen mit der konsumentenorientierten Dokumentation** (`README.md`
+   und `docs/user-guide/`) als **frischer Commit** auf den Auslieferungs-Branch `main` gepusht
+   (kein Force-Push, damit Konsumenten-Pins stabil bleiben). Ein kleiner Helfer
+   (`scripts/deliver-docs.mjs`) schreibt dabei die Links in die Entwickler-Doku um (siehe unten).
 
 ## Quell- und Auslieferungs-Branch
 
@@ -32,14 +34,35 @@ Effective Flow trennt Quelle und gebaute Auslieferung auf zwei Branches:
 
 - **`develop`** ist der **Quell-/Arbeits-Branch** (nur `src/`, `build.mjs`, `docs/`, Tests —
   `dist/` bleibt gitignored). PRs, CI und release-please laufen hier.
-- **`main`** ist der **Auslieferungs-Branch** und zugleich der **Default-Branch**: er trägt
-  **ausschließlich** das gebaute `dist/` (`claude/` + `codex/` im Root), maschinell vom
-  Release-Workflow geschrieben.
+- **`main`** ist der **Auslieferungs-Branch** und zugleich der **Default-Branch**: er trägt den
+  gebauten `dist/`-Payload (`claude/` + `codex/` im Root) **und die konsumentenorientierte
+  Dokumentation**, maschinell vom Release-Workflow geschrieben.
 
 So ziehen Installer, die **keinen** Build ausführen (`dalo`, `npx skills`), automatisch die
 fertigen Artefakte vom Default-Branch — ohne Zusatzkonfiguration. Wer stattdessen das
 Release-Archiv nutzt, installiert unverändert über [`install-skill.sh`](#installation) (lädt
 das `effective-flow-<tag>.tar.gz`-Asset).
+
+### Dokumentation nach Zielgruppe getrennt
+
+Die Doku ist entlang der Branch-Grenze in drei Klassen aufgeteilt:
+
+- **Benutzer-Doku** (`docs/user-guide/`) — wird **auf `main` ausgeliefert** (Endnutzer).
+- **Marketing-Einstieg** (`README.md`) — wird **auf `main` ausgeliefert** und ersetzt dort den
+  Seed-README; er ist die Landefläche des Default-Branch auf GitHub.
+- **Entwickler-Doku** (`docs/developer-guide/`) — bleibt **nur auf `develop`** (Skill-Interna,
+  Build-System, Architektur); sie wird **nie** nach `main` geliefert.
+
+Damit die Links stimmen, transformiert `scripts/deliver-docs.mjs` (reine Logik in
+`build-lib.mjs`, per `node:test` abgedeckt) beim Ausliefern die kopierten Dateien:
+
+- Relative Links in die Entwickler-Doku (`docs/developer-guide/…` im README,
+  `../developer-guide/…` in der Benutzer-Doku) werden auf absolute
+  `https://github.com/<repo>/blob/develop/docs/developer-guide/…`-URLs umgeschrieben, weil das
+  Ziel auf `main` fehlt. Benutzer-Doku-interne Links bleiben relativ und lösen auf `main` auf.
+- Das gelieferte `main`-`README.md` erhält eine dezente Fußzeile, die auf `develop` als Quelle
+  und Beitragsziel verweist. Beide Transformationen sind idempotent; der `develop`-Stand bleibt
+  unverändert.
 
 Da `release-please-config.json` das einzelne Paket `.` unter dem Namen `effective-flow` führt, tragen die
 Releases **komponenten-Tags** der Form `effective-flow-vX.Y.Z` (z. B. `effective-flow-v1.45.0`) statt eines

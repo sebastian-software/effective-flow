@@ -22,7 +22,14 @@ import {
   resolveLazyIncludes,
   collectIncludeNames,
   assertNoEagerLazyOverlap,
+  developerGuideBaseUrl,
+  rewriteDeveloperGuideLinks,
+  appendDeliveryFooter,
+  deliveryFooter,
+  DELIVERY_FOOTER_MARKER,
 } from '../build-lib.mjs';
+
+const DELIVERY = { repo: 'sebastian-software/effective-flow', sourceBranch: 'develop' };
 
 const refConfig = {
   exposedTools: ['build', 'fix', 'apply'],
@@ -582,4 +589,86 @@ test('assertNoEagerLazyOverlap passes for disjoint sets and throws on overlap', 
       }),
     /both eager- and lazy-included \(in tools\/build\.md\): config-migration/,
   );
+});
+
+// --- Delivery-branch documentation transforms ---
+
+test('rewriteDeveloperGuideLinks rewrites the root-README form to an absolute URL', () => {
+  const out = rewriteDeveloperGuideLinks('siehe [Technik](docs/developer-guide/README.md).', {
+    ...DELIVERY,
+    fromRoot: true,
+  });
+  assert.equal(
+    out,
+    'siehe [Technik](https://github.com/sebastian-software/effective-flow/blob/develop/docs/developer-guide/README.md).',
+  );
+});
+
+test('rewriteDeveloperGuideLinks rewrites the user-guide form to an absolute URL', () => {
+  const out = rewriteDeveloperGuideLinks(
+    'siehe [Skill-Ownership](../developer-guide/skill-ownership.md) dort.',
+    { ...DELIVERY, fromRoot: false },
+  );
+  assert.equal(
+    out,
+    `siehe [Skill-Ownership](${developerGuideBaseUrl(DELIVERY.repo, DELIVERY.sourceBranch)}/skill-ownership.md) dort.`,
+  );
+});
+
+test('rewriteDeveloperGuideLinks maps any user-guide nesting depth to the same base', () => {
+  const base = developerGuideBaseUrl(DELIVERY.repo, DELIVERY.sourceBranch);
+  assert.equal(
+    rewriteDeveloperGuideLinks('[a](../developer-guide/a.md)', { ...DELIVERY, fromRoot: false }),
+    `[a](${base}/a.md)`,
+  );
+  assert.equal(
+    rewriteDeveloperGuideLinks('[a](../../developer-guide/a.md)', { ...DELIVERY, fromRoot: false }),
+    `[a](${base}/a.md)`,
+  );
+});
+
+test('rewriteDeveloperGuideLinks is idempotent (already-absolute link untouched)', () => {
+  const once = rewriteDeveloperGuideLinks('[x](docs/developer-guide/a.md)', {
+    ...DELIVERY,
+    fromRoot: true,
+  });
+  const twice = rewriteDeveloperGuideLinks(once, { ...DELIVERY, fromRoot: true });
+  assert.equal(twice, once);
+});
+
+test('rewriteDeveloperGuideLinks leaves other links untouched', () => {
+  const src =
+    '[user](docs/user-guide/README.md) und [ext](https://example.com/developer-guide/x.md)';
+  assert.equal(rewriteDeveloperGuideLinks(src, { ...DELIVERY, fromRoot: true }), src);
+});
+
+test('rewriteDeveloperGuideLinks leaves a plain-text path mention (no link) alone', () => {
+  const src = 'Kategorien sind `docs/developer-guide/` und `docs/user-guide/`.';
+  assert.equal(rewriteDeveloperGuideLinks(src, { ...DELIVERY, fromRoot: true }), src);
+});
+
+test('rewriteDeveloperGuideLinks requires repo and sourceBranch', () => {
+  assert.throws(
+    () => rewriteDeveloperGuideLinks('x', { fromRoot: true }),
+    /requires repo and sourceBranch/,
+  );
+});
+
+test('appendDeliveryFooter appends the footer with the marker and source-branch link', () => {
+  const out = appendDeliveryFooter('# Titel\n\nText.\n', DELIVERY);
+  assert.ok(out.includes(DELIVERY_FOOTER_MARKER));
+  assert.ok(out.includes('https://github.com/sebastian-software/effective-flow/tree/develop'));
+  assert.ok(out.trimStart().startsWith('# Titel'));
+  assert.ok(out.endsWith(deliveryFooter(DELIVERY.repo, DELIVERY.sourceBranch) + '\n'));
+});
+
+test('appendDeliveryFooter is idempotent (no second footer)', () => {
+  const once = appendDeliveryFooter('# Titel\n', DELIVERY);
+  const twice = appendDeliveryFooter(once, DELIVERY);
+  assert.equal(twice, once);
+  assert.equal(twice.split(DELIVERY_FOOTER_MARKER).length - 1, 1);
+});
+
+test('appendDeliveryFooter requires repo and sourceBranch', () => {
+  assert.throws(() => appendDeliveryFooter('x', { repo: 'a/b' }), /requires repo and sourceBranch/);
 });
