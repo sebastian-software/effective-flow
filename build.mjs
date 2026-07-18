@@ -72,25 +72,25 @@ const CLAUDE_AGENT_PREFIX = 'effective-flow-';
 // catalog shows per line; see the catalogHint guard below.
 const TOOL_GROUPS = [
   {
-    title: 'Verstehen, was zu tun ist',
-    when: 'Analyse & Planung, bevor Code entsteht',
+    title: 'Understand what to do',
+    when: 'Analysis & planning before code',
     tools: ['investigate', 'plan', 'open-plans', 'plan-issue'],
   },
   {
-    title: 'Eine Änderung umsetzen',
-    when: 'vom geklärten Plan/Issue zum Code',
+    title: 'Implement a change',
+    when: 'from a clarified plan/issue to code',
     tools: ['apply', 'build', 'fix', 'refactor', 'docs', 'maintain', 'iterate'],
   },
   {
-    title: 'Qualität sichern',
+    title: 'Ensure quality',
     tools: ['review'],
   },
   {
-    title: 'Änderungen einbringen',
+    title: 'Deliver changes',
     tools: ['commit', 'pr'],
   },
   {
-    title: 'Einrichten & Infos',
+    title: 'Set up & info',
     tools: ['setup', 'cleanup', 'version'],
   },
 ];

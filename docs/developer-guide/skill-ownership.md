@@ -97,5 +97,5 @@ minimal fallback; enter the intersection above into the inventory and classify i
 
 - `src/shared/skill-discovery.md` – the operative skill-discovery rule including the authority
   contract.
-- [Architecture](architektur.md) – overall structure of Effective Flow.
+- [Architecture](architecture.md) – overall structure of Effective Flow.
 - [`AGENTS.md`](../../AGENTS.md) – skill-discovery mechanics and contributor conventions.

@@ -17,7 +17,7 @@ under `src/` and generates two harness-specific skill directories under `dist/` 
   branch `main` (carries the built `dist/` payload **and** the consumer-facing docs –
   `README.md` + `docs/user-guide/` –, but **not** the developer docs `docs/developer-guide/`;
   written mechanically by the release workflow). For details see
-  [Release and installation](release-und-installation.md#source-and-delivery-branch).
+  [Release and installation](release-and-installation.md#source-and-delivery-branch).
 - The source layout **mirrors the output**: the folder determines the category, the file name
   without `.md` the name. There is therefore no `name` or `type` field in the frontmatter.
 - Details on the build flow, the placeholders, and the guards are in
@@ -77,7 +77,7 @@ The build generates two independent outputs from the same source:
 | Codex       | `dist/codex/effective-flow/`  | `.toml` agents nested under `dist/codex/effective-flow/agents/<name>.toml`                                                                                                      |
 
 Both outputs carry the same version stamp (see
-[`release-und-installation.md`](release-und-installation.md)); a build guard prevents version
+[`release-and-installation.md`](release-and-installation.md)); a build guard prevents version
 drift between the harnesses.
 
 ## Repo structure at a glance
@@ -86,7 +86,7 @@ drift between the harnesses.
 effective-flow/                        (Repo)
 ├── src/                      # Sources (see above)
 ├── docs/                     # Project documentation
-│   ├── plan/                 # Implementation plans (ISO-date slug, see plan-konventionen.md)
+│   ├── plan/                 # Implementation plans (ISO-date slug, see plan-conventions.md)
 │   ├── user-guide/           # End-user documentation (delivered to main)
 │   └── developer-guide/      # this document and its neighbors (develop only)
 ├── dist/                     # Generated, gitignored
@@ -100,7 +100,7 @@ effective-flow/                        (Repo)
 ## Further reading
 
 - [`build-system.md`](build-system.md) – build flow, placeholder syntax, guards.
-- [`plan-konventionen.md`](plan-konventionen.md) – naming scheme and lifecycle of the plan files.
-- [`release-und-installation.md`](release-und-installation.md) – versioning and installation.
+- [`plan-conventions.md`](plan-conventions.md) – naming scheme and lifecycle of the plan files.
+- [`release-and-installation.md`](release-and-installation.md) – versioning and installation.
 - [`AGENTS.md`](../../AGENTS.md) – canonical agent behavior rules, skill discovery, commit and
   no-AI-attribution rules.

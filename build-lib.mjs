@@ -425,8 +425,8 @@ export function findSelfReferentialContractPhrases(text) {
 // fragment once per harness as a loadable `shared/<name>.md` and replaces the
 // directive with a conditional load pointer at the decision point, so a routine
 // invocation that never reaches the mode never loads the fragment. See
-// docs/developer-guide/build-system.md ("Progressive Disclosure über den Router
-// hinaus").
+// docs/developer-guide/build-system.md ("Progressive disclosure beyond the
+// router").
 //
 // Fence shape (the interior is kept verbatim by oxfmt):
 //   ```lazy-include
@@ -496,7 +496,7 @@ export function assertNoEagerLazyOverlap(eager, lazy, { context } = {}) {
 // `https://github.com/<repo>/blob/<sourceBranch>/docs/developer-guide/<subpath>`.
 //
 // The pure transforms live here (unit-tested); scripts/deliver-docs.mjs does the
-// file I/O in CI. See docs/developer-guide/release-und-installation.md.
+// file I/O in CI. See docs/developer-guide/release-and-installation.md.
 
 const GITHUB_BASE = 'https://github.com';
 
@@ -541,7 +541,7 @@ export function deliveryFooter(repo, sourceBranch) {
     '',
     '---',
     '',
-    `_Dies ist der maschinell verwaltete Auslieferungs-Branch. Quelle, Entwickler-Dokumentation und Beiträge liegen auf [\`${sourceBranch}\`](${url})._`,
+    `_This is the machine-managed delivery branch. Source, developer documentation, and contributions live on [\`${sourceBranch}\`](${url})._`,
   ].join('\n');
 }
 

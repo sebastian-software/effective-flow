@@ -125,5 +125,5 @@ node build.mjs
 ## Further reading
 
 - [`build-system.md`](build-system.md) – build flow and guards, including the version stamp.
-- [`architektur.md`](architektur.md) – repo structure and two-harness split.
+- [`architecture.md`](architecture.md) – repo structure and two-harness split.
 - [`AGENTS.md`](../../AGENTS.md) – canonical versioning rules.

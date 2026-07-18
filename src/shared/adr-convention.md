@@ -80,15 +80,15 @@ Not implemented
 
 [Origin: review report + finding ID, or issue/epic number in remote mode]
 
-## Entscheidung
+## Decision
 
 [Short rationale for why it is not implemented]
 
-## Begründung
+## Rationale
 
 [Full developer note or `wontfix` rationale]
 
-## Quell-Finding
+## Source finding
 
 [Finding ID] from [source]: [short version of the problem]  <!-- traceable backlink -->
 ```

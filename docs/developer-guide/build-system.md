@@ -171,7 +171,7 @@ For comparison, before the change: `build` 1185 → ~624, `fix` 917 → ~425, `d
 
 ## Further reading
 
-- [`architektur.md`](architektur.md) – source-to-dist model and repo structure.
-- [`plan-konventionen.md`](plan-konventionen.md) – plan-file schema.
-- [`release-und-installation.md`](release-und-installation.md) – version stamp and release.
+- [`architecture.md`](architecture.md) – source-to-dist model and repo structure.
+- [`plan-conventions.md`](plan-conventions.md) – plan-file schema.
+- [`release-and-installation.md`](release-and-installation.md) – version stamp and release.
 - [`AGENTS.md`](../../AGENTS.md) – canonical build and behavior rules.
