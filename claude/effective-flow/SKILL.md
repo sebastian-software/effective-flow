@@ -6,7 +6,7 @@ argument-hint: "[investigate|plan|open-plans|plan-issue|apply|build|fix|refactor
 
 # Effective Flow
 
-Effective Flow bündelt einen kompletten Software-Engineering-Workflow als Tools, die über `/effective-flow <tool>` aufgerufen werden (Version 1.46.0 (6b55022)).
+Effective Flow bündelt einen kompletten Software-Engineering-Workflow als Tools, die über `/effective-flow <tool>` aufgerufen werden (Version 1.47.0 (997b2ed)).
 
 Dieses Router-Skill ist bewusst **dünn**. Es enthält nur den Tool-Katalog und die Dispatch-Regel; die vollständige Anweisung eines Tools wird **erst bei Bedarf** aus `tools/<tool>.md` geladen. So bleibt die Session schlank und es entsteht keine Token-Exhaustion durch das Vorladen aller Tools.
 

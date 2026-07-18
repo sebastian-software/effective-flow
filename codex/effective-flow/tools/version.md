@@ -20,7 +20,7 @@ Falls kein Task-Tool verfügbar ist, gib dem User stattdessen eine kurze Fortsch
 
 Gib die folgende Effective Flow-Version aus:
 
-**1.46.0 (6b55022)**
+**1.47.0 (997b2ed)**
 
 ## Versionspflege
 
