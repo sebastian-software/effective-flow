@@ -13,6 +13,9 @@ unter `src/` und erzeugt daraus zwei harness-spezifische Skill-Verzeichnisse unt
 
 - Bearbeitet wird ausschließlich `src/`. `dist/` ist generiert und gitignored – Änderungen dort
   gehen beim nächsten Build verloren.
+- Quelle und Auslieferung liegen auf **zwei Branches**: `develop` (Quelle, kein `dist/`) und
+  der Default-Branch `main` (trägt nur das gebaute `dist/`, maschinell vom Release-Workflow
+  geschrieben). Details siehe [Release und Installation](release-und-installation.md#quell-und-auslieferungs-branch).
 - Das Quell-Layout **spiegelt die Ausgabe**: Der Ordner bestimmt die Kategorie, der Dateiname
   ohne `.md` den Namen. Es gibt daher kein `name`- oder `type`-Feld im Frontmatter.
 - Details zum Build-Ablauf, den Platzhaltern und den Guards stehen in

@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    branches: [main]
+    branches: [develop]
   workflow_dispatch:
 
 permissions:
@@ -53,3 +53,30 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ steps.release.outputs.tag_name }}" "effective-flow-${{ steps.release.outputs.tag_name }}.tar.gz" --clobber
+
+      - name: Deliver built dist to the delivery branch (main)
+        # The delivery branch `main` carries ONLY the built dist/ payload so that
+        # consumers which do not run a build (dalo, `npx skills`) grab finished
+        # artifacts straight from the default branch. Both harnesses ship on this
+        # one branch as `claude/` and `codex/` at the root. This appends a fresh
+        # commit — it never force-pushes — so consumer commit pins stay valid.
+        # Requires the delivery branch `main` to already exist (seeded once during
+        # the develop/main rollout); it does not run until a release is created.
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          work="$(mktemp -d)"
+          git worktree add --force "$work" origin/main
+          rm -rf "$work/claude" "$work/codex"
+          cp -R dist/claude "$work/claude"
+          cp -R dist/codex "$work/codex"
+          git -C "$work" add -A
+          if git -C "$work" diff --cached --quiet; then
+            echo "No delivery changes for ${{ steps.release.outputs.tag_name }}"
+          else
+            git -C "$work" commit -m "chore(delivery): ${{ steps.release.outputs.tag_name }}"
+            git -C "$work" push origin HEAD:main
+          fi
+          git worktree remove --force "$work"
