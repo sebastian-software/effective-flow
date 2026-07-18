@@ -164,21 +164,21 @@ Start in parallel if possible:
 If open findings or residual risks arise in the process, document them in a structured way so Phase 5 can write them as a review report:
 
 - Title
-- Schweregrad (Kritisch / Wichtig / Hinweis)
-- Komplexität (Leicht / Mittel / Schwer)
-- Bereich
-- Datei + line
+- Severity (Critical / Important / Note)
+- Complexity (Low / Medium / High)
+- Area
+- File + line
 - Problem
-- Empfehlung
-- Aktion (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}` or `{{SKILL:docs}}`)
-- Prompt-Vorschlag
-- Status (Behoben / Offen / Nicht umgesetzt)
+- Recommendation
+- Action (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}` or `{{SKILL:docs}}`)
+- Prompt suggestion
+- Status (Fixed / Open / Not implemented)
 - rationale for non-implementation or ADR reference as slug, if present, e.g. `(ADR: <slug>)`
 
 ### Phase 5: Completion
 
 1. If errors were found in Phase 4: fix them and re-verify Phase 4 per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the completion condition still does not hold afterwards, instead of repeating indefinitely.
-2. If findings or residual risks with status `Offen` or `Nicht umgesetzt` remain from verification, regression test or review-like check:
+2. If findings or residual risks with status `Open` or `Not implemented` remain from verification, regression test or review-like check:
    - write them into a new file under `.effective-flow/review/` per "Open review-finding reports"
    - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
    - name the generated report path in the completion summary

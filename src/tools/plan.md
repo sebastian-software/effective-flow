@@ -294,7 +294,7 @@ Rules:
 - If a code example is necessary, limit it to the smallest meaningful fragment and document that it is an example or an interface sketch.
 - Add a `## Plan review` section per the template. It contains exclusively plan-level findings, no code-review findings.
 - Add a section for open points at the end of the plan. For German-language plans it is called `## Offene Punkte` with the empty state `- Keine offenen Punkte.`; for English-language plans it is called `## Open Points` with the empty state `- No open points.`. If the user wants to make a decision later, document the point there concretely with a re-entry note.
-- Do not write any `## Testergebnisse` or `## Review-Findings`, because nothing has been implemented yet.
+- Do not write any `## Test results` or `## Review findings`, because nothing has been implemented yet.
 - Set the canonical open plan status exactly according to the marker language chosen in Phase 3: German to `**Planungsstatus:** Nicht umgesetzt` or English to `**Plan status:** Not implemented`; `{{SKILL:build}}`, `{{SKILL:fix}}`, `{{SKILL:refactor}}`, and `{{SKILL:docs}}` later use this status to recognize the planning or analysis basis.
 - Set exactly one line `**Recommended workflow:** ...` in the header area. Choose one of the four categories Feature, Bugfix, Refactoring, or Documentation and name the appropriate skill in parentheses.
 - For `**Recommended workflow:** Documentation (`{{SKILL:docs}}`)`, place the two additional lines `**Doc category:** ...` and `**Target path:** ...` directly below it per `Doc categories`. Omit the HTML comment `<!-- Only for ... -->` and the two lines for the other three workflows from the header area.

@@ -173,7 +173,7 @@ Only if code was adapted for breaking changes in phase 3:
 
 1. Start the appropriate reviewer for the changed files (`{{AGENT:frontend-reviewer}}`, `{{AGENT:nodejs-reviewer}}`, or `{{AGENT:rust-reviewer}}`).
 2. Fix critical findings before completion.
-3. If findings with status `Offen` or `Nicht umgesetzt` remain, write them per "Open review-finding reports" into a new file under `.effective-flow/review/` and name the report path in the completion summary.
+3. If findings with status `Open` or `Not implemented` remain, write them per "Open review-finding reports" into a new file under `.effective-flow/review/` and name the report path in the completion summary.
 
 Pure dependency bumps without code adaptation need no reviewer pass; note that briefly.
 

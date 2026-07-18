@@ -62,9 +62,9 @@ Right at the start of Phase 1 (after a successful report classification), create
 - **Phase-level tasks:** to `in_progress` before the phase starts, to `completed` after completion. Phase 1 is already active when the tasks are created → set it to `in_progress` directly after creating them and to `completed` after Phase 1 is complete.
 - **Per-finding tasks:**
   - `in_progress`: as soon as the pre-analysis for this finding starts in Phase 4.1.
-  - `completed`: as soon as the delegation in Phase 4.3 reports `ERLEDIGT` for this finding.
-  - **On `ABBRUCH` in Phase 4.1 or 4.3:** set to `completed` anyway (an open task line would block the list), but extend the subject with `[failed]` so the user recognizes the status.
-- **On an early overall abort** (e.g. no implementable findings in Phase 1, report not found): set all still-open `pending` and `in_progress` tasks to `completed` and extend their subjects with `[aborted]` before the skill ends with `ERLEDIGT`.
+  - `completed`: as soon as the delegation in Phase 4.3 reports `DONE` for this finding.
+  - **On `ABORT` in Phase 4.1 or 4.3:** set to `completed` anyway (an open task line would block the list), but extend the subject with `[failed]` so the user recognizes the status.
+- **On an early overall abort** (e.g. no implementable findings in Phase 1, report not found): set all still-open `pending` and `in_progress` tasks to `completed` and extend their subjects with `[aborted]` before the skill ends with `DONE`.
 
 ### Important
 
@@ -189,17 +189,17 @@ First determine the tracker mode via the "apply-source detection" (report file u
 5. **Read the file fresh.** Since the file can be deleted and recreated between conversations, no previously read content may be used. Always read the file directly from the file system.
 6. Parse all findings (`### [R-XXXXXXX] ...` blocks) with:
    - finding ID and title
-   - Schweregrad
-   - Komplexität
+   - Severity
+   - Complexity
    - action (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}`, `{{SKILL:docs}}`)
-   - Prompt-Vorschlag
-   - Entwickler-Anmerkung (if present)
+   - Prompt suggestion
+   - developer note (if present)
    - already present implementation hints (✅)
 7. Classify each finding:
    - **Already implemented:** the finding already has a ✅ hint → skip
-   - **Do not implement:** the Entwickler-Anmerkung begins with "Nicht umsetzen" → hand to `decision-records` as a decision candidate (ADR only for a permanent decision)
+   - **Do not implement:** the developer note begins with "Do not implement" (the German form "Nicht umsetzen" is also recognized) → hand to `decision-records` as a decision candidate (ADR only for a permanent decision)
    - **Implement:** no ✅ hint and no rejecting note → delegate to a skill
-   - **Implement with context:** an Entwickler-Anmerkung is present that does not begin with "Nicht umsetzen" → delegate to a skill, passing the note as additional context
+   - **Implement with context:** a developer note is present that does not begin with "Do not implement" / "Nicht umsetzen" → delegate to a skill, passing the note as additional context
 8. Give the user an overview:
 
 ```markdown
@@ -288,7 +288,7 @@ First survey the available skills:
 skill-discovery
 ```
 
-For each finding with a "Nicht umsetzen" note (in remote mode: `wontfix` finding, with a `wontfix` rationale instead of a developer note):
+For each finding with a "Do not implement" note (German "Nicht umsetzen" also recognized; in remote mode: `wontfix` finding, with a `wontfix` rationale instead of a developer note):
 
 1. **Form the decision candidate.** From the finding and the developer note, summarize a candidate: a descriptive title, context (report filename + finding ID or issue/epic number), the rejection rationale (full note/`wontfix` text) and a traceable **backlink** to the source finding.
 2. **Delegate to `decision-records`.** Hand the candidate to the skill with the task to (a) **decide whether** a permanent architecture/principle decision exists that justifies an ADR, and (b) if so, author it per the **discovered repo convention**. The convention declared for this repo is the living slug model from `adr-convention.md` (location/filename/title/status/mutability); if the target project declares its own ADR convention, the skill follows that one. Constraint on the skill: the ADR carries the backlink to the finding and does **not** become a task-status ledger; an existing thematically matching living ADR is updated **in place** rather than duplicated.
@@ -307,7 +307,7 @@ Start a pre-analysis sub-agent in parallel for **each implementable finding**. T
 Each pre-analysis sub-agent receives:
 
 - the finding details from the report (ID, Problem, Empfehlung, Datei, action)
-- the Entwickler-Anmerkung (if present)
+- the developer note (if present)
 - the task to investigate the code and deliver a structured analysis result:
   - **Affected files:** complete list of all files that will likely be touched (more than just the primary file named in the report).
   - **Root cause / current behavior** (for `{{SKILL:fix}}` and `{{SKILL:refactor}}`), **requirement** (for `{{SKILL:build}}`) or **documentation gap and audience** (for `{{SKILL:docs}}`).
@@ -316,7 +316,7 @@ Each pre-analysis sub-agent receives:
   - **Confidence:** `High` (file list certain), `Medium` (file list plausible), `Low` (file scope uncertain, e.g. large refactoring or unclear dependency).
 - the completion protocol
 
-Write the result per finding into the wisdom file under `## Pre-analysis [R-XXXXXXX]`. On `ABBRUCH`, mark the finding with the status `failed (pre-analysis)` in the wisdom file and skip it in the following steps. This marking allows Phase 6 (stash cleanup) to distinguish pre-analysis aborts (no stash possible, since nothing was implemented) from delegation aborts (a stash may exist).
+Write the result per finding into the wisdom file under `## Pre-analysis [R-XXXXXXX]`. On `ABORT`, mark the finding with the status `failed (pre-analysis)` in the wisdom file and skip it in the following steps. This marking allows Phase 6 (stash cleanup) to distinguish pre-analysis aborts (no stash possible, since nothing was implemented) from delegation aborts (a stash may exist).
 
 Use a valid `applyReviewAnalysis` cache entry only if the report file hash, finding ID and relevant code file hashes match the current situation. If the cache is not unambiguously valid, run the pre-analysis anew. Update the cache only after a successful pre-analysis; do not write user decisions or failed delegation outputs into the cache.
 
@@ -356,7 +356,7 @@ Example (across actions) with five findings over multiple actions:
 2. Each delegation sub-agent receives directly embedded in the prompt:
    - the finding details (ID, Problem, Empfehlung, Prompt-Vorschlag, Datei)
    - the corresponding pre-analysis from Phase 4.1 as an **inline context block** in the prompt — not as a reference to the wisdom file. The sub-skills do not read the wisdom file; they only process the prompt content. Embed the pre-analysis in full, for example under the heading `Pre-analysis for this finding:`.
-   - the Entwickler-Anmerkung (if present)
+   - the developer note (if present)
    - the commit strategy from Phase 2
    - **With commit strategy "Individually":** the full git commit mutex rule from `tools/apply-review-commit-mechanics.md`. The sub-agent must run every finding commit under `.effective-flow/apply-review-commit.lock`, may only stage finding-owned files and may never use `git add .`, `git add -A` or `git commit -a`.
    - **With commit strategy "Individually with worktrees":** the full git worktree isolation rule from `tools/apply-review-commit-mechanics.md`. The sub-agent works exclusively in the assigned worktree, commits each finding individually there and logs commit hashes in the wisdom file. The sub-agent must not switch into the original worktree.
@@ -369,8 +369,8 @@ Example (across actions) with five findings over multiple actions:
    - **Stash convention:** if any stash arises during the implementation of this finding (through a pre-commit hook, a manual `git stash` in the sub-skill or a tool-triggered stash), **the stash message must contain the finding ID**, e.g. `apply-review R-XXXXXXX <short description>`. This allows the stash cleanup in Phase 6 to reliably assign the stash to the finding.
    - the note that the sub-agent runs as a **non-interactive** delegation sub-agent of `{{FIRMO}} apply-review` and therefore skips the explicit goal query per "Explicit goal query for autonomous runs": no extra option "Autonomous via /goal", no `/goal` string. `{{FIRMO}} apply-review` steers the autonomous run at its own gate.
    - the completion protocol
-3. Check each sub-agent for `ERLEDIGT` or `ABBRUCH`.
-4. On `ABBRUCH`:
+3. Check each sub-agent for `DONE` or `ABORT`.
+4. On `ABORT`:
    - inform the user, mark the finding as `failed (delegation)` in the wisdom file.
    - **Before the next finding of the same component:** check via `git status` whether the working tree is clean. If uncommitted changes are present (a half-finished file from the aborted finding), clean the working tree per the `stashPolicy` fixed in Phase 2 before the next finding starts — otherwise it works on an inconsistent state:
      - `interactive` → ask the user whether to stash or discard the changes.
@@ -382,7 +382,7 @@ Example (across actions) with five findings over multiple actions:
    - Continue with the next finding within the same component. Other components keep running independently.
 
 5. Give the user a status update after each completed component with the result per finding.
-6. **Synchronization barrier before Phase 5:** start Phase 5 only when **all** delegation sub-agents started in Phase 4.3 have delivered a final status (`ERLEDIGT` or `ABBRUCH`).
+6. **Synchronization barrier before Phase 5:** start Phase 5 only when **all** delegation sub-agents started in Phase 4.3 have delivered a final status (`DONE` or `ABORT`).
 7. With commit strategy `Individually with worktrees`: after the synchronization barrier, integrate all successful worktree branches sequentially via `git cherry-pick` into the original branch, in the **deterministic component order from Phase 4.2, step 5** (components by report position of their first finding; within a component the finding commits in component order). This fixed order makes the integration result reproducible. Phase 5 may only start once this integration is complete or the workflow has been halted due to a conflict/user decision.
 8. A status update after a completed component is **not** a completion message of the overall workflow and **not** a halt. After each status update you actively check which delegation components are still running, wait for their final status and continue Phase 4.3 until no component is open anymore.
 
@@ -420,7 +420,7 @@ During the delegation in Phase 4, the called sub-skills or pre-commit hooks may 
 5. **Classify each stash:**
 
    **A. Finding fully implemented AND stash content fully contained in the commit for the finding:**
-   - Read the status of the assigned finding from the wisdom file. "Fully implemented" means: status `ERLEDIGT` from Phase 4.3.
+   - Read the status of the assigned finding from the wisdom file. "Fully implemented" means: status `DONE` from Phase 4.3.
    - Fetch the commits belonging to this finding from the `finding ID -> commit hash` mapping logged in Phase 4.3; with "No commits" this path is omitted — see classification D below.
    - Compare `git stash show -p stash@{N}` with `git show <commit>` for the changed files. If the stash diff has been fully absorbed into the finding commit content-wise (the stash content is a subset of the commit changes) → **stash is an intermediate state, no longer needed**.
 

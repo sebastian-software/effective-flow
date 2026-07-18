@@ -164,8 +164,8 @@ options:
    IDs or a thread reference and without `Co-Authored-By`. File-overlapping items run
    sequentially so the commits stay ordered; independent items may be implemented in
    parallel.
-3. Give internal delegation sub-agents the completion protocol and check for `ERLEDIGT` or
-   `ABBRUCH`. On `ABBRUCH`: mark the item as failed and continue with the next.
+3. Give internal delegation sub-agents the completion protocol and check for `DONE` or
+   `ABORT`. On `ABORT`: mark the item as failed and continue with the next.
 
 ### Phase 4: Validation
 

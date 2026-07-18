@@ -23,7 +23,7 @@ Mutex convention:
 Critical section under the lock:
 
 1. Run `git status --porcelain`.
-2. If staged changes are already present that do not clearly belong to this finding: **do not commit**, inform the user and end with `ABBRUCH` for this finding. Foreign staged changes must not be taken over or cleaned up.
+2. If staged changes are already present that do not clearly belong to this finding: **do not commit**, inform the user and end with `ABORT` for this finding. Foreign staged changes must not be taken over or cleaned up.
 3. Stage exclusively the files known from the pre-analysis and the actual implementation of this finding. Do not use blanket commands like `git add .`, `git add -A` or `git commit -a`.
 4. Check `git diff --cached --name-only`. The list may only contain files of this finding.
 5. Check `git diff --cached` whether the staged diff belongs content-wise to the current finding.
@@ -31,7 +31,7 @@ Critical section under the lock:
 7. Determine the commit hash directly afterwards with `git rev-parse HEAD` and log the `finding ID -> commit hash` mapping in the wisdom file.
 8. Run `git status --porcelain` directly afterwards and log in the wisdom file whether uncommitted changes of other parallel findings still lie in the working tree. These residual changes are allowed as long as they are not staged and not part of the current commit.
 
-If a check in the critical section fails, the sub-agent must unstage its own staged changes as far as clearly possible, release the lock and report `ABBRUCH: [reason]`.
+If a check in the critical section fails, the sub-agent must unstage its own staged changes as far as clearly possible, release the lock and report `ABORT: [reason]`.
 
 #### Git worktree isolation for "Individually with worktrees"
 

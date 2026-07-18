@@ -323,48 +323,48 @@ Start in parallel if possible:
 
 ### Phase 6: Review
 
-1. Start the appropriate reviewer skill for the changed files. Explicitly instruct the reviewer to deliver **all severities** (Kritisch + Wichtig + Hinweis), so the later plan-file report serves as a complete audit trail — deviating from the `{{SKILL:review}}` default, which delivers only Kritisch + Wichtig.
+1. Start the appropriate reviewer skill for the changed files. Explicitly instruct the reviewer to deliver **all severities** (Critical + Important + Note), so the later plan-file report serves as a complete audit trail — deviating from the `{{SKILL:review}}` default, which delivers only Critical + Important.
 2. Aggregate all review findings and classify them:
-   - Kritisch: must be fixed before completion
-   - Wichtig: should be fixed, can be handled as a follow-up
-   - Hinweis: optional
+   - Critical: must be fixed before completion
+   - Important: should be fixed, can be handled as a follow-up
+   - Note: optional
 3. Assign each finding a local ID in the order of aggregation: `F1`, `F2`, `F3`, ... These IDs apply only within this workflow run and are reused later in the plan file.
 4. Fix all critical findings before completion.
-5. Present the review results in this format. Additionally aggregate the Komplexität counters so Phase 7 can adopt them without deriving them again:
+5. Present the review results in this format. Additionally aggregate the Complexity counters so Phase 7 can adopt them without deriving them again:
 
 ```markdown
 **Review results**
 
 Summary:
-| Schweregrad | Count | Behoben | Offen |
+| Severity | Count | Fixed | Open |
 |---|---|---|---|
-| Kritisch | X | X | X |
-| Wichtig | X | X | X |
-| Hinweis | X | X | X |
+| Critical | X | X | X |
+| Important | X | X | X |
+| Note | X | X | X |
 
-| Komplexität | Count |
+| Complexity | Count |
 |---|---|
 | Low | X |
 | Medium | Y |
 | High | Z |
 ```
 
-Note: Before completion, the "Offen" column for "Kritisch" must be 0.
+Note: Before completion, the "Open" column for "Critical" must be 0.
 
 6. If findings were not implemented, list them directly in the summary with prompt suggestions for later implementation.
 7. Document each finding in a structured way so open or unimplemented findings can be carried over into an external review report:
    - local ID (`F1`, `F2`, ...)
    - Title
-   - Schweregrad (Kritisch / Wichtig / Hinweis)
-   - Komplexität (Leicht / Mittel / Schwer)
-   - Bereich
-   - Datei + line
+   - Severity (Critical / Important / Note)
+   - Complexity (Low / Medium / High)
+   - Area
+   - File + line
    - Problem
-   - Empfehlung
-   - Status (Behoben / Offen / Nicht umgesetzt)
+   - Recommendation
+   - Status (Fixed / Open / Not implemented)
    - rationale for non-implementation (incl. ADR reference as slug, if present, e.g. `(ADR: <slug>)`)
 8. Never create an ADR in this workflow and do not ask for one either. Deliberately unimplemented findings are documented exclusively in the review report. The developer decides on later implementation or on an ADR for a deliberate non-implementation when going through the findings file, typically via {{SKILL:apply-review}}.
-9. If after review there remain findings with status `Offen` or `Nicht umgesetzt`:
+9. If after review there remain findings with status `Open` or `Not implemented`:
    - write them into a new file under `.effective-flow/review/` per "Open review-finding reports"
    - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
    - record the generated report path for Phase 7
@@ -393,7 +393,7 @@ Note: Before completion, the "Offen" column for "Kritisch" must be 0.
    Use this template:
 
 ```markdown
-## Review-Findings
+## Review findings
 
 **Date:** YYYY-MM-DD
 **Reviewer:** [frontend-reviewer / nodejs-reviewer / both / none]
@@ -402,8 +402,8 @@ Note: Before completion, the "Offen" column for "Kritisch" must be 0.
 
 | Status | Count |
 |---|---:|
-| Behoben | X |
-| Offen / Nicht umgesetzt | Y |
+| Fixed | X |
+| Open / Not implemented | Y |
 
 **External review report:** `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>.md` <!-- only output if open findings were offloaded -->
 
@@ -439,6 +439,6 @@ commit-message-rules
 - Skip optional steps only with a short justification
 - Give internal sub-agents the instruction:
   - first summarize the task in 2-3 sentences
-  - end with `ERLEDIGT` or `ABBRUCH: [reason]`
+  - end with `DONE` or `ABORT: [reason]`
 - Write a wisdom summary after each completed phase
 - Pass the accumulated insights from the wisdom file to each delegated phase

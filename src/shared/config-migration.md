@@ -36,14 +36,17 @@ the ADR, the markers and the migration happen exclusively in the Git-touching pa
 ### Table encoding (binding for writers and readers)
 
 The config parameters stand as a flat Markdown table with two columns
-`| Schlüssel | Wert |`. Writers ({{SKILL:setup}}, migration) and readers (all tools)
-interpret the values identically per this encoding:
+`| Key | Value |`. Writers ({{SKILL:setup}}, migration) and readers (all tools)
+interpret the values identically per this encoding. English is the default encoding;
+a pre-existing ADR written in the former German form (`## Konfiguration`, header
+`| Schlüssel | Wert |`, `## Kontext`, status `Aktiv`/`Abgelöst`, empty list `(leer)`) stays
+recognized on read and is rewritten to the English form on the next write:
 
 - **Boolean** → `true` / `false`.
 - **String** → literal, unquoted (e.g. `focused`, `origin/main`).
 - **`null`** (semantically "ask at run time", e.g. `applyReview.defaultCommitStrategy`) →
   the literal token `null`.
-- **Empty list** → `(leer)`.
+- **Empty list** → `(empty)`.
 - **Filled list** → comma-separated (e.g. `humanizer, distill`).
 - **Nesting** → dotted keys (e.g. `applyReview.worktree.baseDir`,
   `skills.agents.ui-implementer.include`); an empty object has no sub-lines.
@@ -56,13 +59,13 @@ Reading a single value is a trivial line lookup (line with dotted key →
 value cell). Example excerpt (interface sketch, not full content):
 
 ```markdown
-## Konfiguration
+## Configuration
 
-| Schlüssel                         | Wert    |
+| Key                         | Value    |
 | --------------------------------- | ------- |
 | review.profile                    | focused |
 | applyReview.defaultCommitStrategy | null    |
-| skills.exclude                    | (leer)  |
+| skills.exclude                    | (empty)  |
 | worktree.enabled                  | true    |
 ```
 
