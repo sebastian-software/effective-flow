@@ -484,3 +484,74 @@ export function assertNoEagerLazyOverlap(eager, lazy, { context } = {}) {
     );
   }
 }
+
+// --- Delivery-branch documentation transforms ---
+//
+// The delivery branch `main` carries the consumer-facing docs (root README.md +
+// docs/user-guide/) beside the built skill payload, but NOT docs/developer-guide/
+// (develop-only). Relative links into the developer guide would therefore dangle
+// on `main`, so the deliver step rewrites them to absolute URLs on the source
+// branch. Two entry shapes exist: the root README uses the `docs/developer-guide/`
+// prefix, every docs/user-guide/*.md uses `../developer-guide/`. Both map to
+// `https://github.com/<repo>/blob/<sourceBranch>/docs/developer-guide/<subpath>`.
+//
+// The pure transforms live here (unit-tested); scripts/deliver-docs.mjs does the
+// file I/O in CI. See docs/developer-guide/release-und-installation.md.
+
+const GITHUB_BASE = 'https://github.com';
+
+// Absolute base URL for a file inside docs/developer-guide/ on the source branch.
+export function developerGuideBaseUrl(repo, sourceBranch) {
+  return `${GITHUB_BASE}/${repo}/blob/${sourceBranch}/docs/developer-guide`;
+}
+
+// Rewrite every Markdown link whose target points into docs/developer-guide/ to
+// its absolute source-branch URL. `fromRoot` selects the relative prefix: the
+// root README uses `docs/developer-guide/`, user-guide files use
+// `../developer-guide/`. Only real link targets `](…)` match, so plain-text
+// mentions of the path are left alone. Idempotent: an already-absolute
+// `](https://…)` target does not start with the relative prefix and is skipped.
+export function rewriteDeveloperGuideLinks(markdown, { repo, sourceBranch, fromRoot } = {}) {
+  if (!repo || !sourceBranch) {
+    throw new Error('rewriteDeveloperGuideLinks requires repo and sourceBranch');
+  }
+  const base = developerGuideBaseUrl(repo, sourceBranch);
+  // The root README reaches the guide as `docs/developer-guide/`; a user-guide
+  // file reaches it by walking up one level per directory of nesting
+  // (`../developer-guide/`, `../../developer-guide/`, …). Both resolve to the same
+  // developer-guide directory, so any depth maps to the same absolute base. Only
+  // real link targets `](…)` match; the subpath capture stops at the first `)`, so
+  // a literal `)` inside a target (none exist under docs/developer-guide/) is out
+  // of scope by design.
+  const prefix = fromRoot ? 'docs/developer-guide/' : '(?:\\.\\./)+developer-guide/';
+  const re = new RegExp(`\\]\\(${prefix}([^)]*)\\)`, 'g');
+  return markdown.replace(re, (_, subpath) => `](${base}/${subpath})`);
+}
+
+// Marker comment that makes appendDeliveryFooter idempotent across re-deliveries.
+export const DELIVERY_FOOTER_MARKER = '<!-- effective-flow:delivery-footer -->';
+
+// The discreet footer appended only to the delivered `main` README: it names the
+// source branch as the place for the developer guide and contributions, so a
+// visitor of the machine-owned default branch does not edit the overwritten copy.
+export function deliveryFooter(repo, sourceBranch) {
+  const url = `${GITHUB_BASE}/${repo}/tree/${sourceBranch}`;
+  return [
+    DELIVERY_FOOTER_MARKER,
+    '',
+    '---',
+    '',
+    `_Dies ist der maschinell verwaltete Auslieferungs-Branch. Quelle, Entwickler-Dokumentation und Beiträge liegen auf [\`${sourceBranch}\`](${url})._`,
+  ].join('\n');
+}
+
+// Append the delivery footer once. Returns the input unchanged if the marker is
+// already present (idempotent), otherwise trims trailing whitespace and appends
+// the footer with a blank-line gap.
+export function appendDeliveryFooter(markdown, { repo, sourceBranch } = {}) {
+  if (!repo || !sourceBranch) {
+    throw new Error('appendDeliveryFooter requires repo and sourceBranch');
+  }
+  if (markdown.includes(DELIVERY_FOOTER_MARKER)) return markdown;
+  return `${markdown.replace(/\s+$/, '')}\n\n${deliveryFooter(repo, sourceBranch)}\n`;
+}

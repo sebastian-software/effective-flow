@@ -58,14 +58,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ steps.release.outputs.tag_name }}" "effective-flow-${{ steps.release.outputs.tag_name }}.tar.gz" --clobber
 
-      - name: Deliver built dist to the delivery branch (main)
-        # The delivery branch `main` carries ONLY the built dist/ payload so that
-        # consumers which do not run a build (dalo, `npx skills`) grab finished
-        # artifacts straight from the default branch. Both harnesses ship on this
-        # one branch as `claude/` and `codex/` at the root. This appends a fresh
-        # commit — it never force-pushes — so consumer commit pins stay valid.
-        # Requires the delivery branch `main` to already exist (seeded once during
-        # the develop/main rollout); it does not run until a release is created.
+      - name: Deliver built dist and consumer docs to the delivery branch (main)
+        # The delivery branch `main` is the default branch, so it carries what a
+        # consumer sees: the built skill payload (both harnesses as `claude/` and
+        # `codex/` at the root) PLUS the consumer-facing docs — the marketing-entry
+        # README.md and docs/user-guide/. It deliberately does NOT carry
+        # docs/developer-guide/ (develop-only). Consumers that do not run a build
+        # (dalo, `npx skills`) grab finished artifacts straight from here.
+        #
+        # deliver-docs.mjs rewrites developer-guide links in the delivered docs to
+        # absolute develop URLs (they would dangle on `main`) and appends a footer
+        # pointing contributors at `develop`. This appends a fresh commit — it never
+        # force-pushes — so consumer commit pins stay valid. Requires the delivery
+        # branch `main` to already exist (seeded once during the develop/main
+        # rollout); it does not run until a release is created.
         if: ${{ steps.release.outputs.release_created == 'true' }}
         run: |
           git config user.name "github-actions[bot]"
@@ -73,9 +79,13 @@ jobs:
           git fetch origin main
           work="$(mktemp -d)"
           git worktree add --force "$work" origin/main
-          rm -rf "$work/claude" "$work/codex"
+          rm -rf "$work/claude" "$work/codex" "$work/README.md" "$work/docs/user-guide" "$work/docs/developer-guide"
           cp -R dist/claude "$work/claude"
           cp -R dist/codex "$work/codex"
+          mkdir -p "$work/docs"
+          cp README.md "$work/README.md"
+          cp -R docs/user-guide "$work/docs/user-guide"
+          node scripts/deliver-docs.mjs "$work" "$GITHUB_REPOSITORY" develop
           git -C "$work" add -A
           if git -C "$work" diff --cached --quiet; then
             echo "No delivery changes for ${{ steps.release.outputs.tag_name }}"
