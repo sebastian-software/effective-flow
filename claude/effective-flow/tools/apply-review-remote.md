@@ -1,0 +1,249 @@
+
+# Effective Flow Apply Review – Remote-Modus
+
+Diese interne Teil-Datei wird von `tools/apply-review.md` geladen, sobald der Tracker-Modus `remote` ist (das Argument ist ein Epic- oder Finding-Issue). Sie enthält die vollständige Issue-Tracker-Anbindung und den Remote-Ablauf; im lokalen Modus wird sie nie geladen.
+
+## Issue-Tracker-Anbindung (Remote-Modus)
+
+Dieser geteilte Baustein verbindet `/effective-flow review` und ``tools/apply-review.md`` mit einem externen Issue-Tracker (GitHub über `gh`, Forgejo über `tea`). Er ist **opt-in** über die Effective Flow-Konfiguration (Projektsetup-ADR) und standardmäßig deaktiviert (`local`). Im lokalen Modus verhalten sich beide Skills unverändert – Findings laufen über die Markdown-Report-Datei unter `.effective-flow/review/`, es werden keine Issues erzeugt und kein CLI aufgerufen.
+
+Der local/remote-Umschalter (`tracker.mode`) betrifft ausschließlich **Reviews**. **Investigationen** (`/effective-flow investigate`) sind davon ausgenommen und bleiben in jedem Modus rein lokal unter `.effective-flow/investigation/` (nie committet, nie als Issue). Von den Effective Flow-Artefakten werden ausschließlich **Pläne** committet.
+
+Er kapselt die **gemeinsamen** Bausteine: das `tracker`-Config-Schema samt Migration, die Modusbestimmung, die Host- und CLI-Erkennung, die Label-Konvention, die kanonischen Issue- und Epic-Body-Formate sowie das Mapping der Tracker-Operationen auf `gh`/`tea`. Die eigentliche Orchestrierung – wann Issues **erstellt** (`/effective-flow review`) und wann sie **gelesen und abgearbeitet** werden (``tools/apply-review.md``) – bleibt im jeweiligen Skill.
+
+Zusätzlich nutzen ``tools/apply-issues.md`` und `/effective-flow plan-issue` diesen Baustein, allerdings nur für die **werkzeug-generische Plumbing**: die Host- und CLI-Erkennung (unten), die Verfügbarkeits-/Auth-Prüfung, das Mapping der Tracker-Operationen auf `gh`/`tea` und die Fehlerfälle. Diese beiden Skills verarbeiten **beliebige** Menschen-Issues statt der von `/effective-flow review` erzeugten Finding-Issues; sie sind **inhärent remote** und werten den `tracker.mode`-Umschalter (local/remote) **nicht** aus – sie brauchen lediglich ein Git-Repository, eine `origin`-Remote und ein authentifiziertes CLI. Die finding-/epic-spezifischen Abschnitte (Issue-Body-Format, Epic-Body-Format, `R-XXXXXXX`-Konvention) gelten nur für `/effective-flow review`/``tools/apply-review.md``; die Checkbox-Abhak-Mechanik für Epic-Bodys nutzt ``tools/apply-issues.md`` bei Container-Issues sinngemäß mit.
+
+### Konfiguration
+
+Der Remote-Modus funktioniert ohne festgeschriebene Konfiguration (dann bleibt er deaktiviert, `local`). Falls die Effective Flow-Konfiguration (Projektsetup-ADR) entsprechende Werte festschreibt, überschreiben sie diese Defaults (Schema hier zur Illustration):
+
+```json
+{
+  "tracker": {
+    "mode": "local",
+    "remoteToolOverride": "auto"
+  }
+}
+```
+
+Fehlende Werte haben diese Defaults:
+
+- `tracker.mode`: `"local"` (Feature aus)
+- `tracker.remoteToolOverride`: `"auto"` (Werkzeug automatisch aus der `origin`-URL)
+
+Gültige Werte:
+
+- `tracker.mode`: `"local"`, `"remote"`
+- `tracker.remoteToolOverride`: `"auto"`, `"github"`, `"forgejo"`
+
+`remoteToolOverride` ist nur für mehrdeutige Hosts gedacht (z. B. self-hosted GitHub Enterprise, dessen Domain nicht `github.com` enthält). Bei `auto` entscheidet die Host-Erkennung unten.
+
+### Config-Migration
+
+Das Lesen der Effective Flow-Konfiguration aus der Projektsetup-ADR (inklusive der `tracker`-Schlüssel) und die einmalige Migration einer Alt-Config übernimmt zentral der Baustein „Config-Migration“ (`config-migration.md`); dieser Baustein führt keine eigene per-Block-Migration mehr für `tracker` aus. Das `tracker`-Config-Schema oben (Konfiguration, gültige Werte, Modusbestimmung, Erstaufruf-Abfrage) bleibt davon unberührt.
+
+### Modus bestimmen
+
+Bestimme zu Beginn des Laufs den effektiven Modus in dieser Reihenfolge (die erste zutreffende Regel gewinnt):
+
+1. **Argumenttyp:** Der übergebene Argumenttyp überschreibt den Config-Modus für diesen Lauf. Eine Report-Datei (`*.md` unter `.effective-flow/review/`) erzwingt `local`; eine Issue-Referenz (Issue-Nummer, `#123` oder eine Issue-URL) erzwingt `remote`.
+2. **Per-Run-Wunsch des Users:** Verlangt der User ausdrücklich Issue-/Tracker-Arbeit, ist `remote` aktiv; verlangt er ausdrücklich lokale Arbeit („lokal“, „ohne Issues“, „nur Report“), ist `local` aktiv.
+3. **Config:** sonst gilt `tracker.mode` aus der Effective Flow-Konfiguration (Projektsetup-ADR).
+4. **Erstaufruf-Abfrage:** Ist `tracker.mode` nicht in der Config gesetzt und liefert weder Argument noch Per-Run-Wunsch ein Signal, führe die Erstaufruf-Abfrage unten aus.
+
+### Erstaufruf-Abfrage
+
+Nur wenn Schritt 4 oben greift (kein Config-Wert, kein Argument-/Per-Run-Signal):
+
+Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:
+- header: "Tracker"
+- question: "Sollen Review-Findings lokal als Markdown-Report oder remote als Issues (GitHub/Forgejo) geführt werden?"
+- multiSelect: false
+- options:
+  - label: "Lokal", description: "tracker.mode = local — Markdown-Report unter .effective-flow/review/ (bisheriges Verhalten)"
+  - label: "Remote", description: "tracker.mode = remote — Findings als Issues, Werkzeug automatisch aus origin (gh/tea)"
+
+Verwende die gewählte Antwort als Tracker-Modus **für diesen Lauf**. Schreibe sie **nicht** selbst in die Konfiguration — das dauerhafte Festschreiben von `tracker.mode` in der Projektsetup-ADR übernimmt ausschließlich `/effective-flow setup`. Weise den User kurz darauf hin, z. B. „Tracker-Modus `remote` für diesen Lauf verwendet; dauerhaft festschreiben über `/effective-flow setup`.“
+
+### Host- und CLI-Erkennung (nur Remote-Modus)
+
+Bestimme im Remote-Modus das Werkzeug analog zu `/effective-flow pr`:
+
+1. **Vorbedingung:** Es ist ein Git-Repository mit einer `origin`-Remote vorhanden. Fehlt `origin` oder ist es kein Git-Repository, ist der Remote-Modus nicht möglich: klar melden und abbrechen.
+2. **Werkzeug wählen:**
+   - `tracker.remoteToolOverride: "github"` → `gh`; `"forgejo"` → `tea`.
+   - sonst (`auto`): Lies die `origin`-URL (`git remote get-url origin`) und extrahiere daraus den Host robust für HTTPS- und SSH-Formen (`https://host/owner/repo.git`, `ssh://git@host/owner/repo.git`, `git@host:owner/repo.git`). Ist der Host exakt `github.com`, ist das Werkzeug `gh`; **für jeden anderen Host** wird Forgejo/Gitea angenommen und `tea` verwendet.
+   - Ein ausdrücklicher Per-Run-Hinweis des Users zum Werkzeug hat bei mehrdeutigem Host (z. B. GitHub Enterprise) Vorrang. Ist der Host mehrdeutig und weder Override noch Per-Run-Hinweis vorhanden, frage den User nach dem gewünschten Werkzeug.
+3. **Verfügbarkeit prüfen:** Stelle sicher, dass das gewählte CLI installiert und authentifiziert ist (`gh auth status` bzw. `tea` mit konfiguriertem Login). Fehlt das CLI oder die Authentifizierung: gib eine klare Fehlermeldung mit Behebungshinweis aus und brich ohne Seiteneffekt ab. Falle **nicht** still auf `local` zurück; biete einen Fallback auf `local` nur nach ausdrücklicher User-Zustimmung an.
+
+### Label-Konvention
+
+Verwende im Remote-Modus diese Labels und lege fehlende Labels idempotent an (eine „already exists“-Meldung tolerieren, nicht als Fehler behandeln):
+
+| Label                                                                                          | Bedeutung                                                                                |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `effective-flow-review-finding`                                                                | markiert ein einzelnes Finding-Issue                                                     |
+| `effective-flow-review-epic`                                                                   | markiert das Epic-/Tracking-Issue                                                        |
+| `effective-flow-fix`, `effective-flow-refactor`, `effective-flow-build`, `effective-flow-docs` | Ziel-Aktion des Findings (genau eines pro Finding-Issue)                                 |
+| `kritisch`, `wichtig`, `hinweis`                                                               | Schweregrad des Findings (genau eines pro Finding-Issue; `hinweis` für Hinweis-Findings) |
+| `wontfix`                                                                                      | Finding bewusst nicht umsetzen → ADR statt Code                                          |
+| `effective-flow-issue-done`                                                                    | von ``tools/apply-issues.md`` umgesetztes Issue (PR erstellt)                             |
+| `effective-flow-needs-planning`                                                                | von ``tools/apply-issues.md`` übersprungen; Planung via `/effective-flow plan-issue` nötig      |
+
+`wontfix` existiert auf vielen Trackern bereits; lege es nur an, falls es fehlt. `effective-flow-issue-done` und `effective-flow-needs-planning` gehören zum issue-getriebenen Fluss (``tools/apply-issues.md``/`/effective-flow plan-issue`) und werden dort idempotent angelegt.
+
+**Rückwärtskompatibilität (Alt-Präfix `firmo-`):** Frühere Versionen nutzten das Präfix `firmo-` statt `effective-flow-` (`firmo-review-finding`, `firmo-review-epic`, `firmo-fix`/`firmo-refactor`/`firmo-build`/`firmo-docs`, `firmo-issue-done`, `firmo-needs-planning`). Neu **angelegt oder gesetzt** wird ausschließlich das `effective-flow-`-Label; ein Upgrade bestehender `firmo-`-Labels ist **nicht** nötig. Beim **Lesen, Auflisten, Deduplizieren und Erkennen** gilt jede `firmo-`-Variante dauerhaft als gleichwertig zur zugehörigen `effective-flow-`-Variante:
+
+- **Auflisten/Filtern** (Dedup, Epic-/Issue-Suche): `gh`/`tea` verknüpfen mehrere `--label`-Angaben mit UND-Semantik. Führe die Abfrage daher **je Präfix getrennt** aus (einmal `effective-flow-…`, einmal `firmo-…`) und vereinige die Treffer über die Issue-Nummer.
+- **Status-Label entfernen** (`effective-flow-needs-planning`, `effective-flow-issue-done`): entferne zusätzlich die Alt-`firmo-`-Variante, falls vorhanden, damit ein Issue nicht durch ein liegengebliebenes Alt-Label „hängen“ bleibt.
+
+**Einmalige `sf-`-Label-Migration:** Das noch ältere Präfix `sf-` (`sf-review-finding`, `sf-review-epic`, `sf-fix`/`sf-refactor`/`sf-build`/`sf-docs`, `sf-issue-done`, `sf-needs-planning`) wird **nicht** mehr laufend erkannt, sondern **einmal pro Repo migriert**. Beim **ersten** Remote-Tracker-Zugriff — sofern der Marker `labelMigration.sf.done` in `.effective-flow/memory.json` fehlt und ein authentifiziertes CLI vorliegt — zieht eine idempotente Migration jedes noch vorhandene `sf-<x>`-Label auf `effective-flow-<x>` um: erst `effective-flow-<x>` am Issue ergänzen, dann `sf-<x>` entfernen (nicht umgekehrt, damit ein Abbruch kein Issue unklassifiziert zurücklässt). Danach den Marker setzen. Findet die Migration keine `sf-`-Labels, ist sie ein geräuschloser No-Op. Ist der Marker gesetzt, entfällt jeder weitere Scan — laufende Operationen kennen nur `effective-flow-` und `firmo-`. `sf-` wird ausschließlich in dieser Migration referenziert.
+
+### Keine KI-Attribution in Issue-Bodys und -Kommentaren
+
+Füge Issue-Bodys, Epic-Bodys und Kommentaren keine KI-Attribution hinzu: keine „Generated with Claude Code/Codex"-Footer, keine Agent-Session-Links (z. B. `https://claude.ai/code/…`) und keine `Co-Authored-By`-Trailer – auch dann nicht, wenn der Harness sie als Default anhängt. Sachliche Erwähnungen von Claude Code oder Codex als Ziel-Harness sind erlaubt, Generierungs-Attribution nicht.
+
+### Issue-Body-Format (Finding-Issue)
+
+Ein Finding-Issue muss **self-contained** sein: eine fremde LLM-Session muss es ohne Zugriff auf die erzeugende Session abarbeiten können. Es enthält dieselben inhaltlichen Felder wie ein Finding-Block des lokalen Report-Formats (siehe `/effective-flow review`, „Bericht-Format“).
+
+- **Titel:** `[R-XXXXXXX] <Kurztitel>`
+- **Labels:** `effective-flow-review-finding`, das Aktions-Label und das Schweregrad-Label.
+- **Body** (kanonisches Template):
+
+```markdown
+- **Schweregrad**: Kritisch / Wichtig / Hinweis
+- **Komplexität**: Leicht / Mittel / Schwer
+- **Bereich**: [...]
+- **Datei**: [pfad:zeile]
+- **Problem**: [...]
+- **Empfehlung**: [...]
+- **Aktion**: effective-flow-fix | effective-flow-refactor | effective-flow-build | effective-flow-docs
+- **Prompt-Vorschlag**: [direkt kopierbarer Klartext, ohne umschließende Anführungszeichen, ohne Escape-Sequenzen]
+- **Epic**: #<Epic-Nummer> (leer, falls kein Epic)
+- **Signatur**: [pfad:zeile] · [Bereich] · [Kurzfassung des Problems]  <!-- Dedup-Schlüssel -->
+```
+
+Das Feld **Signatur** fixiert den inhaltlichen Dedup-Schlüssel (Datei+Zeile, Bereich, Problem). Es ist bewusst **nicht** die `R-XXXXXXX`-ID, weil diese pro Lauf frisch vergeben wird.
+
+### Epic-Body-Format (Tracking-Issue)
+
+- **Titel:** `Code-Review YYYY-MM-DD[-N]`
+- **Labels:** `effective-flow-review-epic`
+- **Body** (kanonisches Template):
+
+```markdown
+Code-Review vom YYYY-MM-DD · Scope: [Gesamter Code / Beschriebener Bereich] · Projekt-Typ: [...]
+
+## Findings
+
+- [ ] #<nr> [R-0000001] <Kurztitel> — Aktion: effective-flow-fix
+- [ ] #<nr> [R-0000002] <Kurztitel> — Aktion: effective-flow-refactor
+
+## Übersprungen (Designentscheidungen)
+
+- #<nr-oder-keine> [R-XXXXXXX] <Kurztitel> — abgedeckt durch [DD-XXX] ([Quelle])
+```
+
+Regeln für die Task-Liste:
+
+- Jeder Eintrag unter `## Findings` referenziert genau ein Finding-Issue über seine Nummer und trägt die `R-XXXXXXX`-ID sowie die Aktion.
+- Die Sektion `## Übersprungen (Designentscheidungen)` verwendet **keine** Checkboxen und listet nur durch Designentscheidungen gefilterte Findings. Sie entfällt, wenn keine solchen Findings vorhanden sind.
+- Das Abhaken erfolgt durch Umschalten `- [ ]` → `- [x]` und optionales Anhängen des PR-Links am Eintrag; ein bewusst nicht umgesetztes Finding wird per Slug-Referenz als `- [x] … — nicht umgesetzt (ADR: <slug>)` markiert.
+
+### Tracker-Operationen (Werkzeug-Mapping)
+
+Beschreibe alle Tracker-Zugriffe abstrakt als Operation und wähle das Kommando nach dem erkannten Werkzeug. Prüfe bei Forgejo die genauen Flagnamen gegen die installierte `tea`-Version, falls ein Aufruf fehlschlägt (wie in `/effective-flow pr` vermerkt).
+
+| Operation                                | GitHub (`gh`)                                                                              | Forgejo (`tea`)                                                                                      |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| Label anlegen (idempotent)               | `gh label create <name> --force`                                                           | `tea labels create --name <name>`                                                                    |
+| Issue anlegen                            | `gh issue create --title … --body-file … --label …`                                        | `tea issue create --title … --body … --labels …`                                                     |
+| Issue lesen (Body + Labels + Status)     | `gh issue view <nr> --json title,body,labels,state`                                        | `tea issue <nr>` bzw. `tea issue view <nr>`                                                          |
+| Kommentare lesen (Klärungen, Idempotenz) | `gh issue view <nr> --json comments`                                                       | `tea issue view <nr> --comments`, sonst Forgejo-API `GET /repos/<owner>/<repo>/issues/<nr>/comments` |
+| Finding-Issues auflisten (für Dedup)     | `gh issue list --label effective-flow-review-finding --state all --json number,title,body` | `tea issues list --labels effective-flow-review-finding --state all`                                 |
+| Offene Epics auflisten                   | `gh issue list --label effective-flow-review-epic --state open`                            | `tea issues list --labels effective-flow-review-epic --state open`                                   |
+| Issue-Body aktualisieren (Epic abhaken)  | `gh issue edit <nr> --body-file …`                                                         | `tea issue edit <nr> --body …`                                                                       |
+| Kommentar hinzufügen (z. B. PR-Link)     | `gh issue comment <nr> --body …`                                                           | `tea comment <nr> …`                                                                                 |
+| Label setzen/entfernen                   | `gh issue edit <nr> --add-label … --remove-label …`                                        | `tea issue edit <nr> --labels …`                                                                     |
+| Pull-Request erstellen                   | über `/effective-flow pr`                                                                        | über `/effective-flow pr`                                                                                  |
+
+Beim Epic-Body-Update gilt: Body vor dem Ändern frisch lesen, gezielt nur die betroffene Zeile umschalten und zurückschreiben, damit parallele Änderungen nicht verloren gehen.
+
+Für die auflistenden Operationen (Dedup, Offene Epics) gilt die Rückwärtskompatibilität aus „Label-Konvention“: Abfrage je Präfix (`effective-flow-…` **und** `firmo-…`) getrennt ausführen und über die Issue-Nummer vereinigen.
+
+### Fehler- und Randfälle
+
+- **Fehlendes/nicht authentifiziertes CLI:** klar abbrechen, Behebungshinweis geben, keinen Teilzustand hinterlassen; kein stiller Fallback auf `local`.
+- **Kein Git-Repository / keine `origin`-Remote:** Remote-Modus nicht möglich; melden.
+- **Mehrdeutiger Host:** `remoteToolOverride` bzw. Per-Run-Hinweis nutzen; ist beides unklar, den User fragen.
+- **Argumenttyp widerspricht `tracker.mode`:** Der Argumenttyp überschreibt den Config-Modus für diesen Lauf (siehe „Modus bestimmen“).
+
+## Remote-Modus (Issue-Tracker)
+
+Wenn der Tracker-Modus `remote` ist (siehe „Issue-Tracker-Anbindung (Remote-Modus)“), gelten die folgenden Anpassungen **zusätzlich** zum bzw. anstelle des lokalen Report-Flusses. Bestimme den Modus zu Beginn von Phase 1; der Argumenttyp hat dabei Vorrang vor der Config.
+
+### Argument-Erkennung und Modusbestimmung
+
+Klassifiziere das übergebene Argument über die „Apply-Quellen-Erkennung“ (Stufe A und – für Issue-Referenzen – Stufe B) und leite Modus und Sub-Modus aus dem Quelltyp ab:
+
+- **`review-report`** (Report-Datei unter `.effective-flow/review/`) → `local` (bisheriges Verhalten, unverändert).
+- **`review-epic`** (Issue mit `effective-flow-review-epic`-Label, Alt `firmo-review-epic` gleichwertig) → `remote`, **Epic-Modus**: alle im Epic verlinkten Finding-Issues abarbeiten.
+- **`review-finding`** (ein einzelnes Finding-Issue oder eine Liste von Finding-Issue-Referenzen) → `remote`, **Issue-Listen-Modus**: nur genau diese Findings abarbeiten. Das zugehörige Epic je Finding wird für das spätere Abhaken aus dem Sub-Issue ermittelt (`Epic`-Feld/Referenz), sofern vorhanden.
+- **`remote` ohne Argument** → offene Epics auflisten und den User wählen lassen.
+- **`plan`, `container-issue` oder `plain-issue`** → gehört nicht zu ``tools/apply-review.md``: auf den zuständigen Skill verweisen (``tools/apply-plan.md`` für Plan-Dateien, ``tools/apply-issues.md`` für sonstige Issues, oder `/effective-flow apply` zum automatischen Routen) und beenden. Bei Delegation aus `/effective-flow apply` sollte dieser Fall nicht auftreten; die Weiche bleibt als Schutz.
+
+Der Argumenttyp hat Vorrang vor der Config (siehe „Modus bestimmen“ in der Tracker-Anbindung): `review-report` erzwingt `local`, `review-epic`/`review-finding` erzwingen `remote`. Bei `remote` vorab Host und CLI erkennen und die CLI-Verfügbarkeit prüfen; fehlt das CLI, klar abbrechen (kein stiller Fallback auf `local`).
+
+### Phase 1 remote: Findings aus Issues lesen
+
+Ersetzt das Einlesen der Report-Datei. Bestimme die abzuarbeitenden Finding-Issues (Epic-Task-Liste parsen bzw. übergebene Liste verwenden). Lies je Finding-Issue den vollständigen Body **und die Kommentare frisch vom Tracker** (Operation „Kommentare lesen“) und klassifiziere:
+
+- **Ziel-PR vorhanden:** Wenn Body oder Nicht-Effective Flow-Kommentar einen Ziel-PR nennt
+  (`Ziel-PR: #<nr>`, `Target PR: #<nr>` oder eine PR-URL), notiere PR-Nummer, URL,
+  Head-Branch und Basis-Branch des PRs. Ein Ziel-PR überschreibt die
+  Standard-Strategie „ein PR pro Finding“ für dieses Finding.
+- **Label `wontfix`** → nicht umsetzen, ADR erstellen (Phase 3 remote).
+- **bereits abgehakt/geschlossen** → überspringen.
+- **Sub-Issue ohne Ziel-Aktion oder Prompt** (manuell verändert) → als nicht umsetzbar melden, nicht raten.
+- **Entwicklerkommentar (Nicht-Effective Flow) vorhanden** → umsetzen **mit Kontext**: den Kommentartext als zusätzlichen Kontext an den Delegations-Skill mitgeben. Das ist das Remote-Äquivalent der lokalen „Entwickler-Anmerkung“ im Fall „Umsetzen mit Kontext“. Die bewusste Ablehnung läuft im Remote-Modus weiterhin **ausschließlich** über das Label `wontfix`, nicht über Kommentartext; Effective Flow-Kommentare (z. B. `<!-- … -->`-markierte Status- oder PR-Link-Kommentare) zählen nicht als Entwickler-Anmerkung.
+- **sonst** → umsetzen.
+
+Lege die Per-Finding-Tasks wie im lokalen Modus an; die Finding-ID ist die `R-XXXXXXX`-ID aus dem Issue-Titel.
+
+### Phase 2 remote: Commit- und PR-Strategie
+
+Die Commit-/PR-Strategie ist im Remote-Modus standardmäßig **„ein PR pro Finding“** — die lokale Commit-Strategie-Frage entfällt. Jedes umsetzbare Finding ohne Ziel-PR ist eine **eigene Komponente** in einem eigenen Liefer-Branch, bevorzugt mit Worktree-Isolation. Basis-Branch und Branch-Namensbildung stützen sich auf den `delivery`-Config-Block: Branch `<delivery.branchPrefix>/apply-review/<R-ID-oder-slug>` ab `delivery.baseBranch` (Legacy-Fallback: alte `worktree.baseBranch`/`worktree.branchPrefix`-Werte). Dateiüberlappende Findings laufen sequenziell, um Arbeitsbaum-Konflikte zu vermeiden.
+
+Hat ein Finding einen Ziel-PR aus Phase 1 remote, gilt stattdessen **„neuer Commit auf existierendem PR“**:
+
+1. Erstelle keinen neuen Liefer-Branch und keinen neuen PR.
+2. Hole den Head-Branch des Ziel-PRs, checke ihn in einem isolierten Worktree oder im sauberen aktuellen Checkout aus und aktualisiere ihn per normalem Pull/Fetch ohne Rebase- oder Force-Operation.
+3. Setze das Finding dort um und committe die Änderung als neuen Commit auf dem PR-Branch. Bestehende PR-Commits dürfen nicht per `commit --amend`, Rebase, Squash oder Force-Push umgeschrieben werden.
+4. Pushe den PR-Branch normal. Wird der Push wegen divergierter Remote-History abgelehnt, markiere das Finding als fehlgeschlagen und melde den Konflikt, statt History zu überschreiben.
+5. Verwende die URL des bestehenden PRs als Ergebnis-PR-Link für Issue-Kommentar, Epic-Eintrag und Zusammenfassung.
+
+Findings mit demselben Ziel-PR laufen sequenziell, damit neue Commits geordnet auf demselben PR-Branch entstehen. Findings ohne Ziel-PR behalten die Standard-Strategie „ein PR pro Finding“. Die Stash-Policy und der `/goal`-String werden wie im lokalen Modus behandelt.
+
+### Phase 3 remote: Abgelehntes Finding → Entscheidungs-Kandidat
+
+Für jedes `wontfix`-Finding gilt dieselbe Ownership-Regel wie in Phase 3 (lokal): den Kandidaten an `decision-records` delegieren (Skill entscheidet, ob ein ADR gerechtfertigt ist, und autort nach der entdeckten Repo-Konvention; minimaler living-slug-Fallback aus `adr-convention.md`, wenn der Skill fehlt). Der Kontext des Kandidaten referenziert hier **Issue-Nummer und Epic** (`Issue #<nr>` und `Epic #<nr>`) statt eines Report-Findings; die `wontfix`-Begründung ersetzt die Entwickler-Anmerkung. Es wird **kein** nummeriertes ADR angelegt. Entsteht eine dauerhafte ADR, markiere das Finding im Epic später per Slug-Referenz als `- [x] … — nicht umgesetzt (ADR: <slug>)`; stuft der Skill die Ablehnung als nicht-dauerhaft ein, bleibt sie ohne ADR am Issue/Epic dokumentiert (`- [x] … — nicht umgesetzt (siehe Issue-Begründung)`).
+
+### Phase 4 remote: Umsetzung, PR und Epic-Abhaken
+
+Pro umsetzbarem Finding, in dessen Worktree:
+
+1. Vorabanalyse und Umsetzung wie in Phase 4.1/4.3 über den passenden Delegations-Skill (`/effective-flow fix`, `/effective-flow refactor`, `/effective-flow build`, `/effective-flow docs`). Gib einen in Phase 1 remote erkannten Entwicklerkommentar als zusätzlichen Kontext an den Delegations-Skill mit.
+2. Änderungen committen (Conventional-Commit-Message, keine internen Finding-IDs, kein `Co-Authored-By`), Branch pushen.
+3. Wenn ein Ziel-PR vorhanden ist: **keinen neuen PR erstellen**, sondern den bestehenden PR-Link verwenden und optional den PR-Body nur nicht-destruktiv um `Closes #<Sub-Issue>` oder `Refs #<Sub-Issue>` ergänzen, falls das ohne Überschreiben fremder Änderungen möglich ist. Wenn kein Ziel-PR vorhanden ist: über `/effective-flow pr` genau einen PR gegen den Basis-Branch erstellen; im PR-Body `Closes #<Sub-Issue>` setzen.
+4. **Direkt nach erfolgreichem Push bzw. PR-Erstellung** den zugehörigen Eintrag im Epic-Body abhaken (`- [ ]` → `- [x]`, PR-Link anhängen) und optional den PR-Link als Kommentar ans Sub-Issue schreiben. Body vor dem Ändern frisch lesen und nur die betroffene Zeile umschalten.
+5. **Schlägt Push oder PR-Erstellung fehl** (Push abgelehnt, kein Commit): Finding als fehlgeschlagen markieren, Epic-Eintrag **nicht** abhaken, nächstes Finding fortsetzen.
+6. **Fehlt ein zugeordnetes Epic** (Issue-Listen-Modus): Finding trotzdem umsetzen und PR erstellen; das Abhaken entfällt und wird dem User gemeldet.
+
+### Phase 5 remote: Tracking-Oberfläche statt Report
+
+Es wird keine Report-Datei aktualisiert. Stelle stattdessen sicher, dass alle Epic-Checkboxen und Sub-Issue-Kommentare/Labels den Endstand widerspiegeln (umgesetzt → abgehakt mit PR-Link; `wontfix` mit dauerhafter Entscheidung → abgehakt mit ADR-Referenz; `wontfix` ohne dauerhafte Entscheidung → abgehakt mit Verweis auf die Issue-Begründung, ohne ADR).
+
+### Phase 7/8 remote
+
+Finale Validierung und Zusammenfassung wie im lokalen Modus; die Zusammenfassung nennt zusätzlich Epic-URL, die erstellten PRs und die abgehakten Findings.
