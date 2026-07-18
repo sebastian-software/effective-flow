@@ -75,7 +75,7 @@ this precedence — **label before body structure**:
 4. otherwise → `plain-issue`.
 
 Secondary signal when a label is missing (e.g. removed manually): a title in the format
-`[R-XXXXXXX] …` together with a `**Signatur**` field in the body is treated like
+`[R-XXXXXXX] …` together with a `**Signature**` field in the body is treated like
 `review-finding`. If the subtype remains unclear afterwards → `ambiguous`.
 
 Why label before body: a `review-epic` carries — like a generic

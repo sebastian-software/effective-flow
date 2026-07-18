@@ -56,10 +56,10 @@ Tasks are created at **two** points in time, because the directory split in Phas
 - **Phase-level tasks:** set to `in_progress` before the phase starts, to `completed` after completion. Phase 1 is already active when the tasks are created → set it directly to `in_progress` and to `completed` after Phase 1 finishes.
 - **Per-source / per-sub-reviewer tasks:**
   - `in_progress`: when the respective sub-agent in Phase 2 starts.
-  - `completed`: when the sub-agent reports `ERLEDIGT`.
-  - **On `ABBRUCH`:** still set to `completed`, and append `[failed]` to the subject.
-- **Phase-2 aggregate lifecycle:** the phase-level task "Phase 2" only counts as `completed` once all three streams (2a, 2b, 2c) have reported `ERLEDIGT` or `ABBRUCH` — analogous to the Phase-3 start condition.
-- **On early overall abort** (e.g. the skill is interrupted, several critical sub-agents abort, and the workflow cannot continue into Phase 3): set all still-open `pending` and `in_progress` tasks to `completed` and append `[aborted]` to their subjects before the skill ends with `ERLEDIGT` or `ABBRUCH`.
+  - `completed`: when the sub-agent reports `DONE`.
+  - **On `ABORT`:** still set to `completed`, and append `[failed]` to the subject.
+- **Phase-2 aggregate lifecycle:** the phase-level task "Phase 2" only counts as `completed` once all three streams (2a, 2b, 2c) have reported `DONE` or `ABORT` — analogous to the Phase-3 start condition.
+- **On early overall abort** (e.g. the skill is interrupted, several critical sub-agents abort, and the workflow cannot continue into Phase 3): set all still-open `pending` and `in_progress` tasks to `completed` and append `[aborted]` to their subjects before the skill ends with `DONE` or `ABORT`.
 
 ### Important
 
@@ -222,7 +222,7 @@ Whether `.effective-flow/` is checked in or ignored is up to each project. The s
 5. Read the Effective Flow configuration from the project-setup ADR if present (migration of an old config via the "Config migration" building block).
 6. Read `.effective-flow/cache.json` if present and valid; use only valid, non-stale cache entries.
 7. Number new findings consecutively from `lastFindingNumber + 1` with 7-digit formatting: `R-0000001`, `R-0000002`, ...
-8. After creating the report, write the highest assigned finding number back to `.effective-flow/memory.json`. Preserve `configMigration` and other existing memory fields. The memory file must be written before the workflow is completed with `ERLEDIGT`. If the write fails, inform the user.
+8. After creating the report, write the highest assigned finding number back to `.effective-flow/memory.json`. Preserve `configMigration` and other existing memory fields. The memory file must be written before the workflow is completed with `DONE`. If the write fails, inform the user.
 
 ```lazy-include
 config-migration
@@ -244,7 +244,7 @@ The wisdom file carries the outputs of the parallel Phase-2 streams between the 
 - technical findings from Phase 2b
 - reviewer findings from Phase 2c (one block per sub-reviewer)
 
-Delete the file at the end of the workflow, before `ERLEDIGT`.
+Delete the file at the end of the workflow, before `DONE`.
 
 ## Workflow
 
@@ -376,7 +376,7 @@ Write all results to the wisdom file under `## Design decisions` with sub-sectio
 
 ### Phase 3: Aggregation and design-decision filter
 
-**Precondition:** Start Phase 3 only once all three Phase-2 streams (2a, 2b, 2c) have reported `ERLEDIGT` (or `ABBRUCH`). Opportunistically reading the wisdom file ahead while a stream is still writing would process incomplete data.
+**Precondition:** Start Phase 3 only once all three Phase-2 streams (2a, 2b, 2c) have reported `DONE` (or `ABORT`). Opportunistically reading the wisdom file ahead while a stream is still writing would process incomplete data.
 
 1. Aggregate findings from `## Technical findings` and all sub-sections under `## Reviewer findings`.
 2. Finding-quality check. The **reasoning** behind evidence assessment, validation, candidate rejection, dedup judgment, and prioritization follows `codebase-improvement` (see "Delegation contract: generic audit reasoning") where available; if the skill is missing, the minimal fallback applies. The following **deterministic thresholds and keys** remain an Effective Flow output contract in every case and are not handed off to the skill:
@@ -387,7 +387,7 @@ Write all results to the wisdom file under `## Design decisions` with sub-sectio
 3. **Central design-decision filter** (this is the only place where design decisions are reconciled against findings):
    - Read all entries collected under `## Design decisions` in the wisdom file.
    - Check each remaining finding individually for whether it is covered by a documented design decision.
-   - On a match: remove the finding from the main report and move it into the "Übersprungene Findings (Designentscheidungen)" table with a source reference.
+   - On a match: remove the finding from the main report and move it into the "Skipped findings (design decisions)" table with a source reference.
    - In case of uncertainty (partial overlap): keep the finding in the report but annotate it with a reference to the potentially relevant design decision.
 4. Determine the follow-up action for each remaining finding:
    - defect → `{{SKILL:fix}}`
@@ -421,7 +421,7 @@ Use the formats, labels, and operations from "Issue-tracker integration (remote 
 1. **Ensure labels:** Create the required labels idempotently (`effective-flow-review-finding`, `effective-flow-review-epic`, the action and severity labels, `wontfix`).
 2. **Dedup first:** Query the existing finding issues from the tracker (label `effective-flow-review-finding`, status open **and** closed; also query and merge the old label `firmo-review-finding` as equivalent, see "Label convention") and reconcile each quality-checked finding via its content signature (file+line, area, problem) against their `Signatur` field. Remove already-existing findings from the creation list. In case of an uncertain match (e.g. only a shifted line number for the same problem), when in doubt treat it as a new finding and note the possible relationship in the issue body.
 3. **Create new finding issues:** Only for the remaining **new** findings, assign each an `R-XXXXXXX` ID (number consecutively from `lastFindingNumber + 1`, advance `memory.json` only for issues actually created) and create one issue each in the canonical finding-body format with full content and labels.
-4. **Create a new epic:** Create a **new** epic issue in the canonical epic-body format (title `Code-Review YYYY-MM-DD[-N]`, label `effective-flow-review-epic`). The task list contains exclusively the finding issues newly created in this run. Skipped findings (design decisions) go into the non-checkable "Übersprungen (Designentscheidungen)" section; already-existing (deduplicated) findings are **not** referenced. An existing epic is never extended. Record the epic number in the `Epic` field of the associated finding issues.
+4. **Create a new epic:** Create a **new** epic issue in the canonical epic-body format (title `Code review YYYY-MM-DD[-N]`, label `effective-flow-review-epic`). The task list contains exclusively the finding issues newly created in this run. Skipped findings (design decisions) go into the non-checkable "Skipped (design decisions)" section; already-existing (deduplicated) findings are **not** referenced. An existing epic is never extended. Record the epic number in the `Epic` field of the associated finding issues.
 5. **Avoid an empty epic:** If no new findings remain after dedup, do **not** create an empty epic; instead report to the user that all findings already exist as issues.
 6. Write `memory.json` with the highest assigned finding number (as in local mode).
 7. Report to the user the epic URL, the number of newly created findings, and the number of deduplicated findings.
@@ -432,27 +432,27 @@ Use the formats, labels, and operations from "Issue-tracker integration (remote 
 ### Report format
 
 ```markdown
-# Code-Review-Bericht
+# Code review report
 
-**Datum:** YYYY-MM-DD
-**Scope:** [Gesamter Code / Beschriebener Bereich]
-**Projekt-Typ:** [Frontend / Backend / CLI / Rust / Fullstack]
+**Date:** YYYY-MM-DD
+**Scope:** [Entire code / Described area]
+**Project type:** [Frontend / Backend / CLI / Rust / Fullstack]
 
-## Zusammenfassung
+## Summary
 
-| Schweregrad | Anzahl |
+| Severity | Count |
 |---|---|
-| Kritisch | X |
-| Wichtig | Y |
-| Hinweis | Z |
+| Critical | X |
+| Important | Y |
+| Note | Z |
 
-| Komplexität | Anzahl |
+| Complexity | Count |
 |---|---|
-| Leicht | X |
-| Mittel | Y |
-| Schwer | Z |
+| Low | X |
+| Medium | Y |
+| High | Z |
 
-| Aktion | Anzahl |
+| Aktion | Count |
 |---|---|
 | {{SKILL:fix}} | X |
 | {{SKILL:refactor}} | Y |
@@ -462,24 +462,24 @@ Use the formats, labels, and operations from "Issue-tracker integration (remote 
 ## Findings
 
 ### [R-0000001] [Titel]
-- **Schweregrad**: Kritisch / Wichtig / Hinweis
-- **Komplexität**: Leicht / Mittel / Schwer
-- **Bereich**: [...]
-- **Datei**: [pfad:zeile]
+- **Severity**: Critical / Important / Note
+- **Complexity**: Low / Medium / High
+- **Area**: [...]
+- **File**: [path:line]
 - **Problem**: [...]
-- **Empfehlung**: [...]
-- **Aktion**: `{{SKILL:fix}}` | `{{SKILL:refactor}}` | `{{SKILL:build}}` | `{{SKILL:docs}}`
-- **Prompt-Vorschlag**: [...]
-- **Entwickler-Anmerkung**: <!-- nur vom Entwickler manuell auszufüllen; bei der Report-Erstellung immer leer lassen, niemals automatisch befüllen. Spätere Entwicklerwerte: Freitext oder „Nicht umsetzen: [Grund]" -->
+- **Recommendation**: [...]
+- **Action**: `{{SKILL:fix}}` | `{{SKILL:refactor}}` | `{{SKILL:build}}` | `{{SKILL:docs}}`
+- **Prompt suggestion**: [...]
+- **Developer note**: <!-- to be filled in manually by the developer only; always leave empty when generating the report, never fill automatically. Later developer values: free text or "Do not implement: [reason]" (the German form "Nicht umsetzen: [reason]" is also recognized) -->
 
-## Übersprungene Findings (Designentscheidungen)
+## Skipped findings (design decisions)
 
-| Finding | Designentscheidung | Quelle |
+| Finding | Design decision | Source |
 |---|---|---|
 | [...] | [DD-XXX] | [...] |
 ```
 
-If a finding is later implemented via `{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}`, or `{{SKILL:docs}}`, the existing report file may be augmented at the affected finding with a short status note, for example `Umgesetzt am YYYY-MM-DD via {{SKILL:fix}}`.
+If a finding is later implemented via `{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}`, or `{{SKILL:docs}}`, the existing report file may be augmented at the affected finding with a short status note, for example `Implemented on YYYY-MM-DD via {{SKILL:fix}}`. English field labels and values are the default; German field labels and values in a pre-existing report stay recognized when reading it.
 
 ## Known limitations
 

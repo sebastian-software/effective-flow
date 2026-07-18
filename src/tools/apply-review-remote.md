@@ -37,7 +37,7 @@ Replaces reading the report file. Determine the finding issues to work through (
 - **Label `wontfix`** → do not implement, create an ADR (Phase 3 remote).
 - **already checked off/closed** → skip.
 - **Sub-issue without target action or prompt** (manually altered) → report as not implementable, do not guess.
-- **Developer comment (non-Effective Flow) present** → implement **with context**: pass the comment text as additional context to the delegation skill. This is the remote equivalent of the local "Entwickler-Anmerkung" in the "Implement with context" case. Deliberate rejection in remote mode still runs **exclusively** via the label `wontfix`, not via comment text; Effective Flow comments (e.g. `<!-- … -->`-marked status or PR-link comments) do not count as a developer note.
+- **Developer comment (non-Effective Flow) present** → implement **with context**: pass the comment text as additional context to the delegation skill. This is the remote equivalent of the local "developer note" in the "Implement with context" case. Deliberate rejection in remote mode still runs **exclusively** via the label `wontfix`, not via comment text; Effective Flow comments (e.g. `<!-- … -->`-marked status or PR-link comments) do not count as a developer note.
 - **otherwise** → implement.
 
 Create the per-finding tasks as in local mode; the finding ID is the `R-XXXXXXX` ID from the issue title.

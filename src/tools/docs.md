@@ -207,8 +207,8 @@ skill-discovery
    - begin the note with `✅` and name at least the date and workflow
 2. If a plan file was used as the basis, without changing the status marker beforehand:
    - the status marker stays unchanged here (`**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented`): the status switch to `Umgesetzt`/`Implemented` and the archiving to `<plan.dir>/archive/` are handled by step 4 below at the delivery point per "Delivery and worktree integration" (exception: in-place without delivery, see there).
-   - add `## Testergebnisse` with the checks that were run
-   - add `## Review-Findings` or write "No findings found." if no review was needed
+   - add `## Test results` with the checks that were run
+   - add `## Review findings` or write "No findings found." if no review was needed
 3. Delete the wisdom file.
 4. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, retract the worktree if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
 5. Summarize:

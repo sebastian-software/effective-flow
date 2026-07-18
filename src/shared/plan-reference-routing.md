@@ -22,7 +22,7 @@ When the user references an existing plan file on invocation — for example `<p
 3. Status rules (both marker languages are equivalent):
    - exactly one status line `**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented` → the plan can be used as a basis.
    - exactly one status line `**Planungsstatus:** Umgesetzt` or `**Plan status:** Implemented` → ask the user whether the plan should be implemented again, only checked, or whether the workflow should be aborted.
-   - missing or contradictory status → check whether `## Testergebnisse` or `## Review-Findings` are present. If so, treat the plan as probably implemented and ask. If not, ask whether the plan should be used as an unbuilt specification.
+   - missing or contradictory status → check whether `## Test results` or `## Review findings` are present. If so, treat the plan as probably implemented and ask. If not, ask whether the plan should be used as an unbuilt specification.
 
 ### Check the workflow recommendation
 

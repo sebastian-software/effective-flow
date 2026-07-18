@@ -55,7 +55,7 @@ The wizard **always** starts from this single named safe-defaults base. It compr
 the conservative `review`/`applyReview` values plus the core switches (values in the
 ADR's table-encoding form):
 
-| Schlüssel                         | Wert                                                |
+| Key                               | Value                                               |
 | --------------------------------- | --------------------------------------------------- |
 | review.profile                    | focused                                             |
 | review.autoConfirmScope           | false                                               |
@@ -125,7 +125,7 @@ options:
    config locator (AGENTS.md marker `**Effective Flow project setup:** <path>` → default path/scan
    → transitional `.firmo/config.json`; see the building block above). If a marker points to a dead
    path, continue down the order and note the outdated marker for correction.
-3. **Form the current values.** If an ADR exists: parse the `## Konfiguration` table
+3. **Form the current values.** If an ADR exists: parse the `## Configuration` table
    per the encoding into an internal "current values" overview (key → currently
    recorded value). If no ADR exists (yet) but a `.firmo/config.json` does
    (migration case): read its values as the current values and note internally that a migration
@@ -276,9 +276,9 @@ Ask for free-text values (e.g. `baseBranch`, `branchPrefix`, `returnBranch`, `ba
    ADR to `<adr-dir>/effective-flow-project-setup.md` (default slug `effective-flow-project-setup`; an old slug `firmo-project-setup` is recognized as equivalent during the scan and switched to the new slug on write) in the
    living ADR format:
    - H1 `# Effective Flow project setup`
-   - `## Status` with `Aktiv`
-   - a short `## Kontext` prose (this ADR holds the tracked Effective Flow configuration; `.effective-flow/` is a pure runtime directory)
-   - `## Konfiguration` with the two-column table `| Schlüssel | Wert |`; one row per key in the table-encoding form (boolean, unquoted string, literal `null`, `(leer)`, comma-separated list, dotted keys). Preserve unknown foreign keys from an existing source as their own rows.
+   - `## Status` with `Active`
+   - a short `## Context` prose (this ADR holds the tracked Effective Flow configuration; `.effective-flow/` is a pure runtime directory)
+   - `## Configuration` with the two-column table `| Key | Value |`; one row per key in the table-encoding form (boolean, unquoted string, literal `null`, `(empty)`, comma-separated list, dotted keys). Preserve unknown foreign keys from an existing source as their own rows.
 
    Example skeleton:
 
@@ -287,16 +287,16 @@ Ask for free-text values (e.g. `baseBranch`, `branchPrefix`, `returnBranch`, `ba
 
    ## Status
 
-   Aktiv
+   Active
 
-   ## Kontext
+   ## Context
 
    This ADR holds this project's tracked Effective Flow configuration. `.effective-flow/` is a pure
    runtime directory and completely gitignored.
 
-   ## Konfiguration
+   ## Configuration
 
-   | Schlüssel                         | Wert    |
+   | Key                         | Value    |
    | --------------------------------- | ------- |
    | review.profile                    | focused |
    | applyReview.defaultCommitStrategy | null    |

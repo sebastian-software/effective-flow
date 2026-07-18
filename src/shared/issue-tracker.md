@@ -77,17 +77,19 @@ In remote mode, determine the tool analogously to `{{SKILL:pr}}`:
 
 In remote mode, use these labels and create missing labels idempotently (tolerate an "already exists" message, do not treat it as an error):
 
-| Label                                                                                          | Meaning                                                                              |
-| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `effective-flow-review-finding`                                                                | marks a single finding issue                                                         |
-| `effective-flow-review-epic`                                                                   | marks the epic/tracking issue                                                        |
-| `effective-flow-fix`, `effective-flow-refactor`, `effective-flow-build`, `effective-flow-docs` | target action of the finding (exactly one per finding issue)                         |
-| `kritisch`, `wichtig`, `hinweis`                                                               | severity of the finding (exactly one per finding issue; `hinweis` for note findings) |
-| `wontfix`                                                                                      | deliberately do not implement finding → ADR instead of code                          |
-| `effective-flow-issue-done`                                                                    | issue implemented by `{{SKILL:apply-issues}}` (PR created)                           |
-| `effective-flow-needs-planning`                                                                | skipped by `{{SKILL:apply-issues}}`; planning via `{{SKILL:plan-issue}}` needed      |
+| Label                                                                                          | Meaning                                                                           |
+| ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `effective-flow-review-finding`                                                                | marks a single finding issue                                                      |
+| `effective-flow-review-epic`                                                                   | marks the epic/tracking issue                                                     |
+| `effective-flow-fix`, `effective-flow-refactor`, `effective-flow-build`, `effective-flow-docs` | target action of the finding (exactly one per finding issue)                      |
+| `critical`, `important`, `note`                                                                | severity of the finding (exactly one per finding issue; `note` for note findings) |
+| `wontfix`                                                                                      | deliberately do not implement finding → ADR instead of code                       |
+| `effective-flow-issue-done`                                                                    | issue implemented by `{{SKILL:apply-issues}}` (PR created)                        |
+| `effective-flow-needs-planning`                                                                | skipped by `{{SKILL:apply-issues}}`; planning via `{{SKILL:plan-issue}}` needed   |
 
 `wontfix` already exists on many trackers; create it only if it is missing. `effective-flow-issue-done` and `effective-flow-needs-planning` belong to the issue-driven flow (`{{SKILL:apply-issues}}`/`{{SKILL:plan-issue}}`) and are created idempotently there.
+
+**Backward compatibility (severity labels):** The English severity labels `critical`/`important`/`note` are the default; newly created or set is exclusively the English label. The former German labels `kritisch`/`wichtig`/`hinweis` are **not** upgraded but stay **recognized** permanently when reading, listing, deduplicating and detecting a finding's severity — run a severity query per language variant (once `critical`/`important`/`note`, once `kritisch`/`wichtig`/`hinweis`) and union by issue number, analogous to the `firmo-`/`effective-flow-` prefix rule above.
 
 **Backward compatibility (legacy prefix `firmo-`):** Earlier versions used the prefix `firmo-` instead of `effective-flow-` (`firmo-review-finding`, `firmo-review-epic`, `firmo-fix`/`firmo-refactor`/`firmo-build`/`firmo-docs`, `firmo-issue-done`, `firmo-needs-planning`). Newly **created or set** is exclusively the `effective-flow-` label; an upgrade of existing `firmo-` labels is **not** needed. When **reading, listing, deduplicating and detecting**, every `firmo-` variant counts permanently as equivalent to the associated `effective-flow-` variant:
 
@@ -109,43 +111,43 @@ A finding issue must be **self-contained**: a foreign LLM session must be able t
 - **Body** (canonical template):
 
 ```markdown
-- **Schweregrad**: Kritisch / Wichtig / Hinweis
-- **Komplexität**: Leicht / Mittel / Schwer
-- **Bereich**: [...]
-- **Datei**: [pfad:zeile]
+- **Severity**: Critical / Important / Note
+- **Complexity**: Low / Medium / High
+- **Area**: [...]
+- **File**: [path:line]
 - **Problem**: [...]
-- **Empfehlung**: [...]
-- **Aktion**: effective-flow-fix | effective-flow-refactor | effective-flow-build | effective-flow-docs
-- **Prompt-Vorschlag**: [direkt kopierbarer Klartext, ohne umschließende Anführungszeichen, ohne Escape-Sequenzen]
-- **Epic**: #<Epic-Nummer> (leer, falls kein Epic)
-- **Signatur**: [pfad:zeile] · [Bereich] · [Kurzfassung des Problems]  <!-- Dedup-Schlüssel -->
+- **Recommendation**: [...]
+- **Action**: effective-flow-fix | effective-flow-refactor | effective-flow-build | effective-flow-docs
+- **Prompt suggestion**: [directly copy-pasteable plain text, without enclosing quotation marks, without escape sequences]
+- **Epic**: #<epic number> (empty if no epic)
+- **Signature**: [path:line] · [Area] · [short summary of the problem]  <!-- Dedup key -->
 ```
 
-The **Signatur** field fixes the content dedup key (file+line, area, problem). It is deliberately **not** the `R-XXXXXXX` ID, because that is assigned freshly per run.
+The **Signature** field fixes the content dedup key (file+line, area, problem). It is deliberately **not** the `R-XXXXXXX` ID, because that is assigned freshly per run.
 
 ### Epic body format (tracking issue)
 
-- **Title:** `Code-Review YYYY-MM-DD[-N]`
+- **Title:** `Code review YYYY-MM-DD[-N]`
 - **Labels:** `effective-flow-review-epic`
 - **Body** (canonical template):
 
 ```markdown
-Code-Review vom YYYY-MM-DD · Scope: [Gesamter Code / Beschriebener Bereich] · Projekt-Typ: [...]
+Code review of YYYY-MM-DD · Scope: [Entire code / Described area] · Project type: [...]
 
 ## Findings
 
-- [ ] #<nr> [R-0000001] <Kurztitel> — Aktion: effective-flow-fix
-- [ ] #<nr> [R-0000002] <Kurztitel> — Aktion: effective-flow-refactor
+- [ ] #<nr> [R-0000001] <short title> — Action: effective-flow-fix
+- [ ] #<nr> [R-0000002] <short title> — Action: effective-flow-refactor
 
-## Übersprungen (Designentscheidungen)
+## Skipped (design decisions)
 
-- #<nr-oder-keine> [R-XXXXXXX] <Kurztitel> — abgedeckt durch [DD-XXX] ([Quelle])
+- #<nr-or-none> [R-XXXXXXX] <short title> — covered by [DD-XXX] ([Source])
 ```
 
 Rules for the task list:
 
 - Each entry under `## Findings` references exactly one finding issue via its number and carries the `R-XXXXXXX` ID as well as the action.
-- The section `## Übersprungen (Designentscheidungen)` uses **no** checkboxes and lists only findings filtered out by design decisions. It is omitted when no such findings are present.
+- The section `## Skipped (design decisions)` uses **no** checkboxes and lists only findings filtered out by design decisions. It is omitted when no such findings are present.
 - Ticking off is done by toggling `- [ ]` → `- [x]` and optionally appending the PR link on the entry; a finding deliberately not implemented is marked via a slug reference as `- [x] … — nicht umgesetzt (ADR: <slug>)`.
 
 ### Tracker operations (tool mapping)

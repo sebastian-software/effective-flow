@@ -177,24 +177,24 @@ skill-discovery
 
 1. Start the appropriate reviewer skill for the changed files.
 2. Aggregate findings:
-   - Kritisch: fix before completion
-   - Wichtig: should be fixed
-   - Hinweis: optional
+   - Critical: fix before completion
+   - Important: should be fixed
+   - Note: optional
 3. Present the review results in detail, including status per finding.
 4. Document each finding in a structured way so open or unimplemented findings can be written as a review report:
    - Title
-   - Schweregrad (Kritisch / Wichtig / Hinweis)
-   - Komplexität (Leicht / Mittel / Schwer)
-   - Bereich
-   - Datei + line
+   - Severity (Critical / Important / Note)
+   - Complexity (Low / Medium / High)
+   - Area
+   - File + line
    - Problem
-   - Empfehlung
-   - Aktion (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}` or `{{SKILL:docs}}`)
-   - Prompt-Vorschlag
-   - Status (Behoben / Offen / Nicht umgesetzt)
+   - Recommendation
+   - Action (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}` or `{{SKILL:docs}}`)
+   - Prompt suggestion
+   - Status (Fixed / Open / Not implemented)
    - rationale for non-implementation or ADR reference as slug, if present, e.g. `(ADR: <slug>)`
 5. Never create an ADR in this workflow and do not ask for one either. Deliberately unimplemented findings are documented exclusively in the review report. The developer decides on later implementation or on an ADR for a deliberate non-implementation when going through the findings file, typically via {{SKILL:apply-review}}.
-6. If after review there remain findings with status `Offen` or `Nicht umgesetzt`:
+6. If after review there remain findings with status `Open` or `Not implemented`:
    - write them into a new file under `.effective-flow/review/` per "Open review-finding reports"
    - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
    - name the generated report path in the completion summary

@@ -434,15 +434,15 @@ export function findSelfReferentialContractPhrases(text) {
 //   when: <trigger clause>
 //   ```
 // `name` is the shared fragment; `when` is the trigger clause rendered after
-// "sobald " in the pointer (optional but expected — it is the load trigger).
+// "when " in the pointer (optional but expected — it is the load trigger).
 export const LAZY_INCLUDE_RE = /```lazy-include\n([^\n]+)\n(?:when:[ \t]*([^\n]*)\n)?```/g;
 
 // The harness-neutral load pointer emitted in place of one lazy fence. It names
 // the shipped `shared/<name>.md` and, when a trigger is given, the exact
 // condition under which the agent should read it.
 export function renderLazyPointer(name, when) {
-  const trigger = when && when.trim() ? `, sobald ${when.trim()}` : '';
-  return `**Bei Bedarf laden:** Lies \`shared/${name}.md\`${trigger}.`;
+  const trigger = when && when.trim() ? `, when ${when.trim()}` : '';
+  return `**Load on demand:** Read \`shared/${name}.md\`${trigger}.`;
 }
 
 // Replace every ```lazy-include fence in `body` with its load pointer. Returns

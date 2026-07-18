@@ -67,6 +67,6 @@ plan-status
 
 - Do not modify any files.
 - Do not start any implementation or validation.
-- Do not count review-finding statuses like `Nicht umgesetzt` or `Not implemented` as a plan status.
+- Do not count review-finding statuses like `Not implemented` or `Not implemented` as a plan status.
 - Output paths relative to the project root.
 - If `<plan.dir>/` is missing or contains no Markdown files, report that briefly.

@@ -11,8 +11,9 @@ building block is the authoritative convention for all ADRs **produced by Effect
 - **File name:** numberless, kebab-case slug — `docs/adr/<slug>.md` (e.g.
   `docs/adr/effective-flow-project-setup.md`).
 - **Title:** an H1 with the descriptive title — `# <Title>` (no `NNNN` prefix).
-- **Status:** a `## Status` section holds the current state. Canonical values:
-  `Aktiv`, `Abgelöst`, `Nicht umgesetzt`.
+- **Status:** a `## Status` section holds the current state. Canonical values (English by
+  default): `Active`, `Superseded`, `Not implemented`. The former German values `Aktiv`,
+  `Abgelöst`, `Nicht umgesetzt` stay recognized when reading an existing ADR.
 - **Mutability:** an existing ADR is updated **in place** when the decision changes
   (content and `## Status`), not duplicated or replaced by a successor record.
 - **Concurrency:** read the file fresh immediately before writing.
@@ -73,9 +74,9 @@ thematically fitting existing ADR in place instead of duplicating:
 
 ## Status
 
-Nicht umgesetzt
+Not implemented
 
-## Kontext
+## Context
 
 [Origin: review report + finding ID, or issue/epic number in remote mode]
 

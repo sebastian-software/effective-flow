@@ -2,18 +2,18 @@
 
 When you use internal sub-agents, give them this response protocol:
 
-- `ERLEDIGT` for fully completed
-- `ABBRUCH: [reason]` for not completable
+- `DONE` for fully completed
+- `ABORT: [reason]` for not completable
 
 Check by the orchestrator:
 
-1. `ERLEDIGT`: phase completed.
-2. `ABBRUCH: [reason]`: inform the user, adjust the plan or task, and decide whether a retry makes sense.
+1. `DONE`: phase completed.
+2. `ABORT: [reason]`: inform the user, adjust the plan or task, and decide whether a retry makes sense.
 3. No keyword: retry with escalation.
 
 ### Retry escalation
 
-When an internal sub-agent ends without `ERLEDIGT` or `ABBRUCH`:
+When an internal sub-agent ends without `DONE` or `ABORT`:
 
 1. Retry 1: same task with a continuation hint
 2. Retry 2: simplified task with reduced scope

@@ -500,43 +500,40 @@ test('findSelfReferentialContractPhrases allows legitimate {{AGENT:X}} delegatio
 
 test('renderLazyPointer renders a load pointer with and without a trigger', () => {
   assert.equal(
-    renderLazyPointer('worktree-integration', 'der Delivery-Modus bestimmt wird'),
-    '**Bei Bedarf laden:** Lies `shared/worktree-integration.md`, sobald der Delivery-Modus bestimmt wird.',
+    renderLazyPointer('worktree-integration', 'the delivery mode is determined'),
+    '**Load on demand:** Read `shared/worktree-integration.md`, when the delivery mode is determined.',
   );
   // No trigger clause → just the load pointer, still ending in a period.
   assert.equal(
     renderLazyPointer('config-migration', ''),
-    '**Bei Bedarf laden:** Lies `shared/config-migration.md`.',
+    '**Load on demand:** Read `shared/config-migration.md`.',
   );
 });
 
 test('resolveLazyIncludes replaces fences with pointers and collects unique names', () => {
   const body = [
-    'Vorher.',
+    'Before.',
     '```lazy-include',
     'config-migration',
-    'when: die Config gelesen wird',
+    'when: the config is read',
     '```',
-    'Mitte.',
+    'Middle.',
     '```lazy-include',
     'issue-tracker',
-    'when: der Tracker-Modus `remote` aktiv ist',
+    'when: the tracker mode `remote` is active',
     '```',
-    'Nachher.',
+    'After.',
   ].join('\n');
   const { body: out, names } = resolveLazyIncludes(body);
   assert.deepEqual(names, ['config-migration', 'issue-tracker']);
   assert.match(
     out,
-    /\*\*Bei Bedarf laden:\*\* Lies `shared\/config-migration\.md`, sobald die Config gelesen wird\./,
+    /\*\*Load on demand:\*\* Read `shared\/config-migration\.md`, when the config is read\./,
   );
-  assert.match(
-    out,
-    /Lies `shared\/issue-tracker\.md`, sobald der Tracker-Modus `remote` aktiv ist\./,
-  );
+  assert.match(out, /Read `shared\/issue-tracker\.md`, when the tracker mode `remote` is active\./);
   // The fence markers are gone; the surrounding prose is preserved.
   assert.doesNotMatch(out, /```lazy-include/);
-  assert.match(out, /Vorher\.[\s\S]*Mitte\.[\s\S]*Nachher\./);
+  assert.match(out, /Before\.[\s\S]*Middle\.[\s\S]*After\./);
 });
 
 test('resolveLazyIncludes de-duplicates a fragment referenced twice', () => {
@@ -557,7 +554,7 @@ test('resolveLazyIncludes de-duplicates a fragment referenced twice', () => {
 test('resolveLazyIncludes tolerates a fence without a when trigger', () => {
   const { body, names } = resolveLazyIncludes('```lazy-include\nplan-numbering\n```');
   assert.deepEqual(names, ['plan-numbering']);
-  assert.equal(body, '**Bei Bedarf laden:** Lies `shared/plan-numbering.md`.');
+  assert.equal(body, '**Load on demand:** Read `shared/plan-numbering.md`.');
 });
 
 test('collectIncludeNames separates eager and lazy includes', () => {
