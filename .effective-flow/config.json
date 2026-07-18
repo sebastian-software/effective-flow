@@ -23,7 +23,7 @@
     "baseDir": ".effective-flow/.worktrees"
   },
   "delivery": {
-    "baseBranch": "origin/main",
+    "baseBranch": "origin/develop",
     "branchPrefix": "effective-flow",
     "completion": "pr",
     "returnBranch": "auto"
