@@ -1,13 +1,13 @@
-## Externe Dependency-Versionen
+## External dependency versions
 
-Wenn du neue externe Abhängigkeiten oder extern versionierte Referenzen in ein Projekt einbringst:
+When you introduce new external dependencies or externally versioned references into a project:
 
-- prüfe vor dem Ändern von Manifest, Lockfile, CI-Workflow oder Tool-Konfiguration die aktuelle Stable-Version über die passende Quelle:
-  - npm/pnpm/yarn/bun: Registry-Metadaten über den erkannten Paketmanager (z. B. `pnpm view <package> version`, `npm view <package> version`, `yarn npm info <package> version`, `bun pm view <package> version`, falls verfügbar)
-  - Rust/Cargo: crates.io-Metadaten oder `cargo search <crate> --limit 1`; bei `cargo add` nur Stable-Releases verwenden und `Cargo.lock` über Cargo aktualisieren
-  - GitHub Actions: aktuelles Stable-Release bzw. den stabilen Major-Tag der Action prüfen; keine veralteten Major-Versionen übernehmen, wenn ein neuer stabiler Major ohne bekannte Inkompatibilität verfügbar ist
-  - Container-Images, Toolchains, SDKs und CLIs: offizielle Release-/Registry-Metadaten prüfen und eine stabile, dokumentierte Version pinnen
-- verwende möglichst diese Stable-Version explizit statt eine veraltete oder lokal bekannte Version zu raten
-- meide Pre-Releases, RCs, Betas, Canaries und Nightlies, außer die Aufgabe oder das bestehende Projekt verlangt sie ausdrücklich
-- wenn ein bestehendes Framework, Plugin oder Peer-Dependency-Fenster eine ältere Version erzwingt, dokumentiere die Einschränkung kurz und wähle die höchste dazu kompatible Stable-Version
-- halte Manifest und Lockfile konsistent über den erkannten Paketmanager bzw. das native Tool, nicht durch manuelles Editieren des Lockfiles
+- before changing a manifest, lockfile, CI workflow, or tool configuration, check the current stable version via the appropriate source:
+  - npm/pnpm/yarn/bun: registry metadata via the detected package manager (e.g. `pnpm view <package> version`, `npm view <package> version`, `yarn npm info <package> version`, `bun pm view <package> version`, if available)
+  - Rust/Cargo: crates.io metadata or `cargo search <crate> --limit 1`; with `cargo add` use only stable releases and update `Cargo.lock` via Cargo
+  - GitHub Actions: check the current stable release or the stable major tag of the action; do not adopt outdated major versions when a newer stable major without known incompatibility is available
+  - container images, toolchains, SDKs, and CLIs: check official release/registry metadata and pin a stable, documented version
+- prefer using this stable version explicitly rather than guessing an outdated or locally known version
+- avoid pre-releases, RCs, betas, canaries, and nightlies, unless the task or the existing project explicitly requires them
+- if an existing framework, plugin, or peer-dependency window forces an older version, document the constraint briefly and choose the highest stable version compatible with it
+- keep the manifest and lockfile consistent via the detected package manager or the native tool, not by manually editing the lockfile

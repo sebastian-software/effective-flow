@@ -1,21 +1,21 @@
-## Investigation-Methode
+## Investigation method
 
-Dieser Baustein beschreibt den read-only-Kern einer Fehler- und Verhaltensuntersuchung. Die hier beschriebenen Untersuchungsschritte selbst sind read-only: sie ändern keinen Code und schreiben keine Tests; eine Reproduktion erfolgt im Rahmen dieser Schritte nur durch Beobachtung – bestehende Checks ausführen, Logs und Verhalten beschreiben – oder durch eine dokumentierte Reproduktionsanleitung. Ob der einbindende Workflow darüber hinaus einen Reproduktionstest erzeugt, entscheidet dieser Workflow selbst (z. B. schreibt `{{SKILL:fix}}` zusätzlich einen fehlschlagenden Test); `{{SKILL:investigate}}` bleibt dagegen vollständig read-only.
+This building block describes the read-only core of a bug and behavior investigation. The investigation steps described here are themselves read-only: they change no code and write no tests; a reproduction happens within these steps only through observation – running existing checks, describing logs and behavior – or through a documented reproduction guide. Whether the embedding workflow additionally produces a reproduction test is decided by that workflow itself (e.g. `{{SKILL:fix}}` additionally writes a failing test); `{{SKILL:investigate}}`, by contrast, stays fully read-only.
 
-### Symptom und Code untersuchen
+### Investigate symptom and code
 
-1. Analysiere die Symptom- bzw. Fehlerbeschreibung gründlich: erwartetes gegenüber tatsächlichem Verhalten.
-2. Untersuche den relevanten Code lokal oder über einen internen Explore-Sub-Agenten – ausschließlich lesend.
-3. Kläre offene Fragen direkt mit dem User:
-   - wann tritt das Verhalten auf
-   - gibt es eine Fehlermeldung oder ein klar benennbares erwartetes gegenüber tatsächlichem Verhalten
-   - seit wann besteht das Verhalten
-4. Identifiziere die vermutliche Root Cause und die betroffenen Dateien.
+1. Analyze the symptom or error description thoroughly: expected versus actual behavior.
+2. Investigate the relevant code locally or via an internal Explore sub-agent – read-only.
+3. Clarify open questions directly with the user:
+   - when does the behavior occur
+   - is there an error message or a clearly nameable expected versus actual behavior
+   - since when has the behavior existed
+4. Identify the suspected root cause and the affected files.
 
-### Diagnose-Validierung
+### Diagnosis validation
 
-Bewerte die Diagnose mit einer Scorecard, bevor eine Folgeentscheidung getroffen wird:
+Assess the diagnosis with a scorecard before making a follow-up decision:
 
-- **Clarity:** Root Cause sowie Datei und Zeile konkret benannt.
-- **Verification:** Verhalten reproduzierbar oder als konkrete Reproduktionsanleitung beschrieben.
-- **Context:** Annahmen explizit markiert, Ziel <= 10 % Raten.
+- **Clarity:** root cause as well as file and line named concretely.
+- **Verification:** behavior reproducible or described as a concrete reproduction guide.
+- **Context:** assumptions explicitly marked, target <= 10 % guessing.

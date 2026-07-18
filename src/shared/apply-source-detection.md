@@ -1,136 +1,136 @@
-## Apply-Quellen-Erkennung
+## Apply source detection
 
-`<plan.dir>` ist das Plan-Verzeichnis aus der Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` (Default
+`<plan.dir>` is the plan directory from the Effective Flow configuration (project-setup ADR) `plan.dir` (default
 `docs/plan`).
 
-Dieser geteilte Baustein ist die einzige Quelle der Wahrheit dafür, **welcher
-Apply-Quelltyp** ein übergebenes Argument ist. Er wird von `{{SKILL:apply}}`
-(Router) sowie von `{{SKILL:apply-plan}}`, `{{SKILL:apply-review}}` und
-`{{SKILL:apply-issues}}` für die vorgelagerte Argument-Klassifikation genutzt.
+This shared building block is the single source of truth for **which
+apply source type** a given argument is. It is used by `{{SKILL:apply}}`
+(router) as well as by `{{SKILL:apply-plan}}`, `{{SKILL:apply-review}}`, and
+`{{SKILL:apply-issues}}` for the upstream argument classification.
 
-Der Baustein klassifiziert nur und löst die Referenz auf ein Handle (Dateipfad bzw.
-Issue-Nummer(n)) auf. Er trifft **keine** Umsetzungsentscheidung, ändert nichts und
-liest keine Findings/Container-Inhalte tiefer als für die Klassifikation nötig. Die
-type-spezifische Tiefenlogik (Planstatus, Finding-Parsing, Container-Expansion) bleibt
-im jeweiligen Skill.
+The building block only classifies and resolves the reference to a handle (file path or
+issue number(s)). It makes **no** implementation decision, changes nothing, and
+does not read findings/container contents deeper than necessary for classification. The
+type-specific depth logic (plan status, finding parsing, container expansion) stays
+in the respective skill.
 
-### Kanonische Quelltypen
+### Canonical source types
 
-| Typ               | Bedeutung                                                                                                  | Zuständiger Skill                              |
-| ----------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `plan`            | Plan-Datei unter `<plan.dir>/`                                                                             | `{{SKILL:apply-plan}}`                         |
-| `review-report`   | Review-Report-Datei unter `.effective-flow/review/`                                                        | `{{SKILL:apply-review}}` (lokal)               |
-| `review-epic`     | Tracking-/Epic-Issue eines `{{SKILL:review}}`-Laufs                                                        | `{{SKILL:apply-review}}` (remote, Epic)        |
-| `review-finding`  | einzelnes Finding-Issue eines `{{SKILL:review}}`-Laufs                                                     | `{{SKILL:apply-review}}` (remote, Issue-Liste) |
-| `container-issue` | generisches Issue mit Sub-Issue-Checkliste, ohne Review-Label (`effective-flow-review-*`/`firmo-review-*`) | `{{SKILL:apply-issues}}`                       |
-| `plain-issue`     | frei geschriebenes Menschen-Issue                                                                          | `{{SKILL:apply-issues}}`                       |
+| Type              | Meaning                                                                                                       | Responsible skill                             |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `plan`            | plan file under `<plan.dir>/`                                                                                 | `{{SKILL:apply-plan}}`                        |
+| `review-report`   | review report file under `.effective-flow/review/`                                                            | `{{SKILL:apply-review}}` (local)              |
+| `review-epic`     | tracking/epic issue of a `{{SKILL:review}}` run                                                               | `{{SKILL:apply-review}}` (remote, epic)       |
+| `review-finding`  | single finding issue of a `{{SKILL:review}}` run                                                              | `{{SKILL:apply-review}}` (remote, issue list) |
+| `container-issue` | generic issue with a sub-issue checklist, without a review label (`effective-flow-review-*`/`firmo-review-*`) | `{{SKILL:apply-issues}}`                      |
+| `plain-issue`     | freely written human issue                                                                                    | `{{SKILL:apply-issues}}`                      |
 
-Sonderergebnisse: `none` (kein/leeres Argument) und `ambiguous` (nicht eindeutig
-auflösbar). `issue-reference` ist ein **Zwischenergebnis** aus Stufe A für eine noch
-nicht in den Subtyp aufgelöste Issue-Referenz; Stufe B verfeinert es.
+Special results: `none` (empty/no argument) and `ambiguous` (not uniquely
+resolvable). `issue-reference` is an **intermediate result** from stage A for an issue reference
+not yet resolved into its subtype; stage B refines it.
 
-### Stufe A: syntaktische Klassifikation (nur Dateisystem)
+### Stage A: syntactic classification (file system only)
 
-Stufe A benötigt keine Tracker-I/O und steht jedem Skill zur Verfügung. Bestimme den
-Typ in dieser Reihenfolge (erste zutreffende Regel gewinnt):
+Stage A needs no tracker I/O and is available to every skill. Determine the
+type in this order (first matching rule wins):
 
-1. **Leeres/kein Argument** → `none`.
-2. **Plan-Referenz** → `plan`, wenn sich das Argument auf genau eine Datei unter
-   `<plan.dir>/` oder `<plan.dir>/archive/` auflöst. Erlaubte Formen wie in
-   `plan-reference-routing`: vollständiger Pfad (`<plan.dir>/YYYY-MM-DD-…md`),
-   Datums-Slug-Dateiname (`YYYY-MM-DD-…md`), Legacy-Nummer ohne Pfad (`NNNN`, primär
-   über die H1 aufgelöst) oder – als Fallback – der Titel-Slug.
-3. **Review-Report** → `review-report`, wenn das Argument ein `*.md`-Pfad unter
-   `.effective-flow/review/` ist (bzw. ein Dateiname, der sich dort auflöst).
-4. **Issue-Referenz** → `issue-reference` (weiter mit Stufe B), wenn das Argument eine
-   bare Issue-Nummer (`123`), ein `#123` oder eine Issue-URL ist. Issue-URLs sind
-   hostneutral: erkenne `https://<host>/<owner>/<repo>/issues/<nr>` und vergleichbare
-   Forgejo-/Gitea-URL-Formen genauso wie GitHub-URLs. Mehrere solcher Referenzen werden
-   als Liste behandelt und einzeln in Stufe B klassifiziert.
-5. **Sonst** → `ambiguous`: das Argument löst sich zu keiner Kategorie auf oder passt
-   gleichzeitig zu einer Plan- **und** einer Review-Datei. Nicht raten – der Aufrufer
-   fragt nach (siehe „Mehrdeutigkeit und Fallbacks“).
+1. **Empty/no argument** → `none`.
+2. **Plan reference** → `plan`, if the argument resolves to exactly one file under
+   `<plan.dir>/` or `<plan.dir>/archive/`. Permitted forms as in
+   `plan-reference-routing`: full path (`<plan.dir>/YYYY-MM-DD-…md`),
+   date-slug file name (`YYYY-MM-DD-…md`), legacy number without path (`NNNN`, resolved primarily
+   via the H1) or — as a fallback — the title slug.
+3. **Review report** → `review-report`, if the argument is a `*.md` path under
+   `.effective-flow/review/` (or a file name that resolves there).
+4. **Issue reference** → `issue-reference` (continue with stage B), if the argument is a
+   bare issue number (`123`), a `#123`, or an issue URL. Issue URLs are
+   host-neutral: recognize `https://<host>/<owner>/<repo>/issues/<nr>` and comparable
+   Forgejo/Gitea URL forms just like GitHub URLs. Multiple such references are
+   treated as a list and classified individually in stage B.
+5. **Otherwise** → `ambiguous`: the argument resolves to no category or matches
+   both a plan **and** a review file at the same time. Do not guess — the caller
+   asks (see "Ambiguity and fallbacks").
 
-Trennschärfe Plan vs. Report: primär über das Verzeichnis (`<plan.dir>/` bzw.
-`<plan.dir>/archive/` vs. `.effective-flow/review/`), sekundär über den Kopf-Inhalt
-(Planstatus-Marker `**Planungsstatus:**` / `**Plan status:**` vs.
-`### [R-XXXXXXX]`-Finding-Blöcke). Eine vierstellige Nummer ohne Pfad ist immer eine
-(Legacy-)Plan-Referenz, nie eine Issue-Referenz.
+Distinguishing plan vs. report: primarily via the directory (`<plan.dir>/` or
+`<plan.dir>/archive/` vs. `.effective-flow/review/`), secondarily via the header content
+(plan status marker `**Planungsstatus:**` / `**Plan status:**` vs.
+`### [R-XXXXXXX]` finding blocks). A four-digit number without a path is always a
+(legacy) plan reference, never an issue reference.
 
-### Stufe B: Issue-Subtyp (Tracker)
+### Stage B: issue subtype (tracker)
 
-Stufe B verfeinert eine `issue-reference` aus Stufe A in den konkreten Subtyp. Sie
-setzt die Host-/CLI-Erkennung und Verfügbarkeitsprüfung aus `issue-tracker.md`
-voraus; ein Skill, der Stufe B nutzt, bindet daher auch `issue-tracker.md` ein.
-`{{SKILL:apply-plan}}` braucht Stufe B nicht – für einen Plan-Skill genügt Stufe A,
-um eine Issue-Referenz als Fremdtyp zu erkennen und weiterzuleiten.
+Stage B refines an `issue-reference` from stage A into the concrete subtype. It
+requires the host/CLI detection and availability check from `issue-tracker.md`;
+a skill that uses stage B therefore also embeds `issue-tracker.md`.
+`{{SKILL:apply-plan}}` does not need stage B — for a plan skill, stage A is enough
+to recognize an issue reference as a foreign type and forward it.
 
-Lies je Issue Labels und Body **einmal frisch** vom Tracker und bestimme den Subtyp in
-dieser Präzedenz – **Label vor Body-Struktur**:
+Per issue, read labels and body **once fresh** from the tracker and determine the subtype in
+this precedence — **label before body structure**:
 
-1. Label `effective-flow-review-epic` (oder Alt `firmo-review-epic`) → `review-epic`.
-2. Label `effective-flow-review-finding` (oder Alt `firmo-review-finding`) → `review-finding`.
-3. kein Review-Label, aber der Body enthält eine Sub-Issue-Checkliste
+1. Label `effective-flow-review-epic` (or old `firmo-review-epic`) → `review-epic`.
+2. Label `effective-flow-review-finding` (or old `firmo-review-finding`) → `review-finding`.
+3. no review label, but the body contains a sub-issue checklist
    (`- [ ] #NNN …` / `- [x] #NNN …`) → `container-issue`.
-4. sonst → `plain-issue`.
+4. otherwise → `plain-issue`.
 
-Sekundärsignal bei fehlendem Label (z. B. manuell entfernt): ein Titel im Format
-`[R-XXXXXXX] …` zusammen mit einem `**Signatur**`-Feld im Body wird wie
-`review-finding` behandelt. Bleibt der Subtyp danach unklar → `ambiguous`.
+Secondary signal when a label is missing (e.g. removed manually): a title in the format
+`[R-XXXXXXX] …` together with a `**Signatur**` field in the body is treated like
+`review-finding`. If the subtype remains unclear afterwards → `ambiguous`.
 
-Warum Label vor Body: Ein `review-epic` trägt – wie ein generisches
-`container-issue` – eine `- [ ] #NNN`-Checkliste. Das Label `effective-flow-review-epic` bzw.
-`effective-flow-review-finding` (Alt-Präfix `firmo-` gleichwertig, siehe „Label-Konvention“ in
-`issue-tracker.md`) ist der sichere Diskriminator und hat Vorrang vor der
-Body-Struktur.
+Why label before body: a `review-epic` carries — like a generic
+`container-issue` — a `- [ ] #NNN` checklist. The label `effective-flow-review-epic` or
+`effective-flow-review-finding` (old prefix `firmo-` equivalent, see "Label convention" in
+`issue-tracker.md`) is the reliable discriminator and takes precedence over the
+body structure.
 
-### Ownership und Modus
+### Ownership and mode
 
-Aus dem finalen Quelltyp folgt genau ein zuständiger Skill und – bei
-`{{SKILL:apply-review}}` – der Modus:
+From the final source type follows exactly one responsible skill and — for
+`{{SKILL:apply-review}}` — the mode:
 
-| Quelltyp          | Zuständiger Skill        | Modus / Hinweis                  |
+| Source type       | Responsible skill        | Mode / note                      |
 | ----------------- | ------------------------ | -------------------------------- |
 | `plan`            | `{{SKILL:apply-plan}}`   | –                                |
-| `review-report`   | `{{SKILL:apply-review}}` | lokaler Report-Fluss             |
-| `review-epic`     | `{{SKILL:apply-review}}` | Remote-Modus, Epic-Modus         |
-| `review-finding`  | `{{SKILL:apply-review}}` | Remote-Modus, Issue-Listen-Modus |
-| `container-issue` | `{{SKILL:apply-issues}}` | Container-Expansion im Skill     |
-| `plain-issue`     | `{{SKILL:apply-issues}}` | Einzel-Arbeitsitem               |
+| `review-report`   | `{{SKILL:apply-review}}` | local report flow                |
+| `review-epic`     | `{{SKILL:apply-review}}` | remote mode, epic mode           |
+| `review-finding`  | `{{SKILL:apply-review}}` | remote mode, issue-list mode     |
+| `container-issue` | `{{SKILL:apply-issues}}` | container expansion in the skill |
+| `plain-issue`     | `{{SKILL:apply-issues}}` | single work item                 |
 
-Konsistenz mit `issue-tracker.md`: Die dortige Regel „Argumenttyp überschreibt den
-Config-Modus" bleibt gültig – ein `review-report` erzwingt `local`, ein
-`review-epic`/`review-finding` erzwingt `remote`. Dieser Baustein liefert genau diesen
-Argumenttyp.
+Consistency with `issue-tracker.md`: the rule there, "argument type overrides the
+config mode", stays valid — a `review-report` forces `local`, a
+`review-epic`/`review-finding` forces `remote`. This building block delivers exactly that
+argument type.
 
-### Mehrdeutigkeit und Fallbacks
+### Ambiguity and fallbacks
 
-- **`none` (kein Argument):** nicht heuristisch das „neueste“ wählen. Der Aufrufer
-  listet lokale Kandidaten (offene Pläne aus `<plan.dir>/`, Report-Dateien unter
-  `.effective-flow/review/`) und fragt nach der konkreten Quelle. Ist der effektive
-  Tracker-Modus `remote`, listet er zusätzlich offene Review-Epics (Label
-  `effective-flow-review-epic`, inkl. Alt `firmo-review-epic`) als Kandidaten, da im
-  Remote-Modus keine lokalen Report-Dateien existieren.
-- **`ambiguous`:** die konkurrierenden Deutungen benennen und nachfragen, statt zu
-  raten.
-- **Gemischte Issue-Liste** (verschiedene Subtypen in einem Aufruf, z. B. `review-finding`
-  und `plain-issue`): nicht raten. Den User bitten, die Liste nach Zieltyp zu trennen,
-  bzw. – im Router – pro Issue routen. Konservativ: nachfragen.
-- **Issue-Referenz, aber Tracker-CLI fehlt/nicht authentifiziert:** Stufe B kann nicht
-  laufen → klare Fehlermeldung mit Behebungshinweis gemäß „Fehler- und Randfälle“ in
-  `issue-tracker.md`; kein stiller Fallback auf einen lokalen Typ.
-- **Nicht auflösbarer Pfad:** `ambiguous` → nachfragen bzw. Fehlermeldung; nenne, dass
-  `{{SKILL:open-plans}}` offene Pläne auflisten kann.
+- **`none` (no argument):** do not heuristically pick the "newest". The caller
+  lists local candidates (open plans from `<plan.dir>/`, report files under
+  `.effective-flow/review/`) and asks for the specific source. If the effective
+  tracker mode is `remote`, it additionally lists open review epics (label
+  `effective-flow-review-epic`, incl. old `firmo-review-epic`) as candidates, since in
+  remote mode no local report files exist.
+- **`ambiguous`:** name the competing interpretations and ask, instead of
+  guessing.
+- **Mixed issue list** (different subtypes in one call, e.g. `review-finding`
+  and `plain-issue`): do not guess. Ask the user to split the list by target type,
+  or — in the router — route per issue. Conservative: ask.
+- **Issue reference, but tracker CLI missing/not authenticated:** stage B cannot
+  run → clear error message with a remediation hint per "Errors and edge cases" in
+  `issue-tracker.md`; no silent fallback to a local type.
+- **Unresolvable path:** `ambiguous` → ask or error message; note that
+  `{{SKILL:open-plans}}` can list open plans.
 
-### Verwendung durch die Skills
+### Use by the skills
 
-- **Router (`{{SKILL:apply}}`):** führt Stufe A und – für Issue-Referenzen –
-  Stufe B aus, meldet den erkannten Typ und delegiert an den zuständigen Skill mit dem
-  Original-Argument. Bei `none`/`ambiguous`/gemischter Liste: nachfragen.
-- **Zuständigkeits-Skill (jeder der drei Apply-Skills):** klassifiziert das Argument
-  früh über diesen Baustein. Passt der Typ zur eigenen Zuständigkeit → weiter mit der
-  eigenen Tiefenlogik. Passt er nicht:
-  - **Direktaufruf durch den User:** klar auf den zuständigen Skill (oder
-    `{{SKILL:apply}}`) verweisen und beenden.
-  - **Delegation aus `{{SKILL:apply}}`:** sollte nicht auftreten, da der Router
-    korrekt geroutet hat; die Weiche bleibt als Schutz bestehen.
+- **Router (`{{SKILL:apply}}`):** runs stage A and — for issue references —
+  stage B, reports the detected type, and delegates to the responsible skill with the
+  original argument. On `none`/`ambiguous`/mixed list: ask.
+- **Responsibility skill (each of the three apply skills):** classifies the argument
+  early via this building block. If the type matches its own responsibility → continue with its
+  own depth logic. If it does not match:
+  - **Direct invocation by the user:** clearly point to the responsible skill (or
+    `{{SKILL:apply}}`) and end.
+  - **Delegation from `{{SKILL:apply}}`:** should not occur, since the router
+    routed correctly; the switch remains as a safeguard.

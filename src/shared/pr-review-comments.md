@@ -1,119 +1,119 @@
-## PR-Review-Kommentar-Anbindung
+## PR review comment integration
 
-Dieser geteilte Baustein verbindet `{{SKILL:iterate}}` mit den Review-Kommentaren eines
-bestehenden Pull-Requests (GitHub über `gh`, Forgejo über `tea`). Er kapselt das
-**PR-spezifische Plumbing**, das `issue-tracker.md` bewusst nicht enthält: die PR-Auflösung,
-das Lesen von Review-Threads, das Antworten auf einen Thread, das Auflösen eines Threads und
-das Posten eines PR-Summary-Kommentars.
+This shared building block connects `{{SKILL:iterate}}` with the review comments of an
+existing pull request (GitHub via `gh`, Forgejo via `tea`). It encapsulates the
+**PR-specific plumbing** that `issue-tracker.md` deliberately does not contain: PR resolution,
+reading review threads, replying to a thread, resolving a thread, and posting a PR summary
+comment.
 
-Abgrenzung zu `issue-tracker.md`: Jener Baustein ist auf **Issues** und den
-`tracker.mode`-Umschalter zugeschnitten. PR-Review-Threads sind ein anderes API-Objekt.
-`{{SKILL:iterate}}` ist – wie `{{SKILL:apply-issues}}`/`{{SKILL:plan-issue}}` – **inhärent
-remote** im PR-Modus und wertet `tracker.mode` nicht aus; es braucht lediglich ein
-Git-Repository, eine `origin`-Remote und ein authentifiziertes CLI. Die **Host- und
-CLI-Erkennung** wird aus `issue-tracker.md` übernommen (nicht neu erfunden); dieser Baustein
-ergänzt nur die PR-Operationen.
+Boundary to `issue-tracker.md`: that building block is tailored to **issues** and the
+`tracker.mode` switch. PR review threads are a different API object.
+`{{SKILL:iterate}}` is – like `{{SKILL:apply-issues}}`/`{{SKILL:plan-issue}}` – **inherently
+remote** in PR mode and does not evaluate `tracker.mode`; it merely needs a
+Git repository, an `origin` remote, and an authenticated CLI. The **host and
+CLI detection** is taken from `issue-tracker.md` (not reinvented); this building block
+only adds the PR operations.
 
-### Keine KI-Attribution
+### No AI attribution
 
-Füge Thread-Antworten und dem Summary-Kommentar keine KI-Attribution hinzu: keine „Generated
-with Claude Code/Codex"-Footer, keine Agent-Session-Links (z. B. `https://claude.ai/code/…`)
-und keine `Co-Authored-By`-Trailer – auch dann nicht, wenn der Harness sie als Default
-anhängt. Antworttexte in natürlicher Sprache gemäß Sprachregeln.
+Do not add AI attribution to thread replies or the summary comment: no „Generated
+with Claude Code/Codex" footers, no agent session links (e.g. `https://claude.ai/code/…`),
+and no `Co-Authored-By` trailers – not even when the harness appends them as a default.
+Reply texts in natural language according to the language rules.
 
-### Host- und CLI-Erkennung
+### Host and CLI detection
 
-Bestimme das Werkzeug analog zu `{{SKILL:pr}}` und zur „Host- und CLI-Erkennung" in
+Determine the tool analogously to `{{SKILL:pr}}` and to "Host and CLI detection" in
 `issue-tracker.md`:
 
-1. **Vorbedingung:** Es ist ein Git-Repository mit einer `origin`-Remote vorhanden. Fehlt
-   `origin` oder ist es kein Git-Repository, ist der PR-Modus nicht möglich: klar melden.
-2. **Werkzeug wählen:** Lies die `origin`-URL (`git remote get-url origin`) und extrahiere den
-   Host robust für HTTPS- und SSH-Formen. Ist der Host exakt `github.com`, ist das Werkzeug
-   `gh`; für jeden anderen Host wird Forgejo/Gitea angenommen und `tea` verwendet. Ein
-   ausdrücklicher Per-Run-Hinweis des Users hat bei mehrdeutigem Host (z. B. GitHub
-   Enterprise) Vorrang; ist der Host mehrdeutig und weder Hinweis noch Override vorhanden,
-   frage den User.
-3. **Verfügbarkeit prüfen:** Stelle sicher, dass das gewählte CLI installiert und
-   authentifiziert ist (`gh auth status` bzw. `tea` mit konfiguriertem Login). Fehlt das CLI
-   oder die Authentifizierung: gib eine klare Fehlermeldung mit Behebungshinweis aus und brich
-   ohne Seiteneffekt ab. Falle **nicht** still auf lokale Arbeit zurück; einen lokalen
-   Fallback nur nach ausdrücklicher User-Zustimmung.
+1. **Precondition:** There is a Git repository with an `origin` remote present. If
+   `origin` is missing or it is not a Git repository, PR mode is not possible: report clearly.
+2. **Choose the tool:** Read the `origin` URL (`git remote get-url origin`) and extract the
+   host robustly for HTTPS and SSH forms. If the host is exactly `github.com`, the tool is
+   `gh`; for any other host, Forgejo/Gitea is assumed and `tea` is used. An
+   explicit per-run hint from the user takes precedence for an ambiguous host (e.g. GitHub
+   Enterprise); if the host is ambiguous and neither a hint nor an override is present,
+   ask the user.
+3. **Check availability:** Make sure the chosen CLI is installed and
+   authenticated (`gh auth status` or `tea` with a configured login). If the CLI
+   or the authentication is missing: emit a clear error message with a remediation hint and abort
+   without side effect. Do **not** silently fall back to local work; a local
+   fallback only after explicit user consent.
 
-### PR-Auflösung
+### PR resolution
 
-Löse den Ziel-PR aus dem Argument oder dem aktuellen Branch auf und bestimme PR-Nummer,
-Head-Branch, Basis-Branch, URL und Status:
+Resolve the target PR from the argument or the current branch and determine the PR number,
+head branch, base branch, URL, and state:
 
-- **Aus Argument:** eine PR-Referenz ist eine bare Nummer (`42`), `#42` oder eine PR-URL. Eine
-  PR-URL trägt das Segment `/pull/` (GitHub) bzw. `/pulls/` (Forgejo) – das unterscheidet sie
-  von einer Issue-URL (`/issues/`).
-- **Aus aktuellem Branch:** wenn keine PR-Referenz übergeben wurde, versuche den offenen PR des
-  aktuell ausgecheckten Branch zu ermitteln.
+- **From argument:** a PR reference is a bare number (`42`), `#42`, or a PR URL. A
+  PR URL carries the segment `/pull/` (GitHub) or `/pulls/` (Forgejo) – this distinguishes it
+  from an issue URL (`/issues/`).
+- **From the current branch:** if no PR reference was passed, try to determine the open PR of the
+  currently checked-out branch.
 
-| Operation               | GitHub (`gh`)                                                                       | Forgejo (`tea`)                                                       |
-| ----------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| PR aus Nummer lesen     | `gh pr view <nr> --json number,headRefName,baseRefName,url,state,isCrossRepository` | `tea pr <nr>` bzw. Forgejo-API `GET /repos/<owner>/<repo>/pulls/<nr>` |
-| PR aus aktuellem Branch | `gh pr view --json number,headRefName,baseRefName,url,state`                        | `tea pr list --state open` und über den Head-Branch filtern           |
+| Operation              | GitHub (`gh`)                                                                       | Forgejo (`tea`)                                                     |
+| ---------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Read PR from number    | `gh pr view <nr> --json number,headRefName,baseRefName,url,state,isCrossRepository` | `tea pr <nr>` or Forgejo API `GET /repos/<owner>/<repo>/pulls/<nr>` |
+| PR from current branch | `gh pr view --json number,headRefName,baseRefName,url,state`                        | `tea pr list --state open` and filter by the head branch            |
 
-Ist der PR bereits `merged`/`closed`: melden und keine Commits pushen (siehe Fehlerfälle in
+If the PR is already `merged`/`closed`: report and push no commits (see error cases in
 `{{SKILL:iterate}}`).
 
-### Review-Threads lesen (immer frisch)
+### Read review threads (always fresh)
 
-Lies die Review-Kommentare **direkt vor** der Klassifikation frisch vom Host – Kommentare
-können sich zwischen Läufen ändern. Erfasse pro Thread: Thread-ID, Autor (und ob Bot oder
-Mensch), Datei + Zeile, Kommentartext und den `resolved`-Status.
+Read the review comments **directly before** classification fresh from the host – comments
+can change between runs. Capture per thread: thread ID, author (and whether bot or
+human), file + line, comment text, and the `resolved` status.
 
-| Operation                      | GitHub (`gh`)                                                               | Forgejo (`tea`)                                                                                          |
-| ------------------------------ | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Inline-Review-Kommentare lesen | `gh api repos/<owner>/<repo>/pulls/<nr>/comments`                           | Forgejo-API `GET /repos/<owner>/<repo>/pulls/<nr>/reviews` bzw. `.../comments`                           |
-| Thread-/Resolved-Status lesen  | GraphQL `pullRequest.reviewThreads` (Felder `id`, `isResolved`, `comments`) | best-effort über die Forgejo-API; ist der Resolved-Status nicht verfügbar, alle als unresolved behandeln |
-| PR-Ebene-Kommentare lesen      | `gh pr view <nr> --json comments`                                           | `tea pr <nr> --comments`, sonst Forgejo-API                                                              |
+| Operation                   | GitHub (`gh`)                                                               | Forgejo (`tea`)                                                                                   |
+| --------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Read inline review comments | `gh api repos/<owner>/<repo>/pulls/<nr>/comments`                           | Forgejo API `GET /repos/<owner>/<repo>/pulls/<nr>/reviews` or `.../comments`                      |
+| Read thread/resolved status | GraphQL `pullRequest.reviewThreads` (fields `id`, `isResolved`, `comments`) | best-effort via the Forgejo API; if the resolved status is not available, treat all as unresolved |
+| Read PR-level comments      | `gh pr view <nr> --json comments`                                           | `tea pr <nr> --comments`, otherwise Forgejo API                                                   |
 
-Ermittle für die GraphQL-Abfrage `owner`/`repo` aus der `origin`-URL. Prüfe bei Forgejo die
-genauen Flag-/Endpunktnamen gegen die installierte `tea`-Version, falls ein Aufruf
-fehlschlägt (wie in `{{SKILL:pr}}` vermerkt).
+For the GraphQL query, determine `owner`/`repo` from the `origin` URL. For Forgejo, check the
+exact flag/endpoint names against the installed `tea` version if a call
+fails (as noted in `{{SKILL:pr}}`).
 
-### Auf einen Thread antworten
+### Reply to a thread
 
-| Operation                      | GitHub (`gh`)                                                                    | Forgejo (`tea`)                                                                         |
-| ------------------------------ | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Auf Review-Kommentar antworten | `gh api repos/<owner>/<repo>/pulls/<nr>/comments/<comment-id>/replies -f body=…` | Forgejo-API `POST /repos/<owner>/<repo>/pulls/<nr>/reviews` mit Bezug auf den Kommentar |
+| Operation                 | GitHub (`gh`)                                                                    | Forgejo (`tea`)                                                                     |
+| ------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Reply to a review comment | `gh api repos/<owner>/<repo>/pulls/<nr>/comments/<comment-id>/replies -f body=…` | Forgejo API `POST /repos/<owner>/<repo>/pulls/<nr>/reviews` referencing the comment |
 
-Jede Antwort trägt den Marker `<!-- effective-flow-iterate -->` (siehe Idempotenz).
+Every reply carries the marker `<!-- effective-flow-iterate -->` (see idempotency).
 
-### Einen Thread auflösen
+### Resolve a thread
 
-| Operation              | GitHub (`gh`)                                               | Forgejo (`tea`)                                                                                                                                                                  |
-| ---------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Review-Thread auflösen | GraphQL-Mutation `resolveReviewThread(input: { threadId })` | best-effort; unterstützt die installierte API/`tea`-Version das Auflösen nicht, **nur antworten** und im Summary vermerken, dass manuelles Auflösen nötig ist – **kein Abbruch** |
+| Operation             | GitHub (`gh`)                                               | Forgejo (`tea`)                                                                                                                                                    |
+| --------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Resolve review thread | GraphQL mutation `resolveReviewThread(input: { threadId })` | best-effort; if the installed API/`tea` version does not support resolving, **only reply** and note in the summary that manual resolution is needed – **no abort** |
 
-### Summary-Kommentar posten
+### Post summary comment
 
-| Operation           | GitHub (`gh`)                 | Forgejo (`tea`)                         |
-| ------------------- | ----------------------------- | --------------------------------------- |
-| PR-Kommentar posten | `gh pr comment <nr> --body …` | `tea comment <nr> …`, sonst Forgejo-API |
+| Operation       | GitHub (`gh`)                 | Forgejo (`tea`)                             |
+| --------------- | ----------------------------- | ------------------------------------------- |
+| Post PR comment | `gh pr comment <nr> --body …` | `tea comment <nr> …`, otherwise Forgejo API |
 
-Es wird pro Lauf **genau ein** Summary-Kommentar mit Marker `<!-- effective-flow-iterate -->`
-gepostet: welche Punkte umgesetzt, welche übersprungen und welche reinen Fragen als
-offen/zurückgestellt gelistet sind.
+Per run, **exactly one** summary comment with the marker `<!-- effective-flow-iterate -->` is
+posted: which points were implemented, which skipped, and which pure questions are listed as
+open/deferred.
 
-### Idempotenz über den Effective Flow-Marker
+### Idempotency via the Effective Flow marker
 
-Antworten und der Summary-Kommentar tragen den HTML-Marker `<!-- effective-flow-iterate -->`. Lies
-die vorhandenen PR- und Review-Kommentare **vor jedem Schreiben** frisch: ein Thread, der
-bereits `resolved` ist oder eine `<!-- effective-flow-iterate -->`-Antwort trägt, gilt als erledigt und
-wird nicht erneut bearbeitet. **Backcompat (eine Generation):** ein noch vorhandener Alt-Marker
-`<!-- firmo-iterate -->` aus einem früheren Lauf wird beim Lesen gleichwertig erkannt (kein
-Doppel-Bearbeiten in-flight befindlicher Threads); neu geschrieben wird ausschließlich
-`<!-- effective-flow-iterate -->`. So bleibt ein zweiter `{{SKILL:iterate}}`-Lauf auf demselben PR
-sauber.
+Replies and the summary comment carry the HTML marker `<!-- effective-flow-iterate -->`. Read
+the existing PR and review comments **fresh before every write**: a thread that is
+already `resolved` or carries an `<!-- effective-flow-iterate -->` reply is considered done and
+is not processed again. **Backcompat (one generation):** a still-present old marker
+`<!-- firmo-iterate -->` from an earlier run is recognized as equivalent on read (no
+double processing of in-flight threads); newly written is exclusively
+`<!-- effective-flow-iterate -->`. This keeps a second `{{SKILL:iterate}}` run on the same PR
+clean.
 
-### Keine History-Umschreibung
+### No history rewriting
 
-Neue Arbeit geht ausschließlich als **neue Commits** auf den PR-Head-Branch und wird normal
-gepusht – konsistent mit `{{SKILL:pr}}` und „Bestehende PRs aktualisieren" in der Delivery-
-und Worktree-Integration. Kein `commit --amend`, kein Rebase, kein Squash, kein Force-Push.
-Wird der Push wegen divergierter Remote-History abgelehnt, stoppe und melde den Konflikt,
-statt History zu überschreiben.
+New work goes exclusively as **new commits** onto the PR head branch and is pushed normally –
+consistent with `{{SKILL:pr}}` and "Updating existing PRs" in the delivery
+and worktree integration. No `commit --amend`, no rebase, no squash, no force-push.
+If the push is rejected because of diverged remote history, stop and report the conflict
+instead of overwriting history.

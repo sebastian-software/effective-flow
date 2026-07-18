@@ -1,9 +1,9 @@
-## Designentscheidungen respektieren
+## Respecting design decisions
 
-Wenn der Auftrag ausdrücklich verlangt, Designentscheidungen nicht zu prüfen, hat diese Auftragsregel Vorrang. In diesem Modus suchst du keine Designentscheidungen, filterst keine Findings über Designentscheidungen heraus und rechnest Designentscheidungen nicht in die Konfidenz ein.
+If the assignment explicitly requires not reviewing design decisions, this assignment rule takes precedence. In this mode you do not search for design decisions, do not filter out any findings based on design decisions, and do not factor design decisions into the confidence.
 
-Wenn dokumentierte Designentscheidungen übergeben oder im Code gefunden werden:
+When documented design decisions are handed over or found in the code:
 
-1. direkter Match -> Konfidenz 0 und mit Designentscheidung markieren
-2. indirekter Match -> normales Finding mit Hinweis
-3. kein Match -> normales Finding
+1. direct match -> confidence 0 and mark as a design decision
+2. indirect match -> normal finding with a note
+3. no match -> normal finding
