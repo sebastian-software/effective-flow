@@ -72,6 +72,11 @@ jobs:
         # force-pushes — so consumer commit pins stay valid. Requires the delivery
         # branch `main` to already exist (seeded once during the develop/main
         # rollout); it does not run until a release is created.
+        #
+        # Renovate reads its config from the default branch, which is this delivery
+        # `main`. The delivered `renovate.json` (scripts/delivery-renovate.json) pins
+        # `baseBranches: ["develop"]` so Renovate scans manifests and opens update PRs
+        # against the source branch `develop`, not the config-less delivery `main`.
         if: ${{ steps.release.outputs.release_created == 'true' }}
         run: |
           git config user.name "github-actions[bot]"
@@ -85,6 +90,7 @@ jobs:
           mkdir -p "$work/docs"
           cp README.md "$work/README.md"
           cp -R docs/user-guide "$work/docs/user-guide"
+          cp scripts/delivery-renovate.json "$work/renovate.json"
           node scripts/deliver-docs.mjs "$work" "$GITHUB_REPOSITORY" develop
           git -C "$work" add -A
           if git -C "$work" diff --cached --quiet; then
