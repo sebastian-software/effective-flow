@@ -1,61 +1,61 @@
-# Effective Flow-Konfiguration
+# Effective Flow configuration
 
-Die Effective Flow-Konfiguration liegt **nicht** mehr in `.effective-flow/config.json`, sondern in einer lebenden
-Projektsetup-ADR. Dieses Dokument gibt den entwicklerorientierten Überblick; die verbindliche
-Spezifikation steht in [`src/shared/config-migration.md`](../../src/shared/config-migration.md)
-(Locator, Encoding, Migration) und [`src/shared/adr-convention.md`](../../src/shared/adr-convention.md)
-(lebendes ADR-Modell).
+The Effective Flow configuration **no longer** lives in `.effective-flow/config.json` but in a
+living project-setup ADR. This document gives the developer-oriented overview; the binding
+specification is in [`src/shared/config-migration.md`](../../src/shared/config-migration.md)
+(locator, encoding, migration) and [`src/shared/adr-convention.md`](../../src/shared/adr-convention.md)
+(living ADR model).
 
-## Wo die Konfiguration liegt
+## Where the configuration lives
 
-Die getrackte Wahrheit ist eine lebende ADR „Effective Flow project setup" (Default-Slug
-`effective-flow-project-setup`, Default-Pfad `docs/adr/effective-flow-project-setup.md`). Sie trägt die
-Config-Parameter mit minimaler Prosa als **Markdown-Tabelle** (`| Schlüssel | Wert |`) mit dotted
-keys. Aufgefunden wird die Datei über den Locator-Marker in `AGENTS.md`:
+The tracked truth is a living ADR "Effective Flow project setup" (default slug
+`effective-flow-project-setup`, default path `docs/adr/effective-flow-project-setup.md`). It
+carries the config parameters with minimal prose as a **Markdown table** (`| Schlüssel | Wert |`)
+with dotted keys. The file is located via the locator marker in `AGENTS.md`:
 
 ```md
 **Effective Flow project setup:** docs/adr/effective-flow-project-setup.md
 ```
 
-## Auflösungsreihenfolge
+## Resolution order
 
-Beim Lesen wird die Projektsetup-ADR in dieser Reihenfolge aufgelöst; der erste greifende Schritt
-gewinnt:
+When reading, the project-setup ADR is resolved in this order; the first matching step wins:
 
-1. **AGENTS.md-Marker** – die Zeile `**Effective Flow project setup:** <pfad>` (sonst `CLAUDE.md` bzw. eine
-   vergleichbare Konventionsdatei). Ein toter Marker fällt weiter und wird gemeldet.
-2. **Default-Pfad/Scan** – sonst `docs/adr/effective-flow-project-setup.md` bzw. ein Scan des erkannten
-   ADR-Verzeichnisses (`docs/adr/`, `docs/decisions/`, `adr/`).
-3. **Übergangs-Kompatibilität** – sonst übergangsweise eine noch vorhandene `.effective-flow/config.json`
-   lesen und auf `/effective-flow setup` hinweisen.
-4. **Eingebaute Defaults** – sonst die Defaults der jeweiligen Quell-Skills.
+1. **AGENTS.md marker** – the line `**Effective Flow project setup:** <path>` (otherwise
+   `CLAUDE.md` or a comparable convention file). A dead marker falls through and is reported.
+2. **Default path/scan** – otherwise `docs/adr/effective-flow-project-setup.md` or a scan of the
+   detected ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`).
+3. **Transition compatibility** – otherwise, transitionally, read a still-present
+   `.effective-flow/config.json` and point to `/effective-flow setup`.
+4. **Built-in defaults** – otherwise the defaults of the respective source skills.
 
-Der Lesepfad ist nicht-blockierend: Er legt nichts an und berührt kein Git.
+The read path is non-blocking: it creates nothing and touches no Git.
 
-## Tabellen-Encoding (Kurzform)
+## Table encoding (short form)
 
 - **Boolean** → `true` / `false`.
-- **String** → literal, unquoted (z. B. `focused`, `origin/main`).
-- **`null`** → das Literal-Token `null` (semantisch „beim Lauf fragen").
-- **Leere Liste** → `(leer)`.
-- **Gefüllte Liste** → kommagetrennt (z. B. `humanizer, distill`).
-- **Verschachtelung** → dotted keys (z. B. `applyReview.worktree.baseDir`).
-- **Fehlende Zeile** → Schlüssel nicht gesetzt, es gilt der Default des Quell-Skills (bewusst
-  verschieden von einer vorhandenen `null`-Zeile).
+- **String** → literal, unquoted (e.g. `focused`, `origin/main`).
+- **`null`** → the literal token `null` (semantically "ask at run time").
+- **Empty list** → `(leer)`.
+- **Filled list** → comma-separated (e.g. `humanizer, distill`).
+- **Nesting** → dotted keys (e.g. `applyReview.worktree.baseDir`).
+- **Missing row** → key not set, the source skill's default applies (deliberately different from
+  a present `null` row).
 
-## `.effective-flow/` ist gitignored
+## `.effective-flow/` is gitignored
 
-`.effective-flow/` ist reines Laufzeit-Verzeichnis (`memory.json`, `cache.json`, `review/`, `.worktrees/`)
-und wird **komplett** gitignored – es gibt keine getrackte `.effective-flow/config.json` mehr. Die einmalige
-Migration übernimmt `/effective-flow setup`: Es erzeugt die ADR-Tabelle aus dem bestehenden Config-Inhalt,
-schreibt den AGENTS.md-Marker, stellt `.gitignore` auf ein einzelnes `.effective-flow/` um und enttrackt die
-Alt-`config.json`. Außerhalb von `/effective-flow setup` findet keine Migration statt.
+`.effective-flow/` is a pure runtime directory (`memory.json`, `cache.json`, `review/`,
+`.worktrees/`) and is **completely** gitignored – there is no longer a tracked
+`.effective-flow/config.json`. The one-time migration is handled by `/effective-flow setup`: it
+creates the ADR table from the existing config content, writes the AGENTS.md marker, changes
+`.gitignore` to a single `.effective-flow/`, and untracks the old `config.json`. Outside of
+`/effective-flow setup` no migration takes place.
 
-## Lebendes ADR-Modell
+## Living ADR model
 
-Effective Flow-ADRs sind **lebende Dokumente**: mutable, nummernlos und slug-benannt; die aktuelle Datei ist
-die Wahrheit, ohne Supersede-Kette. Das weicht bewusst vom Host-Skill `decision-records` ab (der
-ADRs als immutabel-nach-accepted, nummeriert und ohne Config-Werte definiert) – Effective Flows Konvention
-hat für Effective Flow-erzeugte ADRs Vorrang, weil sie auf kleinen LLM-Lesekontext und die Kolokation von
-Wert und Kurzbegründung in einer getrackten Quelle optimiert. Details in
-[`src/shared/adr-convention.md`](../../src/shared/adr-convention.md).
+Effective Flow ADRs are **living documents**: mutable, numberless, and slug-named; the current
+file is the truth, without a supersede chain. This deliberately deviates from the host skill
+`decision-records` (which defines ADRs as immutable-after-accepted, numbered, and without config
+values) – Effective Flow's convention takes precedence for Effective-Flow-generated ADRs because
+it optimizes for a small LLM read context and the colocation of value and short rationale in one
+tracked source. Details in [`src/shared/adr-convention.md`](../../src/shared/adr-convention.md).

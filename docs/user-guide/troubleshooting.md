@@ -1,108 +1,106 @@
-# Troubleshooting und FAQ
+# Troubleshooting and FAQ
 
-Häufige Fragen und Fehlerbilder rund um Effective Flow – sortiert nach Thema. Führt eine Meldung dich
-hierher, prüfe zuerst den passenden Abschnitt, bevor du einen Lauf wiederholst.
+Common questions and error patterns around Effective Flow – sorted by topic. If a message leads you
+here, check the matching section first before you retry a run.
 
-## „gh: command not found“ oder „tea: command not found“
+## "gh: command not found" or "tea: command not found"
 
-Der [Remote-Tracker](./remote-tracker.md) und `/effective-flow pr` benötigen im Remote-Modus ein
-installiertes und authentifiziertes CLI:
+The [remote tracker](./remote-tracker.md) and `/effective-flow pr` require, in remote mode, an
+installed and authenticated CLI:
 
-- **GitHub** (Host `github.com`): [`gh`](https://cli.github.com/) installieren, danach
-  `gh auth login` bzw. `gh auth status` zur Prüfung.
-- **Forgejo/Gitea** (jeder andere Host): `tea` installieren und mit dem jeweiligen Login
-  konfigurieren.
+- **GitHub** (host `github.com`): install [`gh`](https://cli.github.com/), then
+  `gh auth login` or `gh auth status` to check.
+- **Forgejo/Gitea** (any other host): install `tea` and configure it with the respective
+  login.
 
-Fehlt das CLI oder ist es nicht authentifiziert, bricht Effective Flow bewusst **klar ab**, statt
-still auf den lokalen Modus zurückzufallen – so bleibst du nie im Unklaren darüber, ob ein
-Finding tatsächlich als Issue angelegt wurde. Einen Fallback auf `local` bietet Effective Flow nur an,
-wenn du ihm ausdrücklich zustimmst. Prüfe danach mit `git remote get-url origin`, ob der
-richtige Host erkannt wird; bei mehrdeutigen Hosts (z. B. GitHub Enterprise) hilft
-`tracker.remoteToolOverride` in der [Konfiguration](./konfiguration.md#block-tracker).
+If the CLI is missing or not authenticated, Effective Flow deliberately aborts **clearly** instead of
+silently falling back to local mode – so you are never left in the dark about whether a
+finding was actually created as an issue. Effective Flow offers a fallback to `local` only
+if you explicitly agree to it. Afterwards, check with `git remote get-url origin` whether the
+right host is detected; for ambiguous hosts (e.g. GitHub Enterprise),
+`tracker.remoteToolOverride` in the [Configuration](./configuration.md#block-tracker) helps.
 
-## Worktree-Konflikte und uncommittete Änderungen
+## Worktree conflicts and uncommitted changes
 
-Effective Flow arbeitet standardmäßig in einem separaten [Worktree](./worktree-und-delivery.md) und
-rührt deinen aktuellen Checkout dabei nicht an. Zwei Situationen führen dennoch zu einer
-Rückfrage statt eines automatischen Weiterlaufs:
+By default, Effective Flow works in a separate [worktree](./worktree-and-delivery.md) and does not
+touch your current checkout in the process. Two situations still lead to a
+follow-up question instead of an automatic continuation:
 
-- **Uncommittete Änderungen im Haupt-Checkout**, wenn ausnahmsweise ohne Worktree
-  (`worktree.enabled: false`) geliefert werden soll: Effective Flow staged, stasht oder überschreibt
-  diese Änderungen nie still. Committe oder stashe sie manuell, oder lass die Umsetzung
-  regulär im Default-Worktree laufen.
-- **Entfernen des Worktrees schlägt fehl**, weil darin noch uncommittete Reste liegen: Der
-  Worktree bleibt dann bewusst bestehen, Effective Flow meldet den Pfad. Prüfe die Reste manuell
-  (`git -C <Worktree-Pfad> status`) und committe oder verwirf sie, bevor du
-  `git worktree remove <Pfad>` erneut versuchst.
+- **Uncommitted changes in the main checkout**, when delivery is to happen without a worktree
+  as an exception (`worktree.enabled: false`): Effective Flow never stages, stashes or overwrites
+  these changes silently. Commit or stash them manually, or let the implementation run
+  regularly in the default worktree.
+- **Removing the worktree fails**, because uncommitted remnants still lie within it: the
+  worktree then deliberately stays in place, and Effective Flow reports the path. Check the remnants
+  manually (`git -C <worktree-path> status`) and commit or discard them before you retry
+  `git worktree remove <path>`.
 
-Ein Merge-Konflikt beim Abschluss (`delivery.completion: merge`) wird ebenfalls nie
-automatisch aufgelöst: Effective Flow stoppt, belässt den Liefer-Branch und informiert dich, damit du
-den Konflikt gezielt beheben kannst.
+A merge conflict on completion (`delivery.completion: merge`) is likewise never
+resolved automatically: Effective Flow stops, leaves the delivery branch in place and informs you, so you
+can resolve the conflict deliberately.
 
-## „Das Klärungs-Gate wurde nicht bestanden“
+## "The clarification gate was not passed"
 
-Bevor ein umsetzendes Tool (`build`, `fix`, `refactor`, `docs`, `apply`) eine Plan-Datei, ein
-Issue oder ein Review-Finding tatsächlich umsetzt, prüft es, ob die Grundlage **vollständig
-geklärt** ist. Das Gate schlägt insbesondere dann fehl, wenn:
+Before an implementing tool (`build`, `fix`, `refactor`, `docs`, `apply`) actually implements a
+plan file, an issue or a review finding, it checks whether the basis is **fully
+clarified**. The gate fails in particular when:
 
-- die Plan-Datei noch einen Abschnitt „Offene Punkte“ mit echten Einträgen enthält,
-- messbare Akzeptanzkriterien fehlen oder ohne konkrete Prüfung formuliert sind,
-- als Annahme markierte Punkte das Verhalten, den Scope oder das Risiko der Umsetzung
-  wesentlich beeinflussen,
-- ein Issue oder Finding die gewünschte Umsetzung nicht eigenständig genug beschreibt, um es
-  ohne Rückfrage abzuarbeiten.
+- the plan file still contains an "Open Points" section with real entries,
+- measurable acceptance criteria are missing or are formulated without a concrete check,
+- points marked as assumptions substantially affect the behavior, the scope or the risk of
+  the implementation,
+- an issue or finding does not describe the desired implementation independently enough to
+  work through it without a follow-up question.
 
-Das ist **kein Fehler**, sondern eine bewusste Sicherung gegen Umsetzung auf Basis von
-Annahmen. Effective Flow bricht in diesem Fall nicht mitten in der Umsetzung ab, sondern verweist
-zurück auf die Klärung:
+This is **not an error**, but a deliberate safeguard against implementation on the basis of
+assumptions. In this case, Effective Flow does not abort mid-implementation, but points
+back to the clarification:
 
-- eine Plan-Datei geht an [`/effective-flow plan`](./tools-verstehen.md) bzw. dessen vertieften Review
-  (`/effective-flow review <plandatei>`),
-- ein Issue oder Finding geht an [`/effective-flow plan-issue`](./tools-verstehen.md).
+- a plan file goes to [`/effective-flow plan`](./tools-understand.md) or its deeper review
+  (`/effective-flow review <plan file>`),
+- an issue or finding goes to [`/effective-flow plan-issue`](./tools-understand.md).
 
-Ergänze dort die fehlenden Angaben und rufe das umsetzende Tool anschließend erneut auf.
+Add the missing information there and then call the implementing tool again.
 
-## Falsche oder unerwartete Marker-Sprache in Plan-Dateien
+## Wrong or unexpected marker language in plan files
 
-Der Statusmarker im Kopf einer Plan-Datei (z. B. `**Planungsstatus:** Nicht umgesetzt` bzw.
-`**Plan status:** Not implemented`) folgt `plan.markerLanguage` aus
-`.effective-flow/config.json`. Ist der Schlüssel dort nicht gesetzt, erkennt Effective Flow die Sprache aus
-bereits vorhandenen Plan-Dateien im Verzeichnis `<plan.dir>`; findet sich kein eindeutiges
-Signal, ist der Default Englisch. Nur der Marker selbst folgt dieser Einstellung – der
-restliche Planinhalt bleibt unabhängig davon in der Sprache verfasst, in der der Plan
-geschrieben wurde.
+The status marker in the header of a plan file (e.g. `**Planungsstatus:** Nicht umgesetzt` or
+`**Plan status:** Not implemented`) follows `plan.markerLanguage` from
+`.effective-flow/config.json`. If the key is not set there, Effective Flow detects the language from
+existing plan files in the `<plan.dir>` directory; if no unambiguous signal is found, the
+default is English. Only the marker itself follows this setting – the rest of the plan
+content stays written in the language in which the plan was written, independently of it.
 
-Um die Sprache dauerhaft festzulegen, setze `plan.markerLanguage` explizit über
-[`/effective-flow setup`](./tools-einrichten.md) (Kern-Schalter „Marker“) oder trage sie manuell in
-`.effective-flow/config.json` ein (siehe [Konfiguration](./konfiguration.md#block-plan)).
+To fix the language permanently, set `plan.markerLanguage` explicitly via
+[`/effective-flow setup`](./tools-setup.md) (core toggle "Marker") or enter it manually in
+`.effective-flow/config.json` (see [Configuration](./configuration.md#block-plan)).
 
-## Es existiert keine `.effective-flow/config.json`
+## There is no `.effective-flow/config.json`
 
-Das ist kein Fehlerzustand. Ohne Config-Datei arbeitet jedes Tool mit den in
-[Konfiguration](./konfiguration.md#sichere-defaults-im-überblick) dokumentierten sicheren
-Defaults – Worktree an, Abschluss per Merge, lokaler Tracker, Marker-Sprache aus Erkennung
-bzw. Englisch. Eine Config wird auch dann **nicht automatisch angelegt**, nur weil ein Tool
-läuft; sie entsteht ausschließlich über [`/effective-flow setup`](./tools-einrichten.md) oder durch
-manuelles Anlegen. Willst du von den Defaults abweichen, ist `/effective-flow setup` der einfachste
-Weg – der Express-Weg übernimmt die sicheren Defaults nach einer einzigen Bestätigung.
+This is not an error state. Without a config file, every tool works with the safe defaults
+documented in [Configuration](./configuration.md#safe-defaults-at-a-glance) – worktree on,
+completion via merge, local tracker, marker language from detection or English. A config is
+also **not created automatically** just because a tool runs; it comes into being solely via
+[`/effective-flow setup`](./tools-setup.md) or through manual creation. If you want to deviate from
+the defaults, `/effective-flow setup` is the easiest way – the express path takes over the safe
+defaults after a single confirmation.
 
-## Alte `.firmo/`-/`.sf-plugin/`-Verzeichnisse oder `firmo-`-Labels loswerden
+## Getting rid of old `.firmo/`/`.sf-plugin/` directories or `firmo-` labels
 
-Effective Flow migriert projektlokale Altdaten (`.firmo/`, `.sf-plugin/`, `firmo-`-Labels)
-**non-destruktiv**: Es kopiert bei Bedarf und liest das Alte als Fallback, löscht es aber nie
-von selbst. Bleiben nach einer Migration also Alt-Verzeichnisse, eine enttrackte
-`.firmo/config.json` oder `firmo-`-Labels zurück, ist das **kein Fehler**, sondern Absicht.
+Effective Flow migrates project-local legacy data (`.firmo/`, `.sf-plugin/`, `firmo-` labels)
+**non-destructively**: it copies when needed and reads the old data as a fallback, but never
+deletes it on its own. So if legacy directories, an untracked `.firmo/config.json` or
+`firmo-` labels remain after a migration, that is **not an error**, but intentional.
 
-Zum endgültigen Aufräumen dient [`/effective-flow cleanup`](./tools-einrichten.md): Es zeigt
-zuerst eine Bestandsaufnahme und eine Dry-Run-Vorschau, fragt vor jedem Löschen und entfernt
-getrackte Dateien via `git rm` (über die Git-Historie wiederherstellbar), ungetrackte
-Verzeichnisse erst nach ausdrücklicher Bestätigung. Es committet nicht und legt kein Backup
-an – die gestageten Änderungen bringst du danach mit
-[`/effective-flow commit`](./tools-einbringen.md) ein.
+For the final cleanup, use [`/effective-flow cleanup`](./tools-setup.md): it first shows
+an inventory and a dry-run preview, asks before each deletion, and removes tracked files via
+`git rm` (recoverable through the Git history), untracked directories only after explicit
+confirmation. It does not commit and does not create a backup – you bring the staged changes
+in afterwards with [`/effective-flow commit`](./tools-deliver.md).
 
-## Siehe auch
+## See also
 
-- [Konfiguration](./konfiguration.md) – vollständige Feldreferenz
-- [Worktree und Delivery](./worktree-und-delivery.md)
-- [Remote-Tracker](./remote-tracker.md)
-- [Glossar](./glossar.md)
+- [Configuration](./configuration.md) – full field reference
+- [Worktree and delivery](./worktree-and-delivery.md)
+- [Remote tracker](./remote-tracker.md)
+- [Glossary](./glossary.md)

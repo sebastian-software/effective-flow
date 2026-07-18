@@ -1,46 +1,46 @@
 # Effective Flow
 
-Effective Flow bündelt einen kompletten Software-Engineering-Workflow als Tools: von der Klärung
-über die Umsetzung bis zur Übergabe – aufgerufen über `/effective-flow <tool>`, ausgeliefert als
-**ein** Skill für **Claude Code** und **Codex**, gebaut aus einer einzigen Quelle.
+Effective Flow bundles a complete software-engineering workflow as tools: from clarification
+through implementation to handover – invoked via `/effective-flow <tool>`, shipped as
+**one** skill for **Claude Code** and **Codex**, built from a single source.
 
-Kein Sammelsurium einzelner Prompts, sondern ein durchgängiger Satz an Werkzeugen, die
-sich gegenseitig kennen: `plan` empfiehlt den passenden Folge-Workflow, `build`, `fix`,
-`refactor` und `docs` teilen dieselben Konventionen für Tests, Review und Abschluss, und
-`commit`/`pr` schließen den Kreis bis zum Pull-Request.
+Not a grab-bag of individual prompts, but a coherent set of tools that know one another:
+`plan` recommends the matching follow-up workflow; `build`, `fix`, `refactor` and `docs`
+share the same conventions for tests, review and completion; and `commit`/`pr` close the
+loop all the way to the pull request.
 
-## Warum Effective Flow
+## Why Effective Flow
 
-- **Ein Werkzeug für den ganzen Zyklus.** `investigate` und `plan` klären die Aufgabe,
-  `build`, `fix`, `refactor`, `docs` und `maintain` setzen um, `review` prüft, `commit`
-  und `pr` bringen die Änderung ein – ohne Bruch zwischen den Phasen.
-- **Dünner Router, Lazy-Loading.** Effective Flow lädt beim Start nur den Tool-Katalog; die
-  vollständige Anweisung eines Tools kommt erst beim Aufruf. Das hält Sessions schlank
-  und verhindert, dass die Token-Grenze durch vorab geladene Tools erschöpft wird.
-- **Eine Quelle, zwei Harnesses.** Claude Code und Codex laufen mit demselben Verhalten,
-  gebaut aus einem einzigen `src/`-Baum – keine zwei Wahrheiten, die auseinanderlaufen.
-- **Skill-Discovery statt starrem Preload.** Tools und Agents erkennen zur Laufzeit, welche
-  Host-Skills verfügbar sind, und wenden sie situativ an, statt eine feste Liste
-  vorzuladen.
-- **Worktree und Delivery, wenn gewünscht.** Umsetzungs-Workflows können parallel in einem
-  eigenen Git-Worktree laufen und am Ende automatisch mergen, einen Branch stehen lassen
-  oder einen Pull-Request öffnen.
-- **Läuft ohne Konfiguration, wächst mit ihr.** Effective Flow funktioniert direkt nach der
-  Installation; wer Review-Tiefe, Worktree-Verhalten oder Issue-Tracker-Anbindung steuern
-  will, tut das über eine einzige `.effective-flow/config.json`.
+- **One tool for the whole cycle.** `investigate` and `plan` clarify the task,
+  `build`, `fix`, `refactor`, `docs` and `maintain` implement it, `review` checks it,
+  `commit` and `pr` bring the change in – with no break between the phases.
+- **Thin router, lazy loading.** Effective Flow loads only the tool catalog at startup; the
+  full instruction of a tool arrives only on invocation. This keeps sessions lean and
+  prevents the token limit from being exhausted by tools loaded up front.
+- **One source, two harnesses.** Claude Code and Codex run with the same behavior,
+  built from a single `src/` tree – no two truths that drift apart.
+- **Skill discovery instead of rigid preloading.** Tools and agents detect at runtime which
+  host skills are available and apply them situationally, instead of preloading a fixed
+  list.
+- **Worktree and delivery when wanted.** Implementation workflows can run in parallel in
+  their own Git worktree and, at the end, merge automatically, leave a branch standing
+  or open a pull request.
+- **Runs without configuration, grows with it.** Effective Flow works right after
+  installation; anyone who wants to control review depth, worktree behavior or
+  issue-tracker integration does so through a single `.effective-flow/config.json`.
 
-## Schnellstart
+## Quick start
 
 ```sh
 ./install-skill.sh
 ```
 
-Danach in Claude Code oder Codex `/effective-flow plan` aufrufen (Codex: `$effective-flow plan`), um mit
-der Planung einer ersten Aufgabe zu starten.
+Then, in Claude Code or Codex, call `/effective-flow plan` (Codex: `$effective-flow plan`) to
+start planning a first task.
 
-## Weiterlesen
+## Read on
 
-- **Nutzung:** [docs/user-guide/README.md](docs/user-guide/README.md) – Installation,
-  Tool-Referenz, Konfiguration, Troubleshooting.
-- **Technik:** [docs/developer-guide/README.md](docs/developer-guide/README.md) –
-  Source-to-dist-Build, Router-Konzept, Beitrag zum Projekt.
+- **Usage:** [docs/user-guide/README.md](docs/user-guide/README.md) – installation,
+  tool reference, configuration, troubleshooting.
+- **Technical:** [docs/developer-guide/README.md](docs/developer-guide/README.md) –
+  source-to-dist build, router concept, contributing to the project.

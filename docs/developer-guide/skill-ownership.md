@@ -1,104 +1,101 @@
-# Skill-Ownership
+# Skill ownership
 
-Effective Flow nutzt die zentrale [Skills-Sammlung](https://github.com/sebastian-software/skills.sebastian-software.com)
-als Quelle für wiederverwendbare Fach-Expertise. Dieses Dokument beschreibt die Grenze
-zwischen dem, was **Effective Flow selbst besitzt** (Orchestrierung), und dem, was die
-**zentralen Skills besitzen** (Domänen-Expertise), sowie ein Inventar, das jede Intersection
-mit dem aktuellen Skillset klassifiziert.
+Effective Flow uses the central [skills collection](https://github.com/sebastian-software/skills.sebastian-software.com)
+as the source for reusable domain expertise. This document describes the boundary between what
+**Effective Flow itself owns** (orchestration) and what the **central skills own** (domain
+expertise), plus an inventory that classifies each intersection with the current skillset.
 
-## Der geschichtete Vertrag
+## The layered contract
 
-Der frühere Vertrag lautete „ein Skill informiert das Wie, Effective Flows Regeln gewinnen
-immer". Er wird durch ein **geschichtetes** Modell ersetzt (die operative Regel steht in
-`src/shared/skill-discovery.md`):
+The earlier contract read "a skill informs the how, Effective Flow's rules always win". It is
+replaced by a **layered** model (the operative rule lives in `src/shared/skill-discovery.md`):
 
-- **Effective Flow besitzt die Orchestrierung** – das **Was/Wann**: `/effective-flow`-Routing
-  und User-Interaktion; Plan-/Report-State, Finding-IDs, Backlinks, Tracker-Integration,
-  Resumability; Agent-Auswahl, Parallelisierung, Baseline-Vergleich, Worktrees, Commits,
-  Delivery; Claude/Codex-Transformation und die Effective-Flow-Konfiguration. Diese Ebene hat
-  immer Vorrang.
-- **Zentrale Skills besitzen wiederverwendbare Expertise** – das **Wie**: Domänen-Checklisten,
-  Heuristiken, Standards, Research-Prozeduren, Spezialisten-Implementierungs-/Review-Guidance
-  und wiederverwendbare Artefakt-Konventionen, wo ein Skill diesen Scope deklariert.
+- **Effective Flow owns the orchestration** – the **what/when**: `/effective-flow` routing and
+  user interaction; plan/report state, finding IDs, backlinks, tracker integration,
+  resumability; agent selection, parallelization, baseline comparison, worktrees, commits,
+  delivery; Claude/Codex transformation and the Effective Flow configuration. This layer always
+  takes precedence.
+- **Central skills own reusable expertise** – the **how**: domain checklists, heuristics,
+  standards, research procedures, specialist implementation/review guidance, and reusable
+  artifact conventions where a skill declares this scope.
 
-Ist ein zentraler Skill der **deklarierte Domänen-Owner** für eine Fachfrage **und** deckt er
-sie ab, ist seine Guidance **maßgeblich** – nicht optionaler Rat. Das jeweilige Effective-Flow-Source
-trägt dann **keine zweite Kopie** dieses Playbooks, sondern nur Scope-, Output- und
-Lifecycle-Constraints plus einen **minimalen generischen Fallback** für den Fall, dass der
-Skill fehlt (nicht installiert, `skills.enabled: false` oder via `exclude` deaktiviert).
+If a central skill is the **declared domain owner** for a subject **and** covers it, its guidance
+is **authoritative** – not optional advice. The respective Effective Flow source then carries
+**no second copy** of that playbook, only scope, output, and lifecycle constraints plus a
+**minimal generic fallback** for the case that the skill is missing (not installed,
+`skills.enabled: false`, or deactivated via `exclude`).
 
-## Klassifikation
+## Classification
 
-Jede Intersection – also jedes Paar aus einem zentralen Skill und einem
-Effective-Flow-Tool/-Agent – gehört in genau eine Klasse. Ein Skill mit mehreren Konsumenten
-kann daher je Konsument unterschiedlich eingestuft sein (z. B. `effective-web`: delegate für
-den Reviewer/UI, route für die Test-Agents):
+Each intersection – that is, each pair of a central skill and an Effective-Flow tool/agent –
+belongs in exactly one class. A skill with multiple consumers can therefore be classified
+differently per consumer (e.g. `effective-web`: delegate for the reviewer/UI, route for the test
+agents):
 
-- **delegate** – der zentrale Skill ist autoritativ; Effective Flow ist ein dünner Adapter und
-  trägt nur Orchestrierung + minimalen Fallback.
-- **route-when-relevant** – der zentrale Skill besitzt nur einen Spezialzweig; die
-  Effective-Flow-Guidance bleibt führend und routet bei Bedarf.
-- **no-overlap** – das Effective-Flow-Verhalten ist genuin produktspezifisch bzw. divergiert
-  bewusst; kein Domänen-Transfer.
+- **delegate** – the central skill is authoritative; Effective Flow is a thin adapter and
+  carries only orchestration + minimal fallback.
+- **route-when-relevant** – the central skill owns only a special branch; the Effective Flow
+  guidance stays leading and routes when needed.
+- **no-overlap** – the Effective Flow behavior is genuinely product-specific or deliberately
+  divergent; no domain transfer.
 
-## Ownership-Inventar (aktueller Default-Branch-Skillset)
+## Ownership inventory (current default-branch skillset)
 
-| Zentraler Skill            | Effective-Flow-Tool(s)/Agent(s)                                                                        | Klassifikation                                     | Domänen-Deckung                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| -------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `locale-typography`        | `src/shared/language-rules.md` (Typografie-Teil), `code-documenter`, `docs-writer`, `marketing-writer` | delegate                                           | vollständig – echtes Superset (13 Locales). Effective Flow behält nur die Sprach-Policy (Code EN / Doku DE / Commits EN).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `effective-web`            | `frontend-reviewer`, `ui-implementer`, `test-writer`, `e2e-tester`, `plan`/`plan-review` (via Gate)    | delegate (Reviewer/UI) / route (Test-Agents, Plan) | vollständig – Barrierefreiheit, Core Web Vitals, CSS-Architektur, React, Forms, i18n (versionierte Standards wie WCAG bleiben im Skill). Für `plan`/`plan-review` route-when-relevant: Browser-/Barrierefreiheits-Detail eines Plans wird nur bei gekreuzter Boundary über das Relevanz-Gate hinzugezogen.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `smart-dependency-updater` | `maintain`                                                                                             | delegate                                           | vollständig – `maintain` ist ein dünner Adapter: der Skill besitzt Ecosystem-Erkennung, Gruppierung, Changelog-Research, Kompatibilitäts-Anpassung, Validierungsstrategie und Update-Reporting; Effective Flow behält nur die Orchestrierung + Delivery (Scope-Gate, Baseline, Commit pro Gruppe, Worktree, Handback) und gibt dem Skill „EF besitzt Delivery“ als Constraint mit, damit keine zwei Delivery-Schleifen laufen.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `codebase-improvement`     | `review`, `refactor`, `plan`, `plan-review`                                                            | route-when-relevant                                | Tool-Level-Audit-Reasoning in `review`/`refactor` an den Skill delegiert (via `src/shared/audit-reasoning-delegation.md` + minimaler Fallback): Reconnaissance, Evidence-Standards, Finding-Validierung/-Dedup, Leverage-Priorisierung, Komplexität, Root-Cause, Scope/Risiko, Plan-Qualität. Effective Flow behält Orchestrierung, Finding-Schema/IDs, Konfidenz-/Scorecard-Gates sowie Report-/Tracker-/Baseline-/Delivery-Contract; die Reviewer-Agents (Line-Level-Checks) bleiben unberührt. `plan`/`plan-review` delegieren zusätzlich das generische Plan-Quality-/Review-**Urteil** (Gap-Analysis, Scorecard, Plan-Review-Befunde – `plan` Phasen 4–6, `plan-review` Phase 2) über den eigenen Shared-Include `src/shared/central-reasoning-delegation.md` und normalisieren das Ergebnis in Status-/Scorecard-/Befund-Form; der Plan-Artefakt-Lifecycle bleibt bei Effective Flow, und bei fehlendem Skill greift ein minimaler generischer Fallback. |
-| `port-codebases`           | `refactor` (Cross-Language-Zweig)                                                                      | route-when-relevant                                | vollständig für den Spezialzweig; greift nur bei Cross-Language-/Runtime-Migration.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `software-architecture`    | `nodejs-reviewer`, `rust-reviewer`                                                                     | route-when-relevant                                | **Lücke:** trägt Architektur-Reasoning, **nicht** die Line-Level-Checks (Injection, Event-Loop-Blocking, unhandled rejections, Clippy-Idiomatik).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `decision-records`         | `apply-review` (`src/shared/adr-convention.md`)                                                        | delegate (mit Fallback)                            | `apply-review` übergibt abgelehnte Findings als Entscheidungs-Kandidaten; der Skill entscheidet über ADR-Würdigkeit und autort nach der deklarierten Repo-Konvention (Effective Flows lebendes Slug-Modell aus `adr-convention.md`), das zugleich der minimale Fallback ist, wenn der Skill fehlt. Effective Flow behält Mapping, Approval-/Status-Fluss, Backlink und Summary-Tracking. Die frühere `no-overlap`-Einstufung beruhte auf dem Prä-#85-Stand des Skills (angeblich immutabel/nummeriert); seit der living/mutable-Variante entfällt der Modell-Konflikt.                                                                                                                                                                                                                                                                                                                                                                                         |
-| `product-management`       | `plan`, `plan-review` (via Relevanz-Gate)                                                              | route-when-relevant                                | Product-Outcomes, what/why/for-whom, Prioritisierung und Release-Urteil – nur, wenn ein konkreter Plan die Product-Boundary kreuzt (über das Relevanz-Gate geladen, nicht hart verdrahtet). Ein schmaler Engineering-Plan lädt den Skill nicht.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `product-design`           | `plan`, `plan-review` (via Relevanz-Gate)                                                              | route-when-relevant                                | Research, Problem-Framing, Information-Architecture, Flows, Prototyp – nur bei gekreuzter Design-Boundary über das Relevanz-Gate. **Im aktuellen Default-Branch-Skillset nicht installiert**; die generische Spezialisten-Regel lädt den Owner automatisch, sobald verfügbar.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Central skill              | Effective-Flow tool(s)/agent(s)                                                                        | Classification                                     | Domain coverage                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `locale-typography`        | `src/shared/language-rules.md` (typography part), `code-documenter`, `docs-writer`, `marketing-writer` | delegate                                           | complete – a genuine superset (13 locales). Effective Flow keeps only the language policy (code EN / docs DE / commits EN).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `effective-web`            | `frontend-reviewer`, `ui-implementer`, `test-writer`, `e2e-tester`, `plan`/`plan-review` (via gate)    | delegate (reviewer/UI) / route (test agents, plan) | complete – accessibility, Core Web Vitals, CSS architecture, React, forms, i18n (versioned standards such as WCAG stay in the skill). For `plan`/`plan-review` route-when-relevant: browser/accessibility detail of a plan is only pulled in via the relevance gate when the boundary is crossed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `smart-dependency-updater` | `maintain`                                                                                             | delegate                                           | complete – `maintain` is a thin adapter: the skill owns ecosystem detection, grouping, changelog research, compatibility adjustment, validation strategy, and update reporting; Effective Flow keeps only the orchestration + delivery (scope gate, baseline, commit per group, worktree, handback) and gives the skill "EF owns delivery" as a constraint so that no two delivery loops run.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `codebase-improvement`     | `review`, `refactor`, `plan`, `plan-review`                                                            | route-when-relevant                                | Tool-level audit reasoning in `review`/`refactor` delegated to the skill (via `src/shared/audit-reasoning-delegation.md` + minimal fallback): reconnaissance, evidence standards, finding validation/dedup, leverage prioritization, complexity, root cause, scope/risk, plan quality. Effective Flow keeps orchestration, finding schema/IDs, confidence/scorecard gates, and the report/tracker/baseline/delivery contract; the reviewer agents (line-level checks) stay untouched. `plan`/`plan-review` additionally delegate the generic plan-quality/review **judgment** (gap analysis, scorecard, plan-review findings – `plan` phases 4–6, `plan-review` phase 2) via their own shared include `src/shared/central-reasoning-delegation.md` and normalize the result into status/scorecard/finding form; the plan artifact lifecycle stays with Effective Flow, and if the skill is missing a minimal generic fallback applies. |
+| `port-codebases`           | `refactor` (cross-language branch)                                                                     | route-when-relevant                                | complete for the special branch; applies only for cross-language/runtime migration.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `software-architecture`    | `nodejs-reviewer`, `rust-reviewer`                                                                     | route-when-relevant                                | **Gap:** carries architecture reasoning, **not** the line-level checks (injection, event-loop blocking, unhandled rejections, Clippy idiomatics).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `decision-records`         | `apply-review` (`src/shared/adr-convention.md`)                                                        | delegate (with fallback)                           | `apply-review` hands rejected findings over as decision candidates; the skill decides on ADR-worthiness and authors according to the declared repo convention (Effective Flow's living slug model from `adr-convention.md`), which is at the same time the minimal fallback when the skill is missing. Effective Flow keeps mapping, approval/status flow, backlink, and summary tracking. The earlier `no-overlap` classification was based on the pre-#85 state of the skill (allegedly immutable/numbered); since the living/mutable variant the model conflict is gone.                                                                                                                                                                                                                                                                                                                                                            |
+| `product-management`       | `plan`, `plan-review` (via relevance gate)                                                             | route-when-relevant                                | Product outcomes, what/why/for-whom, prioritization, and release judgment – only when a concrete plan crosses the product boundary (loaded via the relevance gate, not hard-wired). A narrow engineering plan does not load the skill.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `product-design`           | `plan`, `plan-review` (via relevance gate)                                                             | route-when-relevant                                | Research, problem framing, information architecture, flows, prototype – only when the design boundary is crossed via the relevance gate. **Not installed in the current default-branch skillset**; the generic specialist rule loads the owner automatically as soon as it is available.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
-## Bewusste Ausnahmen
+## Deliberate exceptions
 
-- **`codebase-improvement` ↔ `review`/`refactor`:** Delegiert ist ausschließlich das
-  **Tool-Level-Reasoning** (über den Shared-Include `src/shared/audit-reasoning-delegation.md`).
-  Die **Reviewer-Agents** (`frontend-reviewer`, `nodejs-reviewer`, `rust-reviewer`) und ihre
-  Line-Level-Checks bleiben unangetastet, ebenso das Finding-Schema/IDs, die Profiles/Gates und
-  der Report-/Tracker-/Baseline-/Delivery-Contract. Die Einstufung bleibt `route-when-relevant`,
-  weil der Skill die Orchestrierung nicht abdeckt.
-- **`codebase-improvement` ↔ `plan`/`plan-review`:** Der Firmo-Plan-Lifecycle (Naming, Status,
-  Kategorie-Metadaten, Storage, Archiv, offene Punkte, Handoff, interaktiver Schreib-/Review-Loop
-  mit edit-only-referenced-plan) bleibt bei Effective Flow. Das **generische Plan-Quality- und
-  Plan-Review-Urteil** kommt aus `codebase-improvement` über den eigenen Shared-Include
-  `src/shared/central-reasoning-delegation.md`. Er ist bewusst vom Audit-Include
-  (`src/shared/audit-reasoning-delegation.md`, `review`/`refactor`) getrennt, weil das
-  Plan-Artefakt keinen Finding-/Report-/Delivery-Contract kennt, sondern Scorecard, Plan-Review
-  und offene Punkte; beide Includes teilen aber dieselbe Regel (delegiere das Urteil, route
-  Spezialisten via Relevanz-Gate, minimaler Fallback). Spezialisten (`product-management`,
-  `product-design`, `effective-web`, `software-architecture`, `web-legal-compliance` …) werden
-  **nicht** hart pro Skill verdrahtet, sondern nur bei gekreuzter Boundary geladen; ein noch nicht
-  installierter Owner (z. B. `product-design`) wird still übersprungen, bis er verfügbar ist.
-- **`software-architecture` ↔ Reviewer:** Die Line-Level-Security-, Performance- und
-  Error-Handling-Checklisten der `nodejs-reviewer`/`rust-reviewer` bleiben in Effective Flow –
-  der zentrale Skill ergänzt Architektur-Reasoning, ersetzt die Prüftiefe aber nicht.
-- **`decision-records` ↔ `apply-review`:** `apply-review` delegiert das ADR-Authoring an den
-  Skill. Effective Flows lebendes Slug-ADR-Modell (`src/shared/adr-convention.md`) ist dabei
-  **keine Divergenz mehr**, sondern die für dieses Repo **deklarierte Konvention**, der der
-  Skill folgt (er entdeckt und befolgt die Repo-Konvention), sowie der **minimale Fallback**,
-  wenn der Skill fehlt. Sowohl die ADR-_Craft_ („wann/was als ADR") als auch das Authoring
-  liegen beim Skill; Effective Flow behält nur Mapping, Approval/Status, Backlink und
-  Summary-Tracking. Die frühere `no-overlap`-Einstufung beruhte auf dem Prä-#85-Stand des
-  Skills.
-- **`pr-review`:** aktuell von keinem Tool empfohlen, überlappt aber stark mit
-  `src/tools/iterate.md` (PR-Feedback, CI-Recovery, Branch-Pflege) – ein naheliegender
-  künftiger Delegations-Kandidat.
+- **`codebase-improvement` ↔ `review`/`refactor`:** What is delegated is exclusively the
+  **tool-level reasoning** (via the shared include `src/shared/audit-reasoning-delegation.md`).
+  The **reviewer agents** (`frontend-reviewer`, `nodejs-reviewer`, `rust-reviewer`) and their
+  line-level checks stay untouched, as do the finding schema/IDs, the profiles/gates, and the
+  report/tracker/baseline/delivery contract. The classification stays `route-when-relevant`
+  because the skill does not cover the orchestration.
+- **`codebase-improvement` ↔ `plan`/`plan-review`:** The Firmo plan lifecycle (naming, status,
+  category metadata, storage, archive, open points, handoff, interactive write/review loop with
+  edit-only-referenced-plan) stays with Effective Flow. The **generic plan-quality and
+  plan-review judgment** comes from `codebase-improvement` via its own shared include
+  `src/shared/central-reasoning-delegation.md`. It is deliberately separated from the audit
+  include (`src/shared/audit-reasoning-delegation.md`, `review`/`refactor`) because the plan
+  artifact knows no finding/report/delivery contract but scorecard, plan review, and open
+  points; both includes, however, share the same rule (delegate the judgment, route specialists
+  via the relevance gate, minimal fallback). Specialists (`product-management`, `product-design`,
+  `effective-web`, `software-architecture`, `web-legal-compliance` …) are **not** hard-wired per
+  skill but loaded only when the boundary is crossed; an owner not yet installed (e.g.
+  `product-design`) is silently skipped until it is available.
+- **`software-architecture` ↔ reviewer:** The line-level security, performance, and
+  error-handling checklists of the `nodejs-reviewer`/`rust-reviewer` stay in Effective Flow –
+  the central skill adds architecture reasoning but does not replace the check depth.
+- **`decision-records` ↔ `apply-review`:** `apply-review` delegates the ADR authoring to the
+  skill. Effective Flow's living slug ADR model (`src/shared/adr-convention.md`) is **no longer a
+  divergence** but the convention **declared** for this repo, which the skill follows (it
+  discovers and follows the repo convention), as well as the **minimal fallback** when the skill
+  is missing. Both the ADR _craft_ ("when/what as an ADR") and the authoring lie with the skill;
+  Effective Flow keeps only mapping, approval/status, backlink, and summary tracking. The earlier
+  `no-overlap` classification was based on the pre-#85 state of the skill.
+- **`pr-review`:** currently recommended by no tool but overlaps strongly with
+  `src/tools/iterate.md` (PR feedback, CI recovery, branch maintenance) – an obvious future
+  delegation candidate.
 
-## Ownership-Check beim Erweitern
+## Ownership check when extending
 
-Beim Hinzufügen oder Erweitern eines Tools, Agents oder Shared-Includes gilt: **Trägt die
-Änderung eine zweite Kopie eines zentral geowneten Playbooks?** Falls ja, an den Skill
-delegieren und nur einen minimalen Fallback behalten; die Intersection oben ins Inventar
-eintragen und klassifizieren.
+When adding or extending a tool, agent, or shared include, the rule is: **Does the change carry a
+second copy of a centrally owned playbook?** If yes, delegate to the skill and keep only a
+minimal fallback; enter the intersection above into the inventory and classify it.
 
-## Siehe auch
+## See also
 
-- `src/shared/skill-discovery.md` – die operative Skill-Discovery-Regel inklusive Autoritäts-Vertrag.
-- [Architektur](architektur.md) – Gesamtaufbau von Effective Flow.
-- [`AGENTS.md`](../../AGENTS.md) – Skill-Discovery-Mechanik und Contributor-Konventionen.
+- `src/shared/skill-discovery.md` – the operative skill-discovery rule including the authority
+  contract.
+- [Architecture](architektur.md) – overall structure of Effective Flow.
+- [`AGENTS.md`](../../AGENTS.md) – skill-discovery mechanics and contributor conventions.

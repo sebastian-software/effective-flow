@@ -530,18 +530,18 @@ try {
     );
   }
 
-  const umsetzen = readFileSync(join(DOCS_USER_GUIDE, 'tools-umsetzen.md'), 'utf8');
-  const sharedGroup = umsetzen.match(/Tools\s*\(([^)]*?)\)\s*teilen dasselbe Grundmuster/);
+  const umsetzen = readFileSync(join(DOCS_USER_GUIDE, 'tools-implement.md'), 'utf8');
+  const sharedGroup = umsetzen.match(/Tools\s*\(([^)]*?)\)\s*share the same base pattern/);
   if (!sharedGroup) {
     throw new Error(
-      'docs guard (#107): tools-umsetzen.md is missing the shared plan-reference intro sentence ' +
-        '("… Tools (…) teilen dasselbe Grundmuster")',
+      'docs guard (#107): tools-implement.md is missing the shared plan-reference intro sentence ' +
+        '("… Tools (…) share the same base pattern")',
     );
   }
   for (const tool of ['build', 'fix', 'refactor', 'docs']) {
     if (!sharedGroup[1].includes(tool)) {
       throw new Error(
-        `docs guard (#107): "${tool}" must be listed in the shared plan-reference group in tools-umsetzen.md`,
+        `docs guard (#107): "${tool}" must be listed in the shared plan-reference group in tools-implement.md`,
       );
     }
   }
@@ -549,7 +549,7 @@ try {
     if (sharedGroup[1].includes(tool)) {
       throw new Error(
         `docs guard (#107): "${tool}" must not be in the shared plan-reference group in ` +
-          'tools-umsetzen.md (it has no plan-file input / is a router or continuation tool)',
+          'tools-implement.md (it has no plan-file input / is a router or continuation tool)',
       );
     }
   }
