@@ -1,39 +1,39 @@
-## Klärungs-Gate (vollständig geklärt?)
+## Clarification gate (fully clarified?)
 
-Bevor eine Grundlage (Plan-Datei, Issue oder Review-Finding) umgesetzt wird, prüft dieses
-Gate, ob sie **vollständig geklärt** und **ohne Rückfrage umsetzbar** ist. Das Gate greift
-an **beiden** Einstiegspunkten: in der Apply-Kette (`{{SKILL:apply}}` →
-`{{SKILL:apply-plan}}`/`{{SKILL:apply-issues}}`/`{{SKILL:apply-review}}`) **und** bei
-Direktaufruf eines umsetzenden Workflows (`{{SKILL:build}}`, `{{SKILL:fix}}`,
-`{{SKILL:refactor}}`, `{{SKILL:docs}}`) mit einer Plan-Datei.
+Before a basis (plan file, issue, or review finding) is implemented, this
+gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies
+at **both** entry points: in the apply chain (`{{SKILL:apply}}` →
+`{{SKILL:apply-plan}}`/`{{SKILL:apply-issues}}`/`{{SKILL:apply-review}}`) **and** on
+direct invocation of an implementing workflow (`{{SKILL:build}}`, `{{SKILL:fix}}`,
+`{{SKILL:refactor}}`, `{{SKILL:docs}}`) with a plan file.
 
-Leitprinzip: **Keine Annahmen außer absolut offensichtlichen.** Im Zweifel lieber eine
-Klärungsrunde zu viel als eine zu wenig.
+Guiding principle: **No assumptions except the absolutely obvious.** When in doubt, prefer one
+clarification round too many over one too few.
 
-### Abbruchkriterien (mindestens eines trifft zu → nicht umsetzen)
+### Abort criteria (at least one applies → do not implement)
 
-- **Offene Punkte:** Der Plan enthält einen Abschnitt `## Offene Punkte` bzw.
-  `## Open Points` mit anderen Einträgen als dem Leerzustand (`- Keine offenen Punkte.` /
+- **Open points:** the plan contains an `## Offene Punkte` or
+  `## Open Points` section with entries other than the empty state (`- Keine offenen Punkte.` /
   `- No open points.`).
-- **Fehlende messbare Akzeptanzkriterien:** Es gibt keine Akzeptanzkriterien, oder sie sind
-  ohne benannte Prüfung/Messgröße formuliert (kein konkreter Check, kein prüfbarer
-  Zielzustand).
-- **Umsetzungsrelevante Annahmen:** Der Plan enthält als Annahme markierte Unklarheiten, die
-  das Verhalten, den Scope oder das Risiko der Umsetzung wesentlich beeinflussen.
-- **Nicht self-contained (Issues/Findings):** Ein Issue oder Finding beschreibt die
-  gewünschte Umsetzung nicht ausreichend eigenständig, um sie ohne Rückfrage abzuarbeiten.
+- **Missing measurable acceptance criteria:** there are no acceptance criteria, or they are
+  formulated without a named check/metric (no concrete check, no verifiable
+  target state).
+- **Implementation-relevant assumptions:** the plan contains uncertainties marked as assumptions that
+  materially affect the behavior, scope, or risk of the implementation.
+- **Not self-contained (issues/findings):** an issue or finding does not describe the
+  intended implementation self-containedly enough to work through it without a follow-up question.
 
-Reine, unkritische Annahmen ohne Umsetzungsrelevanz blockieren nicht.
+Pure, uncritical assumptions with no implementation relevance do not block.
 
-### Verhalten am Gate
+### Behavior at the gate
 
-- **Bestanden** (kein Kriterium trifft zu): weiter zur Umsetzung.
-- **Nicht bestanden:** die betroffenen Punkte kurz benennen, in eine Klärungsrunde
-  zurückverweisen und den aktuellen Skill beenden, statt teilweise umzusetzen oder zu raten.
-  Zielskill der Klärung: eine Plan-Datei geht an `{{SKILL:plan}}` bzw. dessen vertieften
-  Plan-Review (`{{SKILL:review}} <plandatei>`); ein Issue oder Finding geht an
+- **Passed** (no criterion applies): continue to implementation.
+- **Not passed:** briefly name the affected points, refer back to a clarification round,
+  and end the current skill instead of partially implementing or guessing.
+  Target skill of the clarification: a plan file goes to `{{SKILL:plan}}` or its in-depth
+  plan review (`{{SKILL:review}} <planfile>`); an issue or finding goes to
   `{{SKILL:plan-issue}}`.
 
-Das Gate ersetzt die frühere separate „Offene Punkte prüfen“-Prüfung: Wo ein Workflow diese
-Prüfung bisher einzeln ausgeführt hat, gilt nun dieses Gate als die eine maßgebliche Instanz,
-um Doppelpflege zu vermeiden.
+The gate replaces the former separate "check open points" check: where a workflow previously
+ran this check on its own, this gate now serves as the single authoritative instance,
+to avoid duplicate maintenance.

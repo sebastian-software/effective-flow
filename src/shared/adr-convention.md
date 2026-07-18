@@ -1,75 +1,75 @@
-## Lebendes ADR-Modell
+## Living ADR model
 
-Effective Flow führt Architekturentscheidungen (ADRs) als **lebende Dokumente**: mutable
-Markdown-Dateien, die stets den aktuell gültigen Stand einer Entscheidung tragen. Es gibt
-keine Nummerierung und keine Supersede-Kette; die aktuelle Datei ist die Wahrheit. Dieser
-Baustein ist die maßgebliche Konvention für alle **von Effective Flow erzeugten** ADRs.
+Effective Flow keeps architecture decisions (ADRs) as **living documents**: mutable
+Markdown files that always carry the currently valid state of a decision. There is
+no numbering and no supersede chain; the current file is the truth. This
+building block is the authoritative convention for all ADRs **produced by Effective Flow**.
 
-### Form und Ort
+### Form and location
 
-- **Ort:** ADRs liegen im erkannten ADR-Verzeichnis des Projekts, Default `docs/adr/`.
-- **Dateiname:** nummernlos, kebab-case-Slug — `docs/adr/<slug>.md` (z. B.
+- **Location:** ADRs live in the project's detected ADR directory, default `docs/adr/`.
+- **File name:** numberless, kebab-case slug — `docs/adr/<slug>.md` (e.g.
   `docs/adr/effective-flow-project-setup.md`).
-- **Titel:** eine H1 mit dem sprechenden Titel — `# <Titel>` (kein `NNNN`-Präfix).
-- **Status:** ein `## Status`-Abschnitt hält den aktuellen Zustand. Kanonische Werte:
+- **Title:** an H1 with the descriptive title — `# <Title>` (no `NNNN` prefix).
+- **Status:** a `## Status` section holds the current state. Canonical values:
   `Aktiv`, `Abgelöst`, `Nicht umgesetzt`.
-- **Mutabilität:** eine bestehende ADR wird bei Änderung der Entscheidung **in-place**
-  aktualisiert (Inhalt und `## Status`), nicht dupliziert oder per Nachfolge-Record ersetzt.
-- **Nebenläufigkeit:** die Datei direkt vor dem Schreiben frisch einlesen.
+- **Mutability:** an existing ADR is updated **in place** when the decision changes
+  (content and `## Status`), not duplicated or replaced by a successor record.
+- **Concurrency:** read the file fresh immediately before writing.
 
-### Referenzierung
+### Referencing
 
-Referenzen auf ADRs erfolgen über **Slug oder Titel**, nicht über eine Nummer, z. B.
-`(ADR: <slug>)`. Slug-Referenzen bleiben über Inhaltsänderungen hinweg stabil.
+References to ADRs use the **slug or title**, not a number, e.g.
+`(ADR: <slug>)`. Slug references stay stable across content changes.
 
-### Rückwärts-Lese-Kompatibilität für nummerierte Alt-ADRs
+### Backward read compatibility for numbered legacy ADRs
 
-Vorhandene nummerierte Alt-ADRs (`NNNN-*.md`, H1 `# NNNN — Titel`) bleiben **lesbar und per
-Nummer auflösbar**. Es gibt **keine** verpflichtende Bulk-Umbenennung; Alt-ADRs werden nicht
-angetastet. Neue ADRs entstehen ausschließlich im lebenden Slug-Format. Das spiegelt Effective Flows
-etablierte Kompatibilitätslinie (Plan-Nummern per H1, `firmo-`/`effective-flow-`-Labels).
+Existing numbered legacy ADRs (`NNNN-*.md`, H1 `# NNNN — Title`) remain **readable and
+resolvable by number**. There is **no** mandatory bulk rename; legacy ADRs are not
+touched. New ADRs are created exclusively in the living slug format. This mirrors Effective Flow's
+established compatibility line (plan numbers via H1, `firmo-`/`effective-flow-` labels).
 
-### Verhältnis zum `decision-records`-Skill (deklarierte Konvention + Fallback)
+### Relationship to the `decision-records` skill (declared convention + fallback)
 
-Das oben beschriebene lebende Slug-Modell ist die **deklarierte ADR-Konvention dieses
-Repos**. Der Host-Skill `decision-records` ist der Domänen-Owner für die ADR-Craft (ob eine
-Entscheidung überhaupt ADR-würdig ist, Lifecycle, Supersession, Index); seine erste
-Operating-Regel ist, **die vorhandene Repo-Konvention zu entdecken und ihr zu folgen**, statt
-eine eigene zu erzwingen. Genau dieser Baustein ist diese Konvention — der Skill autort
-Effective-Flow-ADRs also im lebenden Slug-Format (Ort/Dateiname/Titel/Status/Mutabilität wie
-oben), nicht in einem immutabel-nummerierten.
+The living slug model described above is the **declared ADR convention of this
+repo**. The host skill `decision-records` is the domain owner for ADR craft (whether a
+decision is even ADR-worthy, lifecycle, supersession, index); its first
+operating rule is to **discover the existing repo convention and follow it**, rather than
+enforcing its own. This very building block is that convention — so the skill authors
+Effective Flow ADRs in the living slug format (location/file name/title/status/mutability as
+above), not in an immutably numbered one.
 
-Damit gilt der geschichtete Vertrag (siehe `skill-discovery.md`):
+The layered contract therefore applies (see `skill-discovery.md`):
 
-- **`decision-records` maßgeblich, wenn vorhanden.** Der Skill entscheidet, **ob** ein Finding
-  eine dauerhafte Entscheidung ist, und autort — falls ja — nach der hier deklarierten
-  Konvention. Deklariert das Zielrepo eine **eigene** ADR-Konvention (anderes Verzeichnis,
-  Titel-/Status-Format, Index), folgt der Skill dieser; das lebende Slug-Modell ist nur der
-  Default, wenn das Repo nichts anderes deklariert.
-- **Minimaler Fallback, wenn der Skill fehlt.** Ist `decision-records` nicht verfügbar (nicht
-  installiert, `skills.enabled: false` oder via `exclude` deaktiviert), autort das
-  aufrufende Tool selbst nach der **minimalen Fallback-Struktur** unten — **kein** stilles
-  Erfinden einer zweiten Konvention.
+- **`decision-records` is authoritative when present.** The skill decides **whether** a finding
+  is a durable decision and — if so — authors it according to the convention declared here.
+  If the target repo declares its **own** ADR convention (different directory,
+  title/status format, index), the skill follows that; the living slug model is only the
+  default when the repo declares nothing else.
+- **Minimal fallback when the skill is absent.** If `decision-records` is unavailable (not
+  installed, `skills.enabled: false`, or disabled via `exclude`), the
+  calling tool itself authors according to the **minimal fallback structure**
+  below — **no** silent invention of a second convention.
 
-Frühere Fassungen dieses Bausteins beschrieben das Slug-Modell als **bewusste Abweichung**
-gegenüber einem angeblich immutabel/nummerierten `decision-records`-Skill. Diese Prämisse ist
-überholt: `decision-records` unterstützt inzwischen ein deklariert-lebendes/mutables Modell
-(opt-in) und folgt ohnehin der Repo-Konvention. Das lebende Slug-Modell ist deshalb keine
-Divergenz mehr, sondern die vom Skill befolgte deklarierte Konvention.
+Earlier versions of this building block described the slug model as a **deliberate divergence**
+from an allegedly immutable/numbered `decision-records` skill. That premise is
+outdated: `decision-records` now supports a declared living/mutable model (opt-in)
+and follows the repo convention anyway. The living slug model is therefore no longer a
+divergence but the declared convention the skill follows.
 
-**Koexistenz.** Wo ein Projekt lieber ein anderes ADR-Modell fährt, deklariert es dessen
-Konvention im Zielrepo (der Skill folgt ihr) oder schaltet `decision-records` gezielt über die
-`skills`-Config (`include`/`exclude`, auch per-Agent/-Tool) zu oder ab.
+**Coexistence.** Where a project prefers to run a different ADR model, it declares that
+convention in the target repo (the skill follows it) or toggles `decision-records` deliberately via the
+`skills` config (`include`/`exclude`, also per-agent/-tool) on or off.
 
-### Minimale Fallback-Struktur (nur ohne `decision-records`)
+### Minimal fallback structure (only without `decision-records`)
 
-Kurze Kern-Struktur, damit ein aufrufendes Tool eine abgelehnte Entscheidung auch ohne den
-Skill als lebende Slug-ADR festhalten kann — **kein** zweites vollständiges ADR-Handbuch. Ort
-und Form wie unter „Form und Ort“; die Datei vor dem Schreiben frisch einlesen und eine
-thematisch passende bestehende ADR in-place aktualisieren statt zu duplizieren:
+A short core structure so that a calling tool can record a rejected decision as a living
+slug ADR even without the skill — **not** a second full ADR handbook. Location
+and form as under "Form and location"; read the file fresh before writing and update a
+thematically fitting existing ADR in place instead of duplicating:
 
 ```markdown
-# [Titel der Entscheidung]
+# [Title of the decision]
 
 ## Status
 
@@ -77,21 +77,21 @@ Nicht umgesetzt
 
 ## Kontext
 
-[Herkunft: Review-Report + Finding-ID, bzw. Issue-/Epic-Nummer im Remote-Modus]
+[Origin: review report + finding ID, or issue/epic number in remote mode]
 
 ## Entscheidung
 
-[Kurzbegründung, warum nicht umgesetzt wird]
+[Short rationale for why it is not implemented]
 
 ## Begründung
 
-[Vollständige Entwickler-Anmerkung bzw. `wontfix`-Begründung]
+[Full developer note or `wontfix` rationale]
 
 ## Quell-Finding
 
-[Finding-ID] aus [Quelle]: [Kurzfassung des Problems]  <!-- nachverfolgbarer Backlink -->
+[Finding ID] from [source]: [short version of the problem]  <!-- traceable backlink -->
 ```
 
-Nur **dauerhafte** Entscheidungen werden so festgehalten; eine reine Delivery-Ablehnung ohne
-dauerhafte Architektur-Wirkung bleibt im Review-Report bzw. Tracker-Artefakt und wird nicht in
-eine ADR gezwungen.
+Only **durable** decisions are recorded this way; a pure delivery rejection without a
+durable architectural effect stays in the review report or tracker artifact and is not forced into
+an ADR.

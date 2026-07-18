@@ -1,46 +1,47 @@
-## Delegation des Domänen-Urteils an zentrale Skills
+## Delegating the domain judgment to central skills
 
-Das **generische fachliche Urteil** des aufrufenden Tools — für Planung die
-Plan-Quality- und Plan-Review-Disziplin (Executable-Plan-Schärfe, Gap-/Drift-Prüfung,
-Scope, Evidenz, Verifikation, Wartungsfokus) — besitzt der zentrale Skill
-`codebase-improvement`. Effective Flow ist hier der **Artefakt-Orchestrator**, kein zweites
-Fach-Handbuch: Das eigene Source trägt **keine zweite Kopie** dieser Heuristiken, sondern
-delegiert das Urteil und normalisiert das Ergebnis in den eigenen Artefakt-Contract (Status,
-Scorecard/Befund-Form, offene Punkte, Handoff).
+The **generic technical judgment** of the calling tool — for planning, the plan-quality and
+plan-review discipline (executable-plan sharpness, gap/drift checking, scope, evidence,
+verification, maintenance focus) — is owned by the central skill `codebase-improvement`.
+Effective Flow is the **artifact orchestrator** here, not a second domain handbook: the tool's
+own source carries **no second copy** of these heuristics, but delegates the judgment and
+normalizes the result into its own artifact contract (status, scorecard/finding form, open
+points, handoff).
 
-### Was delegiert wird (das „Wie“ des Urteils)
+### What gets delegated (the "how" of the judgment)
 
-- generische Qualitäts-Heuristiken: Over-Engineering, Scope Creep, unausgesprochene Annahmen,
-  fehlende oder nicht messbare Akzeptanzkriterien, Edge Cases, Umsetzungsrisiken, Evidenz vs.
-  Raten, Verifizierbarkeit;
-- das Review-**Urteil** (welche Befunde bestehen und wie schwer sie wiegen) auf Artefakt-Ebene.
+- generic quality heuristics: over-engineering, scope creep, unspoken assumptions, missing or
+  non-measurable acceptance criteria, edge cases, implementation risks, evidence vs. guessing,
+  verifiability;
+- the review **judgment** (which findings hold and how heavily they weigh) at the artifact
+  level.
 
-Wende dafür `codebase-improvement` an, sofern verfügbar und für die konkrete Aufgabe relevant;
-es ist der **Default-Owner** für dieses generische Reasoning. Das Ergebnis bringst du danach in
-die Effective-Flow-Artefakt-Form.
+For this, apply `codebase-improvement`, provided it is available and relevant to the concrete
+task; it is the **default owner** for this generic reasoning. Afterwards you bring the result
+into the Effective Flow artifact form.
 
-### Spezialisten nur bei gekreuzter Boundary (eine generische Regel)
+### Specialists only at a crossed boundary (one generic rule)
 
-Deklarierte Domänen-Owner werden **nicht** hart pro Skill verdrahtet, sondern über **eine**
-Regel geladen: Kreuzt die konkrete Aufgabe die deklarierte Boundary eines Spezialisten, lade
-dessen Owner über das Relevanz-Gate (Baustein „Skill-Discovery“) und das Ownership-Inventar
-(`docs/developer-guide/skill-ownership.md`). Typische Owner:
+Declared domain owners are **not** hard-wired per skill, but loaded via **one** rule: if the
+concrete task crosses the declared boundary of a specialist, load its owner via the relevance
+gate (building block "Skill discovery") and the ownership inventory
+(`docs/developer-guide/skill-ownership.md`). Typical owners:
 
-- `product-management` — Product-Outcomes, what/why/for-whom, Prioritisierung, Release-Urteil;
-- `product-design` — Research, Problem-Framing, Information-Architecture, Flows, Prototyp;
-- `effective-web` — Browser-Implementierungs- und Barrierefreiheits-Detail;
-- weitere deklarierte Owner (z. B. `software-architecture`, `web-legal-compliance`) analog.
+- `product-management` — product outcomes, what/why/for-whom, prioritization, release judgment;
+- `product-design` — research, problem framing, information architecture, flows, prototype;
+- `effective-web` — browser implementation and accessibility detail;
+- further declared owners (e.g. `software-architecture`, `web-legal-compliance`) analogously.
 
-Das Relevanz-Gate **hält schmale Aufgaben schmal**: Ein kleiner Engineering-Plan lädt weder
-Product- noch Design-Owner, und Product-Discovery wird nicht erzwungen.
+The relevance gate **keeps narrow tasks narrow**: a small engineering plan loads neither
+product nor design owners, and product discovery is not forced.
 
-### Autoritäts-Vertrag und minimaler Fallback
+### Authority contract and minimal fallback
 
-Es gilt der geschichtete Vertrag aus dem Baustein „Skill-Discovery“: Effective Flow besitzt die
-**Orchestrierung** (Artefakt-Lifecycle, Status, offene Punkte, Handoff, User-Interaktion und
-die jeweilige No-Code-/Edit-Grenze), die zentralen Skills besitzen das **Domänen-Urteil**. Ist
-der maßgebliche Skill nicht verfügbar (nicht installiert, `skills.enabled: false` oder via
-`exclude` deaktiviert), greift ein **minimaler generischer Fallback**: eine kurze essentielle
-Kern-Checkliste (Over-Engineering, Scope Creep, fehlende messbare Akzeptanzkriterien, Edge
-Cases, Umsetzungsrisiken), damit das Tool funktionsfähig bleibt und sauber degradiert — **kein**
-vollständiges lokales Handbuch.
+The layered contract from the building block "Skill discovery" applies: Effective Flow owns the
+**orchestration** (artifact lifecycle, status, open points, handoff, user interaction, and the
+respective no-code/edit boundary), the central skills own the **domain judgment**. If the
+authoritative skill is not available (not installed, `skills.enabled: false`, or disabled via
+`exclude`), a **minimal generic fallback** applies: a short, essential core checklist
+(over-engineering, scope creep, missing measurable acceptance criteria, edge cases,
+implementation risks) so the tool stays functional and degrades cleanly — **not** a full local
+handbook.

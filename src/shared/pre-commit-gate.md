@@ -1,7 +1,7 @@
-## Pre-Commit-Gate
+## Pre-commit gate
 
-Vor jedem Commit müssen die im Projekt konfigurierten Prüfungen fehlerfrei durchlaufen. Typische Prüfungen sind Type-Checking, Linting und Tests — verwende die im Projekt definierten Scripts (z. B. `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm agent:check`).
+Before every commit, the checks configured in the project must pass without errors. Typical checks are type-checking, linting, and tests — use the scripts defined in the project (e.g. `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm agent:check`).
 
-- Wenn eine Prüfung Fehler meldet: behebe die Fehler zuerst, dann prüfe erneut.
-- Committe niemals Code, der diese Prüfungen nicht besteht.
-- Diese Regel gilt auch dann, wenn eine separate Verifikationsphase existiert — sie ist eine zusätzliche Absicherung, kein Ersatz.
+- If a check reports errors: fix the errors first, then check again.
+- Never commit code that does not pass these checks.
+- This rule applies even when a separate verification phase exists — it is an additional safeguard, not a replacement.

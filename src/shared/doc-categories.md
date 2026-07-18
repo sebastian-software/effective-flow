@@ -1,76 +1,75 @@
-## Doku-Kategorien
+## Doc categories
 
-Finale Dokumente aus dem Doku-Workflow werden ausschließlich in einer der vier festen Kategorien unter `docs/` abgelegt.
+Final documents from the documentation workflow are placed exclusively in one of the four fixed categories under `docs/`.
 
-| Kategorie       | Verzeichnis             | Zielgruppe                                                        |
-| --------------- | ----------------------- | ----------------------------------------------------------------- |
-| User-Guide      | `docs/user-guide/`      | End-User der Anwendung                                            |
-| Developer-Guide | `docs/developer-guide/` | Entwickler, die am Projekt mitarbeiten                            |
-| Operations      | `docs/operations/`      | Betrieb, Deployment, Monitoring, Infrastruktur                    |
-| Runbooks        | `docs/runbooks/`        | Step-by-Step-Prozeduren für Incident-Response und Routineaufgaben |
+| Category        | Directory               | Audience                                                        |
+| --------------- | ----------------------- | --------------------------------------------------------------- |
+| User guide      | `docs/user-guide/`      | End users of the application                                    |
+| Developer guide | `docs/developer-guide/` | Developers who contribute to the project                        |
+| Operations      | `docs/operations/`      | Operations, deployment, monitoring, infrastructure              |
+| Runbooks        | `docs/runbooks/`        | Step-by-step procedures for incident response and routine tasks |
 
-### Vorgegebene Standard-Doku-Struktur
+### Prescribed standard doc structure
 
-Solange der User bzw. der zugrunde liegende Plan nichts anderes vorgibt, gilt für die
-Projektdokumentation diese **Standard-Struktur** aus drei Rollen. Sie ist ein
-Prosa-Default: Der Doku-Workflow wendet sie an, wenn keine abweichende Struktur verlangt
-wird; ein ausdrücklicher Wunsch des Users (z. B. rein technische README ohne Marketing)
-hat immer Vorrang. Es gibt dafür **kein** Config-Feld.
+Unless the user or the underlying plan specifies otherwise, this **standard structure** of
+three roles applies to the project documentation. It is a prose default: the documentation
+workflow applies it when no different structure is required; an explicit wish of the user
+(e.g. a purely technical README without marketing) always takes precedence. There is **no**
+config field for this.
 
-1. **Root-`README.md` – Marketing-Einstieg.** Eine Marketing-Seite komplett aus
-   Benutzersicht: Nutzenversprechen zuerst, werbende Sprache erlaubt, kurz gehalten. Sie
-   wird vom Marketing-Agenten erstellt (nicht vom sachlichen Doku-Agenten) und endet mit
-   genau zwei weiterführenden Links (siehe unten).
-2. **Benutzerdokumentation → `docs/user-guide/`.** Komplett aus Benutzersicht: beschreibt
-   umfangreich Installation und Benutzung, optional mit FAQ und ähnlichen Ergänzungen.
-   Einstieg ist `docs/user-guide/README.md`.
-3. **Technische Dokumentation → `docs/developer-guide/`.** Für Entwickler und
-   Softwarearchitekten: Entwickler bekommen einen Überblick über die Software,
-   Softwarearchitekten können daraus ableiten, ob die Software aus technischer Sicht
-   genutzt werden sollte. Einstieg ist `docs/developer-guide/README.md`.
+1. **Root `README.md` – marketing entry point.** A marketing page entirely from the user's
+   perspective: value proposition first, promotional language allowed, kept short. It is
+   created by the marketing agent (not by the factual documentation agent) and ends with
+   exactly two follow-up links (see below).
+2. **User documentation → `docs/user-guide/`.** Entirely from the user's perspective:
+   describes installation and usage extensively, optionally with an FAQ and similar additions.
+   The entry point is `docs/user-guide/README.md`.
+3. **Technical documentation → `docs/developer-guide/`.** For developers and software
+   architects: developers get an overview of the software, software architects can derive from
+   it whether the software should be used from a technical standpoint. The entry point is
+   `docs/developer-guide/README.md`.
 
-**Zwei-Links-Regel für die Root-README.** Die Root-`README.md` endet mit genau zwei
-Links, in dieser Reihenfolge:
+**Two-links rule for the root README.** The root `README.md` ends with exactly two links, in
+this order:
 
-- erster Link → `docs/user-guide/README.md` (Benutzerdokumentation)
-- zweiter Link → `docs/developer-guide/README.md` (technische Dokumentation)
+- first link → `docs/user-guide/README.md` (user documentation)
+- second link → `docs/developer-guide/README.md` (technical documentation)
 
-Ein Link wird nur gesetzt, wenn sein Ziel existiert oder im selben Doku-Lauf miterstellt
-wird; sonst wird der Link ausgelassen und als offener Punkt vermerkt, damit keine toten
-Links entstehen.
+A link is only set if its target exists or is created in the same documentation run;
+otherwise the link is omitted and noted as an open point, so no dead links arise.
 
-### Dateinamen-Konvention
+### File name convention
 
-- topic-basierte Slugs in Kebab-Case, z. B. `installation.md`, `architecture.md`, `restart-database.md`
-- kein Datums- oder Nummern-Prefix; das Datums-Slug-Schema (mit erhaltener Legacy-Nummer) ist exklusiv für das Plan-Verzeichnis `<plan.dir>/` (aus `plan.dir` der Effective Flow-Konfiguration/Projektsetup-ADR, Default `docs/plan`)
-- Slugs müssen innerhalb ihrer Kategorie eindeutig sein
-- Dateiendung immer `.md`
+- topic-based slugs in kebab-case, e.g. `installation.md`, `architecture.md`, `restart-database.md`
+- no date or number prefix; the date-slug scheme (with a preserved legacy number) is exclusive to the plan directory `<plan.dir>/` (from `plan.dir` of the Effective Flow configuration/project-setup ADR, default `docs/plan`)
+- slugs must be unique within their category
+- file extension always `.md`
 
-### Verzeichnis-Regeln
+### Directory rules
 
-- `docs/user-guide/README.md` als kuratierter Einstiegspunkt mit Lese-Reihenfolge ist Pflicht, sobald mindestens ein User-Guide-Dokument existiert.
-- `docs/developer-guide/README.md` als kuratierter Einstiegspunkt ist Pflicht, sobald mindestens ein Developer-Guide-Dokument existiert. Er gibt Entwicklern einen Überblick und Softwarearchitekten eine Entscheidungsgrundlage und ist das Ziel des zweiten Links der Root-README (siehe „Vorgegebene Standard-Doku-Struktur“).
-- `docs/operations/` und `docs/runbooks/` haben standardmäßig keine README.
-- In `docs/runbooks/` sind thematische Unterordner erlaubt, z. B. `docs/runbooks/database/restart.md`. Sie sind optional; Pflicht erst, wenn die flache Liste unübersichtlich wird.
-- Leere Verzeichnisse werden nicht vorab angelegt. Ein Kategorie-Verzeichnis entsteht erst mit dem ersten Dokument darin.
+- `docs/user-guide/README.md` as a curated entry point with a reading order is mandatory as soon as at least one user-guide document exists.
+- `docs/developer-guide/README.md` as a curated entry point is mandatory as soon as at least one developer-guide document exists. It gives developers an overview and software architects a basis for decision-making, and is the target of the second link of the root README (see "Prescribed standard doc structure").
+- `docs/operations/` and `docs/runbooks/` have no README by default.
+- In `docs/runbooks/`, thematic subfolders are allowed, e.g. `docs/runbooks/database/restart.md`. They are optional; mandatory only once the flat list becomes unwieldy.
+- Empty directories are not created in advance. A category directory comes into being only with the first document in it.
 
-### Schreibgrenze
+### Write boundary
 
-- Der Doku-Workflow darf finale Dokumente ausschließlich in diese vier Verzeichnisse und deren Unterordner schreiben.
-- **Ausnahme Root-`README.md`:** Als Marketing-Einstieg der Standard-Doku-Struktur ist die Root-`README.md` ein sanktioniertes Schreibziel des Doku-Workflows und muss dafür nicht in jeder Plan-Tabelle einzeln genannt sein. Sie wird ausschließlich in dieser Marketing-Einstieg-Rolle geschrieben; existiert bereits eine Root-README, wird sie nicht still überschrieben, sondern der Ersatz mit dem User geklärt (analog zur Kollisionsregel für bestehende Ziel-Pfade).
-- Jede **andere** bestehende Datei außerhalb dieser Verzeichnisse darf nur dann geändert werden, wenn sie ausdrücklich in der `Betroffene Dateien`-Tabelle der zugrunde liegenden Plan-Datei genannt ist.
+- The documentation workflow may write final documents exclusively into these four directories and their subfolders.
+- **Exception root `README.md`:** As the marketing entry point of the standard doc structure, the root `README.md` is a sanctioned write target of the documentation workflow and does not need to be named individually in every plan table for that. It is written exclusively in this marketing-entry-point role; if a root README already exists, it is not silently overwritten but the replacement is clarified with the user (analogous to the collision rule for existing target paths).
+- Every **other** existing file outside these directories may only be changed if it is explicitly named in the `Affected files` table of the underlying plan file.
 
-### Plan-Kopfzeilen für Doku-Pläne
+### Plan headers for documentation plans
 
-Plan-Dateien mit `**Empfohlener Workflow:** Dokumentation` enthalten im Kopf zusätzlich zwei Zeilen direkt unter der Workflow-Empfehlung:
+Plan files with `**Recommended workflow:** Documentation` additionally contain two lines in the header directly under the workflow recommendation:
 
-- `**Doku-Kategorie:** user-guide | developer-guide | operations | runbooks`
-- `**Ziel-Pfad:** docs/<kategorie>/<topic-slug>.md`
+- `**Doc category:** user-guide | developer-guide | operations | runbooks`
+- `**Target path:** docs/<category>/<topic-slug>.md`
 
-Regeln:
+Rules:
 
-- Beide Zeilen müssen exakt so geschrieben sein, inklusive Fettdruck, Doppelpunkt und Kleinschreibung der Kategorie.
-- Die Kategorie in `**Doku-Kategorie:**` muss zum Verzeichnis-Präfix in `**Ziel-Pfad:**` passen.
-- Der Ziel-Pfad muss auf eine Datei innerhalb des passenden Kategorie-Verzeichnisses zeigen.
-- Beispiel: `**Doku-Kategorie:** runbooks` zusammen mit `**Ziel-Pfad:** docs/runbooks/database/restart.md`.
-- **Sonderfall Marketing-Einstieg:** Zielt der Doku-Plan auf die Root-`README.md`, wird `**Ziel-Pfad:** README.md` gesetzt und die Zeile `**Doku-Kategorie:**` **entfällt** – die Root-README ist keine der vier `docs/`-Kategorien. Nur in genau diesem Fall darf die Kategorie-Zeile fehlen; die Konsistenzregel „Kategorie passt zum Verzeichnis-Präfix“ bleibt für alle `docs/`-Ziele unverändert.
+- Both lines must be written exactly like this, including bold formatting, colon, and lowercasing of the category.
+- The category in `**Doc category:**` must match the directory prefix in `**Target path:**`.
+- The target path must point to a file within the matching category directory.
+- Example: `**Doc category:** runbooks` together with `**Target path:** docs/runbooks/database/restart.md`.
+- **Special case marketing entry point:** If the documentation plan targets the root `README.md`, `**Target path:** README.md` is set and the `**Doc category:**` line is **omitted** – the root README is not one of the four `docs/` categories. Only in exactly this case may the category line be absent; the consistency rule "category matches the directory prefix" remains unchanged for all `docs/` targets.

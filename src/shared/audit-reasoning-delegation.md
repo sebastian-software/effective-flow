@@ -1,43 +1,41 @@
-## Delegations-Vertrag: generisches Audit-Reasoning
+## Delegation contract: generic audit reasoning
 
-Der zentrale Skill `codebase-improvement` ist der **deklarierte Owner** des generischen
-Audit-Reasonings (Klassifikation `route-when-relevant`, siehe
-[Skill-Ownership](../../docs/developer-guide/skill-ownership.md)). Wo dieses Reasoning greift,
-ist seine Guidance **maßgeblich**, nicht optionaler Rat; dieses Tool trägt **keine zweite
-Kopie** des Audit-Playbooks – nur den Output-Contract, die Lifecycle-Constraints und einen
-minimalen Fallback.
+The central skill `codebase-improvement` is the **declared owner** of the generic audit
+reasoning (classification `route-when-relevant`, see
+[Skill ownership](../../docs/developer-guide/skill-ownership.md)). Where this reasoning applies,
+its guidance is **authoritative**, not optional advice; this tool carries **no second copy** of
+the audit playbook – only the output contract, the lifecycle constraints, and a minimal
+fallback.
 
-**Der Skill besitzt das generische Reasoning (das „Wie“):**
+**The skill owns the generic reasoning (the "how"):**
 
-- Repository-Reconnaissance und Projektkonventions-Erkennung,
-- Evidence-Standards sowie Finding-Validierung, -Rejection und Deduplizierungs-Beurteilung,
-- Leverage-basierte Priorisierung, Komplexitäts- und Over-Engineering-Linsen,
-- Gap-Analyse, Root-Cause-Platzierung, Scope-/Risiko-Kontrolle und Plan-Qualität.
+- repository reconnaissance and project-convention detection,
+- evidence standards plus finding validation, rejection, and deduplication judgment,
+- leverage-based prioritization, complexity and over-engineering lenses,
+- gap analysis, root-cause placement, scope/risk control, and plan quality.
 
-**Dieses Tool besitzt die Orchestrierung und den Output-Contract (das „Was/Wann“):**
+**This tool owns the orchestration and the output contract (the "what/when"):**
 
-- den `{{FIRMO}}`-Einstieg, das Scope-Gate und die Fortschrittsmeldungen,
-- die Agent-Auswahl, Parallelisierung und – im Review – die Verzeichnis-Split-Heuristik,
-- das Finding-Schema (IDs `R-XXXXXXX`, Schweregrad, Komplexität, Konfidenz-Gate), die
-  Report-/Tracker-Persistenz, Baselines/Verhaltens-Invarianz, Resumability und Delivery.
+- the `{{FIRMO}}` entry point, the scope gate, and the progress updates,
+- the agent selection, parallelization, and – in review – the directory-split heuristic,
+- the finding schema (IDs `R-XXXXXXX`, severity, complexity, confidence gate), the
+  report/tracker persistence, baselines/behavior invariance, resumability, and delivery.
 
-**Output-Contract an den Skill (verbindlich).** Übergib dem Skill das
-Effective-Flow-Finding-Schema (Datei+Zeile, Schweregrad, Komplexität, Bereich, Problem,
-Empfehlung, Konfidenz) als Zielformat und weise ihn an, **kein eigenes Report-, Issue- oder
-Delivery-Artefakt** anzulegen und **nicht** nach einer reinen Zusammenfassung zu stoppen. Er
-liefert Reasoning und Finding-Kandidaten in dieses Schema; die deterministischen Schwellen und
-Schlüssel (Konfidenz-Gate, Dedup-Schlüssel, Scorecard-Grenzen), die Persistenz, die Baseline
-und die Delivery besitzt ausschließlich dieses Tool. So laufen keine zwei
-Persistenz-/Lieferschleifen parallel.
+**Output contract to the skill (binding).** Hand the skill the Effective Flow finding schema
+(file+line, severity, complexity, area, problem, recommendation, confidence) as the target
+format and instruct it to create **no report, issue, or delivery artifact of its own** and
+**not** to stop after a mere summary. It delivers reasoning and finding candidates in this
+schema; the deterministic thresholds and keys (confidence gate, dedup keys, scorecard bounds),
+the persistence, the baseline, and the delivery are owned exclusively by this tool. That way no
+two persistence/delivery loops run in parallel.
 
-**Spezialzweige** routen weiterhin an ihre engeren Owner, wenn deren deklarierter Scope greift:
-`effective-web` (Frontend, Barrierefreiheit, CSS-Architektur, React), `software-architecture`
-(Architektur-Reasoning), `port-codebases` (Cross-Language-/Runtime-Migration),
-`smart-dependency-updater` (Dependency-Updates) und `decision-records` (ADR-Authoring) –
-konsistent mit dem [Ownership-Inventar](../../docs/developer-guide/skill-ownership.md).
+**Special branches** still route to their narrower owners when their declared scope applies:
+`effective-web` (frontend, accessibility, CSS architecture, React), `software-architecture`
+(architecture reasoning), `port-codebases` (cross-language/runtime migration),
+`smart-dependency-updater` (dependency updates), and `decision-records` (ADR authoring) –
+consistent with the [ownership inventory](../../docs/developer-guide/skill-ownership.md).
 
-**Minimaler Fallback (Skill fehlt).** Ist `codebase-improvement` nicht verfügbar (nicht
-installiert, `skills.enabled: false` oder via `exclude` deaktiviert), greift die kurze
-Kern-Guidance im Abschnitt „Minimaler Fallback ohne Skill“ dieses Tools. Sie hält den Workflow
-funktionsfähig, hält aber **kein** zweites vollständiges Audit-Handbuch vor – volle Tiefe kommt
-nur mit dem Skill.
+**Minimal fallback (skill missing).** If `codebase-improvement` is not available (not
+installed, `skills.enabled: false`, or disabled via `exclude`), the short core guidance in this
+tool's "Minimal fallback without skill" section applies. It keeps the workflow functional but
+holds **no** second full audit handbook on hand – full depth comes only with the skill.

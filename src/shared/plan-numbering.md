@@ -1,70 +1,69 @@
-## Plan-Datei-Konvention (Naming, Migration, Archiv)
+## Plan file convention (naming, migration, archive)
 
-Das Plan-Verzeichnis ist über die Effective Flow-Konfiguration (Projektsetup-ADR) `plan.dir` konfigurierbar (Default
-`docs/plan`). Im Folgenden steht `<plan.dir>` für dieses Verzeichnis, `<plan.dir>/archive`
-für sein Archiv.
+The plan directory is configurable via the Effective Flow configuration (project-setup ADR) `plan.dir` (default
+`docs/plan`). In the following, `<plan.dir>` stands for this directory and `<plan.dir>/archive`
+for its archive.
 
-Plan-Dateien liegen unter `<plan.dir>/`. Der Dateiname trägt ein **ISO-Datums-Präfix**
-statt einer durchlaufenden Nummer. Dadurch entfällt jede Nummern-Reservierung und
-Kollisionsauflösung: Ein Plan wird schlicht beim Befüllen unter seinem endgültigen Namen
-geschrieben.
+Plan files live under `<plan.dir>/`. The file name carries an **ISO date prefix**
+instead of a running number. This removes any need for number reservation and
+collision resolution: a plan is simply written under its final name when it is populated.
 
-### Neuer Plan: Datum + Slug
+### New plan: date + slug
 
-- Dateiname: `<plan.dir>/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` ist das Erstellungsdatum
-  (ISO, z. B. aus `date +%F`). `<slug>` ist ein Kebab-Case-Slug aus dem Titel (nur `a–z`,
-  `0–9`, Bindestrich).
-- **Keine Vorab-Reservierung, kein Stub, keine Nummer.** Die Datei entsteht erst, wenn der
-  Plan tatsächlich geschrieben wird. Es gibt keinen Reservierungs-Zeitstempel, keinen
-  Read-back und keine Umnummerierung.
-- **Namenskollision am selben Tag:** Existiert der Name bereits, hänge ein numerisches
-  Suffix an (`YYYY-MM-DD-<slug>-2.md`, `-3`, …). Kein stilles Überschreiben.
-- Die H1 des Plans ist der Titel ohne Nummer: `# <Titel>`.
+- File name: `<plan.dir>/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` is the creation date
+  (ISO, e.g. from `date +%F`). `<slug>` is a kebab-case slug derived from the title (only `a–z`,
+  `0–9`, hyphen).
+- **No advance reservation, no stub, no number.** The file is created only when the
+  plan is actually written. There is no reservation timestamp, no
+  read-back, and no renumbering.
+- **Name collision on the same day:** if the name already exists, append a numeric
+  suffix (`YYYY-MM-DD-<slug>-2.md`, `-3`, …). No silent overwriting.
+- The plan's H1 is the title without a number: `# <Title>`.
 
-### Migration alter Pläne (NNNN → Datum)
+### Migration of old plans (NNNN → date)
 
-Frühere Pläne trugen einen vierstelligen Nummern-Prefix (`NNNN-slug.md`, z. B.
-`0030-feature-name.md`). Diese werden **einmalig** auf das Datums-Schema umgestellt:
+Earlier plans carried a four-digit number prefix (`NNNN-slug.md`, e.g.
+`0030-feature-name.md`). These are converted to the date scheme **once**:
 
-- Zielname: `YYYY-MM-DD-NNNN-slug.md`, wobei `YYYY-MM-DD` das **Umstellungsdatum** ist und
-  die alte `NNNN` als stabile Referenz erhalten bleibt. Die H1 (`# NNNN: Titel`) bleibt
-  **unverändert** – die Nummer bleibt dort als Referenzanker.
-- Umbenennung im Git-Repo mit `git mv`, um die Historie zu erhalten.
-- **Bulk-Durchlauf** über das gesamte Plan-Verzeichnis. Format-Check pro Datei: Ein Name,
-  der mit vier Ziffern und Bindestrich beginnt (`^\d{4}-`), aber **nicht** bereits ein
-  Datums-Präfix trägt (`^\d{4}-\d{2}-\d{2}-`), ist Altformat und wird migriert. Bereits
-  migrierte Dateien werden übersprungen (idempotent).
-- **Auslöser:** (a) beim Erstellen eines neuen Plans und (b) beim Einlesen eines Plans,
-  wenn dabei ein Altformat entdeckt wird. **Nicht** bei jedem Effective Flow-Aufruf – nur bei
-  Plan-Erstellung oder Plan-Einlesen, um keine Zeit zu verlieren.
+- Target name: `YYYY-MM-DD-NNNN-slug.md`, where `YYYY-MM-DD` is the **conversion date** and
+  the old `NNNN` is retained as a stable reference. The H1 (`# NNNN: Title`) stays
+  **unchanged** — the number remains there as a reference anchor.
+- Rename in the Git repo with `git mv` to preserve the history.
+- **Bulk pass** across the entire plan directory. Format check per file: a name
+  that starts with four digits and a hyphen (`^\d{4}-`) but does **not** already carry a
+  date prefix (`^\d{4}-\d{2}-\d{2}-`) is old format and is migrated. Files that have already
+  been migrated are skipped (idempotent).
+- **Trigger:** (a) when creating a new plan and (b) when reading a plan,
+  if an old format is discovered in the process. **Not** on every Effective Flow invocation — only on
+  plan creation or plan reading, to avoid losing time.
 
-### Archiv umgesetzter Pläne
+### Archive of implemented plans
 
-`<plan.dir>/` enthält nur **offene** oder **in Umsetzung** befindliche Pläne. Ein
-vollständig umgesetzter Plan wird nach `<plan.dir>/archive/` verschoben; der
-Umgesetzt-Marker bleibt in der Datei erhalten.
+`<plan.dir>/` contains only **open** or **in-progress** plans. A
+fully implemented plan is moved to `<plan.dir>/archive/`; the
+Umgesetzt/Implemented marker is retained in the file.
 
-- Der Verschiebe-Zeitpunkt ist an das **Delivery-Event** gekoppelt (PR geöffnet bzw.
-  Worktree-Branch gemergt): Der umsetzende Workflow setzt den Statusmarker auf
-  `Umgesetzt`/`Implemented` und verschiebt die Datei per `git mv` nach `<plan.dir>/archive/`
-  (Verzeichnis bei Bedarf anlegen), noch im Liefer-Branch, sodass die Verschiebung Teil
-  desselben PRs/Merges ist (Umsetzungs-Doku). Details siehe „Delivery- und
-  Worktree-Integration“.
-- `{{SKILL:open-plans}}` listet nur die oberste Ebene von `<plan.dir>/`, nicht das Archiv.
-- Auflöser (siehe unten) suchen in `<plan.dir>/` **und** `<plan.dir>/archive/`.
+- The move is coupled to the **delivery event** (PR opened or
+  worktree branch merged): the implementing workflow sets the status marker to
+  `Umgesetzt`/`Implemented` and moves the file via `git mv` to `<plan.dir>/archive/`
+  (creating the directory if needed), still on the delivery branch, so that the move is part
+  of the same PR/merge (implementation documentation). For details see "Delivery and
+  worktree integration".
+- `{{SKILL:open-plans}}` lists only the top level of `<plan.dir>/`, not the archive.
+- Resolvers (see below) search in `<plan.dir>/` **and** `<plan.dir>/archive/`.
 
-### Plan-Referenz auflösen
+### Resolve a plan reference
 
-Eine Plan-Referenz kann sein: vollständiger Pfad, Dateiname, Legacy-Nummer oder
-Titel-Slug. Suche in `<plan.dir>/` **und** `<plan.dir>/archive/`.
+A plan reference can be: a full path, a file name, a legacy number, or a
+title slug. Search in `<plan.dir>/` **and** `<plan.dir>/archive/`.
 
-- **Legacy-Nummer eindeutig auflösen:** Eine vierstellige Nummer `NNNN` wird **primär über
-  die H1** `# NNNN: …` aufgelöst, nicht über das Dateinamen-Segment. Grund: Ein neuer Plan
-  mit einem Slug, der mit vier Ziffern beginnt (Titel „2024 Retrospektive“ →
-  `YYYY-MM-DD-2024-retrospektive.md`), ist vom migrierten Legacy-Muster
-  `YYYY-MM-DD-NNNN-slug.md` am Dateinamen nicht unterscheidbar. Nur migrierte Altpläne
-  tragen eine `# NNNN:`-H1; neue Pläne haben `# <Titel>` ohne Nummer. Die H1 ist damit der
-  sichere Diskriminator; das Dateinamen-Segment ist nur sekundäres Signal, wenn die H1
-  fehlt.
-- **Slug** ist der stabile Anker für neue Pläne (die keine Nummer tragen).
-- Passt mehr als eine Datei, frage nach; wähle nie heuristisch die „neueste“.
+- **Resolve a legacy number unambiguously:** a four-digit number `NNNN` is resolved **primarily via
+  the H1** `# NNNN: …`, not via the file name segment. Reason: a new plan
+  with a slug that starts with four digits (title "2024 Retrospective" →
+  `YYYY-MM-DD-2024-retrospective.md`) is indistinguishable at the file name from the migrated
+  legacy pattern `YYYY-MM-DD-NNNN-slug.md`. Only migrated old plans
+  carry a `# NNNN:` H1; new plans have `# <Title>` without a number. The H1 is thus the
+  reliable discriminator; the file name segment is only a secondary signal when the H1
+  is missing.
+- **The slug** is the stable anchor for new plans (which carry no number).
+- If more than one file matches, ask; never heuristically pick the "newest".

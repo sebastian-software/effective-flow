@@ -1,66 +1,68 @@
-## Offene Review-Finding-Reports
+## Open review-finding reports
 
-Wenn ein Workflow-Review Findings erzeugt, die vor Abschluss nicht direkt behoben werden, schreibe diese offenen Findings zusätzlich in eine Review-Report-Datei unter `.effective-flow/review/`.
+When a workflow review produces findings that are not fixed directly before completion, write these open findings additionally into a review-report file under `.effective-flow/review/`.
 
-Ziel:
+Goal:
 
-- Offene oder bewusst nicht umgesetzte Findings gehen nicht in langen Plan-Dateien unter.
-- `{{SKILL:apply-review}}` kann die Findings später im bekannten Reportformat verarbeiten.
-- Die Plan-Datei bleibt Abschlussdokumentation und verweist nur auf den externen Report.
+- Open or deliberately unimplemented findings do not get lost in long plan files.
+- `{{SKILL:apply-review}}` can process the findings later in the familiar report format.
+- The plan file stays completion documentation and only points to the external report.
 
-Gilt für Findings mit Status:
+Applies to findings with status (canonical report tokens stay in the report's language; the
+current `{{SKILL:review}}` format is German):
 
 - `Offen`
 - `Nicht umgesetzt`
-- `Nicht umgesetzt (ADR: <slug>)` oder vergleichbare ADR-Status
+- `Nicht umgesetzt (ADR: <slug>)` or comparable ADR statuses
 
-Nicht in den externen Report übernehmen:
+Do not carry over into the external report:
 
-- Findings mit Status `Behoben`
-- Findings, die während des Workflows direkt gefixt wurden
-- rein informative Reviewer-Kommentare ohne konkrete Empfehlung
+- Findings with status `Behoben`
+- Findings that were fixed directly during the workflow
+- purely informational reviewer comments without a concrete recommendation
 
-### Report-Pfad
+### Report path
 
-1. Erstelle `.effective-flow/review/` falls nötig.
-2. Wenn der Workflow eine Plan-Datei als Grundlage hat, verwende bevorzugt:
+1. Create `.effective-flow/review/` if needed.
+2. If the workflow has a plan file as its basis, prefer:
    - `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>.md`
-   - bei Kollision: `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>-1.md`, `-2`, ...
-3. Wenn keine Plan-Datei als Grundlage existiert, verwende:
+   - on collision: `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>-1.md`, `-2`, ...
+3. If no plan file exists as a basis, use:
    - `.effective-flow/review/review-report-YYYY-MM-DD-WORKFLOW.md`
-   - bei Kollision: `.effective-flow/review/review-report-YYYY-MM-DD-WORKFLOW-1.md`, `-2`, ...
-4. Schreibe oben im Report immer die Herkunft:
-   - `**Ursprungsplan:** [Pfad oder „Keiner"]`
+   - on collision: `.effective-flow/review/review-report-YYYY-MM-DD-WORKFLOW-1.md`, `-2`, ...
+4. Always write the origin at the top of the report (canonical German header tokens, matched by
+   the still-German `{{SKILL:review}}` format):
+   - `**Ursprungsplan:** [path or "Keiner"]`
    - `**Quell-Workflow:** {{SKILL:build}} / {{SKILL:fix}} / {{SKILL:refactor}} / {{SKILL:maintain}}`
-   - `**Quell-Review:** [Reviewer-Skill oder Phase]`
+   - `**Quell-Review:** [reviewer skill or phase]`
 
-### Finding-IDs und Memory
+### Finding IDs and memory
 
-Dieser Report verwendet dieselben globalen Finding-IDs wie `{{SKILL:review}}`.
+This report uses the same global finding IDs as `{{SKILL:review}}`.
 
-1. Lies `.effective-flow/memory.json`, falls vorhanden.
-2. Falls die Datei fehlt, starte mit `lastFindingNumber: 0`.
-3. Nummeriere neue Findings fortlaufend ab `lastFindingNumber + 1` mit sieben Stellen, z. B. `R-0000021`.
-4. Schreibe nach dem Report die höchste vergebene Nummer zurück nach `.effective-flow/memory.json`.
-5. Erhalte vorhandene Felder wie `configMigration` unverändert.
-6. Wenn Memory nicht geschrieben werden kann, informiere den User und nenne den Reportpfad trotzdem.
+1. Read `.effective-flow/memory.json`, if present.
+2. If the file is missing, start with `lastFindingNumber: 0`.
+3. Number new findings consecutively from `lastFindingNumber + 1` with seven digits, e.g. `R-0000021`.
+4. After the report, write the highest assigned number back to `.effective-flow/memory.json`.
+5. Preserve existing fields such as `configMigration` unchanged.
+6. If memory cannot be written, inform the user and name the report path anyway.
 
-### Reportformat
+### Report format
 
-Verwende das kanonische Bericht-Format aus `{{SKILL:review}}` Abschnitt „Bericht-Format“. Dupliziere das Template hier nicht und weiche nicht davon ab.
+Use the canonical report format from `{{SKILL:review}}` section "Report format". Do not duplicate the template here and do not deviate from it.
 
-Zusätzliche Header-Felder für Workflow-Reports:
+Additional header fields for workflow reports:
 
-- Setze direkt unter `**Projekt-Typ:** ...` diese drei Zeilen:
-  - `**Ursprungsplan:** [<plan.dir>/YYYY-MM-DD-<slug>.md oder Keiner]` (`<plan.dir>` ist das Plan-Verzeichnis aus `plan.dir` der Effective Flow-Konfiguration/Projektsetup-ADR, Default `docs/plan`)
+- Directly below `**Projekt-Typ:** ...` set these three lines:
+  - `**Ursprungsplan:** [<plan.dir>/YYYY-MM-DD-<slug>.md or Keiner]` (`<plan.dir>` is the plan directory from `plan.dir` of the Effective Flow configuration/project-setup ADR, default `docs/plan`)
   - `**Quell-Workflow:** [{{SKILL:build}} / {{SKILL:fix}} / {{SKILL:refactor}} / {{SKILL:maintain}}]`
-  - `**Quell-Review:** [Reviewer oder Phase]`
-- Alle Tabellen und Finding-Blöcke bleiben im `{{SKILL:review}}`-Format.
-- Die `## Übersprungene Findings (Designentscheidungen)`-Sektion wird nur ausgegeben, wenn solche Findings vorhanden sind.
+  - `**Quell-Review:** [reviewer or phase]`
+- All tables and finding blocks stay in the `{{SKILL:review}}` format.
+- The `## Übersprungene Findings (Designentscheidungen)` section is only emitted when such findings are present.
 
-Regeln:
+Rules:
 
-- Kritische Findings dürfen nur dann in diesem Report verbleiben, wenn der User ausdrücklich entschieden hat, den Workflow trotz offenem kritischem Finding abzuschließen.
-- Bestimme die Aktion wie bei `{{SKILL:review}}`: Defekt → `{{SKILL:fix}}`, Strukturproblem → `{{SKILL:refactor}}`, fehlende Funktionalität oder Schutzmechanismus → `{{SKILL:build}}`, reine Dokumentationslücke → `{{SKILL:docs}}`.
-- Trage niemals automatisch etwas in `Entwickler-Anmerkung` ein. Dieses Feld ist ausschließlich für manuelle Notizen des Entwicklers reserviert und bleibt in automatisch erzeugten Reports leer. Wenn ein Finding bewusst nicht umgesetzt wurde und ein ADR existiert, vermerke die ADR-Referenz im `Status` per Slug, z. B. `Nicht umgesetzt (ADR: <slug>)`.
-- Gib dem User nach dem Schreiben den Reportpfad aus.
+- Critical findings may only remain in this report if the user has explicitly decided to complete the workflow despite an open critical finding.
+- Determine the action as in `{{SKILL:review}}`: defect → `{{SKILL:fix}}`, structural problem → `{{SKILL:refactor}}`, missing functionality or safeguard → `{{SKILL:build}}`, pure documentation gap → `{{SKILL:docs}}`.
+- Never enter anything automatically in `Entwickler-Anmerkung`. This field is reserved exclusively for the developer's manual notes and stays empty in automatically generated reports. When a finding was deliberately not implemented and an ADR exists, note the ADR reference in the `Status` via slug, e.g. `Nicht umgesetzt (ADR: <slug>)`.
+- After writing, output the report path to the user.
