@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.48.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.47.0...effective-flow-v1.48.0) (2026-07-18)
+
+
+### Features
+
+* **ci:** deliver consumer docs to the delivery branch on release ([#146](https://github.com/sebastian-software/effective-flow/issues/146)) ([0f539b8](https://github.com/sebastian-software/effective-flow/commit/0f539b8782a53352c293f6368dcc5c74c4a13470))
+
+
+### Bug Fixes
+
+* **ci:** deliver a renovate.json to main that targets develop ([#154](https://github.com/sebastian-software/effective-flow/issues/154)) ([6bb5b78](https://github.com/sebastian-software/effective-flow/commit/6bb5b781ab5204304dec7953fa0d207c209a9dbd))
+* **ci:** point release-please at the develop source branch ([#144](https://github.com/sebastian-software/effective-flow/issues/144)) ([997b2ed](https://github.com/sebastian-software/effective-flow/commit/997b2ed7fffb6b8b2cd1655b04d56ff32d8acb9f)), closes [#92](https://github.com/sebastian-software/effective-flow/issues/92)
+* **deps:** update actions/setup-node action to v7 ([#157](https://github.com/sebastian-software/effective-flow/issues/157)) ([8d873b4](https://github.com/sebastian-software/effective-flow/commit/8d873b42d2970a25c737f1c3a1855978cc7612c4))
+* **deps:** update oxc toolchain to ^0.59.0 ([#155](https://github.com/sebastian-software/effective-flow/issues/155)) ([09f9699](https://github.com/sebastian-software/effective-flow/commit/09f9699ede8e3bcf1e3574af020c56d9594183ad))
+* **deps:** update pnpm to v11.11.0 ([#156](https://github.com/sebastian-software/effective-flow/issues/156)) ([64cd7b6](https://github.com/sebastian-software/effective-flow/commit/64cd7b640317f0de36331e2a57fc20970dd517bf))
+
 ## [1.47.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.46.0...effective-flow-v1.47.0) (2026-07-18)
 
 
