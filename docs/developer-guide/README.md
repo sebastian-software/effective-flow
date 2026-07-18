@@ -23,6 +23,8 @@ Codex). Es gibt keine Laufzeitanwendung – du editierst `src/`, nie `dist/`.
    aktuellen Skillset.
 6. [Release und Installation](release-und-installation.md) – Versionierung über
    release-please, Veröffentlichung und Installation des gebauten Skills.
+7. [Terminology](terminology.md) – verbindliches DE→EN-Glossar für die Sprach-Migration
+   (Englisch als Default, Deutsch weiterhin zulässig).
 
 ## Siehe auch
 
