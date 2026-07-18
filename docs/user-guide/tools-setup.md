@@ -71,7 +71,7 @@ report or after an update.
 **Interplay:** The displayed version comes from `.release-please-manifest.json` and is
 maintained via release-please (versions and `CHANGELOG.md` are generated automatically from
 Conventional-Commit messages, not manually). For details on the release and installation
-process, see [Release and Installation](../developer-guide/release-und-installation.md).
+process, see [Release and Installation](../developer-guide/release-and-installation.md).
 
 ## Further reading
 
@@ -79,5 +79,5 @@ process, see [Release and Installation](../developer-guide/release-und-installat
 - [Worktree and Delivery](worktree-and-delivery.md) – effect of `worktree.*`/`delivery.*`
 - [Remote Tracker](remote-tracker.md) – effect of `tracker.*`
 - [Skill Discovery](skill-discovery.md) – effect of `skills.*`
-- [Release and Installation](../developer-guide/release-und-installation.md) – how Effective Flow
+- [Release and Installation](../developer-guide/release-and-installation.md) – how Effective Flow
   is installed and versioned

@@ -10,18 +10,18 @@ is no runtime application – you edit `src/`, never `dist/`.
 
 ## Reading order
 
-1. [Architecture](architektur.md) – repository layout: source-to-dist model, the thin router
+1. [Architecture](architecture.md) – repository layout: source-to-dist model, the thin router
    with lazy loading, and the split across the two harnesses.
 2. [Build system](build-system.md) – how `build.mjs` transforms `src/` into `dist/`: invocation,
    placeholder syntax, build guards, and the unit test suite.
-3. [Configuration](konfiguration.md) – the Effective Flow configuration in the living
+3. [Configuration](configuration.md) – the Effective Flow configuration in the living
    project-setup ADR, with the developer-oriented overview of all config blocks.
-4. [Plan conventions](plan-konventionen.md) – naming scheme, canonical status markers, and
+4. [Plan conventions](plan-conventions.md) – naming scheme, canonical status markers, and
    archiving of the plan files under `<plan.dir>/`.
 5. [Skill ownership](skill-ownership.md) – the boundary between Effective Flow orchestration
    and central skill expertise (layered contract), including the ownership inventory over the
    current skillset.
-6. [Release and installation](release-und-installation.md) – versioning via release-please,
+6. [Release and installation](release-and-installation.md) – versioning via release-please,
    publishing, and installation of the built skill.
 7. [Terminology](terminology.md) – binding DE→EN glossary for the language migration (English
    as default, German still permitted).

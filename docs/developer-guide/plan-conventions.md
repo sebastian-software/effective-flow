@@ -100,6 +100,6 @@ preserved legacy number stays exclusive to the plan directory.
 
 ## Further reading
 
-- [`architektur.md`](architektur.md) – repo structure into which `<plan.dir>/` is placed.
-- [`release-und-installation.md`](release-und-installation.md) – versioning and release.
+- [`architecture.md`](architecture.md) – repo structure into which `<plan.dir>/` is placed.
+- [`release-and-installation.md`](release-and-installation.md) – versioning and release.
 - [`AGENTS.md`](../../AGENTS.md) – canonical plan-file rules.

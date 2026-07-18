@@ -392,12 +392,12 @@ test('end-to-end: fixture source renders to the expected skill body', () => {
 test('missingCategoryReadmes flags mandatory categories that hold docs but no README', () => {
   // developer-guide has documents but no README -> flagged
   assert.deepEqual(
-    missingCategoryReadmes({ 'developer-guide': ['architektur.md', 'build-system.md'] }),
+    missingCategoryReadmes({ 'developer-guide': ['architecture.md', 'build-system.md'] }),
     ['developer-guide'],
   );
   // README present -> not flagged
   assert.deepEqual(
-    missingCategoryReadmes({ 'developer-guide': ['README.md', 'architektur.md'] }),
+    missingCategoryReadmes({ 'developer-guide': ['README.md', 'architecture.md'] }),
     [],
   );
   // empty or README-only category -> not flagged
@@ -409,7 +409,7 @@ test('missingCategoryReadmes flags mandatory categories that hold docs but no RE
   assert.deepEqual(
     missingCategoryReadmes({
       'user-guide': ['README.md', 'installation.md'],
-      'developer-guide': ['architektur.md'],
+      'developer-guide': ['architecture.md'],
     }),
     ['developer-guide'],
   );

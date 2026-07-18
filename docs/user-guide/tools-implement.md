@@ -132,7 +132,7 @@ asks for it.
 format of the target language – JSDoc/TSDoc for JS/TS, rustdoc doc comments and crate/module docs for
 Rust; in mixed Rust/JS repos the docs route per file/domain, and for Cargo projects
 the `code-validator` additionally checks `cargo doc` and doctests. For details on the category and
-naming convention, see [Plan conventions](../developer-guide/plan-konventionen.md).
+naming convention, see [Plan conventions](../developer-guide/plan-conventions.md).
 
 ## `/effective-flow maintain`
 

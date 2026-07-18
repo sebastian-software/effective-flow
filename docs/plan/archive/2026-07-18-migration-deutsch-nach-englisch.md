@@ -1,6 +1,6 @@
 # Migration der aktiven Repo-Inhalte von Deutsch nach Englisch
 
-**Planungsstatus:** Nicht umgesetzt
+**Planungsstatus:** Umgesetzt
 **Quelle:** /firmo plan
 **Empfohlener Workflow:** Refactoring (`/firmo refactor`)
 
@@ -165,27 +165,27 @@ unverändert** (nur Textinhalt übersetzen); danach `pnpm agent:check` + `pnpm t
 
 ## Akzeptanzkriterien
 
-- [ ] `src/**` (Tools, Agents, Shared, Router) enthält in der **aktiven** Instruktions-Prosa,
+- [x] `src/**` (Tools, Agents, Shared, Router) enthält in der **aktiven** Instruktions-Prosa,
       `description`, `catalogHint` und `ask`-Blöcken kein Deutsch mehr (außer bewusst als
       Rückwärtskompatibilität erhaltene DE-Marker/-Erkennung).
-- [ ] `docs/developer-guide/` und `docs/user-guide/` sind vollständig englisch; deutsche
+- [x] `docs/developer-guide/` und `docs/user-guide/` sind vollständig englisch; deutsche
       Dateislugs sind auf englische umbenannt und alle internen Links aufgelöst; `README.md` ist
       englisch.
-- [ ] `src/shared/language-rules.md` und `AGENTS.md` deklarieren Englisch als Doku-/Instruktions-
+- [x] `src/shared/language-rules.md` und `AGENTS.md` deklarieren Englisch als Doku-/Instruktions-
       **Default** und benennen Deutsch ausdrücklich als weiterhin **zulässige** Projekt-/Marker-
       sprache (kein Deprecation).
-- [ ] Deutsch bleibt als Markersprache voll funktionsfähig: ein Plan mit `plan.markerLanguage:
+- [x] Deutsch bleibt als Markersprache voll funktionsfähig: ein Plan mit `plan.markerLanguage:
 "de"` bzw. deutschem Marker wird korrekt erzeugt und erkannt (Default ohne Signal = EN).
-- [ ] Die 81 archivierten Pläne und der 1 aktive Plan sind **unverändert** deutsch (kein Diff im
+- [x] Die 81 archivierten Pläne und der 1 aktive Plan sind **unverändert** deutsch (kein Diff im
       Archiv/an aktiven Plänen); `main` (Delivery-Branch) wird nicht manuell angefasst.
-- [ ] Der build-emittierte Lazy-Include-Pointer (`renderLazyPointer`) und die `when`-Bedingungen
+- [x] Der build-emittierte Lazy-Include-Pointer (`renderLazyPointer`) und die `when`-Bedingungen
       sind englisch; das `lazy-include`-Directive funktioniert unverändert (Guards grün).
-- [ ] `node build.mjs` (inkl. aller Guards, insbesondere Docs-Guard #107 und Version-Drift),
+- [x] `node build.mjs` (inkl. aller Guards, insbesondere Docs-Guard #107 und Version-Drift),
       `pnpm test` und `pnpm agent:check` sind grün; die generierten Claude- und Codex-Tools sind
       englisch und äquivalent, ohne Platzhalter-Leaks.
-- [ ] Neue Pläne entstehen per Default mit englischem Statusmarker (`**Plan status:** Not
+- [x] Neue Pläne entstehen per Default mit englischem Statusmarker (`**Plan status:** Not
 implemented`); deutsche Marker werden weiterhin korrekt erkannt.
-- [ ] Terminologie ist über alle migrierten Dateien konsistent (Glossar angewandt).
+- [x] Terminologie ist über alle migrierten Dateien konsistent (Glossar angewandt).
 
 ## Validierungsplan
 
