@@ -289,6 +289,50 @@ export function collectRenderedWorkerRefs(text, agentPrefix = 'effective-flow-',
   return [...refs].sort();
 }
 
+// Native command tools expose different invocation parameters. Shared and
+// portable instructions must not leak one harness's parameter contract into
+// another target. Keep this registry explicit so adding a parameter or target
+// is a data change rather than another ad-hoc guard.
+export const HARNESS_TOOL_PARAMETER_OWNERSHIP = Object.freeze({
+  run_in_background: Object.freeze(['claude']),
+  'yield-time_ms': Object.freeze(['codex']),
+  sandbox_permissions: Object.freeze(['codex']),
+});
+
+const TOOL_PARAMETER_TARGETS = Object.freeze(['claude', 'codex', 'portable']);
+
+export function findForeignHarnessToolParameters(text, target) {
+  if (!TOOL_PARAMETER_TARGETS.includes(target)) {
+    throw new Error(`Unknown rendered target "${target}"`);
+  }
+
+  const findings = [];
+  const identifierCharacter = /[A-Za-z0-9_-]/;
+  const lines = normalizeLineEndings(text).split('\n');
+
+  for (const [parameter, owners] of Object.entries(HARNESS_TOOL_PARAMETER_OWNERSHIP)) {
+    if (owners.includes(target)) continue;
+
+    for (const [lineIndex, line] of lines.entries()) {
+      let searchFrom = 0;
+      while (searchFrom < line.length) {
+        const column = line.indexOf(parameter, searchFrom);
+        if (column === -1) break;
+
+        const before = column === 0 ? '' : line[column - 1];
+        const afterIndex = column + parameter.length;
+        const after = afterIndex >= line.length ? '' : line[afterIndex];
+        if (!identifierCharacter.test(before) && !identifierCharacter.test(after)) {
+          findings.push({ line: lineIndex + 1, parameter, owners: [...owners] });
+        }
+        searchFrom = column + parameter.length;
+      }
+    }
+  }
+
+  return findings.sort((a, b) => a.line - b.line || a.parameter.localeCompare(b.parameter));
+}
+
 // --- ASK block transforms ---
 
 export function parseAskBlock(block, { context } = {}) {

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   extractFrontmatter,
   extractBody,
@@ -29,6 +30,8 @@ import {
   DELIVERY_FOOTER_MARKER,
   PORTABLE_WORKER_DELEGATION,
   collectRenderedWorkerRefs,
+  HARNESS_TOOL_PARAMETER_OWNERSHIP,
+  findForeignHarnessToolParameters,
   findProhibitedConsumerScriptCommands,
 } from '../build-lib.mjs';
 
@@ -386,6 +389,112 @@ test('collectRenderedWorkerRefs filters exact known namespaced worker identifier
     ),
     ['effective-flow-code-validator'],
   );
+});
+
+// --- Harness-specific command-tool parameter guard (#163) ---
+
+test('HARNESS_TOOL_PARAMETER_OWNERSHIP defines the explicit native ownership matrix', () => {
+  assert.deepEqual(HARNESS_TOOL_PARAMETER_OWNERSHIP, {
+    run_in_background: ['claude'],
+    'yield-time_ms': ['codex'],
+    sandbox_permissions: ['codex'],
+  });
+});
+
+test('findForeignHarnessToolParameters allows native parameters only on their owning target', () => {
+  const text = [
+    'run_in_background: true',
+    'yield-time_ms: 10000',
+    'sandbox_permissions: require_escalated',
+  ].join('\n');
+
+  assert.deepEqual(findForeignHarnessToolParameters(text, 'claude'), [
+    { line: 2, parameter: 'yield-time_ms', owners: ['codex'] },
+    { line: 3, parameter: 'sandbox_permissions', owners: ['codex'] },
+  ]);
+  assert.deepEqual(findForeignHarnessToolParameters(text, 'codex'), [
+    { line: 1, parameter: 'run_in_background', owners: ['claude'] },
+  ]);
+  assert.deepEqual(findForeignHarnessToolParameters(text, 'portable'), [
+    { line: 1, parameter: 'run_in_background', owners: ['claude'] },
+    { line: 2, parameter: 'yield-time_ms', owners: ['codex'] },
+    { line: 3, parameter: 'sandbox_permissions', owners: ['codex'] },
+  ]);
+});
+
+test('findForeignHarnessToolParameters matches exact identifiers and reports source lines', () => {
+  const text = [
+    'prefixed_run_in_background: ignored',
+    'run_in_background_suffix: ignored',
+    '`run_in_background`: true',
+    'yield-time-ms: ignored',
+    'sandbox_permissions.extra: detected',
+  ].join('\n');
+
+  assert.deepEqual(findForeignHarnessToolParameters(text, 'portable'), [
+    { line: 3, parameter: 'run_in_background', owners: ['claude'] },
+    { line: 5, parameter: 'sandbox_permissions', owners: ['codex'] },
+  ]);
+});
+
+test('findForeignHarnessToolParameters rejects unknown rendered targets', () => {
+  assert.throws(
+    () => findForeignHarnessToolParameters('run_in_background: true', 'unknown'),
+    /Unknown rendered target "unknown"/,
+  );
+});
+
+test('code-validator renders a harness-neutral concurrent validation contract for every target', () => {
+  const source = readFileSync(new URL('../src/agents/code-validator.md', import.meta.url), 'utf8');
+  const body = extractBody(source);
+  assert.doesNotMatch(source, /\brun_in_background\b/);
+
+  for (const target of ['claude', 'codex', 'portable']) {
+    const rendered = renderBody(body, target, {
+      ...refConfig,
+      context: `src/agents/code-validator.md (${target})`,
+    });
+
+    assert.doesNotMatch(rendered, /\brun_in_background\b/, target);
+    assert.doesNotMatch(rendered, /background Bash invocation/, target);
+    assert.doesNotMatch(rendered, /in parallel, never sequentially/, target);
+    assert.match(
+      rendered,
+      /Start every applicable check through a separate command invocation/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /Start all applicable independent checks before waiting for any of them/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /actively wait or poll every retained handle until it reaches a terminal state/,
+      target,
+    );
+    assert.match(rendered, /each started check its own \*\*120-second\*\* timeout/, target);
+    assert.match(
+      rendered,
+      /A failure or timeout in one check must never cancel another check/,
+      target,
+    );
+    assert.match(rendered, /TypeScript → Linting → Build/, target);
+    assert.match(rendered, /repeat the planned checks sequentially/, target);
+    assert.match(
+      rendered,
+      /use sequential execution only when that mechanism is unavailable or the documented race fallback applies/,
+      target,
+    );
+    assert.match(rendered, /reference the TypeScript error in the build section/, target);
+    assert.match(rendered, /SKIPPED \(no script found\)/, target);
+    assert.match(
+      rendered,
+      /a single combined fast script is not additionally started in parallel/,
+      target,
+    );
+    assert.match(rendered, /`off`: run no checks/, target);
+  }
 });
 
 // --- Fixture-based end-to-end snapshot ---

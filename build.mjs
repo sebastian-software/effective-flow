@@ -33,6 +33,7 @@ import {
   assertNoEagerLazyOverlap,
   collectRenderedWorkerRefs,
   findProhibitedConsumerScriptCommands,
+  findForeignHarnessToolParameters,
 } from './build-lib.mjs';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -616,11 +617,20 @@ try {
     },
   ];
   const renderedWorkerNames = new Set(agents.map((agent) => `${AGENT_PREFIX}${agent.name}`));
+  const foreignParameterDiagnostics = [];
 
   for (const target of targetConfigs) {
     const files = renderedFiles(target.root);
     for (const file of files) {
       const content = readFileSync(file, 'utf8');
+      const foreignParameters = findForeignHarnessToolParameters(content, target.name);
+      for (const finding of foreignParameters) {
+        foreignParameterDiagnostics.push(
+          `target=${target.name} ` +
+            `file=${relative(target.root, file)} line=${finding.line} ` +
+            `parameter=${finding.parameter}`,
+        );
+      }
       if (
         /\{\{(?:AGENT|SKILL|FIRMO|WORKER_RESOLUTION|INVOCATION_GUIDANCE)(?::[^}]*)?\}\}/.test(
           content,
@@ -652,6 +662,12 @@ try {
         );
       }
     }
+  }
+
+  if (foreignParameterDiagnostics.length > 0) {
+    throw new Error(
+      `foreign harness tool-parameter guard (#163):\n${foreignParameterDiagnostics.join('\n')}`,
+    );
   }
 
   for (const file of renderedFiles(PORTABLE_SKILL_DIR)) {
