@@ -111,7 +111,16 @@ test('every existing migration marker delegates its owned subtree to the protoco
     readSource('shared', 'effective-flow-dir-migration.md'),
     /memory-state[\s\S]*runtimeMigration\.directory/,
   );
-  assert.match(readSource('shared', 'issue-tracker.md'), /labelMigration\.sf[\s\S]*memory mutation contract/);
-  assert.match(readSource('tools', 'setup.md'), /configMigration\.adr[\s\S]*memory mutation contract/);
-  assert.match(readSource('tools', 'review.md'), /\.sf-memory\.json[\s\S]*memory mutation contract/);
+  assert.match(
+    readSource('shared', 'issue-tracker.md'),
+    /labelMigration\.sf[\s\S]*memory mutation contract/,
+  );
+  assert.match(
+    readSource('tools', 'setup.md'),
+    /configMigration\.adr[\s\S]*memory mutation contract/,
+  );
+  assert.match(
+    readSource('tools', 'review.md'),
+    /\.sf-memory\.json[\s\S]*memory mutation contract/,
+  );
 });
