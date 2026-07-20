@@ -196,6 +196,36 @@ test('the dual-root contract survives every harness render', () => {
   }
 });
 
+test('maintenance red-baseline abort uses ownership-safe delivery handback', () => {
+  const maintain = extractBody(readSource('tools', 'maintain.md'));
+  const abortClauses = [
+    [/current-run ownership flags/, 'current-run artifact ownership'],
+    [/original verified[\s\S]*execution-location receipt/, 'original checkout receipt'],
+    [/exact creation OID/, 'immutable creation OID'],
+    [/Never[\s\S]*compare against a moving remote tip/, 'moving-remote exclusion'],
+    [/Effective Flow-owned worktree/, 'owned worktree cleanup'],
+    [/git worktree remove <WORKTREE_PATH>[\s\S]*without force/, 'non-forced worktree removal'],
+    [/git branch -d <BRANCH_NAME>/, 'safe branch deletion'],
+    [/In-place transient branch/, 'in-place checkout restoration'],
+    [/Restore the original branch or detached OID first/, 'restore-before-delete ordering'],
+    [/harness-managed[\s\S]*perform no lifecycle mutation/, 'externally managed no-op'],
+    [/in-place execution without delivery[\s\S]*no lifecycle\s+cleanup/, 'no-delivery no-op'],
+    [/partial cleanup explicitly/, 'partial cleanup reporting'],
+    [/Never[\s\S]*force-delete a branch/, 'forced cleanup prohibition'],
+  ];
+
+  for (const [pattern, clause] of abortClauses) {
+    assert.match(resolvedDeliveryFragment, pattern, `missing ${clause} clause`);
+  }
+
+  assert.match(maintain, /Wait for both baseline workers to finish/);
+  assert.match(maintain, /preserve both diagnostics/);
+  assert.match(maintain, /Abort handback before implementation/);
+  assert.match(maintain, /point to `\{\{SKILL:fix\}\}`/);
+  assert.match(maintain, /End the workflow before Phase 3/);
+  assert.match(maintain, /before any commit, completion prompt, push, pull request or[\s\S]*merge/);
+});
+
 test('legacy arbitrary-CWD delegation and unconditional cleanup wording stay removed', () => {
   const relevantSources = [
     readShared('execution-location'),

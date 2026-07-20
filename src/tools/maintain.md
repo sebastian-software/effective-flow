@@ -140,7 +140,18 @@ Start in parallel with the verified execution-location receipt:
 1. `{{AGENT:code-validator}}` – type checking, lint, build status.
 2. `{{AGENT:test-writer}}` – run only the existing tests and document the result; write no new tests in this phase.
 
-Document the baseline. If the baseline is already red (build/tests broken before any update): do not update, but point to `{{SKILL:fix}}`, since otherwise later regressions cannot be distinguished from pre-existing problems.
+Wait for both baseline workers to finish and preserve both diagnostics before deciding whether the
+baseline is green. Document the complete baseline. If either result is already red (build/tests
+broken before any update):
+
+1. Do not update, since otherwise later regressions cannot be distinguished from pre-existing
+   problems, and point to `{{SKILL:fix}}`.
+2. Run the dedicated "Abort handback before implementation" from "Delivery and worktree
+   integration" with the retained current-run delivery state.
+3. Report both baseline diagnostics, the final checkout, every removed artifact, and every retained
+   path or branch with its exact reason. Report partial cleanup explicitly.
+4. End the workflow before Phase 3 and before any commit, completion prompt, push, pull request or
+   merge.
 
 ### Phase 3: Delegated update implementation
 
