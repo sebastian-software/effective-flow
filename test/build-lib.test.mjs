@@ -34,6 +34,10 @@ import {
   findForeignHarnessToolParameters,
   findProhibitedConsumerScriptCommands,
   findRetiredConfigDocViolations,
+  parseProjectRoutingTable,
+  assertProjectRoutingContract,
+  classifyProjectRoutingScope,
+  PROJECT_ROUTING_REQUIRED_ROUTES,
 } from '../build-lib.mjs';
 
 const DELIVERY = { repo: 'sebastian-software/effective-flow', sourceBranch: 'develop' };
@@ -202,6 +206,155 @@ test('validateRefs prefers the legacy message even when the sf- name is unknown'
         knownAgents: refConfig.knownAgents,
       }),
     /Legacy placeholder \{\{SKILL:sf-apply-plan\}\} is no longer supported/,
+  );
+});
+
+// --- Shared project-routing contract (#164) ---
+
+const projectRoutingSource = readFileSync(
+  new URL('../src/shared/project-routing.md', import.meta.url),
+  'utf8',
+);
+const projectRoutes = parseProjectRoutingTable(projectRoutingSource, {
+  context: 'src/shared/project-routing.md',
+});
+
+test('parseProjectRoutingTable reads the ordered machine-readable table', () => {
+  assert.deepEqual(
+    projectRoutes.map(({ priority, route, matcher, decision }) => ({
+      priority,
+      route,
+      matcher,
+      decision,
+    })),
+    [
+      {
+        priority: 10,
+        route: 'excluded-generated-vendored',
+        matcher: 'excluded',
+        decision: 'exclude',
+      },
+      {
+        priority: 20,
+        route: 'documentation',
+        matcher: 'documentation',
+        decision: 'route',
+      },
+      { priority: 30, route: 'tooling', matcher: 'tooling', decision: 'route' },
+      {
+        priority: 40,
+        route: 'frontend-js-ts',
+        matcher: 'frontend-js-ts',
+        decision: 'route',
+      },
+      {
+        priority: 50,
+        route: 'node-backend-cli',
+        matcher: 'node-backend-cli',
+        decision: 'route',
+      },
+      { priority: 60, route: 'rust', matcher: 'rust-product', decision: 'route' },
+      {
+        priority: 70,
+        route: 'generic-product',
+        matcher: 'generic-product',
+        decision: 'route-degraded',
+      },
+      { priority: 80, route: 'ambiguous', matcher: 'otherwise', decision: 'clarify' },
+    ],
+  );
+});
+
+test('assertProjectRoutingContract locks required routes, order, fallbacks, and live agent names', () => {
+  assert.doesNotThrow(() =>
+    assertProjectRoutingContract(projectRoutes, { context: 'src/shared/project-routing.md' }),
+  );
+  assert.deepEqual(
+    PROJECT_ROUTING_REQUIRED_ROUTES.map(({ route }) => route),
+    projectRoutes.map(({ route }) => route),
+  );
+  const generic = projectRoutes.find(({ route }) => route === 'generic-product');
+  assert.equal(generic.implementer, '{{AGENT:generic-product-implementer}}');
+  assert.equal(generic.reviewer, '{{AGENT:generic-product-reviewer}}');
+  assert.ok(
+    projectRoutes.findIndex(({ route }) => route === 'tooling') <
+      projectRoutes.findIndex(({ route }) => route === 'generic-product'),
+  );
+  assert.equal(projectRoutes.at(-1).route, 'ambiguous');
+});
+
+test('parseProjectRoutingTable rejects malformed and non-deterministic tables', () => {
+  assert.throws(() => parseProjectRoutingTable('| Priority | Route |\n'), /exactly one start/);
+  assert.throws(
+    () =>
+      parseProjectRoutingTable(
+        projectRoutingSource.replace(
+          /(\|\s*)20(\s*\|\s*`documentation`)/,
+          (_, before, after) => `${before}10${after}`,
+        ),
+      ),
+    /strictly ascending/,
+  );
+  assert.throws(
+    () =>
+      assertProjectRoutingContract(
+        projectRoutes.map((route) =>
+          route.route === 'generic-product'
+            ? { ...route, implementer: '{{AGENT:generic-implementer}}' }
+            : route,
+        ),
+      ),
+    /generic-product-implementer/,
+  );
+});
+
+const projectRoutingFixtures = [
+  'python-product.json',
+  'go-product.json',
+  'unknown-product.json',
+  'tooling-only.json',
+  'frontend-js-ts.json',
+  'node-backend-cli.json',
+  'rust-product.json',
+  'mixed-repository.json',
+  'ambiguous-role.json',
+];
+
+for (const fixtureFile of projectRoutingFixtures) {
+  const fixture = JSON.parse(
+    readFileSync(new URL(`fixtures/project-routing/${fixtureFile}`, import.meta.url), 'utf8'),
+  );
+  test(`project routing fixture: ${fixture.name}`, () => {
+    const result = classifyProjectRoutingScope(projectRoutes, fixture.scope, {
+      context: fixtureFile,
+    });
+    assert.deepEqual(
+      result.files.map(({ route }) => route),
+      fixture.expectedRoutes,
+    );
+    assert.equal(result.clarificationRequired, fixture.clarificationRequired);
+  });
+}
+
+test('mixed project routing retains every specialist and fallback bucket in table order', () => {
+  const fixture = JSON.parse(
+    readFileSync(
+      new URL('fixtures/project-routing/mixed-repository.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  const result = classifyProjectRoutingScope(projectRoutes, fixture.scope);
+  assert.deepEqual(
+    result.buckets.map(({ route }) => route),
+    [
+      'excluded-generated-vendored',
+      'documentation',
+      'tooling',
+      'frontend-js-ts',
+      'node-backend-cli',
+      'rust',
+      'generic-product',
+    ],
   );
 });
 

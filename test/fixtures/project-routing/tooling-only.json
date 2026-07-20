@@ -1,0 +1,10 @@
+{
+  "name": "Tooling and repository configuration",
+  "scope": [
+    { "path": ".github/workflows/ci.yml" },
+    { "path": "package.json" },
+    { "path": "scripts/release.ts", "role": "tooling" }
+  ],
+  "expectedRoutes": ["tooling", "tooling", "tooling"],
+  "clarificationRequired": false
+}

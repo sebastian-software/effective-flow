@@ -1,0 +1,6 @@
+{
+  "name": "Go product code",
+  "scope": [{ "path": "internal/server/handler.go" }],
+  "expectedRoutes": ["generic-product"],
+  "clarificationRequired": false
+}

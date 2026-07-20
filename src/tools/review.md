@@ -19,6 +19,11 @@ language-rules
 task-tracking
 ```
 
+```lazy-include
+project-routing
+when: Phase 1 classifies scoped files into routing buckets
+```
+
 ## Task tracking in detail
 
 In addition to the generic rule in the include above, this skill requires **per-source and per-sub-reviewer granularity** so that during the workflow the user sees live which streams and sub-agents are still running.
@@ -47,7 +52,7 @@ Tasks are created at **two** points in time, because the directory split in Phas
 **Point B — at the start of Phase 2c, after the directory-split heuristic has determined the sub-reviewer partition but **before** the first sub-reviewer is started:**
 
 4. **Per-sub-reviewer tasks for Phase 2c** (1 to N depending on the directory split):
-   - For a single reviewer per project-type bucket: e.g. "2c: Frontend review" or "2c: Backend review"
+   - For a single reviewer per routing bucket: e.g. "2c: Frontend review" or "2c: Generic product review"
    - For a directory split: one dedicated task per sub-reviewer with the directory in the subject, e.g. "2c: Frontend review src/components", "2c: Backend review src/routes"
    - For a recursive split: one task per sub-sub-reviewer with the deeper path in the subject, e.g. "2c: Frontend review src/components/forms".
 
@@ -82,7 +87,7 @@ audit-reasoning-delegation
 `review.md` is already mostly orchestration; the delegable part is the
 **finding-quality reasoning** (evidence standards, validation/rejection, dedup judgment,
 prioritization) in Phases 2c/3. The reviewer agents (`{{AGENT:frontend-reviewer}}`,
-`{{AGENT:nodejs-reviewer}}`, `{{AGENT:rust-reviewer}}`) keep their line-level checks and
+`{{AGENT:nodejs-reviewer}}`, `{{AGENT:rust-reviewer}}`, `{{AGENT:generic-product-reviewer}}`) keep their line-level checks and
 are **not** part of this delegation.
 
 ## Project conventions
@@ -110,9 +115,11 @@ completion-protocol
 
 The review workflow detects documented design decisions so that findings against deliberate decisions are not falsely reported as problems. The sources are searched in parallel in Phase 2a; the reconciliation with findings happens centrally in Phase 3.
 
-## Project-type detection and routing
+## Project routing
 
-Project-type detection as in `{{SKILL:build}}`. The reviewer routing including the directory-split heuristic is defined in Phase 2c.
+Classify every file in scope using the loaded canonical “Project routing” contract. The reviewer
+routing, including the directory-split heuristic, is defined in Phase 2c and operates per route
+bucket rather than assigning one project-wide type.
 
 ## Effective Flow configuration and memory
 
@@ -195,11 +202,11 @@ Persistent cache data lives exclusively in `.effective-flow/cache.json`, not in 
 
 `review` may use these cache areas:
 
-| Area               | Content                                                                    | Invalidation                                            |
-| ------------------ | -------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `designDecisions`  | Extracted design decisions per source                                      | Hash or mtime of the source files, cache schema version |
-| `scopeIndex`       | File list, project-type buckets, and reviewer split for whole-code reviews | Git HEAD, dirty state, and relevant file changes        |
-| `validatorScripts` | Detected check scripts and last usable validation profile                  | Changes to package/build configuration files            |
+| Area               | Content                                                               | Invalidation                                            |
+| ------------------ | --------------------------------------------------------------------- | ------------------------------------------------------- |
+| `designDecisions`  | Extracted design decisions per source                                 | Hash or mtime of the source files, cache schema version |
+| `scopeIndex`       | File list, routing buckets, and reviewer split for whole-code reviews | Git HEAD, dirty state, and relevant file changes        |
+| `validatorScripts` | Detected check scripts and last usable validation profile             | Changes to package/build configuration files            |
 
 Rules:
 
@@ -285,7 +292,7 @@ plan review, ask for the specific plan file instead of guessing a code review.
    - check `git diff --cached --name-only`
    - if there are changes: review only those files
    - otherwise the entire codebase
-4. Examine the project structure and project type. Use a valid `scopeIndex` cache only if Git HEAD, dirty state, and relevant file changes match the current situation.
+4. Examine the project structure and classify the scoped files into routing buckets. Use a valid `scopeIndex` cache only if Git HEAD, dirty state, and relevant file changes match the current situation.
 5. Determine the final review scope (concrete file list or directory description).
 6. Determine the active finding scope: the default is only critical+important, unless the user has explicitly requested a comprehensive review.
 7. Obtain user confirmation only if the scope or review goal is unclear.
@@ -340,29 +347,32 @@ Write all results to the wisdom file under `## Design decisions` with sub-sectio
 #### Phase 2b: Technical validation
 
 1. Observe `review.validation`:
-   - `full`: Start `{{AGENT:code-validator}}` in check mode `full` (TypeScript, lint, build, no fixes).
-   - `quick`: Start `{{AGENT:code-validator}}` in check mode `quick` (prefer a fast combined check script; otherwise TypeScript and lint, skip build).
+   - `full`: Start `{{AGENT:code-validator}}` in check mode `full` (all safely discovered repository-native checks, no fixes).
+   - `quick`: Start `{{AGENT:code-validator}}` in check mode `quick` (prefer a fast combined repository-native check; otherwise run the safely discoverable fast checks and skip the rest with reasons).
    - `off`: Do not start a validator. Document in the wisdom file and in the report that technical validation was disabled by the profile.
 2. Collect technical problems in the wisdom file under `## Technical findings`.
 3. Use valid `validatorScripts` cache entries only for script detection and profile selection. Do not use cached error lists as the current validation result.
 
 #### Phase 2c: Quality review
 
-1. **Reviewer selection per project type:**
+1. **Reviewer selection per routing bucket:**
    - Frontend → `{{AGENT:frontend-reviewer}}`
    - Backend / CLI / Node.js → `{{AGENT:nodejs-reviewer}}`
    - Rust → `{{AGENT:rust-reviewer}}`
-   - Fullstack → the respectively affected reviewers (Rust files to `{{AGENT:rust-reviewer}}`, JS/TS to the appropriate ones)
-2. **Directory-split heuristic** (per project-type bucket in scope):
+   - Other clearly identified product code → emit the reduced-depth notice, then `{{AGENT:generic-product-reviewer}}`
+   - Tooling/configuration/repository metadata → technical findings from `{{AGENT:code-validator}}`; do not use a product reviewer
+   - Mixed scopes → all reviewers selected for their own files; never demote a recognized specialist bucket
+   - Clarification-required → stop that bucket and ask a focused file-role question
+2. **Directory-split heuristic** (per routing bucket in scope):
    - Count the files in scope for this bucket.
    - **≤ 30 files:** one reviewer sub-agent for the whole bucket.
    - **> 30 files:** Split the scope by top-level directory (e.g. `src/components/`, `src/pages/`, `src/lib/` for frontend; `src/routes/`, `src/services/`, `src/middleware/` for backend; `src/`, `crates/<name>/src/` for Rust). One dedicated reviewer sub-agent per top-level directory. If a top-level directory still has > 30 files: split recursively one level deeper — at most **3 recursion levels** from the first split.
    - **Fallback for flat repos:** If no sub-directories exist, all files lie directly in the root scope, or the maximum recursion level is reached and a bucket still contains > 30 files: split the file list into alphabetical blocks of ≤ 30 files each and assign each block its own reviewer sub-agent.
-   - A valid `scopeIndex` cache may provide the file list, project-type buckets, and split calculation. If the invalidation does not clearly match, recompute the split.
+   - A valid `scopeIndex` cache may provide the file list, routing buckets, and split calculation. If the invalidation does not clearly match, recompute the split.
 3. **Assignment to each reviewer sub-agent:**
    - comprehensive review of the assigned files
    - observe the active finding scope
-   - **no design-decision check in the reviewer** — the design decisions are reconciled centrally in Phase 3, which keeps the reviewer assignment lean. This instruction overrides contrary default rules in `{{AGENT:frontend-reviewer}}`, `{{AGENT:nodejs-reviewer}}`, or `{{AGENT:rust-reviewer}}`: in Phase 2c, reviewers must not search for, filter by, or factor design decisions into the confidence.
+   - **no design-decision check in the reviewer** — the design decisions are reconciled centrally in Phase 3, which keeps the reviewer assignment lean. This instruction overrides contrary default rules in `{{AGENT:frontend-reviewer}}`, `{{AGENT:nodejs-reviewer}}`, `{{AGENT:rust-reviewer}}`, or `{{AGENT:generic-product-reviewer}}`: in Phase 2c, reviewers must not search for, filter by, or factor design decisions into the confidence.
    - for each finding:
      - severity
      - area
@@ -371,7 +381,7 @@ Write all results to the wisdom file under `## Design decisions` with sub-sectio
      - solution
      - confidence
      - complexity
-4. All reviewer sub-agents run **in parallel** (both across project types and within a project type when there is a directory split).
+4. All reviewer sub-agents run **in parallel** (both across routing buckets and within a bucket when there is a directory split).
 5. Collect all findings in the wisdom file under `## Reviewer findings` with sub-sections per sub-reviewer.
 
 ### Phase 3: Aggregation and design-decision filter
@@ -436,7 +446,7 @@ Use the formats, labels, and operations from "Issue-tracker integration (remote 
 
 **Date:** YYYY-MM-DD
 **Scope:** [Entire code / Described area]
-**Project type:** [Frontend / Backend / CLI / Rust / Fullstack]
+**Project type:** [Frontend / Backend / CLI / Rust / Generic product / Tooling / Mixed]
 
 ## Summary
 
@@ -500,7 +510,7 @@ Only relevant if `codebase-improvement` is not available. Brief core guidance fo
 
 - **Always start** Phase 2 (2a, 2b, 2c) **in parallel** — no sequential processing.
 - Within Phase 2a, all design-decision sources in parallel.
-- Within Phase 2c, all reviewer sub-agents in parallel (across project types and across directory splits).
+- Within Phase 2c, all reviewer sub-agents in parallel (across routing buckets and across directory splits).
 - Reviewers in Phase 2c check **no** design decisions — the central filter happens in Phase 3.
 - In local mode, this skill only reads and writes the review report and the temporary wisdom file. In remote mode, it additionally writes finding and epic issues via the tracker and writes **no** local report.
 - Prompt suggestions must be directly copyable without quotation marks and without escape sequences (applies to the report and the issue body alike).

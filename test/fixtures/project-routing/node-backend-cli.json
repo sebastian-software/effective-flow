@@ -1,0 +1,6 @@
+{
+  "name": "Node.js backend and CLI",
+  "scope": [{ "path": "src/server/routes/users.ts" }, { "path": "bin/effective-flow.mjs" }],
+  "expectedRoutes": ["node-backend-cli", "node-backend-cli"],
+  "clarificationRequired": false
+}

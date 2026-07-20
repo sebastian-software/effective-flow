@@ -19,6 +19,10 @@ language-rules
 task-tracking
 ```
 
+```include
+project-routing
+```
+
 ```lazy-include
 config-migration
 when: the Effective Flow configuration is first read or a legacy config is migrated
@@ -66,14 +70,18 @@ Delete the wisdom file at the end.
 
 - Root `README.md` as the marketing entry point of the standard doc structure: `{{AGENT:marketing-writer}}`
 - User and project documentation (incl. user docs under `docs/user-guide/` and technical docs under `docs/developer-guide/`): `{{AGENT:docs-writer}}`
-- In-code documentation, JSDoc/TSDoc, CLI help texts: `{{AGENT:code-documenter}}`
+- In-code API documentation, inline comments, and CLI help texts: `{{AGENT:code-documenter}}`
 - Technical check for generated artifacts, CLI help, build files or code files: `{{AGENT:code-validator}}`
 
 The roles and the standard structure (marketing root README, user docs, technical docs) are described in `Doc categories` under "Prescribed standard doc structure"; they apply as the prose default as long as the user or plan does not specify otherwise.
 
-### Language/project-type awareness
+### Language/project awareness
 
-The doc agents document in the idiomatic format of the target language: JSDoc/TSDoc for JS/TS, rustdoc doc comments (`///`/`//!`) and crate/module docs for Rust. Detect Rust by `Cargo.toml`/`Cargo.lock` or `.rs` files and instruct the documentation phase accordingly – analogous to how `{{SKILL:build}}` routes implementation and review by project type instead of passing on language-agnostically. In mixed Rust/JS repos, documentation routes **per file/domain** (Rust files → Rust guidance, JS/TS → the previous). For a Cargo project, the technical check (`{{AGENT:code-validator}}`) additionally uses the existing Cargo doc checks (`cargo doc`, doctests).
+Classify documentation targets per file/domain with the canonical “Project routing” contract.
+Preserve JSDoc/TSDoc for JS/TS and rustdoc plus existing Cargo documentation checks for Rust.
+For other product languages, the documentation agents discover and follow the repository’s
+established format; they do not invent conventions or add tooling. Mixed repositories retain
+every specialized branch independently.
 
 ### Initial doc setup (scaffold mode)
 
@@ -175,7 +183,7 @@ skill-discovery
 2. Start the appropriate agent:
    - `{{AGENT:marketing-writer}}` for the root `README.md` as the marketing entry point
    - `{{AGENT:docs-writer}}` for category guides, category entry-point READMEs (e.g. `docs/user-guide/README.md`, `docs/developer-guide/README.md`), API/CLI docs, migration, changelog and skill documentation – **not** for the root marketing README
-   - `{{AGENT:code-documenter}}` for JSDoc/TSDoc, inline comments and CLI help texts in code files
+   - `{{AGENT:code-documenter}}` for repository-native API/code documentation, inline comments and CLI help texts in code files
 3. For clearly separated file and doc areas, both agents may run in parallel.
 4. Give the agents:
    - the approved documentation plan including doc category and target path

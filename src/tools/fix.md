@@ -1,5 +1,5 @@
 ---
-description: "Orchestrates the bugfix workflow: investigation, reproduction, gap analysis, diagnosis validation, minimal fix, regression tests, validation and completion. Uses skill switches such as {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:rust-implementer}}, {{AGENT:generic-implementer}}, {{AGENT:test-writer}} and {{AGENT:code-validator}}."
+description: "Orchestrates the bugfix workflow: investigation, reproduction, gap analysis, diagnosis validation, routed minimal fix, regression tests, validation and completion."
 catalogHint: "Fixes a specific bug with a minimal, regression-guarded intervention."
 ---
 
@@ -17,6 +17,10 @@ language-rules
 
 ```include
 task-tracking
+```
+
+```include
+project-routing
 ```
 
 ```lazy-include
@@ -53,17 +57,11 @@ investigation-method
 wisdom-accumulation
 ```
 
-## Project type detection
+## Project routing
 
-As with `{{SKILL:build}}`.
-
-## Routing
-
-- Frontend: `{{AGENT:ui-implementer}}`
-- Backend / CLI / Node.js: `{{AGENT:nodejs-implementer}}`
-- Rust: `{{AGENT:rust-implementer}}`
-- Generic / Tooling / CI / Config: `{{AGENT:generic-implementer}}`
-- Fullstack: both, in parallel only with clear separation
+Classify affected files and domains with the canonical “Project routing” contract above. Route
+specialized and degraded product buckets separately from tooling-only work; ask only when the file
+role is genuinely ambiguous.
 
 Current workflow for review-report backlinks: `{{SKILL:fix}}`.
 
@@ -147,8 +145,9 @@ skill-discovery
    its verified execution-location receipt, then run any applicable owned setup. Pass that
    receipt into phases 3–4 (fix, verification); each write-capable boundary revalidates it and
    roots every operation there.
-1. Start the appropriate implementer skill:
-   - `{{AGENT:ui-implementer}}`, `{{AGENT:nodejs-implementer}}`, `{{AGENT:rust-implementer}}` or `{{AGENT:generic-implementer}}`
+1. Start every implementer selected by the canonical routing contract. Before
+   `{{AGENT:generic-product-implementer}}`, emit the reduced-depth notice. Never send product code
+   to `{{AGENT:generic-implementer}}`.
 2. Give a precise assignment:
    - root cause
    - affected files
@@ -162,7 +161,10 @@ Start in parallel if possible:
 1. `{{AGENT:test-writer}}`
    - confirms the failing test from Phase 2 or writes a regression test
 2. `{{AGENT:code-validator}}`
-   - TypeScript, lint and build
+   - repository-native lint, type, build and documentation checks that can be discovered safely
+3. For every degraded generic product bucket, `{{AGENT:generic-product-reviewer}}`
+   - performs a read-only qualitative review with the reduced-depth limitation
+   - reports all severities; critical findings must be fixed before completion
 
 If open findings or residual risks arise in the process, document them in a structured way so Phase 5 can write them as a review report:
 

@@ -28,6 +28,10 @@ task-tracking
 ```
 
 ```include
+project-routing
+```
+
+```include
 config-migration
 ```
 
@@ -106,7 +110,7 @@ unresolved-review-report
 ### Phase 0: Scope gate
 
 1. Confirm that this is maintenance in the sense above. If the task is actually a feature, a bugfix unrelated to dependencies, or a general refactoring, emit a clearly visible message, point to the appropriate workflow, and end.
-2. Detect the project type as in `{{SKILL:build}}`; this determines which implementer carries out a compatibility adaptation and which reviewer checks changed code. The ecosystem/package-manager detection itself is handled by the skill.
+2. Classify affected compatibility-adaptation files with the canonical “Project routing” contract above. It determines implementer and reviewer buckets; ecosystem/package-manager detection itself remains with the central updater skill.
 3. If no `package.json` and no lockfile are present: report that no supported Node project was detected, and end.
 
 ### Phase 1: Skill discovery and delivery setup
@@ -165,7 +169,7 @@ options:
     description: Remaining phases autonomously under native /goal — the skill emits the /goal string to paste
 ```
 
-3. Work through the approved groups **one after another**. For each group the skill applies the version jump, updates the lockfile via the detected manager, researches breaking changes, and where needed adapts local code to the changed API – carried out via the implementer determined in phase 0 (`{{AGENT:ui-implementer}}`, `{{AGENT:nodejs-implementer}}`, `{{AGENT:rust-implementer}}`, or `{{AGENT:generic-implementer}}` for tooling/CI/config; task: only adapt to the changed API, no new behavior). Afterwards `maintain` compares against the baseline:
+3. Work through the approved groups **one after another**. For each group the skill applies the version jump, updates the lockfile via the detected manager, researches breaking changes, and where needed adapts local code to the changed API – carried out via every implementer selected in phase 0. Emit the reduced-depth notice before `{{AGENT:generic-product-implementer}}`; reserve `{{AGENT:generic-implementer}}` for tooling/CI/configuration. The task is only to adapt to the changed API, with no new behavior. Afterwards `maintain` compares against the baseline:
    - green → **one clean commit per group** (see commit rules), a meaningful message, e.g. `chore(deps): …`.
    - red and repairable → follow up with an adaptation via the implementer, validate again – limit the internal correction rounds per "Goal-driven completion control"; if the group stays red afterwards, treat it as "not sensibly repairable" instead of repeating indefinitely.
    - red and not sensibly repairable → roll the group back (manifest and lockfile to the state before the group) and mark it as "manual".
@@ -175,7 +179,8 @@ options:
 
 Only if code was adapted for breaking changes in phase 3:
 
-1. Start the appropriate reviewer for the changed files (`{{AGENT:frontend-reviewer}}`, `{{AGENT:nodejs-reviewer}}`, or `{{AGENT:rust-reviewer}}`).
+1. Start every reviewer selected by project routing for the changed files, including
+   `{{AGENT:generic-product-reviewer}}` for degraded product buckets.
 2. Fix critical findings before completion.
 3. If findings with status `Open` or `Not implemented` remain, write them per "Open review-finding reports" into a new file under `.effective-flow/review/` and name the report path in the completion summary.
 

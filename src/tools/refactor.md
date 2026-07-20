@@ -1,5 +1,5 @@
 ---
-description: "Orchestrates the refactoring workflow: analysis, gap analysis, plan validation, baseline, refactoring, review, post-validation and before/after comparison. Uses {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:rust-implementer}}, {{AGENT:generic-implementer}}, {{AGENT:code-validator}}, {{AGENT:test-writer}} and the appropriate reviewer skills."
+description: "Orchestrates the refactoring workflow: analysis, gap analysis, plan validation, baseline, routed refactoring, review, post-validation and before/after comparison."
 catalogHint: "Improves structure or readability without changing behavior."
 ---
 
@@ -17,6 +17,10 @@ language-rules
 
 ```include
 task-tracking
+```
+
+```include
+project-routing
 ```
 
 ```include
@@ -70,11 +74,11 @@ Contents:
 - problems during the restructuring
 - wrong assumptions
 
-## Project type detection and routing
+## Project routing
 
-As with `{{SKILL:build}}`.
-
-Use `{{AGENT:generic-implementer}}` for refactorings of CI/CD, tooling, build/release configuration, dependency manifests, container configuration and other artifacts that do not clearly belong to a language implementer.
+Classify affected files and domains with the canonical “Project routing” contract above. Use
+`{{AGENT:generic-implementer}}` only for tooling-class routes; clearly identified unsupported
+product code receives the reduced-depth notice and `{{AGENT:generic-product-implementer}}`.
 
 Current workflow for review-report backlinks: `{{SKILL:refactor}}`.
 
@@ -170,6 +174,8 @@ skill-discovery
 ### Phase 3: Refactoring
 
 1. Start the appropriate implementer skill.
+   - Use every bucket selected by project routing; preserve specialist buckets in mixed scopes.
+   - Never demote unsupported product code to the tooling-only generic implementer.
 2. Assignment:
    - change only structure
    - no new behavior
@@ -178,7 +184,8 @@ skill-discovery
 
 ### Phase 4: Review
 
-1. Start the appropriate reviewer skill for the changed files.
+1. Start every reviewer selected by project routing for the changed files, including
+   `{{AGENT:generic-product-reviewer}}` for degraded product buckets.
 2. Aggregate findings:
    - Critical: fix before completion
    - Important: should be fixed

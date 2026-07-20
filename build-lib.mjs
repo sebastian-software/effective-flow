@@ -213,6 +213,373 @@ export function validateRefs(text, { knownTools, knownAgents, context } = {}) {
   }
 }
 
+// --- Shared project-routing contract (#164) ---
+//
+// The runtime instructions and the fixture regression tests intentionally read
+// the same ordered Markdown table. These helpers stay pure: build.mjs owns file
+// I/O, while tests can supply synthetic contracts and project scopes directly.
+
+export const PROJECT_ROUTING_TABLE_START = '<!-- project-routing-table:start -->';
+export const PROJECT_ROUTING_TABLE_END = '<!-- project-routing-table:end -->';
+
+const PROJECT_ROUTING_HEADERS = [
+  'Priority',
+  'Route',
+  'Matcher',
+  'Implementer',
+  'Reviewer',
+  'Decision',
+];
+
+export const PROJECT_ROUTING_REQUIRED_ROUTES = Object.freeze([
+  Object.freeze({
+    route: 'excluded-generated-vendored',
+    matcher: 'excluded',
+    decision: 'exclude',
+  }),
+  Object.freeze({ route: 'documentation', matcher: 'documentation', decision: 'route' }),
+  Object.freeze({
+    route: 'tooling',
+    matcher: 'tooling',
+    implementer: '{{AGENT:generic-implementer}}',
+    decision: 'route',
+  }),
+  Object.freeze({
+    route: 'frontend-js-ts',
+    matcher: 'frontend-js-ts',
+    implementer: '{{AGENT:ui-implementer}}',
+    reviewer: '{{AGENT:frontend-reviewer}}',
+    decision: 'route',
+  }),
+  Object.freeze({
+    route: 'node-backend-cli',
+    matcher: 'node-backend-cli',
+    implementer: '{{AGENT:nodejs-implementer}}',
+    reviewer: '{{AGENT:nodejs-reviewer}}',
+    decision: 'route',
+  }),
+  Object.freeze({
+    route: 'rust',
+    matcher: 'rust-product',
+    implementer: '{{AGENT:rust-implementer}}',
+    reviewer: '{{AGENT:rust-reviewer}}',
+    decision: 'route',
+  }),
+  Object.freeze({
+    route: 'generic-product',
+    matcher: 'generic-product',
+    implementer: '{{AGENT:generic-product-implementer}}',
+    reviewer: '{{AGENT:generic-product-reviewer}}',
+    decision: 'route-degraded',
+  }),
+  Object.freeze({ route: 'ambiguous', matcher: 'otherwise', decision: 'clarify' }),
+]);
+
+function projectRoutingCell(value) {
+  const trimmed = value.trim();
+  if (trimmed === '—' || trimmed === '-') return '';
+  return trimmed.replace(/^`([^`]*)`$/, '$1');
+}
+
+function parseProjectRoutingRow(line, expectedCells, context) {
+  const cells = line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map(projectRoutingCell);
+  if (cells.length !== expectedCells) {
+    throw new Error(
+      `Project-routing row has ${cells.length} cells; expected ${expectedCells}${contextSuffix(context)}`,
+    );
+  }
+  return cells;
+}
+
+export function parseProjectRoutingTable(markdown, { context } = {}) {
+  const normalized = normalizeLineEndings(markdown);
+  const starts = normalized.split(PROJECT_ROUTING_TABLE_START).length - 1;
+  const ends = normalized.split(PROJECT_ROUTING_TABLE_END).length - 1;
+  if (starts !== 1 || ends !== 1) {
+    throw new Error(
+      `Project-routing contract requires exactly one start and end marker${contextSuffix(context)}`,
+    );
+  }
+
+  const start =
+    normalized.indexOf(PROJECT_ROUTING_TABLE_START) + PROJECT_ROUTING_TABLE_START.length;
+  const end = normalized.indexOf(PROJECT_ROUTING_TABLE_END);
+  if (end <= start) {
+    throw new Error(`Project-routing table markers are out of order${contextSuffix(context)}`);
+  }
+
+  const lines = normalized
+    .slice(start, end)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 3) {
+    throw new Error(`Project-routing table has no data rows${contextSuffix(context)}`);
+  }
+
+  const headers = parseProjectRoutingRow(lines[0], PROJECT_ROUTING_HEADERS.length, context);
+  if (headers.some((header, index) => header !== PROJECT_ROUTING_HEADERS[index])) {
+    throw new Error(
+      `Project-routing table headers must be: ${PROJECT_ROUTING_HEADERS.join(', ')}${contextSuffix(context)}`,
+    );
+  }
+  const separator = parseProjectRoutingRow(lines[1], PROJECT_ROUTING_HEADERS.length, context);
+  if (separator.some((cell) => !/^:?-{3,}:?$/.test(cell))) {
+    throw new Error(`Project-routing table has an invalid separator row${contextSuffix(context)}`);
+  }
+
+  const routes = lines.slice(2).map((line) => {
+    const [rawPriority, route, matcher, implementer, reviewer, decision] = parseProjectRoutingRow(
+      line,
+      PROJECT_ROUTING_HEADERS.length,
+      context,
+    );
+    const priority = Number(rawPriority);
+    if (!Number.isSafeInteger(priority) || priority < 0) {
+      throw new Error(
+        `Project-routing priority "${rawPriority}" must be a non-negative integer${contextSuffix(context)}`,
+      );
+    }
+    if (!route || !matcher || !decision) {
+      throw new Error(
+        `Project-routing rows require route, matcher, and decision${contextSuffix(context)}`,
+      );
+    }
+    return { priority, route, matcher, implementer, reviewer, decision };
+  });
+
+  const routeNames = new Set();
+  for (const [index, route] of routes.entries()) {
+    if (routeNames.has(route.route)) {
+      throw new Error(`Duplicate project route "${route.route}"${contextSuffix(context)}`);
+    }
+    routeNames.add(route.route);
+    if (index > 0 && route.priority <= routes[index - 1].priority) {
+      throw new Error(
+        `Project-routing priorities must be strictly ascending${contextSuffix(context)}`,
+      );
+    }
+  }
+  return routes;
+}
+
+export function assertProjectRoutingContract(routes, { context } = {}) {
+  if (routes.length !== PROJECT_ROUTING_REQUIRED_ROUTES.length) {
+    throw new Error(
+      `Project-routing contract must contain exactly ${PROJECT_ROUTING_REQUIRED_ROUTES.length} required routes${contextSuffix(context)}`,
+    );
+  }
+  for (const [index, required] of PROJECT_ROUTING_REQUIRED_ROUTES.entries()) {
+    const actual = routes[index];
+    for (const field of ['route', 'matcher', 'implementer', 'reviewer', 'decision']) {
+      if (required[field] !== undefined && actual[field] !== required[field]) {
+        throw new Error(
+          `Project-routing row ${index + 1} must use ${field} "${required[field]}"${contextSuffix(context)}`,
+        );
+      }
+    }
+  }
+}
+
+const FRONTEND_EXTENSIONS = new Set(['.jsx', '.tsx', '.vue', '.svelte']);
+const JAVASCRIPT_EXTENSIONS = new Set([
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.ts',
+  '.tsx',
+  '.mts',
+  '.cts',
+]);
+const GENERIC_PRODUCT_EXTENSIONS = new Set([
+  '.py',
+  '.pyx',
+  '.go',
+  '.java',
+  '.kt',
+  '.kts',
+  '.scala',
+  '.cs',
+  '.fs',
+  '.fsx',
+  '.rb',
+  '.php',
+  '.swift',
+  '.ex',
+  '.exs',
+  '.erl',
+  '.hrl',
+  '.c',
+  '.h',
+  '.cc',
+  '.cpp',
+  '.cxx',
+  '.hpp',
+]);
+const DOCUMENTATION_EXTENSIONS = new Set(['.md', '.mdx', '.rst', '.adoc']);
+const TOOLING_BASENAMES = new Set([
+  '.editorconfig',
+  '.gitattributes',
+  '.gitignore',
+  'cargo.lock',
+  'compose.yml',
+  'compose.yaml',
+  'dockerfile',
+  'go.mod',
+  'go.sum',
+  'makefile',
+  'package.json',
+  'pnpm-lock.yaml',
+  'poetry.lock',
+  'pyproject.toml',
+  'requirements.txt',
+  'tsconfig.json',
+  'yarn.lock',
+]);
+
+function projectFileFacts(file) {
+  if (!file || typeof file.path !== 'string' || file.path.trim() === '') {
+    throw new Error('Project-routing scope entries require a non-empty path');
+  }
+  const path = file.path.replaceAll('\\', '/').replace(/^\.\//, '').toLowerCase();
+  const basename = path.slice(path.lastIndexOf('/') + 1);
+  const dot = basename.lastIndexOf('.');
+  const extension = dot > 0 ? basename.slice(dot) : '';
+  const role = typeof file.role === 'string' ? file.role.trim().toLowerCase() : '';
+  return { path, basename, extension, role };
+}
+
+function hasPathDomain(path, domains) {
+  const segments = path.split('/');
+  return segments.some((segment) => domains.includes(segment));
+}
+
+function isGenericProductRole(role) {
+  return ['product', 'application', 'library'].includes(role);
+}
+
+function matchesProjectRoute(matcher, facts) {
+  const { path, basename, extension, role } = facts;
+  const explicit = role !== '';
+
+  switch (matcher) {
+    case 'excluded':
+      return (
+        ['generated', 'vendored', 'vendor', 'excluded'].includes(role) ||
+        hasPathDomain(path, [
+          'node_modules',
+          'vendor',
+          'vendored',
+          'third_party',
+          'dist',
+          'coverage',
+          '.cache',
+          'target',
+          'generated',
+        ]) ||
+        /(?:^|[._-])generated(?:[._-]|$)/.test(basename)
+      );
+    case 'documentation':
+      if (explicit) return ['documentation', 'docs'].includes(role);
+      return DOCUMENTATION_EXTENSIONS.has(extension) || hasPathDomain(path, ['docs', 'doc']);
+    case 'tooling':
+      if (explicit) return ['tooling', 'configuration', 'config', 'metadata'].includes(role);
+      return (
+        path.startsWith('.github/') ||
+        path.startsWith('.gitlab/') ||
+        hasPathDomain(path, ['ci', 'scripts']) ||
+        TOOLING_BASENAMES.has(basename) ||
+        /(?:^|\.)(?:config|conf)\.(?:js|mjs|cjs|ts|json|ya?ml|toml)$/.test(basename) ||
+        /^(?:dockerfile|compose)(?:\.|$)/.test(basename)
+      );
+    case 'frontend-js-ts':
+      if (explicit && ['frontend', 'ui', 'browser'].includes(role)) return true;
+      if (explicit && !isGenericProductRole(role)) return false;
+      return (
+        FRONTEND_EXTENSIONS.has(extension) ||
+        (JAVASCRIPT_EXTENSIONS.has(extension) &&
+          hasPathDomain(path, ['frontend', 'client', 'components', 'pages', 'views', 'ui']))
+      );
+    case 'node-backend-cli':
+      if (explicit && ['node', 'nodejs', 'backend', 'server', 'api', 'cli'].includes(role)) {
+        return true;
+      }
+      if (explicit && !isGenericProductRole(role)) return false;
+      return (
+        JAVASCRIPT_EXTENSIONS.has(extension) &&
+        (hasPathDomain(path, [
+          'backend',
+          'server',
+          'api',
+          'routes',
+          'controllers',
+          'services',
+          'workers',
+          'cli',
+          'bin',
+        ]) ||
+          /^(?:server|cli)(?:\.|$)/.test(basename))
+      );
+    case 'rust-product':
+      if (explicit && role === 'rust') return true;
+      if (explicit && !isGenericProductRole(role)) return false;
+      return extension === '.rs';
+    case 'generic-product':
+      if (explicit) return isGenericProductRole(role);
+      return GENERIC_PRODUCT_EXTENSIONS.has(extension);
+    case 'otherwise':
+      return true;
+    default:
+      throw new Error(`Unknown project-routing matcher "${matcher}"`);
+  }
+}
+
+export function classifyProjectRoutingScope(routes, scope, { context } = {}) {
+  if (!Array.isArray(routes) || routes.length === 0) {
+    throw new Error(`Project-routing classification requires routes${contextSuffix(context)}`);
+  }
+  if (!Array.isArray(scope)) {
+    throw new Error(
+      `Project-routing classification requires a scope array${contextSuffix(context)}`,
+    );
+  }
+
+  const files = scope.map((file) => {
+    const facts = projectFileFacts(file);
+    const route = routes.find((candidate) => matchesProjectRoute(candidate.matcher, facts));
+    if (!route) {
+      throw new Error(`No project route matched "${file.path}"${contextSuffix(context)}`);
+    }
+    return {
+      path: file.path,
+      route: route.route,
+      matcher: route.matcher,
+      implementer: route.implementer,
+      reviewer: route.reviewer,
+      decision: route.decision,
+    };
+  });
+
+  const buckets = routes
+    .map((route) => ({
+      route: route.route,
+      files: files.filter((file) => file.route === route.route).map((file) => file.path),
+    }))
+    .filter((bucket) => bucket.files.length > 0);
+
+  return {
+    files,
+    buckets,
+    clarificationRequired: files.some((file) => file.decision === 'clarify'),
+  };
+}
+
 // Enforce the invariant AGENTS.md documents: every source description is a
 // single strictly double-quoted line.
 export function assertQuotedDescription(frontmatter, { context } = {}) {
