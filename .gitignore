@@ -4,7 +4,4 @@ dist/
 dist.tmp/
 dist.bak/
 node_modules/
-.effective-flow/*
-!.effective-flow/config.json
-.firmo/
-.sf-plugin/
+.effective-flow/
