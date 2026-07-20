@@ -155,6 +155,9 @@ The file `.effective-flow/memory.json` stores persistent state across sessions. 
 
 `configMigration` is an object with area-specific sub-keys (`review`, `applyReview`, `tracker`, `worktree`). Each workflow area writes only its own sub-key.
 
+All updates use the “Shared memory-state mutation” contract loaded through the runtime-directory
+prerequisite. No review phase directly rewrites this file.
+
 ### Configuration schema
 
 `review` works without a committed configuration. If the Effective Flow configuration (project-setup ADR) is missing, use internal defaults and do not create anything automatically.
@@ -240,20 +243,25 @@ user to `{{SKILL:setup}}`, the sole repair owner.
    exact target.
 3. If the absolute runtime-root memory handle does not exist but
    `<RUNTIME_STATE_ROOT>/.sf-memory.json` is present, migrate its content to the retained
-   `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle. Guard and complete the destination
-   write first; remove the absolute legacy source only after that successful write, and inform
-   the user. Never inspect or remove a worktree-local `.sf-memory.json`.
-4. If no memory file exists, start with `lastFindingNumber: 0`.
+   `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle only through the shared memory
+   mutation contract: acquire the same absolute runtime-root lock, re-check and validate both
+   absolute paths, atomically persist the legacy object as current memory, and remove the legacy
+   file only after success. Inform the user. Never inspect or remove a worktree-local
+   `.sf-memory.json`.
+4. If no memory file exists, the shared contract treats the fresh object as having no counter;
+   the first reservation starts after `lastFindingNumber: 0`.
 5. Read the Effective Flow configuration from the project-setup ADR if present (migration of an old config via the "Config migration" building block).
 6. Read the absolute `<RUNTIME_STATE_ROOT>/.effective-flow/cache.json` handle if present and
    valid; use only valid, non-stale cache entries. Ignore a same-named cache below
    `EXECUTION_ROOT`.
-7. Number new findings consecutively from `lastFindingNumber + 1` with 7-digit formatting: `R-0000001`, `R-0000002`, ...
-8. After creating the report, apply the guard from the runtime root to the retained absolute
-   memory handle, then write the highest assigned finding number back. Preserve
-   `configMigration` and other existing memory fields. The memory file must be written before
-   the workflow is completed with `DONE`. If the guard blocks or the write fails, preserve the
-   existing file and inform the user.
+7. Finish all confidence filtering, design-decision filtering, and local or remote deduplication.
+   For the exact ordered list that remains, reserve one contiguous range through “Shared
+   memory-state mutation” against the retained absolute runtime-root memory handle. Format its
+   mapping as `R-0000001`, `R-0000002`, ... . Reserve nothing when the list is empty.
+8. The reservation must be atomically persisted and its lock released before any report, finding
+   issue, or epic is published. If reservation fails, publish nothing. If later publication fails
+   or is interrupted, report the reserved range and partial result; the unused IDs remain
+   permanent gaps and are never rolled back or reused.
 
 ```lazy-include
 config-migration
@@ -451,10 +459,12 @@ Phase 4 branches according to the tracker mode determined in Phase 1. In local m
    `<RUNTIME_STATE_ROOT>/.effective-flow/review/`. Run all directory lookups and collision checks
    there. If `.effective-flow/` is missing, guard that exact directory from the runtime root
    immediately before its `mkdir`. If `.effective-flow/review/` is missing, separately guard
-   that exact directory immediately before its `mkdir`. Guard the concrete report file again
-   immediately before writing it, then create
-   `<RUNTIME_STATE_ROOT>/.effective-flow/review/review-report-YYYY-MM-DD[-N].md`. Use the report
-   format below. Never inspect or create a report below a linked execution worktree.
+   that exact directory immediately before its `mkdir`. Finish finding filtering and
+   deduplication, reserve the exact nonzero contiguous ID range through the shared memory
+   contract against the retained absolute runtime-root memory handle, and release its lock before
+   publishing the report. Guard the concrete report file again immediately before writing it,
+   then create `<RUNTIME_STATE_ROOT>/.effective-flow/review/review-report-YYYY-MM-DD[-N].md`. Use
+   the report format below. Never inspect or create a report below a linked execution worktree.
 2. If the active finding scope only covers critical and important findings (default):
    - do not include notes in the main report
    - briefly mention that notes were filtered out and that a comprehensive review is available on request
@@ -469,14 +479,19 @@ Use the formats, labels, and operations from "Issue-tracker integration (remote 
 
 1. **Ensure labels:** Create the required labels idempotently (`effective-flow-review-finding`, `effective-flow-review-epic`, the action and severity labels, `wontfix`).
 2. **Dedup first:** Use the helper's compatibility label queries and finding-dedup operation for existing finding issues in every state. It unions current and `firmo-` label results by issue number, reads both canonical `Signature` and legacy `Signatur`, normalizes either form, and removes exact duplicates from the creation list. In case of an uncertain semantic match outside that exact identity (e.g. only a shifted line number), treat it as a new finding and note the possible relationship in the issue body.
-3. **Create new finding issues:** Only for the remaining **new** findings, assign each an `R-XXXXXXX` ID (number consecutively from `lastFindingNumber + 1`, advance `memory.json` only for issues actually created), build the canonical payload through the helper, and create one issue each. Canonical writes always use `Signature`.
+3. **Reserve, then create new finding issues:** Only for the remaining **new** findings, reserve
+   their exact nonzero contiguous `R-XXXXXXX` range through the shared memory contract and release
+   its lock. Only after persistence, build each canonical payload through the helper and publish
+   one issue per reserved ID. Canonical writes always use `Signature`. An issue-creation failure
+   does not roll memory back; report any created subset and leave unused reserved IDs as permanent
+   gaps.
 4. **Create a new epic:** Create a **new** epic issue from the helper's canonical epic payload (title `Code review YYYY-MM-DD[-N]`, label `effective-flow-review-epic`). The task list contains exclusively the finding issues newly created in this run. Skipped findings (design decisions) go into the non-checkable "Skipped (design decisions)" section and are identified by title, normalized signature, and decision reference only. They receive no issue, no `R-XXXXXXX` ID, and do not advance `lastFindingNumber`. Already-existing (deduplicated) findings are **not** referenced. An existing epic is never extended. Record the epic number in the `Epic` field of the associated finding issues.
 5. **Avoid an empty epic:** If no new findings remain after dedup, do **not** create an empty epic; instead report to the user that all findings already exist as issues.
-6. Write `memory.json` with the highest assigned finding number (as in local mode).
+6. Do not rewrite `memory.json` after publication; the range was already persisted in Step 3.
 7. Report to the user the epic URL, the number of newly created findings, and the number of deduplicated findings.
 8. Delete the wisdom file.
 
-**Completion condition (no autonomous loop):** The review is complete when the findings that were quality-checked in Phase 3 and filtered against design decisions are available — in local mode in the report, in remote mode as finding issues plus an epic (or with the message that all findings already exist) —, `.effective-flow/memory.json` has been written with the highest assigned finding number, and the wisdom file has been deleted. The independent check is provided by the finding-quality check in Phase 3 (confidence filter, duplicate and severity consistency). This workflow only produces a report and implements nothing; therefore there is neither a bounded correction loop nor a `/goal` string.
+**Completion condition (no autonomous loop):** The review is complete when the findings that were quality-checked in Phase 3 and filtered against design decisions are available — in local mode in the report, in remote mode as finding issues plus an epic (or with the message that all findings already exist) —, the exact published finding range was reserved atomically before publication, and the wisdom file has been deleted. The independent check is provided by the finding-quality check in Phase 3 (confidence filter, duplicate and severity consistency). This workflow only produces a report and implements nothing; therefore there is neither a bounded correction loop nor a `/goal` string.
 
 ### Report format
 

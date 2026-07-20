@@ -397,13 +397,16 @@ Ask for free-text values (e.g. `baseBranch`, `branchPrefix`, `returnBranch`, `ba
      not write the marker.
    - Only after target-state validation passes, apply “Runtime-state write safety” immediately
      to the exact directory `.effective-flow/` immediately before its `mkdir` if it is missing.
-     Apply the guard again to the concrete marker file immediately before writing it. Mark completion idempotently in
-     `.effective-flow/memory.json` under `configMigration.adr` (`version` e.g.
-     `config-to-adr-v1`, `appliedAt` timestamp). For a valid existing memory object, deep-merge
-     only `configMigration.adr`: preserve every unrelated top-level field, nested field, and
-     sibling `configMigration` state. Never write or update the marker after invalid JSON, failed
-     required untracking, or failed target-state validation; the pre-write marker check above
-     owns idempotency for an already-complete migration.
+     Mark completion idempotently in `.effective-flow/memory.json` under
+     `configMigration.adr` (`version` e.g. `config-to-adr-v1`, `appliedAt` timestamp) through the
+     loaded shared memory mutation contract: acquire its lock, re-read and validate memory, merge
+     only that owned subtree, preserve every unrelated top-level field, nested field, sibling
+     `configMigration` state, and unknown field, and atomically replace the file. If this marker is
+     already set, do not migrate again. A lock, validation, or replacement failure leaves the
+     prior memory file intact and is reported without claiming migration completion. Never write
+     or update the marker after invalid JSON, failed required untracking, or failed target-state
+     validation; the pre-write marker check above owns idempotency for an already-complete
+     migration.
 
 ### Step 7: Summary
 

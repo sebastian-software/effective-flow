@@ -1612,6 +1612,48 @@ export function findRuntimeDirMigrationViolations(
   );
 }
 
+// --- Shared memory-state mutation coverage guard (#176) ---
+//
+// Every operational write to the repository-global memory object must pass
+// through the single lock/merge/atomic-replacement contract. Ordered traversal
+// catches a writer that includes the contract only after its first mutation.
+
+export function findMemoryStateContractViolations(
+  sources,
+  { rootContexts, contractFragment = 'memory-state' } = {},
+) {
+  const contractContext = `shared/${contractFragment}.md`;
+  const violations = [];
+
+  walkRuntimeStateMutations(sources, {
+    rootContexts,
+    initialState: () => ({ memoryContractSeen: false }),
+    onInclude: ({ name, active }) => {
+      if (name === contractFragment) active.memoryContractSeen = true;
+      return name !== contractFragment;
+    },
+    onMutation: ({ context, lineNumber, target, active, includeChain }) => {
+      if (context === contractContext || !target.startsWith('.effective-flow/memory.json')) return;
+      if (active.memoryContractSeen) return;
+      violations.push({
+        context,
+        line: lineNumber,
+        reason: 'memory mutation is not preceded by the shared memory-state contract',
+        target,
+        includeChain: [...includeChain],
+      });
+    },
+  });
+
+  return violations.sort(
+    (a, b) =>
+      a.context.localeCompare(b.context) ||
+      a.line - b.line ||
+      a.reason.localeCompare(b.reason) ||
+      a.target.localeCompare(b.target),
+  );
+}
+
 // --- Consumer-document command guard (#160) ---
 //
 // These scripts operate on a source checkout or release-maintenance payload;

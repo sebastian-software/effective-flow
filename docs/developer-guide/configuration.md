@@ -38,6 +38,22 @@ memory input or carry-over failure leaves the marker unset and blocks the workfl
 write so a later run can retry. Legacy directories remain untouched until the user explicitly
 runs `/effective-flow cleanup`.
 
+All `memory.json` writers share the contract in
+[`src/shared/memory-state.md`](../../src/shared/memory-state.md). They acquire the atomic
+`.effective-flow/memory.lock` directory, record lock ownership, re-read and validate the complete
+JSON object inside the lock, merge only their owned field or subtree, and replace the file through
+a unique same-directory temporary file and atomic rename. Lock acquisition retries for at most 30
+seconds; timeout reports the recorded owner, and a suspected orphan is removed only after explicit
+confirmation. Invalid JSON or counters, permissions, disk exhaustion, and failed replacement all
+fail closed without replacing the prior file or deleting foreign state.
+
+Finding producers complete filtering and deduplication before reserving the exact nonzero range
+they need. The range is persisted and the lock released before a report or remote issue is
+published, so concurrent producers cannot duplicate IDs. Reservations are monotonic: a failure or
+interruption after persistence may leave harmless gaps, but an ID is never rolled back or reused.
+The runtime-directory marker, legacy `.sf-memory.json` migration, `labelMigration.sf`, and
+`configMigration.adr` use the same mutation protocol and preserve unknown memory fields.
+
 The canonical convention-file locator is:
 
 ```md

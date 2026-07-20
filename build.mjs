@@ -34,6 +34,7 @@ import {
   assertNoEagerLazyOverlap,
   findRuntimeStateSafetyViolations,
   findRuntimeDirMigrationViolations,
+  findMemoryStateContractViolations,
   collectRenderedWorkerRefs,
   findProhibitedConsumerScriptCommands,
   findRetiredConfigDocViolations,
@@ -511,6 +512,19 @@ try {
       'runtime-directory migration guard (#174): every operational mutation below ' +
         '`.effective-flow/` must follow the canonical migration prerequisite:\n  ' +
         runtimeDirMigrationViolations
+          .map(
+            ({ context, line, reason, target, includeChain }) =>
+              `${context}:${line}: ${reason} (${target}; via ${includeChain.join(' -> ')})`,
+          )
+          .join('\n  '),
+    );
+  }
+  const memoryStateViolations = findMemoryStateContractViolations(runtimeStateSources);
+  if (memoryStateViolations.length > 0) {
+    throw new Error(
+      'memory-state writer guard (#176): every `.effective-flow/memory.json` mutation must ' +
+        'follow the shared lock/merge/atomic-replacement contract:\n  ' +
+        memoryStateViolations
           .map(
             ({ context, line, reason, target, includeChain }) =>
               `${context}:${line}: ${reason} (${target}; via ${includeChain.join(' -> ')})`,

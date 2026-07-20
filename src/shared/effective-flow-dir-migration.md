@@ -17,6 +17,10 @@ Resolve every current and legacy runtime path from the retained, verified
 write use absolute handles below that main checkout. Never scan or mutate a legacy/current
 runtime tree below a linked execution worktree.
 
+```include
+memory-state
+```
+
 1. **Read without creating anything.** Read the absolute
    `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle when present. A valid
    marker makes the prerequisite a no-op. A missing marker starts the migration scan even when
@@ -47,16 +51,13 @@ runtime tree below a linked execution worktree.
    both legacy directories and all target entries already carried over, blocks the
    workflow-specific runtime write with an actionable error, and allows the next run to retry
    the remaining missing paths.
-5. **Merge memory recursively, target wins.** Recursively add legacy object keys that are absent
-   from the target; at every scalar, array, object, or type conflict preserve the target value.
-   Immediately before the final memory update, re-read the retained absolute
-   `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle, validate it
-   again, and repeat the missing-key merge against that freshest object so unrelated concurrent
-   fields are not discarded. Reuse the repository-wide memory mutation contract when available;
-   do not introduce a migration-specific lock, finding-number reservation, or competing atomic
-   writer. After every directory copy has succeeded, add
-   `runtimeMigration.directory.version: 1` to the freshly merged object and write it under the
-   loaded runtime-state safety contract. Never reduce or replace existing counters, migration
+5. **Merge memory recursively under the shared contract, target wins.** Use “Shared memory-state
+   mutation” above; do not introduce a migration-specific lock or direct writer. Inside its lock,
+   re-read the retained absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle,
+   validate it again, and recursively add legacy object keys that are absent from that freshest
+   target. At every scalar, array, object, or type conflict preserve the target value. After every
+   directory copy has succeeded, add only `runtimeMigration.directory.version: 1` to the merged
+   object and atomically replace memory. Never reduce or replace existing counters, migration
    markers, status, or unrelated fields.
 6. **Certify only success.** The marker is the final migration mutation and is written only after
    all safe carry-over work succeeds. A run with no legacy source records it as part of the first

@@ -29,6 +29,7 @@ import {
   assertNoEagerLazyOverlap,
   findRuntimeStateSafetyViolations,
   findRuntimeDirMigrationViolations,
+  findMemoryStateContractViolations,
   developerGuideBaseUrl,
   rewriteDeveloperGuideLinks,
   appendDeliveryFooter,
@@ -1498,6 +1499,69 @@ test('migration-fragment mutations still require the runtime-state safety guard'
         reason: 'runtime mutation is not preceded by the canonical safety guard',
       },
     ],
+  );
+});
+
+// --- Shared memory-state mutation coverage guard (#176) ---
+
+test('findMemoryStateContractViolations rejects an absent or late memory contract', () => {
+  const absent = {
+    'tools/absent.md': 'Write `.effective-flow/memory.json` now.\n',
+  };
+  const late = {
+    'tools/late.md': [
+      'Write `.effective-flow/memory.json` now.',
+      '```include',
+      'memory-state',
+      '```',
+    ].join('\n'),
+  };
+
+  assert.deepEqual(
+    findMemoryStateContractViolations(absent).map(({ context, line, reason }) => ({
+      context,
+      line,
+      reason,
+    })),
+    [
+      {
+        context: 'tools/absent.md',
+        line: 1,
+        reason: 'memory mutation is not preceded by the shared memory-state contract',
+      },
+    ],
+  );
+  assert.equal(findMemoryStateContractViolations(late).length, 1);
+});
+
+test('findMemoryStateContractViolations follows a shared owner and preserves ordering', () => {
+  const writer = 'Update `.effective-flow/memory.json` now.\n';
+  const guarded = {
+    'tools/guarded.md': '```include\nowner\n```\n',
+    'shared/owner.md': ['```include', 'memory-state', '```', writer].join('\n'),
+    'shared/memory-state.md': 'Canonical protocol.\n',
+  };
+  const late = {
+    'tools/late.md': '```include\nowner\n```\n',
+    'shared/owner.md': [writer, '```include', 'memory-state', '```'].join('\n'),
+    'shared/memory-state.md': 'Canonical protocol.\n',
+  };
+
+  assert.deepEqual(findMemoryStateContractViolations(guarded), []);
+  const [violation] = findMemoryStateContractViolations(late);
+  assert.equal(violation.context, 'shared/owner.md');
+  assert.deepEqual(violation.includeChain, ['tools/late.md', 'shared/owner.md']);
+});
+
+test('the memory-state contract may describe its own atomic writes', () => {
+  assert.deepEqual(
+    findMemoryStateContractViolations(
+      {
+        'shared/memory-state.md': 'Atomically replace `.effective-flow/memory.json`.\n',
+      },
+      { rootContexts: ['shared/memory-state.md'] },
+    ),
+    [],
   );
 });
 

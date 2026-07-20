@@ -57,8 +57,8 @@ const contractScenarios = [
   {
     name: 'recursive memory conflicts and missing nested keys',
     clauses: [
-      /Recursively add legacy object keys that are absent\s+from the target/,
-      /at every scalar, array, object, or type conflict preserve the target value/,
+      /recursively add legacy object\s+keys that are absent from that freshest target/,
+      /At every scalar, array, object, or type\s+conflict preserve the target value/,
       /Never reduce or replace existing counters, migration\s+markers, status, or unrelated fields/,
     ],
   },
@@ -92,10 +92,11 @@ const contractScenarios = [
     ],
   },
   {
-    name: 'concurrent target memory is preserved without a new lock',
+    name: 'concurrent target memory uses the shared lock',
     clauses: [
-      /Immediately before the final memory update, re-read the retained absolute\s+`<RUNTIME_STATE_ROOT>\/\.effective-flow\/memory\.json` handle/,
-      /do not introduce a migration-specific lock, finding-number reservation, or competing atomic\s+writer/,
+      /```include\s+memory-state\s+```/,
+      /Inside its lock,\s+re-read the retained absolute\s+`<RUNTIME_STATE_ROOT>\/\.effective-flow\/memory\.json` handle/,
+      /do not introduce a migration-specific lock or direct writer/,
     ],
   },
 ];
@@ -119,7 +120,7 @@ test('native and portable renders preserve the same migration marker and behavio
 
     assert.match(rendered, /runtimeMigration\.directory\.version: 1/);
     assert.match(rendered, /Use the whole `<RUNTIME_STATE_ROOT>\/\.firmo\/` tree/);
-    assert.match(rendered, /Immediately before the final memory update, re-read/);
+    assert.match(rendered, /Inside its lock,\s+re-read the retained absolute/);
     assert.match(
       rendered,
       /Never scan or mutate a legacy\/current\s+runtime tree below a linked execution worktree/,
