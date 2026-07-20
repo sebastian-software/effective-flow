@@ -10,6 +10,7 @@ import {
   readFileSync,
   readdirSync,
   readlinkSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -287,10 +288,29 @@ function runDaloSmoke(delivery) {
     run('git', ['commit', '-qm', 'test fixture'], { cwd: repo });
 
     const store = join(temp, 'store');
-    run('dalo', ['--store', store, '--json', 'init']);
-    run('dalo', ['--store', store, '--json', 'source', 'add-catalog', 'staged', `file://${repo}`]);
+    const home = join(temp, 'home');
+    const claudeConfig = join(home, '.claude');
+    mkdirSync(join(claudeConfig, 'skills'), { recursive: true });
+    mkdirSync(join(home, '.agents', 'skills'), { recursive: true });
+    const env = {
+      HOME: home,
+      CLAUDE_CONFIG_DIR: claudeConfig,
+      CODEX_HOME: join(home, '.codex'),
+    };
+
+    // Mirror every command in the documented DALO quick start. The catalog URL
+    // is replaced with a local Git fixture so the smoke remains deterministic;
+    // command names, source/slot IDs, target IDs, and ordering stay identical.
+    run('dalo', ['--store', store, '--json', 'init'], { env });
+    run('dalo', ['--store', store, '--json', 'target', 'link', 'claude'], { env });
+    run('dalo', ['--store', store, '--json', 'target', 'link', 'codex'], { env });
+    run(
+      'dalo',
+      ['--store', store, '--json', 'source', 'add-catalog', 'effective-flow', `file://${repo}`],
+      { env },
+    );
     const inspected = parseJson(
-      run('dalo', ['--store', store, '--json', 'source', 'inspect', 'staged']),
+      run('dalo', ['--store', store, '--json', 'source', 'inspect', 'effective-flow'], { env }),
       'dalo source inspect',
     );
     const candidates = inspected.candidates ?? inspected.skills ?? [];
@@ -300,7 +320,37 @@ function runDaloSmoke(delivery) {
     if (slot !== 'effective-flow' || candidate.path !== 'effective-flow') {
       fail(`unexpected DALO candidate: ${JSON.stringify(candidate)}`);
     }
-    run('dalo', ['--store', store, '--json', 'source', 'select', 'staged', 'effective-flow']);
+    run(
+      'dalo',
+      ['--store', store, '--json', 'source', 'select', 'effective-flow', 'effective-flow'],
+      { env },
+    );
+    run(
+      'dalo',
+      [
+        '--store',
+        store,
+        '--json',
+        'approve',
+        'skill',
+        'effective-flow:effective-flow',
+        '--accept-risk',
+        'Effective Flow intentionally manages project configuration and automation.',
+      ],
+      { env },
+    );
+    run('dalo', ['--store', store, '--json', 'sync'], { env });
+
+    const expected = snapshotTree(join(delivery, 'effective-flow'));
+    for (const [target, installed] of [
+      ['claude', join(claudeConfig, 'skills', 'effective-flow')],
+      ['codex', join(home, '.agents', 'skills', 'effective-flow')],
+    ]) {
+      const actual = snapshotTree(realpathSync(installed));
+      if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+        fail(`DALO ${target} install differs from portable source`);
+      }
+    }
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }

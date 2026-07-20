@@ -29,6 +29,7 @@ import {
   DELIVERY_FOOTER_MARKER,
   PORTABLE_WORKER_DELEGATION,
   collectRenderedWorkerRefs,
+  findProhibitedConsumerScriptCommands,
 } from '../build-lib.mjs';
 
 const DELIVERY = { repo: 'sebastian-software/effective-flow', sourceBranch: 'develop' };
@@ -628,6 +629,48 @@ test('assertNoEagerLazyOverlap passes for disjoint sets and throws on overlap', 
       }),
     /both eager- and lazy-included \(in tools\/build\.md\): config-migration/,
   );
+});
+
+// --- Consumer-document command guard (#160) ---
+
+test('findProhibitedConsumerScriptCommands allows explanatory filename mentions', () => {
+  const prose = [
+    '`install-skill.sh` is a maintainer utility.',
+    'The local-link.sh and local-common.sh files remain on the source branch.',
+    'See https://github.com/example/project/blob/develop/install-skill.sh for its implementation.',
+  ].join('\n');
+  assert.deepEqual(findProhibitedConsumerScriptCommands(prose), []);
+});
+
+test('findProhibitedConsumerScriptCommands rejects direct local script invocations', () => {
+  const markdown = [
+    'Install it:',
+    '```sh',
+    './install-skill.sh',
+    './local-link.sh',
+    '```',
+    'Do not suggest `./local-common.sh` inline either.',
+  ].join('\n');
+  assert.deepEqual(findProhibitedConsumerScriptCommands(markdown), [
+    { line: 3, command: './install-skill.sh' },
+    { line: 4, command: './local-link.sh' },
+    { line: 6, command: './local-common.sh' },
+  ]);
+});
+
+test('findProhibitedConsumerScriptCommands rejects shell-interpreter invocations', () => {
+  const markdown = [
+    'bash install-skill.sh',
+    'sh ./local-link.sh',
+    'source local-common.sh',
+    'zsh ./install-skill.sh local',
+  ].join('\n');
+  assert.deepEqual(findProhibitedConsumerScriptCommands(markdown), [
+    { line: 1, command: 'bash install-skill.sh' },
+    { line: 2, command: 'sh ./local-link.sh' },
+    { line: 3, command: 'source local-common.sh' },
+    { line: 4, command: 'zsh ./install-skill.sh' },
+  ]);
 });
 
 // --- Delivery-branch documentation transforms ---

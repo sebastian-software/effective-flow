@@ -1,8 +1,8 @@
 # Release and installation
 
-This document describes how Effective Flow is versioned, published, and installed. Canonical
+This document describes how Effective Flow is versioned, published, and distributed. Canonical
 versioning rules are in [`AGENTS.md`](../../AGENTS.md), section "Versioning"; the concrete
-mechanisms (release-please, installation scripts, version stamp) follow here.
+mechanisms (release-please, manager delivery, maintainer scripts, version stamp) follow here.
 
 ## Versioning with release-please
 
@@ -37,10 +37,10 @@ Effective Flow separates source and built delivery across two branches:
   mechanically by the release workflow. It contains no `claude/`, `codex/`, or `portable/`
   wrapper and therefore no competing same-name candidate.
 
-This separates two supported paths. DALO and Skills CLI consume the same portable bytes from the
-default branch and use bundled worker contracts with built-in/general subagents. The direct
-installer downloads the release archive and selects the two native targets, including registered
-custom-agent sidecars.
+This establishes one supported end-user interface: DALO and Skills CLI consume the same portable
+bytes from the default branch and use bundled worker contracts with built-in/general subagents.
+The release archive preserves all build targets for verification and release maintenance, but it
+is not a supported end-user installation interface.
 
 ### Documentation separated by audience
 
@@ -72,50 +72,65 @@ Since `release-please-config.json` carries the single package `.` under the name
 The build stamps `<manifest version> (<git short hash>)` into all three routers. A drift guard
 makes the build fail unless native Claude, native Codex, and portable output agree.
 
-## Installation
+## Consumer installation through DALO or Skills CLI
+
+The default branch is a portable catalog with one `effective-flow` skill slot. DALO 0.8.2 selects
+that slot and materializes it into linked Claude Code and Codex targets:
 
 ```sh
-./install-skill.sh
+dalo init
+dalo target link claude
+dalo target link codex
+dalo source add-catalog effective-flow https://github.com/sebastian-software/effective-flow.git
+dalo source select effective-flow effective-flow
+dalo approve skill effective-flow:effective-flow --accept-risk "Effective Flow intentionally manages project configuration and automation."
+dalo sync
 ```
 
-The script:
+Selection runs DALO's audit. The explicit approval is scoped to the selected content hash and
+records why its persistence finding is accepted; users must review the findings before granting
+it, and changed content requires another approval.
 
-1. downloads the archive of the most recently published GitHub release version
-   (`gh release download`, pattern `effective-flow-*.tar.gz`),
-2. copies the native Claude skill to `$CLAUDE_HOME/skills/effective-flow` and the native Codex
-   skill to `~/.agents/skills/effective-flow`,
-3. registers native Claude agents under `$CLAUDE_HOME/agents/effective-flow-*.md` and native
-   Codex agents under `$CODEX_HOME/agents/effective-flow-*.toml`,
-4. records exact owned sidecars per harness so a reinstall can remove stale renamed workers
-   without deleting foreign neighbors,
-5. cleans up the exact retired `firmo`/`sf-` namespaces and former marketplace path.
+[Skills CLI](https://skills.sh/) 1.5.19 installs the same portable directory globally for either
+harness:
 
-Only the `effective-flow` skill child and manifest-recorded Effective Flow sidecars are managed.
-External parent-directory symlinks and foreign neighboring skills/agents stay untouched. Copy
-and link modes are idempotent and validate that both native worker sets are complete before
-changing the installation.
+```sh
+npx skills@1.5.19 add sebastian-software/effective-flow --agent claude-code --skill effective-flow --global --yes --copy
+npx skills@1.5.19 add sebastian-software/effective-flow --agent codex --skill effective-flow --global --yes --copy
+```
 
-### Installation through DALO or Skills CLI
+Both paths consume the built default-branch payload, intentionally avoid native agent-directory
+writes, and delegate through each harness's built-in general-purpose subagent mechanism. If that
+mechanism is unavailable, the portable instruction reports the limitation instead of claiming a
+worker ran.
 
-The default branch is a portable catalog with one skill slot. DALO 0.8.2 can inspect and select
-`effective-flow` without ambiguity. Skills CLI 1.5.19 installs that same directory with
-`--agent claude-code` or `--agent codex`; `--copy` avoids target-symlink differences. These
-manager paths intentionally do **not** write native agent directories. Each workflow loads only
-the selected `workers/effective-flow-<worker>.md` contract and delegates through the harness's
-built-in general-purpose subagent mechanism. If that mechanism is unavailable, the portable
-instruction reports the limitation instead of claiming a worker ran.
+The repository is currently private, so these managers require existing Git credentials with
+read access. Repository visibility is tracked separately in
+[issue #143](https://github.com/sebastian-software/effective-flow/issues/143).
 
-Use the direct installer when native named custom agents are required. Use a manager when one
-portable, manager-owned skill installation is preferred.
+## Checkout and release-maintenance utilities
 
-### Installation from the local checkout
+The shell scripts on `develop` are contributor and maintainer tools. They are not delivered on
+the default branch, are not included in the release archive, and must not be presented as an
+end-user installation path.
+
+### Build and copy the current checkout
 
 ```sh
 ./install-skill.sh local
 ```
 
-Builds the current checkout (instead of downloading a release) and deploys it identically to the
-standard installation – useful for testing an unpublished state locally.
+Builds the current source checkout and copies both native targets into the local harness
+directories. This is useful for testing unpublished native output during development.
+
+### Verify a published release archive
+
+```sh
+./install-skill.sh
+```
+
+Downloads the latest release archive and deploys its two native targets. This path exists for
+maintainer verification and compatibility testing; it is not the supported consumer workflow.
 
 ### Development: symlink instead of copy
 
@@ -127,8 +142,10 @@ Builds the current checkout and links `dist/` via symlink into the harness direc
 of copying. Changes to `src/` thus take effect after another `node build.mjs` without a
 reinstall.
 
-Both installation paths share the same deployment logic in `local-common.sh`; only the
-installation strategy (`cp -R` vs. `ln -s`) and the final message differ.
+The copy and link helpers share deployment logic in `local-common.sh`; only the installation
+strategy (`cp -R` vs. `ln -s`) and the final message differ. These utilities manage only the
+`effective-flow` skill child and manifest-recorded Effective Flow sidecars, leaving parent
+symlinks and unrelated neighboring skills or agents untouched.
 
 ### Build only, no deployment
 

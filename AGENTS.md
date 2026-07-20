@@ -16,9 +16,9 @@ pnpm format              # format with oxfmt (Markdown + JS)
 pnpm agent:check         # oxfmt --check (CI-style, no writes)
 pnpm test                # run the unit test suite (node:test)
 pnpm test:distribution   # isolated build/archive/delivery/install smoke suite
-./install-skill.sh       # install the latest GitHub release asset
-./install-skill.sh local # build + copy the current checkout
-./local-link.sh          # build + symlink dist/ (for development)
+./install-skill.sh       # maintainer verification of the latest release archive
+./install-skill.sh local # maintainer build + copy of the current checkout
+./local-link.sh          # developer build + symlink of the current checkout
 ```
 
 Package manager is **pnpm** (`packageManager: pnpm@11.11.0`). Correctness rests on three layers: a `node:test` unit suite (`pnpm test`) covering pure transforms and installers, build-time guards during `node build.mjs`, and `pnpm test:distribution` for isolated archive/delivery layouts. After editing distribution sources, run the same sequence CI runs: `pnpm agent:check`, `pnpm test`, `node build.mjs`, then `pnpm test:distribution`.
@@ -38,7 +38,7 @@ The build emits three consumer targets:
 - **Native Codex** (`dist/codex/`): skill plus registered agent sidecars in `dist/codex/agents/effective-flow-<name>.toml`.
 - **Portable managers** (`dist/portable/effective-flow/`): one harness-neutral skill with bundled `workers/effective-flow-<name>.md` contracts. It delegates through built-in/general subagents and does not rely on managers installing native agent sidecars.
 
-The release archive contains all three. The machine-managed default/delivery branch publishes only the contents of `dist/portable/effective-flow/` at `effective-flow/`, so recursive skill managers discover exactly one candidate. `install-skill.sh` and `local-link.sh` use only the two native targets.
+The release archive contains all three for release verification and maintenance; it is not a supported end-user installation interface. The machine-managed default/delivery branch publishes only the contents of `dist/portable/effective-flow/` at `effective-flow/`, so DALO and Skills CLI discover exactly one candidate and consume the built payload directly. `install-skill.sh` and `local-link.sh` are checkout utilities that use only the two native targets.
 
 ### Placeholder / directive syntax in sources
 

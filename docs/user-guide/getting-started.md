@@ -2,37 +2,51 @@
 
 ## Installation
 
+Effective Flow's supported installation paths consume the built skill published on the
+repository's default branch. The repository is currently private, so your local Git client must
+already be authenticated and authorized to read it. The decision about public availability is
+tracked separately in [issue #143](https://github.com/sebastian-software/effective-flow/issues/143).
+
+### Preferred: DALO
+
+Install [DALO](https://github.com/sebastian-software/dalo), then initialize its store, link the
+Claude Code and Codex targets you use, add the Effective Flow catalog, select the skill, and sync:
+
 ```sh
-./install-skill.sh
+dalo init
+dalo target link claude
+dalo target link codex
+dalo source add-catalog effective-flow https://github.com/sebastian-software/effective-flow.git
+dalo source select effective-flow effective-flow
+dalo approve skill effective-flow:effective-flow --accept-risk "Effective Flow intentionally manages project configuration and automation."
+dalo sync
 ```
 
-The script downloads the archive of the latest available GitHub release version and
-installs Effective Flow as a skill directory into `~/.claude/skills/effective-flow` (Claude Code) and
-`~/.agents/skills/effective-flow` (Codex). It also registers the complete native worker set as
-`$CLAUDE_HOME/agents/effective-flow-*.md` and `$CODEX_HOME/agents/effective-flow-*.toml`. Old
-owned entries are cleaned up through exact ownership manifests; external parent symlinks and
-unrelated neighboring skills or agents are left untouched.
+`dalo source select` runs DALO's security audit. Review its findings before granting the
+content-hash-scoped approval; the recorded reason acknowledges that Effective Flow intentionally
+manages persistent project configuration and automation. Changed skill content requires a new
+review and approval.
 
-This direct path provides native named custom agents. Standard managers use the portable target
-from the repository's default branch instead:
+If you use only one harness, run only its `dalo target link` command. `dalo sync` materializes the
+selected skill into every linked target. Run it again after a new Effective Flow release to
+refresh the installation.
+
+### Alternative: Skills CLI 1.5.19
+
+[Skills CLI](https://skills.sh/) is the supported alternative. Run the command for each harness
+you use:
 
 ```sh
 npx skills@1.5.19 add sebastian-software/effective-flow --agent claude-code --skill effective-flow --global --yes --copy
 npx skills@1.5.19 add sebastian-software/effective-flow --agent codex --skill effective-flow --global --yes --copy
 ```
 
-Both manager commands install the same `effective-flow/` bytes. The portable skill bundles each
-worker under `workers/effective-flow-<worker>.md`, loads only the selected contract, and delegates
-through the harness's built-in general-purpose subagent mechanism. Managers do not register
-native custom-agent sidecars. DALO likewise sees exactly one `effective-flow` slot on the
-default branch and can select it without choosing a harness build.
-
-Two variants for developing on the Effective Flow repo itself:
-
-```sh
-./install-skill.sh local  # builds the currently checked-out state and copies it
-./local-link.sh           # builds and symlinks dist/ instead of copying
-```
+`--global` installs outside the current project, and `--copy` creates a manager-owned copy rather
+than a target symlink. DALO and Skills CLI install the same `effective-flow/` bytes from the
+default branch. The portable skill bundles each worker under
+`workers/effective-flow-<worker>.md`, loads only the selected contract, and delegates through the
+harness's built-in general-purpose subagent mechanism. Neither manager needs native custom-agent
+sidecars or a release archive.
 
 ## First invocation
 
