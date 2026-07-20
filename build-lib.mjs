@@ -213,6 +213,464 @@ export function validateRefs(text, { knownTools, knownAgents, context } = {}) {
   }
 }
 
+// --- Central-skill ownership contract (#168) ---
+//
+// Effective Flow validates only relationships it declares itself. The central
+// skills repository remains an independently released project: normal builds
+// never enumerate it or compare its revision. Build-time I/O stays in
+// build.mjs; these parsers and reconciliation checks are pure for focused tests.
+
+export const SKILL_OWNERSHIP_TABLE_START = '<!-- skill-ownership-table:start -->';
+export const SKILL_OWNERSHIP_TABLE_END = '<!-- skill-ownership-table:end -->';
+export const SKILL_OWNERSHIP_RELEVANCE_MARKER = 'skill-ownership:relevance-gate-owners';
+export const SKILL_OWNERSHIP_CLASSIFICATIONS = Object.freeze([
+  'delegate',
+  'route-when-relevant',
+  'no-overlap',
+]);
+
+const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function assertPlainObject(value, label, context) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} must be an object${contextSuffix(context)}`);
+  }
+}
+
+function assertOnlyKeys(value, allowedKeys, label, context) {
+  const unknownKeys = Object.keys(value).filter((key) => !allowedKeys.includes(key));
+  if (unknownKeys.length > 0) {
+    throw new Error(
+      `${label} has unsupported field(s): ${unknownKeys.sort().join(', ')}${contextSuffix(context)}`,
+    );
+  }
+}
+
+function assertSkillName(value, label, context) {
+  if (typeof value !== 'string' || !SKILL_NAME_RE.test(value)) {
+    throw new Error(`${label} must be a kebab-case skill name${contextSuffix(context)}`);
+  }
+}
+
+function parseUniqueSkillNames(value, label, context) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array${contextSuffix(context)}`);
+  }
+  const seen = new Set();
+  return value.map((skill) => {
+    assertSkillName(skill, `${label} entry`, context);
+    if (seen.has(skill)) {
+      throw new Error(`Duplicate skill "${skill}" in ${label}${contextSuffix(context)}`);
+    }
+    seen.add(skill);
+    return skill;
+  });
+}
+
+export function parseSkillOwnershipManifest(json, { context } = {}) {
+  let manifest;
+  try {
+    manifest = JSON.parse(json);
+  } catch (error) {
+    throw new Error(`Invalid skill-ownership JSON: ${error.message}${contextSuffix(context)}`);
+  }
+  assertPlainObject(manifest, 'Skill-ownership manifest', context);
+  assertOnlyKeys(
+    manifest,
+    [
+      'schemaVersion',
+      'provenance',
+      'relationships',
+      'relevanceGateOwners',
+      'externalRecommendationAllowlist',
+    ],
+    'Skill-ownership manifest',
+    context,
+  );
+
+  if (manifest.schemaVersion !== 1) {
+    throw new Error(`Skill-ownership manifest schemaVersion must be 1${contextSuffix(context)}`);
+  }
+  if (!Array.isArray(manifest.relationships) || manifest.relationships.length === 0) {
+    throw new Error(
+      `Skill-ownership manifest relationships must be a non-empty array${contextSuffix(context)}`,
+    );
+  }
+
+  if (manifest.provenance !== undefined) {
+    assertPlainObject(manifest.provenance, 'Skill-ownership provenance', context);
+    assertOnlyKeys(
+      manifest.provenance,
+      ['lastReviewedAt', 'observedRevision'],
+      'Skill-ownership provenance',
+      context,
+    );
+    if (
+      manifest.provenance.lastReviewedAt !== undefined &&
+      !/^\d{4}-\d{2}-\d{2}$/.test(manifest.provenance.lastReviewedAt)
+    ) {
+      throw new Error(
+        `Skill-ownership provenance lastReviewedAt must use YYYY-MM-DD${contextSuffix(context)}`,
+      );
+    }
+    if (
+      manifest.provenance.observedRevision !== undefined &&
+      (typeof manifest.provenance.observedRevision !== 'string' ||
+        manifest.provenance.observedRevision.trim() === '')
+    ) {
+      throw new Error(
+        `Skill-ownership provenance observedRevision must be a non-empty string${contextSuffix(context)}`,
+      );
+    }
+  }
+
+  const relationshipSkills = new Set();
+  const relationships = manifest.relationships.map((relationship, relationshipIndex) => {
+    assertPlainObject(
+      relationship,
+      `Skill-ownership relationship ${relationshipIndex + 1}`,
+      context,
+    );
+    assertOnlyKeys(
+      relationship,
+      ['skill', 'consumers'],
+      `Skill-ownership relationship ${relationshipIndex + 1}`,
+      context,
+    );
+    assertSkillName(
+      relationship.skill,
+      `Skill-ownership relationship ${relationshipIndex + 1}.skill`,
+      context,
+    );
+    if (relationshipSkills.has(relationship.skill)) {
+      throw new Error(
+        `Duplicate skill-ownership relationship for "${relationship.skill}"${contextSuffix(context)}`,
+      );
+    }
+    relationshipSkills.add(relationship.skill);
+
+    if (!Array.isArray(relationship.consumers) || relationship.consumers.length === 0) {
+      throw new Error(
+        `Skill-ownership relationship "${relationship.skill}" must declare consumers${contextSuffix(context)}`,
+      );
+    }
+    const consumers = new Set();
+    const normalizedConsumers = relationship.consumers.map((consumer, consumerIndex) => {
+      assertPlainObject(
+        consumer,
+        `Consumer ${consumerIndex + 1} for skill "${relationship.skill}"`,
+        context,
+      );
+      assertOnlyKeys(
+        consumer,
+        ['consumer', 'classification'],
+        `Consumer ${consumerIndex + 1} for skill "${relationship.skill}"`,
+        context,
+      );
+      assertSkillName(
+        consumer.consumer,
+        `Consumer ${consumerIndex + 1} for skill "${relationship.skill}"`,
+        context,
+      );
+      if (consumers.has(consumer.consumer)) {
+        throw new Error(
+          `Duplicate consumer "${consumer.consumer}" for skill "${relationship.skill}"${contextSuffix(context)}`,
+        );
+      }
+      consumers.add(consumer.consumer);
+      if (!SKILL_OWNERSHIP_CLASSIFICATIONS.includes(consumer.classification)) {
+        throw new Error(
+          `Skill-ownership relationship "${relationship.skill}" / "${consumer.consumer}" has invalid or missing classification "${consumer.classification ?? ''}"; expected one of ${SKILL_OWNERSHIP_CLASSIFICATIONS.join(', ')}${contextSuffix(context)}`,
+        );
+      }
+      return {
+        consumer: consumer.consumer,
+        classification: consumer.classification,
+      };
+    });
+
+    return { skill: relationship.skill, consumers: normalizedConsumers };
+  });
+
+  const relevanceGateOwners = parseUniqueSkillNames(
+    manifest.relevanceGateOwners,
+    'Skill-ownership relevanceGateOwners',
+    context,
+  );
+  const externalRecommendationAllowlist = parseUniqueSkillNames(
+    manifest.externalRecommendationAllowlist,
+    'Skill-ownership externalRecommendationAllowlist',
+    context,
+  );
+  for (const skill of externalRecommendationAllowlist) {
+    if (relationshipSkills.has(skill)) {
+      throw new Error(
+        `Skill "${skill}" cannot be both a declared relationship and an external recommendation${contextSuffix(context)}`,
+      );
+    }
+  }
+
+  return {
+    schemaVersion: manifest.schemaVersion,
+    provenance: manifest.provenance,
+    relationships,
+    relevanceGateOwners,
+    externalRecommendationAllowlist,
+  };
+}
+
+function countOccurrences(text, value) {
+  return text.split(value).length - 1;
+}
+
+function ownershipTableCells(line) {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim());
+}
+
+export function parseSkillOwnershipTable(markdown, { context } = {}) {
+  const normalized = normalizeLineEndings(markdown);
+  if (
+    countOccurrences(normalized, SKILL_OWNERSHIP_TABLE_START) !== 1 ||
+    countOccurrences(normalized, SKILL_OWNERSHIP_TABLE_END) !== 1
+  ) {
+    throw new Error(
+      `Skill-ownership guide requires exactly one dedicated table marker pair${contextSuffix(context)}`,
+    );
+  }
+  const start =
+    normalized.indexOf(SKILL_OWNERSHIP_TABLE_START) + SKILL_OWNERSHIP_TABLE_START.length;
+  const end = normalized.indexOf(SKILL_OWNERSHIP_TABLE_END);
+  if (end <= start) {
+    throw new Error(`Skill-ownership table markers are out of order${contextSuffix(context)}`);
+  }
+
+  const lines = normalized
+    .slice(start, end)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 3) {
+    throw new Error(`Skill-ownership table has no relationship rows${contextSuffix(context)}`);
+  }
+  const headers = ownershipTableCells(lines[0]);
+  const expectedHeaders = [
+    'Central skill',
+    'Effective-Flow consumer(s)',
+    'Classification',
+    'Domain coverage',
+  ];
+  if (
+    headers.length !== expectedHeaders.length ||
+    headers.some((header, index) => header !== expectedHeaders[index])
+  ) {
+    throw new Error(
+      `Skill-ownership table headers must be: ${expectedHeaders.join(', ')}${contextSuffix(context)}`,
+    );
+  }
+  const separator = ownershipTableCells(lines[1]);
+  if (
+    separator.length !== expectedHeaders.length ||
+    separator.some((cell) => !/^:?-{3,}:?$/.test(cell))
+  ) {
+    throw new Error(`Skill-ownership table has an invalid separator row${contextSuffix(context)}`);
+  }
+
+  const seen = new Set();
+  return lines.slice(2).map((line) => {
+    const cells = ownershipTableCells(line);
+    if (cells.length !== expectedHeaders.length) {
+      throw new Error(
+        `Skill-ownership table row has ${cells.length} cells; expected ${expectedHeaders.length}${contextSuffix(context)}`,
+      );
+    }
+    const match = cells[0].match(/^`([a-z0-9]+(?:-[a-z0-9]+)*)`$/);
+    if (!match) {
+      throw new Error(
+        `Skill-ownership table has an invalid central skill cell "${cells[0]}"${contextSuffix(context)}`,
+      );
+    }
+    const skill = match[1];
+    if (seen.has(skill)) {
+      throw new Error(
+        `Duplicate skill "${skill}" in Markdown ownership table${contextSuffix(context)}`,
+      );
+    }
+    seen.add(skill);
+    return {
+      skill,
+      consumers: cells[1],
+      classification: cells[2],
+      coverage: cells[3],
+    };
+  });
+}
+
+export function collectRecommendedSkillChains(sources, { context } = {}) {
+  if (!Array.isArray(sources)) {
+    throw new Error(`Recommended-skill sources must be an array${contextSuffix(context)}`);
+  }
+  const chains = [];
+  for (const source of sources) {
+    assertPlainObject(source, 'Recommended-skill source', context);
+    if (typeof source.consumer !== 'string' || source.consumer.trim() === '') {
+      throw new Error(`Recommended-skill source requires a consumer${contextSuffix(context)}`);
+    }
+    if (typeof source.text !== 'string') {
+      throw new Error(
+        `Recommended-skill source "${source.consumer}" requires text${contextSuffix(context)}`,
+      );
+    }
+    const normalized = normalizeLineEndings(source.text);
+    const headingRe = /^## (?:Recommended skills|Empfohlene Skills)\s*$/gm;
+    for (const heading of normalized.matchAll(headingRe)) {
+      const sectionStart = heading.index + heading[0].length;
+      const followingHeading = normalized.slice(sectionStart).search(/^##\s+/m);
+      const section = normalized.slice(
+        sectionStart,
+        followingHeading === -1 ? normalized.length : sectionStart + followingHeading,
+      );
+      for (const bullet of section.matchAll(/^\s*-\s+(.+)$/gm)) {
+        const chain = bullet[1].match(/^`([^`]+)`(.*)$/);
+        if (!chain || chain[2].includes('`') || chain[2].includes('›')) {
+          throw new Error(
+            `Recommended-skill bullet for "${source.consumer}" must start with exactly one backticked skill or fallback chain${contextSuffix(source.context ?? context)}`,
+          );
+        }
+        const tokens = chain[1].split('›').map((part) => part.trim());
+        for (const token of tokens) {
+          assertSkillName(
+            token,
+            `Recommended skill for "${source.consumer}"`,
+            source.context ?? context,
+          );
+        }
+        chains.push({
+          consumer: source.consumer,
+          skills: tokens,
+          context: source.context,
+        });
+      }
+    }
+  }
+  return chains;
+}
+
+export function parseSkillOwnershipRelevanceGateOwners(markdown, { context } = {}) {
+  const normalized = normalizeLineEndings(markdown);
+  const markerRe = new RegExp(
+    `<!--\\s*${escapeRegex(SKILL_OWNERSHIP_RELEVANCE_MARKER)}\\s+(\\[[^\\n]*\\])\\s*-->`,
+    'g',
+  );
+  const matches = [...normalized.matchAll(markerRe)];
+  if (matches.length !== 1) {
+    throw new Error(
+      `Relevance-gate source requires exactly one structured ${SKILL_OWNERSHIP_RELEVANCE_MARKER} marker${contextSuffix(context)}`,
+    );
+  }
+  let owners;
+  try {
+    owners = JSON.parse(matches[0][1]);
+  } catch (error) {
+    throw new Error(
+      `Invalid relevance-gate owner marker: ${error.message}${contextSuffix(context)}`,
+    );
+  }
+  return parseUniqueSkillNames(owners, 'Relevance-gate owner marker', context);
+}
+
+function setDifference(left, right) {
+  return [...left].filter((value) => !right.has(value)).sort();
+}
+
+export function assertSkillOwnershipContract(
+  { manifest, inventoryRows, recommendationChains, relevanceGateOwners, knownConsumers },
+  { context } = {},
+) {
+  const relationshipBySkill = new Map(
+    manifest.relationships.map((relationship) => [relationship.skill, relationship]),
+  );
+  const relationshipSkills = new Set(relationshipBySkill.keys());
+  if (knownConsumers !== undefined) {
+    if (!(knownConsumers instanceof Set)) {
+      throw new Error(`Skill-ownership knownConsumers must be a Set${contextSuffix(context)}`);
+    }
+    for (const relationship of manifest.relationships) {
+      for (const { consumer } of relationship.consumers) {
+        if (!knownConsumers.has(consumer)) {
+          throw new Error(
+            `Unknown Effective Flow consumer "${consumer}" for skill "${relationship.skill}"${contextSuffix(context)}`,
+          );
+        }
+      }
+    }
+  }
+  const inventorySkills = new Set(inventoryRows.map((row) => row.skill));
+  const missingRows = setDifference(relationshipSkills, inventorySkills);
+  const extraRows = setDifference(inventorySkills, relationshipSkills);
+  if (missingRows.length > 0 || extraRows.length > 0) {
+    const details = [];
+    if (missingRows.length > 0) {
+      details.push(`missing Markdown row(s): ${missingRows.join(', ')}`);
+    }
+    if (extraRows.length > 0) {
+      details.push(`stale or extra Markdown row(s): ${extraRows.join(', ')}`);
+    }
+    throw new Error(
+      `Skill-ownership inventory mismatch: ${details.join('; ')}${contextSuffix(context)}`,
+    );
+  }
+
+  const manifestOwners = new Set(manifest.relevanceGateOwners);
+  const sourceOwners = new Set(relevanceGateOwners);
+  const staleManifestOwners = setDifference(manifestOwners, sourceOwners);
+  const undeclaredSourceOwners = setDifference(sourceOwners, manifestOwners);
+  if (staleManifestOwners.length > 0 || undeclaredSourceOwners.length > 0) {
+    const details = [];
+    if (staleManifestOwners.length > 0) {
+      details.push(`stale manifest owner(s): ${staleManifestOwners.join(', ')}`);
+    }
+    if (undeclaredSourceOwners.length > 0) {
+      details.push(`undeclared source owner(s): ${undeclaredSourceOwners.join(', ')}`);
+    }
+    throw new Error(
+      `Skill-ownership relevance-gate mismatch: ${details.join('; ')}${contextSuffix(context)}`,
+    );
+  }
+  for (const owner of manifestOwners) {
+    if (!relationshipSkills.has(owner)) {
+      throw new Error(
+        `Relevance-gate owner "${owner}" has no declared relationship${contextSuffix(context)}`,
+      );
+    }
+  }
+
+  const externalRecommendations = new Set(manifest.externalRecommendationAllowlist);
+  for (const chain of recommendationChains) {
+    for (const [index, skill] of chain.skills.entries()) {
+      if (relationshipSkills.has(skill)) {
+        const consumers = new Set(
+          relationshipBySkill.get(skill).consumers.map((entry) => entry.consumer),
+        );
+        if (!consumers.has(chain.consumer)) {
+          throw new Error(
+            `Unowned recommendation "${skill}" for consumer "${chain.consumer}"${contextSuffix(chain.context ?? context)}`,
+          );
+        }
+      } else if (!externalRecommendations.has(skill)) {
+        const label = index === 0 ? 'Unowned recommended skill' : 'Unknown external fallback skill';
+        throw new Error(
+          `${label} "${skill}" for consumer "${chain.consumer}"${contextSuffix(chain.context ?? context)}`,
+        );
+      }
+    }
+  }
+}
+
 // --- Shared project-routing contract (#164) ---
 //
 // The runtime instructions and the fixture regression tests intentionally read

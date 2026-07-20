@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "provenance": {
+    "lastReviewedAt": "2026-07-20",
+    "observedRevision": "25aca272416d35cc104d4af08ec1f2a48a1fbb3a"
+  },
+  "relationships": [
+    {
+      "skill": "locale-typography",
+      "consumers": [
+        { "consumer": "language-rules", "classification": "delegate" },
+        { "consumer": "code-documenter", "classification": "delegate" },
+        { "consumer": "docs-writer", "classification": "delegate" },
+        { "consumer": "marketing-writer", "classification": "delegate" }
+      ]
+    },
+    {
+      "skill": "effective-web",
+      "consumers": [
+        { "consumer": "frontend-reviewer", "classification": "delegate" },
+        { "consumer": "ui-implementer", "classification": "delegate" },
+        { "consumer": "test-writer", "classification": "route-when-relevant" },
+        { "consumer": "e2e-tester", "classification": "route-when-relevant" },
+        { "consumer": "plan", "classification": "route-when-relevant" },
+        { "consumer": "plan-review", "classification": "route-when-relevant" }
+      ]
+    },
+    {
+      "skill": "smart-dependency-updater",
+      "consumers": [{ "consumer": "maintain", "classification": "delegate" }]
+    },
+    {
+      "skill": "codebase-improvement",
+      "consumers": [
+        { "consumer": "review", "classification": "route-when-relevant" },
+        { "consumer": "refactor", "classification": "route-when-relevant" },
+        { "consumer": "plan", "classification": "route-when-relevant" },
+        { "consumer": "plan-review", "classification": "route-when-relevant" },
+        {
+          "consumer": "generic-product-reviewer",
+          "classification": "route-when-relevant"
+        }
+      ]
+    },
+    {
+      "skill": "port-codebases",
+      "consumers": [{ "consumer": "refactor", "classification": "route-when-relevant" }]
+    },
+    {
+      "skill": "software-architecture",
+      "consumers": [
+        { "consumer": "nodejs-reviewer", "classification": "route-when-relevant" },
+        { "consumer": "rust-reviewer", "classification": "route-when-relevant" },
+        { "consumer": "plan", "classification": "route-when-relevant" },
+        { "consumer": "plan-review", "classification": "route-when-relevant" }
+      ]
+    },
+    {
+      "skill": "decision-records",
+      "consumers": [{ "consumer": "apply-review", "classification": "delegate" }]
+    },
+    {
+      "skill": "product-management",
+      "consumers": [
+        { "consumer": "plan", "classification": "route-when-relevant" },
+        { "consumer": "plan-review", "classification": "route-when-relevant" }
+      ]
+    },
+    {
+      "skill": "product-design",
+      "consumers": [
+        { "consumer": "plan", "classification": "route-when-relevant" },
+        { "consumer": "plan-review", "classification": "route-when-relevant" }
+      ]
+    },
+    {
+      "skill": "metro-english",
+      "consumers": [
+        { "consumer": "iterate", "classification": "route-when-relevant" },
+        { "consumer": "pr", "classification": "route-when-relevant" },
+        { "consumer": "docs-writer", "classification": "route-when-relevant" },
+        { "consumer": "code-documenter", "classification": "route-when-relevant" }
+      ]
+    },
+    {
+      "skill": "web-legal-compliance",
+      "consumers": [
+        { "consumer": "plan", "classification": "route-when-relevant" },
+        { "consumer": "plan-review", "classification": "route-when-relevant" }
+      ]
+    },
+    {
+      "skill": "pr-review",
+      "consumers": [{ "consumer": "iterate", "classification": "delegate" }]
+    }
+  ],
+  "relevanceGateOwners": [
+    "product-management",
+    "product-design",
+    "effective-web",
+    "software-architecture",
+    "web-legal-compliance"
+  ],
+  "externalRecommendationAllowlist": [
+    "humanizer",
+    "impeccable",
+    "frontend-design",
+    "context7-mcp",
+    "copywriting",
+    "copy-editing",
+    "marketing-psychology"
+  ]
+}

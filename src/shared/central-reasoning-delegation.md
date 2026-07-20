@@ -27,6 +27,8 @@ concrete task crosses the declared boundary of a specialist, load its owner via 
 gate (building block "Skill discovery") and the ownership inventory
 (`docs/developer-guide/skill-ownership.md`). Typical owners:
 
+<!-- skill-ownership:relevance-gate-owners ["product-management","product-design","effective-web","software-architecture","web-legal-compliance"] -->
+
 - `product-management` — product outcomes, what/why/for-whom, prioritization, release judgment;
 - `product-design` — research, problem framing, information architecture, flows, prototype;
 - `effective-web` — browser implementation and accessibility detail;

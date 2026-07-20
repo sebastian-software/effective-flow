@@ -86,10 +86,16 @@ only scope/output/lifecycle constraints plus a minimal generic fallback for when
 absent. Effective Flow keeps ownership of orchestration (routing, plan/report state, finding
 IDs, tracker, agent selection, worktrees, commits, delivery, harness transform, config). The
 per-skill classification (delegate / route-when-relevant / no-overlap) lives in
+[`docs/developer-guide/skill-ownership.json`](docs/developer-guide/skill-ownership.json), with
+the human-readable explanation in
 [`docs/developer-guide/skill-ownership.md`](docs/developer-guide/skill-ownership.md). **When
 adding or expanding a tool, agent, or shared include, run the ownership check:** does it carry a
-second copy of a centrally owned playbook? If so, delegate to the skill and keep only a minimal
-fallback.
+second copy of a centrally owned playbook? If so, delegate to the skill, keep only a minimal
+fallback, and update the concrete consumer relationship in both files. Normal builds reconcile
+only Effective Flow’s own relationship declarations, recommendations, and relevance-gate owners;
+they neither synchronize the complete upstream catalog nor enforce the manifest’s informational
+review revision. Use `pnpm audit:skill-ownership -- <local-skills-directory>` as an optional,
+non-blocking maintainer aid and review its candidates manually.
 
 ## Versioning
 

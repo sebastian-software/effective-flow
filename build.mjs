@@ -37,6 +37,11 @@ import {
   findForeignHarnessToolParameters,
   parseProjectRoutingTable,
   assertProjectRoutingContract,
+  parseSkillOwnershipManifest,
+  parseSkillOwnershipTable,
+  collectRecommendedSkillChains,
+  parseSkillOwnershipRelevanceGateOwners,
+  assertSkillOwnershipContract,
 } from './build-lib.mjs';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -49,6 +54,9 @@ const ROUTER_SRC = join(SOURCE_DIR, 'SKILL.md');
 // Hand-maintained user guide (not generated from src/). A content guard below
 // protects the canonical Plan->Build handoff examples against regression (#107).
 const DOCS_USER_GUIDE = join(ROOT_DIR, 'docs', 'user-guide');
+const SKILL_OWNERSHIP_MANIFEST = join(ROOT_DIR, 'docs', 'developer-guide', 'skill-ownership.json');
+const SKILL_OWNERSHIP_GUIDE = join(ROOT_DIR, 'docs', 'developer-guide', 'skill-ownership.md');
+const RELEVANCE_GATE_SOURCE = join(SHARED_DIR, 'central-reasoning-delegation.md');
 
 // The build writes into a temporary tree and swaps it onto dist/ only after a
 // fully successful build (see the atomic swap below), so dist/ is always either
@@ -290,6 +298,57 @@ try {
     knownTools,
     knownAgents,
   };
+
+  // --- Central-skill ownership guard (#168) ---
+  // Validate only Effective Flow's declared relationships. This guard reads no
+  // upstream checkout, performs no network access, and treats provenance in the
+  // manifest as informational rather than as a compatibility pin.
+  for (const path of [SKILL_OWNERSHIP_MANIFEST, SKILL_OWNERSHIP_GUIDE, RELEVANCE_GATE_SOURCE]) {
+    if (!existsSync(path)) {
+      throw new Error(`Skill-ownership contract file not found: ${path}`);
+    }
+  }
+  const ownershipManifest = parseSkillOwnershipManifest(
+    readFileSync(SKILL_OWNERSHIP_MANIFEST, 'utf8'),
+    { context: relative(ROOT_DIR, SKILL_OWNERSHIP_MANIFEST) },
+  );
+  const ownershipRows = parseSkillOwnershipTable(readFileSync(SKILL_OWNERSHIP_GUIDE, 'utf8'), {
+    context: relative(ROOT_DIR, SKILL_OWNERSHIP_GUIDE),
+  });
+  const recommendationSources = [
+    ...toolFiles.map((file) => ({
+      consumer: basename(file, '.md'),
+      context: `tools/${file}`,
+      text: readFileSync(join(TOOLS_DIR, file), 'utf8'),
+    })),
+    ...agentFiles.map((file) => ({
+      consumer: basename(file, '.md'),
+      context: `agents/${file}`,
+      text: readFileSync(join(AGENTS_DIR, file), 'utf8'),
+    })),
+  ];
+  const recommendationChains = collectRecommendedSkillChains(recommendationSources);
+  const knownOwnershipConsumers = new Set([
+    ...toolFiles.map((file) => basename(file, '.md')),
+    ...agentFiles.map((file) => basename(file, '.md')),
+    ...readdirSync(SHARED_DIR)
+      .filter((file) => file.endsWith('.md'))
+      .map((file) => basename(file, '.md')),
+  ]);
+  const relevanceGateOwners = parseSkillOwnershipRelevanceGateOwners(
+    readFileSync(RELEVANCE_GATE_SOURCE, 'utf8'),
+    { context: relative(ROOT_DIR, RELEVANCE_GATE_SOURCE) },
+  );
+  assertSkillOwnershipContract(
+    {
+      manifest: ownershipManifest,
+      inventoryRows: ownershipRows,
+      recommendationChains,
+      relevanceGateOwners,
+      knownConsumers: knownOwnershipConsumers,
+    },
+    { context: 'central-skill ownership guard' },
+  );
 
   // --- Shared project-routing contract guard (#164) ---
   // All project-aware workflows load this runtime contract. Parse and validate
