@@ -242,13 +242,18 @@ Start in parallel:
    - back to Phase 3, then phases 4, 5 and 6 again – per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the baseline is still not reached afterwards, instead of repeating indefinitely
 3. If no regressions:
    - finalize external review state from the latest provisional review only:
-     - if findings with status `Open` or `Not implemented` remain, write them into at most one new file under `.effective-flow/review/` per "Open review-finding reports"
+     - use the session ID as the stable finalization marker for this workflow run; in a generated report, include it after the reviewer or phase in the existing `Source review` field, for example `Phase 4 (run <SESSION_ID>)`
+     - if findings with status `Open` or `Not implemented` remain, before applying the collision rule, search `.effective-flow/review/` for a report whose `Source workflow` is `{{SKILL:refactor}}` and whose `Source review` contains this run's finalization marker
+     - if exactly one matching report exists, reuse that report and its path; complete or validate its contents and memory update as needed, and do not create a collision-suffixed report
+     - if more than one matching report exists, stop before writing and escalate the ambiguity to the user
+     - if no matching report exists, write the findings into at most one new file under `.effective-flow/review/` per "Open review-finding reports"
      - if no findings with status `Open` or `Not implemented` remain, do not create a report
      - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
      - name any generated report path in the completion summary
    - if this refactoring implemented a finding from an existing review-report file in `.effective-flow/review/`:
      - add a short implementation note as the last entry directly in the affected finding
-     - begin the note with `✅` and name at least the date and workflow
+     - begin the note with `✅`, name at least the date and workflow, and include the same finalization marker, for example `✅ Implemented on YYYY-MM-DD via {{SKILL:refactor}} (run <SESSION_ID>)`
+     - before appending, read the finding again and check for an implementation note with this exact finalization marker; if one exists, do not append another note
    - delete the wisdom file
    - if delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
    - summarize what was refactored; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch)
