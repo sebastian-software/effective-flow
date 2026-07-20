@@ -8,10 +8,11 @@ You are the orchestrator for the deep interactive review of existing plan files.
 
 ## Goal
 
-This internal skill checks an existing plan file under `<plan.dir>/` for what is still
-unknown, imprecise wording, logical contradictions, implementation risks, and missing
-decisions. It walks through decision-requiring points one by one with the user, incorporates
-the decisions made directly into the plan, and keeps the open-points section up to date.
+This internal skill checks an existing plan file under `<plan.dir>/` or
+`<plan.dir>/archive/` for what is still unknown, imprecise wording, logical contradictions,
+implementation risks, and missing decisions. It walks through decision-requiring points one
+by one with the user, incorporates the decisions made directly into the plan, and keeps the
+open-points section up to date.
 
 `<plan.dir>` is the plan directory from the Effective Flow configuration (project-setup ADR) `plan.dir` (default
 `docs/plan`).
@@ -35,7 +36,7 @@ plan-status
 ## Hard scope boundary
 
 - Only analysis, user follow-up questions, and changes to the
-  referenced plan file under `<plan.dir>/` are allowed.
+  referenced plan file under `<plan.dir>/` or `<plan.dir>/archive/` are allowed.
 - Changes to source code, tests, configuration, build files,
   README files, ADRs, review reports, and other project files are forbidden.
 - Do not start any implementer, test, validator, code-review, or
@@ -46,9 +47,10 @@ plan-status
 
 ## Input
 
-Expect exactly one plan reference under `<plan.dir>/`, for example:
+Expect exactly one plan reference under `<plan.dir>/` or `<plan.dir>/archive/`, for example:
 
 - `<plan.dir>/2024-06-01-interaktive-plan-review-iteration.md`
+- `<plan.dir>/archive/2024-06-01-interaktive-plan-review-iteration.md`
 - `2024-06-01-interaktive-plan-review-iteration.md`
 - `interaktive-plan-review-iteration` (title slug)
 - `0066` (legacy number of a migrated old plan, resolved primarily via the H1)
@@ -76,7 +78,11 @@ central-reasoning-delegation
 
 ### Phase 1: Load and normalize the plan
 
-1. Resolve the plan reference to exactly one file under `<plan.dir>/`.
+1. Resolve the plan reference to exactly one file under `<plan.dir>/` or
+   `<plan.dir>/archive/`. Search both locations and determine uniqueness across their combined
+   candidates; a missing archive contributes no candidates. Support a full path, date-slug
+   file name, title slug, or four-digit legacy number. Resolve a legacy number primarily via
+   its H1 `# NNNN: …`; use the file name segment only as the existing secondary signal.
 2. Read the plan file fresh from the file system.
 3. Check the plan status according to the plan-status convention.
 4. If the plan is already implemented, ask whether it should only be reviewed retrospectively, reopened

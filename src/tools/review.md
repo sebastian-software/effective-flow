@@ -289,14 +289,18 @@ Delete the file at the end of the workflow, before `DONE`.
 
 Before Phase 1 and before any code-review-specific initialization
 (config migration, tracker mode, memory, cache, or wisdom file),
-check whether the user argument unambiguously points to a plan file under `<plan.dir>/`.
+check whether the user argument unambiguously points to a plan file under `<plan.dir>/`
+or `<plan.dir>/archive/`. Search both locations and determine uniqueness across their
+combined candidates; a missing archive contributes no candidates.
 
 Allowed forms are:
 
-- full path, e.g. `<plan.dir>/2024-06-01-feature.md`
+- full path, e.g. `<plan.dir>/2024-06-01-feature.md` or
+  `<plan.dir>/archive/2024-06-01-feature.md`
 - date-slug file name, e.g. `2024-06-01-feature.md`
 - title slug, e.g. `feature`
-- legacy number, e.g. `0066` (for migrated old plans, resolved primarily via the H1)
+- legacy number, e.g. `0066` (for migrated old plans, resolved primarily via the H1
+  `# 0066: …`; the file name segment is only the existing secondary signal)
 
 If exactly one plan file is found:
 
@@ -306,9 +310,10 @@ If exactly one plan file is found:
 3. Run it with the resolved plan file.
 4. Then end this `review` workflow; do not start a code review.
 
-If no plan file or multiple plan files match, do not treat the argument as a
-plan-file special case and continue with Phase 1. If the user clearly wanted a
-plan review, ask for the specific plan file instead of guessing a code review.
+If no plan file or multiple plan files match and the user clearly wanted a plan
+review, do not continue with Phase 1: report the missing plan or ask for the specific
+file instead of guessing a code review. Only arguments without clear plan-review intent
+may fall through to the normal code-review scope.
 
 ### Phase 1: Scope
 
