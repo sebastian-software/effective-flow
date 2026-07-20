@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   extractFrontmatter,
   extractBody,
@@ -39,7 +43,13 @@ import {
   assertProjectRoutingContract,
   classifyProjectRoutingScope,
   PROJECT_ROUTING_REQUIRED_ROUTES,
+  parseSkillOwnershipManifest,
+  parseSkillOwnershipTable,
+  collectRecommendedSkillChains,
+  parseSkillOwnershipRelevanceGateOwners,
+  assertSkillOwnershipContract,
 } from '../build-lib.mjs';
+import { auditSkillOwnership } from '../scripts/audit-skill-ownership.mjs';
 
 const DELIVERY = { repo: 'sebastian-software/effective-flow', sourceBranch: 'develop' };
 
@@ -208,6 +218,348 @@ test('validateRefs prefers the legacy message even when the sf- name is unknown'
       }),
     /Legacy placeholder \{\{SKILL:sf-apply-plan\}\} is no longer supported/,
   );
+});
+
+// --- Central-skill ownership contract (#168) ---
+
+function skillOwnershipManifest(overrides = {}) {
+  return parseSkillOwnershipManifest(
+    JSON.stringify({
+      schemaVersion: 1,
+      relationships: [
+        {
+          skill: 'effective-web',
+          consumers: [{ consumer: 'test-writer', classification: 'route-when-relevant' }],
+        },
+      ],
+      relevanceGateOwners: [],
+      externalRecommendationAllowlist: ['impeccable', 'frontend-design'],
+      ...overrides,
+    }),
+    { context: 'skill-ownership.json' },
+  );
+}
+
+function skillOwnershipTable(skills = ['effective-web']) {
+  const rows = skills.map(
+    (skill) => `| \`${skill}\` | \`test-writer\` | route-when-relevant | Test coverage |`,
+  );
+  return parseSkillOwnershipTable(
+    [
+      '<!-- skill-ownership-table:start -->',
+      '| Central skill | Effective-Flow consumer(s) | Classification | Domain coverage |',
+      '| --- | --- | --- | --- |',
+      ...rows,
+      '<!-- skill-ownership-table:end -->',
+    ].join('\n'),
+    { context: 'skill-ownership.md' },
+  );
+}
+
+function assertSyntheticSkillOwnershipContract({
+  manifest = skillOwnershipManifest(),
+  inventoryRows = skillOwnershipTable(),
+  recommendation = '- `effective-web › impeccable › frontend-design`',
+  relevanceGateOwners = [],
+  knownConsumers = new Set(['test-writer', 'ui-implementer']),
+} = {}) {
+  const recommendationChains = collectRecommendedSkillChains([
+    {
+      consumer: 'test-writer',
+      context: 'agents/test-writer.md',
+      text: `## Recommended skills\n\n${recommendation}\n`,
+    },
+  ]);
+  assertSkillOwnershipContract(
+    { manifest, inventoryRows, recommendationChains, relevanceGateOwners, knownConsumers },
+    { context: 'synthetic ownership contract' },
+  );
+  return recommendationChains;
+}
+
+test('skill-ownership helpers accept a valid relationship with external fallback skills', () => {
+  const recommendationChains = assertSyntheticSkillOwnershipContract();
+
+  assert.deepEqual(recommendationChains, [
+    {
+      consumer: 'test-writer',
+      context: 'agents/test-writer.md',
+      skills: ['effective-web', 'impeccable', 'frontend-design'],
+    },
+  ]);
+});
+
+test('parseSkillOwnershipManifest rejects duplicate relationships', () => {
+  const relationship = {
+    skill: 'effective-web',
+    consumers: [{ consumer: 'test-writer', classification: 'route-when-relevant' }],
+  };
+
+  assert.throws(
+    () => skillOwnershipManifest({ relationships: [relationship, relationship] }),
+    /Duplicate skill-ownership relationship for "effective-web".*skill-ownership\.json/,
+  );
+});
+
+test('parseSkillOwnershipManifest rejects unsupported coupling fields and malformed consumers', () => {
+  assert.throws(
+    () => skillOwnershipManifest({ requiredUpstreamRevision: 'abc123' }),
+    /unsupported field\(s\): requiredUpstreamRevision.*skill-ownership\.json/,
+  );
+  assert.throws(
+    () =>
+      skillOwnershipManifest({
+        relationships: [
+          {
+            skill: 'effective-web',
+            consumers: [
+              { consumer: 'not a real source !!!', classification: 'route-when-relevant' },
+            ],
+          },
+        ],
+      }),
+    /must be a kebab-case skill name.*skill-ownership\.json/,
+  );
+});
+
+test('parseSkillOwnershipManifest rejects an invalid classification', () => {
+  assert.throws(
+    () =>
+      skillOwnershipManifest({
+        relationships: [
+          {
+            skill: 'effective-web',
+            consumers: [{ consumer: 'test-writer', classification: 'advisory' }],
+          },
+        ],
+      }),
+    /invalid or missing classification "advisory".*skill-ownership\.json/,
+  );
+});
+
+test('parseSkillOwnershipManifest rejects a missing classification', () => {
+  assert.throws(
+    () =>
+      skillOwnershipManifest({
+        relationships: [
+          {
+            skill: 'effective-web',
+            consumers: [{ consumer: 'test-writer' }],
+          },
+        ],
+      }),
+    /invalid or missing classification "".*skill-ownership\.json/,
+  );
+});
+
+test('assertSkillOwnershipContract rejects a stale Markdown inventory row', () => {
+  assert.throws(
+    () =>
+      assertSyntheticSkillOwnershipContract({
+        inventoryRows: skillOwnershipTable(['effective-web', 'stale-skill']),
+      }),
+    /stale or extra Markdown row\(s\): stale-skill.*synthetic ownership contract/,
+  );
+});
+
+test('assertSkillOwnershipContract rejects an unowned recommendation', () => {
+  const manifest = skillOwnershipManifest({
+    relationships: [
+      {
+        skill: 'effective-web',
+        consumers: [{ consumer: 'ui-implementer', classification: 'delegate' }],
+      },
+    ],
+  });
+
+  assert.throws(
+    () => assertSyntheticSkillOwnershipContract({ manifest, recommendation: '- `effective-web`' }),
+    /Unowned recommendation "effective-web" for consumer "test-writer".*agents\/test-writer\.md/,
+  );
+});
+
+test('assertSkillOwnershipContract rejects a stale relevance-gate owner', () => {
+  const manifest = skillOwnershipManifest({ relevanceGateOwners: ['effective-web'] });
+
+  assert.throws(
+    () => assertSyntheticSkillOwnershipContract({ manifest, relevanceGateOwners: [] }),
+    /stale manifest owner\(s\): effective-web.*synthetic ownership contract/,
+  );
+});
+
+test('assertSkillOwnershipContract rejects an unknown fallback token', () => {
+  assert.throws(
+    () =>
+      assertSyntheticSkillOwnershipContract({
+        recommendation: '- `effective-web › impeccable › frontend-desgin`',
+      }),
+    /Unknown external fallback skill "frontend-desgin".*agents\/test-writer\.md/,
+  );
+});
+
+test('collectRecommendedSkillChains rejects unquoted or split fallback syntax', () => {
+  for (const recommendation of ['- effective-web', '- `effective-web` › typo-skill']) {
+    assert.throws(
+      () =>
+        assertSyntheticSkillOwnershipContract({
+          recommendation,
+        }),
+      /must start with exactly one backticked skill or fallback chain.*agents\/test-writer\.md/,
+    );
+  }
+});
+
+test('assertSkillOwnershipContract rejects a relationship with an unknown consumer', () => {
+  const manifest = skillOwnershipManifest({
+    relationships: [
+      {
+        skill: 'effective-web',
+        consumers: [{ consumer: 'ghost-worker', classification: 'delegate' }],
+      },
+    ],
+  });
+
+  assert.throws(
+    () =>
+      assertSyntheticSkillOwnershipContract({
+        manifest,
+        recommendation: '- `impeccable`',
+        knownConsumers: new Set(['test-writer']),
+      }),
+    /Unknown Effective Flow consumer "ghost-worker" for skill "effective-web"/,
+  );
+});
+
+const checkedInSkillOwnershipManifest = parseSkillOwnershipManifest(
+  readFileSync(new URL('../docs/developer-guide/skill-ownership.json', import.meta.url), 'utf8'),
+  { context: 'docs/developer-guide/skill-ownership.json' },
+);
+const checkedInSkillOwnershipRows = parseSkillOwnershipTable(
+  readFileSync(new URL('../docs/developer-guide/skill-ownership.md', import.meta.url), 'utf8'),
+  { context: 'docs/developer-guide/skill-ownership.md' },
+);
+const checkedInRecommendationSources = ['tools', 'agents'].flatMap((directory) => {
+  const sourceDirectory = new URL(`../src/${directory}/`, import.meta.url);
+  return readdirSync(sourceDirectory)
+    .filter((file) => file.endsWith('.md'))
+    .sort()
+    .map((file) => ({
+      consumer: file.slice(0, -'.md'.length),
+      context: `${directory}/${file}`,
+      text: readFileSync(new URL(file, sourceDirectory), 'utf8'),
+    }));
+});
+const checkedInRecommendationChains = collectRecommendedSkillChains(checkedInRecommendationSources);
+const checkedInKnownOwnershipConsumers = new Set(
+  ['tools', 'agents', 'shared'].flatMap((directory) => {
+    const sourceDirectory = new URL(`../src/${directory}/`, import.meta.url);
+    return readdirSync(sourceDirectory)
+      .filter((file) => file.endsWith('.md'))
+      .map((file) => file.slice(0, -'.md'.length));
+  }),
+);
+const checkedInRelevanceGateOwners = parseSkillOwnershipRelevanceGateOwners(
+  readFileSync(new URL('../src/shared/central-reasoning-delegation.md', import.meta.url), 'utf8'),
+  { context: 'src/shared/central-reasoning-delegation.md' },
+);
+
+test('checked-in skill-ownership manifest, table, recommendations, and marker stay reconciled', () => {
+  assert.doesNotThrow(() =>
+    assertSkillOwnershipContract(
+      {
+        manifest: checkedInSkillOwnershipManifest,
+        inventoryRows: checkedInSkillOwnershipRows,
+        recommendationChains: checkedInRecommendationChains,
+        relevanceGateOwners: checkedInRelevanceGateOwners,
+        knownConsumers: checkedInKnownOwnershipConsumers,
+      },
+      { context: 'checked-in skill-ownership contract' },
+    ),
+  );
+});
+
+test('checked-in skill-ownership diagnostics name a deliberately removed skill', () => {
+  const manifestWithoutEffectiveWeb = {
+    ...checkedInSkillOwnershipManifest,
+    relationships: checkedInSkillOwnershipManifest.relationships.filter(
+      ({ skill }) => skill !== 'effective-web',
+    ),
+    relevanceGateOwners: checkedInSkillOwnershipManifest.relevanceGateOwners.filter(
+      (skill) => skill !== 'effective-web',
+    ),
+  };
+
+  assert.throws(
+    () =>
+      assertSkillOwnershipContract(
+        {
+          manifest: manifestWithoutEffectiveWeb,
+          inventoryRows: checkedInSkillOwnershipRows,
+          recommendationChains: checkedInRecommendationChains,
+          relevanceGateOwners: checkedInRelevanceGateOwners.filter(
+            (skill) => skill !== 'effective-web',
+          ),
+          knownConsumers: checkedInKnownOwnershipConsumers,
+        },
+        { context: 'checked-in skill-ownership contract' },
+      ),
+    /stale or extra Markdown row\(s\): effective-web.*checked-in skill-ownership contract/,
+  );
+});
+
+test('checked-in skill-ownership diagnostics name a deliberately removed Markdown row', () => {
+  const rowsWithoutEffectiveWeb = checkedInSkillOwnershipRows.filter(
+    ({ skill }) => skill !== 'effective-web',
+  );
+
+  assert.throws(
+    () =>
+      assertSkillOwnershipContract(
+        {
+          manifest: checkedInSkillOwnershipManifest,
+          inventoryRows: rowsWithoutEffectiveWeb,
+          recommendationChains: checkedInRecommendationChains,
+          relevanceGateOwners: checkedInRelevanceGateOwners,
+          knownConsumers: checkedInKnownOwnershipConsumers,
+        },
+        { context: 'checked-in skill-ownership contract' },
+      ),
+    /missing Markdown row\(s\): effective-web.*checked-in skill-ownership contract/,
+  );
+});
+
+test('advisory ownership audit accepts checkout, skills directory, and listing inputs', (t) => {
+  const fixture = mkdtempSync(join(tmpdir(), 'effective-flow-ownership-audit-'));
+  t.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const skillsDirectory = join(fixture, 'skills');
+  for (const skill of ['effective-web', 'review-candidate']) {
+    const skillDirectory = join(skillsDirectory, skill);
+    mkdirSync(skillDirectory, { recursive: true });
+    writeFileSync(join(skillDirectory, 'SKILL.md'), `# ${skill}\n`);
+  }
+  const listing = join(fixture, 'skills.txt');
+  writeFileSync(listing, 'skills/effective-web\nskills/review-candidate\n');
+  const manifestPath = new URL('../docs/developer-guide/skill-ownership.json', import.meta.url);
+  const manifestBefore = readFileSync(manifestPath, 'utf8');
+
+  for (const input of [fixture, skillsDirectory, listing]) {
+    const result = auditSkillOwnership(input);
+    assert.deepEqual(result.candidates, ['review-candidate']);
+  }
+  assert.equal(readFileSync(manifestPath, 'utf8'), manifestBefore);
+  assert.throws(
+    () => auditSkillOwnership(join(fixture, 'missing')),
+    /Skills directory or listing not found/,
+  );
+
+  const cli = spawnSync(
+    process.execPath,
+    [fileURLToPath(new URL('../scripts/audit-skill-ownership.mjs', import.meta.url)), fixture],
+    { encoding: 'utf8' },
+  );
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.match(cli.stdout, /review-candidate/);
+  assert.match(cli.stdout, /Audit output is advisory/);
 });
 
 // --- Shared project-routing contract (#164) ---

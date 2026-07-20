@@ -6,6 +6,7 @@
     "build": "node build.mjs",
     "format": "oxfmt",
     "agent:check": "oxfmt --check",
+    "audit:skill-ownership": "node scripts/audit-skill-ownership.mjs",
     "test": "node --test",
     "test:distribution": "node scripts/distribution-smoke.mjs offline",
     "test:managers": "node scripts/distribution-smoke.mjs managers"

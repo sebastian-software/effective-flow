@@ -12,6 +12,7 @@ node build.mjs          # builds native + portable targets into dist/ (alias: pn
 pnpm test               # runs the unit test suite (node:test)
 pnpm format             # formats with oxfmt (Markdown + JS)
 pnpm agent:check        # oxfmt --check, CI mode without write access
+pnpm audit:skill-ownership -- <local-skills-directory> # optional, advisory upstream audit
 pnpm test:distribution  # build/archive/delivery/installer smoke suite
 ```
 
@@ -98,6 +99,20 @@ The build aborts with an error message if any of these guards is violated:
   above) is deliberately rejected with a migration message. The same guard also runs during
   rendering (`transformRefs`), so no accepted placeholder can ever produce a non-existent
   target.
+- **Central-skill ownership guard (#168):** The dependency-free guard reconciles
+  `docs/developer-guide/skill-ownership.json` with the dedicated table in
+  `skill-ownership.md`, every token in source `## Recommended skills` fallback chains, and the
+  structured relevance-gate owner marker in `src/shared/central-reasoning-delegation.md`.
+  Recommended central skills require a relationship for the concrete tool or agent consumer;
+  external alternatives require an explicit allowlist entry. Duplicate relationships, invalid
+  or missing classifications, unknown schema fields or consumers, stale or extra Markdown rows,
+  stale relevance owners, malformed recommendation bullets, and unknown recommendation tokens
+  fail with the offending name. The guard performs no network
+  request, does not enumerate the upstream catalog, and never compares the optional
+  `provenance.observedRevision` value with another repository.
+  The Markdown guard reconciles exact skill-row membership. Its grouped consumer,
+  classification, and coverage prose remains a human explanation; the JSON manifest is the
+  authoritative structured relationship contract.
 - **Rendered worker-resolution guard (#159):** Every rendered router, tool, shared fragment and
   worker contract is scanned after transformation. Native references must resolve to exact
   namespaced sidecars under `dist/{claude,codex}/agents/`; portable references must resolve to
@@ -231,6 +246,23 @@ so both managers install the same bytes instead of selecting by traversal order.
 (measured and enforced during the build, see "Guards"); the build prints the sizes as a report.
 For comparison, before the change: `build` 1185 → ~624, `fix` 917 → ~425, `docs` 925 → ~498,
 `review` 787 → ~646, `plan` 723 → ~615 lines. The rest is loaded only when the mode is reached.
+
+## Optional upstream ownership audit
+
+Maintainers can inspect a supplied local checkout, its `skills/` directory, or a newline-delimited
+listing file without changing normal CI:
+
+```sh
+pnpm audit:skill-ownership -- /path/to/skills.sebastian-software.com
+```
+
+The audit reports upstream skills without declared Effective Flow relationships as review
+candidates and also notes declared relationship skills absent from the supplied input. Candidate
+findings are advisory: they do not produce a failing status, mutate the manifest, assign a
+classification, or run during `build`, `test`, or `agent:check`. A candidate may remain unrelated
+indefinitely. Update the relationship manifest only after a human review establishes a concrete
+Effective Flow consumer; refresh the informational provenance only when that relationship review
+actually occurs.
 
 ## Further reading
 

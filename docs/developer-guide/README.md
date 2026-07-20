@@ -19,8 +19,8 @@ is no runtime application – you edit `src/`, never `dist/`.
 4. [Plan conventions](plan-conventions.md) – naming scheme, canonical status markers, and
    archiving of the plan files under `<plan.dir>/`.
 5. [Skill ownership](skill-ownership.md) – the boundary between Effective Flow orchestration
-   and central skill expertise (layered contract), including the ownership inventory over the
-   current skillset.
+   and central skill expertise (layered contract), including the loosely coupled inventory of
+   actual Effective Flow relationships.
 6. [Release and installation](release-and-installation.md) – versioning via release-please,
    publishing, and installation of the built skill.
 7. [Terminology](terminology.md) – binding DE→EN glossary for the language migration (English
