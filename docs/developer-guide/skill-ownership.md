@@ -105,6 +105,10 @@ mistaken for an external skill.
 - **`pr-review` and `iterate`:** Ownership is accepted now, but the execution handoff waits for
   the read-only seam in #105. This change does not duplicate the review playbook or prematurely
   delegate forge actions.
+- **Remote tracker adapter:** Effective Flow owns its issue/finding schemas, IDs, compatibility
+  aliases, Forgejo support, provider-neutral helper, and orchestration. `pr-review` continues to
+  own reusable GitHub PR review judgment; the helper centralizes deterministic transport and
+  never carries review-policy reasoning.
 
 ## Ownership check when extending
 

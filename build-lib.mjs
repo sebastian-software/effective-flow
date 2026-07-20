@@ -1584,6 +1584,26 @@ export function findProhibitedConsumerScriptCommands(markdown) {
   return hits;
 }
 
+// Runtime prompts must delegate provider transport mechanics to the shipped
+// remote-tracker helper. Return line-oriented diagnostics for raw CLI/API recipes
+// that would make the model rediscover flags, parse remotes, or assemble GraphQL.
+export function findRemoteTrackerRecipeViolations(markdown) {
+  const patterns = [
+    ['direct-gh-command', /\bgh\s+(?:api|auth|issue|pr|label)\b/i],
+    ['direct-tea-command', /\btea\s+(?:issue|issues|pr|pulls|comment|labels|logins)\b/i],
+    ['manual-origin-parse', /git\s+remote\s+get-url\s+origin/i],
+    ['manual-graphql', /(?:query|mutation)\s*\([^\n]*\)\s*\{|resolveReviewThread\s*\(/i],
+    ['runtime-flag-discovery', /(?:check|determine)\s+(?:the\s+)?exact\s+flag(?:s| names)?/i],
+  ];
+  const hits = [];
+  for (const [index, line] of normalizeLineEndings(markdown).split('\n').entries()) {
+    for (const [kind, pattern] of patterns) {
+      if (pattern.test(line)) hits.push({ line: index + 1, kind, text: line.trim() });
+    }
+  }
+  return hits;
+}
+
 // --- Retired consumer-configuration reference guard (#166) ---
 //
 // `.effective-flow/config.json` is migration input, not the current

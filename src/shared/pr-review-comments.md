@@ -21,24 +21,13 @@ with Claude Code/Codex" footers, no agent session links (e.g. `https://claude.ai
 and no `Co-Authored-By` trailers – not even when the harness appends them as a default.
 Reply texts in natural language according to the language rules.
 
-### Host and CLI detection
+### Remote helper
 
-Determine the tool analogously to `{{SKILL:pr}}` and to "Host and CLI detection" in
-`issue-tracker.md`:
-
-1. **Precondition:** There is a Git repository with an `origin` remote present. If
-   `origin` is missing or it is not a Git repository, PR mode is not possible: report clearly.
-2. **Choose the tool:** Read the `origin` URL (`git remote get-url origin`) and extract the
-   host robustly for HTTPS and SSH forms. If the host is exactly `github.com`, the tool is
-   `gh`; for any other host, Forgejo/Gitea is assumed and `tea` is used. An
-   explicit per-run hint from the user takes precedence for an ambiguous host (e.g. GitHub
-   Enterprise); if the host is ambiguous and neither a hint nor an override is present,
-   ask the user.
-3. **Check availability:** Make sure the chosen CLI is installed and
-   authenticated (`gh auth status` or `tea` with a configured login). If the CLI
-   or the authentication is missing: emit a clear error message with a remediation hint and abort
-   without side effect. Do **not** silently fall back to local work; a local
-   fallback only after explicit user consent.
+Use the shipped `scripts/remote-tracker.mjs` helper and the envelope, dry-run, capability,
+redaction, and error contract from `issue-tracker.md`. PR mode requires a successful provider
+probe. `AMBIGUOUS_HOST` returns to the orchestrator for an explicit provider choice;
+`CLI_MISSING`/`AUTH_FAILED` abort without side effects. Never assemble provider requests or
+discover flags in the prompt.
 
 ### PR resolution
 
@@ -51,10 +40,8 @@ head branch, base branch, URL, and state:
 - **From the current branch:** if no PR reference was passed, try to determine the open PR of the
   currently checked-out branch.
 
-| Operation              | GitHub (`gh`)                                                                       | Forgejo (`tea`)                                                     |
-| ---------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Read PR from number    | `gh pr view <nr> --json number,headRefName,baseRefName,url,state,isCrossRepository` | `tea pr <nr>` or Forgejo API `GET /repos/<owner>/<repo>/pulls/<nr>` |
-| PR from current branch | `gh pr view --json number,headRefName,baseRefName,url,state`                        | `tea pr list --state open` and filter by the head branch            |
+Use helper reference parsing followed by the normalized PR read/list operations. For current-
+branch resolution, list open PRs for the exact head branch and require exactly one match.
 
 If the PR is already `merged`/`closed`: report and push no commits (see error cases in
 `{{SKILL:iterate}}`).
@@ -65,37 +52,26 @@ Read the review comments **directly before** classification fresh from the host 
 can change between runs. Capture per thread: thread ID, author (and whether bot or
 human), file + line, comment text, and the `resolved` status.
 
-| Operation                   | GitHub (`gh`)                                                               | Forgejo (`tea`)                                                                                   |
-| --------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Read inline review comments | `gh api repos/<owner>/<repo>/pulls/<nr>/comments`                           | Forgejo API `GET /repos/<owner>/<repo>/pulls/<nr>/reviews` or `.../comments`                      |
-| Read thread/resolved status | GraphQL `pullRequest.reviewThreads` (fields `id`, `isResolved`, `comments`) | best-effort via the Forgejo API; if the resolved status is not available, treat all as unresolved |
-| Read PR-level comments      | `gh pr view <nr> --json comments`                                           | `tea pr <nr> --comments`, otherwise Forgejo API                                                   |
-
-For the GraphQL query, determine `owner`/`repo` from the `origin` URL. For Forgejo, check the
-exact flag/endpoint names against the installed `tea` version if a call
-fails (as noted in `{{SKILL:pr}}`).
+Use the normalized review-thread read and PR-comment read operations. The normalized author
+record includes `login`, `isBot`, and `authorType`; when Forgejo does not expose a bot flag and
+the login has no canonical bot suffix, `authorType` is `unknown` rather than guessed as human.
+If the provider reports that resolved status is unavailable, keep the item unresolved and expose
+that limitation in the workflow summary; do not guess.
 
 ### Reply to a thread
 
-| Operation                 | GitHub (`gh`)                                                                    | Forgejo (`tea`)                                                                     |
-| ------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Reply to a review comment | `gh api repos/<owner>/<repo>/pulls/<nr>/comments/<comment-id>/replies -f body=…` | Forgejo API `POST /repos/<owner>/<repo>/pulls/<nr>/reviews` referencing the comment |
-
-Every reply carries the marker `<!-- effective-flow-iterate -->` (see idempotency).
+Use the helper's review-thread reply operation. Every reply carries the marker
+`<!-- effective-flow-iterate -->` (see idempotency).
 
 ### Resolve a thread
 
-| Operation             | GitHub (`gh`)                                               | Forgejo (`tea`)                                                                                                                                                    |
-| --------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Resolve review thread | GraphQL mutation `resolveReviewThread(input: { threadId })` | best-effort; if the installed API/`tea` version does not support resolving, **only reply** and note in the summary that manual resolution is needed – **no abort** |
+Use the helper's review-thread resolve operation. On `UNSUPPORTED_CAPABILITY`, keep the reply,
+leave the thread unresolved, and note that manual resolution is needed; do not improvise.
 
 ### Post summary comment
 
-| Operation       | GitHub (`gh`)                 | Forgejo (`tea`)                             |
-| --------------- | ----------------------------- | ------------------------------------------- |
-| Post PR comment | `gh pr comment <nr> --body …` | `tea comment <nr> …`, otherwise Forgejo API |
-
-Per run, **exactly one** summary comment with the marker `<!-- effective-flow-iterate -->` is
+Use the helper's PR-comment payload builder and PR-comment mutation. Per run, **exactly one**
+summary comment with the marker `<!-- effective-flow-iterate -->` is
 posted: which points were implemented, which skipped, and which pure questions are listed as
 open/deferred.
 

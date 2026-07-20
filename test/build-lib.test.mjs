@@ -38,6 +38,7 @@ import {
   HARNESS_TOOL_PARAMETER_OWNERSHIP,
   findForeignHarnessToolParameters,
   findProhibitedConsumerScriptCommands,
+  findRemoteTrackerRecipeViolations,
   findRetiredConfigDocViolations,
   findStaleAdrContractClaims,
   parseProjectRoutingTable,
@@ -1437,6 +1438,37 @@ test('findProhibitedConsumerScriptCommands rejects shell-interpreter invocations
     { line: 3, command: 'source local-common.sh' },
     { line: 4, command: 'zsh ./install-skill.sh' },
   ]);
+});
+
+test('findRemoteTrackerRecipeViolations rejects prompt-encoded tracker recipes', () => {
+  const markdown = [
+    'Use `gh api repos/o/r/issues`.',
+    'Run `tea issue edit 4`.',
+    'Read `git remote get-url origin`.',
+    'Assemble `mutation($id: ID!) { resolveReviewThread(input: { threadId: $id }) }`.',
+  ].join('\n');
+  assert.deepEqual(
+    findRemoteTrackerRecipeViolations(markdown).map(({ kind }) => kind),
+    ['direct-gh-command', 'direct-tea-command', 'manual-origin-parse', 'manual-graphql'],
+  );
+});
+
+test('findRemoteTrackerRecipeViolations allows provider-neutral helper instructions', () => {
+  assert.deepEqual(
+    findRemoteTrackerRecipeViolations(
+      'Invoke `node <skill-root>/scripts/remote-tracker.mjs issue-read` and handle its envelope.',
+    ),
+    [],
+  );
+});
+
+test('remote-tracker recipe guard scans router, tools, shared fragments, and agents', () => {
+  const buildSource = readFileSync(new URL('../build.mjs', import.meta.url), 'utf8');
+  assert.match(buildSource, /\[TOOLS_DIR, SHARED_DIR, AGENTS_DIR\]/);
+  assert.match(
+    buildSource,
+    /findRemoteTrackerRecipeViolations\(readFileSync\(ROUTER_SRC, 'utf8'\)\)/,
+  );
 });
 
 // --- Retired consumer-configuration references ---

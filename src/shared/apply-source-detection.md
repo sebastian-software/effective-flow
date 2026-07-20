@@ -42,11 +42,11 @@ type in this order (first matching rule wins):
    via the H1) or — as a fallback — the title slug.
 3. **Review report** → `review-report`, if the argument is a `*.md` path under
    `.effective-flow/review/` (or a file name that resolves there).
-4. **Issue reference** → `issue-reference` (continue with stage B), if the argument is a
-   bare issue number (`123`), a `#123`, or an issue URL. Issue URLs are
-   host-neutral: recognize `https://<host>/<owner>/<repo>/issues/<nr>` and comparable
-   Forgejo/Gitea URL forms just like GitHub URLs. Multiple such references are
-   treated as a list and classified individually in stage B.
+4. **Issue reference** → `issue-reference` (continue with stage B), when the remote helper's
+   reference parser accepts the argument as a bare issue number (`123`), `#123`, or a
+   host-neutral issue URL for the current repository. Multiple references are parsed as one list
+   and classified individually in stage B; malformed or cross-repository references remain
+   structured errors instead of heuristic matches.
 5. **Otherwise** → `ambiguous`: the argument resolves to no category or matches
    both a plan **and** a review file at the same time. Do not guess — the caller
    asks (see "Ambiguity and fallbacks").
@@ -75,8 +75,8 @@ this precedence — **label before body structure**:
 4. otherwise → `plain-issue`.
 
 Secondary signal when a label is missing (e.g. removed manually): a title in the format
-`[R-XXXXXXX] …` together with a `**Signature**` field in the body is treated like
-`review-finding`. If the subtype remains unclear afterwards → `ambiguous`.
+`[R-XXXXXXX] …` together with a helper-parsed `Signature` field (legacy `Signatur` accepted on
+read) is treated like `review-finding`. If the subtype remains unclear afterwards → `ambiguous`.
 
 Why label before body: a `review-epic` carries — like a generic
 `container-issue` — a `- [ ] #NNN` checklist. The label `effective-flow-review-epic` or

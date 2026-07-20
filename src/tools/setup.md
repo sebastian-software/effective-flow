@@ -245,7 +245,7 @@ options:
     description: tracker.mode = remote — findings as issues, tool automatically from origin (gh/tea)
 ```
 
-For "Remote", ask for the tool override only if needed: the default `tracker.remoteToolOverride = auto` detects GitHub/Forgejo automatically from the `origin` URL. Only if the user has an ambiguous host (e.g. self-hosted GitHub Enterprise), capture `github` or `forgejo` as free text; otherwise leave `auto`.
+For "Remote", ask for the tool override only if needed: the default `tracker.remoteToolOverride = auto` lets the shipped remote helper classify exact `github.com` origins and hosts that match a configured Forgejo `tea` login. Any other host returns `AMBIGUOUS_HOST` instead of guessing; then capture `github` or `forgejo` as free text. Otherwise leave `auto`.
 
 ### Step 5: Advanced settings (optional gate, guided path only)
 
