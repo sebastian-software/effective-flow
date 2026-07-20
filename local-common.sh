@@ -65,7 +65,7 @@ cleanup_retired_dir_entries() {
 effective_flow_installed_version() {
   skill_md="$DIST_ROOT/claude/effective-flow/SKILL.md"
   [ -f "$skill_md" ] || return 0
-  sed -n 's/.*(Version \(.*\))\..*/\1/p' "$skill_md"
+  sed -n 's/.*(version \(.*\))\..*/\1/p' "$skill_md"
 }
 
 effective_flow_report() {
