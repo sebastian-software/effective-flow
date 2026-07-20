@@ -131,7 +131,7 @@ When delivery or worktree is active:
    if the user confirms the chosen mode or the workflow creates a safe
    partial-diff PR by the procedure described below.
 4. Construct delivery branch names: `<delivery.branchPrefix>/<skill>/<slug>`, e.g.
-   `firmo/build/user-login`. Derive the slug from the plan title, the task description,
+   `effective-flow/build/user-login`. Derive the slug from the plan title, the task description,
    the issue or finding. If the branch name already exists, append a
    numeric suffix and report the chosen name.
 
