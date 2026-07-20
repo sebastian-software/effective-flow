@@ -45,9 +45,22 @@ test('refactor success branch alone finalizes the latest provisional review', ()
 
 test('refactor success finalization is idempotent for reports and backlinks', () => {
   assert.match(successBranch, /session ID as the stable finalization marker/i);
-  assert.match(successBranch, /before applying the collision rule/i);
-  assert.match(successBranch, /reuse that report/i);
-  assert.match(successBranch, /do not create a collision-suffixed report/i);
+  assert.match(
+    successBranch,
+    /search `.effective-flow\/review\/` for a report whose `Source workflow` is `\{\{SKILL:refactor\}\}` and whose `Source review` contains this run's finalization marker/,
+  );
+  assert.match(
+    successBranch,
+    /if no matching report exists,[^\n]*at most one new file under `.effective-flow\/review\/`/,
+  );
+  assert.match(
+    successBranch,
+    /if exactly one matching report exists,[^\n]*reuse that report[^\n]*do not create a collision-suffixed report/,
+  );
+  assert.match(
+    successBranch,
+    /if more than one matching report exists,[^\n]*stop before writing[^\n]*escalate the ambiguity to the user/,
+  );
   assert.match(successBranch, /include the same finalization marker/i);
   assert.match(successBranch, /do not append another note/i);
 });
