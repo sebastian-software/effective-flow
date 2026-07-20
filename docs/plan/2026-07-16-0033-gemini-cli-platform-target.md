@@ -118,11 +118,15 @@ Quellen.
   bytegetreu in der erzeugten TOML-Datei erhalten. Leere Argumente sind zulässig.
 - Es wird kein `!{...}` eingebaut. Die Extension führt daher durch die Command-Erzeugung keine
   Shell-Befehle vorab aus.
-- Extension-Commands haben eine niedrigere Priorität als gleichnamige Projekt- oder
-  User-Commands und können von Gemini bei Konflikten umbenannt werden. Der feste
-  `effective-flow`-Unterordner minimiert dieses Risiko; die Dokumentation bezeichnet
-  `/effective-flow:<tool>` als den konfliktfreien Sollnamen und erklärt die Gemini-Anzeige als
-  maßgeblich.
+- Extension-Commands haben gemäß Gemini CLI v0.39.1 die niedrigste Priorität. Kollidiert ein
+  Extension-Command mit einem gleichnamigen Projekt- oder User-Command, stellt Gemini den
+  Extension-Command automatisch zusätzlich unter einem aus Extension-Name, Punkt und bisherigem
+  Command-Namen gebildeten Fallback bereit. Für den normalen Befehl `/effective-flow:plan` der
+  Extension `effective-flow` ist der abgeleitete Fallback deshalb
+  `/effective-flow.effective-flow:plan`; allgemein gilt hier
+  `/effective-flow.effective-flow:<tool>`. Der feste `effective-flow`-Unterordner minimiert
+  Konflikte. Dokumentation und Tests zeigen sowohl den normalen konfliktfreien Namen als auch
+  diesen exakten Fallback und behandeln die tatsächliche `/help`-Anzeige als maßgeblich.
 
 ### Rendering der Source-Syntax
 
@@ -235,11 +239,16 @@ Build nicht.
 | `.github/workflows/release.yml`                         | Geprüfte Auslieferung auf den Branch `gemini` ergänzen                                                                                           |
 | `package.json`                                          | Beschreibung von zwei Harnesses auf die aktuelle Multi-Target-Auslieferung aktualisieren; vorhandene Check-Skripte beibehalten                   |
 | `README.md`                                             | Gemini CLI als drittes natives Laufzeitziel, Installation über `--ref gemini` und lokalen Link dokumentieren                                     |
+| `docs/user-guide/README.md`                             | Gemini-Einstieg und Navigation zu Installation, Nutzung und Fehlerdiagnose ergänzen                                                              |
 | `docs/user-guide/getting-started.md`                    | Gemini-Installation, Befehlsnamespace und erste Nutzung ergänzen                                                                                 |
-| `docs/user-guide/troubleshooting.md`                    | Command-Konflikte, Preview-Subagents und Branch-/Installationsdiagnose ergänzen                                                                  |
+| `docs/user-guide/troubleshooting.md`                    | Command-Konflikte samt exaktem Punkt-Fallback, Preview-Subagents und Branch-/Installationsdiagnose ergänzen                                      |
+| `docs/user-guide/glossary.md`                           | Harness-Begriff und Aufrufsyntax um Gemini CLI, `/effective-flow:<tool>` und den Konflikt-Fallback erweitern                                     |
 | `docs/developer-guide/README.md`                        | Architekturübersicht auf Gemini erweitern                                                                                                        |
 | `docs/developer-guide/architecture.md`                  | Viertes Build-Target und getrennte Branch-Auslieferung dokumentieren                                                                             |
 | `docs/developer-guide/build-system.md`                  | Renderer, Direktiven, Guards, Metadaten und Validierung für Gemini dokumentieren                                                                 |
+| `docs/developer-guide/release-and-installation.md`      | Vier-Target-Archiv sowie Lebenszyklus, Installation und Prüfung des dedizierten Branches `gemini` dokumentieren                                  |
+| `docs/developer-guide/skill-ownership.md`               | Orchestrierungsverantwortung von „Claude/Codex transformation“ auf Gemini-/Multi-Target-Transformation erweitern                                 |
+| `docs/developer-guide/skill-ownership.json`             | Mit dem Guide maschinell abgleichen; nur bearbeiten, falls sich dabei eine strukturierte Beziehung oder Klassifikation tatsächlich ändert        |
 
 `dist/**` ist ausschließlich Build-Ausgabe und keine Liste direkt zu editierender Quelldateien.
 
@@ -273,9 +282,12 @@ Build nicht.
   und erfolgreich möglich. Nur der native Smoke wird mit dokumentiertem Grund übersprungen.
 - **Preview-Schema hat sich geändert:** Der Build verwirft oder schätzt keine Metadaten. Die
   Umsetzung stoppt vor der Auslieferung und nennt den inkompatiblen Vertrag.
-- **Command-Namenskonflikt:** Der Build verhindert interne Duplikate. Externe Projekt-/User-
-  Konflikte werden über Geminis tatsächliche Command-Anzeige diagnostiziert; Dokumentation und
-  Smoke verwenden im konfliktfreien Fall `/effective-flow:<tool>`.
+- **Command-Namenskonflikt:** Der Build verhindert interne Duplikate. Bei einer Kollision gewinnt
+  der Projekt-/User-Command den normalen Namen; Gemini CLI v0.39.1 stellt den Extension-Command
+  mit vorangestelltem Extension-Namen und Punkt bereit. Aus `/effective-flow:plan` wird für diese
+  Extension `/effective-flow.effective-flow:plan`. Statische Dokumentationschecks sichern diese
+  konkrete Form; ein nativer Smoke bestätigt sie über `/help` in einer isoliert erzeugten
+  Kollision, statt sie ohne laufendes Gemini CLI als praktisch getestet auszugeben.
 - **TOML-Sonderzeichen oder mehrzeilige Prompts:** Der bestehende Basic-String-Serializer wird
   genutzt und mit Anführungszeichen, Backslashes, Zeilenumbrüchen und `{{args}}` getestet; es gibt
   keine ungeschützten dreifachen Anführungszeichen.
@@ -330,9 +342,19 @@ Build nicht.
 - [ ] Die lokale Entwicklung ist mit
       `gemini extensions link dist/gemini/effective-flow` dokumentiert;
       `install-skill.sh`, `local-common.sh` und `local-link.sh` bleiben Claude-/Codex-spezifisch.
+- [ ] Bei einem Projekt-/User-Command-Konflikt dokumentieren User Guide und Troubleshooting den
+      v0.39.1-Fallback exakt als `/effective-flow.effective-flow:<tool>`; für
+      `/effective-flow:plan` steht das konkrete Beispiel `/effective-flow.effective-flow:plan`.
 - [ ] README, Benutzer- und Entwicklerdokumentation beschreiben dieselbe Vier-Target-Architektur,
       denselben Command-Namespace und dass Subagents vor der Umsetzung erneut als Preview-Vertrag
       geprüft werden.
+- [ ] `docs/user-guide/README.md`, `getting-started.md`, `troubleshooting.md`, `glossary.md` sowie
+      `docs/developer-guide/README.md`, `architecture.md`, `build-system.md`,
+      `release-and-installation.md` und `skill-ownership.md` widersprechen weder dem
+      Vier-Target- noch dem getrennten `main`-/`gemini`-Branch-Vertrag. Der
+      Skill-Ownership-Guide und `skill-ownership.json` bleiben durch den bestehenden
+      Ownership-Guard strukturell abgeglichen; eine reine Harness-Formulierungsänderung erzeugt
+      keine erfundene Beziehung im Manifest.
 
 ## Validierung
 
@@ -360,16 +382,23 @@ Zusätzlich prüfen Build-Guards und Tests statisch:
 9. bytegleichen Gemini-Build- und Branch-Root sowie den unveränderten Ein-Kandidaten-Vertrag von
    `main`;
 10. einen fehlgeschlagenen Build vor dem atomaren Swap, bei dem das vorherige `dist/` erhalten
-    bleibt.
+    bleibt;
+11. den exakten dokumentierten Konflikt-Fallback `/effective-flow.effective-flow:plan` sowie die
+    widerspruchsfreie Vier-Target-/Branch-Terminologie in allen im Datei-Inventar genannten
+    kanonischen Benutzer- und Entwicklerdokumenten.
 
 Wenn `gemini` lokal verfügbar ist, kommt nach den statischen Checks ein nativer Smoke hinzu:
 
 1. `gemini extensions link dist/gemini/effective-flow` in einer isolierten Testkonfiguration;
-2. Extension- und Command-Liste prüfen;
+2. Extension- und Command-Liste über `/help` prüfen;
 3. einen argumentlosen Befehl wie `/effective-flow:version` und einen Befehl mit Argumenten
    ausführen;
-4. einen Workflow mit Agent-Delegation prüfen;
-5. den Link anschließend über die dokumentierte Gemini-Extension-Verwaltung entfernen.
+4. in der isolierten Testkonfiguration einen Projekt-Command erzeugen, der mit
+   `/effective-flow:plan` kollidiert; über `/help` bestätigen, dass der Projekt-Command den
+   normalen Namen und die Extension den Fallback `/effective-flow.effective-flow:plan` erhält,
+   und diesen Fallback einmal aufrufen;
+5. einen Workflow mit Agent-Delegation prüfen;
+6. den Link anschließend über die dokumentierte Gemini-Extension-Verwaltung entfernen.
 
 Ist Gemini CLI nicht installiert, wird nur dieser native Block als übersprungen protokolliert;
 alle statischen und repositoryeigenen Checks bleiben verpflichtend.
