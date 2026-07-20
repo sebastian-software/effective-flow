@@ -1,0 +1,22 @@
+{
+  "name": "Mixed repository routes every affected file independently",
+  "scope": [
+    { "path": "web/components/App.tsx", "role": "product" },
+    { "path": "src/server/api.ts", "role": "product" },
+    { "path": "crates/core/src/lib.rs", "role": "product" },
+    { "path": "services/reporting/report.py" },
+    { "path": ".github/workflows/ci.yml" },
+    { "path": "docs/architecture.md" },
+    { "path": "dist/client.generated.js" }
+  ],
+  "expectedRoutes": [
+    "frontend-js-ts",
+    "node-backend-cli",
+    "rust",
+    "generic-product",
+    "tooling",
+    "documentation",
+    "excluded-generated-vendored"
+  ],
+  "clarificationRequired": false
+}

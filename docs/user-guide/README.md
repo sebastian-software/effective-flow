@@ -27,6 +27,8 @@ New to Effective Flow? Read in this order:
      Forgejo instead of locally.
    - [Skill discovery](skill-discovery.md) – how Effective Flow detects host skills and how
      to control that.
+   - [Language support](language-support.md) – specialist depth, reduced-depth product
+     routing, and repository-native checks.
 4. Running into problems? [Troubleshooting](troubleshooting.md).
 5. Unfamiliar term? [Glossary](glossary.md).
 
@@ -44,5 +46,6 @@ New to Effective Flow? Read in this order:
 | [worktree-and-delivery.md](worktree-and-delivery.md) | Worktree, delivery branch, completion types           |
 | [remote-tracker.md](remote-tracker.md)               | Remote issue mode (GitHub/Forgejo)                    |
 | [skill-discovery.md](skill-discovery.md)             | Host skill detection and control                      |
+| [language-support.md](language-support.md)           | Specialist and reduced-depth language support         |
 | [troubleshooting.md](troubleshooting.md)             | FAQ and common problems                               |
 | [glossary.md](glossary.md)                           | Terms from tool to skill discovery                    |

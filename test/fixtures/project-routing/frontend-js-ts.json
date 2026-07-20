@@ -1,0 +1,6 @@
+{
+  "name": "Frontend JavaScript and TypeScript",
+  "scope": [{ "path": "src/components/Button.tsx" }, { "path": "src/client/navigation.js" }],
+  "expectedRoutes": ["frontend-js-ts", "frontend-js-ts"],
+  "clarificationRequired": false
+}

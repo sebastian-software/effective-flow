@@ -35,6 +35,8 @@ import {
   findProhibitedConsumerScriptCommands,
   findRetiredConfigDocViolations,
   findForeignHarnessToolParameters,
+  parseProjectRoutingTable,
+  assertProjectRoutingContract,
 } from './build-lib.mjs';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -289,9 +291,44 @@ try {
     knownAgents,
   };
 
+  // --- Shared project-routing contract guard (#164) ---
+  // All project-aware workflows load this runtime contract. Parse and validate
+  // its ordered table before rendering so missing fallback routes, reordered
+  // priorities, or dead agent references fail every distribution build.
+  const projectRoutingContext = 'shared/project-routing.md';
+  const projectRoutingPath = join(SHARED_DIR, 'project-routing.md');
+  if (!existsSync(projectRoutingPath)) {
+    throw new Error(`Project-routing contract not found: ${projectRoutingPath}`);
+  }
+  const projectRoutingSource = normalizeLineEndings(readFileSync(projectRoutingPath, 'utf8'));
+  const projectRoutes = parseProjectRoutingTable(projectRoutingSource, {
+    context: projectRoutingContext,
+  });
+  assertProjectRoutingContract(projectRoutes, { context: projectRoutingContext });
+  validateRefs(projectRoutingSource, {
+    knownTools,
+    knownAgents,
+    context: projectRoutingContext,
+  });
+
   // Shared fragments deferred via ```lazy-include across all sources; each is
   // shipped once per harness as shared/<name>.md (see the per-harness loop).
   const lazyFragments = new Set();
+  const projectRoutingConsumers = new Set([
+    'tools/build.md',
+    'tools/fix.md',
+    'tools/refactor.md',
+    'tools/review.md',
+    'tools/maintain.md',
+    'tools/docs.md',
+    'agents/generic-implementer.md',
+    'agents/generic-product-implementer.md',
+    'agents/generic-product-reviewer.md',
+    'agents/test-writer.md',
+    'agents/code-validator.md',
+    'agents/code-documenter.md',
+    'agents/docs-writer.md',
+  ]);
 
   const readSource = (dir, file, context) => {
     const content = normalizeLineEndings(readFileSync(join(dir, file), 'utf8'));
@@ -300,6 +337,15 @@ try {
     // Guard: no fragment is both eager- and lazy-included in the same file.
     const { eager, lazy } = collectIncludeNames(rawBody);
     assertNoEagerLazyOverlap(eager, lazy, { context });
+    if (
+      projectRoutingConsumers.has(context) &&
+      !eager.has('project-routing') &&
+      !lazy.has('project-routing')
+    ) {
+      throw new Error(
+        `project-routing consumer guard (#164): ${context} must include project-routing`,
+      );
+    }
     // Eager includes inline now; each lazy include becomes a load pointer and is
     // recorded for shipping as a standalone shared/<name>.md fragment.
     const { body: withPointers, names } = resolveLazyIncludes(resolveIncludes(rawBody), {

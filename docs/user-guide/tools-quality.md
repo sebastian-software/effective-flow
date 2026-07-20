@@ -8,10 +8,15 @@ delivers structured findings that serve directly as input for the implementation
 **Purpose:** Orchestrates a comprehensive code review – or, when the argument clearly points to
 a plan file, a deeper interactive plan review. In the code review, three
 data-collection phases run in parallel: design-decision detection (ADRs, plans, conventions,
-code comments, lint suppressions, earlier reviews), technical validation
-(TypeScript/lint/build), and a project-type-appropriate reviewer pass. Afterwards the findings are
+code comments, lint suppressions, earlier reviews), repository-native technical validation,
+and per-file/domain qualitative reviewer passes. Afterwards the findings are
 aggregated, filtered against documented design decisions (so that deliberate decisions
 are not falsely reported as a problem), and reported.
+
+Frontend JavaScript/TypeScript, Node.js, and Rust use specialist reviewers. Other clearly
+identified product languages use the generic product reviewer after a visible reduced-depth
+notice. Tooling-only files remain in technical validation, and mixed scopes keep every
+recognized reviewer bucket. See [Language support](language-support.md).
 
 **When to use:** Before a merge, after a larger implementation run, or whenever
 a quality check of the code is wanted independently of a running workflow. Also
@@ -49,5 +54,6 @@ can be controlled via `review.profile` (`full`/`focused`/`fast`) in the project-
 ## Further reading
 
 - [Tools: Implement](tools-implement.md) – how findings feed into `fix`/`refactor`/`build`/`docs`
+- [Language support](language-support.md) – specialist depth, reduced-depth review, and limitations
 - [Configuration](configuration.md) – `review.*` keys in detail
 - [Remote tracker](remote-tracker.md) – finding issues, epics, labels

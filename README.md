@@ -1,7 +1,7 @@
 # Effective Flow
 
-Effective Flow bundles a complete software-engineering workflow as tools: from clarification
-through implementation to handover – invoked via `/effective-flow <tool>`, shipped as
+Effective Flow bundles complete lifecycle coverage as software-engineering workflow tools: from
+clarification through implementation to handover – invoked via `/effective-flow <tool>`, shipped as
 **one** skill for **Claude Code** and **Codex**, built from a single source.
 
 Not a grab-bag of individual prompts, but a coherent set of tools that know one another:
@@ -29,6 +29,19 @@ loop all the way to the pull request.
 - **Runs without configuration, grows with it.** Effective Flow works right after
   installation; anyone who wants to control review depth, worktree behavior or
   issue-tracker integration does so through the living Effective Flow project-setup ADR.
+
+## Language support
+
+Effective Flow provides specialist implementation and review depth for frontend JavaScript/
+TypeScript, Node.js backend/CLI code, and Rust. Other product languages use an automatic,
+clearly disclosed degraded mode: repository-native instructions, commands, tests, and nearby
+patterns guide a generic product implementer and qualitative reviewer. Tooling, CI, and
+configuration remain on a separate tooling-only route.
+
+This is complete **workflow lifecycle coverage**, not a claim of equal language expertise.
+When a file’s role or a safe native command cannot be established, the workflow asks a focused
+question or reports the affected check as skipped; it does not guess or install a toolchain.
+See the [language support matrix](docs/user-guide/language-support.md) for details.
 
 ## Quick start
 

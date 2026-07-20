@@ -1,0 +1,6 @@
+{
+  "name": "Rust product code",
+  "scope": [{ "path": "crates/core/src/lib.rs" }],
+  "expectedRoutes": ["rust"],
+  "clarificationRequired": false
+}

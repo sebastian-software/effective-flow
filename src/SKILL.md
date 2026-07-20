@@ -5,7 +5,7 @@ description: "Effective Flow — software engineering workflows as tools, invoke
 
 # Effective Flow
 
-Effective Flow bundles a complete software engineering workflow as tools invoked via `{{FIRMO}} <tool>` (version {{VERSION}}).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `{{FIRMO}} <tool>` (version {{VERSION}}).
 
 This router skill is deliberately **thin**. It contains only the tool catalog and the dispatch rule; a tool's full instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the session lean and avoids token exhaustion from preloading all tools.
 
@@ -25,6 +25,19 @@ For the `apply` tool, its instructions may in turn load an appropriate **interna
 The tools are grouped below by usage intent.
 
 {{TOOL_CATALOG}}
+
+## Language support
+
+| Scope                                                     | Depth                                                                                                 |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Frontend JavaScript/TypeScript, Node.js backend/CLI, Rust | Specialist implementer and reviewer                                                                   |
+| Other clearly identified product code                     | Disclosed reduced-depth implementer and qualitative reviewer, following repository-native conventions |
+| Tooling, CI, configuration, repository metadata           | Tooling-only generic implementer plus technical validation                                            |
+
+The workflow is complete across its lifecycle; it does not claim equal specialist expertise in
+every language. Unknown product languages route automatically to the reduced-depth path after a
+visible notice. A genuinely ambiguous file role or unsafe-to-infer native command requires focused
+clarification instead of a guess.
 
 ## Rules
 

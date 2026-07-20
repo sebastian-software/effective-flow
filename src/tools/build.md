@@ -1,5 +1,5 @@
 ---
-description: "Orchestrates the complete feature workflow: intent gate, plan-reference detection, planning via {{SKILL:plan}}, implementation, documentation, tests, validation, review and completion. Uses explicit skill switches such as {{AGENT:ui-implementer}}, {{AGENT:nodejs-implementer}}, {{AGENT:rust-implementer}}, {{AGENT:generic-implementer}}, {{AGENT:code-validator}}, {{AGENT:test-writer}}, {{AGENT:docs-writer}} and reviewers."
+description: "Orchestrates the complete feature workflow: intent gate, plan-reference detection, planning via {{SKILL:plan}}, project-aware implementation, documentation, tests, validation, review and completion."
 catalogHint: "Fully implements a new feature – plan, code, tests, review, completion."
 ---
 
@@ -13,6 +13,10 @@ language-rules
 
 ```include
 task-tracking
+```
+
+```include
+project-routing
 ```
 
 ```lazy-include
@@ -159,55 +163,11 @@ Create a session ID at the start, for example via timestamp. Use it in:
 - wrong assumptions
 - technical constraints
 
-## Project type detection
+## Project routing
 
-Determine the project type based on the following signals:
-
-| Signal                                                                                                 | Project type |
-| ------------------------------------------------------------------------------------------------------ | ------------ |
-| React/Vue/Angular/Svelte dependencies, `src/components/`, `pages/`, `app/` with JSX/TSX                | Frontend     |
-| Express/Fastify/Hono/Koa dependencies, `src/routes/`, `src/controllers/`, `src/services/`, `server.ts` | Backend API  |
-| `bin/`, CLI entry point, commander/yargs/meow/clipanion                                                | CLI          |
-| `Cargo.toml`/`Cargo.lock`, `src/main.rs`/`src/lib.rs`, `crates/`, `.rs` files, Cargo workspace         | Rust         |
-| `.github/workflows/`, CI/CD, tooling, build, release, container or repository configuration            | Generic      |
-| Combination of frontend + backend/CLI signals                                                          | Fullstack    |
-
-A repo with Rust **and** JS/TS frontend/backend signals (e.g. Tauri, WASM) counts as Fullstack: Rust files go to the Rust agents, JS/TS files to the existing agents.
-Generic files can be affected in addition to any project type; route them separately to the generic implementer instead of pushing them onto a language implementer.
-
-### Routing by project type
-
-| Project type            | Implementer                     | Reviewer                      |
-| ----------------------- | ------------------------------- | ----------------------------- |
-| Frontend                | `{{AGENT:ui-implementer}}`      | `{{AGENT:frontend-reviewer}}` |
-| Backend / CLI / Node.js | `{{AGENT:nodejs-implementer}}`  | `{{AGENT:nodejs-reviewer}}`   |
-| Rust                    | `{{AGENT:rust-implementer}}`    | `{{AGENT:rust-reviewer}}`     |
-| Generic                 | `{{AGENT:generic-implementer}}` | `{{AGENT:code-validator}}`    |
-| Fullstack               | both                            | both                          |
-
-For Fullstack:
-
-- start frontend and backend subtasks in parallel when both areas are affected
-- if only one area is affected, use only the appropriate skill
-- additionally start `{{AGENT:generic-implementer}}` when CI, tooling, configuration, dependency manifests or other generic artifacts are affected
-
-## Delegation rules
-
-Use explicit skill switches for specialist phases:
-
-- Planning: `{{SKILL:plan}}`
-- Frontend: `{{AGENT:ui-implementer}}`
-- Backend/CLI: `{{AGENT:nodejs-implementer}}`
-- Rust: `{{AGENT:rust-implementer}}`
-- Generic/Tooling/CI/Config: `{{AGENT:generic-implementer}}`
-- Code docs: `{{AGENT:code-documenter}}`
-- User docs: `{{AGENT:docs-writer}}`
-- Tests: `{{AGENT:test-writer}}`
-- E2E: `{{AGENT:e2e-tester}}`
-- Validation: `{{AGENT:code-validator}}`
-- Review: `{{AGENT:frontend-reviewer}}`, `{{AGENT:nodejs-reviewer}}`, `{{AGENT:rust-reviewer}}`
-
-For cleanly separable subtasks, the internal sub-agent pattern is allowed and preferred for parallel phases.
+Classify every affected file or domain with the canonical “Project routing” contract above. Use
+the resulting implementer and reviewer buckets independently; mixed repositories do not have one
+global project type. Start cleanly separable buckets in parallel.
 
 Current workflow for review-report backlinks: `{{SKILL:build}}`.
 
@@ -294,7 +254,8 @@ skill-discovery
    - Frontend: `Use the {{AGENT:ui-implementer}} skill for this phase.`
    - Backend/CLI: `Use the {{AGENT:nodejs-implementer}} skill for this phase.`
    - Rust: `Use the {{AGENT:rust-implementer}} skill for this phase.`
-   - Generic/Tooling/CI/Config: `Use the {{AGENT:generic-implementer}} skill for this phase.`
+   - Other clearly identified product code: emit the contract’s reduced-depth notice, then use `Use the {{AGENT:generic-product-implementer}} skill for this phase.`
+   - Tooling/CI/configuration/repository metadata: `Use the {{AGENT:generic-implementer}} skill for this phase.`
    - Fullstack: both in parallel or in clearly separated subphases
 2. Check for the done protocol when delegating internally.
 3. Check the result against the requirements.
@@ -303,10 +264,12 @@ skill-discovery
 
 Start in parallel if possible:
 
-1. `{{AGENT:code-documenter}}` for in-code documentation of all new or changed exports – JSDoc/TSDoc for JS/TS, rustdoc doc comments (`///`/`//!`) for Rust
-2. `{{AGENT:docs-writer}}` for README/guide updates if the change is user-relevant (for Rust incl. crate/module docs)
+1. `{{AGENT:code-documenter}}` for in-code documentation of all new or changed exports, using the established conventions of each routed file/domain
+2. `{{AGENT:docs-writer}}` for README/guide updates if the change is user-relevant
 
-Assign the documentation phase by the same project type as implementation and review (see "Routing by project type"). In mixed Rust/JS repos (project type Fullstack), documentation routes **per file/domain**: Rust files with rustdoc conventions, JS/TS files as before.
+Assign documentation per file/domain using the canonical routing contract. Preserve the explicit
+JS/TS and Rust branches; for other product languages, use repository-native conventions rather
+than inventing a documentation format.
 
 Skip user docs only with a short justification.
 
@@ -326,7 +289,7 @@ Start in parallel if possible:
 
 ### Phase 6: Review
 
-1. Start the appropriate reviewer skill for the changed files. Explicitly instruct the reviewer to deliver **all severities** (Critical + Important + Note), so the later plan-file report serves as a complete audit trail — deviating from the `{{SKILL:review}}` default, which delivers only Critical + Important.
+1. Start every reviewer selected by the canonical routing contract for the changed files, including `{{AGENT:generic-product-reviewer}}` for degraded product buckets. Tooling-only buckets still receive technical validation and do not route to the product fallback. Explicitly instruct each reviewer to deliver **all severities** (Critical + Important + Note), so the later plan-file report serves as a complete audit trail — deviating from the `{{SKILL:review}}` default, which delivers only Critical + Important.
 2. Aggregate all review findings and classify them:
    - Critical: must be fixed before completion
    - Important: should be fixed, can be handled as a follow-up
@@ -399,7 +362,7 @@ Note: Before completion, the "Open" column for "Critical" must be 0.
 ## Review findings
 
 **Date:** YYYY-MM-DD
-**Reviewer:** [frontend-reviewer / nodejs-reviewer / both / none]
+**Reviewer:** [all routed reviewers / none]
 
 ### Summary
 
