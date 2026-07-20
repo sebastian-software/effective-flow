@@ -1,0 +1,1025 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { test } from 'node:test';
+import {
+  bodyHash,
+  buildCommandPlan,
+  buildCommentPayload,
+  buildEpicPayload,
+  buildFindingPayload,
+  deduplicateFindings,
+  executeOperation,
+  labelQueryVariants,
+  parseFindingSignature,
+  parseReference,
+  parseReferences,
+  parseRemote,
+  patchChecklistEntry,
+  patchMarkedBlock,
+  planSfLabelMigration,
+  probeProvider,
+  redact,
+} from '../src/scripts/remote-tracker-core.mjs';
+
+const githubRepository = {
+  host: 'github.com',
+  owner: 'example',
+  repository: 'flow',
+  provider: 'github',
+};
+
+const forgejoRepository = {
+  host: 'code.example.test',
+  owner: 'team',
+  repository: 'flow',
+  slug: 'team/flow',
+  provider: 'forgejo',
+  login: 'work',
+};
+
+function fakeRunner(results) {
+  const calls = [];
+  const runner = async (plan) => {
+    calls.push(plan);
+    const result = results[calls.length - 1];
+    return typeof result === 'function' ? result(plan) : result;
+  };
+  runner.calls = calls;
+  return runner;
+}
+
+function teaProbeResults(overrides = {}) {
+  const help = (name, content) => overrides[name] ?? { status: 0, stdout: content, stderr: '' };
+  return [
+    { status: 0, stdout: 'Version: 0.14.1\n', stderr: '' },
+    {
+      status: 0,
+      stdout: JSON.stringify([{ name: 'work', url: 'https://code.example.test' }]),
+      stderr: '',
+    },
+    help('issues', '--output'),
+    help('issueComments', '--comments'),
+    help('issueCreate', '--title --description'),
+    help('issueUpdate', '--description'),
+    help('issueLabelAdd', '--add-labels'),
+    help('issueLabelRemove', '--remove-labels'),
+    help('pulls', '--output'),
+    help('pullComments', '--comments'),
+    help('pullReviewComments', '--output --fields'),
+    help('pullResolve', '--output'),
+    help('pullCreate', '--head --base'),
+    help('pullCreateDraft', '--draft'),
+    help('pullEdit', '--description'),
+    help('comment', '--output'),
+    help('labelCreate', '--output --name'),
+  ];
+}
+
+test('parses HTTPS, ssh URL, and SCP-style remotes deterministically', () => {
+  for (const remote of [
+    'https://github.com/example/flow.git',
+    'ssh://git@github.com/example/flow.git',
+    'git@github.com:example/flow.git',
+  ]) {
+    assert.deepEqual(parseRemote(remote), {
+      host: 'github.com',
+      owner: 'example',
+      repository: 'flow',
+      slug: 'example/flow',
+      provider: 'github',
+    });
+  }
+});
+
+test('classifies Forgejo only through a matching login or explicit override', () => {
+  assert.equal(
+    parseRemote('git@code.example.test:team/flow.git', {
+      teaLogins: [{ url: 'https://code.example.test' }],
+    }).provider,
+    'forgejo',
+  );
+  assert.equal(
+    parseRemote('https://enterprise.example.test/team/flow', { provider: 'github' }).provider,
+    'github',
+  );
+  assert.throws(
+    () => parseRemote('https://unknown.example.test/team/flow'),
+    (error) => error.code === 'AMBIGUOUS_HOST',
+  );
+});
+
+test('parses host-neutral references and rejects kind/repository mismatches', () => {
+  assert.deepEqual(parseReference('#42', { expectedKind: 'issue' }), {
+    kind: 'issue',
+    number: 42,
+    repository: undefined,
+  });
+  assert.equal(
+    parseReference('https://code.example.test/team/flow/pulls/9', {
+      expectedKind: 'pull-request',
+      repository: { host: 'code.example.test', owner: 'team', repository: 'flow' },
+    }).number,
+    9,
+  );
+  assert.equal(parseReferences('#1, #2', { expectedKind: 'issue' }).length, 2);
+  assert.throws(
+    () =>
+      parseReference('https://github.com/other/repo/issues/1', {
+        expectedKind: 'issue',
+        repository: githubRepository,
+      }),
+    (error) => error.code === 'REFERENCE_REPOSITORY_MISMATCH',
+  );
+  assert.throws(
+    () => parseReference('https://github.com/example/flow/pull/1', { expectedKind: 'issue' }),
+    (error) => error.code === 'INVALID_REFERENCE',
+  );
+});
+
+test('reads canonical Signature and legacy Signatur with one normalized identity', () => {
+  const canonical = parseFindingSignature('- **Signature**: src/a.mjs:2 · Core · Duplicate issue');
+  const legacy = parseFindingSignature('- **Signatur**:  src/a.mjs:2  ·  Core  · Duplicate issue');
+  assert.equal(canonical.normalized, legacy.normalized);
+  assert.equal(canonical.legacy, false);
+  assert.equal(legacy.legacy, true);
+  assert.throws(
+    () => parseFindingSignature('- **Signature**: one\n- **Signatur**: two'),
+    (error) => error.code === 'INVALID_PAYLOAD',
+  );
+});
+
+test('canonical finding writes use Signature and validate the R-ID', () => {
+  const payload = buildFindingPayload({
+    id: 'R-0000007',
+    title: 'Normalize signatures',
+    severity: 'Important',
+    complexity: 'Low',
+    area: 'Tracker',
+    file: 'src/a.mjs:2',
+    problem: 'Duplicate issue',
+    recommendation: 'Normalize the field',
+    action: 'effective-flow-fix',
+    promptSuggestion: 'Normalize the signature field.',
+  });
+  assert.match(payload.body, /\*\*Signature\*\*/);
+  assert.doesNotMatch(payload.body, /\*\*Signatur\*\*/);
+  assert.deepEqual(payload.labels, [
+    'effective-flow-review-finding',
+    'effective-flow-fix',
+    'important',
+  ]);
+});
+
+test('planning, apply, and PR comment builders emit canonical markers and reject attribution', () => {
+  assert.match(
+    buildCommentPayload('planning', { body: 'Plan' }).body,
+    /effective-flow-plan-issues/,
+  );
+  assert.match(
+    buildCommentPayload('apply', { body: 'Applied' }).body,
+    /effective-flow-apply-issues/,
+  );
+  assert.match(buildCommentPayload('pr', { body: 'Summary' }).body, /effective-flow-iterate/);
+  assert.throws(
+    () => buildCommentPayload('pr', { body: 'Generated with Codex' }),
+    (error) => error.code === 'INVALID_PAYLOAD',
+  );
+});
+
+test('dedup unions issue numbers before comparing canonical and legacy signatures', () => {
+  const signature = 'src/a.mjs:2 · Tracker · Duplicate issue';
+  const result = deduplicateFindings(
+    [
+      { number: 5, body: `- **Signature**: ${signature}` },
+      { number: 5, body: `- **Signatur**: ${signature}` },
+      { number: 6, body: '- **Signatur**: another · value · here' },
+    ],
+    [{ signature }, { signature: 'fresh · area · finding' }],
+  );
+  assert.equal(result.existingIssues.length, 2);
+  assert.deepEqual(
+    result.duplicate.map((item) => item.issueNumber),
+    [5],
+  );
+  assert.equal(result.fresh.length, 1);
+});
+
+test('skipped epic findings have title, signature, and decision reference but no ID', () => {
+  const payload = buildEpicPayload({
+    date: '2026-07-20',
+    scope: 'Tracker',
+    projectType: 'Tooling',
+    lastFindingNumber: 14,
+    findings: [],
+    skipped: [
+      {
+        title: 'Deliberate fallback',
+        signature: 'src/a.mjs:2 · Tracker · Deliberate fallback',
+        decisionReference: 'ADR remote-boundary',
+      },
+    ],
+  });
+  assert.match(payload.body, /Deliberate fallback.*Signature:.*ADR remote-boundary/);
+  assert.doesNotMatch(payload.body, /R-\d{7}/);
+  assert.equal(payload.lastFindingNumber, 14);
+  assert.throws(
+    () =>
+      buildEpicPayload({
+        date: '2026-07-20',
+        scope: 'Tracker',
+        projectType: 'Tooling',
+        skipped: [
+          {
+            id: 'R-0000015',
+            title: 'Wrong',
+            signature: 'a · b · c',
+            decisionReference: 'ADR x',
+          },
+        ],
+      }),
+    (error) => error.code === 'INVALID_PAYLOAD',
+  );
+});
+
+test('label compatibility emits separate prefix and legacy severity queries', () => {
+  assert.deepEqual(labelQueryVariants(['effective-flow-review-finding']), [
+    ['effective-flow-review-finding'],
+    ['firmo-review-finding'],
+  ]);
+  assert.deepEqual(labelQueryVariants(['critical']), [['critical'], ['kritisch']]);
+});
+
+test('sf migration adds current labels before removing old labels and is marker-idempotent', () => {
+  const plan = planSfLabelMigration([{ number: 9, labels: ['sf-fix', 'unrelated'] }]);
+  assert.deepEqual(plan.steps, [
+    { operation: 'add', issue: 9, label: 'effective-flow-fix' },
+    { operation: 'remove', issue: 9, label: 'sf-fix' },
+  ]);
+  assert.deepEqual(plan.marker, { done: false });
+  assert.deepEqual(plan.completionMarker, { done: true });
+  assert.deepEqual(planSfLabelMigration([], { done: true }), {
+    skipped: true,
+    steps: [],
+    marker: { done: true },
+  });
+});
+
+test('provider label plans support add and remove with documented argument forms', () => {
+  const githubRemove = buildCommandPlan(
+    'issue-label-remove',
+    { number: 9, payload: { label: 'sf-fix' } },
+    githubRepository,
+  );
+  assert.deepEqual(githubRemove.args.slice(-3), [
+    '-X',
+    'DELETE',
+    'repos/example/flow/issues/9/labels/sf-fix',
+  ]);
+
+  const forgejoAdd = buildCommandPlan(
+    'issue-label-add',
+    { number: 9, payload: { labels: ['effective-flow-fix'] } },
+    forgejoRepository,
+  );
+  assert.deepEqual(forgejoAdd.args, [
+    'issues',
+    'edit',
+    '9',
+    '--login',
+    'work',
+    '--repo',
+    'team/flow',
+    '--add-labels',
+    'effective-flow-fix',
+  ]);
+  const forgejoRemove = buildCommandPlan(
+    'issue-label-remove',
+    { number: 9, payload: { label: 'sf-fix' } },
+    forgejoRepository,
+  );
+  assert.equal(forgejoRemove.args.at(-2), '--remove-labels');
+  assert.equal(forgejoRemove.args.at(-1), 'sf-fix');
+});
+
+test('Forgejo command plans use supported tea forms and filter PR heads after reads', async () => {
+  const comments = buildCommandPlan('issue-comments-read', { number: 3 }, forgejoRepository);
+  assert.deepEqual(comments.args.slice(0, 3), ['issues', '3', '--login']);
+  assert.ok(comments.args.includes('--comments'));
+  assert.ok(comments.args.includes('--output'));
+
+  const create = buildCommandPlan(
+    'issue-create',
+    { payload: { title: 'Title', body: 'Body', labels: ['one', 'two'] } },
+    forgejoRepository,
+  );
+  assert.deepEqual(create.args.slice(0, 2), ['issues', 'create']);
+  assert.equal(create.args.includes('--output'), false);
+  assert.equal(create.args.at(-1), 'one,two');
+
+  const reviewThreads = buildCommandPlan(
+    'review-threads-read',
+    { pullRequest: 7 },
+    forgejoRepository,
+  );
+  assert.deepEqual(reviewThreads.args.slice(0, 3), ['pulls', 'review-comments', '7']);
+  const resolve = buildCommandPlan('review-thread-resolve', { threadId: 44 }, forgejoRepository);
+  assert.deepEqual(resolve.args.slice(0, 3), ['pulls', 'resolve', '44']);
+
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify([
+        { index: 1, title: 'one', state: 'open', head: 'other', base: 'develop' },
+        { index: 2, title: 'two', state: 'open', head: 'topic', base: 'develop' },
+      ]),
+      stderr: '',
+    },
+    { status: 0, stdout: '[]', stderr: '' },
+  ]);
+  const envelope = await executeOperation(
+    'pr-list',
+    { repository: forgejoRepository, head: 'topic' },
+    { runner, skipProbe: true },
+  );
+  assert.equal(runner.calls[0].args.includes('--head'), false);
+  assert.equal(runner.calls[0].args.includes('--limit'), true);
+  assert.equal(runner.calls[1].args.at(runner.calls[1].args.indexOf('--page') + 1), '2');
+  assert.equal(envelope.data.pagesFetched, 2);
+  assert.deepEqual(
+    envelope.data.result.map((item) => item.number),
+    [2],
+  );
+
+  const createEnvelope = await executeOperation(
+    'issue-create',
+    {
+      repository: forgejoRepository,
+      payload: { title: 'Title', body: 'Body' },
+    },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout:
+            '# #17 Title (open)\n@member created now\n\nBody\n\nhttps://code.example.test/team/flow/issues/17\n',
+          stderr: '',
+        },
+      ]),
+      skipProbe: true,
+      apply: true,
+    },
+  );
+  assert.deepEqual(createEnvelope.data.result, {
+    number: 17,
+    title: 'Title',
+    body: 'Body',
+    state: 'open',
+    labels: [],
+    url: 'https://code.example.test/team/flow/issues/17',
+    repository: 'team/flow',
+  });
+
+  const updateEnvelope = await executeOperation(
+    'issue-update-body',
+    {
+      repository: forgejoRepository,
+      number: 17,
+      expectedBodyHash: bodyHash('Body'),
+      payload: { body: 'Updated body' },
+    },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify({
+            index: 17,
+            title: 'Title',
+            body: 'Body',
+            state: 'open',
+            labels: [],
+          }),
+          stderr: '',
+        },
+        { status: 0, stdout: '', stderr: '' },
+      ]),
+      skipProbe: true,
+      apply: true,
+    },
+  );
+  assert.deepEqual(updateEnvelope.data.result, {
+    completed: true,
+    output: '',
+    repository: 'team/flow',
+  });
+});
+
+test('sf label migration executes add before remove and reports partial completion', async () => {
+  const input = {
+    repository: githubRepository,
+    issues: [{ number: 9, labels: ['sf-fix'] }],
+  };
+  const dryRun = await executeOperation('sf-label-migrate', input, { skipProbe: true });
+  assert.equal(dryRun.dryRun, true);
+  assert.deepEqual(dryRun.data.marker, { done: false });
+  assert.deepEqual(dryRun.data.completionMarker, { done: true });
+  assert.equal(dryRun.data.steps[1].command.args.includes('DELETE'), true);
+
+  const appliedRunner = fakeRunner([
+    { status: 0, stdout: '{}', stderr: '' },
+    { status: 0, stdout: '', stderr: '' },
+  ]);
+  const applied = await executeOperation('sf-label-migrate', input, {
+    runner: appliedRunner,
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(applied.ok, true);
+  assert.deepEqual(applied.data.marker, { done: true });
+  assert.deepEqual(
+    applied.data.completedSteps.map((step) => step.operation),
+    ['add', 'remove'],
+  );
+
+  const partialRunner = fakeRunner([
+    { status: 0, stdout: '{}', stderr: '' },
+    { status: 1, stdout: '', stderr: 'remove unavailable' },
+  ]);
+  const partial = await executeOperation('sf-label-migrate', input, {
+    runner: partialRunner,
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(partial.ok, false);
+  assert.equal(partial.error.code, 'COMMAND_FAILED');
+  assert.deepEqual(partial.error.details.marker, { done: false });
+  assert.deepEqual(partial.error.details.completedSteps, [
+    { operation: 'add', issue: 9, label: 'effective-flow-fix' },
+  ]);
+});
+
+test('marker patching changes exactly one block and is idempotent', () => {
+  const original = 'Before\n<!-- effective-flow-summary -->\nold';
+  const first = patchMarkedBlock(original, {
+    marker: 'effective-flow-summary',
+    replacement: 'new',
+  });
+  assert.equal(first.body, 'Before\n<!-- effective-flow-summary -->\nnew');
+  assert.equal(first.changed, true);
+  assert.equal(
+    patchMarkedBlock(first.body, { marker: 'effective-flow-summary', replacement: 'new' }).changed,
+    false,
+  );
+  assert.throws(
+    () =>
+      patchMarkedBlock('<!-- x -->\na\n<!-- x -->\nb', {
+        marker: 'x',
+        replacement: 'c',
+      }),
+    (error) => error.code === 'AMBIGUOUS_TARGET',
+  );
+});
+
+test('checklist patching changes one semantic target and rejects zero/multiple matches', () => {
+  const first = patchChecklistEntry('- [ ] #17 Finding', {
+    reference: '#17',
+    checked: true,
+    append: '— https://example.test/pr/2',
+  });
+  assert.equal(first.body, '- [x] #17 Finding — https://example.test/pr/2');
+  assert.equal(
+    patchChecklistEntry(first.body, {
+      reference: '#17',
+      checked: true,
+      append: '— https://example.test/pr/2',
+    }).changed,
+    false,
+  );
+  assert.throws(
+    () => patchChecklistEntry('- [ ] #1 one', { reference: '#2' }),
+    (error) => error.code === 'TARGET_NOT_FOUND',
+  );
+});
+
+test('dry-run mutations emit redacted executable, argument vector, and stdin without running', async () => {
+  const runner = fakeRunner([]);
+  const envelope = await executeOperation(
+    'issue-create',
+    {
+      repository: githubRepository,
+      payload: { title: 'Finding', body: 'token=github_pat_secret', labels: ['important'] },
+    },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.dryRun, true);
+  assert.equal(envelope.data.conditionalWriteAvailable, false);
+  assert.equal(envelope.data.command.executable, 'gh');
+  assert.ok(Array.isArray(envelope.data.command.args));
+  assert.doesNotMatch(envelope.data.command.stdin, /github_pat_secret/);
+  assert.equal(runner.calls.length, 0);
+});
+
+test('body mutation previews require a caller-supplied fresh body hash', async () => {
+  const envelope = await executeOperation(
+    'issue-update-body',
+    { repository: githubRepository, number: 3, payload: { body: 'desired' } },
+    { skipProbe: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+});
+
+test('repository resolution distinguishes non-Git repositories and missing origins', async () => {
+  const notGit = await executeOperation(
+    'repository-resolve',
+    {},
+    {
+      runner: fakeRunner([{ status: 128, stdout: '', stderr: 'not a repository' }]),
+    },
+  );
+  assert.equal(notGit.error.code, 'NOT_GIT_REPOSITORY');
+
+  const noOrigin = await executeOperation(
+    'repository-resolve',
+    {},
+    {
+      runner: fakeRunner([
+        { status: 0, stdout: 'true\n', stderr: '' },
+        { status: 2, stdout: '', stderr: 'No such remote' },
+      ]),
+    },
+  );
+  assert.equal(noOrigin.error.code, 'NO_ORIGIN');
+});
+
+test('applied body writes fail closed when the fresh body hash changed', async () => {
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify({ number: 3, title: 'x', body: 'changed', labels: [] }),
+      stderr: '',
+    },
+  ]);
+  const envelope = await executeOperation(
+    'issue-update-body',
+    {
+      repository: githubRepository,
+      number: 3,
+      expectedBodyHash: bodyHash('old'),
+      payload: { body: 'desired' },
+    },
+    { runner, skipProbe: true, apply: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'STALE_WRITE');
+  assert.equal(runner.calls.length, 1);
+});
+
+test('already-applied body state is unchanged success without a write', async () => {
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify({ number: 3, title: 'x', body: 'desired', labels: [] }),
+      stderr: '',
+    },
+  ]);
+  const envelope = await executeOperation(
+    'issue-update-body',
+    {
+      repository: githubRepository,
+      number: 3,
+      expectedBodyHash: bodyHash('old'),
+      payload: { body: 'desired' },
+    },
+    { runner, skipProbe: true, apply: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.unchanged, true);
+  assert.equal(runner.calls.length, 1);
+});
+
+test('a matching applied body write re-reads then mutates with no shell command', async () => {
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify({ number: 3, title: 'x', body: 'old', labels: [] }),
+      stderr: '',
+    },
+    {
+      status: 0,
+      stdout: JSON.stringify({ number: 3, title: 'x', body: 'desired', labels: [] }),
+      stderr: '',
+    },
+  ]);
+  const envelope = await executeOperation(
+    'issue-update-body',
+    {
+      repository: githubRepository,
+      number: 3,
+      expectedBodyHash: bodyHash('old'),
+      payload: { body: 'desired' },
+    },
+    { runner, skipProbe: true, apply: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(runner.calls.length, 2);
+  assert.equal(runner.calls[1].executable, 'gh');
+  assert.equal('shell' in runner.calls[1], false);
+  assert.deepEqual(runner.calls[1].args.slice(0, 4), [
+    'api',
+    '-X',
+    'PATCH',
+    'repos/example/flow/issues/3',
+  ]);
+});
+
+test('GitHub reads expose ETags while writes accurately report non-atomic capability', async () => {
+  const readRunner = fakeRunner([
+    {
+      status: 0,
+      stdout:
+        'HTTP/2 200 OK\netag: "version-1"\ncontent-type: application/json\n\n' +
+        JSON.stringify({ number: 3, title: 'x', body: 'old', labels: [] }),
+      stderr: '',
+    },
+  ]);
+  const read = await executeOperation(
+    'issue-read',
+    { repository: githubRepository, number: 3 },
+    { runner: readRunner, skipProbe: true },
+  );
+  assert.equal(read.ok, true);
+  assert.equal(read.data.result.version, '"version-1"');
+  assert.equal(readRunner.calls[0].args.includes('--include'), true);
+
+  const writeRunner = fakeRunner([
+    {
+      status: 0,
+      stdout:
+        'HTTP/2 200 OK\netag: "version-1"\n\n' +
+        JSON.stringify({ number: 3, title: 'x', body: 'old', labels: [] }),
+      stderr: '',
+    },
+    {
+      status: 0,
+      stdout: JSON.stringify({ number: 3, title: 'x', body: 'desired', labels: [] }),
+      stderr: '',
+    },
+  ]);
+  const write = await executeOperation(
+    'issue-update-body',
+    {
+      repository: githubRepository,
+      number: 3,
+      expectedBodyHash: bodyHash('old'),
+      payload: { body: 'desired' },
+      probe: { capabilities: { conditionalWrites: false } },
+    },
+    { runner: writeRunner, skipProbe: true, apply: true },
+  );
+  assert.equal(write.ok, true);
+  assert.equal(writeRunner.calls[1].args.includes('If-Match: "version-1"'), false);
+});
+
+test('review-thread reads normalize file, line, author, text, and resolution', async () => {
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                nodes: [
+                  {
+                    id: 'thread-1',
+                    isResolved: false,
+                    path: 'src/a.mjs',
+                    line: 42,
+                    comments: {
+                      nodes: [
+                        {
+                          id: 'comment-1',
+                          databaseId: 7,
+                          body: 'Handle this case',
+                          path: 'src/a.mjs',
+                          line: 42,
+                          author: { __typename: 'User', login: 'reviewer' },
+                        },
+                      ],
+                    },
+                  },
+                  {
+                    id: 'thread-2',
+                    isResolved: true,
+                    path: 'src/b.mjs',
+                    line: 7,
+                    comments: {
+                      nodes: [
+                        {
+                          id: 'comment-2',
+                          body: 'Automated note',
+                          path: 'src/b.mjs',
+                          line: 7,
+                          author: { __typename: 'Bot', login: 'review-app[bot]' },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }),
+      stderr: '',
+    },
+  ]);
+  const envelope = await executeOperation(
+    'review-threads-read',
+    { repository: githubRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+  assert.deepEqual(envelope.data.result[0], {
+    id: 'thread-1',
+    isResolved: false,
+    path: 'src/a.mjs',
+    line: 42,
+    startLine: undefined,
+    comments: [
+      {
+        id: 'comment-1',
+        databaseId: 7,
+        body: 'Handle this case',
+        author: { login: 'reviewer', isBot: false, authorType: 'human' },
+        path: 'src/a.mjs',
+        line: 42,
+        startLine: undefined,
+      },
+    ],
+  });
+  assert.deepEqual(envelope.data.result[1].comments[0].author, {
+    login: 'review-app[bot]',
+    isBot: true,
+    authorType: 'bot',
+  });
+  assert.match(runner.calls[0].stdin, /reviewThreads.*path line startLine/s);
+  assert.match(runner.calls[0].stdin, /author\{__typename login\}/);
+});
+
+test('provider probes normalize missing CLI, auth failure, and Forgejo capabilities', async () => {
+  await assert.rejects(
+    () =>
+      probeProvider(
+        { ...githubRepository },
+        fakeRunner([{ status: null, error: { code: 'ENOENT' } }]),
+      ),
+    (error) => error.code === 'CLI_MISSING',
+  );
+  await assert.rejects(
+    () =>
+      probeProvider(
+        { ...githubRepository },
+        fakeRunner([
+          { status: 0, stdout: 'gh version 2.70.0\n', stderr: '' },
+          { status: 1, stdout: '', stderr: 'not logged in' },
+        ]),
+      ),
+    (error) => error.code === 'AUTH_FAILED',
+  );
+  const github = await probeProvider(
+    githubRepository,
+    fakeRunner([
+      { status: 0, stdout: 'gh version 2.70.0\n', stderr: '' },
+      { status: 0, stdout: '', stderr: '' },
+    ]),
+  );
+  assert.equal(github.capabilities.conditionalWrites, false);
+  const forgejo = await probeProvider(
+    { host: 'code.example.test', owner: 'team', repository: 'flow', provider: 'forgejo' },
+    fakeRunner(teaProbeResults()),
+  );
+  assert.equal(forgejo.login, 'work');
+  assert.equal(forgejo.capabilities.reviewThreads, true);
+  assert.equal(forgejo.capabilities.reviewThreadResolution, true);
+  assert.equal(forgejo.capabilities.reviewThreadReplies, false);
+  assert.equal(forgejo.capabilities.labelMigration, true);
+});
+
+test('Forgejo probe reports missing commands and flags as unsupported capabilities', async () => {
+  const probe = await probeProvider(
+    forgejoRepository,
+    fakeRunner(
+      teaProbeResults({
+        issueLabelRemove: { status: 1, stdout: '', stderr: 'unknown flag' },
+        pullResolve: { status: 1, stdout: '', stderr: 'unknown command' },
+      }),
+    ),
+  );
+  assert.equal(probe.capabilities.issueUpdate, true);
+  assert.equal(probe.capabilities.issueLabelAdd, true);
+  assert.equal(probe.capabilities.issueLabelRemove, false);
+  assert.equal(probe.capabilities.labelMigration, false);
+  assert.equal(probe.capabilities.pullRequestRead, true);
+  assert.equal(probe.capabilities.reviewThreads, true);
+  assert.equal(probe.capabilities.reviewThreadResolution, false);
+
+  const envelope = await executeOperation(
+    'issue-label-remove',
+    {
+      repository: forgejoRepository,
+      number: 4,
+      payload: { label: 'sf-fix' },
+      probe,
+    },
+    { skipProbe: true, apply: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'UNSUPPORTED_CAPABILITY');
+});
+
+test('Forgejo probes keep base reads and lists independent from comment flags', async () => {
+  const probe = await probeProvider(
+    forgejoRepository,
+    fakeRunner(
+      teaProbeResults({
+        issueComments: { status: 1, stdout: '', stderr: 'unknown flag' },
+        pullComments: { status: 1, stdout: '', stderr: 'unknown flag' },
+      }),
+    ),
+  );
+  assert.equal(probe.capabilities.issueRead, true);
+  assert.equal(probe.capabilities.issueList, true);
+  assert.equal(probe.capabilities.issueCommentsRead, false);
+  assert.equal(probe.capabilities.pullRequestRead, true);
+  assert.equal(probe.capabilities.pullRequestList, true);
+  assert.equal(probe.capabilities.prCommentsRead, false);
+});
+
+test('Forgejo draft PR creation requires and uses a probed draft flag', async () => {
+  const unsupportedProbe = await probeProvider(
+    forgejoRepository,
+    fakeRunner(
+      teaProbeResults({
+        pullCreateDraft: { status: 1, stdout: '', stderr: 'unknown flag' },
+      }),
+    ),
+  );
+  assert.equal(unsupportedProbe.capabilities.pullRequestCreate, true);
+  assert.equal(unsupportedProbe.capabilities.pullRequestDraftCreate, false);
+
+  const unsupported = await executeOperation(
+    'pr-create',
+    {
+      repository: forgejoRepository,
+      payload: { title: 'Draft', body: 'Body', head: 'topic', base: 'develop', draft: true },
+      probe: unsupportedProbe,
+    },
+    { skipProbe: true },
+  );
+  assert.equal(unsupported.ok, false);
+  assert.equal(unsupported.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(unsupported.error.details.capability, 'pullRequestDraftCreate');
+
+  const topLevelUnsupported = await executeOperation(
+    'pr-create',
+    {
+      repository: forgejoRepository,
+      title: 'Draft',
+      body: 'Body',
+      head: 'topic',
+      base: 'develop',
+      draft: true,
+      probe: unsupportedProbe,
+    },
+    { skipProbe: true },
+  );
+  assert.equal(topLevelUnsupported.ok, false);
+  assert.equal(topLevelUnsupported.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(topLevelUnsupported.error.details.capability, 'pullRequestDraftCreate');
+
+  const supported = await executeOperation(
+    'pr-create',
+    {
+      repository: forgejoRepository,
+      payload: { title: 'Draft', body: 'Body', head: 'topic', base: 'develop', draft: true },
+      probe: {
+        ...unsupportedProbe,
+        capabilities: { ...unsupportedProbe.capabilities, pullRequestDraftCreate: true },
+      },
+    },
+    { skipProbe: true },
+  );
+  assert.equal(supported.ok, true);
+  assert.equal(supported.dryRun, true);
+  assert.equal(supported.data.command.args.includes('--draft'), true);
+});
+
+test('provider probes distinguish old versions and missing JSON capability', async () => {
+  await assert.rejects(
+    () =>
+      probeProvider(
+        { ...githubRepository },
+        fakeRunner([{ status: 0, stdout: 'gh version 1.9.0\n', stderr: '' }]),
+      ),
+    (error) => error.code === 'UNSUPPORTED_CAPABILITY' && error.details.capability === 'version',
+  );
+  await assert.rejects(
+    () =>
+      probeProvider(
+        {
+          host: 'code.example.test',
+          owner: 'team',
+          repository: 'flow',
+          provider: 'forgejo',
+        },
+        fakeRunner([
+          { status: 0, stdout: 'Version: 0.10.1\n', stderr: '' },
+          { status: 0, stdout: 'table output', stderr: '' },
+        ]),
+      ),
+    (error) => error.code === 'UNSUPPORTED_CAPABILITY' && error.details.capability === 'json',
+  );
+});
+
+test('unsupported Forgejo review-thread operations return a structured error', async () => {
+  const envelope = await executeOperation(
+    'review-thread-resolve',
+    {
+      repository: {
+        host: 'code.example.test',
+        owner: 'team',
+        repository: 'flow',
+        provider: 'forgejo',
+      },
+      pullRequest: 1,
+      threadId: 'thread',
+      probe: { capabilities: { reviewThreadResolution: false } },
+    },
+    { skipProbe: true, apply: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'UNSUPPORTED_CAPABILITY');
+});
+
+test('malformed provider JSON becomes INVALID_PAYLOAD', async () => {
+  const envelope = await executeOperation(
+    'issue-read',
+    { repository: githubRepository, number: 4 },
+    {
+      skipProbe: true,
+      runner: fakeRunner([{ status: 0, stdout: 'not json', stderr: '' }]),
+    },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+});
+
+test('redaction removes credentials recursively', () => {
+  const redacted = redact({
+    token: 'secret',
+    body: 'Authorization: Bearer abc123',
+    remote: 'https://alice:verysecret@github.com/example/flow.git',
+  });
+  assert.deepEqual(redacted, {
+    token: '[REDACTED]',
+    body: 'Authorization: Bearer [REDACTED]',
+    remote: 'https://[REDACTED]@github.com/example/flow.git',
+  });
+});
+
+test('structured parse failures redact URL userinfo', async () => {
+  const envelope = await executeOperation('remote-parse', {
+    remote: 'https://alice:verysecret@github.com/only-one-segment',
+  });
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.details.remote.includes('verysecret'), false);
+  assert.match(envelope.error.details.remote, /\[REDACTED\]@github\.com/);
+});
+
+test('CLI reads JSON stdin and returns stable success/error envelopes and exit codes', () => {
+  const success = spawnSync(process.execPath, ['src/scripts/remote-tracker.mjs', 'remote-parse'], {
+    cwd: new URL('..', import.meta.url),
+    input: JSON.stringify({ remote: 'git@github.com:example/flow.git' }),
+    encoding: 'utf8',
+  });
+  assert.equal(success.status, 0);
+  assert.deepEqual(Object.keys(JSON.parse(success.stdout)), [
+    'ok',
+    'operation',
+    'provider',
+    'data',
+    'dryRun',
+  ]);
+
+  const failure = spawnSync(process.execPath, ['src/scripts/remote-tracker.mjs', 'remote-parse'], {
+    cwd: new URL('..', import.meta.url),
+    input: '{',
+    encoding: 'utf8',
+  });
+  assert.notEqual(failure.status, 0);
+  const envelope = JSON.parse(failure.stdout);
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+  assert.equal(typeof envelope.error.retryable, 'boolean');
+});

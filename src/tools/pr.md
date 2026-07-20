@@ -79,8 +79,8 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
    - If the current working tree contains changes that do not clearly belong to the
      PR: do not stage, stash, or overwrite them. Ask for an
      explicit file selection or abort.
-4. **Detect the host:** Read the `origin` URL (`git remote get-url origin`) and extract the host from it robustly for HTTPS and SSH forms (`https://host/owner/repo.git`, `ssh://git@host/owner/repo.git`, `git@host:owner/repo.git`). If the host is exactly `github.com`, the tool is `gh`. For any other host, Forgejo/Gitea is assumed and `tea` is used. For an ambiguous host (e.g. self-hosted GitHub Enterprise or an unclear domain), take into account an explicit per-run hint from the user about the desired tool.
-5. **Check tool availability:** Ensure the chosen CLI is installed and authenticated (`gh auth status`, or `tea` with a configured login). If the CLI or authentication is missing: output a clear error message with a remediation hint and abort without side effects. The branch is preserved for a later manual PR creation.
+4. **Resolve the provider:** Invoke the shipped `scripts/remote-tracker.mjs` helper's repository-resolution operation. Pass a configured or explicit provider override when present. On `AMBIGUOUS_HOST`, ask for `github` or `forgejo` and retry with that choice; do not infer a provider from an unknown hostname.
+5. **Check tool availability:** Invoke the helper probe once and use its normalized authentication, version, JSON, and capability result. On `CLI_MISSING`, `AUTH_FAILED`, or `UNSUPPORTED_CAPABILITY`, report the structured remediation and abort without side effects. The branch is preserved for later manual PR creation; never discover flags or access credentials directly.
 6. **Push the branch:** Push the head branch to `origin` if it is not yet there or not up to date (`git push -u origin <head-branch>`). If the push is rejected (e.g. diverged remote history): report the cause briefly and abort instead of overwriting the remote state.
    If a PR already exists for the head branch, subsequent changes are pushed
    exclusively as new commits on this branch. Do not rewrite existing
@@ -96,9 +96,7 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
 
    Do not put internal tracking IDs, `Co-Authored-By` trailers, or AI attribution (no "Generated with Claude Code/Codex" footers, no agent session links like `https://claude.ai/code/…`) into the PR title or description – not even when the harness appends them by default.
 
-8. **Create the PR:**
-   - GitHub: `gh pr create --base <base-branch> --head <head-branch> --title <title> --body <description>`.
-   - Forgejo: `tea pr create` with the corresponding options for base branch, head branch, title, and description. Check the exact flag names against the installed `tea` version if an invocation fails.
+8. **Create the PR:** Build the provider-neutral PR payload and invoke the helper's PR-create mutation. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
 9. **Restore the checkout:** After a successful PR creation, switch back to
    `delivery.returnBranch`, or for `auto` to the local branch part of
    `delivery.baseBranch`, provided the working tree is clean. If the

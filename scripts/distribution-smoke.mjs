@@ -33,6 +33,7 @@ function run(command, args, options = {}) {
     cwd: options.cwd ?? ROOT_DIR,
     encoding: 'utf8',
     env: { ...process.env, CI: '1', NO_COLOR: '1', ...options.env },
+    input: options.input,
   });
   if (result.status !== 0) {
     fail(
@@ -123,6 +124,27 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
   assertWorkerResolution(join(distRoot, 'claude'), claudeAgents, 'md', 'name: ', workers);
   assertWorkerResolution(join(distRoot, 'codex'), codexAgents, 'toml', 'name = "', workers);
   assertWorkerResolution(join(distRoot, 'portable'), portableWorkers, 'md', '# ', workers);
+
+  for (const target of ['claude', 'codex', 'portable']) {
+    const scripts = join(distRoot, target, 'effective-flow', 'scripts');
+    for (const file of ['remote-tracker.mjs', 'remote-tracker-core.mjs']) {
+      if (!lstatSync(join(scripts, file)).isFile()) fail(`${target} is missing scripts/${file}`);
+    }
+    const helper = join(scripts, 'remote-tracker.mjs');
+    const result = spawnSync(process.execPath, [helper, 'body-hash'], {
+      cwd: ROOT_DIR,
+      encoding: 'utf8',
+      env: { ...process.env, CI: '1', NO_COLOR: '1' },
+      input: JSON.stringify({ body: 'distribution-smoke' }),
+    });
+    if (result.status !== 0) {
+      fail(`${target} remote tracker failed (${result.status})\n${result.stdout}${result.stderr}`);
+    }
+    const envelope = parseJson(result.stdout.trim(), `${target} remote tracker`);
+    if (!envelope.ok || envelope.operation !== 'body-hash' || envelope.dryRun !== false) {
+      fail(`${target} remote tracker returned an invalid envelope`);
+    }
+  }
 
   for (const file of walkFiles(join(distRoot, 'portable', 'effective-flow'), (path) =>
     path.endsWith('.md'),

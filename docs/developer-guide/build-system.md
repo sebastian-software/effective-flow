@@ -16,7 +16,8 @@ pnpm audit:skill-ownership -- <local-skills-directory> # optional, advisory upst
 pnpm test:distribution  # build/archive/delivery/installer smoke suite
 ```
 
-The package manager is **pnpm** (`packageManager: pnpm@11.11.0`). Correctness rests on three
+The package manager is **pnpm** (`packageManager: pnpm@11.11.0`), and Node.js 22 or newer is
+required by both the build and the shipped runtime helper. Correctness rests on three
 complementary layers: the `node:test` suite (`pnpm test`) covers pure transforms and isolated
 installer behavior; the build guards (see "Guards") enforce source and rendered-output
 completeness during `node build.mjs`; and `pnpm test:distribution` smoke-tests the built native
@@ -132,6 +133,12 @@ The build aborts with an error message if any of these guards is violated:
   | `yield_time_ms`       | Codex         |
   | `sandbox_permissions` | Codex         |
 
+- **Remote-tracker guards (#169):** `src/scripts/remote-tracker.mjs` and its importable core
+  must exist, import only Node.js built-ins or local siblings, and be copied byte-for-byte to
+  native Claude, native Codex, and portable `scripts/` directories. Runtime prompts are scanned
+  with the unit-tested `findRemoteTrackerRecipeViolations` detector so direct `gh`/`tea`
+  recipes, manual origin parsing, GraphQL assembly, and runtime flag discovery cannot return.
+
 - **Retired consumer-config guard (#166):** The hand-maintained root `README.md` and every
   Markdown file under `docs/user-guide/` are scanned for the retired
   `.effective-flow/config.json` interface. The path is accepted only in an explicitly allowlisted
@@ -215,6 +222,26 @@ Short version (canonical in [`AGENTS.md`](../../AGENTS.md), section "Adding a to
    strictly quoted `catalogHint` frontmatter field.
 3. Run `node build.mjs`. The guards described above cover missing sources, missing include
    targets, unsupported Codex sandbox modes, and missing or duplicate `TOOL_GROUPS` entries.
+
+## Runtime scripts
+
+The remote-tracker adapter is the only consumer runtime code in the skill payload. Invoke it as
+`node <skill-root>/scripts/remote-tracker.mjs <operation> [--apply]` with one JSON object on
+standard input. It emits one stable JSON envelope on standard output and uses nonzero exit codes
+for structured failures. Mutations are dry runs unless `--apply` is present. The core module is
+pure except for an injected process runner; provider CLIs are always executed as an executable
+plus argument array, never through a shell.
+
+Unit tests exercise parsing, payloads, provider plans, redaction, capabilities, compatibility,
+and stale writes with fake runners and fixtures. Forgejo capabilities are derived once per run
+from authenticated login JSON plus documented `tea ... --help` command/flag surfaces; absent
+commands become `UNSUPPORTED_CAPABILITY` before mutation. GitHub reads retain ETags for
+diagnostics, but body writes are reported as non-atomic because GitHub does not support
+conditional requests for these unsafe endpoints. Forgejo list reads page until an empty page,
+and create results are normalized from the final URL that supported `tea` versions print after a
+successful issue or pull-request creation. The CLI-level test spawns the real entry point;
+the build and distribution checks prove that all three installed payloads contain identical,
+usable scripts.
 
 ## Progressive disclosure beyond the router
 

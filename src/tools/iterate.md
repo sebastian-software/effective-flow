@@ -184,8 +184,9 @@ options:
 
 1. Push the head branch normally (no force). If the push fails due to diverged remote history:
    stop, report the conflict, overwrite no history, and resolve no threads.
-2. Reply briefly per addressed thread and resolve it (GitHub via GraphQL; Forgejo
-   best-effort). Use the marker `<!-- effective-flow-iterate -->`.
+2. Reply briefly per addressed thread and resolve it through the remote helper's normalized
+   review-thread operations. If resolution is an unsupported provider capability, keep the reply
+   and report the required manual resolution. Use the marker `<!-- effective-flow-iterate -->`.
 3. Post **one** summary comment on the PR (marker `<!-- effective-flow-iterate -->`): which items
    were implemented or skipped and which pure questions are open/deferred (without a
    substantive auto-reply).

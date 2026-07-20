@@ -4,9 +4,9 @@ This shared fragment connects `{{SKILL:review}}` and `{{SKILL:apply-review}}` wi
 
 The local/remote toggle (`tracker.mode`) affects exclusively **reviews**. **Investigations** (`{{SKILL:investigate}}`) are exempt from it and remain purely local in every mode under `.effective-flow/investigation/` (never committed, never as an issue). Of the Effective Flow artifacts, only **plans** are committed.
 
-It encapsulates the **shared** building blocks: the `tracker` config schema including migration, the mode determination, the host and CLI detection, the label convention, the canonical issue and epic body formats as well as the mapping of tracker operations onto `gh`/`tea`. The actual orchestration – when issues are **created** (`{{SKILL:review}}`) and when they are **read and processed** (`{{SKILL:apply-review}}`) – stays in the respective skill.
+It encapsulates the **shared** building blocks: the `tracker` config schema including migration, the mode determination, the provider-neutral remote-helper contract, the label convention, and the canonical issue and epic body formats. The actual orchestration – when issues are **created** (`{{SKILL:review}}`) and when they are **read and processed** (`{{SKILL:apply-review}}`) – stays in the respective skill.
 
-In addition, `{{SKILL:apply-issues}}` and `{{SKILL:plan-issue}}` use this fragment, though only for the **tool-generic plumbing**: the host and CLI detection (below), the availability/auth check, the mapping of tracker operations onto `gh`/`tea` and the error cases. These two skills process **arbitrary** human issues instead of the finding issues produced by `{{SKILL:review}}`; they are **inherently remote** and do **not** evaluate the `tracker.mode` toggle (local/remote) – they only need a Git repository, an `origin` remote and an authenticated CLI. The finding-/epic-specific sections (issue body format, epic body format, `R-XXXXXXX` convention) apply only to `{{SKILL:review}}`/`{{SKILL:apply-review}}`; the checkbox-ticking mechanics for epic bodies are used by `{{SKILL:apply-issues}}` analogously for container issues.
+In addition, `{{SKILL:apply-issues}}` and `{{SKILL:plan-issue}}` use this fragment for the same provider-neutral helper operations. These two skills process **arbitrary** human issues instead of the finding issues produced by `{{SKILL:review}}`; they are **inherently remote** and do **not** evaluate the `tracker.mode` toggle (local/remote) – they only need a Git repository, an `origin` remote and an authenticated CLI. The finding-/epic-specific sections (issue body format, epic body format, `R-XXXXXXX` convention) apply only to `{{SKILL:review}}`/`{{SKILL:apply-review}}`; the checkbox-ticking mechanics for epic bodies are used by `{{SKILL:apply-issues}}` analogously for container issues.
 
 ### Configuration
 
@@ -62,16 +62,25 @@ options:
 
 Use the chosen answer as the tracker mode **for this run**. Do **not** write it into the configuration yourself — permanently pinning `tracker.mode` in the project setup ADR is handled exclusively by `{{SKILL:setup}}`. Briefly point this out to the user, e.g. "Tracker mode `remote` used for this run; pin permanently via `{{SKILL:setup}}`."
 
-### Host and CLI detection (remote mode only)
+### Remote helper contract (remote mode only)
 
-In remote mode, determine the tool analogously to `{{SKILL:pr}}`:
+All deterministic remote mechanics run through the shipped helper:
 
-1. **Precondition:** A Git repository with an `origin` remote is present. If `origin` is missing or it is not a Git repository, remote mode is not possible: report clearly and abort.
-2. **Choose tool:**
-   - `tracker.remoteToolOverride: "github"` → `gh`; `"forgejo"` → `tea`.
-   - otherwise (`auto`): Read the `origin` URL (`git remote get-url origin`) and extract the host from it robustly for HTTPS and SSH forms (`https://host/owner/repo.git`, `ssh://git@host/owner/repo.git`, `git@host:owner/repo.git`). If the host is exactly `github.com`, the tool is `gh`; **for any other host** Forgejo/Gitea is assumed and `tea` is used.
-   - An explicit per-run hint from the user about the tool takes precedence for an ambiguous host (e.g. GitHub Enterprise). If the host is ambiguous and neither override nor per-run hint is present, ask the user for the desired tool.
-3. **Check availability:** Ensure the chosen CLI is installed and authenticated (`gh auth status` or `tea` with a configured login). If the CLI or the authentication is missing: emit a clear error message with a remediation hint and abort without side effect. Do **not** silently fall back to `local`; offer a fallback to `local` only after explicit user consent.
+```text
+node <skill-root>/scripts/remote-tracker.mjs <operation> [--apply]
+```
+
+Pass exactly one JSON object through standard input and parse exactly one JSON result envelope from standard output. Resolve `<skill-root>` from the currently loaded Effective Flow skill; never copy the helper into the target project. The helper owns origin/provider/reference parsing, `gh`/`tea` probing, capability normalization, command construction, JSON normalization, payload validation, compatibility aliases, exact body patching, redaction, and stale-write preconditions. It never opens a shell and never prompts.
+
+Successful envelopes contain `ok`, `operation`, `provider`, `data`, and `dryRun`. Failed envelopes additionally contain `error.code`, `error.message`, redacted `error.details`, and `error.retryable`, and the process exits nonzero. Treat errors as workflow input; do not discover flags, assemble API requests, read CLI credentials, or invent a fallback. In particular:
+
+- `AMBIGUOUS_HOST`: obtain an explicit `github`/`forgejo` choice from configuration or the user, then retry with that override.
+- `CLI_MISSING`/`AUTH_FAILED`: abort without side effects; offer local mode only with explicit user consent.
+- `UNSUPPORTED_CAPABILITY`: report the unsupported provider capability and preserve the surrounding workflow state.
+- `STALE_WRITE`: abort that write without retrying, merging, or overwriting; re-enter the workflow from a fresh read.
+- all other structured errors: preserve scope and let the owning workflow decide whether a retry is safe.
+
+Reads execute immediately. Mutations are dry runs by default: inspect the returned executable, argument vector, and redacted input preview, obtain every workflow-specific approval that still applies, and only then repeat the same operation with `--apply`. A dry run never changes Git, tracker state, memory, labels, issues, pull requests, comments, or review threads.
 
 ### Label convention
 
@@ -123,7 +132,7 @@ A finding issue must be **self-contained**: a foreign LLM session must be able t
 - **Signature**: [path:line] · [Area] · [short summary of the problem]  <!-- Dedup key -->
 ```
 
-The **Signature** field fixes the content dedup key (file+line, area, problem). It is deliberately **not** the `R-XXXXXXX` ID, because that is assigned freshly per run.
+The **Signature** field fixes the content dedup key (file+line, area, problem). It is deliberately **not** the `R-XXXXXXX` ID, because that is assigned freshly per run. Canonical writes use `Signature`; helper reads and deduplication also accept the legacy field name `Signatur` and normalize both forms to the same identity.
 
 ### Epic body format (tracking issue)
 
@@ -141,35 +150,22 @@ Code review of YYYY-MM-DD · Scope: [Entire code / Described area] · Project ty
 
 ## Skipped (design decisions)
 
-- #<nr-or-none> [R-XXXXXXX] <short title> — covered by [DD-XXX] ([Source])
+- <short title> — Signature: [normalized signature] — covered by [decision reference] ([Source])
 ```
 
 Rules for the task list:
 
 - Each entry under `## Findings` references exactly one finding issue via its number and carries the `R-XXXXXXX` ID as well as the action.
-- The section `## Skipped (design decisions)` uses **no** checkboxes and lists only findings filtered out by design decisions. It is omitted when no such findings are present.
-- Ticking off is done by toggling `- [ ]` → `- [x]` and optionally appending the PR link on the entry; a finding deliberately not implemented is marked via a slug reference as `- [x] … — nicht umgesetzt (ADR: <slug>)`.
+- The section `## Skipped (design decisions)` uses **no** checkboxes and lists only findings filtered out by design decisions. A skipped entry is identified by title, normalized signature, and decision reference; it carries no issue number and no `R-XXXXXXX` ID, and it never advances `lastFindingNumber`. The section is omitted when no such findings are present.
+- Ticking off delegates the exact checklist patch to the helper, using the body hash from the preceding fresh read. It may append the PR link; a finding deliberately not implemented is marked with its decision reference.
 
-### Tracker operations (tool mapping)
+### Tracker operations
 
-Describe all tracker accesses abstractly as an operation and choose the command by the detected tool. For Forgejo, check the exact flag names against the installed `tea` version if a call fails (as noted in `{{SKILL:pr}}`).
+Describe tracker access only as a helper operation: issue/PR read and list, issue/PR create, comment read/create, label create/change, PR review-thread read/reply/resolve, marker/checklist patch, or PR creation. Use the helper's normalized output rather than provider-specific fields. For list operations, request the compatibility variants and let the helper union matches by issue number before signature deduplication.
 
-| Operation                                   | GitHub (`gh`)                                                                              | Forgejo (`tea`)                                                                                          |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| Create label (idempotent)                   | `gh label create <name> --force`                                                           | `tea labels create --name <name>`                                                                        |
-| Create issue                                | `gh issue create --title … --body-file … --label …`                                        | `tea issue create --title … --body … --labels …`                                                         |
-| Read issue (body + labels + status)         | `gh issue view <nr> --json title,body,labels,state`                                        | `tea issue <nr>` or `tea issue view <nr>`                                                                |
-| Read comments (clarifications, idempotency) | `gh issue view <nr> --json comments`                                                       | `tea issue view <nr> --comments`, otherwise Forgejo API `GET /repos/<owner>/<repo>/issues/<nr>/comments` |
-| List finding issues (for dedup)             | `gh issue list --label effective-flow-review-finding --state all --json number,title,body` | `tea issues list --labels effective-flow-review-finding --state all`                                     |
-| List open epics                             | `gh issue list --label effective-flow-review-epic --state open`                            | `tea issues list --labels effective-flow-review-epic --state open`                                       |
-| Update issue body (tick off epic)           | `gh issue edit <nr> --body-file …`                                                         | `tea issue edit <nr> --body …`                                                                           |
-| Add comment (e.g. PR link)                  | `gh issue comment <nr> --body …`                                                           | `tea comment <nr> …`                                                                                     |
-| Set/remove label                            | `gh issue edit <nr> --add-label … --remove-label …`                                        | `tea issue edit <nr> --labels …`                                                                         |
-| Create pull request                         | via `{{SKILL:pr}}`                                                                         | via `{{SKILL:pr}}`                                                                                       |
+Body writes require `expectedBodyHash` from the immediately preceding fresh read. Preview the exact patch and command in dry-run mode, then apply with the same payload. Zero or multiple semantic matches are structured errors; unchanged state is successful and idempotent. The helper exposes whether provider-level conditional writes are available; the expected-body precondition is mandatory regardless. GitHub returns the read ETag for diagnostics but documents unsafe-method conditional requests as unsupported for these endpoints, so the adapter reports the write as non-atomic instead of sending a misleading `If-Match` header.
 
-For the epic body update it applies: read the body freshly before changing, toggle only the affected line specifically and write it back, so parallel changes are not lost.
-
-For the listing operations (dedup, open epics) the backward compatibility from "Label convention" applies: run the query separately per prefix (`effective-flow-…` **and** `firmo-…`) and union by the issue number.
+Legacy-label transitions use the helper's add and remove operations in that order. The one-time `sf-` migration returns its completion marker only after every step succeeds; a partial failure reports completed steps and keeps the marker pending. Cleanup of recognized `firmo-` aliases uses the same add-before-remove operations without changing that one-time marker contract.
 
 ### Error and edge cases
 

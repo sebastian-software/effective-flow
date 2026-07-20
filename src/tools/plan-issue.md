@@ -47,7 +47,7 @@ If the project contains an `AGENTS.md`, read it early in the workflow and observ
 
 ## Tracker integration
 
-This skill is **inherently remote** and always works against the issue tracker of the `origin` remote; the `tracker.mode` switch is **not** evaluated. From the following building block it uses only the tool-generic plumbing (host and CLI detection, availability/auth check, operation-→-command mapping, error cases).
+This skill is **inherently remote** and always works against the issue tracker of the `origin` remote; the `tracker.mode` switch is **not** evaluated. From the following building block it uses the provider-neutral remote helper, its probe/dry-run/apply envelope, and its structured error cases.
 
 ```include
 issue-tracker

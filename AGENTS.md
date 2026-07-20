@@ -6,7 +6,7 @@ This file provides guidance to any coding agent working with code in this reposi
 
 ## What this repo is
 
-Effective Flow is a **source-to-dist build** for a single Software-Engineering skill set (`/effective-flow <tool>`) that ships to Claude Code and Codex from one source tree. There is no runtime application here: `build.mjs` transforms Markdown sources under `src/` into two harness-native direct-install targets plus one harness-neutral portable manager target under `dist/`.
+Effective Flow is a **source-to-dist build** for a single Software-Engineering skill set (`/effective-flow <tool>`) that ships to Claude Code and Codex from one source tree. `build.mjs` transforms Markdown sources under `src/` plus a small dependency-free remote-tracker runtime into two harness-native direct-install targets and one harness-neutral portable manager target under `dist/`.
 
 **You edit `src/`, never `dist/`.** `dist/` is generated and gitignored.
 
@@ -23,7 +23,7 @@ pnpm test:distribution   # isolated build/archive/delivery/install smoke suite
 ./local-link.sh          # developer build + symlink of the current checkout
 ```
 
-Package manager is **pnpm** (`packageManager: pnpm@11.11.0`). Correctness rests on three layers: a `node:test` unit suite (`pnpm test`) covering pure transforms and installers, build-time guards during `node build.mjs`, and `pnpm test:distribution` for isolated archive/delivery layouts. After editing distribution sources, run the same sequence CI runs: `pnpm agent:check`, `pnpm test`, `node build.mjs`, then `pnpm test:distribution`.
+Package manager is **pnpm** (`packageManager: pnpm@11.11.0`); Node.js 22 or newer is required for the build and the shipped remote-tracker helper. Correctness rests on three layers: a `node:test` unit suite (`pnpm test`) covering pure transforms and installers, build-time guards during `node build.mjs`, and `pnpm test:distribution` for isolated archive/delivery layouts. After editing distribution sources, run the same sequence CI runs: `pnpm agent:check`, `pnpm test`, `node build.mjs`, then `pnpm test:distribution`.
 
 ## Build architecture
 
@@ -33,6 +33,7 @@ The source layout **mirrors the output**, and the directory decides the category
 - `src/tools/<name>.md` → `effective-flow/tools/<name>.md`. A tool is exposed via `/effective-flow <name>` only if its name is in the `EXPOSED_TOOLS` array in `build.mjs`. Tools not in that array (e.g. `apply-plan`, `apply-review`, `apply-issues`) are **internal** — built but not listed in the router; `apply` loads the right one on demand.
 - `src/agents/<name>.md` → subagents. Agents are **not** `/effective-flow` tools; workflow tools call them internally as subagents. Frontmatter carries per-harness config under `claude:` and `codex:` keys (model, tools, sandbox, etc.).
 - `src/shared/<name>.md` — include fragments, embedded via an `include` fence.
+- `src/scripts/*.mjs` — dependency-free Node.js runtime resources copied byte-for-byte into `effective-flow/scripts/` for every target. `remote-tracker.mjs` is the single JSON CLI entry point; deterministic logic stays importable from its core sibling.
 
 The build emits three consumer targets:
 

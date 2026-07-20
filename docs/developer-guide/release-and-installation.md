@@ -42,6 +42,11 @@ bytes from the default branch and use bundled worker contracts with built-in/gen
 The release archive preserves all build targets for verification and release maintenance, but it
 is not a supported end-user installation interface.
 
+Every target's minimal skill payload includes `scripts/remote-tracker.mjs` and its importable
+core sibling beside the router, tools, and shared resources. Installed skills therefore require
+Node.js 22 or newer at runtime. The scripts have no third-party runtime dependencies; existing
+`gh` or `tea` installations remain the credential and transport boundary.
+
 ### Documentation separated by audience
 
 The docs are split along the branch boundary into three classes:

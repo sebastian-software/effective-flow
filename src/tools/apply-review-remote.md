@@ -83,7 +83,10 @@ Per implementable finding, in its verified execution root:
    nest an Effective Flow worktree around a reused harness-native one.
 2. Commit the changes (Conventional Commit message, no internal finding IDs, no `Co-Authored-By`), push the branch.
 3. If a target PR is present: **do not create a new PR**, but use the existing PR link and optionally extend the PR body non-destructively by `Closes #<sub-issue>` or `Refs #<sub-issue>`, if that is possible without overwriting others' changes. If no target PR is present: create exactly one PR against the base branch via `{{SKILL:pr}}`; set `Closes #<sub-issue>` in the PR body.
-4. **Immediately after a successful push or PR creation** check off the corresponding entry in the epic body (`- [ ]` → `- [x]`, append the PR link) and optionally write the PR link as a comment on the sub-issue. Read the body fresh before changing it and toggle only the affected line.
+4. **Immediately after a successful push or PR creation** read the epic body fresh and pass its
+   body hash, the exact finding reference, and the PR-link suffix to the helper's checklist patch.
+   Preview the issue-body mutation and apply it only when the fresh-write precondition still
+   matches. Optionally write the PR link through the helper's comment payload/mutation.
 5. **If push or PR creation fails** (push rejected, no commit): mark the finding as failed, do **not** check off the epic entry, continue with the next finding.
 6. **If an assigned epic is missing** (issue-list mode): implement the finding anyway and create a PR; the check-off is omitted and reported to the user.
 

@@ -150,7 +150,7 @@ Execute per class:
 - **Untracked/gitignored directories** (`.firmo/`, `.sf-plugin/`, a gitignored legacy `config.json`): remove physically — only after the explicit "irreversible" confirmation above, without a backup.
 - **`.gitignore`:** leave every line untouched. Report the exact outdated entries and route the
   user to `{{SKILL:setup}}`, the sole owner of normalization and repair.
-- **`firmo-` labels:** only in remote mode with a CLI. First add `effective-flow-<x>` on the issue, **then** detach `firmo-<x>` from the issue (add-new before remove-old, so an abort leaves no issue unclassified). The label **definition** in the tracker remains — do **not** run `label delete`. Use the tool mapping from `issue-tracker.md` (`--add-label`/`--remove-label`, or `tea issue edit`).
+- **`firmo-` labels:** only in remote mode with a successful helper probe. Build the full normalized label transitions through the remote helper: first add `effective-flow-<x>` on the issue, **then** detach `firmo-<x>` (add-new before remove-old, so an abort leaves no issue unclassified). The label **definition** in the tracker remains. Inspect the dry-run steps before applying; if a step fails, report the completed steps and preserve the still-classified issue.
 
 On any error (e.g. `git rm` fails, tracker unreachable), abort in a controlled manner: report the partial state and delete nothing whose new counterpart is not secured.
 

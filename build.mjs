@@ -3,6 +3,7 @@
 import {
   readFileSync,
   writeFileSync,
+  copyFileSync,
   mkdirSync,
   rmSync,
   renameSync,
@@ -38,6 +39,7 @@ import {
   findRetiredConfigDocViolations,
   findStaleAdrContractClaims,
   findForeignHarnessToolParameters,
+  findRemoteTrackerRecipeViolations,
   parseProjectRoutingTable,
   assertProjectRoutingContract,
   parseSkillOwnershipManifest,
@@ -52,7 +54,9 @@ const SOURCE_DIR = join(ROOT_DIR, 'src');
 const SHARED_DIR = join(SOURCE_DIR, 'shared');
 const TOOLS_DIR = join(SOURCE_DIR, 'tools');
 const AGENTS_DIR = join(SOURCE_DIR, 'agents');
+const RUNTIME_SCRIPTS_DIR = join(SOURCE_DIR, 'scripts');
 const ROUTER_SRC = join(SOURCE_DIR, 'SKILL.md');
+const RUNTIME_SCRIPT_FILES = ['remote-tracker.mjs', 'remote-tracker-core.mjs'];
 
 // Hand-maintained user guide (not generated from src/). A content guard below
 // protects the canonical Plan->Build handoff examples against regression (#107).
@@ -291,6 +295,48 @@ mkdirSync(CLAUDE_AGENTS_DIR, { recursive: true });
 // Managers receive one harness-neutral skill with bundled worker contracts.
 mkdirSync(join(PORTABLE_SKILL_DIR, 'tools'), { recursive: true });
 mkdirSync(PORTABLE_WORKERS_DIR, { recursive: true });
+
+// Runtime prompts delegate provider mechanics to the shipped helper. Keep raw
+// CLI/API recipes and runtime flag discovery out of tool/shared Markdown.
+{
+  const violations = [];
+  for (const directory of [TOOLS_DIR, SHARED_DIR, AGENTS_DIR]) {
+    for (const file of readdirSync(directory).filter((name) => name.endsWith('.md'))) {
+      const path = join(directory, file);
+      for (const hit of findRemoteTrackerRecipeViolations(readFileSync(path, 'utf8'))) {
+        violations.push(`${relative(ROOT_DIR, path)}:${hit.line}: ${hit.kind}: ${hit.text}`);
+      }
+    }
+  }
+  for (const hit of findRemoteTrackerRecipeViolations(readFileSync(ROUTER_SRC, 'utf8'))) {
+    violations.push(`${relative(ROOT_DIR, ROUTER_SRC)}:${hit.line}: ${hit.kind}: ${hit.text}`);
+  }
+  if (violations.length > 0) {
+    process.stderr.write(
+      `ERROR: remote-tracker recipe guard (#169): runtime prompts must delegate deterministic transport mechanics to scripts/remote-tracker.mjs:\n${violations.join('\n')}\n`,
+    );
+    process.exit(1);
+  }
+}
+
+for (const file of RUNTIME_SCRIPT_FILES) {
+  const path = join(RUNTIME_SCRIPTS_DIR, file);
+  if (!existsSync(path)) {
+    process.stderr.write(`ERROR: remote-tracker runtime source missing: ${path}\n`);
+    process.exit(1);
+  }
+  const source = readFileSync(path, 'utf8');
+  const imports = [...source.matchAll(/from\s+['"]([^'"]+)['"]/g)].map((match) => match[1]);
+  const thirdParty = imports.filter(
+    (specifier) => !specifier.startsWith('node:') && !specifier.startsWith('./'),
+  );
+  if (thirdParty.length > 0) {
+    process.stderr.write(
+      `ERROR: remote-tracker runtime must be dependency-free; ${file} imports ${thirdParty.join(', ')}\n`,
+    );
+    process.exit(1);
+  }
+}
 
 // --- Include transforms (I/O; the pure transforms live in build-lib.mjs) ---
 
@@ -691,6 +737,12 @@ try {
     ].join('\n');
     writeFileSync(join(skillDir, 'SKILL.md'), routerContent);
 
+    // Dependency-free runtime helper, byte-identical in every consumer target.
+    mkdirSync(join(skillDir, 'scripts'), { recursive: true });
+    for (const file of RUNTIME_SCRIPT_FILES) {
+      copyFileSync(join(RUNTIME_SCRIPTS_DIR, file), join(skillDir, 'scripts', file));
+    }
+
     // Tools (exposed + internal), no frontmatter — loaded on demand by the router.
     for (const t of tools) {
       writeFileSync(
@@ -777,6 +829,26 @@ try {
           '',
         ].join('\n');
         writeFileSync(join(PORTABLE_WORKERS_DIR, `${workerName}.md`), contract);
+      }
+    }
+  }
+
+  // --- Runtime helper shipping guard (#169) ---
+  for (const [target, skillDir] of [
+    ['claude', CLAUDE_SKILL_DIR],
+    ['codex', CODEX_SKILL_DIR],
+    ['portable', PORTABLE_SKILL_DIR],
+  ]) {
+    for (const file of RUNTIME_SCRIPT_FILES) {
+      const source = readFileSync(join(RUNTIME_SCRIPTS_DIR, file));
+      const shipped = join(skillDir, 'scripts', file);
+      if (!existsSync(shipped)) {
+        throw new Error(`remote-tracker shipping guard (#169): ${target} is missing ${shipped}`);
+      }
+      if (!source.equals(readFileSync(shipped))) {
+        throw new Error(
+          `remote-tracker shipping guard (#169): ${target} copy differs from src/scripts/${file}`,
+        );
       }
     }
   }

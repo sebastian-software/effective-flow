@@ -67,7 +67,7 @@ Write a summary after each phase and pass it to later phases. Delete the file at
 
 ## Tracker integration
 
-This skill is **inherently remote**: it always works against the issue tracker of the `origin` remote. The `tracker.mode` switch from `{{SKILL:review}}`/`{{SKILL:apply-review}}` is **not** evaluated. From the following shared building block, this skill uses only the tool-generic plumbing: host and CLI detection, availability/auth check, the operation-to-command mapping and the error cases. The finding/epic-specific body formats do not apply here; the checkbox check-off mechanics for epic bodies are reused analogously for container issues.
+This skill is **inherently remote**: it always works against the issue tracker of the `origin` remote. The `tracker.mode` switch from `{{SKILL:review}}`/`{{SKILL:apply-review}}` is **not** evaluated. From the following shared building block, this skill uses the provider-neutral remote helper, its probe/dry-run/apply envelope, and its structured error cases. The finding/epic-specific body formats do not apply here; the exact checklist patch operation is reused analogously for container issues.
 
 ```include
 config-migration
@@ -218,8 +218,11 @@ Issues with the same target PR run sequentially so that new commits are created 
      Pass the absolute root and execution-location receipt established by that delegated workflow;
      never rely on an inherited current directory or create a nested worktree around a reused
      harness-native one.
-2. Commit the changes (Conventional Commit message, no internal IDs, no `Co-Authored-By`) and push the branch. If a target PR is present: **do not create a new PR**, but use the existing PR link and optionally extend the PR body non-destructively by `Closes #<issue>` or `Refs #<issue>`, if that is possible without overwriting others' changes. If no target PR is present: take the branch through `{{SKILL:pr}}` as exactly one PR against the base branch; set `Closes #<issue>` in the PR body.
-3. **Immediately after a successful push or PR creation:** write the PR link as a comment on the issue (template "Implemented"), set label `effective-flow-issue-done` and — if the issue originates from a container — check off the corresponding checklist entry in the epic body (read the epic body fresh, toggle only the affected line `- [ ]` → `- [x]` and append the PR link).
+2. Commit the changes (Conventional Commit message, no internal IDs, no `Co-Authored-By`) and push the branch. If a target PR is present: **do not create a new PR**, but use the existing PR link and optionally extend its body by one exact `Closes #<issue>` or `Refs #<issue>` entry through the helper's idempotent body patch, using the fresh body hash so concurrent edits fail closed. If no target PR is present: take the branch through `{{SKILL:pr}}` as exactly one PR against the base branch; include `Closes #<issue>` in the helper-validated PR payload.
+3. **Immediately after a successful push or PR creation:** build and write the PR-link comment
+   through the helper, set label `effective-flow-issue-done`, and — if the issue originates from
+   a container — read the container body fresh and use the helper's exact checklist patch with
+   its body hash and PR-link suffix. Apply only when the stale-write precondition still matches.
 4. Task to `completed`.
 
 **Error cases:**
