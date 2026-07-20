@@ -35,7 +35,8 @@ non-delivered trial run – sets `worktree.enabled: false` or requests it explic
 
 Before Effective Flow changes anything, it records and verifies an execution-location receipt:
 
-- the canonical repository identity (Git common directory) and absolute execution root;
+- the canonical repository identity (Git common directory), absolute execution root, and
+  absolute runtime-state root;
 - the expected branch, or an explicitly expected detached HEAD and exact commit;
 - whether the checkout is in-place, harness-managed, or Effective Flow-created;
 - who owns setup and cleanup, and which workflow or component owns the receipt.
@@ -49,6 +50,22 @@ If the root, repository, branch, detached commit, or linked-worktree registratio
 Effective Flow stops before editing, setup, validation that may write caches, staging, commits,
 branch changes, or cleanup. It reports the expected and actual location and leaves all
 checkouts intact.
+
+The two roots deliberately serve different purposes:
+
+- `EXECUTION_ROOT` holds tracked code, tests, documentation, validation output, staging, and
+  commits. It changes when Effective Flow enters a delivery or component worktree.
+- `RUNTIME_STATE_ROOT` is the repository's verified main checkout. Effective Flow derives it
+  from the first record of `git worktree list --porcelain` before resolving a report or creating
+  a worktree, and keeps it unchanged for the run.
+
+Local reports, backlinks, `memory.json`, caches, migrations, and other `.effective-flow/` state
+use absolute paths below `RUNTIME_STATE_ROOT`. This also applies when a task starts in a linked
+or native worktree, so removing an Effective Flow-owned worktree cannot remove its report or
+memory. If the main checkout is bare, missing, moved, belongs to another repository, or a
+runtime path escapes through a symlink, Effective Flow stops without changing state. Ignore or
+tracked-state problems point to `/effective-flow setup`; Effective Flow does not fall back to a
+worktree-local runtime directory.
 
 ### Harness-native worktrees
 
@@ -89,7 +106,8 @@ delivery branch, Effective Flow asks, instead of silently staging, stashing, or 
 Of the Effective Flow artifacts, **only the plan file** is committed – and even that only if the
 workflow led one. All other `.effective-flow/` artifacts (`memory.json`, `cache.json`, local
 review reports, investigations, the worktrees themselves) remain pure bookkeeping in the main
-repo and are never carried into the delivery branch.
+repo and are never carried into the delivery branch. Report-name collision checks and finding
+number reads/writes also inspect only that main-checkout runtime directory.
 
 ## Completion action (`delivery.completion`)
 

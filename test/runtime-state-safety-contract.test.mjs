@@ -71,11 +71,35 @@ test('the canonical guard specifies fail-closed Git predicates and non-mutation'
     [/Missing Git, a non-repository directory/, 'missing Git and non-repository failure'],
     [/Preserve all existing state, perform none of\s+the pending mutations/, 'non-mutation'],
     [/direct the user to `\{\{SKILL:setup\}\}`/, 'setup remediation'],
+    [/exact absolute runtime-state handle/, 'absolute runtime handle'],
+    [/below `<RUNTIME_STATE_ROOT>\/\.effective-flow\/`/, 'runtime-root containment'],
+    [/symlink escape/, 'symlink-escape rejection'],
+    [/from `RUNTIME_STATE_ROOT`/, 'main-checkout guard root'],
+    [/safety pass from\s+`EXECUTION_ROOT` never authorizes/, 'no execution-root fallback'],
+    [/root\/common-directory mismatch/, 'repository mismatch rejection'],
   ];
 
   for (const [pattern, clause] of requiredClauses) {
     assert.match(runtimeStateContract, pattern, `missing ${clause}`);
   }
+});
+
+test('report producers and mutators route safety through the retained runtime root', () => {
+  const sourceDetection = readShared('apply-source-detection');
+  const backlinks = readShared('review-report-backlinks');
+  const unresolved = readShared('unresolved-review-report');
+  const review = readSource('tools', 'review.md');
+
+  assert.match(sourceDetection, /RUNTIME_STATE_ROOT/);
+  assert.match(sourceDetection, /absolute report handle/);
+  assert.match(backlinks, /Runtime-state write safety[\s\S]*main checkout/);
+  assert.match(unresolved, /collision checks[\s\S]*memory reads\/writes/);
+  assert.match(
+    unresolved,
+    /absolute `<RUNTIME_STATE_ROOT>\/\.effective-flow\/memory\.json` handle/,
+  );
+  assert.match(review, /collision checks/);
+  assert.match(review, /retained absolute\s+memory handle/);
 });
 
 test('automatic source coverage includes plan and finds no unguarded runtime writer', () => {
@@ -111,6 +135,12 @@ test('the canonical guard and lazy-load pointer survive every harness render', (
       /git ls-files -- \.effective-flow\//,
       `tracked-path predicate in ${harness}`,
     );
+    assert.match(renderedContract, /from `RUNTIME_STATE_ROOT`/, `runtime root in ${harness}`);
+    assert.match(
+      renderedContract,
+      /exact absolute runtime-state handle/,
+      `absolute runtime handle in ${harness}`,
+    );
     assert.doesNotMatch(renderedContract, /\{\{(?:SKILL|AGENT):/);
     assert.match(renderedFix, /shared\/runtime-state-safety\.md/, `lazy pointer in ${harness}`);
   }
@@ -121,7 +151,7 @@ test('review requires ignored untracked runtime state and keeps read-only lookup
   assert.match(review, /The entire `\.effective-flow\/` directory must be ignored and untracked/);
   assert.match(
     review,
-    /Read `\.effective-flow\/memory\.json`[\s\S]*non-mutating and may precede the guard/,
+    /Read the absolute[\s\S]*<RUNTIME_STATE_ROOT>\/\.effective-flow\/memory\.json[\s\S]*non-mutating and may precede the guard/,
   );
   assert.doesNotMatch(
     review,
@@ -136,11 +166,15 @@ test('configuration fallback lookup remains read-only and is not a runtime write
 
   assert.match(
     configMigration,
-    /Transitional compatibility[\s\S]*read a still-present\s+`\.effective-flow\/config\.json`/,
+    /Transitional compatibility[\s\S]*`<RUNTIME_STATE_ROOT>\/\.effective-flow\/config\.json`/,
   );
   assert.match(
     configMigration,
-    /This read path creates \*\*nothing\*\* and touches \*\*no\*\* Git/,
+    /Never inspect a\s+same-named fallback below a linked `EXECUTION_ROOT`/,
+  );
+  assert.match(
+    configMigration,
+    /This read path creates \*\*nothing\*\*\s+and touches \*\*no\*\* Git/,
   );
   assert.match(
     configMigration,

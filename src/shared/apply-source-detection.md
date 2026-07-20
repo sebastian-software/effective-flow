@@ -14,6 +14,12 @@ does not read findings/container contents deeper than necessary for classificati
 type-specific depth logic (plan status, finding parsing, container expansion) stays
 in the respective skill.
 
+Before report-source resolution, establish and verify the execution-location receipt's
+`RUNTIME_STATE_ROOT` from the first porcelain worktree record. This is required even when
+classification starts in a linked or native worktree and even when Stage A remains otherwise
+read-only. If the main record is bare, missing, moved, unusable, or belongs to another Git common
+directory, abort classification without falling back to `EXECUTION_ROOT`.
+
 ### Canonical source types
 
 | Type              | Meaning                                                                                                       | Responsible skill                             |
@@ -40,8 +46,14 @@ type in this order (first matching rule wins):
    `plan-reference-routing`: full path (`<plan.dir>/YYYY-MM-DD-…md`),
    date-slug file name (`YYYY-MM-DD-…md`), legacy number without path (`NNNN`, resolved primarily
    via the H1) or — as a fallback — the title slug.
-3. **Review report** → `review-report`, if the argument is a `*.md` path under
-   `.effective-flow/review/` (or a file name that resolves there).
+3. **Review report** → `review-report`, if the argument resolves to exactly one `*.md` file
+   below absolute `<RUNTIME_STATE_ROOT>/.effective-flow/review/`. Resolve a filename-only
+   argument directly below that directory; resolve a project-relative
+   `.effective-flow/review/...` argument against `RUNTIME_STATE_ROOT`; accept an absolute path
+   only when it is contained there. Physically canonicalize existing paths. For a prospective
+   path, canonicalize the nearest existing ancestor before appending validated missing segments.
+   Reject `..`, aliases, a symlink escape, and every path outside the directory. Retain the
+   resulting absolute report handle and pass it unchanged to the responsible skill.
 4. **Issue reference** → `issue-reference` (continue with stage B), when the remote helper's
    reference parser accepts the argument as a bare issue number (`123`), `#123`, or a
    host-neutral issue URL for the current repository. Multiple references are parsed as one list
@@ -106,8 +118,8 @@ argument type.
 ### Ambiguity and fallbacks
 
 - **`none` (no argument):** do not heuristically pick the "newest". The caller
-  lists local candidates (open plans from `<plan.dir>/`, report files under
-  `.effective-flow/review/`) and asks for the specific source. If the effective
+  lists local candidates (open plans from `<plan.dir>/`, report files under the absolute
+  `<RUNTIME_STATE_ROOT>/.effective-flow/review/` directory) and asks for the specific source. If the effective
   tracker mode is `remote`, it additionally lists open review epics (label
   `effective-flow-review-epic`, incl. old `firmo-review-epic`) as candidates, since in
   remote mode no local report files exist.
@@ -126,7 +138,8 @@ argument type.
 
 - **Router (`{{SKILL:apply}}`):** runs stage A and — for issue references —
   stage B, reports the detected type, and delegates to the responsible skill with the
-  original argument. On `none`/`ambiguous`/mixed list: ask.
+  original argument plus the retained runtime root and, for a local report, its absolute report
+  handle. On `none`/`ambiguous`/mixed list: ask.
 - **Responsibility skill (each of the three apply skills):** classifies the argument
   early via this building block. If the type matches its own responsibility → continue with its
   own depth logic. If it does not match:

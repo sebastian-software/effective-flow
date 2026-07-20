@@ -4,13 +4,14 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   readdirSync,
   rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -113,12 +114,36 @@ function checkIgnored(root, path, runner, calls) {
   ]);
 }
 
-function checkRuntimeStateSafety(root, target, { runner = runGit, calls = [] } = {}) {
+function checkRuntimeStateSafety(
+  root,
+  target,
+  { runner = runGit, calls = [], expectedRoot, expectedRepositoryIdentity } = {},
+) {
   const repositoryArgs = ['rev-parse', '--show-toplevel'];
   calls.push(repositoryArgs);
   const repository = runner(root, repositoryArgs);
   if (repository.error || repository.status !== 0) {
     throw new RuntimeStateSafetyError('cannot verify the owning Git worktree');
+  }
+  let actualRoot;
+  try {
+    actualRoot = realpathSync(resolve(root, repository.stdout.trim()));
+  } catch {
+    throw new RuntimeStateSafetyError('cannot canonicalize the runtime-state root');
+  }
+  if (expectedRoot !== undefined && actualRoot !== realpathSync(expectedRoot)) {
+    throw new RuntimeStateSafetyError('runtime-state root mismatch');
+  }
+
+  if (expectedRepositoryIdentity !== undefined) {
+    const common = runner(root, ['rev-parse', '--git-common-dir']);
+    if (common.error || common.status !== 0) {
+      throw new RuntimeStateSafetyError('cannot verify the runtime-state repository identity');
+    }
+    const actualCommon = realpathSync(resolve(root, common.stdout.trim()));
+    if (actualCommon !== expectedRepositoryIdentity) {
+      throw new RuntimeStateSafetyError('runtime-state repository identity mismatch');
+    }
   }
 
   checkIgnored(root, '.effective-flow/config.json', runner, calls);
@@ -240,6 +265,63 @@ test('a guarded write checks every exact directory target before mkdir and the f
     '.effective-flow/review/',
     '.effective-flow/review/report.md',
   ]);
+});
+
+test('linked-worktree runtime writes use the verified main checkout and survive cleanup', (t) => {
+  const root = createRepository(t, { gitignore: '.effective-flow/\n' });
+  const linkedRoot = join(dirname(root), `${root.split('/').at(-1)}-linked`);
+  git(root, 'worktree', 'add', linkedRoot, '-b', 'runtime/linked', 'HEAD');
+  const repositoryIdentity = realpathSync(
+    resolve(root, git(root, 'rev-parse', '--git-common-dir')),
+  );
+
+  guardedWrite(root, '.effective-flow/review/report.md', 'persistent\n', {
+    expectedRoot: root,
+    expectedRepositoryIdentity: repositoryIdentity,
+  });
+  guardedWrite(root, '.effective-flow/memory.json', '{"lastFindingNumber":1}\n', {
+    expectedRoot: root,
+    expectedRepositoryIdentity: repositoryIdentity,
+  });
+
+  assert.equal(existsSync(join(linkedRoot, '.effective-flow/review/report.md')), false);
+  git(root, 'worktree', 'remove', linkedRoot);
+  assert.equal(
+    readFileSync(join(root, '.effective-flow/review/report.md'), 'utf8'),
+    'persistent\n',
+  );
+  assert.equal(
+    readFileSync(join(root, '.effective-flow/memory.json'), 'utf8'),
+    '{"lastFindingNumber":1}\n',
+  );
+});
+
+test('a mismatched or unsafe main root blocks without falling back to a linked worktree', (t) => {
+  const root = createRepository(t, { gitignore: '.effective-flow/\n' });
+  const linkedRoot = join(dirname(root), `${root.split('/').at(-1)}-fallback`);
+  git(root, 'worktree', 'add', linkedRoot, '-b', 'runtime/fallback', 'HEAD');
+  const other = createRepository(t, { gitignore: '.effective-flow/\n' });
+  const repositoryIdentity = realpathSync(
+    resolve(root, git(root, 'rev-parse', '--git-common-dir')),
+  );
+
+  assertBlockedWithoutMutation(
+    other,
+    '.effective-flow/review/report.md',
+    { expectedRoot: root, expectedRepositoryIdentity: repositoryIdentity },
+    /runtime-state root mismatch/,
+  );
+
+  writeFileSync(join(root, '.gitignore'), '.effective-flow/*\n!.effective-flow/config.json\n');
+  assertBlockedWithoutMutation(
+    root,
+    '.effective-flow/review/report.md',
+    { expectedRoot: root, expectedRepositoryIdentity: repositoryIdentity },
+    /config\.json is not ignored/,
+  );
+  assert.equal(existsSync(join(root, '.effective-flow/review/report.md')), false);
+  assert.equal(existsSync(join(linkedRoot, '.effective-flow/review/report.md')), false);
+  git(root, 'worktree', 'remove', linkedRoot);
 });
 
 test('tracked runtime state blocks even when both ignore predicates pass', (t) => {

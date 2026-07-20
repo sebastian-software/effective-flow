@@ -12,14 +12,21 @@ write. Merely finding `.effective-flow/` does not prove that migration ran. The 
 versioned completion marker is the JSON value `runtimeMigration.directory.version: 1` in
 `.effective-flow/memory.json`.
 
-1. **Read without creating anything.** Read `.effective-flow/memory.json` when present. A valid
+Resolve every current and legacy runtime path from the retained, verified
+`RUNTIME_STATE_ROOT`. All reads, inventories, copies, collision decisions, and the final memory
+write use absolute handles below that main checkout. Never scan or mutate a legacy/current
+runtime tree below a linked execution worktree.
+
+1. **Read without creating anything.** Read the absolute
+   `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle when present. A valid
    marker makes the prerequisite a no-op. A missing marker starts the migration scan even when
    `.effective-flow/` already contains a transitional `config.json`, wisdom file, report, cache,
    worktree, or unrelated memory fields. Do not create a runtime footprint during a read-only
    run; this prerequisite is activated only because a workflow-specific runtime write is already
    authorized and imminent.
-2. **Choose exactly one legacy source.** Use the whole `.firmo/` tree when it exists; otherwise
-   use `.sf-plugin/` when it exists. If both exist, do not combine them. Preserve both legacy
+2. **Choose exactly one legacy source.** Use the whole `<RUNTIME_STATE_ROOT>/.firmo/` tree when
+   it exists; otherwise use `<RUNTIME_STATE_ROOT>/.sf-plugin/` when it exists. If both exist, do
+   not combine them. Preserve both legacy
    directories unchanged. If neither exists, proceed directly to the final marker update as part
    of the already-authorized first runtime write, without a separate eager migration write.
 3. **Validate before carrying state over.** Inventory the selected source without mutation. All
@@ -42,7 +49,8 @@ versioned completion marker is the JSON value `runtimeMigration.directory.versio
    the remaining missing paths.
 5. **Merge memory recursively, target wins.** Recursively add legacy object keys that are absent
    from the target; at every scalar, array, object, or type conflict preserve the target value.
-   Immediately before the final memory update, re-read `.effective-flow/memory.json`, validate it
+   Immediately before the final memory update, re-read the retained absolute
+   `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle, validate it
    again, and repeat the missing-key merge against that freshest object so unrelated concurrent
    fields are not discarded. Reuse the repository-wide memory mutation contract when available;
    do not introduce a migration-specific lock, finding-number reservation, or competing atomic

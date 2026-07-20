@@ -80,9 +80,19 @@ test('the execution-location contract survives every harness render unchanged', 
       context: `tools/apply-review-commit-mechanics.md (${harness})`,
     });
 
-    assert.equal(renderedContract.trim(), contract);
-    assert.ok(renderedDelivery.includes(contract), `delivery output for ${harness}`);
-    assert.ok(renderedApplyReview.includes(contract), `apply-review output for ${harness}`);
+    assert.equal(
+      renderedContract
+        .trim()
+        .replaceAll('`/effective-flow setup`', '`{{SKILL:setup}}`')
+        .replaceAll('`$effective-flow setup`', '`{{SKILL:setup}}`')
+        .replaceAll('`effective-flow setup`', '`{{SKILL:setup}}`'),
+      contract,
+    );
+    assert.ok(renderedDelivery.includes(renderedContract.trim()), `delivery output for ${harness}`);
+    assert.ok(
+      renderedApplyReview.includes(renderedContract.trim()),
+      `apply-review output for ${harness}`,
+    );
   }
 });
 
@@ -99,14 +109,90 @@ test('the canonical receipt fails closed and roots every write-capable operation
       /If any value is missing, cannot be canonicalized, or differs, abort before writing/,
       'fail-closed behavior',
     ],
-    [/root every file and shell operation in the receipt's execution root/, 'rooted operations'],
+    [/root tracked project,[\s\S]*operations in `EXECUTION_ROOT`/, 'rooted operations'],
     [/After a Handoff or resume/, 'Handoff revalidation'],
     [/receipt says `effective-flow-created`/, 'cleanup ownership'],
     [/Never force-remove a dirty,[\s\S]*harness-managed worktree/, 'ownership-safe cleanup'],
+    [/`EXECUTION_ROOT` and `RUNTIME_STATE_ROOT`/, 'separate execution and runtime roots'],
+    [/first record of `git worktree list --porcelain`/, 'main-worktree discovery'],
+    [/A `bare` first record/, 'bare-main rejection'],
+    [/same canonical Git common directory/, 'runtime repository identity'],
+    [/must not change `RUNTIME_STATE_ROOT`/, 'stable runtime root across worktree entry'],
+    [/never remove, rename, or otherwise alter `RUNTIME_STATE_ROOT`/, 'runtime-root preservation'],
   ];
 
   for (const [pattern, clause] of requiredClauses) {
     assert.match(contract, pattern, `missing ${clause} clause`);
+  }
+});
+
+test('every local report consumer retains and uses the absolute main-checkout handle', () => {
+  const sourceDetection = readShared('apply-source-detection');
+  const backlinks = readShared('review-report-backlinks');
+  const unresolved = readShared('unresolved-review-report');
+  const runtimeSafety = readShared('runtime-state-safety');
+  const apply = readSource('tools', 'apply.md');
+  const applyReview = readSource('tools', 'apply-review.md');
+  const applyReviewMechanics = readSource('tools', 'apply-review-commit-mechanics.md');
+  const review = readSource('tools', 'review.md');
+  const configMigration = readShared('config-migration');
+
+  assert.match(sourceDetection, /Before report-source resolution/);
+  assert.match(sourceDetection, /filename-only/);
+  assert.match(sourceDetection, /absolute report handle/);
+  assert.match(sourceDetection, /<RUNTIME_STATE_ROOT>\/\.effective-flow\/review\//);
+  assert.match(sourceDetection, /symlink escape/);
+  assert.match(backlinks, /absolute report handle/);
+  assert.match(backlinks, /RUNTIME_STATE_ROOT/);
+  assert.match(unresolved, /RUNTIME_STATE_ROOT/);
+  assert.match(unresolved, /collision checks/);
+  assert.match(unresolved, /memory\.json/);
+  assert.match(runtimeSafety, /from `RUNTIME_STATE_ROOT`/);
+  assert.match(runtimeSafety, /exact absolute runtime-state handle/);
+  assert.match(apply, /<RUNTIME_STATE_ROOT>\/\.effective-flow\/review\//);
+  assert.match(applyReview, /Retain `EXECUTION_ROOT` and `RUNTIME_STATE_ROOT` separately/);
+  assert.match(applyReview, /absolute report handle/);
+  assert.match(
+    applyReview,
+    /retained absolute `<RUNTIME_STATE_ROOT>\/\.effective-flow\/apply-review-commit\.lock` handle/,
+  );
+  assert.doesNotMatch(
+    applyReview,
+    /run every finding commit under `\.effective-flow\/apply-review-commit\.lock`/,
+  );
+  assert.match(
+    applyReviewMechanics,
+    /<RUNTIME_STATE_ROOT>\/\.effective-flow\/apply-review-commit\.lock/,
+  );
+  assert.match(applyReviewMechanics, /Resolve a relative BaseDir against `RUNTIME_STATE_ROOT`/);
+  assert.match(
+    review,
+    /<RUNTIME_STATE_ROOT>\/\.sf-memory\.json[\s\S]*<RUNTIME_STATE_ROOT>\/\.effective-flow\/cache\.json/,
+  );
+  assert.match(review, /RUNTIME_STATE_ROOT/);
+  assert.match(review, /collision checks/);
+  assert.match(
+    configMigration,
+    /<RUNTIME_STATE_ROOT>\/\.effective-flow\/config\.json[\s\S]*<RUNTIME_STATE_ROOT>\/\.firmo\/config\.json/,
+  );
+});
+
+test('the dual-root contract survives every harness render', () => {
+  for (const harness of ['claude', 'codex', 'portable']) {
+    const renderedDelivery = renderBody(resolvedDeliveryFragment, harness, {
+      ...renderConfig,
+      context: `shared/worktree-integration.md dual roots (${harness})`,
+    });
+    const renderedApplyReview = renderBody(resolvedApplyReviewMechanics, harness, {
+      ...renderConfig,
+      context: `tools/apply-review-commit-mechanics.md dual roots (${harness})`,
+    });
+
+    for (const rendered of [renderedDelivery, renderedApplyReview]) {
+      assert.match(rendered, /`EXECUTION_ROOT` and `RUNTIME_STATE_ROOT`/);
+      assert.match(rendered, /first record of `git worktree list --porcelain`/);
+      assert.match(rendered, /never remove, rename, or otherwise alter `RUNTIME_STATE_ROOT`/);
+    }
   }
 });
 

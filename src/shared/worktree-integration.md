@@ -97,9 +97,10 @@ per-block migration anymore. Until a config is migrated, reading applies: new va
 At the start of the actual implementation work, determine the effective mode:
 
 - Before any fetch, setup, branch change or other write-capable action, issue and verify an
-  execution-location receipt for the current checkout. Resolve the repository's main worktree
-  and linked worktrees from `git worktree list --porcelain`; a path below
-  `.effective-flow/.worktrees` does not prove ownership.
+  execution-location receipt for the current checkout. Before worktree creation, resolve and
+  retain its verified `RUNTIME_STATE_ROOT` from the first record of
+  `git worktree list --porcelain`; a path below `.effective-flow/.worktrees` does not prove
+  ownership. Keep `EXECUTION_ROOT` and `RUNTIME_STATE_ROOT` separate for the entire run.
 - **Worktree execution is active by default** (`worktree.enabled` default `true`). It
   stays off only when `worktree.enabled: false` is set or the user explicitly requests
   in-place work ("without worktree", "directly on the current branch").
@@ -142,14 +143,17 @@ When worktree execution is active:
    checkout identity and mark setup as `externally managed`. A detached harness-native checkout
    remains valid only at its pinned OID. If delivery requires a branch, create or adopt it
    through the harness-supported flow and issue a new verified receipt before committing; never
-   silently switch a harness-managed worktree.
+   silently switch a harness-managed worktree. The linked or native checkout becomes
+   `EXECUTION_ROOT`; the porcelain main checkout remains `RUNTIME_STATE_ROOT`.
 2. Otherwise determine the repo name from `basename "$(git rev-parse --show-toplevel)"` and use
    `worktree.baseDir` (default `.effective-flow/.worktrees`) as the base dir. Worktree path:
-   `BASE_DIR/REPO_NAME/SESSION_ID`. When that path is below `.effective-flow/`, resolve every
-   missing base or parent directory that will be created. Apply the owning workflow's loaded
-   “Runtime-state write safety” contract to each exact directory path immediately before its
-   `mkdir`; a guard for the eventual worktree path does not authorize creating its parents.
-   Apply the contract again to the exact `WORKTREE_PATH` immediately before `git worktree add`.
+   `BASE_DIR/REPO_NAME/SESSION_ID`. Resolve a relative `BASE_DIR` against
+   `RUNTIME_STATE_ROOT`, never against a disposable worktree. When that path is below
+   `.effective-flow/`, resolve every missing base or parent directory that will be created.
+   From `RUNTIME_STATE_ROOT`, apply the owning workflow's loaded “Runtime-state write safety”
+   contract to each exact directory path immediately before its `mkdir`; a guard for the
+   eventual worktree path does not authorize creating its parents. Apply the contract again to
+   the exact `WORKTREE_PATH` immediately before `git worktree add`.
    Create the worktree and delivery branch with
    `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> <BASE_REF>`, then immediately issue and
    verify an `effective-flow-created` receipt for the exact path, branch, workflow and delivery
@@ -165,10 +169,11 @@ When worktree execution is active:
    - `none`: run no setup.
    - String value: run this explicit command in the worktree.
      Record the final setup status as `complete` or `skipped` before delegation.
-4. Pass the receipt to every subsequent phase and delegated worker that creates or changes
-   code, test or documentation files. Each boundary runs the fail-closed preflight and every
-   operation is explicitly rooted in the receipt's execution root. This also applies through
-   the completion phase and the final validator/formatter.
+4. Pass the full receipt, including both roots, to every subsequent phase and delegated worker
+   that creates or changes code, tests, documentation, or runtime state. Each boundary runs the
+   fail-closed preflight. Project operations are explicitly rooted in `EXECUTION_ROOT`; runtime
+   reads and writes use retained absolute handles below `RUNTIME_STATE_ROOT`. This also applies
+   through the completion phase and the final validator/formatter.
 
 ### In-place delivery without worktree
 
@@ -231,7 +236,8 @@ investigations remain purely local in any case (see "Issue-tracker integration" 
 - **Only in the main repo, never committed:** pure Effective Flow bookkeeping and runtime state, i.e.
   all remaining `.effective-flow/` artifacts – `memory.json`, `cache.json`, local review reports
   under `.effective-flow/review/`, investigation reports under `.effective-flow/investigation/`,
-  config migration status and wisdom files.
+  config migration status and wisdom files. Their operational paths are absolute handles below
+  `RUNTIME_STATE_ROOT`, even while tracked work executes elsewhere.
 
 ### Handback and completion action (completion phase)
 
@@ -298,7 +304,8 @@ options:
    and clean state, then run `git worktree remove <WORKTREE_PATH>`; retain the delivery branch
    in the local repo. If any proof fails or uncommitted remnants remain, keep the worktree and
    report the path and mismatch. For `in-place` and `harness-managed` receipts, perform no
-   worktree cleanup; leave lifecycle handling to the user or harness.
+   worktree cleanup; leave lifecycle handling to the user or harness. The verified
+   `RUNTIME_STATE_ROOT` is never a cleanup target, and local review state there remains intact.
 5. **Execute action:**
    - `branch` / Branch only: leave the branch, report the name and a note about later
      PR creation.
