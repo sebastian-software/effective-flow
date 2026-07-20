@@ -6,6 +6,11 @@ description: "Internal sub-file of apply-review: issue-tracker integration and t
 
 This internal sub-file is loaded by `tools/apply-review.md` as soon as the tracker mode is `remote` (the argument is an epic or finding issue). It contains the full issue-tracker integration and the remote flow; in local mode it is never loaded.
 
+```lazy-include
+runtime-state-safety
+when: a remote tracker access is about to write its local migration marker
+```
+
 ```include
 issue-tracker
 ```

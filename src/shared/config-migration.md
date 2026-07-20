@@ -73,6 +73,8 @@ If the table is invalid or ambiguous (missing key, unknown encoding): use a
 safe default for the run, inform the user about the affected key,
 do **not** guess.
 
+<!-- runtime-state-safety: setup-repair-only:start -->
+
 ### One-time migration legacy `config.json` → project setup ADR
 
 The migration of an existing `.effective-flow/config.json` or legacy `.firmo/config.json`
@@ -87,3 +89,5 @@ Outside {{SKILL:setup}}, **no** migration takes place: The deterministic
 read path creates nothing and touches no Git; on a missing ADR it reads instead a
 still-present `.effective-flow/config.json` (otherwise `.firmo/config.json`) and points to
 {{SKILL:setup}}.
+
+<!-- runtime-state-safety: setup-repair-only:end -->

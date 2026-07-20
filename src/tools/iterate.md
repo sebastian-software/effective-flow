@@ -36,6 +36,11 @@ language-rules
 task-tracking
 ```
 
+```lazy-include
+runtime-state-safety
+when: any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent
+```
+
 ```include
 config-migration
 ```

@@ -30,6 +30,10 @@ without deleting its on-disk content. The values set here (`review.*`, `applyRev
 `delivery.*`, `worktree.*`, `tracker.*`, `skills.*`) drive the other tools; the complete schema
 is in [Configuration](configuration.md).
 
+`setup` is the only repair path when runtime-state safety blocks a write. It validates the
+repaired ignore and index state before writing any migration marker below `.effective-flow/`;
+missing Git or a failed validation leaves that marker unwritten.
+
 ## `/effective-flow cleanup`
 
 **Purpose:** Clears away the legacy leftovers that Effective Flow's migrations deliberately
@@ -37,8 +41,9 @@ leave behind. It captures four classes of leftovers in the current project – l
 directories `.firmo/`/`.sf-plugin/`, an untracked or legacy `config.json`, outdated
 `.gitignore` lines, and `firmo-` labels in the remote issue tracker –, reads them, checks
 against their new counterpart whether anything should still be carried over, has each
-carry-over candidate confirmed, and then deletes the legacy data **git-aware** and only after
-explicit confirmation.
+carry-over candidate confirmed, and then deletes the removable legacy data **git-aware** and
+only after explicit confirmation. Outdated `.gitignore` entries are reported but left untouched
+for setup to repair.
 
 **When to use:** After Effective Flow has migrated a project from an older version (`.firmo/`,
 `.sf-plugin/`, `firmo-` labels) to the current state and you want to finally get rid of the
@@ -51,13 +56,14 @@ is the only path that truly deletes.
 a dry-run preview of the deletion; it removes tracked files via `git rm` (recoverable through
 the Git history), and untracked/gitignored directories physically and irreversibly after
 explicit confirmation. It creates **no** commit or backup and never changes current ADR values or
-a global skill installation. It may copy confirmed runtime files into `.effective-flow/` or
+a global skill installation. It never edits `.gitignore`. It may copy confirmed runtime files into `.effective-flow/` or
 remove a confirmed legacy config from that directory; otherwise the active runtime directory is
 preserved. With no leftovers, cleanup is a no-op.
 
 **Interplay:** `cleanup` does not adopt config values from a legacy `config.json` itself – it
 points to [`/effective-flow setup`](#effective-flow-setup) for that, the owner of the
-project-setup ADR. The staged `git rm` changes are then handled by
+project-setup ADR. It likewise inventories outdated `.gitignore` entries but leaves them
+untouched; only setup repairs or normalizes `.gitignore`. The staged `git rm` changes are then handled by
 [`/effective-flow commit`](tools-deliver.md).
 
 ## `/effective-flow version`

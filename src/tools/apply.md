@@ -30,6 +30,11 @@ language-rules
 task-tracking
 ```
 
+```lazy-include
+runtime-state-safety
+when: a remote tracker access is about to write its local migration marker
+```
+
 ```include
 config-migration
 ```

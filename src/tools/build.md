@@ -15,6 +15,11 @@ language-rules
 task-tracking
 ```
 
+```lazy-include
+runtime-state-safety
+when: any wisdom, report, memory, or worktree mutation below `.effective-flow/` is imminent
+```
+
 ```include
 project-routing
 ```

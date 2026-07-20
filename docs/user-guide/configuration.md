@@ -251,6 +251,15 @@ There is no second “fast” preset. A faster solo flow is configured key by ke
 `review.profile: fast`, `review.validation: quick`, and
 `applyReview.finalValidation: changedScope`.
 
+## Runtime-state safety
+
+Effective Flow writes below `.effective-flow/` only when that whole directory is ignored and no
+path below it is tracked. Immediately before each runtime-state mutation, the owning Git
+worktree checks both a sentinel and the concrete target with non-verbose `git check-ignore`, and
+also checks the Git index. If Git is unavailable, the directory is not ignored, any runtime path
+is tracked, or a check fails, the workflow leaves existing state untouched and directs you to
+`/effective-flow setup`. Other workflows never edit `.gitignore` themselves.
+
 ## How `/effective-flow setup` maintains configuration
 
 [`/effective-flow setup`](./tools-setup.md) is the Git-touching owner of project configuration.

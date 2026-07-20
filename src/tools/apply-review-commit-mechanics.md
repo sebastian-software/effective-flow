@@ -6,6 +6,11 @@ description: "Internal sub-file of apply-review: git commit mutex, worktree isol
 
 This internal sub-file is loaded by `tools/apply-review.md` as soon as the commit strategy `Individually` or `Individually with worktrees` is fixed in Phase 2. With `No commits` it is not needed.
 
+```lazy-include
+runtime-state-safety
+when: the commit lock or a component worktree below `.effective-flow/` is about to be mutated
+```
+
 #### Git commit mutex for "Individually"
 
 If the commit strategy **Individually** was chosen, a global commit mutex applies to all delegation sub-agents. The mutex protects the entire critical git section, not just the final `git commit`.
@@ -15,6 +20,10 @@ Goal: parallel sub-agents may edit files at the same time, but must never perfor
 Mutex convention:
 
 - Lock path: `.effective-flow/apply-review-commit.lock`
+- If `.effective-flow/` is missing, apply “Runtime-state write safety” to that exact parent
+  directory immediately before its `mkdir`. Immediately before every acquisition attempt, apply
+  the guard again to the exact lock-directory target `.effective-flow/apply-review-commit.lock`.
+  Do not create or remove a lock when the relevant guard blocks.
 - Lock acquisition: atomically via `mkdir .effective-flow/apply-review-commit.lock`
 - Lock content: after a successful acquisition, write a short owner file, e.g. `owner`, with finding ID, component and timestamp.
 - Lock release: delete only the lock you acquired yourself, after a commit success, commit abort or error handling.
@@ -62,7 +71,10 @@ The default deliberately lies inside the project root. This keeps worktree creat
 Branch convention:
 
 - Per component: `apply-review/<SESSION_ID>/<GROUP_NAME>`
-- Create the worktree with:
+- When the concrete worktree path is below `.effective-flow/`, resolve every missing base or
+  parent directory. From the original integration root, apply “Runtime-state write safety” to
+  each exact directory immediately before its `mkdir`. Guard the exact `WORKTREE_PATH` separately
+  and immediately before the worktree operation. Create the worktree with:
   `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> HEAD`
 - Immediately issue and verify a separate `effective-flow-created` execution-location receipt
   for the component path, branch, repository, component owner and `apply-review` purpose. Keep
