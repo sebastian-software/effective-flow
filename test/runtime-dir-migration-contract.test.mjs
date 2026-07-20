@@ -65,8 +65,8 @@ const contractScenarios = [
   {
     name: 'whole-source precedence',
     clauses: [
-      /Use the whole `\.firmo\/` tree when it exists; otherwise\s+use `\.sf-plugin\/`/,
-      /If both exist, do not combine them/,
+      /Use the whole `<RUNTIME_STATE_ROOT>\/\.firmo\/` tree when\s+it exists; otherwise use `<RUNTIME_STATE_ROOT>\/\.sf-plugin\/`/,
+      /If both exist, do\s+not combine them/,
     ],
   },
   {
@@ -94,7 +94,7 @@ const contractScenarios = [
   {
     name: 'concurrent target memory is preserved without a new lock',
     clauses: [
-      /Immediately before the final memory update, re-read `\.effective-flow\/memory\.json`/,
+      /Immediately before the final memory update, re-read the retained absolute\s+`<RUNTIME_STATE_ROOT>\/\.effective-flow\/memory\.json` handle/,
       /do not introduce a migration-specific lock, finding-number reservation, or competing atomic\s+writer/,
     ],
   },
@@ -118,8 +118,12 @@ test('native and portable renders preserve the same migration marker and behavio
     });
 
     assert.match(rendered, /runtimeMigration\.directory\.version: 1/);
-    assert.match(rendered, /Use the whole `\.firmo\/` tree when it exists/);
+    assert.match(rendered, /Use the whole `<RUNTIME_STATE_ROOT>\/\.firmo\/` tree/);
     assert.match(rendered, /Immediately before the final memory update, re-read/);
+    assert.match(
+      rendered,
+      /Never scan or mutate a legacy\/current\s+runtime tree below a linked execution worktree/,
+    );
     assert.match(rendered, /except for the entire `\.worktrees\/` subtree/);
     assert.doesNotMatch(rendered, /\{\{(?:SKILL|AGENT):/);
   }

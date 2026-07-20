@@ -73,7 +73,8 @@ issue-tracker
 3. Handle the special results:
    - **`none` (no argument):** list local candidates — open plans from
      `<plan.dir>/` (status `**Planungsstatus:** Nicht umgesetzt` or
-     `**Plan status:** Not implemented`) and report files under `.effective-flow/review/`.
+     `**Plan status:** Not implemented`) and report files under the verified absolute
+     `<RUNTIME_STATE_ROOT>/.effective-flow/review/` directory.
      If the effective tracker mode is `remote` (see "Issue-Tracker Integration"),
      additionally list open review epics (label `effective-flow-review-epic`, incl. legacy
      `firmo-review-epic`) as candidates — in remote mode no local report files are written,

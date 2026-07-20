@@ -23,9 +23,13 @@ first matching step wins:
 2. **Default path/scan.** Otherwise `docs/adr/effective-flow-project-setup.md` (the legacy slug
    `firmo-project-setup` is recognized as equivalent during the scan) or a scan of the detected
    ADR directory (`docs/adr/`, `docs/decisions/`, `adr/`) for the project setup ADR.
-3. **Transitional compatibility.** Otherwise — only transitionally — read a still-present
-   `.effective-flow/config.json` (otherwise a legacy `.firmo/config.json`) and point to
-   {{SKILL:setup}}. This read path creates **nothing** and touches **no** Git.
+3. **Transitional compatibility.** Otherwise — only transitionally — establish or reuse the
+   verified execution-location receipt and resolve the fallback from `RUNTIME_STATE_ROOT`: read
+   a still-present absolute `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` handle (otherwise
+   `<RUNTIME_STATE_ROOT>/.firmo/config.json`) and point to {{SKILL:setup}}. Never inspect a
+   same-named fallback below a linked `EXECUTION_ROOT`. A missing, bare, moved, unsafe, or
+   repository-mismatched runtime root blocks the fallback. This read path creates **nothing**
+   and touches **no** Git.
 4. **Built-in defaults.** Otherwise use the defaults of the respective source skills.
 
 The deterministic read path of any tool is non-blocking: It reads the ADR (or
@@ -87,7 +91,7 @@ idempotency marking is in {{SKILL:setup}}.
 
 Outside {{SKILL:setup}}, **no** migration takes place: The deterministic
 read path creates nothing and touches no Git; on a missing ADR it reads instead a
-still-present `.effective-flow/config.json` (otherwise `.firmo/config.json`) and points to
-{{SKILL:setup}}.
+still-present `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` (otherwise
+`<RUNTIME_STATE_ROOT>/.firmo/config.json`) and points to {{SKILL:setup}}.
 
 <!-- runtime-state-safety: setup-repair-only:end -->

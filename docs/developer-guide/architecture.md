@@ -73,17 +73,29 @@ src/
 
 ## Cross-harness execution locations
 
-Effective Flow treats an absolute Git-verified execution root as data, not as ambient process
-state. Write-capable workers receive a receipt containing the canonical root, common Git
-directory, branch or detached OID, origin, setup owner and workflow/component purpose. They
-revalidate it at their first write boundary and after resume or Handoff, then root every file
-and shell operation there.
+Effective Flow treats two absolute Git-verified roots as data, not as ambient process state.
+Write-capable workers receive a receipt containing the canonical `EXECUTION_ROOT`, retained
+`RUNTIME_STATE_ROOT`, common Git directory, branch or detached OID, origin, setup owner, and
+workflow/component purpose. They revalidate it at their first write boundary and after resume
+or Handoff.
+
+Before worktree creation or local report-source resolution, Effective Flow parses the first
+record of `git worktree list --porcelain` as the main checkout. It rejects bare, missing,
+moved, noncanonical, or common-directory-mismatched records and retains the resulting physical
+path as `RUNTIME_STATE_ROOT`. Tracked files and Git lifecycle operations use `EXECUTION_ROOT`;
+all `.effective-flow/` reads, report-name collision checks, backlinks, memory/cache updates, and
+migrations use canonical absolute handles below `RUNTIME_STATE_ROOT`. Prospective paths
+canonicalize their nearest existing ancestor, so `..` and existing symlink escapes fail closed.
+An in-place main-checkout run has identical roots; linked/native and Effective Flow-owned
+worktrees have different roots.
 
 Claude native `isolation: worktree` and Codex app worktrees remain harness-owned. They may be
 used or reused where appropriate, but Effective Flow neither nests its own delivery worktree
 around an existing native checkout nor removes a harness-managed one. Effective Flow-created
 delivery, partial-diff and review-component worktrees have distinct receipts and may be cleaned
-up only after fresh ownership and state verification.
+up only after fresh ownership and state verification. Cleanup never targets or alters
+`RUNTIME_STATE_ROOT`, which is why local reports and memory survive component and delivery
+worktree removal.
 
 ## Three consumer targets
 

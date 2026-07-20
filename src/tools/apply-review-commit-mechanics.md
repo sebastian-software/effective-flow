@@ -24,13 +24,18 @@ Goal: parallel sub-agents may edit files at the same time, but must never perfor
 
 Mutex convention:
 
-- Lock path: `.effective-flow/apply-review-commit.lock`
-- If `.effective-flow/` is missing, apply “Runtime-state write safety” to that exact parent
-  directory immediately before its `mkdir`. Immediately before every acquisition attempt, apply
-  the guard again to the exact lock-directory target `.effective-flow/apply-review-commit.lock`.
-  Do not create or remove a lock when the relevant guard blocks.
-- Lock acquisition: atomically via `mkdir .effective-flow/apply-review-commit.lock`
-- Lock content: after a successful acquisition, write a short owner file, e.g. `owner`, with finding ID, component and timestamp.
+- Lock handle: absolute
+  `<RUNTIME_STATE_ROOT>/.effective-flow/apply-review-commit.lock`. Every concurrent delegation
+  for the repository uses this one retained main-checkout handle, even when its
+  `EXECUTION_ROOT` is linked or native.
+- If the runtime directory is missing, from `RUNTIME_STATE_ROOT` apply “Runtime-state write
+  safety” to that exact parent directory immediately before its `mkdir`. Immediately before
+  every acquisition attempt, from the same root apply the guard again to the exact
+  repository-relative lock target `.effective-flow/apply-review-commit.lock`. Do not create or
+  remove a lock when the relevant guard blocks.
+- Lock acquisition: atomically via `mkdir <absolute-lock-handle>`.
+- Lock content: after a successful acquisition, write a short `owner` file below that absolute
+  lock handle, with finding ID, component and timestamp.
 - Lock release: delete only the lock you acquired yourself, after a commit success, commit abort or error handling.
 - If the lock already exists: wait and retry. If the lock clearly seems orphaned, ask the user before removing it.
 
@@ -61,12 +66,16 @@ Preconditions:
 - `git worktree` must be available.
 - Read the Effective Flow configuration (project-setup ADR), if present. If it is missing or contains no worktree values, use the defaults.
 - Issue and verify the original integration root's own execution-location receipt before
-  creating any component worktree. Revalidate it before every integration write.
+  creating any component worktree. That receipt retains the verified main checkout as
+  `RUNTIME_STATE_ROOT`, even if the original integration root is itself linked or native.
+  Revalidate both roots before every integration or runtime-state write.
 
 Worktree paths:
 
 1. Determine the repo name from `basename "$(git rev-parse --show-toplevel)"`.
 2. Use `applyReview.worktree.baseDir` from the Effective Flow configuration (project-setup ADR) as the BaseDir, or the default `.effective-flow/.worktrees`.
+   Resolve a relative BaseDir against `RUNTIME_STATE_ROOT`; an explicitly configured absolute
+   external BaseDir remains absolute and must still pass the environment and ownership checks.
 3. Create worktrees under:
    `BASE_DIR/REPO_NAME/SESSION_ID/GROUP_NAME`
 4. `GROUP_NAME` must be deterministic, short and filesystem-safe and identify the component from Phase 4.2, e.g. `component-1`, `component-2` or a slugified component description. Not an action-bound name, since a component can contain findings of multiple actions.
@@ -77,14 +86,15 @@ Branch convention:
 
 - Per component: `apply-review/<SESSION_ID>/<GROUP_NAME>`
 - When the concrete worktree path is below `.effective-flow/`, resolve every missing base or
-  parent directory. From the original integration root, apply “Runtime-state write safety” to
-  each exact directory immediately before its `mkdir`. Guard the exact `WORKTREE_PATH` separately
-  and immediately before the worktree operation. Create the worktree with:
+  parent directory. From `RUNTIME_STATE_ROOT`, apply “Runtime-state write safety” to each exact
+  directory immediately before its `mkdir`. Guard the exact absolute `WORKTREE_PATH` separately
+  from that same root and immediately before the worktree operation. Create the worktree with:
   `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> HEAD`
 - Immediately issue and verify a separate `effective-flow-created` execution-location receipt
   for the component path, branch, repository, component owner and `apply-review` purpose. Keep
-  the original integration root under its own receipt. If component receipt creation fails,
-  retain the new worktree for reconciliation and do not delegate.
+  the original integration root under its own receipt and the main checkout under the unchanged
+  runtime-state handle. If component receipt creation fails, retain the new worktree for
+  reconciliation and do not delegate.
 
 Setup detection in the worktree:
 
@@ -108,8 +118,10 @@ Record the component receipt's final setup status as `complete` or `skipped` bef
 Delegation in the worktree:
 
 - Pass the delegation sub-agent the component receipt and its canonical absolute execution
-  root. Require its fail-closed preflight before the first write and explicitly rooted file,
-  shell, validation, staging and commit operations throughout.
+  root together with the unchanged canonical `RUNTIME_STATE_ROOT`. Require its fail-closed
+  preflight before the first write and explicitly rooted file, shell, validation, staging and
+  commit operations throughout. Reports, backlinks, memory, cache, migrations, and wisdom use
+  only retained absolute handles below the runtime root.
 - Pass it the commit strategy `Individually with worktrees`.
 - Within the verified component root, sub-agents commit after each finding individually,
   without an internal finding ID in the commit message.
@@ -125,7 +137,8 @@ Integration back into the original branch:
 5. After successful integration and validation, reverify each component receipt and clean
    state. Remove the worktree and delete the temporary branch only when the ownership-safe
    cleanup contract proves that this exact component was Effective Flow-created. Otherwise
-   retain both and report the mismatch.
+   retain both and report the mismatch. Never remove, rename, or otherwise alter
+   `RUNTIME_STATE_ROOT` or its local review state.
 6. On a failed component: keep the worktree and branch for now, name the paths in the summary and obtain a user decision on cleanup.
 
 Cherry-pick conflict assessment:

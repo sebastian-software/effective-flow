@@ -23,14 +23,20 @@ Do not carry over into the external report:
 
 ### Report path
 
-If `.effective-flow/` is missing, apply the owning workflow's loaded “Runtime-state write safety”
-contract to the exact directory `.effective-flow/` immediately before its `mkdir`. If
-`.effective-flow/review/` is missing, separately apply it to that exact directory immediately
-before its `mkdir`. Apply it again to the concrete report file immediately before writing the
-report and to `.effective-flow/memory.json` immediately before updating memory. A blocked target
-remains unchanged.
+Resolve and revalidate the main-checkout `RUNTIME_STATE_ROOT` before any report lookup. All
+directory existence checks, collision checks, report creation, and memory reads/writes use
+absolute handles below that root; never inspect or fall back to a same-named path below
+`EXECUTION_ROOT`.
 
-1. Create `.effective-flow/review/` if needed.
+If `<RUNTIME_STATE_ROOT>/.effective-flow/` is missing, apply the owning workflow's loaded
+“Runtime-state write safety” contract from `RUNTIME_STATE_ROOT` to the exact directory
+`.effective-flow/` immediately before its `mkdir`. If the review directory is missing,
+separately apply it to that exact directory immediately before its `mkdir`. Apply the contract
+again to the concrete absolute report handle immediately before writing the report and to the
+absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle immediately before updating
+memory. A blocked target remains unchanged.
+
+1. Create `<RUNTIME_STATE_ROOT>/.effective-flow/review/` if needed.
 2. If the workflow has a plan file as its basis, prefer:
    - `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>.md`
    - on collision: `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>-1.md`, `-2`, ...
@@ -47,10 +53,11 @@ remains unchanged.
 
 This report uses the same global finding IDs as `{{SKILL:review}}`.
 
-1. Read `.effective-flow/memory.json`, if present.
+1. Read `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json`, if present.
 2. If the file is missing, start with `lastFindingNumber: 0`.
 3. Number new findings consecutively from `lastFindingNumber + 1` with seven digits, e.g. `R-0000021`.
-4. After the report, write the highest assigned number back to `.effective-flow/memory.json`.
+4. After the report, write the highest assigned number back to the same absolute
+   `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle.
 5. Preserve existing fields such as `configMigration` unchanged.
 6. If memory cannot be written, inform the user and name the report path anyway.
 
