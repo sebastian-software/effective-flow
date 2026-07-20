@@ -32,6 +32,7 @@ import {
   collectIncludeNames,
   assertNoEagerLazyOverlap,
   findRuntimeStateSafetyViolations,
+  findRuntimeDirMigrationViolations,
   collectRenderedWorkerRefs,
   findProhibitedConsumerScriptCommands,
   findRetiredConfigDocViolations,
@@ -451,6 +452,19 @@ try {
       'runtime-state writer guard (#165): every operational mutation below `.effective-flow/` ' +
         'must follow the canonical runtime-state-safety contract:\n  ' +
         runtimeStateViolations
+          .map(
+            ({ context, line, reason, target, includeChain }) =>
+              `${context}:${line}: ${reason} (${target}; via ${includeChain.join(' -> ')})`,
+          )
+          .join('\n  '),
+    );
+  }
+  const runtimeDirMigrationViolations = findRuntimeDirMigrationViolations(runtimeStateSources);
+  if (runtimeDirMigrationViolations.length > 0) {
+    throw new Error(
+      'runtime-directory migration guard (#174): every operational mutation below ' +
+        '`.effective-flow/` must follow the canonical migration prerequisite:\n  ' +
+        runtimeDirMigrationViolations
           .map(
             ({ context, line, reason, target, includeChain }) =>
               `${context}:${line}: ${reason} (${target}; via ${includeChain.join(' -> ')})`,

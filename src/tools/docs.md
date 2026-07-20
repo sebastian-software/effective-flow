@@ -24,6 +24,11 @@ runtime-state-safety
 when: any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent
 ```
 
+```lazy-include
+effective-flow-dir-migration
+when: any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent
+```
+
 ```include
 project-routing
 ```

@@ -26,6 +26,18 @@ non-verbose `git check-ignore --no-index -- <path>`, then independently requires
 a not-ignored path, tracked runtime state, or a command error preserves all state and routes to
 `/effective-flow setup`. Ordinary workflows never repair `.gitignore`; setup is the sole owner.
 
+Before its first authorized runtime write, every writing workflow also runs the marker-driven
+legacy-directory prerequisite from
+[`src/shared/effective-flow-dir-migration.md`](../../src/shared/effective-flow-dir-migration.md).
+The marker `runtimeMigration.directory.version: 1` in `memory.json`, not the existence of the
+target directory, proves completion. Without it, Effective Flow chooses `.firmo/` as the whole
+source when present, otherwise `.sf-plugin/`, and copies only entries missing from
+`.effective-flow/`. Existing target paths always win; `memory.json` receives a recursive
+missing-key merge after a fresh re-read, and legacy `.worktrees/` is never copied. Any unsafe
+memory input or carry-over failure leaves the marker unset and blocks the workflow-specific
+write so a later run can retry. Legacy directories remain untouched until the user explicitly
+runs `/effective-flow cleanup`.
+
 The canonical convention-file locator is:
 
 ```md

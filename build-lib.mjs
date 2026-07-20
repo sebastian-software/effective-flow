@@ -1426,13 +1426,9 @@ function runtimeMutationOnLine(line) {
   return paths[0];
 }
 
-// Return deterministic { context, line, reason, target, includeChain } records.
-// `sources` is a Map/object from source context (`tools/x.md`, `shared/y.md`, …)
-// to raw source body. By default tools and agents are execution roots; shared
-// fragments are reached through their owning include position.
-export function findRuntimeStateSafetyViolations(
+function walkRuntimeStateMutations(
   sources,
-  { rootContexts, guardFragment = 'runtime-state-safety', setupContext = SETUP_CONTEXT } = {},
+  { rootContexts, initialState, onLine, onInclude, onMutation } = {},
 ) {
   const entries = sourceEntries(sources).sort(([a], [b]) => a.localeCompare(b));
   const sourceMap = new Map(entries);
@@ -1442,7 +1438,6 @@ export function findRuntimeStateSafetyViolations(
   )
     .filter((context) => sourceMap.has(context))
     .sort();
-  const violations = [];
 
   const visit = (context, state, includeChain) => {
     const body = normalizeLineEndings(sourceMap.get(context) ?? '');
@@ -1451,45 +1446,26 @@ export function findRuntimeStateSafetyViolations(
 
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index];
-      if (line.trim() === SETUP_REPAIR_SCOPE_START) {
-        active.setupRepairOnly = true;
-        continue;
-      }
-      if (line.trim() === SETUP_REPAIR_SCOPE_END) {
-        active.setupRepairOnly = false;
-        continue;
-      }
+      onLine?.({ context, line, lineNumber: index + 1, active, includeChain });
+
       const includeStart = INCLUDE_FENCE_START_RE.exec(line);
       if (includeStart) {
         const name = (lines[index + 1] ?? '').trim();
         let fenceEnd = index + 2;
         while (fenceEnd < lines.length && lines[fenceEnd].trim() !== '```') fenceEnd += 1;
-        if (name === guardFragment) {
-          active.guardSeen = true;
-        } else {
-          const sharedContext = `shared/${name}.md`;
-          if (name && sourceMap.has(sharedContext) && !includeChain.includes(sharedContext)) {
-            const nested = visit(sharedContext, active, [...includeChain, sharedContext]);
-            active.guardSeen = nested.guardSeen;
-            active.setupSentinelValidated = nested.setupSentinelValidated;
-            active.setupTargetValidated = nested.setupTargetValidated;
-            active.setupTrackedStateValidated = nested.setupTrackedStateValidated;
-          }
+        const traverseInclude =
+          onInclude?.({ context, name, lineNumber: index + 1, active, includeChain }) !== false;
+        const sharedContext = `shared/${name}.md`;
+        if (
+          traverseInclude &&
+          name &&
+          sourceMap.has(sharedContext) &&
+          !includeChain.includes(sharedContext)
+        ) {
+          Object.assign(active, visit(sharedContext, active, [...includeChain, sharedContext]));
         }
         index = Math.min(fenceEnd, lines.length - 1);
         continue;
-      }
-
-      if (context === setupContext) {
-        if (line.includes('git check-ignore --no-index -- .effective-flow/config.json')) {
-          active.setupSentinelValidated = true;
-        }
-        if (line.includes(`git check-ignore --no-index -- ${SETUP_RUNTIME_MARKER}`)) {
-          active.setupTargetValidated = true;
-        }
-        if (line.includes('git ls-files -- .effective-flow/')) {
-          active.setupTrackedStateValidated = true;
-        }
       }
 
       // Markdown commonly wraps an operation immediately before its target.
@@ -1501,19 +1477,66 @@ export function findRuntimeStateSafetyViolations(
           ? runtimeMutationOnLine(`${lines[index - 1] ?? ''} ${line}`)
           : null);
       if (!target) continue;
-      if (active.setupRepairOnly && includeChain[0] !== setupContext) continue;
+      onMutation?.({ context, line, lineNumber: index + 1, target, active, includeChain });
+    }
 
+    return active;
+  };
+
+  for (const context of roots) {
+    visit(context, initialState?.(context) ?? {}, [context]);
+  }
+}
+
+// Return deterministic { context, line, reason, target, includeChain } records.
+// `sources` is a Map/object from source context (`tools/x.md`, `shared/y.md`, …)
+// to raw source body. By default tools and agents are execution roots; shared
+// fragments are reached through their owning include position.
+export function findRuntimeStateSafetyViolations(
+  sources,
+  { rootContexts, guardFragment = 'runtime-state-safety', setupContext = SETUP_CONTEXT } = {},
+) {
+  const violations = [];
+  walkRuntimeStateMutations(sources, {
+    rootContexts,
+    initialState: () => ({
+      guardSeen: false,
+      setupSentinelValidated: false,
+      setupTargetValidated: false,
+      setupTrackedStateValidated: false,
+      setupRepairOnly: false,
+    }),
+    onLine: ({ context, line, active }) => {
+      if (line.trim() === SETUP_REPAIR_SCOPE_START) active.setupRepairOnly = true;
+      if (line.trim() === SETUP_REPAIR_SCOPE_END) active.setupRepairOnly = false;
+      if (context !== setupContext) return;
+      if (line.includes('git check-ignore --no-index -- .effective-flow/config.json')) {
+        active.setupSentinelValidated = true;
+      }
+      if (line.includes(`git check-ignore --no-index -- ${SETUP_RUNTIME_MARKER}`)) {
+        active.setupTargetValidated = true;
+      }
+      if (line.includes('git ls-files -- .effective-flow/')) {
+        active.setupTrackedStateValidated = true;
+      }
+    },
+    onInclude: ({ name, active }) => {
+      if (name !== guardFragment) return true;
+      active.guardSeen = true;
+      return false;
+    },
+    onMutation: ({ context, lineNumber, target, active, includeChain }) => {
+      if (active.setupRepairOnly && includeChain[0] !== setupContext) return;
       if (!active.guardSeen) {
         violations.push({
           context,
-          line: index + 1,
+          line: lineNumber,
           reason: 'runtime mutation is not preceded by the canonical safety guard',
           target,
           includeChain: [...includeChain],
         });
-        continue;
+        return;
       }
-
       if (
         context === setupContext &&
         target.startsWith(SETUP_RUNTIME_MARKER) &&
@@ -1525,30 +1548,60 @@ export function findRuntimeStateSafetyViolations(
       ) {
         violations.push({
           context,
-          line: index + 1,
+          line: lineNumber,
           reason: 'setup runtime marker write is not preceded by complete target-state validation',
           target,
           includeChain: [...includeChain],
         });
       }
-    }
+    },
+  });
 
-    return active;
-  };
+  return violations.sort(
+    (a, b) =>
+      a.context.localeCompare(b.context) ||
+      a.line - b.line ||
+      a.reason.localeCompare(b.reason) ||
+      a.target.localeCompare(b.target),
+  );
+}
 
-  for (const context of roots) {
-    visit(
-      context,
-      {
-        guardSeen: false,
-        setupSentinelValidated: false,
-        setupTargetValidated: false,
-        setupTrackedStateValidated: false,
-        setupRepairOnly: false,
-      },
-      [context],
-    );
-  }
+// --- Runtime-directory migration prerequisite coverage guard (#174) ---
+//
+// Uses the same ordered mutation traversal as the write-safety guard. Every
+// operational runtime-state mutation must encounter the canonical migration
+// fragment first, including mutations reached through nested shared writers.
+
+export function findRuntimeDirMigrationViolations(
+  sources,
+  { rootContexts, migrationFragment = 'effective-flow-dir-migration' } = {},
+) {
+  const migrationContext = `shared/${migrationFragment}.md`;
+  const violations = [];
+
+  walkRuntimeStateMutations(sources, {
+    rootContexts,
+    initialState: () => ({ migrationSeen: false, setupRepairOnly: false }),
+    onLine: ({ line, active }) => {
+      if (line.trim() === SETUP_REPAIR_SCOPE_START) active.setupRepairOnly = true;
+      if (line.trim() === SETUP_REPAIR_SCOPE_END) active.setupRepairOnly = false;
+    },
+    onInclude: ({ name, active }) => {
+      if (name === migrationFragment) active.migrationSeen = true;
+      return name !== 'runtime-state-safety';
+    },
+    onMutation: ({ context, lineNumber, target, active, includeChain }) => {
+      if (active.setupRepairOnly && includeChain[0] !== SETUP_CONTEXT) return;
+      if (context === migrationContext || active.migrationSeen) return;
+      violations.push({
+        context,
+        line: lineNumber,
+        reason: 'runtime mutation is not preceded by the runtime-directory migration prerequisite',
+        target,
+        includeChain: [...includeChain],
+      });
+    },
+  });
 
   return violations.sort(
     (a, b) =>

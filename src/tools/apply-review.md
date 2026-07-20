@@ -25,6 +25,11 @@ runtime-state-safety
 when: any wisdom, memory, cache, report, lock, or worktree mutation is imminent
 ```
 
+```lazy-include
+effective-flow-dir-migration
+when: any wisdom, memory, cache, report, lock, or worktree mutation is imminent
+```
+
 ```include
 config-migration
 ```
@@ -75,10 +80,6 @@ Right at the start of Phase 1 (after a successful report classification), create
 
 - Create **all** tasks (phase-level and per-finding) at the end of Phase 1, directly after a successful classification. That way the user sees the full list before any parallel sub-agents start.
 - Update tasks promptly: each lifecycle change directly after the event (not batched at the phase end).
-
-```include
-effective-flow-dir-migration
-```
 
 ## Project conventions
 

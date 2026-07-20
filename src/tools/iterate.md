@@ -41,6 +41,11 @@ runtime-state-safety
 when: any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent
 ```
 
+```lazy-include
+effective-flow-dir-migration
+when: any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent
+```
+
 ```include
 config-migration
 ```
@@ -57,10 +62,6 @@ skill-discovery
 
 If the project contains an `AGENTS.md`, read it early in the workflow and observe its
 specifications for implementation, commits, branch/PR conventions, and quality criteria.
-
-```include
-effective-flow-dir-migration
-```
 
 ```include
 completion-protocol

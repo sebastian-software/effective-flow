@@ -57,11 +57,6 @@ doc-categories
 - If code is used, keep it minimal: do not anticipate complete functions, components, classes, tests, or larger snippets.
 - If the user requests implementation during this skill, refer them — depending on the recommended implementation — to `{{SKILL:build}}`, `{{SKILL:fix}}`, `{{SKILL:refactor}}`, or `{{SKILL:docs}}` and end this skill after the plan.
 
-```lazy-include
-effective-flow-dir-migration
-when: a legacy `.sf-plugin/` or `.firmo/` runtime dir must be migrated
-```
-
 ## Project conventions
 
 If the project contains an `AGENTS.md`, read it early in the workflow and observe its specifications for planning, documentation, and file formats.

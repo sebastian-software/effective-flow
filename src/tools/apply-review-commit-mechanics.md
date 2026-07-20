@@ -11,6 +11,11 @@ runtime-state-safety
 when: the commit lock or a component worktree below `.effective-flow/` is about to be mutated
 ```
 
+```lazy-include
+effective-flow-dir-migration
+when: the commit lock or a component worktree below `.effective-flow/` is about to be mutated
+```
+
 #### Git commit mutex for "Individually"
 
 If the commit strategy **Individually** was chosen, a global commit mutex applies to all delegation sub-agents. The mutex protects the entire critical git section, not just the final `git commit`.

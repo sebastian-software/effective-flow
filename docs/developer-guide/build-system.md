@@ -162,6 +162,13 @@ The build aborts with an error message if any of these guards is violated:
   The analyzer recognizes both filesystem commands and operational prose such as write, persist,
   append, move, store, record, emit, and replace, while stripping clearly descriptive passive
   forms before matching; it does not rely on a writer allowlist.
+- **Runtime-directory migration guard (#174):** The pure
+  `findRuntimeDirMigrationViolations` analyzer reuses the ordered runtime-mutation traversal and
+  rejects any operational mutation below `.effective-flow/` that can be reached before the
+  `effective-flow-dir-migration` prerequisite. It follows nested shared writers, so loading the
+  fragment late in a parent tool does not hide an earlier indirect write. The migration fragment
+  is exempt from requiring itself, while the separate runtime-state writer guard still requires
+  its concrete copies and marker write to follow `runtime-state-safety`.
 - **Lazy-include guards (#99):** (a) No fragment may be embedded in the same file both eagerly
   (` ```include `) **and** lazily (` ```lazy-include `) (otherwise the block would be loaded
   twice). (b) Every lazily referenced fragment must be delivered as `shared/<name>.md` for

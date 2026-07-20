@@ -30,6 +30,11 @@ runtime-state-safety
 when: setup has repaired and validated the runtime ignore state and is about to write a runtime marker
 ```
 
+```lazy-include
+effective-flow-dir-migration
+when: setup has repaired and validated the runtime ignore state and is about to write a runtime marker
+```
+
 ```include
 adr-convention
 ```
