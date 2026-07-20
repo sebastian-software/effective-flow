@@ -114,6 +114,22 @@ The shell scripts on `develop` are contributor and maintainer tools. They are no
 the default branch, are not included in the release archive, and must not be presented as an
 end-user installation path.
 
+### Installer syntax
+
+`install-skill.sh` accepts only these invocations:
+
+```sh
+./install-skill.sh
+./install-skill.sh local
+./install-skill.sh -h
+./install-skill.sh --help
+```
+
+With no arguments, the script installs the latest release. The exact, case-sensitive `local`
+argument selects the current checkout. Either help flag prints the usage summary without starting
+an installation. Any other argument—including an empty argument—or more than one argument is
+rejected before deployment helpers are loaded or installer-managed files can change.
+
 ### Build and copy the current checkout
 
 ```sh
