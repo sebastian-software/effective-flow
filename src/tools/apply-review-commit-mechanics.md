@@ -33,6 +33,10 @@ Critical section under the lock:
 
 If a check in the critical section fails, the sub-agent must unstage its own staged changes as far as clearly possible, release the lock and report `ABORT: [reason]`.
 
+```include
+execution-location
+```
+
 #### Git worktree isolation for "Individually with worktrees"
 
 If the commit strategy **Individually with worktrees** was chosen, a worktree isolation per delegation component applies instead of the git commit mutex.
@@ -42,6 +46,8 @@ Preconditions:
 - The original working tree must be clean before creating the worktrees (`git status --porcelain` empty), apart from ignored Effective Flow files under `.effective-flow/`.
 - `git worktree` must be available.
 - Read the Effective Flow configuration (project-setup ADR), if present. If it is missing or contains no worktree values, use the defaults.
+- Issue and verify the original integration root's own execution-location receipt before
+  creating any component worktree. Revalidate it before every integration write.
 
 Worktree paths:
 
@@ -58,6 +64,10 @@ Branch convention:
 - Per component: `apply-review/<SESSION_ID>/<GROUP_NAME>`
 - Create the worktree with:
   `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> HEAD`
+- Immediately issue and verify a separate `effective-flow-created` execution-location receipt
+  for the component path, branch, repository, component owner and `apply-review` purpose. Keep
+  the original integration root under its own receipt. If component receipt creation fails,
+  retain the new worktree for reconciliation and do not delegate.
 
 Setup detection in the worktree:
 
@@ -76,21 +86,29 @@ Setup detection in the worktree:
 Git hooks are not used for this setup. The setup is an explicit `apply-review` step so that it stays visible, reproducible and limited to the temporary worktree.
 
 Before running the worktree setup, briefly show which setup mode is active and which command is planned. With `setup: "none"` no install/fetch command is run; if a sub-agent later fails due to missing dependencies, name the setup profile in the summary as a possible cause.
+Record the component receipt's final setup status as `complete` or `skipped` before delegation.
 
 Delegation in the worktree:
 
-- Start the delegation sub-agent with the working directory `<WORKTREE_PATH>`.
+- Pass the delegation sub-agent the component receipt and its canonical absolute execution
+  root. Require its fail-closed preflight before the first write and explicitly rooted file,
+  shell, validation, staging and commit operations throughout.
 - Pass it the commit strategy `Individually with worktrees`.
-- Within the worktree, sub-agents commit after each finding individually, without an internal finding ID in the commit message.
-- Log in the wisdom file per finding: worktree path, branch, commit hash, commit message.
+- Within the verified component root, sub-agents commit after each finding individually,
+  without an internal finding ID in the commit message.
+- Log in the wisdom file per finding: execution-location receipt, commit hash and commit message.
 
 Integration back into the original branch:
 
 1. Wait for all worktree component final statuses.
 2. Process the successful components in the **deterministic component order from Phase 4.2, step 5** (by report position of their first finding). Determine per component the new commits on its branch since `HEAD` of the original branch, in component order.
-3. Integrate the commits back into the original worktree sequentially with `git cherry-pick <commit>`.
+3. Revalidate the original integration receipt, then integrate the commits back into that
+   verified root sequentially with `git -C <ORIGINAL_ROOT> cherry-pick <commit>`.
 4. On a cherry-pick conflict: first run the cherry-pick conflict assessment. Resolve low-risk conflicts directly; ask the user only on high-risk or unclear conflicts.
-5. After a successful integration and validation: remove the worktree (`git worktree remove <WORKTREE_PATH>`) and delete the temporary branch (`git branch -d <BRANCH_NAME>`).
+5. After successful integration and validation, reverify each component receipt and clean
+   state. Remove the worktree and delete the temporary branch only when the ownership-safe
+   cleanup contract proves that this exact component was Effective Flow-created. Otherwise
+   retain both and report the mismatch.
 6. On a failed component: keep the worktree and branch for now, name the paths in the summary and obtain a user decision on cleanup.
 
 Cherry-pick conflict assessment:

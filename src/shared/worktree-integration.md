@@ -5,9 +5,10 @@ Git worktrees. The general values for base branch, branch-name construction and
 completion action live in the `delivery` config block; the `worktree` block controls
 exclusively whether and how the implementation runs in a separate Git worktree.
 
-**By default the implementation runs in its own Git worktree with its own branch**
-(`worktree.enabled` default `true`). As soon as work happens in a worktree or on a dedicated
-delivery branch, **delivery is implicitly active** and completes via `merge`
+**By default the implementation runs in a Git worktree** (`worktree.enabled` default `true`):
+an existing linked or harness-native worktree is reused, otherwise Effective Flow creates one
+with its own branch. As soon as work happens in a worktree or on a dedicated delivery branch,
+**delivery is implicitly active** and completes via `merge`
 (default) or `pr`. There is no separate `delivery.enabled` switch anymore (see
 "Delivery is implied by worktree/branch").
 
@@ -32,6 +33,10 @@ review findings and folds commits back onto the current branch via cherry-pick.
 This fragment creates delivery branches for PR, merge or "branch only". Both
 may use the same physical `baseDir`, since session and path segments
 distinguish them.
+
+```include
+execution-location
+```
 
 ### Configuration
 
@@ -91,9 +96,16 @@ per-block migration anymore. Until a config is migrated, reading applies: new va
 
 At the start of the actual implementation work, determine the effective mode:
 
+- Before any fetch, setup, branch change or other write-capable action, issue and verify an
+  execution-location receipt for the current checkout. Resolve the repository's main worktree
+  and linked worktrees from `git worktree list --porcelain`; a path below
+  `.effective-flow/.worktrees` does not prove ownership.
 - **Worktree execution is active by default** (`worktree.enabled` default `true`). It
   stays off only when `worktree.enabled: false` is set or the user explicitly requests
   in-place work ("without worktree", "directly on the current branch").
+- When the current receipt points to an existing linked or harness-native worktree rather than
+  the repository's main worktree, reuse it as `harness-managed`. Do not create a nested delivery
+  worktree, switch its branch, repeat automatic setup or remove it during handback.
 - **Delivery is active as soon as work happens in a worktree or on a dedicated delivery
   branch** – so in the default case always. In addition, delivery is active when the
   user explicitly requests PR, branch or merge work (even with in-place work; then
@@ -107,7 +119,8 @@ At the start of the actual implementation work, determine the effective mode:
 
 When delivery or worktree is active:
 
-1. `git` and, for worktree execution, `git worktree` must be available.
+1. `git` and, for worktree execution, `git worktree` must be available. The current execution
+   receipt must pass the fail-closed preflight before continuing.
 2. `delivery.baseBranch` must be resolvable. If it is a remote ref (e.g.
    `origin/main`), first run `git fetch REMOTE BRANCH`, so the delivery branch
    starts from the current remote state.
@@ -125,13 +138,19 @@ When delivery or worktree is active:
 
 When worktree execution is active:
 
-1. Determine the repo name from `basename "$(git rev-parse --show-toplevel)"` and use
+1. If the current receipt identifies a linked or harness-native worktree, keep that root and
+   checkout identity and mark setup as `externally managed`. A detached harness-native checkout
+   remains valid only at its pinned OID. If delivery requires a branch, create or adopt it
+   through the harness-supported flow and issue a new verified receipt before committing; never
+   silently switch a harness-managed worktree.
+2. Otherwise determine the repo name from `basename "$(git rev-parse --show-toplevel)"` and use
    `worktree.baseDir` (default `.effective-flow/.worktrees`) as the base dir. Worktree path:
-   `BASE_DIR/REPO_NAME/SESSION_ID`.
-2. Create the worktree and delivery branch:
-   `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> <BASE_REF>`.
-3. Run setup per `worktree.setup` in the worktree and briefly announce the
-   mode beforehand:
+   `BASE_DIR/REPO_NAME/SESSION_ID`. Create the worktree and delivery branch with
+   `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> <BASE_REF>`, then immediately issue and
+   verify an `effective-flow-created` receipt for the exact path, branch, workflow and delivery
+   purpose. If receipt creation fails, retain the worktree for manual reconciliation.
+3. Only for that newly Effective Flow-created receipt, run setup per `worktree.setup` and
+   briefly announce the mode beforehand:
    - `auto` or missing: decide by lockfile – `pnpm-lock.yaml` →
      `pnpm install --frozen-lockfile --prefer-offline`, `package-lock.json` →
      `npm ci`, `yarn.lock` → `yarn install --frozen-lockfile`, `Cargo.toml` →
@@ -140,21 +159,26 @@ When worktree execution is active:
      file → no setup.
    - `none`: run no setup.
    - String value: run this explicit command in the worktree.
-4. Run all subsequent phases that create or change code, test or documentation
-   files with the working directory in the worktree. This also applies to the
-   completion phase up to and including the final validator/formatter.
+     Record the final setup status as `complete` or `skipped` before delegation.
+4. Pass the receipt to every subsequent phase and delegated worker that creates or changes
+   code, test or documentation files. Each boundary runs the fail-closed preflight and every
+   operation is explicitly rooted in the receipt's execution root. This also applies through
+   the completion phase and the final validator/formatter.
 
 ### In-place delivery without worktree
 
 When delivery is active and worktree execution stays off:
 
-1. Remember the originally checked-out branch.
+1. Keep and verify the current checkout's `in-place` receipt, and remember the originally
+   checked-out branch.
 2. Ensure the working tree contains no uncommitted changes that
    should not become part of the delivery branch. If such changes exist,
    do not silently stage, stash or overwrite them; either obtain a user decision
    or use the partial-diff PR via worktree.
 3. Create and check out the delivery branch from `delivery.baseBranch`.
-4. Run implementation, tests, validation and final formatting on this delivery branch.
+4. Issue a new receipt for the delivery branch after switching. Run implementation, tests,
+   validation and final formatting through explicitly rooted operations after a successful
+   preflight at every write-capable boundary.
 5. After completion, proceed per "Handback and completion action".
 
 ### Partial-diff PR via worktree
@@ -169,16 +193,19 @@ preconditions are met:
 
 The procedure:
 
-1. Create a fresh worktree branch from `delivery.baseBranch`.
+1. Create a fresh worktree branch from `delivery.baseBranch`, then immediately issue and verify
+   a separate `effective-flow-created` receipt whose purpose is `partial-diff`.
 2. Take only the selected delivery files from the main checkout into the worktree.
    Permitted sources for this selection are plan affected files,
    review finding scope, issue scope, known files produced by the workflow, or
    an explicit user selection.
-3. In the worktree, check whether the taken-over files produce a meaningful diff
+3. In the verified execution root, check whether the taken-over files produce a meaningful diff
    against the base ref. If not, abort and create no empty PR.
-4. Commit in the worktree and run `{{SKILL:pr}}` against `delivery.baseBranch`.
-5. Remove the worktree, leave the delivery branch locally and leave the main checkout
-   unchanged. Non-selected changes in the main checkout remain untouched.
+4. Commit in the verified execution root and run `{{SKILL:pr}}` against
+   `delivery.baseBranch`.
+5. Remove the worktree only after the receipt passes the ownership-safe cleanup checks. Leave
+   the delivery branch locally and the main checkout unchanged. Non-selected changes in the
+   main checkout remain untouched.
 
 A heuristic partial-diff selection by "all changed files
 except <plan.dir>" is not allowed. The workflow must know the files to include or
@@ -261,11 +288,12 @@ options:
     description: Leave the branch in the local repo, no further action
 ```
 
-4. **Withdraw worktree:** If a worktree was involved, run `git worktree remove
-<WORKTREE_PATH>`; the delivery branch is retained in the local repo.
-   If removal fails because of uncommitted remnants: first ensure that
-   everything intended is committed; if something remains, keep the worktree and
-   report the path.
+4. **Withdraw an Effective Flow-owned worktree:** Only when the receipt is
+   `effective-flow-created`, freshly reverify its repository, root, checkout identity, purpose
+   and clean state, then run `git worktree remove <WORKTREE_PATH>`; retain the delivery branch
+   in the local repo. If any proof fails or uncommitted remnants remain, keep the worktree and
+   report the path and mismatch. For `in-place` and `harness-managed` receipts, perform no
+   worktree cleanup; leave lifecycle handling to the user or harness.
 5. **Execute action:**
    - `branch` / Branch only: leave the branch, report the name and a note about later
      PR creation.
@@ -279,7 +307,8 @@ options:
      workflow/change type (`feat`/`fix`/`refactor`/`docs`/`chore` depending on the implementing
      workflow and effect) as a title-type hint, so the PR title carries a
      valid Conventional Commit type — with a squash merge it is the release signal.
-6. **Restore checkout:** After successful PR creation or with `branch`, switch back to
-   `delivery.returnBranch` or, with `auto`, to the local branch part of
-   `delivery.baseBranch`, provided the working tree is clean. If the
-   switch-back fails, explicitly report the actual branch as a side effect.
+6. **Restore checkout:** For in-place delivery that switched the current checkout, after
+   successful PR creation or with `branch`, switch back to `delivery.returnBranch` or, with
+   `auto`, to the local branch part of `delivery.baseBranch`, provided the working tree is clean.
+   Do not switch a reused harness-managed checkout. If an applicable switch-back fails,
+   explicitly report the actual branch as a side effect.

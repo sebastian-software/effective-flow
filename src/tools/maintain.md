@@ -117,11 +117,15 @@ unresolved-review-report
 skill-discovery
 ```
 
-2. Determine the effective delivery/worktree mode per "Delivery and worktree integration" and, when a mode is active, run the appropriate setup (worktree setup for worktree execution, or delivery-branch setup in the main repo for in-place delivery), **before** baseline and updates run. All following phases run in the delivery working directory so that the per-group commits land directly on the delivery branch.
+2. Determine the effective delivery/worktree mode and verified execution-location receipt per
+   "Delivery and worktree integration", then run any applicable owned setup **before** baseline
+   and updates. Pass the receipt through all following phases, revalidate it at each
+   write-capable boundary and root every operation there so the per-group commits land on the
+   intended delivery branch.
 
 ### Phase 2: Baseline
 
-Start in parallel in the delivery working directory:
+Start in parallel with the verified execution-location receipt:
 
 1. `{{AGENT:code-validator}}` – type checking, lint, build status.
 2. `{{AGENT:test-writer}}` – run only the existing tests and document the result; write no new tests in this phase.
@@ -187,7 +191,7 @@ Pure dependency bumps without code adaptation need no reviewer pass; note that b
    - a reference to an offloaded review report, if present.
 3. Confirm that the behavior stayed unchanged (baseline comparison green).
 4. Delete the wisdom file.
-5. If delivery or worktree execution was active: run the handback per "Delivery and worktree integration". The per-group commits already sit on the delivery branch; the handback withdraws the worktree if applicable, runs the completion action `pr`/`merge`/`branch`, and restores the checkout. Name the delivery branch, the final checkout state, and the result in the summary.
+5. If delivery or worktree execution was active: run the handback per "Delivery and worktree integration". The per-group commits already sit on the delivery branch; the handback performs ownership-safe worktree cleanup if applicable, runs the completion action `pr`/`merge`/`branch`, and restores only an in-place checkout it switched. Name the delivery branch, the final checkout state, and the result in the summary.
 
 ```include
 pre-commit-gate

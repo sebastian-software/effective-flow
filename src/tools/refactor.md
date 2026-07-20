@@ -146,7 +146,10 @@ options:
 
 ### Phase 2: Baseline
 
-First, per "Delivery and worktree integration", determine the effective delivery/worktree mode and, when a mode is active, run the appropriate setup before the baseline is collected: worktree setup for worktree execution or delivery-branch setup in the main repo for in-place delivery. Baseline, refactoring and post-validation (phases 2–5) then run in the delivery working directory.
+First, per "Delivery and worktree integration", determine the effective delivery/worktree mode
+and its verified execution-location receipt, then run any applicable owned setup before the
+baseline is collected. Pass that receipt into phases 2–5 (baseline, refactoring and
+post-validation); each write-capable boundary revalidates it and roots every operation there.
 
 Start in parallel:
 
@@ -223,7 +226,7 @@ Start in parallel:
    - back to Phase 3, then phases 5 and 6 again – per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the baseline is still not reached afterwards, instead of repeating indefinitely
 3. If no regressions:
    - delete the wisdom file
-   - if delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, retract the worktree if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
+   - if delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
    - summarize what was refactored; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch)
    - confirm that the behavior stayed unchanged
 
