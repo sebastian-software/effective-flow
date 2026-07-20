@@ -181,7 +181,9 @@ The commit/PR strategy is by default **"one PR per issue"** (no commit-strategy 
 If an issue body or non-Effective Flow comment names a target PR (`Ziel-PR: #<nr>`, `Target PR: #<nr>` or a PR URL), **"new commit on existing PR"** applies instead:
 
 1. Do not create a new delivery branch and no new PR.
-2. Fetch the head branch of the target PR, check it out in an isolated worktree or in the clean current checkout, and update it via a normal pull/fetch without any rebase or force operation.
+2. Fetch the head branch of the target PR, check it out in an isolated worktree or in the clean
+   current checkout, issue and verify the downstream workflow's execution-location receipt, and
+   update it via rooted pull/fetch operations without any rebase or force operation.
 3. Implement the issue there and commit the change as a new commit on the PR branch. Existing PR commits must not be rewritten via `commit --amend`, rebase, squash or force-push.
 4. Push the PR branch normally. If the push is rejected due to diverged remote history, mark the issue as failed and report the conflict instead of overwriting history.
 5. Use the URL of the existing PR as the result PR link for the issue comment, epic entry and summary.
@@ -195,7 +197,7 @@ Issues with the same target PR run sequentially so that new commits are created 
 3. Append a skipped comment with the list of what is missing (template above), unless the comments read in Phase 2 already contain an identical `<!-- effective-flow-apply-issues -->` skipped comment (idempotency based on the "read comments" operation).
 4. Task to `completed` with the addition `[skipped]`.
 
-**Sufficient issues (`sufficient`), each issue in its worktree:**
+**Sufficient issues (`sufficient`), each with its own verified execution root:**
 
 1. Delegate to the target skill determined in Phase 3 and pass along the prompt suggestion as the task description:
    - Feature: `Use the skill {{SKILL:build}} for this issue.`
@@ -203,6 +205,9 @@ Issues with the same target PR run sequentially so that new commits are created 
    - Refactoring: `Use the skill {{SKILL:refactor}} for this issue.`
    - Documentation: `Use the skill {{SKILL:docs}} for this issue.`
      The delegation sub-agent runs as a **non-interactive** delegation (context hint "[Context from {{FIRMO}} apply-issues: …]"): no explicit goal query, no `/goal` string, completion protocol `DONE`/`ABORT`.
+     Pass the absolute root and execution-location receipt established by that delegated workflow;
+     never rely on an inherited current directory or create a nested worktree around a reused
+     harness-native one.
 2. Commit the changes (Conventional Commit message, no internal IDs, no `Co-Authored-By`) and push the branch. If a target PR is present: **do not create a new PR**, but use the existing PR link and optionally extend the PR body non-destructively by `Closes #<issue>` or `Refs #<issue>`, if that is possible without overwriting others' changes. If no target PR is present: take the branch through `{{SKILL:pr}}` as exactly one PR against the base branch; set `Closes #<issue>` in the PR body.
 3. **Immediately after a successful push or PR creation:** write the PR link as a comment on the issue (template "Implemented"), set label `effective-flow-issue-done` and — if the issue originates from a container — check off the corresponding checklist entry in the epic body (read the epic body fresh, toggle only the affected line `- [ ]` → `- [x]` and append the PR link).
 4. Task to `completed`.

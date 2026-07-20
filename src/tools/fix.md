@@ -143,7 +143,10 @@ skill-discovery
 
 ### Phase 3: Fix
 
-0. Per "Delivery and worktree integration", determine the effective delivery/worktree mode and, when a mode is active, first run the appropriate setup: worktree setup for worktree execution or delivery-branch setup in the main repo for in-place delivery. The following phases 3–4 (fix, verification) then run in the delivery working directory.
+0. Per "Delivery and worktree integration", determine the effective delivery/worktree mode and
+   its verified execution-location receipt, then run any applicable owned setup. Pass that
+   receipt into phases 3–4 (fix, verification); each write-capable boundary revalidates it and
+   roots every operation there.
 1. Start the appropriate implementer skill:
    - `{{AGENT:ui-implementer}}`, `{{AGENT:nodejs-implementer}}`, `{{AGENT:rust-implementer}}` or `{{AGENT:generic-implementer}}`
 2. Give a precise assignment:
@@ -186,7 +189,7 @@ If open findings or residual risks arise in the process, document them in a stru
    - add a short implementation note as the last entry directly in the affected finding
    - begin the note with `✅` and name at least the date and workflow
 4. Delete the wisdom file.
-5. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, retract the worktree if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
+5. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
 6. Summarize:
    - root cause
    - changes

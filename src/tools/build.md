@@ -286,7 +286,10 @@ skill-discovery
 
 ### Phase 2: Implementation
 
-0. Per "Delivery and worktree integration", determine the effective delivery/worktree mode and, when a mode is active, first run the appropriate setup: worktree setup for worktree execution or delivery-branch setup in the main repo for in-place delivery. All following phases 2–6 (implementation, docs, tests, validation, review) then run in the delivery working directory.
+0. Per "Delivery and worktree integration", determine the effective delivery/worktree mode and
+   its verified execution-location receipt, then run any applicable owned setup. Pass that
+   receipt to every worker in phases 2–6 (implementation, docs, tests, validation, review);
+   each write-capable boundary revalidates it and roots every operation there.
 1. Start the appropriate implementer skill with the agreed plan:
    - Frontend: `Use the {{AGENT:ui-implementer}} skill for this phase.`
    - Backend/CLI: `Use the {{AGENT:nodejs-implementer}} skill for this phase.`
@@ -420,7 +423,7 @@ Rules for the findings report:
 
 4. Delete the wisdom file.
 5. Check whether a formatter is configured and format all changed files including the plan file once, consistently.
-6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, retract the worktree if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
+6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
 7. Summarize what was implemented, tested and documented; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch).
 
 ## Rules
