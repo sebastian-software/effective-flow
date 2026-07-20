@@ -1,5 +1,5 @@
 ---
-description: "Creates a pull request on GitHub (via gh) or Forgejo (via tea) from a local branch or via a fresh delivery branch. Detects the host from the origin URL, pushes the branch if needed, derives title and description from the commits, restores the checkout after a successful PR creation, and reports the PR URL."
+description: "Creates or reuses a pull request on GitHub (via gh) or Forgejo (via tea) from a local branch or via a fresh delivery branch. Detects the host from the origin URL, pushes the branch if needed, derives title and description for a new pull request, restores the checkout after a successful result, and reports the PR URL."
 catalogHint: "Opens a pull request from your branch (GitHub or Forgejo)."
 ---
 
@@ -10,9 +10,9 @@ branch.
 
 ## Goal
 
-- create a pull request from a delivery branch against a base branch
+- create a pull request from a delivery branch against a base branch, or reuse the exact existing open pull request
 - optionally create a fresh delivery branch from `delivery.baseBranch`
-- after a successful PR creation, restore the local checkout to the target
+- after a successful PR creation or reuse, restore the local checkout to the target
   branch
 - support GitHub via `gh` and Forgejo via `tea`
 - automatically detect the host from the `origin` remote URL
@@ -53,8 +53,8 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
   legacy fallback: `worktree.baseBranch`; if the config is missing, `main`.
 - **Switch-back target:** default from `delivery.returnBranch`; for `auto`, the local
   branch part of `delivery.baseBranch`.
-- **Title/description:** optionally provided; a provided title without a valid Conventional Commit type is normalized in step 7. If they are missing, derive them from the commits and the workflow/change type.
-- **Title type hint:** an optional workflow/change type from a delivery handback (e.g. `feat`, `fix`, `refactor`, `docs`) that feeds the type choice in step 7.
+- **Title/description:** optionally provided; a provided title without a valid Conventional Commit type is normalized in step 8. If they are missing, derive them from the commits and the workflow/change type.
+- **Title type hint:** an optional workflow/change type from a delivery handback (e.g. `feat`, `fix`, `refactor`, `docs`) that feeds the type choice in step 8.
 
 ## Approach
 
@@ -85,24 +85,39 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
    If a PR already exists for the head branch, subsequent changes are pushed
    exclusively as new commits on this branch. Do not rewrite existing
    PR history via `commit --amend`, rebase, squash, or force push.
-7. **Derive the PR title and description (enforce a valid Conventional Commit title):** Determine the head branch's commits against the base branch's remote-tracking ref (`origin/<base-branch>`, not the local branch part – the local base branch may lag behind the remote and drag in foreign commits). Derive from this a short description of the changes and reference an associated plan file from `<plan.dir>/` (the plan directory from the Effective Flow configuration (project setup ADR) `plan.dir`, default `docs/plan`), if present.
+7. **Look up an existing open PR:** After the successful push, invoke the helper's
+   `pr-list` operation for open pull requests. For every returned item whose normalized `head`,
+   `base`, `state`, or URL is missing, hydrate the item through the helper's `pr-read` operation;
+   abort as invalid/unparseable output if any item remains incomplete. Exact-filter the complete
+   normalized details using both `head === <head-branch>` and `base === <base-branch>`, and require
+   state `open` and a parseable URL. The helper owns the provider-specific GitHub and
+   Forgejo/Gitea CLI forms, JSON normalization, capability verification, and complete or bounded
+   pagination; do not bypass it with guessed `gh` or `tea` flags.
+   - **Exactly one exact match:** Reuse its URL as the successful PR result. Preserve its title
+     and description, do not invoke `pr-create` or any metadata mutation, skip steps 8 and 9, and
+     continue with the shared restoration and reporting path in steps 10 and 11.
+   - **No exact match:** Continue with title/description derivation and PR creation. An open PR
+     for the same head but a different base, as well as a closed or merged PR, is not a match.
+   - **Multiple exact matches, lookup failure, or invalid/unparseable output:** Report a clear
+     diagnostic and abort without attempting PR creation or guessing which PR to use.
+8. **Derive the PR title and description for a new PR (enforce a valid Conventional Commit title):** Determine the head branch's commits against the base branch's remote-tracking ref (`origin/<base-branch>`, not the local branch part – the local base branch may lag behind the remote and drag in foreign commits). Derive from this a short description of the changes and reference an associated plan file from `<plan.dir>/` (the plan directory from the Effective Flow configuration (project setup ADR) `plan.dir`, default `docs/plan`), if present.
 
    The **PR title must be a valid Conventional Commit** — form `<type>[(scope)][!]: <description>` with a type from the "Commit message rules" (embedded above). This is mandatory because on a squash merge the title becomes the subject of the single commit on the target branch, and release-please derives the version bump from it; an untyped title produces a no-op release (no bump, no delivery) even though CI stays green. Determine the title in this order:
    - **Preserve a valid title:** If a title passed by the user or from the delivery handback already carries a valid type (including an optional `(scope)` and breaking marker `!`), adopt it unchanged.
    - **Choose the type by effect:** Otherwise choose the type by the **effect** of the change per the "Commit message rules" and — if present — the passed title type hint: `feat` for new product behavior, `fix` for corrections, `docs` for docs-only, `refactor` for behavior-preserving restructuring, `chore`/`build`/`ci` or a dependency type for maintenance. If the branch covers multiple effects, the type follows the strongest effect (as with the squash subject), not the most recent commit.
    - **Normalize an untyped subject:** If an otherwise suitable title has no valid prefix, prefix it with the classified type instead of leaving it untyped; keep an optional `(scope)`/`!` marker valid in doing so.
    - **Ask only on genuine ambiguity:** If the effect cannot be assigned unambiguously to a type, briefly ask the user for the type. Do not guess.
-   - **Self-check before creation:** If the title does not match the pattern `<type>[(scope)][!]: …` with one of the allowed types, rebuild it — **never** emit an untyped title in step 8.
+   - **Self-check before creation:** If the title does not match the pattern `<type>[(scope)][!]: …` with one of the allowed types, rebuild it — **never** emit an untyped title in step 9.
 
    Do not put internal tracking IDs, `Co-Authored-By` trailers, or AI attribution (no "Generated with Claude Code/Codex" footers, no agent session links like `https://claude.ai/code/…`) into the PR title or description – not even when the harness appends them by default.
 
-8. **Create the PR:** Build the provider-neutral PR payload and invoke the helper's PR-create mutation. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
-9. **Restore the checkout:** After a successful PR creation, switch back to
-   `delivery.returnBranch`, or for `auto` to the local branch part of
-   `delivery.baseBranch`, provided the working tree is clean. If the
-   switch-back fails, report the actual branch explicitly. The
-   PR head branch is preserved locally and remotely.
-10. **Report the result:** Output the PR URL, the branch name, and the final local
+9. **Create the PR:** Build the provider-neutral PR payload and invoke the helper's PR-create mutation. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
+10. **Restore the checkout:** After a successful PR creation or reuse, switch back to
+    `delivery.returnBranch`, or for `auto` to the local branch part of
+    `delivery.baseBranch`, provided the working tree is clean. If the
+    switch-back fails, report the actual branch explicitly. The
+    PR head branch is preserved locally and remotely.
+11. **Report the result:** Output the PR URL, the branch name, and the final local
     checkout state.
 
 ## Rules

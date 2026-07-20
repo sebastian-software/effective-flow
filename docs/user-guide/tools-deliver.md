@@ -29,11 +29,11 @@ topics in the staged diff, it suggests splitting first.
 
 ## `/effective-flow pr`
 
-**Purpose:** Creates a pull request from a local branch – or via a freshly created
+**Purpose:** Creates or reuses a pull request from a local branch – or via a freshly created
 delivery branch – on the detected Git host: GitHub via `gh` or
 Forgejo via `tea`. Detects the host automatically from the `origin` URL, pushes the branch if
-needed, derives the title and description from the commits, and restores the checkout after
-successful PR creation.
+needed, derives the title and description for a new pull request, and restores the checkout after
+a successful creation or reuse.
 
 **When to use:** When finished changes on a branch are to be submitted as a pull request for
 review, instead of merging them directly.
@@ -43,6 +43,13 @@ review, instead of merging them directly.
 **Input/output:** Input is the head branch (default: currently checked-out branch) and the
 base branch (default from `delivery.baseBranch`, legacy fallback `worktree.baseBranch`, otherwise
 `main`). Output is the PR URL, the branch name, and the final local checkout state.
+
+**Existing pull requests:** After pushing the branch, `pr` queries the detected host for open
+pull requests and exact-matches both the requested head and base branches. Exactly one match is
+reused without changing its title or description; the workflow then follows the same checkout
+restoration and reporting path as a newly created pull request. Pull requests with another base,
+closed or merged pull requests, and other non-matches are ignored. A failed or unparseable lookup
+or multiple exact matches stops the workflow without attempting creation or guessing.
 
 **Conventional-commit title:** `pr` enforces a PR title with a valid conventional-commit type
 (`feat:`, `fix:`, `docs:`, `refactor:`, …), derived from the **effect** of the change or the
