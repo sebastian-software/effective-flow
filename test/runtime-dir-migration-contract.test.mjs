@@ -57,9 +57,9 @@ const contractScenarios = [
   {
     name: 'recursive memory conflicts and missing nested keys',
     clauses: [
-      /recursively add legacy object\s+keys that are absent from that freshest target/,
-      /At every scalar, array, object, or type\s+conflict preserve the target value/,
-      /Never reduce or replace existing counters, migration\s+markers, status, or unrelated fields/,
+      /recursively adding only keys absent from that\s+freshest\s+base/,
+      /At every scalar, array, object, or type conflict preserve the base value/,
+      /Never reduce or\s+replace\s+existing counters, migration markers, status, or unrelated fields/,
     ],
   },
   {
@@ -95,7 +95,7 @@ const contractScenarios = [
     name: 'concurrent target memory uses the shared lock',
     clauses: [
       /```include\s+memory-state\s+```/,
-      /Inside its lock,\s+re-read the retained absolute\s+`<RUNTIME_STATE_ROOT>\/\.effective-flow\/memory\.json` handle/,
+      /Inside its lock,\s+select the retained absolute\s+`<RUNTIME_STATE_ROOT>\/\.effective-flow\/memory\.json` handle or a\s+valid unchanged `<RUNTIME_STATE_ROOT>\/\.sf-memory\.json` as the base/,
       /do not introduce a migration-specific lock or direct writer/,
     ],
   },
@@ -120,7 +120,7 @@ test('native and portable renders preserve the same migration marker and behavio
 
     assert.match(rendered, /runtimeMigration\.directory\.version: 1/);
     assert.match(rendered, /Use the whole `<RUNTIME_STATE_ROOT>\/\.firmo\/` tree/);
-    assert.match(rendered, /Inside its lock,\s+re-read the retained absolute/);
+    assert.match(rendered, /Inside its lock,\s+select the retained absolute/);
     assert.match(
       rendered,
       /Never scan or mutate a legacy\/current\s+runtime tree below a linked execution worktree/,

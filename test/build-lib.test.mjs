@@ -25,6 +25,9 @@ import {
   ASK_MAX_HEADER_LENGTH,
   renderLazyPointer,
   resolveLazyIncludes,
+  resolveEagerIncludes,
+  findUnresolvedEagerIncludes,
+  assertNoUnresolvedEagerIncludes,
   collectIncludeNames,
   assertNoEagerLazyOverlap,
   findRuntimeStateSafetyViolations,
@@ -1251,6 +1254,54 @@ test('assertNoEagerLazyOverlap passes for disjoint sets and throws on overlap', 
   );
 });
 
+test('resolveEagerIncludes recursively expands nested fragments in deterministic order', () => {
+  const fragments = new Map([
+    ['outer', 'outer-start\n```include\ninner\n```\nouter-end\n'],
+    ['inner', 'inner-body\n'],
+  ]);
+
+  assert.equal(
+    resolveEagerIncludes('root-start\n```include\nouter\n```\nroot-end\n', {
+      context: 'tools/example.md',
+      readFragment: (name) => fragments.get(name),
+    }),
+    'root-start\nouter-start\ninner-body\nouter-end\nroot-end\n',
+  );
+});
+
+test('resolveEagerIncludes rejects cycles and missing targets with the complete chain', () => {
+  const cyclic = new Map([
+    ['a', '```include\nb\n```\n'],
+    ['b', '```include\na\n```\n'],
+  ]);
+
+  assert.throws(
+    () =>
+      resolveEagerIncludes('```include\na\n```\n', {
+        context: 'tools/cycle.md',
+        readFragment: (name) => cyclic.get(name),
+      }),
+    /eager include cycle \(in tools\/cycle\.md\): tools\/cycle\.md -> shared\/a\.md -> shared\/b\.md -> shared\/a\.md/,
+  );
+  assert.throws(
+    () =>
+      resolveEagerIncludes('```include\nmissing\n```\n', {
+        context: 'tools/missing.md',
+        readFragment: () => undefined,
+      }),
+    /cannot resolve eager include "missing" \(in tools\/missing\.md\)[\s\S]*fragment reader returned no text/,
+  );
+});
+
+test('unresolved eager-include output is rejected with source line diagnostics', () => {
+  const unresolved = 'before\n```include\nmemory-state\n```\nafter\n';
+  assert.deepEqual(findUnresolvedEagerIncludes(unresolved), [{ line: 2, name: 'memory-state' }]);
+  assert.throws(
+    () => assertNoUnresolvedEagerIncludes(unresolved, { context: 'generated/tools/x.md' }),
+    /unresolved eager include fence \(in generated\/tools\/x\.md\): line 2 \(memory-state\)/,
+  );
+});
+
 // --- Runtime-state write-safety coverage guard (#165) ---
 
 test('findRuntimeStateSafetyViolations rejects an unguarded runtime writer', () => {
@@ -1278,6 +1329,37 @@ test('findRuntimeStateSafetyViolations accepts an earlier canonical include', ()
   };
 
   assert.deepEqual(findRuntimeStateSafetyViolations(sources), []);
+});
+
+test('findRuntimeStateSafetyViolations requires a lazy trigger that covers eager mutations', () => {
+  const migration = 'Write `.effective-flow/memory.json` migration marker.\n';
+  const narrow = {
+    'tools/cleanup.md': [
+      '```lazy-include',
+      'runtime-state-safety',
+      'when: confirmed legacy data is copied into `.effective-flow/`',
+      '```',
+      '```include',
+      'effective-flow-dir-migration',
+      '```',
+    ].join('\n'),
+    'shared/effective-flow-dir-migration.md': migration,
+  };
+  const complete = {
+    ...narrow,
+    'tools/cleanup.md': narrow['tools/cleanup.md'].replace(
+      'when: confirmed legacy data is copied into `.effective-flow/`',
+      'when: any confirmed legacy copy or removal, runtime migration, memory, or tracker-marker mutation is imminent',
+    ),
+  };
+
+  assert.deepEqual(
+    findRuntimeStateSafetyViolations(narrow).map(({ reason }) => reason),
+    [
+      'runtime-state-safety trigger does not cover this mutation: "confirmed legacy data is copied into `.effective-flow/`"',
+    ],
+  );
+  assert.deepEqual(findRuntimeStateSafetyViolations(complete), []);
 });
 
 test('findRuntimeStateSafetyViolations follows a guarded shared owner', () => {
@@ -1563,6 +1645,30 @@ test('the memory-state contract may describe its own atomic writes', () => {
     ),
     [],
   );
+});
+
+test('delivered memory coverage does not follow an unresolved eager include fence', () => {
+  const unresolvedDelivery = {
+    'tools/eager.md': [
+      '```include',
+      'memory-state',
+      '```',
+      'Write `.effective-flow/memory.json` now.',
+    ].join('\n'),
+    'shared/memory-state.md': '## Shared memory-state mutation\n',
+  };
+  const resolvedDelivery = {
+    'tools/eager.md': [
+      '## Shared memory-state mutation',
+      'Write `.effective-flow/memory.json` now.',
+    ].join('\n'),
+  };
+
+  assert.equal(
+    findMemoryStateContractViolations(unresolvedDelivery, { delivered: true }).length,
+    1,
+  );
+  assert.deepEqual(findMemoryStateContractViolations(resolvedDelivery, { delivered: true }), []);
 });
 
 // --- Consumer-document command guard (#160) ---

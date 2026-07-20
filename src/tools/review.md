@@ -241,23 +241,20 @@ user to `{{SKILL:setup}}`, the sole repair owner.
    safety” from `RUNTIME_STATE_ROOT` to the exact directory path `.effective-flow/` immediately
    before its `mkdir`. A later file or child-directory mutation requires its own guard for that
    exact target.
-3. If the absolute runtime-root memory handle does not exist but
-   `<RUNTIME_STATE_ROOT>/.sf-memory.json` is present, migrate its content to the retained
-   `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle only through the shared memory
-   mutation contract: acquire the same absolute runtime-root lock, re-check and validate both
-   absolute paths, atomically persist the legacy object as current memory, and remove the legacy
-   file only after success. Inform the user. Never inspect or remove a worktree-local
-   `.sf-memory.json`.
-4. If no memory file exists, the shared contract treats the fresh object as having no counter;
-   the first reservation starts after `lastFindingNumber: 0`.
+3. If canonical memory is absent but `<RUNTIME_STATE_ROOT>/.sf-memory.json` exists, do not run a
+   preliminary migration. The first shared memory transaction must validate that unchanged legacy
+   object, use it as the base, merge that writer's intended mutation, and persist the combined
+   object to `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` in one replacement before removing
+   the legacy file. Inform the user; never inspect or remove worktree-local legacy memory.
+4. Without either memory file, the first reservation starts after `lastFindingNumber: 0`.
 5. Read the Effective Flow configuration from the project-setup ADR if present (migration of an old config via the "Config migration" building block).
 6. Read the absolute `<RUNTIME_STATE_ROOT>/.effective-flow/cache.json` handle if present and
    valid; use only valid, non-stale cache entries. Ignore a same-named cache below
    `EXECUTION_ROOT`.
 7. Finish all confidence filtering, design-decision filtering, and local or remote deduplication.
    For the exact ordered list that remains, reserve one contiguous range through “Shared
-   memory-state mutation” against the retained absolute runtime-root memory handle. Format its
-   mapping as `R-0000001`, `R-0000002`, ... . Reserve nothing when the list is empty.
+   memory-state mutation” against the retained absolute memory handle under `RUNTIME_STATE_ROOT`.
+   Format its mapping as `R-0000001`, `R-0000002`, ... . Reserve nothing when the list is empty.
 8. The reservation must be atomically persisted and its lock released before any report, finding
    issue, or epic is published. If reservation fails, publish nothing. If later publication fails
    or is interrupted, report the reserved range and partial result; the unused IDs remain

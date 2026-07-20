@@ -399,8 +399,8 @@ Ask for free-text values (e.g. `baseBranch`, `branchPrefix`, `returnBranch`, `ba
      to the exact directory `.effective-flow/` immediately before its `mkdir` if it is missing.
      Mark completion idempotently in `.effective-flow/memory.json` under
      `configMigration.adr` (`version` e.g. `config-to-adr-v1`, `appliedAt` timestamp) through the
-     loaded shared memory mutation contract: acquire its lock, re-read and validate memory, merge
-     only that owned subtree, preserve every unrelated top-level field, nested field, sibling
+     loaded shared memory mutation contract: acquire its lock, re-read and validate memory,
+     deep-merge only `configMigration.adr`, preserve every unrelated top-level field, nested field, sibling
      `configMigration` state, and unknown field, and atomically replace the file. If this marker is
      already set, do not migrate again. A lock, validation, or replacement failure leaves the
      prior memory file intact and is reported without claiming migration completion. Never write

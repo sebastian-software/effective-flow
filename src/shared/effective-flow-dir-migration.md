@@ -27,7 +27,9 @@ memory-state
    `.effective-flow/` already contains a transitional `config.json`, wisdom file, report, cache,
    worktree, or unrelated memory fields. Do not create a runtime footprint during a read-only
    run; this prerequisite is activated only because a workflow-specific runtime write is already
-   authorized and imminent.
+   authorized and imminent. When canonical memory is absent, do not write the marker yet: the
+   locked memory transaction in Step 5 must first adopt a valid absolute
+   `<RUNTIME_STATE_ROOT>/.sf-memory.json` as its base.
 2. **Choose exactly one legacy source.** Use the whole `<RUNTIME_STATE_ROOT>/.firmo/` tree when
    it exists; otherwise use `<RUNTIME_STATE_ROOT>/.sf-plugin/` when it exists. If both exist, do
    not combine them. Preserve both legacy
@@ -53,12 +55,13 @@ memory-state
    the remaining missing paths.
 5. **Merge memory recursively under the shared contract, target wins.** Use “Shared memory-state
    mutation” above; do not introduce a migration-specific lock or direct writer. Inside its lock,
-   re-read the retained absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle,
-   validate it again, and recursively add legacy object keys that are absent from that freshest
-   target. At every scalar, array, object, or type conflict preserve the target value. After every
-   directory copy has succeeded, add only `runtimeMigration.directory.version: 1` to the merged
-   object and atomically replace memory. Never reduce or replace existing counters, migration
-   markers, status, or unrelated fields.
+   select the retained absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle or a
+   valid unchanged `<RUNTIME_STATE_ROOT>/.sf-memory.json` as the base, then merge the selected
+   legacy directory's `memory.json` by recursively adding only keys absent from that freshest
+   base. At every scalar, array, object, or type conflict preserve the base value. After every
+   directory copy has succeeded, add only `runtimeMigration.directory.version: 1` and atomically
+   persist the base, directory merge, and marker in one replacement. Never reduce or replace
+   existing counters, migration markers, status, or unrelated fields.
 6. **Certify only success.** The marker is the final migration mutation and is written only after
    all safe carry-over work succeeds. A run with no legacy source records it as part of the first
    authorized runtime write. Once version `1` is present, later prerequisites skip the legacy

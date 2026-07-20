@@ -261,7 +261,7 @@ test('setup carries the locator-selected transitional source through migration',
   );
   assert.match(
     setup,
-    /deep-merge\s+only `configMigration\.adr`[\s\S]*sibling `configMigration` state/,
+    /deep-merge\s+only `configMigration\.adr`[\s\S]*sibling\s+`configMigration` state/,
   );
   assert.match(
     setup,
@@ -292,4 +292,12 @@ test('cleanup inventories .gitignore remnants but leaves repair exclusively to s
   assert.match(cleanup, /`\{\{SKILL:setup\}\}`, the sole (?:owner|repair owner)/);
   assert.doesNotMatch(cleanup, /`\.gitignore`: remove only clearly outdated lines/);
   assert.doesNotMatch(cleanup, /which `\.gitignore` lines were removed/);
+});
+
+test('cleanup loads runtime safety for migrations, memory, and tracker markers', () => {
+  const cleanup = readSource('tools', 'cleanup.md');
+  assert.match(
+    cleanup,
+    /```lazy-include\s+runtime-state-safety\s+when: any confirmed legacy copy or removal, runtime migration, memory, or tracker-marker mutation is imminent\s+```/,
+  );
 });

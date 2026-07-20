@@ -44,16 +44,22 @@ function collectRuntimeSources() {
 }
 
 const requiredClauses = [
-  [/atomic `mkdir \.effective-flow\/memory\.lock`/, 'atomic lock acquisition'],
+  [
+    /atomic command\s+`mkdir <RUNTIME_STATE_ROOT>\/\.effective-flow\/memory\.lock`/,
+    'atomic lock acquisition',
+  ],
   [/owner.*session.*timestamp/is, 'lock owner metadata'],
   [/no more than 30\s+seconds/i, 'bounded acquisition retry'],
   [/timeout[\s\S]*report[\s\S]*owner/i, 'owner diagnostics on timeout'],
   [/apparent orphan[\s\S]*confirmation/i, 'confirmed orphan recovery'],
   [/release.*only.*own lock/is, 'ownership-checked release'],
-  [/re-read `\.effective-flow\/memory\.json`.*inside the lock/is, 'fresh locked read'],
+  [
+    /re-read the retained absolute `<RUNTIME_STATE_ROOT>\/\.effective-flow\/memory\.json` handle inside\s+the lock/is,
+    'fresh locked read',
+  ],
   [/valid JSON[\s\S]*JSON object/i, 'object validation'],
   [/preserve.*unknown fields/is, 'unknown-field preservation'],
-  [/same-directory unique\s+temporary file/i, 'same-directory unique temp file'],
+  [/same-directory unique\s+(?:absolute\s+)?file/i, 'same-directory unique temp file'],
   [/atomic rename/i, 'atomic replacement'],
   [/clean up only.*own temporary file/is, 'owned temp cleanup'],
   [/exact nonzero contiguous range/i, 'exact range reservation'],
@@ -79,7 +85,11 @@ test('all consumer targets preserve the memory mutation protocol', () => {
       context: `shared/memory-state.md (${harness})`,
     });
 
-    assert.match(rendered, /atomic `mkdir \.effective-flow\/memory\.lock`/);
+    assert.match(
+      rendered,
+      /atomic command\s+`mkdir <RUNTIME_STATE_ROOT>\/\.effective-flow\/memory\.lock`/,
+    );
+    assert.match(rendered, /Never inspect, lock, migrate, or mutate a same-named path below/);
     assert.match(rendered, /exact nonzero contiguous range/i);
     assert.match(rendered, /atomic rename/i);
     assert.match(rendered, /permanent\s+gaps/i);
@@ -121,6 +131,33 @@ test('every existing migration marker delegates its owned subtree to the protoco
   );
   assert.match(
     readSource('tools', 'review.md'),
-    /\.sf-memory\.json[\s\S]*memory mutation contract/,
+    /\.sf-memory\.json[\s\S]*shared memory (?:mutation contract|transaction)/,
+  );
+});
+
+test('root legacy memory is the base for the prerequisite and the following reservation', () => {
+  const legacySection = memoryContract.slice(
+    memoryContract.indexOf('### Legacy `.sf-memory.json`'),
+  );
+  const base = legacySection.indexOf('validate it as the initial object');
+  const mutation = legacySection.indexOf("Merge the current writer's intended mutation", base);
+  const replacement = legacySection.indexOf('one atomic replacement', mutation);
+  const removal = legacySection.indexOf(
+    'remove `<RUNTIME_STATE_ROOT>/.sf-memory.json`',
+    replacement,
+  );
+
+  assert.ok(base >= 0 && base < mutation && mutation < replacement && replacement < removal);
+  assert.match(
+    legacySection,
+    /runtime-directory prerequisite adds `runtimeMigration\.directory` without losing the legacy\s+counter/,
+  );
+  assert.match(
+    legacySection,
+    /`lastFindingNumber: 41`[\s\S]*`R-0000042`–`R-0000043`[\s\S]*persists `43`/,
+  );
+  assert.match(
+    readSource('tools', 'review.md'),
+    /do not run a\s+preliminary migration[\s\S]*merge that writer's intended mutation[\s\S]*one\s+replacement/,
   );
 });
