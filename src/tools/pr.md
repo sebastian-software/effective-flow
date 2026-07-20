@@ -53,8 +53,8 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
   legacy fallback: `worktree.baseBranch`; if the config is missing, `main`.
 - **Switch-back target:** default from `delivery.returnBranch`; for `auto`, the local
   branch part of `delivery.baseBranch`.
-- **Title/description:** optionally provided; a provided title without a valid Conventional Commit type is normalized in step 8. If they are missing, derive them from the commits and the workflow/change type.
-- **Title type hint:** an optional workflow/change type from a delivery handback (e.g. `feat`, `fix`, `refactor`, `docs`) that feeds the type choice in step 8.
+- **Title/description:** optionally provided; a provided title without a valid Conventional Commit type is normalized in step 9. If they are missing, derive them from the commits and the workflow/change type.
+- **Title type hint:** an optional workflow/change type from a delivery handback (e.g. `feat`, `fix`, `refactor`, `docs`) that feeds the type choice in step 9.
 
 ## Approach
 
@@ -75,17 +75,36 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
    - If an already-prepared delivery branch is passed, use it as the head.
    - If a new delivery branch is to be created: resolve `delivery.baseBranch`,
      update remote refs via `git fetch REMOTE BRANCH`, form a branch name
-     `<delivery.branchPrefix>/pr/<slug>`, and create it from the base ref.
+     `<delivery.branchPrefix>/pr/<slug>`, and create it from the base ref. Record
+     explicitly that this invocation created this exact local branch; never infer
+     branch ownership from its name or from lifecycle mode alone.
    - If the current working tree contains changes that do not clearly belong to the
      PR: do not stage, stash, or overwrite them. Ask for an
      explicit file selection or abort.
-4. **Resolve the provider:** Invoke the shipped `scripts/remote-tracker.mjs` helper's repository-resolution operation. Pass a configured or explicit provider override when present. On `AMBIGUOUS_HOST`, ask for `github` or `forgejo` and retry with that choice; do not infer a provider from an unknown hostname.
-5. **Check tool availability:** Invoke the helper probe once and use its normalized authentication, version, JSON, and capability result. On `CLI_MISSING`, `AUTH_FAILED`, or `UNSUPPORTED_CAPABILITY`, report the structured remediation and abort without side effects. The branch is preserved for later manual PR creation; never discover flags or access credentials directly.
-6. **Push the branch:** Push the head branch to `origin` if it is not yet there or not up to date (`git push -u origin <head-branch>`). If the push is rejected (e.g. diverged remote history): report the cause briefly and abort instead of overwriting the remote state.
+4. **Resolve the base and inspect the head before any push:** Refresh the configured base ref if
+   step 3 did not already do so, resolve its remote-tracking ref, and determine the commits in
+   `<remote-tracking-base>..<head-branch>`. Preserve this discovered commit range for the later
+   title and description derivation. If the base cannot be refreshed or resolved, abort before
+   any push and preserve the head branch.
+   - **Commits found:** Continue with the unchanged delivery flow in step 5.
+   - **No commits found:** Do not push or perform any other remote branch mutation. Handle the
+     empty head according to its ownership:
+     - **Branch created by this invocation:** Restore the checkout recorded before branch
+       creation and delete only the exact transient local branch created in step 3, using safe,
+       non-forcing branch deletion and only when the working tree permits both operations. Never
+       stage, stash, overwrite, or discard working-tree changes for this cleanup. If restoration
+       or deletion is unsafe or fails, preserve the branch and report the actual checkout state.
+     - **Prepared or legacy branch:** Preserve it. A branch not created by this invocation is
+       user-owned for cleanup purposes, even when it has a lifecycle-style name.
+     - **After cleanup:** Report that the head has no commits against the resolved base, include
+       the resulting local state, and stop.
+5. **Resolve the provider:** Invoke the shipped `scripts/remote-tracker.mjs` helper's repository-resolution operation. Pass a configured or explicit provider override when present. On `AMBIGUOUS_HOST`, ask for `github` or `forgejo` and retry with that choice; do not infer a provider from an unknown hostname.
+6. **Check tool availability:** Invoke the helper probe once and use its normalized authentication, version, JSON, and capability result. On `CLI_MISSING`, `AUTH_FAILED`, or `UNSUPPORTED_CAPABILITY`, report the structured remediation and abort without side effects. The branch is preserved for later manual PR creation; never discover flags or access credentials directly.
+7. **Push the branch:** Push the head branch to `origin` if it is not yet there or not up to date (`git push -u origin <head-branch>`). If the push is rejected (e.g. diverged remote history): report the cause briefly and abort instead of overwriting the remote state.
    If a PR already exists for the head branch, subsequent changes are pushed
    exclusively as new commits on this branch. Do not rewrite existing
    PR history via `commit --amend`, rebase, squash, or force push.
-7. **Look up an existing open PR:** After the successful push, invoke the helper's
+8. **Look up an existing open PR:** After the successful push, invoke the helper's
    `pr-list` operation for open pull requests. For every returned item whose normalized `head`,
    `base`, `state`, or URL is missing, hydrate the item through the helper's `pr-read` operation;
    abort as invalid/unparseable output if any item remains incomplete. Exact-filter the complete
@@ -94,35 +113,36 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
    Forgejo/Gitea CLI forms, JSON normalization, capability verification, and complete or bounded
    pagination; do not bypass it with guessed `gh` or `tea` flags.
    - **Exactly one exact match:** Reuse its URL as the successful PR result. Preserve its title
-     and description, do not invoke `pr-create` or any metadata mutation, skip steps 8 and 9, and
-     continue with the shared restoration and reporting path in steps 10 and 11.
+     and description, do not invoke `pr-create` or any metadata mutation, skip steps 9 and 10, and
+     continue with the shared restoration and reporting path in steps 11 and 12.
    - **No exact match:** Continue with title/description derivation and PR creation. An open PR
      for the same head but a different base, as well as a closed or merged PR, is not a match.
    - **Multiple exact matches, lookup failure, or invalid/unparseable output:** Report a clear
      diagnostic and abort without attempting PR creation or guessing which PR to use.
-8. **Derive the PR title and description for a new PR (enforce a valid Conventional Commit title):** Determine the head branch's commits against the base branch's remote-tracking ref (`origin/<base-branch>`, not the local branch part – the local base branch may lag behind the remote and drag in foreign commits). Derive from this a short description of the changes and reference an associated plan file from `<plan.dir>/` (the plan directory from the Effective Flow configuration (project setup ADR) `plan.dir`, default `docs/plan`), if present.
+9. **Derive the PR title and description for a new PR (enforce a valid Conventional Commit title):** Reuse the head branch commits discovered against the resolved remote-tracking base in step 4; do not recompute them against the local branch part, which may lag behind the remote and drag in foreign commits. Derive from this a short description of the changes and reference an associated plan file from `<plan.dir>/` (the plan directory from the Effective Flow configuration (project setup ADR) `plan.dir`, default `docs/plan`), if present.
 
    The **PR title must be a valid Conventional Commit** — form `<type>[(scope)][!]: <description>` with a type from the "Commit message rules" (embedded above). This is mandatory because on a squash merge the title becomes the subject of the single commit on the target branch, and release-please derives the version bump from it; an untyped title produces a no-op release (no bump, no delivery) even though CI stays green. Determine the title in this order:
    - **Preserve a valid title:** If a title passed by the user or from the delivery handback already carries a valid type (including an optional `(scope)` and breaking marker `!`), adopt it unchanged.
    - **Choose the type by effect:** Otherwise choose the type by the **effect** of the change per the "Commit message rules" and — if present — the passed title type hint: `feat` for new product behavior, `fix` for corrections, `docs` for docs-only, `refactor` for behavior-preserving restructuring, `chore`/`build`/`ci` or a dependency type for maintenance. If the branch covers multiple effects, the type follows the strongest effect (as with the squash subject), not the most recent commit.
    - **Normalize an untyped subject:** If an otherwise suitable title has no valid prefix, prefix it with the classified type instead of leaving it untyped; keep an optional `(scope)`/`!` marker valid in doing so.
    - **Ask only on genuine ambiguity:** If the effect cannot be assigned unambiguously to a type, briefly ask the user for the type. Do not guess.
-   - **Self-check before creation:** If the title does not match the pattern `<type>[(scope)][!]: …` with one of the allowed types, rebuild it — **never** emit an untyped title in step 9.
+   - **Self-check before creation:** If the title does not match the pattern `<type>[(scope)][!]: …` with one of the allowed types, rebuild it — **never** emit an untyped title in step 10.
 
    Do not put internal tracking IDs, `Co-Authored-By` trailers, or AI attribution (no "Generated with Claude Code/Codex" footers, no agent session links like `https://claude.ai/code/…`) into the PR title or description – not even when the harness appends them by default.
 
-9. **Create the PR:** Build the provider-neutral PR payload and invoke the helper's PR-create mutation. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
-10. **Restore the checkout:** After a successful PR creation or reuse, switch back to
+10. **Create the PR:** Build the provider-neutral PR payload and invoke the helper's PR-create mutation. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
+11. **Restore the checkout:** After a successful PR creation or reuse, switch back to
     `delivery.returnBranch`, or for `auto` to the local branch part of
     `delivery.baseBranch`, provided the working tree is clean. If the
     switch-back fails, report the actual branch explicitly. The
     PR head branch is preserved locally and remotely.
-11. **Report the result:** Output the PR URL, the branch name, and the final local
+12. **Report the result:** Output the PR URL, the branch name, and the final local
     checkout state.
 
 ## Rules
 
-- Do not create a PR from a branch with no commits against the base branch; report that instead.
+- Inspect the head branch's commits against the resolved remote-tracking base before any push;
+  do not create a PR from a branch with no commits in that range.
 - Do not start project validation such as linting, tests, or build checks; that responsibility lies with other skills such as `{{AGENT:code-validator}}`.
 - Never overwrite remote history and never force a push.
 - Always update existing PRs via additional commits on the PR branch, never
