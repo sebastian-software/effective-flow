@@ -16,8 +16,9 @@ pnpm audit:skill-ownership -- <local-skills-directory> # optional, advisory upst
 pnpm test:distribution  # build/archive/delivery/installer smoke suite
 ```
 
-The package manager is **pnpm** (`packageManager: pnpm@11.11.0`), and Node.js 22 or newer is
-required by both the build and the shipped runtime helper. Correctness rests on three
+The package manager is **pnpm**; the root `package.json` `packageManager` field is the source of
+truth for the pinned version. Node.js 22 or newer is required by both the build and the shipped
+runtime helper. Correctness rests on three
 complementary layers: the `node:test` suite (`pnpm test`) covers pure transforms and isolated
 installer behavior; the build guards (see "Guards") enforce source and rendered-output
 completeness during `node build.mjs`; and `pnpm test:distribution` smoke-tests the built native
