@@ -1423,8 +1423,7 @@ test('findRuntimeDirMigrationViolations rejects an absent or late migration prer
       {
         context: 'tools/absent.md',
         line: 1,
-        reason:
-          'runtime mutation is not preceded by the runtime-directory migration prerequisite',
+        reason: 'runtime mutation is not preceded by the runtime-directory migration prerequisite',
       },
     ],
   );
@@ -1458,10 +1457,7 @@ test('findRuntimeDirMigrationViolations preserves nested shared-writer ordering'
 
   const [violation] = findRuntimeDirMigrationViolations(lateSources);
   assert.equal(violation.context, 'shared/runtime-writer.md');
-  assert.deepEqual(violation.includeChain, [
-    'tools/late-owner.md',
-    'shared/runtime-writer.md',
-  ]);
+  assert.deepEqual(violation.includeChain, ['tools/late-owner.md', 'shared/runtime-writer.md']);
   assert.deepEqual(findRuntimeDirMigrationViolations(earlySources), []);
 });
 

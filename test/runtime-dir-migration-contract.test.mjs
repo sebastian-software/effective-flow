@@ -3,11 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  extractBody,
-  findRuntimeDirMigrationViolations,
-  renderBody,
-} from '../build-lib.mjs';
+import { extractBody, findRuntimeDirMigrationViolations, renderBody } from '../build-lib.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
 const SOURCE_DIR = join(ROOT_DIR, 'src');
