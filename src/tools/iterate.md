@@ -163,15 +163,77 @@ options:
 
 ### Phase 3: Implementation
 
-1. Delegate each actionable item to the appropriate skill ({{SKILL:fix}}, {{SKILL:refactor}},
-   {{SKILL:build}}, or {{SKILL:docs}}), on the PR head branch (PR mode) or the current
-   branch (local mode).
-2. **One commit per thread/item** with a clean conventional-commit message without internal
-   IDs or a thread reference and without `Co-Authored-By`. File-overlapping items run
-   sequentially so the commits stay ordered; independent items may be implemented in
+1. Before delegation, record the analyzed file ownership of every actionable item. Items whose
+   analyzed file sets overlap run sequentially; only items with disjoint sets may implement in
    parallel.
-3. Give internal delegation sub-agents the completion protocol and check for `DONE` or
+2. Delegate each actionable item to the appropriate skill ({{SKILL:fix}}, {{SKILL:refactor}},
+   {{SKILL:build}}, or {{SKILL:docs}}), on the PR head branch (PR mode) or the current
+   branch (local mode). Each delegation receives its analyzed owned paths and reports its actual
+   paths. If it discovers that it must touch a path outside its analyzed set, it must stop before
+   modifying that path and return it to the orchestrator. Add the path to the item's actual
+   ownership, compare it with every active item's analyzed and actual paths, and serialize the
+   affected items before allowing work on that path to continue. Never let two active items edit
+   the same path based only on the original analysis.
+3. **One commit per thread/item** with a clean conventional-commit message without internal
+   IDs or a thread reference and without `Co-Authored-By`. Independent items may implement in
+   parallel, but every item uses the commit-integrity mutex below for staging and committing.
+4. Give internal delegation sub-agents the completion protocol and check for `DONE` or
    `ABORT`. On `ABORT`: mark the item as failed and continue with the next.
+
+#### Commit integrity for parallel items
+
+The following mutex applies in both PR and local mode. Parallel delegations may edit disjoint
+files concurrently, but all operations that mutate or inspect the shared Git index and `HEAD`
+for an item run in one critical section.
+
+Mutex convention:
+
+- Retain one absolute lock handle for the repository at
+  `<RUNTIME_STATE_ROOT>/.effective-flow/iterate-commit.lock`. Every item delegation in this
+  `iterate` run uses that same handle, including when the execution checkout is an isolated
+  worktree.
+- Apply "Runtime-state write safety" from `RUNTIME_STATE_ROOT` separately and immediately before
+  every mutation of the exact lock directory or its `owner` file. Guard the repository-relative
+  target `.effective-flow/iterate-commit.lock` before each acquisition attempt; do not create,
+  remove, or modify the lock when a guard blocks.
+- Acquire the lock atomically with `mkdir <absolute-lock-handle>`. Immediately after successful
+  acquisition, write `<absolute-lock-handle>/owner` with the item identity, delegation identity,
+  a unique acquisition token, and timestamp. The successful acquisition and matching owner
+  record together prove ownership.
+- If the lock exists, read its owner for diagnostics, wait, and retry without touching the index.
+  Never infer permission to remove it from age alone. If it appears orphaned, obtain explicit
+  user confirmation before removal, then rerun the runtime-state guards for the exact owner file
+  and lock directory immediately before deleting either.
+- Release the lock on every success, abort, and error path, but only after rereading the owner
+  file and verifying that its complete identity and acquisition token match the current item.
+  If ownership cannot be verified, do not remove or alter the lock; fail closed and report the
+  mismatch.
+
+Before acquiring the mutex, finish the item's configured pre-commit checks. Then, while holding
+the lock for the entire sequence:
+
+1. Run `git status --porcelain` and inspect `git diff --cached --name-only` and
+   `git diff --cached`. If any staged state already exists, treat it as foreign: do not commit,
+   take it over, or clean it up. Release the verified-owned lock and return `ABORT` for the item.
+2. Reconfirm that the item's explicit stage list contains only its analyzed and dynamically
+   approved actual paths. Stage exactly those paths. Never use `git add .`, `git add -A`,
+   `git commit -a`, or an equivalent blanket operation.
+3. Inspect `git diff --cached --name-only` and require it to equal the explicit item-owned path
+   set, then inspect the complete `git diff --cached` and require every staged hunk to belong to
+   the current item. Record the verified staged paths and content before committing.
+4. Create the item's conventional commit, capture its hash immediately with
+   `git rev-parse HEAD`, and write the `item identity -> commit hash` mapping to the wisdom file.
+5. Immediately confirm the committed paths and content against the recorded staged diff. Run
+   `git status --porcelain`, require `git diff --cached` to be empty, and inspect the remaining
+   working-tree diff. Changes from other active items may remain only when they are unstaged and
+   outside this item's owned paths; record that residual state in the wisdom file.
+
+If a check fails before the commit, unstage only paths whose staging is provably attributable to
+this item in the current lock acquisition, verify the resulting cached state, release the lock
+only after owner verification, and return `ABORT`. Never unstage or otherwise clean foreign
+changes. If immediate post-commit confirmation fails, do not amend, reset, rebase, or otherwise
+rewrite history: record the discrepancy, release the verified-owned lock, mark the item failed,
+and stop delivery for reconciliation.
 
 ### Phase 4: Validation
 
