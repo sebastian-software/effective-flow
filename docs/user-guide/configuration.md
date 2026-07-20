@@ -177,12 +177,12 @@ Describes the delivery branch, its base, its generated name, and its completion 
 no `delivery.enabled` setting: delivery is implied whenever work happens in a worktree or on a
 dedicated delivery branch.
 
-| Key            | Values                        | Default          | Meaning                                                            |
-| -------------- | ----------------------------- | ---------------- | ------------------------------------------------------------------ |
-| `baseBranch`   | Git ref as string             | `origin/main`    | Starting point of the delivery branch                              |
-| `branchPrefix` | String                        | `effective-flow` | Prefix of generated branch names (`<branchPrefix>/<skill>/<slug>`) |
-| `completion`   | `pr` / `merge` / `branch` / `null` | `merge`          | Open a PR, merge locally, retain the branch, or ask at run time     |
-| `returnBranch` | `auto` or a local branch name | `auto`           | Checkout to restore after completion                               |
+| Key            | Values                             | Default          | Meaning                                                            |
+| -------------- | ---------------------------------- | ---------------- | ------------------------------------------------------------------ |
+| `baseBranch`   | Git ref as string                  | `origin/main`    | Starting point of the delivery branch                              |
+| `branchPrefix` | String                             | `effective-flow` | Prefix of generated branch names (`<branchPrefix>/<skill>/<slug>`) |
+| `completion`   | `pr` / `merge` / `branch` / `null` | `merge`          | Open a PR, merge locally, retain the branch, or ask at run time    |
+| `returnBranch` | `auto` or a local branch name      | `auto`           | Checkout to restore after completion                               |
 
 ## Block `worktree`
 
