@@ -135,6 +135,27 @@ When delivery or worktree is active:
    the issue or finding. If the branch name already exists, append a
    numeric suffix and report the chosen name.
 
+### Run-owned delivery state
+
+Before creating or switching any delivery artifact, retain the original verified
+execution-location receipt and initialize explicit current-run ownership flags for the delivery
+worktree and branch. After the current run creates a delivery branch, record its exact name and
+creation OID immediately; do not substitute the base ref or a later-moving remote tip. After the
+current run creates a worktree, record that ownership separately from its
+`effective-flow-created` receipt. A name, path, configured base directory or pre-existing receipt
+never proves current-run ownership.
+
+Carry this state through baseline validation and every later phase:
+
+- original checkout receipt and checkout identity,
+- delivery branch name and exact creation OID,
+- whether this run created the delivery branch,
+- whether this run created the delivery worktree,
+- the delivery execution-location receipt.
+
+For a reused `harness-managed` or user-managed worktree or branch, both creation flags stay
+false. For in-place execution without delivery, no delivery artifact is recorded.
+
 ### Worktree execution
 
 When worktree execution is active:
@@ -157,7 +178,9 @@ When worktree execution is active:
    Create the worktree and delivery branch with
    `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> <BASE_REF>`, then immediately issue and
    verify an `effective-flow-created` receipt for the exact path, branch, workflow and delivery
-   purpose. If receipt creation fails, retain the worktree for manual reconciliation.
+   purpose. Record both artifacts as current-run-owned and capture the branch's exact creation
+   OID before setup. If receipt creation or state recording fails, retain the worktree and branch
+   for manual reconciliation.
 3. Only for that newly Effective Flow-created receipt, run setup per `worktree.setup` and
    briefly announce the mode beforehand:
    - `auto` or missing: decide by lockfile – `pnpm-lock.yaml` →
@@ -186,9 +209,10 @@ When delivery is active and worktree execution stays off:
    do not silently stage, stash or overwrite them; either obtain a user decision
    or use the partial-diff PR via worktree.
 3. Create and check out the delivery branch from `delivery.baseBranch`.
-4. Issue a new receipt for the delivery branch after switching. Run implementation, tests,
-   validation and final formatting through explicitly rooted operations after a successful
-   preflight at every write-capable boundary.
+4. Issue a new receipt for the delivery branch after switching. Record the branch as
+   current-run-owned and capture its exact creation OID before setup or implementation. Run
+   implementation, tests, validation and final formatting through explicitly rooted operations
+   after a successful preflight at every write-capable boundary.
 5. After completion, proceed per "Handback and completion action".
 
 ### Partial-diff PR via worktree
@@ -238,6 +262,44 @@ investigations remain purely local in any case (see "Issue-tracker integration" 
   under `.effective-flow/review/`, investigation reports under `.effective-flow/investigation/`,
   config migration status and wisdom files. Their operational paths are absolute handles below
   `RUNTIME_STATE_ROOT`, even while tracked work executes elsewhere.
+
+### Abort handback before implementation
+
+Use this handback only when a workflow must abort after delivery setup but before implementation,
+for example when `maintain` finds a red baseline. It is separate from normal completion: do not
+mark or archive a plan, commit, ask for or execute a completion action, push, merge or create a
+pull request. Preserve all abort diagnostics before lifecycle cleanup.
+
+Fail closed. Mutate only artifacts that the retained run-owned delivery state proves were created
+by the current run:
+
+1. **No delivery artifacts:** For in-place execution without delivery, perform no lifecycle
+   cleanup. Report the unchanged checkout.
+2. **Externally managed state:** For `harness-managed`, user-managed or adopted worktrees and
+   branches, perform no lifecycle mutation. Report every retained path or branch and that it is
+   externally managed.
+3. **Effective Flow-owned worktree:** Only when both current-run creation flags are true and the
+   receipt is `effective-flow-created`, freshly revalidate repository identity, execution root,
+   checkout identity, purpose, worktree registration and clean status. Verify that both `HEAD`
+   and the delivery branch tip still equal the recorded creation OID. If every proof passes, run
+   `git worktree remove <WORKTREE_PATH>` without force. Revalidate that the branch still exists at
+   the recorded creation OID and then delete it safely with `git branch -d <BRANCH_NAME>`. Never
+   compare against a moving remote tip.
+4. **In-place transient branch:** Only when the current run created the delivery branch, freshly
+   verify the delivery receipt, clean status, exact branch name and recorded creation OID. Verify
+   that the retained original checkout belongs to the same repository and can still be restored.
+   Restore the original branch or detached OID first, revalidate its retained receipt, then
+   revalidate and safely delete the unchanged transient branch with
+   `git branch -d <BRANCH_NAME>`.
+5. **Retention and partial cleanup:** Any dirty state, changed tip, ownership mismatch, receipt or
+   registration mismatch, failed restoration, ordinary worktree-removal failure or safe
+   branch-deletion refusal retains the affected artifact. Report its exact path or branch and the
+   failed proof or command. If worktree removal or original-checkout restoration succeeds but
+   branch deletion fails, report that partial cleanup explicitly and retain the branch. Never
+   force-remove a worktree or force-delete a branch in this abort handback.
+
+End the workflow immediately after reporting the abort handback. Do not enter implementation or
+normal delivery completion.
 
 ### Handback and completion action (completion phase)
 

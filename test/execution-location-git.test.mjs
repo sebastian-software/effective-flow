@@ -276,6 +276,129 @@ function cleanupOwnedWorktree(receipt, administrativeRoot, { deleteBranch = fals
   return true;
 }
 
+function deliveryAbortState({
+  originalReceipt,
+  deliveryReceipt,
+  branchCreatedByRun = false,
+  worktreeCreatedByRun = false,
+  deliveryActive = true,
+}) {
+  return {
+    originalReceipt,
+    deliveryReceipt,
+    deliveryActive,
+    deliveryBranch:
+      deliveryReceipt?.checkout.type === 'branch' ? deliveryReceipt.checkout.branch : undefined,
+    creationOid: deliveryReceipt
+      ? git(deliveryReceipt.executionRoot, 'rev-parse', 'HEAD')
+      : undefined,
+    branchCreatedByRun,
+    worktreeCreatedByRun,
+  };
+}
+
+function abortDeliveryState(state, administrativeRoot) {
+  const result = {
+    removedWorktree: false,
+    restoredOriginal: false,
+    deletedBranch: false,
+    retained: [],
+  };
+  const retain = (artifact, reason) => {
+    result.retained.push({ artifact, reason });
+    return result;
+  };
+
+  if (!state.deliveryActive) return result;
+  if (!state.branchCreatedByRun && !state.worktreeCreatedByRun) {
+    return retain(
+      state.deliveryReceipt.executionRoot,
+      `${state.deliveryReceipt.origin} lifecycle is externally managed`,
+    );
+  }
+
+  const { deliveryReceipt, deliveryBranch, creationOid } = state;
+  try {
+    preflight(deliveryReceipt);
+  } catch (error) {
+    return retain(deliveryReceipt.executionRoot, `delivery receipt mismatch: ${error.message}`);
+  }
+  if (git(deliveryReceipt.executionRoot, 'status', '--porcelain') !== '') {
+    return retain(deliveryReceipt.executionRoot, 'delivery checkout is dirty');
+  }
+  if (
+    deliveryReceipt.checkout.type !== 'branch' ||
+    deliveryReceipt.checkout.branch !== deliveryBranch
+  ) {
+    return retain(deliveryReceipt.executionRoot, 'delivery branch identity mismatch');
+  }
+  if (
+    git(deliveryReceipt.executionRoot, 'rev-parse', 'HEAD') !== creationOid ||
+    git(administrativeRoot, 'rev-parse', `refs/heads/${deliveryBranch}`) !== creationOid
+  ) {
+    return retain(deliveryBranch, 'delivery branch tip differs from its creation OID');
+  }
+
+  if (state.worktreeCreatedByRun) {
+    if (deliveryReceipt.origin !== 'effective-flow-created' || !state.branchCreatedByRun) {
+      return retain(deliveryReceipt.executionRoot, 'worktree ownership mismatch');
+    }
+    try {
+      git(administrativeRoot, 'worktree', 'remove', deliveryReceipt.executionRoot);
+      result.removedWorktree = true;
+    } catch (error) {
+      return retain(
+        deliveryReceipt.executionRoot,
+        `ordinary worktree removal failed: ${error.message}`,
+      );
+    }
+  } else {
+    if (deliveryReceipt.origin !== 'in-place' || !state.originalReceipt) {
+      return retain(deliveryReceipt.executionRoot, 'in-place ownership mismatch');
+    }
+    if (
+      state.originalReceipt.repositoryIdentity !== deliveryReceipt.repositoryIdentity ||
+      state.originalReceipt.executionRoot !== deliveryReceipt.executionRoot
+    ) {
+      return retain(deliveryReceipt.executionRoot, 'original checkout receipt mismatch');
+    }
+    try {
+      if (state.originalReceipt.checkout.type === 'branch') {
+        git(
+          administrativeRoot,
+          'show-ref',
+          '--verify',
+          `refs/heads/${state.originalReceipt.checkout.branch}`,
+        );
+        git(administrativeRoot, 'switch', state.originalReceipt.checkout.branch);
+      } else {
+        git(administrativeRoot, 'cat-file', '-e', `${state.originalReceipt.checkout.oid}^{commit}`);
+        git(administrativeRoot, 'switch', '--detach', state.originalReceipt.checkout.oid);
+      }
+      preflight(state.originalReceipt);
+      result.restoredOriginal = true;
+    } catch (error) {
+      return retain(
+        deliveryReceipt.executionRoot,
+        `original checkout restoration failed: ${error.message}`,
+      );
+    }
+  }
+
+  try {
+    assert.equal(
+      git(administrativeRoot, 'rev-parse', `refs/heads/${deliveryBranch}`),
+      creationOid,
+      'delivery branch changed during cleanup',
+    );
+    git(administrativeRoot, 'branch', '-d', deliveryBranch);
+    result.deletedBranch = true;
+  } catch (error) {
+    return retain(deliveryBranch, `safe branch deletion failed: ${error.message}`);
+  }
+  return result;
+}
+
 test('main checkout work stays in an owned worktree through verified cleanup', (t) => {
   const { container, root } = createRepository(t);
   const worktreeRoot = join(container, 'worktrees', 'delivery');
@@ -598,6 +721,239 @@ test('dirty and mismatched cleanup receipts retain their owned worktrees', (t) =
   git(mismatchRoot, 'switch', '-c', 'cleanup/unexpected');
   assert.equal(cleanupOwnedWorktree(mismatchReceipt, mismatchFixture.root), false);
   assert.equal(existsSync(mismatchRoot), true);
+});
+
+test('red-baseline abort removes an unchanged run-owned worktree and branch', (t) => {
+  const { container, root } = createRepository(t);
+  const originalReceipt = captureReceipt(root, {
+    origin: 'in-place',
+    owner: 'maintain',
+    purpose: 'red-baseline',
+  });
+  const worktreeRoot = join(container, 'delivery-worktree');
+  git(root, 'worktree', 'add', worktreeRoot, '-b', 'effective-flow/maintain/abort', 'HEAD');
+  const deliveryReceipt = captureReceipt(worktreeRoot, {
+    origin: 'effective-flow-created',
+    owner: 'maintain',
+    purpose: 'red-baseline',
+    setupStatus: 'complete',
+  });
+  const state = deliveryAbortState({
+    originalReceipt,
+    deliveryReceipt,
+    branchCreatedByRun: true,
+    worktreeCreatedByRun: true,
+  });
+
+  const result = abortDeliveryState(state, root);
+
+  assert.deepEqual(result, {
+    removedWorktree: true,
+    restoredOriginal: false,
+    deletedBranch: true,
+    retained: [],
+  });
+  assert.equal(existsSync(worktreeRoot), false);
+  assert.equal(git(root, 'branch', '--list', state.deliveryBranch), '');
+  preflight(originalReceipt);
+});
+
+test('red-baseline abort retains dirty, changed, and receipt-mismatched worktrees', (t) => {
+  const dirty = createRepository(t);
+  const dirtyRoot = join(dirty.container, 'dirty-delivery');
+  git(dirty.root, 'worktree', 'add', dirtyRoot, '-b', 'maintain/dirty', 'HEAD');
+  const dirtyReceipt = captureReceipt(dirtyRoot, {
+    origin: 'effective-flow-created',
+    owner: 'maintain',
+    purpose: 'red-baseline',
+  });
+  const dirtyState = deliveryAbortState({
+    originalReceipt: captureReceipt(dirty.root, {
+      origin: 'in-place',
+      owner: 'maintain',
+      purpose: 'red-baseline',
+    }),
+    deliveryReceipt: dirtyReceipt,
+    branchCreatedByRun: true,
+    worktreeCreatedByRun: true,
+  });
+  writeFileSync(join(dirtyRoot, 'uncommitted.txt'), 'retain me\n');
+  assert.deepEqual(abortDeliveryState(dirtyState, dirty.root).retained, [
+    { artifact: dirtyRoot, reason: 'delivery checkout is dirty' },
+  ]);
+  assert.equal(existsSync(dirtyRoot), true);
+
+  const changed = createRepository(t);
+  const changedRoot = join(changed.container, 'changed-delivery');
+  git(changed.root, 'worktree', 'add', changedRoot, '-b', 'maintain/changed', 'HEAD');
+  const changedReceipt = captureReceipt(changedRoot, {
+    origin: 'effective-flow-created',
+    owner: 'maintain',
+    purpose: 'red-baseline',
+  });
+  const changedState = deliveryAbortState({
+    originalReceipt: captureReceipt(changed.root, {
+      origin: 'in-place',
+      owner: 'maintain',
+      purpose: 'red-baseline',
+    }),
+    deliveryReceipt: changedReceipt,
+    branchCreatedByRun: true,
+    worktreeCreatedByRun: true,
+  });
+  writeFileSync(join(changedRoot, 'unexpected.txt'), 'committed\n');
+  git(changedRoot, 'add', 'unexpected.txt');
+  git(changedRoot, 'commit', '-m', 'unexpected baseline side effect');
+  assert.deepEqual(abortDeliveryState(changedState, changed.root).retained, [
+    {
+      artifact: changedState.deliveryBranch,
+      reason: 'delivery branch tip differs from its creation OID',
+    },
+  ]);
+  assert.equal(existsSync(changedRoot), true);
+
+  const mismatched = createRepository(t);
+  const mismatchedRoot = join(mismatched.container, 'mismatched-delivery');
+  git(mismatched.root, 'worktree', 'add', mismatchedRoot, '-b', 'maintain/expected', 'HEAD');
+  const mismatchedReceipt = captureReceipt(mismatchedRoot, {
+    origin: 'effective-flow-created',
+    owner: 'maintain',
+    purpose: 'red-baseline',
+  });
+  const mismatchedState = deliveryAbortState({
+    originalReceipt: captureReceipt(mismatched.root, {
+      origin: 'in-place',
+      owner: 'maintain',
+      purpose: 'red-baseline',
+    }),
+    deliveryReceipt: mismatchedReceipt,
+    branchCreatedByRun: true,
+    worktreeCreatedByRun: true,
+  });
+  git(mismatchedRoot, 'switch', '-c', 'maintain/unexpected');
+  const mismatchResult = abortDeliveryState(mismatchedState, mismatched.root);
+  assert.equal(mismatchResult.retained.length, 1);
+  assert.equal(mismatchResult.retained[0].artifact, mismatchedRoot);
+  assert.match(mismatchResult.retained[0].reason, /delivery receipt mismatch: branch mismatch/);
+  assert.equal(existsSync(mismatchedRoot), true);
+});
+
+test('red-baseline abort restores an in-place checkout before deleting its transient branch', (t) => {
+  const { root } = createRepository(t);
+  const originalReceipt = captureReceipt(root, {
+    origin: 'in-place',
+    owner: 'maintain',
+    purpose: 'red-baseline',
+  });
+  git(root, 'switch', '-c', 'effective-flow/maintain/in-place-abort');
+  const deliveryReceipt = captureReceipt(root, {
+    origin: 'in-place',
+    owner: 'maintain',
+    purpose: 'red-baseline',
+  });
+  const state = deliveryAbortState({
+    originalReceipt,
+    deliveryReceipt,
+    branchCreatedByRun: true,
+  });
+
+  const result = abortDeliveryState(state, root);
+
+  assert.deepEqual(result, {
+    removedWorktree: false,
+    restoredOriginal: true,
+    deletedBranch: true,
+    retained: [],
+  });
+  assert.equal(git(root, 'branch', '--show-current'), 'main');
+  assert.equal(git(root, 'branch', '--list', state.deliveryBranch), '');
+});
+
+test('red-baseline abort reports partial cleanup when safe branch deletion refuses', (t) => {
+  const { container, root } = createRepository(t);
+  git(root, 'switch', '-c', 'unmerged-base');
+  writeFileSync(join(root, 'unmerged.txt'), 'unmerged\n');
+  git(root, 'add', 'unmerged.txt');
+  git(root, 'commit', '-m', 'unmerged base');
+  const unmergedOid = git(root, 'rev-parse', 'HEAD');
+  git(root, 'switch', 'main');
+  const originalReceipt = captureReceipt(root, {
+    origin: 'in-place',
+    owner: 'maintain',
+    purpose: 'red-baseline',
+  });
+  const worktreeRoot = join(container, 'partial-cleanup');
+  git(
+    root,
+    'worktree',
+    'add',
+    worktreeRoot,
+    '-b',
+    'effective-flow/maintain/unmerged-abort',
+    unmergedOid,
+  );
+  const deliveryReceipt = captureReceipt(worktreeRoot, {
+    origin: 'effective-flow-created',
+    owner: 'maintain',
+    purpose: 'red-baseline',
+  });
+  const state = deliveryAbortState({
+    originalReceipt,
+    deliveryReceipt,
+    branchCreatedByRun: true,
+    worktreeCreatedByRun: true,
+  });
+
+  const result = abortDeliveryState(state, root);
+
+  assert.equal(result.removedWorktree, true);
+  assert.equal(result.deletedBranch, false);
+  assert.equal(result.retained.length, 1);
+  assert.equal(result.retained[0].artifact, state.deliveryBranch);
+  assert.match(result.retained[0].reason, /safe branch deletion failed/);
+  assert.equal(existsSync(worktreeRoot), false);
+  assert.equal(git(root, 'branch', '--list', state.deliveryBranch), state.deliveryBranch);
+});
+
+test('red-baseline abort does not mutate externally managed or no-delivery state', (t) => {
+  const { container, root } = createRepository(t);
+  const linkedRoot = join(container, 'external-worktree');
+  git(root, 'worktree', 'add', linkedRoot, '-b', 'external/maintain', 'HEAD');
+  const receipt = captureReceipt(linkedRoot, {
+    origin: 'harness-managed',
+    owner: 'maintain',
+    purpose: 'red-baseline',
+    setupStatus: 'externally managed',
+  });
+  const externalResult = abortDeliveryState(
+    deliveryAbortState({
+      originalReceipt: captureReceipt(root, {
+        origin: 'in-place',
+        owner: 'maintain',
+        purpose: 'red-baseline',
+      }),
+      deliveryReceipt: receipt,
+    }),
+    root,
+  );
+  assert.deepEqual(externalResult.retained, [
+    { artifact: linkedRoot, reason: 'harness-managed lifecycle is externally managed' },
+  ]);
+  assert.equal(existsSync(linkedRoot), true);
+
+  const noDeliveryResult = abortDeliveryState(
+    deliveryAbortState({
+      originalReceipt: captureReceipt(root, {
+        origin: 'in-place',
+        owner: 'maintain',
+        purpose: 'red-baseline',
+      }),
+      deliveryActive: false,
+    }),
+    root,
+  );
+  assert.deepEqual(noDeliveryResult.retained, []);
+  assert.equal(git(root, 'branch', '--show-current'), 'main');
 });
 
 test('apply-review integrates a component commit and cleans up only that component', (t) => {
