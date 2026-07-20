@@ -1,193 +1,395 @@
 # 0033: Gemini-CLI-Plattform-Target
 
 **Planungsstatus:** Nicht umgesetzt
-**Quelle:** $sf-plan
+**Empfohlener Workflow:** Feature (`/effective-flow build`)
 
-## Anforderung
+## Ziel
 
-Das bestehende Skill-Set soll zusätzlich zu Codex und Claude Code auch für Gemini CLI ausgeliefert werden können. Ziel ist ein drittes Build-Ziel unter `dist/gemini/`, das die vorhandenen Orchestratoren, Utilities und spezialisierten Agents in Gemini-kompatible Extension-Artefakte transformiert.
+Effective Flow erhält Gemini CLI als viertes Build-Artefakt: neben den nativen Targets für
+Claude Code und Codex sowie dem portablen Manager-Target entsteht eine installierbare
+Gemini-CLI-Extension. Alle vier Artefakte werden aus derselben Source-to-Dist-Pipeline erzeugt;
+Gemini führt keinen separaten Bestand an Workflow-Anweisungen ein.
 
-Verifizierter Code-Kontext:
+Der Scope umfasst ausschließlich Gemini CLI. Gemini Web, Google AI Studio und IDE-spezifische
+Gemini-Code-Assist-Oberflächen sind nicht Teil dieses Vorhabens.
 
-- `build.mjs` erzeugt aktuell genau zwei Targets: `dist/codex/` und `dist/claude/`.
-- `build.mjs` verarbeitet Skill-Quellen aus `skills/sf-*`, löst `{{INCLUDE:...}}`, transformiert `{{SKILL:...}}`, `{{AGENT:...}}` und `{{ASK}}` plattformspezifisch.
-- Orchestratoren und Utilities werden für Codex als `SKILL.md` und für Claude Code als Command-Markdown generiert.
-- Agents werden für Codex als TOML Custom Agents und für Claude Code als Agent-Markdown generiert.
-- `README.md`, `local-update.sh` und `local-link.sh` dokumentieren und deployen aktuell nur Codex und Claude Code.
-- Der aktuelle Build zählt 8 Skills und 9 Agents.
+## Verifizierter Ist-Zustand
 
-Externer Kontext aus Gemini-CLI-Dokumentation:
+### Quellen und Build
 
-- Gemini CLI Extensions verwenden ein `gemini-extension.json` im Extension-Root.
-- Gemini CLI Custom Commands liegen als TOML-Dateien unter `commands/`; der Command-Name ergibt sich aus dem Pfad.
-- Gemini CLI unterstützt Extension-Inhalte wie Custom Commands, Agent Skills unter `skills/`, Subagents unter `agents/`, MCP-Server, Policies und `GEMINI.md`.
-- Gemini CLI Subagents sind laut Dokumentation ein Preview-Feature. Der Plan behandelt Subagent-Parität daher als vorsichtig zu validierenden Teil, nicht als garantiert gleichwertig zu Claude/Codex.
+- `src/SKILL.md` ist der dünne Router. Er veröffentlicht den gruppierten Tool-Katalog und lädt
+  nur das konkret aufgerufene `tools/<tool>.md`.
+- `src/tools/` enthält aktuell 17 über `TOOL_GROUPS` abgeleitete, öffentlich aufrufbare Tools
+  und 6 interne Tools. Die Zahlen werden im Build nicht dupliziert, sondern aus
+  `TOOL_GROUPS` und der Source-Discovery abgeleitet.
+- `src/agents/` enthält aktuell 15 Agent-Verträge. Auch deren Anzahl wird aus den vorhandenen
+  Quelldateien abgeleitet.
+- `src/shared/` enthält eager eingebundene und über `lazy-include` ausgelieferte Fragmente.
+- `src/scripts/` enthält die laufzeitrelevanten, abhängigkeitsfreien Ressourcen
+  `remote-tracker.mjs` und `remote-tracker-core.mjs`.
+- `build-lib.mjs` besitzt die reinen Parser, Renderer und Guards; `build.mjs` übernimmt
+  Dateisystem-I/O, Source-Discovery, Artefakt-Erzeugung, Build-Zusammenfassung und Guards.
+- `test/build-lib.test.mjs` prüft die reinen Transformationen. Weitere repositoryweite Tests
+  prüfen Ausführungs- und Dokumentationsverträge.
+- Der Build erzeugt derzeit `dist/claude/`, `dist/codex/` und `dist/portable/` zunächst unter
+  `dist.tmp/`. Erst nach allen Guards wird der vollständige Baum atomar auf `dist/` getauscht;
+  bei einem Fehler bleibt das vorherige `dist/` erhalten.
+- Die semantische Release-Version stammt aus `.release-please-manifest.json`. Der Router-Stempel
+  ergänzt den Git-Kurz-Hash; ein Guard verhindert Versionsdrift zwischen Targets.
+- `pnpm test:distribution` prüft Build, Release-Archiv, Installer und den auf `main` gestagten
+  portablen Auslieferungsbaum.
+
+### Bestehende Auslieferung
+
+- `develop` ist der Source- und Release-Please-Branch.
+- Der Default-Branch `main` ist vertraglich für genau einen portablen
+  `effective-flow/`-Manager-Kandidaten plus Consumer-Dokumentation reserviert. Er enthält keine
+  nativen Wrapper und darf keinen zweiten `skills/effective-flow/`-Kandidaten bekommen.
+- Das Release-Archiv enthält die nativen Claude-/Codex-Artefakte und das portable Target.
+- `install-skill.sh`, `local-common.sh` und `local-link.sh` bedienen die bestehende native
+  Claude-Code-/Codex-Installation beziehungsweise deren lokale Entwicklung. Sie werden nicht
+  zum Gemini-Installer erweitert.
+
+## Verbindliche Gemini-CLI-Verträge
+
+Die Planung basiert auf der offiziellen Dokumentation für Gemini CLI v0.39.1:
+
+- [Extension-Referenz](https://github.com/google-gemini/gemini-cli/blob/v0.39.1/docs/extensions/reference.md)
+- [Extension-Veröffentlichung](https://github.com/google-gemini/gemini-cli/blob/v0.39.1/docs/extensions/releasing.md)
+- [Custom Commands](https://github.com/google-gemini/gemini-cli/blob/v0.39.1/docs/cli/custom-commands.md)
+- [Agent Skills](https://github.com/google-gemini/gemini-cli/blob/v0.39.1/docs/cli/creating-skills.md)
+- [Subagents](https://github.com/google-gemini/gemini-cli/blob/v0.39.1/docs/core/subagents.md)
+
+Unmittelbar vor der Implementierung werden diese fünf Quellen erneut gegen die dann aktuelle
+Gemini-CLI-Version geprüft. Das gilt insbesondere für Subagents, da ihr Vertrag in v0.39.1 noch
+Preview ist. Widerspricht der aktuelle Vertrag der hier festgelegten Manifest-, Command-, Skill-
+oder Agent-Struktur, stoppt die Umsetzung mit einer konkreten Inkompatibilitätsmeldung; sie lässt
+keine Agents stillschweigend weg und behauptet keine unbestätigte Plattformparität.
 
 ## Architekturentscheidungen
 
-- **Drittes Build-Target statt separater Codepfad:** `build.mjs` bleibt die zentrale Single-Source-Pipeline. Gemini wird analog zu Codex und Claude aus denselben `skills/sf-*`-Quellen erzeugt.
-- **MVP mit Commands + Skills + Agents:** Das Gemini-Target soll Orchestratoren als Commands, alle Skills als Agent Skills und spezialisierte Worker als Subagents generieren. Falls Subagents in der Zielumgebung nicht stabil genug sind, bleiben Agent Skills und Commands trotzdem nutzbar.
-- **Gemini Extension als Auslieferungsformat:** `dist/gemini/sf-claude-plugin/` erhält ein `gemini-extension.json`, `commands/`, `skills/`, `agents/` und optional `GEMINI.md`.
-- **Command-Namespace `sf`:** Orchestratoren und Utilities werden als Gemini Commands unter `commands/sf/*.toml` erzeugt, damit die Befehle als `/sf:build`, `/sf:review`, `/sf:apply-review` usw. erscheinen.
-- **ASK bleibt textbasiert:** Gemini bekommt keine Claude-ähnliche `AskUserQuestion`-UI-Transformation. `{{ASK}}` wird wie bei Codex zu einer bedingten Textfrage transformiert.
-- **Keine Shell-Injection im ersten Schritt:** Gemini Custom Commands unterstützen `!{...}`, aber der erste Port soll keine zusätzlichen Shell-Injections in Commands einführen. Die vorhandenen Workflow-Anweisungen steuern Tool-Nutzung im Modell statt über vorab injizierte Shell-Ausgaben.
-- **Tool- und Modell-Mapping konservativ:** Gemini-Agent-Frontmatter erhält Gemini-kompatible Toolnamen und Modellnamen über explizite Mapping-Funktionen. Unsichere Claude-/Codex-spezifische Werte werden nicht blind übernommen.
+### Ein viertes Target in derselben Pipeline
 
-## Betroffene Dateien
+`build.mjs` erhält `dist.tmp/gemini/effective-flow/` als viertes Ziel. Nach erfolgreichem
+atomarem Swap liegt die Extension unter `dist/gemini/effective-flow/`. Die bestehenden drei
+Targets ändern ihre Bedeutung und Installationsverträge nicht.
 
-| Datei                                          | Beschreibung                                                                                                                         |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `build.mjs`                                    | Neues Gemini-Dist-Target, Manifest-Erzeugung, Command-TOML-, Skill- und Subagent-Generatoren, Placeholder-/ASK-Transforms für Gemini |
-| `README.md`                                    | Architektur-, Build-, Struktur- und Deployment-Dokumentation um Gemini CLI erweitern                                                 |
-| `local-link.sh`                                | Optionales lokales Linken der Gemini Extension per `gemini extensions link` oder dokumentierter manueller Fallback                   |
-| `local-update.sh`                              | Optionales lokales Aktualisieren/Installieren der Gemini Extension oder Hinweis auf getrennten Gemini-Installationsschritt           |
-| `docs/skill-migration-notes.md`                | Notizen zu Gemini-spezifischen Abweichungen ergänzen                                                                                 |
-| `docs/plan/0033-gemini-cli-platform-target.md` | Audit-Trail dieser Planung                                                                                                           |
+Die Gemini-Struktur lautet:
 
-## Implementierungsdetails
+```text
+dist/gemini/effective-flow/
+├── gemini-extension.json
+├── commands/
+│   └── effective-flow/
+│       └── <exposed-tool>.toml
+├── skills/
+│   └── effective-flow/
+│       ├── SKILL.md
+│       ├── tools/
+│       │   └── <exposed-or-internal-tool>.md
+│       ├── shared/
+│       │   └── <lazy-fragment>.md
+│       └── scripts/
+│           ├── remote-tracker.mjs
+│           └── remote-tracker-core.mjs
+└── agents/
+    └── effective-flow-<agent>.md
+```
 
-### Vorgehen
+`dist/` bleibt generiert und gitignoriert. Die Umsetzung bearbeitet keine dortigen Dateien als
+Quellen.
 
-1. Konstanten in `build.mjs` ergänzen:
-   - `DIST_GEMINI`
-   - Gemini-Extension-Name
-   - Gemini-Extension-Ausgabepfad
-2. Clean-/Create-Phase erweitern:
-   - `dist/gemini/` löschen und neu anlegen
-   - Unterverzeichnisse `commands/sf/`, `skills/` und `agents/` erstellen
-3. Gemini-Placeholder-Transforms ergänzen:
-   - `{{SKILL:sf-build}}` → `/sf:build`
-   - `{{SKILL:sf-apply-review}}` → `/sf:apply-review`
-   - `{{AGENT:sf-code-validator}}` → `sf-code-validator` oder eindeutige Subagent-Referenz nach Gemini-Konvention
-   - `{{ASK}}` → bedingte Textfrage mit Optionen, analog zu Codex
-4. Gemini-Command-Generator ergänzen:
-   - Für `type: orchestrator` und `type: utility` jeweils eine TOML-Datei unter `commands/sf/` erzeugen.
-   - `description` aus der Skill-Frontmatter übernehmen.
-   - `prompt` als multiline TOML-String aus dem transformierten Body schreiben.
-   - Command-Dateinamen aus dem `sf-`-Präfix ableiten, z. B. `sf-apply-review` → `commands/sf/apply-review.toml`.
-5. Gemini-Agent-Skills generieren:
-   - Für alle `skills/sf-*` ein Verzeichnis unter `dist/gemini/sf-claude-plugin/skills/<skill-name>/SKILL.md` erzeugen.
-   - Includes und Platzhalter transformieren.
-   - Frontmatter minimal halten: `name` und bereinigte `description`.
-   - Orchestratoren, Utilities und Agents einschließen, damit Gemini Skills auch unabhängig von Commands aktivierbar sind.
-6. Gemini-Subagents generieren:
-   - Für `type: agent` Markdown-Dateien unter `agents/` erzeugen.
-   - YAML-Frontmatter mit `name`, `description`, `kind`, `tools`, optionalem `model` und konservativen Limits erzeugen.
-   - Toolnamen über Mapping übersetzen, z. B. Claude `Read` zu Gemini `read_file`, `Grep` zu `grep_search`, `Bash` zu `run_shell_command`.
-   - Wenn ein Tool nicht eindeutig mapbar ist, weglassen und im Build eine Warnung ausgeben.
-7. Gemini-Manifest erzeugen:
-   - `gemini-extension.json` mit `name`, `version`, `description` und optional `contextFileName`.
-   - Keine `excludeTools` setzen, sofern nicht explizit nötig; Policies bleiben ein späterer Schritt.
-8. Optionales `GEMINI.md` erzeugen oder kopieren:
-   - Kurzer Kontext, dass die Extension aus denselben `skills/`-Quellen wie Codex und Claude erzeugt wird.
-   - Hinweise zur deutschen Dokumentationssprache und zu den `/sf:*` Commands.
-9. Build-Summary erweitern:
-   - Ausgabe für Gemini Commands, Skills und Agents ergänzen.
-10. README aktualisieren:
+### Router, Commands und Argumente
 
-- „Dual-Platform“ zu „Multi-Platform“ ändern.
-- Tabelle für Codex, Claude Code und Gemini CLI ergänzen.
-- Installations-/Link-Hinweise für Gemini CLI ergänzen.
+- `skills/effective-flow/SKILL.md` bleibt der einzige Gemini Agent Skill und behält das
+  Progressive-Disclosure-Modell des dünnen Routers bei.
+- Alle Source-Tools – öffentlich und intern – werden unter
+  `skills/effective-flow/tools/` ausgeliefert. Interne Tools bleiben ausschließlich
+  routergeladene Dateien.
+- Für jedes aus `TOOL_GROUPS` abgeleitete öffentliche Tool entsteht genau eine Datei
+  `commands/effective-flow/<tool>.toml`. Der pfadbasierte Namespace ergibt den vorgesehenen
+  Befehl `/effective-flow:<tool>`.
+- Interne Tools erhalten keine Command-Datei. Der Build leitet die Sollmenge der Commands aus
+  `EXPOSED_TOOLS` ab und prüft auf fehlende, zusätzliche oder kollidierende Namen.
+- Jede Command-Datei enthält `description` und einen mit dem vorhandenen `tomlString`-Ansatz
+  sicher serialisierten `prompt`. Der Prompt delegiert exakt an den Router und das benannte
+  Tool; Gemini ersetzt dabei sein eigenes `{{args}}` durch die Benutzerargumente.
+- `{{args}}` wird bei der Effective-Flow-Transformation ausdrücklich geschützt und bleibt
+  bytegetreu in der erzeugten TOML-Datei erhalten. Leere Argumente sind zulässig.
+- Es wird kein `!{...}` eingebaut. Die Extension führt daher durch die Command-Erzeugung keine
+  Shell-Befehle vorab aus.
+- Extension-Commands haben eine niedrigere Priorität als gleichnamige Projekt- oder
+  User-Commands und können von Gemini bei Konflikten umbenannt werden. Der feste
+  `effective-flow`-Unterordner minimiert dieses Risiko; die Dokumentation bezeichnet
+  `/effective-flow:<tool>` als den konfliktfreien Sollnamen und erklärt die Gemini-Anzeige als
+  maßgeblich.
 
-11. Lokale Deployment-Skripte entscheiden:
+### Rendering der Source-Syntax
 
-- Minimal: Gemini nicht automatisch deployen, aber Pfad und `gemini extensions link dist/gemini/sf-claude-plugin` im README dokumentieren.
-- Optional: `local-link.sh` um Gemini-Link erweitern, falls `gemini` im PATH vorhanden ist; bei fehlendem CLI nur warnen.
-- Optional: `local-update.sh` mit bewusstem Hinweis, dass Gemini Extension-Updates bei aktiver Session erst nach Neustart sichtbar sind.
+Der Gemini-Renderer wird als reine Transformation in `build-lib.mjs` ergänzt und durch
+`build.mjs` mit denselben bekannten Tool-/Agent-Mengen wie die bestehenden Renderer aufgerufen.
+Er behandelt die Source-Syntax wie folgt:
 
-12. Keine Änderung an fachlichen Skill-Inhalten vornehmen, außer Gemini-spezifische Transformationsartefakte erfordern minimale Plattformhinweise.
+| Source-Syntax                           | Gemini-Ausgabe                                                                     |
+| --------------------------------------- | ---------------------------------------------------------------------------------- |
+| `{{SKILL:X}}` für ein öffentliches Tool | `/effective-flow:X`                                                                |
+| `{{SKILL:X}}` für ein internes Tool     | `` `tools/X.md` ``                                                                 |
+| `{{AGENT:X}}`                           | `` `effective-flow-X` ``                                                           |
+| `{{VERSION}}`                           | Release-Please-Version plus Git-Kurz-Hash im Router-/Textkontext                   |
+| `include`                               | eager eingebetteter Inhalt aus `src/shared/X.md`                                   |
+| `lazy-include`                          | Gemini-kompatibler Ladezeiger auf `shared/X.md`; Fragment wird einmal ausgeliefert |
+| `ask`                                   | bedingte, textbasierte Frage mit erhaltenen Optionen und Bedingungen               |
 
-### Komponenten-Struktur
+Die routerinternen Generator-Platzhalter für Katalog, Invocation und Worker-Auflösung werden
+ebenfalls vor dem Schreiben vollständig ersetzt. Der Abschluss-Guard darf in keiner
+Gemini-Markdown- oder TOML-Datei ungelöste Effective-Flow-Platzhalter oder Direktiven finden.
+Geminis `{{args}}` ist die einzige bewusst verbleibende Mustache-Sequenz in Command-Prompts.
 
-Geplante Gemini-Ausgabe:
+### Agents und plattformspezifische Metadaten
 
-| Pfad                                                 | Inhalt                                          |
-| ---------------------------------------------------- | ----------------------------------------------- |
-| `dist/gemini/sf-claude-plugin/gemini-extension.json` | Gemini Extension Manifest                       |
-| `dist/gemini/sf-claude-plugin/GEMINI.md`             | Optionaler Extension-Kontext                    |
-| `dist/gemini/sf-claude-plugin/commands/sf/*.toml`    | Slash Commands wie `/sf:build` und `/sf:review` |
-| `dist/gemini/sf-claude-plugin/skills/sf-*/SKILL.md`  | Agent Skills für alle Source-Skills             |
-| `dist/gemini/sf-claude-plugin/agents/*.md`           | Gemini Subagents für `type: agent`              |
+- Jeder Vertrag unter `src/agents/*.md` erhält einen expliziten `gemini:`-Block. Er enthält die
+  für diesen Agent freigegebenen Gemini-Toolnamen und nur solche weiteren Felder, die die vor der
+  Implementierung revalidierte Subagent-Spezifikation unterstützt.
+- Der Renderer liest ausschließlich diesen `gemini:`-Block. Er leitet weder Modell- oder
+  Toolwerte noch Sandbox-Einstellungen aus `claude:` oder `codex:` ab.
+- Wenn kein Gemini-Modell festgelegt ist, wird das Feld bewusst weggelassen und Gemini verwendet
+  seinen dokumentierten Standard. Es wird kein Claude-/Codex-Modellname als Fallback übernommen.
+- Ein in Gemini nicht vorhandenes Sandbox-Feld wird nicht simuliert. Unbekannte Gemini-Felder,
+  Toolnamen oder unvollständige Pflichtmetadaten brechen den Build mit Dateipfad und Agent-Namen
+  ab.
+- Aus jeder Agent-Quelle entsteht genau ein Preview-Subagent
+  `agents/effective-flow-<agent>.md`. Sein YAML-Frontmatter deklariert denselben
+  `effective-flow-<agent>`-Namen, die bereinigte Beschreibung und die expliziten Gemini-Werte;
+  sein Body stammt aus dem gemeinsamen Agent-Vertrag.
 
-### API-Anbindung
+### Manifest und bewusst ausgelassene Features
 
-Nicht relevant. Es werden keine externen APIs angebunden. Der Port erzeugt statische Extension-Artefakte aus lokalen Markdown-/TOML-/JSON-Dateien.
+`gemini-extension.json` wird deterministisch mit `JSON.stringify` erzeugt und enthält genau die
+für den gewählten MVP benötigten Felder: den Namen `effective-flow`, die semantische Version aus
+`.release-please-manifest.json` und die Extension-Beschreibung.
 
-### Styling-Ansatz
+Es gibt kein `GEMINI.md` und kein `contextFileName`: immer geladener Extension-Kontext würde den
+dünnen Router und Lazy Loading unterlaufen. Ohne konkrete Produktanforderung werden außerdem
+keine MCP-Server, Settings, Policies, Themes, Hooks oder `excludeTools` in das Manifest
+aufgenommen.
 
-Nicht relevant. Es gibt keine UI-Komponenten.
+## Auslieferungsdesign
 
-### Barrierefreiheit
+### Dedizierter Branch `gemini`
 
-Nicht relevant für die Build-Pipeline. Die Markdown-/TOML-Ausgaben sollen aber lesbar strukturiert bleiben.
+Der Default-Branch `main` bleibt unverändert der einzige portable Manager-Kandidat. Die
+Gemini-Extension wird stattdessen auf einem dedizierten, maschinell verwalteten Branch
+`gemini` veröffentlicht. Dessen Repository-Root ist eine exakte, installierbare Kopie des Inhalts
+von `dist/gemini/effective-flow/`; `gemini-extension.json` liegt also direkt am Branch-Root.
 
-### Edge Cases
+Die Benutzerinstallation lautet:
 
-- Wenn Gemini CLI nicht installiert ist, darf `node build.mjs` trotzdem erfolgreich laufen; nur optionale Link-/Update-Skripte dürfen eine Warnung ausgeben.
-- Wenn Gemini Subagent-Toolnamen nicht eindeutig mapbar sind, darf der Build nicht still falsche Tools eintragen. Entweder warnen und weglassen oder das Mapping explizit ergänzen.
-- Wenn TOML-Prompts dreifache Anführungszeichen oder problematische Sequenzen enthalten, muss der Generator TOML korrekt escapen oder eine robuste Literal-String-Strategie verwenden.
-- Wenn zwei Commands mit demselben Namen entstehen, muss der Build deterministisch abbrechen.
-- Wenn Gemini CLI seine Subagent-Preview-Syntax ändert, soll der Command-/Skill-Teil weiterhin unabhängig nutzbar bleiben.
-- Wenn `{{ASK}}` eine `when:`-Bedingung enthält, muss Gemini die Bedingung textuell behalten.
+```sh
+gemini extensions install https://github.com/sebastian-software/effective-flow --ref gemini
+```
+
+Die lokale Entwicklung verwendet das gebaute Target direkt:
+
+```sh
+gemini extensions link dist/gemini/effective-flow
+```
+
+`install-skill.sh`, `local-common.sh` und `local-link.sh` bleiben auf Claude Code und Codex
+begrenzt. Sie rufen Gemini nicht auf und ein fehlendes `gemini`-Binary beeinflusst den normalen
+Build nicht.
+
+### Staging und Release-Workflow
+
+- `scripts/stage-delivery.mjs` erhält neben der unveränderten `main`-Staging-Funktion einen
+  expliziten Gemini-Modus. Dieser leert ausschließlich den verifizierten Gemini-Branch-Worktree
+  und kopiert den Inhalt von `dist/gemini/effective-flow/` an dessen Root. Die portable
+  `stageDelivery`-Funktion und ihr Ein-Kandidaten-Guard bleiben unverändert.
+- `.github/workflows/release.yml` baut und prüft weiterhin auf `develop`. Bei einer von
+  Release Please erzeugten Version wird zusätzlich zum Archiv und zu `main` ein Worktree des
+  vorab angelegten, maschinell verwalteten Branches `gemini` erstellt, über den Gemini-Modus
+  gestagt, statisch geprüft, als neuer nicht erzwungener Delivery-Commit geschrieben und nach
+  `gemini` gepusht.
+- Der Workflow prüft anschließend, dass der Remote-Branch auf genau diesem Commit steht und dass
+  dessen Root dem gebauten Extension-Baum entspricht. Ein fehlender Branch, ein abweichender
+  Baum oder ein zweiter Extension-Root lässt die Release-Auslieferung sichtbar fehlschlagen.
+- `scripts/distribution-smoke.mjs` erhält einen Gemini-Layout- und
+  Gemini-Delivery-Modus. Der Offline-Smoke prüft das vierte Target und das gestagte Branch-Root;
+  der Archiv-Smoke erwartet das Gemini-Target zusätzlich. Der bestehende `main`-Smoke erwartet
+  weiterhin exakt einen portablen Kandidaten und keine Target-Wrapper.
+- Die Release-Dokumentation beschreibt die einmalige Anlage des Branches `gemini`; danach wird er
+  ausschließlich durch den Release-Workflow fortgeschrieben. Es gibt keinen Force-Push.
+
+## Betroffene Quelldateien der späteren Umsetzung
+
+| Datei oder Bereich                                      | Geplante Änderung                                                                                                                                |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `build-lib.mjs`                                         | Reine Gemini-Referenz-, Body-, Command- und Agent-Metadaten-Transformationen sowie statische Guards ergänzen                                     |
+| `build.mjs`                                             | Viertes Target, Source-Discovery-Verwendung, Verzeichnisse, Manifest/Commands/Skills/Agents, Zusammenfassung, Guards und atomaren Swap erweitern |
+| `test/build-lib.test.mjs`                               | Unit-Tests für Gemini-Rendering, `{{args}}`-Erhalt, TOML-Escaping, Metadaten und Fehlerfälle ergänzen                                            |
+| weitere bestehende `test/*.test.mjs` nach Zuständigkeit | Repositoryweite Build- und Vertragschecks auf vier Targets erweitern                                                                             |
+| `src/agents/*.md`                                       | Für alle aus der Source-Discovery gefundenen Agents explizite `gemini:`-Metadaten ergänzen                                                       |
+| `src/SKILL.md`, `src/tools/*.md`, `src/shared/*.md`     | Nur ändern, falls die gemeinsame Formulierung einen verifizierten Gemini-neutralen Hinweis benötigt; keine Gemini-Kopie der Verträge anlegen     |
+| `AGENTS.md`                                             | Build-Architektur, Target-Regeln und Agent-Frontmatter für Gemini dokumentieren                                                                  |
+| `scripts/stage-delivery.mjs`                            | Separaten Gemini-Branch-Staging-Modus ergänzen, ohne den `main`-Vertrag zu lockern                                                               |
+| `scripts/distribution-smoke.mjs`                        | Gemini-Build-, Archiv- und Branch-Root-Checks ergänzen                                                                                           |
+| `.github/workflows/release.yml`                         | Geprüfte Auslieferung auf den Branch `gemini` ergänzen                                                                                           |
+| `package.json`                                          | Beschreibung von zwei Harnesses auf die aktuelle Multi-Target-Auslieferung aktualisieren; vorhandene Check-Skripte beibehalten                   |
+| `README.md`                                             | Gemini CLI als drittes natives Laufzeitziel, Installation über `--ref gemini` und lokalen Link dokumentieren                                     |
+| `docs/user-guide/getting-started.md`                    | Gemini-Installation, Befehlsnamespace und erste Nutzung ergänzen                                                                                 |
+| `docs/user-guide/troubleshooting.md`                    | Command-Konflikte, Preview-Subagents und Branch-/Installationsdiagnose ergänzen                                                                  |
+| `docs/developer-guide/README.md`                        | Architekturübersicht auf Gemini erweitern                                                                                                        |
+| `docs/developer-guide/architecture.md`                  | Viertes Build-Target und getrennte Branch-Auslieferung dokumentieren                                                                             |
+| `docs/developer-guide/build-system.md`                  | Renderer, Direktiven, Guards, Metadaten und Validierung für Gemini dokumentieren                                                                 |
+
+`dist/**` ist ausschließlich Build-Ausgabe und keine Liste direkt zu editierender Quelldateien.
+
+## Umsetzungsschritte
+
+1. Die fünf offiziellen Gemini-Quellen frisch prüfen und die unterstützten Manifest-, Command-,
+   Skill- und Preview-Subagent-Felder protokollieren. Bei Inkompatibilität vor dem ersten
+   Produktcode-Schritt abbrechen.
+2. In `build-lib.mjs` den Gemini-Harness ergänzen: Referenzen, `ask`, Lazy-Ladezeiger,
+   Command-Prompt/TOML-Serialisierung und explizite Agent-Metadaten rein transformieren. Unit-Tests
+   zuerst um positive und negative Fälle erweitern.
+3. Alle `src/agents/*.md` um validierte `gemini:`-Blöcke ergänzen. Die Toolmenge pro Agent wird
+   fachlich aus dessen Vertrag abgeleitet und gegen die offizielle Gemini-Toolliste geprüft.
+4. In `build.mjs` `DIST_GEMINI` und die Extension-Verzeichnisse unter `dist.tmp/` ergänzen.
+   Manifest, genau einen Router-Skill, alle Tool-Ressourcen, abgeleitete Lazy-Fragmente,
+   Runtime-Scripts, Commands nur für öffentliche Tools und einen Subagent pro Agent-Quelle
+   erzeugen.
+5. Die vorhandenen Guards und die Build-Zusammenfassung auf Gemini erweitern: Mengen werden aus
+   `TOOL_GROUPS`, Tool-Dateien, Agent-Dateien, Lazy-Fragmenten und Runtime-Script-Liste abgeleitet,
+   nicht als neue feste Zahlen gepflegt.
+6. Staging, Distribution-Smoke und Release-Workflow um den dedizierten Branch `gemini` ergänzen;
+   den `main`-Ein-Kandidaten-Vertrag unverändert testen.
+7. README, User Guide, Developer Guide und `AGENTS.md` auf die verifizierte Zielarchitektur und
+   die beiden nativen Gemini-Befehle für Installation und lokalen Link aktualisieren.
+8. Die vollständige Validierung ausführen und bei lokal vorhandenem Gemini CLI zusätzlich den
+   nativen Smoke-Test durchführen.
+
+## Edge Cases und Fehlerverhalten
+
+- **Gemini CLI fehlt lokal:** Alle statischen Checks und der normale Build bleiben verpflichtend
+  und erfolgreich möglich. Nur der native Smoke wird mit dokumentiertem Grund übersprungen.
+- **Preview-Schema hat sich geändert:** Der Build verwirft oder schätzt keine Metadaten. Die
+  Umsetzung stoppt vor der Auslieferung und nennt den inkompatiblen Vertrag.
+- **Command-Namenskonflikt:** Der Build verhindert interne Duplikate. Externe Projekt-/User-
+  Konflikte werden über Geminis tatsächliche Command-Anzeige diagnostiziert; Dokumentation und
+  Smoke verwenden im konfliktfreien Fall `/effective-flow:<tool>`.
+- **TOML-Sonderzeichen oder mehrzeilige Prompts:** Der bestehende Basic-String-Serializer wird
+  genutzt und mit Anführungszeichen, Backslashes, Zeilenumbrüchen und `{{args}}` getestet; es gibt
+  keine ungeschützten dreifachen Anführungszeichen.
+- **Leere Command-Argumente:** Der Prompt bleibt gültig und übergibt eine leere Argumentmenge an
+  das fest benannte Tool.
+- **Agent-Metadaten fehlen oder sind unbekannt:** Der Build bricht mit Source-Pfad und Feld ab,
+  statt Claude-/Codex-Werte zu übernehmen oder einen Agent auszulassen.
+- **Lazy-Fragment oder Runtime-Script fehlt:** Der Build bricht vor dem atomaren Swap ab; das
+  vorherige `dist/` bleibt vollständig erhalten.
+- **Gemini-Branch fehlt oder enthält Fremddateien:** Der Release-Schritt bricht vor dem Push ab.
+  Der verifizierte Stager darf ausschließlich seinen separaten Worktree verändern und erzeugt
+  einen exakten Extension-Root.
+- **Default-Branch-Regressionsrisiko:** Der bestehende Delivery-Smoke beweist weiterhin genau
+  einen portablen Kandidaten unter `effective-flow/`; Gemini wird weder nach `main` kopiert noch
+  von den Claude-/Codex-Shell-Installern verwaltet.
 
 ## Akzeptanzkriterien
 
-- [ ] `node build.mjs` erzeugt zusätzlich `dist/gemini/sf-claude-plugin/`.
-- [ ] `dist/gemini/sf-claude-plugin/gemini-extension.json` enthält Name, Version und Beschreibung.
-- [ ] Für alle Orchestratoren und Utilities existiert eine Gemini Command-TOML-Datei unter `commands/sf/`.
-- [ ] Für alle `skills/sf-*` existiert ein Gemini Agent Skill unter `skills/<skill-name>/SKILL.md`.
-- [ ] Für alle `type: agent`-Skills existiert ein Gemini Subagent unter `agents/`.
-- [ ] `{{SKILL:...}}`, `{{AGENT:...}}`, `{{INCLUDE:...}}` und `{{ASK}}` sind in Gemini-Ausgaben vollständig transformiert.
-- [ ] Bedingte `{{ASK}}`-Blöcke bleiben in Gemini als bedingte Textfragen erhalten.
-- [ ] Build-Summary zeigt Gemini Commands, Skills und Agents.
-- [ ] README dokumentiert Gemini CLI als drittes Target inklusive Link-/Installationshinweis.
-- [ ] `node --check build.mjs` besteht.
+- [ ] `node build.mjs` erzeugt zusätzlich die oben definierte Struktur unter
+      `dist/gemini/effective-flow/`, ohne die bestehenden Claude-, Codex- oder Portable-Layouts zu
+      verändern.
+- [ ] `gemini-extension.json` ist valides JSON und enthält exakt den Namen `effective-flow`, die
+      semantische Release-Please-Version und die Beschreibung; nicht benötigte Manifest-Features
+      sowie `GEMINI.md` und `contextFileName` fehlen.
+- [ ] Die Command-Menge entspricht exakt den aus `TOOL_GROUPS` abgeleiteten öffentlichen Tools;
+      interne Tools besitzen keine Command-Datei. Jede Datei liegt unter
+      `commands/effective-flow/<tool>.toml` und ergibt `/effective-flow:<tool>`.
+- [ ] Jede Command-TOML ist statisch valide, besitzt `prompt` und `description`, enthält genau den
+      vorgesehenen Toolnamen und bewahrt Geminis `{{args}}`; kein Artefakt enthält `!{...}`.
+- [ ] `skills/effective-flow/` enthält den dünnen Router, alle öffentlichen und internen Tools,
+      alle abgeleiteten Lazy-Fragmente und die beiden aus `src/scripts/` entdeckten
+      Runtime-Ressourcen.
+- [ ] Alle Effective-Flow-Source-Direktiven und Generator-Platzhalter sind in Gemini-Artefakten
+      vollständig gerendert. `{{args}}` bleibt ausschließlich dort erhalten, wo ein Gemini-Command
+      Argumente entgegennimmt.
+- [ ] Für jede entdeckte Agent-Quelle existiert genau ein
+      `agents/effective-flow-<agent>.md` mit validem YAML-Frontmatter, übereinstimmendem
+      namespaced Namen, Beschreibung und ausschließlich expliziten `gemini:`-Werten.
+- [ ] Kein Gemini-Agent übernimmt Modell-, Tool- oder Sandbox-Werte aus `claude:` oder `codex:`;
+      unbekannte Felder und Tools erzeugen einen klaren Build-Fehler.
+- [ ] Der Versionsstempel ist in Claude, Codex, Portable und Gemini konsistent; das Manifest nutzt
+      die semantische Version ohne Git-Hash.
+- [ ] Build- und Distribution-Guards beweisen für alle vier Targets vollständige
+      Lazy-Ressourcen, Runtime-Scripts, aufgelöste Agent-Referenzen und das Fehlen fremder
+      Harness-Parameter.
+- [ ] Der Branch `main` enthält nach dem Staging weiterhin genau den einen portablen
+      `effective-flow/`-Kandidaten plus Consumer-Dokumentation und keine Gemini-Extension.
+- [ ] Der maschinell verwaltete Branch `gemini` enthält am Root exakt den gebauten Extension-Baum
+      und ist mit
+      `gemini extensions install https://github.com/sebastian-software/effective-flow --ref gemini`
+      installierbar.
+- [ ] Die lokale Entwicklung ist mit
+      `gemini extensions link dist/gemini/effective-flow` dokumentiert;
+      `install-skill.sh`, `local-common.sh` und `local-link.sh` bleiben Claude-/Codex-spezifisch.
+- [ ] README, Benutzer- und Entwicklerdokumentation beschreiben dieselbe Vier-Target-Architektur,
+      denselben Command-Namespace und dass Subagents vor der Umsetzung erneut als Preview-Vertrag
+      geprüft werden.
 
-## Validierungsplan
+## Validierung
 
-- `node --check build.mjs`
-- `node build.mjs`
-- `rg` gegen `dist/gemini/`, um untransformierte Platzhalter zu finden:
-  - `{{SKILL:`
-  - `{{AGENT:`
-  - `{{INCLUDE:`
-  - `{{ASK`
-- `rg` gegen `dist/gemini/commands/`, um erwartete Command-Dateien zu prüfen.
-- `rg` gegen `dist/gemini/agents/`, um Toolnamen und Frontmatter-Felder zu prüfen.
-- Falls Gemini CLI lokal verfügbar ist:
-  - `gemini extensions link dist/gemini/sf-claude-plugin`
-  - Gemini CLI neu starten oder Commands neu laden, soweit unterstützt.
-  - `/commands list` prüfen.
-  - `/sf:version` oder `/sf:plan` als Smoke-Test verwenden.
-- Falls Gemini CLI nicht verfügbar ist: Validierung auf statische Artefakte und Build-Syntax beschränken und das im Abschluss dokumentieren.
+Die spätere Umsetzung führt in dieser Reihenfolge mindestens aus:
 
-## Annahmen und offene Punkte
+```sh
+pnpm agent:check
+pnpm test
+node build.mjs
+pnpm test:distribution
+```
 
-- Annahme: Der erste Gemini-Port zielt auf Gemini CLI, nicht auf Gemini Web, AI Studio oder IDE-spezifische Gemini-Code-Assist-Oberflächen.
-- Annahme: Commands und Agent Skills sind stabil genug für den MVP; Subagents sind wegen Preview-Status gesondert zu beobachten.
-- Annahme: Gemini CLI kann Extension Commands aus `commands/` und Skills aus `skills/` gemeinsam laden.
-- Offener Punkt: Exaktes Gemini-Modell-Mapping für die bestehenden Codex-/Claude-Modellklassen muss bei der Umsetzung final gewählt werden.
-- Offener Punkt: Ob `local-update.sh` Gemini automatisch installieren/aktualisieren soll oder nur `local-link.sh` für Entwicklung erweitert wird, kann während der Umsetzung anhand der lokalen Gemini-CLI-Verfügbarkeit entschieden werden.
-- Offener Punkt: Gemini-spezifische Policies können später ergänzt werden; sie sind nicht Teil des MVP.
+Zusätzlich prüfen Build-Guards und Tests statisch:
+
+1. JSON-Parsing und exakte erlaubte Schlüssel von `gemini-extension.json`;
+2. TOML-Syntax des unterstützten Command-Subsets, Pflichtfelder, Escaping und unverändertes
+   `{{args}}`;
+3. YAML-Frontmatter, Pflichtfelder und erlaubte Gemini-Metadaten jedes Preview-Subagents;
+4. exakte, aus den Quellen abgeleitete Tool-, Command- und Agent-Mengen;
+5. vollständige Lazy-Fragmente und Runtime-Scripts in allen vier Targets;
+6. identische Versionsstempel und semantische Manifest-Version;
+7. keine ungelösten `{{SKILL:...}}`, `{{AGENT:...}}`, `{{VERSION}}`, `include`,
+   `lazy-include`, `ask` oder routerinternen Platzhalter in erzeugten Artefakten;
+8. `{{args}}` nur in Gemini-Commands und nirgendwo eine neu erzeugte `!{...}`-Shell-Injection;
+9. bytegleichen Gemini-Build- und Branch-Root sowie den unveränderten Ein-Kandidaten-Vertrag von
+   `main`;
+10. einen fehlgeschlagenen Build vor dem atomaren Swap, bei dem das vorherige `dist/` erhalten
+    bleibt.
+
+Wenn `gemini` lokal verfügbar ist, kommt nach den statischen Checks ein nativer Smoke hinzu:
+
+1. `gemini extensions link dist/gemini/effective-flow` in einer isolierten Testkonfiguration;
+2. Extension- und Command-Liste prüfen;
+3. einen argumentlosen Befehl wie `/effective-flow:version` und einen Befehl mit Argumenten
+   ausführen;
+4. einen Workflow mit Agent-Delegation prüfen;
+5. den Link anschließend über die dokumentierte Gemini-Extension-Verwaltung entfernen.
+
+Ist Gemini CLI nicht installiert, wird nur dieser native Block als übersprungen protokolliert;
+alle statischen und repositoryeigenen Checks bleiben verpflichtend.
+
+## Offene Punkte
+
+- Keine offenen Punkte.
 
 ## Plan-Review
 
 **Ergebnis:** Freigegeben
 
-### Zusammenfassung
-
-| Bereich     | Kritisch | Wichtig | Hinweis |
-| ----------- | -------: | ------: | ------: |
-| Architektur |        0 |       0 |       1 |
-| Security    |        0 |       0 |       1 |
-| Datenschutz |        0 |       0 |       0 |
-| Fehlerfälle |        0 |       0 |       1 |
-| Testbarkeit |        0 |       0 |       0 |
-| Scope       |        0 |       0 |       0 |
-| Wartbarkeit |        0 |       0 |       0 |
-
-### Befunde
-
-- **Hinweis – Architektur:** Gemini Subagents sind laut externer Dokumentation Preview. Der Plan begrenzt das Risiko, indem Commands und Agent Skills als stabiler MVP unabhängig von Subagent-Parität erzeugt werden.
-- **Hinweis – Security:** Gemini Custom Commands unterstützen Shell-Injection mit Bestätigung. Der Plan führt im ersten Schritt keine neuen `!{...}`-Shell-Injections ein und reduziert damit zusätzliche Tool-Bestätigungen und Sicherheitsrisiken.
-- **Hinweis – Fehlerfälle:** Gemini CLI ist eventuell lokal nicht installiert. Der Plan verlangt, dass der Build auch ohne Gemini CLI funktioniert und nur optionale Deployment-Schritte warnen.
+- Die Source-to-Dist-, Atomic-Swap- und Release-Please-Verträge entsprechen dem aktuellen
+  Repository.
+- Die Tool- und Agent-Mengen werden aus den Quellen abgeleitet; der aktuelle Snapshot von
+  17 öffentlichen plus 6 internen Tools und 15 Agents ist nur verifizierter Kontext.
+- `main` bleibt frei von einem konkurrierenden Gemini-Skill-Kandidaten. Der dedizierte Branch
+  `gemini` erfüllt den installierbaren Root-Vertrag ohne die portable Manager-Auslieferung zu
+  schwächen.
+- Preview-Subagents sind verbindlicher Scope, aber durch Revalidierung, strikte Metadaten-Guards
+  und einen klaren Abbruchpfad abgesichert.
+- Die Validierung deckt reine Transformationen, generierte Artefakte, Distribution, Branch-
+  Staging und – sofern verfügbar – Gemini CLI selbst ab.
