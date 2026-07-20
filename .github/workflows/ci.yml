@@ -79,7 +79,7 @@ jobs:
           mkdir -p "$install_dir"
           curl --fail --location --silent --show-error "$url" --output "$RUNNER_TEMP/$asset"
           printf '%s  %s\n' "$DALO_SHA256" "$RUNNER_TEMP/$asset" | sha256sum --check -
-          tar -xzf "$RUNNER_TEMP/$asset" -C "$install_dir"
+          tar -xzf "$RUNNER_TEMP/$asset" -C "$install_dir" --strip-components=1
           printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
           "$install_dir/dalo" --version
 
