@@ -1,15 +1,14 @@
 # Tool reference: Setup & info
 
-This group covers the one-time setup of a project and one info command.
+This group covers project setup, explicit cleanup of migration remnants, and version information.
 
 ## `/effective-flow setup`
 
-**Purpose:** Prepares a target project for using Effective Flow: idempotently adds `.effective-flow/`
-to `.gitignore` (runtime state such as `memory.json`, `cache.json`, `review/`, or
-`.worktrees/` is ignored, while `.effective-flow/config.json` stays **tracked**) and creates
-`.effective-flow/config.json` via a guided wizard, or updates it non-destructively.
-It always starts from safe defaults and offers two paths: **Express** (adopt defaults or
-existing values) or **Guided** (each option explained individually).
+**Purpose:** Prepares a target project for Effective Flow. It makes `.effective-flow/` a fully
+gitignored runtime directory, creates or updates the living project-setup ADR, and writes the
+canonical `**Effective Flow project setup:** <path>` marker in `AGENTS.md` or another existing
+convention file. The wizard starts from safe defaults and offers two paths: **Express** (adopt
+defaults while retaining existing values) or **Guided** (explain and choose each option).
 
 **When to use:** On the first use of Effective Flow in a project, or later, to adjust individual
 settings (worktree, completion action, marker language, tracker mode, advanced
@@ -17,16 +16,19 @@ review/apply-review values, skill discovery).
 
 **Typical call:** `/effective-flow setup`
 
-**Input/output:** No input required beyond the answers to the wizard questions. The output
-is the updated `.gitignore` and `.effective-flow/config.json`; when a config already exists,
-the wizard shows the currently committed value before each question and changes it only after
-explicit confirmation.
+**Input/output:** No input is required beyond the wizard answers. The output is the normalized
+`.gitignore`, the project-setup ADR (default
+`docs/adr/effective-flow-project-setup.md`), and its convention-file marker. When configuration
+already exists, the wizard shows current values and changes them only after explicit
+confirmation. Unknown ADR rows are preserved.
 
-**Interplay:** `setup` is the only place where deferred config-migration follow-up questions
-are decided; other tools defer unclear migration cases only with a safe default. The values
-set here (`review.*`, `applyReview.*`, `plan.*`, `delivery.*`, `worktree.*`, `tracker.*`,
-`skills.*`) drive the behavior of all other tools – the full schema reference lives in
-[Configuration](configuration.md).
+**Interplay:** `setup` owns configuration writes and migration. Other tools only resolve and read
+the ADR; if they find only a legacy JSON config, they may use it transitionally for that run and
+point to `setup`. During migration, setup converts the legacy values to the flat Markdown table,
+sets the marker, normalizes `.gitignore` to `.effective-flow/`, and untracks an old tracked config
+without deleting its on-disk content. The values set here (`review.*`, `applyReview.*`, `plan.*`,
+`delivery.*`, `worktree.*`, `tracker.*`, `skills.*`) drive the other tools; the complete schema
+is in [Configuration](configuration.md).
 
 ## `/effective-flow cleanup`
 
@@ -48,9 +50,10 @@ is the only path that truly deletes.
 **Input/output:** No input beyond the confirmations. The skill first shows an inventory, then
 a dry-run preview of the deletion; it removes tracked files via `git rm` (recoverable through
 the Git history), and untracked/gitignored directories physically and irreversibly after
-explicit confirmation. It creates **no** commit and no backup, touches neither `.effective-flow/`
-nor the project-setup ADR nor a global skill installation, and is a no-op when no leftovers
-are present.
+explicit confirmation. It creates **no** commit or backup and never changes current ADR values or
+a global skill installation. It may copy confirmed runtime files into `.effective-flow/` or
+remove a confirmed legacy config from that directory; otherwise the active runtime directory is
+preserved. With no leftovers, cleanup is a no-op.
 
 **Interplay:** `cleanup` does not adopt config values from a legacy `config.json` itself – it
 points to [`/effective-flow setup`](#effective-flow-setup) for that, the owner of the
@@ -75,7 +78,7 @@ process, see [Release and Installation](../developer-guide/release-and-installat
 
 ## Further reading
 
-- [Configuration](configuration.md) – complete `.effective-flow/config.json` reference
+- [Configuration](configuration.md) – complete project-setup ADR reference
 - [Worktree and Delivery](worktree-and-delivery.md) – effect of `worktree.*`/`delivery.*`
 - [Remote Tracker](remote-tracker.md) – effect of `tracker.*`
 - [Skill Discovery](skill-discovery.md) – effect of `skills.*`

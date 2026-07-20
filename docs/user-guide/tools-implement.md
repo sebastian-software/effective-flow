@@ -21,8 +21,8 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
   [Skill discovery](skill-discovery.md)) and respect their respective
   write boundary.
 
-`<plan.dir>` is the plan directory from `.effective-flow/config.json` → `plan.dir` (default
-`docs/plan`, see [Configuration](configuration.md)).
+`<plan.dir>` is the `plan.dir` value from the Effective Flow project-setup ADR (default
+`docs/plan`; see [Configuration](configuration.md#block-plan)).
 
 ## `/effective-flow apply`
 

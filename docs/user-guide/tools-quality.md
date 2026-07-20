@@ -42,8 +42,8 @@ suitable to deeply cross-check an existing plan before implementation.
 `/effective-flow fix` (defect), `/effective-flow refactor` (structural problem), `/effective-flow build` (missing
 functionality), or `/effective-flow docs` (documentation gap). The resulting report or the
 epic is typically picked up via `/effective-flow apply`. The behavior and depth of the review
-can be controlled via `review.profile` (`full`/`focused`/`fast`) in `.effective-flow/config.json`,
-see [Configuration](configuration.md). Remote mode is described in
+can be controlled via `review.profile` (`full`/`focused`/`fast`) in the project-setup ADR; see
+[Configuration](configuration.md#block-review). Remote mode is described in
 [Remote tracker](remote-tracker.md).
 
 ## Further reading

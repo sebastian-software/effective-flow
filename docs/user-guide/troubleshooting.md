@@ -66,24 +66,28 @@ Add the missing information there and then call the implementing tool again.
 
 The status marker in the header of a plan file (e.g. `**Planungsstatus:** Nicht umgesetzt` or
 `**Plan status:** Not implemented`) follows `plan.markerLanguage` from
-`.effective-flow/config.json`. If the key is not set there, Effective Flow detects the language from
-existing plan files in the `<plan.dir>` directory; if no unambiguous signal is found, the
-default is English. Only the marker itself follows this setting – the rest of the plan
-content stays written in the language in which the plan was written, independently of it.
+the [project-setup ADR](./configuration.md#project-setup-adr). If the row is missing, Effective
+Flow detects the language from existing plan files in `<plan.dir>`; without a clear signal, the
+default is English. Only the marker follows this setting – the rest of the plan stays in the
+language in which it was written.
 
 To fix the language permanently, set `plan.markerLanguage` explicitly via
-[`/effective-flow setup`](./tools-setup.md) (core toggle "Marker") or enter it manually in
-`.effective-flow/config.json` (see [Configuration](./configuration.md#block-plan)).
+[`/effective-flow setup`](./tools-setup.md) (core toggle “Marker”) or edit the corresponding ADR
+row (see [Configuration](./configuration.md#block-plan)).
 
-## There is no `.effective-flow/config.json`
+## There is no project-setup ADR
 
-This is not an error state. Without a config file, every tool works with the safe defaults
-documented in [Configuration](./configuration.md#safe-defaults-at-a-glance) – worktree on,
-completion via merge, local tracker, marker language from detection or English. A config is
-also **not created automatically** just because a tool runs; it comes into being solely via
-[`/effective-flow setup`](./tools-setup.md) or through manual creation. If you want to deviate from
-the defaults, `/effective-flow setup` is the easiest way – the express path takes over the safe
-defaults after a single confirmation.
+This is not an error. Without an ADR or transitional legacy source, every tool uses the safe
+defaults in [Configuration](./configuration.md#safe-defaults-at-a-glance): worktree enabled,
+completion via merge, local tracker as the safe base, and marker language detected or English.
+Review still asks for local or remote mode on first use when no source pins `tracker.mode`.
+Running an ordinary tool never creates configuration or touches Git. To persist different settings, run
+[`/effective-flow setup`](./tools-setup.md); its Express path adopts the safe base after one
+before/after confirmation.
+
+If a convention-file marker exists but points to a missing ADR, Effective Flow reports the stale
+marker and continues through the default-path scan and other fallbacks. Run setup to correct the
+marker once you have chosen the intended ADR location.
 
 ## Getting rid of old `.firmo/`/`.sf-plugin/` directories or `firmo-` labels
 

@@ -33,6 +33,7 @@ import {
   assertNoEagerLazyOverlap,
   collectRenderedWorkerRefs,
   findProhibitedConsumerScriptCommands,
+  findRetiredConfigDocViolations,
   findForeignHarnessToolParameters,
 } from './build-lib.mjs';
 
@@ -200,6 +201,36 @@ const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
     process.stderr.write(
       'ERROR: consumer docs guard (#160): developer-only scripts must not be executable install commands:\n' +
         violations.map(({ file, line, command }) => `  ${file}:${line}: ${command}`).join('\n') +
+        '\n',
+    );
+    process.exit(1);
+  }
+}
+
+// --- Guard: retired config paths stay confined to migration documentation ---
+// The living project-setup ADR is the only current configuration interface.
+// Scan the hand-maintained consumer sources recursively so stale operational
+// `.effective-flow/config.json` instructions cannot reach the delivery branch.
+{
+  const markdownFiles = [join(ROOT_DIR, 'README.md')];
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.isFile() && entry.name.endsWith('.md')) markdownFiles.push(path);
+    }
+  };
+  visit(DOCS_USER_GUIDE);
+
+  const violations = markdownFiles.flatMap((file) =>
+    findRetiredConfigDocViolations(relative(ROOT_DIR, file), readFileSync(file, 'utf8')),
+  );
+  if (violations.length > 0) {
+    process.stderr.write(
+      'ERROR: delivery docs config guard (#166): retired config references are allowed only in explicit migration sections:\n' +
+        violations
+          .map(({ file, line, kind, reference }) => `  ${file}:${line}: ${kind}: ${reference}`)
+          .join('\n') +
         '\n',
     );
     process.exit(1);

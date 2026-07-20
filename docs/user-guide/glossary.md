@@ -70,8 +70,8 @@ architecture and implementation decisions, and recommends the appropriate subseq
 
 The mechanism with which Effective Flow tools and agents survey available host skills at
 runtime (e.g. `humanizer`, `impeccable`, `context7`) and additionally include the ones
-suited to the concrete task – controlled via the `skills` block in `.effective-flow/config.json`,
-globally as well as per agent and tool. Details in [Skill Discovery](./skill-discovery.md).
+suited to the concrete task – controlled via `skills.*` rows in the project-setup ADR, globally
+and per agent or tool. Details in [Skill Discovery](./skill-discovery.md).
 
 ## Tool
 
