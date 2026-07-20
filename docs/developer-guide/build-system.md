@@ -97,6 +97,20 @@ The build aborts with an error message if any of these guards is violated:
   namespaced sidecars under `dist/{claude,codex}/agents/`; portable references must resolve to
   exact contracts under `dist/portable/effective-flow/workers/`. All worker artifacts carry
   matching metadata, and no source placeholder may remain.
+- **Foreign harness tool-parameter guard (#163):** Every rendered Markdown and TOML file is
+  scanned before the atomic `dist/` swap. A native target may contain only parameters owned by
+  that harness, while the portable target may contain no native-only parameters. Violations
+  report the target, relative file, line, and parameter. The extensible ownership registry and
+  pure checker live as `HARNESS_TOOL_PARAMETER_OWNERSHIP` and
+  `findForeignHarnessToolParameters` in `build-lib.mjs` and are covered in
+  `test/build-lib.test.mjs`.
+
+  | Parameter             | Owning target |
+  | --------------------- | ------------- |
+  | `run_in_background`   | Claude        |
+  | `yield_time_ms`       | Codex         |
+  | `sandbox_permissions` | Codex         |
+
 - **Include-target guard:** Every ` ```include ` fence must point to an existing
   `src/shared/<name>.md`.
 - **Lazy-include guards (#99):** (a) No fragment may be embedded in the same file both eagerly

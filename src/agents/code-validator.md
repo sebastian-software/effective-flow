@@ -71,11 +71,13 @@ In mixed repos (Rust **and** JS/TS), run both toolchains side by side and report
    - `full`: TypeScript, linting, and build as before.
    - `quick`: prefer an existing fast combined script such as `check`, `agent:check`, `validate`, or a project-specific clearly fast script. If no such script exists, run TypeScript and linting and skip build with the note `SKIPPED (quick mode)`.
    - `off`: run no checks. Output `## Result: SKIPPED` and document that the calling workflow disabled technical validation.
-5. **Start the independent checks in parallel in the background** instead of sequentially:
+5. **Start the independent checks concurrently** instead of sequentially:
    - TypeScript, linting, and build are treated as check commands but are not guaranteed to be read-only: build scripts, linter caches, and incremental TypeScript artifacts can write files in the workspace.
-   - Use a separate Bash invocation with `run_in_background: true` for each check.
-   - Wait for all background processes, collect their output, and merge it.
+   - Start every applicable check through a separate command invocation using the active harness's supported concurrent or non-blocking execution mechanism. Retain one handle or session per started check.
+   - Start all applicable independent checks before waiting for any of them. Then actively wait or poll every retained handle until it reaches a terminal state, collect all output, and merge it.
    - If one check fails, the others do **not** abort — all three run to completion so the report is complete.
+   - If concurrent workspace writes cause a race, terminate every still-running check, confirm that all retained handles reach a terminal state, then repeat the planned checks sequentially and state that fallback in the report. This race-specific recovery is the only case where one check may stop the others.
+   - If the active harness has no safe concurrent execution mechanism, run the checks sequentially and state that fallback in the report.
    - If the task is explicitly read-only, run only checks that run in the current sandbox mode without write access. For checks that need to write, ask the user for an escalation or mark the section as skipped.
    - In `quick` mode, a single combined fast script is not additionally started in parallel with TypeScript/lint if it already covers those checks.
 6. **Cache awareness:** If the project offers such mechanisms, prefer them. Do **not** change script arguments on your own — use existing scripts unchanged.
@@ -88,15 +90,15 @@ In mixed repos (Rust **and** JS/TS), run both toolchains side by side and report
    2. a top-level script in `package.json` that explicitly covers all packages
    3. `pnpm -r run check` (or the `npm`/`yarn` equivalent) as a fallback
 
-   **Never start more than one orchestrator at the same time** — they would block each other or produce duplicate output. If none is available, start one background Bash invocation per package, as far as the scripts are independent of each other.
+   **Never start more than one orchestrator at the same time** — they would block each other or produce duplicate output. If none is available, start one command invocation per package through the active harness's supported concurrency mechanism, as far as the scripts are independent of each other.
 
 8. collect and categorize all errors and warnings
 9. provide a concrete solution for each error
 
 ### Aggregation
 
-1. **Actively wait for all background processes:** After starting the three `run_in_background` Bash invocations, actively read in the output of all background tasks before you create the report. Write the report **only** once all three processes have delivered output — not right after the start.
-2. **Timeout per check:** If a background process has not delivered a final result after **120 seconds**, mark the section as `TIMEOUT` and continue with the available results of the other checks.
+1. **Actively wait for every started check:** After starting all applicable invocations, actively wait or poll each retained handle until it reaches a terminal state. Write the report **only** after every started check has finished, failed, or been terminated at its timeout — not immediately after starting it.
+2. **Timeout per check:** Give each started check its own **120-second** timeout. At the deadline, terminate that invocation using the active harness's supported mechanism, confirm that it reaches a terminal state, mark its section as `TIMEOUT`, and continue waiting for every other started check. A failure or timeout in one check must never cancel another check.
 3. **Deterministic order:** Even if the processes finish in any order, the section order in the output stays **TypeScript → Linting → Build** (see output format).
 4. **Cross-section correlation:** If build errors and TypeScript errors concern the same file or the same symbol, reference the TypeScript error in the build section instead of duplicating it. This keeps the report compact and leads the user straight to the root cause.
 
@@ -124,7 +126,7 @@ In mixed repos (Rust **and** JS/TS), run both toolchains side by side and report
 - never automatic fixes without explicit approval
 - report all errors, not just the first ones
 - for monorepos, check all relevant packages
-- in `full` mode, always start the three main checks (TypeScript, linting, build) in parallel, never sequentially
+- in `full` mode, start the three main checks (TypeScript, linting, build) concurrently when the active harness provides a safe mechanism; use sequential execution only when that mechanism is unavailable or the documented race fallback applies
 - in `quick` mode, run build only if an existing fast combined script deliberately includes it
 - in `off` mode, start no check commands
 - use existing caches and incremental modes of the tools without touching the project configuration
