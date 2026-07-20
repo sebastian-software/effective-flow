@@ -9,7 +9,7 @@ import {
   readdirSync,
   existsSync,
 } from 'node:fs';
-import { join, basename, dirname } from 'node:path';
+import { join, basename, dirname, relative } from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
@@ -32,6 +32,7 @@ import {
   collectIncludeNames,
   assertNoEagerLazyOverlap,
   collectRenderedWorkerRefs,
+  findProhibitedConsumerScriptCommands,
 } from './build-lib.mjs';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -169,6 +170,37 @@ const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
         `ERROR: docs/${category}/ holds documents but is missing the mandatory docs/${category}/README.md landing page\n`,
       );
     }
+    process.exit(1);
+  }
+}
+
+// --- Guard: developer-only scripts never become consumer install commands ---
+// README.md and all user-guide Markdown files are delivered to the default
+// branch. Plain filename mentions remain valid; executable local commands do
+// not, because manager installation consumes the built default-branch payload.
+{
+  const markdownFiles = [join(ROOT_DIR, 'README.md')];
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.isFile() && entry.name.endsWith('.md')) markdownFiles.push(path);
+    }
+  };
+  visit(DOCS_USER_GUIDE);
+
+  const violations = markdownFiles.flatMap((file) =>
+    findProhibitedConsumerScriptCommands(readFileSync(file, 'utf8')).map((hit) => ({
+      file: relative(ROOT_DIR, file),
+      ...hit,
+    })),
+  );
+  if (violations.length > 0) {
+    process.stderr.write(
+      'ERROR: consumer docs guard (#160): developer-only scripts must not be executable install commands:\n' +
+        violations.map(({ file, line, command }) => `  ${file}:${line}: ${command}`).join('\n') +
+        '\n',
+    );
     process.exit(1);
   }
 }

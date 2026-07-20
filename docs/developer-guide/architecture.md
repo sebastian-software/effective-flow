@@ -9,8 +9,8 @@ instead of duplicating them.
 ## Source-to-dist model
 
 Effective Flow is **not** a runtime product but a build: `build.mjs` reads the Markdown sources
-under `src/` and generates two harness-native direct-install targets plus one portable manager
-target under `dist/`.
+under `src/` and generates two harness-native artifacts plus one portable manager target under
+`dist/`.
 
 - Only `src/` is edited. `dist/` is generated and gitignored – changes there are lost on the
   next build.
@@ -72,11 +72,11 @@ src/
 
 The build generates three independent outputs from the same source:
 
-| Consumer           | Skill target                    | Worker resolution                                                                                                                                          |
-| ------------------ | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Direct Claude Code | `dist/claude/effective-flow/`   | native `.md` agents under `dist/claude/agents/effective-flow-<name>.md`, installed into `$CLAUDE_HOME/agents`                                              |
-| Direct Codex       | `dist/codex/effective-flow/`    | native `.toml` agents under `dist/codex/agents/effective-flow-<name>.toml`, installed into `$CODEX_HOME/agents`                                            |
-| DALO / Skills CLI  | `dist/portable/effective-flow/` | bundled `workers/effective-flow-<name>.md` contracts, loaded one at a time and delegated through the harness's built-in general-purpose subagent mechanism |
+| Consumer                     | Skill target                    | Worker resolution                                                                                                                                          |
+| ---------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native Claude artifact       | `dist/claude/effective-flow/`   | native `.md` agents under `dist/claude/agents/effective-flow-<name>.md`, used by maintainer checkout and release-verification utilities                    |
+| Native Codex artifact        | `dist/codex/effective-flow/`    | native `.toml` agents under `dist/codex/agents/effective-flow-<name>.toml`, used by maintainer checkout and release-verification utilities                 |
+| DALO / Skills CLI (end user) | `dist/portable/effective-flow/` | bundled `workers/effective-flow-<name>.md` contracts, loaded one at a time and delegated through the harness's built-in general-purpose subagent mechanism |
 
 All outputs use the same `effective-flow-<name>` worker namespace and carry the same version
 stamp. Rendered-reference guards ensure every native reference has an exact sidecar and every
@@ -84,9 +84,9 @@ portable reference has an exact worker contract. Portable instructions never req
 identifiers as custom roles: if built-in delegation is unavailable, they fail clearly instead
 of pretending that a worker ran.
 
-The release archive retains all three targets. The default branch publishes only the portable
-skill at `effective-flow/`; native sidecars are release-archive implementation details of the
-direct installer, not competing skill-manager candidates.
+The release archive retains all three targets for verification and release maintenance; it is
+not a supported end-user installation interface. The default branch publishes only the portable
+skill at `effective-flow/`, which is the payload consumed by DALO and Skills CLI.
 
 ## Repo structure at a glance
 
@@ -102,8 +102,8 @@ effective-flow/                        (Repo)
 │   ├── codex/                # native skill + agents/effective-flow-*.toml
 │   └── portable/effective-flow/ # manager skill + workers/effective-flow-*.md
 ├── build.mjs                 # Build script (see build-system.md)
-├── install-skill.sh          # Installation from release or local checkout
-└── local-link.sh             # Build + symlink for development
+├── install-skill.sh          # Maintainer deployment from release or local checkout
+└── local-link.sh             # Developer build + symlink helper
 ```
 
 ## Further reading

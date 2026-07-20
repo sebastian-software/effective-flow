@@ -509,6 +509,31 @@ export function assertNoEagerLazyOverlap(eager, lazy, { context } = {}) {
   }
 }
 
+// --- Consumer-document command guard (#160) ---
+//
+// These scripts operate on a source checkout or release-maintenance payload;
+// they are not supported end-user installation interfaces. Consumer docs may
+// still name the files in explanatory prose, but must not present an executable
+// local command. Keep this detector pure so the build-time filesystem scan can
+// be covered with focused unit tests.
+
+const DEVELOPER_ONLY_SCRIPTS = '(?:install-skill|local-link|local-common)\\.sh';
+const LOCAL_SCRIPT_COMMAND_RE = new RegExp(
+  `(?:\\.\\/${DEVELOPER_ONLY_SCRIPTS}\\b|\\b(?:bash|sh|zsh|source)[ \\t]+(?:\\.\\/)?${DEVELOPER_ONLY_SCRIPTS}\\b)`,
+  'g',
+);
+
+export function findProhibitedConsumerScriptCommands(markdown) {
+  const hits = [];
+  for (const [index, line] of normalizeLineEndings(markdown).split('\n').entries()) {
+    LOCAL_SCRIPT_COMMAND_RE.lastIndex = 0;
+    for (const match of line.matchAll(LOCAL_SCRIPT_COMMAND_RE)) {
+      hits.push({ line: index + 1, command: match[0] });
+    }
+  }
+  return hits;
+}
+
 // --- Delivery-branch documentation transforms ---
 //
 // The delivery branch `main` carries the consumer-facing docs (root README.md +

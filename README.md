@@ -32,14 +32,34 @@ loop all the way to the pull request.
 
 ## Quick start
 
+Effective Flow is installed from the repository's built default-branch payload. Because the
+repository is currently private, your local Git client must already have access to it. Public
+availability is tracked in [issue #143](https://github.com/sebastian-software/effective-flow/issues/143).
+
+The preferred path is [DALO](https://github.com/sebastian-software/dalo):
+
 ```sh
-./install-skill.sh
+dalo init
+dalo target link claude
+dalo target link codex
+dalo source add-catalog effective-flow https://github.com/sebastian-software/effective-flow.git
+dalo source select effective-flow effective-flow
+dalo approve skill effective-flow:effective-flow --accept-risk "Effective Flow intentionally manages project configuration and automation."
+dalo sync
 ```
 
-This is the full-fidelity path: it installs the native Claude Code and Codex skills together
-with their namespaced custom agents. DALO and Skills CLI instead consume the single portable
-`effective-flow/` candidate from the default branch; its bundled worker contracts delegate via
-each harness's built-in general-purpose subagents and require no native agent-directory writes.
+Review DALO's audit findings before running the approval command; its reason records why you
+accept the persistence finding for this exact skill version. Link only the Claude Code or Codex
+target if you use one harness. As an alternative, install the same skill globally with [Skills
+CLI](https://skills.sh/) 1.5.19; run the command for each target you use:
+
+```sh
+npx skills@1.5.19 add sebastian-software/effective-flow --agent claude-code --skill effective-flow --global --yes --copy
+npx skills@1.5.19 add sebastian-software/effective-flow --agent codex --skill effective-flow --global --yes --copy
+```
+
+Both managers consume the same portable `effective-flow/` candidate and its bundled worker
+contracts from the default branch.
 
 Then, in Claude Code or Codex, call `/effective-flow plan` (Codex: `$effective-flow plan`) to
 start planning a first task.
