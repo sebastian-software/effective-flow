@@ -111,6 +111,16 @@ The build aborts with an error message if any of these guards is violated:
   | `yield_time_ms`       | Codex         |
   | `sandbox_permissions` | Codex         |
 
+- **Retired consumer-config guard (#166):** The hand-maintained root `README.md` and every
+  Markdown file under `docs/user-guide/` are scanned for the retired
+  `.effective-flow/config.json` interface. The path is accepted only in an explicitly allowlisted
+  migration section, while the former negation pattern is rejected everywhere. Diagnostics name
+  the file, 1-based line, and violation kind. The same pure detector,
+  `findRetiredConfigDocViolations`, runs again in `stage-delivery.mjs` after documentation
+  transforms, so the exact mechanically staged default-branch payload is checked rather than
+  inferred from source files. Unit tests cover allowlist boundaries and diagnostics;
+  `pnpm test:distribution` verifies the staged-payload rejection path.
+
 - **Include-target guard:** Every ` ```include ` fence must point to an existing
   `src/shared/<name>.md`.
 - **Lazy-include guards (#99):** (a) No fragment may be embedded in the same file both eagerly

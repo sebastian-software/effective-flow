@@ -5,8 +5,8 @@ pure read phases or write exclusively to their designated stores
 (`.effective-flow/investigation/`, `<plan.dir>/`, or an issue comment); none changes
 source code, tests, or configuration.
 
-`<plan.dir>` is the plan directory from `.effective-flow/config.json` → `plan.dir` (default
-`docs/plan`, see [Configuration](configuration.md)).
+`<plan.dir>` is the `plan.dir` value from the Effective Flow project-setup ADR (default
+`docs/plan`; see [Configuration](configuration.md#block-plan)).
 
 ## `/effective-flow investigate`
 

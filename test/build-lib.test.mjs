@@ -33,6 +33,7 @@ import {
   HARNESS_TOOL_PARAMETER_OWNERSHIP,
   findForeignHarnessToolParameters,
   findProhibitedConsumerScriptCommands,
+  findRetiredConfigDocViolations,
 } from '../build-lib.mjs';
 
 const DELIVERY = { repo: 'sebastian-software/effective-flow', sourceBranch: 'develop' };
@@ -779,6 +780,86 @@ test('findProhibitedConsumerScriptCommands rejects shell-interpreter invocations
     { line: 2, command: 'sh ./local-link.sh' },
     { line: 3, command: 'source local-common.sh' },
     { line: 4, command: 'zsh ./install-skill.sh' },
+  ]);
+});
+
+// --- Retired consumer-configuration references ---
+
+test('findRetiredConfigDocViolations allows the retired path only in its migration section', () => {
+  const markdown = [
+    '# Configuration',
+    '',
+    '## Migrating a legacy JSON configuration',
+    '',
+    'Setup can import `.effective-flow/config.json` into the project-setup ADR.',
+    '',
+    '### What setup preserves',
+    '',
+    'The old `.effective-flow/config.json` remains on disk.',
+  ].join('\n');
+
+  assert.deepEqual(
+    findRetiredConfigDocViolations('docs/user-guide/configuration.md', markdown),
+    [],
+  );
+});
+
+test('findRetiredConfigDocViolations rejects operational retired-config prose', () => {
+  const markdown = [
+    '# Configuration',
+    '',
+    'Edit `.effective-flow/config.json` to choose remote mode.',
+    '',
+    '## Migrating a legacy JSON configuration',
+    '',
+    'Migration prose may name `.effective-flow/config.json`.',
+  ].join('\n');
+
+  assert.deepEqual(findRetiredConfigDocViolations('docs/user-guide/configuration.md', markdown), [
+    {
+      file: 'docs/user-guide/configuration.md',
+      line: 3,
+      kind: 'retired-config-outside-migration',
+      reference: '.effective-flow/config.json',
+    },
+  ]);
+});
+
+test('findRetiredConfigDocViolations requires both an allowlisted file and section', () => {
+  const markdown = [
+    '# Troubleshooting',
+    '',
+    '## Migrating a legacy JSON configuration',
+    '',
+    'Read `.effective-flow/config.json`.',
+  ].join('\n');
+
+  assert.deepEqual(findRetiredConfigDocViolations('docs/user-guide/troubleshooting.md', markdown), [
+    {
+      file: 'docs/user-guide/troubleshooting.md',
+      line: 5,
+      kind: 'retired-config-outside-migration',
+      reference: '.effective-flow/config.json',
+    },
+  ]);
+});
+
+test('findRetiredConfigDocViolations always rejects the retired negation with actionable diagnostics', () => {
+  const markdown = [
+    '# Configuration',
+    '',
+    '## Migrating a legacy JSON configuration',
+    '',
+    'Do not restore `!.effective-flow/config.json`.',
+  ].join('\n');
+
+  assert.deepEqual(findRetiredConfigDocViolations('./docs/user-guide/configuration.md', markdown), [
+    {
+      file: 'docs/user-guide/configuration.md',
+      line: 5,
+      kind: 'retired-negation',
+      reference: '!.effective-flow/config.json',
+    },
   ]);
 });
 

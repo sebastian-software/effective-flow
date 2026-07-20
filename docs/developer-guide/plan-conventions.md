@@ -60,7 +60,7 @@ status – other occurrences of the terms in running text or review findings are
 The marker language is determined when a plan is created in this order: `plan.markerLanguage`
 from the Effective Flow configuration (project-setup ADR) → auto-detection from existing plans →
 follow-up question to the user. A decision is persisted via `/effective-flow setup` in the
-project-setup ADR, no longer in `.effective-flow/config.json`.
+project-setup ADR; ordinary plan readers do not write configuration.
 
 ## Archive of implemented plans
 

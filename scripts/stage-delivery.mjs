@@ -4,9 +4,10 @@
 // effective-flow skill plus consumer documentation. Native harness artifacts
 // remain release-archive-only and are deliberately removed from the staged tree.
 
-import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findRetiredConfigDocViolations } from '../build-lib.mjs';
 import { deliverDocs } from './deliver-docs.mjs';
 
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -14,6 +15,30 @@ const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 function fail(message) {
   console.error(`stage-delivery: ${message}`);
   process.exit(1);
+}
+
+function assertStagedDocumentationUsesProjectSetupAdr(work) {
+  const markdownFiles = [join(work, 'README.md')];
+  const visit = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) visit(path);
+      else if (entry.isFile() && entry.name.endsWith('.md')) markdownFiles.push(path);
+    }
+  };
+  visit(join(work, 'docs', 'user-guide'));
+
+  const violations = markdownFiles.flatMap((file) =>
+    findRetiredConfigDocViolations(relative(work, file), readFileSync(file, 'utf8')),
+  );
+  if (violations.length > 0) {
+    throw new Error(
+      'delivery docs config guard (#166) rejected the staged payload:\n' +
+        violations
+          .map(({ file, line, kind, reference }) => `  ${file}:${line}: ${kind}: ${reference}`)
+          .join('\n'),
+    );
+  }
 }
 
 export function stageDelivery(work, repo, sourceBranch, { root = ROOT_DIR } = {}) {
@@ -44,6 +69,7 @@ export function stageDelivery(work, repo, sourceBranch, { root = ROOT_DIR } = {}
   });
   cpSync(join(root, 'scripts', 'delivery-renovate.json'), join(work, 'renovate.json'));
   deliverDocs(work, repo, sourceBranch);
+  assertStagedDocumentationUsesProjectSetupAdr(work);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

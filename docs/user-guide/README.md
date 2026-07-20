@@ -18,10 +18,9 @@ New to Effective Flow? Read in this order:
      `refactor`, `docs`, `maintain`, `iterate`.
    - [Ensure quality](tools-quality.md) – `review`.
    - [Deliver changes](tools-deliver.md) – `commit`, `pr`.
-   - [Set up & info](tools-setup.md) – `setup`, `version`.
+   - [Set up & info](tools-setup.md) – `setup`, `cleanup`, `version`.
 3. In-depth guides:
-   - [Configuration](configuration.md) – the complete
-     `.effective-flow/config.json` reference.
+   - [Configuration](configuration.md) – the complete project-setup ADR reference.
    - [Worktree and delivery](worktree-and-delivery.md) – parallel work in
      Git worktrees, delivery branch, pull request/merge/branch completion.
    - [Remote tracker](remote-tracker.md) – keep findings and issues on GitHub or
@@ -40,8 +39,8 @@ New to Effective Flow? Read in this order:
 | [tools-implement.md](tools-implement.md)             | Tool reference: implementation                        |
 | [tools-quality.md](tools-quality.md)                 | Tool reference: review                                |
 | [tools-deliver.md](tools-deliver.md)                 | Tool reference: commit & pull request                 |
-| [tools-setup.md](tools-setup.md)                     | Tool reference: setup & version                       |
-| [configuration.md](configuration.md)                 | Complete `.effective-flow/config.json` reference      |
+| [tools-setup.md](tools-setup.md)                     | Tool reference: setup, cleanup & version              |
+| [configuration.md](configuration.md)                 | Complete project-setup ADR reference                  |
 | [worktree-and-delivery.md](worktree-and-delivery.md) | Worktree, delivery branch, completion types           |
 | [remote-tracker.md](remote-tracker.md)               | Remote issue mode (GitHub/Forgejo)                    |
 | [skill-discovery.md](skill-discovery.md)             | Host skill detection and control                      |

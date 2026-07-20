@@ -47,9 +47,11 @@ Effective Flow determines the effective mode in this order:
 1. **Argument type:** if you pass a report file, that forces `local`; if you pass an issue
    number or URL, that forces `remote` – regardless of the config.
 2. **Explicit wish in the task:** "as issues" or "local only, without issues".
-3. **Config:** otherwise `tracker.mode` from `.effective-flow/config.json` applies.
-4. **First-call query:** if none of these is set, Effective Flow asks once and stores the
-   answer non-destructively in `.effective-flow/config.json`.
+3. **Configuration:** otherwise `tracker.mode` from the
+   [project-setup ADR](./configuration.md#block-tracker) applies.
+4. **First-call query:** if none of these determines the mode, Effective Flow asks for this run.
+   To persist the answer, use `/effective-flow setup`; the review workflow does not write
+   configuration itself.
 
 ### Labels
 

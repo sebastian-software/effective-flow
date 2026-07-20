@@ -17,8 +17,9 @@ Effective Flow agent depends on a host skill for its base function.
    non-excluded skill in the group is taken – never both at once.
 2. **Assess relevance.** Each skill is checked against the specific task; only clearly
    fitting ones are brought in (typically zero to two), not "on suspicion".
-3. **Take config into account.** The `skills` block from `.effective-flow/config.json` controls the
-   behavior globally as well as – more finely – per agent and per tool (see below).
+3. **Take configuration into account.** The `skills.*` rows in the
+   [project-setup ADR](./configuration.md#block-skills) control behavior globally and, more
+   finely, per agent and per tool.
 4. **Current library docs when needed.** For unknown or recent frameworks/libraries,
    tools use documentation skills like `context7` when needed, instead of guessing from the
    training snapshot.
@@ -41,9 +42,9 @@ instruction.
 
 ## Control via configuration
 
-The `skills` block in `.effective-flow/config.json` (full field reference see
-[Configuration](./configuration.md#block-skills)) controls dynamic skill usage on
-three levels:
+The `skills.*` rows in the project-setup ADR (see the full
+[configuration reference](./configuration.md#block-skills)) control dynamic skill usage on three
+levels:
 
 | Level  | Key                                 | Effect                                                   |
 | ------ | ----------------------------------- | -------------------------------------------------------- |
@@ -60,18 +61,12 @@ installed is silently ignored.
 
 Example – prefer `humanizer` globally, but disable it for the `docs` tool:
 
-```json
-{
-  "skills": {
-    "enabled": true,
-    "include": ["humanizer"],
-    "tools": {
-      "docs": {
-        "exclude": ["humanizer"]
-      }
-    }
-  }
-}
+```md
+| Key                          | Value     |
+| ---------------------------- | --------- |
+| skills.enabled               | true      |
+| skills.include               | humanizer |
+| skills.tools.docs.exclude    | humanizer |
 ```
 
 ## Materialization via `/effective-flow setup`
@@ -79,7 +74,7 @@ Example – prefer `humanizer` globally, but disable it for the `docs` tool:
 In the guided path of [`/effective-flow setup`](./tools-setup.md) you can have the built-in
 fallback recommendations of individual agents written visibly into the config (section
 "Advanced settings"). For a fallback recommendation like `impeccable › frontend-design`,
-only the **primary** skill is materialized (`skills.agents.<name>.include: ["impeccable"]`)
+only the **primary** skill is materialized (row `skills.agents.<name>.include`, value `impeccable`)
 – the built-in fallback to `frontend-design` still stays active in case `impeccable` is
 ever unavailable. A flat recommendation without a fallback (e.g. `humanizer`) is taken over
 unchanged. This step is purely optional – without it, the built-in recommendations of the

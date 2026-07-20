@@ -422,6 +422,46 @@ function runSkillsCliSmoke(delivery) {
   }
 }
 
+function assertStageDeliveryChecksTransformedDocs(dist, temp) {
+  const fixtureRoot = join(temp, 'delivery-doc-guard-source');
+  mkdirSync(join(fixtureRoot, 'dist', 'portable'), { recursive: true });
+  cpSync(
+    join(dist, 'portable', 'effective-flow'),
+    join(fixtureRoot, 'dist', 'portable', 'effective-flow'),
+    { recursive: true },
+  );
+  writeFileSync(
+    join(fixtureRoot, 'README.md'),
+    '# Guard fixture\n\nEdit `.effective-flow/config.json` to configure the skill.\n',
+  );
+  mkdirSync(join(fixtureRoot, 'docs'), { recursive: true });
+  cpSync(join(ROOT_DIR, 'docs', 'user-guide'), join(fixtureRoot, 'docs', 'user-guide'), {
+    recursive: true,
+  });
+  mkdirSync(join(fixtureRoot, 'scripts'), { recursive: true });
+  cpSync(
+    join(ROOT_DIR, 'scripts', 'delivery-renovate.json'),
+    join(fixtureRoot, 'scripts', 'delivery-renovate.json'),
+  );
+
+  const staged = join(temp, 'delivery-doc-guard-staged');
+  let rejection;
+  try {
+    stageDelivery(staged, 'sebastian-software/effective-flow', 'develop', {
+      root: fixtureRoot,
+    });
+  } catch (error) {
+    rejection = error;
+  }
+  if (!rejection) fail('stageDelivery accepted a retired operational config reference');
+  if (!rejection.message.includes('README.md:3: retired-config-outside-migration')) {
+    fail(`stageDelivery config-guard diagnostic was not actionable:\n${rejection.message}`);
+  }
+  if (!readFileSync(join(staged, 'README.md'), 'utf8').includes('effective-flow:delivery-footer')) {
+    fail('stageDelivery config guard did not evaluate the transformed documentation payload');
+  }
+}
+
 function offlineSmoke() {
   run(process.execPath, ['build.mjs']);
   const dist = join(ROOT_DIR, 'dist');
@@ -433,6 +473,7 @@ function offlineSmoke() {
     cpSync(join(ROOT_DIR, 'docs'), join(delivery, 'old-docs'), { recursive: true });
     stageDelivery(delivery, 'sebastian-software/effective-flow', 'develop');
     assertDeliveryLayout(delivery, join(dist, 'portable', 'effective-flow'));
+    assertStageDeliveryChecksTransformedDocs(dist, temp);
 
     const archive = join(temp, 'effective-flow-test.tar.gz');
     run('tar', ['-czf', archive, '-C', dist, '.']);

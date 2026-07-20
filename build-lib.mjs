@@ -578,6 +578,67 @@ export function findProhibitedConsumerScriptCommands(markdown) {
   return hits;
 }
 
+// --- Retired consumer-configuration reference guard (#166) ---
+//
+// `.effective-flow/config.json` is migration input, not the current
+// configuration interface. Consumer documentation may name it only inside the
+// deliberately narrow migration section below. The former `.gitignore`
+// negation is invalid even there because `.effective-flow/` is now wholly
+// ignored. Keep the detector pure so both the source build and the mechanically
+// transformed delivery payload can use exactly the same policy.
+
+const RETIRED_CONFIG_PATH = '.effective-flow/config.json';
+const RETIRED_CONFIG_MIGRATION_SECTIONS = new Map([
+  ['docs/user-guide/configuration.md', new Set(['Migrating a legacy JSON configuration'])],
+]);
+
+function normalizeDocumentationPath(file) {
+  return file.replaceAll('\\', '/').replace(/^\.\//, '');
+}
+
+// Return every prohibited retired-config reference as
+// { file, line, kind, reference }. `kind` is `retired-negation` for the former
+// `!.effective-flow/config.json` ignore exception and
+// `retired-config-outside-migration` for a path mention outside an explicitly
+// allowlisted migration section. Lines are reported 1-based.
+export function findRetiredConfigDocViolations(file, markdown) {
+  const normalizedFile = normalizeDocumentationPath(file);
+  const allowedHeadings = RETIRED_CONFIG_MIGRATION_SECTIONS.get(normalizedFile) ?? new Set();
+  const headingStack = [];
+  const hits = [];
+
+  for (const [index, line] of normalizeLineEndings(markdown).split('\n').entries()) {
+    const heading = /^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/.exec(line);
+    if (heading) {
+      const level = heading[1].length;
+      headingStack.length = level - 1;
+      headingStack[level - 1] = heading[2].trim();
+    }
+    const inAllowedMigrationSection = headingStack.some((title) => allowedHeadings.has(title));
+
+    for (const match of line.matchAll(/!?\.effective-flow\/config\.json/g)) {
+      const reference = match[0];
+      if (reference.startsWith('!')) {
+        hits.push({
+          file: normalizedFile,
+          line: index + 1,
+          kind: 'retired-negation',
+          reference,
+        });
+      } else if (!inAllowedMigrationSection) {
+        hits.push({
+          file: normalizedFile,
+          line: index + 1,
+          kind: 'retired-config-outside-migration',
+          reference: RETIRED_CONFIG_PATH,
+        });
+      }
+    }
+  }
+
+  return hits;
+}
+
 // --- Delivery-branch documentation transforms ---
 //
 // The delivery branch `main` carries the consumer-facing docs (root README.md +
