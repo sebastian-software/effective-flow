@@ -66,7 +66,24 @@ src/
   `claude:` and `codex:`; the body is also the single contract rendered into the portable target.
 - **`src/shared/<name>.md`**: Include fragments embedded via the ` ```include ` fence into tools
   and agents (e.g. `language-rules`, `task-tracking`, `skill-discovery`, `goal-completion`,
-  `worktree-integration`).
+  `worktree-integration`). `execution-location` is the canonical nested fragment for
+  repository/root/checkout receipts, write-boundary preflight and ownership-safe cleanup; both
+  delivery and `apply-review` component worktrees include it instead of duplicating the
+  contract.
+
+## Cross-harness execution locations
+
+Effective Flow treats an absolute Git-verified execution root as data, not as ambient process
+state. Write-capable workers receive a receipt containing the canonical root, common Git
+directory, branch or detached OID, origin, setup owner and workflow/component purpose. They
+revalidate it at their first write boundary and after resume or Handoff, then root every file
+and shell operation there.
+
+Claude native `isolation: worktree` and Codex app worktrees remain harness-owned. They may be
+used or reused where appropriate, but Effective Flow neither nests its own delivery worktree
+around an existing native checkout nor removes a harness-managed one. Effective Flow-created
+delivery, partial-diff and review-component worktrees have distinct receipts and may be cleaned
+up only after fresh ownership and state verification.
 
 ## Three consumer targets
 

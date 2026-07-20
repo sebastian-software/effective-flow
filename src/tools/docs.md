@@ -165,7 +165,10 @@ skill-discovery
 
 ### Phase 2: Implementation
 
-0. Per "Delivery and worktree integration", determine the effective delivery/worktree mode and, when a mode is active, first run the appropriate setup: worktree setup for worktree execution or delivery-branch setup in the main repo for in-place delivery. Implementation and validation (phases 2–3) then run in the delivery working directory.
+0. Per "Delivery and worktree integration", determine the effective delivery/worktree mode and
+   its verified execution-location receipt, then run any applicable owned setup. Pass that
+   receipt into phases 2–3 (implementation and validation); each write-capable boundary
+   revalidates it and roots every operation there.
 1. Ensure the target directory exists:
    - for target paths under `docs/user-guide/`, `docs/developer-guide/`, `docs/operations/` or `docs/runbooks/`, create missing directories before writing
    - do not create empty category directories if no file is written in them
@@ -210,7 +213,7 @@ skill-discovery
    - add `## Test results` with the checks that were run
    - add `## Review findings` or write "No findings found." if no review was needed
 3. Delete the wisdom file.
-4. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, retract the worktree if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
+4. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
 5. Summarize:
    - changed documentation areas
    - checked sources

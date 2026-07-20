@@ -352,14 +352,21 @@ Example (across actions) with five findings over multiple actions:
 #### Phase 4.3: Parallel delegation
 
 1. Start a delegation sub-agent for each **overlap component** from Phase 4.2. All components run in parallel (by construction they share no file); within a sub-agent its findings are worked through **sequentially** in component order — even if the component contains findings of multiple action groups.
-   - With commit strategy `Individually with worktrees`: create the worktree per component beforehand per the worktree rules and start the sub-agent with this worktree as the working directory.
+   - With commit strategy `Individually with worktrees`: create the worktree and its separate
+     execution-location receipt per component beforehand. Pass the sub-agent the canonical
+     absolute root and receipt; do not rely on an inherited or assigned persistent working
+     directory.
 2. Each delegation sub-agent receives directly embedded in the prompt:
    - the finding details (ID, Problem, Empfehlung, Prompt-Vorschlag, Datei)
    - the corresponding pre-analysis from Phase 4.1 as an **inline context block** in the prompt — not as a reference to the wisdom file. The sub-skills do not read the wisdom file; they only process the prompt content. Embed the pre-analysis in full, for example under the heading `Pre-analysis for this finding:`.
    - the developer note (if present)
    - the commit strategy from Phase 2
    - **With commit strategy "Individually":** the full git commit mutex rule from `tools/apply-review-commit-mechanics.md`. The sub-agent must run every finding commit under `.effective-flow/apply-review-commit.lock`, may only stage finding-owned files and may never use `git add .`, `git add -A` or `git commit -a`.
-   - **With commit strategy "Individually with worktrees":** the full git worktree isolation rule from `tools/apply-review-commit-mechanics.md`. The sub-agent works exclusively in the assigned worktree, commits each finding individually there and logs commit hashes in the wisdom file. The sub-agent must not switch into the original worktree.
+   - **With commit strategy "Individually with worktrees":** the full git worktree isolation
+     and execution-location rule from `tools/apply-review-commit-mechanics.md`. The sub-agent
+     first verifies its component receipt, roots every operation there, commits each finding
+     individually and logs commit hashes in the wisdom file. It must not switch into or operate
+     on the original integration root.
    - the task to call, for **each** finding, the skill matching its action group (in mixed components thus determined anew per finding):
      - action fix: `Use the skill {{SKILL:fix}} for this finding.`
      - action refactor: `Use the skill {{SKILL:refactor}} for this finding.`
@@ -383,7 +390,13 @@ Example (across actions) with five findings over multiple actions:
 
 5. Give the user a status update after each completed component with the result per finding.
 6. **Synchronization barrier before Phase 5:** start Phase 5 only when **all** delegation sub-agents started in Phase 4.3 have delivered a final status (`DONE` or `ABORT`).
-7. With commit strategy `Individually with worktrees`: after the synchronization barrier, integrate all successful worktree branches sequentially via `git cherry-pick` into the original branch, in the **deterministic component order from Phase 4.2, step 5** (components by report position of their first finding; within a component the finding commits in component order). This fixed order makes the integration result reproducible. Phase 5 may only start once this integration is complete or the workflow has been halted due to a conflict/user decision.
+7. With commit strategy `Individually with worktrees`: after the synchronization barrier,
+   revalidate the original execution-location receipt and integrate all successful worktree
+   branches sequentially via rooted `git cherry-pick` operations, in the **deterministic
+   component order from Phase 4.2, step 5** (components by report position of their first
+   finding; within a component the finding commits in component order). This fixed order makes
+   the integration result reproducible. Phase 5 may only start once this integration is
+   complete or the workflow has been halted due to a conflict/user decision.
 8. A status update after a completed component is **not** a completion message of the overall workflow and **not** a halt. After each status update you actively check which delegation components are still running, wait for their final status and continue Phase 4.3 until no component is open anymore.
 
 #### Known limitations

@@ -49,7 +49,9 @@ In remote mode the commit/PR strategy is by default **"one PR per finding"** —
 If a finding has a target PR from Phase 1 remote, **"new commit on existing PR"** applies instead:
 
 1. Do not create a new delivery branch and no new PR.
-2. Fetch the head branch of the target PR, check it out in an isolated worktree or in the clean current checkout, and update it via a normal pull/fetch without any rebase or force operation.
+2. Fetch the head branch of the target PR, check it out in an isolated worktree or in the clean
+   current checkout, issue and verify the downstream workflow's execution-location receipt, and
+   update it via rooted pull/fetch operations without any rebase or force operation.
 3. Implement the finding there and commit the change as a new commit on the PR branch. Existing PR commits must not be rewritten via `commit --amend`, rebase, squash or force-push.
 4. Push the PR branch normally. If the push is rejected due to diverged remote history, mark the finding as failed and report the conflict instead of overwriting history.
 5. Use the URL of the existing PR as the result PR link for the issue comment, epic entry and summary.
@@ -62,9 +64,13 @@ For each `wontfix` finding, the same ownership rule as in Phase 3 (local) applie
 
 ### Phase 4 remote: Implementation, PR and epic check-off
 
-Per implementable finding, in its worktree:
+Per implementable finding, in its verified execution root:
 
-1. Pre-analysis and implementation as in Phase 4.1/4.3 via the matching delegation skill (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}`, `{{SKILL:docs}}`). Pass a developer comment detected in Phase 1 remote as additional context to the delegation skill.
+1. Pre-analysis and implementation as in Phase 4.1/4.3 via the matching delegation skill
+   (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}`, `{{SKILL:docs}}`). Pass a
+   developer comment detected in Phase 1 remote as additional context, together with the
+   delegated workflow's absolute execution root and receipt. Do not rely on inherited CWD or
+   nest an Effective Flow worktree around a reused harness-native one.
 2. Commit the changes (Conventional Commit message, no internal finding IDs, no `Co-Authored-By`), push the branch.
 3. If a target PR is present: **do not create a new PR**, but use the existing PR link and optionally extend the PR body non-destructively by `Closes #<sub-issue>` or `Refs #<sub-issue>`, if that is possible without overwriting others' changes. If no target PR is present: create exactly one PR against the base branch via `{{SKILL:pr}}`; set `Closes #<sub-issue>` in the PR body.
 4. **Immediately after a successful push or PR creation** check off the corresponding entry in the epic body (`- [ ]` → `- [x]`, append the PR link) and optionally write the PR link as a comment on the sub-issue. Read the body fresh before changing it and toggle only the affected line.

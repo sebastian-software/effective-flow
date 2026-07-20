@@ -81,6 +81,12 @@ when: the delivery/worktree mode is determined
 delivery/worktree mode is determined." A routine run that never reaches the mode never loads the
 fragment.
 
+Shared fragments may contain eager includes. In particular, both the lazy
+`worktree-integration` fragment and the internal `apply-review-commit-mechanics` tool include
+`execution-location`, the single source for execution receipts, rooted operations and
+ownership-safe cleanup. Rendering each of those direct eager includes places the same contract
+in all native and portable targets.
+
 ## Guards
 
 The build aborts with an error message if any of these guards is violated:
@@ -192,6 +198,11 @@ directory and rendered there through the same pipeline as a tool body (nested ea
 `{{VERSION}}`, references/`ask`). A worker reads the file at runtime
 the same way the router loads `tools/<tool>.md` on demand or `apply` loads its `apply-*.md`
 siblings.
+
+Execution-location behavior intentionally remains instruction-level and harness-neutral: Git
+metadata verifies the absolute root and checkout identity, while Claude- or Codex-managed
+worktree lifecycle stays outside Effective Flow ownership. No runtime helper or configuration
+schema is required for the receipt.
 
 ## Native and portable worker rendering
 
