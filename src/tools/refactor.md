@@ -24,6 +24,11 @@ runtime-state-safety
 when: any wisdom, report, memory, backlink, runtime migration, or worktree mutation is imminent
 ```
 
+```lazy-include
+effective-flow-dir-migration
+when: any wisdom, report, memory, backlink, runtime migration, or worktree mutation is imminent
+```
+
 ```include
 project-routing
 ```

@@ -28,6 +28,7 @@ import {
   collectIncludeNames,
   assertNoEagerLazyOverlap,
   findRuntimeStateSafetyViolations,
+  findRuntimeDirMigrationViolations,
   developerGuideBaseUrl,
   rewriteDeveloperGuideLinks,
   appendDeliveryFooter,
@@ -1394,6 +1395,108 @@ test('findRuntimeStateSafetyViolations accepts setup marker writes only after co
     findRuntimeStateSafetyViolations({ 'tools/setup.md': unsafe }).map(({ reason }) => reason),
     ['setup runtime marker write is not preceded by complete target-state validation'],
     'partial validation must not permit the marker write',
+  );
+});
+
+// --- Runtime-directory migration prerequisite coverage guard (#174) ---
+
+test('findRuntimeDirMigrationViolations rejects an absent or late migration prerequisite', () => {
+  const absent = {
+    'tools/absent.md': 'Write `.effective-flow/memory.json` now.\n',
+  };
+  const late = {
+    'tools/late.md': [
+      'Write `.effective-flow/cache.json` now.',
+      '```lazy-include',
+      'effective-flow-dir-migration',
+      '```',
+    ].join('\n'),
+  };
+
+  assert.deepEqual(
+    findRuntimeDirMigrationViolations(absent).map(({ context, line, reason }) => ({
+      context,
+      line,
+      reason,
+    })),
+    [
+      {
+        context: 'tools/absent.md',
+        line: 1,
+        reason: 'runtime mutation is not preceded by the runtime-directory migration prerequisite',
+      },
+    ],
+  );
+  assert.equal(findRuntimeDirMigrationViolations(late).length, 1);
+});
+
+test('findRuntimeDirMigrationViolations preserves nested shared-writer ordering', () => {
+  const sharedWriter = 'Save state to `.effective-flow/shared-state.json`.\n';
+  const lateSources = {
+    'tools/late-owner.md': [
+      '```include',
+      'runtime-writer',
+      '```',
+      '```lazy-include',
+      'effective-flow-dir-migration',
+      '```',
+    ].join('\n'),
+    'shared/runtime-writer.md': sharedWriter,
+  };
+  const earlySources = {
+    'tools/early-owner.md': [
+      '```lazy-include',
+      'effective-flow-dir-migration',
+      '```',
+      '```include',
+      'runtime-writer',
+      '```',
+    ].join('\n'),
+    'shared/runtime-writer.md': sharedWriter,
+  };
+
+  const [violation] = findRuntimeDirMigrationViolations(lateSources);
+  assert.equal(violation.context, 'shared/runtime-writer.md');
+  assert.deepEqual(violation.includeChain, ['tools/late-owner.md', 'shared/runtime-writer.md']);
+  assert.deepEqual(findRuntimeDirMigrationViolations(earlySources), []);
+});
+
+test('findRuntimeDirMigrationViolations exempts the migration fragment itself', () => {
+  const sources = {
+    'tools/writer.md': [
+      '```lazy-include',
+      'effective-flow-dir-migration',
+      '```',
+      'Write `.effective-flow/cache.json` now.',
+    ].join('\n'),
+    'shared/effective-flow-dir-migration.md':
+      'Write `.effective-flow/memory.json` migration marker.\n',
+  };
+
+  assert.deepEqual(findRuntimeDirMigrationViolations(sources), []);
+  assert.deepEqual(
+    findRuntimeDirMigrationViolations(sources, {
+      rootContexts: ['shared/effective-flow-dir-migration.md'],
+    }),
+    [],
+  );
+});
+
+test('migration-fragment mutations still require the runtime-state safety guard', () => {
+  const sources = {
+    'tools/unguarded.md': '```include\neffective-flow-dir-migration\n```\n',
+    'shared/effective-flow-dir-migration.md':
+      'Write `.effective-flow/memory.json` migration marker.\n',
+  };
+
+  assert.deepEqual(
+    findRuntimeStateSafetyViolations(sources).map(({ context, reason }) => ({ context, reason })),
+    [
+      {
+        context: 'shared/effective-flow-dir-migration.md',
+        reason: 'runtime mutation is not preceded by the canonical safety guard',
+      },
+    ],
   );
 });
 

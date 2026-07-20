@@ -25,6 +25,11 @@ when: any wisdom, memory, cache, report, runtime migration, or tracker-marker mu
 ```
 
 ```lazy-include
+effective-flow-dir-migration
+when: any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent
+```
+
+```lazy-include
 project-routing
 when: Phase 1 classifies scoped files into routing buckets
 ```
@@ -75,11 +80,6 @@ Tasks are created at **two** points in time, because the directory split in Phas
 
 - Create tasks according to Point A and B above so that the user sees the full list before each start of the relevant sub-agents.
 - Update tasks promptly as soon as a sub-agent reports — not batched.
-
-```lazy-include
-effective-flow-dir-migration
-when: a legacy `.sf-plugin/` or `.firmo/` runtime dir must be migrated
-```
 
 ## Recommended skills
 
