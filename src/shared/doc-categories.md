@@ -19,8 +19,8 @@ config field for this.
 
 1. **Root `README.md` – marketing entry point.** A marketing page entirely from the user's
    perspective: value proposition first, promotional language allowed, kept short. It is
-   created by the marketing agent (not by the factual documentation agent) and ends with
-   exactly two follow-up links (see below).
+   created by the marketing agent (not by the factual documentation agent) and applies the
+   conditional follow-up-link rule below.
 2. **User documentation → `docs/user-guide/`.** Entirely from the user's perspective:
    describes installation and usage extensively, optionally with an FAQ and similar additions.
    The entry point is `docs/user-guide/README.md`.
@@ -29,14 +29,21 @@ config field for this.
    it whether the software should be used from a technical standpoint. The entry point is
    `docs/developer-guide/README.md`.
 
-**Two-links rule for the root README.** The root `README.md` ends with exactly two links, in
-this order:
+**Conditional follow-up-link rule for the root README.** At the end of the documentation run,
+inspect whether `docs/user-guide/README.md` and `docs/developer-guide/README.md` exist. The
+final documentation follow-up section of the root `README.md` includes only links whose targets
+exist, in user-guide then developer-guide order:
 
-- first link → `docs/user-guide/README.md` (user documentation)
-- second link → `docs/developer-guide/README.md` (technical documentation)
+- If both targets exist at the end of the run, the section contains exactly two links:
+  first `docs/user-guide/README.md`, then `docs/developer-guide/README.md`.
+- If exactly one target exists, the section contains only that target's valid link. Report the
+  other path as an open point in the workflow or agent result.
+- If neither target exists, emit neither link. Report both missing paths individually as open
+  points in the workflow or agent result.
 
-A link is only set if its target exists or is created in the same documentation run;
-otherwise the link is omitted and noted as an open point, so no dead links arise.
+Never add a placeholder or broken link for a missing target. Preserve existing unrelated
+README links; they are outside the final documentation follow-up section and do not count
+toward this invariant.
 
 ### File name convention
 
@@ -48,7 +55,7 @@ otherwise the link is omitted and noted as an open point, so no dead links arise
 ### Directory rules
 
 - `docs/user-guide/README.md` as a curated entry point with a reading order is mandatory as soon as at least one user-guide document exists.
-- `docs/developer-guide/README.md` as a curated entry point is mandatory as soon as at least one developer-guide document exists. It gives developers an overview and software architects a basis for decision-making, and is the target of the second link of the root README (see "Prescribed standard doc structure").
+- `docs/developer-guide/README.md` as a curated entry point is mandatory as soon as at least one developer-guide document exists. It gives developers an overview and software architects a basis for decision-making, and is the target of the developer-guide follow-up link when that link is included under the conditional rule (see "Prescribed standard doc structure").
 - `docs/operations/` and `docs/runbooks/` have no README by default.
 - In `docs/runbooks/`, thematic subfolders are allowed, e.g. `docs/runbooks/database/restart.md`. They are optional; mandatory only once the flat list becomes unwieldy.
 - Empty directories are not created in advance. A category directory comes into being only with the first document in it.

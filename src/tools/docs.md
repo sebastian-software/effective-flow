@@ -97,8 +97,8 @@ every specialized branch independently.
 
 An initial setup of the project documentation is not a separate tool but a mode of this workflow. It applies when (a) the assignment is explicitly "set up project documentation initially" **or** (b) no doc structure exists yet.
 
-- In **one** run, create the three roles of the standard structure and coordinate the agents so the two README links point to existing targets at the end: `{{AGENT:marketing-writer}}` for the root `README.md`, `{{AGENT:docs-writer}}` for `docs/user-guide/README.md` (plus initial guides) and `docs/developer-guide/README.md`.
-- Choose the order so the targets of the two links exist before the root README links to them (create the category entry points first or in the same run).
+- In **one** run, create the three roles of the standard structure: `{{AGENT:marketing-writer}}` for the root `README.md`, `{{AGENT:docs-writer}}` for `docs/user-guide/README.md` (plus initial guides) and `docs/developer-guide/README.md`. Because both follow-up targets then exist, the conditional rule emits both links in the prescribed order.
+- Choose the order so both follow-up targets exist before the root README applies the conditional rule (create the category entry points first or in the same run).
 - If part of the structure already exists, scaffold only the missing parts and link the existing ones; existing files are not silently overwritten but handled via the replacement clarification.
 - The scaffold mode uses the regular phases, the delivery/worktree setup, the goal-driven completion control and the commit gate of this workflow; **no** new top-level tool is created.
 
@@ -216,8 +216,15 @@ skill-discovery
    - for developer-guide changes, `docs/developer-guide/README.md` is present as soon as content exists under `docs/developer-guide/`
 3. For the root `README.md` as the marketing entry point, check:
    - it is written from the user's perspective (value proposition, no internal architecture details)
-   - it ends with exactly two links per the two-links rule from `Doc categories`: first link → `docs/user-guide/README.md`, second link → `docs/developer-guide/README.md`
-   - every link that is set points to an existing target; a missing target was omitted and noted as an open point instead of being written as a dead link
+   - at the end of the run, its final documentation follow-up section satisfies the conditional
+     rule from `Doc categories`: if both `docs/user-guide/README.md` and
+     `docs/developer-guide/README.md` exist, it has exactly those two links in user-guide then
+     developer-guide order; if exactly one exists, it has only that valid link; if neither
+     exists, it has neither link
+   - each missing target is reported individually as an open point in the workflow or agent
+     result, never as a placeholder or broken README link
+   - existing unrelated README links are preserved and excluded from the final documentation
+     follow-up-section invariant
 4. Start `{{AGENT:code-validator}}` when doc changes affect technical artifacts or the project build can plausibly check the change.
 5. If errors are found: fix them or delegate again to the appropriate doc agent – per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if validation still reports errors afterwards, instead of repeating indefinitely.
 
