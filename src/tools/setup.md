@@ -1,5 +1,5 @@
 ---
-description: "Prepares a target project for using Effective Flow: enters `.effective-flow/` completely and idempotently into `.gitignore` (pure runtime directory) and writes the Effective Flow configuration via a guided wizard into a living project setup ADR (Markdown table) that an `**Effective Flow project setup:**` marker in AGENTS.md points to. Migrates an existing `.firmo/config.json` once into the ADR and untracks it non-destructively. Always starts from safe defaults, offers an express and a guided path, explains every option even for Effective Flow newcomers, and shows the currently recorded values when a config exists. Maintains an existing configuration non-destructively. Use this skill for the one-time setup or to adjust the Effective Flow configuration."
+description: "Prepares a target project for using Effective Flow: enters `.effective-flow/` completely and idempotently into `.gitignore` (pure runtime directory) and writes the Effective Flow configuration via a guided wizard into a living project setup ADR (Markdown table) that an `**Effective Flow project setup:**` marker in AGENTS.md points to. Migrates an existing transitional `.effective-flow/config.json`, or otherwise `.firmo/config.json`, once into the ADR while preserving the selected source content on disk. Always starts from safe defaults, offers an express and a guided path, explains every option even for Effective Flow newcomers, and shows the currently recorded values when a config exists. Maintains an existing configuration non-destructively. Use this skill for the one-time setup or to adjust the Effective Flow configuration."
 catalogHint: "Sets up Effective Flow in the project – guided wizard, starts with safe defaults."
 ---
 
@@ -11,7 +11,7 @@ You prepare a target project for using Effective Flow: a `.gitignore` entry for 
 
 - enter the runtime directory `.effective-flow/` completely and idempotently into `.gitignore` (only if the target state is not yet established)
 - write the Effective Flow configuration via a guided wizard into the project setup ADR table or update it non-destructively, and set the `**Effective Flow project setup:**` marker in `AGENTS.md` (or `CLAUDE.md`)
-- migrate an existing `.firmo/config.json` once into the ADR and then untrack it (leave the file content on disk)
+- migrate the transitional JSON source selected by the shared locator once into the ADR while preserving its file content on disk
 - always start from safe defaults and offer the user two paths: **Express** (adopt defaults) or **Guided** (go through every option explained)
 - explain every option so that it is understandable even without prior knowledge of how Effective Flow works
 - for an existing config, show and pre-select the currently recorded value at every choice
@@ -143,19 +143,28 @@ options:
 2. **Resolve the project setup ADR.** Resolve an already-existing project setup ADR via the
    config locator (AGENTS.md marker `**Effective Flow project setup:** <path>` → default path/scan
    → transitional `.effective-flow/config.json`, otherwise `.firmo/config.json`; see the building block above). If a marker points to a dead
-   path, continue down the order and note the outdated marker for correction.
-3. **Form the current values.** If an ADR exists: parse the `## Configuration` table
-   per the encoding into an internal "current values" overview (key → currently
-   recorded value). If no ADR exists (yet) but a `.firmo/config.json` does
-   (migration case): read its values as the current values and note internally that a migration
-   will happen. Treat `.effective-flow/config.json` the same way when it is the transitional
-   source. Show the respective value at every following question ("currently recorded:
-   …") and use it as the pre-selection. If a key is missing, label the pre-selection as the
-   default ("currently not set – default: …").
-4. **Invalid source.** If the ADR table is invalid/ambiguous or an old `config.json`
-   is not valid JSON: do not overwrite silently. Inform the user with the path and error and
-   ask whether the configuration should be newly created (old backup/overwrite) or the run
-   aborted.
+   path, continue down the order and note the outdated marker for correction. If an ADR resolves,
+   it is authoritative and neither transitional JSON file is a migration source or may be
+   untracked. Otherwise, capture the locator's exact verified absolute transitional JSON handle
+   under `RUNTIME_STATE_ROOT` as `<source-handle>`; never replace it with or inspect a same-named
+   fallback under `EXECUTION_ROOT`. For Git commands only, derive `<source-path>` as the verified
+   repository-relative pathspec that identifies the same file after the locator's root/common-
+   directory and containment checks. When both JSON files exist,
+   `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` wins; leave the unselected
+   `<RUNTIME_STATE_ROOT>/.firmo/config.json` untouched throughout the run. Record whether Step 2
+   resolved an ADR, a transitional JSON source, or no source; Step 6 uses this source state to
+   detect intervening changes without inventing an undefined handle.
+3. **Form the current values.** If an ADR exists, parse the `## Configuration` table per the
+   encoding into an internal "current values" overview (key → currently recorded value). In the
+   migration case, read `<source-handle>` as the current values and preserve all known and unknown
+   keys. Show the respective value at every following question ("currently recorded: …") and use
+   it as the pre-selection. If a key is missing, label the pre-selection as the default
+   ("currently not set – default: …").
+4. **Invalid source.** If the ADR table is invalid/ambiguous or the selected `<source-handle>` is
+   not valid JSON, do not overwrite silently. Inform the user with that exact handle and the
+   error, and ask whether the configuration should be newly created (old backup/overwrite) or the
+   run aborted. Without the workflow's explicit invalid-source decision, do not write a
+   replacement ADR, untrack either JSON file, or mark the migration complete.
 
 ### Step 3: Express or Guided
 
@@ -291,7 +300,39 @@ Ask for free-text values (e.g. `baseBranch`, `branchPrefix`, `returnBranch`, `ba
 
 1. Build the target configuration non-destructively: set the known keys to the chosen values, carry over existing valid values for keys not asked about, and leave unknown keys unchanged.
 2. This also applies to the safe defaults: a default value that would replace an already-present, differing config value is set only after explicit confirmation. Before writing, show a before/after list of **all** keys to be changed (whether from the express base, the core switches, or the advanced settings) and obtain confirmation. A full overwrite (discarding existing values) likewise only after explicit confirmation.
-3. Resolve the project setup ADR freshly once more directly before writing (locator) and re-read an existing ADR table or old `config.json` freshly, so that intervening changes are not lost.
+3. Resolve the project setup ADR freshly once more directly before writing (locator) and compare
+   its result with the source state recorded in Step 2:
+   - If an ADR now resolves, it is authoritative: re-read its table and do not migrate or touch
+     either JSON fallback.
+   - If Step 2 selected a transitional JSON source and no ADR now resolves, require the freshly
+     resolved transitional handle to equal the retained `<source-handle>`. If they match,
+     revalidate and re-read that exact absolute handle immediately before writing; do not resolve a
+     fallback under `EXECUTION_ROOT` during this pre-write check. If the file disappeared, failed
+     the runtime-root/repository checks, or became invalid, report that exact handle and abort the
+     write. If the fresh locator selects a different transitional handle, stop before writing and
+     restart from Step 2 with the newly selected source. In particular, if
+     `<RUNTIME_STATE_ROOT>/.firmo/config.json` was retained and
+     `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` appeared, the higher-precedence Effective
+     Flow source must be read and presented before any write.
+   - If Step 2 found no source and the fresh locator still finds none, continue as a normal fresh
+     setup; no `<source-handle>` or `<source-path>` exists and no migration action runs.
+   - If Step 2 found no source but the fresh locator now finds a transitional JSON source, stop
+     before writing and return to Step 2 with that newly selected source. Read and present its
+     values instead of writing defaults over it. Likewise, if a previously resolved ADR
+     disappeared and no ADR now resolves, restart from Step 2 rather than silently switching to a
+     fallback or to defaults.
+
+   Rebuild the target configuration from the applicable fresh values so that intervening changes,
+   including unknown keys, are not lost.
+
+   Before Step 4 in a migration case, perform a read-only idempotency check. This check creates
+   nothing and touches no Git: read the verified absolute
+   `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle non-mutatingly and inspect
+   `configMigration.adr`. If the completion marker is already set, stop before Step 4 and before
+   any Git action; do not migrate again. Re-resolve the ADR: if it is missing despite the
+   completion marker, report the inconsistent state and ask whether to begin a separate normal
+   non-migration setup or abort. Do not continue this migration path.
+
 4. **Write the project setup ADR.** Determine the ADR directory (Step 2) and write the
    ADR to `<adr-dir>/effective-flow-project-setup.md` (default slug `effective-flow-project-setup`; an old slug `firmo-project-setup` is recognized as equivalent during the scan and switched to the new slug on write) in the
    living ADR format:
@@ -324,26 +365,45 @@ Ask for free-text values (e.g. `baseBranch`, `branchPrefix`, `returnBranch`, `ba
    | tracker.mode                      | local   |
    ```
 
+   In the migration case, snapshot the pre-write existence and content of the target ADR and the
+   convention file that will carry the marker. Keep those snapshots only for the failure recovery
+   in Step 6.
+
 5. **Set the AGENTS.md marker.** Write the canonical line `**Effective Flow project setup:** <adr-path>` non-destructively: preferably into an existing `AGENTS.md`, otherwise into an existing `CLAUDE.md`, otherwise create a minimal `AGENTS.md` with this line. Leave the remaining content untouched; update an existing (possibly outdated) marker instead of duplicating it — this includes an old marker `**Firmo project setup:**`, which is switched to the new spelling in the process.
 6. **Migration and untracking (migration case only).** If a transitional
-   `.effective-flow/config.json` or old `.firmo/config.json` was read as the source:
-   - If the source is tracked, untrack that exact path automatically with
-     `git rm --cached <source-path>`; **leave the file content on disk** (Effective Flow's
+   `.effective-flow/config.json` or old `.firmo/config.json` was read from `<source-handle>`:
+   - In a Git repository, determine whether that exact source is tracked with
+     `git ls-files -- <source-path>`. If it is tracked, untrack only that source automatically
+     with `git rm --cached <source-path>`; **leave the file content on disk** (Effective Flow's
      non-destructive line), leaving cleanup to the user. `git rm --cached` **stages** an index
-     change but creates **no** commit — the setup rule "creates no commits" stays intact.
-   - If the project is not a Git repository or the file is not tracked, skip the untracking and report that.
+     change but creates **no** commit — the setup rule "creates no commits" stays intact. Never
+     inspect, untrack, or otherwise modify the unselected fallback.
+   - If that required untracking command fails or `<source-handle>` is no longer present on disk,
+     the migration is incomplete. Report the failure, do not write `configMigration.adr`, and
+     restore the ADR and convention-marker file from the snapshots taken immediately before Steps
+     4–5 so the locator can select the same JSON source on a later run. Roll back only when the
+     current content still exactly matches this run's write; never overwrite a concurrent change.
+     If safe rollback is no longer possible, report the precise manual recovery needed instead of
+     claiming that the migration completed.
+   - If the project is not a Git repository or `<source-path>` is not tracked, skip the
+     untracking and report that exact outcome; this is a successful migration path because no
+     index repair is required.
    - Before writing the migration marker, freshly validate the repaired target state using the
      exact non-verbose checks from Step 1. Run
      `git check-ignore --no-index -- .effective-flow/memory.json` as the concrete-target
      predicate as well as the sentinel predicate, and require empty output from
      `git ls-files -- .effective-flow/`. If any check blocks, preserve the runtime directory,
-     report the concrete reason and tracked paths, and do not write the marker.
+     report the concrete reason and tracked paths, apply the same safe ADR/marker rollback, and do
+     not write the marker.
    - Only after target-state validation passes, apply “Runtime-state write safety” immediately
      to the exact directory `.effective-flow/` immediately before its `mkdir` if it is missing.
      Apply the guard again to the concrete marker file immediately before writing it. Mark completion idempotently in
      `.effective-flow/memory.json` under `configMigration.adr` (`version` e.g.
-     `config-to-adr-v1`, `appliedAt` timestamp), without losing existing `memory.json` fields.
-     If this marker is already set, do not migrate again.
+     `config-to-adr-v1`, `appliedAt` timestamp). For a valid existing memory object, deep-merge
+     only `configMigration.adr`: preserve every unrelated top-level field, nested field, and
+     sibling `configMigration` state. Never write or update the marker after invalid JSON, failed
+     required untracking, or failed target-state validation; the pre-write marker check above
+     owns idempotency for an already-complete migration.
 
 ### Step 7: Summary
 
@@ -354,7 +414,12 @@ Report to the user:
 - the set central behavior values (`worktree.enabled` [default `true`], `delivery.completion` [default `merge`] including, if applicable, `delivery.baseBranch`/`delivery.returnBranch`, `plan.markerLanguage`, `tracker.mode`, and, if applicable, `tracker.remoteToolOverride`) as well as `plan.dir`, if set or changed from the default
 - for a previously existing config: which keys were changed from the old state (before/after)
 - the path of the written project setup ADR and the location of the set `**Effective Flow project setup:**` marker (`AGENTS.md`/`CLAUDE.md`)
-- in the migration case: that the old `.firmo/config.json` was **removed staged** via `git rm --cached` (content left on disk) but **not** committed — and that the user handles the cleanup themselves
+- in the migration case: identify the exact `<source-handle>` selected by the locator and whether
+  migration completed. For a completed migration, report whether `<source-path>` was **removed
+  staged** via `git rm --cached` (content left on disk) or was already untracked. For an incomplete
+  migration, report the failed step and rollback outcome and do not call the source migrated.
+  Never name the unselected fallback as processed. State that no commit was created and that the
+  user handles any cleanup themselves
 
 ## Rules
 
