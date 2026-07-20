@@ -200,8 +200,12 @@ skill-discovery
    - Critical: fix before completion
    - Important: should be fixed
    - Note: optional
-3. Present the review results in detail, including status per finding.
-4. Document each finding in a structured way so open or unimplemented findings can be written as a review report:
+3. Present the review results in detail, including status per finding. Treat the results as
+   provisional until Phase 6 confirms that no regression remains. On every Phase 4 run, replace
+   the previous provisional review set in full with the newest results; do not carry findings
+   from superseded runs forward.
+4. Document each provisional finding in a structured way so open or unimplemented findings can
+   be written as a review report after successful validation:
    - Title
    - Severity (Critical / Important / Note)
    - Complexity (Low / Medium / High)
@@ -214,13 +218,8 @@ skill-discovery
    - Status (Fixed / Open / Not implemented)
    - rationale for non-implementation or ADR reference as slug, if present, e.g. `(ADR: <slug>)`
 5. Never create an ADR in this workflow and do not ask for one either. Deliberately unimplemented findings are documented exclusively in the review report. The developer decides on later implementation or on an ADR for a deliberate non-implementation when going through the findings file, typically via {{SKILL:apply-review}}.
-6. If after review there remain findings with status `Open` or `Not implemented`:
-   - write them into a new file under `.effective-flow/review/` per "Open review-finding reports"
-   - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
-   - name the generated report path in the completion summary
-7. If this phase implemented a finding from an existing review-report file in `.effective-flow/review/`:
-   - add a short implementation note as the last entry directly in the affected finding
-   - begin the note with `✅` and name at least the date and workflow
+6. Do not create an open-findings report or append an implementation backlink in this phase.
+   Both are external finalization state and are persisted only after Phase 6 succeeds.
 
 ### Phase 5: Post-validation
 
@@ -240,8 +239,21 @@ Start in parallel:
    - build
 2. If regressions are found:
    - inform the user
-   - back to Phase 3, then phases 5 and 6 again – per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the baseline is still not reached afterwards, instead of repeating indefinitely
+   - back to Phase 3, then phases 4, 5 and 6 again – per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the baseline is still not reached afterwards, instead of repeating indefinitely
 3. If no regressions:
+   - finalize external review state from the latest provisional review only:
+     - use the session ID as the stable finalization marker for this workflow run; in a generated report, include it after the reviewer or phase in the existing `Source review` field, for example `Phase 4 (run <SESSION_ID>)`
+     - if findings with status `Open` or `Not implemented` remain, before applying the collision rule, search `.effective-flow/review/` for a report whose `Source workflow` is `{{SKILL:refactor}}` and whose `Source review` contains this run's finalization marker
+     - if exactly one matching report exists, reuse that report and its path; complete or validate its contents and memory update as needed, and do not create a collision-suffixed report
+     - if more than one matching report exists, stop before writing and escalate the ambiguity to the user
+     - if no matching report exists, write the findings into at most one new file under `.effective-flow/review/` per "Open review-finding reports"
+     - if no findings with status `Open` or `Not implemented` remain, do not create a report
+     - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
+     - name any generated report path in the completion summary
+   - if this refactoring implemented a finding from an existing review-report file in `.effective-flow/review/`:
+     - add a short implementation note as the last entry directly in the affected finding
+     - begin the note with `✅`, name at least the date and workflow, and include the same finalization marker, for example `✅ Implemented on YYYY-MM-DD via {{SKILL:refactor}} (run <SESSION_ID>)`
+     - before appending, read the finding again and check for an implementation note with this exact finalization marker; if one exists, do not append another note
    - delete the wisdom file
    - if delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
    - summarize what was refactored; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch)
