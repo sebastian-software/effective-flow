@@ -23,6 +23,13 @@ Do not carry over into the external report:
 
 ### Report path
 
+If `.effective-flow/` is missing, apply the owning workflow's loaded “Runtime-state write safety”
+contract to the exact directory `.effective-flow/` immediately before its `mkdir`. If
+`.effective-flow/review/` is missing, separately apply it to that exact directory immediately
+before its `mkdir`. Apply it again to the concrete report file immediately before writing the
+report and to `.effective-flow/memory.json` immediately before updating memory. A blocked target
+remains unchanged.
+
 1. Create `.effective-flow/review/` if needed.
 2. If the workflow has a plan file as its basis, prefer:
    - `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>.md`

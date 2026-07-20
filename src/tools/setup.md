@@ -25,6 +25,11 @@ language-rules
 task-tracking
 ```
 
+```lazy-include
+runtime-state-safety
+when: setup has repaired and validated the runtime ignore state and is about to write a runtime marker
+```
+
 ```include
 adr-convention
 ```
@@ -92,13 +97,22 @@ Target state: the entire runtime directory `.effective-flow/` (excluding the `co
 
 There is **no** `!.effective-flow/config.json` exception pattern anymore: the Effective Flow configuration is no longer kept as a tracked `config.json`, but in the project setup ADR. `.effective-flow/` is thus a pure runtime directory and is ignored completely.
 
-1. Check whether the target state is already established — with Git available, via: `git check-ignore -q .effective-flow/config.json` must end with exit code 0 (the directory including `config.json` is ignored) and there must be **no** `!.effective-flow/config.json` negation line left in `.gitignore`. Without Git, via a line comparison of `.gitignore`: one line ignores `.effective-flow/` as a whole and **no** `!.effective-flow/…` negation line follows.
+1. Check whether the target state is already established. In a Git worktree, run the
+   non-verbose predicate `git check-ignore --no-index -- .effective-flow/config.json`: exit `0`
+   means ignored, exit `1` means not ignored, and every other exit or launch error fails closed.
+   Separately run `git ls-files -- .effective-flow/`; failure or any listed tracked path means
+   the runtime target state is not established. Use
+   `git check-ignore -v --no-index -- .effective-flow/config.json` only for diagnostics, never
+   for the decision. There must also be **no** `!.effective-flow/config.json` negation line left
+   in `.gitignore`. Without Git, use a line comparison of `.gitignore`: one line ignores
+   `.effective-flow/` as a whole and **no** `!.effective-flow/…` negation line follows, but do
+   not treat that as authorization for a runtime-state write.
 2. If the target state is not yet established:
    - Migrate the former two-line pattern: if `.gitignore` contains the lines `.effective-flow/*` and `!.effective-flow/config.json` (old target state with a tracked `config.json`), replace **both** with the single line `.effective-flow/`.
    - Migrate old directory patterns of the predecessor names: if a line ignores the former `.firmo/` or `.sf-plugin/` (common spellings with/without a leading or trailing slash, including the old `.firmo/*` + `!.firmo/config.json` two-line form), replace it with the single line `.effective-flow/`. Normalize an already-present blanket `.effective-flow/` (or `.effective-flow`, `/.effective-flow/`) to `.effective-flow/` and remove any subsequent `!.effective-flow/config.json` negation line.
    - If every `.effective-flow/` entry is missing, append the line `.effective-flow/`. Ensure a trailing newline before appending. If `.gitignore` is missing, create it with this single line.
 3. If the target state is already established: change nothing and report that briefly.
-4. If the project is not a Git repository: point out that a `.gitignore` is ineffective without Git, and ask whether it should be written anyway. Then use the same line comparison as above instead of `git check-ignore`. The config creation continues independently of this.
+4. If the project is not a Git repository: point out that a `.gitignore` is ineffective without Git, and ask whether it should be written anyway. Then use the same line comparison as above instead of `git check-ignore`. The ADR and convention-marker creation continue independently, but no `.effective-flow/` runtime marker may be written.
 
 ### Step 2: Determine the ADR location and read the existing config
 
@@ -123,13 +137,14 @@ options:
 
 2. **Resolve the project setup ADR.** Resolve an already-existing project setup ADR via the
    config locator (AGENTS.md marker `**Effective Flow project setup:** <path>` → default path/scan
-   → transitional `.firmo/config.json`; see the building block above). If a marker points to a dead
+   → transitional `.effective-flow/config.json`, otherwise `.firmo/config.json`; see the building block above). If a marker points to a dead
    path, continue down the order and note the outdated marker for correction.
 3. **Form the current values.** If an ADR exists: parse the `## Configuration` table
    per the encoding into an internal "current values" overview (key → currently
    recorded value). If no ADR exists (yet) but a `.firmo/config.json` does
    (migration case): read its values as the current values and note internally that a migration
-   will happen. Show the respective value at every following question ("currently recorded:
+   will happen. Treat `.effective-flow/config.json` the same way when it is the transitional
+   source. Show the respective value at every following question ("currently recorded:
    …") and use it as the pre-selection. If a key is missing, label the pre-selection as the
    default ("currently not set – default: …").
 4. **Invalid source.** If the ADR table is invalid/ambiguous or an old `config.json`
@@ -305,10 +320,25 @@ Ask for free-text values (e.g. `baseBranch`, `branchPrefix`, `returnBranch`, `ba
    ```
 
 5. **Set the AGENTS.md marker.** Write the canonical line `**Effective Flow project setup:** <adr-path>` non-destructively: preferably into an existing `AGENTS.md`, otherwise into an existing `CLAUDE.md`, otherwise create a minimal `AGENTS.md` with this line. Leave the remaining content untouched; update an existing (possibly outdated) marker instead of duplicating it — this includes an old marker `**Firmo project setup:**`, which is switched to the new spelling in the process.
-6. **Migration and untracking (migration case only).** If an old `.firmo/config.json` was read as the source:
-   - Untrack it automatically with `git rm --cached .firmo/config.json`; **leave the file content on disk** (Effective Flow's non-destructive line), leaving the cleanup to the user. `git rm --cached` **stages** an index change but creates **no** commit — the setup rule "creates no commits" stays intact.
+6. **Migration and untracking (migration case only).** If a transitional
+   `.effective-flow/config.json` or old `.firmo/config.json` was read as the source:
+   - If the source is tracked, untrack that exact path automatically with
+     `git rm --cached <source-path>`; **leave the file content on disk** (Effective Flow's
+     non-destructive line), leaving cleanup to the user. `git rm --cached` **stages** an index
+     change but creates **no** commit — the setup rule "creates no commits" stays intact.
    - If the project is not a Git repository or the file is not tracked, skip the untracking and report that.
-   - Mark the migration completion idempotently in `.effective-flow/memory.json` under `configMigration.adr` (`version` e.g. `config-to-adr-v1`, `appliedAt` timestamp), without losing existing `memory.json` fields. If this marker is already set, do not migrate again.
+   - Before writing the migration marker, freshly validate the repaired target state using the
+     exact non-verbose checks from Step 1. Run
+     `git check-ignore --no-index -- .effective-flow/memory.json` as the concrete-target
+     predicate as well as the sentinel predicate, and require empty output from
+     `git ls-files -- .effective-flow/`. If any check blocks, preserve the runtime directory,
+     report the concrete reason and tracked paths, and do not write the marker.
+   - Only after target-state validation passes, apply “Runtime-state write safety” immediately
+     to the exact directory `.effective-flow/` immediately before its `mkdir` if it is missing.
+     Apply the guard again to the concrete marker file immediately before writing it. Mark completion idempotently in
+     `.effective-flow/memory.json` under `configMigration.adr` (`version` e.g.
+     `config-to-adr-v1`, `appliedAt` timestamp), without losing existing `memory.json` fields.
+     If this marker is already set, do not migrate again.
 
 ### Step 7: Summary
 

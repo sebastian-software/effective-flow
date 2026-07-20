@@ -145,7 +145,12 @@ When worktree execution is active:
    silently switch a harness-managed worktree.
 2. Otherwise determine the repo name from `basename "$(git rev-parse --show-toplevel)"` and use
    `worktree.baseDir` (default `.effective-flow/.worktrees`) as the base dir. Worktree path:
-   `BASE_DIR/REPO_NAME/SESSION_ID`. Create the worktree and delivery branch with
+   `BASE_DIR/REPO_NAME/SESSION_ID`. When that path is below `.effective-flow/`, resolve every
+   missing base or parent directory that will be created. Apply the owning workflow's loaded
+   “Runtime-state write safety” contract to each exact directory path immediately before its
+   `mkdir`; a guard for the eventual worktree path does not authorize creating its parents.
+   Apply the contract again to the exact `WORKTREE_PATH` immediately before `git worktree add`.
+   Create the worktree and delivery branch with
    `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> <BASE_REF>`, then immediately issue and
    verify an `effective-flow-created` receipt for the exact path, branch, workflow and delivery
    purpose. If receipt creation fails, retain the worktree for manual reconciliation.

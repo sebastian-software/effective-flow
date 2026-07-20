@@ -1378,6 +1378,187 @@ export function assertNoEagerLazyOverlap(eager, lazy, { context } = {}) {
   }
 }
 
+// --- Runtime-state write-safety coverage guard (#165) ---
+//
+// Runtime workflow sources are executable natural-language contracts. This
+// checker walks each root source in order, follows eager and lazy shared
+// includes, and verifies that an operational `.effective-flow/` mutation is
+// preceded by the canonical safety fragment. It deliberately derives writers
+// from their source instructions instead of maintaining a second writer
+// allowlist. Read-only runtime lookup is not a mutation.
+
+const RUNTIME_STATE_PATH_RE = /\.effective-flow\/(?:[A-Za-z0-9._<>/{-]+)?/g;
+const RUNTIME_MUTATION_RE =
+  /\b(?:mkdir|write|writes|wrote|written|writing|create|creates|created|creating|update|updates|updated|updating|delete|deletes|deleted|deleting|remove|removes|removed|removing|copy|copies|copied|copying|rename|renames|renamed|renaming|migrate|migrates|migrated|migrating|mark|marks|marked|marking|acquire|acquires|acquired|acquiring|persist|persists|persisted|persisting|save|saves|saved|saving|append|appends|appended|appending|edit|edits|edited|editing|touch|touches|touched|touching|move|moves|moved|moving|unlink|unlinks|unlinked|unlinking|symlink|symlinks|symlinked|symlinking|store|stores|stored|storing|record|records|recorded|recording|emit|emits|emitted|emitting|replace|replaces|replaced|replacing|lock acquisition)\b|\bgit\s+worktree\s+add\b/i;
+const RUNTIME_PASSIVE_MUTATION_RE =
+  /\b(?:is|are|was|were)\s+(?:(?:not|never|only)\s+)?(?:written|created|updated|deleted|removed|copied|renamed|migrated|marked|acquired|persisted|saved|appended|edited|touched|moved|unlinked|symlinked|stored|recorded|emitted|replaced)\b/gi;
+const RUNTIME_NEGATED_MUTATION_RE =
+  /\b(?:(?:do|does|did|must|should|may|can)\s+not|never)\s+(?:write|create|update|delete|remove|copy|rename|migrate|mark|acquire|persist|save|append|edit|touch|move|unlink|symlink|store|record|emit|replace)|\bwithout\s+(?:writing|creating|updating|deleting|removing|copying|renaming|migrating|marking|acquiring|persisting|saving|appending|editing|touching|moving|unlinking|symlinking|storing|recording|emitting|replacing)\b/gi;
+const RUNTIME_DESCRIPTIVE_NON_MUTATION_RE =
+  /\b(?:read-only|non-mutating|creates? nothing|touches? no git)\b/gi;
+const RUNTIME_READ_ONLY_GIT_COMMAND_RE = /\bgit\s+(?:check-ignore|ls-files)\b/i;
+const INCLUDE_FENCE_START_RE = /^```(lazy-)?include\s*$/;
+const SETUP_REPAIR_SCOPE_START = '<!-- runtime-state-safety: setup-repair-only:start -->';
+const SETUP_REPAIR_SCOPE_END = '<!-- runtime-state-safety: setup-repair-only:end -->';
+const SETUP_CONTEXT = 'tools/setup.md';
+const SETUP_RUNTIME_MARKER = '.effective-flow/memory.json';
+
+function sourceEntries(sources) {
+  if (sources instanceof Map) return [...sources.entries()];
+  return Object.entries(sources ?? {});
+}
+
+function runtimeMutationOnLine(line) {
+  RUNTIME_STATE_PATH_RE.lastIndex = 0;
+  const paths = [...line.matchAll(RUNTIME_STATE_PATH_RE)].map((match) => match[0]);
+  const withoutNonOperationalCode = line.replace(/`([^`]+)`/g, (match, code) =>
+    /\.effective-flow\/|\bgit\s+worktree\s+add\b|\bmkdir\b|\b(?:cp|mv|rm|touch|unlink)\b/i.test(
+      code,
+    )
+      ? match
+      : '',
+  );
+  const operationalText = withoutNonOperationalCode
+    .replace(RUNTIME_PASSIVE_MUTATION_RE, '')
+    .replace(RUNTIME_NEGATED_MUTATION_RE, '')
+    .replace(RUNTIME_DESCRIPTIVE_NON_MUTATION_RE, '');
+  if (paths.length === 0 || !RUNTIME_MUTATION_RE.test(operationalText)) return null;
+  return paths[0];
+}
+
+// Return deterministic { context, line, reason, target, includeChain } records.
+// `sources` is a Map/object from source context (`tools/x.md`, `shared/y.md`, …)
+// to raw source body. By default tools and agents are execution roots; shared
+// fragments are reached through their owning include position.
+export function findRuntimeStateSafetyViolations(
+  sources,
+  { rootContexts, guardFragment = 'runtime-state-safety', setupContext = SETUP_CONTEXT } = {},
+) {
+  const entries = sourceEntries(sources).sort(([a], [b]) => a.localeCompare(b));
+  const sourceMap = new Map(entries);
+  const roots = (
+    rootContexts ??
+    entries.map(([context]) => context).filter((context) => !context.startsWith('shared/'))
+  )
+    .filter((context) => sourceMap.has(context))
+    .sort();
+  const violations = [];
+
+  const visit = (context, state, includeChain) => {
+    const body = normalizeLineEndings(sourceMap.get(context) ?? '');
+    const lines = body.split('\n');
+    const active = { ...state };
+
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (line.trim() === SETUP_REPAIR_SCOPE_START) {
+        active.setupRepairOnly = true;
+        continue;
+      }
+      if (line.trim() === SETUP_REPAIR_SCOPE_END) {
+        active.setupRepairOnly = false;
+        continue;
+      }
+      const includeStart = INCLUDE_FENCE_START_RE.exec(line);
+      if (includeStart) {
+        const name = (lines[index + 1] ?? '').trim();
+        let fenceEnd = index + 2;
+        while (fenceEnd < lines.length && lines[fenceEnd].trim() !== '```') fenceEnd += 1;
+        if (name === guardFragment) {
+          active.guardSeen = true;
+        } else {
+          const sharedContext = `shared/${name}.md`;
+          if (name && sourceMap.has(sharedContext) && !includeChain.includes(sharedContext)) {
+            const nested = visit(sharedContext, active, [...includeChain, sharedContext]);
+            active.guardSeen = nested.guardSeen;
+            active.setupSentinelValidated = nested.setupSentinelValidated;
+            active.setupTargetValidated = nested.setupTargetValidated;
+            active.setupTrackedStateValidated = nested.setupTrackedStateValidated;
+          }
+        }
+        index = Math.min(fenceEnd, lines.length - 1);
+        continue;
+      }
+
+      if (context === setupContext) {
+        if (line.includes('git check-ignore --no-index -- .effective-flow/config.json')) {
+          active.setupSentinelValidated = true;
+        }
+        if (line.includes(`git check-ignore --no-index -- ${SETUP_RUNTIME_MARKER}`)) {
+          active.setupTargetValidated = true;
+        }
+        if (line.includes('git ls-files -- .effective-flow/')) {
+          active.setupTrackedStateValidated = true;
+        }
+      }
+
+      // Markdown commonly wraps an operation immediately before its target.
+      // Join only the preceding physical line, preserving source order without
+      // turning an entire paragraph into a broad prose heuristic.
+      const target =
+        runtimeMutationOnLine(line) ??
+        (line.includes('.effective-flow/') && !RUNTIME_READ_ONLY_GIT_COMMAND_RE.test(line)
+          ? runtimeMutationOnLine(`${lines[index - 1] ?? ''} ${line}`)
+          : null);
+      if (!target) continue;
+      if (active.setupRepairOnly && includeChain[0] !== setupContext) continue;
+
+      if (!active.guardSeen) {
+        violations.push({
+          context,
+          line: index + 1,
+          reason: 'runtime mutation is not preceded by the canonical safety guard',
+          target,
+          includeChain: [...includeChain],
+        });
+        continue;
+      }
+
+      if (
+        context === setupContext &&
+        target.startsWith(SETUP_RUNTIME_MARKER) &&
+        !(
+          active.setupSentinelValidated &&
+          active.setupTargetValidated &&
+          active.setupTrackedStateValidated
+        )
+      ) {
+        violations.push({
+          context,
+          line: index + 1,
+          reason: 'setup runtime marker write is not preceded by complete target-state validation',
+          target,
+          includeChain: [...includeChain],
+        });
+      }
+    }
+
+    return active;
+  };
+
+  for (const context of roots) {
+    visit(
+      context,
+      {
+        guardSeen: false,
+        setupSentinelValidated: false,
+        setupTargetValidated: false,
+        setupTrackedStateValidated: false,
+        setupRepairOnly: false,
+      },
+      [context],
+    );
+  }
+
+  return violations.sort(
+    (a, b) =>
+      a.context.localeCompare(b.context) ||
+      a.line - b.line ||
+      a.reason.localeCompare(b.reason) ||
+      a.target.localeCompare(b.target),
+  );
+}
+
 // --- Consumer-document command guard (#160) ---
 //
 // These scripts operate on a source checkout or release-maintenance payload;

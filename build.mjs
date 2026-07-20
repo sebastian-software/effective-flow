@@ -31,6 +31,7 @@ import {
   resolveLazyIncludes,
   collectIncludeNames,
   assertNoEagerLazyOverlap,
+  findRuntimeStateSafetyViolations,
   collectRenderedWorkerRefs,
   findProhibitedConsumerScriptCommands,
   findRetiredConfigDocViolations,
@@ -418,6 +419,45 @@ try {
     'agents/code-documenter.md',
     'agents/docs-writer.md',
   ]);
+
+  // Runtime writers are derived from their ordered source instructions rather
+  // than maintained in a second allowlist. Shared fragments are traversed at
+  // their owning include position, so a parent or the fragment itself may load
+  // the canonical guard before the first mutation.
+  const runtimeStateSources = new Map();
+  for (const file of toolFiles) {
+    runtimeStateSources.set(
+      `tools/${file}`,
+      extractBody(normalizeLineEndings(readFileSync(join(TOOLS_DIR, file), 'utf8'))),
+    );
+  }
+  for (const file of agentFiles) {
+    runtimeStateSources.set(
+      `agents/${file}`,
+      extractBody(normalizeLineEndings(readFileSync(join(AGENTS_DIR, file), 'utf8'))),
+    );
+  }
+  for (const file of readdirSync(SHARED_DIR)
+    .filter((entry) => entry.endsWith('.md'))
+    .sort()) {
+    runtimeStateSources.set(
+      `shared/${file}`,
+      normalizeLineEndings(readFileSync(join(SHARED_DIR, file), 'utf8')),
+    );
+  }
+  const runtimeStateViolations = findRuntimeStateSafetyViolations(runtimeStateSources);
+  if (runtimeStateViolations.length > 0) {
+    throw new Error(
+      'runtime-state writer guard (#165): every operational mutation below `.effective-flow/` ' +
+        'must follow the canonical runtime-state-safety contract:\n  ' +
+        runtimeStateViolations
+          .map(
+            ({ context, line, reason, target, includeChain }) =>
+              `${context}:${line}: ${reason} (${target}; via ${includeChain.join(' -> ')})`,
+          )
+          .join('\n  '),
+    );
+  }
 
   const readSource = (dir, file, context) => {
     const content = normalizeLineEndings(readFileSync(join(dir, file), 'utf8'));

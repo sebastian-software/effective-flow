@@ -20,6 +20,11 @@ task-tracking
 ```
 
 ```lazy-include
+runtime-state-safety
+when: a legacy runtime directory migration is about to mutate `.effective-flow/`
+```
+
+```lazy-include
 config-migration
 when: the Effective Flow configuration is read for the first time or an old config is migrated
 ```

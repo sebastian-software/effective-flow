@@ -27,6 +27,7 @@ import {
   resolveLazyIncludes,
   collectIncludeNames,
   assertNoEagerLazyOverlap,
+  findRuntimeStateSafetyViolations,
   developerGuideBaseUrl,
   rewriteDeveloperGuideLinks,
   appendDeliveryFooter,
@@ -1244,6 +1245,155 @@ test('assertNoEagerLazyOverlap passes for disjoint sets and throws on overlap', 
         context: 'tools/build.md',
       }),
     /both eager- and lazy-included \(in tools\/build\.md\): config-migration/,
+  );
+});
+
+// --- Runtime-state write-safety coverage guard (#165) ---
+
+test('findRuntimeStateSafetyViolations rejects an unguarded runtime writer', () => {
+  const violations = findRuntimeStateSafetyViolations({
+    'tools/new-writer.md': 'Write `.effective-flow/new-state.json` now.\n',
+  });
+
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].context, 'tools/new-writer.md');
+  assert.equal(violations[0].line, 1);
+  assert.equal(
+    violations[0].reason,
+    'runtime mutation is not preceded by the canonical safety guard',
+  );
+});
+
+test('findRuntimeStateSafetyViolations accepts an earlier canonical include', () => {
+  const sources = {
+    'tools/guarded-writer.md': [
+      '```lazy-include',
+      'runtime-state-safety',
+      '```',
+      'Write `.effective-flow/new-state.json` now.',
+    ].join('\n'),
+  };
+
+  assert.deepEqual(findRuntimeStateSafetyViolations(sources), []);
+});
+
+test('findRuntimeStateSafetyViolations follows a guarded shared owner', () => {
+  const sources = {
+    'tools/owner.md': '```include\nruntime-writer\n```\n',
+    'shared/runtime-writer.md': [
+      '```lazy-include',
+      'runtime-state-safety',
+      '```',
+      'Write `.effective-flow/cache.json` now.',
+    ].join('\n'),
+  };
+
+  assert.deepEqual(findRuntimeStateSafetyViolations(sources), []);
+});
+
+test('findRuntimeStateSafetyViolations does not classify read-only config lookup as a writer', () => {
+  const sources = {
+    'tools/reader.md': 'Read `.effective-flow/config.json` as a transitional fallback.\n',
+  };
+
+  assert.deepEqual(findRuntimeStateSafetyViolations(sources), []);
+});
+
+test('findRuntimeStateSafetyViolations rejects adversarial mutation verbs', () => {
+  const mutations = [
+    ['persist', 'Persist state to'],
+    ['save', 'Save state to'],
+    ['append', 'Append data to'],
+    ['edit', 'Edit'],
+    ['touch', 'Touch'],
+    ['move', 'Move data into'],
+    ['unlink', 'Unlink'],
+    ['symlink', 'Symlink an artifact at'],
+    ['store', 'Store state in'],
+    ['record', 'Record state in'],
+    ['emit', 'Emit output to'],
+    ['replace', 'Replace'],
+  ];
+
+  for (const [name, instruction] of mutations) {
+    const violations = findRuntimeStateSafetyViolations({
+      [`tools/${name}.md`]: `${instruction} \`.effective-flow/${name}.json\`.\n`,
+    });
+    assert.equal(violations.length, 1, `${name} must be classified as a runtime mutation`);
+    assert.equal(
+      violations[0].reason,
+      'runtime mutation is not preceded by the canonical safety guard',
+    );
+  }
+});
+
+test('findRuntimeStateSafetyViolations ignores clear passive descriptions', () => {
+  const sources = {
+    'tools/descriptions.md': [
+      'The historical report was created under `.effective-flow/review/` by a previous release.',
+      'The existing `.effective-flow/cache.json` was saved by a previous release.',
+      'The documentation says the report is stored at `.effective-flow/review/report.md`.',
+      'The read-only `.effective-flow/memory.json` is not written by this lookup.',
+    ].join('\n'),
+  };
+
+  assert.deepEqual(findRuntimeStateSafetyViolations(sources), []);
+});
+
+test('findRuntimeStateSafetyViolations preserves shared-consumer ordering', () => {
+  const sharedWriter = 'Save state to `.effective-flow/shared-state.json`.\n';
+  const lateGuardSources = {
+    'tools/late-guard.md': [
+      '```include',
+      'runtime-writer',
+      '```',
+      '```lazy-include',
+      'runtime-state-safety',
+      '```',
+    ].join('\n'),
+    'shared/runtime-writer.md': sharedWriter,
+  };
+  const earlyGuardSources = {
+    'tools/early-guard.md': [
+      '```lazy-include',
+      'runtime-state-safety',
+      '```',
+      '```include',
+      'runtime-writer',
+      '```',
+    ].join('\n'),
+    'shared/runtime-writer.md': sharedWriter,
+  };
+
+  const lateViolations = findRuntimeStateSafetyViolations(lateGuardSources);
+  assert.equal(lateViolations.length, 1);
+  assert.equal(lateViolations[0].context, 'shared/runtime-writer.md');
+  assert.deepEqual(lateViolations[0].includeChain, [
+    'tools/late-guard.md',
+    'shared/runtime-writer.md',
+  ]);
+  assert.deepEqual(findRuntimeStateSafetyViolations(earlyGuardSources), []);
+});
+
+test('findRuntimeStateSafetyViolations accepts setup marker writes only after complete validation', () => {
+  const guard = '```lazy-include\nruntime-state-safety\n```';
+  const repair = 'Remove tracked `.effective-flow/config.json` with git rm --cached.';
+  const sentinel = 'Run git check-ignore --no-index -- .effective-flow/config.json.';
+  const target = 'Run git check-ignore --no-index -- .effective-flow/memory.json.';
+  const tracked = 'Run git ls-files -- .effective-flow/.';
+  const write = 'Write `.effective-flow/memory.json` migration marker.';
+  const safe = [guard, repair, sentinel, target, tracked, write].join('\n');
+  const unsafe = [guard, repair, sentinel, write, target, tracked].join('\n');
+
+  assert.deepEqual(
+    findRuntimeStateSafetyViolations({ 'tools/setup.md': safe }),
+    [],
+    'complete validation must permit the marker write',
+  );
+  assert.deepEqual(
+    findRuntimeStateSafetyViolations({ 'tools/setup.md': unsafe }).map(({ reason }) => reason),
+    ['setup runtime marker write is not preceded by complete target-state validation'],
+    'partial validation must not permit the marker write',
   );
 });
 

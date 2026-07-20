@@ -1,5 +1,5 @@
 ---
-description: "Cleans up the legacy remnants that Effective Flow's migrations deliberately leave behind in a target project: old runtime directories `.firmo/`/`.sf-plugin/`, an untracked or legacy `config.json`, outdated `.gitignore` lines, and `firmo-` labels in the remote issue tracker. Reads all outdated artifacts, checks against their new counterpart whether anything still needs to be carried over, has the user confirm every carry-over candidate, and then deletes the old data git-aware and only after explicit confirmation (tracked via `git rm`, untracked/gitignored only after an \"irreversible\" confirmation, no backup, no auto-commit). Is idempotent and a no-op when no legacy remnants are present. Use this skill to conclusively finalize a completed migration and get rid of the old data."
+description: "Cleans up the legacy remnants that Effective Flow's migrations deliberately leave behind in a target project: old runtime directories `.firmo/`/`.sf-plugin/`, an untracked or legacy `config.json`, and `firmo-` labels in the remote issue tracker. Inventories outdated `.gitignore` lines without editing them and routes their repair to setup. Reads all outdated artifacts, checks against their new counterpart whether anything still needs to be carried over, has the user confirm every carry-over candidate, and then deletes the old data git-aware and only after explicit confirmation (tracked via `git rm`, untracked/gitignored only after an \"irreversible\" confirmation, no backup, no auto-commit). Is idempotent and a no-op when no legacy remnants are present. Use this skill to conclusively finalize a completed migration and get rid of the old data."
 catalogHint: "Cleans up migration remnants (`.firmo/`, old config, `firmo-` labels) after confirmation."
 ---
 
@@ -14,6 +14,7 @@ You clean up the legacy remnants that Effective Flow's migrations deliberately l
 - have the user confirm every carry-over candidate and carry over what is confirmed
 - then delete the old data **git-aware** and only after explicit confirmation (dry run first)
 - never delete before the new counterpart exists and the carry-over is complete or deliberately discarded
+- inventory outdated `.gitignore` entries but leave them untouched and route their repair to `{{SKILL:setup}}`
 - do not create a commit and do not create a backup directory
 - be a no-op with a clear message when no legacy remnants are present
 
@@ -23,6 +24,11 @@ language-rules
 
 ```include
 task-tracking
+```
+
+```lazy-include
+runtime-state-safety
+when: confirmed legacy data is about to be copied into or removed from `.effective-flow/`
 ```
 
 ```include
@@ -48,6 +54,8 @@ If the project has an `AGENTS.md`, read it before cleaning up and follow its gui
 - **No auto-commit.** The skill at most stages `git rm` changes and removes untracked files physically; it does not commit. Committing is done by the user or `{{SKILL:commit}}`.
 - **No backup.** For artifacts that are not git-recoverable, no backup directory is deliberately created; the safety net is the explicit confirmation.
 - **Do not write config.** This skill does not itself write carried-over config values into the project setup ADR — `{{SKILL:setup}}` is responsible for that (see Phase 3).
+- **Do not edit `.gitignore`.** Inventory and report outdated entries, then route normalization
+  to `{{SKILL:setup}}`, the sole repair owner.
 - **Delete only with consent.** Every deletion happens only after a dry run and explicit confirmation.
 
 ## Legacy classes
@@ -101,7 +109,12 @@ options:
     description: Carry over no file — the entire old content is released for deletion
 ```
 
-- **Runtime files:** Copy confirmed items to `.effective-flow/` (do not move); do **not** overwrite a file already present in the target. Rejected items remain deletion candidates.
+- **Runtime files:** If a copy needs a missing directory below `.effective-flow/`, apply
+  “Runtime-state write safety” to that exact directory immediately before its `mkdir`; repeat
+  this for every missing parent created. Immediately before each confirmed copy, apply the guard
+  again to the concrete file target. Copy only after it passes (do not move); do **not** overwrite
+  a file already present in the target. A block preserves both source and target and directs the
+  user to `{{SKILL:setup}}`. Rejected items remain deletion candidates.
 - **Config values:** Do **not** write differing values into the ADR yourself. Disclose them and refer to `{{SKILL:setup}}` for the carry-over. Output the affected keys concretely so the user can confirm them in `{{SKILL:setup}}`. Only once the values are in the ADR or the user explicitly discards them is the legacy `config.json` considered free of carry-over and thus deletable.
 - **Labels:** no file carry-over; the carry-over happens in Phase 5 as add-`effective-flow-`-before-remove-`firmo-`.
 
@@ -135,7 +148,8 @@ Execute per class:
 
 - **Tracked files:** remove via `git rm` (staged, **no** commit). For untracked/gitignored, `git rm` does not apply.
 - **Untracked/gitignored directories** (`.firmo/`, `.sf-plugin/`, a gitignored legacy `config.json`): remove physically — only after the explicit "irreversible" confirmation above, without a backup.
-- **`.gitignore`:** remove only clearly outdated lines (`.firmo/`, `.sf-plugin/`, old two-line pattern). Ensure that `.effective-flow/` remains ignored; leave foreign lines untouched. The canonical `.gitignore` normalization is the job of `{{SKILL:setup}}`; here only remove the old remnants.
+- **`.gitignore`:** leave every line untouched. Report the exact outdated entries and route the
+  user to `{{SKILL:setup}}`, the sole owner of normalization and repair.
 - **`firmo-` labels:** only in remote mode with a CLI. First add `effective-flow-<x>` on the issue, **then** detach `firmo-<x>` from the issue (add-new before remove-old, so an abort leaves no issue unclassified). The label **definition** in the tracker remains — do **not** run `label delete`. Use the tool mapping from `issue-tracker.md` (`--add-label`/`--remove-label`, or `tea issue edit`).
 
 On any error (e.g. `git rm` fails, tracker unreachable), abort in a controlled manner: report the partial state and delete nothing whose new counterpart is not secured.
@@ -146,7 +160,7 @@ Report to the user:
 
 - what was carried over (files to `.effective-flow/`) and which config values were referred to `{{SKILL:setup}}`
 - what was deleted, separated into tracked (via `git rm`, staged) and physically removed
-- which `.gitignore` lines were removed
+- which outdated `.gitignore` lines remain and that `{{SKILL:setup}}` owns their repair
 - which `firmo-` labels were detached from how many issues (or that the label class was skipped)
 - what deliberately remains and why
 - that **no** commit was created; refer to `{{SKILL:commit}}` for the staged changes
@@ -159,6 +173,8 @@ Report to the user:
 - Do not touch `.effective-flow/` (the active directory) or the project setup ADR, nor a global skill installation.
 - Do not create commits or backup directories.
 - Do not write config yourself; config carry-over runs through `{{SKILL:setup}}`.
+- Never edit `.gitignore`; inventory and report outdated entries and route repair to
+  `{{SKILL:setup}}`.
 - For label cleanup, first add `effective-flow-`, then detach `firmo-` from the issue; the label definition remains.
 - If no legacy remnant is present, the run is a no-op.
 - Output paths relative to the project root.

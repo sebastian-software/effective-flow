@@ -20,6 +20,11 @@ language-rules
 task-tracking
 ```
 
+```lazy-include
+runtime-state-safety
+when: any wisdom, memory, cache, report, lock, or worktree mutation is imminent
+```
+
 ```include
 config-migration
 ```

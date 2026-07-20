@@ -18,6 +18,14 @@ This table is a narrow, explicit exception to the usual separation of ADR ration
 configuration values: the project-setup ADR is itself the owning tracked configuration artifact.
 Other ADRs remain decision records and must not become configuration stores.
 
+Every mutation below `.effective-flow/` is fail-closed and just-in-time. Immediately before a
+runtime `mkdir`, copy, write, rename, deletion, lock, or worktree operation, the owning Git
+worktree checks both the sentinel `.effective-flow/config.json` and the concrete target with
+non-verbose `git check-ignore --no-index -- <path>`, then independently requires
+`git ls-files -- .effective-flow/` to succeed with empty output. Missing Git, a non-repository,
+a not-ignored path, tracked runtime state, or a command error preserves all state and routes to
+`/effective-flow setup`. Ordinary workflows never repair `.gitignore`; setup is the sole owner.
+
 The canonical convention-file locator is:
 
 ```md

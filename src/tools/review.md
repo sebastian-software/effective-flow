@@ -20,6 +20,11 @@ task-tracking
 ```
 
 ```lazy-include
+runtime-state-safety
+when: any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent
+```
+
+```lazy-include
 project-routing
 when: Phase 1 classifies scoped files into routing buckets
 ```
@@ -218,18 +223,23 @@ Rules:
 
 ### Git tracking
 
-Whether `.effective-flow/` is checked in or ignored is up to each project. The skill does not change any `.gitignore` files in target projects.
+The entire `.effective-flow/` directory must be ignored and untracked. Review never changes
+`.gitignore`; if the runtime-state safety guard blocks, it preserves all state and directs the
+user to `{{SKILL:setup}}`, the sole repair owner.
 
 ### Usage
 
-1. Create `.effective-flow/` if needed.
-2. Read `.effective-flow/memory.json` at the start of the review workflow.
+1. Read `.effective-flow/memory.json` at the start of the review workflow; this lookup is
+   non-mutating and may precede the guard.
+2. If the first runtime write requires creating `.effective-flow/`, apply “Runtime-state write
+   safety” to the exact directory path `.effective-flow/` immediately before its `mkdir`. A
+   later file or child-directory mutation requires its own guard for that exact target.
 3. If `.effective-flow/memory.json` does not exist but the old file `.sf-memory.json` is present: migrate its content to `.effective-flow/memory.json`, remove `.sf-memory.json` only after a successful write, and inform the user.
 4. If no memory file exists, start with `lastFindingNumber: 0`.
 5. Read the Effective Flow configuration from the project-setup ADR if present (migration of an old config via the "Config migration" building block).
 6. Read `.effective-flow/cache.json` if present and valid; use only valid, non-stale cache entries.
 7. Number new findings consecutively from `lastFindingNumber + 1` with 7-digit formatting: `R-0000001`, `R-0000002`, ...
-8. After creating the report, write the highest assigned finding number back to `.effective-flow/memory.json`. Preserve `configMigration` and other existing memory fields. The memory file must be written before the workflow is completed with `DONE`. If the write fails, inform the user.
+8. After creating the report, apply the guard to `.effective-flow/memory.json`, then write the highest assigned finding number back. Preserve `configMigration` and other existing memory fields. The memory file must be written before the workflow is completed with `DONE`. If the guard blocks or the write fails, preserve the existing file and inform the user.
 
 ```lazy-include
 config-migration
@@ -244,6 +254,9 @@ when: the tracker mode `remote` is active
 ## Wisdom accumulation
 
 At the start of Phase 1, generate a session ID (e.g. via the timestamp `date +%Y%m%d%H%M%S`) and use it consistently for the wisdom file `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`. This prevents collisions if several review runs are running in parallel.
+
+Immediately before every creation, update, or deletion of this wisdom file, apply
+“Runtime-state write safety” to its concrete path.
 
 The wisdom file carries the outputs of the parallel Phase-2 streams between the phases:
 
@@ -415,7 +428,11 @@ Phase 4 branches according to the tracker mode determined in Phase 1. In local m
 
 #### Local mode
 
-1. Create a report as `.effective-flow/review/review-report-YYYY-MM-DD[-N].md`. Create `.effective-flow/review/` if it does not exist. Use the report format below.
+1. Resolve the concrete report path. If `.effective-flow/` is missing, guard that exact directory
+   immediately before its `mkdir`. If `.effective-flow/review/` is missing, separately guard
+   that exact directory immediately before its `mkdir`. Guard the concrete report file again
+   immediately before writing it, then create
+   `.effective-flow/review/review-report-YYYY-MM-DD[-N].md`. Use the report format below.
 2. If the active finding scope only covers critical and important findings (default):
    - do not include notes in the main report
    - briefly mention that notes were filtered out and that a comprehensive review is available on request
@@ -512,6 +529,8 @@ Only relevant if `codebase-improvement` is not available. Brief core guidance fo
 - Within Phase 2a, all design-decision sources in parallel.
 - Within Phase 2c, all reviewer sub-agents in parallel (across routing buckets and across directory splits).
 - Reviewers in Phase 2c check **no** design decisions — the central filter happens in Phase 3.
-- In local mode, this skill only reads and writes the review report and the temporary wisdom file. In remote mode, it additionally writes finding and epic issues via the tracker and writes **no** local report.
+- In local mode, this skill writes the review report, temporary wisdom, memory, and valid cache
+  entries. In remote mode, it additionally writes finding and epic issues via the tracker and
+  writes **no** local report. Every local runtime mutation uses “Runtime-state write safety”.
 - Prompt suggestions must be directly copyable without quotation marks and without escape sequences (applies to the report and the issue body alike).
 - The active finding scope (default: only critical+important) must be respected in the report or in the finding issues.

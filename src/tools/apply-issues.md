@@ -27,6 +27,11 @@ language-rules
 task-tracking
 ```
 
+```lazy-include
+runtime-state-safety
+when: any wisdom, tracker-marker, or other runtime-state mutation is imminent
+```
+
 ```include
 commit-message-rules
 ```

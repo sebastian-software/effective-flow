@@ -29,6 +29,11 @@ language-rules
 task-tracking
 ```
 
+```lazy-include
+runtime-state-safety
+when: a wisdom file, runtime migration, investigation directory, or report mutation is imminent
+```
+
 ```include
 effective-flow-dir-migration
 ```
@@ -108,10 +113,15 @@ If the scorecard does not support the diagnosis, name the concrete next diagnost
 
 ### Phase 5: Recommendation and report
 
-1. Create `.effective-flow/investigation/` if needed.
-2. Write the diagnosis report to `.effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md` per the report template below.
-3. Output exactly one follow-up recommendation with rationale (see "Routing outward") plus a copy-paste-ready invocation suggestion that references the report path, e.g. `{{FIRMO}} fix .effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md`.
-4. Optionally offer to hand over directly to the recommended follow-up workflow; do not start it unprompted.
+1. If `.effective-flow/` is missing, apply “Runtime-state write safety” to the exact directory
+   path `.effective-flow/` immediately before its `mkdir`, then create it.
+2. If `.effective-flow/investigation/` is missing, apply the guard to that exact directory path
+   immediately before its `mkdir`, then create it.
+3. Apply the guard again to the exact diagnosis-report path immediately before writing
+   `.effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md`, then write it per the
+   report template below.
+4. Output exactly one follow-up recommendation with rationale (see "Routing outward") plus a copy-paste-ready invocation suggestion that references the report path, e.g. `{{FIRMO}} fix .effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md`.
+5. Optionally offer to hand over directly to the recommended follow-up workflow; do not start it unprompted.
 
 ## Report template
 

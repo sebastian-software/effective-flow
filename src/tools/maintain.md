@@ -27,6 +27,11 @@ language-rules
 task-tracking
 ```
 
+```lazy-include
+runtime-state-safety
+when: any wisdom, report, memory, runtime migration, or worktree mutation is imminent
+```
+
 ```include
 project-routing
 ```

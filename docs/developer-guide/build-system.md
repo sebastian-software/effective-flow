@@ -153,6 +153,15 @@ The build aborts with an error message if any of these guards is violated:
 
 - **Include-target guard:** Every ` ```include ` fence must point to an existing
   `src/shared/<name>.md`.
+- **Runtime-state writer guard (#165):** The pure `findRuntimeStateSafetyViolations` source
+  analyzer walks tools and agents in source order, follows eager and lazy shared includes, and
+  rejects an operational mutation below `.effective-flow/` unless the canonical
+  `runtime-state-safety` fragment was loaded earlier. Read-only lookup is excluded. A marked
+  setup-repair-only scope is evaluated only through setup, whose runtime marker additionally
+  requires the sentinel, concrete-target, and tracked-state validations to precede the write.
+  The analyzer recognizes both filesystem commands and operational prose such as write, persist,
+  append, move, store, record, emit, and replace, while stripping clearly descriptive passive
+  forms before matching; it does not rely on a writer allowlist.
 - **Lazy-include guards (#99):** (a) No fragment may be embedded in the same file both eagerly
   (` ```include `) **and** lazily (` ```lazy-include `) (otherwise the block would be loaded
   twice). (b) Every lazily referenced fragment must be delivered as `shared/<name>.md` for
