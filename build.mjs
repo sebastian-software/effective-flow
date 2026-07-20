@@ -34,6 +34,7 @@ import {
   collectRenderedWorkerRefs,
   findProhibitedConsumerScriptCommands,
   findRetiredConfigDocViolations,
+  findStaleAdrContractClaims,
   findForeignHarnessToolParameters,
   parseProjectRoutingTable,
   assertProjectRoutingContract,
@@ -232,6 +233,35 @@ const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
       'ERROR: delivery docs config guard (#166): retired config references are allowed only in explicit migration sections:\n' +
         violations
           .map(({ file, line, kind, reference }) => `  ${file}:${line}: ${kind}: ${reference}`)
+          .join('\n') +
+        '\n',
+    );
+    process.exit(1);
+  }
+}
+
+// --- Guard: current ADR guidance follows the decision-records ownership contract ---
+// The central skill discovers and follows this repository's living ADR
+// convention. Scan only current normative/contributor guidance: archived plans
+// remain historical records and are intentionally outside this guard's scope.
+{
+  const guidanceFiles = [
+    join(ROOT_DIR, 'AGENTS.md'),
+    join(ROOT_DIR, 'docs', 'developer-guide', 'configuration.md'),
+    join(ROOT_DIR, 'docs', 'developer-guide', 'skill-ownership.md'),
+    join(ROOT_DIR, 'src', 'shared', 'adr-convention.md'),
+  ];
+  const violations = guidanceFiles.flatMap((file) =>
+    findStaleAdrContractClaims(readFileSync(file, 'utf8')).map((hit) => ({
+      file: relative(ROOT_DIR, file),
+      ...hit,
+    })),
+  );
+  if (violations.length > 0) {
+    process.stderr.write(
+      'ERROR: ADR ownership-contract guard (#167): current guidance must describe the living ADR model as a declared repository convention followed by decision-records:\n' +
+        violations
+          .map(({ file, line, kind, claim }) => `  ${file}:${line}: ${kind}: ${claim}`)
           .join('\n') +
         '\n',
     );

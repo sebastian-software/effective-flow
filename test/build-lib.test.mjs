@@ -34,6 +34,7 @@ import {
   findForeignHarnessToolParameters,
   findProhibitedConsumerScriptCommands,
   findRetiredConfigDocViolations,
+  findStaleAdrContractClaims,
   parseProjectRoutingTable,
   assertProjectRoutingContract,
   classifyProjectRoutingScope,
@@ -1014,6 +1015,152 @@ test('findRetiredConfigDocViolations always rejects the retired negation with ac
       reference: '!.effective-flow/config.json',
     },
   ]);
+});
+
+// --- ADR ownership-contract consistency ---
+
+test('findStaleAdrContractClaims rejects a deliberate divergence claim', () => {
+  assert.deepEqual(
+    findStaleAdrContractClaims(
+      'The living ADR model is a deliberate divergence from the host `decision-records` skill.',
+    ),
+    [
+      {
+        line: 1,
+        kind: 'stale-divergence',
+        claim: 'deliberate divergence',
+      },
+    ],
+  );
+});
+
+test('findStaleAdrContractClaims supports verb-adverb divergence order', () => {
+  assert.deepEqual(
+    findStaleAdrContractClaims('Effective Flow diverges deliberately from decision-records.'),
+    [{ line: 1, kind: 'stale-divergence', claim: 'diverges deliberately' }],
+  );
+});
+
+test('findStaleAdrContractClaims supports intentional divergence wording', () => {
+  assert.deepEqual(
+    findStaleAdrContractClaims('Effective Flow intentionally diverges from decision-records.'),
+    [{ line: 1, kind: 'stale-divergence', claim: 'intentionally diverges' }],
+  );
+});
+
+test('findStaleAdrContractClaims allows locally negated divergence wording', () => {
+  assert.deepEqual(
+    findStaleAdrContractClaims('This is not a deliberate divergence from decision-records.'),
+    [],
+  );
+  assert.deepEqual(
+    findStaleAdrContractClaims(
+      'Effective Flow no longer deliberately diverges from decision-records.',
+    ),
+    [],
+  );
+});
+
+test('findStaleAdrContractClaims rejects immutable and numbered skill-contract variants', () => {
+  const markdown = [
+    '# ADR guidance',
+    '',
+    'The `decision-records` skill requires immutable ADRs.',
+    '',
+    'Numbered records are mandatory under `decision-records`.',
+  ].join('\n');
+
+  assert.deepEqual(findStaleAdrContractClaims(markdown), [
+    {
+      line: 3,
+      kind: 'immutable-numbered-skill-contract',
+      claim: 'immutable',
+    },
+    {
+      line: 5,
+      kind: 'immutable-numbered-skill-contract',
+      claim: 'Numbered',
+    },
+  ]);
+});
+
+test('findStaleAdrContractClaims accepts the aligned ownership wording', () => {
+  const markdown =
+    'The authoritative `decision-records` skill discovers and follows this repository’s living, mutable, numberless, slug-named ADR convention.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), []);
+});
+
+test('findStaleAdrContractClaims allows explicitly corrected historical context', () => {
+  const markdown = [
+    'Earlier versions described the slug model as a deliberate divergence from an allegedly',
+    'immutable/numbered `decision-records` skill. That premise is outdated: `decision-records`',
+    'now supports the declared living model, so this is no longer a divergence.',
+  ].join('\n');
+  assert.deepEqual(findStaleAdrContractClaims(markdown), []);
+});
+
+test('findStaleAdrContractClaims rejects historical wording without an explicit correction', () => {
+  const markdown =
+    'Earlier guidance called `decision-records` immutable and numbered, and this remains our contract.';
+  assert.equal(findStaleAdrContractClaims(markdown).length, 2);
+});
+
+test('findStaleAdrContractClaims does not let corrected history waive a later current claim', () => {
+  const markdown =
+    'Earlier guidance described a deliberate divergence from `decision-records`, but that premise is outdated; Effective Flow now deliberately diverges from `decision-records`.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), [
+    { line: 1, kind: 'stale-divergence', claim: 'deliberately diverges' },
+  ]);
+});
+
+test('findStaleAdrContractClaims evaluates later immutable claims independently', () => {
+  const markdown =
+    'Earlier guidance said decision-records is immutable and numbered. That premise is outdated. Current guidance says decision-records is immutable.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), [
+    { line: 1, kind: 'immutable-numbered-skill-contract', claim: 'immutable' },
+  ]);
+});
+
+test('findStaleAdrContractClaims associates an immediate skill-contract continuation', () => {
+  const markdown =
+    'The decision-records skill defines the contract. It requires immutable, numbered ADRs.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), [
+    { line: 1, kind: 'immutable-numbered-skill-contract', claim: 'immutable' },
+    { line: 1, kind: 'immutable-numbered-skill-contract', claim: 'numbered' },
+  ]);
+});
+
+test('findStaleAdrContractClaims allows locally negated immutable and numbered wording', () => {
+  const markdown = 'The decision-records skill does not require immutable or numbered ADRs.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), []);
+});
+
+test('findStaleAdrContractClaims does not associate an unrelated divergence sentence', () => {
+  const markdown =
+    'Effective Flow deliberately diverges from another policy. The decision-records skill follows the repository convention.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), []);
+});
+
+test('findStaleAdrContractClaims does not use unrelated old and support prose as a waiver', () => {
+  const markdown =
+    'The old ADR directory remains readable. The decision-records skill requires immutable ADRs. The parser now supports tables.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), [
+    { line: 1, kind: 'immutable-numbered-skill-contract', claim: 'immutable' },
+  ]);
+});
+
+test('findStaleAdrContractClaims requires history in the stale candidate sentence', () => {
+  const markdown =
+    'Earlier releases used Markdown. Effective Flow deliberately diverges from decision-records. The build now supports Windows.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), [
+    { line: 1, kind: 'stale-divergence', claim: 'deliberately diverges' },
+  ]);
+});
+
+test('findStaleAdrContractClaims ignores numbered legacy compatibility without a skill claim', () => {
+  const markdown =
+    'Existing numbered legacy ADRs remain readable; new records use the numberless slug convention.';
+  assert.deepEqual(findStaleAdrContractClaims(markdown), []);
 });
 
 // --- Delivery-branch documentation transforms ---

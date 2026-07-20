@@ -1006,6 +1006,163 @@ export function findRetiredConfigDocViolations(file, markdown) {
   return hits;
 }
 
+// --- ADR ownership-contract guard (#167) ---
+//
+// Effective Flow's living, mutable, numberless ADR model is a repository
+// convention that the central `decision-records` skill discovers and follows.
+// Older guidance described that relationship as a deliberate divergence from
+// an immutable/numbered skill contract. Current contributor guidance must not
+// restore that obsolete premise, while an explicitly corrected historical
+// explanation may retain it. Keep this detector pure so the build-time file
+// scan can be covered with focused unit tests.
+
+const STALE_ADR_DIVERGENCE_RE =
+  /\b(?:(?:deliberate|intentional)\s+(?:conflict|divergence|deviation)|(?:deliberately|intentionally)\s+(?:conflicts?|diverges?|deviates?)|(?:conflicts?|diverges?|deviates?)\s+(?:deliberately|intentionally))\b/gi;
+const STALE_ADR_DESCRIPTOR_RE = /\b(?:immutable|numbered)\b/gi;
+
+const ADR_CONTRACT_HISTORY_RE = /\b(?:earlier|previous|former|historical|old|pre-#85)\b/i;
+const ADR_CONTRACT_CORRECTION_RE =
+  /\b(?:outdated|no longer (?:a )?(?:conflict|divergence)|conflict is gone|now supports)\b/i;
+
+function markdownParagraphs(markdown) {
+  const paragraphs = [];
+  let startLine = 1;
+  let lines = [];
+
+  const flush = () => {
+    if (lines.length > 0) paragraphs.push({ line: startLine, text: lines.join('\n') });
+    lines = [];
+  };
+
+  for (const [index, line] of normalizeLineEndings(markdown).split('\n').entries()) {
+    if (line.trim() === '') {
+      flush();
+      startLine = index + 2;
+    } else {
+      if (lines.length === 0) startLine = index + 1;
+      lines.push(line);
+    }
+  }
+  flush();
+  return paragraphs;
+}
+
+function markdownSentences(text) {
+  const sentences = [];
+  let start = 0;
+
+  for (const boundary of text.matchAll(/[.!?](?=\s|$)/g)) {
+    const end = boundary.index + 1;
+    if (text.slice(start, end).trim()) sentences.push({ start, text: text.slice(start, end) });
+    start = end;
+  }
+  if (text.slice(start).trim()) sentences.push({ start, text: text.slice(start) });
+  return sentences;
+}
+
+function continuesPreviousSkillClaim(sentence) {
+  const prose = sentence.trimStart().replace(/^(?:[#>*+-]+\s*)+/, '');
+  return /^(?:It|The skill|This skill|That skill)\b/i.test(prose);
+}
+
+function isLocallyNegated(sentence, claimIndex) {
+  const prefix = sentence.slice(0, claimIndex);
+  const negations = [
+    ...prefix.matchAll(
+      /\b(?:no longer|not|does not|do not|did not|is not|are not|was not|were not)\b/gi,
+    ),
+  ];
+  const negation = negations.at(-1);
+  if (!negation) return false;
+  const scope = prefix.slice(negation.index + negation[0].length);
+  return scope.length <= 80 && !/(?:[;:.!?]|\b(?:but|however|yet)\b)/i.test(scope);
+}
+
+function isAssociatedCorrectionSentence(sentence) {
+  const prose = sentence.trimStart().replace(/^(?:[#>*+-]+\s*)+/, '');
+  return /^(?:(?:That|This)\s+(?:assumption|claim|conflict|contract|description|divergence|model|premise)|It)\b/i.test(
+    prose,
+  );
+}
+
+function isCorrectedHistoricalClaim(sentences, sentenceIndex, claimIndex) {
+  const sentence = sentences[sentenceIndex].text;
+  const history = ADR_CONTRACT_HISTORY_RE.exec(sentence);
+  if (!history || history.index > claimIndex) return false;
+
+  const correction = ADR_CONTRACT_CORRECTION_RE.exec(sentence);
+  if (correction && correction.index > claimIndex) return true;
+
+  const nextSentence = sentences[sentenceIndex + 1]?.text;
+  return Boolean(
+    nextSentence &&
+    isAssociatedCorrectionSentence(nextSentence) &&
+    ADR_CONTRACT_CORRECTION_RE.test(nextSentence),
+  );
+}
+
+// Return stale ADR ownership claims as { line, kind, claim } records. Historical
+// wording is allowed only when the same paragraph both identifies the old
+// context and explicitly corrects it as outdated or no longer a conflict.
+export function findStaleAdrContractClaims(markdown) {
+  const hits = [];
+
+  for (const paragraph of markdownParagraphs(markdown)) {
+    if (!/\bdecision-records\b/i.test(paragraph.text)) continue;
+    const sentences = markdownSentences(paragraph.text);
+    const candidates = [];
+
+    for (const [sentenceIndex, sentence] of sentences.entries()) {
+      const namesDecisionRecords = /\bdecision-records\b/i.test(sentence.text);
+      if (namesDecisionRecords) {
+        for (const match of sentence.text.matchAll(STALE_ADR_DIVERGENCE_RE)) {
+          candidates.push({
+            kind: 'stale-divergence',
+            index: sentence.start + match.index,
+            sentenceIndex,
+            sentenceClaimIndex: match.index,
+            claim: match[0],
+          });
+        }
+      }
+
+      const previousNamesDecisionRecords =
+        sentenceIndex > 0 && /\bdecision-records\b/i.test(sentences[sentenceIndex - 1].text);
+      const inheritsDecisionRecords =
+        previousNamesDecisionRecords && continuesPreviousSkillClaim(sentence.text);
+      const isLegacyCompatibility =
+        /\blegacy\b/i.test(sentence.text) &&
+        /\b(?:compatib\w*|readable|resolvable)\b/i.test(sentence.text);
+      if ((namesDecisionRecords || inheritsDecisionRecords) && !isLegacyCompatibility) {
+        for (const match of sentence.text.matchAll(STALE_ADR_DESCRIPTOR_RE)) {
+          candidates.push({
+            kind: 'immutable-numbered-skill-contract',
+            index: sentence.start + match.index,
+            sentenceIndex,
+            sentenceClaimIndex: match.index,
+            claim: match[0],
+          });
+        }
+      }
+    }
+
+    candidates.sort((a, b) => a.index - b.index || a.kind.localeCompare(b.kind));
+
+    for (const { kind, index, sentenceIndex, sentenceClaimIndex, claim } of candidates) {
+      if (isLocallyNegated(sentences[sentenceIndex].text, sentenceClaimIndex)) continue;
+      if (isCorrectedHistoricalClaim(sentences, sentenceIndex, sentenceClaimIndex)) continue;
+      const precedingLines = paragraph.text.slice(0, index).split('\n').length - 1;
+      hits.push({
+        line: paragraph.line + precedingLines,
+        kind,
+        claim: claim.replace(/\s+/g, ' ').trim(),
+      });
+    }
+  }
+
+  return hits;
+}
+
 // --- Delivery-branch documentation transforms ---
 //
 // The delivery branch `main` carries the consumer-facing docs (root README.md +
