@@ -55,7 +55,7 @@ toward this invariant.
 ### Directory rules
 
 - `docs/user-guide/README.md` as a curated entry point with a reading order is mandatory as soon as at least one user-guide document exists.
-- `docs/developer-guide/README.md` as a curated entry point is mandatory as soon as at least one developer-guide document exists. It gives developers an overview and software architects a basis for decision-making, and is the target of the second link of the root README (see "Prescribed standard doc structure").
+- `docs/developer-guide/README.md` as a curated entry point is mandatory as soon as at least one developer-guide document exists. It gives developers an overview and software architects a basis for decision-making, and is the target of the developer-guide follow-up link when that link is included under the conditional rule (see "Prescribed standard doc structure").
 - `docs/operations/` and `docs/runbooks/` have no README by default.
 - In `docs/runbooks/`, thematic subfolders are allowed, e.g. `docs/runbooks/database/restart.md`. They are optional; mandatory only once the flat list becomes unwieldy.
 - Empty directories are not created in advance. A category directory comes into being only with the first document in it.
