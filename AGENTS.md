@@ -23,7 +23,7 @@ pnpm test:distribution   # isolated build/archive/delivery/install smoke suite
 ./local-link.sh          # developer build + symlink of the current checkout
 ```
 
-Package manager is **pnpm** (`packageManager: pnpm@11.11.0`); Node.js 22 or newer is required for the build and the shipped remote-tracker helper. Correctness rests on three layers: a `node:test` unit suite (`pnpm test`) covering pure transforms and installers, build-time guards during `node build.mjs`, and `pnpm test:distribution` for isolated archive/delivery layouts. After editing distribution sources, run the same sequence CI runs: `pnpm agent:check`, `pnpm test`, `node build.mjs`, then `pnpm test:distribution`.
+Package manager is **pnpm**; the root `package.json` `packageManager` field is the source of truth for the pinned version. Node.js 22 or newer is required for the build and the shipped remote-tracker helper. Correctness rests on three layers: a `node:test` unit suite (`pnpm test`) covering pure transforms and installers, build-time guards during `node build.mjs`, and `pnpm test:distribution` for isolated archive/delivery layouts. After editing distribution sources, run the same sequence CI runs: `pnpm agent:check`, `pnpm test`, `node build.mjs`, then `pnpm test:distribution`.
 
 ## Build architecture
 
