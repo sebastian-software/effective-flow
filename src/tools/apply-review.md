@@ -108,7 +108,10 @@ Write a summary after each phase and pass it to later phases. Delete the file at
 
 ## Effective Flow configuration
 
-Effective Flow-internal files live under `.effective-flow/` in the project root.
+Effective Flow-internal files live under `.effective-flow/` in the verified main checkout.
+Retain `EXECUTION_ROOT` and `RUNTIME_STATE_ROOT` separately from the first source-resolution
+step through final cleanup. Every path below is resolved as an absolute handle below
+`RUNTIME_STATE_ROOT`; entering a component worktree changes only `EXECUTION_ROOT`.
 
 - Configuration: Effective Flow configuration from the project-setup ADR (see building block "Config migration")
 - Memory file: `.effective-flow/memory.json`
@@ -184,15 +187,22 @@ If the tracker mode is `remote` (the argument is an epic or finding issue), read
 
 First determine the tracker mode via the "apply-source detection" (report file under `.effective-flow/review/` → `local`; epic/finding issue → `remote`). If it is `remote`, read and follow the internal sub-file `tools/apply-review-remote.md` (phase 1 remote and following) instead of the report-file steps 4–7 below; the config, stash and cache steps still apply.
 
-1. Load the Effective Flow configuration, migrate it if necessary and determine the commit-strategy default, stash policy, worktree defaults and final validation profile.
-2. Read `.effective-flow/cache.json`, if present and valid. Use only valid `applyReviewAnalysis` entries.
+1. Establish the verified dual-root execution receipt before resolving the source. Load the
+   Effective Flow configuration, migrate it if necessary and determine the commit-strategy
+   default, stash policy, worktree defaults and final validation profile.
+2. Read the absolute `<RUNTIME_STATE_ROOT>/.effective-flow/cache.json` handle, if present and
+   valid. Use only valid `applyReviewAnalysis` entries.
 3. **Capture the stash baseline:** run `git stash list` and remember the full list of already-existing stash references (e.g. `stash@{0}`, `stash@{1}`, ... with their descriptions). Record the baseline in the wisdom file so that Phase 6 (stash cleanup) can later distinguish new stashes created by this workflow from it. If `git stash list` is empty: note "no baseline stashes".
 4. Determine the report file:
-   - if passed as an argument: use this file
-   - otherwise: search for `.effective-flow/review/review-report-*.md` in `.effective-flow/review/`
+   - if passed as an argument: use the absolute report handle returned by apply-source detection
+   - otherwise: search for `review-report-*.md` only in the absolute
+     `<RUNTIME_STATE_ROOT>/.effective-flow/review/` directory
    - with multiple reports: ask the user which one to use
    - if no report is found: error message and abort
-5. **Read the file fresh.** Since the file can be deleted and recreated between conversations, no previously read content may be used. Always read the file directly from the file system.
+5. **Read the file fresh from its retained absolute report handle.** Since the file can be
+   deleted and recreated between conversations, no previously read content may be used.
+   Revalidate the runtime root and handle containment first; never substitute a same-named file
+   below the current execution root.
 6. Parse all findings (`### [R-XXXXXXX] ...` blocks) with:
    - finding ID and title
    - Severity
@@ -367,7 +377,7 @@ Example (across actions) with five findings over multiple actions:
    - the corresponding pre-analysis from Phase 4.1 as an **inline context block** in the prompt — not as a reference to the wisdom file. The sub-skills do not read the wisdom file; they only process the prompt content. Embed the pre-analysis in full, for example under the heading `Pre-analysis for this finding:`.
    - the developer note (if present)
    - the commit strategy from Phase 2
-   - **With commit strategy "Individually":** the full git commit mutex rule from `tools/apply-review-commit-mechanics.md`. The sub-agent must run every finding commit under `.effective-flow/apply-review-commit.lock`, may only stage finding-owned files and may never use `git add .`, `git add -A` or `git commit -a`.
+   - **With commit strategy "Individually":** the full git commit mutex rule from `tools/apply-review-commit-mechanics.md`. The sub-agent must run every finding commit under the retained absolute `<RUNTIME_STATE_ROOT>/.effective-flow/apply-review-commit.lock` handle, may only stage finding-owned files and may never use `git add .`, `git add -A` or `git commit -a`.
    - **With commit strategy "Individually with worktrees":** the full git worktree isolation
      and execution-location rule from `tools/apply-review-commit-mechanics.md`. The sub-agent
      first verifies its component receipt, roots every operation there, commits each finding

@@ -229,17 +229,31 @@ user to `{{SKILL:setup}}`, the sole repair owner.
 
 ### Usage
 
-1. Read `.effective-flow/memory.json` at the start of the review workflow; this lookup is
-   non-mutating and may precede the guard.
+1. Before the first memory, cache, or report lookup, establish the verified dual-root receipt.
+   Retain `RUNTIME_STATE_ROOT` from the main porcelain worktree record independently from
+   `EXECUTION_ROOT`; abort on an unusable or repository-mismatched main root. Read the absolute
+   `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle at the start of the review workflow;
+   this lookup is non-mutating and may precede the guard.
 2. If the first runtime write requires creating `.effective-flow/`, apply “Runtime-state write
-   safety” to the exact directory path `.effective-flow/` immediately before its `mkdir`. A
-   later file or child-directory mutation requires its own guard for that exact target.
-3. If `.effective-flow/memory.json` does not exist but the old file `.sf-memory.json` is present: migrate its content to `.effective-flow/memory.json`, remove `.sf-memory.json` only after a successful write, and inform the user.
+   safety” from `RUNTIME_STATE_ROOT` to the exact directory path `.effective-flow/` immediately
+   before its `mkdir`. A later file or child-directory mutation requires its own guard for that
+   exact target.
+3. If the absolute runtime-root memory handle does not exist but
+   `<RUNTIME_STATE_ROOT>/.sf-memory.json` is present, migrate its content to the retained
+   `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle. Guard and complete the destination
+   write first; remove the absolute legacy source only after that successful write, and inform
+   the user. Never inspect or remove a worktree-local `.sf-memory.json`.
 4. If no memory file exists, start with `lastFindingNumber: 0`.
 5. Read the Effective Flow configuration from the project-setup ADR if present (migration of an old config via the "Config migration" building block).
-6. Read `.effective-flow/cache.json` if present and valid; use only valid, non-stale cache entries.
+6. Read the absolute `<RUNTIME_STATE_ROOT>/.effective-flow/cache.json` handle if present and
+   valid; use only valid, non-stale cache entries. Ignore a same-named cache below
+   `EXECUTION_ROOT`.
 7. Number new findings consecutively from `lastFindingNumber + 1` with 7-digit formatting: `R-0000001`, `R-0000002`, ...
-8. After creating the report, apply the guard to `.effective-flow/memory.json`, then write the highest assigned finding number back. Preserve `configMigration` and other existing memory fields. The memory file must be written before the workflow is completed with `DONE`. If the guard blocks or the write fails, preserve the existing file and inform the user.
+8. After creating the report, apply the guard from the runtime root to the retained absolute
+   memory handle, then write the highest assigned finding number back. Preserve
+   `configMigration` and other existing memory fields. The memory file must be written before
+   the workflow is completed with `DONE`. If the guard blocks or the write fails, preserve the
+   existing file and inform the user.
 
 ```lazy-include
 config-migration
@@ -428,11 +442,14 @@ Phase 4 branches according to the tracker mode determined in Phase 1. In local m
 
 #### Local mode
 
-1. Resolve the concrete report path. If `.effective-flow/` is missing, guard that exact directory
+1. Resolve the concrete absolute report handle below
+   `<RUNTIME_STATE_ROOT>/.effective-flow/review/`. Run all directory lookups and collision checks
+   there. If `.effective-flow/` is missing, guard that exact directory from the runtime root
    immediately before its `mkdir`. If `.effective-flow/review/` is missing, separately guard
    that exact directory immediately before its `mkdir`. Guard the concrete report file again
    immediately before writing it, then create
-   `.effective-flow/review/review-report-YYYY-MM-DD[-N].md`. Use the report format below.
+   `<RUNTIME_STATE_ROOT>/.effective-flow/review/review-report-YYYY-MM-DD[-N].md`. Use the report
+   format below. Never inspect or create a report below a linked execution worktree.
 2. If the active finding scope only covers critical and important findings (default):
    - do not include notes in the main report
    - briefly mention that notes were filtered out and that a comprehensive review is available on request

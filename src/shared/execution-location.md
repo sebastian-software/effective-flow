@@ -1,19 +1,25 @@
 ## Verified execution location
 
 Every write-capable phase and delegated worker uses an **execution-location receipt**. The
-receipt replaces any assumption that a one-time `cd`, an inherited current working directory,
-or a subagent spawn option will keep later operations in the intended checkout.
+receipt keeps `EXECUTION_ROOT` and `RUNTIME_STATE_ROOT` separate: tracked project work follows
+the selected checkout, while private `.effective-flow/` state remains in the repository's main
+checkout. It replaces any assumption that a one-time `cd`, an inherited current working
+directory, or a subagent spawn option will keep later operations in the intended checkout.
 
 ### Receipt
 
-Create the receipt before the first write-capable action and pass it unchanged to every worker
-that may edit files, run a formatter or a test that writes caches, run setup, stage or commit,
-switch branches, or clean up a worktree. Record:
+Create the receipt before worktree creation, report-source resolution, or the first
+write-capable action, whichever comes first. Pass it unchanged to every worker that may edit
+files, read or mutate runtime state, run a formatter or a test that writes caches, run setup,
+stage or commit, switch branches, or clean up a worktree. Record:
 
 - the canonical absolute repository identity: the physical path returned by
   `git rev-parse --git-common-dir`, resolved against the command's working directory when Git
   returns a relative path;
-- the canonical absolute execution root from `git rev-parse --show-toplevel`;
+- `EXECUTION_ROOT`, the canonical absolute execution root from
+  `git rev-parse --show-toplevel`;
+- `RUNTIME_STATE_ROOT`, the canonical absolute main-checkout root resolved by the procedure
+  below;
 - the checkout identity: either the exact branch name, or `detached` plus the exact commit OID
   when detached HEAD is explicitly expected;
 - the origin: `in-place`, `harness-managed`, or `effective-flow-created`;
@@ -25,6 +31,32 @@ Canonicalize paths before comparison: resolve symlinks, `..`, relative segments,
 case behavior through the host's physical-path facility. Path shape does not prove ownership.
 A pre-existing user-created linked worktree counts as `harness-managed` for lifecycle purposes:
 it is external to Effective Flow and must not be removed by this workflow.
+
+### Runtime-state root
+
+Before report-source resolution or any operation that may create or enter a delivery, native,
+or component worktree, run `git worktree list --porcelain` from the verified current checkout.
+Parse records by their empty-line separator and use only the first record, which Git defines as
+the main worktree. The first record of `git worktree list --porcelain` must begin with exactly
+one `worktree <path>` line. Reject a missing or duplicate path field, an empty path, or any record
+that contains the boolean line `bare`. A `bare` first record has no usable main checkout and
+therefore cannot own runtime state.
+
+Canonicalize that path physically and require it to exist as a directory. From the candidate
+root, require `git rev-parse --show-toplevel` to resolve back to the same root and
+`git rev-parse --git-common-dir` to resolve to the same canonical Git common directory recorded
+as the repository identity in the execution receipt. Record the result as
+`RUNTIME_STATE_ROOT`. In an in-place run from the main checkout, `EXECUTION_ROOT` and
+`RUNTIME_STATE_ROOT` are the same physical path. In a linked, native, delivery, or component
+worktree, they differ.
+
+Entering or creating another worktree changes only `EXECUTION_ROOT` and its checkout fields; it
+must not change `RUNTIME_STATE_ROOT`. Revalidate the retained runtime root from the current
+porcelain first record and its common-directory identity before every runtime-state read or
+mutation and after resume or Handoff. A missing, moved, newly bare, repository-mismatched, or
+otherwise unusable runtime root fails closed. Preserve every checkout and all existing state;
+never fall back to `EXECUTION_ROOT`. If the root is valid but its runtime-state safety checks
+fail, direct the user to `{{SKILL:setup}}` as specified by that contract.
 
 ### Fail-closed preflight
 
@@ -50,7 +82,8 @@ preflight never authorizes later writes from an unverified runtime location.
 
 ### Rooted operations
 
-After preflight, root every file and shell operation in the receipt's execution root:
+After preflight, root tracked project, validation, staging, commit, and worktree lifecycle
+operations in `EXECUTION_ROOT`:
 
 - pass the absolute root as the per-call working directory when the harness supports it;
 - use absolute paths for file tools;
@@ -60,7 +93,18 @@ After preflight, root every file and shell operation in the receipt's execution 
 Do not rely on a previous `cd` or on a worker inheriting the orchestrator's current directory.
 If a worker cannot establish and verify the assigned root, it returns `ABORT` without writes.
 Edits, validation, commits, and lifecycle operations for one receipt stay in that receipt's
-root; component and delivery receipts are never interchangeable.
+execution root; component and delivery receipts are never interchangeable.
+
+Root every `.effective-flow/` read, collision check, directory creation, report or backlink
+write, cache or memory read/write, migration, and wisdom operation in `RUNTIME_STATE_ROOT`.
+Resolve the concrete target to an absolute handle before entering another worktree and retain
+that handle. For an existing path, physically canonicalize the path itself; for a target that
+does not exist yet, physically canonicalize its nearest existing ancestor and append only the
+validated missing path segments. The result must remain below the canonical absolute
+`<RUNTIME_STATE_ROOT>/.effective-flow/` directory, and report handles must remain below
+`<RUNTIME_STATE_ROOT>/.effective-flow/review/`. Reject `..`, path aliasing, or any existing
+symlink that escapes those directories. A project-relative path is only presentation; it is
+never an operational handle after the roots diverge.
 
 ### Harness-owned worktrees
 
@@ -95,3 +139,8 @@ If any proof fails, retain the worktree and branch and report why. Never force-r
 moved, missing, mismatched, reused, in-place, user-owned, or harness-managed worktree. A failure
 between `git worktree add` and successful receipt creation also leaves the new worktree in place
 for manual reconciliation.
+
+Cleanup targets only the exact Effective Flow-owned execution/component worktree named by its
+receipt. It must never remove, rename, or otherwise alter `RUNTIME_STATE_ROOT` or use the runtime
+root as a cleanup target. Runtime reports, backlinks, memory, caches, migrations, and wisdom
+state remain in the main checkout after an owned worktree is removed.
