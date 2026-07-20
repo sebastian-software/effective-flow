@@ -1,27 +1,27 @@
 # Build system
 
-`build.mjs` transforms the Markdown sources under `src/` into two harness-specific skill
-directories under `dist/claude/` and `dist/codex/`. This document describes invocation,
+`build.mjs` transforms the Markdown sources under `src/` into native Claude and Codex targets
+plus one portable manager target under `dist/`. This document describes invocation,
 placeholder syntax, and build guards. Conventions for adding tools and agents are described
 canonically in [`AGENTS.md`](../../AGENTS.md); only a short summary follows here.
 
 ## Invocation
 
 ```sh
-node build.mjs   # builds both harnesses into dist/ (alias: pnpm build)
-pnpm test        # runs the unit test suite (node:test)
-pnpm format      # formats with oxfmt (Markdown + JS)
-pnpm agent:check # oxfmt --check, CI mode without write access
+node build.mjs          # builds native + portable targets into dist/ (alias: pnpm build)
+pnpm test               # runs the unit test suite (node:test)
+pnpm format             # formats with oxfmt (Markdown + JS)
+pnpm agent:check        # oxfmt --check, CI mode without write access
+pnpm test:distribution  # build/archive/delivery/installer smoke suite
 ```
 
-The package manager is **pnpm** (`packageManager: pnpm@11.9.0`). Correctness rests on two
-complementary layers: a `node:test` unit suite (`pnpm test`, `test/build-lib.test.mjs`) that
-covers the pure `build-lib.mjs` transforms (frontmatter parsing, `{{SKILL:X}}`/`{{AGENT:X}}`
-and `include` resolution, body rendering, description quoting), **and** the build guards (see
-"Guards") that kick in during the `node build.mjs` run – the unit tests secure the transform
-logic, the guards the completeness and consistency of the sources. After every source change,
-the same order as in CI applies: `pnpm agent:check` (format), `pnpm test` (unit tests), then
-`node build.mjs` (build + guards).
+The package manager is **pnpm** (`packageManager: pnpm@11.11.0`). Correctness rests on three
+complementary layers: the `node:test` suite (`pnpm test`) covers pure transforms and isolated
+installer behavior; the build guards (see "Guards") enforce source and rendered-output
+completeness during `node build.mjs`; and `pnpm test:distribution` smoke-tests the built native
+and portable layouts, archive, staged delivery tree, and direct release installer. After every
+source or installer change, use the same order as CI: `pnpm agent:check`, `pnpm test`,
+`node build.mjs`, then `pnpm test:distribution`.
 
 The build first writes into a temporary directory (`dist.tmp/`) and swaps it atomically against
 `dist/` only after a fully successful run. If the build fails, the previous `dist/` stays
@@ -35,11 +35,11 @@ written by hand.
 **Inline references** sit in the middle of the text (including in the frontmatter `description:`
 string) and use the Mustache syntax `{{…}}`:
 
-| Placeholder   | Meaning                          | Replacement                                                     |
-| ------------- | -------------------------------- | --------------------------------------------------------------- |
-| `{{SKILL:X}}` | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)  |
-| `{{AGENT:X}}` | Agent reference                  | `` `X` `` (Codex) or `` `effective-flow-X` `` (Claude subagent) |
-| `{{VERSION}}` | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                 |
+| Placeholder   | Meaning                          | Replacement                                                                          |
+| ------------- | -------------------------------- | ------------------------------------------------------------------------------------ |
+| `{{SKILL:X}}` | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                       |
+| `{{AGENT:X}}` | Worker reference                 | `` `effective-flow-X` `` in all targets; native role or portable contract identifier |
+| `{{VERSION}}` | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                                      |
 
 **No legacy aliases.** Names from before the rename – that is, `{{SKILL:sf-…}}` or
 `{{AGENT:sf-…}}` with the old `sf-` prefix – are **not** mapped onto their current names. The
@@ -92,12 +92,17 @@ The build aborts with an error message if any of these guards is violated:
   above) is deliberately rejected with a migration message. The same guard also runs during
   rendering (`transformRefs`), so no accepted placeholder can ever produce a non-existent
   target.
+- **Rendered worker-resolution guard (#159):** Every rendered router, tool, shared fragment and
+  worker contract is scanned after transformation. Native references must resolve to exact
+  namespaced sidecars under `dist/{claude,codex}/agents/`; portable references must resolve to
+  exact contracts under `dist/portable/effective-flow/workers/`. All worker artifacts carry
+  matching metadata, and no source placeholder may remain.
 - **Include-target guard:** Every ` ```include ` fence must point to an existing
   `src/shared/<name>.md`.
 - **Lazy-include guards (#99):** (a) No fragment may be embedded in the same file both eagerly
   (` ```include `) **and** lazily (` ```lazy-include `) (otherwise the block would be loaded
   twice). (b) Every lazily referenced fragment must be delivered as `shared/<name>.md` for
-  **both** harnesses so that the load pointer resolves on Claude Code and Codex. The pure check
+  **all three** targets so that the load pointer resolves in both native and portable installs. The pure check
   logic (`resolveLazyIncludes`, `collectIncludeNames`, `assertNoEagerLazyOverlap`) lives in
   `build-lib.mjs` and is covered in `test/build-lib.test.mjs`.
 - **Context-budget guard (#99):** The always-loaded core of the largest tools (`build`, `fix`,
@@ -110,8 +115,8 @@ The build aborts with an error message if any of these guards is violated:
   or a tool without a matching source file make the build fail.
 - **Codex sandbox guard:** A value given in `codex.sandbox_mode` must be among the modes
   supported by Codex.
-- **Version-drift guard:** The version string stamped into both router outputs
-  (`<manifest version> (<git short hash>)`) must be identical in the Claude and Codex output.
+- **Version-drift guard:** The version string stamped into all three router outputs
+  (`<manifest version> (<git short hash>)`) must be identical.
 - **Doc landing-page guard:** If a README-required doc category
   (`docs/user-guide/`, `docs/developer-guide/`) contains at least one document, a `README.md`
   must be present there as a curated landing page (rule from `src/shared/doc-categories.md`);
@@ -158,11 +163,25 @@ and directive syntax").
   `effective-flow-dir-migration`. The load trigger (`when:`) sits at the decision point where
   the mode/branch is determined.
 
-The fragment is delivered **once per harness**, deduplicated, to
-`dist/<harness>/effective-flow/shared/` and rendered there through the same pipeline as a tool
-body (nested eager includes, `{{VERSION}}`, references/`ask`). An agent reads the file at runtime
+The fragment is delivered **once per consumer target**, deduplicated, to that skill's `shared/`
+directory and rendered there through the same pipeline as a tool body (nested eager includes,
+`{{VERSION}}`, references/`ask`). A worker reads the file at runtime
 the same way the router loads `tools/<tool>.md` on demand or `apply` loads its `apply-*.md`
 siblings.
+
+## Native and portable worker rendering
+
+Each `src/agents/<name>.md` body remains the only worker contract. The native renderers combine
+it with harness-specific frontmatter to produce registered `effective-flow-<name>` sidecars.
+The portable renderer writes the same body to `workers/effective-flow-<name>.md`; instructions
+that reference a worker receive a short delegation protocol telling the harness to load only
+the selected contract and pass it to a built-in general-purpose subagent. This is orchestration
+metadata, not a duplicate domain playbook: centrally discovered skills remain authoritative
+for their declared domains.
+
+Portable tool references use the harness-neutral notation `effective-flow <tool>`. Its router
+also states the executable `/effective-flow` (Claude Code) and `$effective-flow` (Codex) forms,
+so both managers install the same bytes instead of selecting by traversal order.
 
 **Context budget.** The always-loaded core of the five largest tools stays under **700 lines**
 (measured and enforced during the build, see "Guards"); the build prints the sizes as a report.

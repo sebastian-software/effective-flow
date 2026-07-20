@@ -230,9 +230,10 @@ export function assertQuotedDescription(frontmatter, { context } = {}) {
 // {{SKILL:X}} -> harness-specific exposed tool invocation, or
 //                `` `tools/<name>.md` `` for internal tools (loaded on demand
 //                by `apply`).
-// {{AGENT:X}} -> the subagent reference. Codex auto-discovers nested skill
-// agents by their bare name; Claude Code only sees agents registered under
-// ~/.claude/agents, so they are referenced namespaced as `<agentPrefix>X`.
+// {{AGENT:X}} -> a namespaced worker reference. Native Claude/Codex installs
+// register that exact custom-agent name; the portable manager build maps the
+// same identifier to a bundled worker contract and the built-in/general
+// subagent mechanism.
 //
 // The command name (`/<skillName>` on Claude, `$<skillName>` on Codex) and the
 // agent prefix are passed in from the single source of truth in build.mjs, so a
@@ -258,8 +259,9 @@ export function transformRefs(
     );
   }
   validateRefs(body, { knownTools, knownAgents, context });
-  const agentName = (raw) => (harness === 'claude' ? `${agentPrefix}${raw}` : raw);
-  const command = harness === 'codex' ? `$${skillName}` : `/${skillName}`;
+  const agentName = (raw) => `${agentPrefix}${raw}`;
+  const command =
+    harness === 'codex' ? `$${skillName}` : harness === 'portable' ? skillName : `/${skillName}`;
   const skillInvocation = (raw) => `${command} ${raw}`;
   return body
     .replace(/\{\{FIRMO\}\}/g, command)
@@ -267,6 +269,24 @@ export function transformRefs(
       exposedTools.includes(raw) ? skillInvocation(raw) : `\`tools/${raw}.md\``,
     )
     .replace(/\{\{AGENT:([^}]+)\}\}/g, (_, raw) => `\`${agentName(raw)}\``);
+}
+
+export const PORTABLE_WORKER_DELEGATION = [
+  '## Portable worker delegation',
+  '',
+  "Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with that contract as the worker instructions. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.",
+].join('\n');
+
+// Enumerate exact rendered worker identifiers. Build-time completeness guards
+// use this on every rendered router/tool/shared/worker file, so a missing native
+// sidecar or portable contract cannot hide behind source-level validation.
+export function collectRenderedWorkerRefs(text, agentPrefix = 'effective-flow-', knownWorkers) {
+  const refs = new Set();
+  const re = new RegExp(`\\\`(${escapeRegex(agentPrefix)}[a-z0-9]+(?:-[a-z0-9]+)*)\\\``, 'g');
+  for (const match of text.matchAll(re)) {
+    if (!knownWorkers || knownWorkers.has(match[1])) refs.add(match[1]);
+  }
+  return [...refs].sort();
 }
 
 // --- ASK block transforms ---
@@ -347,10 +367,14 @@ export function transformAskCodex(body, { context } = {}) {
 // Full body pipeline per harness: ask blocks, then references.
 export function renderBody(resolvedBody, harness, config = {}) {
   const withAsk =
-    harness === 'codex'
+    harness === 'codex' || harness === 'portable'
       ? transformAskCodex(resolvedBody, { context: config.context })
       : transformAskClaude(resolvedBody, { context: config.context });
-  return transformRefs(withAsk, harness, config);
+  const withWorkerResolution =
+    harness === 'portable' && /\{\{AGENT:[^}]+\}\}/.test(withAsk)
+      ? `${PORTABLE_WORKER_DELEGATION}\n\n${withAsk.replace(/^\n/, '')}`
+      : withAsk;
+  return transformRefs(withWorkerResolution, harness, config);
 }
 
 // Documentation categories whose curated README.md landing page is mandatory

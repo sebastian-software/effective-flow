@@ -9,12 +9,13 @@ instead of duplicating them.
 ## Source-to-dist model
 
 Effective Flow is **not** a runtime product but a build: `build.mjs` reads the Markdown sources
-under `src/` and generates two harness-specific skill directories under `dist/` from them.
+under `src/` and generates two harness-native direct-install targets plus one portable manager
+target under `dist/`.
 
 - Only `src/` is edited. `dist/` is generated and gitignored – changes there are lost on the
   next build.
 - Source and delivery live on **two branches**: `develop` (source, no `dist/`) and the default
-  branch `main` (carries the built `dist/` payload **and** the consumer-facing docs –
+  branch `main` (carries only the portable `effective-flow/` payload **and** the consumer-facing docs –
   `README.md` + `docs/user-guide/` –, but **not** the developer docs `docs/developer-guide/`;
   written mechanically by the release workflow). For details see
   [Release and installation](release-and-installation.md#source-and-delivery-branch).
@@ -40,18 +41,18 @@ demand via `lazy-include` only at the decision point. Details and the context bu
 
 Effective Flow knows two building-block types:
 
-| Type      | Description                                | Invocation                                          |
-| --------- | ------------------------------------------ | --------------------------------------------------- |
-| **Tool**  | Workflow or utility instruction            | `/effective-flow <tool>` (loads `tools/<tool>.md`)  |
-| **Agent** | specialized worker (implementer, reviewer) | internally by tools as a subagent (`agents/<name>`) |
+| Type       | Description                                  | Invocation                                                   |
+| ---------- | -------------------------------------------- | ------------------------------------------------------------ |
+| **Tool**   | Workflow or utility instruction              | `/effective-flow <tool>` (loads `tools/<tool>.md`)           |
+| **Worker** | specialized contract (implementer, reviewer) | internally by tools as a native or built-in/general subagent |
 
 ## Source directories
 
 ```text
 src/
 ├── SKILL.md      # Router: tool catalog + dispatch, no tool contents
-├── tools/        # one .md per tool → dist/<harness>/effective-flow/tools/<name>.md
-├── agents/       # one .md per agent → dist/<harness>/agents/<name>
+├── tools/        # one .md per tool → every consumer target's tools/<name>.md
+├── agents/       # one .md contract per worker → native sidecars + portable resources
 └── shared/       # include fragments, embedded via `include` fence
 ```
 
@@ -60,25 +61,32 @@ src/
   [`build-system.md`](build-system.md)). Unlisted tools (e.g. `apply-plan`, `apply-review`,
   `apply-issues`) are **internal**: built but not visible in the router catalog; `apply` loads
   the matching internal instruction on demand depending on the detected source.
-- **`src/agents/<name>.md`**: Agents are **not** `/effective-flow` tools. Workflow tools call
-  them internally as subagents. The frontmatter carries per-harness configuration under the keys
-  `claude:` and `codex:` (model, color, tools/sandbox).
+- **`src/agents/<name>.md`**: Workers are **not** `/effective-flow` tools. Workflow tools call
+  them internally as subagents. The frontmatter carries native per-harness configuration under
+  `claude:` and `codex:`; the body is also the single contract rendered into the portable target.
 - **`src/shared/<name>.md`**: Include fragments embedded via the ` ```include ` fence into tools
   and agents (e.g. `language-rules`, `task-tracking`, `skill-discovery`, `goal-completion`,
   `worktree-integration`).
 
-## Two-harness split
+## Three consumer targets
 
-The build generates two independent outputs from the same source:
+The build generates three independent outputs from the same source:
 
-| Harness     | Target                        | Agent format                                                                                                                                                                    |
-| ----------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Claude Code | `dist/claude/effective-flow/` | standalone `.md` subagents under `dist/claude/agents/`, namespace-prefixed `effective-flow-<name>.md` (Claude Code does not automatically discover agents nested inside skills) |
-| Codex       | `dist/codex/effective-flow/`  | `.toml` agents nested under `dist/codex/effective-flow/agents/<name>.toml`                                                                                                      |
+| Consumer           | Skill target                    | Worker resolution                                                                                                                                          |
+| ------------------ | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Direct Claude Code | `dist/claude/effective-flow/`   | native `.md` agents under `dist/claude/agents/effective-flow-<name>.md`, installed into `$CLAUDE_HOME/agents`                                              |
+| Direct Codex       | `dist/codex/effective-flow/`    | native `.toml` agents under `dist/codex/agents/effective-flow-<name>.toml`, installed into `$CODEX_HOME/agents`                                            |
+| DALO / Skills CLI  | `dist/portable/effective-flow/` | bundled `workers/effective-flow-<name>.md` contracts, loaded one at a time and delegated through the harness's built-in general-purpose subagent mechanism |
 
-Both outputs carry the same version stamp (see
-[`release-and-installation.md`](release-and-installation.md)); a build guard prevents version
-drift between the harnesses.
+All outputs use the same `effective-flow-<name>` worker namespace and carry the same version
+stamp. Rendered-reference guards ensure every native reference has an exact sidecar and every
+portable reference has an exact worker contract. Portable instructions never request those
+identifiers as custom roles: if built-in delegation is unavailable, they fail clearly instead
+of pretending that a worker ran.
+
+The release archive retains all three targets. The default branch publishes only the portable
+skill at `effective-flow/`; native sidecars are release-archive implementation details of the
+direct installer, not competing skill-manager candidates.
 
 ## Repo structure at a glance
 
@@ -90,8 +98,9 @@ effective-flow/                        (Repo)
 │   ├── user-guide/           # End-user documentation (delivered to main)
 │   └── developer-guide/      # this document and its neighbors (develop only)
 ├── dist/                     # Generated, gitignored
-│   ├── claude/effective-flow/         # Router SKILL.md + tools/*.md, agents separately under dist/claude/agents/
-│   └── codex/effective-flow/          # Router SKILL.md + tools/*.md + agents/*.toml
+│   ├── claude/               # native skill + agents/effective-flow-*.md
+│   ├── codex/                # native skill + agents/effective-flow-*.toml
+│   └── portable/effective-flow/ # manager skill + workers/effective-flow-*.md
 ├── build.mjs                 # Build script (see build-system.md)
 ├── install-skill.sh          # Installation from release or local checkout
 └── local-link.sh             # Build + symlink for development

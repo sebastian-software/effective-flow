@@ -4,23 +4,24 @@ This file provides guidance to any coding agent working with code in this reposi
 
 ## What this repo is
 
-Effective Flow is a **source-to-dist build** for a single Software-Engineering skill set (`/effective-flow <tool>`) that ships to **two harnesses** — Claude Code and Codex — from one source tree. There is no runtime application here: `build.mjs` transforms Markdown sources under `src/` into two harness-specific skill directories under `dist/`.
+Effective Flow is a **source-to-dist build** for a single Software-Engineering skill set (`/effective-flow <tool>`) that ships to Claude Code and Codex from one source tree. There is no runtime application here: `build.mjs` transforms Markdown sources under `src/` into two harness-native direct-install targets plus one harness-neutral portable manager target under `dist/`.
 
 **You edit `src/`, never `dist/`.** `dist/` is generated and gitignored.
 
 ## Commands
 
 ```sh
-node build.mjs           # build both harnesses into dist/ (also: pnpm build)
+node build.mjs           # build native + portable targets into dist/ (also: pnpm build)
 pnpm format              # format with oxfmt (Markdown + JS)
 pnpm agent:check         # oxfmt --check (CI-style, no writes)
 pnpm test                # run the unit test suite (node:test)
+pnpm test:distribution   # isolated build/archive/delivery/install smoke suite
 ./install-skill.sh       # install the latest GitHub release asset
 ./install-skill.sh local # build + copy the current checkout
 ./local-link.sh          # build + symlink dist/ (for development)
 ```
 
-Package manager is **pnpm** (`packageManager: pnpm@11.9.0`). Correctness rests on two layers: a `node:test` unit suite (`pnpm test`, in `test/build-lib.test.mjs`) covering the pure `build-lib.mjs` transforms — frontmatter parsing, `{{SKILL:X}}`/`{{AGENT:X}}` and `include` resolution, body rendering, description quoting — **and** the build-time guards (see below) that run during `node build.mjs`. After editing sources, run the same sequence CI runs: `pnpm agent:check` (format), `pnpm test` (unit tests), then `node build.mjs` (build + guards).
+Package manager is **pnpm** (`packageManager: pnpm@11.11.0`). Correctness rests on three layers: a `node:test` unit suite (`pnpm test`) covering pure transforms and installers, build-time guards during `node build.mjs`, and `pnpm test:distribution` for isolated archive/delivery layouts. After editing distribution sources, run the same sequence CI runs: `pnpm agent:check`, `pnpm test`, `node build.mjs`, then `pnpm test:distribution`.
 
 ## Build architecture
 
@@ -31,22 +32,25 @@ The source layout **mirrors the output**, and the directory decides the category
 - `src/agents/<name>.md` → subagents. Agents are **not** `/effective-flow` tools; workflow tools call them internally as subagents. Frontmatter carries per-harness config under `claude:` and `codex:` keys (model, tools, sandbox, etc.).
 - `src/shared/<name>.md` — include fragments, embedded via an `include` fence.
 
-The build emits per harness:
+The build emits three consumer targets:
 
-- **Claude** (`dist/claude/`): agents ship separately as registered subagents in `dist/claude/agents/`, namespaced `effective-flow-<name>.md` (Claude Code does not auto-discover skill-nested agents).
-- **Codex** (`dist/codex/`): agents ship nested as `agents/<name>.toml`.
+- **Native Claude** (`dist/claude/`): skill plus registered agent sidecars in `dist/claude/agents/effective-flow-<name>.md`.
+- **Native Codex** (`dist/codex/`): skill plus registered agent sidecars in `dist/codex/agents/effective-flow-<name>.toml`.
+- **Portable managers** (`dist/portable/effective-flow/`): one harness-neutral skill with bundled `workers/effective-flow-<name>.md` contracts. It delegates through built-in/general subagents and does not rely on managers installing native agent sidecars.
+
+The release archive contains all three. The machine-managed default/delivery branch publishes only the contents of `dist/portable/effective-flow/` at `effective-flow/`, so recursive skill managers discover exactly one candidate. `install-skill.sh` and `local-link.sh` use only the two native targets.
 
 ### Placeholder / directive syntax in sources
 
 The build resolves these — do not hand-write their expansions:
 
-| Syntax                                      | Meaning                                                                      |
-| ------------------------------------------- | ---------------------------------------------------------------------------- |
-| `{{SKILL:X}}`                               | → `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)             |
-| `{{AGENT:X}}`                               | → `` `X` `` (Codex) or `` `effective-flow-X` `` (Claude)                     |
-| `{{VERSION}}`                               | release-please manifest version + git short hash                             |
-| ` ```include ` fence (name on its own line) | inlines `src/shared/<name>.md`                                               |
-| ` ```ask ` fence                            | conditional user question (Claude `AskUserQuestion` block / Codex free-text) |
+| Syntax                                      | Meaning                                                                                                   |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `{{SKILL:X}}`                               | → `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                                          |
+| `{{AGENT:X}}`                               | → `` `effective-flow-X` `` in every target; native registered role or portable worker-contract identifier |
+| `{{VERSION}}`                               | release-please manifest version + git short hash                                                          |
+| ` ```include ` fence (name on its own line) | inlines `src/shared/<name>.md`                                                                            |
+| ` ```ask ` fence                            | conditional user question (Claude `AskUserQuestion` block / Codex free-text)                              |
 
 `include` and `ask` fence interiors are kept verbatim against the oxfmt formatter (`embeddedLanguageFormatting: off`).
 
@@ -93,8 +97,8 @@ Release versioning is managed by release-please. The source of truth for the
 current released version is `.release-please-manifest.json`; do not bump versions
 manually in feature or fix commits. Conventional Commit messages drive the next
 release PR, changelog entries, tags, GitHub releases, and release asset upload.
-The build stamps `<manifest-version> (<git-short-hash>)` into both routers and a
-**version-drift guard** fails the build if Claude and Codex outputs disagree.
+The build stamps `<manifest-version> (<git-short-hash>)` into all three routers and a
+**version-drift guard** fails the build if native Claude, native Codex, and portable outputs disagree.
 
 ## Language rules
 

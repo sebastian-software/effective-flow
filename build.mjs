@@ -31,6 +31,7 @@ import {
   resolveLazyIncludes,
   collectIncludeNames,
   assertNoEagerLazyOverlap,
+  collectRenderedWorkerRefs,
 } from './build-lib.mjs';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -55,13 +56,17 @@ const DIST_BAK = join(ROOT_DIR, 'dist.bak');
 const FIRMO_SKILL_NAME = 'effective-flow';
 const DIST_CODEX = join(DIST_TMP, 'codex');
 const DIST_CLAUDE = join(DIST_TMP, 'claude');
+const DIST_PORTABLE = join(DIST_TMP, 'portable');
 const CODEX_SKILL_DIR = join(DIST_CODEX, FIRMO_SKILL_NAME);
 const CLAUDE_SKILL_DIR = join(DIST_CLAUDE, FIRMO_SKILL_NAME);
-// Claude Code does not auto-discover skill-nested agents, so Claude agents ship
-// separately as registered subagents (installed into ~/.claude/agents),
-// namespaced with a `firmo-` prefix to avoid collisions with other agents.
+const PORTABLE_SKILL_DIR = join(DIST_PORTABLE, FIRMO_SKILL_NAME);
+// Native agents ship separately from the skill and are registered into each
+// harness's discovery directory by the direct installer. The shared namespace
+// avoids collisions and is also used by portable worker-contract identifiers.
 const CLAUDE_AGENTS_DIR = join(DIST_CLAUDE, 'agents');
-const CLAUDE_AGENT_PREFIX = 'effective-flow-';
+const CODEX_AGENTS_DIR = join(DIST_CODEX, 'agents');
+const PORTABLE_WORKERS_DIR = join(PORTABLE_SKILL_DIR, 'workers');
+const AGENT_PREFIX = 'effective-flow-';
 
 // The tools exposed via `/effective-flow <tool>`, grouped by user intent. The router
 // catalog renders these groups (title + optional "when" line + tools); the flat
@@ -172,12 +177,14 @@ const VERSION_STRING = `${VERSION} (${GIT_SHORT_HASH})`;
 
 rmSync(DIST_TMP, { recursive: true, force: true });
 rmSync(DIST_BAK, { recursive: true, force: true });
-// Codex: one nested skill dir with tools/ and (nested) agents/.
+// Native skill payloads are separate from their registered agent sidecars.
 mkdirSync(join(CODEX_SKILL_DIR, 'tools'), { recursive: true });
-mkdirSync(join(CODEX_SKILL_DIR, 'agents'), { recursive: true });
-// Claude: skill dir with tools/ only; agents are emitted separately.
+mkdirSync(CODEX_AGENTS_DIR, { recursive: true });
 mkdirSync(join(CLAUDE_SKILL_DIR, 'tools'), { recursive: true });
 mkdirSync(CLAUDE_AGENTS_DIR, { recursive: true });
+// Managers receive one harness-neutral skill with bundled worker contracts.
+mkdirSync(join(PORTABLE_SKILL_DIR, 'tools'), { recursive: true });
+mkdirSync(PORTABLE_WORKERS_DIR, { recursive: true });
 
 // --- Include transforms (I/O; the pure transforms live in build-lib.mjs) ---
 
@@ -212,7 +219,7 @@ try {
   const knownAgents = new Set(agentFiles.map((f) => basename(f, '.md')));
   const refConfig = {
     exposedTools: EXPOSED_TOOLS,
-    agentPrefix: CLAUDE_AGENT_PREFIX,
+    agentPrefix: AGENT_PREFIX,
     skillName: FIRMO_SKILL_NAME,
     knownTools,
     knownAgents,
@@ -354,11 +361,36 @@ try {
   });
 
   const skillInvocation = (harness, name) =>
-    harness === 'codex' ? `$${FIRMO_SKILL_NAME} ${name}` : `/${FIRMO_SKILL_NAME} ${name}`;
+    harness === 'codex'
+      ? `$${FIRMO_SKILL_NAME} ${name}`
+      : harness === 'portable'
+        ? `${FIRMO_SKILL_NAME} ${name}`
+        : `/${FIRMO_SKILL_NAME} ${name}`;
   const routerDescForHarness = (harness) =>
     harness === 'codex'
       ? routerDesc.replaceAll(`/${FIRMO_SKILL_NAME}`, `$${FIRMO_SKILL_NAME}`)
-      : routerDesc;
+      : harness === 'portable'
+        ? routerDesc.replaceAll(`/${FIRMO_SKILL_NAME}`, FIRMO_SKILL_NAME)
+        : routerDesc;
+  const workerResolutionForHarness = (harness) => {
+    if (harness === 'claude') {
+      return `registered native Claude Code agents named \`${AGENT_PREFIX}<worker>\``;
+    }
+    if (harness === 'codex') {
+      return `registered native Codex agents named \`${AGENT_PREFIX}<worker>\``;
+    }
+    return "bundled `workers/effective-flow-<worker>.md` contracts delegated through the host harness's built-in general-purpose subagent mechanism";
+  };
+  const invocationGuidanceForHarness = (harness) => {
+    if (harness === 'claude') return '`/effective-flow <tool> [arguments]`';
+    if (harness === 'codex') return '`$effective-flow <tool> [arguments]`';
+    return [
+      '- Claude Code: `/effective-flow <tool> [arguments]`',
+      '- Codex: `$effective-flow <tool> [arguments]`',
+      '',
+      'The portable instructions below use `effective-flow <tool>` as harness-neutral notation; invoke the skill with the syntax of the active harness.',
+    ].join('\n');
+  };
   const catalogForHarness = (harness) =>
     TOOL_GROUPS.map((group) => {
       const lines = [`### ${group.title}`];
@@ -374,14 +406,22 @@ try {
   // Static autocomplete hint for the `<tool>` argument, kept in sync with EXPOSED_TOOLS.
   const argumentHint = `[${EXPOSED_TOOLS.join('|')}]`;
 
-  // --- Per-harness output ---
+  // --- Per-consumer output ---
 
-  for (const harness of ['claude', 'codex']) {
-    const skillDir = harness === 'claude' ? CLAUDE_SKILL_DIR : CODEX_SKILL_DIR;
+  for (const harness of ['claude', 'codex', 'portable']) {
+    const skillDir =
+      harness === 'claude'
+        ? CLAUDE_SKILL_DIR
+        : harness === 'codex'
+          ? CODEX_SKILL_DIR
+          : PORTABLE_SKILL_DIR;
 
     // Router SKILL.md
     const routerBody = renderBody(
-      routerBodyRaw.replace(/\{\{TOOL_CATALOG\}\}/g, catalogForHarness(harness)),
+      routerBodyRaw
+        .replace(/\{\{TOOL_CATALOG\}\}/g, catalogForHarness(harness))
+        .replace(/\{\{WORKER_RESOLUTION\}\}/g, workerResolutionForHarness(harness))
+        .replace(/\{\{INVOCATION_GUIDANCE\}\}/g, invocationGuidanceForHarness(harness)),
       harness,
       {
         ...refConfig,
@@ -427,7 +467,7 @@ try {
       }
     }
 
-    // Agents (nested subagents)
+    // Native sidecars or portable worker-contract resources.
     for (const a of agents) {
       const context = `agents/${a.name}.md`;
       if (harness === 'claude') {
@@ -436,7 +476,7 @@ try {
         const claudeTools = getNestedArray(a.fm, 'claude', 'tools', { context });
         const agentDesc = cleanDescription(getField(a.fm, 'description')).replace(/"/g, '\\"');
 
-        const claudeAgentName = `${CLAUDE_AGENT_PREFIX}${a.name}`;
+        const claudeAgentName = `${AGENT_PREFIX}${a.name}`;
         let agentFm = '---\n';
         agentFm += `name: ${claudeAgentName}\n`;
         agentFm += `description: "${agentDesc}"\n`;
@@ -455,7 +495,7 @@ try {
           join(CLAUDE_AGENTS_DIR, `${claudeAgentName}.md`),
           agentFm + renderBody(a.body, 'claude', { ...refConfig, context }),
         );
-      } else {
+      } else if (harness === 'codex') {
         const codexModel = getNested(a.fm, 'codex', 'model', { context });
         const codexEffort = getNested(a.fm, 'codex', 'model_reasoning_effort', { context });
         const codexSandbox = normalizeCodexSandboxMode(
@@ -464,24 +504,38 @@ try {
         );
         const tomlDesc = cleanDescription(getField(a.fm, 'description'));
 
-        let toml = `name = ${tomlString(a.name)}\n`;
+        const codexAgentName = `${AGENT_PREFIX}${a.name}`;
+        let toml = `name = ${tomlString(codexAgentName)}\n`;
         toml += `description = ${tomlString(tomlDesc)}\n`;
         if (codexModel) toml += `model = ${tomlString(codexModel)}\n`;
         if (codexEffort) toml += `model_reasoning_effort = ${tomlString(codexEffort)}\n`;
         if (codexSandbox) toml += `sandbox_mode = ${tomlString(codexSandbox)}\n`;
         toml += `developer_instructions = '''\n${renderBody(a.body, 'codex', { ...refConfig, context }).replace(/\n+$/, '')}\n'''\n`;
-        writeFileSync(join(skillDir, 'agents', `${a.name}.toml`), toml);
+        writeFileSync(join(CODEX_AGENTS_DIR, `${codexAgentName}.toml`), toml);
+      } else {
+        const workerName = `${AGENT_PREFIX}${a.name}`;
+        const description = cleanDescription(getField(a.fm, 'description'));
+        const contract = [
+          `# ${workerName}`,
+          '',
+          description,
+          '',
+          renderBody(a.body, 'portable', { ...refConfig, context }).replace(/\n+$/, ''),
+          '',
+        ].join('\n');
+        writeFileSync(join(PORTABLE_WORKERS_DIR, `${workerName}.md`), contract);
       }
     }
   }
 
-  // --- Guard: every lazy-loaded fragment is shipped for BOTH harnesses (#99) ---
+  // --- Guard: every lazy-loaded fragment is shipped for every target (#99) ---
   // A tool's load pointer ("Lies `shared/<name>.md` …") must resolve on Claude
   // Code and Codex alike, so the fragment file has to exist in both skill dirs.
   for (const name of lazyFragments) {
     for (const [harness, skillDir] of [
       ['claude', CLAUDE_SKILL_DIR],
       ['codex', CODEX_SKILL_DIR],
+      ['portable', PORTABLE_SKILL_DIR],
     ]) {
       const shipped = join(skillDir, 'shared', `${name}.md`);
       if (!existsSync(shipped)) {
@@ -489,6 +543,92 @@ try {
           `lazy-include guard (#99): fragment "${name}" is referenced but not shipped for ${harness} (${shipped})`,
         );
       }
+    }
+  }
+
+  // --- Rendered worker-reference completeness guard (#159) ---
+  // Source validation proves only that a worker source exists. This second
+  // layer walks every rendered instruction and verifies the actual consumer
+  // artifact: native registered sidecar or portable bundled contract.
+  const renderedFiles = (root) => {
+    const files = [];
+    const visit = (dir) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) visit(path);
+        else if (entry.name.endsWith('.md') || entry.name.endsWith('.toml')) files.push(path);
+      }
+    };
+    visit(root);
+    return files.sort();
+  };
+
+  const targetConfigs = [
+    {
+      name: 'claude',
+      root: DIST_CLAUDE,
+      workerPath: (ref) => join(CLAUDE_AGENTS_DIR, `${ref}.md`),
+      metadata: (ref) => `name: ${ref}`,
+    },
+    {
+      name: 'codex',
+      root: DIST_CODEX,
+      workerPath: (ref) => join(CODEX_AGENTS_DIR, `${ref}.toml`),
+      metadata: (ref) => `name = ${tomlString(ref)}`,
+    },
+    {
+      name: 'portable',
+      root: DIST_PORTABLE,
+      workerPath: (ref) => join(PORTABLE_WORKERS_DIR, `${ref}.md`),
+      metadata: (ref) => `# ${ref}`,
+    },
+  ];
+  const renderedWorkerNames = new Set(agents.map((agent) => `${AGENT_PREFIX}${agent.name}`));
+
+  for (const target of targetConfigs) {
+    const files = renderedFiles(target.root);
+    for (const file of files) {
+      const content = readFileSync(file, 'utf8');
+      if (
+        /\{\{(?:AGENT|SKILL|FIRMO|WORKER_RESOLUTION|INVOCATION_GUIDANCE)(?::[^}]*)?\}\}/.test(
+          content,
+        )
+      ) {
+        throw new Error(`unresolved placeholder in rendered ${target.name} file ${file}`);
+      }
+      for (const ref of collectRenderedWorkerRefs(content, AGENT_PREFIX, renderedWorkerNames)) {
+        const workerPath = target.workerPath(ref);
+        if (!existsSync(workerPath)) {
+          throw new Error(
+            `worker-reference guard (#159): ${target.name} reference ${ref} in ${file} has no artifact ${workerPath}`,
+          );
+        }
+      }
+    }
+
+    for (const agent of agents) {
+      const ref = `${AGENT_PREFIX}${agent.name}`;
+      const workerPath = target.workerPath(ref);
+      if (!existsSync(workerPath)) {
+        throw new Error(
+          `worker-reference guard (#159): ${target.name} is missing worker artifact ${workerPath}`,
+        );
+      }
+      if (!readFileSync(workerPath, 'utf8').includes(target.metadata(ref))) {
+        throw new Error(
+          `worker-reference guard (#159): ${target.name} worker ${workerPath} has mismatched metadata`,
+        );
+      }
+    }
+  }
+
+  for (const file of renderedFiles(PORTABLE_SKILL_DIR)) {
+    const content = readFileSync(file, 'utf8');
+    const refs = collectRenderedWorkerRefs(content, AGENT_PREFIX, renderedWorkerNames);
+    if (refs.length > 0 && !content.includes('built-in general-purpose subagent mechanism')) {
+      throw new Error(
+        `portable worker-reference guard (#159): ${file} names workers without the built-in delegation contract`,
+      );
     }
   }
 
@@ -500,8 +640,10 @@ try {
   const CONTEXT_BUDGET_MAX_LINES = 700;
   const BUDGET_TOOLS = ['build', 'fix', 'docs', 'review', 'plan'];
   budgetReport = BUDGET_TOOLS.map((name) => {
-    const built = readFileSync(join(CLAUDE_SKILL_DIR, 'tools', `${name}.md`), 'utf8');
-    return { name, lines: built.split('\n').length };
+    const lines = [CLAUDE_SKILL_DIR, CODEX_SKILL_DIR, PORTABLE_SKILL_DIR].map(
+      (skillDir) => readFileSync(join(skillDir, 'tools', `${name}.md`), 'utf8').split('\n').length,
+    );
+    return { name, lines: Math.max(...lines) };
   });
   const overBudget = budgetReport.filter((r) => r.lines > CONTEXT_BUDGET_MAX_LINES);
   if (overBudget.length > 0) {
@@ -511,12 +653,17 @@ try {
     );
   }
 
-  // --- Version-drift guard: Claude and Codex router carry the same version ---
+  // --- Version-drift guard: all three routers carry the same version ---
 
   const claudeRouter = readFileSync(join(CLAUDE_SKILL_DIR, 'SKILL.md'), 'utf8');
   const codexRouter = readFileSync(join(CODEX_SKILL_DIR, 'SKILL.md'), 'utf8');
-  if (!claudeRouter.includes(VERSION_STRING) || !codexRouter.includes(VERSION_STRING)) {
-    throw new Error(`version drift — expected "${VERSION_STRING}" in both router outputs`);
+  const portableRouter = readFileSync(join(PORTABLE_SKILL_DIR, 'SKILL.md'), 'utf8');
+  if (
+    !claudeRouter.includes(VERSION_STRING) ||
+    !codexRouter.includes(VERSION_STRING) ||
+    !portableRouter.includes(VERSION_STRING)
+  ) {
+    throw new Error(`version drift — expected "${VERSION_STRING}" in all router outputs`);
   }
 
   // --- Docs handoff guard: the user guide must document an executable Plan->Build
@@ -579,10 +726,13 @@ const internalCount = tools.length - exposedCount;
 
 process.stdout.write(`Built ${FIRMO_SKILL_NAME} skill:\n`);
 process.stdout.write(
-  `  Claude Code: ${exposedCount} tools (+${internalCount} internal) -> dist/claude/${FIRMO_SKILL_NAME}/, ${agents.length} agents -> dist/claude/agents/${CLAUDE_AGENT_PREFIX}*.md\n`,
+  `  Claude Code (native): ${exposedCount} tools (+${internalCount} internal) -> dist/claude/${FIRMO_SKILL_NAME}/, ${agents.length} agents -> dist/claude/agents/${AGENT_PREFIX}*.md\n`,
 );
 process.stdout.write(
-  `  Codex:       ${exposedCount} tools (+${internalCount} internal), ${agents.length} agents -> dist/codex/${FIRMO_SKILL_NAME}/\n`,
+  `  Codex (native):      ${exposedCount} tools (+${internalCount} internal) -> dist/codex/${FIRMO_SKILL_NAME}/, ${agents.length} agents -> dist/codex/agents/${AGENT_PREFIX}*.toml\n`,
+);
+process.stdout.write(
+  `  Managers (portable): ${exposedCount} tools (+${internalCount} internal), ${agents.length} worker contracts -> dist/portable/${FIRMO_SKILL_NAME}/\n`,
 );
 if (budgetReport.length > 0) {
   const sizes = budgetReport.map((r) => `${r.name} ${r.lines}`).join(', ');

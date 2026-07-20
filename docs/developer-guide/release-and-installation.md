@@ -19,13 +19,12 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
 2. `node build.mjs` builds the distribution into `dist/`.
 3. `release-please-action` creates or updates the release PR and, once merged, the Git tag and
    the GitHub release.
-4. On an actually created release, `dist/` is packed as `effective-flow-<tag>.tar.gz` and
-   attached to the GitHub release.
-5. Also only on a created release, the built `dist/` output (both harnesses, `claude/` and
-   `codex/`) is pushed **together with the consumer-facing documentation** (`README.md` and
-   `docs/user-guide/`) as a **fresh commit** to the delivery branch `main` (no force push, so
-   consumer pins stay stable). A small helper (`scripts/deliver-docs.mjs`) rewrites the links
-   into the developer docs in the process (see below).
+4. The isolated distribution smoke verifies native/portable layouts and installers.
+5. On an actually created release, all three targets in `dist/` are packed as
+   `effective-flow-<tag>.tar.gz`, uploaded, downloaded again, and verified.
+6. Also only on a created release, `scripts/stage-delivery.mjs` pushes **only** the portable
+   `effective-flow/` skill together with `README.md` and `docs/user-guide/` as a fresh commit to
+   `main` (no force push). The workflow fetches that exact commit and verifies its layout.
 
 ## Source and delivery branch
 
@@ -33,14 +32,15 @@ Effective Flow separates source and built delivery across two branches:
 
 - **`develop`** is the **source/working branch** (only `src/`, `build.mjs`, `docs/`, tests —
   `dist/` stays gitignored). PRs, CI, and release-please run here.
-- **`main`** is the **delivery branch** and at the same time the **default branch**: it carries
-  the built `dist/` payload (`claude/` + `codex/` in the root) **and the consumer-facing
-  documentation**, written mechanically by the release workflow.
+- **`main`** is the **delivery/default branch**: it carries exactly one portable
+  `effective-flow/` skill candidate **and the consumer-facing documentation**, written
+  mechanically by the release workflow. It contains no `claude/`, `codex/`, or `portable/`
+  wrapper and therefore no competing same-name candidate.
 
-This way installers that run **no** build (`dalo`, `npx skills`) automatically pull the finished
-artifacts from the default branch — without any extra configuration. Anyone using the release
-archive instead installs unchanged via [`install-skill.sh`](#installation) (downloads the
-`effective-flow-<tag>.tar.gz` asset).
+This separates two supported paths. DALO and Skills CLI consume the same portable bytes from the
+default branch and use bundled worker contracts with built-in/general subagents. The direct
+installer downloads the release archive and selects the two native targets, including registered
+custom-agent sidecars.
 
 ### Documentation separated by audience
 
@@ -69,10 +69,8 @@ Since `release-please-config.json` carries the single package `.` under the name
 
 ## Version stamp and drift guard
 
-The build stamps `<manifest version> (<git short hash>)` (e.g. `1.45.0 (01bd063)`) into both
-router outputs (`dist/claude/effective-flow/SKILL.md` and `dist/codex/effective-flow/SKILL.md`).
-A **version-drift guard** makes the build fail if the Claude and Codex output do not carry the
-same version string – for details see [`build-system.md`](build-system.md#guards).
+The build stamps `<manifest version> (<git short hash>)` into all three routers. A drift guard
+makes the build fail unless native Claude, native Codex, and portable output agree.
 
 ## Installation
 
@@ -84,15 +82,31 @@ The script:
 
 1. downloads the archive of the most recently published GitHub release version
    (`gh release download`, pattern `effective-flow-*.tar.gz`),
-2. copies the Effective Flow skill to `~/.claude/skills/effective-flow` and
-   `~/.agents/skills/effective-flow`,
-3. registers the Claude agents under `~/.claude/agents/effective-flow-*.md` (Claude Code does
-   not automatically discover agents nested inside skills),
-4. cleans up outdated `sf-*` skills, `~/.codex/agents/sf-*.toml`, and the former marketplace
-   `sf-claude-plugin`.
+2. copies the native Claude skill to `$CLAUDE_HOME/skills/effective-flow` and the native Codex
+   skill to `~/.agents/skills/effective-flow`,
+3. registers native Claude agents under `$CLAUDE_HOME/agents/effective-flow-*.md` and native
+   Codex agents under `$CODEX_HOME/agents/effective-flow-*.toml`,
+4. records exact owned sidecars per harness so a reinstall can remove stale renamed workers
+   without deleting foreign neighbors,
+5. cleans up the exact retired `firmo`/`sf-` namespaces and former marketplace path.
 
-Only the `effective-flow` subdirectory is managed: an existing external `~/.claude/skills`
-symlink (e.g. from another tool) and foreign neighboring skills stay untouched.
+Only the `effective-flow` skill child and manifest-recorded Effective Flow sidecars are managed.
+External parent-directory symlinks and foreign neighboring skills/agents stay untouched. Copy
+and link modes are idempotent and validate that both native worker sets are complete before
+changing the installation.
+
+### Installation through DALO or Skills CLI
+
+The default branch is a portable catalog with one skill slot. DALO 0.8.2 can inspect and select
+`effective-flow` without ambiguity. Skills CLI 1.5.19 installs that same directory with
+`--agent claude-code` or `--agent codex`; `--copy` avoids target-symlink differences. These
+manager paths intentionally do **not** write native agent directories. Each workflow loads only
+the selected `workers/effective-flow-<worker>.md` contract and delegates through the harness's
+built-in general-purpose subagent mechanism. If that mechanism is unavailable, the portable
+instruction reports the limitation instead of claiming a worker ran.
+
+Use the direct installer when native named custom agents are required. Use a manager when one
+portable, manager-owned skill installation is preferred.
 
 ### Installation from the local checkout
 

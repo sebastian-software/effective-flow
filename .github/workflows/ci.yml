@@ -37,6 +37,9 @@ jobs:
       - name: Build distribution
         run: node build.mjs
 
+      - name: Distribution and installation smoke tests
+        run: pnpm test:distribution
+
   shellcheck:
     name: Shellcheck
     runs-on: ubuntu-latest
@@ -45,4 +48,43 @@ jobs:
       - name: Shellcheck helper scripts
         # Gate at error severity: the scripts use the deliberate `CDPATH= cd`
         # idiom and literal backticks that trip lower-severity style warnings.
-        run: shellcheck --severity=error install-skill.sh local-link.sh
+        run: shellcheck --severity=error install-skill.sh local-common.sh local-link.sh
+
+  managers:
+    name: DALO 0.8.2 and Skills CLI 1.5.19
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: node build.mjs
+
+      - name: Install pinned DALO 0.8.2
+        env:
+          DALO_VERSION: 0.8.2
+          DALO_SHA256: 1988645d39f68fbea917d3c852e047abe988d5fcbae96f62d9ea961ae4e4b633
+        run: |
+          asset="dalo-${DALO_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+          url="https://github.com/sebastian-software/dalo/releases/download/dalo-v${DALO_VERSION}/${asset}"
+          install_dir="$RUNNER_TEMP/dalo-${DALO_VERSION}"
+          mkdir -p "$install_dir"
+          curl --fail --location --silent --show-error "$url" --output "$RUNNER_TEMP/$asset"
+          printf '%s  %s\n' "$DALO_SHA256" "$RUNNER_TEMP/$asset" | sha256sum --check -
+          tar -xzf "$RUNNER_TEMP/$asset" -C "$install_dir"
+          printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
+          "$install_dir/dalo" --version
+
+      - name: Stage the default-branch payload
+        run: node scripts/stage-delivery.mjs "$RUNNER_TEMP/delivery" "$GITHUB_REPOSITORY" develop
+
+      - name: Manager compatibility smoke tests
+        run: pnpm test:managers "$RUNNER_TEMP/delivery"
