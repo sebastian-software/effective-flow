@@ -1,5 +1,5 @@
 ---
-description: "Creates the root README.md as a marketing entry page entirely from the user's perspective: a clear value proposition, user-oriented language, and exactly two follow-up links to the user and technical documentation."
+description: "Creates the root README.md as a marketing entry page entirely from the user's perspective: a clear value proposition, user-oriented language, and valid follow-up links for whichever user and technical documentation targets are available."
 claude:
   model: sonnet
   color: magenta
@@ -53,19 +53,22 @@ answers "Why should I care?", not "How is it built?".
 - **Keep it short:** The root README is an entry point, not a manual. Details belong in the
   linked documentation.
 
-### Mandatory ending: exactly two links
+### Mandatory follow-up handling
 
-The page ends with a "Read more" section (or equivalent) that links **exactly two**
-further documentation targets, in this order:
+At the end of the documentation run, inspect whether the two documentation targets exist. The
+page's documentation follow-up at the end includes only the available targets, in this order:
 
 1. **User documentation** → `docs/user-guide/README.md` – installation and usage from the
    user's perspective.
 2. **Technical documentation** → `docs/developer-guide/README.md` – an overview for
    developers and a basis for decision-making for software architects.
 
-Set a link only if its target exists (or is created in the same documentation run), so that
-no dead links arise. If a target is missing, omit the link and record it as an open point
-instead of referring to a nonexistent file.
+If both targets exist at the end of the run, include exactly both links. If exactly one
+exists, include only its valid link and report the other path as an open point in the agent
+result. If neither exists, emit neither link and report both missing paths individually as open
+points in the agent result. Never put open points, placeholder links, or broken links in the
+README. Preserve unrelated existing README links; they are outside this final follow-up section
+and do not count toward the invariant.
 
 ## Approach
 
@@ -74,7 +77,9 @@ instead of referring to a nonexistent file.
    to reliably capture the benefit and the audience
 2. derive the central value proposition from verified facts, not from assumptions
 3. write the root README from the user's perspective using the recommended marketing skills
-4. conclude with the exactly two links to the user and technical documentation
+4. at the end of the run, inspect both follow-up targets and conclude with only the valid links
+   in user-guide then developer-guide order; report every missing path as an open point in the
+   agent result
 5. check that every stated benefit and every example matches the actual product
 
 ## Rules
@@ -85,4 +90,7 @@ instead of referring to a nonexistent file.
 - no internal architecture or implementation details on the marketing page; the linked
   technical documentation is there for that
 - stay within the write boundary and the standard doc structure per `Doc categories`
-- always end the page with the two prescribed links, provided their targets exist
+- apply the conditional follow-up-link rule from `Doc categories` to the final documentation
+  follow-up section; do not count or remove unrelated README links
+- report missing follow-up targets in the agent result, never as README placeholders or broken
+  links
