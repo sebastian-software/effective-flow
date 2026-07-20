@@ -9,7 +9,8 @@
 //   <source-branch> branch the developer-guide links point at, e.g. develop
 
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { rewriteDeveloperGuideLinks, appendDeliveryFooter } from '../build-lib.mjs';
 
 function fail(message) {
@@ -17,39 +18,53 @@ function fail(message) {
   process.exit(1);
 }
 
-const [work, repo, sourceBranch] = process.argv.slice(2);
-if (!work || !repo || !sourceBranch) {
-  fail('usage: node scripts/deliver-docs.mjs <work-dir> <repo> <source-branch>');
-}
+export function deliverDocs(work, repo, sourceBranch) {
+  if (!work || !repo || !sourceBranch) {
+    throw new Error('work, repo and sourceBranch are required');
+  }
 
-// Root README: developer-guide links use the `docs/developer-guide/` prefix, and
-// only the delivered README carries the delivery footer.
-const readmePath = join(work, 'README.md');
-if (!existsSync(readmePath)) fail(`expected README.md at ${readmePath}`);
-let readme = readFileSync(readmePath, 'utf8');
-readme = rewriteDeveloperGuideLinks(readme, { repo, sourceBranch, fromRoot: true });
-readme = appendDeliveryFooter(readme, { repo, sourceBranch });
-writeFileSync(readmePath, readme);
+  // Root README: developer-guide links use the `docs/developer-guide/` prefix,
+  // and only the delivered README carries the delivery footer.
+  const readmePath = join(work, 'README.md');
+  if (!existsSync(readmePath)) throw new Error(`expected README.md at ${readmePath}`);
+  let readme = readFileSync(readmePath, 'utf8');
+  readme = rewriteDeveloperGuideLinks(readme, { repo, sourceBranch, fromRoot: true });
+  readme = appendDeliveryFooter(readme, { repo, sourceBranch });
+  writeFileSync(readmePath, readme);
 
-// docs/user-guide/**/*.md: developer-guide links use the `../developer-guide/`
-// prefix. Sibling user-guide links stay relative and resolve on `main`.
-function rewriteUserGuide(dir) {
-  for (const entry of readdirSync(dir)) {
-    const path = join(dir, entry);
-    if (statSync(path).isDirectory()) {
-      rewriteUserGuide(path);
-    } else if (entry.endsWith('.md')) {
-      const rewritten = rewriteDeveloperGuideLinks(readFileSync(path, 'utf8'), {
-        repo,
-        sourceBranch,
-        fromRoot: false,
-      });
-      writeFileSync(path, rewritten);
+  // docs/user-guide/**/*.md: developer-guide links use the
+  // `../developer-guide/` prefix. Sibling user-guide links stay relative.
+  function rewriteUserGuide(dir) {
+    for (const entry of readdirSync(dir)) {
+      const path = join(dir, entry);
+      if (statSync(path).isDirectory()) {
+        rewriteUserGuide(path);
+      } else if (entry.endsWith('.md')) {
+        const rewritten = rewriteDeveloperGuideLinks(readFileSync(path, 'utf8'), {
+          repo,
+          sourceBranch,
+          fromRoot: false,
+        });
+        writeFileSync(path, rewritten);
+      }
     }
   }
+  const userGuideDir = join(work, 'docs', 'user-guide');
+  if (!existsSync(userGuideDir)) {
+    throw new Error(`expected docs/user-guide/ at ${userGuideDir}`);
+  }
+  rewriteUserGuide(userGuideDir);
 }
-const userGuideDir = join(work, 'docs', 'user-guide');
-if (!existsSync(userGuideDir)) fail(`expected docs/user-guide/ at ${userGuideDir}`);
-rewriteUserGuide(userGuideDir);
 
-console.log(`deliver-docs: rewrote developer-guide links and appended footer under ${work}`);
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const [work, repo, sourceBranch] = process.argv.slice(2);
+  if (!work || !repo || !sourceBranch) {
+    fail('usage: node scripts/deliver-docs.mjs <work-dir> <repo> <source-branch>');
+  }
+  try {
+    deliverDocs(work, repo, sourceBranch);
+    console.log(`deliver-docs: rewrote developer-guide links and appended footer under ${work}`);
+  } catch (error) {
+    fail(error.message);
+  }
+}

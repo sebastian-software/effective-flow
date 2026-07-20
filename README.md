@@ -18,7 +18,8 @@ loop all the way to the pull request.
   full instruction of a tool arrives only on invocation. This keeps sessions lean and
   prevents the token limit from being exhausted by tools loaded up front.
 - **One source, two harnesses.** Claude Code and Codex run with the same behavior,
-  built from a single `src/` tree – no two truths that drift apart.
+  built from a single `src/` tree into native direct-install targets and one portable manager
+  target – no separate worker contracts that drift apart.
 - **Skill discovery instead of rigid preloading.** Tools and agents detect at runtime which
   host skills are available and apply them situationally, instead of preloading a fixed
   list.
@@ -27,13 +28,18 @@ loop all the way to the pull request.
   or open a pull request.
 - **Runs without configuration, grows with it.** Effective Flow works right after
   installation; anyone who wants to control review depth, worktree behavior or
-  issue-tracker integration does so through a single `.effective-flow/config.json`.
+  issue-tracker integration does so through the living Effective Flow project-setup ADR.
 
 ## Quick start
 
 ```sh
 ./install-skill.sh
 ```
+
+This is the full-fidelity path: it installs the native Claude Code and Codex skills together
+with their namespaced custom agents. DALO and Skills CLI instead consume the single portable
+`effective-flow/` candidate from the default branch; its bundled worker contracts delegate via
+each harness's built-in general-purpose subagents and require no native agent-directory writes.
 
 Then, in Claude Code or Codex, call `/effective-flow plan` (Codex: `$effective-flow plan`) to
 start planning a first task.

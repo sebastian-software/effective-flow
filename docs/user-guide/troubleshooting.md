@@ -98,6 +98,33 @@ an inventory and a dry-run preview, asks before each deletion, and removes track
 confirmation. It does not commit and does not create a backup – you bring the staged changes
 in afterwards with [`/effective-flow commit`](./tools-deliver.md).
 
+## A workflow cannot resolve a worker
+
+First identify the installation path:
+
+- **Direct installer:** native Claude agents must exist under
+  `$CLAUDE_HOME/agents/effective-flow-*.md`; native Codex agents under
+  `$CODEX_HOME/agents/effective-flow-*.toml`. Run `./install-skill.sh` again to replace the exact
+  Effective Flow-owned set. Do not move the files into the skill's own directory: neither native
+  installation relies on skill-nested custom-agent discovery.
+- **DALO or Skills CLI:** no native agent sidecars are expected. The installed skill must contain
+  `workers/effective-flow-*.md`. Effective Flow loads only the selected contract and delegates it
+  through the harness's built-in general-purpose subagent mechanism. A host without that
+  mechanism is unsupported for worker-dependent portable workflows; the tool should state this
+  clearly rather than silently continuing.
+
+## DALO reports an ambiguous `effective-flow` slot
+
+Current releases publish exactly one portable candidate at `effective-flow/SKILL.md`. If an
+inspection also shows `claude/effective-flow` or `codex/effective-flow`, the source points at an
+older delivery commit or at the release archive instead of the default branch. Refresh the DALO
+catalog source and verify its commit. Release archives intentionally contain all three targets
+for the direct installer and are not manager catalogs.
+
+Skills CLI users should likewise select `--skill effective-flow` from the repository/default
+branch, not from an extracted archive. Claude Code and Codex receive the same portable files;
+only their destination directories differ.
+
 ## See also
 
 - [Configuration](./configuration.md) – full field reference

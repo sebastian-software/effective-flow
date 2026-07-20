@@ -11,9 +11,7 @@ This router skill is deliberately **thin**. It contains only the tool catalog an
 
 ## Invocation
 
-`{{FIRMO}} <tool> [arguments]`
-
-On Codex the same skill is invoked via the skill name (e.g. `$effective-flow <tool> [arguments]`); the dispatch rule is identical.
+{{INVOCATION_GUIDANCE}}
 
 ## Dispatch rule
 
@@ -31,4 +29,4 @@ The tools are grouped below by usage intent.
 ## Rules
 
 - Never load multiple tool files "just in case"; always only the currently invoked tool (plus, if applicable, the single internal `apply` source).
-- Specialist agents (implementers, reviewers, validators, test/docs writers …) are **not** `{{FIRMO}}` tools; the tools invoke them internally as subagents (nested under `agents/` on Codex, as registered `effective-flow-*` subagents on Claude Code).
+- Specialist workers (implementers, reviewers, validators, test/docs writers …) are **not** `{{FIRMO}}` tools. Tools invoke them internally through {{WORKER_RESOLUTION}}. Load or delegate only the selected worker, never the full worker set.

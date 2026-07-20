@@ -27,6 +27,8 @@ import {
   appendDeliveryFooter,
   deliveryFooter,
   DELIVERY_FOOTER_MARKER,
+  PORTABLE_WORKER_DELEGATION,
+  collectRenderedWorkerRefs,
 } from '../build-lib.mjs';
 
 const DELIVERY = { repo: 'sebastian-software/effective-flow', sourceBranch: 'develop' };
@@ -236,8 +238,17 @@ test('transformRefs maps exposed vs internal tools and agents per harness', () =
   );
   assert.equal(
     transformRefs('{{AGENT:nodejs-implementer}}', 'codex', refConfig),
-    '`nodejs-implementer`',
+    '`effective-flow-nodejs-implementer`',
   );
+  assert.equal(
+    transformRefs('{{AGENT:nodejs-implementer}}', 'portable', refConfig),
+    '`effective-flow-nodejs-implementer`',
+  );
+});
+
+test('portable refs use harness-neutral tool notation', () => {
+  assert.equal(transformRefs('{{FIRMO}} fix', 'portable', refConfig), 'effective-flow fix');
+  assert.equal(transformRefs('{{SKILL:fix}}', 'portable', refConfig), 'effective-flow fix');
 });
 
 // Rendering must apply the same guard as validation: the known-name sets are
@@ -341,7 +352,38 @@ test('renderBody uses Codex skill invocation syntax for exposed tool refs', () =
   const body = 'Intro {{SKILL:fix}} and {{AGENT:code-validator}}.\n';
   assert.equal(
     renderBody(body, 'codex', { ...refConfig, context: 't.md' }),
-    'Intro $effective-flow fix and `code-validator`.\n',
+    'Intro $effective-flow fix and `effective-flow-code-validator`.\n',
+  );
+});
+
+test('renderBody gives portable worker refs an explicit one-contract delegation protocol', () => {
+  const body = 'Start {{AGENT:code-validator}}.\n';
+  const rendered = renderBody(body, 'portable', { ...refConfig, context: 't.md' });
+  assert.ok(rendered.startsWith(PORTABLE_WORKER_DELEGATION));
+  assert.match(rendered, /read only its matching `workers\/effective-flow-<worker>\.md` file/);
+  assert.match(rendered, /built-in general-purpose subagent mechanism/);
+  assert.match(rendered, /Start `effective-flow-code-validator`\./);
+  assert.equal(rendered.match(/## Portable worker delegation/g)?.length, 1);
+});
+
+test('renderBody does not add portable worker instructions when no worker is referenced', () => {
+  const rendered = renderBody('Run {{SKILL:fix}}.\n', 'portable', {
+    ...refConfig,
+    context: 't.md',
+  });
+  assert.doesNotMatch(rendered, /Portable worker delegation/);
+  assert.equal(rendered, 'Run effective-flow fix.\n');
+});
+
+test('collectRenderedWorkerRefs filters exact known namespaced worker identifiers', () => {
+  const known = new Set(['effective-flow-code-validator']);
+  assert.deepEqual(
+    collectRenderedWorkerRefs(
+      '`effective-flow-code-validator` `effective-flow-project-setup` `code-validator`',
+      'effective-flow-',
+      known,
+    ),
+    ['effective-flow-code-validator'],
   );
 });
 

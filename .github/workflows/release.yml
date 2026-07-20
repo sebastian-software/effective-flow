@@ -37,6 +37,9 @@ jobs:
       - name: Build distribution
         run: node build.mjs
 
+      - name: Distribution and installation smoke tests
+        run: pnpm test:distribution
+
       - name: Release Please
         id: release
         uses: googleapis/release-please-action@v5
@@ -58,10 +61,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ steps.release.outputs.tag_name }}" "effective-flow-${{ steps.release.outputs.tag_name }}.tar.gz" --clobber
 
-      - name: Deliver built dist and consumer docs to the delivery branch (main)
+      - name: Verify uploaded release archive
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          verify_dir="$(mktemp -d)"
+          asset="effective-flow-${{ steps.release.outputs.tag_name }}.tar.gz"
+          gh release download "${{ steps.release.outputs.tag_name }}" --pattern "$asset" --dir "$verify_dir"
+          node scripts/distribution-smoke.mjs archive "$verify_dir/$asset"
+
+      - name: Deliver portable skill and consumer docs to the delivery branch (main)
+        id: deliver
         # The delivery branch `main` is the default branch, so it carries what a
-        # consumer sees: the built skill payload (both harnesses as `claude/` and
-        # `codex/` at the root) PLUS the consumer-facing docs — the marketing-entry
+        # consumer sees: exactly one portable `effective-flow/` skill candidate
+        # PLUS the consumer-facing docs — the marketing-entry
         # README.md and docs/user-guide/. It deliberately does NOT carry
         # docs/developer-guide/ (develop-only). Consumers that do not run a build
         # (dalo, `npx skills`) grab finished artifacts straight from here.
@@ -84,14 +98,8 @@ jobs:
           git fetch origin main
           work="$(mktemp -d)"
           git worktree add --force "$work" origin/main
-          rm -rf "$work/claude" "$work/codex" "$work/README.md" "$work/docs/user-guide" "$work/docs/developer-guide"
-          cp -R dist/claude "$work/claude"
-          cp -R dist/codex "$work/codex"
-          mkdir -p "$work/docs"
-          cp README.md "$work/README.md"
-          cp -R docs/user-guide "$work/docs/user-guide"
-          cp scripts/delivery-renovate.json "$work/renovate.json"
-          node scripts/deliver-docs.mjs "$work" "$GITHUB_REPOSITORY" develop
+          node scripts/stage-delivery.mjs "$work" "$GITHUB_REPOSITORY" develop
+          node scripts/distribution-smoke.mjs delivery "$work"
           git -C "$work" add -A
           if git -C "$work" diff --cached --quiet; then
             echo "No delivery changes for ${{ steps.release.outputs.tag_name }}"
@@ -99,4 +107,15 @@ jobs:
             git -C "$work" commit -m "chore(delivery): ${{ steps.release.outputs.tag_name }}"
             git -C "$work" push origin HEAD:main
           fi
+          echo "commit=$(git -C "$work" rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           git worktree remove --force "$work"
+
+      - name: Verify delivered commit
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        run: |
+          git fetch origin main
+          test "$(git rev-parse origin/main)" = "${{ steps.deliver.outputs.commit }}"
+          verify_work="$(mktemp -d)"
+          git worktree add --detach "$verify_work" "${{ steps.deliver.outputs.commit }}"
+          node scripts/distribution-smoke.mjs delivery "$verify_work"
+          git worktree remove --force "$verify_work"

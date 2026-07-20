@@ -8,9 +8,24 @@
 
 The script downloads the archive of the latest available GitHub release version and
 installs Effective Flow as a skill directory into `~/.claude/skills/effective-flow` (Claude Code) and
-`~/.agents/skills/effective-flow` (Codex). Old `sf-*` skills and the former marketplace plugin path
-are cleaned up in the process; an existing external `~/.claude/skills` symlink and unrelated
-neighboring skills are left untouched.
+`~/.agents/skills/effective-flow` (Codex). It also registers the complete native worker set as
+`$CLAUDE_HOME/agents/effective-flow-*.md` and `$CODEX_HOME/agents/effective-flow-*.toml`. Old
+owned entries are cleaned up through exact ownership manifests; external parent symlinks and
+unrelated neighboring skills or agents are left untouched.
+
+This direct path provides native named custom agents. Standard managers use the portable target
+from the repository's default branch instead:
+
+```sh
+npx skills@1.5.19 add sebastian-software/effective-flow --agent claude-code --skill effective-flow --global --yes --copy
+npx skills@1.5.19 add sebastian-software/effective-flow --agent codex --skill effective-flow --global --yes --copy
+```
+
+Both manager commands install the same `effective-flow/` bytes. The portable skill bundles each
+worker under `workers/effective-flow-<worker>.md`, loads only the selected contract, and delegates
+through the harness's built-in general-purpose subagent mechanism. Managers do not register
+native custom-agent sidecars. DALO likewise sees exactly one `effective-flow` slot on the
+default branch and can select it without choosing a harness build.
 
 Two variants for developing on the Effective Flow repo itself:
 

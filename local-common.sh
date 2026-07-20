@@ -11,7 +11,15 @@ CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 CLAUDE_SKILLS="$CLAUDE_HOME/skills"
 CLAUDE_AGENTS="$CLAUDE_HOME/agents"
 CODEX_SKILLS="$HOME/.agents/skills"
+CODEX_AGENTS="$CODEX_HOME/agents"
 DIST_ROOT="${DIST_ROOT:-$ROOT_DIR/dist}"
+CLAUDE_AGENT_MANIFEST="$CLAUDE_AGENTS/.effective-flow-agents.manifest"
+CODEX_AGENT_MANIFEST="$CODEX_AGENTS/.effective-flow-agents.manifest"
+
+# Frozen migration allowlists. These are names the direct installer historically
+# created itself; cleanup must never infer ownership from a broad prefix glob.
+EFFECTIVE_FLOW_OWNED_WORKERS='code-documenter code-validator docs-writer e2e-tester frontend-reviewer generic-implementer marketing-writer nodejs-implementer nodejs-reviewer rust-implementer rust-reviewer test-writer ui-implementer'
+LEGACY_SF_SKILLS='sf-apply sf-apply-issues sf-apply-plan sf-apply-review sf-build sf-code-documenter sf-code-validator sf-commit sf-docs sf-docs-writer sf-e2e-tester sf-fix sf-frontend-reviewer sf-investigate sf-maintain sf-nodejs-implementer sf-nodejs-reviewer sf-open-plans sf-plan sf-plan-issues sf-pr sf-refactor sf-review sf-rust-implementer sf-rust-reviewer sf-setup sf-test-writer sf-ui-implementer sf-version'
 
 # Effective Flow installs as a single directory skill named `effective-flow`. We
 # only ever create or replace the `effective-flow` subdirectory (via copy or
@@ -20,42 +28,238 @@ DIST_ROOT="${DIST_ROOT:-$ROOT_DIR/dist}"
 install_skill() {
   built="$1"
   dest_dir="$2"
-  mkdir -p "$dest_dir"
-  rm -rf "$dest_dir/effective-flow"
+  mkdir -p "$dest_dir" || return 1
+  rm -rf "$dest_dir/effective-flow" || return 1
   if [ "$INSTALL_MODE" = link ]; then
-    ln -s "$built" "$dest_dir/effective-flow"
+    ln -s "$built" "$dest_dir/effective-flow" || return 1
   else
-    cp -R "$built" "$dest_dir/effective-flow"
+    cp -R "$built" "$dest_dir/effective-flow" || return 1
   fi
 }
 
-# Claude Code does not auto-discover skill-nested agents, so the Effective Flow
-# agents ship as registered subagents under ~/.claude/agents (namespaced
-# effective-flow-*).
-install_claude_agents() {
-  mkdir -p "$CLAUDE_AGENTS"
-  rm -f "$CLAUDE_AGENTS"/effective-flow-*.md
-  for agent in "$DIST_ROOT/claude/agents"/effective-flow-*.md; do
-    [ -f "$agent" ] || continue
-    if [ "$INSTALL_MODE" = link ]; then
-      ln -s "$agent" "$CLAUDE_AGENTS/$(basename "$agent")"
-    else
-      cp "$agent" "$CLAUDE_AGENTS/"
+agent_name_from_artifact() {
+  artifact="$1"
+  harness="$2"
+  if [ "$harness" = claude ]; then
+    sed -n 's/^name:[[:space:]]*//p' "$artifact" | sed -n '1p'
+  else
+    sed -n 's/^name[[:space:]]*=[[:space:]]*"\([^"]*\)"[[:space:]]*$/\1/p' "$artifact" | sed -n '1p'
+  fi
+}
+
+# Native agents are release sidecars, not files nested inside the skill. Check
+# both complete sets before changing an existing installation so a damaged
+# archive cannot leave either harness half-updated.
+validate_native_agents() {
+  harness="$1"
+  source_dir="$2"
+  extension="$3"
+  counterpart_dir="$4"
+  counterpart_extension="$5"
+  found=false
+
+  if [ ! -d "$source_dir" ]; then
+    printf 'Native %s agent distribution not found under %s\n' "$harness" "$source_dir" >&2
+    return 1
+  fi
+
+  for artifact in "$source_dir"/*; do
+    [ -e "$artifact" ] || [ -L "$artifact" ] || continue
+    artifact_name="$(basename "$artifact")"
+    case "$artifact_name" in
+      effective-flow-*".$extension") ;;
+      *)
+        printf 'Unexpected native %s agent artifact: %s\n' "$harness" "$artifact" >&2
+        return 1
+        ;;
+    esac
+    if [ ! -f "$artifact" ] || [ -L "$artifact" ]; then
+      printf 'Native %s agent artifact must be a regular file: %s\n' "$harness" "$artifact" >&2
+      return 1
+    fi
+
+    worker_name="${artifact_name%."$extension"}"
+    worker_suffix="${worker_name#effective-flow-}"
+    case "$worker_suffix" in
+      ''|*[!a-z0-9-]*|-*|*-)
+        printf 'Malformed native %s agent filename: %s\n' "$harness" "$artifact" >&2
+        return 1
+        ;;
+    esac
+    declared_name="$(agent_name_from_artifact "$artifact" "$harness")"
+    if [ "$declared_name" != "$worker_name" ]; then
+      printf 'Native %s agent name does not match its filename: %s\n' "$harness" "$artifact" >&2
+      return 1
+    fi
+    counterpart="$counterpart_dir/$worker_name.$counterpart_extension"
+    if [ ! -f "$counterpart" ] || [ -L "$counterpart" ]; then
+      printf 'Native %s agent has no matching sidecar: %s\n' "$harness" "$counterpart" >&2
+      return 1
+    fi
+    found=true
+  done
+
+  if [ "$found" != true ]; then
+    printf 'Native %s agent distribution contains no effective-flow agents: %s\n' "$harness" "$source_dir" >&2
+    return 1
+  fi
+}
+
+validate_native_distribution() {
+  if [ ! -d "$DIST_ROOT/claude/effective-flow" ] || [ ! -d "$DIST_ROOT/codex/effective-flow" ]; then
+    printf 'Distribution not found under %s\n' "$DIST_ROOT" >&2
+    return 1
+  fi
+  validate_native_agents \
+    claude "$DIST_ROOT/claude/agents" md "$DIST_ROOT/codex/agents" toml || return 1
+  validate_native_agents \
+    codex "$DIST_ROOT/codex/agents" toml "$DIST_ROOT/claude/agents" md || return 1
+}
+
+validate_agent_install_target() {
+  source_dir="$1"
+  dest_dir="$2"
+  manifest="$3"
+  extension="$4"
+
+  if { [ -e "$dest_dir" ] || [ -L "$dest_dir" ]; } && [ ! -d "$dest_dir" ]; then
+    printf 'Native agent destination must be a directory: %s\n' "$dest_dir" >&2
+    return 1
+  fi
+  if [ -d "$manifest" ]; then
+    printf 'Agent ownership manifest must not be a directory: %s\n' "$manifest" >&2
+    return 1
+  fi
+  for agent in "$source_dir"/effective-flow-*".$extension"; do
+    destination="$dest_dir/$(basename "$agent")"
+    if [ -d "$destination" ] && [ ! -L "$destination" ]; then
+      printf 'Cannot replace agent directory with a file: %s\n' "$destination" >&2
+      return 1
     fi
   done
 }
 
-# Remove a retired install (skill directory or prefixed agents/skills) left by an
-# earlier name so a stale `/firmo` or `/sf-*` skill cannot linger beside the new
-# `/effective-flow`. Only ever removes the given legacy names, never
-# `effective-flow` itself.
-cleanup_retired_dir_entries() {
+is_owned_agent_name() {
+  candidate="$1"
+  extension="$2"
+  case "$candidate" in
+    */*|.|..|'') return 1 ;;
+    effective-flow-*".$extension")
+      worker_name="${candidate%."$extension"}"
+      worker_suffix="${worker_name#effective-flow-}"
+      case "$worker_suffix" in
+        ''|*[!a-z0-9-]*|-*|*-) return 1 ;;
+        *) return 0 ;;
+      esac
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+remove_recorded_agents() {
+  dest_dir="$1"
+  manifest="$2"
+  extension="$3"
+  [ -f "$manifest" ] || return 0
+
+  while IFS= read -r owned_name || [ -n "$owned_name" ]; do
+    is_owned_agent_name "$owned_name" "$extension" || continue
+    owned_path="$dest_dir/$owned_name"
+    # A manifest only owns files and links. Never turn a corrupt manifest into
+    # recursive directory deletion.
+    if [ ! -d "$owned_path" ] || [ -L "$owned_path" ]; then
+      rm -f "$owned_path" || return 1
+    fi
+  done < "$manifest"
+}
+
+# Releases before ownership manifests removed all effective-flow-* agents on
+# every install. Migrate only the exact worker names those releases shipped, and
+# only when no manifest exists yet. This catches stale agents after a worker was
+# removed without claiming similarly named foreign files.
+remove_pre_manifest_agents() {
+  dest_dir="$1"
+  manifest="$2"
+  extension="$3"
+  [ -e "$manifest" ] || [ -L "$manifest" ] || {
+    for worker in $EFFECTIVE_FLOW_OWNED_WORKERS; do
+      owned_path="$dest_dir/effective-flow-$worker.$extension"
+      if [ ! -d "$owned_path" ] || [ -L "$owned_path" ]; then
+        rm -f "$owned_path" || return 1
+      fi
+    done
+  }
+  return 0
+}
+
+install_native_agents() {
+  source_dir="$1"
+  dest_dir="$2"
+  manifest="$3"
+  extension="$4"
+
+  mkdir -p "$dest_dir" || return 1
+  remove_pre_manifest_agents "$dest_dir" "$manifest" "$extension" || return 1
+  remove_recorded_agents "$dest_dir" "$manifest" "$extension" || return 1
+  manifest_tmp="$manifest.tmp.$$"
+  : > "$manifest_tmp" || return 1
+
+  for agent in "$source_dir"/effective-flow-*".$extension"; do
+    agent_name="$(basename "$agent")"
+    destination="$dest_dir/$agent_name"
+    if [ -d "$destination" ] && [ ! -L "$destination" ]; then
+      rm -f "$manifest_tmp"
+      printf 'Cannot replace agent directory with a file: %s\n' "$destination" >&2
+      return 1
+    fi
+    if ! rm -f "$destination"; then
+      rm -f "$manifest_tmp"
+      return 1
+    fi
+    if [ "$INSTALL_MODE" = link ]; then
+      if ! ln -s "$agent" "$destination"; then
+        rm -f "$manifest_tmp"
+        return 1
+      fi
+    else
+      if ! cp "$agent" "$destination"; then
+        rm -f "$manifest_tmp"
+        return 1
+      fi
+    fi
+    if ! printf '%s\n' "$agent_name" >> "$manifest_tmp"; then
+      rm -f "$manifest_tmp"
+      return 1
+    fi
+  done
+
+  if ! mv "$manifest_tmp" "$manifest"; then
+    rm -f "$manifest_tmp"
+    return 1
+  fi
+}
+
+# Remove only retired skill names that an earlier installer actually created.
+cleanup_retired_skill_entries() {
   dir="$1"
-  prefix="$2"
   [ -d "$dir" ] || return 0
-  for old in "$dir/$prefix"*; do
+  for legacy_name in firmo $LEGACY_SF_SKILLS; do
+    old="$dir/$legacy_name"
     [ -e "$old" ] || [ -L "$old" ] || continue
     rm -rf "$old"
+  done
+}
+
+cleanup_retired_agent_entries() {
+  dir="$1"
+  extension="$2"
+  [ -d "$dir" ] || return 0
+  for worker in $EFFECTIVE_FLOW_OWNED_WORKERS; do
+    for legacy_prefix in firmo sf; do
+      old="$dir/$legacy_prefix-$worker.$extension"
+      [ -e "$old" ] || [ -L "$old" ] || continue
+      rm -f "$old"
+    done
   done
 }
 
@@ -76,38 +280,37 @@ effective_flow_report() {
   if [ "$INSTALL_MODE" = link ]; then
     printf 'Linked effective-flow skill to:\n'
     printf '  Claude Code: %s/effective-flow (+ agents in %s/effective-flow-*.md)\n' "$CLAUDE_SKILLS" "$CLAUDE_AGENTS"
-    printf '  Codex:       %s/effective-flow -> %s\n' "$CODEX_SKILLS" "$DIST_ROOT/codex/effective-flow"
+    printf '  Codex:       %s/effective-flow -> %s (+ agents in %s/effective-flow-*.toml)\n' "$CODEX_SKILLS" "$DIST_ROOT/codex/effective-flow" "$CODEX_AGENTS"
   else
     printf 'Deployed effective-flow skill to:\n'
     printf '  Claude Code: %s/effective-flow (+ agents in %s/effective-flow-*.md)\n' "$CLAUDE_SKILLS" "$CLAUDE_AGENTS"
-    printf '  Codex:       %s/effective-flow\n' "$CODEX_SKILLS"
+    printf '  Codex:       %s/effective-flow (+ agents in %s/effective-flow-*.toml)\n' "$CODEX_SKILLS" "$CODEX_AGENTS"
+    # Backticks are intentional literal CLI notation in this user-facing text.
+    # shellcheck disable=SC2016
     printf 'Alternatively install as a standard agent skill via `npx skills`, or link it with dalo.\n'
   fi
 }
 
 effective_flow_deploy_from_dist() {
-  if [ ! -d "$DIST_ROOT/claude/effective-flow" ] || [ ! -d "$DIST_ROOT/codex/effective-flow" ]; then
-    printf 'Distribution not found under %s\n' "$DIST_ROOT" >&2
-    exit 1
-  fi
+  validate_native_distribution || return 1
+  validate_agent_install_target \
+    "$DIST_ROOT/claude/agents" "$CLAUDE_AGENTS" "$CLAUDE_AGENT_MANIFEST" md || return 1
+  validate_agent_install_target \
+    "$DIST_ROOT/codex/agents" "$CODEX_AGENTS" "$CODEX_AGENT_MANIFEST" toml || return 1
 
-  install_skill "$DIST_ROOT/claude/effective-flow" "$CLAUDE_SKILLS"
-  install_skill "$DIST_ROOT/codex/effective-flow" "$CODEX_SKILLS"
-  install_claude_agents
+  install_skill "$DIST_ROOT/claude/effective-flow" "$CLAUDE_SKILLS" || return 1
+  install_skill "$DIST_ROOT/codex/effective-flow" "$CODEX_SKILLS" || return 1
+  install_native_agents \
+    "$DIST_ROOT/claude/agents" "$CLAUDE_AGENTS" "$CLAUDE_AGENT_MANIFEST" md || return 1
+  install_native_agents \
+    "$DIST_ROOT/codex/agents" "$CODEX_AGENTS" "$CODEX_AGENT_MANIFEST" toml || return 1
 
   # --- Cleanup retired firmo-/sf-* installs and the old Claude marketplace ---
-  for legacy in firmo sf-; do
-    cleanup_retired_dir_entries "$CLAUDE_SKILLS" "$legacy"
-    cleanup_retired_dir_entries "$CODEX_SKILLS" "$legacy"
-    cleanup_retired_dir_entries "$CODEX_HOME/skills" "$legacy"
-    cleanup_retired_dir_entries "$CLAUDE_AGENTS" "$legacy"
-  done
-  if [ -d "$CODEX_HOME/agents" ]; then
-    for old_agent in "$CODEX_HOME/agents"/firmo-*.toml "$CODEX_HOME/agents"/sf-*.toml; do
-      [ -e "$old_agent" ] || [ -L "$old_agent" ] || continue
-      rm -f "$old_agent"
-    done
-  fi
+  cleanup_retired_skill_entries "$CLAUDE_SKILLS"
+  cleanup_retired_skill_entries "$CODEX_SKILLS"
+  cleanup_retired_skill_entries "$CODEX_HOME/skills"
+  cleanup_retired_agent_entries "$CLAUDE_AGENTS" md
+  cleanup_retired_agent_entries "$CODEX_AGENTS" toml
   rm -rf "$CLAUDE_HOME/plugins/marketplaces/sf-claude-plugin"
 
   effective_flow_report

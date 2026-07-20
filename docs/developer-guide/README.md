@@ -5,7 +5,7 @@ software architects who want to assess how Effective Flow is built and whether i
 technically.
 
 Effective Flow is a **source-to-dist build**: `build.mjs` transforms the Markdown sources under
-`src/` into two harness-specific skill directories under `dist/` (Claude Code and Codex). There
+`src/` into native Claude/Codex targets and one portable manager target under `dist/`. There
 is no runtime application – you edit `src/`, never `dist/`.
 
 ## Reading order
