@@ -211,6 +211,77 @@ test('setup repairs first, validates the target state, then guards and writes it
   );
 });
 
+test('setup carries the locator-selected transitional source through migration', () => {
+  const setup = readSource('tools', 'setup.md');
+
+  assert.match(
+    setup,
+    /capture the locator's exact verified absolute transitional JSON handle[\s\S]*under `RUNTIME_STATE_ROOT` as `<source-handle>`/,
+  );
+  assert.match(
+    setup,
+    /never replace it with or inspect a same-named[\s\S]*fallback under `EXECUTION_ROOT`/,
+  );
+  assert.match(
+    setup,
+    /For Git commands only, derive `<source-path>`[\s\S]*identifies the same file/,
+  );
+  assert.match(
+    setup,
+    /If an ADR resolves[\s\S]*authoritative[\s\S]*neither transitional JSON file is a migration source/,
+  );
+  assert.match(
+    setup,
+    /When both JSON files exist[\s\S]*`<RUNTIME_STATE_ROOT>\/\.effective-flow\/config\.json` wins[\s\S]*`<RUNTIME_STATE_ROOT>\/\.firmo\/config\.json` untouched/,
+  );
+  assert.match(
+    setup,
+    /If Step 2 selected a transitional JSON source[\s\S]*require the freshly[\s\S]*resolved transitional handle to equal the retained `<source-handle>`[\s\S]*revalidate and re-read that exact absolute handle[\s\S]*do not resolve a[\s\S]*fallback under `EXECUTION_ROOT`/,
+  );
+  assert.match(
+    setup,
+    /If the fresh locator selects a different transitional handle[\s\S]*restart from Step 2[\s\S]*`<RUNTIME_STATE_ROOT>\/\.firmo\/config\.json` was retained[\s\S]*`<RUNTIME_STATE_ROOT>\/\.effective-flow\/config\.json` appeared[\s\S]*higher-precedence Effective[\s\S]*Flow source must be read and presented before any write/,
+  );
+  assert.match(
+    setup,
+    /If Step 2 found no source and the fresh locator still finds none[\s\S]*normal fresh[\s\S]*no `<source-handle>` or `<source-path>` exists/,
+  );
+  assert.match(
+    setup,
+    /If Step 2 found no source but the fresh locator now finds a transitional JSON source[\s\S]*return to Step 2[\s\S]*instead of writing defaults over it/,
+  );
+  assert.match(setup, /git ls-files -- <source-path>/);
+  assert.match(
+    setup,
+    /If that required untracking command fails[\s\S]*do not write `configMigration\.adr`[\s\S]*restore the ADR and convention-marker file/,
+  );
+  assert.match(
+    setup,
+    /If any check blocks[\s\S]*apply the same safe ADR\/marker rollback[\s\S]*do[\s\S]*not write the marker/,
+  );
+  assert.match(
+    setup,
+    /deep-merge\s+only `configMigration\.adr`[\s\S]*sibling `configMigration` state/,
+  );
+  assert.match(
+    setup,
+    /identify the exact `<source-handle>` selected by the locator[\s\S]*For an incomplete[\s\S]*do not call the source migrated[\s\S]*Never name the unselected fallback as processed/,
+  );
+
+  const completionCheck = setup.indexOf(
+    'Before Step 4 in a migration case, perform a read-only idempotency check',
+  );
+  const adrWrite = setup.indexOf('4. **Write the project setup ADR.**');
+  const untracking = setup.indexOf('git rm --cached <source-path>');
+  assert.ok(completionCheck !== -1, 'setup must check completed migration state');
+  assert.ok(completionCheck < adrWrite, 'completion check must precede the ADR write');
+  assert.ok(completionCheck < untracking, 'completion check must precede untracking');
+  assert.match(
+    setup,
+    /If the completion marker is already set[\s\S]*stop before Step 4 and before[\s\S]*any Git action[\s\S]*do not migrate again/,
+  );
+});
+
 test('cleanup inventories .gitignore remnants but leaves repair exclusively to setup', () => {
   const cleanup = readSource('tools', 'cleanup.md');
 
