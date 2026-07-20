@@ -14,6 +14,10 @@ Markdown table with minimal context. The `.effective-flow/` directory contains o
 such as `memory.json`, `cache.json`, `review/`, and `.worktrees/`; the entire directory is
 gitignored with one `.effective-flow/` line.
 
+This table is a narrow, explicit exception to the usual separation of ADR rationale from exact
+configuration values: the project-setup ADR is itself the owning tracked configuration artifact.
+Other ADRs remain decision records and must not become configuration stores.
+
 The canonical convention-file locator is:
 
 ```md
@@ -94,7 +98,9 @@ Outside setup, no migration occurs. The exact legacy procedure and idempotency c
 ## Living ADR model
 
 Effective Flow ADRs are mutable, numberless, slug-named documents whose current file is the truth.
-The `decision-records` skill remains the domain owner for ADR craft and follows a repository's
-declared convention. For Effective Flow-generated ADRs, the living slug model in
-[`src/shared/adr-convention.md`](../../src/shared/adr-convention.md) is that declared convention,
-not a competing second playbook.
+The authoritative central
+[`decision-records`](https://github.com/sebastian-software/skills.sebastian-software.com/tree/main/skills/decision-records) skill follows
+a repository's declared convention. For Effective Flow-generated ADRs, the living lifecycle and
+minimal fallback in [`src/shared/adr-convention.md`](../../src/shared/adr-convention.md) are that
+declared convention, not a competing second playbook. Consult the central skill for ADR
+worthiness, lifecycle, and authoring; this guide does not duplicate that playbook.

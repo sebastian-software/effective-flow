@@ -126,6 +126,15 @@ The build aborts with an error message if any of these guards is violated:
   transforms, so the exact mechanically staged default-branch payload is checked rather than
   inferred from source files. Unit tests cover allowlist boundaries and diagnostics;
   `pnpm test:distribution` verifies the staged-payload rejection path.
+- **ADR ownership-contract guard (#167):** `AGENTS.md`,
+  `docs/developer-guide/configuration.md`, `docs/developer-guide/skill-ownership.md`, and
+  `src/shared/adr-convention.md` are scanned for stale current claims that Effective Flow
+  deliberately or intentionally diverges, deviates, or conflicts with `decision-records`, or
+  that the central skill requires immutable, numbered ADRs. An explicitly historical paragraph is accepted only
+  when it also marks that premise as outdated or no longer a conflict. The guard intentionally
+  excludes `docs/plan/archive/` and other historical records. The pure detector,
+  `findStaleAdrContractClaims`, lives in `build-lib.mjs` and is covered in
+  `test/build-lib.test.mjs`.
 
 - **Include-target guard:** Every ` ```include ` fence must point to an existing
   `src/shared/<name>.md`.
