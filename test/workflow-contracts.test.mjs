@@ -149,3 +149,58 @@ test('issue planning updates one comment fail-closed and apply rejects blocking 
   );
   assert.match(applyIssues, /never route it to\n\s*implementation/);
 });
+
+test('release exposes verified delivery state before starting the catalog job', () => {
+  const release = source('.github/workflows/release.yml');
+
+  assert.match(
+    release,
+    /outputs:\n\s+release_created: \$\{\{ steps\.release\.outputs\.release_created \}\}\n\s+tag_name: \$\{\{ steps\.release\.outputs\.tag_name \}\}\n\s+delivery_commit: \$\{\{ steps\.deliver\.outputs\.commit \}\}/,
+  );
+  ordered(
+    release,
+    'name: Release Please',
+    'name: Deliver portable skill, consumer docs, and trusted automation to main',
+    'name: Verify delivered commit',
+    'update-team-catalog:',
+    'needs: release',
+    "needs.release.outputs.release_created == 'true'",
+    'name: Update Effective Flow team-catalog pin',
+  );
+  assert.match(
+    release,
+    /if: \$\{\{ needs\.release\.result == 'success' && needs\.release\.outputs\.release_created == 'true' \}\}/,
+  );
+  assert.match(release, /--delivery-commit "\$\{\{ needs\.release\.outputs\.delivery_commit \}\}"/);
+  assert.match(release, /--release-tag "\$\{\{ needs\.release\.outputs\.tag_name \}\}"/);
+});
+
+test('catalog job uses scoped app tokens and a checksum-pinned Dalo binary', () => {
+  const release = source('.github/workflows/release.yml');
+
+  assert.match(release, /actions\/create-github-app-token@v3/g);
+  assert.equal(
+    release.match(/client-id: \$\{\{ vars\.DALO_CATALOG_APP_CLIENT_ID \}\}/g)?.length,
+    2,
+  );
+  assert.doesNotMatch(release, /\bapp-id:/);
+  assert.equal(
+    release.match(/private-key: \$\{\{ secrets\.DALO_CATALOG_APP_PRIVATE_KEY \}\}/g)?.length,
+    2,
+  );
+  assert.match(release, /repositories: effective-flow\n\s+permission-contents: read/);
+  assert.match(
+    release,
+    /repositories: skills\.sebastian-software\.com\n\s+permission-contents: write\n\s+permission-pull-requests: write/,
+  );
+  assert.match(
+    release,
+    /repository: sebastian-software\/skills\.sebastian-software\.com[\s\S]*?persist-credentials: false[\s\S]*?path: team-catalog/,
+  );
+  assert.match(release, /dalo-0\.9\.2-x86_64-unknown-linux-musl/);
+  assert.match(release, /7f7b7b4948a5cd156948bb0a8ceaa4889c09cd6d53397c07370c663bac1343ef/);
+  ordered(release, 'curl --fail', 'sha256sum --check --strict', 'tar -xzf', 'install -m 0755');
+  assert.match(release, /DALO_SOURCE_TOKEN: \$\{\{ steps\.source-token\.outputs\.token \}\}/);
+  assert.match(release, /GH_TOKEN: \$\{\{ steps\.target-token\.outputs\.token \}\}/);
+  assert.match(release, /node scripts\/update-team-catalog\.mjs/);
+});

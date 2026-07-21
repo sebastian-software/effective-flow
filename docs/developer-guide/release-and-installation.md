@@ -26,6 +26,39 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
    `effective-flow/` skill, `README.md`, `docs/user-guide/`, and the two trusted issue-closing
    automation files as a fresh commit to `main` (no force push). The workflow fetches that exact
    commit and verifies its layout.
+7. After the delivered commit is verified, a separate catalog job updates the `effective-flow`
+   entry in the team catalog repository through Dalo. A failure in this downstream job marks the
+   release workflow as failed, but does not roll back the already published release, archive, or
+   delivery commit.
+
+### Automatic team-catalog update
+
+The catalog job installs the `x86_64-unknown-linux-musl` archive of Dalo 0.9.2 and verifies its
+pinned SHA-256 digest before running it. It first executes
+`dalo --dry-run --json team catalog update effective-flow --from main`. The dry-run candidate must
+equal the delivery commit verified by the release job; a mismatch fails closed before the
+catalog manifest is changed. The real update may change only `dalo.toml`.
+
+Catalog delivery is handled by `scripts/update-team-catalog.mjs`. A changed pin is committed to a
+deterministic release branch and proposed in exactly one pull request against `main`. Re-running
+the same release is idempotent: an unchanged pin and an already matching open pull request are
+successful no-ops. Dalo errors, blocking audit results, unexpected files, and contradictory
+branch or pull-request state fail the job.
+
+Authentication uses one GitHub App installed only on `effective-flow` and
+`skills.sebastian-software.com`. The release repository must define the
+`DALO_CATALOG_APP_CLIENT_ID` repository variable and the `DALO_CATALOG_APP_PRIVATE_KEY` secret.
+The workflow creates two short-lived installation tokens:
+
+- a source token restricted to `effective-flow` with `Contents: read`, used only for Dalo's
+  private source clone;
+- a target token restricted to `skills.sebastian-software.com` with `Contents: write` and
+  `Pull requests: write`, used for checkout, branch push, and pull-request reconciliation.
+
+Checkout does not persist either token, and Dalo receives source authentication through
+process-local Git configuration rather than a credential-bearing URL. The target repository must
+already contain a reviewed `dalo.toml` declaration whose catalog ID is `effective-flow`; this
+workflow deliberately does not create or restructure that declaration.
 
 ## Source and delivery branch
 
