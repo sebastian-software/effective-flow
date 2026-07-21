@@ -1076,6 +1076,9 @@ const EXPLICIT_GOAL_GATE_TOOLS = [
   'apply-issues',
 ];
 
+const COPY_READY_GOAL_PROMPT_CONTRACT =
+  /Whenever a `\/goal` prompt is output for the user to paste.*put the fully resolved single-line command as the sole content of a dedicated fenced `text` code block.*Keep the cause, explanation and paste prompt outside the fence/s;
+
 const sourceToolsUrl = new URL('../src/tools/', import.meta.url);
 const sourceAgentsUrl = new URL('../src/agents/', import.meta.url);
 const sourceSharedUrl = new URL('../src/shared/', import.meta.url);
@@ -1119,6 +1122,7 @@ test('all explicit goal gates render the complete harness-specific goal-start co
   for (const tool of EXPLICIT_GOAL_GATE_TOOLS) {
     const codex = renderSourceTool(tool, 'codex');
     assert.equal(codex.match(/`create_goal`/g)?.length, 1, `${tool}: Codex create_goal count`);
+    assert.match(codex, COPY_READY_GOAL_PROMPT_CONTRACT, `${tool}: Codex prompt presentation`);
     for (const clause of codexClauses) {
       assert.match(codex, clause, `${tool}: Codex clause ${clause}`);
     }
@@ -1126,6 +1130,11 @@ test('all explicit goal gates render the complete harness-specific goal-start co
 
     for (const harness of ['claude', 'portable']) {
       const rendered = renderSourceTool(tool, harness);
+      assert.match(
+        rendered,
+        COPY_READY_GOAL_PROMPT_CONTRACT,
+        `${tool}: ${harness} prompt presentation`,
+      );
       assert.equal(
         rendered.match(promptHandoff)?.length,
         1,
@@ -1144,6 +1153,7 @@ test('apply-review keeps its optional goal prompt without gaining a Codex direct
   assert.match(rendered, /#### Optional `\/goal` string/);
   assert.match(rendered, /output the optional `\/goal` string/);
   assert.match(rendered, /instructs the user to run through the remaining phases/);
+  assert.match(rendered, COPY_READY_GOAL_PROMPT_CONTRACT);
   assert.doesNotMatch(rendered, /\{\{GOAL_START\}\}/);
 });
 
