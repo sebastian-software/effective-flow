@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.49.0...effective-flow-v1.50.0) (2026-07-21)
+
+
+### Features
+
+* automate team catalog updates after releases ([#234](https://github.com/sebastian-software/effective-flow/issues/234)) ([e1e80ee](https://github.com/sebastian-software/effective-flow/commit/e1e80ee0bf028ef978fedd19c40f0076f4312132))
+
 ## [1.49.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.48.0...effective-flow-v1.49.0) (2026-07-21)
 
 
