@@ -111,7 +111,10 @@ dependency-version-policy
 
 ## Rules
 
-- test names, test code, and assertions in English by default
+- keep test code, identifiers, and machine contracts in English; write human-readable test names,
+  descriptions, and comments in the concrete `language.source` value supplied by the
+  orchestrator, preserving existing test-file prose unless translation was requested; only a
+  direct invocation resolves the shared language rule itself
 - for JS/TS, prefer package.json scripts; for Rust, use the repository's Cargo command; for every other ecosystem, use the established repository-native command
 - every test needs a clear name
 - tests must run independently

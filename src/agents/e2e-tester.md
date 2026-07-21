@@ -87,7 +87,10 @@ dependency-version-policy
 
 ## Rules
 
-- test code, test names, and technical assertions in English by default
+- keep test code, identifiers, and machine-facing assertions in English; write human-readable
+  test names, descriptions, and comments in the concrete `language.source` value supplied by the
+  orchestrator, preserving existing prose unless translation was requested; only a direct
+  invocation resolves the shared language rule itself
 - prefer package.json scripts
 - no hard-coded wait times
 - every test runs independently

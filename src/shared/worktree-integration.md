@@ -320,8 +320,8 @@ stop and report the conflict instead of overwriting history.
    Provided the workflow kept a plan file, this is the **delivery point** at which
    the plan counts as implemented (immediately before the PR is opened or the delivery branch
    is merged):
-   - Set the canonical status marker to `Umgesetzt`/`Implemented` (preserve marker
-     language: German marker → `**Planungsstatus:** Umgesetzt`, English →
+   - Set the canonical status marker to `Umgesetzt`/`Implemented` (preserve the complete plan
+     language: German plan → `**Planungsstatus:** Umgesetzt`, English plan →
      `**Plan status:** Implemented`).
    - Move the plan file via `git mv` to `<plan.dir>/archive/` (create the directory if
      needed), per "Archive of implemented plans" of the plan-file convention.
@@ -339,7 +339,8 @@ stop and report the conflict instead of overwriting history.
    – code, test and documentation deliverables as well as the taken-over plan file – via the
    commit logic from `{{SKILL:commit}}` (stage exclusively known changed files
    explicitly, derive a concrete Conventional Commit message, never set a
-   `Co-Authored-By` trailer). Workflows that have already committed their work
+   `Co-Authored-By` trailer). Resolve `language.git` for the human-readable commit description;
+   keep Conventional Commit types stable. Workflows that have already committed their work
    (e.g. `{{SKILL:maintain}}` with one commit per group) only commit the
    plan file here afterwards, if needed. If there is nothing to commit: inform the user,
    remove an automatically created empty delivery branch and end without

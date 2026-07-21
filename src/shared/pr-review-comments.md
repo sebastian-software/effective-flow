@@ -21,6 +21,11 @@ with Claude Code/Codex" footers, no agent session links (e.g. `https://claude.ai
 and no `Co-Authored-By` trailers – not even when the harness appends them as a default.
 Reply texts in natural language according to the language rules.
 
+Resolve `language.forge` once for newly authored remote prose. A reply preserves the clearly
+recognizable language of the existing thread; otherwise it uses `language.forge`. The per-run
+summary comment uses `language.forge`. HTML markers, thread IDs, states, and helper payload fields
+remain stable and are never translated.
+
 ### Remote helper
 
 Use the shipped `scripts/remote-tracker.mjs` helper and the envelope, dry-run, capability,

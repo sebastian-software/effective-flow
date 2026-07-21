@@ -13,7 +13,8 @@ corresponding settings affect everyday use.
 ## Project-setup ADR
 
 The configuration is a mutable, numberless Markdown ADR whose current contents are the tracked
-truth. A new ADR uses this structure:
+truth. A new ADR uses the configured technical-documentation language. This English example and
+the equivalent German envelope use the same stable keys and encoded values:
 
 ```md
 # Effective Flow project setup
@@ -35,6 +36,29 @@ runtime directory and completely gitignored.
 | worktree.enabled | true        |
 | tracker.mode     | local       |
 | skills.exclude   | (empty)     |
+```
+
+The same configuration in a German envelope starts like this:
+
+```md
+# Effective-Flow-Projektsetup
+
+## Status
+
+Aktiv
+
+## Kontext
+
+Diese ADR enthält die versionierte Effective-Flow-Konfiguration dieses Projekts.
+
+## Konfiguration
+
+| Schlüssel        | Wert    |
+| ---------------- | ------- |
+| review.profile   | focused |
+| worktree.enabled | true    |
+| tracker.mode     | local   |
+| skills.exclude   | (empty) |
 ```
 
 The file name is a kebab-case slug without a number. Effective Flow updates the ADR in place when
@@ -87,10 +111,13 @@ A missing row and an explicit `null` have different meanings. A missing row leav
 so the source tool's default applies. A present row whose value is `null` explicitly means “ask at
 run time” for keys that accept it.
 
-Existing ADRs with the former German `## Konfiguration`, `| Schlüssel | Wert |`, `(leer)`,
-`Aktiv`, or `Abgelöst` forms remain readable. `/effective-flow setup` normalizes them to the
-English form on its next write. These tokens are backward compatibility, not an alternative
-canonical encoding.
+The bootstrap reader accepts both canonical envelopes: English `## Configuration`,
+`| Key | Value |`, `Active`, and `Superseded`; and German `## Konfiguration`,
+`| Schlüssel | Wert |`, `Aktiv`, and `Abgelöst`. Config keys and encoded values—including
+`(empty)`—remain identical and English in either form. The former translated token `(leer)`
+remains readable only for backward compatibility. Setup creates a new ADR in
+`language.documentation.technical`; a normal update preserves an existing ADR's envelope and
+prose language rather than translating it as a side effect.
 
 ## Complete table example
 
@@ -112,7 +139,13 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | applyReview.stashPolicy                  | interactive                 |
 | applyReview.worktree.baseDir             | .effective-flow/.worktrees  |
 | applyReview.worktree.setup               | auto                        |
-| plan.markerLanguage                      | en                          |
+| language.project                         | en                          |
+| language.source                          | en                          |
+| language.documentation.user              | en                          |
+| language.documentation.technical         | en                          |
+| language.workflow                        | en                          |
+| language.forge                           | en                          |
+| language.git                             | en                          |
 | plan.dir                                 | docs/plan                   |
 | delivery.baseBranch                      | origin/main                 |
 | delivery.branchPrefix                    | effective-flow              |
@@ -130,9 +163,44 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | skills.tools.docs.exclude                | humanizer                   |
 ```
 
-The `plan.markerLanguage` value shown here is an example. When that row is missing, Effective Flow
-detects the language from existing plan markers and otherwise uses English. Omit optional skill
-override rows when no override is needed.
+The seven explicit language rows illustrate every override. In a typical project, only
+`language.project` is needed; omit an override to inherit the project language. Omit optional
+skill override rows when no override is needed.
+
+## Block `language`
+
+Controls the language of human-readable content created or edited by Effective Flow. Every value
+is `de` or `en`; `null` has no special meaning for these keys.
+
+| Key                       | Scope                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------- |
+| `project`                 | Default for every human-readable surface without an override                                |
+| `source`                  | Comments, test descriptions, and in-code documentation                                      |
+| `documentation.user`      | Root README, marketing entry points, and user documentation                                 |
+| `documentation.technical` | Developer and API documentation, operations documentation, runbooks, and ADRs               |
+| `workflow`                | Plans, plan reviews, local review reports, investigations, and other local workflow prose   |
+| `forge`                   | Issues, PR bodies, issue/PR comments, remote reviews, and review-thread replies             |
+| `git`                     | Commit descriptions, Conventional-Commit PR titles, changelog prose, and release-note prose |
+
+For a new artifact, the surface-specific override wins, then `language.project`, then the
+built-in default `en`. An explicit user instruction for that artifact wins over configuration.
+When editing an existing artifact, its recognizable language is preserved unless translation is
+requested. Incoming third-party text and verbatim quotations are not translated automatically.
+Interactive, non-persisted replies follow the current user's language; the project language is
+only a fallback when the conversation language is unclear.
+
+A local review therefore follows `language.workflow`, while the same review published as issues
+follows `language.forge`. PR bodies and comments follow `language.forge`, but a
+Conventional-Commit PR title follows `language.git` because squash merges may turn it into the
+commit subject. Commit descriptions and generated changelog/release prose also follow
+`language.git`; Conventional-Commit types remain English.
+
+Stable machine-facing tokens are never localized: config keys and encoded values, labels, HTML
+idempotency markers, finding IDs, action values, paths, Conventional-Commit types, branch slugs,
+schemas, and runtime/wisdom headings. `language.source` does not rename identifiers, public API
+names, or data formats. Product UI, CLI, and error-message localization remains governed by the
+target project's i18n policy. English content uses `en-US` typography and German content uses
+`de-DE`; this feature does not add independent locale selection.
 
 ## Block `review`
 
@@ -166,10 +234,13 @@ location of the overall workflow. See [Worktree and delivery](./worktree-and-del
 Controls [`/effective-flow plan`](./tools-understand.md) and every tool that reads or writes plan
 files.
 
-| Key              | Values      | Default                                 | Meaning                                                             |
-| ---------------- | ----------- | --------------------------------------- | ------------------------------------------------------------------- |
-| `markerLanguage` | `de` / `en` | detected from existing plans, else `en` | Language of the status marker in the plan header, not the plan body |
-| `dir`            | String      | `docs/plan`                             | Directory in which plan files live (`<plan.dir>`)                   |
+| Key   | Values | Default     | Meaning                                           |
+| ----- | ------ | ----------- | ------------------------------------------------- |
+| `dir` | String | `docs/plan` | Directory in which plan files live (`<plan.dir>`) |
+
+Plan headers, sections, review content, open points, and the status marker all use one artifact
+language. New plans follow `language.workflow`; existing German and English plans retain their
+recognizable language when read, edited, or completed.
 
 ## Block `delivery`
 
@@ -229,23 +300,26 @@ uninstalled included skill is ignored.
 `/effective-flow setup` always starts from this single conservative base. Existing differing
 values are retained unless the user explicitly confirms a change.
 
-| Key                                 | Value                                   |
-| ----------------------------------- | --------------------------------------- |
-| `review.profile`                    | `focused`                               |
-| `review.autoConfirmScope`           | `false`                                 |
-| `review.designDecisionSources`      | `standard`                              |
-| `review.validation`                 | `full`                                  |
-| `applyReview.defaultCommitStrategy` | `null` (ask at run time)                |
-| `applyReview.finalValidation`       | `full`                                  |
-| `applyReview.stashPolicy`           | `interactive`                           |
-| `applyReview.worktree.baseDir`      | `.effective-flow/.worktrees`            |
-| `applyReview.worktree.setup`        | `auto`                                  |
-| `worktree.enabled`                  | `true`                                  |
-| `delivery.completion`               | `merge`                                 |
-| `delivery.baseBranch`               | `origin/main`                           |
-| `tracker.mode`                      | `local`                                 |
-| `plan.dir`                          | `docs/plan`                             |
-| `plan.markerLanguage`               | detected from existing plans, else `en` |
+| Key                                 | Value                        |
+| ----------------------------------- | ---------------------------- |
+| `review.profile`                    | `focused`                    |
+| `review.autoConfirmScope`           | `false`                      |
+| `review.designDecisionSources`      | `standard`                   |
+| `review.validation`                 | `full`                       |
+| `applyReview.defaultCommitStrategy` | `null` (ask at run time)     |
+| `applyReview.finalValidation`       | `full`                       |
+| `applyReview.stashPolicy`           | `interactive`                |
+| `applyReview.worktree.baseDir`      | `.effective-flow/.worktrees` |
+| `applyReview.worktree.setup`        | `auto`                       |
+| `language.project`                  | `en`                         |
+| `worktree.enabled`                  | `true`                       |
+| `delivery.completion`               | `merge`                      |
+| `delivery.baseBranch`               | `origin/main`                |
+| `tracker.mode`                      | `local`                      |
+| `plan.dir`                          | `docs/plan`                  |
+
+Language overrides are absent in the safe base and therefore inherit `language.project`. If the
+entire `language.*` block is absent, the default remains `en`.
 
 There is no second “fast” preset. A faster solo flow is configured key by key, for example with
 `review.profile: fast`, `review.validation: quick`, and
@@ -270,14 +344,32 @@ It first normalizes `.gitignore` to the single runtime-directory entry:
 ```
 
 The wizard then resolves and rereads any existing source, offers **Express** or **Guided** setup,
-shows every proposed change, and writes only after confirmation. Express combines the safe base
-with existing values. Guided explains the core settings and optionally exposes all advanced
-settings. In both paths, existing values and unknown rows are preserved unless a change is
+shows every proposed change, and writes only after confirmation. Express combines the safe base,
+including `language.project: en`, with existing values. Guided first explains the project
+language, then offers each optional language override with “inherit project language” represented
+by an absent row. Removing an existing override appears in the same before/after diff as any other
+change. In both paths, existing values and unknown rows are preserved unless a change is
 explicitly confirmed.
 
-On write, setup creates or updates the living ADR, writes or corrects the convention-file marker,
-and normalizes backward-compatible German ADR tokens to the canonical English encoding. Ordinary
-config readers do none of these operations.
+On write, setup creates or updates the living ADR and writes or corrects the convention-file
+marker. A new ADR uses `language.documentation.technical`; an existing ADR retains its envelope
+and prose language. Ordinary config readers do none of these operations.
+
+### Migrating `plan.markerLanguage`
+
+`plan.markerLanguage` is no longer an active setting or writer output. For one compatibility
+generation, readers may use a legacy value as the fallback for `language.workflow` only when
+neither a valid workflow override nor a valid project language exists, and they direct the user
+to setup. Setup may still propose the explicit migration whenever `language.workflow` is absent:
+it shows that the old marker setting now controls the complete workflow artifact language,
+proposes `language.workflow: de|en`, and removes the legacy row only in the confirmed write. An
+existing `language.workflow` always wins and is never overwritten.
+
+If neither language settings nor a legacy marker exists, a consistently German or English plan
+collection may temporarily supply the workflow fallback. Plan prose and markers must agree;
+mixed, contradictory, or empty collections provide no signal and fall back to `en` or require
+clarification. Setup reports this inference before persisting it. Existing plans, reports,
+issues, PRs, and documentation are never mass-translated.
 
 ## Migrating a legacy JSON configuration
 

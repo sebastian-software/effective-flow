@@ -112,11 +112,27 @@ The build stamps `<manifest-version> (<git-short-hash>)` into all three routers 
 
 ## Language rules
 
-Unless the user asks otherwise (see `src/shared/language-rules.md`):
+Target projects configure language in the project-setup ADR (see
+`src/shared/language-rules.md`). `language.project` defaults to `en`; optional `de`/`en`
+overrides cover source prose, user and technical documentation, local Effective Flow artifacts,
+Forge content, and Git/release prose. An explicit user request wins, and an existing artifact
+keeps its recognizable language unless translation is requested. This repository currently uses
+English for code-adjacent prose and documentation; existing German artifacts remain valid.
 
-- Code, identifiers, tests, and commit messages are **English**.
-- Documentation and tool instructions (files under `docs/` and this repo's Markdown prose) are **English by default**; German remains a permitted option — continue the existing language of a file you edit, and honour an explicit German choice for a document or plan marker. German is not deprecated: a file already written in German stays valid. (This file, AGENTS.md, is English as a cross-harness agent instruction.)
-- Locale-specific typography of visible prose (quotation marks, dashes, `ß`/umlauts, spacing, number and date formats) is owned by the central [`locale-typography`](https://github.com/sebastian-software/skills.sebastian-software.com/tree/main/skills/locale-typography) skill — the canonical source, `en-US` for English and `de-DE` for German. Effective Flow keeps no second typography guide; see [`docs/developer-guide/skill-ownership.md`](docs/developer-guide/skill-ownership.md) and [`docs/developer-guide/terminology.md`](docs/developer-guide/terminology.md) for the migration glossary.
+Plans and local reviews use `language.workflow`; remote issues, PR bodies, and comments use
+`language.forge`; commit descriptions and Conventional-Commit PR titles use `language.git`.
+Identifiers, public API names, config keys and values, labels, finding IDs, action values, paths,
+Conventional-Commit types, branch slugs, and runtime schemas remain language-stable. Product UI,
+CLI, and error-message localization belongs to the target project's product i18n policy.
+
+Locale-specific typography of visible prose (quotation marks, dashes, `ß`/umlauts, spacing,
+number and date formats) is owned by the central
+[`locale-typography`](https://github.com/sebastian-software/skills.sebastian-software.com/tree/main/skills/locale-typography)
+skill—the canonical source, `en-US` for English and `de-DE` for German. Effective Flow keeps no
+second typography guide; see
+[`docs/developer-guide/skill-ownership.md`](docs/developer-guide/skill-ownership.md) and
+[`docs/developer-guide/terminology.md`](docs/developer-guide/terminology.md) for the migration
+glossary.
 
 ## Commit messages
 
@@ -130,7 +146,7 @@ Never add AI-attribution references to anything published from this repo: no "Ge
 
 The plan directory is configurable via the Effective Flow configuration (the Projektsetup ADR) `plan.dir` (default `docs/plan`).
 
-Plans use an ISO date-slug name `YYYY-MM-DD-<slug>.md` (creation date + kebab-case title slug), with no number and no reservation step — the file is written directly under its final name; a same-day collision appends a numeric suffix (`-2`, `-3`, …). Older plans that still carry the legacy four-digit prefix (`NNNN-slug.md`) are migrated once, in bulk, to `YYYY-MM-DD-NNNN-slug.md` (`YYYY-MM-DD` = migration date, the old `NNNN` kept as a stable reference; the H1 `# NNNN: Title` stays unchanged). Reference resolution for a legacy number resolves primarily via that H1, not the filename segment. Plans that are fully implemented move to `docs/plan/archive/`, kept as part of the same delivery PR/merge; resolvers search both `docs/plan/` and `docs/plan/archive/`. The canonical status line is `**Planungsstatus:** Nicht umgesetzt` / `**Plan status:** Not implemented` (one language per file; the `**Empfohlener Workflow:**` line stays German either way). Only that canonical line counts as status — ignore other occurrences of the words in prose. Docs plans additionally carry `**Doku-Kategorie:**` and `**Ziel-Pfad:**` (categories defined in `src/shared/doc-categories.md`).
+Plans use an ISO date-slug name `YYYY-MM-DD-<slug>.md` (creation date + kebab-case title slug), with no number and no reservation step—the file is written directly under its final name; a same-day collision appends a numeric suffix (`-2`, `-3`, …). Older plans that still carry the legacy four-digit prefix (`NNNN-slug.md`) are migrated once, in bulk, to `YYYY-MM-DD-NNNN-slug.md` (`YYYY-MM-DD` = migration date, the old `NNNN` kept as a stable reference; the H1 `# NNNN: Title` stays unchanged). Reference resolution for a legacy number resolves primarily via that H1, not the filename segment. Plans that are fully implemented move to `docs/plan/archive/`, kept as part of the same delivery PR/merge; resolvers search both `docs/plan/` and `docs/plan/archive/`. A plan uses one language throughout: header fields, sections, review, open points, and status marker are all German or all English. The canonical status line is `**Planungsstatus:** Nicht umgesetzt` / `**Plan status:** Not implemented`; only that line counts as status. Existing plans retain their language when edited. Docs plans use the matching `**Doku-Kategorie:**` / `**Ziel-Pfad:**` or `**Doc category:**` / `**Target path:**` fields (categories defined in `src/shared/doc-categories.md`).
 
 ## Configuration and ADRs (target-project behavior)
 

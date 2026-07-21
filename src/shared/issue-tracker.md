@@ -72,6 +72,11 @@ node <skill-root>/scripts/remote-tracker.mjs <operation> [--apply]
 
 Pass exactly one JSON object through standard input and parse exactly one JSON result envelope from standard output. Resolve `<skill-root>` from the currently loaded Effective Flow skill; never copy the helper into the target project. The helper owns origin/provider/reference parsing, `gh`/`tea` probing, capability normalization, command construction, JSON normalization, payload validation, compatibility aliases, exact body patching, redaction, and stale-write preconditions. It never opens a shell and never prompts.
 
+For `finding-build` and `epic-build`, pass the already-resolved `language.forge` as the top-level
+`language: en|de`; this applies equally when the finding or epic data is nested under its named
+key. The optional field defaults to `en`, and unsupported values are rejected. The helper returns
+the same language-stable payload keys in either language.
+
 Successful envelopes contain `ok`, `operation`, `provider`, `data`, and `dryRun`. Failed envelopes additionally contain `error.code`, `error.message`, redacted `error.details`, and `error.retryable`, and the process exits nonzero. Treat errors as workflow input; do not discover flags, assemble API requests, read CLI credentials, or invent a fallback. In particular:
 
 - `AMBIGUOUS_HOST`: obtain an explicit `github`/`forgejo` choice from configuration or the user, then retry with that override.
@@ -111,11 +116,30 @@ In remote mode, use these labels and create missing labels idempotently (tolerat
 
 Do not add AI attribution to issue bodies, epic bodies and comments: no "Generated with Claude Code/Codex" footers, no agent session links (e.g. `https://claude.ai/code/…`) and no `Co-Authored-By` trailers – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex as the target harness are allowed, generation attribution is not.
 
+### Remote prose language
+
+Resolve `language.forge` once per remote run and pass it to all issue/comment writers. Preserve
+the clear language of an existing issue or thread when editing/replying; otherwise use the
+resolved Forge language. Finding and epic bodies use one complete language for human-readable
+titles, headings, field labels, displayed severity/complexity values, and prose.
+
+The German display mapping is `Schweregrad`, `Komplexität`, `Bereich`, `Datei`, `Problem`,
+`Empfehlung`, `Prompt-Vorschlag`, `Befunde`, and
+`Übersprungen (Architekturentscheidungen)`. English uses the template labels below. `Action`,
+`Epic`, and `Signature` are stable helper/dedup fields and remain canonical English in both
+forms, as do their action values. Displayed severities map to
+`Kritisch`/`Wichtig`/`Hinweis`, and displayed complexities map to
+`Niedrig`/`Mittel`/`Hoch`; their helper input enums remain
+`Critical`/`Important`/`Note` and `Low`/`Medium`/`High`. Labels, issue numbers, `R-XXXXXXX` IDs, HTML markers, body
+hashes, checklist syntax, and helper payload keys are never localized. Readers accept both
+German and English historical display fields, including legacy `Signatur`, but canonical writes
+use `Signature`.
+
 ### Issue body format (finding issue)
 
 A finding issue must be **self-contained**: a foreign LLM session must be able to process it without access to the producing session. It contains the same content fields as a finding block of the local report format (see `{{SKILL:review}}`, "Report format").
 
-- **Title:** `[R-XXXXXXX] <short title>`
+- **Title:** `[R-XXXXXXX] <short title in language.forge>`
 - **Labels:** `effective-flow-review-finding`, the action label and the severity label.
 - **Body** (canonical template):
 
@@ -136,7 +160,8 @@ The **Signature** field fixes the content dedup key (file+line, area, problem). 
 
 ### Epic body format (tracking issue)
 
-- **Title:** `Code review YYYY-MM-DD[-N]`
+- **Title:** `Code review YYYY-MM-DD[-N]` for English or
+  `Code-Review YYYY-MM-DD[-N]` for German
 - **Labels:** `effective-flow-review-epic`
 - **Body** (canonical template):
 

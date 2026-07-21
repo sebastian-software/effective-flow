@@ -19,6 +19,13 @@ With `tracker.mode: remote`, `/effective-flow review` instead creates an issue f
 on your Git hosting service, bundled under an epic/tracking issue. `/effective-flow apply` then
 reads these issues back in and works through them.
 
+Local Markdown reports use `language.workflow`. Issue bodies, epic prose, issue comments, remote
+review content, and review-thread replies use `language.forge`; existing German and English
+artifacts retain their language when updated. Headings, field names, and displayed values are
+rendered consistently in the selected artifact language. Labels, finding IDs, action values,
+paths, and HTML idempotency markers remain identical across languages so deduplication and routing
+continue to work.
+
 Important: the local/remote switch concerns **reviews only**.
 [Investigations](./tools-understand.md) remain purely local under
 `.effective-flow/investigation/` in either mode – they are never committed and never created as

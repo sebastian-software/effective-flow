@@ -36,15 +36,21 @@ suitable to deeply cross-check an existing plan before implementation.
   explicitly requested comprehensive review.
 - In local tracker mode (default): output is a report under
   `.effective-flow/review/review-report-YYYY-MM-DD[-N].md` with a finding table, severity,
-  complexity, file+line, recommendation, and suggested follow-up action.
+  complexity, file+line, recommendation, and suggested follow-up action. Human-readable report
+  fields and values use `language.workflow` consistently.
 - In remote tracker mode (`tracker.mode: remote`): no local report, but instead a
   finding issue per new finding plus an epic issue that bundles them; already-present
-  findings are deduplicated.
+  findings are deduplicated. Issue and comment prose uses `language.forge`.
 - Findings use repository-wide monotonic IDs (`R-0000001`, `R-0000002`, …) tracked in
   `.effective-flow/memory.json`. A review filters and deduplicates first, atomically reserves the
   exact range it needs, and only then publishes a local report or remote issues. Parallel reviews
   therefore receive disjoint ranges. If publication fails after a reservation, the unused IDs
   remain as harmless gaps; Effective Flow never reuses them.
+
+German and English reports remain readable. New reports and remote issues localize their complete
+human-readable template rather than mixing field names, headings, and displayed values. Finding
+IDs, action values, labels, file paths, and other machine-facing tokens are identical in both
+languages.
 
 **Interplay:** Each finding carries a recommendation for the appropriate follow-up action –
 `/effective-flow fix` (defect), `/effective-flow refactor` (structural problem), `/effective-flow build` (missing

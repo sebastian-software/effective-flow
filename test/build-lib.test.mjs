@@ -2395,6 +2395,84 @@ test('findRetiredConfigDocViolations always rejects the retired negation with ac
   ]);
 });
 
+// --- Target-project language contract ---
+
+test('checked-in language configuration remains complete and migration-only', () => {
+  const readSource = (path) => readFileSync(new URL(`../src/${path}`, import.meta.url), 'utf8');
+  const languageRules = readSource('shared/language-rules.md');
+
+  for (const key of [
+    'language.project',
+    'language.source',
+    'language.documentation.user',
+    'language.documentation.technical',
+    'language.workflow',
+    'language.forge',
+    'language.git',
+  ]) {
+    assert.match(languageRules, new RegExp(`\\b${key.replaceAll('.', '\\.')}\\b`));
+  }
+  assert.match(languageRules, /resolves every required surface once per run/i);
+  assert.match(languageRules, /must not\s+independently re-read the project setup ADR/i);
+
+  const agentDomains = {
+    'marketing-writer': ['language.documentation.user'],
+    'docs-writer': [
+      'language.documentation.user',
+      'language.documentation.technical',
+      'language.git',
+    ],
+    'code-documenter': ['language.source'],
+    'test-writer': ['language.source'],
+    'e2e-tester': ['language.source'],
+    'code-validator': ['language.source'],
+  };
+  for (const [agent, domains] of Object.entries(agentDomains)) {
+    const source = readSource(`agents/${agent}.md`);
+    for (const domain of domains) assert.match(source, new RegExp(domain.replaceAll('.', '\\.')));
+    assert.match(source, /supplied by the\s+orchestrator/is);
+    assert.match(source, /direct\s+invocation resolves the shared language rule itself/is);
+  }
+
+  const planStatus = readSource('shared/plan-status.md');
+  for (const marker of [
+    '**Planungsstatus:** Nicht umgesetzt',
+    '**Planungsstatus:** Umgesetzt',
+    '**Plan status:** Not implemented',
+    '**Plan status:** Implemented',
+  ]) {
+    assert.ok(planStatus.includes(marker), `missing bilingual plan form: ${marker}`);
+  }
+
+  const setup = readSource('tools/setup.md');
+  for (const form of [
+    '# Effective Flow project setup',
+    '# Effective-Flow-Projektsetup',
+    '| Key | Value |',
+    '| Schlüssel | Wert |',
+  ]) {
+    assert.ok(setup.includes(form), `missing bilingual setup form: ${form}`);
+  }
+  assert.doesNotMatch(
+    setup,
+    /\|\s*(?:review\.|worktree\.|language\.)[^|]*\|[^|]*(?:fokussiert|wahr|falsch|\(leer\))[^|]*\|/i,
+  );
+
+  const markerReferences = ['tools', 'shared', 'agents'].flatMap((directory) =>
+    readdirSync(new URL(`../src/${directory}/`, import.meta.url))
+      .filter((file) => file.endsWith('.md'))
+      .sort()
+      .map((file) => ({ file: `${directory}/${file}`, source: readSource(`${directory}/${file}`) }))
+      .filter(({ source }) => source.includes('plan.markerLanguage'))
+      .map(({ file, source }) => [file, source.match(/plan\.markerLanguage/g).length]),
+  );
+  assert.deepEqual(markerReferences, [
+    ['tools/setup.md', 4],
+    ['shared/config-migration.md', 1],
+    ['shared/language-rules.md', 2],
+  ]);
+});
+
 // --- ADR ownership-contract consistency ---
 
 test('findStaleAdrContractClaims rejects a deliberate divergence claim', () => {

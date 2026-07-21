@@ -84,7 +84,9 @@ For product code outside the specialized branches, follow the repository-native 
 
 ## Rules
 
-- documentation in English by default; German remains permitted – if documentation already exists in the area concerned, continue its language
+- use the concrete `language.source` value supplied by the orchestrator for new comments and
+  in-code documentation; existing prose keeps its clear language unless translation was
+  requested; only a direct invocation resolves the shared language rule itself
 - do not remove or shorten existing comments unless the task explicitly requires it
 - no redundant comments
 - prefer self-documenting code

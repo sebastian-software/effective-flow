@@ -84,21 +84,24 @@ central-reasoning-delegation
    file name, title slug, or four-digit legacy number. Resolve a legacy number primarily via
    its H1 `# NNNN: …`; use the file name segment only as the existing secondary signal.
 2. Read the plan file fresh from the file system.
-3. Check the plan status according to the plan-status convention.
+3. Determine and preserve the complete plan language from its canonical fields and sections, then
+   check the status according to the plan-status convention. If the artifact is mixed or unclear,
+   clarify the language before editing it; do not infer the language from the marker alone.
 4. If the plan is already implemented, ask whether it should only be reviewed retrospectively, reopened
    for a follow-up change, or the review aborted. Do not change
    the status without an explicit decision.
 5. Ensure that a section for open points exists at the end:
    - German-language plans use `## Offene Punkte` with `- Keine offenen Punkte.`
-   - English-language plans use `## Open Points` with `- No open points.`
-   - If one of the two sections already exists, keep its language.
+   - English-language plans use `## Open points` with `- No open points.`
+   - If one of the two sections already exists, require it to match the complete plan language.
    - If a combined section `## Annahmen und offene Punkte` exists:
      move decision-requiring points to `## Offene Punkte`; leave
      pure assumptions in the existing section.
    - If a combined section `## Assumptions and open points` exists:
-     move decision-requiring points to `## Open Points`; leave pure
+     move decision-requiring points to `## Open points`; leave pure
      assumptions in the existing section.
-6. Preserve existing plan content, order, and marker language as far as possible.
+6. Preserve existing plan content, order, and complete plan language. Pass that concrete language
+   to any delegated reviewer; the delegate does not resolve configuration independently.
 
 ### Phase 2: Identify findings
 
@@ -116,8 +119,8 @@ fallback from the building block applies instead of a local full checklist.
 Split the reported findings into two groups (Effective Flow artifact handling):
 
 - **Directly incorporable:** a clear plan deficiency that can be
-  corrected without a domain decision. Incorporate it directly and document it in the
-  `## Plan review`.
+  corrected without a domain decision. Incorporate it directly and document it in the matching
+  `## Plan-Review` / `## Plan review` section.
 - **Decision-requiring:** a decision significantly affects behavior, scope,
   risk, or later implementation. Clarify the point in Phase 3.
 
@@ -146,10 +149,11 @@ After the user's answer:
 - For a domain decision: incorporate it into the appropriate plan section,
   for example architecture decisions, approach, edge cases,
   acceptance criteria, or validation plan. Remove the corresponding entry from
-  `## Offene Punkte` or `## Open Points`.
+  `## Offene Punkte` or `## Open points`. Continue to recognize the former English spelling
+  `## Open Points` when reading an existing plan.
 - For "Decide later": add or update a precise entry in
-  `## Offene Punkte` or `## Open Points` with a re-entry note.
-- Update the `## Plan review` immediately.
+  `## Offene Punkte` or `## Open points` with a re-entry note.
+- Update the matching `## Plan-Review` / `## Plan review` immediately.
 
 ### Phase 4: Update the plan
 
@@ -158,13 +162,15 @@ After each decision or direct correction:
 1. Write the plan file back.
 2. Keep the open-points section up to date:
    - German: `## Offene Punkte` with the empty state `- Keine offenen Punkte.`
-   - English: `## Open Points` with the empty state `- No open points.`
+   - English: `## Open points` with the empty state `- No open points.`
    - Open points → each decision-oriented, concrete, and with a note on
      how the review is continued later.
-3. Update the `## Plan review`:
-   - `**Result:** Approved` if no critical findings and no
+3. Update the matching plan-review section in the plan language:
+   - German uses `**Ergebnis:** Freigegeben` / `**Ergebnis:** Überarbeitung nötig`.
+   - English uses `**Result:** Approved` / `**Result:** Revision required`.
+   - Use the approved value if no critical findings and no
      implementation-blocking open points remain.
-   - `**Result:** Revise` if critical findings or
+   - Use the revision-required value if critical findings or
      implementation-blocking open points remain.
    - a summary table with the areas Architecture, Security,
      Data protection, Error cases, Testability, Scope, and Maintainability.

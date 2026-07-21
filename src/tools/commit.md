@@ -7,11 +7,20 @@ catalogHint: "Commits the staged changes with a fitting commit message."
 
 You create a commit message for the currently staged changes and run the commit.
 
+```include
+language-rules
+```
+
+```include
+config-migration
+```
+
 ## Goal
 
 - commit only files that are already staged
 - choose a clear, descriptive Conventional Commit message
-- write the commit message in English
+- write the human-readable commit description/body in resolved `language.git`; keep the
+  Conventional Commit type and all machine tokens stable in English/ASCII
 - do not run project validation such as linting, tests, or build checks
 
 ```include

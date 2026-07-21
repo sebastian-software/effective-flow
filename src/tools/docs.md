@@ -11,8 +11,9 @@ You are the orchestrator for documentation changes.
 
 This workflow specializes in README files, developer guides, API/CLI documentation, skill documentation, migration notes, changelogs and in-code documentation. It changes product or code behavior only when the change is documentation-adjacent, for example CLI help text or JSDoc/TSDoc in existing code files.
 
-```include
+```lazy-include
 language-rules
+when: documentation target languages or delegated language contexts must be resolved
 ```
 
 ```include
@@ -92,6 +93,11 @@ The roles and the standard structure (marketing root README, user docs, technica
 ### Language/project awareness
 
 Classify documentation targets per file/domain with the canonical “Project routing” contract.
+Resolve and pass the target language once per delegate: root `README.md` and `docs/user-guide/**`
+use `language.documentation.user`; `docs/developer-guide/**`, `docs/operations/**`,
+`docs/runbooks/**`, standalone API docs, and ADRs use `language.documentation.technical`;
+in-code documentation uses `language.source`; explicit changelog/release prose uses
+`language.git`. Existing files keep their clear language unless translation was requested.
 Preserve JSDoc/TSDoc for JS/TS and rustdoc plus existing Cargo documentation checks for Rust.
 For other product languages, the documentation agents discover and follow the repository’s
 established format; they do not invent conventions or add tooling. Mixed repositories retain
@@ -130,7 +136,8 @@ When an open plan for `{{SKILL:docs}}` is confirmed, it first passes through the
 the plan passes the gate:
 
 - use the plan file's contents as the agreed documentation basis
-- read `**Doc category:**` and `**Target path:**` from the header area
+- read the matching `**Doku-Kategorie:**` / `**Ziel-Pfad:**` or
+  `**Doc category:**` / `**Target path:**` from the header area
 - if both lines are missing or inconsistent: ask the user for the category and target path per `Doc categories` and add the lines in the plan file before implementation
 - if the target path points to an existing file: clarify replacement or a new slug with the user before `{{AGENT:docs-writer}}` starts
 - if a "clarified + goal-driven" context was already passed from the apply chain (basis clarified, confirmation for the autonomous run already given), honor it: skip the goal query in Phase 1 and run through phases 2–4 under the "Goal-driven completion control".
@@ -205,6 +212,7 @@ skill-discovery
    - the accumulated wisdom insights
    - the note not to change product logic
    - the write boundary per `Doc categories`
+   - the concrete resolved output language and locale; agents do not independently re-read config
 
 ### Phase 3: Validation
 
@@ -239,8 +247,10 @@ skill-discovery
    - begin the note with `✅` and name at least the date and workflow
 2. If a plan file was used as the basis, without changing the status marker beforehand:
    - the status marker stays unchanged here (`**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented`): the status switch to `Umgesetzt`/`Implemented` and the archiving to `<plan.dir>/archive/` are handled by step 4 below at the delivery point per "Delivery and worktree integration" (exception: in-place without delivery, see there).
-   - add `## Test results` with the checks that were run
-   - add `## Review findings` or write "No findings found." if no review was needed
+   - add `## Testergebnisse` or `## Test results`, matching the plan language, with the checks
+     that were run
+   - add `## Review-Befunde` or `## Review findings`, matching the plan language, and use
+     corresponding prose for the no-findings case
 3. Delete the wisdom file.
 4. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
 5. Summarize:

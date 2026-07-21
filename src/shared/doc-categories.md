@@ -17,6 +17,14 @@ workflow applies it when no different structure is required; an explicit wish of
 (e.g. a purely technical README without marketing) always takes precedence. There is **no**
 config field for this.
 
+Resolve documentation language by target: root `README.md` and `docs/user-guide/**` use
+`language.documentation.user`; `docs/developer-guide/**`, `docs/operations/**`,
+`docs/runbooks/**`, standalone API documentation, and new ADRs use
+`language.documentation.technical`; in-code documentation uses `language.source`; explicit
+changelog/release prose uses `language.git`. Existing documents preserve their clear language
+unless translation was explicitly requested. File/directory names and category values remain
+stable and are not translated.
+
 1. **Root `README.md` – marketing entry point.** A marketing page entirely from the user's
    perspective: value proposition first, promotional language allowed, kept short. It is
    created by the marketing agent (not by the factual documentation agent) and applies the
@@ -68,15 +76,24 @@ toward this invariant.
 
 ### Plan headers for documentation plans
 
-Plan files with `**Recommended workflow:** Documentation` additionally contain two lines in the header directly under the workflow recommendation:
+Plan files with `**Empfohlener Workflow:** Documentation` or
+`**Recommended workflow:** Documentation` additionally contain the matching two lines directly
+under the workflow recommendation:
 
-- `**Doc category:** user-guide | developer-guide | operations | runbooks`
-- `**Target path:** docs/<category>/<topic-slug>.md`
+- German: `**Doku-Kategorie:** user-guide | developer-guide | operations | runbooks` and
+  `**Ziel-Pfad:** docs/<category>/<topic-slug>.md`
+- English: `**Doc category:** user-guide | developer-guide | operations | runbooks` and
+  `**Target path:** docs/<category>/<topic-slug>.md`
 
 Rules:
 
-- Both lines must be written exactly like this, including bold formatting, colon, and lowercasing of the category.
-- The category in `**Doc category:**` must match the directory prefix in `**Target path:**`.
+- Both lines must use the complete plan language and be written exactly as above, including bold
+  formatting, colon, and lowercasing of the stable category value.
+- The category field must match the directory prefix in the target-path field.
 - The target path must point to a file within the matching category directory.
-- Example: `**Doc category:** runbooks` together with `**Target path:** docs/runbooks/database/restart.md`.
-- **Special case marketing entry point:** If the documentation plan targets the root `README.md`, `**Target path:** README.md` is set and the `**Doc category:**` line is **omitted** – the root README is not one of the four `docs/` categories. Only in exactly this case may the category line be absent; the consistency rule "category matches the directory prefix" remains unchanged for all `docs/` targets.
+- Example: `**Doku-Kategorie:** runbooks` with `**Ziel-Pfad:** docs/runbooks/database/restart.md`,
+  or the complete English equivalent.
+- **Special case marketing entry point:** If the documentation plan targets the root `README.md`,
+  the matching target-path field contains `README.md` and the doc-category line is omitted – the
+  root README is not one of the four `docs/` categories. Only in exactly this case may the
+  category line be absent.

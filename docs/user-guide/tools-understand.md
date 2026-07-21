@@ -25,7 +25,8 @@ fits.
 `.effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md` with symptom, reproduction,
 root-cause hypotheses including confidence, discarded hypotheses, and exactly one
 follow-up recommendation. Investigation reports are always local: they are never committed and never
-tracked as an issue, not even in remote tracker mode.
+tracked as an issue, not even in remote tracker mode. Their prose follows `language.workflow`;
+the internal runtime/wisdom schema remains language-stable.
 
 **Interplay:** The recommendation routes to `/effective-flow fix` (defect with a clear cause),
 `/effective-flow refactor` (structural problem without behavior change), `/effective-flow build` (missing
@@ -49,7 +50,9 @@ acceptance criteria, or architecture decisions are not yet settled.
 `**Plan status:** Not implemented`), recommended workflow, architecture decisions,
 affected files, acceptance criteria, validation plan, and its own
 plan review section. For documentation plans, the header adds `**Doc category:**` and
-`**Target path:**` per the doc category convention.
+`**Target path:**` per the doc category convention. A new plan uses `language.workflow`
+throughout—header fields, sections, plan review, open points, and status marker are all German or
+all English. An existing plan retains its recognizable language when edited or completed.
 
 **Interplay:** The finished plan is implemented later with `/effective-flow build <plan file>`,
 `/effective-flow fix <plan file>`, `/effective-flow refactor <plan file>`, or `/effective-flow docs <plan file>`;
@@ -94,7 +97,8 @@ information for an autonomous implementation.
 selection; with an argument, the handed-over issue references (number, `#123`, URL)
 are used. Output is a comment on the issue with the completed requirement,
 acceptance criteria, affected areas, and assumptions; afterwards the label
-`effective-flow-needs-planning` is removed.
+`effective-flow-needs-planning` is removed. The comment follows `language.forge`; its label and
+other machine-facing tokens remain stable.
 
 **Interplay:** This tool is inherently remote and always works against the
 issue tracker of the `origin` remote (see [Remote tracker](remote-tracker.md)); the
@@ -103,7 +107,8 @@ issue.
 
 ## Further reading
 
-- [Configuration](configuration.md) – `plan.dir`, `plan.markerLanguage`, and other defaults
+- [Configuration](configuration.md) – `language.workflow`, `language.forge`, `plan.dir`, and
+  other defaults
 - [Remote tracker](remote-tracker.md) – issue mode, labels, local vs. remote mode
 - [Skill discovery](skill-discovery.md) – how these tools draw on host skills for analysis
 - [Tools: Implement](tools-implement.md) – how plans, reports, and issues are implemented

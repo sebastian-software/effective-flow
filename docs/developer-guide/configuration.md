@@ -8,11 +8,13 @@ model, and [`src/tools/setup.md`](../../src/tools/setup.md) for all Git-touching
 
 ## Tracked source and runtime boundary
 
-The tracked truth is a mutable, numberless ADR titled `# Effective Flow project setup`, with the
-default slug and path `docs/adr/effective-flow-project-setup.md`. It holds a `## Configuration`
-Markdown table with minimal context. The `.effective-flow/` directory contains only runtime state
-such as `memory.json`, `cache.json`, `review/`, and `.worktrees/`; the entire directory is
-gitignored with one `.effective-flow/` line.
+The tracked truth is a mutable, numberless ADR with the default slug and path
+`docs/adr/effective-flow-project-setup.md`. A new ADR uses the configured technical-documentation
+language: `# Effective Flow project setup` with `## Configuration`, or
+`# Effective-Flow-Projektsetup` with `## Konfiguration`. Existing ADRs preserve their recognizable
+envelope language on ordinary setup updates. The `.effective-flow/` directory contains only
+runtime state such as `memory.json`, `cache.json`, `review/`, and `.worktrees/`; the entire
+directory is gitignored with one `.effective-flow/` line.
 
 This table is a narrow, explicit exception to the usual separation of ADR rationale from exact
 configuration values: the project-setup ADR is itself the owning tracked configuration artifact.
@@ -79,9 +81,12 @@ only workflow that creates or updates the ADR and marker, normalizes `.gitignore
 legacy config. Readers with no ADR may consume legacy values for the current run and direct the
 user to setup; they do not perform migration themselves.
 
-## Canonical table encoding
+## Bilingual envelope and canonical table encoding
 
-Writers emit a flat table headed exactly `| Key | Value |`. Values use this encoding:
+Readers bootstrap before language resolution by accepting `| Key | Value |` in the English
+envelope and `| Schlüssel | Wert |` in the German envelope. Writers create a new envelope in
+`language.documentation.technical` and preserve an existing envelope instead of translating it.
+Keys and encoded values remain identical and English in both forms. Values use this encoding:
 
 - Boolean → `true` / `false`.
 - String → literal and unquoted, for example `focused` or `origin/main`.
@@ -114,10 +119,21 @@ defaults.
 
 ## Read-time backward compatibility
 
-Existing ADRs written with `## Konfiguration`, the header `| Schlüssel | Wert |`, the empty-list
-token `(leer)`, the statuses `Aktiv`/`Abgelöst`, the former marker spelling, or the former slug
-remain readable. They are compatibility inputs only. On its next write, setup normalizes them to
-the canonical English forms while preserving known and unknown rows.
+The complete German envelope—`# Effective-Flow-Projektsetup`, `Aktiv`/`Abgelöst`,
+`## Kontext`, `## Konfiguration`, and `| Schlüssel | Wert |`—is canonical alongside the English
+form. The former translated empty-list token `(leer)`, former marker spelling, and former slug
+remain readable compatibility inputs. On write, setup keeps the recognized envelope language,
+uses the stable `(empty)` value, and preserves known and unknown rows.
+
+## Language configuration
+
+`language.project` defaults to `en`. Optional `language.source`,
+`language.documentation.user`, `language.documentation.technical`, `language.workflow`,
+`language.forge`, and `language.git` overrides accept `de` or `en`; a missing override inherits
+the project language. Artifact precedence, destination overlap, stable-token boundaries, and the
+one-generation `plan.markerLanguage` migration are defined in the living
+[project language policy](../adr/language-policy.md) and the binding
+[`language-rules`](../../src/shared/language-rules.md) source.
 
 ## Migration compatibility
 

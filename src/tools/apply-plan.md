@@ -95,7 +95,9 @@ plan-reference-routing
    - the full plan path
    - the detected workflow
    - that the basis is already clarified and, if confirmed, the implementation should run goal-driven
-   - for documentation plans, additionally the values found in the plan header for `**Doc category:**` and `**Target path:**`, or the note that one or both lines are missing
+   - for documentation plans, additionally the values found in the matching German
+     `**Doku-Kategorie:**` / `**Ziel-Pfad:**` or English `**Doc category:**` /
+     `**Target path:**` fields, or the note that one or both lines are missing
 5. After that, responsibility for implementation, validation, review, plan status update and commit preparation lies with the target workflow.
 
 ## Rules

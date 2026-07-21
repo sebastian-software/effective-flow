@@ -33,7 +33,9 @@ commit-message-rules
 
 ## Recommended skills
 
-- `metro-english › humanizer` (fallback)
+- `metro-english › humanizer` (fallback) – apply it to the Conventional Commit title description
+  only when resolved `language.git` is `en`, and to the PR body only when resolved
+  `language.forge` is `en`; never apply English rewriting to a German artifact
 
 ```include
 skill-discovery
@@ -119,9 +121,12 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
      for the same head but a different base, as well as a closed or merged PR, is not a match.
    - **Multiple exact matches, lookup failure, or invalid/unparseable output:** Report a clear
      diagnostic and abort without attempting PR creation or guessing which PR to use.
-9. **Derive the PR title and description for a new PR (enforce a valid Conventional Commit title):** Reuse the head branch commits discovered against the resolved remote-tracking base in step 4; do not recompute them against the local branch part, which may lag behind the remote and drag in foreign commits. Derive from this a short description of the changes and reference an associated plan file from `<plan.dir>/` (the plan directory from the Effective Flow configuration (project setup ADR) `plan.dir`, default `docs/plan`), if present.
+9. **Derive the PR title and description for a new PR (enforce a valid Conventional Commit title):** Reuse the head branch commits discovered against the resolved remote-tracking base in step 4; do not recompute them against the local branch part, which may lag behind the remote and drag in foreign commits. Resolve `language.git` for the title description and `language.forge` for the PR body, and keep each artifact internally consistent even when they differ. Preserve the language of explicitly supplied text. Derive the content from the changes and reference an associated plan file from `<plan.dir>/` (the plan directory from the Effective Flow configuration (project setup ADR) `plan.dir`, default `docs/plan`), if present.
 
-   The **PR title must be a valid Conventional Commit** — form `<type>[(scope)][!]: <description>` with a type from the "Commit message rules" (embedded above). This is mandatory because on a squash merge the title becomes the subject of the single commit on the target branch, and release-please derives the version bump from it; an untyped title produces a no-op release (no bump, no delivery) even though CI stays green. Determine the title in this order:
+   The **PR title must be a valid Conventional Commit** — form `<type>[(scope)][!]: <description>`
+   with a stable English type and a `language.git` description, per "Commit message rules". This
+   is mandatory because on a squash merge the title becomes the subject of the single commit,
+   while the PR body remains Forge prose in `language.forge`. Determine the title in this order:
    - **Preserve a valid title:** If a title passed by the user or from the delivery handback already carries a valid type (including an optional `(scope)` and breaking marker `!`), adopt it unchanged.
    - **Choose the type by effect:** Otherwise choose the type by the **effect** of the change per the "Commit message rules" and — if present — the passed title type hint: `feat` for new product behavior, `fix` for corrections, `docs` for docs-only, `refactor` for behavior-preserving restructuring, `chore`/`build`/`ci` or a dependency type for maintenance. If the branch covers multiple effects, the type follows the strongest effect (as with the squash subject), not the most recent commit.
    - **Normalize an untyped subject:** If an otherwise suitable title has no valid prefix, prefix it with the classified type instead of leaving it untyped; keep an optional `(scope)`/`!` marker valid in doing so.

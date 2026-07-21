@@ -38,10 +38,14 @@ The resolution of a legacy number happens primarily via the H1 `# NNNN: …`, no
 name segment, since a new, number-like title slug would otherwise not be unambiguously
 distinguishable from the migrated old format.
 
-## Status markers (German/English)
+## One language per plan (German/English)
 
-Every plan carries exactly one canonical status line in the header area, either in German or
-English:
+Every plan is a single-language artifact. Its H1 prose, header fields, section headings, plan
+review, findings, open points, and status marker are all German or all English. Writers must not
+combine the two canonical templates. Readers normalize both templates to the same internal
+meanings.
+
+Every plan carries exactly one canonical status line in the header area:
 
 ```md
 **Planungsstatus:** Nicht umgesetzt
@@ -52,15 +56,30 @@ English:
 ```
 
 Accepted values are `Nicht umgesetzt`/`Umgesetzt` (German) or `Not implemented`/`Implemented`
-(English). Only one language is used per plan file; when the status switches to completed, the
-once-chosen marker language is preserved. The `**Recommended workflow:**` line uses its fixed
-canonical form independent of the marker language. Only this canonical status line counts as the
-status – other occurrences of the terms in running text or review findings are irrelevant.
+(English). When the status switches to completed, the plan language is preserved. Only this
+canonical status line counts as the status—other occurrences of the terms in running text or
+review findings are irrelevant.
 
-The marker language is determined when a plan is created in this order: `plan.markerLanguage`
-from the Effective Flow configuration (project-setup ADR) → auto-detection from existing plans →
-follow-up question to the user. A decision is persisted via `/effective-flow setup` in the
-project-setup ADR; ordinary plan readers do not write configuration.
+The remaining canonical fields and sections use the complete mapping in
+[`terminology.md`](terminology.md#canonical-artifact-fields-must-match-exactly), including
+`**Empfohlener Workflow:**`/`**Recommended workflow:**`,
+`**Doku-Kategorie:**`/`**Doc category:**`, `**Ziel-Pfad:**`/`**Target path:**`, the main content
+sections, and the Plan-Review/Plan review result. Workflow routing values and references such as
+`effective-flow-fix` remain stable even when their visible labels are localized.
+
+For a new plan, an explicit user instruction wins, followed by `language.workflow`,
+`language.project`, and finally `en`. When editing a plan, its recognizable existing language
+wins after an explicit user instruction. A requested translation converts the entire artifact,
+including its status marker and review. An unclear or mixed existing plan is not rewritten until
+its language is clarified.
+
+For one compatibility generation only, projects without a valid `language.workflow` or
+`language.project` may read legacy `plan.markerLanguage` as the complete workflow-language
+fallback and direct the user to `/effective-flow setup`. If no language key exists, a plan
+collection provides a transitional signal only when its prose and markers consistently agree on
+German or English. Mixed, contradictory, or empty collections provide no signal. Writers never
+create `plan.markerLanguage`; setup may migrate it whenever `language.workflow` is absent, but
+only through a confirmed before/after change.
 
 ## Archive of implemented plans
 
@@ -74,12 +93,16 @@ search both `<plan.dir>/` and `<plan.dir>/archive/`.
 
 ## Doc categories
 
-Plans with `**Recommended workflow:** Documentation` carry two additional lines in the header:
+Documentation plans carry two additional lines in the same language as the rest of the plan. For
+English plans:
 
 ```md
 **Doc category:** user-guide | developer-guide | operations | runbooks
 **Target path:** docs/<category>/<topic-slug>.md
 ```
+
+For German plans, the corresponding fields are `**Doku-Kategorie:**` and `**Ziel-Pfad:**`.
+Category routing values and paths stay language-stable.
 
 The four categories are defined in
 [`src/shared/doc-categories.md`](../../src/shared/doc-categories.md):

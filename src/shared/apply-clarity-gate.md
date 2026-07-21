@@ -12,9 +12,9 @@ clarification round too many over one too few.
 
 ### Abort criteria (at least one applies → do not implement)
 
-- **Open points:** the plan contains an `## Offene Punkte` or
-  `## Open Points` section with entries other than the empty state (`- Keine offenen Punkte.` /
-  `- No open points.`).
+- **Open points:** the plan contains an `## Offene Punkte` or canonical `## Open points` section
+  with entries other than the empty state (`- Keine offenen Punkte.` / `- No open points.`).
+  Continue to recognize the former English spelling `## Open Points` when reading existing plans.
 - **Missing measurable acceptance criteria:** there are no acceptance criteria, or they are
   formulated without a named check/metric (no concrete check, no verifiable
   target state).
@@ -27,7 +27,10 @@ Pure, uncritical assumptions with no implementation relevance do not block.
 
 ### Behavior at the gate
 
-- **Passed** (no criterion applies): continue to implementation.
+- **Passed** (no criterion applies): continue to implementation. Before delegating, the
+  orchestrating workflow resolves the concrete output language for every destination surface
+  through the shared language rules and includes those `de`/`en` values in the agent task. The
+  agent uses the supplied values and does not reinterpret project configuration.
 - **Not passed:** briefly name the affected points, refer back to a clarification round,
   and end the current skill instead of partially implementing or guessing.
   Target skill of the clarification: a plan file goes to `{{SKILL:plan}}` or its in-depth

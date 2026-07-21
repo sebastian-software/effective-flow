@@ -55,7 +55,13 @@ issue-tracker
 
 ## Comment convention
 
-Write the planning result as an issue comment (operation "Add comment" from the mapping). Begin every Effective Flow comment with the marker `<!-- effective-flow-plan-issues -->`. Canonical structure of the comment:
+Write the planning result as an issue comment (operation "Add comment" from the mapping). Resolve
+`language.forge`, but preserve the clear language of an existing planning comment when updating
+it. Begin every Effective Flow comment with the stable marker
+`<!-- effective-flow-plan-issues -->`. The English structure is shown below. The complete German
+form uses `Planung abgeschlossen`, `Empfohlener Workflow`, `Anforderung`,
+`Akzeptanzkriterien`, `Betroffene Bereiche/Dateien`, `Randfälle`, and `Annahmen`. Workflow
+values, paths, checklist syntax, and the HTML marker remain stable.
 
 ```markdown
 <!-- effective-flow-plan-issues -->

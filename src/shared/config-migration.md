@@ -39,12 +39,15 @@ the ADR, the markers and the migration happen exclusively in the Git-touching pa
 
 ### Table encoding (binding for writers and readers)
 
-The config parameters stand as a flat Markdown table with two columns
-`| Key | Value |`. Writers ({{SKILL:setup}}, migration) and readers (all tools)
-interpret the values identically per this encoding. English is the default encoding;
-a pre-existing ADR written in the former German form (`## Konfiguration`, header
-`| Schlüssel | Wert |`, `## Kontext`, status `Aktiv`/`Abgelöst`, empty list `(leer)`) stays
-recognized on read and is rewritten to the English form on the next write:
+The config parameters stand as a flat Markdown table with two columns. Readers bootstrap before
+they know the configured language by accepting both canonical envelopes: English
+`## Configuration` with `| Key | Value |`, and German `## Konfiguration` with
+`| Schlüssel | Wert |`. They likewise recognize `## Context`/`## Kontext`, `## Status`,
+`Active`/`Aktiv` and `Superseded`/`Abgelöst`. The former German empty-list token `(leer)` is
+accepted on legacy reads only. Config keys and newly written encoded values remain identical and
+English in both envelopes, including `(empty)`. Writers ({{SKILL:setup}}, migration) and readers
+(all tools) interpret values identically. A normal update preserves the existing ADR envelope
+language; changing `language.documentation.technical` does not translate an existing ADR.
 
 - **Boolean** → `true` / `false`.
 - **String** → literal, unquoted (e.g. `focused`, `origin/main`).
@@ -76,6 +79,28 @@ value cell). Example excerpt (interface sketch, not full content):
 If the table is invalid or ambiguous (missing key, unknown encoding): use a
 safe default for the run, inform the user about the affected key,
 do **not** guess.
+
+### Language configuration and compatibility migration
+
+The supported language keys and their surface mapping live only in the shared "Language
+resolution" fragment. This configuration contract accepts `language.project`,
+`language.source`, `language.documentation.user`, `language.documentation.technical`,
+`language.workflow`, `language.forge`, and `language.git`; every value is `de` or `en`.
+Missing overrides inherit `language.project`, and a missing project language resolves to `en`.
+Invalid values are ignored with a diagnostic and never guessed.
+
+`plan.markerLanguage` is a legacy read/migration key, not part of the current schema. If
+`language.workflow` is absent, {{SKILL:setup}} may propose migrating a valid legacy `de`/`en`
+value to `language.workflow`; an existing `language.workflow` always wins. Show explicitly that
+the old marker-only setting becomes the language of the complete workflow artifact. Apply the
+addition and removal only in the confirmed before/after write step. Preserve the legacy key if
+the write is not confirmed, and never emit it in a new configuration.
+
+If neither language keys nor the legacy key exist, {{SKILL:setup}} may propose the read-only
+plan-corpus fallback defined by "Language resolution" as `language.workflow`, but only when
+prose, fields, and markers consistently identify one language. Mixed, contradictory, or empty
+plan sets are not migrated. This compatibility path must be reported and confirmed like every
+other config change.
 
 <!-- runtime-state-safety: setup-repair-only:start -->
 

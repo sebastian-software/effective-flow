@@ -8,8 +8,7 @@ Goal:
 - `{{SKILL:apply-review}}` can process the findings later in the familiar report format.
 - The plan file stays completion documentation and only points to the external report.
 
-Applies to findings with status (new reports use the canonical English tokens; equivalent
-German values in existing reports remain readable):
+Applies to findings with status in either complete report language:
 
 - `Open`
 - `Not implemented`
@@ -44,10 +43,10 @@ absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle as required b
 3. If no plan file exists as a basis, use:
    - `.effective-flow/review/review-report-YYYY-MM-DD-WORKFLOW.md`
    - on collision: `.effective-flow/review/review-report-YYYY-MM-DD-WORKFLOW-1.md`, `-2`, ...
-4. Always write the origin at the top of the report using the canonical English header tokens:
-   - `**Origin plan:** [path or "None"]`
-   - `**Source workflow:** {{SKILL:build}} / {{SKILL:fix}} / {{SKILL:refactor}} / {{SKILL:maintain}}`
-   - `**Source review:** [reviewer skill or phase]`
+4. Always write the origin at the top of the report using the complete report language:
+   - English: `**Origin plan:**`, `**Source workflow:**`, `**Source review:**`
+   - German: `**Ursprungsplan:**`, `**Quell-Workflow:**`, `**Quell-Review:**`
+   - Keep paths, skill references, and `None`/`Keiner` display semantics mapped internally.
 
 ### Finding IDs and memory
 
@@ -66,14 +65,14 @@ This report uses the same global finding IDs as `{{SKILL:review}}`.
 
 ### Report format
 
-Use the canonical report format from `{{SKILL:review}}` section "Report format". Do not duplicate the template here and do not deviate from it.
+Resolve `language.workflow` and use the matching complete canonical report format from
+`{{SKILL:review}}` section "Report format". Do not duplicate the template here. When appending to
+an existing report, preserve its clearly recognizable report language.
 
 Additional header fields for workflow reports:
 
-- Directly below `**Project type:** ...` set these three lines:
-  - `**Origin plan:** [<plan.dir>/YYYY-MM-DD-<slug>.md or None]` (`<plan.dir>` is the plan directory from `plan.dir` of the Effective Flow configuration/project-setup ADR, default `docs/plan`)
-  - `**Source workflow:** [{{SKILL:build}} / {{SKILL:fix}} / {{SKILL:refactor}} / {{SKILL:maintain}}]`
-  - `**Source review:** [reviewer or phase]`
+- Directly below the matching project-type field, set the three matching English or German
+  origin/source lines defined above. The plan path uses `<plan.dir>` from configuration.
 - All tables and finding blocks stay in the `{{SKILL:review}}` format.
 - The `## Skipped findings (design decisions)` section is only emitted when such findings are present.
 

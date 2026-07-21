@@ -7,8 +7,9 @@ catalogHint: "Fully implements a new feature – plan, code, tests, review, comp
 
 You are the orchestrator for the complete development workflow for new features.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include
@@ -96,13 +97,16 @@ Before the actual workflow starts, check whether the project already has documen
      - technologies used
      - existing architecture decisions
    - write the initial state as `<plan.dir>/YYYY-MM-DD-initial-state.md` (date via `date +%F`)
-   - use the format of the existing plan files:
-   - marker language of the status line: determine it by the same procedure as `{{SKILL:plan}}` (`plan.markerLanguage` from the Effective Flow configuration (project setup ADR) → auto-detection from existing plans → English as fallback). Since this initial state documentation is only created when **no** plan files exist yet, detection does not apply; therefore: `plan.markerLanguage` if set (`"de"` → `**Planungsstatus:** Umgesetzt`, `"en"` → `**Plan status:** Implemented`), otherwise the English marker `**Plan status:** Implemented`. Produce exactly one status line, no mixed-language form. The example block below shows the German marker for illustration; replace the status line with the marker determined this way.
+   - resolve `language.workflow` through the shared language rule and render the **complete**
+     initial-state plan in that language, including title, status, headings, table labels, and
+     prose. Pass the resolved language to any analysis delegate. Stable paths and technical
+     tokens remain unchanged. The English form is shown below; use the canonical German plan
+     contract for `de` and never mix forms.
 
 ```markdown
 # Initial state — [Project name]
 
-**Planungsstatus:** Umgesetzt
+**Plan status:** Implemented
 
 ## Requirement
 
@@ -370,7 +374,12 @@ Note: Before completion, the "Open" column for "Critical" must be 0.
      - review result and reference to external review reports if open findings were offloaded
 3. **Plan-file findings summary:** Write only a compact summary in the plan file. Open or unimplemented findings are not copied in full into the plan file, but written into the external review report from Phase 6.
 
-   Use this template:
+   Use the complete plan language. The English form is shown below; for a German plan render
+   `## Review-Befunde`, `**Datum:**`, `**Reviewer:**`, `### Zusammenfassung`, localized table
+   headings/status prose, `**Externer Review-Bericht:**`, and the German no-findings sentence.
+   Stable paths, IDs, and status tokens used by report readers remain unchanged.
+
+   English template:
 
 ```markdown
 ## Review findings
@@ -395,7 +404,8 @@ Rules for the findings report:
 - Do not copy open or unimplemented findings in full into the plan file.
 - If open or unimplemented findings exist, name the external review report from Phase 6.
 - Fixed findings may be counted briefly; full details of fixed findings are not required in the plan file.
-- If no findings arose: write "No findings found." in the section instead of the tables.
+- If no findings arose: write `Keine Befunde.` for a German plan or `No findings found.` for an
+  English plan instead of the tables.
 - If no reviewers were started in Phase 6 (e.g. because the change required no review): write a short note with justification in the section instead.
 
 4. Delete the wisdom file.

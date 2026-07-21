@@ -23,8 +23,9 @@ is no runtime application – you edit `src/`, never `dist/`.
    actual Effective Flow relationships.
 6. [Release and installation](release-and-installation.md) – versioning via release-please,
    publishing, and installation of the built skill.
-7. [Terminology](terminology.md) – binding DE→EN glossary for the language migration (English
-   as default, German still permitted).
+7. [Terminology](terminology.md) – binding German/English glossary for the complete bilingual
+   artifact contracts; the configured project and surface languages select new output while
+   existing artifact languages remain valid.
 
 ## See also
 

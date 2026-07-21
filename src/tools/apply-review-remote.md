@@ -40,6 +40,11 @@ The argument type takes precedence over the config (see "Determine mode" in the 
 
 Replaces reading the report file. Determine the finding issues to work through (parse the epic task list or use the passed list). Read for each finding issue the full body **and the comments fresh from the tracker** ("read comments" operation) and classify:
 
+Resolve `language.forge` once for newly authored issue comments and checklist prose, while
+preserving clearly established existing thread/body language. Resolve `language.git` once for
+all commits and Conventional Commit PR titles. Pass both concrete values to delegated workflows;
+stable labels, IDs, action values, references, and markers are never translated.
+
 - **Target PR present:** if the body or a non-Effective Flow comment names a target PR
   (`Ziel-PR: #<nr>`, `Target PR: #<nr>` or a PR URL), note the PR number, URL,
   head branch and base branch of the PR. A target PR overrides the
