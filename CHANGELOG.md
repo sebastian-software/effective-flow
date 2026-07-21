@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.49.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.48.0...effective-flow-v1.49.0) (2026-07-21)
+
+
+### Features
+
+* add generic product-language fallback ([#203](https://github.com/sebastian-software/effective-flow/issues/203)) ([80cf27c](https://github.com/sebastian-software/effective-flow/commit/80cf27cd734959f33acc0a973cc318fc68e86bdd))
+* align issue planning review flow ([#232](https://github.com/sebastian-software/effective-flow/issues/232)) ([cc295ac](https://github.com/sebastian-software/effective-flow/commit/cc295ac017536a33ff739e03225ff0fa98e3d4cd))
+* **ci:** close issues merged into develop ([#229](https://github.com/sebastian-software/effective-flow/issues/229)) ([7a87c70](https://github.com/sebastian-software/effective-flow/commit/7a87c70affd2375d2eba96050c648c4db9ba92ba))
+* configure language by artifact surface ([#228](https://github.com/sebastian-software/effective-flow/issues/228)) ([87f4ed8](https://github.com/sebastian-software/effective-flow/commit/87f4ed8b05cbe65af3fcee321d7cf24b0356992a))
+* start Codex goals directly ([#230](https://github.com/sebastian-software/effective-flow/issues/230)) ([2c57b95](https://github.com/sebastian-software/effective-flow/commit/2c57b95ad433251dbc73c3505a959103c2e4a883))
+* validate central skill ownership relationships ([#206](https://github.com/sebastian-software/effective-flow/issues/206)) ([190cd40](https://github.com/sebastian-software/effective-flow/commit/190cd4040a381ee1640f63c98fe91d83c3a67df1))
+
+
+### Bug Fixes
+
+* align active workflow terminology ([#216](https://github.com/sebastian-software/effective-flow/issues/216)) ([6f478bd](https://github.com/sebastian-software/effective-flow/commit/6f478bd951db530d263d973be5e9e86d9e4f9894))
+* align ADR ownership contract ([#205](https://github.com/sebastian-software/effective-flow/issues/205)) ([22ad506](https://github.com/sebastian-software/effective-flow/commit/22ad5066f6f76a9a532732f1a4adc34009d70d99))
+* check lifecycle branch commits before push ([#221](https://github.com/sebastian-software/effective-flow/issues/221)) ([051dfd4](https://github.com/sebastian-software/effective-flow/commit/051dfd4043a83ac4f8cb24a6657025c357e70e8d))
+* clean delivery state after red maintenance baseline ([#219](https://github.com/sebastian-software/effective-flow/issues/219)) ([0022474](https://github.com/sebastian-software/effective-flow/commit/0022474fc4792ac1217bb4433e713e22684a3813))
+* define Rust validator result contract ([#227](https://github.com/sebastian-software/effective-flow/issues/227)) ([d0a5f54](https://github.com/sebastian-software/effective-flow/commit/d0a5f544e3a7249d042c3bab2865ac5a9c757274))
+* enforce runtime state write safety ([#207](https://github.com/sebastian-software/effective-flow/issues/207)) ([409dbbf](https://github.com/sebastian-software/effective-flow/commit/409dbbf96a87b3ed10c2cda94fd52c48bf04e944))
+* localize generated workflow scaffolding ([#226](https://github.com/sebastian-software/effective-flow/issues/226)) ([5d87c4d](https://github.com/sebastian-software/effective-flow/commit/5d87c4d897c69e4f0131893025ec3554466764b8))
+* make distribution harness-correct and agent-complete ([#198](https://github.com/sebastian-software/effective-flow/issues/198)) ([9df0e7e](https://github.com/sebastian-software/effective-flow/commit/9df0e7effe9bebc891b143d42ed9dd367403e451))
+* make goal prompts easy to copy ([#231](https://github.com/sebastian-software/effective-flow/issues/231)) ([e95da04](https://github.com/sebastian-software/effective-flow/commit/e95da04be62b3fe8fc3f008028eb0d8296c0c2ec))
+* make README follow-up links conditional ([#212](https://github.com/sebastian-software/effective-flow/issues/212)) ([1d4aeb6](https://github.com/sebastian-software/effective-flow/commit/1d4aeb666d5d83a50b63473933defefd3e8df6bf))
+* make validator concurrency harness-neutral ([#200](https://github.com/sebastian-software/effective-flow/issues/200)) ([0c214b0](https://github.com/sebastian-software/effective-flow/commit/0c214b0c24273cb1abe299e275c37cf8e291814a))
+* migrate partial legacy runtime state ([#209](https://github.com/sebastian-software/effective-flow/issues/209)) ([713ad55](https://github.com/sebastian-software/effective-flow/commit/713ad55ee3a0a564c24758bc759e42feecb0ac18))
+* migrate project setup configuration to ADR ([#210](https://github.com/sebastian-software/effective-flow/issues/210)) ([ac0b702](https://github.com/sebastian-software/effective-flow/commit/ac0b7025517c9165be2101faf87336ebe52c5546))
+* preserve runtime state across worktree execution ([#215](https://github.com/sebastian-software/effective-flow/issues/215)) ([aff5da9](https://github.com/sebastian-software/effective-flow/commit/aff5da9b30c9fff5207554ccdd69e7e8864c18c1))
+* preserve transitional setup config source ([#223](https://github.com/sebastian-software/effective-flow/issues/223)) ([225056a](https://github.com/sebastian-software/effective-flow/commit/225056a1d99596695095e12df29d452b13235f36))
+* re-review refactor regression repairs ([#222](https://github.com/sebastian-software/effective-flow/issues/222)) ([dc3dfe7](https://github.com/sebastian-software/effective-flow/commit/dc3dfe70e8628797a0785d782a1c7bea34f1eb26))
+* reject invalid installer arguments ([#208](https://github.com/sebastian-software/effective-flow/issues/208)) ([4deb8f5](https://github.com/sebastian-software/effective-flow/commit/4deb8f52452a62e7160c3dc921ec83420f054a7d))
+* resolve archived plans during plan review ([#218](https://github.com/sebastian-software/effective-flow/issues/218)) ([5e3dced](https://github.com/sebastian-software/effective-flow/commit/5e3dced24a4f20703f8f1af8012ff0ca66e6c893))
+* restore installer version reporting ([#196](https://github.com/sebastian-software/effective-flow/issues/196)) ([2f015c4](https://github.com/sebastian-software/effective-flow/commit/2f015c40f52d8abcc96cdb0560e84a235592d9d8))
+* reuse existing pull requests during delivery ([#213](https://github.com/sebastian-software/effective-flow/issues/213)) ([b1c4e4b](https://github.com/sebastian-software/effective-flow/commit/b1c4e4bb562aff4cbcbe3e1dea580f2795d4a328))
+* serialize finding memory updates ([#214](https://github.com/sebastian-software/effective-flow/issues/214)) ([a402a5a](https://github.com/sebastian-software/effective-flow/commit/a402a5a110d15e46f01fcd612d1d03bafec78198))
+* serialize iterate item commits ([#217](https://github.com/sebastian-software/effective-flow/issues/217)) ([1cf6864](https://github.com/sebastian-software/effective-flow/commit/1cf68648efe24ba3113f5357b396b5c48332d24b))
+* terminate validator process trees on timeout ([#225](https://github.com/sebastian-software/effective-flow/issues/225)) ([7879bd3](https://github.com/sebastian-software/effective-flow/commit/7879bd32d7aec868e8f245460b2713d87ba8a814))
+* verify worktree execution locations ([#201](https://github.com/sebastian-software/effective-flow/issues/201)) ([2223cc9](https://github.com/sebastian-software/effective-flow/commit/2223cc96ff42b2134bd472ebdc5ad02614a67d8c))
+
 ## [1.48.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.47.0...effective-flow-v1.48.0) (2026-07-18)
 
 
