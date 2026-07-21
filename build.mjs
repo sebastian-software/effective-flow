@@ -30,10 +30,13 @@ import {
   README_MANDATORY_CATEGORIES,
   findSelfReferentialContractPhrases,
   resolveLazyIncludes,
+  resolveEagerIncludes,
+  assertNoUnresolvedEagerIncludes,
   collectIncludeNames,
   assertNoEagerLazyOverlap,
   findRuntimeStateSafetyViolations,
   findRuntimeDirMigrationViolations,
+  findMemoryStateContractViolations,
   collectRenderedWorkerRefs,
   findProhibitedConsumerScriptCommands,
   findRetiredConfigDocViolations,
@@ -340,14 +343,14 @@ for (const file of RUNTIME_SCRIPT_FILES) {
 
 // --- Include transforms (I/O; the pure transforms live in build-lib.mjs) ---
 
-function resolveIncludes(body) {
-  return body.replace(/```include\n([^\n]+)\n```/g, (match, name) => {
-    const filePath = join(SHARED_DIR, `${name.trim()}.md`);
-    if (!existsSync(filePath)) {
-      process.stderr.write(`ERROR: Include file not found: ${filePath}\n`);
-      process.exit(1);
-    }
-    return readFileSync(filePath, 'utf8').replace(/\n+$/, '');
+function resolveIncludes(body, context) {
+  return resolveEagerIncludes(body, {
+    context,
+    readFragment(name) {
+      const filePath = join(SHARED_DIR, `${name}.md`);
+      if (!existsSync(filePath)) throw new Error(`include target not found: ${filePath}`);
+      return readFileSync(filePath, 'utf8');
+    },
   });
 }
 
@@ -375,6 +378,11 @@ try {
     skillName: FIRMO_SKILL_NAME,
     knownTools,
     knownAgents,
+  };
+  const renderGeneratedBody = (body, harness, config) => {
+    const rendered = renderBody(body, harness, config);
+    assertNoUnresolvedEagerIncludes(rendered, { context: `${config.context} (${harness})` });
+    return rendered;
   };
 
   // --- Central-skill ownership guard (#168) ---
@@ -518,6 +526,27 @@ try {
           .join('\n  '),
     );
   }
+  const deliveredRuntimeStateSources = new Map(
+    [...runtimeStateSources].map(([context, body]) => [
+      context,
+      resolveIncludes(body, `${context} (delivered memory-state guard)`),
+    ]),
+  );
+  const memoryStateViolations = findMemoryStateContractViolations(deliveredRuntimeStateSources, {
+    delivered: true,
+  });
+  if (memoryStateViolations.length > 0) {
+    throw new Error(
+      'memory-state writer guard (#176): every `.effective-flow/memory.json` mutation must ' +
+        'follow the shared lock/merge/atomic-replacement contract:\n  ' +
+        memoryStateViolations
+          .map(
+            ({ context, line, reason, target, includeChain }) =>
+              `${context}:${line}: ${reason} (${target}; via ${includeChain.join(' -> ')})`,
+          )
+          .join('\n  '),
+    );
+  }
 
   const readSource = (dir, file, context) => {
     const content = normalizeLineEndings(readFileSync(join(dir, file), 'utf8'));
@@ -537,7 +566,7 @@ try {
     }
     // Eager includes inline now; each lazy include becomes a load pointer and is
     // recorded for shipping as a standalone shared/<name>.md fragment.
-    const { body: withPointers, names } = resolveLazyIncludes(resolveIncludes(rawBody), {
+    const { body: withPointers, names } = resolveLazyIncludes(resolveIncludes(rawBody, context), {
       context,
     });
     for (const name of names) lazyFragments.add(name);
@@ -648,7 +677,7 @@ try {
   const routerFm = extractFrontmatter(routerRaw);
   const routerName = getField(routerFm, 'name') || FIRMO_SKILL_NAME;
   const routerDesc = getField(routerFm, 'description');
-  const routerBodyRaw = resolveIncludes(extractBody(routerRaw)).replace(
+  const routerBodyRaw = resolveIncludes(extractBody(routerRaw), 'SKILL.md').replace(
     /\{\{VERSION\}\}/g,
     VERSION_STRING,
   );
@@ -716,7 +745,7 @@ try {
           : PORTABLE_SKILL_DIR;
 
     // Router SKILL.md
-    const routerBody = renderBody(
+    const routerBody = renderGeneratedBody(
       routerBodyRaw
         .replace(/\{\{TOOL_CATALOG\}\}/g, catalogForHarness(harness))
         .replace(/\{\{WORKER_RESOLUTION\}\}/g, workerResolutionForHarness(harness))
@@ -747,7 +776,10 @@ try {
     for (const t of tools) {
       writeFileSync(
         join(skillDir, 'tools', `${t.name}.md`),
-        renderBody(t.body, harness, { ...refConfig, context: `tools/${t.name}.md` }),
+        renderGeneratedBody(t.body, harness, {
+          ...refConfig,
+          context: `tools/${t.name}.md`,
+        }),
       );
     }
 
@@ -762,12 +794,14 @@ try {
         if (!existsSync(fragPath)) {
           throw new Error(`lazy-include fragment source not found: ${fragPath}`);
         }
+        const context = `shared/${name}.md`;
         const rawFrag = resolveIncludes(
           normalizeLineEndings(readFileSync(fragPath, 'utf8')),
+          context,
         ).replace(/\{\{VERSION\}\}/g, VERSION_STRING);
         writeFileSync(
           join(skillDir, 'shared', `${name}.md`),
-          renderBody(rawFrag, harness, { ...refConfig, context: `shared/${name}.md` }),
+          renderGeneratedBody(rawFrag, harness, { ...refConfig, context }),
         );
       }
     }
@@ -798,7 +832,7 @@ try {
         agentFm += '---\n';
         writeFileSync(
           join(CLAUDE_AGENTS_DIR, `${claudeAgentName}.md`),
-          agentFm + renderBody(a.body, 'claude', { ...refConfig, context }),
+          agentFm + renderGeneratedBody(a.body, 'claude', { ...refConfig, context }),
         );
       } else if (harness === 'codex') {
         const codexModel = getNested(a.fm, 'codex', 'model', { context });
@@ -815,7 +849,7 @@ try {
         if (codexModel) toml += `model = ${tomlString(codexModel)}\n`;
         if (codexEffort) toml += `model_reasoning_effort = ${tomlString(codexEffort)}\n`;
         if (codexSandbox) toml += `sandbox_mode = ${tomlString(codexSandbox)}\n`;
-        toml += `developer_instructions = '''\n${renderBody(a.body, 'codex', { ...refConfig, context }).replace(/\n+$/, '')}\n'''\n`;
+        toml += `developer_instructions = '''\n${renderGeneratedBody(a.body, 'codex', { ...refConfig, context }).replace(/\n+$/, '')}\n'''\n`;
         writeFileSync(join(CODEX_AGENTS_DIR, `${codexAgentName}.toml`), toml);
       } else {
         const workerName = `${AGENT_PREFIX}${a.name}`;
@@ -825,7 +859,7 @@ try {
           '',
           description,
           '',
-          renderBody(a.body, 'portable', { ...refConfig, context }).replace(/\n+$/, ''),
+          renderGeneratedBody(a.body, 'portable', { ...refConfig, context }).replace(/\n+$/, ''),
           '',
         ].join('\n');
         writeFileSync(join(PORTABLE_WORKERS_DIR, `${workerName}.md`), contract);

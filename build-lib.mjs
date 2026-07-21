@@ -1313,6 +1313,76 @@ export function findSelfReferentialContractPhrases(text) {
 
 // --- Lazy-include directive (#99) — progressive disclosure inside a tool ---
 //
+// Eager shared fragments are expanded recursively before any harness-specific
+// rendering. Keep this transform pure so nested includes, missing targets, and
+// cycles have deterministic regression coverage independent of filesystem I/O.
+export const EAGER_INCLUDE_RE = /^```include[ \t]*\n([^\n]*)\n```[ \t]*$/gm;
+
+export function findUnresolvedEagerIncludes(body) {
+  const findings = [];
+  const lines = normalizeLineEndings(body).split('\n');
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index].trim() !== '```include') continue;
+    findings.push({ line: index + 1, name: (lines[index + 1] ?? '').trim() });
+  }
+  return findings;
+}
+
+export function assertNoUnresolvedEagerIncludes(body, { context } = {}) {
+  const findings = findUnresolvedEagerIncludes(body);
+  if (findings.length === 0) return;
+  const details = findings
+    .map(({ line, name }) => `line ${line}${name ? ` (${name})` : ' (missing fragment name)'}`)
+    .join(', ');
+  throw new Error(`unresolved eager include fence${contextSuffix(context)}: ${details}`);
+}
+
+export function resolveEagerIncludes(body, { context, readFragment } = {}) {
+  if (typeof readFragment !== 'function') {
+    throw new Error(`resolveEagerIncludes requires readFragment${contextSuffix(context)}`);
+  }
+
+  const expand = (input, chain) =>
+    normalizeLineEndings(input).replace(EAGER_INCLUDE_RE, (_, rawName) => {
+      const name = rawName.trim();
+      if (!name) {
+        throw new Error(`eager include fence is missing a fragment name${contextSuffix(context)}`);
+      }
+      const sharedContext = `shared/${name}.md`;
+      if (chain.includes(sharedContext)) {
+        throw new Error(
+          `eager include cycle${contextSuffix(context)}: ${[...chain, sharedContext].join(' -> ')}`,
+        );
+      }
+
+      let fragment;
+      try {
+        fragment = readFragment(name);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `cannot resolve eager include "${name}"${contextSuffix(context)} via ${[
+            ...chain,
+            sharedContext,
+          ].join(' -> ')}: ${detail}`,
+        );
+      }
+      if (typeof fragment !== 'string') {
+        throw new Error(
+          `cannot resolve eager include "${name}"${contextSuffix(context)} via ${[
+            ...chain,
+            sharedContext,
+          ].join(' -> ')}: fragment reader returned no text`,
+        );
+      }
+      return expand(fragment.replace(/\n+$/, ''), [...chain, sharedContext]);
+    });
+
+  const resolved = expand(body, context ? [context] : []);
+  assertNoUnresolvedEagerIncludes(resolved, { context });
+  return resolved;
+}
+
 // A ```lazy-include fence defers a mode-gated shared fragment. Instead of
 // inlining `src/shared/<name>.md` eagerly (```include), the build ships the
 // fragment once per harness as a loadable `shared/<name>.md` and replaces the
@@ -1439,7 +1509,7 @@ function walkRuntimeStateMutations(
     .filter((context) => sourceMap.has(context))
     .sort();
 
-  const visit = (context, state, includeChain) => {
+  const visit = (context, state, includeChain, includePath = []) => {
     const body = normalizeLineEndings(sourceMap.get(context) ?? '');
     const lines = body.split('\n');
     const active = { ...state };
@@ -1450,11 +1520,27 @@ function walkRuntimeStateMutations(
 
       const includeStart = INCLUDE_FENCE_START_RE.exec(line);
       if (includeStart) {
+        const lazy = Boolean(includeStart[1]);
         const name = (lines[index + 1] ?? '').trim();
         let fenceEnd = index + 2;
         while (fenceEnd < lines.length && lines[fenceEnd].trim() !== '```') fenceEnd += 1;
+        const when = lazy
+          ? (lines
+              .slice(index + 2, fenceEnd)
+              .find((candidate) => candidate.trim().startsWith('when:'))
+              ?.replace(/^\s*when:\s*/, '') ?? '')
+          : '';
         const traverseInclude =
-          onInclude?.({ context, name, lineNumber: index + 1, active, includeChain }) !== false;
+          onInclude?.({
+            context,
+            name,
+            lineNumber: index + 1,
+            active,
+            includeChain,
+            includePath,
+            lazy,
+            when,
+          }) !== false;
         const sharedContext = `shared/${name}.md`;
         if (
           traverseInclude &&
@@ -1462,7 +1548,15 @@ function walkRuntimeStateMutations(
           sourceMap.has(sharedContext) &&
           !includeChain.includes(sharedContext)
         ) {
-          Object.assign(active, visit(sharedContext, active, [...includeChain, sharedContext]));
+          Object.assign(
+            active,
+            visit(
+              sharedContext,
+              active,
+              [...includeChain, sharedContext],
+              [...includePath, { name, lazy, when }],
+            ),
+          );
         }
         index = Math.min(fenceEnd, lines.length - 1);
         continue;
@@ -1477,7 +1571,15 @@ function walkRuntimeStateMutations(
           ? runtimeMutationOnLine(`${lines[index - 1] ?? ''} ${line}`)
           : null);
       if (!target) continue;
-      onMutation?.({ context, line, lineNumber: index + 1, target, active, includeChain });
+      onMutation?.({
+        context,
+        line,
+        lineNumber: index + 1,
+        target,
+        active,
+        includeChain,
+        includePath,
+      });
     }
 
     return active;
@@ -1486,6 +1588,38 @@ function walkRuntimeStateMutations(
   for (const context of roots) {
     visit(context, initialState?.(context) ?? {}, [context]);
   }
+}
+
+function runtimeSafetyTriggerCoversMutation(when, { context, line, target, includeChain }) {
+  const trigger = when.toLowerCase();
+  if (/\b(?:any|other|every) runtime-state mutation\b/.test(trigger)) return true;
+
+  const inDirectoryMigration =
+    context === 'shared/effective-flow-dir-migration.md' ||
+    includeChain.includes('shared/effective-flow-dir-migration.md');
+  if (inDirectoryMigration) {
+    return /runtime (?:directory )?migration|\bmemory\b|runtime marker/.test(trigger);
+  }
+
+  const inIssueTracker =
+    context === 'shared/issue-tracker.md' || includeChain.includes('shared/issue-tracker.md');
+  if (inIssueTracker) {
+    return /tracker-marker|tracker marker|migration marker|\bmemory\b/.test(trigger);
+  }
+
+  if (target.startsWith('.effective-flow/memory.json')) {
+    return /\bmemory\b|runtime marker|migration marker|tracker-marker|tracker marker/.test(trigger);
+  }
+  if (target.includes('.worktrees/')) return /worktree/.test(trigger);
+  if (target.includes('wisdom')) return /wisdom/.test(trigger);
+  if (target.includes('cache.json')) return /cache/.test(trigger);
+  if (target.includes('/review/') || /\breport\b/i.test(line)) return /report/.test(trigger);
+  if (target.includes('/investigation/')) return /investigation/.test(trigger);
+  if (target.includes('lock')) return /\block\b/.test(trigger);
+  if (/\b(?:copy|copied|remove|removed|delete|deleted)\b/i.test(line)) {
+    return /copied|copy|removed|remove|delet/.test(trigger);
+  }
+  return trigger.includes(target.toLowerCase());
 }
 
 // Return deterministic { context, line, reason, target, includeChain } records.
@@ -1501,6 +1635,8 @@ export function findRuntimeStateSafetyViolations(
     rootContexts,
     initialState: () => ({
       guardSeen: false,
+      guardLazy: false,
+      guardWhen: '',
       setupSentinelValidated: false,
       setupTargetValidated: false,
       setupTrackedStateValidated: false,
@@ -1520,18 +1656,48 @@ export function findRuntimeStateSafetyViolations(
         active.setupTrackedStateValidated = true;
       }
     },
-    onInclude: ({ name, active }) => {
+    onInclude: ({ name, active, lazy, when }) => {
       if (name !== guardFragment) return true;
       active.guardSeen = true;
+      active.guardLazy = lazy;
+      active.guardWhen = when;
       return false;
     },
-    onMutation: ({ context, lineNumber, target, active, includeChain }) => {
+    onMutation: ({ context, line, lineNumber, target, active, includeChain, includePath }) => {
       if (active.setupRepairOnly && includeChain[0] !== setupContext) return;
       if (!active.guardSeen) {
         violations.push({
           context,
           line: lineNumber,
           reason: 'runtime mutation is not preceded by the canonical safety guard',
+          target,
+          includeChain: [...includeChain],
+        });
+        return;
+      }
+      const mutationHasOwnLazyTrigger = includePath.some(
+        ({ name, lazy }) => lazy && name !== guardFragment,
+      );
+      const eagerApplicabilityOwner = includePath.find(
+        ({ name, lazy }) =>
+          !lazy && (name === 'effective-flow-dir-migration' || name === 'issue-tracker'),
+      );
+      if (
+        active.guardLazy &&
+        active.guardWhen &&
+        eagerApplicabilityOwner &&
+        !mutationHasOwnLazyTrigger &&
+        !runtimeSafetyTriggerCoversMutation(active.guardWhen, {
+          context,
+          line,
+          target,
+          includeChain,
+        })
+      ) {
+        violations.push({
+          context,
+          line: lineNumber,
+          reason: `runtime-state-safety trigger does not cover this mutation: "${active.guardWhen}"`,
           target,
           includeChain: [...includeChain],
         });
@@ -1597,6 +1763,54 @@ export function findRuntimeDirMigrationViolations(
         context,
         line: lineNumber,
         reason: 'runtime mutation is not preceded by the runtime-directory migration prerequisite',
+        target,
+        includeChain: [...includeChain],
+      });
+    },
+  });
+
+  return violations.sort(
+    (a, b) =>
+      a.context.localeCompare(b.context) ||
+      a.line - b.line ||
+      a.reason.localeCompare(b.reason) ||
+      a.target.localeCompare(b.target),
+  );
+}
+
+// --- Shared memory-state mutation coverage guard (#176) ---
+//
+// Every operational write to the repository-global memory object must pass
+// through the single lock/merge/atomic-replacement contract. Ordered traversal
+// catches a writer that includes the contract only after its first mutation.
+
+export function findMemoryStateContractViolations(
+  sources,
+  { rootContexts, contractFragment = 'memory-state', delivered = false } = {},
+) {
+  const contractContext = `shared/${contractFragment}.md`;
+  const violations = [];
+
+  walkRuntimeStateMutations(sources, {
+    rootContexts,
+    initialState: () => ({ memoryContractSeen: false }),
+    onLine: ({ line, active }) => {
+      if (delivered && line.trim() === '## Shared memory-state mutation') {
+        active.memoryContractSeen = true;
+      }
+    },
+    onInclude: ({ name, active, lazy }) => {
+      if (delivered) return lazy;
+      if (name === contractFragment) active.memoryContractSeen = true;
+      return name !== contractFragment;
+    },
+    onMutation: ({ context, lineNumber, target, active, includeChain }) => {
+      if (context === contractContext || !target.startsWith('.effective-flow/memory.json')) return;
+      if (active.memoryContractSeen) return;
+      violations.push({
+        context,
+        line: lineNumber,
+        reason: 'memory mutation is not preceded by the shared memory-state contract',
         target,
         includeChain: [...includeChain],
       });

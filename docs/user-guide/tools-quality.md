@@ -40,8 +40,11 @@ suitable to deeply cross-check an existing plan before implementation.
 - In remote tracker mode (`tracker.mode: remote`): no local report, but instead a
   finding issue per new finding plus an epic issue that bundles them; already-present
   findings are deduplicated.
-- Findings are numbered sequentially (`R-0000001`, `R-0000002`, …) and tracked in
-  `.effective-flow/memory.json`.
+- Findings use repository-wide monotonic IDs (`R-0000001`, `R-0000002`, …) tracked in
+  `.effective-flow/memory.json`. A review filters and deduplicates first, atomically reserves the
+  exact range it needs, and only then publishes a local report or remote issues. Parallel reviews
+  therefore receive disjoint ranges. If publication fails after a reservation, the unused IDs
+  remain as harmless gaps; Effective Flow never reuses them.
 
 **Interplay:** Each finding carries a recommendation for the appropriate follow-up action –
 `/effective-flow fix` (defect), `/effective-flow refactor` (structural problem), `/effective-flow build` (missing

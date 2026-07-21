@@ -28,7 +28,7 @@ task-tracking
 
 ```lazy-include
 runtime-state-safety
-when: confirmed legacy data is about to be copied into or removed from `.effective-flow/`
+when: any confirmed legacy copy or removal, runtime migration, memory, or tracker-marker mutation is imminent
 ```
 
 ```include

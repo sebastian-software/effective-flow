@@ -33,8 +33,8 @@ If `<RUNTIME_STATE_ROOT>/.effective-flow/` is missing, apply the owning workflow
 `.effective-flow/` immediately before its `mkdir`. If the review directory is missing,
 separately apply it to that exact directory immediately before its `mkdir`. Apply the contract
 again to the concrete absolute report handle immediately before writing the report and to the
-absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle immediately before updating
-memory. A blocked target remains unchanged.
+absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle as required by the loaded
+“Shared memory-state mutation” contract. A blocked target remains unchanged.
 
 1. Create `<RUNTIME_STATE_ROOT>/.effective-flow/review/` if needed.
 2. If the workflow has a plan file as its basis, prefer:
@@ -53,13 +53,16 @@ memory. A blocked target remains unchanged.
 
 This report uses the same global finding IDs as `{{SKILL:review}}`.
 
-1. Read `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json`, if present.
-2. If the file is missing, start with `lastFindingNumber: 0`.
-3. Number new findings consecutively from `lastFindingNumber + 1` with seven digits, e.g. `R-0000021`.
-4. After the report, write the highest assigned number back to the same absolute
-   `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle.
-5. Preserve existing fields such as `configMigration` unchanged.
-6. If memory cannot be written, inform the user and name the report path anyway.
+1. Finish confidence and design-decision filtering plus any applicable deduplication, then fix the
+   ordered list of findings that the report will actually publish.
+2. If the list is empty, publish no finding report and reserve no IDs.
+3. Otherwise use “Shared memory-state mutation” against the absolute
+   `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle to reserve the exact range for that
+   list. Format the returned consecutive numbers with seven digits, e.g. `R-0000021`.
+4. Only after the reservation is atomically persisted and the lock is released, publish the
+   report with that fixed mapping. If reservation fails, publish nothing. If report publication
+   then fails or is interrupted, report the error and leave the reserved IDs as permanent gaps;
+   never roll back or reuse them.
 
 ### Report format
 
