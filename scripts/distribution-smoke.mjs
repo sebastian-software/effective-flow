@@ -23,6 +23,10 @@ import { stageDelivery } from './stage-delivery.mjs';
 
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const AGENT_PREFIX = 'effective-flow-';
+const TRUSTED_AUTOMATION = [
+  join('.github', 'workflows', 'close-develop-issues.yml'),
+  join('.github', 'scripts', 'close-develop-issues.mjs'),
+];
 
 function fail(message) {
   throw new Error(message);
@@ -207,6 +211,23 @@ export function assertDeliveryLayout(directory, portableSkill) {
     const expected = snapshotTree(portableSkill);
     if (JSON.stringify(actual) !== JSON.stringify(expected)) {
       fail('delivered effective-flow tree differs from the portable build');
+    }
+  }
+
+  for (const path of TRUSTED_AUTOMATION) {
+    const actual = readFileSync(join(directory, path));
+    const expected = readFileSync(join(ROOT_DIR, path));
+    if (!actual.equals(expected)) fail(`delivered trusted automation differs from source: ${path}`);
+  }
+  for (const path of [
+    join('.github', 'workflows', 'ci.yml'),
+    join('.github', 'workflows', 'release.yml'),
+  ]) {
+    try {
+      lstatSync(join(directory, path));
+      fail(`delivery contains source-only workflow: ${path}`);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
     }
   }
 }
@@ -465,6 +486,11 @@ function assertStageDeliveryChecksTransformedDocs(dist, temp) {
     join(ROOT_DIR, 'scripts', 'delivery-renovate.json'),
     join(fixtureRoot, 'scripts', 'delivery-renovate.json'),
   );
+  for (const path of TRUSTED_AUTOMATION) {
+    const target = join(fixtureRoot, path);
+    mkdirSync(dirname(target), { recursive: true });
+    cpSync(join(ROOT_DIR, path), target);
+  }
 
   const staged = join(temp, 'delivery-doc-guard-staged');
   let rejection;
@@ -493,6 +519,11 @@ function offlineSmoke() {
   try {
     const delivery = join(temp, 'delivery');
     cpSync(join(ROOT_DIR, 'docs'), join(delivery, 'old-docs'), { recursive: true });
+    for (const path of TRUSTED_AUTOMATION) {
+      const stale = join(delivery, path);
+      mkdirSync(dirname(stale), { recursive: true });
+      writeFileSync(stale, 'stale managed automation\n');
+    }
     stageDelivery(delivery, 'sebastian-software/effective-flow', 'develop');
     assertDeliveryLayout(delivery, join(dist, 'portable', 'effective-flow'));
     assertStageDeliveryChecksTransformedDocs(dist, temp);
