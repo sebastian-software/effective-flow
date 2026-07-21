@@ -69,6 +69,10 @@ goal-completion
 ```
 
 ```include
+goal-start-action
+```
+
+```include
 worktree-integration
 ```
 
@@ -144,7 +148,7 @@ the plan passes the gate:
    - Behavior invariance: every change justified
 7. Present the plan with scorecard.
 8. Derive the explicit completion condition from the measurable acceptance criteria (see "Goal-driven completion control"); it covers phases 2–6 and feeds the explicit goal query in the approval question below. The completion condition includes behavior invariance: the baseline collected in Phase 2 must remain unchanged.
-9. Obtain approval. The approval question contains the explicit goal query (option "Autonomous via /goal"); handle it per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, emit the `/goal` string for phases 2–6; the option is omitted when the workflow was delegated non-interactively.
+9. Obtain approval. The approval question contains the explicit goal query (option "Autonomous via /goal"); handle it per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, perform the central harness-specific goal-start action for phases 2–6; the option is omitted when the workflow was delegated non-interactively.
 
 ```ask
 header: Approval
@@ -153,7 +157,7 @@ options:
   - label: Yes
     description: Approval granted, workflow continues gated
   - label: Autonomous via /goal
-    description: Remaining phases autonomous under the native /goal — the skill emits the /goal string to paste (omitted for non-interactive delegation)
+    description: Remaining phases autonomous under the native /goal after this explicit selection (omitted for non-interactive delegation)
   - label: Adjust
     description: Enter feedback as free text
 ```

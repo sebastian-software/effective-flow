@@ -72,6 +72,10 @@ goal-completion
 ```
 
 ```include
+goal-start-action
+```
+
+```include
 worktree-integration
 ```
 
@@ -146,7 +150,7 @@ Determine per item (review thread or free-text instruction):
 Show the classified items (actionable, skipped, deferred questions) and obtain an
 approval. Without approval **no** externally visible action takes place (no push, no
 comment). Handle the response per "Explicit goal query for autonomous runs": on "Autonomous
-via /goal" emit the `/goal` string for phases 3–6. The query is omitted if `iterate`
+via /goal" perform the central harness-specific goal-start action for phases 3–6. The query is omitted if `iterate`
 was delegated non-interactively (e.g. by {{FIRMO}} apply-review).
 
 ```ask
@@ -156,7 +160,7 @@ options:
   - label: Yes
     description: Approval granted, implementation and delivery-back continue gated
   - label: Autonomous via /goal
-    description: Remaining phases autonomously under native /goal — the skill emits the /goal string to paste (omitted for non-interactive delegation)
+    description: Remaining phases autonomously under native /goal after this explicit selection (omitted for non-interactive delegation)
   - label: Adjust
     description: Enter feedback as free text, e.g. deselect individual items
 ```

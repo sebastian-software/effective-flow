@@ -19,6 +19,7 @@ import {
   assertQuotedDescription,
   transformRefs,
   parseAskBlock,
+  transformGoalStart,
   renderBody,
   missingCategoryReadmes,
   findSelfReferentialContractPhrases,
@@ -1019,7 +1020,154 @@ test('plan.markerLanguage does not influence the block-local ask language defaul
   assert.doesNotMatch(rendered, /Verwende|Freigabe erteilt/);
 });
 
+// --- Goal-start transforms ---
+
+test('transformGoalStart gives Codex the complete direct-start contract', () => {
+  const rendered = transformGoalStart('Before\n{{GOAL_START}}\nAfter\n', 'codex');
+
+  assert.match(rendered, /available `create_goal` capability/);
+  assert.match(
+    rendered,
+    /Set the required `objective` to exactly the text after `\/goal ` in the completed single-line prompt/,
+  );
+  assert.match(
+    rendered,
+    /Set `token_budget` only if the user explicitly supplied a token budget.*otherwise omit it/,
+  );
+  assert.match(rendered, /Make exactly one start attempt/);
+  assert.match(rendered, /If it succeeds, do not output the `\/goal` prompt/);
+  assert.match(
+    rendered,
+    /capability is unavailable or the call fails for a technical reason.*output the full copy-pasteable `\/goal` prompt/s,
+  );
+  assert.match(
+    rendered,
+    /another unfinished goal is already active.*Do not output a new `\/goal` prompt.*do not continue gated/s,
+  );
+  assert.doesNotMatch(rendered, /\{\{GOAL_START\}\}/);
+});
+
+test('transformGoalStart keeps prompt handoff for Claude and portable', () => {
+  const expected =
+    'After the user explicitly chooses the autonomous `/goal` option, output the full copy-pasteable `/goal` prompt prominently and ask the user to paste it as a new input. Use only this prompt handoff; without a pasted prompt, the workflow continues gated.';
+
+  for (const harness of ['claude', 'portable']) {
+    const rendered = transformGoalStart('{{GOAL_START}}', harness);
+    assert.equal(rendered, expected, harness);
+    assert.doesNotMatch(rendered, /create_goal|start the goal directly/, harness);
+  }
+});
+
+test('transformGoalStart replaces every placeholder occurrence', () => {
+  const rendered = transformGoalStart('{{GOAL_START}}\n---\n{{GOAL_START}}', 'codex');
+
+  assert.doesNotMatch(rendered, /\{\{GOAL_START\}\}/);
+  assert.equal(rendered.match(/attempt to start the goal directly/g)?.length, 2);
+});
+
+const EXPLICIT_GOAL_GATE_TOOLS = [
+  'build',
+  'fix',
+  'refactor',
+  'docs',
+  'maintain',
+  'iterate',
+  'apply-plan',
+  'apply-issues',
+];
+
+const sourceToolsUrl = new URL('../src/tools/', import.meta.url);
+const sourceAgentsUrl = new URL('../src/agents/', import.meta.url);
+const sourceSharedUrl = new URL('../src/shared/', import.meta.url);
+const sourceToolNames = readdirSync(sourceToolsUrl)
+  .filter((file) => file.endsWith('.md'))
+  .map((file) => file.slice(0, -3));
+const sourceAgentNames = readdirSync(sourceAgentsUrl)
+  .filter((file) => file.endsWith('.md'))
+  .map((file) => file.slice(0, -3));
+const sourceRenderConfig = {
+  exposedTools: sourceToolNames,
+  agentPrefix: 'effective-flow-',
+  skillName: 'effective-flow',
+  knownTools: new Set(sourceToolNames),
+  knownAgents: new Set(sourceAgentNames),
+};
+
+function renderSourceTool(name, harness) {
+  const context = `tools/${name}.md`;
+  const source = readFileSync(new URL(`${name}.md`, sourceToolsUrl), 'utf8');
+  const body = resolveEagerIncludes(extractBody(source), {
+    context,
+    readFragment: (fragment) => readFileSync(new URL(`${fragment}.md`, sourceSharedUrl), 'utf8'),
+  });
+  return renderBody(body, harness, { ...sourceRenderConfig, context });
+}
+
+test('all explicit goal gates render the complete harness-specific goal-start contract', () => {
+  const codexClauses = [
+    /After the user explicitly chooses the autonomous `\/goal` option, attempt to start the goal directly/,
+    /Set the required `objective` to exactly the text after `\/goal ` in the completed single-line prompt/,
+    /Set `token_budget` only if the user explicitly supplied a token budget.*otherwise omit it/,
+    /Make exactly one start attempt/,
+    /If it succeeds, do not output the `\/goal` prompt.*continue the named remaining phases under the active goal/s,
+    /capability is unavailable or the call fails for a technical reason.*output the full copy-pasteable `\/goal` prompt.*Do not claim that the goal started.*do not silently switch to gated execution/s,
+    /another unfinished goal is already active.*Do not output a new `\/goal` prompt.*do not replace, edit, complete or otherwise change the active goal.*do not continue gated/s,
+  ];
+  const promptHandoff =
+    /output the full copy-pasteable `\/goal` prompt prominently and ask the user to paste it as a new input/g;
+
+  for (const tool of EXPLICIT_GOAL_GATE_TOOLS) {
+    const codex = renderSourceTool(tool, 'codex');
+    assert.equal(codex.match(/`create_goal`/g)?.length, 1, `${tool}: Codex create_goal count`);
+    for (const clause of codexClauses) {
+      assert.match(codex, clause, `${tool}: Codex clause ${clause}`);
+    }
+    assert.doesNotMatch(codex, /\{\{GOAL_START\}\}/, `${tool}: Codex placeholder`);
+
+    for (const harness of ['claude', 'portable']) {
+      const rendered = renderSourceTool(tool, harness);
+      assert.equal(
+        rendered.match(promptHandoff)?.length,
+        1,
+        `${tool}: ${harness} prompt handoff count`,
+      );
+      assert.doesNotMatch(rendered, /create_goal/, `${tool}: ${harness} direct start`);
+      assert.doesNotMatch(rendered, /\{\{GOAL_START\}\}/, `${tool}: ${harness} placeholder`);
+    }
+  }
+});
+
+test('apply-review keeps its optional goal prompt without gaining a Codex direct-start action', () => {
+  const rendered = renderSourceTool('apply-review', 'codex');
+
+  assert.doesNotMatch(rendered, /create_goal/);
+  assert.match(rendered, /#### Optional `\/goal` string/);
+  assert.match(rendered, /output the optional `\/goal` string/);
+  assert.match(rendered, /instructs the user to run through the remaining phases/);
+  assert.doesNotMatch(rendered, /\{\{GOAL_START\}\}/);
+});
+
 // --- renderBody end-to-end ---
+
+test('renderBody resolves ask, goal-start and reference syntax for Codex', () => {
+  const body = [
+    '```ask',
+    'header: Goal mode',
+    'question: Start autonomously?',
+    'type: approval',
+    '```',
+    '',
+    '{{GOAL_START}}',
+    '',
+    'Continue with {{SKILL:fix}}.',
+  ].join('\n');
+  const rendered = renderBody(body, 'codex', { ...refConfig, context: 'goal-start.md' });
+
+  assert.match(rendered, /Ask the user: \*\*Start autonomously\?\*\*/);
+  assert.match(rendered, /available `create_goal` capability/);
+  assert.match(rendered, /Continue with \$effective-flow fix\./);
+  assert.doesNotMatch(rendered, /```ask|\{\{GOAL_START\}\}|\{\{SKILL:/);
+});
 
 test('renderBody runs ask + ref transforms for claude', () => {
   const body = 'Intro {{SKILL:fix}} and {{AGENT:code-validator}}.\n';

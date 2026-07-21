@@ -58,6 +58,10 @@ completion-protocol
 goal-completion
 ```
 
+```include
+goal-start-action
+```
+
 ```lazy-include
 worktree-integration
 when: the delivery/worktree mode is determined (Phase 2, step 0)
@@ -163,7 +167,7 @@ the plan passes the gate:
    - affected files
    - planned content changes
    - validation strategy
-8. Derive the explicit completion condition from the validation strategy and the planned changes (see "Goal-driven completion control"); it covers phases 2–4 and feeds the explicit goal query in the approval question below. Handle the goal query per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, emit the `/goal` string for phases 2–4; the option is omitted when the workflow was delegated non-interactively.
+8. Derive the explicit completion condition from the validation strategy and the planned changes (see "Goal-driven completion control"); it covers phases 2–4 and feeds the explicit goal query in the approval question below. Handle the goal query per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, perform the central harness-specific goal-start action for phases 2–4; the option is omitted when the workflow was delegated non-interactively.
 
 ```ask
 header: Doc plan
@@ -172,7 +176,7 @@ options:
   - label: Yes
     description: Approval granted, workflow continues gated
   - label: Autonomous via /goal
-    description: Remaining phases autonomous under the native /goal — the skill emits the /goal string to paste (omitted for non-interactive delegation)
+    description: Remaining phases autonomous under the native /goal after this explicit selection (omitted for non-interactive delegation)
   - label: Adjust
     description: Enter feedback as free text
 ```

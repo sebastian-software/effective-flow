@@ -14,9 +14,19 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
   delivery branch or worktree; at the end there is a completion action (`pr`, `merge`, or
   `branch`). For details see [Worktree and delivery](worktree-and-delivery.md).
   `/effective-flow apply` itself implements nothing, it only delegates.
-- After the approval of an internal plan, they offer an explicit goal prompt
-  ("Autonomous via `/goal`"), so that the remaining phases can run autonomously instead of
-  step-by-step gated.
+- After the approval of an internal plan, they offer the explicit option "Autonomous via
+  `/goal`", so that the remaining phases can run autonomously instead of step-by-step gated.
+  In native Codex, this explicit choice makes one direct `create_goal` attempt. Its `objective`
+  is exactly the completion condition that a `/goal` prompt would contain; `token_budget` is
+  omitted unless you supplied one explicitly. A successful start continues without an extra
+  prompt. If the capability is unavailable or fails for a technical reason, Effective Flow
+  reports the cause and provides the complete copy-pasteable prompt instead. If another
+  unfinished goal is active, it waits for your decision without emitting a new prompt, changing
+  that goal, or continuing in gated mode.
+- Claude Code and the portable manager target retain the prompt handoff: Effective Flow outputs
+  the complete `/goal` prompt, and the autonomous run starts only after you paste it as a new
+  input. Choosing the gated or adjustment path, answering normally, and non-interactive
+  delegation do not start a goal.
 - Before analysis, they review the available host skills (see
   [Skill discovery](skill-discovery.md)) and respect their respective
   write boundary.
