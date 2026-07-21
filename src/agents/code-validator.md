@@ -139,14 +139,56 @@ A command that requires a missing runtime, network access, secrets, a destructiv
    Record `TIMEOUT`, start a sequential retry, or write a normal completion report only after the required trees have both verified exit and fully drained output. If complete tree shutdown, verification, or stream drainage cannot be guaranteed, emit only a `FAILED (cleanup incomplete)` result without claiming terminal state, start no replacement or retry, and do not allow later workflow phases to proceed. Still observe every already-running independent check to its terminal state and include its output.
 
 3. **Timeout per check:** Give each started check its own **120-second** timeout. At the deadline, apply the canonical process-tree shutdown procedure to that check tree, mark its section as `TIMEOUT` only after verified exit and output drainage, and continue waiting for every other started check. A failure or timeout in one check must never cancel another check.
-4. **Deterministic order:** Even if the processes finish in any order, report each file/domain bucket in routing order and its sections as **Type/static → Lint/format → Build → Documentation**. JS/TS labels may remain **TypeScript → Linting → Build → Documentation**.
-5. **Cross-section correlation:** If later checks concern the same file or symbol as an earlier root-cause error, reference the earlier error instead of duplicating it. For JS/TS, if build errors and TypeScript errors concern the same file or symbol, reference the TypeScript error in the build section instead of duplicating it.
+4. **Deterministic order:** Even if the processes finish in any order, report each file/domain bucket in routing order and use the applicable section order:
+   - JS/TS: **TypeScript → Linting → Build → Documentation**
+   - Rust: **Cargo check or Cargo build → Clippy → Cargo format → rustdoc → Rust doctests**. Use the exact established Cargo check/build command selected by repository-native discovery as the first heading.
+   - Generic product languages: **Type/static → Lint/format → Build → Documentation**
+
+   JS/TS-only buckets use only JS/TS labels and omit Rust sections. Rust-only buckets use only Rust labels and omit JS/TS placeholders. Mixed repositories retain the project-routing bucket order and apply the deterministic section order within each bucket.
+
+5. **Section visibility and terminal states:** Keep every applicable section visible when its command is unavailable, skipped by the active mode, or timed out. Omit nonapplicable toolchains rather than emitting placeholders. Every applicable Rust section finishes with exactly one terminal result: `SUCCESS`, `FAILED`, `SKIPPED (<reason>)`, or `TIMEOUT`; retain source-located diagnostics and concrete remedies under that result. A zero-exit Clippy command remains `SUCCESS` when it emits warnings: record the warnings, but only a nonzero command result makes Clippy `FAILED`.
+6. **Combined commands:** Execute each repository-native command exactly once. A combined command may populate multiple named results only when its established definition evidences that coverage. Attribute each diagnostic once to a single primary section and cross-reference it elsewhere, so neither command execution nor diagnostics are double-counted.
+7. **Overall result:** Report `FAILED` if any executed check fails or times out. Report `PASSED` if at least one check executes and none fail or time out. Report `SKIPPED` when the mode is `off` or no applicable check executes. A visible individual `SKIPPED` section does not itself make the overall result fail.
+8. **Cross-section correlation:** If later checks concern the same file or symbol as an earlier root-cause error, reference the earlier error instead of duplicating it. For JS/TS, if build errors and TypeScript errors concern the same file or symbol, reference the TypeScript error in the build section instead of duplicating it.
 
 ## Output format
 
 ```text
-## Result: [PASSED / FAILED]
+## Result: [PASSED / FAILED / SKIPPED]
 ## Mode: [full / quick / off]
+
+For a JS/TS bucket:
+
+### TypeScript: [X errors, Y warnings / SKIPPED (reason) / TIMEOUT]
+- [File:Line] Error: description -> solution
+
+### Linting: [X errors, Y warnings / SKIPPED (reason) / TIMEOUT]
+- [File:Line] Rule: description -> solution
+
+### Build: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]
+- Error: description -> solution
+
+### Documentation: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]
+- Error: description -> solution
+
+For a Rust bucket, use `Cargo check` or `Cargo build` as the first heading to reflect the selected established command:
+
+### [Cargo check / Cargo build]: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]
+- [File:Line] Error: description -> solution
+
+### Clippy: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]
+- [File:Line] Warning or error: description -> solution
+
+### Cargo format: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]
+- [File:Line] Error: description -> solution
+
+### rustdoc: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]
+- [File:Line] Error: description -> solution
+
+### Rust doctests: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]
+- [File:Line] Error: description -> solution
+
+For a generic product-language bucket:
 
 ### [Type/static check label]: [X errors, Y warnings / SKIPPED (reason)]
 - [File:Line] Error: description -> solution

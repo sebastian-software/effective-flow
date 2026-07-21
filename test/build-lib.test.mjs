@@ -1244,6 +1244,116 @@ test('code-validator renders a harness-neutral concurrent validation contract fo
       target,
     );
     assert.match(rendered, /`off`: run no checks/, target);
+
+    const rustOrder = [
+      '**Cargo check or Cargo build',
+      '→ Clippy',
+      '→ Cargo format',
+      '→ rustdoc',
+      '→ Rust doctests**',
+    ].map((label) => rendered.indexOf(label));
+    assert.ok(
+      rustOrder.every((position) => position >= 0),
+      target,
+    );
+    assert.deepEqual(
+      rustOrder,
+      [...rustOrder].sort((a, b) => a - b),
+      target,
+    );
+    assert.match(
+      rendered,
+      /Use the exact established Cargo check\/build command selected by repository-native discovery as the first heading/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /Every applicable Rust section finishes with exactly one terminal result: `SUCCESS`, `FAILED`, `SKIPPED \(<reason>\)`, or `TIMEOUT`/,
+      target,
+    );
+    assert.match(rendered, /retain source-located diagnostics and concrete remedies/, target);
+    assert.match(
+      rendered,
+      /A zero-exit Clippy command remains `SUCCESS` when it emits warnings/,
+      target,
+    );
+    assert.match(rendered, /only a nonzero command result makes Clippy `FAILED`/, target);
+    assert.match(rendered, /Report `FAILED` if any executed check fails or times out/, target);
+    assert.match(
+      rendered,
+      /Report `PASSED` if at least one check executes and none fail or time out/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /Report `SKIPPED` when the mode is `off` or no applicable check executes/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /A visible individual `SKIPPED` section does not itself make the overall result fail/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /JS\/TS-only buckets use only JS\/TS labels and omit Rust sections/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /Rust-only buckets use only Rust labels and omit JS\/TS placeholders/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /Mixed repositories retain the project-routing bucket order and apply the deterministic section order within each bucket/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /Keep every applicable section visible when its command is unavailable, skipped by the active mode, or timed out/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /Omit nonapplicable toolchains rather than emitting placeholders/,
+      target,
+    );
+    assert.match(rendered, /Execute each repository-native command exactly once/, target);
+    assert.match(
+      rendered,
+      /A combined command may populate multiple named results only when its established definition evidences that coverage/,
+      target,
+    );
+    assert.match(rendered, /neither command execution nor diagnostics are double-counted/, target);
+    const jsHeadings = ['### TypeScript:', '### Linting:', '### Build:', '### Documentation:'].map(
+      (heading) => rendered.indexOf(heading),
+    );
+    assert.ok(
+      jsHeadings.every((position) => position >= 0),
+      target,
+    );
+    assert.deepEqual(
+      jsHeadings,
+      [...jsHeadings].sort((a, b) => a - b),
+      target,
+    );
+    const rustHeadings = [
+      '### [Cargo check / Cargo build]: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]',
+      '### Clippy: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]',
+      '### Cargo format: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]',
+      '### rustdoc: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]',
+      '### Rust doctests: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]',
+    ].map((heading) => rendered.indexOf(heading));
+    assert.ok(
+      rustHeadings.every((position) => position >= 0),
+      target,
+    );
+    assert.deepEqual(
+      rustHeadings,
+      [...rustHeadings].sort((a, b) => a - b),
+      target,
+    );
   }
 });
 
