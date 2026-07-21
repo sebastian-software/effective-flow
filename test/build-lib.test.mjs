@@ -1326,34 +1326,57 @@ test('code-validator renders a harness-neutral concurrent validation contract fo
       target,
     );
     assert.match(rendered, /neither command execution nor diagnostics are double-counted/, target);
-    const jsHeadings = ['### TypeScript:', '### Linting:', '### Build:', '### Documentation:'].map(
-      (heading) => rendered.indexOf(heading),
-    );
-    assert.ok(
-      jsHeadings.every((position) => position >= 0),
+    assert.match(
+      rendered,
+      /Repeat the following single bucket envelope once for every applicable file\/domain bucket/,
       target,
     );
-    assert.deepEqual(
-      jsHeadings,
-      [...jsHeadings].sort((a, b) => a - b),
+    assert.match(rendered, /The envelope is mandatory even when only one bucket applies/, target);
+    assert.match(
+      rendered,
+      /`Bucket` is the route identity and `Scope` is the exact assigned file or domain scope/,
       target,
     );
-    const rustHeadings = [
-      '### [Cargo check / Cargo build]: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]',
-      '### Clippy: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]',
-      '### Cargo format: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]',
-      '### rustdoc: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]',
-      '### Rust doctests: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]',
-    ].map((heading) => rendered.indexOf(heading));
-    assert.ok(
-      rustHeadings.every((position) => position >= 0),
+    assert.match(rendered, /Do not merge buckets that happen to use the same labels/, target);
+    assert.match(rendered, /### Bucket: \[route identity\]/, target);
+    assert.match(rendered, /\*\*Scope:\*\* \[assigned files or domain\]/, target);
+    assert.match(rendered, /\*\*Labels:\*\* \[applicable ordered label mapping\]/, target);
+    assert.match(
+      rendered,
+      /#### \[result-section label\]: \[SUCCESS \/ FAILED \/ SKIPPED \(reason\) \/ TIMEOUT\]/,
       target,
     );
-    assert.deepEqual(
-      rustHeadings,
-      [...rustHeadings].sort((a, b) => a - b),
+    assert.equal(rendered.match(/#### \[result-section label\]/g)?.length, 1, target);
+    assert.match(
+      rendered,
+      /JS\/TS route: \*\*TypeScript → Linting → Build → Documentation\*\*/,
       target,
     );
+    assert.match(
+      rendered,
+      /Rust route: \*\*Cargo check or Cargo build → Clippy → Cargo format → rustdoc → Rust doctests\*\*/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /Generic product-language route: \*\*Type\/static → Lint\/format → Build → Documentation\*\*/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /Keep the bucket identity and scope attached to all of its result sections/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /This makes two Cargo projects or workspaces distinguishable even when their Rust label sequences are identical/,
+      target,
+    );
+    assert.doesNotMatch(rendered, /For a JS\/TS bucket:/, target);
+    assert.doesNotMatch(rendered, /For a Rust bucket/, target);
+    assert.doesNotMatch(rendered, /For a generic product-language bucket:/, target);
+    assert.doesNotMatch(rendered, /### TypeScript:/, target);
+    assert.doesNotMatch(rendered, /### \[Cargo check \/ Cargo build\]:/, target);
   }
 });
 

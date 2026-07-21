@@ -153,55 +153,28 @@ A command that requires a missing runtime, network access, secrets, a destructiv
 
 ## Output format
 
+Repeat the following single bucket envelope once for every applicable file/domain bucket, preserving project-routing order. The envelope is mandatory even when only one bucket applies: `Bucket` is the route identity and `Scope` is the exact assigned file or domain scope. Do not merge buckets that happen to use the same labels.
+
 ```text
 ## Result: [PASSED / FAILED / SKIPPED]
 ## Mode: [full / quick / off]
 
-For a JS/TS bucket:
+### Bucket: [route identity]
+**Scope:** [assigned files or domain]
+**Labels:** [applicable ordered label mapping]
 
-### TypeScript: [X errors, Y warnings / SKIPPED (reason) / TIMEOUT]
-- [File:Line] Error: description -> solution
-
-### Linting: [X errors, Y warnings / SKIPPED (reason) / TIMEOUT]
-- [File:Line] Rule: description -> solution
-
-### Build: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]
-- Error: description -> solution
-
-### Documentation: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]
-- Error: description -> solution
-
-For a Rust bucket, use `Cargo check` or `Cargo build` as the first heading to reflect the selected established command:
-
-### [Cargo check / Cargo build]: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]
-- [File:Line] Error: description -> solution
-
-### Clippy: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]
-- [File:Line] Warning or error: description -> solution
-
-### Cargo format: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]
-- [File:Line] Error: description -> solution
-
-### rustdoc: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]
-- [File:Line] Error: description -> solution
-
-### Rust doctests: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]
-- [File:Line] Error: description -> solution
-
-For a generic product-language bucket:
-
-### [Type/static check label]: [X errors, Y warnings / SKIPPED (reason)]
-- [File:Line] Error: description -> solution
-
-### [Lint/format check label]: [X errors, Y warnings / SKIPPED (reason)]
-- [File:Line] Rule: description -> solution
-
-### [Build check label]: [SUCCESS / FAILED / SKIPPED (reason)]
-- Error: description -> solution
-
-### [Documentation check label]: [SUCCESS / FAILED / SKIPPED (reason)]
-- Error: description -> solution
+#### [result-section label]: [SUCCESS / FAILED / SKIPPED (reason) / TIMEOUT]
+- Summary: [X errors, Y warnings]
+- [File:Line] Error or warning: description -> solution
 ```
+
+Inside each bucket envelope, set `Labels` to exactly one applicable mapping and repeat the generalized result section once per label:
+
+- JS/TS route: **TypeScript → Linting → Build → Documentation**
+- Rust route: **Cargo check or Cargo build → Clippy → Cargo format → rustdoc → Rust doctests**. Use the exact selected established command as the first result-section label.
+- Generic product-language route: **Type/static → Lint/format → Build → Documentation**
+
+Keep the bucket identity and scope attached to all of its result sections. This makes two Cargo projects or workspaces distinguishable even when their Rust label sequences are identical.
 
 ## Rules
 
