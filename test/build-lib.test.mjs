@@ -969,9 +969,11 @@ test('code-validator renders a harness-neutral concurrent validation contract fo
       context: `src/agents/code-validator.md (${target})`,
     });
 
+    assert.deepEqual(findForeignHarnessToolParameters(rendered, target), [], target);
     assert.doesNotMatch(rendered, /\brun_in_background\b/, target);
     assert.doesNotMatch(rendered, /background Bash invocation/, target);
     assert.doesNotMatch(rendered, /in parallel, never sequentially/, target);
+    assert.doesNotMatch(rendered, /\b(?:SIGTERM|SIGKILL|pkill|taskkill)\b/i, target);
     assert.match(
       rendered,
       /Start every applicable check through a separate command invocation/,
@@ -987,14 +989,85 @@ test('code-validator renders a harness-neutral concurrent validation contract fo
       /actively wait or poll every retained handle until it reaches a terminal state/,
       target,
     );
+    assert.match(
+      rendered,
+      /The cleanup-failure result in step 2 is the only exception: emit it without claiming terminal state, then block every later workflow phase/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /Treat each retained handle as owning the invoked process and all of its descendants/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /request ordinary termination through the active harness's supported process-control mechanism/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /if any process in the tree survives, use the supported forced-stop mechanism for those survivors/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /wait for and reap the invoked process tree through the retained handle or session/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /verifying that the invoked process and every descendant have exited/,
+      target,
+    );
+    assert.match(rendered, /continue draining stdout and stderr until both streams close/, target);
+    assert.match(rendered, /include that shutdown output in the check's result/, target);
+    assert.match(
+      rendered,
+      /select only the affected check trees so unrelated checks continue/,
+      target,
+    );
     assert.match(rendered, /each started check its own \*\*120-second\*\* timeout/, target);
+    assert.match(
+      rendered,
+      /mark its section as `TIMEOUT` only after verified exit and output drainage/,
+      target,
+    );
     assert.match(
       rendered,
       /A failure or timeout in one check must never cancel another check/,
       target,
     );
     assert.match(rendered, /TypeScript → Linting → Build/, target);
-    assert.match(rendered, /repeat the planned checks sequentially/, target);
+    assert.match(
+      rendered,
+      /apply the canonical process-tree shutdown procedure under `Aggregation` to every still-running check/,
+      target,
+    );
+    assert.match(rendered, /[Rr]epeat the planned checks sequentially/, target);
+    assert.match(
+      rendered,
+      /only after every selected tree has a verified exit and fully drained output/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /on a match: apply the canonical process-tree shutdown procedure to every still-running check that must stop/,
+      target,
+    );
+    assert.doesNotMatch(
+      rendered,
+      /on a match: terminate all parallel processes, repeat the checks sequentially/,
+      target,
+    );
+    assert.match(
+      rendered,
+      /If complete tree shutdown, verification, or stream drainage cannot be guaranteed/,
+      target,
+    );
+    assert.match(rendered, /emit only a `FAILED \(cleanup incomplete\)` result/, target);
+    assert.match(rendered, /without claiming terminal state/, target);
+    assert.match(rendered, /start no replacement or retry/, target);
+    assert.match(rendered, /do not allow later workflow phases to proceed/, target);
     assert.match(
       rendered,
       /use sequential execution only when that mechanism is unavailable or the documented race fallback applies/,
