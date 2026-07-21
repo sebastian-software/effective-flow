@@ -11,7 +11,7 @@ convention file. The wizard starts from safe defaults and offers two paths: **Ex
 defaults while retaining existing values) or **Guided** (explain and choose each option).
 
 **When to use:** On the first use of Effective Flow in a project, or later, to adjust individual
-settings (worktree, completion action, marker language, tracker mode, advanced
+settings (project and surface languages, worktree, completion action, tracker mode, advanced
 review/apply-review values, skill discovery).
 
 **Typical call:** `/effective-flow setup`
@@ -22,13 +22,24 @@ review/apply-review values, skill discovery).
 already exists, the wizard shows current values and changes them only after explicit
 confirmation. Unknown ADR rows are preserved.
 
+Express stores `language.project: en` and lets every absent override inherit it. Guided asks for
+the project language first, then offers independent `de`/`en` overrides for source prose, user
+documentation, technical documentation, local workflow artifacts, Forge prose, and Git/release
+prose. Choosing “inherit project language” removes or omits the override and appears in the
+before/after confirmation. A new ADR uses the technical-documentation language; setup preserves
+the language of an existing ADR during ordinary updates.
+
 **Interplay:** `setup` owns configuration writes and migration. Other tools only resolve and read
 the ADR; if they find only a legacy JSON config, they may use it transitionally for that run and
 point to `setup`. During migration, setup converts the legacy values to the flat Markdown table,
 sets the marker, normalizes `.gitignore` to `.effective-flow/`, and untracks an old tracked config
-without deleting its on-disk content. The values set here (`review.*`, `applyReview.*`, `plan.*`,
-`delivery.*`, `worktree.*`, `tracker.*`, `skills.*`) drive the other tools; the complete schema
-is in [Configuration](configuration.md).
+without deleting its on-disk content. A legacy `plan.markerLanguage` remains a read fallback for
+one compatibility generation when neither a valid workflow nor project language exists. Whenever
+`language.workflow` is absent, setup may show that the old marker-only choice becomes the language
+of the complete workflow artifact, propose the new key, and remove the old row only after
+confirmation; an existing new key always wins. The values set here
+(`language.*`, `review.*`, `applyReview.*`, `plan.*`, `delivery.*`, `worktree.*`, `tracker.*`,
+`skills.*`) drive the other tools; the complete schema is in [Configuration](configuration.md).
 
 `setup` is the only repair path when runtime-state safety blocks a write. It validates the
 repaired ignore and index state before writing any migration marker below `.effective-flow/`;

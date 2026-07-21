@@ -53,7 +53,10 @@ The Effective Flow configuration is optional and controls the defaults of the fo
 
 - **`review`** (source: `{{SKILL:review}}`): `profile` (full/focused/fast), `autoConfirmScope` (bool), `designDecisionSources` (full/standard/minimal), `validation` (full/quick/off)
 - **`applyReview`** (source: `{{SKILL:apply-review}}`): `defaultCommitStrategy` (worktrees/single/none/`null` = ask at run time), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/command)
-- **`plan`** (source: `{{SKILL:plan}}`): `markerLanguage` (de/en), `dir` (string, default `docs/plan`) — directory of the plan files
+- **`language`** (source: shared "Language resolution"): `project` and optional `source`,
+  `documentation.user`, `documentation.technical`, `workflow`, `forge`, `git` overrides
+  (`de`/`en`; a missing override inherits `language.project`, whose default is `en`)
+- **`plan`** (source: `{{SKILL:plan}}`): `dir` (string, default `docs/plan`) — directory of the plan files
 - **`delivery`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default `origin/main`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name)
 - **`worktree`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
 - **`tracker`** (source: `{{SKILL:review}}`, section "Issue-tracker integration" – likewise embedded in `{{SKILL:apply-review}}` and the other tracker workflows): `mode` (local/remote, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`)
@@ -65,30 +68,30 @@ The wizard **always** starts from this single named safe-defaults base. It compr
 the conservative `review`/`applyReview` values plus the core switches (values in the
 ADR's table-encoding form):
 
-| Key                               | Value                                               |
-| --------------------------------- | --------------------------------------------------- |
-| review.profile                    | focused                                             |
-| review.autoConfirmScope           | false                                               |
-| review.designDecisionSources      | standard                                            |
-| review.validation                 | full                                                |
-| applyReview.defaultCommitStrategy | null (ask at run time)                              |
-| applyReview.finalValidation       | full                                                |
-| applyReview.stashPolicy           | interactive                                         |
-| applyReview.worktree.baseDir      | .effective-flow/.worktrees                          |
-| applyReview.worktree.setup        | auto                                                |
-| worktree.enabled                  | true                                                |
-| delivery.completion               | merge                                               |
-| delivery.baseBranch               | origin/main                                         |
-| tracker.mode                      | local                                               |
-| plan.dir                          | docs/plan                                           |
-| plan.markerLanguage               | derived: detect from existing plans, otherwise `en` |
+| Key                               | Value                      |
+| --------------------------------- | -------------------------- |
+| review.profile                    | focused                    |
+| review.autoConfirmScope           | false                      |
+| review.designDecisionSources      | standard                   |
+| review.validation                 | full                       |
+| applyReview.defaultCommitStrategy | null (ask at run time)     |
+| applyReview.finalValidation       | full                       |
+| applyReview.stashPolicy           | interactive                |
+| applyReview.worktree.baseDir      | .effective-flow/.worktrees |
+| applyReview.worktree.setup        | auto                       |
+| worktree.enabled                  | true                       |
+| delivery.completion               | merge                      |
+| delivery.baseBranch               | origin/main                |
+| tracker.mode                      | local                      |
+| plan.dir                          | docs/plan                  |
+| language.project                  | en                         |
 
 There is deliberately **no** second preset anymore. Anyone who wants a faster solo flow (e.g.
 `review.profile: fast`, `review.validation: quick`, `applyReview.finalValidation:
 changedScope`) reaches these values individually via the guided path (advanced
-settings). For `plan.markerLanguage` there is no fixed value: detect the marker language
-from existing plans (detection as in `{{SKILL:plan}}`); without a clear signal,
-English.
+settings). Missing `language.*` overrides inherit `language.project`; Express therefore writes
+only `language.project = en` unless existing overrides are preserved. The legacy
+`plan.markerLanguage` is never written as a current setting.
 
 ## Workflow
 
@@ -154,8 +157,10 @@ options:
    `<RUNTIME_STATE_ROOT>/.firmo/config.json` untouched throughout the run. Record whether Step 2
    resolved an ADR, a transitional JSON source, or no source; Step 6 uses this source state to
    detect intervening changes without inventing an undefined handle.
-3. **Form the current values.** If an ADR exists, parse the `## Configuration` table per the
-   encoding into an internal "current values" overview (key → currently recorded value). In the
+3. **Form the current values.** If an ADR exists, parse either canonical `## Configuration` /
+   `| Key | Value |` or `## Konfiguration` / `| Schlüssel | Wert |` table per the encoding into
+   an internal "current values" overview (key → currently recorded value), and retain the
+   envelope language for a later update. In the
    migration case, read `<source-handle>` as the current values and preserve all known and unknown
    keys. Show the respective value at every following question ("currently recorded: …") and use
    it as the pre-selection. If a key is missing, label the pre-selection as the default
@@ -182,15 +187,16 @@ options:
 
 - **Express:** Build the target configuration from the safe-defaults base (config schema above)
   plus – if a valid config exists – its existing values. Derive
-  `plan.markerLanguage` per the base (detection, otherwise English). Jump directly to
-  Step 6 (merge and write); the before/after list and confirmation there
+  `language.project = en` per the base and retain valid existing language overrides. Apply the
+  confirmed compatibility migration described below when needed. Jump directly to Step 6
+  (merge and write); the before/after list and confirmation there
   ensure that no existing, differing config is silently overwritten.
 - **Guided:** Continue with Step 4 (core switches); the optional
   advanced gate follows afterwards (Step 5).
 
 ### Step 4: Core switches (guided path only)
 
-These four switches determine the core behavior. **Before** each question, provide a short,
+These five switches determine the core behavior. **Before** each question, provide a short,
 understandable explanation (what is it, why is it relevant, what does the choice mean) –
 without assuming prior knowledge of Effective Flow – and state whether and with which value the
 switch is currently set in the config (see Step 2); pre-select this value or the safe
@@ -232,19 +238,38 @@ Briefly explain the base branch (the branch that is delivered into) and ask for 
 (`delivery.baseBranch`, default `origin/main`); the switch-back target (`delivery.returnBranch`,
 default `auto`) only optionally.
 
-**Marker language.** Explain: the language of the small status marker at the head of
-plan files (only the marker, not the plan content). Pre-selection: the value detected from existing
-plans; if there is no signal, English.
+**Project and surface languages.** Explain: the project language is the fallback for every new
+human-readable artifact, while optional surface overrides let source prose, documentation,
+workflow artifacts, Forge communication, and Git history differ. A plan is entirely in the
+workflow language, including its status marker. Only `de` and `en` are supported; German maps to
+`de-DE` typography and English to `en-US`.
 
 ```ask
-header: Marker
-question: In which language should the status markers of new plan files be?
+header: Language
+question: Which default language should Effective Flow use for this project?
 options:
   - label: English
-    description: plan.markerLanguage = en (default if no language can be detected from existing plans)
+    description: language.project = en (default)
   - label: German
-    description: plan.markerLanguage = de
+    description: language.project = de
 ```
+
+Then offer each override in turn: `language.source`, `language.documentation.user`,
+`language.documentation.technical`, `language.workflow`, `language.forge`, and `language.git`.
+For every override, offer **Inherit project language** first, then English and German. Inherit is
+represented by an absent row, not `null`; removing an existing override is a normal before/after
+change that requires confirmation. Explain the exact target surface from the shared language
+table. In particular, a Conventional Commit PR title uses `language.git`, while the PR body and
+comments use `language.forge`.
+
+Before asking, detect compatibility input. If `language.workflow` is absent and a valid
+`plan.markerLanguage` exists, show the old value and explain that migration changes it from a
+marker-only language to the language of the complete plan/review artifact. Propose adding
+`language.workflow = <legacy value>` and removing `plan.markerLanguage`; do neither before the
+confirmed Step 6 write. If no `language.*` and no legacy key exist, use the existing-plan fallback
+only when plan prose, canonical fields, and marker all consistently identify one language;
+propose that as `language.workflow` and point to setup. Do not infer from a marker alone, and do
+not guess for mixed, contradictory, empty, or unclear corpora.
 
 **Tracker.** Explain: where review findings end up – `local` as a Markdown report in the project
 (`.effective-flow/review/`) or `remote` as issues on GitHub/Forgejo (useful for teamwork).
@@ -283,11 +308,12 @@ config value or default as the pre-selection:
 
 1. `review`: `review.profile` (full/focused/fast — depth of the review), `review.autoConfirmScope`, `review.designDecisionSources`, `review.validation`
 2. `applyReview`: `applyReview.defaultCommitStrategy`, `applyReview.finalValidation`, `applyReview.stashPolicy`, `applyReview.worktree.baseDir`, `applyReview.worktree.setup`
-3. `plan`: `plan.markerLanguage` (already asked in Step 4 — carry over), `plan.dir` (free text, default `docs/plan` — directory of the plan files)
-4. `delivery`: `delivery.baseBranch` and `delivery.completion` (already asked in Step 4 — carry over), `delivery.branchPrefix`, `delivery.returnBranch`
-5. `worktree`: `worktree.enabled` (already asked in Step 4 — carry over), `worktree.setup`, `worktree.baseDir`
-6. `tracker`: `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo)
-7. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (global lists) as well as – as an advanced option – `skills.agents.<name>` and `skills.tools.<name>` for individual agents/tools. Additionally offer optionally (do not force) to materialize the built-in per-agent and per-tool recommendations visibly into the config as `skills.agents.<name>.include` or `skills.tools.<name>.include`; for a fallback recommendation (`effective-web › impeccable › frontend-design`), write only the **primary** skill (`effective-web`) — the built-in fallback stays active. Flat recommendations (e.g. `locale-typography`) are carried over unchanged.
+3. `language`: the project language and six overrides already asked in Step 4 — carry over
+4. `plan`: `plan.dir` (free text, default `docs/plan` — directory of the plan files)
+5. `delivery`: `delivery.baseBranch` and `delivery.completion` (already asked in Step 4 — carry over), `delivery.branchPrefix`, `delivery.returnBranch`
+6. `worktree`: `worktree.enabled` (already asked in Step 4 — carry over), `worktree.setup`, `worktree.baseDir`
+7. `tracker`: `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo)
+8. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (global lists) as well as – as an advanced option – `skills.agents.<name>` and `skills.tools.<name>` for individual agents/tools. Additionally offer optionally (do not force) to materialize the built-in per-agent and per-tool recommendations visibly into the config as `skills.agents.<name>.include` or `skills.tools.<name>.include`; for a fallback recommendation (`effective-web › impeccable › frontend-design`), write only the **primary** skill (`effective-web`) — the built-in fallback stays active. Flat recommendations (e.g. `locale-typography`) are carried over unchanged.
 
 Anyone who wants the former "fast solo workflow" sets, for example, `review.profile: fast`,
 `review.validation: quick`, and `applyReview.finalValidation: changedScope` here.
@@ -336,10 +362,20 @@ Ask for free-text values (e.g. `baseBranch`, `branchPrefix`, `returnBranch`, `ba
 4. **Write the project setup ADR.** Determine the ADR directory (Step 2) and write the
    ADR to `<adr-dir>/effective-flow-project-setup.md` (default slug `effective-flow-project-setup`; an old slug `firmo-project-setup` is recognized as equivalent during the scan and switched to the new slug on write) in the
    living ADR format:
-   - H1 `# Effective Flow project setup`
-   - `## Status` with `Active`
-   - a short `## Context` prose (this ADR holds the tracked Effective Flow configuration; `.effective-flow/` is a pure runtime directory)
-   - `## Configuration` with the two-column table `| Key | Value |`; one row per key in the table-encoding form (boolean, unquoted string, literal `null`, `(empty)`, comma-separated list, dotted keys). Preserve unknown foreign keys from an existing source as their own rows.
+   - For a new ADR, resolve `language.documentation.technical` through `language.project` and
+     the default. Use the complete English envelope (`# Effective Flow project setup`,
+     `## Status` + `Active`, `## Context`, `## Configuration`, `| Key | Value |`) for `en`, or
+     the complete German envelope (`# Effective-Flow-Projektsetup`, `## Status` + `Aktiv`,
+     `## Kontext`, `## Konfiguration`, `| Schlüssel | Wert |`) for `de`.
+   - For an existing ADR, preserve its recognized English or German envelope and surrounding
+     prose during a normal update, even when the configured technical-documentation language
+     changes. Do not translate it incidentally.
+   - Add a short context sentence in that envelope's language explaining that the ADR holds the
+     tracked Effective Flow configuration and `.effective-flow/` is a pure runtime directory.
+   - Use one row per key in the table-encoding form (boolean, unquoted string, literal `null`,
+     `(empty)`, comma-separated list, dotted keys). Config keys and values remain identical and
+     English in both envelopes: never write the legacy German token `(leer)`. Preserve unknown
+     foreign keys from an existing source.
 
    Example skeleton:
 
@@ -364,6 +400,9 @@ Ask for free-text values (e.g. `baseBranch`, `branchPrefix`, `returnBranch`, `ba
    | worktree.enabled                  | true    |
    | tracker.mode                      | local   |
    ```
+
+   The German equivalent changes only the human-readable envelope and context prose; it does not
+   translate keys such as `language.project` or values such as `en`, `true`, and `focused`.
 
    In the migration case, snapshot the pre-write existence and content of the target ADR and the
    convention file that will carry the marker. Keep those snapshots only for the failure recovery
@@ -414,7 +453,12 @@ Report to the user:
 
 - whether the `.gitignore` line `.effective-flow/` was added, a former two-line pattern (`.effective-flow/*` plus `!.effective-flow/config.json`) or an old `.firmo/`/`.sf-plugin/` line was migrated to it, or the target state was already established
 - which path was chosen (Express or Guided) and whether advanced settings were adjusted
-- the set central behavior values (`worktree.enabled` [default `true`], `delivery.completion` [default `merge`] including, if applicable, `delivery.baseBranch`/`delivery.returnBranch`, `plan.markerLanguage`, `tracker.mode`, and, if applicable, `tracker.remoteToolOverride`) as well as `plan.dir`, if set or changed from the default
+- the central behavior values (`worktree.enabled` [default `true`], `delivery.completion`
+  [default `merge`] including, if applicable, `delivery.baseBranch`/`delivery.returnBranch`,
+  `language.project` and all explicit `language.*` overrides, `tracker.mode`, and, if applicable,
+  `tracker.remoteToolOverride`) as well as `plan.dir`, if set or changed from the default
+- whether `plan.markerLanguage` or a consistent existing plan corpus was proposed/migrated to
+  `language.workflow`, including the visible semantic change and whether the legacy row was removed
 - for a previously existing config: which keys were changed from the old state (before/after)
 - the path of the written project setup ADR and the location of the set `**Effective Flow project setup:**` marker (`AGENTS.md`/`CLAUDE.md`)
 - in the migration case: identify the exact `<source-handle>` selected by the locator and whether

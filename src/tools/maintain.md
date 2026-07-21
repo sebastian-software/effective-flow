@@ -187,7 +187,8 @@ options:
 ```
 
 3. Work through the approved groups **one after another**. For each group the skill applies the version jump, updates the lockfile via the detected manager, researches breaking changes, and where needed adapts local code to the changed API – carried out via every implementer selected in phase 0. Emit the reduced-depth notice before `{{AGENT:generic-product-implementer}}`; reserve `{{AGENT:generic-implementer}}` for tooling/CI/configuration. The task is only to adapt to the changed API, with no new behavior. Afterwards `maintain` compares against the baseline:
-   - green → **one clean commit per group** (see commit rules), a meaningful message, e.g. `chore(deps): …`.
+   - green → **one clean commit per group** (see commit rules), with the description in resolved
+     `language.git` and a stable Conventional Commit type, e.g. `chore(deps): …`.
    - red and repairable → follow up with an adaptation via the implementer, validate again – limit the internal correction rounds per "Goal-driven completion control"; if the group stays red afterwards, treat it as "not sensibly repairable" instead of repeating indefinitely.
    - red and not sensibly repairable → roll the group back (manifest and lockfile to the state before the group) and mark it as "manual".
 4. Record the result and rationale per group in the wisdom file.

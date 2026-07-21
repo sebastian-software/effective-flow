@@ -1,9 +1,9 @@
 # Terminology (DE → EN)
 
-Binding glossary for the German → English migration of Effective Flow (see the migration plan
-under `docs/plan/`). Every translation of source instructions or documentation uses these
-canonical terms so the wording stays consistent across all ~84 files. English is the default
-language; German remains a permitted project and marker language.
+Binding bilingual glossary for Effective Flow artifacts. Every German or English plan, review,
+or translated instruction uses these canonical terms so writers and readers agree. The target
+project's project-setup ADR chooses the language for each communication surface; German and
+English remain equally valid artifact languages.
 
 ## How to use
 
@@ -21,26 +21,45 @@ language; German remains a permitted project and marker language.
 These strings are matched by build guards, resolvers, or conventions — translate them verbatim
 as given, never paraphrased.
 
-| German                                                          | English                                              |
-| --------------------------------------------------------------- | ---------------------------------------------------- |
-| `**Planungsstatus:** Nicht umgesetzt`                           | `**Plan status:** Not implemented`                   |
-| `**Planungsstatus:** Umgesetzt`                                 | `**Plan status:** Implemented`                       |
-| `**Empfohlener Workflow:**`                                     | `**Recommended workflow:**`                          |
-| `**Doku-Kategorie:**`                                           | `**Doc category:**`                                  |
-| `**Ziel-Pfad:**`                                                | `**Target path:**`                                   |
-| `## Anforderung`                                                | `## Requirement`                                     |
-| `## Architekturentscheidungen`                                  | `## Architecture decisions`                          |
-| `## Betroffene Dateien`                                         | `## Affected files`                                  |
-| `## Implementierungsdetails`                                    | `## Implementation details`                          |
-| `## Akzeptanzkriterien`                                         | `## Acceptance criteria`                             |
-| `## Validierungsplan`                                           | `## Validation plan`                                 |
-| `## Annahmen und offene Punkte`                                 | `## Assumptions and open points`                     |
-| `## Offene Punkte` / `- Keine offenen Punkte.`                  | `## Open Points` / `- No open points.`               |
-| `## Plan-Review` · `**Ergebnis:** Freigegeben` / `Überarbeiten` | `## Plan review` · `**Result:** Approved` / `Revise` |
-| `## Zusammenfassung` · `## Befunde`                             | `## Summary` · `## Findings`                         |
+| German                                                                 | English                                                         |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `**Planungsstatus:** Nicht umgesetzt`                                  | `**Plan status:** Not implemented`                              |
+| `**Planungsstatus:** Umgesetzt`                                        | `**Plan status:** Implemented`                                  |
+| `**Empfohlener Workflow:**`                                            | `**Recommended workflow:**`                                     |
+| `**Doku-Kategorie:**`                                                  | `**Doc category:**`                                             |
+| `**Ziel-Pfad:**`                                                       | `**Target path:**`                                              |
+| `## Anforderung`                                                       | `## Requirement`                                                |
+| `## Architekturentscheidungen`                                         | `## Architecture decisions`                                     |
+| `## Betroffene Dateien`                                                | `## Affected files`                                             |
+| `## Implementierungsdetails`                                           | `## Implementation details`                                     |
+| `## Akzeptanzkriterien`                                                | `## Acceptance criteria`                                        |
+| `## Validierungsplan`                                                  | `## Validation plan`                                            |
+| `## Annahmen und offene Punkte`                                        | `## Assumptions and open points`                                |
+| `## Offene Punkte` / `- Keine offenen Punkte.`                         | `## Open points` / `- No open points.`                          |
+| `## Plan-Review` · `**Ergebnis:** Freigegeben` / `Überarbeitung nötig` | `## Plan review` · `**Result:** Approved` / `Revision required` |
+| `## Zusammenfassung` · `## Befunde`                                    | `## Summary` · `## Findings`                                    |
 
 Note: the German artifact fields stay valid (a plan may be authored in German). The mapping
-defines the English default form.
+defines the equivalent English form. A writer selects one column for an entire artifact; it never
+mixes columns. Readers accept both columns and normalize them to the same internal meanings.
+
+## Language configuration terms
+
+| German                                | English                          | Configuration key                  |
+| ------------------------------------- | -------------------------------- | ---------------------------------- |
+| Projektsprache                        | project language                 | `language.project`                 |
+| Source-Sprache                        | source language                  | `language.source`                  |
+| Sprache der Benutzerdokumentation     | user-documentation language      | `language.documentation.user`      |
+| Sprache der technischen Dokumentation | technical-documentation language | `language.documentation.technical` |
+| Workflow-Sprache                      | workflow language                | `language.workflow`                |
+| Forge-Sprache                         | Forge language                   | `language.forge`                   |
+| Git-Sprache                           | Git language                     | `language.git`                     |
+
+The keys and their `de`/`en` values are machine-facing and are never translated. The same applies
+to label names, HTML idempotency markers, finding IDs, action values, file paths,
+Conventional-Commit types, branch slugs, schemas, and internal runtime/wisdom headings. Visible
+headings, field names, and displayed values follow the artifact language; stable routing values
+and references do not.
 
 ## Recurring domain terms
 
@@ -85,7 +104,7 @@ defines the English default form.
 | Sichtprüfung                | spot check                             |
 | Umgebung                    | environment                            |
 | Verzeichnis                 | directory                              |
-| Markersprache               | marker language                        |
+| Markersprache (legacy)      | marker language (legacy)               |
 | Empfohlene Skills           | Recommended skills                     |
 | Projektkonventionen         | project conventions                    |
 | Ziel                        | goal / target (per context)            |

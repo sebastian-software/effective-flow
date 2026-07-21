@@ -126,6 +126,54 @@ function requireNumber(value, label) {
   return number;
 }
 
+const REVIEW_BODY_LANGUAGE = Object.freeze({
+  en: Object.freeze({
+    findingFields: Object.freeze({
+      severity: 'Severity',
+      complexity: 'Complexity',
+      area: 'Area',
+      file: 'File',
+      problem: 'Problem',
+      recommendation: 'Recommendation',
+      promptSuggestion: 'Prompt suggestion',
+    }),
+    severity: Object.freeze({ Critical: 'Critical', Important: 'Important', Note: 'Note' }),
+    complexity: Object.freeze({ Low: 'Low', Medium: 'Medium', High: 'High' }),
+    epicTitle: 'Code review',
+    epicLead: (date, scope, projectType) =>
+      `Code review of ${date} · Scope: ${scope} · Project type: ${projectType}`,
+    findingsHeading: 'Findings',
+    skippedHeading: 'Skipped (design decisions)',
+    coveredBy: 'covered by',
+  }),
+  de: Object.freeze({
+    findingFields: Object.freeze({
+      severity: 'Schweregrad',
+      complexity: 'Komplexität',
+      area: 'Bereich',
+      file: 'Datei',
+      problem: 'Problem',
+      recommendation: 'Empfehlung',
+      promptSuggestion: 'Prompt-Vorschlag',
+    }),
+    severity: Object.freeze({ Critical: 'Kritisch', Important: 'Wichtig', Note: 'Hinweis' }),
+    complexity: Object.freeze({ Low: 'Niedrig', Medium: 'Mittel', High: 'Hoch' }),
+    epicTitle: 'Code-Review',
+    epicLead: (date, scope, projectType) =>
+      `Code-Review vom ${date} · Umfang: ${scope} · Projekttyp: ${projectType}`,
+    findingsHeading: 'Befunde',
+    skippedHeading: 'Übersprungen (Architekturentscheidungen)',
+    coveredBy: 'abgedeckt durch',
+  }),
+});
+
+function reviewBodyLanguage(value = 'en') {
+  if (!Object.hasOwn(REVIEW_BODY_LANGUAGE, value)) {
+    fail('INVALID_PAYLOAD', 'language must be en or de', { field: 'language', value });
+  }
+  return { language: value, strings: REVIEW_BODY_LANGUAGE[value] };
+}
+
 export function bodyHash(body) {
   return createHash('sha256')
     .update(requireString(body, 'body', { allowEmpty: true }))
@@ -344,20 +392,21 @@ function validateFinding(input) {
   return input;
 }
 
-export function buildFindingPayload(input) {
+export function buildFindingPayload(input, options = {}) {
   const finding = validateFinding(input);
+  const { strings } = reviewBodyLanguage(options.language ?? finding.language);
   requireString(finding.id, 'finding.id');
   if (!/^R-\d{7}$/.test(finding.id)) fail('INVALID_PAYLOAD', 'finding.id must match R-XXXXXXX');
   const signature = finding.signature ?? `${finding.file} · ${finding.area} · ${finding.problem}`;
   const body = [
-    `- **Severity**: ${finding.severity}`,
-    `- **Complexity**: ${finding.complexity}`,
-    `- **Area**: ${finding.area}`,
-    `- **File**: ${finding.file}`,
-    `- **Problem**: ${assertPublishable(finding.problem, 'finding.problem')}`,
-    `- **Recommendation**: ${finding.recommendation}`,
+    `- **${strings.findingFields.severity}**: ${strings.severity[finding.severity]}`,
+    `- **${strings.findingFields.complexity}**: ${strings.complexity[finding.complexity]}`,
+    `- **${strings.findingFields.area}**: ${finding.area}`,
+    `- **${strings.findingFields.file}**: ${finding.file}`,
+    `- **${strings.findingFields.problem}**: ${assertPublishable(finding.problem, 'finding.problem')}`,
+    `- **${strings.findingFields.recommendation}**: ${finding.recommendation}`,
     `- **Action**: ${finding.action}`,
-    `- **Prompt suggestion**: ${finding.promptSuggestion}`,
+    `- **${strings.findingFields.promptSuggestion}**: ${finding.promptSuggestion}`,
     `- **Epic**: ${finding.epic ? `#${requireNumber(finding.epic, 'finding.epic')}` : ''}`,
     `- **Signature**: ${signature}`,
   ].join('\n');
@@ -387,8 +436,9 @@ export function buildCommentPayload(kind, input) {
   return { kind, marker, body: `<!-- ${marker} -->\n${content}` };
 }
 
-export function buildSkippedFindingEntry(input) {
+export function buildSkippedFindingEntry(input, options = {}) {
   requireObject(input, 'skippedFinding');
+  const { strings } = reviewBodyLanguage(options.language ?? input.language);
   const title = assertPublishable(input.title, 'skippedFinding.title');
   const signature = assertPublishable(input.signature, 'skippedFinding.signature');
   const decisionReference = assertPublishable(
@@ -403,17 +453,20 @@ export function buildSkippedFindingEntry(input) {
     signature,
     normalizedSignature: normalizeSignature(signature),
     decisionReference,
-    line: `- ${title} — Signature: ${signature} — covered by ${decisionReference}`,
+    line: `- ${title} — Signature: ${signature} — ${strings.coveredBy} ${decisionReference}`,
   };
 }
 
-export function buildEpicPayload(input) {
+export function buildEpicPayload(input, options = {}) {
   requireObject(input, 'epic');
+  const { language, strings } = reviewBodyLanguage(options.language ?? input.language);
   const date = requireString(input.date, 'epic.date');
   const scope = requireString(input.scope, 'epic.scope');
   const projectType = requireString(input.projectType, 'epic.projectType');
   const findings = Array.isArray(input.findings) ? input.findings : [];
-  const skipped = Array.isArray(input.skipped) ? input.skipped.map(buildSkippedFindingEntry) : [];
+  const skipped = Array.isArray(input.skipped)
+    ? input.skipped.map((item) => buildSkippedFindingEntry(item, { language }))
+    : [];
   const findingLines = findings.map((finding, index) => {
     requireObject(finding, `epic.findings[${index}]`);
     const number = requireNumber(finding.number, `epic.findings[${index}].number`);
@@ -422,16 +475,16 @@ export function buildEpicPayload(input) {
     return `- [ ] #${number} [${id}] ${requireString(finding.title, 'finding.title')} — Action: ${requireString(finding.action, 'finding.action')}`;
   });
   const lines = [
-    `Code review of ${date} · Scope: ${scope} · Project type: ${projectType}`,
+    strings.epicLead(date, scope, projectType),
     '',
-    '## Findings',
+    `## ${strings.findingsHeading}`,
     '',
     ...findingLines,
   ];
   if (skipped.length > 0)
-    lines.push('', '## Skipped (design decisions)', '', ...skipped.map((item) => item.line));
+    lines.push('', `## ${strings.skippedHeading}`, '', ...skipped.map((item) => item.line));
   return {
-    title: `Code review ${date}${input.suffix ?? ''}`,
+    title: `${strings.epicTitle} ${date}${input.suffix ?? ''}`,
     body: lines.join('\n'),
     labels: ['effective-flow-review-epic'],
     lastFindingNumber: input.lastFindingNumber,
@@ -1531,9 +1584,9 @@ function localOperation(operation, input) {
     case 'signature-parse':
       return parseFindingSignature(input.body);
     case 'finding-build':
-      return buildFindingPayload(input.finding ?? input);
+      return buildFindingPayload(input.finding ?? input, { language: input.language });
     case 'epic-build':
-      return buildEpicPayload(input.epic ?? input);
+      return buildEpicPayload(input.epic ?? input, { language: input.language });
     case 'planning-comment-build':
       return buildCommentPayload('planning', input.comment ?? input);
     case 'apply-comment-build':

@@ -18,7 +18,8 @@ appropriate conventional-commit message.
 **Input/output:** Input is the staged diff. Output is a commit with a
 conventional-commit prefix (`feat:` new functionality, `fix:` defect fix, `chore:`
 maintenance, `docs:` documentation, `refactor:` structural improvement without behavior change,
-`test:` test change), message in English, without `Co-Authored-By` lines.
+`test:` test change), description in `language.git`, without `Co-Authored-By` lines. The type and
+other Conventional-Commit syntax remain English and language-stable.
 
 **Interplay:** Typically used at the end of a `/effective-flow build`, `/effective-flow fix`,
 `/effective-flow refactor`, `/effective-flow docs`, or `/effective-flow maintain` run (which follow these
@@ -59,6 +60,11 @@ the target branch: there, the PR title is part of the release contract, and
 **release-please** derives the version bump from it. An untyped title leads, despite green
 CI, to a silent no-op release (no version, no delivery) – which is why `pr` normalizes
 the title and asks only in cases of genuine ambiguity.
+
+The title description follows `language.git` because a squash merge may make it the commit
+subject. The PR body and subsequent PR or review-thread comments follow `language.forge`. These
+may intentionally differ without producing a mixed artifact: each surface uses one resolved
+language, while types, branch names, paths, labels, and other machine-facing tokens stay stable.
 
 **Interplay:** `pr` is one of the three possible completion actions
 (`delivery.completion: pr`) that `/effective-flow build`, `/effective-flow fix`, `/effective-flow refactor`,

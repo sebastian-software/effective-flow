@@ -45,7 +45,8 @@ Before an implementing tool (`build`, `fix`, `refactor`, `docs`, `apply`) actual
 plan file, an issue or a review finding, it checks whether the basis is **fully
 clarified**. The gate fails in particular when:
 
-- the plan file still contains an "Open Points" section with real entries,
+- the plan file still contains an "Open points" section with real entries (the former spelling
+  "Open Points" remains readable),
 - measurable acceptance criteria are missing or are formulated without a concrete check,
 - points marked as assumptions substantially affect the behavior, the scope or the risk of
   the implementation,
@@ -62,24 +63,32 @@ back to the clarification:
 
 Add the missing information there and then call the implementing tool again.
 
-## Wrong or unexpected marker language in plan files
+## Wrong or mixed language in Effective Flow artifacts
 
-The status marker in the header of a plan file (e.g. `**Planungsstatus:** Nicht umgesetzt` or
-`**Plan status:** Not implemented`) follows `plan.markerLanguage` from
-the [project-setup ADR](./configuration.md#project-setup-adr). If the row is missing, Effective
-Flow detects the language from existing plan files in `<plan.dir>`; without a clear signal, the
-default is English. Only the marker follows this setting – the rest of the plan stays in the
-language in which it was written.
+A new plan—including its header fields, sections, review, open points, and status marker—uses
+`language.workflow` from the [project-setup ADR](./configuration.md#block-language). Local review
+and investigation reports use the same setting. Existing artifacts retain their recognizable
+language unless you explicitly request a translation, so changing the project configuration does
+not rewrite earlier files.
 
-To fix the language permanently, set `plan.markerLanguage` explicitly via
-[`/effective-flow setup`](./tools-setup.md) (core toggle “Marker”) or edit the corresponding ADR
-row (see [Configuration](./configuration.md#block-plan)).
+Other surfaces intentionally may differ: remote issues and comments and PR bodies use
+`language.forge`; commit descriptions and Conventional-Commit PR titles use `language.git`.
+Each missing override inherits `language.project`, which itself defaults to `en`. An invalid
+`de`/`en` value is reported and ignored in favor of the next fallback rather than guessed.
+
+Use [`/effective-flow setup`](./tools-setup.md) to inspect and change these values. If only a
+legacy `plan.markerLanguage` row exists, Effective Flow can still read it as a temporary workflow
+fallback and setup offers a confirmed migration; writers never create the old row. A repository
+without language settings may temporarily infer the workflow language from existing plans only
+when plan prose and markers are consistently German or English. Mixed or contradictory plans are
+not a valid signal. If one existing artifact is itself mixed or unclear, clarify its intended
+language before asking Effective Flow to edit it.
 
 ## There is no project-setup ADR
 
 This is not an error. Without an ADR or transitional legacy source, every tool uses the safe
 defaults in [Configuration](./configuration.md#safe-defaults-at-a-glance): worktree enabled,
-completion via merge, local tracker as the safe base, and marker language detected or English.
+completion via merge, local tracker as the safe base, and English as the project language.
 Review still asks for local or remote mode on first use when no source pins `tracker.mode`.
 Running an ordinary tool never creates configuration or touches Git. To persist different settings, run
 [`/effective-flow setup`](./tools-setup.md); its Express path adopts the safe base after one

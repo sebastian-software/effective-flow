@@ -6,6 +6,36 @@ Behavior rules for agents (language rules, commit conventions, no-AI-attribution
 conventions) live canonically in [`AGENTS.md`](../../AGENTS.md) – this document references them
 instead of duplicating them.
 
+## Central language resolution
+
+Human-readable output uses the target project's project-setup ADR rather than harness-specific
+defaults. `language.project` is the common `de`/`en` fallback; optional overrides select source
+prose, user documentation, technical documentation, local workflow artifacts, Forge prose, and
+Git/release prose. Missing overrides inherit the project language, and a completely missing
+configuration resolves to `en`.
+
+Resolution order is artifact-specific: an explicit user request wins; while editing, a
+recognizable existing artifact language comes next; a new artifact then uses its surface
+override, `language.project`, and finally `en`. Orchestrating tools resolve every language needed
+for a run once and pass the concrete values to delegated workers. A standalone tool performs the
+same resolution itself. Workers do not independently reparse the ADR, which prevents parallel
+writers from making inconsistent choices.
+
+Publication target selects the surface. Plans, local reviews, and investigations use
+`language.workflow`; issues, PR bodies, comments, and remote reviews use `language.forge`;
+commit descriptions, Conventional-Commit PR titles, changelog prose, and release-note prose use
+`language.git`. Root README/user-guide work uses `language.documentation.user`; developer/API,
+operations, and runbook work uses `language.documentation.technical`; code comments, test
+descriptions, and in-code documentation use `language.source`. Product UI and CLI localization is
+outside this model.
+
+This selection affects visible prose only. Config keys and encoded values, identifiers, API
+names, labels, HTML markers, finding IDs, action values, paths, Conventional-Commit types, branch
+slugs, schemas, and internal runtime/wisdom headings remain stable. German and English plan and
+review templates remain readable; a writer emits one complete language variant per artifact.
+See [Configuration](../user-guide/configuration.md#block-language) for the user-facing schema and
+[`src/shared/language-rules.md`](../../src/shared/language-rules.md) for the executable contract.
+
 ## Source-to-dist model
 
 Effective Flow is **not** a runtime product but a build: `build.mjs` reads the Markdown sources

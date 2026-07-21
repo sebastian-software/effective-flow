@@ -148,7 +148,7 @@ test('reads canonical Signature and legacy Signatur with one normalized identity
   );
 });
 
-test('canonical finding writes use Signature and validate the R-ID', () => {
+test('English finding writes remain canonical and use stable helper tokens', () => {
   const payload = buildFindingPayload({
     id: 'R-0000007',
     title: 'Normalize signatures',
@@ -161,6 +161,8 @@ test('canonical finding writes use Signature and validate the R-ID', () => {
     action: 'effective-flow-fix',
     promptSuggestion: 'Normalize the signature field.',
   });
+  assert.match(payload.body, /- \*\*Severity\*\*: Important/);
+  assert.match(payload.body, /- \*\*Complexity\*\*: Low/);
   assert.match(payload.body, /\*\*Signature\*\*/);
   assert.doesNotMatch(payload.body, /\*\*Signatur\*\*/);
   assert.deepEqual(payload.labels, [
@@ -168,6 +170,47 @@ test('canonical finding writes use Signature and validate the R-ID', () => {
     'effective-flow-fix',
     'important',
   ]);
+});
+
+test('German finding writes localize display fields while preserving stable helper tokens', () => {
+  const payload = buildFindingPayload({
+    language: 'de',
+    id: 'R-0000008',
+    title: 'Signaturen normalisieren',
+    severity: 'Important',
+    complexity: 'Low',
+    area: 'Tracker',
+    file: 'src/a.mjs:2',
+    problem: 'Doppelter Befund',
+    recommendation: 'Feld normalisieren',
+    action: 'effective-flow-fix',
+    promptSuggestion: 'Normalisiere das Signaturfeld.',
+    epic: 12,
+  });
+
+  assert.equal(payload.title, '[R-0000008] Signaturen normalisieren');
+  assert.match(payload.body, /- \*\*Schweregrad\*\*: Wichtig/);
+  assert.match(payload.body, /- \*\*Komplexität\*\*: Niedrig/);
+  assert.match(payload.body, /- \*\*Bereich\*\*: Tracker/);
+  assert.match(payload.body, /- \*\*Datei\*\*: src\/a\.mjs:2/);
+  assert.match(payload.body, /- \*\*Empfehlung\*\*: Feld normalisieren/);
+  assert.match(payload.body, /- \*\*Prompt-Vorschlag\*\*: Normalisiere/);
+  assert.match(payload.body, /- \*\*Action\*\*: effective-flow-fix/);
+  assert.match(payload.body, /- \*\*Epic\*\*: #12/);
+  assert.match(payload.body, /- \*\*Signature\*\*: src\/a\.mjs:2 · Tracker · Doppelter Befund/);
+  assert.doesNotMatch(
+    payload.body,
+    /\*\*(?:Severity|Complexity|Area|File|Recommendation|Prompt suggestion)\*\*/,
+  );
+  assert.deepEqual(payload.labels, [
+    'effective-flow-review-finding',
+    'effective-flow-fix',
+    'important',
+  ]);
+  assert.equal(
+    parseFindingSignature(payload.body).normalized,
+    'src/a.mjs:2 · tracker · doppelter befund',
+  );
 });
 
 test('planning, apply, and PR comment builders emit canonical markers and reject attribution', () => {
@@ -204,7 +247,7 @@ test('dedup unions issue numbers before comparing canonical and legacy signature
   assert.equal(result.fresh.length, 1);
 });
 
-test('skipped epic findings have title, signature, and decision reference but no ID', () => {
+test('English epic writes remain canonical and skipped findings carry no ID', () => {
   const payload = buildEpicPayload({
     date: '2026-07-20',
     scope: 'Tracker',
@@ -219,6 +262,10 @@ test('skipped epic findings have title, signature, and decision reference but no
       },
     ],
   });
+  assert.equal(payload.title, 'Code review 2026-07-20');
+  assert.match(payload.body, /^Code review of 2026-07-20 · Scope: Tracker · Project type: Tooling/);
+  assert.match(payload.body, /## Findings/);
+  assert.match(payload.body, /## Skipped \(design decisions\)/);
   assert.match(payload.body, /Deliberate fallback.*Signature:.*ADR remote-boundary/);
   assert.doesNotMatch(payload.body, /R-\d{7}/);
   assert.equal(payload.lastFindingNumber, 14);
@@ -239,6 +286,101 @@ test('skipped epic findings have title, signature, and decision reference but no
       }),
     (error) => error.code === 'INVALID_PAYLOAD',
   );
+});
+
+test('German epic writes localize human prose while preserving checklist and helper tokens', () => {
+  const payload = buildEpicPayload({
+    language: 'de',
+    date: '2026-07-21',
+    suffix: '-2',
+    scope: 'Gesamter Code',
+    projectType: 'Werkzeug',
+    lastFindingNumber: 15,
+    findings: [
+      {
+        number: 42,
+        id: 'R-0000015',
+        title: 'Remote-Body lokalisieren',
+        action: 'effective-flow-fix',
+      },
+    ],
+    skipped: [
+      {
+        title: 'Bewusster Fallback',
+        signature: 'src/a.mjs:2 · Tracker · Bewusster Fallback',
+        decisionReference: 'ADR Remote-Grenze',
+      },
+    ],
+  });
+
+  assert.equal(payload.title, 'Code-Review 2026-07-21-2');
+  assert.match(
+    payload.body,
+    /^Code-Review vom 2026-07-21 · Umfang: Gesamter Code · Projekttyp: Werkzeug/,
+  );
+  assert.match(payload.body, /## Befunde/);
+  assert.match(payload.body, /## Übersprungen \(Architekturentscheidungen\)/);
+  assert.match(
+    payload.body,
+    /- \[ \] #42 \[R-0000015\] Remote-Body lokalisieren — Action: effective-flow-fix/,
+  );
+  assert.match(
+    payload.body,
+    /Bewusster Fallback — Signature: .* — abgedeckt durch ADR Remote-Grenze/,
+  );
+  assert.doesNotMatch(payload.body, /Code review|Scope:|Project type:|## Findings|covered by/);
+  assert.deepEqual(payload.labels, ['effective-flow-review-epic']);
+  assert.equal(payload.lastFindingNumber, 15);
+});
+
+test('review body builders reject unsupported languages and route envelope language to nested input', async () => {
+  assert.throws(
+    () =>
+      buildFindingPayload({
+        language: 'fr',
+        id: 'R-0000008',
+        title: 'Finding',
+        severity: 'Note',
+        complexity: 'Medium',
+        area: 'Tracker',
+        file: 'src/a.mjs:2',
+        problem: 'Problem',
+        recommendation: 'Recommendation',
+        action: 'effective-flow-docs',
+        promptSuggestion: 'Document it.',
+      }),
+    (error) => error.code === 'INVALID_PAYLOAD' && error.details.value === 'fr',
+  );
+  assert.throws(
+    () =>
+      buildEpicPayload({
+        language: 'EN',
+        date: '2026-07-21',
+        scope: 'All',
+        projectType: 'Tooling',
+      }),
+    (error) => error.code === 'INVALID_PAYLOAD' && error.details.value === 'EN',
+  );
+
+  const envelope = await executeOperation('finding-build', {
+    language: 'de',
+    finding: {
+      id: 'R-0000009',
+      title: 'Body lokalisieren',
+      severity: 'Note',
+      complexity: 'Medium',
+      area: 'Tracker',
+      file: 'src/a.mjs:2',
+      problem: 'Gemischte Sprache',
+      recommendation: 'Vollständig lokalisieren',
+      action: 'effective-flow-docs',
+      promptSuggestion: 'Dokumentiere die Zuordnung.',
+    },
+  });
+  assert.equal(envelope.ok, true);
+  assert.match(envelope.data.body, /\*\*Schweregrad\*\*: Hinweis/);
+  assert.match(envelope.data.body, /\*\*Komplexität\*\*: Mittel/);
+  assert.match(envelope.data.body, /\*\*Action\*\*: effective-flow-docs/);
 });
 
 test('label compatibility emits separate prefix and legacy severity queries', () => {

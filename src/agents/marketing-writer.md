@@ -84,7 +84,9 @@ and do not count toward the invariant.
 
 ## Rules
 
-- write in English by default; German remains permitted – where a README already exists, continue its language
+- use the concrete language supplied by the orchestrator; for a new root README this is
+  `language.documentation.user`, while an existing README keeps its clear language unless the
+  user requested translation; only a direct invocation resolves the shared language rule itself
 - change only the root `README.md`; no files under `docs/` and no product logic
 - invent no facts, claims, numbers, or references; when in doubt, omit or ask
 - no internal architecture or implementation details on the marketing page; the linked

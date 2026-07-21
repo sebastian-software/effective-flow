@@ -22,8 +22,14 @@ a pure runtime directory and completely gitignored.
 | applyReview.stashPolicy           | interactive                |
 | applyReview.worktree.baseDir      | .effective-flow/.worktrees |
 | applyReview.worktree.setup        | auto                       |
-| plan.markerLanguage               | de                         |
 | plan.dir                          | docs/plan                  |
+| language.project                  | en                         |
+| language.source                   | en                         |
+| language.documentation.user       | en                         |
+| language.documentation.technical  | en                         |
+| language.workflow                 | de                         |
+| language.forge                    | en                         |
+| language.git                      | en                         |
 | delivery.baseBranch               | origin/develop             |
 | delivery.branchPrefix             | effective-flow             |
 | delivery.completion               | pr                         |

@@ -203,7 +203,8 @@ First determine the tracker mode via the "apply-source detection" (report file u
    deleted and recreated between conversations, no previously read content may be used.
    Revalidate the runtime root and handle containment first; never substitute a same-named file
    below the current execution root.
-6. Parse all findings (`### [R-XXXXXXX] ...` blocks) using the canonical English field labels:
+6. Detect and preserve the complete local report language, then parse all findings
+   (`### [R-XXXXXXX] ...` blocks) using either complete English or German field labels:
    - finding ID and title
    - `Severity`
    - `Complexity`
@@ -221,9 +222,9 @@ First determine the tracker mode via the "apply-source detection" (report file u
    `Prompt-Vorschlag`, and `Entwickler-Anmerkung` / `Entwicklernotiz` / `Entwickler-Notiz`.
    Legacy values remain readable as well: severity `Kritisch` / `Wichtig` / `Hinweis`,
    complexity `Leicht` / `Niedrig` / `Mittel` / `Hoch`, and status `Offen` / `Behoben` /
-   `Umgesetzt` / `Nicht umgesetzt`. Canonical writes and payloads use the English labels and
-   values. This compatibility applies only to local report parsing and does not change the
-   remote issue flow.
+   `Umgesetzt` / `Nicht umgesetzt`. Updates use the report's preserved language; action values,
+   finding IDs, paths, and other machine tokens remain stable. A mixed/unclear report is not
+   rewritten automatically. Remote issues independently use `language.forge`.
 
 7. Classify each finding:
    - **Already implemented:** the finding already has a ✅ hint → skip
@@ -440,11 +441,13 @@ Example (across actions) with five findings over multiple actions:
 **Precondition:** Phase 5 may only start once the synchronization barrier from Phase 4.3 is satisfied, i.e. no delegation component is open anymore.
 
 1. Read the report file again fresh from the file system. The file could have changed during implementation.
-2. Append to each successfully implemented finding as the last entry:
-   `✅ Implemented on YYYY-MM-DD via Effective Flow Apply-Review`
+2. Append to each successfully implemented finding as the last entry in the preserved report
+   language: `✅ Implemented on YYYY-MM-DD via Effective Flow Apply-Review` or
+   `✅ Umgesetzt am YYYY-MM-DD über Effective Flow Apply-Review`.
 3. Append to each rejected finding as the last entry — depending on the classification by `decision-records`:
-   - permanent decision with ADR: `📋 ADR created/updated on YYYY-MM-DD: not implemented (ADR: <slug>)`
-   - non-permanent rejection without ADR: `⏭️ Documented on YYYY-MM-DD as not implemented (no permanent decision, no ADR)`
+   - permanent decision with ADR: use matching English/German prose and retain `(ADR: <slug>)`
+   - non-permanent rejection without ADR: use matching English/German prose; IDs and references
+     remain stable
 4. Save the updated report file.
 
 ### Phase 6: Stash cleanup

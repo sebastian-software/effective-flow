@@ -119,79 +119,20 @@ central-reasoning-delegation
 
 Write the plan file to `<plan.dir>/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` is the creation date (via `date +%F`), `<slug>` a kebab-case slug from the final title. On a name collision on the same day, append a numeric suffix (`-2`, `-3`, …). The H1 is `# <title>` without a number.
 
-Before you write the plan, determine the language of the canonical status marker in this order. The first source that yields a valid value wins.
+Before writing, resolve `language.workflow` once through the shared language resolver and retain
+that concrete value for all planning/review delegates. For an existing plan, preserve its
+clearly recognizable complete plan language. The legacy marker and existing-plan-corpus paths
+are only the transitional read fallbacks defined centrally; report the setup recommendation when
+either is used. Do not write configuration from this tool.
 
-#### Step 1: Consult the configuration
+The plan uses the complete German or English contract in "Plan status convention" — status,
+header fields, sections, review content, and open points all use one column. Stable workflow
+values, skill references, doc-category values, and paths are not translated. Do not carry
+language explanations or template comments into the plan.
 
-1. Read the Effective Flow configuration from the project-setup ADR (locator via the `**Effective Flow project setup:**` marker in `AGENTS.md`; see the "Config migration" building block) if present.
-2. Read the value `plan.markerLanguage`:
-   - `"de"` → marker language German; output a status line like "Marker language adopted from the Effective Flow configuration (project-setup ADR): German." and skip Steps 2 to 6.
-   - `"en"` → analogously English.
-   - any other value (e.g. `"fr"`, `null`, `true`) → ignore it, output a brief note, and continue with Step 2.
-   - key missing → go to Step 2 without an extra note (detection outputs its own status line).
-3. If the configuration is not readable (missing or corrupt): a brief note to the user, then Step 2.
-
-#### Step 2: Auto-detection from `<plan.dir>/`
-
-1. Read all `.md` files under `<plan.dir>/`. Do _not_ create any new directories and do not write any other files.
-2. Determine the plan status per file via the canonical single-marker rule: exactly one line with the prefix `**Planungsstatus:**` or `**Plan status:**` and a valid value; files with a missing, multiple, or invalid status line count as "unclear".
-3. Count the plan files with a German marker (`de_count`) and with an English marker (`en_count`). Files with status "unclear" are ignored.
-4. Determine the detection result:
-   - `de_count > 0` and `en_count == 0` → detection: German.
-   - `en_count > 0` and `de_count == 0` → detection: English.
-   - otherwise (both > 0 or both == 0) → detection: not unambiguous.
-
-#### Step 3: Note on permanent commitment
-
-If the detection from Step 2 yielded an unambiguous result and `plan.markerLanguage` is not yet set in the Effective Flow configuration (project-setup ADR): use the detected value for this run and briefly note that `{{SKILL:setup}}` permanently commits the marker language in the project-setup ADR. Write **nothing** to the configuration here and do not create a file.
-
-#### Step 4: Adopt the detection result
-
-For an unambiguous detection result:
-
-- Use the detected language as the marker language of the new plan file.
-- Output a one-line status update, e.g. "Marker language detected from 12 existing plans: German."
-- Skip Steps 5 and 6.
-
-#### Step 5: Question to the user
-
-Only if neither Step 1 nor Step 4 could determine the language:
-
-```ask
-header: Marker
-question: In which language should the status marker in the plan header be written?
-options:
-  - label: German
-    description: Status line **Planungsstatus:** Nicht umgesetzt
-  - label: English
-    description: Status line **Plan status:** Not implemented
-```
-
-In the accompanying message, briefly state why the question is asked (mixed inventory, no recognizable marker, or config not set).
-
-#### Step 6: Note after the question
-
-Only if Step 5 was executed: use the chosen marker language for **this plan**. Do **not** write it to the configuration — permanently committing `plan.markerLanguage` in the project-setup ADR is done exclusively by `{{SKILL:setup}}`. Briefly note this to the user, e.g. "Marker language `de` used for this plan; commit permanently via `{{SKILL:setup}}`."
-
-#### Consistency rules
-
-Use the final marker language consistently: German marker with German values, English marker with English values. Do not mix the marker key and value. Do not carry over language explanations or HTML comments from the example blocks below into the final plan file.
-
-The plan must use at least this structure. Depending on the chosen marker language, use one of the two status lines, not both:
-
-German status line:
-
-```markdown
-**Planungsstatus:** Nicht umgesetzt
-```
-
-English status line:
-
-```markdown
-**Plan status:** Not implemented
-```
-
-Complete plan template (insert the status line according to the chosen marker language):
+The English form of the structural template is shown below. For `de`, render the complete German
+field/section mapping from the canonical bilingual plan contract, including German table headings
+and review prose; do not partially translate this example:
 
 ```markdown
 # [Title]
@@ -261,7 +202,7 @@ Complete plan template (insert the status line according to the chosen marker la
 
 ## Plan review
 
-**Result:** Approved / Revise
+**Result:** Approved / Revision required
 
 ### Summary
 
@@ -279,7 +220,7 @@ Complete plan template (insert the status line according to the chosen marker la
 
 - No findings. / [Finding with area, severity, problem, and adjustment]
 
-## Open Points
+## Open points
 
 - No open points.
 ```
@@ -292,12 +233,18 @@ Rules:
 - Write the plan as an implementation guide, not as a pre-implementation.
 - Avoid code blocks in the plan. Use them only when a short code formulation is clearer and shorter than a prose description.
 - If a code example is necessary, limit it to the smallest meaningful fragment and document that it is an example or an interface sketch.
-- Add a `## Plan review` section per the template. It contains exclusively plan-level findings, no code-review findings.
-- Add a section for open points at the end of the plan. For German-language plans it is called `## Offene Punkte` with the empty state `- Keine offenen Punkte.`; for English-language plans it is called `## Open Points` with the empty state `- No open points.`. If the user wants to make a decision later, document the point there concretely with a re-entry note.
-- Do not write any `## Test results` or `## Review findings`, because nothing has been implemented yet.
-- Set the canonical open plan status exactly according to the marker language chosen in Phase 3: German to `**Planungsstatus:** Nicht umgesetzt` or English to `**Plan status:** Not implemented`; `{{SKILL:build}}`, `{{SKILL:fix}}`, `{{SKILL:refactor}}`, and `{{SKILL:docs}}` later use this status to recognize the planning or analysis basis.
-- Set exactly one line `**Recommended workflow:** ...` in the header area. Choose one of the four categories Feature, Bugfix, Refactoring, or Documentation and name the appropriate skill in parentheses.
-- For `**Recommended workflow:** Documentation (`{{SKILL:docs}}`)`, place the two additional lines `**Doc category:** ...` and `**Target path:** ...` directly below it per `Doc categories`. Omit the HTML comment `<!-- Only for ... -->` and the two lines for the other three workflows from the header area.
+- Add the matching `## Plan-Review` or `## Plan review` section. It contains exclusively
+  plan-level findings, no code-review findings.
+- Add a section for open points at the end of the plan. For German-language plans it is called `## Offene Punkte` with the empty state `- Keine offenen Punkte.`; for English-language plans it is called `## Open points` with the empty state `- No open points.`. Continue to recognize the former English spelling `## Open Points` when reading existing plans. If the user wants to make a decision later, document the point there concretely with a re-entry note.
+- Do not write `## Testergebnisse` / `## Test results` or `## Review-Befunde` /
+  `## Review findings`, because nothing has been implemented yet.
+- Set the canonical open status and every header/section label from the resolved complete plan
+  language; later workflows use either complete form to recognize the basis.
+- Set exactly one matching workflow field in the header area. Choose one of the stable categories
+  Feature, Bugfix, Refactoring, or Documentation and name the appropriate skill in parentheses.
+- For a Documentation recommendation, place the matching German or English doc-category and
+  target-path fields directly below it per `Doc categories`. Omit the HTML comment and the two
+  fields for the other workflows.
 
 ### Phase 4: Gap analysis
 
@@ -318,16 +265,16 @@ Incorporate the reported gaps into the plan and clean it up before you report it
 Normalize the quality judgment from Phase 4 into the Effective Flow scorecard (the skill provides
 the judgment, Effective Flow the artifact form):
 
-| Criterion               | Target                                                                                                             |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Clarity                 | concrete file references and clear steps, target >= 80%                                                            |
-| Verification            | measurable acceptance criteria per requirement                                                                     |
-| Context                 | verified code vs. assumptions, target <= 10% guessing                                                              |
-| Big Picture             | purpose and workflow explicitly described                                                                          |
-| No-code boundary        | no changes outside `<plan.dir>/`                                                                                   |
-| Code frugality          | no code in the plan unless a minimal fragment is the shortest clear explanation                                    |
-| Workflow recommendation | Feature, Bugfix, Refactoring, or Documentation is justified and fits the scope                                     |
-| Doc target              | for documentation plans, `**Doc category:**` and `**Target path:**` are set, valid, and consistent with each other |
+| Criterion               | Target                                                                                                                               |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Clarity                 | concrete file references and clear steps, target >= 80%                                                                              |
+| Verification            | measurable acceptance criteria per requirement                                                                                       |
+| Context                 | verified code vs. assumptions, target <= 10% guessing                                                                                |
+| Big Picture             | purpose and workflow explicitly described                                                                                            |
+| No-code boundary        | no changes outside `<plan.dir>/`                                                                                                     |
+| Code frugality          | no code in the plan unless a minimal fragment is the shortest clear explanation                                                      |
+| Workflow recommendation | Feature, Bugfix, Refactoring, or Documentation is justified and fits the scope                                                       |
+| Doc target              | documentation plans contain the matching German or English doc-category and target-path fields, valid and consistent with each other |
 
 If a criterion is not met, revise the plan or ask the user for the missing information.
 
@@ -360,8 +307,8 @@ Approach:
 
 1. Obtain the review judgment via `codebase-improvement` (plus relevant specialists).
 2. Incorporate all critical findings directly into the plan.
-3. Incorporate important findings or document in the `## Plan review` why they are deliberately not implemented.
-4. Update the `## Plan review` section with the result, summary, and findings.
+3. Incorporate important findings or document in the matching `## Plan-Review` / `## Plan review` section why they are deliberately not implemented.
+4. Update that language-matching review section with the result, summary, and findings.
 5. If critical findings still remain after the revision, ask the user for the missing decision and do not complete the plan.
 
 ### Phase 6b: Deep interactive plan review

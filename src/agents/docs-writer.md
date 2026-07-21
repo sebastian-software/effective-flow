@@ -117,7 +117,11 @@ For unsupported product languages, follow the documentation layout, API-referenc
 
 ## Rules
 
-- write in English by default; German remains permitted – where documentation already exists, continue its language
+- use the concrete language supplied by the orchestrator: user-guide content uses
+  `language.documentation.user`; developer/API/operations/runbook content uses
+  `language.documentation.technical`; explicit changelog/release prose uses `language.git`;
+  existing files keep their clear language unless translation was requested; only a direct
+  invocation resolves the shared language rule itself
 - choose the documentation format by target language and repository convention: JS/TS as before, Rust per rustdoc conventions, and every other product language through its established native branch
 - in mixed-language repos, split documentation per file/domain and keep recognized specialist files on their specialist branch
 - prefer package.json scripts for JS/TS and the repository's Cargo command for Rust; for every other ecosystem, use the established repository-native command

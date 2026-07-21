@@ -30,8 +30,12 @@ skill-discovery
 project-routing
 ```
 
-- treat English test names and commit conventions as the standard
-- assess the documentation language relative to the existing documentation
+- keep code identifiers, machine contracts, and Conventional Commit types English; validate
+  human-readable test descriptions/comments against `language.source`
+- assess new documentation against its supplied user/technical/source/Git language domain and
+  existing documentation against the preserved artifact language; flag mixed artifacts
+- use the concrete language domains supplied by the orchestrator without re-reading project
+  configuration; only a direct invocation resolves the shared language rule itself
 
 ## Repository-native discovery
 

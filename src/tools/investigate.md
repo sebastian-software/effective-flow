@@ -125,6 +125,14 @@ If the scorecard does not support the diagnosis, name the concrete next diagnost
 
 ## Report template
 
+Resolve `language.workflow` once and use it for the complete human-readable diagnosis report;
+keep transient wisdom headings and runtime keys stable English. The English template is shown
+below. For German, render `Untersuchung`, `Datum`, `Klassifikation`, `Symptom`, `Reproduktion`,
+`Untersuchte Bereiche / betroffene Dateien`, `Ursachenhypothesen`, `Verworfene Hypothesen`,
+`Empfehlung`, `Folge-Workflow`, `Begründung`, `Aufrufvorschlag`, and
+`Offene Punkte / benötigte Entscheidungen`, with corresponding German prose. Paths, skill
+references, and machine tokens remain stable. Do not mix template languages.
+
 ```markdown
 # Investigation: [short title]
 
@@ -157,7 +165,7 @@ If the scorecard does not support the diagnosis, name the concrete next diagnost
 **Rationale:** [brief]
 **Invocation suggestion:** [e.g. `{{FIRMO}} fix .effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md`]
 
-## Open Points / needed decisions
+## Open points / needed decisions
 
 - [open point or "None"]
 ```

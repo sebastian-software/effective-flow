@@ -52,7 +52,8 @@ config-migration
 
 ## Recommended skills
 
-- `metro-english › humanizer` (fallback) – for the thread replies and the summary comment
+- `metro-english › humanizer` (fallback) – for thread replies and the summary comment only when
+  resolved `language.forge` is `en`; do not apply English rewriting to German output
 
 ```include
 skill-discovery
@@ -177,6 +178,7 @@ options:
 3. **One commit per thread/item** with a clean conventional-commit message without internal
    IDs or a thread reference and without `Co-Authored-By`. Independent items may implement in
    parallel, but every item uses the commit-integrity mutex below for staging and committing.
+   Resolve `language.git` once and pass it to every item for its commit description.
 4. Give internal delegation sub-agents the completion protocol and check for `DONE` or
    `ABORT`. On `ABORT`: mark the item as failed and continue with the next.
 
@@ -246,10 +248,12 @@ and stop delivery for reconciliation.
 
 1. Push the head branch normally (no force). If the push fails due to diverged remote history:
    stop, report the conflict, overwrite no history, and resolve no threads.
-2. Reply briefly per addressed thread and resolve it through the remote helper's normalized
+2. Reply briefly per addressed thread, preserving the clearly established thread language or
+   otherwise using resolved `language.forge`, and resolve it through the remote helper's normalized
    review-thread operations. If resolution is an unsupported provider capability, keep the reply
    and report the required manual resolution. Use the marker `<!-- effective-flow-iterate -->`.
-3. Post **one** summary comment on the PR (marker `<!-- effective-flow-iterate -->`): which items
+3. Post **one** summary comment on the PR in resolved `language.forge` (marker
+   `<!-- effective-flow-iterate -->`): which items
    were implemented or skipped and which pure questions are open/deferred (without a
    substantive auto-reply).
 

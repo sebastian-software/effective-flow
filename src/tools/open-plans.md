@@ -42,14 +42,17 @@ plan-status
 5. For open plans, determine:
    - the title from the first H1 line (for migrated legacy plans including the number preserved there, e.g. `# 0030: Title`)
    - the path
-   - the recommended workflow from `**Recommended workflow:** ...`
-   - for doc plans additionally the doc category from `**Doc category:** ...`, if present
-   - a short summary from `## Requirement`
-   - optionally the most important affected files from `## Affected files`, if short enough
+   - the recommended workflow from `**Empfohlener Workflow:** ...` or
+     `**Recommended workflow:** ...`
+   - for doc plans additionally the doc category from `**Doku-Kategorie:** ...` or
+     `**Doc category:** ...`, if present
+   - a short summary from `## Anforderung` or `## Requirement`
+   - optionally the most important affected files from `## Betroffene Dateien` or
+     `## Affected files`, if short enough
 6. Output:
    - If open plans exist: a table with `Plan`, `Title`, `Workflow`, `Category`, `Path`, `Summary`
      - for non-doc plans, show a dash in the `Category` column
-     - for doc plans without a `**Doc category:**` line, show `unknown`
+     - for doc plans without a matching doc-category line, show `unknown`
    - Then a short list of status-unclear plans, if present
    - If multiple plan files carry the same date-slug name, point this out separately (this duplicate violates the `Plan file convention` and should be resolved via the appropriate workflow)
    - If no open plans exist: a clear message "No open plans found."
@@ -57,7 +60,7 @@ plan-status
 ## Summary rules
 
 - Summarize the requirement in one sentence.
-- Prefer the first substantive paragraph under `## Requirement`.
+- Prefer the first substantive paragraph under `## Anforderung` or `## Requirement`.
 - If the section is missing, use the H1 title as a fallback.
 - Remove pure meta sentences like "Verified code context:" from the summary.
 - Shorten long summaries to about 160 characters.

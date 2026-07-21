@@ -22,11 +22,15 @@ When the user references an existing plan file on invocation — for example `<p
 3. Status rules (both marker languages are equivalent):
    - exactly one status line `**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented` → the plan can be used as a basis.
    - exactly one status line `**Planungsstatus:** Umgesetzt` or `**Plan status:** Implemented` → ask the user whether the plan should be implemented again, only checked, or whether the workflow should be aborted.
-   - missing or contradictory status → check whether `## Test results` or `## Review findings` are present. If so, treat the plan as probably implemented and ask. If not, ask whether the plan should be used as an unbuilt specification.
+   - missing or contradictory status → check whether `## Testergebnisse` / `## Test results` or
+     `## Review-Befunde` / `## Review findings` are present. If so, treat the plan as probably
+     implemented and ask. If not, ask whether the plan should be used as an unbuilt specification.
 
 ### Check the workflow recommendation
 
-1. Check whether a line `**Empfohlener Workflow:** ...` is present in the header.
+1. Check whether exactly one canonical line `**Empfohlener Workflow:** ...` or
+   `**Recommended workflow:** ...` is present in the header. It must match the language of the
+   complete plan; a mixed header makes the language unclear.
 2. Determine the recommendation:
    - Feature or `{{SKILL:build}}` → `{{SKILL:build}}`
    - Bugfix or `{{SKILL:fix}}` → `{{SKILL:fix}}`
@@ -49,4 +53,6 @@ embed. This reference rule does not duplicate that check separately.
 
 - Use the contents of the plan file as the agreed basis for the current workflow.
 - Record in the wisdom file which plan file is the source and which workflow recommendation it contains.
-- The status update to completed happens only at the completion of the implementing workflow and preserves the marker language: a German marker becomes `**Planungsstatus:** Umgesetzt`, an English marker becomes `**Plan status:** Implemented`.
+- The status update to completed happens only at the completion of the implementing workflow and
+  preserves the complete plan language: a German plan becomes
+  `**Planungsstatus:** Umgesetzt`, an English plan becomes `**Plan status:** Implemented`.

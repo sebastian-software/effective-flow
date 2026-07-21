@@ -11,8 +11,9 @@ You are the orchestrator for comprehensive code reviews.
 
 This workflow analyzes code quality and produces a structured report whose findings can serve directly as input for `{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}`, and `{{SKILL:docs}}`.
 
-```include
+```lazy-include
 language-rules
+when: local or remote review output languages must be resolved
 ```
 
 ```include
@@ -324,16 +325,21 @@ may fall through to the normal code-review scope.
 
 1. Read the arguments.
 2. Load the Effective Flow configuration, migrate it if necessary, and determine the review profile, DD source profile, and validation mode. Additionally determine the tracker mode according to "Issue-tracker integration (remote mode)" (config `tracker.mode`, argument/per-run signal, and possibly a first-call query). For `remote`: detect the host and CLI and check CLI availability and authentication in advance; if the CLI is missing, abort clearly (no silent fallback to `local`).
-3. Without arguments:
+3. Resolve the concrete output language once before any Phase-2 delegation: resolve
+   `language.workflow` for local review artifacts and `language.forge` for remote review
+   artifacts, then set `<review-output-language>` from the tracker mode. Record the concrete
+   `de`/`en` value in the wisdom context and pass it to every Phase-2 agent. Do not let delegated
+   agents re-read or reinterpret the project setup ADR.
+4. Without arguments:
    - check `git diff --name-only`
    - check `git diff --cached --name-only`
    - if there are changes: review only those files
    - otherwise the entire codebase
-4. Examine the project structure and classify the scoped files into routing buckets. Use a valid `scopeIndex` cache only if Git HEAD, dirty state, and relevant file changes match the current situation.
-5. Determine the final review scope (concrete file list or directory description).
-6. Determine the active finding scope: the default is only critical+important, unless the user has explicitly requested a comprehensive review.
-7. Obtain user confirmation only if the scope or review goal is unclear.
-8. Skip the scope confirmation if the user has explicitly specified the scope, or if `review.autoConfirmScope: true` is set and the scope determination is unambiguous. Still ask if there are uncommitted changes and the desired scope is not unambiguous.
+5. Examine the project structure and classify the scoped files into routing buckets. Use a valid `scopeIndex` cache only if Git HEAD, dirty state, and relevant file changes match the current situation.
+6. Determine the final review scope (concrete file list or directory description).
+7. Determine the active finding scope: the default is only critical+important, unless the user has explicitly requested a comprehensive review.
+8. Obtain user confirmation only if the scope or review goal is unclear.
+9. Skip the scope confirmation if the user has explicitly specified the scope, or if `review.autoConfirmScope: true` is set and the scope determination is unambiguous. Still ask if there are uncommitted changes and the desired scope is not unambiguous.
 
 ```ask
 when: a scope confirmation is required per the rules above
@@ -409,6 +415,8 @@ Write all results to the wisdom file under `## Design decisions` with sub-sectio
 3. **Assignment to each reviewer sub-agent:**
    - comprehensive review of the assigned files
    - observe the active finding scope
+   - write finding titles, problems, solutions, and other human-readable result prose in the
+     concrete Phase-1 `<review-output-language>`; do not resolve configuration independently
    - **no design-decision check in the reviewer** — the design decisions are reconciled centrally in Phase 3, which keeps the reviewer assignment lean. This instruction overrides contrary default rules in `{{AGENT:frontend-reviewer}}`, `{{AGENT:nodejs-reviewer}}`, `{{AGENT:rust-reviewer}}`, or `{{AGENT:generic-product-reviewer}}`: in Phase 2c, reviewers must not search for, filter by, or factor design decisions into the confidence.
    - for each finding:
      - severity
@@ -452,7 +460,9 @@ Phase 4 branches according to the tracker mode determined in Phase 1. In local m
 
 #### Local mode
 
-1. Resolve the concrete absolute report handle below
+1. Reuse the Phase-1 `language.workflow` value for the complete new local report. Existing reports
+   retain their clearly recognizable language. Pass the same concrete language to report writers.
+2. Resolve the concrete absolute report handle below
    `<RUNTIME_STATE_ROOT>/.effective-flow/review/`. Run all directory lookups and collision checks
    there. If `.effective-flow/` is missing, guard that exact directory from the runtime root
    immediately before its `mkdir`. If `.effective-flow/review/` is missing, separately guard
@@ -462,17 +472,21 @@ Phase 4 branches according to the tracker mode determined in Phase 1. In local m
    publishing the report. Guard the concrete report file again immediately before writing it,
    then create `<RUNTIME_STATE_ROOT>/.effective-flow/review/review-report-YYYY-MM-DD[-N].md`. Use
    the report format below. Never inspect or create a report below a linked execution worktree.
-2. If the active finding scope only covers critical and important findings (default):
+3. If the active finding scope only covers critical and important findings (default):
    - do not include notes in the main report
    - briefly mention that notes were filtered out and that a comprehensive review is available on request
-3. If `review.validation: off` was active, mention in the report that technical validation was skipped.
-4. Update valid cache areas (`designDecisions`, `scopeIndex`, `validatorScripts`) only after a successful recomputation. Do not write review findings to the cache.
-5. Present the most important findings to the user and point to the saved report file.
-6. Delete the wisdom file.
+4. If `review.validation: off` was active, mention in the report that technical validation was skipped.
+5. Update valid cache areas (`designDecisions`, `scopeIndex`, `validatorScripts`) only after a successful recomputation. Do not write review findings to the cache.
+6. Present the most important findings to the user and point to the saved report file.
+7. Delete the wisdom file.
 
 #### Remote mode
 
 Use the formats, labels, and operations from "Issue-tracker integration (remote mode)". **No** local report is written.
+
+Reuse the Phase-1 `language.forge` value for finding issues, the epic, and remote comments. It may
+differ from `language.workflow`; labels, IDs, action values, signatures, and helper fields stay
+stable.
 
 1. **Ensure labels:** Create the required labels idempotently (`effective-flow-review-finding`, `effective-flow-review-epic`, the action and severity labels, `wontfix`).
 2. **Dedup first:** Use the helper's compatibility label queries and finding-dedup operation for existing finding issues in every state. It unions current and `firmo-` label results by issue number, reads both canonical `Signature` and legacy `Signatur`, normalizes either form, and removes exact duplicates from the creation list. In case of an uncertain semantic match outside that exact identity (e.g. only a shifted line number), treat it as a new finding and note the possible relationship in the issue body.
@@ -491,6 +505,14 @@ Use the formats, labels, and operations from "Issue-tracker integration (remote 
 **Completion condition (no autonomous loop):** The review is complete when the findings that were quality-checked in Phase 3 and filtered against design decisions are available — in local mode in the report, in remote mode as finding issues plus an epic (or with the message that all findings already exist) —, the exact published finding range was reserved atomically before publication, and the wisdom file has been deleted. The independent check is provided by the finding-quality check in Phase 3 (confidence filter, duplicate and severity consistency). This workflow only produces a report and implements nothing; therefore there is neither a bounded correction loop nor a `/goal` string.
 
 ### Report format
+
+The English form is shown below. For `language.workflow = de`, render the complete report in
+German: `# Code-Review-Bericht`, `Datum`, `Umfang`, `Projekttyp`, `Zusammenfassung`,
+`Schweregrad`, `Anzahl`, `Komplexität`, `Aktion`, `Befunde`, `Titel`, `Bereich`, `Datei`,
+`Problem`, `Empfehlung`, `Prompt-Vorschlag`, `Entwicklernotiz`, and
+`Übersprungene Befunde (Architekturentscheidungen)`, with German displayed severity/complexity
+values. Keep finding IDs, paths, skill/action values, and other machine tokens unchanged. A
+report uses one complete form; readers accept both forms.
 
 ```markdown
 # Code review report
@@ -540,7 +562,9 @@ Use the formats, labels, and operations from "Issue-tracker integration (remote 
 | [...] | [DD-XXX] | [...] |
 ```
 
-If a finding is later implemented via `{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}`, or `{{SKILL:docs}}`, the existing report file may be augmented at the affected finding with a short status note, for example `Implemented on YYYY-MM-DD via {{SKILL:fix}}`. English field labels and values are the default; German field labels and values in a pre-existing report stay recognized when reading it.
+If a finding is later implemented, augment the existing report in its preserved report language
+with a matching short status note. English and German field labels and displayed values remain
+readable; stable action values and IDs are never translated.
 
 ## Known limitations
 

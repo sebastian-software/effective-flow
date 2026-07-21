@@ -87,7 +87,12 @@ apply-clarity-gate
 
 ## Comment conventions
 
-All status updates are written as issue comments (operation "add comment" from the mapping above). Use these canonical templates and begin every Effective Flow comment with the marker `<!-- effective-flow-apply-issues -->` so that later runs recognize their own comments and avoid duplicate comments:
+All status updates are written as issue comments (operation "add comment" from the mapping above).
+Resolve `language.forge` once and use it for new comment prose, preserving a clearly established
+existing thread language. Use the English templates below or their complete German equivalents
+(`Umgesetzt`, `Übersprungen`, `Umsetzung fehlgeschlagen` and corresponding sentences). Begin
+every comment with the stable marker `<!-- effective-flow-apply-issues -->` so later runs
+recognize their own comments and avoid duplicates:
 
 - **Implemented:** `🤖 Implemented via {{FIRMO}} apply — PR #<nr>` (no internal IDs, no `Co-Authored-By`).
 - **Skipped:** `⏭️ Skipped: some details are still missing for an autonomous implementation: <list of what is missing>. Complete with {{FIRMO}} plan-issue.`
@@ -218,7 +223,14 @@ Issues with the same target PR run sequentially so that new commits are created 
      Pass the absolute root and execution-location receipt established by that delegated workflow;
      never rely on an inherited current directory or create a nested worktree around a reused
      harness-native one.
-2. Commit the changes (Conventional Commit message, no internal IDs, no `Co-Authored-By`) and push the branch. If a target PR is present: **do not create a new PR**, but use the existing PR link and optionally extend its body by one exact `Closes #<issue>` or `Refs #<issue>` entry through the helper's idempotent body patch, using the fresh body hash so concurrent edits fail closed. If no target PR is present: take the branch through `{{SKILL:pr}}` as exactly one PR against the base branch; include `Closes #<issue>` in the helper-validated PR payload.
+2. Commit the changes using resolved `language.git` for the description (Conventional Commit
+   type stable, no internal IDs, no `Co-Authored-By`) and push the branch. Pass resolved
+   `language.git` and `language.forge` to the delegated delivery path. If a target PR is present:
+   **do not create a new PR**, but use the existing PR link and optionally extend its body by one
+   exact `Closes #<issue>` or `Refs #<issue>` entry through the helper's idempotent body patch,
+   using the fresh body hash so concurrent edits fail closed. If no target PR is present: take
+   the branch through `{{SKILL:pr}}` as exactly one PR against the base branch; include
+   `Closes #<issue>` in the helper-validated PR payload.
 3. **Immediately after a successful push or PR creation:** build and write the PR-link comment
    through the helper, set label `effective-flow-issue-done`, and — if the issue originates from
    a container — read the container body fresh and use the helper's exact checklist patch with

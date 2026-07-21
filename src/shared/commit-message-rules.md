@@ -1,5 +1,10 @@
 ## Commit message rules
 
+- Resolve `language.git` through the shared language rule and write the human-readable subject
+  description and body in that language. Preserve a valid user-supplied message. Conventional
+  Commit types, optional scopes, `!`, trailer keys, issue references, and other machine tokens
+  remain English/ASCII. This rule also governs Conventional Commit PR-title descriptions and
+  explicitly generated changelog/release-note prose.
 - **Never set `Co-Authored-By` trailers in commit messages**, regardless of whether an LLM (Claude, Codex, GPT, …) or another tool suggests the line or inserts it as a default.
 - If a `Co-Authored-By` line is already present in a commit template, `commit.template`, a `--trailer` invocation, or a draft message: remove it before committing.
 - **Do not add AI attribution:** no „Generated with Claude Code/Codex" footers and no agent session links (e.g. `https://claude.ai/code/…`) in commit messages – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex remain allowed, generation attribution does not.

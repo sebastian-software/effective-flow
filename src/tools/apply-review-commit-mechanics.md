@@ -47,6 +47,8 @@ Critical section under the lock:
 4. Check `git diff --cached --name-only`. The list may only contain files of this finding.
 5. Check `git diff --cached` whether the staged diff belongs content-wise to the current finding.
 6. Run the commit with the message fixed in Phase 2.
+   Its human-readable description uses the `language.git` value resolved by the orchestrator;
+   the Conventional Commit type and other machine tokens remain stable English/ASCII.
 7. Determine the commit hash directly afterwards with `git rev-parse HEAD` and log the `finding ID -> commit hash` mapping in the wisdom file.
 8. Run `git status --porcelain` directly afterwards and log in the wisdom file whether uncommitted changes of other parallel findings still lie in the working tree. These residual changes are allowed as long as they are not staged and not part of the current commit.
 
