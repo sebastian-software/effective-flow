@@ -108,7 +108,7 @@ A command that requires a missing runtime, network access, secrets, a destructiv
    - Start every applicable check through a separate command invocation using the active harness's supported concurrent or non-blocking execution mechanism. Retain one handle or session per started check.
    - Start all applicable independent checks before waiting for any of them. Then actively wait or poll every retained handle until it reaches a terminal state, collect all output, and merge it.
    - If one check fails, the others do **not** abort — every started check runs to completion so the report is complete.
-   - If concurrent workspace writes cause a race, terminate every still-running check, confirm that all retained handles reach a terminal state, then repeat the planned checks sequentially and state that fallback in the report. This race-specific recovery is the only case where one check may stop the others.
+   - If concurrent workspace writes cause a race, apply the canonical process-tree shutdown procedure under `Aggregation` to every still-running check that must stop before a safe fallback. Repeat the planned checks sequentially only after every selected tree has a verified exit and fully drained output, and state that fallback in the report. If cleanup is incomplete, do not start the sequential retry. This race-specific recovery is the only case where one check may stop the others.
    - If the active harness has no safe concurrent execution mechanism, run the checks sequentially and state that fallback in the report.
    - If the task is explicitly read-only, run only checks that run in the current sandbox mode without write access. For checks that need to write, ask the user for an escalation or mark the section as skipped.
    - In `quick` mode, a single combined fast command is not additionally started in parallel with checks it already covers.
@@ -129,10 +129,18 @@ A command that requires a missing runtime, network access, secrets, a destructiv
 
 ### Aggregation
 
-1. **Actively wait for every started check:** After starting all applicable invocations, actively wait or poll each retained handle until it reaches a terminal state. Write the report **only** after every started check has finished, failed, or been terminated at its timeout — not immediately after starting it.
-2. **Timeout per check:** Give each started check its own **120-second** timeout. At the deadline, terminate that invocation using the active harness's supported mechanism, confirm that it reaches a terminal state, mark its section as `TIMEOUT`, and continue waiting for every other started check. A failure or timeout in one check must never cancel another check.
-3. **Deterministic order:** Even if the processes finish in any order, report each file/domain bucket in routing order and its sections as **Type/static → Lint/format → Build → Documentation**. JS/TS labels may remain **TypeScript → Linting → Build → Documentation**.
-4. **Cross-section correlation:** If later checks concern the same file or symbol as an earlier root-cause error, reference the earlier error instead of duplicating it. For JS/TS, if build errors and TypeScript errors concern the same file or symbol, reference the TypeScript error in the build section instead of duplicating it.
+1. **Actively wait for every started check:** After starting all applicable invocations, actively wait or poll each retained handle until it reaches a terminal state. Write a normal completion report **only** after every started check has finished, failed, or been terminated at its timeout — not immediately after starting it. The cleanup-failure result in step 2 is the only exception: emit it without claiming terminal state, then block every later workflow phase.
+2. **Canonical process-tree shutdown:** Treat each retained handle as owning the invoked process and all of its descendants. When a timeout or race fallback requires cleanup, select only the affected check trees so unrelated checks continue, then for each selected tree:
+   1. request ordinary termination through the active harness's supported process-control mechanism
+   2. if any process in the tree survives, use the supported forced-stop mechanism for those survivors
+   3. wait for and reap the invoked process tree through the retained handle or session, verifying that the invoked process and every descendant have exited
+   4. continue draining stdout and stderr until both streams close, and include that shutdown output in the check's result
+
+   Record `TIMEOUT`, start a sequential retry, or write a normal completion report only after the required trees have both verified exit and fully drained output. If complete tree shutdown, verification, or stream drainage cannot be guaranteed, emit only a `FAILED (cleanup incomplete)` result without claiming terminal state, start no replacement or retry, and do not allow later workflow phases to proceed. Still observe every already-running independent check to its terminal state and include its output.
+
+3. **Timeout per check:** Give each started check its own **120-second** timeout. At the deadline, apply the canonical process-tree shutdown procedure to that check tree, mark its section as `TIMEOUT` only after verified exit and output drainage, and continue waiting for every other started check. A failure or timeout in one check must never cancel another check.
+4. **Deterministic order:** Even if the processes finish in any order, report each file/domain bucket in routing order and its sections as **Type/static → Lint/format → Build → Documentation**. JS/TS labels may remain **TypeScript → Linting → Build → Documentation**.
+5. **Cross-section correlation:** If later checks concern the same file or symbol as an earlier root-cause error, reference the earlier error instead of duplicating it. For JS/TS, if build errors and TypeScript errors concern the same file or symbol, reference the TypeScript error in the build section instead of duplicating it.
 
 ## Output format
 
@@ -170,4 +178,4 @@ A command that requires a missing runtime, network access, secrets, a destructiv
 - on observed race conditions between parallel checks, fall back to sequential mode and inform the user. Concrete detection signals from the stdout/stderr of an aborted process:
   - strings such as `EBUSY`, `EPERM`, `ENOENT`, `lock`, `already in use`, `cache conflict`, or `file is being used by another process`
   - more than one parallel process fails with exit code ≠ 0 even though the checks previously ran without errors individually
-  - on a match: terminate all parallel processes, repeat the checks sequentially, inform the user that a switch to the sequential fallback was made
+  - on a match: apply the canonical process-tree shutdown procedure to every still-running check that must stop, begin the sequential retry only after verified exit and fully drained output for all selected trees, and inform the user that a switch to the sequential fallback was made; if cleanup is incomplete, emit the cleanup-failure result and do not retry
