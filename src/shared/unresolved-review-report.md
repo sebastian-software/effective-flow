@@ -8,12 +8,13 @@ Goal:
 - `{{SKILL:apply-review}}` can process the findings later in the familiar report format.
 - The plan file stays completion documentation and only points to the external report.
 
-Applies to findings with status (canonical report tokens stay in the report's language; the
-current `{{SKILL:review}}` format is German):
+Applies to findings with status (new reports use the canonical English tokens; equivalent
+German values in existing reports remain readable):
 
 - `Open`
 - `Not implemented`
-- `Nicht umgesetzt (ADR: <slug>)` or comparable ADR statuses
+- `Not implemented (ADR: <slug>)` or comparable ADR statuses; legacy German
+  `Nicht umgesetzt (ADR: <slug>)` remains readable
 
 Do not carry over into the external report:
 
@@ -43,9 +44,8 @@ absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle as required b
 3. If no plan file exists as a basis, use:
    - `.effective-flow/review/review-report-YYYY-MM-DD-WORKFLOW.md`
    - on collision: `.effective-flow/review/review-report-YYYY-MM-DD-WORKFLOW-1.md`, `-2`, ...
-4. Always write the origin at the top of the report (canonical German header tokens, matched by
-   the still-German `{{SKILL:review}}` format):
-   - `**Origin plan:** [path or "Keiner"]`
+4. Always write the origin at the top of the report using the canonical English header tokens:
+   - `**Origin plan:** [path or "None"]`
    - `**Source workflow:** {{SKILL:build}} / {{SKILL:fix}} / {{SKILL:refactor}} / {{SKILL:maintain}}`
    - `**Source review:** [reviewer skill or phase]`
 
@@ -71,7 +71,7 @@ Use the canonical report format from `{{SKILL:review}}` section "Report format".
 Additional header fields for workflow reports:
 
 - Directly below `**Project type:** ...` set these three lines:
-  - `**Origin plan:** [<plan.dir>/YYYY-MM-DD-<slug>.md or Keiner]` (`<plan.dir>` is the plan directory from `plan.dir` of the Effective Flow configuration/project-setup ADR, default `docs/plan`)
+  - `**Origin plan:** [<plan.dir>/YYYY-MM-DD-<slug>.md or None]` (`<plan.dir>` is the plan directory from `plan.dir` of the Effective Flow configuration/project-setup ADR, default `docs/plan`)
   - `**Source workflow:** [{{SKILL:build}} / {{SKILL:fix}} / {{SKILL:refactor}} / {{SKILL:maintain}}]`
   - `**Source review:** [reviewer or phase]`
 - All tables and finding blocks stay in the `{{SKILL:review}}` format.
@@ -81,5 +81,5 @@ Rules:
 
 - Critical findings may only remain in this report if the user has explicitly decided to complete the workflow despite an open critical finding.
 - Determine the action as in `{{SKILL:review}}`: defect → `{{SKILL:fix}}`, structural problem → `{{SKILL:refactor}}`, missing functionality or safeguard → `{{SKILL:build}}`, pure documentation gap → `{{SKILL:docs}}`.
-- Never enter anything automatically in `developer note`. This field is reserved exclusively for the developer's manual notes and stays empty in automatically generated reports. When a finding was deliberately not implemented and an ADR exists, note the ADR reference in the `Status` via slug, e.g. `Nicht umgesetzt (ADR: <slug>)`.
+- Never enter anything automatically in `Developer note`. This field is reserved exclusively for the developer's manual notes and stays empty in automatically generated reports. When a finding was deliberately not implemented and an ADR exists, note the ADR reference in the `Status` via slug, e.g. `Not implemented (ADR: <slug>)`. Existing reports using `Nicht umgesetzt (ADR: <slug>)` remain readable.
 - After writing, output the report path to the user.

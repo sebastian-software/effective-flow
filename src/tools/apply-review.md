@@ -203,14 +203,28 @@ First determine the tracker mode via the "apply-source detection" (report file u
    deleted and recreated between conversations, no previously read content may be used.
    Revalidate the runtime root and handle containment first; never substitute a same-named file
    below the current execution root.
-6. Parse all findings (`### [R-XXXXXXX] ...` blocks) with:
+6. Parse all findings (`### [R-XXXXXXX] ...` blocks) using the canonical English field labels:
    - finding ID and title
-   - Severity
-   - Complexity
-   - action (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}`, `{{SKILL:docs}}`)
-   - Prompt suggestion
-   - developer note (if present)
-   - already present implementation hints (✅)
+   - `Severity`
+   - `Complexity`
+   - `Area`
+   - `File`
+   - `Problem`
+   - `Recommendation`
+   - `Action` (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}`, `{{SKILL:docs}}`)
+   - `Prompt suggestion`
+   - `Developer note` (if present)
+   - `Status` (if present) and already present implementation hints (✅)
+
+   When reading an existing local report, also accept the historical German field aliases
+   `Schweregrad`, `Komplexität`, `Bereich`, `Datei`, `Empfehlung`, `Aktion`,
+   `Prompt-Vorschlag`, and `Entwickler-Anmerkung` / `Entwicklernotiz` / `Entwickler-Notiz`.
+   Legacy values remain readable as well: severity `Kritisch` / `Wichtig` / `Hinweis`,
+   complexity `Leicht` / `Niedrig` / `Mittel` / `Hoch`, and status `Offen` / `Behoben` /
+   `Umgesetzt` / `Nicht umgesetzt`. Canonical writes and payloads use the English labels and
+   values. This compatibility applies only to local report parsing and does not change the
+   remote issue flow.
+
 7. Classify each finding:
    - **Already implemented:** the finding already has a ✅ hint → skip
    - **Do not implement:** the developer note begins with "Do not implement" (the German form "Nicht umsetzen" is also recognized) → hand to `decision-records` as a decision candidate (ADR only for a permanent decision)
@@ -322,7 +336,7 @@ Start a pre-analysis sub-agent in parallel for **each implementable finding**. T
 
 Each pre-analysis sub-agent receives:
 
-- the finding details from the report (ID, Problem, Empfehlung, Datei, action)
+- the finding details from the report (ID, Problem, Recommendation, File, Action)
 - the developer note (if present)
 - the task to investigate the code and deliver a structured analysis result:
   - **Affected files:** complete list of all files that will likely be touched (more than just the primary file named in the report).
@@ -373,7 +387,7 @@ Example (across actions) with five findings over multiple actions:
      absolute root and receipt; do not rely on an inherited or assigned persistent working
      directory.
 2. Each delegation sub-agent receives directly embedded in the prompt:
-   - the finding details (ID, Problem, Empfehlung, Prompt-Vorschlag, Datei)
+   - the finding details (ID, Problem, Recommendation, Prompt suggestion, File)
    - the corresponding pre-analysis from Phase 4.1 as an **inline context block** in the prompt — not as a reference to the wisdom file. The sub-skills do not read the wisdom file; they only process the prompt content. Embed the pre-analysis in full, for example under the heading `Pre-analysis for this finding:`.
    - the developer note (if present)
    - the commit strategy from Phase 2
