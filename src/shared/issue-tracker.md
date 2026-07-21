@@ -186,9 +186,37 @@ Rules for the task list:
 
 ### Tracker operations
 
-Describe tracker access only as a helper operation: issue/PR read and list, issue/PR create, comment read/create, label create/change, PR review-thread read/reply/resolve, marker/checklist patch, or PR creation. Use the helper's normalized output rather than provider-specific fields. For list operations, request the compatibility variants and let the helper union matches by issue number before signature deduplication.
+Describe tracker access only as a helper operation: issue/PR read and list, issue/PR create,
+comment read/create/update, label create/change, PR review-thread read/reply/resolve,
+marker/checklist patch, or PR creation. Use the helper's normalized output rather than
+provider-specific fields. For list operations, request the compatibility variants and let the
+helper union matches by issue number before signature deduplication.
 
-Body writes require `expectedBodyHash` from the immediately preceding fresh read. Preview the exact patch and command in dry-run mode, then apply with the same payload. Zero or multiple semantic matches are structured errors; unchanged state is successful and idempotent. The helper exposes whether provider-level conditional writes are available; the expected-body precondition is mandatory regardless. GitHub returns the read ETag for diagnostics but documents unsafe-method conditional requests as unsupported for these endpoints, so the adapter reports the write as non-atomic instead of sending a misleading `If-Match` header.
+The targeted issue-comment update operation is `issue-comment-update`. Its input contains the
+issue number, the positive `commentId` returned by `issue-comments-read`, the freshly computed
+`expectedBodyHash` of that exact comment body, and `payload.body`. It is a mutation and therefore
+uses the normal dry-run-first envelope. On apply, the helper reads the issue comments again,
+requires exactly one matching comment ID, and compares its body hash before writing. A missing,
+ambiguous, or changed comment fails with `TARGET_NOT_FOUND`, `AMBIGUOUS_TARGET`, or `STALE_WRITE`;
+the caller must not fall back to `issue-comment` and create a competing comment.
+
+Provider mapping for `issue-comment-update` is fixed and owned by the helper:
+
+- GitHub: `PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}`.
+- Forgejo: `PATCH /repos/{owner}/{repo}/issues/{index}/comments/{id}`; Forgejo currently ignores
+  `index`, but the adapter still supplies the freshly resolved issue number.
+
+Both send a JSON object with the validated, attribution-free `body`. If probing reports that the
+provider or installed CLI cannot execute this API operation, abort with `UNSUPPORTED_CAPABILITY`
+before a write; never append a replacement planning comment.
+
+Body writes, including `issue-comment-update`, require `expectedBodyHash` from the immediately
+preceding fresh read. Preview the exact patch and command in dry-run mode, then apply with the same
+payload. Zero or multiple semantic matches are structured errors; unchanged state is successful
+and idempotent. The helper exposes whether provider-level conditional writes are available; the
+expected-body precondition is mandatory regardless. GitHub returns the read ETag for diagnostics
+but documents unsafe-method conditional requests as unsupported for these endpoints, so the
+adapter reports the write as non-atomic instead of sending a misleading `If-Match` header.
 
 Legacy-label transitions use the helper's add and remove operations in that order. The one-time `sf-` migration returns its completion marker only after every step succeeds; a partial failure reports completed steps and keeps the marker pending. Cleanup of recognized `firmo-` aliases uses the same add-before-remove operations without changing that one-time marker contract.
 
