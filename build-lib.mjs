@@ -10,6 +10,7 @@
 // gate; the default (no `type`) renders an options question. Any other value
 // is a typo and must fail the build.
 export const ASK_ALLOWED_TYPES = ['approval', 'options'];
+export const ASK_ALLOWED_LANGUAGES = ['en', 'de'];
 // AskUserQuestion header chips are capped at 12 characters (see R-0000001).
 export const ASK_MAX_HEADER_LENGTH = 12;
 
@@ -1166,11 +1167,13 @@ export function parseAskBlock(block, { context } = {}) {
   const questionMatch = block.match(/question:\s*(.+)/);
   const typeMatch = block.match(/type:\s*(\S+)/);
   const whenMatch = block.match(/when:\s*(.+)/);
+  const languageMatch = block.match(/^language:[ \t]*(.*)$/m);
 
   const header = headerMatch ? headerMatch[1].trim() : null;
   const question = questionMatch ? questionMatch[1].trim() : null;
   const type = typeMatch ? typeMatch[1].trim() : null;
   const when = whenMatch ? whenMatch[1].trim() : null;
+  const language = languageMatch ? languageMatch[1].trim() : 'en';
 
   if (!header) throw new Error(`ASK block missing header field${contextSuffix(context)}`);
   if (!question) throw new Error(`ASK block missing question field${contextSuffix(context)}`);
@@ -1182,6 +1185,11 @@ export function parseAskBlock(block, { context } = {}) {
   if (type !== null && !ASK_ALLOWED_TYPES.includes(type)) {
     throw new Error(
       `ASK block has unknown type "${type}" (allowed: ${ASK_ALLOWED_TYPES.join(', ')})${contextSuffix(context)}`,
+    );
+  }
+  if (!ASK_ALLOWED_LANGUAGES.includes(language)) {
+    throw new Error(
+      `ASK block has unknown language "${language}" (allowed: ${ASK_ALLOWED_LANGUAGES.join(', ')})${contextSuffix(context)}`,
     );
   }
 
@@ -1197,37 +1205,64 @@ export function parseAskBlock(block, { context } = {}) {
     }
   }
 
-  return { header, question, type, when, options };
+  return { header, question, type, when, language, options };
 }
+
+const ASK_SCAFFOLDING = Object.freeze({
+  en: Object.freeze({
+    condition: 'If',
+    claudeIntro: 'Use the `AskUserQuestion` tool with the following parameters:',
+    approvalLabel: 'Yes',
+    approvalDescription: 'Approval granted',
+    adjustLabel: 'Adjust',
+    adjustDescription: 'Enter feedback as free text',
+    codexQuestion: 'Ask the user',
+    codexApproval: 'Answer with "Yes" or enter feedback as free text.',
+  }),
+  de: Object.freeze({
+    condition: 'Wenn',
+    claudeIntro: 'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:',
+    approvalLabel: 'Ja',
+    approvalDescription: 'Freigabe erteilt',
+    adjustLabel: 'Anpassen',
+    adjustDescription: 'Feedback als Freitext eingeben',
+    codexQuestion: 'Frage den User',
+    codexApproval: 'Antworte mit "Ja" oder gib Feedback als Freitext.',
+  }),
+});
 
 export function transformAskClaude(body, { context } = {}) {
   return body.replace(/```ask\n([\s\S]*?)```/g, (_, block) => {
-    const { header, question, type, when, options } = parseAskBlock(block, { context });
-    let out = 'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:\n';
+    const { header, question, type, when, language, options } = parseAskBlock(block, {
+      context,
+    });
+    const copy = ASK_SCAFFOLDING[language];
+    let out = `${copy.claudeIntro}\n`;
     out += `- header: "${header}"\n`;
     out += `- question: "${question}"\n`;
     out += '- multiSelect: false\n';
     out += '- options:\n';
     if (type === 'approval') {
-      out += '  - label: "Ja", description: "Freigabe erteilt"\n';
-      out += '  - label: "Anpassen", description: "Feedback als Freitext eingeben"';
+      out += `  - label: "${copy.approvalLabel}", description: "${copy.approvalDescription}"\n`;
+      out += `  - label: "${copy.adjustLabel}", description: "${copy.adjustDescription}"`;
     } else {
       out += options
         .map((o) => `  - label: "${o.label}", description: "${o.description}"`)
         .join('\n');
     }
-    return when ? `Wenn ${when}:\n\n${out}` : out;
+    return when ? `${copy.condition} ${when}:\n\n${out}` : out;
   });
 }
 
 export function transformAskCodex(body, { context } = {}) {
   return body.replace(/```ask\n([\s\S]*?)```/g, (_, block) => {
-    const { question, type, when, options } = parseAskBlock(block, { context });
-    const prefix = when ? `Wenn ${when}: ` : '';
+    const { question, type, when, language, options } = parseAskBlock(block, { context });
+    const copy = ASK_SCAFFOLDING[language];
+    const prefix = when ? `${copy.condition} ${when}: ` : '';
     if (type === 'approval') {
-      return `${prefix}Frage den User: **${question}** Antworte mit "Ja" oder gib Feedback als Freitext.`;
+      return `${prefix}${copy.codexQuestion}: **${question}** ${copy.codexApproval}`;
     }
-    let out = `Frage den User: **${question}**\n`;
+    let out = `${copy.codexQuestion}: **${question}**\n`;
     out += options.map((o) => `- ${o.label} -- ${o.description}`).join('\n');
     return prefix ? `${prefix}${out}` : out;
   });

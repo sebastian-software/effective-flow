@@ -822,6 +822,7 @@ test('parseAskBlock parses an options block', () => {
   const r = parseAskBlock(block);
   assert.equal(r.header, 'Commits');
   assert.equal(r.question, 'Welche?');
+  assert.equal(r.language, 'en');
   assert.deepEqual(r.options, [
     { label: 'A', description: 'erste' },
     { label: 'B', description: 'zweite' },
@@ -829,8 +830,9 @@ test('parseAskBlock parses an options block', () => {
 });
 
 test('parseAskBlock handles an approval block', () => {
-  const r = parseAskBlock('header: Freigabe\nquestion: Ok?\ntype: approval\n');
+  const r = parseAskBlock('header: Freigabe\nquestion: Ok?\ntype: approval\nlanguage: de\n');
   assert.equal(r.type, 'approval');
+  assert.equal(r.language, 'de');
   assert.deepEqual(r.options, []);
 });
 
@@ -853,6 +855,120 @@ test('parseAskBlock rejects an unknown type', () => {
   assert.throws(
     () => parseAskBlock('header: H\nquestion: Q\ntype: aproval\n', { context: 'x.md' }),
     /unknown type "aproval".*x\.md/,
+  );
+});
+
+test('parseAskBlock rejects invalid language values with source context', () => {
+  for (const languageLine of ['language: fr', 'language: EN', 'language:']) {
+    assert.throws(
+      () =>
+        parseAskBlock(`header: H\nquestion: Q\ntype: approval\n${languageLine}\n`, {
+          context: 'workflow.md',
+        }),
+      /unknown language.*allowed: en, de.*workflow\.md/,
+    );
+  }
+});
+
+test('renderBody localizes only generated ask scaffolding for both harnesses', () => {
+  const optionsBlock = (language) =>
+    [
+      '```ask',
+      'when: die Freigabe fehlt',
+      'header: Freigabe',
+      'question: Weiter?',
+      ...(language ? [`language: ${language}`] : []),
+      'options:',
+      '  - label: Ja',
+      '    description: Die Quelle bleibt unverändert',
+      '```',
+    ].join('\n');
+  const approvalBlock = (language) =>
+    [
+      '```ask',
+      'when: approval is required',
+      'header: Approval',
+      'question: Continue?',
+      'type: approval',
+      ...(language ? [`language: ${language}`] : []),
+      '```',
+    ].join('\n');
+
+  assert.equal(
+    renderBody(optionsBlock(), 'claude', { ...refConfig, context: 'default-options.md' }),
+    [
+      'If die Freigabe fehlt:',
+      '',
+      'Use the `AskUserQuestion` tool with the following parameters:',
+      '- header: "Freigabe"',
+      '- question: "Weiter?"',
+      '- multiSelect: false',
+      '- options:',
+      '  - label: "Ja", description: "Die Quelle bleibt unverändert"',
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(optionsBlock(), 'codex', { ...refConfig, context: 'default-options.md' }),
+    [
+      'If die Freigabe fehlt: Ask the user: **Weiter?**',
+      '- Ja -- Die Quelle bleibt unverändert',
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(optionsBlock('de'), 'claude', { ...refConfig, context: 'german-options.md' }),
+    [
+      'Wenn die Freigabe fehlt:',
+      '',
+      'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:',
+      '- header: "Freigabe"',
+      '- question: "Weiter?"',
+      '- multiSelect: false',
+      '- options:',
+      '  - label: "Ja", description: "Die Quelle bleibt unverändert"',
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(optionsBlock('de'), 'codex', { ...refConfig, context: 'german-options.md' }),
+    [
+      'Wenn die Freigabe fehlt: Frage den User: **Weiter?**',
+      '- Ja -- Die Quelle bleibt unverändert',
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(approvalBlock(), 'claude', { ...refConfig, context: 'default-approval.md' }),
+    [
+      'If approval is required:',
+      '',
+      'Use the `AskUserQuestion` tool with the following parameters:',
+      '- header: "Approval"',
+      '- question: "Continue?"',
+      '- multiSelect: false',
+      '- options:',
+      '  - label: "Yes", description: "Approval granted"',
+      '  - label: "Adjust", description: "Enter feedback as free text"',
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(approvalBlock(), 'codex', { ...refConfig, context: 'default-approval.md' }),
+    'If approval is required: Ask the user: **Continue?** Answer with "Yes" or enter feedback as free text.',
+  );
+  assert.equal(
+    renderBody(approvalBlock('de'), 'claude', { ...refConfig, context: 'german-approval.md' }),
+    [
+      'Wenn approval is required:',
+      '',
+      'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:',
+      '- header: "Approval"',
+      '- question: "Continue?"',
+      '- multiSelect: false',
+      '- options:',
+      '  - label: "Ja", description: "Freigabe erteilt"',
+      '  - label: "Anpassen", description: "Feedback als Freitext eingeben"',
+    ].join('\n'),
+  );
+  assert.equal(
+    renderBody(approvalBlock('de'), 'codex', { ...refConfig, context: 'german-approval.md' }),
+    'Wenn approval is required: Frage den User: **Continue?** Antworte mit "Ja" oder gib Feedback als Freitext.',
   );
 });
 
@@ -1013,7 +1129,7 @@ test('code-validator renders a harness-neutral concurrent validation contract fo
 
 // --- Fixture-based end-to-end snapshot ---
 
-test('end-to-end: fixture source renders to the expected skill body', () => {
+test('end-to-end: fixture asks render in English by default and German by opt-in', () => {
   const fixture = [
     '---',
     'description: "A fixture tool that delegates to {{SKILL:fix}}."',
@@ -1024,9 +1140,21 @@ test('end-to-end: fixture source renders to the expected skill body', () => {
     'Ruft {{SKILL:fix}} und {{AGENT:nodejs-implementer}} auf.',
     '',
     '```ask',
+    'when: Freigabe erforderlich',
     'header: Freigabe',
     'question: Weiter?',
+    'options:',
+    '  - label: Ja',
+    '    description: Direkt fortfahren',
+    '  - label: Anpassen',
+    '    description: Quelldetails ändern',
+    '```',
+    '',
+    '```ask',
+    'header: Approval',
+    'question: Continue?',
     'type: approval',
+    'language: de',
     '```',
     '',
   ].join('\n');
@@ -1036,23 +1164,65 @@ test('end-to-end: fixture source renders to the expected skill body', () => {
   assert.doesNotThrow(() => assertQuotedDescription(fm));
   validateRefs(`${fm}\n${body}`, refConfig);
 
-  const claude = renderBody(body, 'claude', { ...refConfig, context: 'fixture.md' });
-  const expected = [
+  const expectedClaude = [
     '',
     '# Fixture',
     '',
     'Ruft /effective-flow fix und `effective-flow-nodejs-implementer` auf.',
     '',
-    'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:',
+    'If Freigabe erforderlich:',
+    '',
+    'Use the `AskUserQuestion` tool with the following parameters:',
     '- header: "Freigabe"',
     '- question: "Weiter?"',
+    '- multiSelect: false',
+    '- options:',
+    '  - label: "Ja", description: "Direkt fortfahren"',
+    '  - label: "Anpassen", description: "Quelldetails ändern"',
+    '',
+    'Verwende das `AskUserQuestion`-Tool mit folgenden Parametern:',
+    '- header: "Approval"',
+    '- question: "Continue?"',
     '- multiSelect: false',
     '- options:',
     '  - label: "Ja", description: "Freigabe erteilt"',
     '  - label: "Anpassen", description: "Feedback als Freitext eingeben"',
     '',
   ].join('\n');
-  assert.equal(claude, expected);
+  assert.equal(renderBody(body, 'claude', { ...refConfig, context: 'fixture.md' }), expectedClaude);
+
+  const expectedCodex = [
+    '',
+    '# Fixture',
+    '',
+    'Ruft $effective-flow fix und `effective-flow-nodejs-implementer` auf.',
+    '',
+    'If Freigabe erforderlich: Ask the user: **Weiter?**',
+    '- Ja -- Direkt fortfahren',
+    '- Anpassen -- Quelldetails ändern',
+    '',
+    'Frage den User: **Continue?** Antworte mit "Ja" oder gib Feedback als Freitext.',
+    '',
+  ].join('\n');
+  assert.equal(renderBody(body, 'codex', { ...refConfig, context: 'fixture.md' }), expectedCodex);
+});
+
+test('end-to-end: fixture rejects an invalid ask language with source context', () => {
+  const body = [
+    '```ask',
+    'header: Approval',
+    'question: Continue?',
+    'type: approval',
+    'language: fr',
+    '```',
+  ].join('\n');
+
+  for (const harness of ['claude', 'codex']) {
+    assert.throws(
+      () => renderBody(body, harness, { ...refConfig, context: 'invalid-fixture.md' }),
+      /unknown language "fr".*invalid-fixture\.md/,
+    );
+  }
 });
 
 test('missingCategoryReadmes flags mandatory categories that hold docs but no README', () => {

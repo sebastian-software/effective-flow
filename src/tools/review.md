@@ -513,7 +513,7 @@ Use the formats, labels, and operations from "Issue-tracker integration (remote 
 | Medium | Y |
 | High | Z |
 
-| Aktion | Count |
+| Action | Count |
 |---|---|
 | {{SKILL:fix}} | X |
 | {{SKILL:refactor}} | Y |
@@ -522,7 +522,7 @@ Use the formats, labels, and operations from "Issue-tracker integration (remote 
 
 ## Findings
 
-### [R-0000001] [Titel]
+### [R-0000001] [Title]
 - **Severity**: Critical / Important / Note
 - **Complexity**: Low / Medium / High
 - **Area**: [...]
