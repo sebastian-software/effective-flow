@@ -14,15 +14,29 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
   delivery branch or worktree; at the end there is a completion action (`pr`, `merge`, or
   `branch`). For details see [Worktree and delivery](worktree-and-delivery.md).
   `/effective-flow apply` itself implements nothing, it only delegates.
-- After the approval of an internal plan, they offer an explicit goal prompt
-  ("Autonomous via `/goal`"), so that the remaining phases can run autonomously instead of
-  step-by-step gated.
+- After the approval of an internal plan, they offer the explicit option "Autonomous via
+  `/goal`", so that the remaining phases can run autonomously instead of step-by-step gated.
+  In native Codex, this explicit choice makes one direct `create_goal` attempt. Its `objective`
+  is exactly the completion condition that a `/goal` prompt would contain; `token_budget` is
+  omitted unless you supplied one explicitly. A successful start continues without an extra
+  prompt. If the capability is unavailable or fails for a technical reason, Effective Flow
+  reports the cause and provides the complete copy-pasteable prompt instead. If another
+  unfinished goal is active, it waits for your decision without emitting a new prompt, changing
+  that goal, or continuing in gated mode.
+- Claude Code and the portable manager target retain the prompt handoff: Effective Flow outputs
+  the complete `/goal` prompt, and the autonomous run starts only after you paste it as a new
+  input. Choosing the gated or adjustment path, answering normally, and non-interactive
+  delegation do not start a goal.
 - Before analysis, they review the available host skills (see
   [Skill discovery](skill-discovery.md)) and respect their respective
   write boundary.
+- They classify affected files or domains independently. Specialized JavaScript/TypeScript,
+  Node.js, and Rust routes remain preferred; other clearly identified product code uses a
+  disclosed reduced-depth product route; tooling and configuration use a separate tooling-only
+  route. See [Language support](language-support.md).
 
-`<plan.dir>` is the plan directory from `.effective-flow/config.json` → `plan.dir` (default
-`docs/plan`, see [Configuration](configuration.md)).
+`<plan.dir>` is the `plan.dir` value from the Effective Flow project-setup ADR (default
+`docs/plan`; see [Configuration](configuration.md#block-plan)).
 
 ## `/effective-flow apply`
 
@@ -64,8 +78,9 @@ Output is the code changes including tests and docs, an updated plan file (statu
 `<plan.dir>/archive/`) as well as – with delivery/worktree mode active – a delivery branch with
 PR, merge, or left-standing branch.
 
-**Interplay:** Delegates internally to project-type-appropriate implementer, test, docs, and
-reviewer agents. Open, not-implemented review findings land as an external report under
+**Interplay:** Delegates internally per affected file/domain to specialized or reduced-depth
+implementer and reviewer workers, plus repository-native test, validation, and documentation
+workers. Mixed repositories keep each route separate. Open, not-implemented review findings land as an external report under
 `.effective-flow/review/`, which can later be worked off via `/effective-flow apply` or the appropriate implementation workflow.
 
 ## `/effective-flow fix`
@@ -91,8 +106,8 @@ observing.
 ## `/effective-flow refactor`
 
 **Purpose:** Orchestrates structural or readability improvements without an intended
-behavior change. Before the restructuring it takes a baseline (tests, TypeScript, lint,
-build) and compares it again after the refactoring, as a safety net against
+behavior change. Before the restructuring it takes a baseline from the repository-native tests,
+lint, type, build, and documentation checks that can be discovered safely and compares it again after the refactoring, as a safety net against
 regressions.
 
 **When to use:** Code is to be restructured, technical debt reduced, or performance
@@ -101,7 +116,7 @@ improved, without the external behavior changing.
 **Typical call:** `/effective-flow refactor <description>` or `/effective-flow refactor <plan file>`
 
 **Input/output:** Input is the refactoring requirement or a plan file. Output is
-the restructured code including confirmation that tests/TypeScript/lint/build are still green and
+the restructured code including confirmation that the discovered repository-native checks are still green and
 unchanged relative to the baseline, plus – with delivery/worktree mode active – a delivery branch
 and a completion action.
 
@@ -128,10 +143,11 @@ document within one of the four categories (`docs/user-guide/`, `docs/developer-
 asks for it.
 
 **Interplay:** Uses the `docs-writer` agent for user docs and the
-`code-documenter` agent for in-code documentation. Both work cross-language and document in the idiomatic
-format of the target language – JSDoc/TSDoc for JS/TS, rustdoc doc comments and crate/module docs for
-Rust; in mixed Rust/JS repos the docs route per file/domain, and for Cargo projects
-the `code-validator` additionally checks `cargo doc` and doctests. For details on the category and
+`code-documenter` agent for in-code documentation. Both work cross-language and follow the
+repository’s established format. JSDoc/TSDoc for JS/TS and rustdoc plus crate/module docs for
+Rust remain specialized branches; other languages use repository-native conventions without
+adding documentation tooling. For details on language routing, see
+[Language support](language-support.md); for details on the category and
 naming convention, see [Plan conventions](https://github.com/sebastian-software/effective-flow/blob/develop/docs/developer-guide/plan-conventions.md).
 
 ## `/effective-flow maintain`
@@ -161,6 +177,9 @@ delivery", so that two delivery loops don't run. If the skill is missing, a deli
 minimal fallback kicks in. `maintain` refuses to update as long as the before baseline is already
 red, and instead points to `/effective-flow fix`. For code adaptations to breaking
 changes, a reviewer pass runs as with `build`/`refactor`.
+Compatibility adaptations use the same per-file routing as other implementation workflows, so
+unsupported product code goes to the reduced-depth product workers rather than the tooling-only
+generic implementer.
 
 ## `/effective-flow iterate`
 

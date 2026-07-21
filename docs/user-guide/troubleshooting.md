@@ -45,7 +45,8 @@ Before an implementing tool (`build`, `fix`, `refactor`, `docs`, `apply`) actual
 plan file, an issue or a review finding, it checks whether the basis is **fully
 clarified**. The gate fails in particular when:
 
-- the plan file still contains an "Open Points" section with real entries,
+- the plan file still contains an "Open points" section with real entries (the former spelling
+  "Open Points" remains readable),
 - measurable acceptance criteria are missing or are formulated without a concrete check,
 - points marked as assumptions substantially affect the behavior, the scope or the risk of
   the implementation,
@@ -62,28 +63,40 @@ back to the clarification:
 
 Add the missing information there and then call the implementing tool again.
 
-## Wrong or unexpected marker language in plan files
+## Wrong or mixed language in Effective Flow artifacts
 
-The status marker in the header of a plan file (e.g. `**Planungsstatus:** Nicht umgesetzt` or
-`**Plan status:** Not implemented`) follows `plan.markerLanguage` from
-`.effective-flow/config.json`. If the key is not set there, Effective Flow detects the language from
-existing plan files in the `<plan.dir>` directory; if no unambiguous signal is found, the
-default is English. Only the marker itself follows this setting – the rest of the plan
-content stays written in the language in which the plan was written, independently of it.
+A new plan—including its header fields, sections, review, open points, and status marker—uses
+`language.workflow` from the [project-setup ADR](./configuration.md#block-language). Local review
+and investigation reports use the same setting. Existing artifacts retain their recognizable
+language unless you explicitly request a translation, so changing the project configuration does
+not rewrite earlier files.
 
-To fix the language permanently, set `plan.markerLanguage` explicitly via
-[`/effective-flow setup`](./tools-setup.md) (core toggle "Marker") or enter it manually in
-`.effective-flow/config.json` (see [Configuration](./configuration.md#block-plan)).
+Other surfaces intentionally may differ: remote issues and comments and PR bodies use
+`language.forge`; commit descriptions and Conventional-Commit PR titles use `language.git`.
+Each missing override inherits `language.project`, which itself defaults to `en`. An invalid
+`de`/`en` value is reported and ignored in favor of the next fallback rather than guessed.
 
-## There is no `.effective-flow/config.json`
+Use [`/effective-flow setup`](./tools-setup.md) to inspect and change these values. If only a
+legacy `plan.markerLanguage` row exists, Effective Flow can still read it as a temporary workflow
+fallback and setup offers a confirmed migration; writers never create the old row. A repository
+without language settings may temporarily infer the workflow language from existing plans only
+when plan prose and markers are consistently German or English. Mixed or contradictory plans are
+not a valid signal. If one existing artifact is itself mixed or unclear, clarify its intended
+language before asking Effective Flow to edit it.
 
-This is not an error state. Without a config file, every tool works with the safe defaults
-documented in [Configuration](./configuration.md#safe-defaults-at-a-glance) – worktree on,
-completion via merge, local tracker, marker language from detection or English. A config is
-also **not created automatically** just because a tool runs; it comes into being solely via
-[`/effective-flow setup`](./tools-setup.md) or through manual creation. If you want to deviate from
-the defaults, `/effective-flow setup` is the easiest way – the express path takes over the safe
-defaults after a single confirmation.
+## There is no project-setup ADR
+
+This is not an error. Without an ADR or transitional legacy source, every tool uses the safe
+defaults in [Configuration](./configuration.md#safe-defaults-at-a-glance): worktree enabled,
+completion via merge, local tracker as the safe base, and English as the project language.
+Review still asks for local or remote mode on first use when no source pins `tracker.mode`.
+Running an ordinary tool never creates configuration or touches Git. To persist different settings, run
+[`/effective-flow setup`](./tools-setup.md); its Express path adopts the safe base after one
+before/after confirmation.
+
+If a convention-file marker exists but points to a missing ADR, Effective Flow reports the stale
+marker and continues through the default-path scan and other fallbacks. Run setup to correct the
+marker once you have chosen the intended ADR location.
 
 ## Getting rid of old `.firmo/`/`.sf-plugin/` directories or `firmo-` labels
 
@@ -97,6 +110,34 @@ an inventory and a dry-run preview, asks before each deletion, and removes track
 `git rm` (recoverable through the Git history), untracked directories only after explicit
 confirmation. It does not commit and does not create a backup – you bring the staged changes
 in afterwards with [`/effective-flow commit`](./tools-deliver.md).
+
+## A workflow cannot resolve a worker
+
+First identify the installation path:
+
+- **DALO:** confirm that the source and skill are selected as shown in
+  [Getting started](getting-started.md#preferred-dalo), then run `dalo sync` again.
+- **Skills CLI:** repeat the command for your harness from
+  [Getting started](getting-started.md#alternative-skills-cli-1519).
+
+For either manager, no native agent sidecars are expected. The installed skill must contain
+`workers/effective-flow-*.md`. Effective Flow loads only the selected contract and delegates it
+through the harness's built-in general-purpose subagent mechanism. A host without that mechanism
+is unsupported for worker-dependent portable workflows; the tool should state this clearly
+rather than silently continuing.
+
+## DALO reports an ambiguous `effective-flow` slot
+
+Current releases publish exactly one portable candidate at `effective-flow/SKILL.md`. If an
+inspection also shows `claude/effective-flow` or `codex/effective-flow`, the source points at an
+older delivery commit or at the release archive instead of the default branch. Refresh the DALO
+catalog source with `dalo sync` and verify its commit. Release archives intentionally contain all
+three build targets for release maintenance and are not a supported end-user installation source
+or manager catalog.
+
+Skills CLI users should likewise select `--skill effective-flow` from the repository/default
+branch, not from an extracted archive. Claude Code and Codex receive the same portable files;
+only their destination directories differ.
 
 ## See also
 

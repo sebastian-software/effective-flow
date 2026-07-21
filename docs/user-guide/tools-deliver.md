@@ -18,7 +18,8 @@ appropriate conventional-commit message.
 **Input/output:** Input is the staged diff. Output is a commit with a
 conventional-commit prefix (`feat:` new functionality, `fix:` defect fix, `chore:`
 maintenance, `docs:` documentation, `refactor:` structural improvement without behavior change,
-`test:` test change), message in English, without `Co-Authored-By` lines.
+`test:` test change), description in `language.git`, without `Co-Authored-By` lines. The type and
+other Conventional-Commit syntax remain English and language-stable.
 
 **Interplay:** Typically used at the end of a `/effective-flow build`, `/effective-flow fix`,
 `/effective-flow refactor`, `/effective-flow docs`, or `/effective-flow maintain` run (which follow these
@@ -29,11 +30,11 @@ topics in the staged diff, it suggests splitting first.
 
 ## `/effective-flow pr`
 
-**Purpose:** Creates a pull request from a local branch – or via a freshly created
+**Purpose:** Creates or reuses a pull request from a local branch – or via a freshly created
 delivery branch – on the detected Git host: GitHub via `gh` or
 Forgejo via `tea`. Detects the host automatically from the `origin` URL, pushes the branch if
-needed, derives the title and description from the commits, and restores the checkout after
-successful PR creation.
+needed, derives the title and description for a new pull request, and restores the checkout after
+a successful creation or reuse.
 
 **When to use:** When finished changes on a branch are to be submitted as a pull request for
 review, instead of merging them directly.
@@ -44,6 +45,13 @@ review, instead of merging them directly.
 base branch (default from `delivery.baseBranch`, legacy fallback `worktree.baseBranch`, otherwise
 `main`). Output is the PR URL, the branch name, and the final local checkout state.
 
+**Existing pull requests:** After pushing the branch, `pr` queries the detected host for open
+pull requests and exact-matches both the requested head and base branches. Exactly one match is
+reused without changing its title or description; the workflow then follows the same checkout
+restoration and reporting path as a newly created pull request. Pull requests with another base,
+closed or merged pull requests, and other non-matches are ignored. A failed or unparseable lookup
+or multiple exact matches stops the workflow without attempting creation or guessing.
+
 **Conventional-commit title:** `pr` enforces a PR title with a valid conventional-commit type
 (`feat:`, `fix:`, `docs:`, `refactor:`, …), derived from the **effect** of the change or the
 triggering workflow; an already valid, self-set title is preserved. This is
@@ -52,6 +60,11 @@ the target branch: there, the PR title is part of the release contract, and
 **release-please** derives the version bump from it. An untyped title leads, despite green
 CI, to a silent no-op release (no version, no delivery) – which is why `pr` normalizes
 the title and asks only in cases of genuine ambiguity.
+
+The title description follows `language.git` because a squash merge may make it the commit
+subject. The PR body and subsequent PR or review-thread comments follow `language.forge`. These
+may intentionally differ without producing a mixed artifact: each surface uses one resolved
+language, while types, branch names, paths, labels, and other machine-facing tokens stay stable.
 
 **Interplay:** `pr` is one of the three possible completion actions
 (`delivery.completion: pr`) that `/effective-flow build`, `/effective-flow fix`, `/effective-flow refactor`,

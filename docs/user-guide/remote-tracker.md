@@ -19,6 +19,13 @@ With `tracker.mode: remote`, `/effective-flow review` instead creates an issue f
 on your Git hosting service, bundled under an epic/tracking issue. `/effective-flow apply` then
 reads these issues back in and works through them.
 
+Local Markdown reports use `language.workflow`. Issue bodies, epic prose, issue comments, remote
+review content, and review-thread replies use `language.forge`; existing German and English
+artifacts retain their language when updated. Headings, field names, and displayed values are
+rendered consistently in the selected artifact language. Labels, finding IDs, action values,
+paths, and HTML idempotency markers remain identical across languages so deduplication and routing
+continue to work.
+
 Important: the local/remote switch concerns **reviews only**.
 [Investigations](./tools-understand.md) remain purely local under
 `.effective-flow/investigation/` in either mode – they are never committed and never created as
@@ -47,9 +54,11 @@ Effective Flow determines the effective mode in this order:
 1. **Argument type:** if you pass a report file, that forces `local`; if you pass an issue
    number or URL, that forces `remote` – regardless of the config.
 2. **Explicit wish in the task:** "as issues" or "local only, without issues".
-3. **Config:** otherwise `tracker.mode` from `.effective-flow/config.json` applies.
-4. **First-call query:** if none of these is set, Effective Flow asks once and stores the
-   answer non-destructively in `.effective-flow/config.json`.
+3. **Configuration:** otherwise `tracker.mode` from the
+   [project-setup ADR](./configuration.md#block-tracker) applies.
+4. **First-call query:** if none of these determines the mode, Effective Flow asks for this run.
+   To persist the answer, use `/effective-flow setup`; the review workflow does not write
+   configuration itself.
 
 ### Labels
 
