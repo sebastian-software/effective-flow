@@ -1167,13 +1167,17 @@ export function parseAskBlock(block, { context } = {}) {
   const questionMatch = block.match(/question:\s*(.+)/);
   const typeMatch = block.match(/type:\s*(\S+)/);
   const whenMatch = block.match(/when:\s*(.+)/);
-  const languageMatch = block.match(/^language:[ \t]*(.*)$/m);
+  const languageMatches = [...block.matchAll(/^language:[ \t]*(.*)$/gm)];
+
+  if (languageMatches.length > 1) {
+    throw new Error(`ASK block has duplicate language fields${contextSuffix(context)}`);
+  }
 
   const header = headerMatch ? headerMatch[1].trim() : null;
   const question = questionMatch ? questionMatch[1].trim() : null;
   const type = typeMatch ? typeMatch[1].trim() : null;
   const when = whenMatch ? whenMatch[1].trim() : null;
-  const language = languageMatch ? languageMatch[1].trim() : 'en';
+  const language = languageMatches.length === 1 ? languageMatches[0][1].trim() : 'en';
 
   if (!header) throw new Error(`ASK block missing header field${contextSuffix(context)}`);
   if (!question) throw new Error(`ASK block missing question field${contextSuffix(context)}`);

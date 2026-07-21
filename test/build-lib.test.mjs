@@ -858,14 +858,30 @@ test('parseAskBlock rejects an unknown type', () => {
   );
 });
 
-test('parseAskBlock rejects invalid language values with source context', () => {
-  for (const languageLine of ['language: fr', 'language: EN', 'language:']) {
+test('parseAskBlock rejects invalid and empty language values with source context', () => {
+  for (const [languageLine, expectedValue] of [
+    ['language: fr', 'fr'],
+    ['language: EN', 'EN'],
+    ['language:', ''],
+  ]) {
     assert.throws(
       () =>
         parseAskBlock(`header: H\nquestion: Q\ntype: approval\n${languageLine}\n`, {
           context: 'workflow.md',
         }),
-      /unknown language.*allowed: en, de.*workflow\.md/,
+      new RegExp(`unknown language "${expectedValue}".*allowed: en, de.*workflow\\.md`),
+    );
+  }
+});
+
+test('parseAskBlock rejects duplicate language fields with source context', () => {
+  for (const languageLines of ['language: en\nlanguage: de', 'language: de\nlanguage: de']) {
+    assert.throws(
+      () =>
+        parseAskBlock(`header: H\nquestion: Q\ntype: approval\n${languageLines}\n`, {
+          context: 'duplicate.md',
+        }),
+      /duplicate language fields.*duplicate\.md/,
     );
   }
 });
@@ -970,6 +986,37 @@ test('renderBody localizes only generated ask scaffolding for both harnesses', (
     renderBody(approvalBlock('de'), 'codex', { ...refConfig, context: 'german-approval.md' }),
     'Wenn approval is required: Frage den User: **Continue?** Antworte mit "Ja" oder gib Feedback als Freitext.',
   );
+});
+
+test('portable ask rendering uses the Codex-equivalent English default', () => {
+  const body = [
+    '```ask',
+    'when: approval is required',
+    'header: Approval',
+    'question: Continue?',
+    'type: approval',
+    '```',
+  ].join('\n');
+  const expected =
+    'If approval is required: Ask the user: **Continue?** Answer with "Yes" or enter feedback as free text.';
+
+  assert.equal(renderBody(body, 'codex', { ...refConfig, context: 'ask.md' }), expected);
+  assert.equal(renderBody(body, 'portable', { ...refConfig, context: 'ask.md' }), expected);
+});
+
+test('plan.markerLanguage does not influence the block-local ask language default', () => {
+  const body = ['```ask', 'header: Approval', 'question: Continue?', 'type: approval', '```'].join(
+    '\n',
+  );
+  const rendered = renderBody(body, 'claude', {
+    ...refConfig,
+    context: 'marker-config.md',
+    plan: { markerLanguage: 'de' },
+  });
+
+  assert.match(rendered, /Use the `AskUserQuestion` tool/);
+  assert.match(rendered, /label: "Yes", description: "Approval granted"/);
+  assert.doesNotMatch(rendered, /Verwende|Freigabe erteilt/);
 });
 
 // --- renderBody end-to-end ---
