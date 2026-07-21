@@ -22,9 +22,10 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
 4. The isolated distribution smoke verifies native/portable layouts and installers.
 5. On an actually created release, all three targets in `dist/` are packed as
    `effective-flow-<tag>.tar.gz`, uploaded, downloaded again, and verified.
-6. Also only on a created release, `scripts/stage-delivery.mjs` pushes **only** the portable
-   `effective-flow/` skill together with `README.md` and `docs/user-guide/` as a fresh commit to
-   `main` (no force push). The workflow fetches that exact commit and verifies its layout.
+6. Also only on a created release, `scripts/stage-delivery.mjs` pushes the portable
+   `effective-flow/` skill, `README.md`, `docs/user-guide/`, and the two trusted issue-closing
+   automation files as a fresh commit to `main` (no force push). The workflow fetches that exact
+   commit and verifies its layout.
 
 ## Source and delivery branch
 
@@ -34,13 +35,34 @@ Effective Flow separates source and built delivery across two branches:
   `dist/` stays gitignored). PRs, CI, and release-please run here.
 - **`main`** is the **delivery/default branch**: it carries exactly one portable
   `effective-flow/` skill candidate **and the consumer-facing documentation**, written
-  mechanically by the release workflow. It contains no `claude/`, `codex/`, or `portable/`
-  wrapper and therefore no competing same-name candidate.
+  mechanically by the release workflow. It also carries the narrowly scoped
+  `.github/workflows/close-develop-issues.yml` workflow and its
+  `.github/scripts/close-develop-issues.mjs` helper. It contains no `claude/`, `codex/`, or
+  `portable/` wrapper and therefore no competing same-name candidate.
 
 This establishes one supported end-user interface: DALO and Skills CLI consume the same portable
 bytes from the default branch and use bundled worker contracts with built-in/general subagents.
 The release archive preserves all build targets for verification and release maintenance, but it
 is not a supported end-user installation interface.
+
+### Trusted default-branch automation
+
+GitHub evaluates native closing keywords only when a pull request targets the default branch.
+Effective Flow keeps `main` as the default because consumers install its built payload, while
+source pull requests target `develop`. The delivered `close-develop-issues.yml` workflow bridges
+that branch split by closing same-repository issues referenced with GitHub-compatible closing
+keywords after a pull request is merged into `develop`.
+
+The workflow uses `pull_request_target`, so its workflow definition and executable helper must be
+trusted default-branch content. `develop` remains their source of truth. Delivery stages only
+these two named `.github` files byte-for-byte onto `main`; source-only workflows such as CI and
+release are not delivered. The automation therefore becomes active only after the first release
+that contains a workflow or helper change has published those files to `main`.
+
+The workflow checks out the exact default-branch commit supplied as `github.sha` and never checks
+out a pull-request head or merge ref. Pull-request text is passed as data through the Actions
+JavaScript context, not interpolated into shell code. Its token permissions are limited to
+reading repository contents and writing issues.
 
 Every target's minimal skill payload includes `scripts/remote-tracker.mjs` and its importable
 core sibling beside the router, tools, and shared resources. Installed skills therefore require

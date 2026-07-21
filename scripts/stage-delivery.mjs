@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 // Materialize exactly what the default delivery branch publishes: one portable
-// effective-flow skill plus consumer documentation. Native harness artifacts
-// remain release-archive-only and are deliberately removed from the staged tree.
+// effective-flow skill, consumer documentation, and narrowly scoped trusted
+// automation. Native harness artifacts remain release-archive-only and are
+// deliberately removed from the staged tree.
 
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -11,6 +12,10 @@ import { findRetiredConfigDocViolations } from '../build-lib.mjs';
 import { deliverDocs } from './deliver-docs.mjs';
 
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
+const TRUSTED_AUTOMATION = [
+  join('.github', 'workflows', 'close-develop-issues.yml'),
+  join('.github', 'scripts', 'close-develop-issues.mjs'),
+];
 
 function fail(message) {
   console.error(`stage-delivery: ${message}`);
@@ -68,6 +73,11 @@ export function stageDelivery(work, repo, sourceBranch, { root = ROOT_DIR } = {}
     recursive: true,
   });
   cpSync(join(root, 'scripts', 'delivery-renovate.json'), join(work, 'renovate.json'));
+  for (const path of TRUSTED_AUTOMATION) {
+    const target = join(work, path);
+    mkdirSync(dirname(target), { recursive: true });
+    cpSync(join(root, path), target);
+  }
   deliverDocs(work, repo, sourceBranch);
   assertStagedDocumentationUsesProjectSetupAdr(work);
 }
@@ -79,7 +89,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   }
   try {
     stageDelivery(work, repo, sourceBranch);
-    console.log(`stage-delivery: published one portable effective-flow skill under ${work}`);
+    console.log(
+      `stage-delivery: published one portable effective-flow skill and trusted automation under ${work}`,
+    );
   } catch (error) {
     fail(error.message);
   }
