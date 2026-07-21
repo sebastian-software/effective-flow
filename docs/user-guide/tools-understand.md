@@ -35,26 +35,40 @@ documentation gap) – including a copy-paste-ready follow-up call that referenc
 
 ## `/effective-flow plan`
 
-**Purpose:** Creates an implementable, validated implementation plan in `<plan.dir>/`,
-without generating code or changing existing implementation files. Clarifies open questions
-interactively with the user until a solid basis exists, and recommends the appropriate
-implementation workflow (feature, bugfix, refactoring, or documentation).
+**Purpose:** Acts as the planning gateway. Explicit issue references are handed to
+`/effective-flow plan-issue` unchanged; every other input creates an implementable, validated
+implementation plan in `<plan.dir>/`, without generating code or changing existing implementation
+files. The local path clarifies open questions interactively with the user until a solid basis
+exists, and recommends the appropriate implementation workflow (feature, bugfix, refactoring, or
+documentation).
 
 **When to use:** Before a larger change is implemented while the requirement, its
 acceptance criteria, or architecture decisions are not yet settled.
 
-**Typical call:** `/effective-flow plan <requirement>`
+**Typical calls:**
 
-**Input/output:** Input is the requirement in natural language. Output is
+```text
+/effective-flow plan Add an export function to the dashboard
+/effective-flow plan #123
+/effective-flow plan https://github.com/acme/product/issues/123
+```
+
+The first call starts local planning. The other two calls hand the original reference to
+`plan-issue`; `plan` does not inspect or change tracker state itself. Natural-language requirements
+remain local planning input. A bare four-digit value such as `1234` retains precedence as a legacy
+plan reference; use `#1234` or an issue URL for a four-digit issue.
+
+**Input/output:** Natural-language input produces
 `<plan.dir>/YYYY-MM-DD-<slug>.md` with a status line (`**Planungsstatus:** Nicht umgesetzt` or
 `**Plan status:** Not implemented`), recommended workflow, architecture decisions,
 affected files, acceptance criteria, validation plan, and its own
 plan review section. For documentation plans, the header adds `**Doc category:**` and
 `**Target path:**` per the doc category convention. A new plan uses `language.workflow`
 throughout—header fields, sections, plan review, open points, and status marker are all German or
-all English. An existing plan retains its recognizable language when edited or completed.
+all English. An existing plan retains its recognizable language when edited or completed. Explicit
+issue input instead produces the canonical issue-planning comment described under `plan-issue`.
 
-**Interplay:** The finished plan is implemented later with `/effective-flow build <plan file>`,
+**Interplay:** A finished local plan is implemented later with `/effective-flow build <plan file>`,
 `/effective-flow fix <plan file>`, `/effective-flow refactor <plan file>`, or `/effective-flow docs <plan file>`;
 each of these tools first checks the plan file against the clarification gate. Optionally,
 `plan` offers a deeper interactive plan review directly afterwards; if it is
@@ -85,20 +99,34 @@ unclear status (missing, multiple, or invalid status line).
 issue implementation workflow) skipped due to missing information and marked with the label
 `effective-flow-needs-planning`. Completes the planning per issue interactively following
 the same clarification methodology as `/effective-flow plan` and writes the result as a structured
-comment back to the issue. Produces neither code nor a plan file – the issue remains the
-single source.
+comment back to the issue. It then runs the full automatic baseline—gap analysis, validation, and
+internal plan review—before offering the same optional deep interactive review as local planning.
+It produces neither code nor a plan file – the issue remains the single source.
 
 **When to use:** In remote tracker mode, when there are issues that still contain too little
 information for an autonomous implementation.
 
-**Typical call:** `/effective-flow plan-issue [issue reference(s)]`
+**Typical calls:**
+
+```text
+/effective-flow plan-issue #123
+/effective-flow plan-issue #123 #456
+/effective-flow plan-issue https://github.com/acme/product/issues/123
+```
 
 **Input/output:** Without an argument, all open `effective-flow-needs-planning` issues are listed for
 selection; with an argument, the handed-over issue references (number, `#123`, URL)
-are used. Output is a comment on the issue with the completed requirement,
-acceptance criteria, affected areas, and assumptions; afterwards the label
-`effective-flow-needs-planning` is removed. The comment follows `language.forge`; its label and
-other machine-facing tokens remain stable.
+are used. Output is one canonical comment per issue with the completed requirement, acceptance
+criteria, affected areas, assumptions, baseline review result, and open points. The comment follows
+`language.forge`; its marker, label, and other machine-facing tokens remain stable. Multiple issues
+are processed separately and completely, so one blocked issue does not prevent the others from
+being planned.
+
+After the automatic baseline, answer **Yes** to continue with the shared plan-review method as a
+deep interactive review or **No** to release the ready baseline. A skipped review can be resumed later with
+`/effective-flow plan-issue #123`. The label `effective-flow-needs-planning` is removed only when
+the issue plan is ready; unresolved implementation-blocking points keep the label and the canonical
+comment records the re-entry state.
 
 **Interplay:** This tool is inherently remote and always works against the
 issue tracker of the `origin` remote (see [Remote tracker](remote-tracker.md)); the

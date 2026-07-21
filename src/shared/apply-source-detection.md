@@ -6,7 +6,9 @@
 This shared building block is the single source of truth for **which
 apply source type** a given argument is. It is used by `{{SKILL:apply}}`
 (router) as well as by `{{SKILL:apply-plan}}`, `{{SKILL:apply-review}}`, and
-`{{SKILL:apply-issues}}` for the upstream argument classification.
+`{{SKILL:apply-issues}}` for the upstream argument classification. `{{SKILL:plan}}` uses only
+Stage A as a planning gateway: it delegates an unambiguous `issue-reference` to
+`{{SKILL:plan-issue}}` and never performs Stage B itself.
 
 The building block only classifies and resolves the reference to a handle (file path or
 issue number(s)). It makes **no** implementation decision, changes nothing, and
@@ -140,6 +142,12 @@ argument type.
   stage B, reports the detected type, and delegates to the responsible skill with the
   original argument plus the retained runtime root and, for a local report, its absolute report
   handle. On `none`/`ambiguous`/mixed list: ask.
+- **Planning gateway (`{{SKILL:plan}}`):** after read-only configuration resolution has supplied
+  `<plan.dir>`, runs Stage A only when an argument exists. On `issue-reference`, it passes the
+  complete original argument unchanged to `{{SKILL:plan-issue}}` and ends before plan inventory,
+  migration, questions, or artifact creation. Every other result stays in the existing local plan
+  workflow. A bare four-digit value therefore keeps the legacy-plan precedence and is not routed
+  as an issue.
 - **Responsibility skill (each of the three apply skills):** classifies the argument
   early via this building block. If the type matches its own responsibility → continue with its
   own depth logic. If it does not match:

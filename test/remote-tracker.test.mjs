@@ -71,6 +71,7 @@ function teaProbeResults(overrides = {}) {
     help('pullCreateDraft', '--draft'),
     help('pullEdit', '--description'),
     help('comment', '--output'),
+    help('commentUpdate', '--method --data'),
     help('labelCreate', '--output --name'),
   ];
 }
@@ -669,6 +670,211 @@ test('body mutation previews require a caller-supplied fresh body hash', async (
   );
   assert.equal(envelope.ok, false);
   assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+});
+
+test('issue-comment-update builds the documented GitHub and Forgejo PATCH commands', () => {
+  const github = buildCommandPlan(
+    'issue-comment-update',
+    { number: 17, commentId: 23, payload: { body: 'Updated plan' } },
+    githubRepository,
+  );
+  assert.deepEqual(github.args, [
+    'api',
+    '-X',
+    'PATCH',
+    'repos/example/flow/issues/comments/23',
+    '--input',
+    '-',
+  ]);
+  assert.deepEqual(JSON.parse(github.stdin), { body: 'Updated plan' });
+
+  const forgejo = buildCommandPlan(
+    'issue-comment-update',
+    { number: 17, commentId: 23, payload: { body: 'Updated plan' } },
+    forgejoRepository,
+  );
+  assert.deepEqual(forgejo.args, [
+    'api',
+    'repos/team/flow/issues/17/comments/23',
+    '--method',
+    'PATCH',
+    '--login',
+    'work',
+    '--repo',
+    'team/flow',
+    '--data',
+    '@-',
+  ]);
+  assert.deepEqual(JSON.parse(forgejo.stdin), { body: 'Updated plan' });
+});
+
+test('issue-comment-update requires positive issue and comment IDs', () => {
+  assert.throws(
+    () =>
+      buildCommandPlan(
+        'issue-comment-update',
+        { number: 0, commentId: 23, payload: { body: 'Updated plan' } },
+        githubRepository,
+      ),
+    (error) => error.code === 'INVALID_REFERENCE' && error.details.field === 'issue number',
+  );
+  assert.throws(
+    () =>
+      buildCommandPlan(
+        'issue-comment-update',
+        { number: 17, commentId: -1, payload: { body: 'Updated plan' } },
+        githubRepository,
+      ),
+    (error) => error.code === 'INVALID_REFERENCE' && error.details.field === 'commentId',
+  );
+});
+
+test('issue-comment-update dry-run exposes the exact patch without executing it', async () => {
+  const runner = fakeRunner([]);
+  const envelope = await executeOperation(
+    'issue-comment-update',
+    {
+      repository: githubRepository,
+      number: 17,
+      commentId: 23,
+      expectedBodyHash: bodyHash('Old plan'),
+      payload: { body: 'Updated plan' },
+    },
+    { runner, skipProbe: true },
+  );
+
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.dryRun, true);
+  assert.deepEqual(envelope.data.command.args.slice(0, 5), [
+    'api',
+    '-X',
+    'PATCH',
+    'repos/example/flow/issues/comments/23',
+    '--input',
+  ]);
+  assert.equal(runner.calls.length, 0);
+});
+
+test('issue-comment-update re-reads by ID and applies when the body hash is fresh', async () => {
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify([[{ id: 23, body: 'Old plan', user: { login: 'maintainer' } }]]),
+      stderr: '',
+    },
+    {
+      status: 0,
+      stdout: JSON.stringify({ id: 23, body: 'Updated plan', user: { login: 'maintainer' } }),
+      stderr: '',
+    },
+  ]);
+  const envelope = await executeOperation(
+    'issue-comment-update',
+    {
+      repository: githubRepository,
+      number: 17,
+      commentId: 23,
+      expectedBodyHash: bodyHash('Old plan'),
+      payload: { body: 'Updated plan' },
+    },
+    { runner, skipProbe: true, apply: true },
+  );
+
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.result.id, 23);
+  assert.equal(envelope.data.result.body, 'Updated plan');
+  assert.equal(runner.calls.length, 2);
+  assert.match(runner.calls[0].args.at(-1), /issues\/17\/comments$/);
+  assert.match(runner.calls[1].args.join(' '), /issues\/comments\/23/);
+});
+
+test('issue-comment-update is idempotent when the desired body is already present', async () => {
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify([[{ id: 23, body: 'Updated plan' }]]),
+      stderr: '',
+    },
+  ]);
+  const envelope = await executeOperation(
+    'issue-comment-update',
+    {
+      repository: githubRepository,
+      number: 17,
+      commentId: 23,
+      expectedBodyHash: bodyHash('Old plan'),
+      payload: { body: 'Updated plan' },
+    },
+    { runner, skipProbe: true, apply: true },
+  );
+
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.unchanged, true);
+  assert.equal(envelope.data.item.id, 23);
+  assert.equal(runner.calls.length, 1);
+});
+
+test('issue-comment-update fails closed for stale and missing comments', async () => {
+  const staleRunner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify([[{ id: 23, body: 'Changed elsewhere' }]]),
+      stderr: '',
+    },
+  ]);
+  const stale = await executeOperation(
+    'issue-comment-update',
+    {
+      repository: githubRepository,
+      number: 17,
+      commentId: 23,
+      expectedBodyHash: bodyHash('Old plan'),
+      payload: { body: 'Updated plan' },
+    },
+    { runner: staleRunner, skipProbe: true, apply: true },
+  );
+  assert.equal(stale.ok, false);
+  assert.equal(stale.error.code, 'STALE_WRITE');
+  assert.equal(staleRunner.calls.length, 1);
+
+  const missingRunner = fakeRunner([
+    { status: 0, stdout: JSON.stringify([[{ id: 24, body: 'Other comment' }]]), stderr: '' },
+  ]);
+  const missing = await executeOperation(
+    'issue-comment-update',
+    {
+      repository: githubRepository,
+      number: 17,
+      commentId: 23,
+      expectedBodyHash: bodyHash('Old plan'),
+      payload: { body: 'Updated plan' },
+    },
+    { runner: missingRunner, skipProbe: true, apply: true },
+  );
+  assert.equal(missing.ok, false);
+  assert.equal(missing.error.code, 'TARGET_NOT_FOUND');
+  assert.equal(missingRunner.calls.length, 1);
+});
+
+test('issue-comment-update aborts before writing when provider capability is unavailable', async () => {
+  const runner = fakeRunner([]);
+  const envelope = await executeOperation(
+    'issue-comment-update',
+    {
+      repository: forgejoRepository,
+      number: 17,
+      commentId: 23,
+      expectedBodyHash: bodyHash('Old plan'),
+      payload: { body: 'Updated plan' },
+      probe: { capabilities: { issueCommentUpdate: false } },
+    },
+    { runner, skipProbe: true, apply: true },
+  );
+
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(envelope.error.details.capability, 'issueCommentUpdate');
+  assert.equal(runner.calls.length, 0);
 });
 
 test('repository resolution distinguishes non-Git repositories and missing origins', async () => {

@@ -21,6 +21,7 @@ const MUTATIONS = new Set([
   'issue-create',
   'issue-update-body',
   'issue-comment',
+  'issue-comment-update',
   'issue-labels',
   'issue-label-add',
   'issue-label-remove',
@@ -42,6 +43,7 @@ const REMOTE_OPERATIONS = new Set([
   'issue-create',
   'issue-update-body',
   'issue-comment',
+  'issue-comment-update',
   'issue-labels',
   'issue-label-add',
   'issue-label-remove',
@@ -65,6 +67,7 @@ const CAPABILITY_BY_OPERATION = Object.freeze({
   'issue-create': 'issueCreate',
   'issue-update-body': 'issueUpdate',
   'issue-comment': 'issueComment',
+  'issue-comment-update': 'issueCommentUpdate',
   'issue-labels': 'issueLabelAdd',
   'issue-label-add': 'issueLabelAdd',
   'issue-label-remove': 'issueLabelRemove',
@@ -816,6 +819,22 @@ export function buildCommandPlan(operation, input, repository) {
           ],
           jsonStdin({ body: assertPublishable(payload.body, 'payload.body') }),
         );
+      case 'issue-comment-update': {
+        issueNumber(input);
+        return mutationPlan(
+          'gh',
+          [
+            'api',
+            ...hostArgs,
+            '-X',
+            'PATCH',
+            ghEndpoint(`issues/comments/${requireNumber(input.commentId, 'commentId')}`),
+            '--input',
+            '-',
+          ],
+          jsonStdin({ body: assertPublishable(payload.body, 'payload.body') }),
+        );
+      }
       case 'issue-labels':
       case 'issue-label-add': {
         const labels = payload.labels ?? (payload.label ? [payload.label] : []);
@@ -1026,6 +1045,20 @@ export function buildCommandPlan(operation, input, repository) {
         ...teaJson,
         assertPublishable(payload.body, 'payload.body'),
       ]);
+    case 'issue-comment-update':
+      return mutationPlan(
+        'tea',
+        [
+          'api',
+          `repos/${owner}/${repo}/issues/${issueNumber(input)}/comments/${requireNumber(input.commentId, 'commentId')}`,
+          '--method',
+          'PATCH',
+          ...teaTarget,
+          '--data',
+          '@-',
+        ],
+        jsonStdin({ body: assertPublishable(payload.body, 'payload.body') }),
+      );
     case 'issue-labels':
     case 'issue-label-add': {
       const labels = payload.labels ?? (payload.label ? [payload.label] : []);
@@ -1286,6 +1319,7 @@ export async function probeProvider(repository, runner) {
         issueCreate: true,
         issueUpdate: true,
         issueComment: true,
+        issueCommentUpdate: true,
         issueLabelAdd: true,
         issueLabelRemove: true,
         labelMigration: true,
@@ -1344,6 +1378,7 @@ export async function probeProvider(repository, runner) {
     pullCreateDraft,
     pullEdit,
     comment,
+    commentUpdate,
     labelCreate,
   ] = await Promise.all([
     probeTeaHelp(runner, ['issues'], ['--output']),
@@ -1360,6 +1395,7 @@ export async function probeProvider(repository, runner) {
     probeTeaHelp(runner, ['pulls', 'create'], ['--draft']),
     probeTeaHelp(runner, ['pulls', 'edit'], ['--description']),
     probeTeaHelp(runner, ['comment'], ['--output']),
+    probeTeaHelp(runner, ['api'], ['--method', '--data']),
     probeTeaHelp(runner, ['labels', 'create'], ['--output', '--name']),
   ]);
   return {
@@ -1376,6 +1412,7 @@ export async function probeProvider(repository, runner) {
       issueCreate,
       issueUpdate,
       issueComment: comment,
+      issueCommentUpdate: commentUpdate,
       issueLabelAdd,
       issueLabelRemove,
       labelMigration: issueLabelAdd && issueLabelRemove,
@@ -1447,6 +1484,18 @@ function normalizePullRequest(item, repository, metadata = {}) {
   };
 }
 
+function normalizeComment(comment) {
+  if (!comment || typeof comment !== 'object') {
+    fail('INVALID_PAYLOAD', 'provider returned an invalid issue comment');
+  }
+  return {
+    id: requireNumber(comment.id, 'provider comment id'),
+    body: comment.body ?? comment.content ?? '',
+    author: comment.user?.login ?? comment.poster?.login ?? comment.author?.login,
+    url: comment.html_url ?? comment.url,
+  };
+}
+
 function flattenPages(value) {
   return Array.isArray(value) && value.every(Array.isArray) ? value.flat() : value;
 }
@@ -1509,13 +1558,10 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
     case 'issue-comments-read':
     case 'pr-comments-read':
       return (Array.isArray(flattened) ? flattened : (flattened?.comments ?? [])).map(
-        (comment) => ({
-          id: comment.id,
-          body: comment.body ?? comment.content ?? '',
-          author: comment.user?.login ?? comment.poster?.login ?? comment.author?.login,
-          url: comment.html_url ?? comment.url,
-        }),
+        normalizeComment,
       );
+    case 'issue-comment-update':
+      return normalizeComment(flattened);
     case 'pr-read':
     case 'pr-update-body':
       return flattened?.output !== undefined
@@ -1611,16 +1657,53 @@ function localOperation(operation, input) {
 }
 
 async function staleWriteGuard(operation, input, repository, runner, conditionalWriteAvailable) {
-  if (!['issue-update-body', 'pr-update-body'].includes(operation)) return undefined;
+  if (!['issue-update-body', 'pr-update-body', 'issue-comment-update'].includes(operation)) {
+    return undefined;
+  }
   const expected = requireString(input.expectedBodyHash, 'expectedBodyHash');
+  const desired = requireString((input.payload ?? input).body, 'payload.body', {
+    allowEmpty: true,
+  });
+  if (operation === 'issue-comment-update') {
+    const commentId = requireNumber(input.commentId, 'commentId');
+    const readPlan = buildCommandPlan('issue-comments-read', input, repository);
+    const readResult = await runChecked(runner, readPlan, 'issue-comments-read precondition');
+    const parsed = parseCommandOutput(readResult, readPlan, 'issue-comments-read');
+    const comments = normalizeRemoteData(
+      'issue-comments-read',
+      parsed.raw,
+      repository,
+      input,
+      parsed,
+    );
+    const matches = comments.filter((comment) => comment.id === commentId);
+    if (matches.length === 0) {
+      fail('TARGET_NOT_FOUND', 'issue comment no longer exists', { commentId });
+    }
+    if (matches.length > 1) {
+      fail('AMBIGUOUS_TARGET', 'issue comment ID matched more than once', {
+        commentId,
+        matches: matches.length,
+      });
+    }
+    const current = matches[0];
+    if (current.body === desired) return { unchanged: true, current };
+    const actual = bodyHash(current.body);
+    if (actual !== expected) {
+      fail('STALE_WRITE', 'issue comment changed after the caller read it', {
+        commentId,
+        expectedBodyHash: expected,
+        actualBodyHash: actual,
+        conditionalWriteAvailable: false,
+      });
+    }
+    return { unchanged: false, current };
+  }
   const readOperation = operation === 'issue-update-body' ? 'issue-read' : 'pr-read';
   const readPlan = buildCommandPlan(readOperation, input, repository);
   const readResult = await runChecked(runner, readPlan, `${readOperation} precondition`);
   const parsed = parseCommandOutput(readResult, readPlan, readOperation);
   const current = normalizeRemoteData(readOperation, parsed.raw, repository, input, parsed);
-  const desired = requireString((input.payload ?? input).body, 'payload.body', {
-    allowEmpty: true,
-  });
   if (current.body === desired) return { unchanged: true, current };
   const actual = bodyHash(current.body);
   const expectedVersion = input.expectedVersion;
@@ -1800,9 +1883,9 @@ export async function executeOperation(operation, input = {}, options = {}) {
         capability: 'pullRequestDraftCreate',
       });
     }
-    if (['issue-update-body', 'pr-update-body'].includes(operation)) {
+    if (['issue-update-body', 'pr-update-body', 'issue-comment-update'].includes(operation)) {
       requireString(input.expectedBodyHash, 'expectedBodyHash');
-      if (probe.capabilities?.conditionalWrites === true) {
+      if (operation !== 'issue-comment-update' && probe.capabilities?.conditionalWrites === true) {
         requireString(input.expectedVersion, 'expectedVersion');
       }
     }

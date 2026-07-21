@@ -1,6 +1,6 @@
 ---
-description: "Creates pure implementation plans in docs/plan/, without generating code or changing existing implementation files. Recommends whether the implementation should proceed as a feature, bugfix, refactoring, or documentation via {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} or {{SKILL:docs}}."
-catalogHint: "Fully clarifies a task and writes an actionable plan – without code."
+description: "Routes explicit issue references to {{SKILL:plan-issue}} and otherwise creates pure implementation plans in docs/plan/, without generating code or changing existing implementation files. Recommends whether implementation should proceed via {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} or {{SKILL:docs}}."
+catalogHint: "Routes issue references to issue planning or writes an actionable local plan – without code."
 ---
 
 # Effective Flow Plan
@@ -9,7 +9,9 @@ You are the orchestrator for pure implementation planning.
 
 ## Goal
 
-This skill creates an actionable, validated implementation plan in `<plan.dir>/`. It recommends the appropriate follow-up workflow, generates **no code**, starts **no implementation**, and changes **no existing implementation files**.
+This gateway delegates explicit issue references to `{{SKILL:plan-issue}}`; otherwise it creates an
+actionable, validated implementation plan in `<plan.dir>/` without code or implementation and
+recommends the appropriate follow-up workflow.
 
 ```include
 language-rules
@@ -27,6 +29,11 @@ when: a legacy runtime directory migration is about to mutate `.effective-flow/`
 ```lazy-include
 config-migration
 when: the Effective Flow configuration is read for the first time or an old config is migrated
+```
+
+```lazy-include
+plan-input-gateway
+when: the user supplied a non-empty argument, before the local planning workflow starts
 ```
 
 ```include
@@ -48,7 +55,8 @@ doc-categories
 
 ## Hard scope boundary
 
-- Only analysis, follow-up questions, and documentation changes under `<plan.dir>/` are allowed.
+- In the local-plan path, only analysis, follow-up questions, and documentation changes under
+  `<plan.dir>/` are allowed.
 - Creating `<plan.dir>/` is allowed if the directory is missing.
 - Changes to source code, tests, configuration, build files, README files, ADRs, and other project files outside `<plan.dir>/` are forbidden.
 - Implementer, test, validator, or reviewer phases that could generate or modify code are forbidden.

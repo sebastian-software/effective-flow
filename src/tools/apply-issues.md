@@ -147,9 +147,24 @@ Start an analysis sub-agent in parallel for **each work item**. These sub-agents
 
 Each analysis sub-agent receives the issue body **and the issue comments** and the task to investigate the codebase and deliver a structured result:
 
-- **Comments as a source:** evaluate body and comments together. A `<!-- effective-flow-plan-issues -->` planning comment provides the specification completed by `{{SKILL:plan-issue}}` (target behavior, acceptance criteria, affected areas) and counts as the **authoritative, sufficient** basis — even if the original body is thin; if several exist, the newest counts. Further maintainer comments count as clarifications for the sufficiency check. Pure Effective Flow status comments (`<!-- effective-flow-apply-issues -->`) are not counted as a requirement.
+- **Comments as a source:** evaluate body and comments together. The newest
+  `<!-- effective-flow-plan-issues -->` planning comment is the authoritative planning artifact,
+  even if the original body is thin; it is **not automatically sufficient**. If its
+  `### Open points` / `### Offene Punkte` section is nonempty (anything other than exactly
+  `- No open points.` / `- Keine offenen Punkte.`), or its plan-review result is
+  `Revision required` / `Überarbeitung nötig`, treat the issue as `insufficient`. Also treat a
+  review assumption explicitly marked as implementation-blocking as `insufficient`. Keep or add
+  `effective-flow-needs-planning` and return it to `{{SKILL:plan-issue}}`; never route it to
+  implementation.
+  Further maintainer comments count as clarifications. Pure Effective Flow status comments
+  (`<!-- effective-flow-apply-issues -->`) are not counted as requirements.
 - **Classification:** Feature / Bugfix / Refactoring / Documentation (definitions as in `{{SKILL:plan}}`, Phase 1) and from that the target skill (`{{SKILL:build}}` / `{{SKILL:fix}}` / `{{SKILL:refactor}}` / `{{SKILL:docs}}`).
 - **Sufficiency check:** applies the "clarification gate" analogously at issue granularity: can a clear target behavior and at least one **measurable acceptance criterion** be derived from the issue (body **and comments**), and are there enough file/area hints for the target workflow to start autonomously? Result: `sufficient` or `insufficient`. On `insufficient`: a concrete list of what is missing (open functional questions, missing acceptance criteria, unclear scope).
+  A canonical planning comment passes this gate only when its required sections meet those checks
+  and its review/open-points state contains no implementation blocker. Older planning comments
+  without Plan-review or Open-points sections remain backward-compatible and are assessed by the
+  existing target-behavior, measurable-acceptance-criterion, and file/area checks rather than
+  rejected solely for missing the new sections.
 - **Prompt suggestion:** a directly usable plain-text task for the target skill.
 - **Confidence:** `High` / `Medium` / `Low` regarding the file scope (analogous to the pre-analysis in `{{SKILL:apply-review}}`).
 - **Affected files:** best estimate of the touched files (for the conflict consideration in Phase 4).
