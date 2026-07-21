@@ -38,11 +38,28 @@ written by hand.
 **Inline references** sit in the middle of the text (including in the frontmatter `description:`
 string) and use the Mustache syntax `{{…}}`:
 
-| Placeholder   | Meaning                          | Replacement                                                                          |
-| ------------- | -------------------------------- | ------------------------------------------------------------------------------------ |
-| `{{SKILL:X}}` | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                       |
-| `{{AGENT:X}}` | Worker reference                 | `` `effective-flow-X` `` in all targets; native role or portable contract identifier |
-| `{{VERSION}}` | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                                      |
+| Placeholder      | Meaning                            | Replacement                                                                                               |
+| ---------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `{{SKILL:X}}`    | Tool reference                     | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                                            |
+| `{{AGENT:X}}`    | Worker reference                   | `` `effective-flow-X` `` in all targets; native role or portable contract identifier                      |
+| `{{VERSION}}`    | Version including git short hash   | Manifest version + `git rev-parse --short HEAD`                                                           |
+| `{{GOAL_START}}` | Harness-specific goal-start action | Direct native Codex attempt with failure-specific fallback; prompt handoff in Claude and portable targets |
+
+`{{GOAL_START}}` belongs at the action point reached only after an explicit autonomous-goal
+choice. In native Codex, its replacement instructs the workflow to make exactly one
+`create_goal` attempt. The required `objective` is exactly the text after `/goal ` in the
+completed single-line prompt, and `token_budget` is omitted unless the user supplied it
+explicitly. Success continues under the active goal without outputting the prompt. An unavailable
+capability or a technical call failure produces a concise cause and the full prompt fallback. An
+explicit active-goal conflict instead stops for a user decision without a prompt, state mutation,
+or silent gated continuation. Claude Code and the portable manager target receive only the
+copy-pasteable prompt handoff and never a `create_goal` instruction.
+
+For a resolved source body, `renderBody` applies the harness-specific transforms in this order:
+`ask` blocks, `{{GOAL_START}}`, portable worker-delegation preparation when required, then
+`{{SKILL:X}}` and `{{AGENT:X}}` references. Eager includes, lazy-include pointers, and
+`{{VERSION}}` are resolved before that body enters `renderBody`. This ordering ensures the goal
+action is target-specific before worker and tool references receive their final target syntax.
 
 **No legacy aliases.** Names from before the rename – that is, `{{SKILL:sf-…}}` or
 `{{AGENT:sf-…}}` with the old `sf-` prefix – are **not** mapped onto their current names. The
@@ -270,7 +287,7 @@ and directive syntax").
 
 The fragment is delivered **once per consumer target**, deduplicated, to that skill's `shared/`
 directory and rendered there through the same pipeline as a tool body (nested eager includes,
-`{{VERSION}}`, references/`ask`). A worker reads the file at runtime
+`{{VERSION}}`, `ask`, goal-start action, portable worker preparation, then references). A worker reads the file at runtime
 the same way the router loads `tools/<tool>.md` on demand or `apply` loads its `apply-*.md`
 siblings.
 

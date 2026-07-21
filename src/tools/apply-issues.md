@@ -53,6 +53,10 @@ completion-protocol
 goal-completion
 ```
 
+```include
+goal-start-action
+```
+
 ## Wisdom Accumulation
 
 Use `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` for:
@@ -170,13 +174,13 @@ options:
   - label: Yes
     description: Approval granted, the workflow continues gated (status update per issue)
   - label: Autonomous via /goal
-    description: Remaining phases autonomous under native /goal — the skill outputs the /goal string to paste
+    description: Remaining phases autonomous under native /goal after this explicit selection
   - label: Adjust
     description: Enter feedback as free text (e.g. correct the issue selection or target skill)
 ```
 
-4. **Dropping the query:** if `{{SKILL:apply-issues}}` itself runs as a non-interactive sub-agent of a higher-level orchestrator (recognizable from the call context, e.g. "[Context from …]"), skip this gate entirely (no extra option, no `/goal` string) and continue directly with Phase 4. A direct call by the user does **not** count as such a delegation.
-5. On choosing "Autonomous via `/goal`": output the `/goal` string prominently and prompt the user to paste it as a new input. Without pasting, the skill continues gated. Form (single line, without internal IDs):
+4. **Dropping the query:** if `{{SKILL:apply-issues}}` itself runs as a non-interactive sub-agent of a higher-level orchestrator (recognizable from the call context, e.g. "[Context from …]"), skip this gate entirely (no extra option, no goal-start action and no `/goal` string) and continue directly with Phase 4. A direct call by the user does **not** count as such a delegation.
+5. On choosing "Autonomous via `/goal`": perform the central harness-specific goal-start action with the following form (single line, without internal IDs):
 
 ```text
 /goal Fully work through the issues analyzed via {{FIRMO}} apply (#… , #…) and run the remaining phases of this workflow: implement each sufficiently specified issue via the matching implementation skill, create exactly one PR per issue without a target PR, update issues with a target PR exclusively through new commits on the existing PR branch, comment the PR link, set effective-flow-issue-done and check off the epic entry; mark insufficient issues with effective-flow-needs-planning and a comment; project-configured checks of the delegated workflows green. Change nothing outside the named issues. Stop when all chosen issues are processed.

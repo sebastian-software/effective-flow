@@ -85,6 +85,10 @@ goal-completion
 ```
 
 ```include
+goal-start-action
+```
+
+```include
 worktree-integration
 ```
 
@@ -173,7 +177,7 @@ options:
     description: Name specific groups as free text
 ```
 
-2. From the chosen update selection, derive the explicit completion condition (implemented groups, baseline comparison green, reviewer with no open critical findings on code adaptations; see "Goal-driven completion control"); it covers phases 3–5. Since the update gate is a selection question, ask the standalone goal follow-up question directly after the selection per "Explicit goal query for autonomous runs". If "Autonomous via /goal" is chosen, emit the `/goal` string for phases 3–5; the follow-up question is omitted if the workflow was delegated non-interactively.
+2. From the chosen update selection, derive the explicit completion condition (implemented groups, baseline comparison green, reviewer with no open critical findings on code adaptations; see "Goal-driven completion control"); it covers phases 3–5. Since the update gate is a selection question, ask the standalone goal follow-up question directly after the selection per "Explicit goal query for autonomous runs". "Autonomous via /goal" performs the central harness-specific goal-start action for phases 3–5; "Continue gated" keeps the usual stops. The follow-up question is omitted if the workflow was delegated non-interactively.
 
 ```ask
 when: the workflow runs interactively and was not delegated as a non-interactive sub-agent (e.g. by {{FIRMO}} apply-review)
@@ -183,7 +187,7 @@ options:
   - label: Continue gated
     description: The workflow continues with the usual stops
   - label: Autonomous via /goal
-    description: Remaining phases autonomously under native /goal — the skill emits the /goal string to paste
+    description: Remaining phases autonomously under native /goal after this explicit selection
 ```
 
 3. Work through the approved groups **one after another**. For each group the skill applies the version jump, updates the lockfile via the detected manager, researches breaking changes, and where needed adapts local code to the changed API – carried out via every implementer selected in phase 0. Emit the reduced-depth notice before `{{AGENT:generic-product-implementer}}`; reserve `{{AGENT:generic-implementer}}` for tooling/CI/configuration. The task is only to adapt to the changed API, with no new behavior. Afterwards `maintain` compares against the baseline:

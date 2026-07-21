@@ -136,6 +136,10 @@ completion-protocol
 goal-completion
 ```
 
+```include
+goal-start-action
+```
+
 ```lazy-include
 worktree-integration
 when: the delivery/worktree mode is determined (Phase 2, step 0)
@@ -209,7 +213,7 @@ the plan passes the gate:
 
 - skip Phase 1 entirely
 - use the plan file's contents as the agreed implementation plan
-- derive the explicit completion condition from the acceptance criteria and the validation plan, and before starting Phase 2 present the explicit goal query per "Explicit goal query for autonomous runs". Since Phase 1 is skipped here and there is no yes/no approval at this boundary, it is the standalone yes/no follow-up question; if "Autonomous via /goal" is chosen, emit the `/goal` string for phases 2–7. The query is omitted when the workflow was delegated non-interactively (e.g. by `{{FIRMO}} apply-review`); the handover through `{{FIRMO}} apply-plan` does not count as such delegation. If a "clarified + goal-driven" context was already passed from the apply chain (basis clarified, confirmation for the autonomous run already given), honor it directly: skip this query and run through phases 2–7 under the "Goal-driven completion control".
+- derive the explicit completion condition from the acceptance criteria and the validation plan, and before starting Phase 2 present the explicit goal query per "Explicit goal query for autonomous runs". Since Phase 1 is skipped here and there is no yes/no approval at this boundary, it is the standalone goal follow-up question; "Yes" performs the central harness-specific goal-start action for phases 2–7, while "No" continues gated. The query is omitted when the workflow was delegated non-interactively (e.g. by `{{FIRMO}} apply-review`); the handover through `{{FIRMO}} apply-plan` does not count as such delegation. If a "clarified + goal-driven" context was already passed from the apply chain (basis clarified, confirmation for the autonomous run already given), honor it directly: skip this query and run through phases 2–7 under the "Goal-driven completion control".
 - start directly with Phase 2
 
 A referenced unbuilt plan only replaces the planning phase. Initial state documentation, review-report backlinks, implementation, documentation, tests, validation, review and completion still run normally.
@@ -234,7 +238,7 @@ If no unbuilt plan file was referenced:
    - affected files are concrete enough for Phase 2
 5. Present the plan file to the user with a short validation scorecard.
 6. Derive the explicit completion condition from the acceptance criteria and the validation plan (see "Goal-driven completion control"); it covers phases 2–7 and feeds the explicit goal query in the approval question below.
-7. Obtain explicit approval. The approval question contains the explicit goal query (option "Autonomous via /goal"); handle it per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, emit the `/goal` string for phases 2–7; the option is omitted when the workflow was delegated non-interactively. Do not start Phase 2 without this approval.
+7. Obtain explicit approval. The approval question contains the explicit goal query (option "Autonomous via /goal"); handle it per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, perform the central harness-specific goal-start action for phases 2–7; the option is omitted when the workflow was delegated non-interactively. Do not start Phase 2 without this approval.
 
 If `{{SKILL:plan}}` aborts due to missing information, ask the user about the open points and then restart the planning.
 
@@ -245,7 +249,7 @@ options:
   - label: Yes
     description: Approval granted, workflow continues gated
   - label: Autonomous via /goal
-    description: Remaining phases autonomous under the native /goal — the skill emits the /goal string to paste (omitted for non-interactive delegation)
+    description: Remaining phases autonomous under the native /goal after this explicit selection (omitted for non-interactive delegation)
   - label: Adjust
     description: Enter feedback as free text
 ```

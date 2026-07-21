@@ -34,12 +34,20 @@ a remote tracker (see [Remote Tracker](./remote-tracker.md)) and are worked thro
 ## Goal steering
 
 A uniform pattern with which interactive Effective Flow tools offer, at an approval boundary, to
-run the remaining phases **autonomously** instead of stepwise-gated – via your harness's native
-`/goal`. For this, Effective Flow formulates a measurable completion condition derived from the
-acceptance criteria, outputs a ready-to-insert `/goal` string, and then verifies the condition
-through independent instances (e.g. a validator or reviewer) rather than by self-assessment.
-Without your explicit insertion of the `/goal` string, the tool continues perfectly normally
-in gated mode.
+run the remaining phases **autonomously** instead of stepwise-gated via the native `/goal` mode.
+Effective Flow formulates a measurable completion condition derived from the acceptance criteria
+and verifies it through independent instances (e.g. a validator or reviewer) rather than by
+self-assessment.
+
+In native Codex, choosing "Autonomous via `/goal`" triggers one direct `create_goal` attempt. Its
+`objective` is exactly the text that follows `/goal ` in the equivalent prompt, and no
+`token_budget` is set unless you explicitly supplied one. A successful start needs no prompt. If
+the capability is unavailable or fails for a technical reason, Effective Flow reports the cause
+and falls back to the complete copy-pasteable prompt. If an unfinished goal is already active, it
+instead waits for your decision without outputting a new prompt or changing the active goal.
+Claude Code and the portable manager target always use the prompt handoff; the autonomous run
+starts only after you paste that prompt as a new input. Other choices and non-interactive
+delegation do not start a goal.
 
 ## Harness
 
