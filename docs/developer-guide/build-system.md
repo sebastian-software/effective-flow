@@ -120,6 +120,10 @@ The build aborts with an error message if any of these guards is violated:
 
 - **Frontmatter/quoting guard:** `description` (and, for exposed tools, additionally
   `catalogHint`) must be strictly double-quoted.
+- **Claude effort guard:** Every agent's nested `claude` block must contain `effort`. The build
+  accepts exactly `low`, `medium`, `high`, `xhigh`, or `max`; a missing, empty, differently
+  cased, or unknown value aborts the build with the agent name and source path. The field is
+  rendered deterministically next to `model` in the native Claude sidecar.
 - **Reference guard:** Every `{{SKILL:X}}` must point to an existing `src/tools/X.md`, every
   `{{AGENT:X}}` to an existing `src/agents/X.md`. A legacy `sf-` prefix (see "No legacy aliases"
   above) is deliberately rejected with a migration message. The same guard also runs during
@@ -305,6 +309,12 @@ that reference a worker receive a short delegation protocol telling the harness 
 the selected contract and pass it to a built-in general-purpose subagent. This is orchestration
 metadata, not a duplicate domain playbook: centrally discovered skills remain authoritative
 for their declared domains.
+
+The native frontmatter also owns role-based model selection. Implementers and reviewers use
+Claude `opus`/`xhigh` and Codex `gpt-5.6-sol`/`high`; support roles use Claude
+`sonnet`/`medium` and Codex `gpt-5.6-luna`/`medium`. The source agent files are the canonical
+per-role assignments. Portable workers intentionally omit these native fields, so the build
+does not imply that a portable manager can enforce the same profiles.
 
 Portable tool references use the harness-neutral notation `effective-flow <tool>`. Its router
 also states the executable `/effective-flow` (Claude Code) and `$effective-flow` (Codex) forms,

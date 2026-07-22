@@ -1,7 +1,8 @@
 ---
 description: "Checks code quality through repository-native type/static analysis, linting, formatting, build, and documentation commands across ecosystems while preserving specialized package.json and Cargo behavior."
 claude:
-  model: haiku
+  model: sonnet
+  effort: medium
   color: magenta
   tools: [Read, Bash, Glob, Grep, Skill]
 codex:

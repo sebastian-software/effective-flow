@@ -1,7 +1,8 @@
 ---
 description: "Implements UI components and frontend code (HTML, CSS, JavaScript, TypeScript, React) under Firmo conventions for readability, file splitting, package manager and handoff; accessibility, responsive and design-system depth come from the central effective-web skill."
 claude:
-  model: sonnet
+  model: opus
+  effort: xhigh
   color: cyan
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:

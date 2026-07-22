@@ -2,6 +2,7 @@
 description: "Creates the root README.md as a marketing entry page entirely from the user's perspective: a clear value proposition, user-oriented language, and valid follow-up links for whichever user and technical documentation targets are available."
 claude:
   model: sonnet
+  effort: medium
   color: magenta
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:

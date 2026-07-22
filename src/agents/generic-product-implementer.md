@@ -1,7 +1,8 @@
 ---
 description: "Implements product code in languages and frameworks without a dedicated Effective Flow specialist by following repository-native instructions, architecture, commands, and established neighboring patterns in a disclosed reduced-depth mode."
 claude:
-  model: sonnet
+  model: opus
+  effort: xhigh
   color: cyan
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:

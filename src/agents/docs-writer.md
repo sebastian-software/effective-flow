@@ -2,6 +2,7 @@
 description: "Creates and maintains repository-native end-user and developer documentation across product languages, including README files, guides, components, APIs, CLIs, Rust crates/modules, and migrations."
 claude:
   model: sonnet
+  effort: medium
   color: blue
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:

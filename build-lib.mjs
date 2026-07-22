@@ -197,6 +197,22 @@ export function normalizeCodexSandboxMode(mode, skillName) {
   return normalized;
 }
 
+const CLAUDE_EFFORT_LEVELS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+
+export function normalizeClaudeEffort(effort, agentName, context) {
+  if (!effort) {
+    throw new Error(`Missing required claude effort for ${agentName}${contextSuffix(context)}`);
+  }
+
+  if (!CLAUDE_EFFORT_LEVELS.has(effort)) {
+    throw new Error(
+      `Unsupported claude effort "${effort}" for ${agentName}${contextSuffix(context)}; expected one of: low, medium, high, xhigh, max`,
+    );
+  }
+
+  return effort;
+}
+
 // Fail the build if any {{SKILL:X}} / {{AGENT:X}} reference points at a name
 // that has no matching tool/agent source.
 export function validateRefs(text, { knownTools, knownAgents, context } = {}) {

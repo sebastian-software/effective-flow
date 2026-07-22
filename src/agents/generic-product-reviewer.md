@@ -2,6 +2,7 @@
 description: "Performs read-only qualitative review of product code without a dedicated language specialist, using repository evidence and codebase-improvement audit reasoning while disclosing reduced language-specific depth."
 claude:
   model: opus
+  effort: xhigh
   color: red
   tools: [Read, Glob, Grep, Skill]
 codex:

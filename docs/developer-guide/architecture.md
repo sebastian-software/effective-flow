@@ -94,6 +94,8 @@ src/
 - **`src/agents/<name>.md`**: Workers are **not** `/effective-flow` tools. Workflow tools call
   them internally as subagents. The frontmatter carries native per-harness configuration under
   `claude:` and `codex:`; the body is also the single contract rendered into the portable target.
+  Each Claude block requires `model` and `effort`, while each Codex block defines `model` and
+  `model_reasoning_effort`. These source fields are the canonical worker-profile assignments.
 - **`src/shared/<name>.md`**: Include fragments embedded via the ` ```include ` fence into tools
   and agents (e.g. `language-rules`, `task-tracking`, `skill-discovery`, `goal-completion`,
   `worktree-integration`). `execution-location` is the canonical nested fragment for
@@ -191,6 +193,26 @@ of pretending that a worker ran.
 The release archive retains all three targets for verification and release maintenance; it is
 not a supported end-user installation interface. The default branch publishes only the portable
 skill at `effective-flow/`, which is the payload consumed by DALO and Skills CLI.
+
+## Caller and worker model profiles
+
+The model running the Effective Flow tool is the **caller**: it interprets the workflow,
+delegates work, and integrates the results. Native worker sidecars have independent,
+role-specific profiles. Implementers and reviewers use the quality tier—Claude `opus` with
+`xhigh` effort and Codex `gpt-5.6-sol` with `high` reasoning effort. Documentation, testing,
+validation, and other support roles use the economical tier—Claude `sonnet` with `medium`
+effort and Codex `gpt-5.6-luna` with `medium` reasoning effort. The individual files under
+`src/agents/` remain the exhaustive source of truth for which role belongs to which tier.
+
+Caller defaults are deliberately documentation rather than generated skill configuration.
+This keeps Effective Flow from overriding a user's global or project harness settings and lets
+the caller be escalated for unusually ambiguous or architecture-heavy work without changing
+the worker fleet. Claude can apply a model or effort override from skill frontmatter for the
+current turn, but the next user prompt returns to the session selection; Effective Flow therefore
+does not place a caller override in its router. Native worker metadata is rendered only into the
+Claude and Codex sidecars.
+Portable worker contracts contain no native model metadata; their built-in/general subagents
+therefore follow the model-selection behavior of the consuming manager and harness.
 
 ## Repo structure at a glance
 

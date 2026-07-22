@@ -2,6 +2,7 @@
 description: "Writes and improves repository-native unit, integration, component, API, CLI, database, and product tests across ecosystems while preserving specialized JavaScript/TypeScript, frontend, and Rust behavior."
 claude:
   model: sonnet
+  effort: medium
   color: green
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:

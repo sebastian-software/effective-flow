@@ -2,6 +2,7 @@
 description: "Implements Node.js backend code, CLI tools and server-side applications: APIs, middleware, security, DB, error handling, logging, file splitting and package manager rules."
 claude:
   model: opus
+  effort: xhigh
   color: cyan
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:

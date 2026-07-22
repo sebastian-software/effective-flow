@@ -2,6 +2,7 @@
 description: "Runs a specialized backend and CLI review: API design, security, performance, error handling, CLI quality, config, logging, and design-decision-aware findings."
 claude:
   model: opus
+  effort: xhigh
   color: red
   tools: [Read, Glob, Grep, Skill]
 codex:

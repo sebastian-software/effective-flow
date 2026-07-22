@@ -2,6 +2,7 @@
 description: "Runs a specialized frontend review – accessibility, performance, UI patterns, design system, CSS and state architecture – with Firmo confidence, design-decision filter, and report format; the central effective-web skill provides the browser domain depth."
 claude:
   model: opus
+  effort: xhigh
   color: red
   tools: [Read, Glob, Grep, Skill]
 codex:
