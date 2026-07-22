@@ -1,6 +1,7 @@
 # Tool reference: Setup & info
 
-This group covers project setup, explicit cleanup of migration remnants, and version information.
+This group covers project setup, explicit cleanup of migration remnants and finished worktrees,
+and version information.
 
 ## `/effective-flow setup`
 
@@ -47,35 +48,61 @@ missing Git or a failed validation leaves that marker unwritten.
 
 ## `/effective-flow cleanup`
 
-**Purpose:** Clears away the legacy leftovers that Effective Flow's migrations deliberately
-leave behind. It captures four classes of leftovers in the current project – legacy runtime
-directories `.firmo/`/`.sf-plugin/`, an untracked or legacy `config.json`, outdated
-`.gitignore` lines, and `firmo-` labels in the remote issue tracker –, reads them, checks
-against their new counterpart whether anything should still be carried over, has each
-carry-over candidate confirmed, and then deletes the removable legacy data **git-aware** and
-only after explicit confirmation. Outdated `.gitignore` entries are reported but left untouched
-for setup to repair.
+**Purpose:** Clears away legacy leftovers that Effective Flow's migrations deliberately leave
+behind and checks every linked Git worktree in the current repository. For migrations, it still
+handles the same four classes: legacy runtime directories `.firmo/`/`.sf-plugin/`, an untracked
+or legacy `config.json`, outdated `.gitignore` lines, and `firmo-` labels in the remote issue
+tracker. It reads them, checks their new counterpart for data that still needs to be carried
+over, confirms each carry-over candidate, and deletes removable legacy data **git-aware** only
+after explicit confirmation. Outdated `.gitignore` entries are reported but left untouched for
+setup to repair.
+
+For worktrees, `cleanup` parses Git's complete linked-worktree inventory and matches it against
+the persisted Effective Flow lifecycle under
+`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/`. A worktree becomes a removal candidate
+only when all independent checks agree: Effective Flow created it, its lifecycle is
+`cleanup-ready` or `cleanup-failed`, its execution-location receipt still matches its repository,
+path, branch, purpose, and registration, and the checkout is clean, unlocked, and not prunable.
+The repository's main worktree and the worktree running `cleanup` are never removal candidates.
 
 **When to use:** After Effective Flow has migrated a project from an older version (`.firmo/`,
-`.sf-plugin/`, `firmo-` labels) to the current state and you want to finally get rid of the
-deliberately retained legacy data. All migrations themselves are non-destructive; `cleanup`
-is the only path that truly deletes.
+`.sf-plugin/`, `firmo-` labels) and you want to remove deliberately retained legacy data, or when
+a finished Effective Flow run left a linked worktree behind. Migration itself remains
+non-destructive, and a worktree's age alone never makes it safe to remove.
 
 **Typical call:** `/effective-flow cleanup`
 
-**Input/output:** No input beyond the confirmations. The skill first shows an inventory, then
-a dry-run preview of the deletion; it removes tracked files via `git rm` (recoverable through
-the Git history), and untracked/gitignored directories physically and irreversibly after
-explicit confirmation. It creates **no** commit or backup and never changes current ADR values or
-a global skill installation. It never edits `.gitignore`. It may copy confirmed runtime files into `.effective-flow/` or
-remove a confirmed legacy config from that directory; otherwise the active runtime directory is
-preserved. With no leftovers, cleanup is a no-op.
+**Input/output:** No input beyond the confirmations. The skill first shows an inventory, then a
+dry-run preview of each deletion class. It removes tracked legacy files via `git rm` (recoverable
+through Git history), removes untracked or gitignored legacy directories physically and
+irreversibly after explicit confirmation, and removes an eligible worktree with ordinary
+`git worktree remove <path>` only after confirmation. It never uses `--force`, broad
+`git worktree prune`, or `git branch -D`. Delivery branches remain in the repository; a temporary
+`apply-review` branch may be removed only with `git branch -d` when its lifecycle proves that the
+component was integrated safely.
+
+The final report is always produced, even when no migration remnant or removable worktree exists.
+It separates removed worktrees from failed removal attempts and lists every remaining linked
+worktree except the main worktree. Each entry includes its path, checkout identity, lifecycle or
+inspection status, a specific reason for keeping it, and a safe next step. When cleanup runs in a
+linked worktree, that current execution worktree is reported as in use by the cleanup run. Active,
+aborted, failed, dirty, locked, prunable, harness-managed, mismatched, and lifecycle-less worktrees
+stay intact.
+An `active` record may represent either work still in progress or a run interrupted by a crash;
+there is no timeout or heartbeat that guesses which one it is.
+
+Cleanup creates **no** commit or backup and never changes current ADR values or a global skill
+installation. It never edits `.gitignore`. It may copy confirmed runtime files into
+`.effective-flow/` or remove a confirmed legacy config from that directory; otherwise it
+preserves active runtime state. A true no-op means there are no migration actions and no eligible
+worktrees, but the remaining-worktree report still appears.
 
 **Interplay:** `cleanup` does not adopt config values from a legacy `config.json` itself – it
 points to [`/effective-flow setup`](#effective-flow-setup) for that, the owner of the
 project-setup ADR. It likewise inventories outdated `.gitignore` entries but leaves them
-untouched; only setup repairs or normalizes `.gitignore`. The staged `git rm` changes are then handled by
-[`/effective-flow commit`](tools-deliver.md).
+untouched; only setup repairs or normalizes `.gitignore`. It also never adopts an older worktree
+that has no lifecycle record, even when its path or branch name looks like Effective Flow. The
+staged `git rm` changes are then handled by [`/effective-flow commit`](tools-deliver.md).
 
 ## `/effective-flow version`
 

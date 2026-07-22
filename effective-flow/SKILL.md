@@ -6,7 +6,7 @@ argument-hint: "[investigate|plan|open-plans|plan-issue|apply|build|fix|refactor
 
 # Effective Flow
 
-Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.50.0 (994a339)).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.51.0 (b451d5b)).
 
 This router skill is deliberately **thin**. It contains only the tool catalog and the dispatch rule; a tool's full instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the session lean and avoids token exhaustion from preloading all tools.
 
@@ -59,7 +59,7 @@ _from a clarified plan/issue to code_
 ### Set up & info
 
 - `effective-flow setup` — Sets up Effective Flow in the project – guided wizard, starts with safe defaults.
-- `effective-flow cleanup` — Cleans up migration remnants (`.firmo/`, old config, `firmo-` labels) after confirmation.
+- `effective-flow cleanup` — Cleans migration remnants and safely reports or removes verified Effective Flow worktrees.
 - `effective-flow version` — Shows the installed Effective Flow version.
 
 ## Language support

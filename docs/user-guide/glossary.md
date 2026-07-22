@@ -49,6 +49,13 @@ Claude Code and the portable manager target always use the prompt handoff; the a
 starts only after you paste that prompt as a new input. Other choices and non-interactive
 delegation do not start a goal.
 
+While a native Goal is active, Effective Flow maintains a visible overview of the known remaining
+phases and reconciles every entry before reporting success. After each major phase, it reports the
+result and next step in chat and continues autonomously unless an existing approval rule or genuine
+blocker requires input. If task tracking is unavailable or fails irrecoverably, the overview and
+subsequent progress are carried in chat instead. The harness determines the exact visual
+presentation.
+
 ## Harness
 
 The environment in which Effective Flow runs as a skill – currently Claude Code and Codex.

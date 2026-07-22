@@ -39,6 +39,37 @@ A merge conflict on completion (`delivery.completion: merge`) is likewise never
 resolved automatically: Effective Flow stops, leaves the delivery branch in place and informs you, so you
 can resolve the conflict deliberately.
 
+## Cleanup keeps a linked worktree
+
+[`/effective-flow cleanup`](./tools-setup.md#effective-flow-cleanup) always reports every remaining
+linked worktree except the repository's main worktree. The report gives the checkout identity,
+inspection or lifecycle status, the specific reason for retaining it, and a safe next step.
+Retention is intentional whenever Effective Flow cannot prove that normal removal is safe.
+
+| Reported state or reason                        | What it means                                                                                     | Safe next step                                                                                                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `active`                                        | Work may still be running, or the owning run may have ended unexpectedly, for example in a crash. | Check whether the owning workflow is still running and inspect the worktree before changing anything. Age alone is not evidence that it is finished. |
+| `aborted` or `failed`                           | The run stopped before it could mark the worktree safe for cleanup.                               | Inspect `git -C <worktree-path> status`; recover or commit wanted changes, or discard them deliberately outside the automatic cleanup path.          |
+| Dirty checkout                                  | Tracked, untracked, or submodule state would make ordinary removal unsafe.                        | Inspect the status and secure or intentionally discard the remaining work. Then run cleanup again.                                                   |
+| Locked worktree                                 | Git or another workflow has marked the worktree as unavailable for removal.                       | Identify who owns the lock. Unlock it only after you have verified that no workflow or external process still depends on it.                         |
+| `cleanup-in-progress` or lifecycle lock         | Another cleanup actor claimed the record, or a previous attempt stopped after claiming it.        | Inspect the recorded owner and timestamp. Do not break the lock or claim merely because it looks old.                                                |
+| Prunable or missing worktree path               | Git registration and the filesystem no longer agree.                                              | Inspect `git worktree list --porcelain` and reconcile the Git metadata manually. Cleanup never runs a broad `git worktree prune`.                    |
+| Missing or unknown lifecycle record             | Effective Flow cannot prove ownership or a safe completed run.                                    | Treat the worktree as user-managed. Inspect and resolve it manually; cleanup does not adopt legacy worktrees from a path or branch pattern.          |
+| Receipt, branch, commit, or repository mismatch | Current Git state no longer matches the record that created the worktree.                         | Verify the repository and checkout history manually. Preserve the worktree until you understand the mismatch.                                        |
+| Harness-managed or user-created                 | Effective Flow does not own cleanup for this checkout.                                            | Use the owning harness or your normal Git workflow to manage it.                                                                                     |
+| Cleanup is running in this worktree             | The current execution worktree cannot safely remove itself.                                       | Let cleanup finish, then run it from the main checkout or another safe execution location if this worktree should be reconsidered.                   |
+
+If normal `git worktree remove <path>` fails, the lifecycle remains `cleanup-failed` with the
+reported error. Fix the concrete cause and rerun cleanup; it rechecks ownership, the receipt, Git
+registration, branch, status, lock, and lifecycle before retrying. If the worktree was removed but
+its lifecycle record or temporary component branch remains, the report calls this partial cleanup.
+Delivery branches are intentionally retained. A temporary `apply-review` branch is removed only
+when integration is proven and ordinary `git branch -d` accepts it.
+
+Cleanup does not use a timeout, heartbeat, or stale-after rule, so it never reclassifies `active`
+or `cleanup-in-progress` state based on age. It also never uses `--force`, `git branch -D`, or a
+broad prune operation. These limits preserve recoverable work after a crash or interrupted run.
+
 ## "The clarification gate was not passed"
 
 Before an implementing tool (`build`, `fix`, `refactor`, `docs`, `apply`) actually implements a
@@ -105,11 +136,12 @@ Effective Flow migrates project-local legacy data (`.firmo/`, `.sf-plugin/`, `fi
 deletes it on its own. So if legacy directories, an untracked `.firmo/config.json` or
 `firmo-` labels remain after a migration, that is **not an error**, but intentional.
 
-For the final cleanup, use [`/effective-flow cleanup`](./tools-setup.md): it first shows
-an inventory and a dry-run preview, asks before each deletion, and removes tracked files via
-`git rm` (recoverable through the Git history), untracked directories only after explicit
-confirmation. It does not commit and does not create a backup – you bring the staged changes
-in afterwards with [`/effective-flow commit`](./tools-deliver.md).
+For the final cleanup, use [`/effective-flow cleanup`](./tools-setup.md): it first shows an
+inventory and a dry-run preview, asks before each deletion, removes tracked files via `git rm`
+(recoverable through Git history), and removes untracked directories only after explicit
+confirmation. The same run also inventories linked worktrees and ends with the mandatory
+remaining-worktree report described above. It does not commit and does not create a backup – you
+bring the staged changes in afterwards with [`/effective-flow commit`](./tools-deliver.md).
 
 ## A workflow cannot resolve a worker
 
