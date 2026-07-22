@@ -2,7 +2,7 @@
 
 Effective Flow tools, and the agents they invoke internally, do not work in isolation: before they
 begin planning, implementation or review, they survey the skills already available in your
-environment (e.g. `humanizer`, `impeccable`, `context7`, `effective-german-typography-skill`)
+environment (e.g. `tech-docs`, `software-testing`, `software-validation`, `effective-web`)
 and additionally bring in the ones that fit the specific task. Where a skill is the
 **owner of its domain**, its guidance is authoritative; if it is missing, every tool's base
 function is preserved through a deliberately minimal fallback – no Effective Flow tool and no
@@ -16,7 +16,9 @@ Effective Flow agent depends on a host skill for its base function.
    UI implementation). A notation `A › B` is an **ordered fallback**: the first available,
    non-excluded skill in the group is taken – never both at once.
 2. **Assess relevance.** Each skill is checked against the specific task; only clearly
-   fitting ones are brought in (typically zero to two), not "on suspicion".
+   fitting ones are brought in (typically zero to two), not "on suspicion". End-to-end
+   orchestrators are alternatives, not compositions: `effective-workflow` can be used directly,
+   but an active `/effective-flow` run never loads it recursively.
 3. **Take configuration into account.** The `skills.*` rows in the
    [project-setup ADR](./configuration.md#block-skills) control behavior globally and, more
    finely, per agent and per tool.

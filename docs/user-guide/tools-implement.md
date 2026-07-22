@@ -148,11 +148,10 @@ document within one of the four categories (`docs/user-guide/`, `docs/developer-
 `docs/operations/`, `docs/runbooks/`); if the category or target path is missing from the plan, `docs`
 asks for it.
 
-**Interplay:** Uses the `docs-writer` agent for user docs and the
-`code-documenter` agent for in-code documentation. Both work cross-language and follow the
-repository’s established format. JSDoc/TSDoc for JS/TS and rustdoc plus crate/module docs for
-Rust remain specialized branches; other languages use repository-native conventions without
-adding documentation tooling. For details on language routing, see
+**Interplay:** The model-configured `docs-writer` and `code-documenter` agents remain Effective
+Flow workers, but apply the authoritative `tech-docs` guidance. Effective Flow retains category,
+path, language, approval, and delivery decisions; the workers no longer duplicate general
+README, API/CLI, example, JSDoc/TSDoc, or rustdoc playbooks. For details on language routing, see
 [Language support](language-support.md); for details on the category and
 naming convention, see [Plan conventions](../developer-guide/plan-conventions.md).
 

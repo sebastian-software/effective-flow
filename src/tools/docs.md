@@ -51,6 +51,27 @@ doc-categories
 
 If the project has an `AGENTS.md`, read it before analysis and implementation and follow its guidance for documentation style, file formats, examples, tests, validation and commits.
 
+## Recommended skills
+
+- `tech-docs`
+
+```include
+skill-discovery
+```
+
+## Delegation contract
+
+`tech-docs` is the declared domain owner for technical-documentation craft. It owns repository
+and audience discovery, document-shape judgment, interface and migration accuracy, executable
+examples, in-code documentation, and verification design. This tool owns the Effective Flow
+entry point, optional standard categories, target-path and replacement approval, plan/report
+state, worker selection, validation phase, worktrees, commits, and delivery.
+
+When the skill is unavailable, use only a minimal repository-led fallback: derive facts from the
+implementation and neighboring docs, follow the existing structure, write the narrow requested
+change, and run an established docs check when one exists. Do not recreate a documentation
+handbook here or add tooling without approval.
+
 ```include
 completion-protocol
 ```
@@ -146,35 +167,27 @@ the plan passes the gate:
 
 ### Phase 1: Scope and analysis
 
-1. Analyze the documentation requirement thoroughly. Check early whether this is an initial doc setup (see "Initial doc setup (scaffold mode)"); if so, follow that mode and create the three roles of the standard structure in a coordinated single run.
-2. Determine the doc type:
-   - Root `README.md` as the marketing entry point (standard doc structure)
-   - README / guide
-   - API or CLI documentation
-   - Skill/workflow documentation
-   - Migration note / changelog
-   - In-code documentation
-3. Determine the doc category per `Doc categories`:
+1. Apply `tech-docs` to establish the audience, reader task, owning source of truth, narrowest
+   documentation surface, connected references, and verification strategy. Check early whether
+   this is an initial doc setup (see "Initial doc setup (scaffold mode)"); if so, follow that mode
+   and create the three roles of the standard structure in a coordinated single run.
+2. Determine the Effective Flow route and doc category per `Doc categories`:
    - User guide, developer guide, operations or runbooks
    - for the marketing entry point (root `README.md`) the category is omitted: it is not one of the four `docs/` categories, the target path is `README.md` and the implementation goes to `{{AGENT:marketing-writer}}`
    - for in-code documentation or for an existing file explicitly named in the plan outside the category directories, the category may be omitted; record this explicitly in the doc plan
-4. Set the target path for the final document:
+3. Set the target path for the final document:
    - for category docs: `docs/<category>/<topic-slug>.md`
    - for the marketing entry point: `README.md`
    - check the uniqueness of the slug within the category
    - on collision (also for an already existing root `README.md`): clarify replacement, extension or an alternative slug with the user
-5. Check the relevant sources:
-   - existing documentation
-   - code, exports, CLI options, API routes or configuration the docs refer to
-   - existing examples, scripts and validation paths
-6. Clarify open questions directly with the user when the audience, scope or substantive statements cannot be reliably derived.
-7. Create a short documentation plan:
+4. Clarify open questions directly with the user when the audience, scope, target, or substantive statements cannot be reliably derived.
+5. Create a short documentation plan from the owner's analysis:
    - audience
    - doc category and target path
    - affected files
    - planned content changes
    - validation strategy
-8. Derive the explicit completion condition from the validation strategy and the planned changes (see "Goal-driven completion control"); it covers phases 2–4 and feeds the explicit goal query in the approval question below. Handle the goal query per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, perform the central harness-specific goal-start action for phases 2–4; the option is omitted when the workflow was delegated non-interactively.
+6. Derive the explicit completion condition from the validation strategy and the planned changes (see "Goal-driven completion control"); it covers phases 2–4 and feeds the explicit goal query in the approval question below. Handle the goal query per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, perform the central harness-specific goal-start action for phases 2–4; the option is omitted when the workflow was delegated non-interactively.
 
 ```ask
 header: Doc plan
@@ -186,10 +199,6 @@ options:
     description: Remaining phases autonomous under the native /goal after this explicit selection (omitted for non-interactive delegation)
   - label: Adjust
     description: Enter feedback as free text
-```
-
-```include
-skill-discovery
 ```
 
 ### Phase 2: Implementation
@@ -216,12 +225,9 @@ skill-discovery
 
 ### Phase 3: Validation
 
-1. Check the changed documentation against the verified sources:
-   - code examples match current APIs
-   - CLI options and defaults are correct
-   - links and paths are plausible
-   - migration notes have clear before/after statements
-2. Check the write paths:
+1. Have the active `tech-docs` owner verify the changed documentation against its owning
+   implementation and examples, and return the exact evidence and remaining gaps.
+2. Check Effective Flow's write paths:
    - all newly created or changed final documents lie within the category directories from `Doc categories`, are the root `README.md` as the marketing entry point, or an existing file explicitly named in the plan
    - slugs follow the convention (kebab-case, no date or number prefix)
    - for user-guide changes, `docs/user-guide/README.md` is present as soon as content exists under `docs/user-guide/`

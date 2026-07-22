@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "provenance": {
-    "lastReviewedAt": "2026-07-20",
-    "observedRevision": "25aca272416d35cc104d4af08ec1f2a48a1fbb3a"
+    "lastReviewedAt": "2026-07-22",
+    "observedRevision": "a2c18a9c1b6e7745b1cf1cb7d0642cd10fe43248"
   },
   "relationships": [
     {
@@ -27,7 +27,40 @@
     },
     {
       "skill": "smart-dependency-updater",
-      "consumers": [{ "consumer": "maintain", "classification": "delegate" }]
+      "consumers": [
+        { "consumer": "maintain", "classification": "delegate" },
+        {
+          "consumer": "dependency-version-policy",
+          "classification": "route-when-relevant"
+        }
+      ]
+    },
+    {
+      "skill": "tech-docs",
+      "consumers": [
+        { "consumer": "docs", "classification": "delegate" },
+        { "consumer": "docs-writer", "classification": "delegate" },
+        { "consumer": "code-documenter", "classification": "delegate" }
+      ]
+    },
+    {
+      "skill": "software-testing",
+      "consumers": [
+        { "consumer": "test-writer", "classification": "delegate" },
+        { "consumer": "e2e-tester", "classification": "route-when-relevant" }
+      ]
+    },
+    {
+      "skill": "software-validation",
+      "consumers": [
+        { "consumer": "code-validator", "classification": "delegate" },
+        { "consumer": "test-writer", "classification": "route-when-relevant" },
+        { "consumer": "e2e-tester", "classification": "route-when-relevant" }
+      ]
+    },
+    {
+      "skill": "effective-workflow",
+      "consumers": [{ "consumer": "skill-discovery", "classification": "no-overlap" }]
     },
     {
       "skill": "codebase-improvement",

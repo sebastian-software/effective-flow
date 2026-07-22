@@ -2,8 +2,9 @@
 
 This group brings finished changes into the repository: creating a commit and opening a
 pull request from it. Both tools deliberately run **no** project validation of their own (linting,
-tests, build checks) – `code-validator` and `test-writer`, or the
-implementation tools, are responsible for that.
+tests, build checks) – the implementation tools and their model-configured validation/test
+workers are responsible for that, applying central `software-validation` and `software-testing`
+guidance when available.
 
 ## `/effective-flow commit`
 

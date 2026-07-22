@@ -52,6 +52,7 @@ config-migration
 
 ## Recommended skills
 
+- `pr-review`
 - `metro-english › humanizer` (fallback) – for thread replies and the summary comment only when
   resolved `language.forge` is `en`; do not apply English rewriting to German output
 
@@ -83,6 +84,18 @@ worktree-integration
 ```include
 pr-review-comments
 ```
+
+## Classification delegation
+
+`pr-review` is the declared domain owner for review-item judgment. Supply its caller-owned Mode C
+with the already gathered change context, stable item IDs, authors and locations, thread state,
+surrounding-code evidence, linked intent, and Effective Flow's authority constraints. It returns
+the provider-neutral `pr-review-handoff/v1` JSON and performs no discovery, implementation, Git,
+CI, forge, reply, or resolution action.
+
+Effective Flow remains the caller and owns freshness, approval, action routing, implementation,
+one-commit-per-item delivery, replies, and thread resolution. If `pr-review` is unavailable, use
+the minimal local classification fallback in Phase 2 and disclose the reduced review depth.
 
 ## Wisdom Accumulation
 
@@ -127,24 +140,30 @@ end.
 
 ### Phase 2: Classification
 
-Determine per item (review thread or free-text instruction):
-
-1. **actionable vs. not actionable:**
-   - pure praise/info comments do not count as actionable.
-   - **Nitpick and low-priority bot comments are taken along as actionable by
-     default** – the approval gate in phase 2.5 lets the user deselect individual ones.
-   - **pure questions** without a need for code changes are not implemented and are **not
-     automatically answered in substance**; they are listed in the summary as open/deferred
-     so the user answers them themselves.
-2. **already addressed:** thread is `resolved` or carries a `<!-- effective-flow-iterate -->`
-   reply → skip.
-3. Derive the **action type**:
+1. Exclude an already addressed thread when it is `resolved` or carries an
+   `<!-- effective-flow-iterate -->` reply.
+2. Send every remaining review thread and free-text instruction to `pr-review` Mode C with the
+   caller constraints: Effective Flow owns authority, approval, implementation, commits,
+   delivery, replies, and resolution; the analysis may only classify supplied context.
+3. Require one returned item for every supplied stable ID and map the contract as follows:
+   - `valid_in_scope` + `caller_fix` → actionable. Include valid nitpicks and low-priority bot
+     findings by default; Phase 2.5 may deselect them.
+   - `valid_out_of_scope` → follow-up or no action, never silently widen this PR.
+   - `unsupported` → skipped with the returned rationale and optional proposed reply.
+   - `question_or_information` → deferred or proposed reply; never implement it as code by
+     assumption.
+   - `needs_evidence` → gather the named evidence when it is already within the read-only scope
+     and submit the item once more; otherwise defer it with the exact missing evidence.
+4. For every actionable item, derive the Effective Flow **action type**:
    - {{SKILL:fix}} for a bug/correction,
    - {{SKILL:refactor}} for structure without behavior change,
    - {{SKILL:build}} for small new functionality,
    - {{SKILL:docs}} for pure documentation.
      Treat human and bot comments equally.
-4. Create a task per actionable item (per-item granularity).
+5. Create a task per actionable item (per-item granularity).
+
+If `pr-review` is unavailable, apply only the same five classifications from supplied evidence;
+never invent missing context, and report that the authoritative review owner was unavailable.
 
 ### Phase 2.5: Approval
 

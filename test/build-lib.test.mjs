@@ -1306,7 +1306,7 @@ test('findForeignHarnessToolParameters rejects unknown rendered targets', () => 
   );
 });
 
-test('code-validator renders a harness-neutral concurrent validation contract for every target', () => {
+test('code-validator remains a harness-neutral adapter to central validation', () => {
   const source = readFileSync(new URL('../src/agents/code-validator.md', import.meta.url), 'utf8');
   const body = extractBody(source);
   assert.doesNotMatch(source, /\brun_in_background\b/);
@@ -1318,251 +1318,45 @@ test('code-validator renders a harness-neutral concurrent validation contract fo
     });
 
     assert.deepEqual(findForeignHarnessToolParameters(rendered, target), [], target);
-    assert.doesNotMatch(rendered, /\brun_in_background\b/, target);
-    assert.doesNotMatch(rendered, /background Bash invocation/, target);
-    assert.doesNotMatch(rendered, /in parallel, never sequentially/, target);
-    assert.doesNotMatch(rendered, /\b(?:SIGTERM|SIGKILL|pkill|taskkill)\b/i, target);
-    assert.match(
-      rendered,
-      /Start every applicable check through a separate command invocation/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /Start all applicable independent checks before waiting for any of them/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /actively wait or poll every retained handle until it reaches a terminal state/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /The cleanup-failure result in step 2 is the only exception: emit it without claiming terminal state, then block every later workflow phase/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /Treat each retained handle as owning the invoked process and all of its descendants/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /request ordinary termination through the active harness's supported process-control mechanism/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /if any process in the tree survives, use the supported forced-stop mechanism for those survivors/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /wait for and reap the invoked process tree through the retained handle or session/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /verifying that the invoked process and every descendant have exited/,
-      target,
-    );
-    assert.match(rendered, /continue draining stdout and stderr until both streams close/, target);
-    assert.match(rendered, /include that shutdown output in the check's result/, target);
-    assert.match(
-      rendered,
-      /select only the affected check trees so unrelated checks continue/,
-      target,
-    );
-    assert.match(rendered, /each started check its own \*\*120-second\*\* timeout/, target);
-    assert.match(
-      rendered,
-      /mark its section as `TIMEOUT` only after verified exit and output drainage/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /A failure or timeout in one check must never cancel another check/,
-      target,
-    );
-    assert.match(rendered, /TypeScript → Linting → Build/, target);
-    assert.match(
-      rendered,
-      /apply the canonical process-tree shutdown procedure under `Aggregation` to every still-running check/,
-      target,
-    );
-    assert.match(rendered, /[Rr]epeat the planned checks sequentially/, target);
-    assert.match(
-      rendered,
-      /only after every selected tree has a verified exit and fully drained output/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /on a match: apply the canonical process-tree shutdown procedure to every still-running check that must stop/,
-      target,
-    );
-    assert.doesNotMatch(
-      rendered,
-      /on a match: terminate all parallel processes, repeat the checks sequentially/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /If complete tree shutdown, verification, or stream drainage cannot be guaranteed/,
-      target,
-    );
-    assert.match(rendered, /emit only a `FAILED \(cleanup incomplete\)` result/, target);
-    assert.match(rendered, /without claiming terminal state/, target);
-    assert.match(rendered, /start no replacement or retry/, target);
-    assert.match(rendered, /do not allow later workflow phases to proceed/, target);
-    assert.match(
-      rendered,
-      /use sequential execution only when that mechanism is unavailable or the documented race fallback applies/,
-      target,
-    );
-    assert.match(rendered, /reference the TypeScript error in the build section/, target);
-    assert.match(rendered, /SKIPPED \(no script found\)/, target);
-    assert.match(
-      rendered,
-      /a single combined fast script is not additionally started in parallel/,
-      target,
-    );
-    assert.match(rendered, /`off`: run no checks/, target);
-
-    const rustOrder = [
-      '**Cargo check or Cargo build',
-      '→ Clippy',
-      '→ Cargo format',
-      '→ rustdoc',
-      '→ Rust doctests**',
-    ].map((label) => rendered.indexOf(label));
-    assert.ok(
-      rustOrder.every((position) => position >= 0),
-      target,
-    );
-    assert.deepEqual(
-      rustOrder,
-      [...rustOrder].sort((a, b) => a - b),
-      target,
-    );
-    assert.match(
-      rendered,
-      /Use the exact established Cargo check\/build command selected by repository-native discovery as the first heading/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /Every applicable Rust section finishes with exactly one terminal result: `SUCCESS`, `FAILED`, `SKIPPED \(<reason>\)`, or `TIMEOUT`/,
-      target,
-    );
-    assert.match(rendered, /retain source-located diagnostics and concrete remedies/, target);
-    assert.match(
-      rendered,
-      /A zero-exit Clippy command remains `SUCCESS` when it emits warnings/,
-      target,
-    );
-    assert.match(rendered, /only a nonzero command result makes Clippy `FAILED`/, target);
-    assert.match(rendered, /Report `FAILED` if any executed check fails or times out/, target);
-    assert.match(
-      rendered,
-      /Report `PASSED` if at least one check executes and none fail or time out/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /Report `SKIPPED` when the mode is `off` or no applicable check executes/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /A visible individual `SKIPPED` section does not itself make the overall result fail/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /JS\/TS-only buckets use only JS\/TS labels and omit Rust sections/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /Rust-only buckets use only Rust labels and omit JS\/TS placeholders/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /Mixed repositories retain the project-routing bucket order and apply the deterministic section order within each bucket/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /Keep every applicable section visible when its command is unavailable, skipped by the active mode, or timed out/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /Omit nonapplicable toolchains rather than emitting placeholders/,
-      target,
-    );
-    assert.match(rendered, /Execute each repository-native command exactly once/, target);
-    assert.match(
-      rendered,
-      /A combined command may populate multiple named results only when its established definition evidences that coverage/,
-      target,
-    );
-    assert.match(rendered, /neither command execution nor diagnostics are double-counted/, target);
-    assert.match(
-      rendered,
-      /Repeat the following single bucket envelope once for every applicable file\/domain bucket/,
-      target,
-    );
-    assert.match(rendered, /The envelope is mandatory even when only one bucket applies/, target);
-    assert.match(
-      rendered,
-      /`Bucket` is the route identity and `Scope` is the exact assigned file or domain scope/,
-      target,
-    );
-    assert.match(rendered, /Do not merge buckets that happen to use the same labels/, target);
-    assert.match(rendered, /### Bucket: \[route identity\]/, target);
-    assert.match(rendered, /\*\*Scope:\*\* \[assigned files or domain\]/, target);
-    assert.match(rendered, /\*\*Labels:\*\* \[applicable ordered label mapping\]/, target);
-    assert.match(
-      rendered,
-      /#### \[result-section label\]: \[SUCCESS \/ FAILED \/ SKIPPED \(reason\) \/ TIMEOUT\]/,
-      target,
-    );
-    assert.equal(rendered.match(/#### \[result-section label\]/g)?.length, 1, target);
-    assert.match(
-      rendered,
-      /JS\/TS route: \*\*TypeScript → Linting → Build → Documentation\*\*/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /Rust route: \*\*Cargo check or Cargo build → Clippy → Cargo format → rustdoc → Rust doctests\*\*/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /Generic product-language route: \*\*Type\/static → Lint\/format → Build → Documentation\*\*/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /Keep the bucket identity and scope attached to all of its result sections/,
-      target,
-    );
-    assert.match(
-      rendered,
-      /This makes two Cargo projects or workspaces distinguishable even when their Rust label sequences are identical/,
-      target,
-    );
-    assert.doesNotMatch(rendered, /For a JS\/TS bucket:/, target);
-    assert.doesNotMatch(rendered, /For a Rust bucket/, target);
-    assert.doesNotMatch(rendered, /For a generic product-language bucket:/, target);
-    assert.doesNotMatch(rendered, /### TypeScript:/, target);
-    assert.doesNotMatch(rendered, /### \[Cargo check \/ Cargo build\]:/, target);
+    assert.match(rendered, /`software-validation` is the declared domain owner/, target);
+    assert.match(rendered, /do not keep\s+a second ecosystem command matrix/is, target);
+    assert.match(rendered, /`full`.*`quick`.*`off`/s, target);
+    assert.match(rendered, /`PASSED`, `FAILED`, `SKIPPED \(<reason>\)`, or `TIMEOUT`/, target);
+    assert.match(rendered, /each bucket and exact assigned scope/, target);
+    assert.doesNotMatch(rendered, /120-second/, target);
+    assert.doesNotMatch(rendered, /TypeScript → Linting → Build/, target);
+    assert.doesNotMatch(rendered, /Cargo check or Cargo build → Clippy/, target);
   }
+});
+
+test('central-skill adapters retain Effective Flow ownership without duplicate handbooks', () => {
+  const readSource = (path) => readFileSync(new URL(`../src/${path}`, import.meta.url), 'utf8');
+  const adapters = {
+    'agents/docs-writer.md': 'tech-docs',
+    'agents/code-documenter.md': 'tech-docs',
+    'agents/test-writer.md': 'software-testing',
+    'agents/e2e-tester.md': 'effective-web',
+    'agents/code-validator.md': 'software-validation',
+  };
+
+  for (const [path, owner] of Object.entries(adapters)) {
+    const source = readSource(path);
+    assert.match(source, new RegExp(`\\b${owner}\\b`), path);
+    assert.match(source, /## Minimal fallback/, path);
+    assert.match(source, /Effective Flow (?:retains|constraints)/i, path);
+  }
+
+  const iterate = readSource('tools/iterate.md');
+  assert.match(iterate, /pr-review-handoff\/v1/);
+  assert.match(iterate, /performs no discovery, implementation, Git/);
+  assert.match(iterate, /Effective Flow remains the caller and owns freshness, approval/);
+
+  const discovery = readSource('shared/skill-discovery.md');
+  assert.match(discovery, /Never load the alternative orchestrator `effective-workflow`/);
+
+  const dependencyPolicy = readSource('shared/dependency-version-policy.md');
+  assert.match(dependencyPolicy, /`smart-dependency-updater` is the declared domain owner/);
+  assert.doesNotMatch(dependencyPolicy, /pnpm view|cargo search|stable major tag/);
 });
 
 // --- Fixture-based end-to-end snapshot ---
