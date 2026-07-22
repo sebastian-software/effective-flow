@@ -27,6 +27,12 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
   the complete `/goal` prompt, and the autonomous run starts only after you paste it as a new
   input. Choosing the gated or adjustment path, answering normally, and non-interactive
   delegation do not start a goal.
+- While a native Goal is active, Effective Flow maintains a visible overview of the known
+  remaining phases and reconciles it before reporting success. After each major phase, it reports
+  the result and next step in chat, then continues autonomously unless an existing approval rule
+  or genuine blocker requires input. If task tracking is unavailable or fails irrecoverably, the
+  overview and subsequent progress move to chat; the exact visual presentation remains up to the
+  harness.
 - Before analysis, they review the available host skills (see
   [Skill discovery](skill-discovery.md)) and respect their respective
   write boundary.
