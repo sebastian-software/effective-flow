@@ -298,6 +298,52 @@ test('cleanup loads runtime safety for migrations, memory, and tracker markers',
   const cleanup = readSource('tools', 'cleanup.md');
   assert.match(
     cleanup,
-    /```lazy-include\s+runtime-state-safety\s+when: any confirmed legacy copy or removal, runtime migration, memory, or tracker-marker mutation is imminent\s+```/,
+    /```lazy-include\s+runtime-state-safety\s+when: [^\n]*worktree lifecycle state[^\n]*any confirmed legacy copy or removal, runtime migration, memory, or tracker-marker mutation is imminent\s+```/,
+  );
+});
+
+test('worktree lifecycle state is contained in the verified runtime root', () => {
+  const lifecycle = readShared('worktree-lifecycle');
+  const { eager, lazy } = collectIncludeNames(lifecycle);
+
+  assert.match(lifecycle, /execution-location receipt/i);
+  assert.match(lifecycle, /Runtime-state write safety/i);
+  assert.equal(eager.has('execution-location') && lazy.has('execution-location'), false);
+  assert.equal(eager.has('runtime-state-safety') && lazy.has('runtime-state-safety'), false);
+  assert.match(lifecycle, /<RUNTIME_STATE_ROOT>\/\.effective-flow\/worktree-runs\//);
+  assert.match(lifecycle, /absolute handle below the verified\s+`RUNTIME_STATE_ROOT`/i);
+  assert.match(lifecycle, /canonical repository identity/i);
+  assert.match(lifecycle, /common Git directory matches the recorded repository identity/i);
+  assert.match(
+    lifecycle,
+    /(?:create|write|update|transition|remove|delete)[\s\S]{0,320}(?:Runtime-state write safety|runtime-state safety)/i,
+  );
+  assert.match(
+    lifecycle,
+    /Runtime-state write safety” immediately before every parent[\s\S]{0,180}record deletion/i,
+  );
+  assert.match(lifecycle, /fail(?:-| )closed/i);
+});
+
+test('cleanup guards lifecycle claims, updates, and record removal at the main runtime root', () => {
+  const cleanup = readSource('tools', 'cleanup.md');
+  const { eager, lazy } = collectIncludeNames(cleanup);
+
+  assert.equal(
+    eager.has('worktree-lifecycle') || lazy.has('worktree-lifecycle'),
+    true,
+    'cleanup must consume the lifecycle contract',
+  );
+  assert.match(cleanup, /RUNTIME_STATE_ROOT/);
+  assert.match(cleanup, /worktree-runs/);
+  assert.match(cleanup, /apply runtime-state safety\s+to the exact lock and record handles/i);
+  assert.match(cleanup, /atomically write `cleanup-in-progress`/i);
+  assert.match(
+    cleanup,
+    /Delete only this run's lifecycle record after every required postcondition is proven/i,
+  );
+  assert.match(
+    cleanup,
+    /`RUNTIME_STATE_ROOT` and the worktree\s+from which cleanup is running are never removal candidates/i,
   );
 });

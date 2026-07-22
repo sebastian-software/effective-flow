@@ -67,6 +67,45 @@ runtime path escapes through a symlink, Effective Flow stops without changing st
 tracked-state problems point to `/effective-flow setup`; Effective Flow does not fall back to a
 worktree-local runtime directory.
 
+### Persisted worktree lifecycle
+
+Every newly created Effective Flow delivery, partial-diff, or `apply-review` component worktree
+gets its own lifecycle record under
+`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/`. Effective Flow writes the record only after
+the execution-location receipt exists and records the repository and worktree identity, branch,
+branch creation commit (OID), workflow and purpose, ownership, timestamps, status, and
+branch-cleanup policy.
+Reused, user-created, and harness-managed worktrees do not receive Effective Flow ownership this
+way.
+
+The recorded `creationOid` is immutable evidence of where Effective Flow created the branch, not
+the branch's expected final tip. During cleanup, that commit must still resolve and remain an
+ancestor of the current recorded branch tip. Normal committed work therefore advances `HEAD`
+without invalidating the record. Rewritten or divergent history, including a branch tip that no
+longer descends from `creationOid`, blocks automatic cleanup.
+
+The lifecycle makes later cleanup explicit instead of relying on path or age heuristics:
+
+| Status                | Meaning and cleanup behavior                                                                                                 |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `active`              | The owning workflow may still be running or may have been interrupted unexpectedly. Cleanup keeps the worktree.              |
+| `cleanup-ready`       | The intended work is safely stored or integrated. Cleanup may remove the worktree if every fresh safety check also passes.   |
+| `aborted`             | The workflow stopped deliberately before cleanup eligibility. Cleanup keeps the worktree for inspection or recovery.         |
+| `failed`              | The workflow failed before cleanup eligibility. Cleanup keeps the worktree and its contents.                                 |
+| `cleanup-in-progress` | One verified actor has claimed the removal attempt. Other workflows and cleanup runs leave the worktree and claim untouched. |
+| `cleanup-failed`      | A normal removal attempt did not finish. A later cleanup may retry only after all safety checks pass again.                  |
+
+All status changes use a per-record lock and fresh receipt, Git registration, and lifecycle
+checks. Before removing a worktree, the owning actor changes an eligible record to
+`cleanup-in-progress` with its run ID and timestamp. A foreign or apparently abandoned lock or
+claim is never broken automatically. There is no TTL, heartbeat, or stale-after setting: elapsed
+time cannot prove that a workflow has ended safely.
+
+The lifecycle record remains until worktree removal and any permitted branch follow-up are fully
+verified. If a crash happens between those steps, a later cleanup reconciles the registration,
+path, branch policy, and claim. It removes only its own record when the result is complete;
+otherwise it reports partial cleanup and preserves the remaining state.
+
 ### Harness-native worktrees
 
 [Claude Code subagents](https://code.claude.com/docs/en/sub-agents) do not provide a portable
@@ -127,7 +166,9 @@ After successful completion, Effective Flow removes a worktree only when its rec
 that this workflow created that exact path and branch for the recorded purpose and a fresh
 verification confirms a clean, matching checkout. The delivery branch itself is retained in
 the local repo. Dirty, moved, missing, mismatched, user-created, and harness-managed worktrees
-stay in place and Effective Flow reports why. It never force-removes them.
+stay in place and Effective Flow reports why. A retained Effective Flow-created worktree keeps
+its lifecycle record so a later [`/effective-flow cleanup`](./tools-setup.md#effective-flow-cleanup)
+can reassess it. Effective Flow never force-removes a worktree.
 
 ### Updating existing pull requests
 
@@ -162,7 +203,10 @@ separate worktrees and brings their commits back onto your current branch via ch
 it creates **no** delivery branch in the sense of this guide. Both mechanisms can use the same
 physical `baseDir`, since they use different session and path segments; do not confuse them
 when configuring. Each component and the original integration root have separate receipts, and
-component cleanup requires proof that Effective Flow created that component worktree.
+each Effective Flow-created component has a separate lifecycle record. A component becomes
+`cleanup-ready` only after successful integration and validation. Component cleanup requires
+proof that Effective Flow created that exact worktree; an aborted, failed, or ambiguously
+integrated component remains available for inspection.
 
 ## See also
 

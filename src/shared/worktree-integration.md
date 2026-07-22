@@ -38,6 +38,10 @@ distinguish them.
 execution-location
 ```
 
+```include
+worktree-lifecycle
+```
+
 ### Configuration
 
 If the Effective Flow configuration (project setup ADR) pins corresponding values, they override these defaults (schema shown here for illustration):
@@ -151,10 +155,13 @@ Carry this state through baseline validation and every later phase:
 - delivery branch name and exact creation OID,
 - whether this run created the delivery branch,
 - whether this run created the delivery worktree,
-- the delivery execution-location receipt.
+- the delivery execution-location receipt,
+- for an Effective Flow-created worktree, its lifecycle record ID and retained absolute record
+  handle below `RUNTIME_STATE_ROOT`.
 
 For a reused `harness-managed` or user-managed worktree or branch, both creation flags stay
-false. For in-place execution without delivery, no delivery artifact is recorded.
+false and no lifecycle record is created. For in-place execution without delivery, no delivery
+artifact is recorded.
 
 ### Worktree execution
 
@@ -179,8 +186,10 @@ When worktree execution is active:
    `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> <BASE_REF>`, then immediately issue and
    verify an `effective-flow-created` receipt for the exact path, branch, workflow and delivery
    purpose. Record both artifacts as current-run-owned and capture the branch's exact creation
-   OID before setup. If receipt creation or state recording fails, retain the worktree and branch
-   for manual reconciliation.
+   OID. Immediately after that receipt succeeds, initialize its version 1 worktree-lifecycle
+   record as `active`, with branch policy `retain`, under the verified runtime root. Do this
+   before setup or delegation. If receipt or lifecycle-record creation fails, retain the
+   worktree and branch for manual reconciliation and do not continue inside it.
 3. Only for that newly Effective Flow-created receipt, run setup per `worktree.setup` and
    briefly announce the mode beforehand:
    - `auto` or missing: decide by lockfile – `pnpm-lock.yaml` →
@@ -197,6 +206,26 @@ When worktree execution is active:
    fail-closed preflight. Project operations are explicitly rooted in `EXECUTION_ROOT`; runtime
    reads and writes use retained absolute handles below `RUNTIME_STATE_ROOT`. This also applies
    through the completion phase and the final validator/formatter.
+
+### Lifecycle outcome handling
+
+For a current-run-owned `effective-flow-created` delivery or partial-diff worktree, keep its
+lifecycle record synchronized at every terminal workflow boundary. Perform every transition
+under the record lock and the runtime-state write-safety guard:
+
+- keep `active` while implementation, validation, commit, integration, or delivery preparation
+  can still change the checkout;
+- on a controlled stop before readiness, transition `active` to `aborted` with the concrete
+  reason and retain both worktree and branch;
+- on an implementation, validation, integration, ownership, or state error before readiness,
+  transition `active` to `failed` with the exact reason and retain both artifacts;
+- only after the intended changes are durably committed to the delivery branch may the owning
+  workflow transition `active` to `cleanup-ready` and enter the shared claim/remove/reconcile
+  sequence.
+
+If a lifecycle transition cannot be persisted safely, retain the worktree and branch and report
+the record handle and failed guard or operation. A sudden interruption deliberately leaves
+`active`; no age check upgrades or downgrades it.
 
 ### In-place delivery without worktree
 
@@ -228,7 +257,9 @@ preconditions are met:
 The procedure:
 
 1. Create a fresh worktree branch from `delivery.baseBranch`, then immediately issue and verify
-   a separate `effective-flow-created` receipt whose purpose is `partial-diff`.
+   a separate `effective-flow-created` receipt whose purpose is `partial-diff`. Before setup or
+   file transfer, initialize its lifecycle record as `active` with branch policy `retain`; a
+   record-creation failure retains both worktree and branch and aborts the partial-diff flow.
 2. Take only the selected delivery files from the main checkout into the worktree.
    Permitted sources for this selection are plan affected files,
    review finding scope, issue scope, known files produced by the workflow, or
@@ -237,7 +268,8 @@ The procedure:
    against the base ref. If not, abort and create no empty PR.
 4. Commit in the verified execution root and run `{{SKILL:pr}}` against
    `delivery.baseBranch`.
-5. Remove the worktree only after the receipt passes the ownership-safe cleanup checks. Leave
+5. Remove the worktree only through the shared lifecycle transition, claim, ordinary remove, and
+   reconciliation sequence after the receipt passes every ownership-safe cleanup check. Leave
    the delivery branch locally and the main checkout unchanged. Non-selected changes in the
    main checkout remain untouched.
 
@@ -278,25 +310,26 @@ by the current run:
 2. **Externally managed state:** For `harness-managed`, user-managed or adopted worktrees and
    branches, perform no lifecycle mutation. Report every retained path or branch and that it is
    externally managed.
-3. **Effective Flow-owned worktree:** Only when both current-run creation flags are true and the
-   receipt is `effective-flow-created`, freshly revalidate repository identity, execution root,
-   checkout identity, purpose, worktree registration and clean status. Verify that both `HEAD`
-   and the delivery branch tip still equal the recorded creation OID. If every proof passes, run
-   `git worktree remove <WORKTREE_PATH>` without force. Revalidate that the branch still exists at
-   the recorded creation OID and then delete it safely with `git branch -d <BRANCH_NAME>`. Never
-   compare against a moving remote tip.
+3. **Effective Flow-owned worktree:** Only when both current-run creation flags are true, the
+   receipt is `effective-flow-created`, and the matching lifecycle record is still `active`,
+   acquire its record lock and transition it to `aborted` with the concrete pre-implementation
+   stop reason. Retain the worktree and branch for inspection; an aborted worktree is never a
+   cleanup candidate. If the transition cannot be persisted, retain both artifacts and report
+   the lifecycle failure. Do not remove the worktree merely because `HEAD` and the branch tip
+   still equal the creation OID. Never compare against a moving remote tip when proving ownership
+   or deciding whether any current-run artifact may be changed.
 4. **In-place transient branch:** Only when the current run created the delivery branch, freshly
    verify the delivery receipt, clean status, exact branch name and recorded creation OID. Verify
    that the retained original checkout belongs to the same repository and can still be restored.
    Restore the original branch or detached OID first, revalidate its retained receipt, then
    revalidate and safely delete the unchanged transient branch with
    `git branch -d <BRANCH_NAME>`.
-5. **Retention and partial cleanup:** Any dirty state, changed tip, ownership mismatch, receipt or
-   registration mismatch, failed restoration, ordinary worktree-removal failure or safe
-   branch-deletion refusal retains the affected artifact. Report its exact path or branch and the
-   failed proof or command. If worktree removal or original-checkout restoration succeeds but
-   branch deletion fails, report that partial cleanup explicitly and retain the branch. Never
-   force-remove a worktree or force-delete a branch in this abort handback.
+5. **Retention and partial cleanup:** Any lifecycle-write failure, dirty state, changed tip,
+   ownership mismatch, receipt or registration mismatch, or failed restoration retains the
+   affected artifact. Report its exact path or branch and the failed proof or command. If
+   restoration succeeds but safe deletion of an in-place transient branch is refused, report
+   partial cleanup explicitly and retain that branch. Never force-remove a worktree or
+   force-delete a branch in this abort handback.
 
 End the workflow immediately after reporting the abort handback. Do not enter implementation or
 normal delivery completion.
@@ -363,12 +396,17 @@ options:
 ```
 
 4. **Withdraw an Effective Flow-owned worktree:** Only when the receipt is
-   `effective-flow-created`, freshly reverify its repository, root, checkout identity, purpose
-   and clean state, then run `git worktree remove <WORKTREE_PATH>`; retain the delivery branch
-   in the local repo. If any proof fails or uncommitted remnants remain, keep the worktree and
-   report the path and mismatch. For `in-place` and `harness-managed` receipts, perform no
-   worktree cleanup; leave lifecycle handling to the user or harness. The verified
-   `RUNTIME_STATE_ROOT` is never a cleanup target, and local review state there remains intact.
+   `effective-flow-created` and the intended changes are durably committed on its delivery
+   branch, acquire the lifecycle record lock, freshly reverify every eligibility proof, and
+   transition `active` to `cleanup-ready`. Claim it as `cleanup-in-progress` for this workflow's
+   cleanup run, execute only `git worktree remove <WORKTREE_PATH>` without force, and reconcile
+   the result while retaining the lock. The `retain` branch policy leaves the delivery branch in
+   the local repository. Delete only the successfully reconciled lifecycle record; a proof,
+   remove, or record-finalization failure becomes `cleanup-failed` where safely writable and is
+   reported with the retained path or partial state. For `in-place` and `harness-managed`
+   receipts, perform no worktree cleanup and create no lifecycle state; leave handling to the
+   user or harness. The verified `RUNTIME_STATE_ROOT` is never a cleanup target, and local review
+   state there remains intact.
 5. **Execute action:**
    - `branch` / Branch only: leave the branch, report the name and a note about later
      PR creation.

@@ -13,8 +13,8 @@ The tracked truth is a mutable, numberless ADR with the default slug and path
 language: `# Effective Flow project setup` with `## Configuration`, or
 `# Effective-Flow-Projektsetup` with `## Konfiguration`. Existing ADRs preserve their recognizable
 envelope language on ordinary setup updates. The `.effective-flow/` directory contains only
-runtime state such as `memory.json`, `cache.json`, `review/`, and `.worktrees/`; the entire
-directory is gitignored with one `.effective-flow/` line.
+runtime state such as `memory.json`, `cache.json`, `review/`, `.worktrees/`, and
+`worktree-runs/`; the entire directory is gitignored with one `.effective-flow/` line.
 
 This table is a narrow, explicit exception to the usual separation of ADR rationale from exact
 configuration values: the project-setup ADR is itself the owning tracked configuration artifact.
@@ -61,6 +61,30 @@ The canonical convention-file locator is:
 ```md
 **Effective Flow project setup:** docs/adr/effective-flow-project-setup.md
 ```
+
+## Worktree lifecycle runtime state
+
+`worktree-runs/` is runtime bookkeeping, not project configuration. Every newly created
+Effective Flow delivery, partial-diff, or `apply-review` component worktree receives a versioned
+lifecycle record at
+`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json`. The record binds the worktree to
+its verified repository, canonical path, branch, creation OID, workflow purpose, ownership,
+timestamps, current lifecycle status, and branch follow-up policy. Reused, user-created, and
+harness-managed worktrees do not gain ownership through this store.
+
+Record creation, state changes, per-record locks, and deletion use the same just-in-time
+runtime-state safety checks described above. Writers resolve an absolute handle below the verified
+`RUNTIME_STATE_ROOT`, validate containment and Git state immediately before mutation, and fail
+closed on unknown schemas, foreign locks, mismatched receipts, or unsafe paths. A record remains
+until worktree removal and any permitted branch follow-up are completely reverified; partial
+cleanup preserves enough state for a later reconciliation.
+
+This feature adds no configuration key. In particular, there is no cleanup TTL, heartbeat,
+`staleAfter`, or equivalent age threshold. The existing `worktree.*` and
+`applyReview.worktree.*` blocks still control creation location and setup only; they do not weaken
+cleanup eligibility. Lifecycle status, a current receipt, and fresh Git evidence determine whether
+ordinary `git worktree remove` may be offered. Cleanup reads this runtime state but never writes
+configuration values into the project-setup ADR.
 
 ## Resolution order and ownership
 

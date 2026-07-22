@@ -127,6 +127,51 @@ up only after fresh ownership and state verification. Cleanup never targets or a
 `RUNTIME_STATE_ROOT`, which is why local reports and memory survive component and delivery
 worktree removal.
 
+## Persisted worktree lifecycle
+
+[`src/shared/worktree-lifecycle.md`](../../src/shared/worktree-lifecycle.md) is the common lifecycle
+contract for every Effective Flow-created delivery, partial-diff, and `apply-review` component
+worktree. It consumes the canonical execution-location receipt and runtime-state safety contracts
+instead of restating repository identity, path containment, ignore, or tracked-state rules. The
+delivery and component-worktree creation paths both register through this shared contract;
+user-created, reused, and harness-managed worktrees remain outside Effective Flow ownership.
+
+After receipt creation, each owned worktree gets a versioned record under
+`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/`. The record binds the session or component,
+workflow and purpose, canonical repository and worktree identities, branch and creation OID,
+ownership, timestamps, lifecycle status, and branch follow-up policy. Records are atomic,
+gitignored runtime state. Every write, replacement, lock, or deletion revalidates the exact
+absolute runtime handle through the runtime-state safety guard.
+
+The record's immutable `creationOid` identifies the commit from which the worktree branch was
+created; it is not a frozen expected branch tip. Fresh verification requires that `creationOid`
+still resolves as a commit and is an ancestor of the current recorded branch tip. Valid committed
+work can advance `HEAD`, while rewritten or divergent history that breaks this ancestry fails
+closed and blocks cleanup.
+
+The state machine is explicit: creation starts at `active`; durably securing the intended changes
+on the branch or completing component integration moves to `cleanup-ready`; controlled stops and
+errors move to `aborted` or `failed`.
+An eligible cleanup actor serializes a fresh read and validation with a per-record lock, then
+claims `cleanup-ready` or `cleanup-failed` as `cleanup-in-progress` with its run ID and timestamp.
+A failed normal removal returns to `cleanup-failed`; complete and reverified worktree and branch
+cleanup removes only that actor's record. Foreign locks and claims are never stolen, even when
+they appear old.
+
+Cleanup derives eligibility from the intersection of independent evidence: owned lifecycle,
+matching receipt, current Git registration, branch and purpose agreement, clean status, and the
+absence of `locked` or `prunable` attributes. It never targets the main worktree or its own
+execution worktree and never uses `--force`, broad `git worktree prune`, or `git branch -D`.
+Existing worktrees without a lifecycle record remain diagnostic-only. There is no TTL, heartbeat,
+or stale-after configuration: an old `active` or `cleanup-in-progress` record can represent a
+crash, but elapsed time cannot prove cleanup eligibility.
+
+Every cleanup run reconciles partial outcomes and reports removed worktrees, failed attempts, and
+all remaining linked worktrees except the main worktree. A current linked execution worktree
+remains in that final inventory even though it is excluded as a removal target. Each retained
+entry carries its checkout identity, observed status, individual retention reason, and safe next
+step.
+
 ## Three consumer targets
 
 The build generates three independent outputs from the same source:

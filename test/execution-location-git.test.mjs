@@ -4,7 +4,9 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -26,6 +28,14 @@ function git(root, ...args) {
     env: GIT_ENV,
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
+}
+
+function gitRaw(root, ...args) {
+  return execFileSync('git', ['-C', root, ...args], {
+    encoding: 'utf8',
+    env: GIT_ENV,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
 }
 
 function canonical(path) {
@@ -274,6 +284,416 @@ function cleanupOwnedWorktree(receipt, administrativeRoot, { deleteBranch = fals
     git(administrativeRoot, 'branch', '-d', receipt.checkout.branch);
   }
   return true;
+}
+
+function worktreeEntriesPorcelainZ(root) {
+  const entries = [];
+  let current;
+  for (const field of gitRaw(root, 'worktree', 'list', '--porcelain', '-z').split('\0')) {
+    if (field === '') {
+      if (current) entries.push(current);
+      current = undefined;
+      continue;
+    }
+    if (field.startsWith('worktree ')) {
+      if (current) entries.push(current);
+      current = {
+        root: field.slice('worktree '.length),
+        branch: '',
+        detached: false,
+        locked: false,
+        prunable: false,
+      };
+      continue;
+    }
+    assert.ok(current, `worktree attribute without a record: ${field}`);
+    if (field.startsWith('HEAD ')) current.head = field.slice('HEAD '.length);
+    if (field.startsWith('branch ')) {
+      current.branch = field.slice('branch refs/heads/'.length);
+    }
+    if (field === 'detached') current.detached = true;
+    if (field === 'locked' || field.startsWith('locked ')) current.locked = true;
+    if (field === 'prunable' || field.startsWith('prunable ')) current.prunable = true;
+  }
+  if (current) entries.push(current);
+  return entries;
+}
+
+function gitSucceeds(root, ...args) {
+  try {
+    execFileSync('git', ['-C', root, ...args], {
+      env: GIT_ENV,
+      stdio: 'ignore',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function lifecycleDirectory(runtimeStateRoot) {
+  return join(runtimeStateRoot, '.effective-flow', 'worktree-runs');
+}
+
+function lifecycleRecordPath(runtimeStateRoot, recordId) {
+  return join(lifecycleDirectory(runtimeStateRoot), `${recordId}.json`);
+}
+
+function lifecycleLockPath(runtimeStateRoot, recordId) {
+  return join(lifecycleDirectory(runtimeStateRoot), `${recordId}.lock`);
+}
+
+function lifecycleRecord(receipt, status, overrides = {}) {
+  assert.equal(receipt.checkout.type, 'branch');
+  const recordId = overrides.recordId ?? `record-${basename(receipt.executionRoot)}`;
+  const workflow = overrides.workflow ?? 'build';
+  const purpose = overrides.purpose ?? receipt.purpose;
+  const componentId = overrides.componentId ?? null;
+  const branchPolicy = overrides.branchPolicy ?? 'retain';
+  const timestamp = '2000-01-01T00:00:00Z';
+  const record = {
+    schemaVersion: 1,
+    recordId,
+    sessionId: `session-${recordId}`,
+    componentId,
+    workflow,
+    purpose,
+    repositoryIdentity: receipt.repositoryIdentity,
+    runtimeStateRoot: receipt.runtimeStateRoot,
+    worktreePath: receipt.executionRoot,
+    branch: receipt.checkout.branch,
+    creationOid: git(receipt.executionRoot, 'rev-parse', 'HEAD'),
+    ownership: 'effective-flow-created',
+    receipt: {
+      repositoryIdentity: receipt.repositoryIdentity,
+      executionRoot: receipt.executionRoot,
+      runtimeStateRoot: receipt.runtimeStateRoot,
+      checkout: { kind: 'branch', branch: receipt.checkout.branch },
+      origin: receipt.origin,
+      setupOwner: receipt.owner,
+      setupStatus: 'pending',
+      workflow,
+      purpose,
+    },
+    branchPolicy,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    status,
+    reason: ['active', 'cleanup-ready'].includes(status) ? null : `fixture state: ${status}`,
+  };
+  if (status === 'cleanup-in-progress') {
+    record.cleanupRunId = 'other-cleanup';
+    record.claimedAt = timestamp;
+  }
+  return { ...record, ...overrides };
+}
+
+function atomicWriteLifecycleRecord(runtimeStateRoot, record, { fileRecordId } = {}) {
+  const directory = lifecycleDirectory(runtimeStateRoot);
+  mkdirSync(directory, { recursive: true });
+  const handle = lifecycleRecordPath(runtimeStateRoot, fileRecordId ?? record.recordId);
+  const temporary = `${handle}.tmp-${process.pid}`;
+  writeFileSync(temporary, `${JSON.stringify(record, null, 2)}\n`);
+  renameSync(temporary, handle);
+  return handle;
+}
+
+function readLifecycleRecord(runtimeStateRoot, recordId) {
+  return JSON.parse(readFileSync(lifecycleRecordPath(runtimeStateRoot, recordId), 'utf8'));
+}
+
+function readLifecycleEntries(runtimeStateRoot) {
+  const directory = lifecycleDirectory(runtimeStateRoot);
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory)
+    .filter((name) => name.endsWith('.json'))
+    .sort()
+    .map((fileName) => ({
+      fileName,
+      record: JSON.parse(readFileSync(join(directory, fileName), 'utf8')),
+    }));
+}
+
+function validateLifecycleEnvelope(root, fileName, record) {
+  const requiredStrings = [
+    'recordId',
+    'sessionId',
+    'workflow',
+    'purpose',
+    'repositoryIdentity',
+    'runtimeStateRoot',
+    'worktreePath',
+    'branch',
+    'creationOid',
+    'ownership',
+    'branchPolicy',
+    'createdAt',
+    'updatedAt',
+    'status',
+  ];
+
+  const baseKeys = [
+    'branch',
+    'branchPolicy',
+    'componentId',
+    'createdAt',
+    'creationOid',
+    'ownership',
+    'purpose',
+    'reason',
+    'receipt',
+    'recordId',
+    'repositoryIdentity',
+    'runtimeStateRoot',
+    'schemaVersion',
+    'sessionId',
+    'status',
+    'updatedAt',
+    'workflow',
+    'worktreePath',
+  ];
+  const expectedKeys =
+    record.status === 'cleanup-in-progress'
+      ? [...baseKeys, 'claimedAt', 'cleanupRunId'].sort()
+      : baseKeys.sort();
+
+  if (record.schemaVersion !== 1) return 'unknown lifecycle schema';
+  if (JSON.stringify(Object.keys(record).sort()) !== JSON.stringify(expectedKeys)) {
+    return 'invalid lifecycle field layout';
+  }
+  if (!requiredStrings.every((field) => typeof record[field] === 'string' && record[field])) {
+    return 'invalid lifecycle schema';
+  }
+  if (!/^[A-Za-z0-9._-]+$/.test(record.recordId) || fileName !== `${record.recordId}.json`) {
+    return 'record ID and filename mismatch';
+  }
+  if (record.componentId !== null && typeof record.componentId !== 'string') {
+    return 'invalid component ID';
+  }
+  if (record.ownership !== 'effective-flow-created') return 'externally managed worktree';
+  if (!['retain', 'delete-after-integration'].includes(record.branchPolicy)) {
+    return 'invalid branch policy';
+  }
+  if (
+    ![
+      'active',
+      'cleanup-ready',
+      'aborted',
+      'failed',
+      'cleanup-in-progress',
+      'cleanup-failed',
+    ].includes(record.status)
+  ) {
+    return 'invalid lifecycle status';
+  }
+  if (
+    ['active', 'cleanup-ready'].includes(record.status)
+      ? record.reason !== null
+      : typeof record.reason !== 'string' || record.reason === ''
+  ) {
+    return 'invalid lifecycle reason';
+  }
+  if (
+    record.status === 'cleanup-in-progress' &&
+    (!(typeof record.cleanupRunId === 'string' && record.cleanupRunId) ||
+      !(typeof record.claimedAt === 'string' && record.claimedAt))
+  ) {
+    return 'invalid cleanup claim';
+  }
+  if (
+    record.status !== 'cleanup-in-progress' &&
+    (record.cleanupRunId !== undefined || record.claimedAt !== undefined)
+  ) {
+    return 'unexpected cleanup claim';
+  }
+  if (record.runtimeStateRoot !== root) return 'runtime-state root mismatch';
+  if (!record.receipt || typeof record.receipt !== 'object') return 'receipt identity mismatch';
+  if (
+    JSON.stringify(Object.keys(record.receipt).sort()) !==
+    JSON.stringify(
+      [
+        'checkout',
+        'executionRoot',
+        'origin',
+        'purpose',
+        'repositoryIdentity',
+        'runtimeStateRoot',
+        'setupOwner',
+        'setupStatus',
+        'workflow',
+      ].sort(),
+    )
+  ) {
+    return 'invalid receipt field layout';
+  }
+  if (
+    JSON.stringify(Object.keys(record.receipt.checkout).sort()) !==
+    JSON.stringify(['branch', 'kind'])
+  ) {
+    return 'invalid receipt checkout layout';
+  }
+  if (record.receipt.checkout.kind !== 'branch') return 'receipt identity mismatch';
+  if (record.receipt.setupStatus !== 'pending' || !record.receipt.setupOwner) {
+    return 'invalid immutable setup receipt';
+  }
+  if (record.workflow !== record.receipt.workflow || record.purpose !== record.receipt.purpose) {
+    return 'workflow or purpose mismatch';
+  }
+  if (record.branchPolicy === 'retain' && record.componentId !== null) {
+    return 'invalid non-component identity';
+  }
+  if (
+    record.branchPolicy === 'delete-after-integration' &&
+    !(
+      record.workflow === 'apply-review' &&
+      typeof record.componentId === 'string' &&
+      record.componentId
+    )
+  ) {
+    return 'invalid component identity';
+  }
+  return undefined;
+}
+
+function validateLifecycleCandidate(
+  root,
+  entry,
+  fileName,
+  record,
+  { currentExecutionRoot, ignoreLifecycleLock = false } = {},
+) {
+  const retain = (reason) => ({ root: entry.root, action: 'retain', reason });
+  const envelopeError = validateLifecycleEnvelope(root, fileName, record);
+  if (envelopeError) return retain(envelopeError);
+  if (record.worktreePath !== entry.root) return retain('worktree path mismatch');
+  if (entry.locked) return retain('worktree is locked');
+  if (entry.prunable) return retain('worktree record is prunable');
+
+  const expectedReceipt = {
+    repositoryIdentity: record.repositoryIdentity,
+    executionRoot: record.worktreePath,
+    runtimeStateRoot: record.runtimeStateRoot,
+    checkout: { kind: 'branch', branch: record.branch },
+    origin: record.ownership,
+    setupOwner: record.receipt.setupOwner,
+    setupStatus: 'pending',
+    workflow: record.workflow,
+    purpose: record.purpose,
+  };
+  if (JSON.stringify(record.receipt) !== JSON.stringify(expectedReceipt)) {
+    return retain('receipt identity mismatch');
+  }
+  const repositoryIdentity = canonicalGitPath(root, ['rev-parse', '--git-common-dir']);
+  if (record.repositoryIdentity !== repositoryIdentity) {
+    return retain('common Git directory mismatch');
+  }
+  if (record.branch !== entry.branch || entry.detached) return retain('branch identity mismatch');
+  if (!existsSync(entry.root)) return retain('worktree path is missing');
+  if (canonical(entry.root) !== record.worktreePath)
+    return retain('canonical worktree path mismatch');
+  if (canonicalGitPath(entry.root, ['rev-parse', '--git-common-dir']) !== repositoryIdentity) {
+    return retain('common Git directory mismatch');
+  }
+  if (!ignoreLifecycleLock && existsSync(lifecycleLockPath(root, record.recordId))) {
+    const ownerHandle = join(lifecycleLockPath(root, record.recordId), 'owner.json');
+    return retain(existsSync(ownerHandle) ? 'foreign lifecycle lock' : 'ownerless lifecycle lock');
+  }
+  if (!gitSucceeds(entry.root, 'cat-file', '-e', `${record.creationOid}^{commit}`)) {
+    return retain('creation OID is not an existing commit');
+  }
+  if (!gitSucceeds(entry.root, 'merge-base', '--is-ancestor', record.creationOid, 'HEAD')) {
+    return retain('creation OID is not an ancestor of the branch tip');
+  }
+  if (entry.root === currentExecutionRoot) return retain('cleanup runs in this worktree');
+  if (record.status === 'cleanup-in-progress') return retain('another cleanup owns the claim');
+  if (!['cleanup-ready', 'cleanup-failed'].includes(record.status)) {
+    return retain(`lifecycle status is ${record.status}`);
+  }
+  if (
+    git(
+      entry.root,
+      'status',
+      '--porcelain',
+      '--untracked-files=all',
+      '--ignore-submodules=none',
+    ) !== ''
+  ) {
+    return retain('worktree is dirty');
+  }
+  return { root: entry.root, action: 'candidate', reason: 'verified cleanup candidate' };
+}
+
+function classifyCleanupWorktrees(root, { currentExecutionRoot } = {}) {
+  const entries = worktreeEntriesPorcelainZ(root);
+  const lifecycleEntries = readLifecycleEntries(root).map((entry) => ({
+    ...entry,
+    validationError: validateLifecycleEnvelope(root, entry.fileName, entry.record),
+  }));
+  return entries.slice(1).map((entry) => {
+    const matches = lifecycleEntries.filter(({ record }) => record.worktreePath === entry.root);
+    if (matches.length === 0) {
+      return { root: entry.root, action: 'retain', reason: 'no Effective Flow lifecycle record' };
+    }
+    if (matches.length !== 1) {
+      return { root: entry.root, action: 'retain', reason: 'duplicate lifecycle records' };
+    }
+    const [{ fileName, record, validationError }] = matches;
+    if (validationError) {
+      return { root: entry.root, action: 'retain', reason: validationError };
+    }
+    return validateLifecycleCandidate(root, entry, fileName, record, { currentExecutionRoot });
+  });
+}
+
+function acquireLifecycleLock(runtimeStateRoot, recordId, actor) {
+  const handle = lifecycleLockPath(runtimeStateRoot, recordId);
+  try {
+    mkdirSync(handle);
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    const ownerHandle = join(handle, 'owner.json');
+    return {
+      acquired: false,
+      reason: existsSync(ownerHandle) ? 'foreign lifecycle lock' : 'ownerless lifecycle lock',
+      owner: existsSync(ownerHandle) ? JSON.parse(readFileSync(ownerHandle, 'utf8')) : undefined,
+    };
+  }
+  const owner = { actor, acquiredAt: '2000-01-01T00:00:01Z' };
+  writeFileSync(join(handle, 'owner.json'), `${JSON.stringify(owner)}\n`);
+  return { acquired: true, handle, owner };
+}
+
+function releaseLifecycleLock(lock, actor) {
+  assert.equal(lock.acquired, true);
+  assert.equal(lock.owner.actor, actor);
+  const persistedOwner = JSON.parse(readFileSync(join(lock.handle, 'owner.json'), 'utf8'));
+  assert.equal(persistedOwner.actor, actor);
+  rmSync(lock.handle, { recursive: true });
+}
+
+function claimLifecycleCleanup(root, entry, recordId, actor) {
+  const lock = acquireLifecycleLock(root, recordId, actor);
+  if (!lock.acquired) return { claimed: false, ...lock };
+
+  const record = readLifecycleRecord(root, recordId);
+  const validation = validateLifecycleCandidate(root, entry, `${recordId}.json`, record, {
+    ignoreLifecycleLock: true,
+  });
+  if (validation.action !== 'candidate') {
+    releaseLifecycleLock(lock, actor);
+    return { claimed: false, reason: validation.reason };
+  }
+
+  const claimed = {
+    ...record,
+    status: 'cleanup-in-progress',
+    reason: `claimed by ${actor}`,
+    cleanupRunId: actor,
+    claimedAt: '2000-01-01T00:00:02Z',
+    updatedAt: '2000-01-01T00:00:02Z',
+  };
+  atomicWriteLifecycleRecord(root, claimed);
+  return { claimed: true, lock, record: claimed };
 }
 
 function deliveryAbortState({
@@ -988,4 +1408,482 @@ test('apply-review integrates a component commit and cleans up only that compone
   assert.equal(existsSync(componentRoot), false);
   assert.equal(existsSync(root), true);
   preflight(originalReceipt);
+});
+
+test('cleanup inventory classifies the complete candidate and retention matrix', (t) => {
+  const { container, root } = createRepository(t, { commits: 2 });
+  const otherRepository = createRepository(t);
+  git(root, 'switch', '-c', 'nonancestor-source', 'HEAD~1');
+  writeFileSync(join(root, 'nonancestor.txt'), 'side history\n');
+  git(root, 'add', 'nonancestor.txt');
+  git(root, 'commit', '-m', 'create nonancestor fixture');
+  const nonancestorOid = git(root, 'rev-parse', 'HEAD');
+  git(root, 'switch', 'main');
+  const receipts = new Map();
+
+  const add = (name, status, overrides = {}) => {
+    const worktreeRoot = join(container, 'cleanup-matrix', name);
+    mkdirSync(dirname(worktreeRoot), { recursive: true });
+    git(root, 'worktree', 'add', worktreeRoot, '-b', `cleanup-matrix/${name}`, 'HEAD');
+    const receipt = captureReceipt(worktreeRoot, {
+      origin: overrides.origin ?? 'effective-flow-created',
+      owner: 'cleanup-matrix',
+      purpose: name,
+      setupStatus: overrides.origin === 'harness-managed' ? 'externally managed' : 'complete',
+    });
+    receipts.set(name, receipt);
+    if (!overrides.recordless) {
+      const record = lifecycleRecord(receipt, status, overrides.recordOverrides);
+      overrides.mutateRecord?.(record);
+      atomicWriteLifecycleRecord(root, record, { fileRecordId: overrides.fileRecordId });
+    }
+    return receipt;
+  };
+
+  add('ready', 'cleanup-ready');
+  add('apply-review-ready', 'cleanup-ready', {
+    recordOverrides: {
+      workflow: 'apply-review',
+      componentId: 'component-1',
+      branchPolicy: 'delete-after-integration',
+    },
+  });
+  add('retryable', 'cleanup-failed');
+  add('active', 'active');
+  add('aborted', 'aborted');
+  add('failed', 'failed');
+  add('claimed', 'cleanup-in-progress');
+  const dirty = add('dirty', 'cleanup-ready');
+  writeFileSync(join(dirty.executionRoot, 'untracked.txt'), 'retain me\n');
+  const locked = add('locked', 'cleanup-ready');
+  git(root, 'worktree', 'lock', locked.executionRoot, '--reason', 'fixture lock');
+  const prunable = add('prunable', 'cleanup-ready');
+  const foreignLock = add('foreign-lock', 'cleanup-ready');
+  acquireLifecycleLock(root, `record-${basename(foreignLock.executionRoot)}`, 'other-owner');
+  const ownerlessLock = add('ownerless-lock', 'cleanup-ready');
+  mkdirSync(lifecycleLockPath(root, `record-${basename(ownerlessLock.executionRoot)}`));
+  add('external', 'cleanup-ready', {
+    origin: 'harness-managed',
+    recordOverrides: { ownership: 'harness-managed' },
+  });
+  add('mismatched', 'cleanup-ready', {
+    mutateRecord: (record) => {
+      record.receipt.purpose = 'different-purpose';
+    },
+  });
+  add('recordless', 'cleanup-ready', { recordless: true });
+  add('unknown-schema', 'cleanup-ready', { recordOverrides: { schemaVersion: 999 } });
+  add('record-id-mismatch', 'cleanup-ready', { fileRecordId: 'wrong-file-name' });
+  add('creation-oid-mismatch', 'cleanup-ready', {
+    recordOverrides: { creationOid: '0000000000000000000000000000000000000000' },
+  });
+  add('creation-oid-nonancestor', 'cleanup-ready', {
+    recordOverrides: { creationOid: nonancestorOid },
+  });
+  add('runtime-root-mismatch', 'cleanup-ready', {
+    recordOverrides: { runtimeStateRoot: otherRepository.root },
+  });
+  add('common-dir-mismatch', 'cleanup-ready', {
+    mutateRecord: (record) => {
+      record.repositoryIdentity = canonicalGitPath(otherRepository.root, [
+        'rev-parse',
+        '--git-common-dir',
+      ]);
+      record.receipt.repositoryIdentity = record.repositoryIdentity;
+    },
+  });
+  const current = add('current-execution', 'cleanup-ready');
+  const advanced = add('advanced-after-creation', 'cleanup-ready');
+  const advancedRecord = readLifecycleEntries(root).find(
+    ({ record }) => record.worktreePath === advanced.executionRoot,
+  ).record;
+  writeFileSync(join(advanced.executionRoot, 'completed-work.txt'), 'durably completed\n');
+  git(advanced.executionRoot, 'add', 'completed-work.txt');
+  git(advanced.executionRoot, 'commit', '-m', 'complete work after worktree creation');
+  assert.notEqual(git(advanced.executionRoot, 'rev-parse', 'HEAD'), advancedRecord.creationOid);
+  assert.equal(
+    gitSucceeds(
+      advanced.executionRoot,
+      'merge-base',
+      '--is-ancestor',
+      advancedRecord.creationOid,
+      'HEAD',
+    ),
+    true,
+  );
+  const submoduleRepository = createRepository(t);
+  const dirtySubmodule = add('dirty-submodule', 'cleanup-ready');
+  git(
+    dirtySubmodule.executionRoot,
+    '-c',
+    'protocol.file.allow=always',
+    'submodule',
+    'add',
+    submoduleRepository.root,
+    'vendor/submodule',
+  );
+  git(dirtySubmodule.executionRoot, 'add', '.gitmodules', 'vendor/submodule');
+  git(dirtySubmodule.executionRoot, 'commit', '-m', 'add local submodule fixture');
+  writeFileSync(
+    join(dirtySubmodule.executionRoot, 'vendor/submodule/history.txt'),
+    'dirty submodule state\n',
+  );
+
+  rmSync(prunable.executionRoot, { recursive: true });
+
+  assert.equal(
+    git(root, 'check-ignore', '--no-index', '--', '.effective-flow/worktree-runs'),
+    '.effective-flow/worktree-runs',
+  );
+  const inventory = classifyCleanupWorktrees(root, {
+    currentExecutionRoot: current.executionRoot,
+  });
+  const byName = new Map(
+    inventory.map((result) => [
+      basename(result.root),
+      { action: result.action, reason: result.reason },
+    ]),
+  );
+
+  assert.deepEqual(byName.get('ready'), {
+    action: 'candidate',
+    reason: 'verified cleanup candidate',
+  });
+  assert.deepEqual(byName.get('apply-review-ready'), {
+    action: 'candidate',
+    reason: 'verified cleanup candidate',
+  });
+  assert.deepEqual(byName.get('retryable'), {
+    action: 'candidate',
+    reason: 'verified cleanup candidate',
+  });
+  assert.deepEqual(byName.get('active'), {
+    action: 'retain',
+    reason: 'lifecycle status is active',
+  });
+  assert.deepEqual(byName.get('aborted'), {
+    action: 'retain',
+    reason: 'lifecycle status is aborted',
+  });
+  assert.deepEqual(byName.get('failed'), {
+    action: 'retain',
+    reason: 'lifecycle status is failed',
+  });
+  assert.deepEqual(byName.get('claimed'), {
+    action: 'retain',
+    reason: 'another cleanup owns the claim',
+  });
+  assert.deepEqual(byName.get('dirty'), {
+    action: 'retain',
+    reason: 'worktree is dirty',
+  });
+  assert.deepEqual(byName.get('locked'), {
+    action: 'retain',
+    reason: 'worktree is locked',
+  });
+  assert.deepEqual(byName.get('prunable'), {
+    action: 'retain',
+    reason: 'worktree record is prunable',
+  });
+  assert.deepEqual(byName.get('foreign-lock'), {
+    action: 'retain',
+    reason: 'foreign lifecycle lock',
+  });
+  assert.deepEqual(byName.get('ownerless-lock'), {
+    action: 'retain',
+    reason: 'ownerless lifecycle lock',
+  });
+  assert.deepEqual(byName.get('external'), {
+    action: 'retain',
+    reason: 'externally managed worktree',
+  });
+  assert.deepEqual(byName.get('mismatched'), {
+    action: 'retain',
+    reason: 'workflow or purpose mismatch',
+  });
+  assert.deepEqual(byName.get('recordless'), {
+    action: 'retain',
+    reason: 'no Effective Flow lifecycle record',
+  });
+  assert.deepEqual(byName.get('unknown-schema'), {
+    action: 'retain',
+    reason: 'unknown lifecycle schema',
+  });
+  assert.deepEqual(byName.get('record-id-mismatch'), {
+    action: 'retain',
+    reason: 'record ID and filename mismatch',
+  });
+  assert.deepEqual(byName.get('creation-oid-mismatch'), {
+    action: 'retain',
+    reason: 'creation OID is not an existing commit',
+  });
+  assert.deepEqual(byName.get('creation-oid-nonancestor'), {
+    action: 'retain',
+    reason: 'creation OID is not an ancestor of the branch tip',
+  });
+  assert.deepEqual(byName.get('runtime-root-mismatch'), {
+    action: 'retain',
+    reason: 'runtime-state root mismatch',
+  });
+  assert.deepEqual(byName.get('common-dir-mismatch'), {
+    action: 'retain',
+    reason: 'common Git directory mismatch',
+  });
+  assert.deepEqual(byName.get('current-execution'), {
+    action: 'retain',
+    reason: 'cleanup runs in this worktree',
+  });
+  assert.deepEqual(byName.get('advanced-after-creation'), {
+    action: 'candidate',
+    reason: 'verified cleanup candidate',
+  });
+  assert.deepEqual(byName.get('dirty-submodule'), {
+    action: 'retain',
+    reason: 'worktree is dirty',
+  });
+  assert.equal(inventory.length, receipts.size);
+});
+
+test('filesystem lifecycle locks serialize fresh cleanup claims', (t) => {
+  const { container, root } = createRepository(t);
+
+  const worktreeRoot = join(container, 'cleanup-locks', 'claimed');
+  mkdirSync(dirname(worktreeRoot), { recursive: true });
+  git(root, 'worktree', 'add', worktreeRoot, '-b', 'cleanup-locks/claimed', 'HEAD');
+  const receipt = captureReceipt(worktreeRoot, {
+    origin: 'effective-flow-created',
+    owner: 'cleanup-lock-test',
+    purpose: 'claimed',
+    setupStatus: 'complete',
+  });
+  const record = lifecycleRecord(receipt, 'cleanup-ready');
+  atomicWriteLifecycleRecord(root, record);
+  const entry = worktreeEntriesPorcelainZ(root).find(
+    ({ root: entryRoot }) => entryRoot === worktreeRoot,
+  );
+
+  const first = claimLifecycleCleanup(root, entry, record.recordId, 'cleanup-actor-1');
+  assert.equal(first.claimed, true);
+  assert.deepEqual(readLifecycleRecord(root, record.recordId), first.record);
+  assert.equal(first.record.status, 'cleanup-in-progress');
+  assert.equal(first.record.cleanupRunId, 'cleanup-actor-1');
+  assert.equal(first.record.claimedAt, '2000-01-01T00:00:02Z');
+
+  const competing = claimLifecycleCleanup(root, entry, record.recordId, 'cleanup-actor-2');
+  assert.equal(competing.claimed, false);
+  assert.equal(competing.reason, 'foreign lifecycle lock');
+  assert.equal(competing.owner.actor, 'cleanup-actor-1');
+  assert.equal(readLifecycleRecord(root, record.recordId).cleanupRunId, 'cleanup-actor-1');
+
+  releaseLifecycleLock(first.lock, 'cleanup-actor-1');
+  mkdirSync(lifecycleLockPath(root, record.recordId));
+  const ownerless = claimLifecycleCleanup(root, entry, record.recordId, 'cleanup-actor-3');
+  assert.equal(ownerless.claimed, false);
+  assert.equal(ownerless.reason, 'ownerless lifecycle lock');
+  rmSync(lifecycleLockPath(root, record.recordId), { recursive: true });
+
+  const staleLocalCopy = { ...record };
+  const changedOnDisk = readLifecycleRecord(root, record.recordId);
+  changedOnDisk.status = 'cleanup-ready';
+  changedOnDisk.reason = null;
+  changedOnDisk.purpose = 'changed-after-initial-read';
+  delete changedOnDisk.cleanupRunId;
+  delete changedOnDisk.claimedAt;
+  atomicWriteLifecycleRecord(root, changedOnDisk);
+  const freshRead = claimLifecycleCleanup(root, entry, record.recordId, 'cleanup-actor-4');
+  assert.equal(staleLocalCopy.purpose, 'claimed');
+  assert.equal(freshRead.claimed, false);
+  assert.equal(freshRead.reason, 'workflow or purpose mismatch');
+});
+
+test('filesystem cleanup persists removal failures and partial reconciliation', (t) => {
+  const { container, root } = createRepository(t);
+
+  const refusalRoot = join(container, 'cleanup-outcomes', 'remove-refusal');
+  mkdirSync(dirname(refusalRoot), { recursive: true });
+  git(root, 'worktree', 'add', refusalRoot, '-b', 'cleanup-outcomes/remove-refusal', 'HEAD');
+  const refusalReceipt = captureReceipt(refusalRoot, {
+    origin: 'effective-flow-created',
+    owner: 'cleanup-outcomes',
+    purpose: 'remove-refusal',
+    setupStatus: 'complete',
+  });
+  const refusalRecord = lifecycleRecord(refusalReceipt, 'cleanup-ready');
+  atomicWriteLifecycleRecord(root, refusalRecord);
+  const refusalEntry = worktreeEntriesPorcelainZ(root).find(
+    ({ root: entryRoot }) => entryRoot === refusalRoot,
+  );
+  const refusalClaim = claimLifecycleCleanup(
+    root,
+    refusalEntry,
+    refusalRecord.recordId,
+    'cleanup-refusal',
+  );
+  assert.equal(refusalClaim.claimed, true);
+  writeFileSync(join(refusalRoot, 'appeared-after-claim.txt'), 'race fixture\n');
+  let removalError;
+  try {
+    git(root, 'worktree', 'remove', refusalRoot);
+  } catch (error) {
+    removalError = error;
+  }
+  assert.ok(removalError, 'ordinary worktree removal must refuse a newly dirty worktree');
+  const failedRemoval = readLifecycleRecord(root, refusalRecord.recordId);
+  failedRemoval.status = 'cleanup-failed';
+  failedRemoval.reason = removalError.message;
+  failedRemoval.updatedAt = '2000-01-01T00:00:03Z';
+  delete failedRemoval.cleanupRunId;
+  delete failedRemoval.claimedAt;
+  atomicWriteLifecycleRecord(root, failedRemoval);
+  releaseLifecycleLock(refusalClaim.lock, 'cleanup-refusal');
+  const persistedFailure = readLifecycleRecord(root, refusalRecord.recordId);
+  assert.equal(persistedFailure.status, 'cleanup-failed');
+  assert.match(persistedFailure.reason, /Command failed/);
+  assert.equal('cleanupRunId' in persistedFailure, false);
+  assert.equal(existsSync(refusalRoot), true);
+
+  const deliveryRoot = join(container, 'cleanup-outcomes', 'delivery-success');
+  git(root, 'worktree', 'add', deliveryRoot, '-b', 'cleanup-outcomes/delivery-success', 'HEAD');
+  const deliveryReceipt = captureReceipt(deliveryRoot, {
+    origin: 'effective-flow-created',
+    owner: 'cleanup-outcomes',
+    purpose: 'delivery-success',
+    setupStatus: 'complete',
+  });
+  const deliveryRecord = lifecycleRecord(deliveryReceipt, 'cleanup-ready');
+  atomicWriteLifecycleRecord(root, deliveryRecord);
+  const deliveryEntry = worktreeEntriesPorcelainZ(root).find(
+    ({ root: entryRoot }) => entryRoot === deliveryRoot,
+  );
+  const deliveryClaim = claimLifecycleCleanup(
+    root,
+    deliveryEntry,
+    deliveryRecord.recordId,
+    'cleanup-delivery',
+  );
+  assert.equal(deliveryClaim.claimed, true);
+  git(root, 'worktree', 'remove', deliveryRoot);
+  assert.notEqual(git(root, 'branch', '--list', deliveryRecord.branch), '');
+  rmSync(lifecycleRecordPath(root, deliveryRecord.recordId));
+  releaseLifecycleLock(deliveryClaim.lock, 'cleanup-delivery');
+  assert.equal(
+    worktreeEntriesPorcelainZ(root).some(({ root: entryRoot }) => entryRoot === deliveryRoot),
+    false,
+    'a second reconciliation remains a no-op',
+  );
+  assert.equal(existsSync(lifecycleRecordPath(root, deliveryRecord.recordId)), false);
+
+  const finalizationRoot = join(container, 'cleanup-outcomes', 'finalization-failure');
+  git(
+    root,
+    'worktree',
+    'add',
+    finalizationRoot,
+    '-b',
+    'cleanup-outcomes/finalization-failure',
+    'HEAD',
+  );
+  const finalizationReceipt = captureReceipt(finalizationRoot, {
+    origin: 'effective-flow-created',
+    owner: 'cleanup-outcomes',
+    purpose: 'finalization-failure',
+    setupStatus: 'complete',
+  });
+  const finalizationRecord = lifecycleRecord(finalizationReceipt, 'cleanup-ready');
+  atomicWriteLifecycleRecord(root, finalizationRecord);
+  const finalizationEntry = worktreeEntriesPorcelainZ(root).find(
+    ({ root: entryRoot }) => entryRoot === finalizationRoot,
+  );
+  const finalizationClaim = claimLifecycleCleanup(
+    root,
+    finalizationEntry,
+    finalizationRecord.recordId,
+    'cleanup-finalization',
+  );
+  assert.equal(finalizationClaim.claimed, true);
+  git(root, 'worktree', 'remove', finalizationRoot);
+  const persistFinalOutcome = () => {
+    throw new Error('injected lifecycle finalization persistence failure');
+  };
+  assert.throws(persistFinalOutcome, /injected lifecycle finalization persistence failure/);
+  assert.equal(existsSync(finalizationRoot), false);
+  assert.equal(
+    readLifecycleRecord(root, finalizationRecord.recordId).status,
+    'cleanup-in-progress',
+  );
+  assert.equal(
+    readLifecycleRecord(root, finalizationRecord.recordId).cleanupRunId,
+    'cleanup-finalization',
+  );
+  assert.equal(existsSync(finalizationClaim.lock.handle), true);
+  assert.equal(
+    JSON.parse(readFileSync(join(finalizationClaim.lock.handle, 'owner.json'), 'utf8')).actor,
+    'cleanup-finalization',
+  );
+  assert.equal(
+    worktreeEntriesPorcelainZ(root).some(({ root: entryRoot }) => entryRoot === finalizationRoot),
+    false,
+    'manual reconciliation evidence never recreates the removed worktree',
+  );
+
+  const componentRoot = join(container, 'cleanup-outcomes', 'component-partial');
+  git(root, 'worktree', 'add', componentRoot, '-b', 'cleanup-outcomes/component-partial', 'HEAD');
+  const componentReceipt = captureReceipt(componentRoot, {
+    origin: 'effective-flow-created',
+    owner: 'apply-review/component',
+    purpose: 'apply-review',
+    setupStatus: 'skipped',
+  });
+  const componentRecord = lifecycleRecord(componentReceipt, 'cleanup-ready', {
+    componentId: 'component-partial',
+    workflow: 'apply-review',
+    branchPolicy: 'delete-after-integration',
+  });
+  atomicWriteLifecycleRecord(root, componentRecord);
+  writeFileSync(join(componentRoot, 'unmerged-component.txt'), 'component work\n');
+  git(componentRoot, 'add', 'unmerged-component.txt');
+  git(componentRoot, 'commit', '-m', 'add unmerged component work');
+  const componentEntry = worktreeEntriesPorcelainZ(root).find(
+    ({ root: entryRoot }) => entryRoot === componentRoot,
+  );
+  const componentClaim = claimLifecycleCleanup(
+    root,
+    componentEntry,
+    componentRecord.recordId,
+    'cleanup-component',
+  );
+  assert.equal(componentClaim.claimed, true);
+  git(root, 'worktree', 'remove', componentReceipt.executionRoot);
+  let branchError;
+  assert.throws(() => {
+    try {
+      git(root, 'branch', '-d', componentReceipt.checkout.branch);
+    } catch (error) {
+      branchError = error;
+      throw error;
+    }
+  }, /Command failed/);
+  const partialRecord = readLifecycleRecord(root, componentRecord.recordId);
+  partialRecord.status = 'cleanup-failed';
+  partialRecord.reason = `safe branch deletion failed after worktree removal: ${branchError.message}`;
+  partialRecord.updatedAt = '2000-01-01T00:00:04Z';
+  delete partialRecord.cleanupRunId;
+  delete partialRecord.claimedAt;
+  atomicWriteLifecycleRecord(root, partialRecord);
+  releaseLifecycleLock(componentClaim.lock, 'cleanup-component');
+
+  assert.equal(existsSync(componentReceipt.executionRoot), false);
+  assert.notEqual(git(root, 'branch', '--list', componentReceipt.checkout.branch), '');
+  assert.equal(readLifecycleRecord(root, componentRecord.recordId).status, 'cleanup-failed');
+  assert.match(
+    readLifecycleRecord(root, componentRecord.recordId).reason,
+    /branch deletion failed/,
+  );
+  assert.equal(
+    worktreeEntriesPorcelainZ(root).some(
+      ({ root: entryRoot }) => entryRoot === componentReceipt.executionRoot,
+    ),
+    false,
+    'partial reconciliation never recreates a removed worktree',
+  );
 });

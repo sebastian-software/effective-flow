@@ -58,6 +58,10 @@ If a check in the critical section fails, the sub-agent must unstage its own sta
 execution-location
 ```
 
+```include
+worktree-lifecycle
+```
+
 #### Git worktree isolation for "Individually with worktrees"
 
 If the commit strategy **Individually with worktrees** was chosen, a worktree isolation per delegation component applies instead of the git commit mutex.
@@ -95,8 +99,12 @@ Branch convention:
 - Immediately issue and verify a separate `effective-flow-created` execution-location receipt
   for the component path, branch, repository, component owner and `apply-review` purpose. Keep
   the original integration root under its own receipt and the main checkout under the unchanged
-  runtime-state handle. If component receipt creation fails, retain the new worktree for
-  reconciliation and do not delegate.
+  runtime-state handle. Immediately after the receipt succeeds, initialize a version 1
+  lifecycle record for this component as `active`, with branch policy
+  `delete-after-integration`, below the verified `RUNTIME_STATE_ROOT`. Create it before setup or
+  delegation and retain its record ID and absolute handle with the component receipt. If receipt
+  or lifecycle-record creation fails, retain the new worktree and branch for reconciliation and
+  do not delegate.
 
 Setup detection in the worktree:
 
@@ -129,6 +137,12 @@ Delegation in the worktree:
   without an internal finding ID in the commit message.
 - Log in the wisdom file per finding: execution-location receipt, commit hash and commit message.
 
+The component lifecycle remains `active` after a successful delegation because its commits are
+not yet proven integrated. Under the per-record lock, transition it to `failed` when the
+component implementation, commit, integration, or validation fails, or to `aborted` when the
+workflow deliberately stops that component before integration. Retain the worktree and branch in
+both states. An unexpected interruption leaves `active`; never infer an outcome from age.
+
 Integration back into the original branch:
 
 1. Wait for all worktree component final statuses.
@@ -136,12 +150,21 @@ Integration back into the original branch:
 3. Revalidate the original integration receipt, then integrate the commits back into that
    verified root sequentially with `git -C <ORIGINAL_ROOT> cherry-pick <commit>`.
 4. On a cherry-pick conflict: first run the cherry-pick conflict assessment. Resolve low-risk conflicts directly; ask the user only on high-risk or unclear conflicts.
-5. After successful integration and validation, reverify each component receipt and clean
-   state. Remove the worktree and delete the temporary branch only when the ownership-safe
-   cleanup contract proves that this exact component was Effective Flow-created. Otherwise
-   retain both and report the mismatch. Never remove, rename, or otherwise alter
-   `RUNTIME_STATE_ROOT` or its local review state.
-6. On a failed component: keep the worktree and branch for now, name the paths in the summary and obtain a user decision on cleanup.
+5. After successful integration and validation, acquire the component lifecycle lock and
+   reverify that its receipt and lifecycle record still prove `effective-flow-created`, Git
+   registration, exact checkout identity, clean state, and proof that every component commit was
+   integrated. Transition `active` to `cleanup-ready`, claim it as `cleanup-in-progress`, and
+   run only `git worktree remove <WORKTREE_PATH>` without force while retaining the lock.
+   Reconcile the absence of the worktree, then apply the recorded `delete-after-integration`
+   policy only when integration is still proven, using exclusively
+   `git branch -d <BRANCH_NAME>`. Delete only the fully reconciled lifecycle record. A remove or
+   branch-cleanup refusal becomes `cleanup-failed` with the exact error and retains the remaining
+   record, branch, or partial state. Never use `git worktree prune`, `git branch -D`, or alter
+   `RUNTIME_STATE_ROOT` and its local review state.
+6. On a failed component, transition an `active` lifecycle record to `failed` under its lock,
+   keep the worktree and branch, name both paths and the record in the summary, and obtain a user
+   decision only for manual reconciliation. On a controlled cancellation, use `aborted` instead.
+   Neither status is eligible for automatic cleanup.
 
 Cherry-pick conflict assessment:
 
