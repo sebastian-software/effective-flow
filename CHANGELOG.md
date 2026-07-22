@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.51.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.50.0...effective-flow-v1.51.0) (2026-07-22)
+
+
+### Features
+
+* add lifecycle-aware worktree cleanup ([#236](https://github.com/sebastian-software/effective-flow/issues/236)) ([d254b7e](https://github.com/sebastian-software/effective-flow/commit/d254b7e475713a2ae0dbdcc450122542b11b0d80))
+* define role-based model profiles ([#238](https://github.com/sebastian-software/effective-flow/issues/238)) ([bff15b3](https://github.com/sebastian-software/effective-flow/commit/bff15b332ec13ac7d684b1644e3acbfe968ed99e))
+* show progress for goal-driven workflows ([#239](https://github.com/sebastian-software/effective-flow/issues/239)) ([926db0d](https://github.com/sebastian-software/effective-flow/commit/926db0d9273cc16feaf9efb13365146fa3d204f9))
+
 ## [1.50.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.49.0...effective-flow-v1.50.0) (2026-07-21)
 
 
