@@ -2,6 +2,7 @@
 description: "Writes and runs end-to-end tests: Playwright tests, API integration tests, CLI smoke tests, visual regressions, page objects, and stable test organization; the browser E2E depth comes from the central effective-web skill."
 claude:
   model: sonnet
+  effort: medium
   color: yellow
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:

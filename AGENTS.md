@@ -31,7 +31,7 @@ The source layout **mirrors the output**, and the directory decides the category
 
 - `src/SKILL.md` — the thin **router** (tool catalog + dispatch rule). Deliberately minimal: it only lists tools and lazy-loads the one `tools/<tool>.md` that was invoked. Never pre-load all tools.
 - `src/tools/<name>.md` → `effective-flow/tools/<name>.md`. A tool is exposed via `/effective-flow <name>` only if its name is in the `EXPOSED_TOOLS` array in `build.mjs`. Tools not in that array (e.g. `apply-plan`, `apply-review`, `apply-issues`) are **internal** — built but not listed in the router; `apply` loads the right one on demand.
-- `src/agents/<name>.md` → subagents. Agents are **not** `/effective-flow` tools; workflow tools call them internally as subagents. Frontmatter carries per-harness config under `claude:` and `codex:` keys (model, tools, sandbox, etc.).
+- `src/agents/<name>.md` → subagents. Agents are **not** `/effective-flow` tools; workflow tools call them internally as subagents. Frontmatter carries per-harness config under `claude:` and `codex:` keys. Every Claude agent requires both `model` and `effort`; Codex agents carry `model` and `model_reasoning_effort` alongside their harness-specific tools and sandbox settings.
 - `src/shared/<name>.md` — include fragments, embedded via an `include` fence.
 - `src/scripts/*.mjs` — dependency-free Node.js runtime resources copied byte-for-byte into `effective-flow/scripts/` for every target. `remote-tracker.mjs` is the single JSON CLI entry point; deterministic logic stays importable from its core sibling.
 
@@ -62,9 +62,9 @@ Source frontmatter carries **no** `name` or `type` field — name and category c
 
 ### Adding a tool or agent
 
-1. Create `src/tools/<name>.md` (or `src/agents/<name>.md`).
+1. Create `src/tools/<name>.md` (or `src/agents/<name>.md`). For an agent, select one of the repository's role profiles in its native frontmatter: implementers and reviewers use the quality tier (Claude `opus`/`xhigh`, Codex `gpt-5.6-sol`/`high`); support roles use the economical tier (Claude `sonnet`/`medium`, Codex `gpt-5.6-luna`/`medium`). The agent source is the canonical assignment—do not duplicate an exhaustive per-agent matrix in documentation.
 2. To expose a tool via `/effective-flow`, add it to exactly one intent group in `TOOL_GROUPS` in `build.mjs`; `EXPOSED_TOOLS` is derived from `TOOL_GROUPS` (array/group order = catalog order in the router). An exposed tool also needs a `catalogHint` frontmatter field (strictly double-quoted, a single usage-oriented line).
-3. Run `node build.mjs`. Guards will fail if an exposed tool has no source, if an `include` target is missing, if a Codex `sandbox_mode` is unsupported, if an exposed tool is missing or has an unquoted `catalogHint`, or if a tool is missing from or duplicated across `TOOL_GROUPS`.
+3. Run `node build.mjs`. Guards will fail if an exposed tool has no source, if an `include` target is missing, if a Claude agent omits `effort` or uses an unsupported value, if a Codex `sandbox_mode` is unsupported, if an exposed tool is missing or has an unquoted `catalogHint`, or if a tool is missing from or duplicated across `TOOL_GROUPS`.
 
 ## Skill discovery
 

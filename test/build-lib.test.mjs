@@ -15,6 +15,7 @@ import {
   cleanDescription,
   firstSentence,
   normalizeCodexSandboxMode,
+  normalizeClaudeEffort,
   validateRefs,
   assertQuotedDescription,
   transformRefs,
@@ -154,6 +155,32 @@ test('normalizeCodexSandboxMode maps and rejects', () => {
   assert.equal(normalizeCodexSandboxMode('full', 'a'), 'danger-full-access');
   assert.equal(normalizeCodexSandboxMode('', 'a'), '');
   assert.throws(() => normalizeCodexSandboxMode('bogus', 'a'), /Unsupported codex sandbox_mode/);
+});
+
+// --- normalizeClaudeEffort ---
+
+test('normalizeClaudeEffort accepts every supported exact value', () => {
+  for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) {
+    assert.equal(normalizeClaudeEffort(effort, 'test-writer', 'src/agents/test-writer.md'), effort);
+  }
+});
+
+test('normalizeClaudeEffort rejects missing values with agent and source context', () => {
+  for (const effort of [undefined, null, '']) {
+    assert.throws(
+      () => normalizeClaudeEffort(effort, 'test-writer', 'src/agents/test-writer.md'),
+      /Missing required claude effort for test-writer.*src\/agents\/test-writer\.md/,
+    );
+  }
+});
+
+test('normalizeClaudeEffort rejects unsupported, whitespace, and case-variant values', () => {
+  for (const effort of ['bogus', ' ', ' medium ', 'Medium', 'XHIGH']) {
+    assert.throws(
+      () => normalizeClaudeEffort(effort, 'nodejs-implementer', 'src/agents/nodejs-implementer.md'),
+      /Unsupported claude effort .* for nodejs-implementer.*src\/agents\/nodejs-implementer\.md.*expected one of: low, medium, high, xhigh, max/,
+    );
+  }
 });
 
 // --- validateRefs (dead-reference guard) ---

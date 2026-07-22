@@ -2,6 +2,7 @@
 description: "Implements Rust code, CLI tools and server-side applications: Cargo, ownership/borrowing, error handling, async, traits, unsafe discipline, file splitting and toolchain rules."
 claude:
   model: opus
+  effort: xhigh
   color: cyan
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:

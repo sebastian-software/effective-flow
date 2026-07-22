@@ -2,6 +2,7 @@
 description: "Runs a specialized Rust review: memory safety, unsafe, error handling, Clippy idiomatics, concurrency, API design, security, and design-decision-aware findings."
 claude:
   model: opus
+  effort: xhigh
   color: red
   tools: [Read, Glob, Grep, Skill]
 codex:

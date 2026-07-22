@@ -2,6 +2,7 @@
 description: "Creates and improves repository-native in-code documentation across product languages, preserving specialized JSDoc/TSDoc and rustdoc branches while following established conventions elsewhere."
 claude:
   model: sonnet
+  effort: medium
   color: cyan
   tools: [Read, Write, Edit, Glob, Grep, Skill]
 codex:

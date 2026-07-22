@@ -1,7 +1,8 @@
 ---
 description: "Implements tooling-only changes: CI/CD, GitHub Actions, build and release tooling, configuration, dependency manifests, containers, and repository metadata; never serves as the fallback for unsupported product code."
 claude:
-  model: sonnet
+  model: opus
+  effort: xhigh
   color: cyan
   tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:

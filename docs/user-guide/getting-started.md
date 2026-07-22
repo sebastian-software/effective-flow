@@ -48,6 +48,49 @@ default branch. The portable skill bundles each worker under
 harness's built-in general-purpose subagent mechanism. Neither manager needs native custom-agent
 sidecars or a release archive.
 
+## Recommended calling model
+
+Effective Flow's caller primarily orchestrates: it selects the workflow, delegates specialized
+work, and integrates the results. A balanced default is therefore preferable to running every
+workflow with the most expensive model and maximum reasoning.
+
+For Codex, add this profile to your Codex configuration:
+
+```toml
+model = "gpt-5.6"
+model_reasoning_effort = "medium"
+```
+
+For Claude Code, use the corresponding settings:
+
+```json
+{
+  "model": "sonnet",
+  "effortLevel": "high"
+}
+```
+
+These are recommendations, not settings written or enforced by Effective Flow. Native
+Effective Flow workers select their own role profiles: implementers and reviewers favor
+quality, while documentation, testing, validation, and other support roles use a more
+economical profile. Portable installations do not carry native model metadata; their delegated
+workers follow the consuming manager and harness instead.
+
+Claude skills can request a different caller model or effort for their current turn, but that
+selection does not persist across the next user prompt. Effective Flow deliberately leaves this
+turn-local override out of its router so it neither creates a temporary guarantee nor downgrades
+an intentionally stronger session. The role-specific native subagent profiles remain separate.
+
+Escalate the caller when the orchestration itself is difficult—for example, an ambiguous plan,
+a broad architectural decision, or a synthesis that repeatedly misses cross-cutting
+constraints. Increase reasoning effort first; for the hardest runs, select the quality-focused
+model as well. This is a per-run judgment and does not require changing the worker profiles.
+
+Claude Code's `CLAUDE_CODE_SUBAGENT_MODEL` environment variable has higher precedence than an
+agent's own model declaration. Leave it unset when you want Effective Flow's native Claude
+workers to use their role-specific model selection. Other user, project, or invocation-level
+harness overrides may likewise affect the effective caller or worker model.
+
 ## First invocation
 
 In Claude Code:

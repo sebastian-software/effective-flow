@@ -23,6 +23,7 @@ import {
   cleanDescription,
   tomlString,
   normalizeCodexSandboxMode,
+  normalizeClaudeEffort,
   validateRefs,
   assertQuotedDescription,
   renderBody,
@@ -811,6 +812,11 @@ try {
       const context = `agents/${a.name}.md`;
       if (harness === 'claude') {
         const claudeModel = getNested(a.fm, 'claude', 'model', { context });
+        const claudeEffort = normalizeClaudeEffort(
+          getNested(a.fm, 'claude', 'effort', { context }),
+          a.name,
+          context,
+        );
         const claudeColor = getNested(a.fm, 'claude', 'color', { context });
         const claudeTools = getNestedArray(a.fm, 'claude', 'tools', { context });
         const agentDesc = cleanDescription(getField(a.fm, 'description')).replace(/"/g, '\\"');
@@ -820,6 +826,7 @@ try {
         agentFm += `name: ${claudeAgentName}\n`;
         agentFm += `description: "${agentDesc}"\n`;
         if (claudeModel) agentFm += `model: ${claudeModel}\n`;
+        agentFm += `effort: ${claudeEffort}\n`;
         if (claudeColor) agentFm += `color: ${claudeColor}\n`;
         if (claudeTools) {
           const toolList = claudeTools
