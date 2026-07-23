@@ -1,7 +1,7 @@
 # 0033: Gemini CLI Platform Target
 
 **Plan status:** Not implemented
-**Empfohlener Workflow:** Feature (`/effective-flow build`)
+**Recommended workflow:** Feature (`/effective-flow build`)
 
 ## Goal
 

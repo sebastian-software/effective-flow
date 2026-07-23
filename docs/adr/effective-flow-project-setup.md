@@ -27,7 +27,7 @@ a pure runtime directory and completely gitignored.
 | language.source                   | en                         |
 | language.documentation.user       | en                         |
 | language.documentation.technical  | en                         |
-| language.workflow                 | de                         |
+| language.workflow                 | en                         |
 | language.forge                    | en                         |
 | language.git                      | en                         |
 | delivery.baseBranch               | origin/develop             |
