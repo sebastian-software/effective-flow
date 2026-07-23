@@ -219,7 +219,8 @@ skill-discovery
    - Recommendation
    - Action (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}` or `{{SKILL:docs}}`)
    - Prompt suggestion
-   - Status (Fixed / Open / Not implemented)
+   - Status in the complete report language (English: Fixed / Open / Not implemented; German:
+     Behoben / Offen / Nicht umgesetzt)
    - rationale for non-implementation or ADR reference as slug, if present, e.g. `(ADR: <slug>)`
 5. Never create an ADR in this workflow and do not ask for one either. Deliberately unimplemented findings are documented exclusively in the review report. The developer decides on later implementation or on an ADR for a deliberate non-implementation when going through the findings file, typically via {{SKILL:apply-review}}.
 6. Do not create an open-findings report or append an implementation backlink in this phase.
@@ -247,11 +248,12 @@ Start in parallel:
 3. If no regressions:
    - finalize external review state from the latest provisional review only:
      - use the session ID as the stable finalization marker for this workflow run; in a generated report, include it after the reviewer or phase in the existing `Source review` field, for example `Phase 4 (run <SESSION_ID>)`
-     - if findings with status `Open` or `Not implemented` remain, before applying the collision rule, search `.effective-flow/review/` for a report whose `Source workflow` is `{{SKILL:refactor}}` and whose `Source review` contains this run's finalization marker
+     - if findings with a canonical open or unimplemented status in the complete report language (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`) remain, before applying the collision rule, search `.effective-flow/review/` for a report whose `Source workflow` is `{{SKILL:refactor}}` and whose `Source review` contains this run's finalization marker
      - if exactly one matching report exists, reuse that report and its path; complete or validate its contents and memory update as needed, and do not create a collision-suffixed report
      - if more than one matching report exists, stop before writing and escalate the ambiguity to the user
      - if no matching report exists, write the findings into at most one new file under `.effective-flow/review/` per "Open review-finding reports"
-     - if no findings with status `Open` or `Not implemented` remain, do not create a report
+     - if no findings with those canonical English or German open/unimplemented statuses remain,
+       do not create a report
      - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
      - name any generated report path in the completion summary
    - if this refactoring implemented a finding from an existing review-report file in `.effective-flow/review/`:

@@ -204,7 +204,10 @@ Only if code was adapted for breaking changes in phase 3:
 1. Start every reviewer selected by project routing for the changed files, including
    `{{AGENT:generic-product-reviewer}}` for degraded product buckets.
 2. Fix critical findings before completion.
-3. If findings with status `Open` or `Not implemented` remain, write them per "Open review-finding reports" into a new file under `.effective-flow/review/` and name the report path in the completion summary.
+3. If findings with a canonical open or unimplemented status in the complete report language
+   (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`) remain, write them per "Open
+   review-finding reports" into a new file under `.effective-flow/review/` and name the report
+   path in the completion summary.
 
 Pure dependency bumps without code adaptation need no reviewer pass; note that briefly.
 

@@ -345,6 +345,11 @@ Zieloberfläche ausschließlich die erwartete Sprache bei stabilen technischen T
   Entscheidungspunkt lazy, damit das Always-loaded-Budget eingehalten wird.
 - Das Living ADR `docs/adr/language-policy.md` dokumentiert die dauerhafte Policy; Benutzer- und
   Entwicklerdokumentation sowie das Projektsetup dieses Repositories sind darauf abgestimmt.
+- Die Nachvalidierung am 2026-07-23 hat die Statusübergabe lokaler Review-Berichte vollständig
+  zweisprachig ausgerichtet: Writer und nachgelagerte Gates behandeln
+  `Fixed`/`Open`/`Not implemented` und `Behoben`/`Offen`/`Nicht umgesetzt` semantisch gleich,
+  schreiben aber ausschließlich die zur Artefaktsprache passenden Werte. Plan-Zusammenfassungen
+  und Remote-Epics verwenden ebenfalls die ermittelte Zieloberflächensprache.
 
 ## Testergebnisse
 
@@ -356,6 +361,9 @@ Zieloberfläche ausschließlich die erwartete Sprache bei stabilen technischen T
 - `git diff --check` und die gezielte Suche nach aktiven `plan.markerLanguage`-Writer-Regeln:
   bestanden. E2E-Tests entfallen, weil das Repository keinen ausführbaren UI-/CLI-Produktfluss
   enthält; das Verhalten wird durch Source-Verträge, Helper-Tests und generierte Harnesses geprüft.
+- Nachvalidierung am 2026-07-23: `pnpm agent:check` bestand für 238 Dateien, `pnpm test` für 342
+  von 342 Tests, `node build.mjs` für alle drei Ziele einschließlich des 700-Zeilen-Kontextguards
+  und `pnpm test:distribution` für die isolierten Offline-Smoke-Checks.
 
 ## Review-Befunde
 
@@ -366,6 +374,10 @@ Zieloberfläche ausschließlich die erwartete Sprache bei stabilen technischen T
 - Der Schlussvalidator fand zusätzlich fehlende Resolver-Includes im eigenständigen Commit-Tool,
   eine zu breite englische Schreib-Skill-Empfehlung im PR-Tool und eine zu späte Sprachauflösung
   im Review-Orchestrator. Alle Punkte wurden korrigiert.
+- Die Nachvalidierung am 2026-07-23 fand eine wichtige Inkonsistenz bei deutschen
+  Review-Statuswerten sowie zwei nachgelagerte Darstellungswidersprüche in Plan-Zusammenfassungen
+  und Remote-Epics. Die Verträge und der strukturelle Guard-Test wurden korrigiert; der
+  abschließende unabhängige Review meldete keine verbleibenden Befunde.
 - Abschließender Validator: keine Fehler oder Warnungen, keine offenen kritischen oder
   blockierenden Befunde.
 

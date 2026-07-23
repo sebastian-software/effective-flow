@@ -345,10 +345,10 @@ Note: Before completion, the "Open" column for "Critical" must be 0.
    - File + line
    - Problem
    - Recommendation
-   - Status (Fixed / Open / Not implemented)
+   - Status in the complete report language (English: Fixed / Open / Not implemented; German: Behoben / Offen / Nicht umgesetzt)
    - rationale for non-implementation (incl. ADR reference as slug, if present, e.g. `(ADR: <slug>)`)
 8. Never create an ADR in this workflow and do not ask for one either. Deliberately unimplemented findings are documented exclusively in the review report. The developer decides on later implementation or on an ADR for a deliberate non-implementation when going through the findings file, typically via {{SKILL:apply-review}}.
-9. If after review there remain findings with status `Open` or `Not implemented`:
+9. If after review there remain findings with a canonical open or unimplemented status in the complete report language (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`):
    - write them into a new file under `.effective-flow/review/` per "Open review-finding reports"
    - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
    - record the generated report path for Phase 7
@@ -376,8 +376,8 @@ Note: Before completion, the "Open" column for "Critical" must be 0.
 
    Use the complete plan language. The English form is shown below; for a German plan render
    `## Review-Befunde`, `**Datum:**`, `**Reviewer:**`, `### Zusammenfassung`, localized table
-   headings/status prose, `**Externer Review-Bericht:**`, and the German no-findings sentence.
-   Stable paths, IDs, and status tokens used by report readers remain unchanged.
+   headings and status values (`Behoben`, `Offen / Nicht umgesetzt`), `**Externer
+Review-Bericht:**`, and the German no-findings sentence. Stable paths and IDs remain unchanged.
 
    English template:
 
