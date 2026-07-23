@@ -40,6 +40,22 @@ memory input or carry-over failure leaves the marker unset and blocks the workfl
 write so a later run can retry. Legacy directories remain untouched until the user explicitly
 runs `/effective-flow cleanup`.
 
+Two orchestration paths additionally authorize this prerequisite as the runtime write itself.
+`/effective-flow cleanup` invokes it after its first legacy inventory when a legacy runtime
+directory exists and the marker is missing, then re-inventories before any deletion decision.
+`/effective-flow setup` invokes it only when the shared locator selected a transitional JSON
+config, after ignore/index repair and before `configMigration.adr`; a setup without such a source
+keeps its no-runtime-footprint behavior. Both paths reuse the shared migration and memory
+contracts rather than copying their algorithms.
+
+Failure remains fail-closed: no directory-migration marker means no runtime-directory deletion
+approval, and setup additionally withholds `configMigration.adr`, preserves the selected config
+source and partial target state, and conditionally rolls back only its own unchanged ADR and
+convention-marker writes. When both `.firmo/` and `.sf-plugin/` exist, the marker certifies only
+the preferred `.firmo/` source; cleanup inventories the unselected source separately. A legacy
+runtime directory is also undeletable while a registered current or retained linked worktree
+remains below its `.worktrees/` tree.
+
 All `memory.json` writers share the contract in
 [`src/shared/memory-state.md`](../../src/shared/memory-state.md). They acquire the atomic
 `.effective-flow/memory.lock` directory, record lock ownership, re-read and validate the complete
@@ -167,7 +183,9 @@ the ADR table, writes the canonical marker, normalizes `.gitignore` to `.effecti
 untracks an old tracked config with `git rm --cached` while leaving its content on disk. The
 separate `/effective-flow cleanup` workflow may later remove confirmed remnants.
 
-Outside setup, no migration occurs. The exact legacy procedure and idempotency contract remain in
+Outside setup, configuration-to-ADR migration does not occur. Cleanup may trigger only the
+separate marker-driven runtime-directory prerequisite described above. The exact legacy config
+procedure and idempotency contract remain in
 [`src/shared/config-migration.md`](../../src/shared/config-migration.md) and
 [`src/tools/setup.md`](../../src/tools/setup.md).
 

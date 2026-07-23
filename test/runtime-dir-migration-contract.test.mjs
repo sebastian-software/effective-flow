@@ -13,6 +13,8 @@ const SHARED_DIR = join(SOURCE_DIR, 'shared');
 
 const readSource = (...segments) => readFileSync(join(SOURCE_DIR, ...segments), 'utf8');
 const migrationContract = readSource('shared', 'effective-flow-dir-migration.md').trim();
+const cleanupTool = readSource('tools', 'cleanup.md');
+const setupTool = readSource('tools', 'setup.md');
 const toolNames = readdirSync(TOOLS_DIR)
   .filter((name) => name.endsWith('.md'))
   .map((name) => name.slice(0, -3));
@@ -109,6 +111,70 @@ for (const scenario of contractScenarios) {
 
 test('all checked-in runtime writers establish migration before their first mutation', () => {
   assert.deepEqual(findRuntimeDirMigrationViolations(collectRuntimeSources()), []);
+});
+
+test('cleanup triggers the shared migration after inventory and refreshes evidence', () => {
+  const initialInventory = cleanupTool.indexOf(
+    'Capture the existing legacy remnants in the project root',
+  );
+  const markerCheck = cleanupTool.indexOf(
+    'runtimeMigration.directory.version',
+    initialInventory + 1,
+  );
+  const sharedTrigger = cleanupTool.indexOf(
+    'invoke the loaded shared runtime-directory migration prerequisite exactly as written',
+    markerCheck + 1,
+  );
+  const refreshedInventory = cleanupTool.indexOf(
+    'repeat the legacy-runtime, counterpart, legacy-config, and nested-worktree',
+    sharedTrigger + 1,
+  );
+
+  assert.ok(initialInventory !== -1, 'cleanup must first inventory legacy remnants');
+  assert.ok(markerCheck > initialInventory, 'cleanup must check the marker after inventory');
+  assert.ok(
+    sharedTrigger > markerCheck,
+    'cleanup must invoke the shared migration after the check',
+  );
+  assert.ok(
+    refreshedInventory > sharedTrigger,
+    'cleanup must refresh migration-dependent evidence after success',
+  );
+  assert.match(
+    cleanupTool,
+    /Do not invoke the prerequisite when no legacy runtime directory exists[\s\S]*creates no runtime footprint/,
+  );
+  assert.match(
+    cleanupTool,
+    /if any guard, source inventory, copy, memory validation, lock, or marker write fails[\s\S]*do not offer any runtime directory for deletion/,
+  );
+  assert.doesNotMatch(cleanupTool, /normal tool run triggers the migration/);
+});
+
+test('cleanup keeps simultaneous unselected legacy source separate', () => {
+  assert.match(
+    cleanupTool,
+    /If `\.firmo\/` and `\.sf-plugin\/` both exist[\s\S]*inventory[\s\S]*unselected `\.sf-plugin\/` separately/,
+  );
+  assert.match(
+    cleanupTool,
+    /marker does not certify its carry-over and never[\s\S]*releases it for deletion/,
+  );
+});
+
+test('setup triggers the shared migration only for a locator-selected legacy config', () => {
+  assert.match(
+    setupTool,
+    /only because the locator selected the[\s\S]*transitional `<source-handle>`[\s\S]*invoke the loaded shared runtime-directory[\s\S]*migration prerequisite before writing `configMigration\.adr`/,
+  );
+  assert.match(
+    setupTool,
+    /normal fresh setup with no selected transitional JSON source does not invoke this[\s\S]*creates no `\.effective-flow\/` runtime footprint/,
+  );
+  assert.match(
+    setupTool,
+    /If the shared runtime-directory migration fails or remains incomplete[\s\S]*do not write[\s\S]*`configMigration\.adr`[\s\S]*Preserve the locator-selected config source[\s\S]*safely copied[\s\S]*partial runtime target/,
+  );
 });
 
 test('native and portable renders preserve the same migration marker and behavior clauses', () => {
