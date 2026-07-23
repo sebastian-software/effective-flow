@@ -75,6 +75,17 @@ jobs:
           gh release download "${{ steps.release.outputs.tag_name }}" --pattern "$asset" --dir "$verify_dir"
           node scripts/distribution-smoke.mjs archive "$verify_dir/$asset"
 
+      - name: Create delivery token
+        id: delivery-token
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.DELIVERY_APP_ID }}
+          private-key: ${{ secrets.DELIVERY_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: effective-flow
+          permission-contents: write
+
       - name: Deliver portable skill, consumer docs, and trusted automation to main
         id: deliver
         # The delivery branch `main` is the default branch, so it carries what a
@@ -99,6 +110,8 @@ jobs:
         # manifests and open update PRs against the source branch `develop`, not the
         # config-less delivery `main`.
         if: ${{ steps.release.outputs.release_created == 'true' }}
+        env:
+          DELIVERY_TOKEN: ${{ steps.delivery-token.outputs.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -112,7 +125,9 @@ jobs:
             echo "No delivery changes for ${{ steps.release.outputs.tag_name }}"
           else
             git -C "$work" commit -m "chore(delivery): ${{ steps.release.outputs.tag_name }}"
-            git -C "$work" push origin HEAD:main
+            # Push with the dedicated delivery GitHub App token so it is the sole bypass
+            # identity once the `main` ruleset restricts direct pushes (issue #143).
+            git -C "$work" push "https://x-access-token:${DELIVERY_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main
           fi
           echo "commit=$(git -C "$work" rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           git worktree remove --force "$work"
