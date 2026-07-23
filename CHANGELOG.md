@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.52.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.52.0...effective-flow-v1.52.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* correct the LICENSE copyright year to 2026 ([#249](https://github.com/sebastian-software/effective-flow/issues/249)) ([2f1d0a8](https://github.com/sebastian-software/effective-flow/commit/2f1d0a8de3dc89d9a4853383061f0f70bc7a1363))
+
 ## [1.52.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.51.0...effective-flow-v1.52.0) (2026-07-23)
 
 
