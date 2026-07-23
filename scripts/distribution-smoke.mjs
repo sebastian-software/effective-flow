@@ -29,7 +29,7 @@ const TRUSTED_AUTOMATION = [
 ];
 const EXPECTED_LICENSE = `MIT License
 
-Copyright 2016 Sebastian Software GmbH
+Copyright 2026 Sebastian Software GmbH
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
