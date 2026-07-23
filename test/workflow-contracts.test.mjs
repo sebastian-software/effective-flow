@@ -193,12 +193,24 @@ test('release delegates the licensed develop-to-main payload to central staging'
     'git worktree add --force "$work" origin/main',
     'node scripts/stage-delivery.mjs "$work" "$GITHUB_REPOSITORY" develop',
     'node scripts/distribution-smoke.mjs delivery "$work"',
-    'git -C "$work" push origin HEAD:main',
+    'git -C "$work" push "https://x-access-token:${DELIVERY_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main',
     'git fetch origin main',
     'test "$(git rev-parse origin/main)" = "${{ steps.deliver.outputs.commit }}"',
     'node scripts/distribution-smoke.mjs delivery "$verify_work"',
   );
   assert.doesNotMatch(release, /^\s*(?:cp|install|rsync)\b[^\n]*\bLICENSE\b[^\n]*$/m);
+
+  // The delivery push authenticates with a dedicated delivery GitHub App token so that app
+  // is the sole bypass identity once the `main` ruleset restricts direct pushes (issue #143).
+  ordered(
+    release,
+    'name: Create delivery token',
+    'uses: actions/create-github-app-token@v3',
+    'app-id: ${{ secrets.DELIVERY_APP_ID }}',
+    'private-key: ${{ secrets.DELIVERY_APP_PRIVATE_KEY }}',
+    'permission-contents: write',
+    'DELIVERY_TOKEN: ${{ steps.delivery-token.outputs.token }}',
+  );
 });
 
 test('delivery stages the canonical Renovate config from the repository root', () => {
@@ -228,7 +240,9 @@ test('catalog job uses scoped app tokens and a checksum-pinned Dalo binary', () 
     release.match(/client-id: \$\{\{ vars\.DALO_CATALOG_APP_CLIENT_ID \}\}/g)?.length,
     2,
   );
-  assert.doesNotMatch(release, /\bapp-id:/);
+  // The catalog job authenticates through client-id; the only app-id in the workflow is the
+  // dedicated delivery token (issue #143).
+  assert.equal(release.match(/\bapp-id: \$\{\{ secrets\.DELIVERY_APP_ID \}\}/g)?.length, 1);
   assert.equal(
     release.match(/private-key: \$\{\{ secrets\.DALO_CATALOG_APP_PRIVATE_KEY \}\}/g)?.length,
     2,

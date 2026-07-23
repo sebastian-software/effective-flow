@@ -24,8 +24,10 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
    `effective-flow-<tag>.tar.gz`, uploaded, downloaded again, and verified.
 6. Also only on a created release, `scripts/stage-delivery.mjs` pushes the portable
    `effective-flow/` skill, `README.md`, `docs/user-guide/`, and the two trusted issue-closing
-   automation files as a fresh commit to `main` (no force push). The workflow fetches that exact
-   commit and verifies its layout.
+   automation files as a fresh commit to `main` (no force push). The push authenticates with a
+   dedicated delivery GitHub App installation token (`DELIVERY_APP_ID` /
+   `DELIVERY_APP_PRIVATE_KEY`) rather than the default `GITHUB_TOKEN`, so the delivery app is the
+   identity that updates `main`. The workflow fetches that exact commit and verifies its layout.
 7. After the delivered commit is verified, a separate catalog job updates the `effective-flow`
    entry in the team catalog repository through Dalo. A failure in this downstream job marks the
    release workflow as failed, but does not roll back the already published release, archive, or
@@ -164,9 +166,8 @@ writes, and delegate through each harness's built-in general-purpose subagent me
 mechanism is unavailable, the portable instruction reports the limitation instead of claiming a
 worker ran.
 
-The repository is currently private, so these managers require existing Git credentials with
-read access. Repository visibility is tracked separately in
-[issue #143](https://github.com/sebastian-software/effective-flow/issues/143).
+The repository is public, so these managers read `main` without any authentication — no token or
+deploy key is required for a `dalo` / `npx skills` install.
 
 ## Checkout and release-maintenance utilities
 
