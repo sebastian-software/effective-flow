@@ -74,7 +74,7 @@ export function stageDelivery(work, repo, sourceBranch, { root = ROOT_DIR } = {}
   cpSync(join(root, 'docs', 'user-guide'), join(work, 'docs', 'user-guide'), {
     recursive: true,
   });
-  cpSync(join(root, 'scripts', 'delivery-renovate.json'), join(work, 'renovate.json'));
+  cpSync(join(root, 'renovate.json'), join(work, 'renovate.json'));
   for (const path of TRUSTED_AUTOMATION) {
     const target = join(work, path);
     mkdirSync(dirname(target), { recursive: true });
