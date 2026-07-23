@@ -80,6 +80,13 @@ bytes from the default branch and use bundled worker contracts with built-in/gen
 The release archive preserves all build targets for verification and release maintenance, but it
 is not a supported end-user installation interface.
 
+`main` is protected by a branch ruleset so its built payload can change only through the verified
+release delivery. Only the dedicated delivery GitHub App may update the branch (through the
+short-lived `DELIVERY_APP_ID` / `DELIVERY_APP_PRIVATE_KEY` token, which is the ruleset's sole
+bypass actor); force-pushes and deletions are blocked, and direct pushes by any other actor —
+including human maintainers — are rejected. Consumer commit pins therefore stay valid, and the
+"only CI delivers to `main`" rule is enforced rather than merely conventional.
+
 ### Trusted default-branch automation
 
 GitHub evaluates native closing keywords only when a pull request targets the default branch.
