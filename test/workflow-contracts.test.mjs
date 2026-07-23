@@ -175,6 +175,32 @@ test('release exposes verified delivery state before starting the catalog job', 
   assert.match(release, /--release-tag "\$\{\{ needs\.release\.outputs\.tag_name \}\}"/);
 });
 
+test('release delegates the licensed develop-to-main payload to central staging', () => {
+  const release = source('.github/workflows/release.yml');
+  const staging = source('scripts/stage-delivery.mjs');
+
+  assert.match(release, /on:\n\s+push:\n\s+branches: \[develop\]/);
+  assert.match(release, /target-branch: develop/);
+  ordered(
+    staging,
+    "'effective-flow',\n    'LICENSE',",
+    "cpSync(join(root, 'LICENSE'), join(work, 'LICENSE'));",
+    "cpSync(portableSkill, join(work, 'effective-flow'), { recursive: true });",
+  );
+  ordered(
+    release,
+    'git fetch origin main',
+    'git worktree add --force "$work" origin/main',
+    'node scripts/stage-delivery.mjs "$work" "$GITHUB_REPOSITORY" develop',
+    'node scripts/distribution-smoke.mjs delivery "$work"',
+    'git -C "$work" push origin HEAD:main',
+    'git fetch origin main',
+    'test "$(git rev-parse origin/main)" = "${{ steps.deliver.outputs.commit }}"',
+    'node scripts/distribution-smoke.mjs delivery "$verify_work"',
+  );
+  assert.doesNotMatch(release, /^\s*(?:cp|install|rsync)\b[^\n]*\bLICENSE\b[^\n]*$/m);
+});
+
 test('catalog job uses scoped app tokens and a checksum-pinned Dalo binary', () => {
   const release = source('.github/workflows/release.yml');
 
