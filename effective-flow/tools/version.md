@@ -20,7 +20,7 @@ If no task tool is available, give the user a short progress update after each c
 
 Output the following Effective Flow version:
 
-**1.52.0 (5bd6c3c)**
+**1.52.1 (a597b63)**
 
 ## Version maintenance
 
