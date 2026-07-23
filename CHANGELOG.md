@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.52.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.51.0...effective-flow-v1.52.0) (2026-07-23)
+
+
+### Features
+
+* distribute MIT license across release targets ([#244](https://github.com/sebastian-software/effective-flow/issues/244)) ([a969945](https://github.com/sebastian-software/effective-flow/commit/a969945465f36457bced69e6383ef68035f91c70))
+
+
+### Bug Fixes
+
+* localize review status handoffs ([#246](https://github.com/sebastian-software/effective-flow/issues/246)) ([a770961](https://github.com/sebastian-software/effective-flow/commit/a770961719ad7b66f572ff4ea550b09a33c101ac))
+* trigger legacy runtime migration in setup and cleanup ([#242](https://github.com/sebastian-software/effective-flow/issues/242)) ([a6dc9a4](https://github.com/sebastian-software/effective-flow/commit/a6dc9a427f3b3ef0ca564cd49f174185e45820db))
+
 ## [1.51.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.50.0...effective-flow-v1.51.0) (2026-07-22)
 
 
