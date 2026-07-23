@@ -8,7 +8,7 @@ claude:
 codex:
   model: gpt-5.6-luna
   model_reasoning_effort: medium
-  # danger-full-access deliberately: browser downloads and local dev-server access may require it
+  # danger-full-access deliberately: Playwright browser download (cache outside the workspace) and network access to the local dev server are blocked under workspace-write
   sandbox_mode: danger-full-access
 ---
 
