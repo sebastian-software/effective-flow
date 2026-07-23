@@ -192,8 +192,8 @@ test('setup repairs first, validates the target state, then guards and writes it
     'git check-ignore --no-index -- .effective-flow/memory.json',
     'git ls-files -- .effective-flow/',
     'Only after target-state validation passes',
-    'apply “Runtime-state write safety” immediately',
-    'Mark completion idempotently in',
+    'Apply “Runtime-state write',
+    'mark completion idempotently in',
   ];
   let previousIndex = -1;
   for (const clause of orderedClauses) {
@@ -282,6 +282,34 @@ test('setup carries the locator-selected transitional source through migration',
   );
 });
 
+test('setup orders runtime migration between repair and config completion', () => {
+  const setup = readSource('tools', 'setup.md');
+  const orderedClauses = [
+    'git rm --cached <source-path>',
+    'Before writing the migration marker, freshly validate the repaired target state',
+    'Only after target-state validation passes',
+    'invoke the loaded shared runtime-directory',
+    'before writing `configMigration.adr`',
+    'mark completion idempotently in',
+  ];
+
+  let previousIndex = -1;
+  for (const clause of orderedClauses) {
+    const index = setup.indexOf(clause, previousIndex + 1);
+    assert.ok(index > previousIndex, `setup clause must follow its predecessor: ${clause}`);
+    previousIndex = index;
+  }
+
+  assert.match(
+    setup,
+    /runtime-directory migration fails or remains incomplete[\s\S]*same conditional ADR and[\s\S]*convention-marker rollback/,
+  );
+  assert.match(
+    setup,
+    /Preserve the locator-selected config source and every safely copied[\s\S]*partial runtime target/,
+  );
+});
+
 test('cleanup inventories .gitignore remnants but leaves repair exclusively to setup', () => {
   const cleanup = readSource('tools', 'cleanup.md');
 
@@ -299,6 +327,48 @@ test('cleanup loads runtime safety for migrations, memory, and tracker markers',
   assert.match(
     cleanup,
     /```lazy-include\s+runtime-state-safety\s+when: [^\n]*worktree lifecycle state[^\n]*any confirmed legacy copy or removal, runtime migration, memory, or tracker-marker mutation is imminent\s+```/,
+  );
+});
+
+test('cleanup verifies location and safety before migration-dependent deletion decisions', () => {
+  const cleanup = readSource('tools', 'cleanup.md');
+  const orderedClauses = [
+    'issue and verify an execution-location receipt',
+    'retain the verified main checkout as `RUNTIME_STATE_ROOT`',
+    'Capture the existing legacy remnants in the project root',
+    'freshly revalidate the execution-location receipt and `RUNTIME_STATE_ROOT`',
+    '“Runtime-state write safety” from that root',
+    'invoke the loaded shared runtime-directory migration prerequisite',
+    'repeat the legacy-runtime, counterpart, legacy-config, and nested-worktree',
+    '### Phase 4: Dry-run preview',
+  ];
+
+  let previousIndex = -1;
+  for (const clause of orderedClauses) {
+    const index = cleanup.indexOf(clause, previousIndex + 1);
+    assert.ok(index > previousIndex, `cleanup clause must follow its predecessor: ${clause}`);
+    previousIndex = index;
+  }
+});
+
+test('cleanup blocks containing legacy directory while a linked worktree remains', () => {
+  const cleanup = readSource('tools', 'cleanup.md');
+
+  assert.match(
+    cleanup,
+    /compare[\s\S]*`<legacy-directory>\/\.worktrees\/` tree with the fresh complete Git worktree[\s\S]*inventory/,
+  );
+  assert.match(
+    cleanup,
+    /If any registered linked worktree is current, active, retained, not reliably[\s\S]*checkable, or otherwise still rooted below that tree, keep the containing legacy runtime[\s\S]*directory/,
+  );
+  assert.match(
+    cleanup,
+    /Worktree removal remains exclusively governed by the lifecycle[\s\S]*claim\/remove\/reconcile protocol/,
+  );
+  assert.match(
+    cleanup,
+    /immediately before removal, refresh the migration\/carry-over evidence and Git[\s\S]*worktree inventory/,
   );
 });
 
