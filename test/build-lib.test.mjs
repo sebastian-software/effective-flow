@@ -2510,6 +2510,40 @@ test('checked-in language configuration remains complete and migration-only', ()
   ]);
 });
 
+test('workflow report consumers retain bilingual status and remote epic prose', () => {
+  const readSource = (path) => readFileSync(new URL(`../src/${path}`, import.meta.url), 'utf8');
+  const localReviewStatusConsumers = [
+    'shared/unresolved-review-report.md',
+    'tools/build.md',
+    'tools/fix.md',
+    'tools/refactor.md',
+    'tools/maintain.md',
+  ];
+  for (const file of localReviewStatusConsumers) {
+    const source = readSource(file);
+    assert.match(source, /Open.*Not implemented/s);
+    assert.match(source, /Offen.*Nicht umgesetzt/s);
+  }
+
+  const workflowReport = readSource('shared/unresolved-review-report.md');
+  assert.match(workflowReport, /English: `- \*\*Status\*\*: Fixed \| Open \| Not implemented`/);
+  assert.match(workflowReport, /German: `- \*\*Status\*\*: Behoben \| Offen \| Nicht umgesetzt`/);
+
+  const build = readSource('tools/build.md');
+  assert.match(build, /status values \(`Behoben`, `Offen \/ Nicht umgesetzt`\)/);
+  assert.doesNotMatch(build, /status tokens used by report readers remain unchanged/);
+
+  const review = readSource('tools/review.md');
+  for (const epicText of [
+    'Code review YYYY-MM-DD[-N]',
+    'Skipped (design decisions)',
+    'Code-Review YYYY-MM-DD[-N]',
+    'Übersprungen (Architekturentscheidungen)',
+  ]) {
+    assert.ok(review.includes(epicText), `review is missing localized epic prose: ${epicText}`);
+  }
+});
+
 // --- ADR ownership-contract consistency ---
 
 test('findStaleAdrContractClaims rejects a deliberate divergence claim', () => {
