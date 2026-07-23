@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { resolveEagerIncludes } from '../build-lib.mjs';
@@ -199,6 +199,25 @@ test('release delegates the licensed develop-to-main payload to central staging'
     'node scripts/distribution-smoke.mjs delivery "$verify_work"',
   );
   assert.doesNotMatch(release, /^\s*(?:cp|install|rsync)\b[^\n]*\bLICENSE\b[^\n]*$/m);
+});
+
+test('delivery stages the canonical Renovate config from the repository root', () => {
+  const renovate = JSON.parse(source('renovate.json'));
+  const staging = source('scripts/stage-delivery.mjs');
+  const smoke = source('scripts/distribution-smoke.mjs');
+  const release = source('.github/workflows/release.yml');
+  const retiredConfig = new URL('scripts/delivery-renovate.json', repositoryRoot);
+
+  assert.equal(renovate.$schema, 'https://docs.renovatebot.com/renovate-schema.json');
+  assert.deepEqual(renovate.extends, ['local>sebastian-software/renovate-config']);
+  assert.deepEqual(renovate.baseBranchPatterns, ['develop']);
+  assert.equal(renovate.baseBranches, undefined);
+  assert.match(staging, /cpSync\(join\(root, 'renovate\.json'\), join\(work, 'renovate\.json'\)\)/);
+  assert.match(smoke, /'delivered Renovate config'/);
+  assert.equal(existsSync(retiredConfig), false);
+  for (const contents of [staging, smoke, release]) {
+    assert.doesNotMatch(contents, /delivery-renovate\.json/);
+  }
 });
 
 test('catalog job uses scoped app tokens and a checksum-pinned Dalo binary', () => {

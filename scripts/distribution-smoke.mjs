@@ -260,6 +260,11 @@ export function assertDeliveryLayout(directory, portableSkill) {
     join(ROOT_DIR, 'LICENSE'),
     'delivered portable license',
   );
+  assertSameFile(
+    join(directory, 'renovate.json'),
+    join(ROOT_DIR, 'renovate.json'),
+    'delivered Renovate config',
+  );
 
   if (portableSkill) {
     const actual = snapshotTree(join(directory, 'effective-flow'));
@@ -553,11 +558,7 @@ function assertStageDeliveryChecksTransformedDocs(dist, temp) {
   cpSync(join(ROOT_DIR, 'docs', 'user-guide'), join(fixtureRoot, 'docs', 'user-guide'), {
     recursive: true,
   });
-  mkdirSync(join(fixtureRoot, 'scripts'), { recursive: true });
-  cpSync(
-    join(ROOT_DIR, 'scripts', 'delivery-renovate.json'),
-    join(fixtureRoot, 'scripts', 'delivery-renovate.json'),
-  );
+  cpSync(join(ROOT_DIR, 'renovate.json'), join(fixtureRoot, 'renovate.json'));
   for (const path of TRUSTED_AUTOMATION) {
     const target = join(fixtureRoot, path);
     mkdirSync(dirname(target), { recursive: true });
