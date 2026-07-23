@@ -253,6 +253,7 @@ still-present `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` (otherwise
 
 ## Recommended skills
 
+- `pr-review`
 - `metro-english › humanizer` (fallback) – for thread replies and the summary comment only when
   resolved `language.forge` is `en`; do not apply English rewriting to German output
 
@@ -271,8 +272,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
    optional). A fallback notation `A › B` is an ordered preference: take the first available,
    non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
    this point does not apply.
-2. **Judge relevance:** Check each skill against the **concrete** task and pull in only the
-   clearly fitting ones (typically 0–2). Do not load skills "on suspicion" — be token-frugal.
+2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
+   0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
+   inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
 3. **Take config into account:** If present, read the `skills` block from the Effective Flow
    configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
    scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
@@ -283,9 +285,8 @@ no skill directory or none fits, this step is a no-op — continue without an er
      skill that is not installed is silently ignored.
    - If the block or the file is missing, the default applies (`enabled` on, no additional
      lists). Only read the config; do not migrate or write it here.
-4. **Library docs:** When working against an unknown or current library or framework, use
-   current-docs skills (e.g. `context7`) as needed, if available, instead of guessing from
-   memory. Only when needed, never mandatory.
+4. **Library docs:** For an unknown or current library or framework, use an available
+   current-docs skill (e.g. `context7`) when needed instead of guessing from memory.
 5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
    skills share the responsibility in a **layered** way — not "Effective Flow always wins":
    - **Effective Flow owns the orchestration** (the **what/when**): routing and user
@@ -1288,6 +1289,18 @@ and worktree integration. No `commit --amend`, no rebase, no squash, no force-pu
 If the push is rejected because of diverged remote history, stop and report the conflict
 instead of overwriting history.
 
+## Classification delegation
+
+`pr-review` is the declared domain owner for review-item judgment. Supply its caller-owned Mode C
+with the already gathered change context, stable item IDs, authors and locations, thread state,
+surrounding-code evidence, linked intent, and Effective Flow's authority constraints. It returns
+the provider-neutral `pr-review-handoff/v1` JSON and performs no discovery, implementation, Git,
+CI, forge, reply, or resolution action.
+
+Effective Flow remains the caller and owns freshness, approval, action routing, implementation,
+one-commit-per-item delivery, replies, and thread resolution. If `pr-review` is unavailable, use
+the minimal local classification fallback in Phase 2 and disclose the reduced review depth.
+
 ## Wisdom Accumulation
 
 At the start, generate a session ID (e.g. via timestamp) and use
@@ -1331,24 +1344,30 @@ end.
 
 ### Phase 2: Classification
 
-Determine per item (review thread or free-text instruction):
-
-1. **actionable vs. not actionable:**
-   - pure praise/info comments do not count as actionable.
-   - **Nitpick and low-priority bot comments are taken along as actionable by
-     default** – the approval gate in phase 2.5 lets the user deselect individual ones.
-   - **pure questions** without a need for code changes are not implemented and are **not
-     automatically answered in substance**; they are listed in the summary as open/deferred
-     so the user answers them themselves.
-2. **already addressed:** thread is `resolved` or carries a `<!-- effective-flow-iterate -->`
-   reply → skip.
-3. Derive the **action type**:
+1. Exclude an already addressed thread when it is `resolved` or carries an
+   `<!-- effective-flow-iterate -->` reply.
+2. Send every remaining review thread and free-text instruction to `pr-review` Mode C with the
+   caller constraints: Effective Flow owns authority, approval, implementation, commits,
+   delivery, replies, and resolution; the analysis may only classify supplied context.
+3. Require one returned item for every supplied stable ID and map the contract as follows:
+   - `valid_in_scope` + `caller_fix` → actionable. Include valid nitpicks and low-priority bot
+     findings by default; Phase 2.5 may deselect them.
+   - `valid_out_of_scope` → follow-up or no action, never silently widen this PR.
+   - `unsupported` → skipped with the returned rationale and optional proposed reply.
+   - `question_or_information` → deferred or proposed reply; never implement it as code by
+     assumption.
+   - `needs_evidence` → gather the named evidence when it is already within the read-only scope
+     and submit the item once more; otherwise defer it with the exact missing evidence.
+4. For every actionable item, derive the Effective Flow **action type**:
    - effective-flow fix for a bug/correction,
    - effective-flow refactor for structure without behavior change,
    - effective-flow build for small new functionality,
    - effective-flow docs for pure documentation.
      Treat human and bot comments equally.
-4. Create a task per actionable item (per-item granularity).
+5. Create a task per actionable item (per-item granularity).
+
+If `pr-review` is unavailable, apply only the same five classifications from supplied evidence;
+never invent missing context, and report that the authoritative review owner was unavailable.
 
 ### Phase 2.5: Approval
 

@@ -1339,16 +1339,19 @@ Goal:
 - ``tools/apply-review.md`` can process the findings later in the familiar report format.
 - The plan file stays completion documentation and only points to the external report.
 
-Applies to findings with status in either complete report language:
+Applies to findings with the matching status from either complete report language:
 
-- `Open`
-- `Not implemented`
-- `Not implemented (ADR: <slug>)` or comparable ADR statuses; legacy German
-  `Nicht umgesetzt (ADR: <slug>)` remains readable
+- English: `Open`, `Not implemented`, or `Not implemented (ADR: <slug>)`
+- German: `Offen`, `Nicht umgesetzt`, or `Nicht umgesetzt (ADR: <slug>)`
+
+Treat each English/German pair as the same semantic state when filtering or handing findings
+between phases. Writers use only the values matching the complete report language; readers keep
+both forms readable.
 
 Do not carry over into the external report:
 
-- Findings with status `Fixed`
+- Findings with status `Fixed` (English) or `Behoben` (German); legacy German `Umgesetzt` remains
+  readable as the same completed state
 - Findings that were fixed directly during the workflow
 - purely informational reviewer comments without a concrete recommendation
 
@@ -1404,14 +1407,21 @@ Additional header fields for workflow reports:
 
 - Directly below the matching project-type field, set the three matching English or German
   origin/source lines defined above. The plan path uses `<plan.dir>` from configuration.
-- All tables and finding blocks stay in the `effective-flow review` format.
+- All tables and finding blocks stay in the `effective-flow review` format, with one additional
+  report-language status field in every workflow finding:
+  - English: `- **Status**: Fixed | Open | Not implemented`
+  - German: `- **Status**: Behoben | Offen | Nicht umgesetzt`
 - The `## Skipped findings (design decisions)` section is only emitted when such findings are present.
 
 Rules:
 
 - Critical findings may only remain in this report if the user has explicitly decided to complete the workflow despite an open critical finding.
 - Determine the action as in `effective-flow review`: defect → `effective-flow fix`, structural problem → `effective-flow refactor`, missing functionality or safeguard → `effective-flow build`, pure documentation gap → `effective-flow docs`.
-- Never enter anything automatically in `Developer note`. This field is reserved exclusively for the developer's manual notes and stays empty in automatically generated reports. When a finding was deliberately not implemented and an ADR exists, note the ADR reference in the `Status` via slug, e.g. `Not implemented (ADR: <slug>)`. Existing reports using `Nicht umgesetzt (ADR: <slug>)` remain readable.
+- Never enter anything automatically in `Developer note`. This field is reserved exclusively for
+  the developer's manual notes and stays empty in automatically generated reports. When a finding
+  was deliberately not implemented and an ADR exists, note the ADR reference in the matching
+  report-language `Status`: `Not implemented (ADR: <slug>)` or
+  `Nicht umgesetzt (ADR: <slug>)`.
 - After writing, output the report path to the user.
 
 Current workflow for plan references: Refactoring (`effective-flow refactor`).
@@ -1593,8 +1603,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
    optional). A fallback notation `A › B` is an ordered preference: take the first available,
    non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
    this point does not apply.
-2. **Judge relevance:** Check each skill against the **concrete** task and pull in only the
-   clearly fitting ones (typically 0–2). Do not load skills "on suspicion" — be token-frugal.
+2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
+   0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
+   inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
 3. **Take config into account:** If present, read the `skills` block from the Effective Flow
    configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
    scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
@@ -1605,9 +1616,8 @@ no skill directory or none fits, this step is a no-op — continue without an er
      skill that is not installed is silently ignored.
    - If the block or the file is missing, the default applies (`enabled` on, no additional
      lists). Only read the config; do not migrate or write it here.
-4. **Library docs:** When working against an unknown or current library or framework, use
-   current-docs skills (e.g. `context7`) as needed, if available, instead of guessing from
-   memory. Only when needed, never mandatory.
+4. **Library docs:** For an unknown or current library or framework, use an available
+   current-docs skill (e.g. `context7`) when needed instead of guessing from memory.
 5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
    skills share the responsibility in a **layered** way — not "Effective Flow always wins":
    - **Effective Flow owns the orchestration** (the **what/when**): routing and user
@@ -1669,7 +1679,8 @@ no skill directory or none fits, this step is a no-op — continue without an er
    - Recommendation
    - Action (`effective-flow fix`, `effective-flow refactor`, `effective-flow build` or `effective-flow docs`)
    - Prompt suggestion
-   - Status (Fixed / Open / Not implemented)
+   - Status in the complete report language (English: Fixed / Open / Not implemented; German:
+     Behoben / Offen / Nicht umgesetzt)
    - rationale for non-implementation or ADR reference as slug, if present, e.g. `(ADR: <slug>)`
 5. Never create an ADR in this workflow and do not ask for one either. Deliberately unimplemented findings are documented exclusively in the review report. The developer decides on later implementation or on an ADR for a deliberate non-implementation when going through the findings file, typically via `tools/apply-review.md`.
 6. Do not create an open-findings report or append an implementation backlink in this phase.
@@ -1697,11 +1708,12 @@ Start in parallel:
 3. If no regressions:
    - finalize external review state from the latest provisional review only:
      - use the session ID as the stable finalization marker for this workflow run; in a generated report, include it after the reviewer or phase in the existing `Source review` field, for example `Phase 4 (run <SESSION_ID>)`
-     - if findings with status `Open` or `Not implemented` remain, before applying the collision rule, search `.effective-flow/review/` for a report whose `Source workflow` is `effective-flow refactor` and whose `Source review` contains this run's finalization marker
+     - if findings with a canonical open or unimplemented status in the complete report language (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`) remain, before applying the collision rule, search `.effective-flow/review/` for a report whose `Source workflow` is `effective-flow refactor` and whose `Source review` contains this run's finalization marker
      - if exactly one matching report exists, reuse that report and its path; complete or validate its contents and memory update as needed, and do not create a collision-suffixed report
      - if more than one matching report exists, stop before writing and escalate the ambiguity to the user
      - if no matching report exists, write the findings into at most one new file under `.effective-flow/review/` per "Open review-finding reports"
-     - if no findings with status `Open` or `Not implemented` remain, do not create a report
+     - if no findings with those canonical English or German open/unimplemented statuses remain,
+       do not create a report
      - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
      - name any generated report path in the completion summary
    - if this refactoring implemented a finding from an existing review-report file in `.effective-flow/review/`:

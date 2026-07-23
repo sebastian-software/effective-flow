@@ -8,16 +8,19 @@ Goal:
 - ``tools/apply-review.md`` can process the findings later in the familiar report format.
 - The plan file stays completion documentation and only points to the external report.
 
-Applies to findings with status in either complete report language:
+Applies to findings with the matching status from either complete report language:
 
-- `Open`
-- `Not implemented`
-- `Not implemented (ADR: <slug>)` or comparable ADR statuses; legacy German
-  `Nicht umgesetzt (ADR: <slug>)` remains readable
+- English: `Open`, `Not implemented`, or `Not implemented (ADR: <slug>)`
+- German: `Offen`, `Nicht umgesetzt`, or `Nicht umgesetzt (ADR: <slug>)`
+
+Treat each English/German pair as the same semantic state when filtering or handing findings
+between phases. Writers use only the values matching the complete report language; readers keep
+both forms readable.
 
 Do not carry over into the external report:
 
-- Findings with status `Fixed`
+- Findings with status `Fixed` (English) or `Behoben` (German); legacy German `Umgesetzt` remains
+  readable as the same completed state
 - Findings that were fixed directly during the workflow
 - purely informational reviewer comments without a concrete recommendation
 
@@ -73,12 +76,19 @@ Additional header fields for workflow reports:
 
 - Directly below the matching project-type field, set the three matching English or German
   origin/source lines defined above. The plan path uses `<plan.dir>` from configuration.
-- All tables and finding blocks stay in the `effective-flow review` format.
+- All tables and finding blocks stay in the `effective-flow review` format, with one additional
+  report-language status field in every workflow finding:
+  - English: `- **Status**: Fixed | Open | Not implemented`
+  - German: `- **Status**: Behoben | Offen | Nicht umgesetzt`
 - The `## Skipped findings (design decisions)` section is only emitted when such findings are present.
 
 Rules:
 
 - Critical findings may only remain in this report if the user has explicitly decided to complete the workflow despite an open critical finding.
 - Determine the action as in `effective-flow review`: defect → `effective-flow fix`, structural problem → `effective-flow refactor`, missing functionality or safeguard → `effective-flow build`, pure documentation gap → `effective-flow docs`.
-- Never enter anything automatically in `Developer note`. This field is reserved exclusively for the developer's manual notes and stays empty in automatically generated reports. When a finding was deliberately not implemented and an ADR exists, note the ADR reference in the `Status` via slug, e.g. `Not implemented (ADR: <slug>)`. Existing reports using `Nicht umgesetzt (ADR: <slug>)` remain readable.
+- Never enter anything automatically in `Developer note`. This field is reserved exclusively for
+  the developer's manual notes and stays empty in automatically generated reports. When a finding
+  was deliberately not implemented and an ADR exists, note the ADR reference in the matching
+  report-language `Status`: `Not implemented (ADR: <slug>)` or
+  `Nicht umgesetzt (ADR: <slug>)`.
 - After writing, output the report path to the user.

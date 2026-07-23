@@ -46,6 +46,15 @@ confirmation; an existing new key always wins. The values set here
 repaired ignore and index state before writing any migration marker below `.effective-flow/`;
 missing Git or a failed validation leaves that marker unwritten.
 
+When the shared locator selected a transitional JSON config, setup also invokes the shared
+runtime-directory migration after successful ignore/index repair and before it writes
+`configMigration.adr`. This carries missing runtime state from `.firmo/` (otherwise `.sf-plugin/`)
+into `.effective-flow/` without overwriting existing targets. A fresh setup with no selected
+legacy config does not run this prerequisite and therefore does not create a runtime footprint.
+If the runtime migration fails, setup leaves the config marker unwritten, preserves the selected
+source and safely copied partial state, and applies its existing conditional rollback to its own
+unchanged ADR/convention writes.
+
 ## `/effective-flow cleanup`
 
 **Purpose:** Clears away legacy leftovers that Effective Flow's migrations deliberately leave
@@ -56,6 +65,21 @@ tracker. It reads them, checks their new counterpart for data that still needs t
 over, confirms each carry-over candidate, and deletes removable legacy data **git-aware** only
 after explicit confirmation. Outdated `.gitignore` entries are reported but left untouched for
 setup to repair.
+
+After the initial legacy inventory, cleanup automatically invokes the same shared
+runtime-directory migration when `.firmo/` or `.sf-plugin/` exists and the versioned completion
+marker is missing. It then refreshes the legacy, counterpart, config, and worktree inventory
+before offering any deletion. The migration itself needs no confirmation because it is
+non-destructive and target-wins; confirmations remain mandatory for divergent carry-over,
+explicit discard, and deletion. A run with no legacy runtime directory creates no marker or
+runtime footprint.
+
+If both legacy directories exist, `.firmo/` remains the selected migration source and
+`.sf-plugin/` is assessed separately; the selected source's marker never certifies the unselected
+directory. Cleanup also retains a legacy runtime directory while any registered current, active,
+retained, or otherwise unresolved linked worktree remains below its `.worktrees/` tree. Such a
+worktree can be removed only through the normal lifecycle claim protocol, never by deleting its
+containing legacy directory.
 
 For worktrees, `cleanup` parses Git's complete linked-worktree inventory and matches it against
 the persisted Effective Flow lifecycle under

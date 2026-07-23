@@ -270,6 +270,80 @@ Rules:
 
 If the project has an `AGENTS.md`, read it before analysis and implementation and follow its guidance for documentation style, file formats, examples, tests, validation and commits.
 
+## Recommended skills
+
+- `tech-docs`
+
+## Skill discovery
+
+Before you start the actual implementation, planning, or review, survey the skills available in
+the environment and pull in the ones useful for the concrete task. If the environment provides
+no skill directory or none fits, this step is a no-op — continue without an error or a block.
+
+### Approach
+
+1. **Prefer recommended skills:** Preferentially apply the skills listed further above under
+   "Recommended skills", provided they are available and relevant to the concrete task.
+   "Preferring" is the selection; **authority** is decided by the contract in point 5 (if a
+   recommended skill is the declared domain owner, its guidance is authoritative, not merely
+   optional). A fallback notation `A › B` is an ordered preference: take the first available,
+   non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
+   this point does not apply.
+2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
+   0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
+   inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
+3. **Take config into account:** If present, read the `skills` block from the Effective Flow
+   configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
+   scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
+   - `enabled: false` → skip the entire dynamic skill usage.
+   - `exclude` (global or scope) → never apply these skills; an excluded fallback member is
+     skipped in favor of the next fallback.
+   - `include` (global or scope) → additionally consider these skills as preferred; a
+     skill that is not installed is silently ignored.
+   - If the block or the file is missing, the default applies (`enabled` on, no additional
+     lists). Only read the config; do not migrate or write it here.
+4. **Library docs:** For an unknown or current library or framework, use an available
+   current-docs skill (e.g. `context7`) when needed instead of guessing from memory.
+5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
+   skills share the responsibility in a **layered** way — not "Effective Flow always wins":
+   - **Effective Flow owns the orchestration** (the **what/when**): routing and user
+     interaction, plan/report state, finding IDs, backlinks, tracker integration, resumability,
+     agent selection and parallelization, baseline comparison, worktrees, commits, delivery,
+     harness transform, and config. These rules, `AGENTS.md`/project conventions, plus its own
+     language, commit, and scope rules **always** take precedence; no skill may widen scope,
+     introduce new dependencies, or violate the agreed plan. In analysis/planning tools the
+     no-code boundary stays strict.
+   - **Central skills own reusable expertise** (the **how**): domain checklists, heuristics,
+     standards, research procedures, and specialist guidance. If a recommended skill is the
+     **declared domain owner** for the technical question at hand **and** covers it, its
+     guidance is **authoritative** — not optional advice. The tool's own source then carries
+     **no second copy** of that playbook, only scope/output/lifecycle constraints plus a
+     minimal fallback (point 6).
+   - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
+     Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
+     guidance stays leading. The binding assignment per skill/intersection is in the ownership
+     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
+6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
+   available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
+   **minimal generic fallback** left in the source applies — a short, essential core guidance
+   so the tool stays functional and degrades cleanly. **No** second full domain handbook is
+   kept on hand; full depth comes only with the central skill.
+7. **Report:** Briefly name which skills were used (or that none fit). If an orchestrator tool
+   already handed you relevant skills, apply them and do not run a redundant full discovery.
+
+## Delegation contract
+
+`tech-docs` is the declared domain owner for technical-documentation craft. It owns repository
+and audience discovery, document-shape judgment, interface and migration accuracy, executable
+examples, in-code documentation, and verification design. This tool owns the Effective Flow
+entry point, optional standard categories, target-path and replacement approval, plan/report
+state, worker selection, validation phase, worktrees, commits, and delivery.
+
+When the skill is unavailable, use only a minimal repository-led fallback: derive facts from the
+implementation and neighboring docs, follow the existing structure, write the narrow requested
+change, and run an established docs check when one exists. Do not recreate a documentation
+handbook here or add tooling without approval.
+
 ## Completion protocol
 
 When you use internal sub-agents, give them this response protocol:
@@ -454,97 +528,32 @@ the plan passes the gate:
 
 ### Phase 1: Scope and analysis
 
-1. Analyze the documentation requirement thoroughly. Check early whether this is an initial doc setup (see "Initial doc setup (scaffold mode)"); if so, follow that mode and create the three roles of the standard structure in a coordinated single run.
-2. Determine the doc type:
-   - Root `README.md` as the marketing entry point (standard doc structure)
-   - README / guide
-   - API or CLI documentation
-   - Skill/workflow documentation
-   - Migration note / changelog
-   - In-code documentation
-3. Determine the doc category per `Doc categories`:
+1. Apply `tech-docs` to establish the audience, reader task, owning source of truth, narrowest
+   documentation surface, connected references, and verification strategy. Check early whether
+   this is an initial doc setup (see "Initial doc setup (scaffold mode)"); if so, follow that mode
+   and create the three roles of the standard structure in a coordinated single run.
+2. Determine the Effective Flow route and doc category per `Doc categories`:
    - User guide, developer guide, operations or runbooks
    - for the marketing entry point (root `README.md`) the category is omitted: it is not one of the four `docs/` categories, the target path is `README.md` and the implementation goes to ``effective-flow-marketing-writer``
    - for in-code documentation or for an existing file explicitly named in the plan outside the category directories, the category may be omitted; record this explicitly in the doc plan
-4. Set the target path for the final document:
+3. Set the target path for the final document:
    - for category docs: `docs/<category>/<topic-slug>.md`
    - for the marketing entry point: `README.md`
    - check the uniqueness of the slug within the category
    - on collision (also for an already existing root `README.md`): clarify replacement, extension or an alternative slug with the user
-5. Check the relevant sources:
-   - existing documentation
-   - code, exports, CLI options, API routes or configuration the docs refer to
-   - existing examples, scripts and validation paths
-6. Clarify open questions directly with the user when the audience, scope or substantive statements cannot be reliably derived.
-7. Create a short documentation plan:
+4. Clarify open questions directly with the user when the audience, scope, target, or substantive statements cannot be reliably derived.
+5. Create a short documentation plan from the owner's analysis:
    - audience
    - doc category and target path
    - affected files
    - planned content changes
    - validation strategy
-8. Derive the explicit completion condition from the validation strategy and the planned changes (see "Goal-driven completion control"); it covers phases 2–4 and feeds the explicit goal query in the approval question below. Handle the goal query per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, perform the central harness-specific goal-start action for phases 2–4; the option is omitted when the workflow was delegated non-interactively.
+6. Derive the explicit completion condition from the validation strategy and the planned changes (see "Goal-driven completion control"); it covers phases 2–4 and feeds the explicit goal query in the approval question below. Handle the goal query per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, perform the central harness-specific goal-start action for phases 2–4; the option is omitted when the workflow was delegated non-interactively.
 
 Ask the user: **Documentation plan approved?**
 - Yes -- Approval granted, workflow continues gated
 - Autonomous via /goal -- Remaining phases autonomous under the native /goal after this explicit selection (omitted for non-interactive delegation)
 - Adjust -- Enter feedback as free text
-
-## Skill discovery
-
-Before you start the actual implementation, planning, or review, survey the skills available in
-the environment and pull in the ones useful for the concrete task. If the environment provides
-no skill directory or none fits, this step is a no-op — continue without an error or a block.
-
-### Approach
-
-1. **Prefer recommended skills:** Preferentially apply the skills listed further above under
-   "Recommended skills", provided they are available and relevant to the concrete task.
-   "Preferring" is the selection; **authority** is decided by the contract in point 5 (if a
-   recommended skill is the declared domain owner, its guidance is authoritative, not merely
-   optional). A fallback notation `A › B` is an ordered preference: take the first available,
-   non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
-   this point does not apply.
-2. **Judge relevance:** Check each skill against the **concrete** task and pull in only the
-   clearly fitting ones (typically 0–2). Do not load skills "on suspicion" — be token-frugal.
-3. **Take config into account:** If present, read the `skills` block from the Effective Flow
-   configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
-   scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
-   - `enabled: false` → skip the entire dynamic skill usage.
-   - `exclude` (global or scope) → never apply these skills; an excluded fallback member is
-     skipped in favor of the next fallback.
-   - `include` (global or scope) → additionally consider these skills as preferred; a
-     skill that is not installed is silently ignored.
-   - If the block or the file is missing, the default applies (`enabled` on, no additional
-     lists). Only read the config; do not migrate or write it here.
-4. **Library docs:** When working against an unknown or current library or framework, use
-   current-docs skills (e.g. `context7`) as needed, if available, instead of guessing from
-   memory. Only when needed, never mandatory.
-5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
-   skills share the responsibility in a **layered** way — not "Effective Flow always wins":
-   - **Effective Flow owns the orchestration** (the **what/when**): routing and user
-     interaction, plan/report state, finding IDs, backlinks, tracker integration, resumability,
-     agent selection and parallelization, baseline comparison, worktrees, commits, delivery,
-     harness transform, and config. These rules, `AGENTS.md`/project conventions, plus its own
-     language, commit, and scope rules **always** take precedence; no skill may widen scope,
-     introduce new dependencies, or violate the agreed plan. In analysis/planning tools the
-     no-code boundary stays strict.
-   - **Central skills own reusable expertise** (the **how**): domain checklists, heuristics,
-     standards, research procedures, and specialist guidance. If a recommended skill is the
-     **declared domain owner** for the technical question at hand **and** covers it, its
-     guidance is **authoritative** — not optional advice. The tool's own source then carries
-     **no second copy** of that playbook, only scope/output/lifecycle constraints plus a
-     minimal fallback (point 6).
-   - **Edge cases:** If a skill only covers a special branch (_route-when-relevant_) or
-     Effective Flow's product behavior deliberately diverges (_no-overlap_), the Effective Flow
-     guidance stays leading. The binding assignment per skill/intersection is in the ownership
-     inventory in the Developer Guide (`docs/developer-guide/skill-ownership.md`).
-6. **Missing authoritative skill (minimal fallback):** If the authoritative skill is not
-   available (not installed, `skills.enabled: false`, or disabled via `exclude`), the
-   **minimal generic fallback** left in the source applies — a short, essential core guidance
-   so the tool stays functional and degrades cleanly. **No** second full domain handbook is
-   kept on hand; full depth comes only with the central skill.
-7. **Report:** Briefly name which skills were used (or that none fit). If an orchestrator tool
-   already handed you relevant skills, apply them and do not run a redundant full discovery.
 
 ### Phase 2: Implementation
 
@@ -570,12 +579,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
 
 ### Phase 3: Validation
 
-1. Check the changed documentation against the verified sources:
-   - code examples match current APIs
-   - CLI options and defaults are correct
-   - links and paths are plausible
-   - migration notes have clear before/after statements
-2. Check the write paths:
+1. Have the active `tech-docs` owner verify the changed documentation against its owning
+   implementation and examples, and return the exact evidence and remaining gaps.
+2. Check Effective Flow's write paths:
    - all newly created or changed final documents lie within the category directories from `Doc categories`, are the root `README.md` as the marketing entry point, or an existing file explicitly named in the plan
    - slugs follow the convention (kebab-case, no date or number prefix)
    - for user-guide changes, `docs/user-guide/README.md` is present as soon as content exists under `docs/user-guide/`

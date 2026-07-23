@@ -115,7 +115,7 @@ If no task tool is available, give the user a short progress update after each c
 
 **Load on demand:** Read `shared/runtime-state-safety.md`, when setup has repaired and validated the runtime ignore state and is about to write a runtime marker.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when setup has repaired and validated the runtime ignore state and is about to write a runtime marker.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when the config locator selected a transitional JSON source and setup has repaired and validated the runtime ignore/index state before the config-migration marker.
 
 ## Living ADR model
 
@@ -688,9 +688,21 @@ Ask for free-text values (e.g. `baseBranch`, `branchPrefix`, `returnBranch`, `ba
      `git ls-files -- .effective-flow/`. If any check blocks, preserve the runtime directory,
      report the concrete reason and tracked paths, apply the same safe ADR/marker rollback, and do
      not write the marker.
-   - Only after target-state validation passes, apply “Runtime-state write safety” immediately
-     to the exact directory `.effective-flow/` immediately before its `mkdir` if it is missing.
-     Mark completion idempotently in `.effective-flow/memory.json` under
+   - Only after target-state validation passes, and only because the locator selected the
+     retained transitional `<source-handle>`, invoke the loaded shared runtime-directory
+     migration prerequisite before writing `configMigration.adr`. Apply “Runtime-state write
+     safety” immediately to every exact runtime target as required by that shared contract; do
+     not duplicate its source precedence, inventory, copy, memory-merge, lock, or marker logic.
+     A normal fresh setup with no selected transitional JSON source does not invoke this
+     prerequisite and creates no `.effective-flow/` runtime footprint.
+   - If the shared runtime-directory migration fails or remains incomplete, do not write
+     `configMigration.adr`. Preserve the locator-selected config source and every safely copied
+     partial runtime target, report the exact failure, and apply the same conditional ADR and
+     convention-marker rollback used for failed untracking: roll back only this run's unchanged
+     tracked writes and never overwrite a concurrent change. A later setup or cleanup run may
+     resume the markerless runtime migration idempotently.
+   - After the shared runtime-directory migration succeeds, mark completion idempotently in
+     `.effective-flow/memory.json` under
      `configMigration.adr` (`version` e.g. `config-to-adr-v1`, `appliedAt` timestamp) through the
      loaded shared memory mutation contract: acquire its lock, re-read and validate memory,
      deep-merge only `configMigration.adr`, preserve every unrelated top-level field, nested field, sibling
@@ -716,7 +728,8 @@ Report to the user:
 - for a previously existing config: which keys were changed from the old state (before/after)
 - the path of the written project setup ADR and the location of the set `**Effective Flow project setup:**` marker (`AGENTS.md`/`CLAUDE.md`)
 - in the migration case: identify the exact `<source-handle>` selected by the locator and whether
-  migration completed. For a completed migration, report whether `<source-path>` was **removed
+  both runtime-directory and config migration completed. For a completed migration, report
+  whether `<source-path>` was **removed
   staged** via `git rm --cached` (content left on disk) or was already untracked. For an incomplete
   migration, report the failed step and rollback outcome and do not call the source migrated.
   Never name the unselected fallback as processed. State that no commit was created and that the
@@ -724,7 +737,10 @@ Report to the user:
 
 ## Rules
 
-- Change only `.gitignore` (the `.effective-flow/` line or its migration), the project setup ADR, and the `**Effective Flow project setup:**` marker in `AGENTS.md`/`CLAUDE.md`; no further setup steps like deployment or Git hooks.
+- Change only `.gitignore` (the `.effective-flow/` line or its migration), the project setup ADR,
+  the `**Effective Flow project setup:**` marker in `AGENTS.md`/`CLAUDE.md`, and—only when the
+  locator selected a transitional config—the runtime targets written by the shared
+  runtime-directory migration; no further setup steps like deployment or Git hooks.
 - Never overwrite existing config values and unknown keys without asking.
 - On an abort during the questions, leave no half-written ADR; write only once at the end.
 - Do not start project validation; linting, tests, and build checks are the job of other skills such as ``effective-flow-code-validator``.

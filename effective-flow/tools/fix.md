@@ -477,8 +477,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
    optional). A fallback notation `A › B` is an ordered preference: take the first available,
    non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
    this point does not apply.
-2. **Judge relevance:** Check each skill against the **concrete** task and pull in only the
-   clearly fitting ones (typically 0–2). Do not load skills "on suspicion" — be token-frugal.
+2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
+   0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
+   inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
 3. **Take config into account:** If present, read the `skills` block from the Effective Flow
    configuration (project-setup ADR) on a best-effort basis — the global fields plus your own
    scope entry (an agent reads `agents.<own-name>`, a tool reads `tools.<own-name>`).
@@ -489,9 +490,8 @@ no skill directory or none fits, this step is a no-op — continue without an er
      skill that is not installed is silently ignored.
    - If the block or the file is missing, the default applies (`enabled` on, no additional
      lists). Only read the config; do not migrate or write it here.
-4. **Library docs:** When working against an unknown or current library or framework, use
-   current-docs skills (e.g. `context7`) as needed, if available, instead of guessing from
-   memory. Only when needed, never mandatory.
+4. **Library docs:** For an unknown or current library or framework, use an available
+   current-docs skill (e.g. `context7`) when needed instead of guessing from memory.
 5. **Authority contract (orchestration vs. domain expertise):** Effective Flow and the central
    skills share the responsibility in a **layered** way — not "Effective Flow always wins":
    - **Effective Flow owns the orchestration** (the **what/when**): routing and user
@@ -557,13 +557,16 @@ If open findings or residual risks arise in the process, document them in a stru
 - Recommendation
 - Action (`effective-flow fix`, `effective-flow refactor`, `effective-flow build` or `effective-flow docs`)
 - Prompt suggestion
-- Status (Fixed / Open / Not implemented)
+- Status in the complete report language (English: Fixed / Open / Not implemented; German:
+  Behoben / Offen / Nicht umgesetzt)
 - rationale for non-implementation or ADR reference as slug, if present, e.g. `(ADR: <slug>)`
 
 ### Phase 5: Completion
 
 1. If errors were found in Phase 4: fix them and re-verify Phase 4 per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the completion condition still does not hold afterwards, instead of repeating indefinitely.
-2. If findings or residual risks with status `Open` or `Not implemented` remain from verification, regression test or review-like check:
+2. If findings or residual risks with a canonical open or unimplemented status in the complete
+   report language (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`) remain from
+   verification, regression test or review-like check:
    - write them into a new file under `.effective-flow/review/` per "Open review-finding reports"
    - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
    - name the generated report path in the completion summary
