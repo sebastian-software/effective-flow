@@ -27,6 +27,28 @@ const TRUSTED_AUTOMATION = [
   join('.github', 'workflows', 'close-develop-issues.yml'),
   join('.github', 'scripts', 'close-develop-issues.mjs'),
 ];
+const EXPECTED_LICENSE = `MIT License
+
+Copyright 2016 Sebastian Software GmbH
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+`;
 
 function fail(message) {
   throw new Error(message);
@@ -75,6 +97,19 @@ function assertSameMembers(actual, expected, label) {
   }
 }
 
+function assertSameFile(actual, expected, label) {
+  if (!readFileSync(actual).equals(readFileSync(expected))) {
+    fail(`${label} differs from ${expected}`);
+  }
+}
+
+function assertCanonicalLicense() {
+  const license = join(ROOT_DIR, 'LICENSE');
+  if (readFileSync(license, 'utf8') !== EXPECTED_LICENSE) {
+    fail(`${license} is not the canonical MIT license for Sebastian Software GmbH`);
+  }
+}
+
 function assertWorkerResolution(root, workerDir, extension, metadataPrefix, workers) {
   const knownWorkers = new Set(workers);
   for (const file of walkFiles(root, (path) => /\.(?:md|toml)$/.test(path))) {
@@ -96,6 +131,8 @@ function assertWorkerResolution(root, workerDir, extension, metadataPrefix, work
 }
 
 export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
+  assertCanonicalLicense();
+
   const workers = sourceWorkers();
   const claudeAgents = join(distRoot, 'claude', 'agents');
   const codexAgents = join(distRoot, 'codex', 'agents');
@@ -130,6 +167,11 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
   assertWorkerResolution(join(distRoot, 'portable'), portableWorkers, 'md', '# ', workers);
 
   for (const target of ['claude', 'codex', 'portable']) {
+    assertSameFile(
+      join(distRoot, target, 'effective-flow', 'LICENSE'),
+      join(ROOT_DIR, 'LICENSE'),
+      `${target} license`,
+    );
     const scripts = join(distRoot, target, 'effective-flow', 'scripts');
     for (const file of ['remote-tracker.mjs', 'remote-tracker-core.mjs']) {
       if (!lstatSync(join(scripts, file)).isFile()) fail(`${target} is missing scripts/${file}`);
@@ -189,6 +231,8 @@ function snapshotTree(root) {
 }
 
 export function assertDeliveryLayout(directory, portableSkill) {
+  assertCanonicalLicense();
+
   for (const wrapper of ['claude', 'codex', 'portable']) {
     try {
       lstatSync(join(directory, wrapper));
@@ -205,6 +249,17 @@ export function assertDeliveryLayout(directory, portableSkill) {
       candidates.push(relative(directory, file));
   }
   assertSameMembers(candidates, [join('effective-flow', 'SKILL.md')], 'delivery skill candidates');
+
+  assertSameFile(
+    join(directory, 'LICENSE'),
+    join(ROOT_DIR, 'LICENSE'),
+    'delivered repository license',
+  );
+  assertSameFile(
+    join(directory, 'effective-flow', 'LICENSE'),
+    join(ROOT_DIR, 'LICENSE'),
+    'delivered portable license',
+  );
 
   if (portableSkill) {
     const actual = snapshotTree(join(directory, 'effective-flow'));
@@ -300,6 +355,22 @@ function runReleaseInstallerSmoke(archive) {
       workers.map((name) => `${name}.toml`),
       'release-installed Codex workers',
     );
+    for (const [target, actual, expected] of [
+      [
+        'Claude',
+        join(claudeHome, 'skills', 'effective-flow'),
+        join(ROOT_DIR, 'dist', 'claude', 'effective-flow'),
+      ],
+      [
+        'Codex',
+        join(home, '.agents', 'skills', 'effective-flow'),
+        join(ROOT_DIR, 'dist', 'codex', 'effective-flow'),
+      ],
+    ]) {
+      if (JSON.stringify(snapshotTree(actual)) !== JSON.stringify(snapshotTree(expected))) {
+        fail(`release-installed ${target} skill differs from the built distribution`);
+      }
+    }
     if (readdirSync(join(home, '.agents', 'skills', 'effective-flow')).includes('workers')) {
       fail('direct installer selected the portable manager artifact for Codex');
     }
@@ -473,6 +544,7 @@ function assertStageDeliveryChecksTransformedDocs(dist, temp) {
     join(fixtureRoot, 'dist', 'portable', 'effective-flow'),
     { recursive: true },
   );
+  cpSync(join(ROOT_DIR, 'LICENSE'), join(fixtureRoot, 'LICENSE'));
   writeFileSync(
     join(fixtureRoot, 'README.md'),
     '# Guard fixture\n\nEdit `.effective-flow/config.json` to configure the skill.\n',
@@ -519,6 +591,7 @@ function offlineSmoke() {
   try {
     const delivery = join(temp, 'delivery');
     cpSync(join(ROOT_DIR, 'docs'), join(delivery, 'old-docs'), { recursive: true });
+    writeFileSync(join(delivery, 'LICENSE'), 'stale managed license\n');
     for (const path of TRUSTED_AUTOMATION) {
       const stale = join(delivery, path);
       mkdirSync(dirname(stale), { recursive: true });

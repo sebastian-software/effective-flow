@@ -2,6 +2,7 @@
   "name": "effective-flow",
   "private": true,
   "description": "Effective Flow — single-source, lazy-loading /effective-flow <tool> skill set for Codex and Claude Code",
+  "license": "MIT",
   "scripts": {
     "build": "node build.mjs",
     "format": "oxfmt",

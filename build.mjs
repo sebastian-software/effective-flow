@@ -60,6 +60,7 @@ const TOOLS_DIR = join(SOURCE_DIR, 'tools');
 const AGENTS_DIR = join(SOURCE_DIR, 'agents');
 const RUNTIME_SCRIPTS_DIR = join(SOURCE_DIR, 'scripts');
 const ROUTER_SRC = join(SOURCE_DIR, 'SKILL.md');
+const LICENSE_SRC = join(ROOT_DIR, 'LICENSE');
 const RUNTIME_SCRIPT_FILES = ['remote-tracker.mjs', 'remote-tracker-core.mjs'];
 
 // Hand-maintained user guide (not generated from src/). A content guard below
@@ -745,6 +746,9 @@ try {
           ? CODEX_SKILL_DIR
           : PORTABLE_SKILL_DIR;
 
+    // Every independently installable skill carries the canonical repository license.
+    copyFileSync(LICENSE_SRC, join(skillDir, 'LICENSE'));
+
     // Router SKILL.md
     const routerBody = renderGeneratedBody(
       routerBodyRaw
@@ -871,6 +875,22 @@ try {
         ].join('\n');
         writeFileSync(join(PORTABLE_WORKERS_DIR, `${workerName}.md`), contract);
       }
+    }
+  }
+
+  // --- License shipping guard ---
+  const canonicalLicense = readFileSync(LICENSE_SRC);
+  for (const [target, skillDir] of [
+    ['claude', CLAUDE_SKILL_DIR],
+    ['codex', CODEX_SKILL_DIR],
+    ['portable', PORTABLE_SKILL_DIR],
+  ]) {
+    const shipped = join(skillDir, 'LICENSE');
+    if (!existsSync(shipped)) {
+      throw new Error(`license shipping guard: ${target} is missing ${shipped}`);
+    }
+    if (!canonicalLicense.equals(readFileSync(shipped))) {
+      throw new Error(`license shipping guard: ${target} copy differs from LICENSE`);
     }
   }
 

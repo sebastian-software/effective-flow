@@ -58,6 +58,7 @@ export function stageDelivery(work, repo, sourceBranch, { root = ROOT_DIR } = {}
     'codex',
     'portable',
     'effective-flow',
+    'LICENSE',
     'README.md',
     join('docs', 'user-guide'),
     join('docs', 'developer-guide'),
@@ -66,6 +67,7 @@ export function stageDelivery(work, repo, sourceBranch, { root = ROOT_DIR } = {}
     rmSync(join(work, entry), { recursive: true, force: true });
   }
 
+  cpSync(join(root, 'LICENSE'), join(work, 'LICENSE'));
   cpSync(portableSkill, join(work, 'effective-flow'), { recursive: true });
   cpSync(join(root, 'README.md'), join(work, 'README.md'));
   mkdirSync(join(work, 'docs'), { recursive: true });
