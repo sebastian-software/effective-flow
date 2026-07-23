@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.52.2](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.52.1...effective-flow-v1.52.2) (2026-07-23)
+
+
+### Bug Fixes
+
+* exercise the main delivery app-token push ([#143](https://github.com/sebastian-software/effective-flow/issues/143)) ([8b21ce9](https://github.com/sebastian-software/effective-flow/commit/8b21ce912b4856074fb38e5dc1e5ab169d50c108))
+
 ## [1.52.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.52.0...effective-flow-v1.52.1) (2026-07-23)
 
 
