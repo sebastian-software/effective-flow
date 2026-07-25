@@ -228,8 +228,9 @@ First determine the tracker mode via the "apply-source detection" (report file u
 
 7. Classify each finding:
    - **Already implemented:** the finding already has a ✅ hint → skip
+   - **Already published as an issue:** the finding carries a 🔓 publication note (`Published as #<nr>` / `Veröffentlicht als #<nr>`) from the security disclosure gate → do not implement it from the report, because the local report and the issue would otherwise be implemented twice. Collect these findings with their issue numbers for the handover in step 9; the local flow never processes them silently. If a note is present but its issue number is unreadable or ambiguous, ask instead of guessing, and do not treat the finding as implementable in the meantime.
    - **Do not implement:** the developer note begins with "Do not implement" (the German form "Nicht umsetzen" is also recognized) → hand to `decision-records` as a decision candidate (ADR only for a permanent decision)
-   - **Implement:** no ✅ hint and no rejecting note → delegate to a skill
+   - **Implement:** no ✅ hint, no rejecting note, and no publication note → delegate to a skill
    - **Implement with context:** a developer note is present that does not begin with "Do not implement" / "Nicht umsetzen" → delegate to a skill, passing the note as additional context
 8. Give the user an overview:
 
@@ -242,10 +243,12 @@ First determine the tracker mode via the "apply-source detection" (report file u
 | To implement | X |
 | Do not implement (→ decision-records) | Y |
 | Already implemented | Z |
+| Already published (→ issue) | P |
 | Total | N |
 ```
 
-9. If there are no implementable findings and no rejected findings to handle: short message and abort.
+9. **Hand over published findings:** If findings carry a publication note, name each one with its issue number and output the concrete re-entry `{{SKILL:apply}} #<nr> [#<nr> …]`, which processes them through the remote flow. Never drop them silently — the argument type decides the mode, so a report file cannot enter the remote flow by itself.
+10. If no implementable findings and no rejected findings remain: report that briefly. If published findings exist, the message is the handover from step 9 rather than a bare abort, so a report consisting only of published findings ends with an executable next step instead of an apparent dead end. Then end the workflow.
 
 ### Phase 2: Commit and stash strategy
 

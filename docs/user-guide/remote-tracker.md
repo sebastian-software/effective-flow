@@ -32,6 +32,41 @@ Important: the local/remote switch concerns **reviews only**.
 an issue. Of the Effective Flow artifacts, only the plan file is committed (see
 [Worktree and Delivery](./worktree-and-delivery.md)).
 
+## Security findings stay local first
+
+Even in remote mode, a finding classified as security relevant is **never** published to the
+tracker on its own. An issue for an unfixed vulnerability describes it with file, line, problem,
+and a ready-made reproduction prompt, is visible to everyone with read access, and is propagated
+through notifications, mail, feeds, and mirrors – deleting the issue later does not undo that.
+
+Therefore `/effective-flow review` does this in remote mode:
+
+1. The findings of the run are classified. Anything security relevant – above all anything
+   reachable from outside through untrusted input, a network boundary, or an auth boundary –
+   becomes `local-only`. An uncertain assessment counts as security relevant.
+2. The withheld findings are written first to a local report
+   `.effective-flow/review/review-report-YYYY-MM-DD-security[-N].md`, with a notice that the file
+   must not be pasted into public issues, pull requests, or chats. Like all runtime state it stays
+   local and untracked.
+3. The remaining findings become issues plus an epic, exactly as before. The epic and every issue
+   body stay silent about the withheld findings – even a bare "3 security findings withheld" would
+   tell an attacker that unfixed vulnerabilities exist.
+4. Only then does Effective Flow offer to publish the withheld findings as issues as well, naming
+   the disclosure consequence. Keeping them local is the default; an unanswered or non-interactive
+   run publishes nothing. If you accept, the findings land in the same epic and their report entry
+   records the issue number.
+
+This gate overrides `tracker.mode` and every other configuration value; there is no config key
+that switches it off. Process the withheld findings with
+`/effective-flow apply .effective-flow/review/review-report-YYYY-MM-DD-security.md`, exactly like
+any local report.
+
+**What the gate does not cover:** the fix delivery. A branch named after the vulnerability, a
+commit subject like "prevent SQL injection in the upload endpoint", or a descriptive pull request
+body discloses the same thing the gate withheld – and a PR is public as soon as the repository is.
+Decide the wording of that delivery yourself, or fix security findings in a private fork before
+publishing.
+
 ### Tool detection
 
 Effective Flow does not distinguish between GitHub and Forgejo itself, but reads your

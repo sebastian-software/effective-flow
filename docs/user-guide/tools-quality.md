@@ -38,9 +38,11 @@ suitable to deeply cross-check an existing plan before implementation.
   `.effective-flow/review/review-report-YYYY-MM-DD[-N].md` with a finding table, severity,
   complexity, file+line, recommendation, and suggested follow-up action. Human-readable report
   fields and values use `language.workflow` consistently.
-- In remote tracker mode (`tracker.mode: remote`): no local report, but instead a
-  finding issue per new finding plus an epic issue that bundles them; already-present
-  findings are deduplicated. Issue and comment prose uses `language.forge`.
+- In remote tracker mode (`tracker.mode: remote`): a finding issue per new finding plus an epic
+  issue that bundles them; already-present findings are deduplicated. Issue and comment prose uses
+  `language.forge`. A local report is written only for security findings, which are never
+  published on their own – see
+  [Security findings stay local first](remote-tracker.md#security-findings-stay-local-first).
 - Findings use repository-wide monotonic IDs (`R-0000001`, `R-0000002`, …) tracked in
   `.effective-flow/memory.json`. A review filters and deduplicates first, atomically reserves the
   exact range it needs, and only then publishes a local report or remote issues. Parallel reviews

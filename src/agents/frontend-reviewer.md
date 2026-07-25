@@ -52,12 +52,14 @@ For each finding:
 - Problem
 - Solution
 - Confidence
+- Security relevance: `external`, `internal`, or `none`
 - Design decision, if relevant
 
 ## Rules
 
 - report only findings with confidence >= 80
 - quality over quantity
+- set the security relevance to `external` when the finding is reachable through untrusted input, a network boundary, or an auth boundary, to `internal` for security relevance without external reachability, and to `none` otherwise; when unsure, report the stronger value, because the review workflow withholds security findings from public trackers
 - justify the concrete impact on users or developers
 - cleanly separate must-fix from optional
 - for excessive file length or file complexity, recommend file splitting instead of compression
