@@ -224,10 +224,22 @@ test('security findings stay local until the review publication gate is confirme
     assert.match(reviewer, /when unsure, report the stronger value/);
   }
 
-  // The local report route must not implement a finding that was published as an issue.
+  // The local report route must not implement a finding that was published as an issue,
+  // and must hand it over instead of dropping it — a report file cannot enter remote mode.
+  const applyReview = source('src/tools/apply-review.md');
   assert.match(
-    source('src/tools/apply-review.md'),
+    applyReview,
     /\*\*Already published as an issue:\*\*[\s\S]*do not implement it from the report/,
+  );
+  assert.match(applyReview, /\| Already published \(→ issue\) \| P \|/);
+  assert.match(
+    applyReview,
+    /\*\*Hand over published findings:\*\*[\s\S]*`\{\{SKILL:apply\}\} #<nr> \[#<nr> …\]`/,
+  );
+  assert.match(applyReview, /Never drop them silently/);
+  assert.match(
+    applyReview,
+    /a report consisting only of published findings ends with an executable next step/,
   );
 });
 
