@@ -150,6 +150,87 @@ test('issue planning updates one comment fail-closed and apply rejects blocking 
   assert.match(applyIssues, /never route it to\n\s*implementation/);
 });
 
+test('security findings stay local until the review publication gate is confirmed', () => {
+  const review = source('src/tools/review.md');
+  const gate = source('src/shared/security-disclosure-gate.md');
+  const tracker = source('src/shared/issue-tracker.md');
+
+  // review.md orchestrates: it loads the gate and classifies before it publishes anything.
+  assert.match(review, /```lazy-include\nsecurity-disclosure-gate\n/);
+  assert.match(review, /\*\*Central security classification:\*\*/);
+  ordered(
+    review,
+    '**Dedup withheld findings:**',
+    '**Reserve IDs:**',
+    '**Run the security disclosure gate:**',
+    '**Create finding issues:**',
+  );
+  assert.match(review, /must finish before the reservation, so a finding already recorded/);
+  assert.match(review, /in that order and before any tracker mutation/);
+  assert.match(
+    review,
+    /plus the withheld findings only when the gate returned an explicit publication confirmation/,
+  );
+
+  // The gate classifies conservatively and never weakens the reviewer signal.
+  assert.match(
+    gate,
+    /`local-only` for every security-relevant finding, `publishable` for every other finding/,
+  );
+  assert.match(gate, /never\*\* de-escalate one marked `external`/);
+  assert.match(gate, /uncertain value classifies as `local-only`/);
+
+  // The gate persists the withheld findings before any tracker mutation, and only then asks.
+  ordered(
+    gate,
+    '### Local dedup',
+    '### Local-first persistence',
+    'review-report-YYYY-MM-DD-security[-N].md',
+    '### Publication offer',
+    'header: Security',
+    '🔓 Published as #<issue number>',
+    '### Silence in public artifacts',
+  );
+  assert.match(gate, /an unanswered, skipped, or\nnon-interactive run publishes nothing/);
+  assert.match(
+    gate,
+    /epic body and every issue body contain no count, title, signature, ID, or other reference/,
+  );
+
+  // A blocked report never blocks the unrelated findings, and never silently publishes.
+  assert.match(
+    gate,
+    /\*\*If the report cannot be written\*\*, publish the `publishable` findings as usual, publish\n\s*nothing from the withheld set/,
+  );
+
+  // The gate binds every remote publisher and cannot be configured away.
+  assert.match(tracker, /### Security disclosure gate/);
+  assert.match(tracker, /never\*\* written to a tracker without an explicit\nper-run confirmation/);
+  assert.match(tracker, /no configuration key\nthat switches it off/);
+  assert.match(
+    tracker,
+    /does not sanitize branch names,\n\s*commit subjects, or pull request bodies/,
+  );
+
+  // Every reviewer supplies the signal the classification consumes.
+  for (const agent of [
+    'frontend-reviewer',
+    'nodejs-reviewer',
+    'rust-reviewer',
+    'generic-product-reviewer',
+  ]) {
+    const reviewer = source(`src/agents/${agent}.md`);
+    assert.match(reviewer, /- Security relevance: `external`, `internal`, or `none`/);
+    assert.match(reviewer, /when unsure, report the stronger value/);
+  }
+
+  // The local report route must not implement a finding that was published as an issue.
+  assert.match(
+    source('src/tools/apply-review.md'),
+    /\*\*Already published as an issue:\*\*[\s\S]*do not implement it from the report/,
+  );
+});
+
 test('release exposes verified delivery state before starting the catalog job', () => {
   const release = source('.github/workflows/release.yml');
 

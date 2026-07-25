@@ -271,6 +271,11 @@ issue-tracker
 when: the tracker mode `remote` is active
 ```
 
+```lazy-include
+security-disclosure-gate
+when: findings are classified for publication or a withheld security finding is persisted or published
+```
+
 ## Wisdom accumulation
 
 At the start of Phase 1, generate a session ID (e.g. via the timestamp `date +%Y%m%d%H%M%S`) and use it consistently for the wisdom file `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`. This prevents collisions if several review runs are running in parallel.
@@ -444,19 +449,20 @@ Write all results to the wisdom file under `## Design decisions` with sub-sectio
    - Check each remaining finding individually for whether it is covered by a documented design decision.
    - On a match: remove the finding from the main report and move it into the "Skipped findings (design decisions)" table with a source reference.
    - In case of uncertainty (partial overlap): keep the finding in the report but annotate it with a reference to the potentially relevant design decision.
-4. Determine the follow-up action for each remaining finding:
+4. **Central security classification:** classify every remaining finding as `local-only` or `publishable` per the loaded "Security disclosure gate". This is the only place where a finding's publication class is decided. Record the class, the exposure marking, and the reason in the wisdom file so Phase 4 does not re-derive them.
+5. Determine the follow-up action for each remaining finding:
    - defect → `{{SKILL:fix}}`
    - structural problem → `{{SKILL:refactor}}`
    - missing functionality / safeguard → `{{SKILL:build}}`
    - pure documentation gap, outdated documentation, incorrect examples, missing migration, CLI, or API documentation → `{{SKILL:docs}}`
-5. Formulate prompt suggestions:
+6. Formulate prompt suggestions:
    - directly copyable plain text
    - no surrounding quotation marks
    - no escape sequences like `\"`
 
 ### Phase 4: Report
 
-Phase 4 branches according to the tracker mode determined in Phase 1. In local mode a Markdown report is written as before. In remote mode **no** local report is written; instead, finding issues and an epic issue are created. The finding numbering from `.effective-flow/memory.json` applies in both modes.
+Phase 4 branches according to the tracker mode determined in Phase 1. In local mode a Markdown report is written as before. In remote mode finding issues and an epic issue are created, and a local report is written **only** for the findings the security classification held back. A remote run without `local-only` findings therefore writes no local report, exactly as before. The finding numbering from `.effective-flow/memory.json` applies in both modes.
 
 #### Local mode
 
@@ -475,44 +481,38 @@ Phase 4 branches according to the tracker mode determined in Phase 1. In local m
 3. If the active finding scope only covers critical and important findings (default):
    - do not include notes in the main report
    - briefly mention that notes were filtered out and that a comprehensive review is available on request
-4. If `review.validation: off` was active, mention in the report that technical validation was skipped.
+4. If `review.validation: off` was active, mention in the report that technical validation was skipped. Carry the Phase-3 security classification into the report as well: every finding gets its `Security` field, and a report holding at least one `local-only` finding gets the disclosure banner. The publication gate is a no-op here, because local mode publishes nothing.
 5. Update valid cache areas (`designDecisions`, `scopeIndex`, `validatorScripts`) only after a successful recomputation. Do not write review findings to the cache.
 6. Present the most important findings to the user and point to the saved report file.
 7. Delete the wisdom file.
 
 #### Remote mode
 
-Use the formats, labels, and operations from "Issue-tracker integration (remote mode)". **No** local report is written.
+Use the formats, labels, and operations from "Issue-tracker integration (remote mode)". A local report is written only for the `local-only` findings of the security classification.
 
-Reuse the Phase-1 `language.forge` value for finding issues, the epic, and remote comments. It may
-differ from `language.workflow`; labels, IDs, action values, signatures, and helper fields stay
-stable.
+Reuse the Phase-1 `language.forge` value for finding issues, the epic, and remote comments. It may differ from `language.workflow`; labels, IDs, action values, signatures, and helper fields stay stable. The local security report keeps `language.workflow`, so one run may legitimately write in both languages — each artifact stays complete in its own language.
 
 1. **Ensure labels:** Create the required labels idempotently (`effective-flow-review-finding`, `effective-flow-review-epic`, the action and severity labels, `wontfix`).
-2. **Dedup first:** Use the helper's compatibility label queries and finding-dedup operation for existing finding issues in every state. It unions current and `firmo-` label results by issue number, reads both canonical `Signature` and legacy `Signatur`, normalizes either form, and removes exact duplicates from the creation list. In case of an uncertain semantic match outside that exact identity (e.g. only a shifted line number), treat it as a new finding and note the possible relationship in the issue body.
-3. **Reserve, then create new finding issues:** Only for the remaining **new** findings, reserve
-   their exact nonzero contiguous `R-XXXXXXX` range through the shared memory contract and release
-   its lock. Only after persistence, build each canonical payload through the helper and publish
-   one issue per reserved ID. Canonical writes always use `Signature`. An issue-creation failure
-   does not roll memory back; report any created subset and leave unused reserved IDs as permanent
-   gaps.
-4. **Create a new epic:** Create a **new** epic issue from the helper's canonical epic payload in the resolved Forge language (English title `Code review YYYY-MM-DD[-N]` and section `Skipped (design decisions)`; German title `Code-Review YYYY-MM-DD[-N]` and section `Übersprungen (Architekturentscheidungen)`), with label `effective-flow-review-epic`. The task list contains exclusively the finding issues newly created in this run. Skipped findings (design decisions) go into that non-checkable localized section and are identified by title, normalized signature, and decision reference only. They receive no issue, no `R-XXXXXXX` ID, and do not advance `lastFindingNumber`. Already-existing (deduplicated) findings are **not** referenced. An existing epic is never extended. Record the epic number in the `Epic` field of the associated finding issues.
-5. **Avoid an empty epic:** If no new findings remain after dedup, do **not** create an empty epic; instead report to the user that all findings already exist as issues.
-6. Do not rewrite `memory.json` after publication; the range was already persisted in Step 3.
-7. Report to the user the epic URL, the number of newly created findings, and the number of deduplicated findings.
-8. Delete the wisdom file.
+2. **Dedup first:** Use the helper's compatibility label queries and finding-dedup operation for existing finding issues in every state. It unions current and `firmo-` label results by issue number, reads both canonical `Signature` and legacy `Signatur`, normalizes either form, and removes exact duplicates from the creation list. In case of an uncertain semantic match outside that exact identity (e.g. only a shifted line number), treat it as a new finding and note the possible relationship in the issue body. Remote dedup applies to `publishable` findings; a `local-only` finding was never published and therefore cannot match a remote issue.
+3. **Dedup withheld findings:** Run the local dedup of the loaded "Security disclosure gate" for the `local-only` findings, which remote dedup cannot see. This must finish before the reservation, so a finding already recorded in an earlier report consumes no new ID.
+4. **Reserve IDs:** Reserve exactly one contiguous nonzero `R-XXXXXXX` range through the shared memory contract for the ordered list of all remaining findings of **both** classes, and release its lock. Findings dropped by remote or local dedup are not part of that list. Only after the reservation is atomically persisted may any report or issue be published; if reservation fails, publish nothing.
+5. **Run the security disclosure gate:** the local security report and then the publication offer follow the loaded "Security disclosure gate" — in that order and before any tracker mutation. Use the same report handle, directory guards, and collision mechanics as local mode, and never inspect or create a report below a linked execution worktree.
+6. **Create finding issues:** Build each canonical payload through the helper and publish one issue per reserved ID. Publish the `publishable` findings, plus the withheld findings only when the gate returned an explicit publication confirmation. Canonical writes always use `Signature`. An issue-creation failure does not roll memory back; report any created subset and leave unused reserved IDs as permanent gaps.
+7. **Create a new epic:** Create a **new** epic issue from the helper's canonical epic payload in the resolved Forge language (English title `Code review YYYY-MM-DD[-N]` and section `Skipped (design decisions)`; German title `Code-Review YYYY-MM-DD[-N]` and section `Übersprungen (Architekturentscheidungen)`), with label `effective-flow-review-epic`. The task list contains exclusively the finding issues newly created in this run. Skipped findings (design decisions) go into that non-checkable localized section and are identified by title, normalized signature, and decision reference only. They receive no issue, no `R-XXXXXXX` ID, and do not advance `lastFindingNumber`. Already-existing (deduplicated) findings are **not** referenced. An existing epic is never extended. Record the epic number in the `Epic` field of the associated finding issues.
+8. **Avoid an empty epic:** If no new findings remain after dedup, do **not** create an empty epic; instead report to the user that all findings already exist as issues. The same applies to the split: if every new finding of this run stayed local, create no epic and report the local report path instead.
+9. Do not rewrite `memory.json` after publication; the range was already persisted in Step 4.
+10. Report to the user the epic URL, the number of newly created findings, the number of deduplicated findings, plus the number of withheld findings and the local report path.
+11. Delete the wisdom file.
 
-**Completion condition (no autonomous loop):** The review is complete when the findings that were quality-checked in Phase 3 and filtered against design decisions are available — in local mode in the report, in remote mode as finding issues plus an epic (or with the message that all findings already exist) —, the exact published finding range was reserved atomically before publication, and the wisdom file has been deleted. The independent check is provided by the finding-quality check in Phase 3 (confidence filter, duplicate and severity consistency). This workflow only produces a report and implements nothing; therefore there is neither a bounded correction loop nor a `/goal` string.
+**Completion condition (no autonomous loop):** The review is complete when the findings that were quality-checked in Phase 3, filtered against design decisions, and classified by the security gate are available — in local mode in the report, in remote mode as finding issues plus an epic (or with the message that all findings already exist), with every withheld finding in the local security report or, if that report was blocked, reported in the chat as not persisted —, the exact published finding range was reserved atomically before publication, and the wisdom file has been deleted. The independent check is provided by the finding-quality check in Phase 3 (confidence filter, duplicate and severity consistency). This workflow only produces a report and implements nothing; therefore there is neither a bounded correction loop nor a `/goal` string.
 
 ### Report format
 
 The English form is shown below. For `language.workflow = de`, render the complete report in
 German: `# Code-Review-Bericht`, `Datum`, `Umfang`, `Projekttyp`, `Zusammenfassung`,
 `Schweregrad`, `Anzahl`, `Komplexität`, `Aktion`, `Befunde`, `Titel`, `Bereich`, `Datei`,
-`Problem`, `Empfehlung`, `Prompt-Vorschlag`, `Entwicklernotiz`, and
-`Übersprungene Befunde (Architekturentscheidungen)`, with German displayed severity/complexity
-values. Keep finding IDs, paths, skill/action values, and other machine tokens unchanged. A
-report uses one complete form; readers accept both forms.
+`Problem`, `Empfehlung`, `Prompt-Vorschlag`, `Entwicklernotiz`, `Sicherheit`, and
+`Übersprungene Befunde (Architekturentscheidungen)`, with German displayed severity/complexity values and the German banner sentence from "Security disclosure gate". Keep finding IDs, paths, skill/action values, the `external`/`internal` exposure tokens, and other machine tokens unchanged. A report uses one complete form; readers accept both forms.
 
 ```markdown
 # Code review report
@@ -549,6 +549,7 @@ report uses one complete form; readers accept both forms.
 - **Complexity**: Low / Medium / High
 - **Area**: [...]
 - **File**: [path:line]
+- **Security**: external | internal | none <!-- publication class of the security gate: external and internal are withheld from the tracker, none is publishable; omitted in workflow reports that ran no classification -->
 - **Problem**: [...]
 - **Recommendation**: [...]
 - **Action**: `{{SKILL:fix}}` | `{{SKILL:refactor}}` | `{{SKILL:build}}` | `{{SKILL:docs}}`
@@ -587,8 +588,7 @@ Only relevant if `codebase-improvement` is not available. Brief core guidance fo
 - Within Phase 2a, all design-decision sources in parallel.
 - Within Phase 2c, all reviewer sub-agents in parallel (across routing buckets and across directory splits).
 - Reviewers in Phase 2c check **no** design decisions — the central filter happens in Phase 3.
-- In local mode, this skill writes the review report, temporary wisdom, memory, and valid cache
-  entries. In remote mode, it additionally writes finding and epic issues via the tracker and
-  writes **no** local report. Every local runtime mutation uses “Runtime-state write safety”.
+- In local mode, this skill writes the review report, temporary wisdom, memory, and valid cache entries. In remote mode, it additionally writes finding and epic issues via the tracker and writes a local report only for the findings withheld by the security gate. Every local runtime mutation uses “Runtime-state write safety”.
+- A security-classified finding never reaches the tracker without the explicit per-run confirmation from the publication gate. This overrides `tracker.mode` and every other configuration; no config key switches the gate off.
 - Prompt suggestions must be directly copyable without quotation marks and without escape sequences (applies to the report and the issue body alike).
 - The active finding scope (default: only critical+important) must be respected in the report or in the finding issues.

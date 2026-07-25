@@ -69,12 +69,14 @@ Begin with the audited scope, evidence limits, the reduced-depth notice, and imp
 - Evidence and concrete impact
 - Solution
 - Confidence
+- Security relevance: `external`, `internal`, or `none`
 - Design decision, if relevant
 
 ## Rules
 
 - report only findings with confidence >= 80
 - quality over quantity; verify and deduplicate every finding
+- set the security relevance to `external` when the finding is reachable through untrusted input, a network boundary, or an auth boundary, to `internal` for security relevance without external reachability, and to `none` otherwise; when unsure, report the stronger value, because the review workflow withholds security findings from public trackers
 - prioritize by supported impact, effort, confidence, fix risk, and whether the change unblocks other work
 - separate defects from optional improvements and product-direction choices
 - for excessive file length or complexity, recommend a repository-conformant split rather than compression

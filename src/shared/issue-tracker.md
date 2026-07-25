@@ -1,6 +1,6 @@
 ## Issue-tracker integration (remote mode)
 
-This shared fragment connects `{{SKILL:review}}` and `{{SKILL:apply-review}}` with an external issue tracker (GitHub via `gh`, Forgejo via `tea`). It is **opt-in** via the Effective Flow configuration (project setup ADR) and disabled by default (`local`). In local mode both skills behave unchanged – findings run through the Markdown report file under `.effective-flow/review/`, no issues are created and no CLI is invoked.
+This shared fragment connects `{{SKILL:review}}` and `{{SKILL:apply-review}}` with an external issue tracker (GitHub via `gh`, Forgejo via `tea`). It is **opt-in** via the Effective Flow configuration (project setup ADR) and disabled by default (`local`). In local mode both skills behave unchanged – findings run through the Markdown report file under `.effective-flow/review/`, no issues are created and no CLI is invoked. In remote mode a local report is written only for findings withheld by the "Security disclosure gate" below.
 
 The local/remote toggle (`tracker.mode`) affects exclusively **reviews**. **Investigations** (`{{SKILL:investigate}}`) are exempt from it and remain purely local in every mode under `.effective-flow/investigation/` (never committed, never as an issue). Of the Effective Flow artifacts, only **plans** are committed.
 
@@ -112,6 +112,34 @@ In remote mode, use these labels and create missing labels idempotently (tolerat
 
 **One-time `sf-` label migration:** The even older prefix `sf-` (`sf-review-finding`, `sf-review-epic`, `sf-fix`/`sf-refactor`/`sf-build`/`sf-docs`, `sf-issue-done`, `sf-needs-planning`) is **no longer** detected continuously, but **migrated once per repo**. On the **first** remote tracker access — provided the marker `labelMigration.sf.done` in the retained absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle is missing and an authenticated CLI is present — an idempotent migration moves every still-present `sf-<x>` label to `effective-flow-<x>`: first add `effective-flow-<x>` on the issue, then remove `sf-<x>` (not the other way around, so an abort leaves no issue unclassified). If the runtime directory is missing, apply the owning workflow's loaded “Runtime-state write safety” contract from `RUNTIME_STATE_ROOT` to that exact directory immediately before its `mkdir`. After the remote migration, use the loaded shared memory mutation contract against the retained absolute memory handle: acquire its lock, re-read memory, merge only `labelMigration.sf`, and atomically persist `done` plus the completion timestamp while preserving every sibling and unknown field. If this marker mutation blocks or fails, preserve local state, report that the remote labels may already have migrated, and direct the user to `{{SKILL:setup}}`; the next run may repeat the idempotent remote migration. If the migration finds no `sf-` labels, it is a silent no-op. If the marker is set, any further scan is skipped — ongoing operations know only `effective-flow-` and `firmo-`. `sf-` is referenced exclusively in this migration.
 
+### Security disclosure gate
+
+A finding classified as security relevant is **never** written to a tracker without an explicit
+per-run confirmation by the user. This gate binds every remote publisher of review findings and
+overrides `tracker.mode` as well as every other configuration value; there is no configuration key
+that switches it off. The producing workflow owns the classification and the confirmation
+(see `{{SKILL:review}}`, Phase 3 and Phase 4).
+
+Rules for every remote publisher:
+
+- **Local first:** the withheld findings are persisted in a local report below
+  `.effective-flow/review/` before any tracker mutation. That report is the authoritative record
+  for them; it stays in the gitignored runtime state of the main checkout and is never committed.
+- **Confirmation before publication:** publication happens only after an explicit user decision in
+  that run, taken with knowledge of the disclosure consequence. Keeping them local is the default;
+  an unanswered, skipped, or non-interactive run publishes nothing from the withheld set.
+- **Silence in public artifacts:** epic bodies, issue bodies, and comments contain no count, title,
+  signature, ID, or other reference to a withheld finding. A public hint that unfixed security
+  findings exist is itself an exploitable signal.
+- **Conservative classification:** an uncertain or missing security assessment counts as security
+  relevant and stays local.
+- **Scope:** the gate covers the publication of review findings. It does not sanitize branch names,
+  commit subjects, or pull request bodies of a later fix; that disclosure decision belongs to the
+  delivering workflow and its user.
+
+The gate governs only the destination of a finding. It never removes a finding, changes its
+severity, or narrows the active finding scope.
+
 ### No AI attribution in issue bodies and comments
 
 Do not add AI attribution to issue bodies, epic bodies and comments: no "Generated with Claude Code/Codex" footers, no agent session links (e.g. `https://claude.ai/code/…`) and no `Co-Authored-By` trailers – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex as the target harness are allowed, generation attribution is not.
@@ -124,8 +152,10 @@ resolved Forge language. Finding and epic bodies use one complete language for h
 titles, headings, field labels, displayed severity/complexity values, and prose.
 
 The German display mapping is `Schweregrad`, `Komplexität`, `Bereich`, `Datei`, `Problem`,
-`Empfehlung`, `Prompt-Vorschlag`, `Befunde`, and
-`Übersprungen (Architekturentscheidungen)`. English uses the template labels below. `Action`,
+`Empfehlung`, `Prompt-Vorschlag`, `Sicherheit`, `Befunde`, and
+`Übersprungen (Architekturentscheidungen)`. English uses the template labels below. The exposure
+values `external`, `internal`, and `none` of the `Security`/`Sicherheit` field are machine tokens
+and stay unlocalized in both forms. `Action`,
 `Epic`, and `Signature` are stable helper/dedup fields and remain canonical English in both
 forms, as do their action values. Displayed severities map to
 `Kritisch`/`Wichtig`/`Hinweis`, and displayed complexities map to
@@ -155,6 +185,10 @@ A finding issue must be **self-contained**: a foreign LLM session must be able t
 - **Epic**: #<epic number> (empty if no epic)
 - **Signature**: [path:line] · [Area] · [short summary of the problem]  <!-- Dedup key -->
 ```
+
+A finding published through the "Security disclosure gate" keeps its `Security`/`Sicherheit` field
+in the issue body, so the accepted disclosure stays visible; an ordinary finding omits that field
+instead of carrying an empty `none`.
 
 The **Signature** field fixes the content dedup key (file+line, area, problem). It is deliberately **not** the `R-XXXXXXX` ID, because that is assigned freshly per run. Canonical writes use `Signature`; helper reads and deduplication also accept the legacy field name `Signatur` and normalize both forms to the same identity.
 

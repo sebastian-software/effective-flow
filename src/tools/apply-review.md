@@ -228,8 +228,9 @@ First determine the tracker mode via the "apply-source detection" (report file u
 
 7. Classify each finding:
    - **Already implemented:** the finding already has a ✅ hint → skip
+   - **Already published as an issue:** the finding carries a 🔓 publication note (`Published as #<nr>` / `Veröffentlicht als #<nr>`) from the security disclosure gate → do not implement it from the report; name the issue so the work runs through the remote flow instead, and ask if the note is ambiguous. This prevents the same finding being implemented twice from two sources.
    - **Do not implement:** the developer note begins with "Do not implement" (the German form "Nicht umsetzen" is also recognized) → hand to `decision-records` as a decision candidate (ADR only for a permanent decision)
-   - **Implement:** no ✅ hint and no rejecting note → delegate to a skill
+   - **Implement:** no ✅ hint, no rejecting note, and no publication note → delegate to a skill
    - **Implement with context:** a developer note is present that does not begin with "Do not implement" / "Nicht umsetzen" → delegate to a skill, passing the note as additional context
 8. Give the user an overview:
 
