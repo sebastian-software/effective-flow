@@ -51,8 +51,9 @@ plan-numbering
 when: a plan file is created or its date-slug name is resolved
 ```
 
-```include
+```lazy-include
 doc-categories
+when: the requirement is classified as Documentation and a doc category or target path is decided
 ```
 
 ## Recommended skills

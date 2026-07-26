@@ -425,8 +425,9 @@ Rules for the findings report:
 pre-commit-gate
 ```
 
-```include
+```lazy-include
 commit-message-rules
+when: a commit message or Conventional Commit title is written
 ```
 
 - Always start independent specialist phases in parallel when they are truly independent

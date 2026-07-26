@@ -227,8 +227,9 @@ If open findings or residual risks arise in the process, document them in a stru
 pre-commit-gate
 ```
 
-```include
+```lazy-include
 commit-message-rules
+when: a commit message or Conventional Commit title is written
 ```
 
 ## Rules

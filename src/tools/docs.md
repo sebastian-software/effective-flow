@@ -276,8 +276,9 @@ options:
 pre-commit-gate
 ```
 
-```include
+```lazy-include
 commit-message-rules
+when: a commit message or Conventional Commit title is written
 ```
 
 ## Rules
