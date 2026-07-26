@@ -167,7 +167,7 @@ use `Signature`.
 
 ### Issue body format (finding issue)
 
-A finding issue must be **self-contained**: a foreign LLM session must be able to process it without access to the producing session. It contains the same content fields as a finding block of the local report format (see `{{SKILL:review}}`, "Report format").
+A finding issue must be **self-contained**: a foreign LLM session must be able to process it without access to the producing session. It contains the same content fields as a finding block of the local report format (see the shared `review-report-format` fragment).
 
 - **Title:** `[R-XXXXXXX] <short title in language.forge>`
 - **Labels:** `effective-flow-review-finding`, the action label and the severity label.

@@ -139,25 +139,10 @@ Effective Flow-internal files live under `.effective-flow/` in the project root.
 
 The file `.effective-flow/memory.json` stores persistent state across sessions. Unlike the wisdom file, it is never deleted.
 
-### Content
-
-```json
-{
-  "lastFindingNumber": 42,
-  "configMigration": {
-    "review": {
-      "version": "review-speed-profiles-v1",
-      "appliedAt": "YYYY-MM-DDTHH:mm:ssZ",
-      "addedKeys": ["review.profile"]
-    }
-  }
-}
+```lazy-include
+review-state
+when: memory or cache data is inspected, reserved, or written
 ```
-
-`configMigration` is an object with area-specific sub-keys (`review`, `applyReview`, `tracker`, `worktree`). Each workflow area writes only its own sub-key.
-
-All updates use the “Shared memory-state mutation” contract loaded through the runtime-directory
-prerequisite. No review phase directly rewrites this file.
 
 ### Configuration schema
 
@@ -204,26 +189,6 @@ Explicitly set detail values take precedence over profile derivations.
 ### Config migration
 
 Reading the Effective Flow configuration from the project-setup ADR (including the `review` keys) and the one-time migration of an old config is handled centrally by the "Config migration" building block (`config-migration.md`); this building block no longer performs its own per-block migration for `review`. The `review` config schema above (defaults, profile derivation) is unaffected.
-
-### Cache file
-
-Persistent cache data lives exclusively in `.effective-flow/cache.json`, not in `.effective-flow/memory.json` and not permanently in wisdom files.
-
-`review` may use these cache areas:
-
-| Area               | Content                                                               | Invalidation                                            |
-| ------------------ | --------------------------------------------------------------------- | ------------------------------------------------------- |
-| `designDecisions`  | Extracted design decisions per source                                 | Hash or mtime of the source files, cache schema version |
-| `scopeIndex`       | File list, routing buckets, and reviewer split for whole-code reviews | Git HEAD, dirty state, and relevant file changes        |
-| `validatorScripts` | Detected check scripts and last usable validation profile             | Changes to package/build configuration files            |
-
-Rules:
-
-- Every cache entry needs `version`, `createdAt`, and `sourceHash` or equivalent invalidation data.
-- In case of uncertainty, a missing file, invalid JSON, a version change, or invalidation that cannot be checked unambiguously: ignore the cache and recompute normally.
-- Do not overwrite invalid cache files; briefly inform the user and continue without the cache.
-- Never take final review findings from the cache or replace them with cached results.
-- Wisdom files remain temporary in-run storage and are deleted at the end.
 
 ### Git tracking
 
@@ -506,66 +471,10 @@ Reuse the Phase-1 `language.forge` value for finding issues, the epic, and remot
 
 **Completion condition (no autonomous loop):** The review is complete when the findings that were quality-checked in Phase 3, filtered against design decisions, and classified by the security gate are available — in local mode in the report, in remote mode as finding issues plus an epic (or with the message that all findings already exist), with every withheld finding in the local security report or, if that report was blocked, reported in the chat as not persisted —, the exact published finding range was reserved atomically before publication, and the wisdom file has been deleted. The independent check is provided by the finding-quality check in Phase 3 (confidence filter, duplicate and severity consistency). This workflow only produces a report and implements nothing; therefore there is neither a bounded correction loop nor a `/goal` string.
 
-### Report format
-
-The English form is shown below. For `language.workflow = de`, render the complete report in
-German: `# Code-Review-Bericht`, `Datum`, `Umfang`, `Projekttyp`, `Zusammenfassung`,
-`Schweregrad`, `Anzahl`, `Komplexität`, `Aktion`, `Befunde`, `Titel`, `Bereich`, `Datei`,
-`Problem`, `Empfehlung`, `Prompt-Vorschlag`, `Entwicklernotiz`, `Sicherheit`, and
-`Übersprungene Befunde (Architekturentscheidungen)`, with German displayed severity/complexity values and the German banner sentence from "Security disclosure gate". Keep finding IDs, paths, skill/action values, the `external`/`internal` exposure tokens, and other machine tokens unchanged. A report uses one complete form; readers accept both forms.
-
-```markdown
-# Code review report
-
-**Date:** YYYY-MM-DD
-**Scope:** [Entire code / Described area]
-**Project type:** [Frontend / Backend / CLI / Rust / Generic product / Tooling / Mixed]
-
-## Summary
-
-| Severity | Count |
-|---|---|
-| Critical | X |
-| Important | Y |
-| Note | Z |
-
-| Complexity | Count |
-|---|---|
-| Low | X |
-| Medium | Y |
-| High | Z |
-
-| Action | Count |
-|---|---|
-| {{SKILL:fix}} | X |
-| {{SKILL:refactor}} | Y |
-| {{SKILL:build}} | Z |
-| {{SKILL:docs}} | W |
-
-## Findings
-
-### [R-0000001] [Title]
-- **Severity**: Critical / Important / Note
-- **Complexity**: Low / Medium / High
-- **Area**: [...]
-- **File**: [path:line]
-- **Security**: external | internal | none <!-- publication class of the security gate: external and internal are withheld from the tracker, none is publishable; omitted in workflow reports that ran no classification -->
-- **Problem**: [...]
-- **Recommendation**: [...]
-- **Action**: `{{SKILL:fix}}` | `{{SKILL:refactor}}` | `{{SKILL:build}}` | `{{SKILL:docs}}`
-- **Prompt suggestion**: [...]
-- **Developer note**: <!-- to be filled in manually by the developer only; always leave empty when generating the report, never fill automatically. Later developer values: free text or "Do not implement: [reason]" (the German form "Nicht umsetzen: [reason]" is also recognized) -->
-
-## Skipped findings (design decisions)
-
-| Finding | Design decision | Source |
-|---|---|---|
-| [...] | [DD-XXX] | [...] |
+```lazy-include
+review-report-format
+when: a review report is written or an existing one is augmented
 ```
-
-If a finding is later implemented, augment the existing report in its preserved report language
-with a matching short status note. English and German field labels and displayed values remain
-readable; stable action values and IDs are never translated.
 
 ## Known limitations
 
