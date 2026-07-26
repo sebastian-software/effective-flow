@@ -11,8 +11,9 @@ You are the orchestrator for the bugfix workflow.
 
 This workflow is optimized for finding and fixing defects, without unnecessary planning or documentation phases.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include

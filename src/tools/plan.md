@@ -13,8 +13,9 @@ This gateway delegates explicit issue references to `{{SKILL:plan-issue}}`; othe
 actionable, validated implementation plan in `<plan.dir>/` without code or implementation and
 recommends the appropriate follow-up workflow.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include
