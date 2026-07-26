@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { resolveEagerIncludes } from '../build-lib.mjs';
@@ -56,6 +56,58 @@ test('plan gateway preserves local-input and legacy-plan precedence', () => {
   assert.match(
     gateway.replace(/\s+/g, ' '),
     /For `none`, `plan`, `review-report`, or `ambiguous`, do not infer an issue\.[\s\S]*Natural-language requirement text therefore retains the existing local-plan behavior\./,
+  );
+});
+
+test('the session-title contract ships in the router and stays out of the budgeted tools', () => {
+  const router = source('src/SKILL.md');
+  const fragment = source('src/shared/session-title.md');
+  const renderedRouter = resolveEagerIncludes(router, {
+    context: 'SKILL.md',
+    readFragment: (name) => source(`src/shared/${name}.md`),
+  });
+
+  // The router is the only carrier: `build` and `plan` sit at the 700-line context
+  // budget, so even a lazy-include pointer per tool would fail the build.
+  assert.match(router, /```include\nsession-title\n```/);
+  assert.equal(router.match(/```include\nsession-title\n```/g).length, 1);
+  assert.doesNotMatch(renderedRouter, /```include/);
+  assert.match(renderedRouter, /\*\*Suggested session title:\*\* <title>/);
+  for (const directory of ['src/tools', 'src/agents']) {
+    const sources = readdirSync(new URL(`${directory}/`, repositoryRoot)).filter((entry) =>
+      entry.endsWith('.md'),
+    );
+    assert.ok(sources.length > 0, `${directory} must contain sources to check`);
+    for (const file of sources) {
+      assert.doesNotMatch(
+        source(`${directory}/${file}`),
+        /session-title/,
+        `${directory}/${file} must not carry the always-loaded session-title fragment`,
+      );
+    }
+  }
+
+  // Load-bearing clauses: a host gate that never touches the running session, a
+  // single emission, and a subject-first title.
+  assert.match(fragment, /Never call such a tool for the current session/);
+  assert.match(fragment, /apply the title silently instead of proposing it/);
+  assert.match(fragment, /a delegate never repeats a subject its parent already proposed/);
+  assert.match(fragment, /at most 60 characters/);
+  for (const silent of ['version', 'open-plans', 'setup', 'cleanup', 'commit', 'pr']) {
+    assert.match(
+      fragment,
+      new RegExp(`\`${silent}\``),
+      `${silent} must stay listed as a silent tool`,
+    );
+  }
+  ordered(
+    fragment,
+    '## Session title',
+    'Only where sessions carry titles',
+    'Only from work-subject tools',
+    'Once, as soon as the subject exists',
+    'Subject first',
+    'One line, never blocking',
   );
 });
 

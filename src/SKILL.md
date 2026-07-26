@@ -7,7 +7,7 @@ description: "Effective Flow — software engineering workflows as tools, invoke
 
 Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `{{FIRMO}} <tool>` (version {{VERSION}}).
 
-This router skill is deliberately **thin**. It contains only the tool catalog and the dispatch rule; a tool's full instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the session lean and avoids token exhaustion from preloading all tools.
+This router skill is deliberately **thin**. Beyond the tool catalog, the dispatch rule and the session-title contract it carries nothing; a tool's full instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the session lean and avoids token exhaustion from preloading all tools.
 
 ## Invocation
 
@@ -19,6 +19,10 @@ This router skill is deliberately **thin**. It contains only the tool catalog an
 2. **Valid `<tool>`:** Read the file `tools/<tool>.md` in this skill directory and follow it verbatim. Pass the remaining arguments through to the tool unchanged. Do **not** read any further tool files in the process — only the one that corresponds to the invoked tool.
 
 For the `apply` tool, its instructions may in turn load an appropriate **internal** file (`tools/apply-plan.md`, `tools/apply-review.md`, or `tools/apply-issues.md`), depending on the detected source. These internal files are not directly invocable via `{{FIRMO}}`.
+
+```include
+session-title
+```
 
 ## Tools
 
