@@ -44,6 +44,11 @@ plan-status
 ```
 
 ```lazy-include
+plan-contract
+when: a plan artifact's fields, sections, or review prose are written or translated
+```
+
+```lazy-include
 plan-numbering
 when: a plan file is created or its date-slug name is resolved
 ```

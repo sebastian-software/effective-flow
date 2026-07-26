@@ -43,6 +43,11 @@ when: the Effective Flow configuration is first read or a legacy config is migra
 plan-status
 ```
 
+```lazy-include
+plan-contract
+when: a plan artifact's fields, sections, or review prose are written or translated
+```
+
 ```include
 doc-categories
 ```

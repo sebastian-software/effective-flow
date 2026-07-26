@@ -42,6 +42,11 @@ when: the Effective Flow configuration is first read or a legacy config is migra
 plan-status
 ```
 
+```lazy-include
+plan-contract
+when: a plan artifact's fields, sections, or review prose are written or translated
+```
+
 ## Project conventions
 
 If the project has an `AGENTS.md`, read it before investigation and fix and follow its guidance for analysis, implementation, tests, validation and commits.

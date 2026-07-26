@@ -41,6 +41,11 @@ config-migration
 plan-status
 ```
 
+```lazy-include
+plan-contract
+when: a plan artifact's fields, sections, or review prose are written or translated
+```
+
 ## Recommended skills
 
 - `codebase-improvement`
