@@ -109,6 +109,11 @@ review-report-backlinks
 unresolved-review-report
 ```
 
+```lazy-include
+review-report-format
+when: a review report is written or an existing one is augmented
+```
+
 Current workflow for plan references: Refactoring (`{{SKILL:refactor}}`).
 
 ```include

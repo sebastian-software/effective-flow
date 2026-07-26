@@ -115,6 +115,11 @@ review-report-backlinks
 unresolved-review-report
 ```
 
+```lazy-include
+review-report-format
+when: a review report is written or an existing one is augmented
+```
+
 ## Workflow
 
 ### Phase 0: Scope gate

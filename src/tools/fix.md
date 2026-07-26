@@ -96,6 +96,11 @@ unresolved-review-report
 when: open or unimplemented review findings are offloaded as a report
 ```
 
+```lazy-include
+review-report-format
+when: a review report is written or an existing one is augmented
+```
+
 Current workflow for plan references: Bugfix (`{{SKILL:fix}}`).
 
 ```lazy-include
