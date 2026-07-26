@@ -56,13 +56,22 @@ under `src/` and generates two harness-native artifacts plus one portable manage
 
 ## Thin router with lazy loading
 
-`src/SKILL.md` is the router: a tool catalog plus a dispatch rule, nothing else. It never loads
-all tools up front but references, on the call `/effective-flow <tool>` (Claude) or
-`$effective-flow <tool>` (Codex), exactly the one matching `tools/<tool>.md`. This lazy loading
-keeps the session lean and avoids token exhaustion from unnecessarily preloaded tool
+`src/SKILL.md` is the router: a tool catalog, a dispatch rule, and exactly one behavioral
+contract. It never loads all tools up front but references, on the call `/effective-flow <tool>`
+(Claude) or `$effective-flow <tool>` (Codex), exactly the one matching `tools/<tool>.md`. This lazy
+loading keeps the session lean and avoids token exhaustion from unnecessarily preloaded tool
 instructions.
 
 With no `<tool>` or an unknown one, the router only prints the tool list and does nothing else.
+
+**The one documented exception to router thinness** is the eagerly included `session-title`
+fragment: a session-level concern that no single tool owns, since a run's title outlives the tool
+that produced it. It lives in the router because the context-budget guard leaves the largest tools
+no room — `build` and `plan` sit at exactly the 700-line limit, so even a four-line `lazy-include`
+pointer per tool would fail the build. The router carries no size guard and is read once per
+session, and the trigger fires in nearly every work-subject run, which makes a deferred read more
+expensive than inlining. Treat this as a bounded exception, not a precedent: further cross-tool
+behavior belongs in a tool or a mode-gated fragment unless the same measurement applies.
 
 The same progressive disclosure applies **within** a tool: mode-gated shared fragments (e.g.
 worktree delivery, remote tracker, report handling) are no longer inlined eagerly but loaded on

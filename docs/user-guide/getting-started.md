@@ -110,6 +110,20 @@ does nothing else – it's the fastest way to get an overview. As soon as you na
 concrete tool (`/effective-flow plan`, `/effective-flow build`, …), Effective Flow loads its
 full instruction and works from there.
 
+### Keeping sessions tellable apart
+
+If your host lists sessions by title, it derives that title from your **first** message. A session
+opened with a bare `/effective-flow plan 42` is therefore filed as "Effective-flow plan 42", which
+says nothing once several runs are open at the same time. Two things help:
+
+- **Open with one descriptive sentence** before the command. The host then has something to work
+  with from the start, and this is the only thing that fixes the title from the very beginning.
+- **Take the suggestion.** As soon as a run knows its real subject – the plan title, the issue
+  title, the review scope – it proposes one line such as
+  `**Suggested session title:** Harden test-server configuration · plan`. Apply it with your
+  host's own rename function: no host currently lets a running session rename itself, so Effective
+  Flow suggests rather than sets. On hosts without titled sessions, nothing is printed.
+
 ## The typical flow: Plan → Build → Pull Request
 
 For new functionality or a larger change, this is the usual three-step process:
