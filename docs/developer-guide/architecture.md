@@ -66,12 +66,16 @@ With no `<tool>` or an unknown one, the router only prints the tool list and doe
 
 **The one documented exception to router thinness** is the eagerly included `session-title`
 fragment: a session-level concern that no single tool owns, since a run's title outlives the tool
-that produced it. It lives in the router because the context-budget guard leaves the largest tools
-no room — `build` and `plan` sit at exactly the 700-line limit, so even a four-line `lazy-include`
-pointer per tool would fail the build. The router carries no size guard and is read once per
-session, and the trigger fires in nearly every work-subject run, which makes a deferred read more
-expensive than inlining. Treat this as a bounded exception, not a precedent: further cross-tool
-behavior belongs in a tool or a mode-gated fragment unless the same measurement applies.
+that produced it. Two things put it in the router. It is read once per session and its trigger
+fires in nearly every work-subject run, so a deferred read would cost more than inlining. And at
+the time of the decision the context-budget guard left no room anywhere else — `build` and `plan`
+sat at exactly the 700-line limit, where even a four-line `lazy-include` pointer per tool would
+have failed the build.
+
+That second reason has since expired: the budget refactor returned enough headroom that a per-tool
+pointer would now fit. The placement stands on the first reason alone, which is the durable one.
+Treat this as a bounded exception, not a precedent: further cross-tool behavior belongs in a tool
+or a mode-gated fragment unless it, too, is read once and needed almost always.
 
 The same progressive disclosure applies **within** a tool: mode-gated shared fragments (e.g.
 worktree delivery, remote tracker, report handling) are no longer inlined eagerly but loaded on

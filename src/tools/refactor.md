@@ -41,6 +41,11 @@ config-migration
 plan-status
 ```
 
+```lazy-include
+plan-contract
+when: a plan artifact's fields, sections, or review prose are written or translated
+```
+
 ## Recommended skills
 
 - `codebase-improvement`
@@ -102,6 +107,11 @@ review-report-backlinks
 
 ```include
 unresolved-review-report
+```
+
+```lazy-include
+review-report-format
+when: a review report is written or an existing one is augmented
 ```
 
 Current workflow for plan references: Refactoring (`{{SKILL:refactor}}`).

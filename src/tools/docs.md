@@ -30,8 +30,9 @@ effective-flow-dir-migration
 when: any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent
 ```
 
-```include
+```lazy-include
 project-routing
+when: an affected file or domain must be classified into a routing bucket
 ```
 
 ```lazy-include
@@ -41,6 +42,11 @@ when: the Effective Flow configuration is first read or a legacy config is migra
 
 ```include
 plan-status
+```
+
+```lazy-include
+plan-contract
+when: a plan artifact's fields, sections, or review prose are written or translated
 ```
 
 ```include
@@ -270,8 +276,9 @@ options:
 pre-commit-gate
 ```
 
-```include
+```lazy-include
 commit-message-rules
+when: a commit message or Conventional Commit title is written
 ```
 
 ## Rules

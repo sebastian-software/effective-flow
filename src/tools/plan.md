@@ -13,8 +13,9 @@ This gateway delegates explicit issue references to `{{SKILL:plan-issue}}`; othe
 actionable, validated implementation plan in `<plan.dir>/` without code or implementation and
 recommends the appropriate follow-up workflow.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include
@@ -41,12 +42,18 @@ plan-status
 ```
 
 ```lazy-include
+plan-contract
+when: a plan artifact's fields, sections, or review prose are written or translated
+```
+
+```lazy-include
 plan-numbering
 when: a plan file is created or its date-slug name is resolved
 ```
 
-```include
+```lazy-include
 doc-categories
+when: the requirement is classified as Documentation and a doc category or target path is decided
 ```
 
 ## Recommended skills

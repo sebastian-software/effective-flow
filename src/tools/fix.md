@@ -11,8 +11,9 @@ You are the orchestrator for the bugfix workflow.
 
 This workflow is optimized for finding and fixing defects, without unnecessary planning or documentation phases.
 
-```include
+```lazy-include
 language-rules
+when: an artifact output language or delegated language context must be resolved
 ```
 
 ```include
@@ -29,8 +30,9 @@ effective-flow-dir-migration
 when: any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent
 ```
 
-```include
+```lazy-include
 project-routing
+when: an affected file or domain must be classified into a routing bucket
 ```
 
 ```lazy-include
@@ -40,6 +42,11 @@ when: the Effective Flow configuration is first read or a legacy config is migra
 
 ```include
 plan-status
+```
+
+```lazy-include
+plan-contract
+when: a plan artifact's fields, sections, or review prose are written or translated
 ```
 
 ## Project conventions
@@ -87,6 +94,11 @@ when: a review-report backlink is written or updated
 ```lazy-include
 unresolved-review-report
 when: open or unimplemented review findings are offloaded as a report
+```
+
+```lazy-include
+review-report-format
+when: a review report is written or an existing one is augmented
 ```
 
 Current workflow for plan references: Bugfix (`{{SKILL:fix}}`).
@@ -220,8 +232,9 @@ If open findings or residual risks arise in the process, document them in a stru
 pre-commit-gate
 ```
 
-```include
+```lazy-include
 commit-message-rules
+when: a commit message or Conventional Commit title is written
 ```
 
 ## Rules

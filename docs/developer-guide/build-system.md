@@ -280,14 +280,24 @@ disclosure continues **within** a tool: a large tool no longer inlines every sha
 eagerly but moves the **mode-gated** blocks behind a `lazy-include` pointer (see "Placeholder
 and directive syntax").
 
-- **Core flow stays inline** – blocks that (almost) every run needs: `language-rules`,
-  `task-tracking`, `skill-discovery`, `completion-protocol`, `commit-message-rules`,
-  `pre-commit-gate`, `goal-completion`, `apply-clarity-gate`, `plan-status`.
-- **Mode-gated blocks are lazy** – needed only when the branch is reached: `config-migration`,
+- **Core flow stays inline** – blocks that (almost) every run needs, or that must not be missed:
+  `task-tracking`, `skill-discovery`, `completion-protocol`, `pre-commit-gate`,
+  `goal-completion`, `apply-clarity-gate`, and the status markers in `plan-status`.
+  `goal-completion` governs every remaining phase rather than one decision point, and
+  `apply-clarity-gate` is a safety gate whose failure mode — silently not running — is the one
+  nobody notices. Neither is deferred, however tempting their size.
+- **Mode-gated blocks are lazy** – needed only when the branch is reached: `language-rules`,
+  `project-routing`, `commit-message-rules`, `doc-categories`, `plan-contract`,
+  `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
   `worktree-integration`, `issue-tracker`, `review-report-backlinks`,
   `unresolved-review-report`, `plan-numbering`, `plan-reference-routing`,
   `effective-flow-dir-migration`. The load trigger (`when:`) sits at the decision point where
   the mode/branch is determined.
+
+A fragment qualifies for deferral only when it serves **one nameable decision point** and the
+pointer states that trigger. Where a fragment is read in nearly every run anyway — review's
+configuration schema, for instance — deferring it would move the measured number without saving
+anything real, so it stays inline.
 
 The fragment is delivered **once per consumer target**, deduplicated, to that skill's `shared/`
 directory and rendered there through the same pipeline as a tool body (nested eager includes,
@@ -322,8 +332,9 @@ so both managers install the same bytes instead of selecting by traversal order.
 
 **Context budget.** The always-loaded core of the five largest tools stays under **700 lines**
 (measured and enforced during the build, see "Guards"); the build prints the sizes as a report.
-For comparison, before the change: `build` 1185 → ~624, `fix` 917 → ~425, `docs` 925 → ~498,
-`review` 787 → ~646, `plan` 723 → ~615 lines. The rest is loaded only when the mode is reached.
+The current cores are `build` 540, `fix` 427, `docs` 543, `review` 598, and `plan` 478 lines —
+roughly 150 to 270 lines of headroom each, deliberately left free for future instruction work
+rather than locked in by lowering the guard. The rest is loaded only when the mode is reached.
 
 ## Optional upstream ownership audit
 

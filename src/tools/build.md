@@ -26,8 +26,9 @@ effective-flow-dir-migration
 when: any wisdom, report, memory, or worktree mutation below `.effective-flow/` is imminent
 ```
 
-```include
+```lazy-include
 project-routing
+when: an affected file or domain must be classified into a routing bucket
 ```
 
 ```lazy-include
@@ -41,6 +42,11 @@ If the project has an `AGENTS.md`, read it early in the workflow and follow its 
 
 ```include
 plan-status
+```
+
+```lazy-include
+plan-contract
+when: a plan artifact's fields, sections, or review prose are written or translated
 ```
 
 ```lazy-include
@@ -84,53 +90,10 @@ options:
    - end the workflow immediately, unless the user has explicitly confirmed `{{SKILL:build}}` as the desired workflow
 6. For Feature: first run the initial state documentation.
 
-## Initial state documentation
-
-Before the actual workflow starts, check whether the project already has documented plans:
-
-1. Check whether `<plan.dir>/` exists and contains at least one `.md` file.
-2. If no plan files exist:
-   - create `<plan.dir>/` if needed
-   - investigate the current project state locally or with an internal sub-agent:
-     - project structure
-     - existing files
-     - technologies used
-     - existing architecture decisions
-   - write the initial state as `<plan.dir>/YYYY-MM-DD-initial-state.md` (date via `date +%F`)
-   - resolve `language.workflow` through the shared language rule and render the **complete**
-     initial-state plan in that language, including title, status, headings, table labels, and
-     prose. Pass the resolved language to any analysis delegate. Stable paths and technical
-     tokens remain unchanged. The English form is shown below; use the canonical German plan
-     contract for `de` and never mix forms.
-
-```markdown
-# Initial state — [Project name]
-
-**Plan status:** Implemented
-
-## Requirement
-
-Documentation of the project state before the first feature workflow.
-
-## Architecture decisions
-
-[Existing architecture and design decisions]
-
-## Affected files
-
-| File | Description |
-|---|---|
-| [all relevant files] | [Description] |
-
-## Implementation details
-
-[Current project structure, technologies, dependencies]
+```lazy-include
+initial-state-documentation
+when: the project has no plan files yet and its initial state must be documented
 ```
-
-3. If plan files exist: skip this step without a message.
-4. If an initial plan file was created, record it in the wisdom file.
-
-Important: The plan file in the completion phase gets its date-slug name according to `Plan file convention`.
 
 ```include
 completion-protocol
@@ -197,6 +160,11 @@ when: a review-report backlink is written or updated
 ```lazy-include
 unresolved-review-report
 when: open or unimplemented review findings are offloaded as a report
+```
+
+```lazy-include
+review-report-format
+when: a review report is written or an existing one is augmented
 ```
 
 Current workflow for plan references: Feature (`{{SKILL:build}}`).
@@ -419,8 +387,9 @@ Rules for the findings report:
 pre-commit-gate
 ```
 
-```include
+```lazy-include
 commit-message-rules
+when: a commit message or Conventional Commit title is written
 ```
 
 - Always start independent specialist phases in parallel when they are truly independent
