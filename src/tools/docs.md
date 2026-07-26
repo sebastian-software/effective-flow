@@ -30,8 +30,9 @@ effective-flow-dir-migration
 when: any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent
 ```
 
-```include
+```lazy-include
 project-routing
+when: an affected file or domain must be classified into a routing bucket
 ```
 
 ```lazy-include
