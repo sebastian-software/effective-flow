@@ -2,11 +2,32 @@
 
 import process from 'node:process';
 import { spawn } from 'node:child_process';
+import { statSync } from 'node:fs';
 import { errorEnvelope, executeOperation, RemoteTrackerError } from './remote-tracker-core.mjs';
+
+// A spawn against a missing working directory and a spawn of a missing executable both surface as
+// ENOENT with the executable in `error.path`, so the core could not tell them apart. Detect the
+// unusable directory here, at the single I/O boundary, and report it under its own code.
+function isUsableDirectory(path) {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 function createProcessRunner() {
   return ({ executable, args = [], stdin, cwd, env }) =>
     new Promise((resolve) => {
+      if (cwd !== undefined && !isUsableDirectory(cwd)) {
+        resolve({
+          status: null,
+          stdout: '',
+          stderr: '',
+          error: { code: 'INVALID_CWD', path: cwd },
+        });
+        return;
+      }
       const child = spawn(executable, args, {
         cwd,
         env: env ? { ...process.env, ...env } : process.env,

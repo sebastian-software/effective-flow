@@ -41,13 +41,45 @@ commit-message-rules
 skill-discovery
 ```
 
+## Execution root
+
+Every remote-helper invocation and every **repository-wide** Git operation of this tool — refreshing
+the base ref, resolving refs, listing the head commits, and pushing the branch — runs in the
+repository's main checkout, `RUNTIME_STATE_ROOT`. `gh` and `tea` resolve their repository context
+from the working directory, and a delivery handback may already have withdrawn its worktree before
+this tool runs, so an inherited execution directory can be a deleted path. These operations act on
+refs, not on a working tree, so they need no worktree.
+
+Resolve the root from the first record of `git worktree list --porcelain` when a handback did not
+supply it, verify it, and use it as the per-call working directory: `git -C <ROOT> …` for those Git
+calls and the top-level `cwd` field for every helper payload. In an in-place run the root is the
+current checkout, so nothing changes. Never fall back to an inherited directory.
+
+**The invocation checkout stays separate.** Everything that reads or changes a working tree belongs
+to the checkout this tool was invoked from, which may be a linked worktree: the default head
+branch, noting the branch that was checked out, creating and checking out a lifecycle branch, the
+working-tree cleanliness checks, and the final switch-back. Resolve those against that checkout
+before rooting the operations above. Never take the head branch from the execution root's checkout
+— in a worktree-based invocation that is the base branch or an unrelated branch, which would push
+the wrong branch or stop on a head with no commits. In an in-place run both checkouts are the same
+path and the distinction has no effect.
+
+```lazy-include
+execution-location
+when: the supplied or resolved execution root must be verified before a push, helper call, or checkout restore
+```
+
 ## Project conventions
 
 If the project has an `AGENTS.md`, read it before creating the PR and follow its guidance on branch names, PR titles, PR descriptions, and project-wide conventions.
 
 ## Inputs
 
-- **Head branch:** the delivery branch. Default: the currently checked-out branch.
+- **Execution root:** the verified absolute `RUNTIME_STATE_ROOT` from a delivery handback. If it is
+  missing, resolve and verify it per "Execution root".
+- **Head branch:** the delivery branch. Default: the branch checked out in the invocation checkout,
+  never the one in the execution root (see "Execution root"). A delivery handback always passes it
+  explicitly.
 - **Lifecycle mode:** an optional instruction to create a delivery branch fresh from the
   base ref or to finalize an already-prepared delivery branch.
 - **Base branch:** the PR target. Default: the branch part of
@@ -60,7 +92,11 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
 
 ## Approach
 
-1. **Determine config and mode:**
+1. **Determine the execution root, config and mode:**
+   - Establish and verify the execution root per "Execution root" before any other step, and keep
+     the invocation checkout separate from it. Every helper payload and every repository-wide
+     `git` call below uses the execution root; every working-tree operation uses the invocation
+     checkout.
    - Read the Effective Flow configuration (project setup ADR), if present. Use `delivery.baseBranch`,
      `delivery.branchPrefix`, and `delivery.returnBranch`; for
      `baseBranch`/`branchPrefix`, fall back to the old `worktree.*` values.
@@ -72,8 +108,9 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
    - In legacy mode, the head branch exists locally. In lifecycle mode, either a prepared
      delivery branch exists locally or the new delivery branch is created
      in step 3.
-3. **Prepare the lifecycle branch, if requested:**
-   - Note the currently checked-out branch.
+3. **Prepare the lifecycle branch, if requested:** Branch creation, branch checkout and the
+   working-tree check below happen in the invocation checkout, never in the execution root.
+   - Note the branch currently checked out there.
    - If an already-prepared delivery branch is passed, use it as the head.
    - If a new delivery branch is to be created: resolve `delivery.baseBranch`,
      update remote refs via `git fetch REMOTE BRANCH`, form a branch name
@@ -100,14 +137,14 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
        user-owned for cleanup purposes, even when it has a lifecycle-style name.
      - **After cleanup:** Report that the head has no commits against the resolved base, include
        the resulting local state, and stop.
-5. **Resolve the provider:** Invoke the shipped `scripts/remote-tracker.mjs` helper's repository-resolution operation. Pass a configured or explicit provider override when present. On `AMBIGUOUS_HOST`, ask for `github` or `forgejo` and retry with that choice; do not infer a provider from an unknown hostname.
-6. **Check tool availability:** Invoke the helper probe once and use its normalized authentication, version, JSON, and capability result. On `CLI_MISSING`, `AUTH_FAILED`, or `UNSUPPORTED_CAPABILITY`, report the structured remediation and abort without side effects. The branch is preserved for later manual PR creation; never discover flags or access credentials directly.
-7. **Push the branch:** Push the head branch to `origin` if it is not yet there or not up to date (`git push -u origin <head-branch>`). If the push is rejected (e.g. diverged remote history): report the cause briefly and abort instead of overwriting the remote state.
+5. **Resolve the provider:** Invoke the shipped `scripts/remote-tracker.mjs` helper's repository-resolution operation with the execution root as the payload's `cwd`. Pass a configured or explicit provider override when present. On `AMBIGUOUS_HOST`, ask for `github` or `forgejo` and retry with that choice; do not infer a provider from an unknown hostname.
+6. **Check tool availability:** Invoke the helper probe once — again with the execution root as `cwd` — and use its normalized authentication, version, JSON, and capability result. On `CLI_MISSING`, `AUTH_FAILED`, or `UNSUPPORTED_CAPABILITY`, report the structured remediation and abort without side effects. A `tea` below the supported minimum surfaces here as `UNSUPPORTED_CAPABILITY` with its `installed` and `minimum` versions, which is the intended early gate. The branch is preserved for later manual PR creation; never discover flags or access credentials directly.
+7. **Push the branch:** Push the head branch to `origin` if it is not yet there or not up to date (`git -C <execution-root> push -u origin <head-branch>`). If the push is rejected (e.g. diverged remote history): report the cause briefly and abort instead of overwriting the remote state.
    If a PR already exists for the head branch, subsequent changes are pushed
    exclusively as new commits on this branch. Do not rewrite existing
    PR history via `commit --amend`, rebase, squash, or force push.
 8. **Look up an existing open PR:** After the successful push, invoke the helper's
-   `pr-list` operation for open pull requests. For every returned item whose normalized `head`,
+   `pr-list` operation for open pull requests, with the execution root as `cwd`. For every returned item whose normalized `head`,
    `base`, `state`, or URL is missing, hydrate the item through the helper's `pr-read` operation;
    abort as invalid/unparseable output if any item remains incomplete. Exact-filter the complete
    normalized details using both `head === <head-branch>` and `base === <base-branch>`, and require
@@ -135,10 +172,11 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
 
    Do not put internal tracking IDs, `Co-Authored-By` trailers, or AI attribution (no "Generated with Claude Code/Codex" footers, no agent session links like `https://claude.ai/code/…`) into the PR title or description – not even when the harness appends them by default.
 
-10. **Create the PR:** Build the provider-neutral PR payload and invoke the helper's PR-create mutation. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
-11. **Restore the checkout:** After a successful PR creation or reuse, switch back to
+10. **Create the PR:** Build the provider-neutral PR payload, set the execution root as its `cwd`, and invoke the helper's PR-create mutation. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
+11. **Restore the checkout:** After a successful PR creation or reuse, switch the invocation
+    checkout — the one step 3 may have switched, never the execution root — back to
     `delivery.returnBranch`, or for `auto` to the local branch part of
-    `delivery.baseBranch`, provided the working tree is clean. If the
+    `delivery.baseBranch`, provided its working tree is clean. If the
     switch-back fails, report the actual branch explicitly. The
     PR head branch is preserved locally and remotely.
 12. **Report the result:** Output the PR URL, the branch name, and the final local

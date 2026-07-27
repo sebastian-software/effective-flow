@@ -254,3 +254,100 @@ test('legacy arbitrary-CWD delegation and unconditional cleanup wording stay rem
     }
   }
 });
+
+test('forge operations are rooted in the runtime state root, not the execution worktree', () => {
+  const requiredClauses = [
+    [/Root every forge operation in `RUNTIME_STATE_ROOT`/, 'forge rooting category'],
+    [
+      /provider CLI such as `gh` or `tea` resolves its repository context from its working\s+directory/,
+      'provider working-directory rationale',
+    ],
+    [/may already have been withdrawn/, 'withdrawn-worktree rationale'],
+    [
+      /repository-wide Git\s+operations that accompany a completion action/,
+      'repository-wide scope of the redirected Git operations',
+    ],
+    [
+      /never any operation that reads or changes a working tree —\s+branch creation, branch checkout, cleanliness checks and a default derived from the checked-out\s+branch all stay in `EXECUTION_ROOT`/,
+      'boundary against working-tree operations',
+    ],
+  ];
+
+  for (const [pattern, clause] of requiredClauses) {
+    assert.match(contract, pattern, `missing ${clause} clause`);
+  }
+});
+
+test('the pr tool keeps its invocation checkout separate from the execution root', () => {
+  const pr = extractBody(readSource('tools', 'pr.md'));
+
+  assert.match(
+    pr,
+    /\*\*The invocation checkout stays separate\.\*\*/,
+    'pr.md must separate the invocation checkout from the execution root',
+  );
+  assert.match(
+    pr,
+    /Default: the branch checked out in the invocation checkout,\s+never the one in the execution root/,
+    'the head branch must default from the invocation checkout',
+  );
+  assert.match(
+    pr,
+    /Branch creation, branch checkout and the\s+working-tree check below happen in the invocation checkout, never in the execution root/,
+    'lifecycle branch preparation must stay in the invocation checkout',
+  );
+  assert.match(
+    pr,
+    /switch the invocation\s+checkout — the one step 3 may have switched, never the execution root — back to/,
+    'the checkout restore must target the invocation checkout',
+  );
+});
+
+test('the completion action and the pr tool root their forge work in the runtime state root', () => {
+  assert.match(
+    resolvedDeliveryFragment,
+    /5\. \*\*Execute action:\*\* Run this step and every Git, remote-helper and provider-CLI operation it\s+performs in `RUNTIME_STATE_ROOT`/,
+    'the completion action must name its execution root',
+  );
+  assert.match(
+    resolvedDeliveryFragment,
+    /Never fall back to\s+`EXECUTION_ROOT` for this step/,
+    'the completion action must forbid the execution-root fallback',
+  );
+  assert.match(
+    resolvedDeliveryFragment,
+    /pass the delivery branch, base branch, the verified\s+`RUNTIME_STATE_ROOT` as its execution root/,
+    'the pr handback must pass the runtime root',
+  );
+
+  const pr = extractBody(readSource('tools', 'pr.md'));
+  assert.match(pr, /^## Execution root$/m, 'pr.md must state its execution root');
+  assert.match(
+    pr,
+    /```lazy-include\nexecution-location\n(?:when:[^\n]+\n)?```/,
+    'pr.md must attach the canonical execution-location contract',
+  );
+  assert.match(pr, /`git -C <execution-root> push -u origin <head-branch>`/, 'rooted push');
+  for (const step of [
+    /repository-resolution operation with the execution root as the payload's `cwd`/,
+    /Invoke the helper probe once — again with the execution root as `cwd`/,
+    /`pr-list` operation for open pull requests, with the execution root as `cwd`/,
+    /set the execution root as its `cwd`, and invoke the helper's PR-create mutation/,
+  ]) {
+    assert.match(pr, step, 'every helper invocation in pr.md must carry the execution root');
+  }
+});
+
+test('the remote helper contract documents the working directory it runs in', () => {
+  const issueTracker = readShared('issue-tracker');
+  assert.match(
+    issueTracker,
+    /Pass the verified absolute `RUNTIME_STATE_ROOT` as the top-level `cwd`/,
+    'the helper contract must document the cwd input',
+  );
+  assert.match(
+    issueTracker,
+    /A `cwd` that is not an existing directory fails with\s+a structured error naming the path, never as a missing-CLI error/,
+    'the helper contract must document the unusable-directory error',
+  );
+});
