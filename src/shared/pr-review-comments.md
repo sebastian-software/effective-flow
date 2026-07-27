@@ -6,13 +6,18 @@ existing pull request (GitHub via `gh`, Forgejo via `tea`). It encapsulates the
 reading review threads, replying to a thread, resolving a thread, and posting a PR summary
 comment.
 
-Boundary to `issue-tracker.md`: that building block is tailored to **issues** and the
-`tracker.mode` switch. PR review threads are a different API object.
-`{{SKILL:iterate}}` is – like `{{SKILL:apply-issues}}`/`{{SKILL:plan-issue}}` – **inherently
-remote** in PR mode and does not evaluate `tracker.mode`; it merely needs a
-Git repository, an `origin` remote, and an authenticated CLI. The **host and
-CLI detection** is taken from `issue-tracker.md` (not reinvented); this building block
-only adds the PR operations.
+Boundary to `issue-tracker.md`: that building block is tailored to **issues** and the tracker
+target. PR review threads are a different API object. `{{SKILL:iterate}}` is **inherently
+forge-bound** in PR mode: it never evaluates the tracker target and merely needs a Git repository,
+an `origin` remote, and an authenticated CLI. That makes it tracker-independent in the same way
+`{{SKILL:apply-issues}}`/`{{SKILL:plan-issue}}` are tracker-**bound** — those two follow the
+resolved target, while `iterate` always stays on the forge. The **host detection, CLI probing, and
+availability check** are taken from the "Remote helper contract" in `issue-tracker.md` (not
+reinvented); this building block only adds the PR operations.
+
+Pull requests, PR comments, and PR review threads are code-host objects and stay with the forge
+behind `origin` even when the tracker target is `external`; a tracker target never redirects them
+to another tool.
 
 ### No AI attribution
 

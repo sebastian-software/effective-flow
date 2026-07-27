@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { resolveEagerIncludes } from '../build-lib.mjs';
+import { collectIncludeNames, resolveEagerIncludes } from '../build-lib.mjs';
 
 const repositoryRoot = new URL('..', import.meta.url);
 
@@ -18,6 +18,37 @@ function ordered(text, ...fragments) {
     assert.ok(next > position, `fragment is out of order: ${fragment}`);
     position = next;
   }
+}
+
+// Slices one Markdown section so a row assertion cannot be satisfied by an
+// identically named row that moved into a neighboring (e.g. optional) table.
+function section(text, heading, stop = '\n### ') {
+  const start = text.indexOf(heading);
+  assert.notEqual(start, -1, `missing section heading: ${heading}`);
+  const rest = text.slice(start + heading.length);
+  const end = rest.indexOf(stop);
+  return end === -1 ? rest : rest.slice(0, end);
+}
+
+// First column of every Markdown table row in the given text, compared
+// literally so no cell value is reinterpreted as a regular expression.
+function firstColumnCells(text) {
+  return text
+    .split('\n')
+    .filter((line) => line.startsWith('|'))
+    .map((line) => line.split('|')[1].trim());
+}
+
+function tableRow(text, cell) {
+  const row = text
+    .split('\n')
+    .find((line) => line.startsWith('|') && line.split('|')[1].trim() === cell);
+  assert.ok(row, `missing table row: ${cell}`);
+  return row;
+}
+
+function flat(text) {
+  return text.replace(/\s+/g, ' ');
 }
 
 test('plan routes an unambiguous issue through Stage A and exits before local planning', () => {
@@ -255,13 +286,16 @@ test('security findings stay local until the review publication gate is confirme
     /\*\*If the report cannot be written\*\*, publish the `publishable` findings as usual, publish\n\s*nothing from the withheld set/,
   );
 
-  // The gate binds every remote publisher and cannot be configured away.
+  // The gate binds every publisher and cannot be configured away. That it binds an
+  // external target too is asserted once, in the tracker-target security test below.
   assert.match(tracker, /### Security disclosure gate/);
-  assert.match(tracker, /never\*\* written to a tracker without an explicit\nper-run confirmation/);
-  assert.match(tracker, /no configuration key\nthat switches it off/);
   assert.match(
-    tracker,
-    /does not sanitize branch names,\n\s*commit subjects, or pull request bodies/,
+    flat(tracker),
+    /never\*\* written to a tracker without an explicit per-run confirmation/,
+  );
+  assert.match(
+    flat(tracker),
+    /does not sanitize branch names, commit subjects, or pull request bodies/,
   );
 
   // Every reviewer supplies the signal the classification consumes.
@@ -407,4 +441,349 @@ test('catalog job uses scoped app tokens and a checksum-pinned Dalo binary', () 
   assert.match(release, /DALO_SOURCE_TOKEN: \$\{\{ steps\.source-token\.outputs\.token \}\}/);
   assert.match(release, /GH_TOKEN: \$\{\{ steps\.target-token\.outputs\.token \}\}/);
   assert.match(release, /node scripts\/update-team-catalog\.mjs/);
+});
+
+test('the tracker config keys document three modes in source, setup, and user guide', () => {
+  const tracker = source('src/shared/issue-tracker.md');
+  const setup = source('src/tools/setup.md');
+  const docs = source('docs/user-guide/configuration.md');
+
+  // Schema and defaults of the two new keys live in the tracker fragment. The JSON
+  // keys are matched independently so the assertion does not pin their order.
+  assert.match(tracker, /"externalTool": null/);
+  assert.match(tracker, /"externalToolHint": null/);
+  assert.match(tracker, /- `tracker\.externalTool`: `null`/);
+  assert.match(tracker, /- `tracker\.externalToolHint`: `null`/);
+  const flatTracker = flat(tracker);
+  assert.match(flatTracker, /- `tracker\.mode`: `"local"`, `"remote"`, `"external"`/);
+  assert.match(flatTracker, /Required when the mode is `external`\./);
+  assert.match(flatTracker, /There is \*\*no\*\* whitelist/);
+  assert.match(
+    flatTracker,
+    /`tracker\.externalToolHint`: free text that lets the run-time agent pick the right connection/,
+  );
+  assert.match(flatTracker, /It names a \*\*forge\*\* CLI and stays forge-only\./);
+
+  // setup owns the interview that pins them, and asks for the same three modes.
+  const flatSetup = flat(setup);
+  for (const mode of ['local', 'remote', 'external']) {
+    assert.match(
+      flatSetup,
+      new RegExp(`tracker\\.mode = ${mode}`),
+      `the setup interview must offer tracker.mode = ${mode}`,
+    );
+  }
+  assert.match(flatSetup, /`tracker\.externalTool` – the short, stable identifier/);
+  assert.match(flatSetup, /It is required for this mode, there is no list of supported tools/);
+  assert.match(flatSetup, /`tracker\.externalToolHint` – optional free text/);
+  assert.match(flatSetup, /`tracker\.remoteToolOverride` stays a forge setting/);
+
+  // The user guide carries the contract in its own `tracker` block, not in a passing
+  // mention elsewhere. Its defaults are presented as `(unset)` rather than `null`.
+  const trackerBlock = section(docs, '## Block `tracker`', '\n## ');
+  const modeRow = tableRow(trackerBlock, '`mode`');
+  for (const mode of ['local', 'remote', 'external']) {
+    assert.match(modeRow, new RegExp(`\`${mode}\``), `the mode row must list ${mode}`);
+  }
+  assert.match(tableRow(trackerBlock, '`externalTool`'), /required for `mode: external`/);
+  assert.match(tableRow(trackerBlock, '`externalTool`'), /no whitelist/);
+  assert.match(tableRow(trackerBlock, '`externalToolHint`'), /connection/);
+  assert.match(
+    flat(trackerBlock),
+    /A `mode: external` without a non-empty `externalTool` is invalid configuration: the run aborts instead of falling back to the forge or to `local`\./,
+  );
+});
+
+test('an external tracker target fails closed on all four connection failures', () => {
+  const target = source('src/shared/tracker-target.md');
+  const tracker = source('src/shared/issue-tracker.md');
+  const discovery = section(target, '### Connection discovery');
+  const flatDiscovery = flat(discovery);
+
+  assert.match(discovery, /\*\*Fail closed\.\*\*/);
+  const classes = firstColumnCells(discovery);
+  for (const failure of [
+    'missing tool identifier',
+    'no connection',
+    'ambiguous connection',
+    'missing capability',
+  ]) {
+    assert.ok(
+      classes.includes(failure),
+      `failure class must stay in the fail-closed table of "Connection discovery": ${failure}`,
+    );
+  }
+  assert.match(
+    flatDiscovery,
+    /aborts the run before its first write, with a remediation hint and every workflow artifact preserved/,
+  );
+  assert.match(flatDiscovery, /There is no silent fallback\./);
+  assert.match(
+    flatDiscovery,
+    /Publishing to the forge instead would scatter[\s\S]*degrading to a local report would hide work the user asked to publish/,
+  );
+  assert.match(flatDiscovery, /an unanswered or non-interactive run publishes nothing/);
+
+  // The always-loaded fragment states the same closure for the missing identifier.
+  assert.match(
+    flat(tracker),
+    /Never guess a tool, and never fall back to the forge or to `local`\./,
+  );
+});
+
+test('the external capability gate aborts before the first write and keeps the relation conditional', () => {
+  const target = source('src/shared/tracker-target.md');
+  const required = section(target, '### Required capabilities');
+  const flatRequired = flat(required);
+
+  const capabilities = firstColumnCells(required);
+  for (const capability of [
+    'read one issue',
+    'list or search issues',
+    'create an issue',
+    'read comments',
+    'create a comment',
+    'update a comment by its ID',
+    'add and remove a classification',
+    'patch an exact block or checklist',
+  ]) {
+    assert.ok(
+      capabilities.includes(capability),
+      `capability must stay in the required table of "Required capabilities": ${capability}`,
+    );
+  }
+  assert.match(
+    flatRequired,
+    /abort before the first write and name the missing capability — the external equivalent of `UNSUPPORTED_CAPABILITY`/,
+  );
+  // Exactly one capability may be missing without aborting, and it is the relation —
+  // but only together with the write that makes it usable. Gating the native mechanism on
+  // the relation's mere existence let a read-only relation reach delivery and fail to mark
+  // completion after the pull request existed.
+  assert.match(
+    flatRequired,
+    /One capability is \*\*conditional\*\*: a native parent\/sub-issue relation \*\*whose sub-item completion state this connection can write\*\*/,
+  );
+  assert.match(
+    flatRequired,
+    /Discovery must prove that write, not merely that the relation exists/,
+  );
+  assert.match(
+    flatRequired,
+    /An unproven or missing completion write never aborts: the run selects the checklist fallback/,
+  );
+  // Capabilities come from the resolved connection, never from the tool's name.
+  assert.match(
+    flat(section(target, '### Connection discovery')),
+    /Establish the coverage from the resolved connection itself, not from the tool's name/,
+  );
+});
+
+test('the external container mechanism is chosen once, reported, and never mixed', () => {
+  const target = source('src/shared/tracker-target.md');
+  const container = flat(section(target, '### Container mechanism'));
+
+  assert.match(
+    container,
+    /exactly one mechanism, decided once per run from the resolved connection and named in the run summary/,
+  );
+  ordered(
+    container,
+    '**Native relation (preferred).**',
+    'If the connection exposes a parent/sub-issue relation',
+    '**Checklist fallback.**',
+  );
+  assert.match(
+    container,
+    /Never mix the two within one container, and never downgrade a native relation to a checklist mid-run/,
+  );
+
+  // The native mechanism must be gated on the completion *write*, not on the relation's
+  // existence. Otherwise a read-only relation is selected, the run creates a PR, and only
+  // then fails to mark completion — after the first write, and leaving a work item the next
+  // run implements again.
+  assert.match(
+    container,
+    /parent\/sub-issue relation \*\*and\*\* discovery proved that it can write a sub-item's completion state/,
+  );
+  assert.match(
+    container,
+    /a relation whose completion state this connection cannot write — carry the/,
+  );
+  assert.match(
+    container,
+    /Selecting the fallback because the completion write could not be proven is part of that one decision, not a downgrade/,
+  );
+
+  // The conditional capability and its degrade-not-abort rule are pinned once, by the
+  // capability-gate test above.
+  // Both flows that tick off only after a PR exists must settle the mechanism in preflight.
+  for (const path of ['src/tools/apply-issues.md', 'src/tools/apply-review-remote.md']) {
+    assert.match(
+      flat(source(path)),
+      /only when the connection proves it can write a sub-item's completion state/,
+      `${path} must settle the container mechanism before delivery`,
+    );
+  }
+});
+
+test('plan files stay committed and pull requests stay on the forge in every tracker target', () => {
+  const target = source('src/shared/tracker-target.md');
+  const prComments = source('src/shared/pr-review-comments.md');
+  const boundary = flat(section(target, '### Forge boundary'));
+
+  // Plan-file invariant: no target introduces an external publication path.
+  assert.match(
+    boundary,
+    /`\{\{SKILL:plan\}\}` keeps writing a committed Markdown file below `plan\.dir` in every target, and no target introduces an external publication path for plan files/,
+  );
+  assert.match(
+    boundary,
+    /Investigations likewise stay local below `\.effective-flow\/investigation\/` in every target/,
+  );
+
+  // Forge boundary: code-host objects never follow the tracker target.
+  assert.match(
+    boundary,
+    /Pull requests, PR comments, and PR review threads are code-host objects and stay with the forge behind `origin`, whatever the tracker target is/,
+  );
+  assert.match(boundary, /the PR body references the external issue identifier/);
+  assert.match(
+    flat(prComments),
+    /Pull requests, PR comments, and PR review threads are code-host objects and stay with the forge behind `origin` even when the tracker target is `external`; a tracker target never redirects them/,
+  );
+});
+
+test('the security disclosure gate binds every publisher on every tracker target', () => {
+  const tracker = source('src/shared/issue-tracker.md');
+  const gate = flat(section(tracker, '### Security disclosure gate'));
+
+  assert.match(
+    gate,
+    /This gate binds every publisher of review findings and overrides `tracker\.mode`/,
+  );
+  assert.match(gate, /there is no configuration key that switches it off/);
+  assert.match(
+    gate,
+    /Publication to a third-party tracker is a disclosure with the same consequences as publication to a public forge, so the gate binds a forge target and an external target alike/,
+  );
+  assert.match(gate, /Rules for every publisher, on whichever tracker target the run resolved/);
+  // The AI-attribution ban generalizes the same way.
+  assert.match(
+    flat(section(tracker, '### No AI attribution in issue bodies and comments')),
+    /This binds every publisher on every tracker target, the forge and an external tool alike/,
+  );
+});
+
+test('every source embedding issue-tracker also loads the tracker-target fragment', () => {
+  const fence =
+    '```lazy-include\ntracker-target\nwhen: the resolved tracker target is `external`\n```';
+
+  // The consumer set is derived, not listed: a seventh tool that embeds the tracker
+  // integration without this pointer would otherwise ship without the external contract.
+  function includeClosure(body) {
+    const names = new Set();
+    const pending = [body];
+    while (pending.length > 0) {
+      const { eager, lazy } = collectIncludeNames(pending.pop());
+      for (const name of [...eager, ...lazy]) {
+        if (names.has(name)) continue;
+        names.add(name);
+        pending.push(source(`src/shared/${name}.md`));
+      }
+    }
+    return names;
+  }
+
+  // One documented exemption. `cleanup.md` embeds the tracker integration only to decide
+  // whether its `firmo-` label class runs at all; it performs no tracker write and skips that
+  // class entirely on an external target, so the contract would be pure context cost there.
+  // Exemptions are listed, never inferred — adding one has to be a deliberate edit, and an
+  // exempt source must both omit the pointer and say why.
+  const exempt = new Set(['src/tools/cleanup.md']);
+
+  const consumers = [];
+  for (const directory of ['src/tools', 'src/agents']) {
+    const sources = readdirSync(new URL(`${directory}/`, repositoryRoot)).filter((entry) =>
+      entry.endsWith('.md'),
+    );
+    assert.ok(sources.length > 0, `${directory} must contain sources to check`);
+    for (const file of sources) {
+      const path = `${directory}/${file}`;
+      const body = source(path);
+      // Eager and lazy embedding count alike: `review.md` defers `issue-tracker` itself.
+      if (!includeClosure(body).has('issue-tracker')) continue;
+      consumers.push(path);
+      if (exempt.has(path)) {
+        assert.equal(
+          body.split(fence).length - 1,
+          0,
+          `${path} is exempt and must not carry the tracker-target load pointer`,
+        );
+        assert.match(
+          flat(body),
+          /deliberately carries \*\*no\*\* deferred `tracker-target` pointer/,
+          `${path} must state why it is exempt`,
+        );
+        continue;
+      }
+      assert.equal(
+        body.split(fence).length - 1,
+        1,
+        `${path} must carry the tracker-target load pointer exactly once`,
+      );
+    }
+  }
+  assert.ok(consumers.length > 0, 'no source embeds issue-tracker — derivation is vacuous');
+  for (const path of exempt) {
+    assert.ok(consumers.includes(path), `stale exemption: ${path} no longer embeds issue-tracker`);
+  }
+  assert.ok(
+    consumers.includes('src/tools/review.md'),
+    'review.md lazily embeds issue-tracker and must be part of the derived consumer set',
+  );
+
+  // Deviation from the plan, which predicted one nested fence inside this fragment.
+  // `build.mjs:571` does resolve lazy fences after eager inlining, so the five tools
+  // that eagerly include `issue-tracker` would have rendered fine. The dead pointer
+  // comes from `src/tools/review.md`, which defers `issue-tracker` itself: the fragment
+  // then also ships standalone through the eager-only path at `build.mjs:803`, where a
+  // raw lazy fence survives verbatim. Guard #99 would not have caught it either, because
+  // `tracker-target` still ships via the other roots. Do not "simplify" these fences
+  // back into the fragment.
+  const tracker = source('src/shared/issue-tracker.md');
+  assert.doesNotMatch(tracker, /```lazy-include/);
+  const flatTracker = flat(tracker);
+  assert.match(flatTracker, /lives in the `tracker-target` fragment\./);
+  assert.match(
+    flatTracker,
+    /Every source that embeds this fragment \*\*must\*\* carry its own deferred pointer to `tracker-target`/,
+  );
+  assert.match(flatTracker, /as soon as the resolved target is `external`/);
+});
+
+test('no source cites the non-existent "Host and CLI detection" section', () => {
+  // AC4: the section never existed in `issue-tracker.md`; the surviving references were
+  // broken across lines, so the sweep normalizes whitespace and Markdown emphasis.
+  const tracker = source('src/shared/issue-tracker.md');
+  assert.doesNotMatch(
+    tracker,
+    /^#+ .*host and cli detection/im,
+    'issue-tracker.md must not gain the section this sweep forbids citing',
+  );
+
+  for (const directory of ['src/shared', 'src/tools', 'src/agents']) {
+    const sources = readdirSync(new URL(`${directory}/`, repositoryRoot)).filter((entry) =>
+      entry.endsWith('.md'),
+    );
+    assert.ok(sources.length > 0, `${directory} must contain sources to check`);
+    for (const file of sources) {
+      const normalized = flat(source(`${directory}/${file}`).replaceAll('*', ''));
+      assert.doesNotMatch(
+        normalized,
+        /host and CLI detection/i,
+        `${directory}/${file} must not reference the non-existent "Host and CLI detection" section`,
+      );
+    }
+  }
 });

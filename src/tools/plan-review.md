@@ -45,8 +45,10 @@ when: a plan artifact's fields, sections, or review prose are written or transla
 - **File mode:** only analysis, user follow-up questions, and changes to exactly one referenced
   plan file under `<plan.dir>/` or `<plan.dir>/archive/` are allowed.
 - **Issue mode:** only when delegated by `{{SKILL:plan-issue}}`; only analysis, user follow-up
-  questions, and `issue-comment-update` for exactly one supplied canonical planning-comment ID are
-  allowed. Return readiness to the caller; do not change labels here.
+  questions, and the targeted update of exactly one supplied canonical planning-comment ID are
+  allowed. The tracker adapter supplied with the delegation is the resolved target's access path:
+  the helper's `issue-comment-update` on the forge, or the connection's update-comment-by-ID
+  capability on an external target. Return readiness to the caller; do not change labels here.
 - Changes to source code, tests, configuration, build files,
   README files, ADRs, review reports, and other project files are forbidden.
 - In issue mode, creating a plan file, adding a comment, updating another comment, changing the
@@ -205,6 +207,12 @@ After each decision or direct correction:
      each successful update. Never call `issue-comment`, create a file, update the issue body, or
      choose another comment. On unsupported capability, missing target, ambiguity, or stale body,
      return a blocking persistence failure to `plan-issue` without a fallback write.
+     The supplied adapter decides how that update is executed: on an external target it is the
+     resolved connection's update-comment-by-ID capability under the `tracker-target` write
+     discipline `plan-issue` has already loaded — preview the payload, re-read the exact comment
+     immediately before writing, and compare it verbatim against the retained basis. A missing
+     capability, a missing or ambiguous comment, and a changed body are the same blocking
+     persistence failure there, and never a second comment.
 2. Keep the artifact's open-points section up to date:
    - German: `## Offene Punkte` with the empty state `- Keine offenen Punkte.`
    - English: `## Open points` with the empty state `- No open points.`

@@ -1,12 +1,12 @@
 ## Issue-tracker integration (remote mode)
 
-This shared fragment connects `{{SKILL:review}}` and `{{SKILL:apply-review}}` with an external issue tracker (GitHub via `gh`, Forgejo via `tea`). It is **opt-in** via the Effective Flow configuration (project setup ADR) and disabled by default (`local`). In local mode both skills behave unchanged – findings run through the Markdown report file under `.effective-flow/review/`, no issues are created and no CLI is invoked. In remote mode a local report is written only for findings withheld by the "Security disclosure gate" below.
+This shared fragment connects `{{SKILL:review}}` and `{{SKILL:apply-review}}` with an issue tracker. Its own mechanics describe the **forge** target: the issue tracker of the Git forge behind the `origin` remote (GitHub via `gh`, Forgejo via `tea`). A project may instead resolve the `external` target, whose contract is named under "Tracker target" below. Publication is **opt-in** via the Effective Flow configuration (project setup ADR) and disabled by default (`local`). On the `local` target both skills behave unchanged – findings run through the Markdown report file under `.effective-flow/review/`, no issues are created and no CLI is invoked. On a publishing target a local report is written only for findings withheld by the "Security disclosure gate" below.
 
-The local/remote toggle (`tracker.mode`) affects exclusively **reviews**. **Investigations** (`{{SKILL:investigate}}`) are exempt from it and remain purely local in every mode under `.effective-flow/investigation/` (never committed, never as an issue). Of the Effective Flow artifacts, only **plans** are committed.
+The tracker target (`tracker.mode`) affects exclusively **reviews**. **Investigations** (`{{SKILL:investigate}}`) are exempt from it and remain purely local on every target under `.effective-flow/investigation/` (never committed, never as an issue). Of the Effective Flow artifacts, only **plans** are committed.
 
 It encapsulates the **shared** building blocks: the `tracker` config schema including migration, the mode determination, the provider-neutral remote-helper contract, the label convention, and the canonical issue and epic body formats. The actual orchestration – when issues are **created** (`{{SKILL:review}}`) and when they are **read and processed** (`{{SKILL:apply-review}}`) – stays in the respective skill.
 
-In addition, `{{SKILL:apply-issues}}` and `{{SKILL:plan-issue}}` use this fragment for the same provider-neutral helper operations. These two skills process **arbitrary** human issues instead of the finding issues produced by `{{SKILL:review}}`; they are **inherently remote** and do **not** evaluate the `tracker.mode` toggle (local/remote) – they only need a Git repository, an `origin` remote and an authenticated CLI. The finding-/epic-specific sections (issue body format, epic body format, `R-XXXXXXX` convention) apply only to `{{SKILL:review}}`/`{{SKILL:apply-review}}`; the checkbox-ticking mechanics for epic bodies are used by `{{SKILL:apply-issues}}` analogously for container issues.
+In addition, `{{SKILL:apply-issues}}` and `{{SKILL:plan-issue}}` use this fragment for the same provider-neutral helper operations. These two skills process **arbitrary** human issues instead of the finding issues produced by `{{SKILL:review}}`; they are **inherently tracker-bound** and do **not** evaluate the local/remote toggle – they resolve the tracker target (see "Tracker target") and work against it. On the forge target they only need a Git repository, an `origin` remote and an authenticated CLI. The finding-/epic-specific sections (issue body format, epic body format, `R-XXXXXXX` convention) apply only to `{{SKILL:review}}`/`{{SKILL:apply-review}}`; the checkbox-ticking mechanics for epic bodies are used by `{{SKILL:apply-issues}}` analogously for container issues.
 
 ### Configuration
 
@@ -16,7 +16,9 @@ Remote mode works without pinned configuration (then it stays disabled, `local`)
 {
   "tracker": {
     "mode": "local",
-    "remoteToolOverride": "auto"
+    "remoteToolOverride": "auto",
+    "externalTool": null,
+    "externalToolHint": null
   }
 }
 ```
@@ -25,13 +27,20 @@ Missing values have these defaults:
 
 - `tracker.mode`: `"local"` (feature off)
 - `tracker.remoteToolOverride`: `"auto"` (tool automatically from the `origin` URL)
+- `tracker.externalTool`: `null` (no external tool named)
+- `tracker.externalToolHint`: `null` (no additional connection hint)
 
 Valid values:
 
-- `tracker.mode`: `"local"`, `"remote"`
+- `tracker.mode`: `"local"`, `"remote"`, `"external"`
 - `tracker.remoteToolOverride`: `"auto"`, `"github"`, `"forgejo"`
+- `tracker.externalTool`: a short, non-empty identifier of the tool that holds the issues. There is
+  **no** whitelist; Effective Flow neither rejects an unknown tool nor infers capabilities from the
+  name. Required when the mode is `external`.
+- `tracker.externalToolHint`: free text that lets the run-time agent pick the right connection —
+  e.g. MCP server name, workspace, team or project key, identifier convention, or state names.
 
-`remoteToolOverride` is intended only for ambiguous hosts (e.g. self-hosted GitHub Enterprise whose domain does not contain `github.com`). With `auto` the host detection below decides.
+`remoteToolOverride` is intended only for ambiguous hosts (e.g. self-hosted GitHub Enterprise whose domain does not contain `github.com`). With `auto` the host detection below decides. It names a **forge** CLI and stays forge-only.
 
 ### Config migration
 
@@ -41,8 +50,8 @@ Reading the Effective Flow configuration from the project setup ADR (including t
 
 At the start of the run, determine the effective mode in this order (the first matching rule wins):
 
-1. **Argument type:** The passed argument type overrides the config mode for this run. A report file (`*.md` under `.effective-flow/review/`) forces `local`; an issue reference (issue number, `#123` or an issue URL) forces `remote`.
-2. **Per-run wish of the user:** If the user explicitly requests issue/tracker work, `remote` is active; if they explicitly request local work ("local", "without issues", "report only"), `local` is active.
+1. **Argument type:** The passed argument type overrides the config mode for this run. A report file (`*.md` under `.effective-flow/review/`) forces `local`; a forge issue reference (issue number, `#123` or a forge issue URL) forces `remote`; a tool-native identifier or URL of the configured external tool forces `external`.
+2. **Per-run wish of the user:** A **generic** wish for issue/tracker work ("as issues", "publish to the tracker") activates the **configured** target and never redirects a run to a different one; without a configured target it selects `remote`. Only a wish that explicitly names the forge (GitHub, Forgejo, `origin`) selects `remote`, and only a wish that explicitly names the configured external tool selects `external`. If the user explicitly requests local work ("local", "without issues", "report only"), `local` is active — that stays the escape hatch on every target.
 3. **Config:** otherwise `tracker.mode` from the Effective Flow configuration (project setup ADR) applies.
 4. **First-invocation query:** If `tracker.mode` is not set in the config and neither argument nor per-run wish delivers a signal, run the first-invocation query below.
 
@@ -62,9 +71,19 @@ options:
 
 Use the chosen answer as the tracker mode **for this run**. Do **not** write it into the configuration yourself — permanently pinning `tracker.mode` in the project setup ADR is handled exclusively by `{{SKILL:setup}}`. Briefly point this out to the user, e.g. "Tracker mode `remote` used for this run; pin permanently via `{{SKILL:setup}}`."
 
+The query stays deliberately two-way: it runs only when no configuration pins a mode, and it must not write configuration itself, so it cannot obtain the tool identifier an external target requires. An external target is configured through `{{SKILL:setup}}` or named per run in an explicit user wish that supplies the tool.
+
+### Tracker target
+
+The determined mode names the **target** that owns issue identity for this run: `local` (Markdown report), `forge` (`remote` — the issue tracker of the `origin` remote), or `external` (the tool named by `tracker.externalTool`). Everything below in this fragment — the helper contract, the label convention with its `firmo-` compatibility and one-time `sf-` migration, the tracker operations, and the finding and epic body formats — describes the **forge** target.
+
+`external` requires a non-empty `tracker.externalTool`. Without it the configuration is invalid: abort before any tracker access, name the missing key, and point to `{{SKILL:setup}}`. Never guess a tool, and never fall back to the forge or to `local`. While the mode is `local` or `remote`, `tracker.externalTool` and `tracker.externalToolHint` are ignored for routing and reported once as ignored. Both issue-carrying flows follow the resolved target: the issue-driven flow (`{{SKILL:apply-issues}}`, `{{SKILL:plan-issue}}`) and review publication.
+
+The complete external contract — connection discovery with its fail-closed rules, the required capabilities, the write discipline, the classification mapping, the container mechanism, and the reference syntax — lives in the `tracker-target` fragment. Every source that embeds this fragment **must** carry its own deferred pointer to `tracker-target`, so a run loads that contract as soon as the resolved target is `external` and never for a `local` or `forge` run. A run that resolves `external` without that contract available aborts instead of improvising.
+
 ### Remote helper contract (remote mode only)
 
-All deterministic remote mechanics run through the shipped helper:
+All deterministic remote mechanics of the forge target run through the shipped helper:
 
 ```text
 node <skill-root>/scripts/remote-tracker.mjs <operation> [--apply]
@@ -115,12 +134,14 @@ In remote mode, use these labels and create missing labels idempotently (tolerat
 ### Security disclosure gate
 
 A finding classified as security relevant is **never** written to a tracker without an explicit
-per-run confirmation by the user. This gate binds every remote publisher of review findings and
+per-run confirmation by the user. This gate binds every publisher of review findings and
 overrides `tracker.mode` as well as every other configuration value; there is no configuration key
-that switches it off. The producing workflow owns the classification and the confirmation
+that switches it off. Publication to a third-party tracker is a disclosure with the same
+consequences as publication to a public forge, so the gate binds a forge target and an external
+target alike. The producing workflow owns the classification and the confirmation
 (see `{{SKILL:review}}`, Phase 3 and Phase 4).
 
-Rules for every remote publisher:
+Rules for every publisher, on whichever tracker target the run resolved:
 
 - **Local first:** the withheld findings are persisted in a local report below
   `.effective-flow/review/` before any tracker mutation. That report is the authoritative record
@@ -142,7 +163,7 @@ severity, or narrows the active finding scope.
 
 ### No AI attribution in issue bodies and comments
 
-Do not add AI attribution to issue bodies, epic bodies and comments: no "Generated with Claude Code/Codex" footers, no agent session links (e.g. `https://claude.ai/code/…`) and no `Co-Authored-By` trailers – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex as the target harness are allowed, generation attribution is not.
+Do not add AI attribution to issue bodies, epic bodies and comments: no "Generated with Claude Code/Codex" footers, no agent session links (e.g. `https://claude.ai/code/…`) and no `Co-Authored-By` trailers – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex as the target harness are allowed, generation attribution is not. This binds every publisher on every tracker target, the forge and an external tool alike.
 
 ### Remote prose language
 
@@ -260,3 +281,4 @@ Legacy-label transitions use the helper's add and remove operations in that orde
 - **No Git repository / no `origin` remote:** remote mode not possible; report.
 - **Ambiguous host:** use `remoteToolOverride` or a per-run hint; if both are unclear, ask the user.
 - **Argument type contradicts `tracker.mode`:** The argument type overrides the config mode for this run (see "Determine mode").
+- **External target:** connection discovery, its four fail-closed failure classes (missing tool identifier, no connection, ambiguous connection, missing capability) and the write discipline live in the loaded "Tracker target" fragment. There is no fallback to the forge or to `local`.

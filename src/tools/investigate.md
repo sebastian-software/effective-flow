@@ -45,8 +45,8 @@ If the project has an `AGENTS.md`, read it early in the workflow and follow its 
 ## Data storage
 
 Investigation reports are **always local**: they live exclusively under
-`.effective-flow/investigation/`, are **never committed**, and are **never tracked as an issue** – not
-even in remote-tracker mode. The local/remote switch (`tracker.mode`) applies only to
+`.effective-flow/investigation/`, are **never committed**, and are **never tracked as an issue** – on
+no tracker target. The tracker target (`tracker.mode`) applies only to
 reviews, not to investigations. Of the Effective Flow artifacts, only plans are committed.
 
 ## Hard scope boundary
