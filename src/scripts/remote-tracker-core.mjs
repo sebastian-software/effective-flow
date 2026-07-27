@@ -1292,7 +1292,9 @@ export async function probeProvider(repository, runner) {
   const version = versionResult.stdout.trim().split(/\r?\n/)[0];
   assertMinimumVersion(
     parseCliVersion(versionResult.stdout, executable),
-    repository.provider === 'github' ? [2, 0, 0] : [0, 9, 0],
+    // tea 0.14.2 is the first release whose `pulls create` accepts a `--repo` slug together with an
+    // explicit `--head`; 0.14.1 rejects that combination outright.
+    repository.provider === 'github' ? [2, 0, 0] : [0, 14, 2],
     executable,
   );
   if (repository.provider === 'github') {
@@ -1832,9 +1834,24 @@ export async function executeOperation(operation, input = {}, options = {}) {
       fail('INVALID_PAYLOAD', `unknown operation: ${operation}`, { operation });
     }
 
-    const runner =
+    const baseRunner =
       options.runner ??
       (async () => fail('INVALID_PAYLOAD', 'remote operations require an injected process runner'));
+    if (input.cwd !== undefined) requireString(input.cwd, 'cwd');
+    // Single choke point: every provider CLI resolves its repository from the working directory,
+    // so root all of them - repository resolution, probe, command plan, pagination, guards - in
+    // the caller's `cwd` rather than in whatever directory the process happens to sit in.
+    const runner = async (call) => {
+      const result = await baseRunner(
+        call?.cwd === undefined && input.cwd !== undefined ? { ...call, cwd: input.cwd } : call,
+      );
+      if (result?.error?.code === 'INVALID_CWD') {
+        fail('INVALID_PAYLOAD', 'working directory is not an existing directory', {
+          cwd: result.error.path,
+        });
+      }
+      return result;
+    };
     const repository = await resolveRepositoryInput(input, runner);
     if (operation === 'repository-resolve') {
       return {

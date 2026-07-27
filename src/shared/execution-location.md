@@ -106,6 +106,16 @@ validated missing path segments. The result must remain below the canonical abso
 symlink that escapes those directories. A project-relative path is only presentation; it is
 never an operational handle after the roots diverge.
 
+Root every forge operation in `RUNTIME_STATE_ROOT` as well — for a different reason than runtime
+state. A provider CLI such as `gh` or `tea` resolves its repository context from its working
+directory, and the execution worktree is not guaranteed to exist when that call happens: the
+completion action runs after an Effective Flow-owned worktree may already have been withdrawn, so
+an inherited execution directory can be a deleted path. Pass the absolute runtime root as the
+per-call working directory for every remote-helper invocation and for the Git operations that
+accompany a completion action. This holds while the execution worktree still exists, so the
+behavior does not depend on cleanup order. It never redirects tracked project work, which stays
+in `EXECUTION_ROOT`.
+
 ### Harness-owned worktrees
 
 - **Claude Code:** Subagents start from the parent context and directory changes do not persist

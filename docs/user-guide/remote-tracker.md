@@ -49,6 +49,11 @@ an installed and authenticated CLI (`gh auth status` or the corresponding `tea` 
 of these is missing, Effective Flow aborts with a clear error message instead of silently
 falling back to `local` (see [Troubleshooting](./troubleshooting.md)).
 
+Minimum versions: `gh` 2.0.0 and `tea` 0.14.2. Effective Flow checks them once at the start of a
+remote run, so an unsupported CLI surfaces before any work is done rather than at the delivery
+point. `tea` 0.14.2 is the first release that can create a pull request from a repository slug
+together with an explicit head branch, which is the form Effective Flow uses.
+
 `tracker.remoteToolOverride` is a forge setting. It is ignored while the target is `external`.
 
 ### Labels
