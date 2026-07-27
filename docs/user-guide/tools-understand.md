@@ -1,12 +1,44 @@
 # Tool reference: Understand what needs doing
 
-This group covers analysis and planning – **before** any code is written. All four tools are
+This group covers analysis and planning – **before** any code is written. All five tools are
 pure read phases or write exclusively to their designated stores
-(`.effective-flow/investigation/`, `<plan.dir>/`, or an issue comment); none changes
-source code, tests, or configuration.
+(`.effective-flow/investigation/`, `<concept.dir>/`, `<plan.dir>/`, or an issue comment); none
+changes source code, tests, or configuration.
 
-`<plan.dir>` is the `plan.dir` value from the Effective Flow project-setup ADR (default
-`docs/plan`; see [Configuration](configuration.md#block-plan)).
+`<plan.dir>` is the `plan.dir` value and `<concept.dir>` the `concept.dir` value from the
+Effective Flow project-setup ADR (defaults `docs/plan` and `docs/concept`; see
+[block `plan`](configuration.md#block-plan) and [block `concept`](configuration.md#block-concept)).
+
+## `/effective-flow concept`
+
+**Purpose:** Creates the concept for a **new application or program** – one step before an
+implementation plan. The result is complete but deliberately shallow: problem, target users, the
+central use cases, what the first version contains, what is explicitly excluded, and a coarse
+technical direction. No work breakdown, no code, no plan file.
+
+**When to use:** When it is not yet settled _what_ should be built at all. For a change to an
+existing application, start with `/effective-flow plan` instead. The tool works in an empty
+repository; existing code is read as context when it is there.
+
+**Typical call:** `/effective-flow concept A scheduling app for volunteer fire brigades`
+
+**Input/output:** Input is the product idea in free text. Output is
+`<concept.dir>/YYYY-MM-DD-<slug>.md` with the status line `**Concept status:** Draft` (German:
+`**Konzeptstatus:** Entwurf`), the sections problem, target users and use cases, solution sketch,
+scope with non-goals, technical direction, risks, plus the still-empty roadmap, concept review and
+open-points sections. A concept uses `language.workflow` throughout; an existing concept keeps its
+recognizable language.
+
+**Deep concept review:** Once you are satisfied with the concept, the deep review elaborates it:
+it clarifies decision-requiring points one by one, deepens the sections, marks durable decisions as
+ADR candidates, and records the first planning steps as ordered work packages – each with a
+ready-to-paste `/effective-flow plan` call. Only then does the status become
+`**Concept status:** Elaborated`. `concept` offers this review right at the end of its run; you can
+also catch it up later with `/effective-flow review <concept file>`.
+
+**Interplay:** concept → deep concept review → `/effective-flow plan` per work package →
+`/effective-flow build`. The concept workflows never write a plan file themselves; the handoff is
+the ready-to-paste call in the roadmap.
 
 ## `/effective-flow investigate`
 

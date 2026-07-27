@@ -348,7 +348,10 @@ config value or default as the pre-selection:
 1. `review`: `review.profile` (full/focused/fast — depth of the review), `review.autoConfirmScope`, `review.designDecisionSources`, `review.validation`
 2. `applyReview`: `applyReview.defaultCommitStrategy`, `applyReview.finalValidation`, `applyReview.stashPolicy`, `applyReview.worktree.baseDir`, `applyReview.worktree.setup`
 3. `language`: the project language and six overrides already asked in Step 4 — carry over
-4. `plan`: `plan.dir` (free text, default `docs/plan` — directory of the plan files)
+4. `plan`: `plan.dir` (free text, default `docs/plan` — directory of the plan files) and
+   `concept.dir` (free text, default `docs/concept` — directory of the concept files). Both are
+   canonicalized before they are written; reject values that resolve to the same directory or nest
+   one inside the other instead of writing them.
 5. `delivery`: `delivery.baseBranch`, `delivery.completion`, and `delivery.prReview` (already asked in Step 4 — carry over), `delivery.branchPrefix`, `delivery.returnBranch`
 6. `worktree`: `worktree.enabled` (already asked in Step 4 — carry over), `worktree.setup`, `worktree.baseDir`
 7. `tracker`: `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo, forge only), `tracker.externalTool` and `tracker.externalToolHint` (free text; required identifier plus optional connection hint for `mode: external`, carried over when already asked in Step 4)
@@ -509,7 +512,7 @@ Report to the user:
   `delivery.prReview` [default `ask`],
   `language.project` and all explicit `language.*` overrides, `tracker.mode`, and, if applicable,
   `tracker.remoteToolOverride` or `tracker.externalTool` plus `tracker.externalToolHint`) as well
-  as `plan.dir`, if set or changed from the default
+  as `plan.dir` and `concept.dir`, if set or changed from the default
 - for `tracker.mode = external`: both new values verbatim, plus the note that the connection is
   selected at run time from the hint and that a missing, ambiguous, or under-capable connection
   aborts the run instead of falling back to the forge

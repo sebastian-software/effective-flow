@@ -22,7 +22,9 @@
         { "consumer": "test-writer", "classification": "route-when-relevant" },
         { "consumer": "e2e-tester", "classification": "route-when-relevant" },
         { "consumer": "plan", "classification": "route-when-relevant" },
-        { "consumer": "plan-review", "classification": "route-when-relevant" }
+        { "consumer": "plan-review", "classification": "route-when-relevant" },
+        { "consumer": "concept", "classification": "route-when-relevant" },
+        { "consumer": "concept-review", "classification": "route-when-relevant" }
       ]
     },
     {
@@ -72,6 +74,7 @@
         { "consumer": "plan-issue", "classification": "route-when-relevant" },
         { "consumer": "plan-review", "classification": "route-when-relevant" },
         { "consumer": "docs", "classification": "route-when-relevant" },
+        { "consumer": "concept-review", "classification": "route-when-relevant" },
         {
           "consumer": "generic-product-reviewer",
           "classification": "route-when-relevant"
@@ -88,25 +91,34 @@
         { "consumer": "nodejs-reviewer", "classification": "route-when-relevant" },
         { "consumer": "rust-reviewer", "classification": "route-when-relevant" },
         { "consumer": "plan", "classification": "route-when-relevant" },
-        { "consumer": "plan-review", "classification": "route-when-relevant" }
+        { "consumer": "plan-review", "classification": "route-when-relevant" },
+        { "consumer": "concept", "classification": "route-when-relevant" },
+        { "consumer": "concept-review", "classification": "route-when-relevant" }
       ]
     },
     {
       "skill": "decision-records",
-      "consumers": [{ "consumer": "apply-review", "classification": "delegate" }]
+      "consumers": [
+        { "consumer": "apply-review", "classification": "delegate" },
+        { "consumer": "concept-review", "classification": "route-when-relevant" }
+      ]
     },
     {
       "skill": "product-management",
       "consumers": [
         { "consumer": "plan", "classification": "route-when-relevant" },
-        { "consumer": "plan-review", "classification": "route-when-relevant" }
+        { "consumer": "plan-review", "classification": "route-when-relevant" },
+        { "consumer": "concept", "classification": "delegate" },
+        { "consumer": "concept-review", "classification": "delegate" }
       ]
     },
     {
       "skill": "product-design",
       "consumers": [
         { "consumer": "plan", "classification": "route-when-relevant" },
-        { "consumer": "plan-review", "classification": "route-when-relevant" }
+        { "consumer": "plan-review", "classification": "route-when-relevant" },
+        { "consumer": "concept", "classification": "route-when-relevant" },
+        { "consumer": "concept-review", "classification": "route-when-relevant" }
       ]
     },
     {
@@ -122,7 +134,8 @@
       "skill": "web-legal-compliance",
       "consumers": [
         { "consumer": "plan", "classification": "route-when-relevant" },
-        { "consumer": "plan-review", "classification": "route-when-relevant" }
+        { "consumer": "plan-review", "classification": "route-when-relevant" },
+        { "consumer": "concept-review", "classification": "route-when-relevant" }
       ]
     },
     {

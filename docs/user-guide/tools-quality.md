@@ -6,7 +6,8 @@ delivers structured findings that serve directly as input for the implementation
 ## `/effective-flow review`
 
 **Purpose:** Orchestrates a comprehensive code review – or, when the argument clearly points to
-a plan file, a deeper interactive plan review. In the code review, three
+a plan file, a deeper interactive plan review, or when it points to a concept file, the deep
+concept review. In the code review, three
 data-collection phases run in parallel: design-decision detection (ADRs, plans, conventions,
 code comments, lint suppressions, earlier reviews), repository-native technical validation,
 and per-file/domain qualitative reviewer passes. Afterwards the findings are
@@ -29,6 +30,9 @@ suitable to deeply cross-check an existing plan before implementation.
 - `/effective-flow review <area>` – reviews only the described area
 - `/effective-flow review <plan file>` – starts the deeper interactive
   plan review for that plan file instead
+- `/effective-flow review <concept file>` – starts the deep concept review for that concept file
+  instead: it elaborates the concept, clarifies decisions, and records the first work packages. An
+  argument that matches both a plan and a concept is not guessed; the tool asks.
 
 **Input/output:**
 

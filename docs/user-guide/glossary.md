@@ -73,6 +73,17 @@ open points or missing measurable acceptance criteria), Effective Flow refers ba
 clarification instead of guessing or partially implementing. See
 [Troubleshooting](./troubleshooting.md#the-clarification-gate-was-not-passed).
 
+## Concept (file)
+
+A Markdown file created by [`/effective-flow concept`](./tools-understand.md) under
+`<concept.dir>` (default `docs/concept`) that describes a **new application** one step before
+planning: problem, target users, use cases, first-version scope, non-goals, and a coarse technical
+direction. The file name follows the pattern `YYYY-MM-DD-<slug>.md`. Its status is
+`Draft`/`Entwurf` until the deep concept review has elaborated it to
+`Elaborated`/`Ausgearbeitet`. Unlike a plan, a concept is never implemented directly: its roadmap
+hands work packages over to `/effective-flow plan`, and concepts are neither archived nor marked as
+implemented.
+
 ## Plan (file)
 
 A Markdown file created by [`/effective-flow plan`](./tools-understand.md) under `<plan.dir>`

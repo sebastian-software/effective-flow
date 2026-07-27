@@ -284,7 +284,17 @@ Allowed forms are:
 - legacy number, e.g. `0066` (for migrated old plans, resolved primarily via the H1
   `# 0066: …`; the file name segment is only the existing secondary signal)
 
-If exactly one plan file is found:
+If exactly one plan file is found, first resolve the same argument against `<concept.dir>/` per the
+concept-file special case below. That cross-check belongs here, before the plan branch acts,
+because acting first would make the ambiguity unreachable:
+
+- **Plan match only:** continue with the plan steps below.
+- **Plan match and concept match:** the argument is ambiguous. Name both interpretations, ask which
+  artifact was meant, and start neither review. Only a bare file name or a title slug can be
+  ambiguous — a full path names its directory, and a bare four-digit value stays a legacy plan
+  reference.
+
+For an unambiguous plan match:
 
 1. Do not load any code-review configuration, tracker mode, memory file,
    cache, or wisdom file.
@@ -296,6 +306,34 @@ If no plan file or multiple plan files match and the user clearly wanted a plan
 review, do not continue with Phase 1: report the missing plan or ask for the specific
 file instead of guessing a code review. Only arguments without clear plan-review intent
 may fall through to the normal code-review scope.
+
+### Concept-file special case
+
+Evaluated **after** the plan-file special case and never before it: a bare four-digit value stays a
+legacy plan reference and is never read as a concept reference. Like the plan-file case, this
+branch runs before Phase 1 and before any code-review-specific initialization.
+
+```lazy-include
+concept-contract
+when: the review argument may be a concept reference that must be resolved
+```
+
+`<concept.dir>` is the concept directory from the Effective Flow configuration (project-setup ADR)
+`concept.dir` (default `docs/concept`). Check whether the user argument unambiguously points to a
+concept file there. Allowed forms are the full path, the date-slug file name, and the title slug.
+
+If exactly one concept file is found:
+
+1. Do not load any code-review configuration, tracker mode, memory file, cache, or wisdom file.
+2. Read the internal instruction `{{SKILL:concept-review}}`.
+3. Run it with the resolved concept file.
+4. Then end this `review` workflow; do not start a code review.
+
+An argument that matches both a plan file and a concept file is ambiguous. That case is decided by
+the cross-check in the plan-file special case above, which runs first and asks instead of starting
+either review; the rule is stated there so it stays reachable. If no concept file or several
+concept files match and the user clearly wanted a concept review, report the missing concept or ask
+for the specific file instead of guessing a code review.
 
 ### Pull-request special case
 

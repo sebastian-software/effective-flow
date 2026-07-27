@@ -1,6 +1,6 @@
 ---
 name: effective-flow
-description: "Effective Flow — software engineering workflows as tools, invoked via /effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: build, fix, plan, refactor, docs, review, apply, plan-issue, maintain, commit, pr, setup, cleanup, open-plans, investigate, version."
+description: "Effective Flow — software engineering workflows as tools, invoked via /effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: build, fix, plan, refactor, docs, review, apply, concept, plan-issue, maintain, commit, pr, setup, cleanup, open-plans, investigate, version."
 ---
 
 # Effective Flow

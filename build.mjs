@@ -105,7 +105,7 @@ const TOOL_GROUPS = [
   {
     title: 'Understand what to do',
     when: 'Analysis & planning before code',
-    tools: ['investigate', 'plan', 'open-plans', 'plan-issue'],
+    tools: ['concept', 'investigate', 'plan', 'open-plans', 'plan-issue'],
   },
   {
     title: 'Implement a change',
