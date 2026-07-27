@@ -114,8 +114,12 @@ The four categories are defined in
 | Operations      | `docs/operations/`      | Operations, deployment, monitoring, infrastructure              |
 | Runbooks        | `docs/runbooks/`        | Step-by-step procedures for incident response and routine tasks |
 
-Category and target path must match; the target path must lie within the respective category
-directory. `docs/user-guide/README.md` and `docs/developer-guide/README.md` are mandatory as
+The target-path line is always required. The doc-category line is omitted exactly when the target
+lies outside the four categories: the root `README.md` as the marketing entry point, an existing
+file explicitly named in the plan, in-code documentation, or a divergent established repository
+documentation structure that takes precedence over the prescribed standard structure. When a
+category is present, category and target path must match; the target path must lie within the
+respective category directory. `docs/user-guide/README.md` and `docs/developer-guide/README.md` are mandatory as
 curated entry points as soon as at least one User-Guide or Developer-Guide document exists;
 `operations` and `runbooks` have no README by default. Slugs are topic-based kebab-case without a
 date or number prefix and must be unique within their category – the date-slug scheme with the

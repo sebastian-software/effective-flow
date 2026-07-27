@@ -1360,6 +1360,24 @@ test('central-skill adapters retain Effective Flow ownership without duplicate h
   assert.match(dependencyPolicy, /`smart-dependency-updater` is the declared domain owner/);
   assert.doesNotMatch(dependencyPolicy, /pnpm view|cargo search|stable major tag/);
 
+  // The docs tool delegates documentation craft to tech-docs. Anchor each removal
+  // beside the positive delegation assertion so a rewritten section cannot pass
+  // the negative greps vacuously.
+  const docs = readSource('tools/docs.md');
+  assert.match(docs, /`tech-docs` is the declared domain owner/);
+  assert.doesNotMatch(docs, /Do not invent substantive statements/);
+  assert.doesNotMatch(docs, /Keep examples runnable/);
+
+  const codeDocumenter = readSource('agents/code-documenter.md');
+  assert.match(codeDocumenter, /`tech-docs` is the declared domain owner/);
+  assert.doesNotMatch(codeDocumenter, /Prefer self-documenting code/);
+
+  // An established repository documentation structure outranks the prescribed
+  // standard structure; Effective Flow defines no local test for "established".
+  const docCategories = readSource('shared/doc-categories.md');
+  assert.match(docCategories, /takes precedence over the prescribed standard structure/);
+  assert.match(docCategories, /local test for what counts as/);
+
   // The documentation sync gate routes documentation work and is therefore an
   // adapter surface where a second craft handbook could grow unnoticed.
   const syncContract = readSource('shared/documentation-sync-contract.md').replace(/\s+/g, ' ');

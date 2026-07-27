@@ -156,9 +156,13 @@ product behavior changing. This reference document itself was created via `/effe
 
 **Input/output:** Input is the documentation requirement or a plan file with the
 header lines `**Doku-Kategorie:**` and `**Ziel-Pfad:**`. Output is the new or updated
-document within one of the four categories (`docs/user-guide/`, `docs/developer-guide/`,
-`docs/operations/`, `docs/runbooks/`); if the category or target path is missing from the plan, `docs`
-asks for it.
+document. By default it lands in one of the four categories (`docs/user-guide/`,
+`docs/developer-guide/`, `docs/operations/`, `docs/runbooks/`) – but that structure is a default,
+not a mandate: if the documentation owner's repository discovery finds an established, working
+documentation structure, `docs` writes into that structure instead and names it in the doc plan
+for your approval. The target path is always required; the category is required only for targets
+inside the four categories, and `docs` asks only when a required value is missing or a stated
+category contradicts its target path.
 
 **Interplay:** The model-configured `docs-writer` and `code-documenter` agents remain Effective
 Flow workers, but apply the authoritative `tech-docs` guidance. Effective Flow retains category,
