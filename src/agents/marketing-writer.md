@@ -70,10 +70,12 @@ precedence, use that structure's user-facing and technical entry points instead;
 to the standard paths and do not link a target the effective structure does not have.
 
 If both targets exist at the end of the run, include exactly both links. If exactly one
-exists, include only its valid link and report the other path as an open point in the agent
-result. If neither exists, emit neither link and report both missing paths individually as open
-points in the agent result. Never put open points, placeholder links, or broken links in the
-README. Preserve unrelated existing README links; they are outside this final follow-up section
+exists, include only its valid link and report the other as an open point in the agent
+result. If neither exists, emit neither link and report both individually as open
+points in the agent result. Report a target the effective structure defines but has not created
+yet by its concrete path; report a role the effective structure does not define at all by its
+role, since there is no path to name. Never put open points, placeholder links, or broken links in
+the README. Preserve unrelated existing README links; they are outside this final follow-up section
 and do not count toward the invariant.
 
 ## Approach

@@ -254,12 +254,16 @@ options:
 3. For the root `README.md` as the marketing entry point, check:
    - it is written from the user's perspective (value proposition, no internal architecture details)
    - at the end of the run, its final documentation follow-up section satisfies the conditional
-     rule from `Doc categories`: if both `docs/user-guide/README.md` and
-     `docs/developer-guide/README.md` exist, it has exactly those two links in user-guide then
-     developer-guide order; if exactly one exists, it has only that valid link; if neither
-     exists, it has neither link
+     rule from `Doc categories`, evaluated against the **effective** structure's two entry points:
+     `docs/user-guide/README.md` and `docs/developer-guide/README.md` under the prescribed standard
+     structure, or the established structure's user-facing and technical entry points when that
+     structure took precedence. If both exist, the section has exactly those two links in
+     user-facing then technical order; if exactly one exists, it has only that valid link; if
+     neither exists, it has neither link. A link to a standard path that the effective structure
+     does not have is a validation failure, not a permitted fallback
    - each missing target is reported individually as an open point in the workflow or agent
-     result, never as a placeholder or broken README link
+     result, never as a placeholder or broken README link; an entry point the effective structure
+     does not define at all is reported by its role rather than by an invented path
    - existing unrelated README links are preserved and excluded from the final documentation
      follow-up-section invariant
 4. Start `{{AGENT:code-validator}}` when doc changes affect technical artifacts or the project build can plausibly check the change.
