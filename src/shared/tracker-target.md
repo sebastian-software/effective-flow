@@ -99,8 +99,17 @@ before the first write and name the missing capability — the external equivale
 canonical planning comment cannot stay single, and one without description search, where
 `Signature` deduplication cannot run.
 
-One capability is **optional**: a native parent/sub-issue relation. Its presence selects the native
-container mechanism and its absence the checklist fallback; neither case aborts.
+One capability is **conditional**: a native parent/sub-issue relation **whose sub-item completion
+state this connection can write**. Discovery must prove that write, not merely that the relation
+exists. A relation the connection can read and populate but whose completion state it cannot set
+would otherwise pass discovery, be chosen as the container mechanism, and then fail to mark
+completion _after_ the pull request already exists — leaving a work item that carries neither a
+done classification nor a closed state, which the next run implements again and delivers twice.
+That failure lands after the first write and therefore breaks the fail-closed guarantee above.
+
+An unproven or missing completion write never aborts: the run selects the checklist fallback, which
+needs only capabilities that are already required, and reports that a relation exists but is not
+used together with the reason. That decision is still made once, during discovery.
 
 ### Write discipline
 
@@ -149,16 +158,18 @@ emulate, or record them against an external target.
 The epic of a review run and the container issue of the issue-driven flow use exactly one
 mechanism, decided once per run from the resolved connection and named in the run summary:
 
-1. **Native relation (preferred).** If the connection exposes a parent/sub-issue relation, create
-   the container as the parent, attach every finding or work item as a sub-item, and derive
-   completion from the sub-item's own state.
-2. **Checklist fallback.** Otherwise carry the `- [ ] <reference> …` list in the container body and
+1. **Native relation (preferred).** If the connection exposes a parent/sub-issue relation **and**
+   discovery proved that it can write a sub-item's completion state, create the container as the
+   parent, attach every finding or work item as a sub-item, and derive completion from that state.
+2. **Checklist fallback.** Otherwise — no relation at all, or a relation whose completion state
+   this connection cannot write — carry the `- [ ] <reference> …` list in the container body and
    tick entries off with the exact-patch discipline above.
 
-Never mix the two within one container, and never downgrade a native relation to a checklist
-mid-run — that leaves a container whose progress the two systems disagree about. Both mechanisms
-must produce the same observable outcome: every finding reachable from its container, and
-completion visible per finding.
+Selecting the fallback because the completion write could not be proven is part of that one
+decision, not a downgrade. Never mix the two within one container, and never downgrade a native
+relation to a checklist mid-run — that leaves a container whose progress the two systems disagree
+about. Both mechanisms must produce the same observable outcome: every finding reachable from its
+container, and completion visible per finding.
 
 ### Reference syntax
 

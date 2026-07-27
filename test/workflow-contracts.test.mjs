@@ -531,7 +531,7 @@ test('an external tracker target fails closed on all four connection failures', 
   );
 });
 
-test('the external capability gate aborts before the first write and keeps the relation optional', () => {
+test('the external capability gate aborts before the first write and keeps the relation conditional', () => {
   const target = source('src/shared/tracker-target.md');
   const required = section(target, '### Required capabilities');
   const flatRequired = flat(required);
@@ -556,12 +556,22 @@ test('the external capability gate aborts before the first write and keeps the r
     flatRequired,
     /abort before the first write and name the missing capability — the external equivalent of `UNSUPPORTED_CAPABILITY`/,
   );
-  // Exactly one capability may be missing without aborting, and it is the relation.
+  // Exactly one capability may be missing without aborting, and it is the relation —
+  // but only together with the write that makes it usable. Gating the native mechanism on
+  // the relation's mere existence let a read-only relation reach delivery and fail to mark
+  // completion after the pull request existed.
   assert.match(
     flatRequired,
-    /One capability is \*\*optional\*\*: a native parent\/sub-issue relation\./,
+    /One capability is \*\*conditional\*\*: a native parent\/sub-issue relation \*\*whose sub-item completion state this connection can write\*\*/,
   );
-  assert.match(flatRequired, /neither case aborts/);
+  assert.match(
+    flatRequired,
+    /Discovery must prove that write, not merely that the relation exists/,
+  );
+  assert.match(
+    flatRequired,
+    /An unproven or missing completion write never aborts: the run selects the checklist fallback/,
+  );
   // Capabilities come from the resolved connection, never from the tool's name.
   assert.match(
     flat(section(target, '### Connection discovery')),
@@ -587,6 +597,34 @@ test('the external container mechanism is chosen once, reported, and never mixed
     container,
     /Never mix the two within one container, and never downgrade a native relation to a checklist mid-run/,
   );
+
+  // The native mechanism must be gated on the completion *write*, not on the relation's
+  // existence. Otherwise a read-only relation is selected, the run creates a PR, and only
+  // then fails to mark completion — after the first write, and leaving a work item the next
+  // run implements again.
+  assert.match(
+    container,
+    /parent\/sub-issue relation \*\*and\*\* discovery proved that it can write a sub-item's completion state/,
+  );
+  assert.match(
+    container,
+    /a relation whose completion state this connection cannot write — carry the/,
+  );
+  assert.match(
+    container,
+    /Selecting the fallback because the completion write could not be proven is part of that one decision, not a downgrade/,
+  );
+
+  // The conditional capability and its degrade-not-abort rule are pinned once, by the
+  // capability-gate test above.
+  // Both flows that tick off only after a PR exists must settle the mechanism in preflight.
+  for (const path of ['src/tools/apply-issues.md', 'src/tools/apply-review-remote.md']) {
+    assert.match(
+      flat(source(path)),
+      /only when the connection proves it can write a sub-item's completion state/,
+      `${path} must settle the container mechanism before delivery`,
+    );
+  }
 });
 
 test('plan files stay committed and pull requests stay on the forge in every tracker target', () => {
