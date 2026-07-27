@@ -25,7 +25,7 @@ fits.
 `.effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md` with symptom, reproduction,
 root-cause hypotheses including confidence, discarded hypotheses, and exactly one
 follow-up recommendation. Investigation reports are always local: they are never committed and never
-tracked as an issue, not even in remote tracker mode. Their prose follows `language.workflow`;
+tracked as an issue, on no tracker target. Their prose follows `language.workflow`;
 the internal runtime/wisdom schema remains language-stable.
 
 **Interplay:** The recommendation routes to `/effective-flow fix` (defect with a clear cause),
@@ -103,8 +103,8 @@ comment back to the issue. It then runs the full automatic baseline—gap analys
 internal plan review—before offering the same optional deep interactive review as local planning.
 It produces neither code nor a plan file – the issue remains the single source.
 
-**When to use:** In remote tracker mode, when there are issues that still contain too little
-information for an autonomous implementation.
+**When to use:** When your issues live in a tracker – the Git forge or an external tool – and
+some of them still contain too little information for an autonomous implementation.
 
 **Typical calls:**
 
@@ -128,15 +128,15 @@ deep interactive review or **No** to release the ready baseline. A skipped revie
 the issue plan is ready; unresolved implementation-blocking points keep the label and the canonical
 comment records the re-entry state.
 
-**Interplay:** This tool is inherently remote and always works against the
-issue tracker of the `origin` remote (see [Remote tracker](remote-tracker.md)); the
-`tracker.mode` switch does not apply here. Once complete, `/effective-flow apply` can implement the now-planned
+**Interplay:** This tool is inherently tracker-bound: it always works against the resolved tracker
+target – the issue tracker of the `origin` remote, or the external tool named in the project setup
+(see [Remote tracker](remote-tracker.md)). The local/remote distinction does not apply here. Once complete, `/effective-flow apply` can implement the now-planned
 issue.
 
 ## Further reading
 
 - [Configuration](configuration.md) – `language.workflow`, `language.forge`, `plan.dir`, and
   other defaults
-- [Remote tracker](remote-tracker.md) – issue mode, labels, local vs. remote mode
+- [Remote tracker](remote-tracker.md) – issue mode, labels, and the three tracker targets
 - [Skill discovery](skill-discovery.md) – how these tools draw on host skills for analysis
 - [Tools: Implement](tools-implement.md) – how plans, reports, and issues are implemented

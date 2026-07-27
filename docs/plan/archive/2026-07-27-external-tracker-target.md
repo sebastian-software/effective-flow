@@ -455,8 +455,8 @@ byte-identical), `shared/tracker-target.md` present in all three `dist/` targets
 
 | Status                 | Count |
 | ---------------------- | ----: |
-| Fixed                  |    23 |
-| Open / Not implemented |     3 |
+| Fixed                  |    26 |
+| Open / Not implemented |     0 |
 
 Both Critical findings were fixed before completion. The most consequential: a generic "as issues"
 wish outranked the configuration, so a project pinning `tracker.mode: external` would have had its
@@ -467,10 +467,12 @@ acceptance criterion — the stale "Host and CLI detection" reference had surviv
 `src/shared/pr-review-comments.md` because it was broken across a line; it is now removed and
 guarded by a test.
 
-The three remaining findings are Notes, all deliberately not implemented: the `cleanup.md` fence
-was kept so the "every embedding source carries the pointer" invariant stays uniform, and
-`src/tools/investigate.md` plus four user-guide tool pages still use two-mode wording outside this
-plan's scope.
+Three Note findings were initially recorded as deliberately not implemented — the `cleanup.md`
+fence, plus two-mode wording in `src/tools/investigate.md` and four user-guide tool pages, all
+outside this plan's original scope. They were fixed on explicit request in a follow-up round on the
+same pull request: `cleanup.md` now carries no pointer and says why, with the derived consumer
+assertion gaining a listed, justified exemption and a stale-exemption guard; the terminology was
+aligned across all five remaining sources. No finding remains open.
 
 **External review report:**
 `.effective-flow/review/review-report-2026-07-27-plan-external-tracker-target.md`

@@ -657,6 +657,13 @@ test('every source embedding issue-tracker also loads the tracker-target fragmen
     return names;
   }
 
+  // One documented exemption. `cleanup.md` embeds the tracker integration only to decide
+  // whether its `firmo-` label class runs at all; it performs no tracker write and skips that
+  // class entirely on an external target, so the contract would be pure context cost there.
+  // Exemptions are listed, never inferred — adding one has to be a deliberate edit, and an
+  // exempt source must both omit the pointer and say why.
+  const exempt = new Set(['src/tools/cleanup.md']);
+
   const consumers = [];
   for (const directory of ['src/tools', 'src/agents']) {
     const sources = readdirSync(new URL(`${directory}/`, repositoryRoot)).filter((entry) =>
@@ -669,6 +676,19 @@ test('every source embedding issue-tracker also loads the tracker-target fragmen
       // Eager and lazy embedding count alike: `review.md` defers `issue-tracker` itself.
       if (!includeClosure(body).has('issue-tracker')) continue;
       consumers.push(path);
+      if (exempt.has(path)) {
+        assert.equal(
+          body.split(fence).length - 1,
+          0,
+          `${path} is exempt and must not carry the tracker-target load pointer`,
+        );
+        assert.match(
+          flat(body),
+          /deliberately carries \*\*no\*\* deferred `tracker-target` pointer/,
+          `${path} must state why it is exempt`,
+        );
+        continue;
+      }
       assert.equal(
         body.split(fence).length - 1,
         1,
@@ -677,6 +697,9 @@ test('every source embedding issue-tracker also loads the tracker-target fragmen
     }
   }
   assert.ok(consumers.length > 0, 'no source embeds issue-tracker — derivation is vacuous');
+  for (const path of exempt) {
+    assert.ok(consumers.includes(path), `stale exemption: ${path} no longer embeds issue-tracker`);
+  }
   assert.ok(
     consumers.includes('src/tools/review.md'),
     'review.md lazily embeds issue-tracker and must be part of the derived consumer set',

@@ -62,10 +62,11 @@ config-migration
 issue-tracker
 ```
 
-```lazy-include
-tracker-target
-when: the resolved tracker target is `external`
-```
+This tool deliberately carries **no** deferred `tracker-target` pointer, unlike every other source
+that embeds the fragment above. It resolves the tracker target only to decide whether its
+`firmo-` label class runs at all, performs no tracker write of any kind, and skips that class
+entirely on an external target. Loading the external contract would therefore be pure context
+cost. Any tracker write added here must load the contract first.
 
 ## Project conventions
 
@@ -136,7 +137,7 @@ worktrees are never treated as legacy merely because they predate lifecycle reco
    - **Runtime directories:** do `.firmo/` and/or `.sf-plugin/` exist?
    - **Legacy `config.json`:** does `.firmo/config.json`, `.sf-plugin/config.json`, or a `config.json` recognizable as outdated in `.effective-flow/` (transitional fallback whose values belong in the ADR) exist?
    - **`.gitignore`:** does it contain outdated lines for `.firmo/`/`.sf-plugin/` or the old two-line pattern?
-   - **`firmo-` labels:** forge history, and therefore only on the forge target with an authenticated CLI (see "Remote helper contract" in `issue-tracker.md`) — list issues with `firmo-` labels separately per prefix. If the forge target, a Git repository, `origin`, or an authenticated CLI is missing, skip this class and report that briefly. On an external target this class is skipped entirely and reported as skipped: `firmo-` recognition and the one-time `sf-` migration are never run, emulated, or recorded against an external tool.
+   - **`firmo-` labels:** forge history, and therefore only on the forge target with an authenticated CLI (see "Remote helper contract" in `issue-tracker.md`) — list issues with `firmo-` labels separately per prefix. If the forge target, a Git repository, `origin`, or an authenticated CLI is missing, skip this class and report that briefly. On an external target this class is skipped entirely and reported as skipped: `firmo-` recognition and the one-time `sf-` migration are never run, emulated, or recorded against an external tool. Because that skip needs no tracker access, this tool requires no external-target contract.
 5. If at least one legacy runtime directory exists, read
    `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` without mutation and inspect
    `runtimeMigration.directory.version`. When the valid version `1` marker is missing, treat the

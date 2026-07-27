@@ -12,8 +12,8 @@ convention file. The wizard starts from safe defaults and offers two paths: **Ex
 defaults while retaining existing values) or **Guided** (explain and choose each option).
 
 **When to use:** On the first use of Effective Flow in a project, or later, to adjust individual
-settings (project and surface languages, worktree, completion action, tracker mode, advanced
-review/apply-review values, skill discovery).
+settings (project and surface languages, worktree, completion action, tracker target including an
+external tool, advanced review/apply-review values, skill discovery).
 
 **Typical call:** `/effective-flow setup`
 

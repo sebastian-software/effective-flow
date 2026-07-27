@@ -47,7 +47,7 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
 ## `/effective-flow apply`
 
 **Purpose:** Pure entry router. Takes any apply source – plan file,
-local review report, remote review epic/finding, or GitHub/Forgejo issue –, classifies
+local review report, review epic/finding, or any tracker issue –, classifies
 it via the shared apply-source detection, and delegates to the responsible internal tool
 (internally `apply-plan`, `apply-review`, or `apply-issues`; these are not directly callable via
 `/effective-flow`). `apply` implements nothing itself.
@@ -58,7 +58,7 @@ decide yourself which tool is responsible.
 **Typical call:** `/effective-flow apply [<plan file>|<report path>|<issue reference>]`
 
 **Input/output:** Without an argument, `apply` lists local candidates (open plans from
-`<plan.dir>/`, report files under `.effective-flow/review/`) and, in remote tracker mode, additionally
+`<plan.dir>/`, report files under `.effective-flow/review/`) and, on a tracker target, additionally
 open review epics, and then asks for the concrete source. The output consists of the
 detected source type, the resolved handle, and the started target tool.
 
