@@ -1375,6 +1375,15 @@ test('central-skill adapters retain Effective Flow ownership without duplicate h
   const docCategories = readSource('shared/doc-categories.md');
   assert.match(docCategories, /takes precedence over the prescribed standard structure/);
   assert.match(docCategories, /local test for what counts as/);
+
+  // The marketing writer restates the root README's follow-up targets, so it must
+  // resolve them from the effective structure rather than the standard paths.
+  const marketingWriter = readSource('agents/marketing-writer.md');
+  assert.match(
+    marketingWriter,
+    /resolve the two documentation targets from the \*\*effective\s+structure\*\*/,
+  );
+  assert.match(marketingWriter, /do not fall back\s+to the standard paths/);
 });
 
 // --- Fixture-based end-to-end snapshot ---
