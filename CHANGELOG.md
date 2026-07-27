@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.54.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.53.0...effective-flow-v1.54.0) (2026-07-27)
+
+
+### Features
+
+* add the concept tool and its deep concept review ([#269](https://github.com/sebastian-software/effective-flow/issues/269)) ([674b6c1](https://github.com/sebastian-software/effective-flow/commit/674b6c1d84dc09c4bd7a87a903d9eefd1ef85374))
+* defer documentation structure and craft to tech-docs ([#266](https://github.com/sebastian-software/effective-flow/issues/266)) ([3018135](https://github.com/sebastian-software/effective-flow/commit/3018135f94a812b90a8c093b9278be0763fb6148))
+* drop the autonomous /goal mode from every workflow ([#271](https://github.com/sebastian-software/effective-flow/issues/271)) ([6fe6a31](https://github.com/sebastian-software/effective-flow/commit/6fe6a31cc6755e294e7685c60df96f23fea755a6))
+* make the documentation check a fixed part of the implementation tools ([c54755a](https://github.com/sebastian-software/effective-flow/commit/c54755ad932b4cf71d22d1b6a9b424d09248a09a))
+* publish review findings onto pull requests through pr-review ([#265](https://github.com/sebastian-software/effective-flow/issues/265)) ([5da62ac](https://github.com/sebastian-software/effective-flow/commit/5da62aca5613f0b7795e1330c59212049df18fa9))
+
+
+### Bug Fixes
+
+* resolve the root README follow-up targets from the effective structure ([#268](https://github.com/sebastian-software/effective-flow/issues/268)) ([8d8c3b4](https://github.com/sebastian-software/effective-flow/commit/8d8c3b46d4fdb8cd1133a5e650dff49651b0a334))
+* root forge CLI operations in the main checkout ([#263](https://github.com/sebastian-software/effective-flow/issues/263)) ([2dddb72](https://github.com/sebastian-software/effective-flow/commit/2dddb7202b18ce3ebb71410d3a3741d3c2c8b5ef))
+
 ## [1.53.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.52.2...effective-flow-v1.53.0) (2026-07-27)
 
 
