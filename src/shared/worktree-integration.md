@@ -339,7 +339,7 @@ normal delivery completion.
 
 ### Handback and completion action (completion phase)
 
-Following the workflow's regular completion logic (including goal verification).
+Following the workflow's regular completion logic (including completion-condition verification).
 The final status switch of the plan file to `Umgesetzt`/`Implemented` and its
 archiving is handled by step 1 below at the delivery point – the implementing workflow therefore does **not** set the
 status beforehand, but leaves it to this phase (exception: in-place without
@@ -429,7 +429,7 @@ options:
      a title-type hint, so the PR title carries a valid Conventional Commit type — with a squash
      merge it is the release signal.
      Once `{{SKILL:pr}}` returned the pull request, run "PR review publication" with that pull
-     request, whether this run is gated or under an authorized goal, and either the workflow's
+     request, whether this run is gated or a non-interactive delegation, and either the workflow's
      residual finding set or its explicit declaration that it has none. It uses the same verified
      `RUNTIME_STATE_ROOT`. This stays inside step 5 deliberately: step 4 has already withdrawn an
      Effective Flow-owned worktree and step 6 restores the checkout to the base branch, so a review

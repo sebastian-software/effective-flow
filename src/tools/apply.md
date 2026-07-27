@@ -113,9 +113,7 @@ when: the resolved tracker target is `external`
    responsibility lies with the target skill.
 4. The target skill checks the basis itself against the "clarification gate" before it
    implements. `{{SKILL:apply}}` itself does not run this check and implements
-   nothing. With a clarified basis, the target skill — after a confirmation — prefers the
-   goal-driven, autonomous implementation (see "Explicit goal query for autonomous
-   runs" in `goal-completion.md`).
+   nothing.
 
 ## Rules
 

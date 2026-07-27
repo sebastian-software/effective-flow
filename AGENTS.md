@@ -51,7 +51,6 @@ The build resolves these — do not hand-write their expansions:
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `{{SKILL:X}}`                               | → `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                                          |
 | `{{AGENT:X}}`                               | → `` `effective-flow-X` `` in every target; native registered role or portable worker-contract identifier |
-| `{{GOAL_START}}`                            | → direct `create_goal` attempt in Codex; copy-pasteable `/goal` prompt handoff in Claude and portable     |
 | `{{VERSION}}`                               | release-please manifest version + git short hash                                                          |
 | ` ```include ` fence (name on its own line) | inlines `src/shared/<name>.md`                                                                            |
 | ` ```ask ` fence                            | conditional user question (Claude `AskUserQuestion` block / Codex free-text)                              |
