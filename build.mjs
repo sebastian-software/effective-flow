@@ -35,6 +35,7 @@ import {
   assertNoUnresolvedEagerIncludes,
   collectIncludeNames,
   assertNoEagerLazyOverlap,
+  assertDocumentationSyncConsumers,
   findRuntimeStateSafetyViolations,
   findRuntimeDirMigrationViolations,
   findMemoryStateContractViolations,
@@ -550,6 +551,9 @@ try {
     );
   }
 
+  // Include names per read source; consumed by the documentation-sync guard
+  // once every tool has been read.
+  const sourceIncludes = new Map();
   const readSource = (dir, file, context) => {
     const content = normalizeLineEndings(readFileSync(join(dir, file), 'utf8'));
     const fm = extractFrontmatter(content);
@@ -557,6 +561,7 @@ try {
     // Guard: no fragment is both eager- and lazy-included in the same file.
     const { eager, lazy } = collectIncludeNames(rawBody);
     assertNoEagerLazyOverlap(eager, lazy, { context });
+    sourceIncludes.set(context, { eager, lazy });
     if (
       projectRoutingConsumers.has(context) &&
       !eager.has('project-routing') &&
@@ -604,6 +609,11 @@ try {
       body,
     });
   }
+
+  // --- Documentation-sync consumer guard ---
+  // Keeping documentation in sync is a fixed phase of every implementation
+  // tool. Removing the eager include from any consumer fails the build.
+  assertDocumentationSyncConsumers(sourceIncludes);
 
   for (const file of agentFiles) {
     const context = `agents/${file}`;

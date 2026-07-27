@@ -211,6 +211,16 @@ The build aborts with an error message if any of these guards is violated:
   **all three** targets so that the load pointer resolves in both native and portable installs. The pure check
   logic (`resolveLazyIncludes`, `collectIncludeNames`, `assertNoEagerLazyOverlap`) lives in
   `build-lib.mjs` and is covered in `test/build-lib.test.mjs`.
+- **Documentation-sync consumer guard:** `tools/build.md`, `tools/fix.md`, `tools/refactor.md`, and
+  `tools/maintain.md` must each embed the `documentation-sync` fragment **eagerly**. A lazy pointer
+  does not satisfy the guard: its `when:` condition could be judged inapplicable, which is exactly
+  the skippable documentation phase this gate replaces. Only the eager core is required; its
+  `documentation-sync-contract` detail fragment stays lazy and keeps the core out of the context
+  budget. The pure `findDocumentationSyncViolations` checker and its
+  `assertDocumentationSyncConsumers` wrapper live in `build-lib.mjs` and are covered in
+  `test/build-lib.test.mjs`. The core fragment deliberately opens at heading level four: it is
+  always embedded inside a consuming tool's `###` phase heading, so an `##` heading would make the
+  following phases read as its subsections.
 - **Context-budget guard (#99):** The always-loaded core of the largest tools (`build`, `fix`,
   `docs`, `review`, `plan`) – the built tool file without the lazy fragments – stays under
   **700 lines**. The build prints the measured sizes as a report and aborts if a tool exceeds
