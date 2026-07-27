@@ -407,7 +407,11 @@ options:
    receipts, perform no worktree cleanup and create no lifecycle state; leave handling to the
    user or harness. The verified `RUNTIME_STATE_ROOT` is never a cleanup target, and local review
    state there remains intact.
-5. **Execute action:**
+5. **Execute action:** Run this step and every Git, remote-helper and provider-CLI operation it
+   performs in `RUNTIME_STATE_ROOT`, per "Rooted operations". Step 4 may already have removed the
+   Effective Flow-owned worktree, so an inherited execution directory can be a deleted path; the
+   delivery branch and its commits are repository-wide and need no worktree. Never fall back to
+   `EXECUTION_ROOT` for this step.
    - `branch` / Branch only: leave the branch, report the name and a note about later
      PR creation.
    - `merge`: the target is the local branch part of `delivery.baseBranch` or the
@@ -416,10 +420,11 @@ options:
      behind its remote-tracking ref, point that out. Merge the delivery branch –
      prefer fast-forward, otherwise a merge commit; on conflict stop, leave the branch
      and inform the user, no automatic conflict resolution.
-   - `pr`: delegate to `{{SKILL:pr}}` and pass the delivery branch, base branch and the
-     workflow/change type (`feat`/`fix`/`refactor`/`docs`/`chore` depending on the implementing
-     workflow and effect) as a title-type hint, so the PR title carries a
-     valid Conventional Commit type — with a squash merge it is the release signal.
+   - `pr`: delegate to `{{SKILL:pr}}` and pass the delivery branch, base branch, the verified
+     `RUNTIME_STATE_ROOT` as its execution root, and the workflow/change type
+     (`feat`/`fix`/`refactor`/`docs`/`chore` depending on the implementing workflow and effect) as
+     a title-type hint, so the PR title carries a valid Conventional Commit type — with a squash
+     merge it is the release signal.
 6. **Restore checkout:** For in-place delivery that switched the current checkout, after
    successful PR creation or with `branch`, switch back to `delivery.returnBranch` or, with
    `auto`, to the local branch part of `delivery.baseBranch`, provided the working tree is clean.

@@ -20,6 +20,16 @@ if you explicitly agree to it. Afterwards, check with `git remote get-url origin
 right host is detected; for ambiguous hosts (e.g. GitHub Enterprise),
 `tracker.remoteToolOverride` in the [Configuration](./configuration.md#block-tracker) helps.
 
+## "gh is too old" or "tea is too old for the remote-tracker adapter"
+
+The CLI is installed, but below the supported minimum – `gh` 2.0.0 or `tea` 0.14.2. The message
+names the `installed` and `minimum` versions. Update the CLI (for example `brew upgrade gh` or
+`brew upgrade tea`) and start the run again.
+
+`tea` before 0.14.2 cannot create a pull request from a repository slug together with an explicit
+head branch, which is exactly the form Effective Flow uses. The check runs at the start of a remote
+run, so you find out before implementation instead of at the delivery point.
+
 ## The external tracker connection could not be resolved
 
 With `tracker.mode: external` (see [Remote tracker](./remote-tracker.md#external-target)), a run

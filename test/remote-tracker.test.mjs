@@ -51,7 +51,7 @@ function fakeRunner(results) {
 function teaProbeResults(overrides = {}) {
   const help = (name, content) => overrides[name] ?? { status: 0, stdout: content, stderr: '' };
   return [
-    { status: 0, stdout: 'Version: 0.14.1\n', stderr: '' },
+    { status: 0, stdout: 'Version: 0.14.2\n', stderr: '' },
     {
       status: 0,
       stdout: JSON.stringify([{ name: 'work', url: 'https://code.example.test' }]),
@@ -1282,11 +1282,30 @@ test('provider probes distinguish old versions and missing JSON capability', asy
           provider: 'forgejo',
         },
         fakeRunner([
-          { status: 0, stdout: 'Version: 0.10.1\n', stderr: '' },
+          // Must stay at or above the tea floor so this case still proves the JSON capability
+          // rather than tripping the earlier version check.
+          { status: 0, stdout: 'Version: 0.14.2\n', stderr: '' },
           { status: 0, stdout: 'table output', stderr: '' },
         ]),
       ),
     (error) => error.code === 'UNSUPPORTED_CAPABILITY' && error.details.capability === 'json',
+  );
+  await assert.rejects(
+    () =>
+      probeProvider(
+        {
+          host: 'code.example.test',
+          owner: 'team',
+          repository: 'flow',
+          provider: 'forgejo',
+        },
+        fakeRunner([{ status: 0, stdout: 'Version: 0.14.1\n', stderr: '' }]),
+      ),
+    (error) =>
+      error.code === 'UNSUPPORTED_CAPABILITY' &&
+      error.details.capability === 'version' &&
+      error.details.installed === '0.14.1' &&
+      error.details.minimum === '0.14.2',
   );
 });
 
@@ -1370,4 +1389,73 @@ test('CLI reads JSON stdin and returns stable success/error envelopes and exit c
   assert.equal(envelope.ok, false);
   assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
   assert.equal(typeof envelope.error.retryable, 'boolean');
+});
+
+test('a supplied cwd roots every process invocation of an operation', async () => {
+  const runner = fakeRunner([
+    { status: 0, stdout: 'true\n', stderr: '' },
+    { status: 0, stdout: 'https://github.com/example/flow.git\n', stderr: '' },
+    { status: 0, stdout: '[]', stderr: '' },
+  ]);
+  const envelope = await executeOperation(
+    'issue-list',
+    { cwd: '/main/checkout' },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(runner.calls.length, 3);
+  for (const call of runner.calls) assert.equal(call.cwd, '/main/checkout');
+});
+
+test('an absent cwd leaves every process invocation unrooted', async () => {
+  const runner = fakeRunner([
+    { status: 0, stdout: 'true\n', stderr: '' },
+    { status: 0, stdout: 'https://github.com/example/flow.git\n', stderr: '' },
+    { status: 0, stdout: '[]', stderr: '' },
+  ]);
+  await executeOperation('issue-list', {}, { runner, skipProbe: true });
+  assert.equal(runner.calls.length, 3);
+  for (const call of runner.calls) assert.equal(call.cwd, undefined);
+});
+
+test('a non-string cwd is rejected as an invalid payload', async () => {
+  const envelope = await executeOperation(
+    'issue-list',
+    { cwd: 42 },
+    { runner: fakeRunner([]), skipProbe: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+});
+
+test('an unusable working directory is reported as such, not as a missing CLI', async () => {
+  const runner = fakeRunner([
+    { status: null, stdout: '', stderr: '', error: { code: 'INVALID_CWD', path: '/removed/tree' } },
+  ]);
+  const envelope = await executeOperation(
+    'issue-list',
+    { cwd: '/removed/tree' },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+  assert.notEqual(envelope.error.code, 'CLI_MISSING');
+  assert.equal(envelope.error.details.cwd, '/removed/tree');
+});
+
+test('the shipped process runner detects a removed working directory before spawning', () => {
+  const result = spawnSync(
+    process.execPath,
+    ['src/scripts/remote-tracker.mjs', 'repository-resolve'],
+    {
+      cwd: new URL('..', import.meta.url),
+      input: JSON.stringify({ cwd: '/effective-flow/definitely/removed/worktree' }),
+      encoding: 'utf8',
+    },
+  );
+  assert.notEqual(result.status, 0);
+  const envelope = JSON.parse(result.stdout);
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+  assert.equal(envelope.error.details.cwd, '/effective-flow/definitely/removed/worktree');
 });
