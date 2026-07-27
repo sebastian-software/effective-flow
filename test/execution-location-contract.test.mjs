@@ -264,14 +264,43 @@ test('forge operations are rooted in the runtime state root, not the execution w
     ],
     [/may already have been withdrawn/, 'withdrawn-worktree rationale'],
     [
-      /It never redirects tracked project work, which stays\s+in `EXECUTION_ROOT`/,
-      'boundary against tracked project work',
+      /repository-wide Git\s+operations that accompany a completion action/,
+      'repository-wide scope of the redirected Git operations',
+    ],
+    [
+      /never any operation that reads or changes a working tree —\s+branch creation, branch checkout, cleanliness checks and a default derived from the checked-out\s+branch all stay in `EXECUTION_ROOT`/,
+      'boundary against working-tree operations',
     ],
   ];
 
   for (const [pattern, clause] of requiredClauses) {
     assert.match(contract, pattern, `missing ${clause} clause`);
   }
+});
+
+test('the pr tool keeps its invocation checkout separate from the execution root', () => {
+  const pr = extractBody(readSource('tools', 'pr.md'));
+
+  assert.match(
+    pr,
+    /\*\*The invocation checkout stays separate\.\*\*/,
+    'pr.md must separate the invocation checkout from the execution root',
+  );
+  assert.match(
+    pr,
+    /Default: the branch checked out in the invocation checkout,\s+never the one in the execution root/,
+    'the head branch must default from the invocation checkout',
+  );
+  assert.match(
+    pr,
+    /Branch creation, branch checkout and the\s+working-tree check below happen in the invocation checkout, never in the execution root/,
+    'lifecycle branch preparation must stay in the invocation checkout',
+  );
+  assert.match(
+    pr,
+    /switch the invocation\s+checkout — the one step 3 may have switched, never the execution root — back to/,
+    'the checkout restore must target the invocation checkout',
+  );
 });
 
 test('the completion action and the pr tool root their forge work in the runtime state root', () => {
