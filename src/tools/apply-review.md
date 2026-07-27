@@ -252,7 +252,7 @@ First determine the tracker target via the "apply-source detection" (report file
 
 ### Phase 2: Commit and stash strategy
 
-This phase is the workflow's only up-front strategy gate: the commit strategy and stash policy are determined here together, before the findings are worked through. After that no further **regular** approval gate follows; the remaining stops are exclusively conflict-driven data-integrity escalations: an `apply` merge conflict in Phase 6, a high-risk cherry-pick conflict in Phase 4.3 under the "Individually with worktrees" strategy and — rarely — an orphaned commit lock under the "Individually" strategy. If no such escalation occurs, phases 3–8 run autonomously under native `/goal`.
+This phase is the workflow's only up-front strategy gate: the commit strategy and stash policy are determined here together, before the findings are worked through. After that no further **regular** approval gate follows; the remaining stops are exclusively conflict-driven data-integrity escalations: an `apply` merge conflict in Phase 6, a high-risk cherry-pick conflict in Phase 4.3 under the "Individually with worktrees" strategy and — rarely — an orphaned commit lock under the "Individually" strategy. With a non-`interactive` `applyReview.stashPolicy`, phases 3–8 therefore run through without a further stop if no such escalation occurs; with the default `interactive` policy, the stash decisions in Phase 6 and Phase 4.3 are additional stops.
 
 If `applyReview.defaultCommitStrategy` is validly set, skip the ASK question and use the configured strategy:
 
@@ -283,7 +283,7 @@ Record the answer and pass it to each delegated skill as an instruction:
 
 #### Stash policy
 
-Part of the same up-front gate: the stash policy determines in advance how the stash cleanup in Phase 6 (classes B/C/D) and the abort cleanup in Phase 4.3 handle stashes left behind — without a later follow-up question. Concrete stashes do not yet exist at the start; therefore the policy is decided, not the individual case.
+Part of the same up-front gate: the stash policy determines in advance how the stash cleanup in Phase 6 (classes B/C/D) and the abort cleanup in Phase 4.3 handle stashes left behind — for every value except the default `interactive`, without a later follow-up question. Concrete stashes do not yet exist at the start; therefore the policy is decided, not the individual case.
 
 If `applyReview.stashPolicy` is validly set, skip the ASK question and use the value; briefly report that the stash policy was taken from the Effective Flow configuration (project-setup ADR). If no valid value is set, ask at the same gate as the commit strategy:
 
@@ -293,20 +293,16 @@ header: Stashes
 question: How should stashes left behind during the run be handled when a decision is needed?
 options:
   - label: Interactive
-    description: Ask per affected stash (today's behavior, blocks autonomous runs)
+    description: Ask per affected stash (today's behavior, blocks unattended runs)
   - label: Keep
-    description: Keep unclear stashes unchanged and report at the end (safe for autonomous runs)
+    description: Keep unclear stashes unchanged and report at the end (safe for unattended runs)
   - label: Discard
     description: Discard unclear stashes (git stash drop) — possible data loss
   - label: Apply
     description: Apply unclear stashes (git stash pop); on a merge conflict it still asks
 ```
 
-Value mapping: Interactive → `interactive`, Keep → `keep`, Discard → `discard`, Apply → `apply`. Record the chosen policy in the wisdom file. For unattended `/goal` runs, `keep` is the safe value; `interactive` blocks such runs at Phase 6 and Phase 4.3.
-
-#### Optional `/goal` string
-
-Once the commit strategy and stash policy are fixed, output the optional `/goal` string per "Goal-driven completion control"; it covers phases 3–8. The string references the report file and instructs the user to run through the remaining phases. With `stashPolicy != interactive` (recommended `keep`), these phases run without a regular approval gate; the remaining stops are only the conflict-driven escalations from the phase intro (`apply` merge conflict, high-risk cherry-pick conflict with worktrees, rarely an orphaned lock).
+Value mapping: Interactive → `interactive`, Keep → `keep`, Discard → `discard`, Apply → `apply`. Record the chosen policy in the wisdom file. For an unattended non-interactive delegation, `keep` is the safe value; `interactive` blocks such runs at Phase 6 and Phase 4.3.
 
 #### Commit mechanics per strategy
 
@@ -408,7 +404,7 @@ Example (across actions) with five findings over multiple actions:
      - action docs: `Use the skill {{SKILL:docs}} for this finding.`
    - the prompt suggestion from the report as the task description
    - **Stash convention:** if any stash arises during the implementation of this finding (through a pre-commit hook, a manual `git stash` in the sub-skill or a tool-triggered stash), **the stash message must contain the finding ID**, e.g. `apply-review R-XXXXXXX <short description>`. This allows the stash cleanup in Phase 6 to reliably assign the stash to the finding.
-   - the note that the sub-agent runs as a **non-interactive** delegation sub-agent of `{{FIRMO}} apply-review` and therefore skips the explicit goal query per "Explicit goal query for autonomous runs": no extra option "Autonomous via /goal", no `/goal` string. `{{FIRMO}} apply-review` steers the autonomous run at its own gate.
+   - the note that the sub-agent runs as a **non-interactive** delegation sub-agent of `{{FIRMO}} apply-review` and therefore opens no approval gate of its own. `{{FIRMO}} apply-review` steers the run at its own gate.
    - the completion protocol
 3. Check each sub-agent for `DONE` or `ABORT`.
 4. On `ABORT`:
@@ -485,7 +481,7 @@ During the delegation in Phase 4, the called sub-skills or pre-commit hooks may 
 
 6. **Handle each stash based on its classification:**
 
-   **Apply the stash policy from Phase 2:** class A remains auto-drop in all policies. Classes B/C/D follow the `stashPolicy`. The class steps below describe the case `stashPolicy = interactive` (default), which asks the stash question per stash. With the other values the question is omitted and you act directly: `keep` → keep the stash unchanged and note it as "kept" for the Phase 8 summary; `discard` → `git stash drop`; `apply` → `git stash pop` and on a merge conflict do **not** drop, but escalate to the user (the only remaining stop in the autonomous run).
+   **Apply the stash policy from Phase 2:** class A remains auto-drop in all policies. Classes B/C/D follow the `stashPolicy`. The class steps below describe the case `stashPolicy = interactive` (default), which asks the stash question per stash. With the other values the question is omitted and you act directly: `keep` → keep the stash unchanged and note it as "kept" for the Phase 8 summary; `discard` → `git stash drop`; `apply` → `git stash pop` and on a merge conflict do **not** drop, but escalate to the user (the only remaining stop in the otherwise unattended run).
 
    - **Class A:** drop without asking.
      - `git stash drop stash@{N}`

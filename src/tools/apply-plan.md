@@ -45,10 +45,6 @@ apply-clarity-gate
 goal-completion
 ```
 
-```include
-goal-start-action
-```
-
 ## Project conventions
 
 If the project has an `AGENTS.md`, read it before evaluating the plan and honor its rules for workflow routing, plan files and user follow-up questions.
@@ -84,7 +80,7 @@ plan-reference-routing
    - plan status
    - detected target workflow
    - for documentation plans, additionally the doc category and target path from the plan header
-2. Since the plan has passed the clarification gate, a fully clarified basis is available: before delegating, offer the goal-driven, autonomous implementation — after an explicit confirmation at this approval boundary per "Explicit goal query for autonomous runs" from `goal-completion.md`. On "Yes", perform the central harness-specific goal-start action with the target workflow's remaining phases and completion condition. On "No", the existing interactive (gated) path remains the alternative.
+2. Since the plan has passed the clarification gate, a fully clarified basis is available; the target workflow therefore starts without a further clarification round and, per "Goal-driven completion control", hands the progress overview to that workflow before its remaining phases begin.
 3. Start the detected skill with the plan file as argument:
    - `{{SKILL:build}} <plan.dir>/YYYY-MM-DD-<slug>.md`
    - `{{SKILL:fix}} <plan.dir>/YYYY-MM-DD-<slug>.md`
@@ -94,7 +90,7 @@ plan-reference-routing
    - that `{{SKILL:apply-plan}}` has already checked the plan status, the workflow recommendation and the clarification gate
    - the full plan path
    - the detected workflow
-   - that the basis is already clarified and, if confirmed, the implementation should run goal-driven
+   - that the basis is already clarified
    - for documentation plans, additionally the values found in the matching German
      `**Doku-Kategorie:**` / `**Ziel-Pfad:**` or English `**Doc category:**` /
      `**Target path:**` fields, or the note that one or both lines are missing

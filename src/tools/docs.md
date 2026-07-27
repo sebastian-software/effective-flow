@@ -94,10 +94,6 @@ completion-protocol
 goal-completion
 ```
 
-```include
-goal-start-action
-```
-
 ```lazy-include
 worktree-integration
 when: the delivery/worktree mode is determined (Phase 2, step 0)
@@ -176,7 +172,6 @@ the plan passes the gate:
 - the target-path line is always required; the doc-category line is required only when the target lies inside the four `docs/` categories, since `Doc categories` sanctions its omission for the root `README.md`, an explicitly named existing file, in-code documentation, and a divergent established structure
 - ask the user for the missing value only when a required line is absent or when a present category contradicts its target path, and add the lines in the plan file before implementation
 - if the target path points to an existing file: clarify replacement or a new slug with the user before `{{AGENT:docs-writer}}` starts
-- if a "clarified + goal-driven" context was already passed from the apply chain (basis clarified, confirmation for the autonomous run already given), honor it: skip the goal query in Phase 1 and run through phases 2–4 under the "Goal-driven completion control".
 
 ## Workflow
 
@@ -204,16 +199,15 @@ the plan passes the gate:
    - affected files
    - planned content changes
    - validation strategy
-6. Derive the explicit completion condition from the validation strategy and the planned changes (see "Goal-driven completion control"); it covers phases 2–4 and feeds the explicit goal query in the approval question below. Handle the goal query per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, perform the central harness-specific goal-start action for phases 2–4; the option is omitted when the workflow was delegated non-interactively.
+6. Derive the explicit completion condition from the validation strategy and the planned changes (see "Goal-driven completion control"); it covers phases 2–4.
+7. Obtain approval.
 
 ```ask
 header: Doc plan
 question: Documentation plan approved?
 options:
   - label: Yes
-    description: Approval granted, workflow continues gated
-  - label: Autonomous via /goal
-    description: Remaining phases autonomous under the native /goal after this explicit selection (omitted for non-interactive delegation)
+    description: Approval granted, the workflow continues with Phase 2
   - label: Adjust
     description: Enter feedback as free text
 ```

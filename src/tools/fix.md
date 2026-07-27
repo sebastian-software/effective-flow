@@ -65,10 +65,6 @@ completion-protocol
 goal-completion
 ```
 
-```include
-goal-start-action
-```
-
 ```lazy-include
 worktree-integration
 when: the delivery/worktree mode is determined
@@ -123,7 +119,6 @@ the plan passes the gate:
 
 - use the plan file's contents as the basis for diagnosis and fix
 - do not skip reproduction automatically; if the plan already contains reproduction hints, validate them in Phase 2
-- if a "clarified + goal-driven" context was already passed from the apply chain (basis clarified, confirmation for the autonomous run already given), honor it: skip the goal query in Phase 2 and run through phases 3–5 under the "Goal-driven completion control".
 
 ## Workflow
 
@@ -150,17 +145,15 @@ Run the read-only investigation per "Investigation method", section "Investigate
    - how it can be reproduced
    - gap-analysis insights
    - validation scorecard
-5. Derive the explicit completion condition from the diagnosis, fix scope and acceptance criteria (see "Goal-driven completion control"); it covers phases 3–5 and feeds the explicit goal query in the approval question below.
-6. Obtain approval. The approval question contains the explicit goal query (option "Autonomous via /goal"); handle it per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, perform the central harness-specific goal-start action for phases 3–5; the option is omitted when the workflow was delegated non-interactively.
+5. Derive the explicit completion condition from the diagnosis, fix scope and acceptance criteria (see "Goal-driven completion control"); it covers phases 3–5.
+6. Obtain approval.
 
 ```ask
 header: Fix plan
 question: Diagnosis and fix strategy approved?
 options:
   - label: Yes
-    description: Approval granted, workflow continues gated
-  - label: Autonomous via /goal
-    description: Remaining phases autonomous under the native /goal after this explicit selection (omitted for non-interactive delegation)
+    description: Approval granted, the workflow continues with the next phase
   - label: Adjust
     description: Enter feedback as free text
 ```

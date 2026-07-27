@@ -57,10 +57,6 @@ completion-protocol
 goal-completion
 ```
 
-```include
-goal-start-action
-```
-
 ## Wisdom Accumulation
 
 Use `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` for:
@@ -180,7 +176,7 @@ Each analysis sub-agent receives the issue body **and the issue comments** and t
 
 Write each result into the wisdom file. When in doubt, an issue counts as `insufficient` — better to hand off cleanly to `{{SKILL:plan-issue}}` than to implement on an unclear basis.
 
-### Phase 3.5: Approval and goal query
+### Phase 3.5: Approval
 
 This is the approval boundary of this workflow: the classification is fixed, and the remaining phases (delegation, PRs, comments, summary) then run without a further regular approval gate.
 
@@ -194,28 +190,21 @@ This is the approval boundary of this workflow: the classification is fixed, and
 ```
 
 2. Per "Goal-driven completion control" (principle 1), declare the explicit completion condition for phases 4–5: every `sufficient` issue is implemented via the matching implementation skill and has either a newly created PR or a new commit on the specified target PR with a PR comment, label `effective-flow-issue-done` and — for container origin — a checked-off epic entry; every `insufficient` issue carries `effective-flow-needs-planning` together with a comment; the project-configured checks of the delegated workflows are green; nothing outside the chosen issues is changed.
-3. Ask the goal query per "Explicit goal query for autonomous runs". The approval boundary here is a yes/no approval, hence "Autonomous via `/goal`" as a third option:
+3. **Dropping the gate:** if `{{SKILL:apply-issues}}` itself runs as a non-interactive sub-agent of a higher-level orchestrator (recognizable from the call context, e.g. "[Context from …]"), skip the following gate entirely and continue directly with Phase 4. A direct call by the user does **not** count as such a delegation.
+4. Otherwise obtain the approval:
 
 ```ask
+when: the run is not a non-interactive delegation
 header: Approval
 question: Start implementing the sufficiently specified issues?
 options:
   - label: Yes
-    description: Approval granted, the workflow continues gated (status update per issue)
-  - label: Autonomous via /goal
-    description: Remaining phases autonomous under native /goal after this explicit selection
+    description: Approval granted, the workflow continues (status update per issue)
   - label: Adjust
     description: Enter feedback as free text (e.g. correct the issue selection or target skill)
 ```
 
-4. **Dropping the query:** if `{{SKILL:apply-issues}}` itself runs as a non-interactive sub-agent of a higher-level orchestrator (recognizable from the call context, e.g. "[Context from …]"), skip this gate entirely (no extra option, no goal-start action and no `/goal` string) and continue directly with Phase 4. A direct call by the user does **not** count as such a delegation.
-5. On choosing "Autonomous via `/goal`": perform the central harness-specific goal-start action with the following form (single line, without internal IDs):
-
-```text
-/goal Fully work through the issues analyzed via {{FIRMO}} apply (#… , #…) and run the remaining phases of this workflow: implement each sufficiently specified issue via the matching implementation skill, create exactly one PR per issue without a target PR, update issues with a target PR exclusively through new commits on the existing PR branch, comment the PR link, set effective-flow-issue-done and check off the epic entry; mark insufficient issues with effective-flow-needs-planning and a comment; project-configured checks of the delegated workflows green. Maintain a visible phase task list and report the result and next step in chat after each major phase. Change nothing outside the named issues. Stop when all chosen issues are processed.
-```
-
-6. On "Yes"/gated (or a normal answer): continue gated without a `/goal` string. On "Adjust": incorporate the feedback (correct selection/target) and ask the query again. Start Phase 4 only after this approval.
+5. On "Adjust": incorporate the feedback (correct selection/target) and ask again. Start Phase 4 only after this approval.
 
 ### Phase 4: Routing & delegation
 
@@ -247,7 +236,7 @@ Issues with the same target PR run sequentially so that new commits are created 
    - Bugfix: `Use the skill {{SKILL:fix}} for this issue.`
    - Refactoring: `Use the skill {{SKILL:refactor}} for this issue.`
    - Documentation: `Use the skill {{SKILL:docs}} for this issue.`
-     The delegation sub-agent runs as a **non-interactive** delegation (context hint "[Context from {{FIRMO}} apply-issues: …]"): no explicit goal query, no `/goal` string, completion protocol `DONE`/`ABORT`.
+     The delegation sub-agent runs as a **non-interactive** delegation (context hint "[Context from {{FIRMO}} apply-issues: …]"): no approval gate of its own, completion protocol `DONE`/`ABORT`.
      Pass the absolute root and execution-location receipt established by that delegated workflow;
      never rely on an inherited current directory or create a nested worktree around a reused
      harness-native one.
@@ -275,7 +264,7 @@ Issues with the same target PR run sequentially so that new commits are created 
 
 This path creates its pull requests without the delivery completion action, so it invokes the
 automatic review itself: after step 2 created a pull request, run "PR review publication" with that
-pull request, whether the run is gated or under an authorized goal, and the residual finding set the
+pull request, whether the run is gated or a non-interactive delegation, and the residual finding set the
 delegated implementation workflow reported — or its explicit declaration that it has none.
 Because this tool creates one pull request per issue, ask the gated question only for the first
 pull request and reuse that answer for every further pull request of this run — deliberately unlike

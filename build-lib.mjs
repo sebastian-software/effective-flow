@@ -1288,34 +1288,16 @@ export function transformAskCodex(body, { context } = {}) {
   });
 }
 
-const GOAL_START_CODEX = `After the user explicitly chooses the autonomous \`/goal\` option, attempt to start the goal directly through the available \`create_goal\` capability:
-
-- Set the required \`objective\` to exactly the text after \`/goal \` in the completed single-line prompt for this workflow. Do not paraphrase, shorten or extend it.
-- Set \`token_budget\` only if the user explicitly supplied a token budget for this goal; otherwise omit it.
-- Make exactly one start attempt. If it succeeds, do not output the \`/goal\` prompt and do not ask the user to paste anything; continue the named remaining phases under the active goal.
-- If the capability is unavailable or the call fails for a technical reason, briefly report the cause, then output the full copy-pasteable \`/goal\` prompt and ask the user to paste it as a new input. Do not claim that the goal started and do not silently switch to gated execution.
-- If the call explicitly reports that another unfinished goal is already active, report that conflict and wait for the user's decision. Do not output a new \`/goal\` prompt, do not replace, edit, complete or otherwise change the active goal, and do not continue gated.`;
-
-const GOAL_START_PROMPT_HANDOFF = `After the user explicitly chooses the autonomous \`/goal\` option, output the full copy-pasteable \`/goal\` prompt prominently and ask the user to paste it as a new input. Use only this prompt handoff; without a pasted prompt, the workflow continues gated.`;
-
-// Replace the central goal-start action after ASK rendering but before references.
-// Codex can attempt a direct start; Claude and portable retain prompt handoff.
-export function transformGoalStart(body, harness) {
-  const replacement = harness === 'codex' ? GOAL_START_CODEX : GOAL_START_PROMPT_HANDOFF;
-  return body.replace(/\{\{GOAL_START\}\}/g, replacement);
-}
-
-// Full body pipeline per harness: ask blocks, goal-start action, then references.
+// Full body pipeline per harness: ask blocks, then references.
 export function renderBody(resolvedBody, harness, config = {}) {
   const withAsk =
     harness === 'codex' || harness === 'portable'
       ? transformAskCodex(resolvedBody, { context: config.context })
       : transformAskClaude(resolvedBody, { context: config.context });
-  const withGoalStart = transformGoalStart(withAsk, harness);
   const withWorkerResolution =
-    harness === 'portable' && /\{\{AGENT:[^}]+\}\}/.test(withGoalStart)
-      ? `${PORTABLE_WORKER_DELEGATION}\n\n${withGoalStart.replace(/^\n/, '')}`
-      : withGoalStart;
+    harness === 'portable' && /\{\{AGENT:[^}]+\}\}/.test(withAsk)
+      ? `${PORTABLE_WORKER_DELEGATION}\n\n${withAsk.replace(/^\n/, '')}`
+      : withAsk;
   return transformRefs(withWorkerResolution, harness, config);
 }
 

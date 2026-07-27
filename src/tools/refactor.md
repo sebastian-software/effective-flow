@@ -75,10 +75,6 @@ goal-completion
 ```
 
 ```include
-goal-start-action
-```
-
-```include
 worktree-integration
 ```
 
@@ -132,7 +128,6 @@ the plan passes the gate:
 
 - use the plan file's contents as the refactoring plan
 - still validate in Phase 1 that no intended behavior change is included
-- if a "clarified + goal-driven" context was already passed from the apply chain (basis clarified, confirmation for the autonomous run already given), honor it: skip the goal query in Phase 1 and run through phases 2–6 under the "Goal-driven completion control".
 
 ## Workflow
 
@@ -158,17 +153,15 @@ the plan passes the gate:
    - Big Picture: benefit clear
    - Behavior invariance: every change justified
 7. Present the plan with scorecard.
-8. Derive the explicit completion condition from the measurable acceptance criteria (see "Goal-driven completion control"); it covers phases 2–6 and feeds the explicit goal query in the approval question below. The completion condition includes behavior invariance: the baseline collected in Phase 2 must remain unchanged.
-9. Obtain approval. The approval question contains the explicit goal query (option "Autonomous via /goal"); handle it per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, perform the central harness-specific goal-start action for phases 2–6; the option is omitted when the workflow was delegated non-interactively.
+8. Derive the explicit completion condition from the measurable acceptance criteria (see "Goal-driven completion control"); it covers phases 2–6. The completion condition includes behavior invariance: the baseline collected in Phase 2 must remain unchanged.
+9. Obtain approval.
 
 ```ask
 header: Approval
 question: Refactoring plan approved?
 options:
   - label: Yes
-    description: Approval granted, workflow continues gated
-  - label: Autonomous via /goal
-    description: Remaining phases autonomous under the native /goal after this explicit selection (omitted for non-interactive delegation)
+    description: Approval granted, the workflow continues with Phase 2
   - label: Adjust
     description: Enter feedback as free text
 ```

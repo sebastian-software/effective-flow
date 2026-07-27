@@ -82,7 +82,7 @@ If a finding has a target PR from Phase 1 remote, **"new commit on existing PR"*
 4. Push the PR branch normally. If the push is rejected due to diverged remote history, mark the finding as failed and report the conflict instead of overwriting history.
 5. Use the URL of the existing PR as the result PR link for the issue comment, epic entry and summary.
 
-Findings with the same target PR run sequentially so that new commits are created in order on the same PR branch. Findings without a target PR keep the default strategy "one PR per finding". The stash policy and the `/goal` string are handled as in local mode.
+Findings with the same target PR run sequentially so that new commits are created in order on the same PR branch. Findings without a target PR keep the default strategy "one PR per finding". The stash policy is handled as in local mode.
 
 ### Phase 3 remote: Rejected finding → decision candidate
 
@@ -119,7 +119,7 @@ Per implementable finding, in its verified execution root:
 
 This path creates its pull requests without the delivery completion action, so it invokes the
 automatic review itself: after step 3 created a pull request, run "PR review publication" with that
-pull request, whether the run is gated or under an authorized goal, and the residual finding set the
+pull request, whether the run is gated or a non-interactive delegation, and the residual finding set the
 delegated workflow reported — or its explicit declaration that it has none.
 Because this path creates one pull request per finding, ask the gated question only for the first
 pull request and reuse that answer for every further pull request of this run — deliberately unlike

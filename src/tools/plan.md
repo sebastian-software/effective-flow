@@ -244,7 +244,7 @@ Rules:
 
 - Remove irrelevant optional subsections or write a brief "Not relevant" with a rationale.
 - Use concrete file references as soon as they can be derived from the codebase.
-- Formulate the acceptance criteria so that together they yield exactly one measurable completion condition. The implementing workflow derives its goal condition and the optional `/goal` string from them; avoid vague criteria without a named check.
+- Formulate the acceptance criteria so that together they yield exactly one measurable completion condition. The implementing workflow derives its completion condition from them; avoid vague criteria without a named check.
 - Write the plan as an implementation guide, not as a pre-implementation.
 - Avoid code blocks in the plan. Use them only when a short code formulation is clearer and shorter than a prose description.
 - If a code example is necessary, limit it to the smallest meaningful fragment and document that it is an example or an interface sketch.

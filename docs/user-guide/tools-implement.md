@@ -14,25 +14,15 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
   delivery branch or worktree; at the end there is a completion action (`pr`, `merge`, or
   `branch`). For details see [Worktree and delivery](worktree-and-delivery.md).
   `/effective-flow apply` itself implements nothing, it only delegates.
-- After the approval of an internal plan, they offer the explicit option "Autonomous via
-  `/goal`", so that the remaining phases can run autonomously instead of step-by-step gated.
-  In native Codex, this explicit choice makes one direct `create_goal` attempt. Its `objective`
-  is exactly the completion condition that a `/goal` prompt would contain; `token_budget` is
-  omitted unless you supplied one explicitly. A successful start continues without an extra
-  prompt. If the capability is unavailable or fails for a technical reason, Effective Flow
-  reports the cause and provides the complete copy-pasteable prompt instead. If another
-  unfinished goal is active, it waits for your decision without emitting a new prompt, changing
-  that goal, or continuing in gated mode.
-- Claude Code and the portable manager target retain the prompt handoff: Effective Flow outputs
-  the complete `/goal` prompt, and the autonomous run starts only after you paste it as a new
-  input. Choosing the gated or adjustment path, answering normally, and non-interactive
-  delegation do not start a goal.
-- While a native Goal is active, Effective Flow maintains a visible overview of the known
-  remaining phases and reconciles it before reporting success. After each major phase, it reports
-  the result and next step in chat, then continues autonomously unless an existing approval rule
-  or genuine blocker requires input. If task tracking is unavailable or fails irrecoverably, the
-  overview and subsequent progress move to chat; the exact visual presentation remains up to the
-  harness.
+- Before implementation starts, they declare one measurable completion condition derived from the
+  acceptance criteria and the validation plan, and they verify it through the validator and the
+  routed reviewers rather than by self-assessment. Correction rounds are bounded; if the condition
+  still does not hold, the tool escalates to you instead of looping on.
+- Every run maintains a visible overview of the known remaining phases and reconciles it before
+  reporting completion. After each major phase, it reports the result and next step in chat, then
+  continues with the next step unless an approval gate or a genuine blocker requires input. If task
+  tracking is unavailable or fails irrecoverably, the overview and subsequent progress move to
+  chat; the exact visual presentation remains up to the harness.
 - Before analysis, they review the available host skills (see
   [Skill discovery](skill-discovery.md)) and respect their respective
   write boundary.

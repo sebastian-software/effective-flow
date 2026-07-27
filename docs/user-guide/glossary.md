@@ -32,31 +32,6 @@ report or as an issue on the Git forge or in an external tool (see
 [Remote Tracker](./remote-tracker.md)), and are worked through by
 [`/effective-flow apply`](./tools-implement.md).
 
-## Goal steering
-
-A uniform pattern with which interactive Effective Flow tools offer, at an approval boundary, to
-run the remaining phases **autonomously** instead of stepwise-gated via the native `/goal` mode.
-Effective Flow formulates a measurable completion condition derived from the acceptance criteria
-and verifies it through independent instances (e.g. a validator or reviewer) rather than by
-self-assessment.
-
-In native Codex, choosing "Autonomous via `/goal`" triggers one direct `create_goal` attempt. Its
-`objective` is exactly the text that follows `/goal ` in the equivalent prompt, and no
-`token_budget` is set unless you explicitly supplied one. A successful start needs no prompt. If
-the capability is unavailable or fails for a technical reason, Effective Flow reports the cause
-and falls back to the complete copy-pasteable prompt. If an unfinished goal is already active, it
-instead waits for your decision without outputting a new prompt or changing the active goal.
-Claude Code and the portable manager target always use the prompt handoff; the autonomous run
-starts only after you paste that prompt as a new input. Other choices and non-interactive
-delegation do not start a goal.
-
-While a native Goal is active, Effective Flow maintains a visible overview of the known remaining
-phases and reconciles every entry before reporting success. After each major phase, it reports the
-result and next step in chat and continues autonomously unless an existing approval rule or genuine
-blocker requires input. If task tracking is unavailable or fails irrecoverably, the overview and
-subsequent progress are carried in chat instead. The harness determines the exact visual
-presentation.
-
 ## Harness
 
 The environment in which Effective Flow runs as a skill – currently Claude Code and Codex.
@@ -72,6 +47,25 @@ implementing tool actually starts work. If the basis does not pass the gate (e.g
 open points or missing measurable acceptance criteria), Effective Flow refers back to
 clarification instead of guessing or partially implementing. See
 [Troubleshooting](./troubleshooting.md#the-clarification-gate-was-not-passed).
+
+## Completion control
+
+The uniform pattern with which an Effective Flow tool decides that it is done; the tools and the
+developer documentation call it "Goal-driven completion control". Before the implementation work
+starts, it formulates one measurable completion condition derived from the acceptance criteria and
+the validation plan, including the scope boundary — what is deliberately not changed. It verifies
+that condition through independent instances (the validator, the routed reviewers) rather than by
+self-assessment, and it bounds its correction rounds: if the condition still does not hold, it
+escalates to you instead of looping on.
+
+Effective Flow never hands the remaining phases to a harness-native autonomous mode; the regular
+approval gates of each workflow always apply.
+
+Every run maintains a visible overview of the known remaining phases and reconciles every entry
+before reporting completion. After each major phase, it reports the result and next step in chat
+and continues with the next step unless an approval gate or a genuine blocker requires input. If
+task tracking is unavailable or fails irrecoverably, the overview and subsequent progress are
+carried in chat instead. The harness determines the exact visual presentation.
 
 ## Concept (file)
 

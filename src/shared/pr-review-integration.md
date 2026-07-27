@@ -29,8 +29,7 @@ requests stay on the forge behind `origin` regardless of `tracker.mode`.
 ### Inputs
 
 The caller supplies a **resolved pull request** (number, head ref, base ref, URL, state), its **run
-state** — gated, under an authorized goal, or non-interactive without an authorized goal — and
-exactly one of these three **input states**:
+state** — gated or non-interactive delegation — and exactly one of these three **input states**:
 
 - **`finding-set`** — the caller's residual findings: what survived its own correction rounds, not
   its full finding history. Publish the survivors of the handoff and the gates below.
@@ -178,11 +177,9 @@ Governed by the configuration key `delivery.prReview` with the values `ask` (def
   `{{SKILL:review}} <PR>` invocation is never affected.
 - `ask` — resolved by the run state:
   - **gated** — ask exactly once with the question below.
-  - **under an authorized goal** — behaves as `always`, and no question is posed: "Goal-driven
-    completion control" restricts the autonomous option to approval boundaries after which no
-    further gate follows, so a question here would strand an authorized run.
-  - **non-interactive without an authorized goal** — the state `{{SKILL:apply-issues}}` creates when
-    it delegates. Publish nothing and report that the question could not be posed, naming
+  - **non-interactive delegation** — the state any higher-level orchestrator creates when it
+    delegates a workflow non-interactively; the authoritative list of those orchestrators is the
+    one in the documentation-sync contract. Publish nothing and report that the question could not be posed, naming
     `delivery.prReview: always` as the setting that would authorize publication in such a run. This
     follows the loaded gate, where an unanswered, skipped, or non-interactive run publishes nothing.
 

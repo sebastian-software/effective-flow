@@ -74,10 +74,6 @@ goal-completion
 ```
 
 ```include
-goal-start-action
-```
-
-```include
 worktree-integration
 ```
 
@@ -171,18 +167,15 @@ never invent missing context, and report that the authoritative review owner was
 
 Show the classified items (actionable, skipped, deferred questions) and obtain an
 approval. Without approval **no** externally visible action takes place (no push, no
-comment). Handle the response per "Explicit goal query for autonomous runs": on "Autonomous
-via /goal" perform the central harness-specific goal-start action for phases 3–6. The query is omitted if `iterate`
-was delegated non-interactively (e.g. by {{FIRMO}} apply-review).
+comment). The approval is omitted if `iterate` was delegated non-interactively
+(e.g. by {{FIRMO}} apply-review).
 
 ```ask
 header: Approval
 question: Approve and implement the classified items?
 options:
   - label: Yes
-    description: Approval granted, implementation and delivery-back continue gated
-  - label: Autonomous via /goal
-    description: Remaining phases autonomously under native /goal after this explicit selection (omitted for non-interactive delegation)
+    description: Approval granted, implementation and delivery-back continue
   - label: Adjust
     description: Enter feedback as free text, e.g. deselect individual items
 ```
