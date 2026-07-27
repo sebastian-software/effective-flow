@@ -29,6 +29,7 @@ const MUTATIONS = new Set([
   'pr-create',
   'pr-update-body',
   'pr-comment',
+  'review-create',
   'review-thread-reply',
   'review-thread-resolve',
 ]);
@@ -54,6 +55,7 @@ const REMOTE_OPERATIONS = new Set([
   'pr-create',
   'pr-update-body',
   'pr-comment',
+  'review-create',
   'review-threads-read',
   'review-thread-reply',
   'review-thread-resolve',
@@ -78,6 +80,7 @@ const CAPABILITY_BY_OPERATION = Object.freeze({
   'pr-create': 'pullRequestCreate',
   'pr-update-body': 'pullRequestUpdate',
   'pr-comment': 'prComment',
+  'review-create': 'reviewCreate',
   'review-threads-read': 'reviewThreads',
   'review-thread-reply': 'reviewThreadReplies',
   'review-thread-resolve': 'reviewThreadResolution',
@@ -426,17 +429,117 @@ const COMMENT_MARKERS = Object.freeze({
   planning: 'effective-flow-plan-issues',
   apply: 'effective-flow-apply-issues',
   pr: 'effective-flow-iterate',
+  'pr-review': 'effective-flow-pr-review',
 });
 
-export function buildCommentPayload(kind, input) {
+function commentMarker(kind) {
   if (!Object.hasOwn(COMMENT_MARKERS, kind)) {
-    fail('INVALID_PAYLOAD', 'comment kind must be planning, apply, or pr', { kind });
+    fail(
+      'INVALID_PAYLOAD',
+      `comment kind must be one of ${Object.keys(COMMENT_MARKERS).join(', ')}`,
+      { kind },
+    );
   }
+  return COMMENT_MARKERS[kind];
+}
+
+// Stamps the marker of one kind onto a body. Idempotent on purpose: repeat suppression and the
+// separation between the tool's own output and third-party threads are plain string matches, so
+// a body that already carries its marker is returned unchanged instead of collecting a second one.
+function stampMarker(marker, content) {
+  const text = content.trim();
+  return text.includes(`<!-- ${marker} -->`) ? text : `<!-- ${marker} -->\n${text}`;
+}
+
+function publishableText(value, field) {
+  const text = assertPublishable(value, field);
+  if (text.trim() === '') fail('INVALID_PAYLOAD', `${field} must not be empty`, { field });
+  return text;
+}
+
+export function buildCommentPayload(kind, input) {
+  const marker = commentMarker(kind);
   requireObject(input, 'comment');
-  const content = assertPublishable(input.body, 'comment.body').trim();
-  if (content === '') fail('INVALID_PAYLOAD', 'comment.body must not be empty');
-  const marker = COMMENT_MARKERS[kind];
-  return { kind, marker, body: `<!-- ${marker} -->\n${content}` };
+  const content = publishableText(input.body, 'comment.body');
+  return { kind, marker, body: stampMarker(marker, content) };
+}
+
+const REVIEW_EVENTS = Object.freeze(['COMMENT']);
+const REVIEW_SIDES = Object.freeze(['LEFT', 'RIGHT']);
+
+// Deliberately not `requireNumber`: that helper guards issue and PR references and therefore
+// reports a bad value as INVALID_REFERENCE, while a comment line is payload data whose rejection
+// must stay INVALID_PAYLOAD like every other field of this builder.
+function reviewCommentLine(value, field) {
+  const line =
+    typeof value === 'string' && /^\d+$/.test(value.trim()) ? Number(value.trim()) : value;
+  if (!Number.isSafeInteger(line) || line <= 0) {
+    fail('INVALID_PAYLOAD', `${field} must be a positive integer`, { field, value });
+  }
+  return line;
+}
+
+function reviewCommentSide(value, field) {
+  const side =
+    value === undefined || value === null
+      ? 'RIGHT'
+      : requireString(value, field).trim().toUpperCase();
+  if (!REVIEW_SIDES.includes(side)) {
+    fail('INVALID_PAYLOAD', `${field} must be LEFT or RIGHT`, {
+      field,
+      value,
+      supported: [...REVIEW_SIDES],
+    });
+  }
+  return side;
+}
+
+// Builds the provider-neutral payload for one pull-request review carrying inline comments.
+// The event is pinned to the neutral comment event: this operation never approves a pull
+// request and never requests changes, so any other event value is rejected here instead of
+// being forwarded to the provider. Every input is validated before a request is planned, so
+// an invalid comment fails closed with the same structured error shape as every other payload.
+// The review body is mandatory and the comment array is optional: the publication contract
+// requires body-only submissions — a short summary when nothing was found, and a finding on a
+// line outside the diff that must not be anchored onto a wrong line — while a submission
+// without body text carries nothing to publish and would be rejected by the provider anyway.
+// Body and comment bodies are stamped with the `pr-review` marker from the marker table, so no
+// caller has to hand-write it and repeat suppression cannot be defeated by a reworded marker.
+export function buildReviewPayload(input) {
+  requireObject(input, 'payload');
+  const event =
+    input.event === undefined || input.event === null
+      ? 'COMMENT'
+      : requireString(input.event, 'payload.event').trim().toUpperCase();
+  if (!REVIEW_EVENTS.includes(event)) {
+    fail('INVALID_PAYLOAD', 'payload.event must be COMMENT', {
+      field: 'payload.event',
+      value: input.event,
+      supported: [...REVIEW_EVENTS],
+    });
+  }
+  const marker = commentMarker('pr-review');
+  const body = stampMarker(marker, publishableText(input.body, 'payload.body'));
+  const comments = input.comments ?? [];
+  if (!Array.isArray(comments)) {
+    fail('INVALID_PAYLOAD', 'payload.comments must be an array', {
+      field: 'payload.comments',
+    });
+  }
+  return {
+    body,
+    event,
+    comments: comments.map((comment, index) => {
+      const field = `payload.comments[${index}]`;
+      requireObject(comment, field);
+      return {
+        path: requireString(comment.path, `${field}.path`),
+        line: reviewCommentLine(comment.line, `${field}.line`),
+        side: reviewCommentSide(comment.side, `${field}.side`),
+        body: stampMarker(marker, publishableText(comment.body, `${field}.body`)),
+      };
+    }),
+  };
 }
 
 export function buildSkippedFindingEntry(input, options = {}) {
@@ -929,6 +1032,20 @@ export function buildCommandPlan(operation, input, repository) {
           ],
           jsonStdin({ body: assertPublishable(payload.body, 'payload.body') }),
         );
+      case 'review-create':
+        return mutationPlan(
+          'gh',
+          [
+            'api',
+            ...hostArgs,
+            '-X',
+            'POST',
+            ghEndpoint(`pulls/${prNumber(input)}/reviews`),
+            '--input',
+            '-',
+          ],
+          jsonStdin(buildReviewPayload(payload)),
+        );
       case 'review-threads-read': {
         const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId body path line originalLine startLine originalStartLine author{__typename login}}}}}}}}`;
         return mutationPlan(
@@ -1171,6 +1288,7 @@ export function buildCommandPlan(operation, input, repository) {
         '--fields',
         'id,body,reviewer,path,line,resolver,url',
       ]);
+    case 'review-create':
     case 'review-thread-reply':
       fail('UNSUPPORTED_CAPABILITY', `installed tea adapter does not safely support ${operation}`, {
         operation,
@@ -1333,6 +1451,7 @@ export async function probeProvider(repository, runner) {
         comments: true,
         labels: true,
         labelCreate: true,
+        reviewCreate: true,
         reviewThreads: true,
         reviewThreadReplies: true,
         reviewThreadResolution: true,
@@ -1427,6 +1546,7 @@ export async function probeProvider(repository, runner) {
       comments: comment,
       labels: labelCreate && issueLabelAdd && issueLabelRemove,
       labelCreate,
+      reviewCreate: false,
       reviewThreads: pullReviewComments,
       reviewThreadReplies: false,
       reviewThreadResolution: pullResolve,
@@ -1639,6 +1759,11 @@ function localOperation(operation, input) {
       return buildCommentPayload('apply', input.comment ?? input);
     case 'pr-comment-build':
       return buildCommentPayload('pr', input.comment ?? input);
+    // The Forgejo fallback for `review-create` posts one ordinary pull-request comment. It must
+    // not use the `pr` kind: that stamps the iterate marker, which iterate reads as its own
+    // completed work, so the fallback would feed the tool its own findings back.
+    case 'pr-review-comment-build':
+      return buildCommentPayload('pr-review', input.comment ?? input);
     case 'finding-deduplicate':
       return deduplicateFindings(input.existingIssues, input.findings);
     case 'label-query-variants':

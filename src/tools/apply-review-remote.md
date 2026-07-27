@@ -25,6 +25,10 @@ tracker-target
 when: the resolved tracker target is `external`
 ```
 
+## Recommended skills
+
+- `pr-review`
+
 ## Remote mode (issue tracker)
 
 When the resolved tracker target is the forge or an external tool (see "Issue-tracker integration (remote mode)"), the following adjustments apply **in addition to** or **instead of** the local report flow. Determine the target at the start of Phase 1; the argument type takes precedence over the config.
@@ -112,6 +116,20 @@ Per implementable finding, in its verified execution root:
 
 5. **If push or PR creation fails** (push rejected, no commit): mark the finding as failed, do **not** check off the epic entry, continue with the next finding.
 6. **If an assigned epic is missing** (issue-list mode): implement the finding anyway and create a PR; the check-off is omitted and reported to the user.
+
+This path creates its pull requests without the delivery completion action, so it invokes the
+automatic review itself: after step 3 created a pull request, run "PR review publication" with that
+pull request, whether the run is gated or under an authorized goal, and the residual finding set the
+delegated workflow reported — or its explicit declaration that it has none.
+Because this path creates one pull request per finding, ask the gated question only for the first
+pull request and reuse that answer for every further pull request of this run — deliberately unlike
+the security disclosure gate, whose offer is per run and never remembered, because this question
+governs comment noise rather than disclosure.
+
+```lazy-include
+pr-review-integration
+when: the completion action created or reused a pull request and the automatic PR review may run
+```
 
 ### Phase 5 remote: Tracking surface instead of report
 

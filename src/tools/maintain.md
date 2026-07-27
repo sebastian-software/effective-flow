@@ -48,6 +48,7 @@ config-migration
 ## Recommended skills
 
 - `smart-dependency-updater`
+- `pr-review`
 
 ## Delegation contract
 
@@ -226,7 +227,7 @@ Pure dependency bumps without code adaptation need no reviewer pass; note that b
    - a reference to an offloaded review report, if present.
 3. Confirm that the behavior stayed unchanged (baseline comparison green).
 4. Delete the wisdom file.
-5. If delivery or worktree execution was active: run the handback per "Delivery and worktree integration". The per-group commits already sit on the delivery branch; the handback performs ownership-safe worktree cleanup if applicable, runs the completion action `pr`/`merge`/`branch`, and restores only an in-place checkout it switched. Name the delivery branch, the final checkout state, and the result in the summary.
+5. If delivery or worktree execution was active: run the handback per "Delivery and worktree integration". The per-group commits already sit on the delivery branch; the handback performs ownership-safe worktree cleanup if applicable, runs the completion action `pr`/`merge`/`branch`, and restores only an in-place checkout it switched. Hand the **residual** Phase-4 finding set to that handback — the findings that survived this run's correction rounds, not the full review history — so an automatic PR review publishes them instead of reviewing the pull request a second time; if Phase 4 did not run at all (pure dependency bumps without code adaptation), declare **no** complete finding set, so an automatic PR review reviews the pull request itself. Name the delivery branch, the final checkout state, and the result in the summary.
 
 ```include
 pre-commit-gate

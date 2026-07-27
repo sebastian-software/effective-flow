@@ -57,7 +57,7 @@ The Effective Flow configuration is optional and controls the defaults of the fo
   `documentation.user`, `documentation.technical`, `workflow`, `forge`, `git` overrides
   (`de`/`en`; a missing override inherits `language.project`, whose default is `en`)
 - **`plan`** (source: `{{SKILL:plan}}`): `dir` (string, default `docs/plan`) — directory of the plan files
-- **`delivery`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default `origin/main`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name)
+- **`delivery`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default `origin/main`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery)
 - **`worktree`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
 - **`tracker`** (source: `{{SKILL:review}}`, section "Issue-tracker integration" – likewise embedded in `{{SKILL:apply-review}}` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names)
 - **`skills`** (source: building block "Skill discovery"): `enabled` (bool, default `true` — toggles dynamic skill usage), `include` (list — prefer these skills project-wide), `exclude` (list — never apply these skills), `agents.<name>` and `tools.<name>` (each `include`/`exclude` for a single agent or a single tool). Keys are the source agent/tool names (e.g. `ui-implementer`, `plan`).
@@ -196,7 +196,7 @@ options:
 
 ### Step 4: Core switches (guided path only)
 
-These five switches determine the core behavior. **Before** each question, provide a short,
+These core switches determine the everyday behavior. **Before** each question, provide a short,
 understandable explanation (what is it, why is it relevant, what does the choice mean) –
 without assuming prior knowledge of Effective Flow – and state whether and with which value the
 switch is currently set in the config (see Step 2); pre-select this value or the safe
@@ -237,6 +237,23 @@ options:
 Briefly explain the base branch (the branch that is delivered into) and ask for it as free text
 (`delivery.baseBranch`, default `origin/main`); the switch-back target (`delivery.returnBranch`,
 default `auto`) only optionally.
+
+**PR review.** Explain: when a run creates a pull request, Effective Flow can post that run's
+review findings on it as comments. "Ask each time" decides per run, "Always" posts without asking,
+"Never" switches the automatic step off; an explicit `{{SKILL:review}} <PR>` stays available in
+every case.
+
+```ask
+header: PR review
+question: Should Effective Flow post its review findings on a pull request it created?
+options:
+  - label: Ask each time
+    description: delivery.prReview = ask (default) — a gated run asks once per delivery
+  - label: Always
+    description: delivery.prReview = always — post the findings without asking
+  - label: Never
+    description: delivery.prReview = off — no automatic posting; an explicit review of a PR is unaffected
+```
 
 **Project and surface languages.** Explain: the project language is the fallback for every new
 human-readable artifact, while optional surface overrides let source prose, documentation,
@@ -332,7 +349,7 @@ config value or default as the pre-selection:
 2. `applyReview`: `applyReview.defaultCommitStrategy`, `applyReview.finalValidation`, `applyReview.stashPolicy`, `applyReview.worktree.baseDir`, `applyReview.worktree.setup`
 3. `language`: the project language and six overrides already asked in Step 4 — carry over
 4. `plan`: `plan.dir` (free text, default `docs/plan` — directory of the plan files)
-5. `delivery`: `delivery.baseBranch` and `delivery.completion` (already asked in Step 4 — carry over), `delivery.branchPrefix`, `delivery.returnBranch`
+5. `delivery`: `delivery.baseBranch`, `delivery.completion`, and `delivery.prReview` (already asked in Step 4 — carry over), `delivery.branchPrefix`, `delivery.returnBranch`
 6. `worktree`: `worktree.enabled` (already asked in Step 4 — carry over), `worktree.setup`, `worktree.baseDir`
 7. `tracker`: `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo, forge only), `tracker.externalTool` and `tracker.externalToolHint` (free text; required identifier plus optional connection hint for `mode: external`, carried over when already asked in Step 4)
 8. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (global lists) as well as – as an advanced option – `skills.agents.<name>` and `skills.tools.<name>` for individual agents/tools. Additionally offer optionally (do not force) to materialize the built-in per-agent and per-tool recommendations visibly into the config as `skills.agents.<name>.include` or `skills.tools.<name>.include`; for a fallback recommendation (`effective-web › impeccable › frontend-design`), write only the **primary** skill (`effective-web`) — the built-in fallback stays active. Flat recommendations (e.g. `locale-typography`) are carried over unchanged.
@@ -489,6 +506,7 @@ Report to the user:
 - which path was chosen (Express or Guided) and whether advanced settings were adjusted
 - the central behavior values (`worktree.enabled` [default `true`], `delivery.completion`
   [default `merge`] including, if applicable, `delivery.baseBranch`/`delivery.returnBranch`,
+  `delivery.prReview` [default `ask`],
   `language.project` and all explicit `language.*` overrides, `tracker.mode`, and, if applicable,
   `tracker.remoteToolOverride` or `tracker.externalTool` plus `tracker.externalToolHint`) as well
   as `plan.dir`, if set or changed from the default

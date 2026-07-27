@@ -7,6 +7,7 @@ import {
   buildCommentPayload,
   buildEpicPayload,
   buildFindingPayload,
+  buildReviewPayload,
   deduplicateFindings,
   executeOperation,
   labelQueryVariants,
@@ -1143,6 +1144,7 @@ test('provider probes normalize missing CLI, auth failure, and Forgejo capabilit
     ]),
   );
   assert.equal(github.capabilities.conditionalWrites, false);
+  assert.equal(github.capabilities.reviewCreate, true);
   const forgejo = await probeProvider(
     { host: 'code.example.test', owner: 'team', repository: 'flow', provider: 'forgejo' },
     fakeRunner(teaProbeResults()),
@@ -1151,6 +1153,7 @@ test('provider probes normalize missing CLI, auth failure, and Forgejo capabilit
   assert.equal(forgejo.capabilities.reviewThreads, true);
   assert.equal(forgejo.capabilities.reviewThreadResolution, true);
   assert.equal(forgejo.capabilities.reviewThreadReplies, false);
+  assert.equal(forgejo.capabilities.reviewCreate, false);
   assert.equal(forgejo.capabilities.labelMigration, true);
 });
 
@@ -1370,4 +1373,319 @@ test('CLI reads JSON stdin and returns stable success/error envelopes and exit c
   assert.equal(envelope.ok, false);
   assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
   assert.equal(typeof envelope.error.retryable, 'boolean');
+});
+
+const prReviewMarker = '<!-- effective-flow-pr-review -->';
+
+test('review-create builds a GitHub review submission with the pinned neutral event and inline comments', () => {
+  const plan = buildCommandPlan(
+    'review-create',
+    {
+      number: 7,
+      payload: {
+        body: 'Summary of findings',
+        comments: [{ path: 'src/app.js', line: 12, side: 'LEFT', body: 'Comment text' }],
+      },
+    },
+    githubRepository,
+  );
+  assert.deepEqual(plan.args, [
+    'api',
+    '-X',
+    'POST',
+    'repos/example/flow/pulls/7/reviews',
+    '--input',
+    '-',
+  ]);
+  assert.deepEqual(JSON.parse(plan.stdin), {
+    body: `${prReviewMarker}\nSummary of findings`,
+    event: 'COMMENT',
+    comments: [
+      { path: 'src/app.js', line: 12, side: 'LEFT', body: `${prReviewMarker}\nComment text` },
+    ],
+  });
+});
+
+test('review-create defaults an omitted comment side to RIGHT and coerces a digit-only string line', () => {
+  const payload = buildReviewPayload({
+    body: 'Summary',
+    comments: [{ path: 'src/app.js', line: '15', body: 'Comment text' }],
+  });
+  assert.deepEqual(payload.comments, [
+    { path: 'src/app.js', line: 15, side: 'RIGHT', body: `${prReviewMarker}\nComment text` },
+  ]);
+});
+
+test('review-create accepts a body-only submission and defaults a missing comment array to empty', () => {
+  // Both body-only cases the publication contract mandates: the explicit entry point posts a
+  // summary even when nothing was found, and a finding outside the diff goes into the body.
+  const summaryOnly = buildReviewPayload({ body: 'No findings in this review.' });
+  assert.deepEqual(summaryOnly.comments, []);
+  assert.equal(summaryOnly.event, 'COMMENT');
+  assert.equal(summaryOnly.body, `${prReviewMarker}\nNo findings in this review.`);
+  assert.deepEqual(buildReviewPayload({ body: 'Summary', comments: [] }).comments, []);
+
+  const plan = buildCommandPlan(
+    'review-create',
+    { number: 7, payload: { body: 'No findings in this review.' } },
+    githubRepository,
+  );
+  assert.deepEqual(JSON.parse(plan.stdin).comments, []);
+});
+
+test('review-create requires body text and rejects a comment array that is not an array', () => {
+  for (const body of [undefined, '', '   ']) {
+    assert.throws(
+      () => buildReviewPayload({ body, comments: [{ path: 'src/app.js', line: 3, body: 'Text' }] }),
+      (error) => error.code === 'INVALID_PAYLOAD' && error.details.field === 'payload.body',
+      `body ${JSON.stringify(body)} must be rejected`,
+    );
+  }
+  assert.throws(
+    () => buildReviewPayload({ body: 'Summary', comments: 'not-an-array' }),
+    (error) => error.code === 'INVALID_PAYLOAD' && error.details.field === 'payload.comments',
+  );
+});
+
+test('review-create stamps the pr-review marker exactly once on the body and on every comment', () => {
+  const payload = buildReviewPayload({
+    body: `${prReviewMarker}\nSummary`,
+    comments: [
+      { path: 'src/app.js', line: 3, body: 'Fresh comment' },
+      { path: 'src/app.js', line: 9, body: `${prReviewMarker}\nRebuilt comment` },
+    ],
+  });
+  const occurrences = (text) => text.split(prReviewMarker).length - 1;
+  assert.equal(occurrences(payload.body), 1);
+  assert.equal(payload.body, `${prReviewMarker}\nSummary`);
+  for (const comment of payload.comments) assert.equal(occurrences(comment.body), 1);
+  assert.equal(payload.comments[0].body, `${prReviewMarker}\nFresh comment`);
+  assert.equal(payload.comments[1].body, `${prReviewMarker}\nRebuilt comment`);
+
+  // The marker is never hand-written into a body: it comes from the marker table, and the
+  // iterate marker stays a separate kind so the two tools never read each other's output.
+  assert.doesNotMatch(payload.body, /effective-flow-iterate/);
+});
+
+test('the Forgejo review fallback comment carries the pr-review marker, not the iterate marker', async () => {
+  const envelope = await executeOperation('pr-review-comment-build', {
+    body: 'src/app.js:12 — Finding text',
+  });
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.marker, 'effective-flow-pr-review');
+  assert.equal(envelope.data.body, `${prReviewMarker}\nsrc/app.js:12 — Finding text`);
+  assert.doesNotMatch(envelope.data.body, /effective-flow-iterate/);
+});
+
+test('review-create on Forgejo fails with UNSUPPORTED_CAPABILITY and performs no runner call', async () => {
+  const runner = fakeRunner([]);
+  const envelope = await executeOperation(
+    'review-create',
+    {
+      repository: forgejoRepository,
+      number: 7,
+      payload: {
+        body: 'Summary',
+        comments: [{ path: 'src/app.js', line: 1, body: 'Comment text' }],
+      },
+    },
+    { runner, skipProbe: true, apply: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(runner.calls.length, 0);
+});
+
+test('review-create payload validation fails closed with INVALID_PAYLOAD before any request is planned', () => {
+  assert.throws(
+    () =>
+      buildReviewPayload({
+        body: 'Summary',
+        comments: [{ line: 3, body: 'Comment text' }],
+      }),
+    (error) =>
+      error.code === 'INVALID_PAYLOAD' && error.details.field === 'payload.comments[0].path',
+  );
+  assert.throws(
+    () =>
+      buildReviewPayload({
+        body: 'Summary',
+        comments: [{ path: 'src/app.js', line: 'not-a-number', body: 'Comment text' }],
+      }),
+    (error) =>
+      error.code === 'INVALID_PAYLOAD' && error.details.field === 'payload.comments[0].line',
+  );
+  assert.throws(
+    () =>
+      buildReviewPayload({
+        body: 'Summary',
+        comments: [{ path: 'src/app.js', line: 3, side: 'UP', body: 'Comment text' }],
+      }),
+    (error) =>
+      error.code === 'INVALID_PAYLOAD' && error.details.field === 'payload.comments[0].side',
+  );
+  assert.throws(
+    () =>
+      buildReviewPayload({
+        body: 'Summary',
+        comments: [{ path: 'src/app.js', line: 3, body: '   ' }],
+      }),
+    (error) =>
+      error.code === 'INVALID_PAYLOAD' && error.details.field === 'payload.comments[0].body',
+  );
+});
+
+test('review-create validates through the executor before the runner is reached', async () => {
+  // The real path, not the payload builder in isolation: an invalid payload must surface as the
+  // INVALID_PAYLOAD envelope and must not have planned, previewed, or issued a single request.
+  const runner = fakeRunner([{ status: 0, stdout: '{}', stderr: '' }]);
+  const envelope = await executeOperation(
+    'review-create',
+    {
+      repository: githubRepository,
+      number: 7,
+      payload: {
+        body: '   ',
+        comments: [{ path: 'src/app.js', line: 3, body: 'Comment text' }],
+      },
+    },
+    { runner, skipProbe: true, apply: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+  assert.equal(envelope.error.details.field, 'payload.body');
+  assert.equal(runner.calls.length, 0);
+
+  const badLine = fakeRunner([{ status: 0, stdout: '{}', stderr: '' }]);
+  const lineEnvelope = await executeOperation(
+    'review-create',
+    {
+      repository: githubRepository,
+      number: 7,
+      payload: {
+        body: 'Summary',
+        comments: [{ path: 'src/app.js', line: 0, body: 'Comment text' }],
+      },
+    },
+    { runner: badLine, skipProbe: true, apply: true },
+  );
+  assert.equal(lineEnvelope.ok, false);
+  assert.equal(lineEnvelope.error.code, 'INVALID_PAYLOAD');
+  assert.equal(lineEnvelope.error.details.field, 'payload.comments[0].line');
+  assert.equal(badLine.calls.length, 0);
+});
+
+test('review-create rejects generation attribution in the review body and in a comment body', () => {
+  assert.throws(
+    () =>
+      buildReviewPayload({
+        body: 'Summary\n\nGenerated with Claude Code',
+        comments: [{ path: 'src/app.js', line: 3, body: 'Comment text' }],
+      }),
+    (error) => error.code === 'INVALID_PAYLOAD' && error.details.field === 'payload.body',
+  );
+  assert.throws(
+    () =>
+      buildReviewPayload({
+        body: 'Summary',
+        comments: [
+          { path: 'src/app.js', line: 3, body: 'Comment text\n\nCo-Authored-By: Someone <a@b.c>' },
+        ],
+      }),
+    (error) =>
+      error.code === 'INVALID_PAYLOAD' && error.details.field === 'payload.comments[0].body',
+  );
+});
+
+test('review-create redacts a forge token in the dry-run preview while keeping stdin approvable', async () => {
+  const runner = fakeRunner([]);
+  const envelope = await executeOperation(
+    'review-create',
+    {
+      repository: githubRepository,
+      number: 7,
+      payload: {
+        body: 'Summary — leaked ghp_ABCDEF1234567890abcdef while pasting',
+        comments: [
+          { path: 'src/app.js', line: 3, body: 'Comment with github_pat_11ABCDEFG0abcdefghij' },
+        ],
+      },
+    },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.dryRun, true);
+  assert.equal(runner.calls.length, 0);
+
+  // The preview keeps stdin: the user has to see the exact body to approve the write.
+  const { stdin } = envelope.data.command;
+  assert.equal(typeof stdin, 'string');
+  const previewed = JSON.parse(stdin);
+  assert.equal(previewed.body.includes('ghp_'), false);
+  assert.match(previewed.body, /Summary — leaked \[REDACTED\] while pasting/);
+  assert.equal(previewed.comments[0].body.includes('github_pat_'), false);
+  assert.match(previewed.comments[0].body, /Comment with \[REDACTED\]/);
+  assert.match(previewed.comments[0].body, /effective-flow-pr-review/);
+});
+
+test('review-create rejects an APPROVE or REQUEST_CHANGES event so the tool never issues a verdict', () => {
+  for (const event of ['APPROVE', 'REQUEST_CHANGES']) {
+    assert.throws(
+      () =>
+        buildReviewPayload({
+          body: 'Summary',
+          event,
+          comments: [{ path: 'src/app.js', line: 3, body: 'Comment text' }],
+        }),
+      (error) => error.code === 'INVALID_PAYLOAD' && error.details.field === 'payload.event',
+    );
+  }
+});
+
+test('review-create dry-run previews the command and only mutates with apply: true', async () => {
+  const input = {
+    repository: githubRepository,
+    number: 7,
+    payload: {
+      body: 'Summary',
+      comments: [{ path: 'src/app.js', line: 3, body: 'Comment text' }],
+    },
+  };
+  const previewRunner = fakeRunner([]);
+  const preview = await executeOperation('review-create', input, {
+    runner: previewRunner,
+    skipProbe: true,
+  });
+  assert.equal(preview.ok, true);
+  assert.equal(preview.dryRun, true);
+  assert.equal(preview.data.command.executable, 'gh');
+  assert.ok(Array.isArray(preview.data.command.args));
+  assert.equal(previewRunner.calls.length, 0);
+
+  const appliedRunner = fakeRunner([{ status: 0, stdout: '{}', stderr: '' }]);
+  const applied = await executeOperation('review-create', input, {
+    runner: appliedRunner,
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(applied.ok, true);
+  assert.equal(applied.dryRun, false);
+  assert.equal(appliedRunner.calls.length, 1);
+
+  // The request that actually went out: the reviews endpoint of PR 7, the pinned neutral event.
+  const [call] = appliedRunner.calls;
+  assert.equal(call.executable, 'gh');
+  assert.deepEqual(call.args, [
+    'api',
+    '-X',
+    'POST',
+    'repos/example/flow/pulls/7/reviews',
+    '--input',
+    '-',
+  ]);
+  const submitted = JSON.parse(call.stdin);
+  assert.equal(submitted.event, 'COMMENT');
+  assert.equal(submitted.comments.length, 1);
+  assert.equal(submitted.comments[0].path, 'src/app.js');
+  assert.equal(submitted.comments[0].line, 3);
 });
