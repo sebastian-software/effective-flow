@@ -40,7 +40,8 @@
       "consumers": [
         { "consumer": "docs", "classification": "delegate" },
         { "consumer": "docs-writer", "classification": "delegate" },
-        { "consumer": "code-documenter", "classification": "delegate" }
+        { "consumer": "code-documenter", "classification": "delegate" },
+        { "consumer": "documentation-sync-contract", "classification": "delegate" }
       ]
     },
     {

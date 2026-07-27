@@ -202,6 +202,20 @@ options:
    - red and not sensibly repairable → roll the group back (manifest and lockfile to the state before the group) and mark it as "manual".
 4. Record the result and rationale per group in the wisdom file.
 
+### Phase 3.5: Documentation sync
+
+Run the mandatory documentation sync gate once for all implemented groups, after the group loop and
+before review. Typical surfaces here are documented runtime or dependency requirements, changed
+build or test commands, and migration notes for a breaking upgrade.
+
+Phase 3 already committed one clean commit per update group, so the gate's own changes get their
+own dedicated commit (Conventional Commit type `docs`) before Phase 4; never fold them into an
+unrelated group commit and never leave them uncommitted for the handback.
+
+```include
+documentation-sync
+```
+
 ### Phase 4: Review
 
 Only if code was adapted for breaking changes in phase 3:

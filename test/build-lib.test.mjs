@@ -32,6 +32,8 @@ import {
   assertNoUnresolvedEagerIncludes,
   collectIncludeNames,
   assertNoEagerLazyOverlap,
+  DOCUMENTATION_SYNC_CONSUMERS,
+  findDocumentationSyncViolations,
   findRuntimeStateSafetyViolations,
   findRuntimeDirMigrationViolations,
   findMemoryStateContractViolations,
@@ -1375,6 +1377,13 @@ test('central-skill adapters retain Effective Flow ownership without duplicate h
   const docCategories = readSource('shared/doc-categories.md');
   assert.match(docCategories, /takes precedence over the prescribed standard structure/);
   assert.match(docCategories, /local test for what counts as/);
+
+  // The documentation sync gate routes documentation work and is therefore an
+  // adapter surface where a second craft handbook could grow unnoticed.
+  const syncContract = readSource('shared/documentation-sync-contract.md').replace(/\s+/g, ' ');
+  assert.match(syncContract, /`tech-docs` is the declared domain owner/);
+  assert.match(syncContract, /minimal repository-led fallback declared in/);
+  assert.doesNotMatch(syncContract, /audience|reading order|runnable example/i);
 });
 
 // --- Fixture-based end-to-end snapshot ---
@@ -1671,6 +1680,61 @@ test('assertNoEagerLazyOverlap passes for disjoint sets and throws on overlap', 
         context: 'tools/build.md',
       }),
     /both eager- and lazy-included \(in tools\/build\.md\): config-migration/,
+  );
+});
+
+test('documentation-sync consumer guard demands an eager include in every implementation tool', () => {
+  const eagerBody = ['```include', 'documentation-sync', '```'].join('\n');
+  const lazyBody = ['```lazy-include', 'documentation-sync', 'when: docs are due', '```'].join(
+    '\n',
+  );
+
+  // Every consumer carries the eager core -> no violation.
+  assert.deepEqual(
+    findDocumentationSyncViolations(
+      new Map(
+        DOCUMENTATION_SYNC_CONSUMERS.map((context) => [context, collectIncludeNames(eagerBody)]),
+      ),
+    ),
+    [],
+  );
+
+  // A missing include is a violation naming the offending consumer.
+  const missing = findDocumentationSyncViolations(
+    new Map([
+      ['tools/build.md', collectIncludeNames(eagerBody)],
+      ['tools/fix.md', collectIncludeNames('no includes here')],
+      ['tools/refactor.md', collectIncludeNames(eagerBody)],
+      ['tools/maintain.md', collectIncludeNames(eagerBody)],
+    ]),
+  );
+  assert.deepEqual(
+    missing.map((violation) => violation.context),
+    ['tools/fix.md'],
+  );
+  assert.match(missing[0].reason, /eager/);
+
+  // A lazy pointer does not satisfy the guard: a `when:` condition the model may
+  // judge inapplicable is exactly the skip this gate removes.
+  const lazyOnly = findDocumentationSyncViolations(
+    new Map(
+      DOCUMENTATION_SYNC_CONSUMERS.map((context) => [
+        context,
+        collectIncludeNames(context === 'tools/maintain.md' ? lazyBody : eagerBody),
+      ]),
+    ),
+  );
+  assert.deepEqual(
+    lazyOnly.map((violation) => violation.context),
+    ['tools/maintain.md'],
+  );
+  assert.match(lazyOnly[0].reason, /lazily/);
+
+  // A consumer that was never read at all must not pass silently.
+  const absent = findDocumentationSyncViolations(new Map());
+  assert.deepEqual(
+    absent.map((violation) => violation.context).sort(),
+    [...DOCUMENTATION_SYNC_CONSUMERS].sort(),
   );
 });
 
