@@ -59,7 +59,6 @@ documentation check that could not run. Add no generator or dependency.
   translation was requested. Only a direct invocation resolves the shared language rule itself.
 - Touch only assigned documentation comments, doc examples, or CLI help surfaces; change no
   runtime logic.
-- Prefer self-documenting code and avoid redundant narration.
 - Tell `{{AGENT:code-validator}}` which established documentation check applies, or report that no
   safe check was found.
 - Return changed files, checked interfaces, evidence, and remaining gaps to the caller.

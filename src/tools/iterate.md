@@ -141,7 +141,9 @@ end.
 ### Phase 2: Classification
 
 1. Exclude an already addressed thread when it is `resolved` or carries an
-   `<!-- effective-flow-iterate -->` reply.
+   `<!-- effective-flow-iterate -->` reply. Exclude a thread carrying
+   `<!-- effective-flow-pr-review -->` as well — that is Effective Flow's own published review
+   output, not third-party input — unless the user names those threads explicitly.
 2. Send every remaining review thread and free-text instruction to `pr-review` Mode C with the
    caller constraints: Effective Flow owns authority, approval, implementation, commits,
    delivery, replies, and resolution; the analysis may only classify supplied context.
@@ -279,6 +281,9 @@ and stop delivery for reconciliation.
    `<!-- effective-flow-iterate -->`): which items
    were implemented or skipped and which pure questions are open/deferred (without a
    substantive auto-reply).
+4. Declare to the handback of "Delivery and worktree integration" that this workflow supplies
+   **no** complete finding set — it has no reviewer phase at all — so an automatic PR review
+   reviews the pull request itself.
 
 ### Phase 6: Summary
 

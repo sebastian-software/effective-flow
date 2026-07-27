@@ -98,7 +98,8 @@ central-reasoning-delegation
 1. Read `AGENTS.md` and the repository structure when present.
 2. Record which statements are verified repository context and which are assumptions. An empty
    repository is recorded as "no verified code context" and is not an obstacle.
-3. Check whether `<concept.dir>/` already holds concepts, and adopt their structure and language.
+3. Check whether `<concept.dir>/` already holds concepts, and adopt their structure. Their language
+   is **not** adopted: a new concept follows the resolved `language.workflow` (see Phase 3).
 
 ### Phase 2: Bounded clarification
 
@@ -117,9 +118,12 @@ central-reasoning-delegation
 ### Phase 3: Concept creation
 
 Write the concept file to `<concept.dir>/YYYY-MM-DD-<slug>.md` per the concept contract, in the
-concrete `language.workflow` value resolved once through the shared language resolver. For an
-existing concept corpus, preserve its clearly recognizable complete language. Do not write
-configuration from this tool.
+concrete `language.workflow` value resolved once through the shared language resolver. A new
+concept always follows that resolved value; an existing concept corpus is not a language signal and
+never overrides it. Only when editing an existing concept do you preserve its clearly recognizable
+complete language, and only an unconfigured project may derive the language from its corpus through
+the transitional read fallback defined centrally — report the setup recommendation when that path
+is used. Do not write configuration from this tool.
 
 Use the structural template from the concept contract, and observe:
 

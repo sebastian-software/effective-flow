@@ -36,6 +36,10 @@ config-migration
 when: the Effective Flow configuration is first read or a legacy config is migrated
 ```
 
+## Recommended skills
+
+- `pr-review`
+
 ## Project conventions
 
 If the project has an `AGENTS.md`, read it early in the workflow and follow its guidance for planning, implementation, review, tests, docs and commits.
@@ -248,16 +252,14 @@ skill-discovery
 
 ### Phase 3: Documentation
 
-Start in parallel if possible:
+Run the mandatory documentation sync gate for the files this run changed. Assign documentation per
+file/domain using the canonical routing contract; preserve the explicit JS/TS and Rust branches and
+use repository-native conventions for other product languages rather than inventing a documentation
+format.
 
-1. `{{AGENT:code-documenter}}` for in-code documentation of all new or changed exports, using the established conventions of each routed file/domain
-2. `{{AGENT:docs-writer}}` for README/guide updates if the change is user-relevant
-
-Assign documentation per file/domain using the canonical routing contract. Preserve the explicit
-JS/TS and Rust branches; for other product languages, use repository-native conventions rather
-than inventing a documentation format.
-
-Skip user docs only with a short justification.
+```include
+documentation-sync
+```
 
 ### Phase 4: Tests
 
@@ -378,7 +380,7 @@ Rules for the findings report:
 
 4. Delete the wisdom file.
 5. Check whether a formatter is configured and format all changed files including the plan file once, consistently.
-6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
+6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand the **residual** Phase-6 finding set to that handback — the findings that survived this run's correction rounds, not the full Phase-6 history — so an automatic PR review publishes them instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
 7. Summarize what was implemented, tested and documented; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch).
 
 ## Rules
@@ -395,7 +397,7 @@ when: a commit message or Conventional Commit title is written
 - Always start independent specialist phases in parallel when they are truly independent
 - Give the user a short status update after each phase
 - If a phase reports errors, fix them before continuing
-- Skip optional steps only with a short justification
+- Skip optional steps only with a short justification; the documentation sync gate is not one of them
 - Give internal sub-agents the instruction:
   - first summarize the task in 2-3 sentences
   - end with `DONE` or `ABORT: [reason]`

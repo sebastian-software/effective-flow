@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { collectIncludeNames, resolveEagerIncludes } from '../build-lib.mjs';
+import {
+  assertNoUnresolvedEagerIncludes,
+  collectIncludeNames,
+  renderBody,
+  resolveEagerIncludes,
+  resolveLazyIncludes,
+} from '../build-lib.mjs';
 
 const repositoryRoot = new URL('..', import.meta.url);
 
@@ -789,6 +795,146 @@ test('no source cites the non-existent "Host and CLI detection" section', () => 
   }
 });
 
+test('the pr-review-integration fragment resolves through the build into all three targets', () => {
+  const fragment = source('src/shared/pr-review-integration.md');
+
+  // The fragment ships once per harness as a lazily loaded shared/pr-review-integration.md
+  // (build.mjs's #99 guard). That path resolves nested **eager** includes — the fragment loads
+  // `pr-review-comments` and `security-disclosure-gate` that way — but it never runs the lazy
+  // resolver, so a ```lazy-include fence here would survive into the shipped file unresolved.
+  assert.doesNotMatch(fragment, /```lazy-include/);
+
+  const knownTools = new Set(
+    readdirSync(new URL('src/tools/', repositoryRoot))
+      .filter((entry) => entry.endsWith('.md'))
+      .map((entry) => entry.replace(/\.md$/, '')),
+  );
+  const knownAgents = new Set(
+    readdirSync(new URL('src/agents/', repositoryRoot))
+      .filter((entry) => entry.endsWith('.md'))
+      .map((entry) => entry.replace(/\.md$/, '')),
+  );
+  const refConfig = {
+    exposedTools: [...knownTools],
+    agentPrefix: 'effective-flow-',
+    skillName: 'effective-flow',
+    knownTools,
+    knownAgents,
+  };
+
+  const resolved = resolveEagerIncludes(fragment, {
+    context: 'shared/pr-review-integration.md',
+    readFragment: (name) => source(`src/shared/${name}.md`),
+  });
+
+  for (const harness of ['claude', 'codex', 'portable']) {
+    const context = `shared/pr-review-integration.md (${harness})`;
+    const rendered = renderBody(resolved, harness, { ...refConfig, context });
+    assertNoUnresolvedEagerIncludes(rendered, { context });
+    assert.match(rendered, /review-create/, harness);
+    assert.match(rendered, /<!-- effective-flow-pr-review -->/, harness);
+    assert.match(rendered, /Never approve and never request changes/, harness);
+
+    // The security gate on this published surface is unconditional: making it switchable by a
+    // configuration key must not ship green. Pinned as the rule rather than as one sentence —
+    // any wording is accepted as long as it still binds the gate, states that no configuration
+    // key changes it, and names `delivery.prReview` as included in that.
+    const gateRule = rendered.split(/\n{2,}/).find((block) => /no configuration key/i.test(block));
+    assert.ok(
+      gateRule,
+      `${harness}: the fragment must state that no configuration key changes the security gate`,
+    );
+    assert.match(gateRule, /gate|security/i, harness);
+    assert.match(gateRule, /delivery\.prReview/, harness);
+  }
+});
+
+test('every one of the three delivery call sites and review.md load the pr-review-integration fragment exactly once', () => {
+  const callSites = [
+    'src/shared/worktree-integration.md',
+    'src/tools/apply-review-remote.md',
+    'src/tools/apply-issues.md',
+    'src/tools/review.md',
+  ];
+
+  for (const path of callSites) {
+    const body = source(path);
+    const { eager, lazy } = collectIncludeNames(body);
+    assert.equal(eager.has('pr-review-integration'), false, `${path} must not eager-include it`);
+    assert.ok(lazy.has('pr-review-integration'), `${path} must reference pr-review-integration`);
+
+    const { names } = resolveLazyIncludes(body, { context: path });
+    assert.equal(
+      names.filter((name) => name === 'pr-review-integration').length,
+      1,
+      `${path} must load pr-review-integration exactly once`,
+    );
+  }
+});
+
+test('review.md keeps the plan-file special case before the pull-request special case', () => {
+  const review = source('src/tools/review.md');
+  ordered(
+    review,
+    '### Plan-file special case',
+    '### Pull-request special case',
+    'a bare four-digit value stays a\nlegacy plan reference',
+  );
+
+  // The bare four-digit precedence is stated explicitly, right at the pull-request
+  // branch, not only implied by section order — a re-ordering that kept the words but
+  // moved the section would still be caught by `ordered` above.
+  assert.match(
+    review,
+    /Evaluated \*\*after\*\* the plan-file special case and never before it: a bare four-digit value stays a\s*\nlegacy plan reference and is never read as a pull request\./,
+  );
+});
+
+test('the documentation sync gate is a fixed, blocking part of every implementation tool', () => {
+  const consumers = ['build', 'fix', 'refactor', 'maintain'];
+  for (const tool of consumers) {
+    const { eager, lazy } = collectIncludeNames(source(`src/tools/${tool}.md`));
+    assert.ok(
+      eager.has('documentation-sync'),
+      `tools/${tool}.md must embed documentation-sync eagerly, so the phase cannot be deferred away`,
+    );
+    assert.ok(!lazy.has('documentation-sync'), `tools/${tool}.md must not lazy-load the gate core`);
+  }
+
+  // The eager core carries the mandate; only the detail contract is deferred.
+  const core = source('src/shared/documentation-sync.md');
+  assert.match(flat(core), /mandatory/i);
+  assert.match(flat(core), /not skippable|unskippable/i);
+  assert.ok(
+    collectIncludeNames(core).lazy.has('documentation-sync-contract'),
+    'the eager core must lazy-load its detail contract',
+  );
+
+  const contract = source('src/shared/documentation-sync-contract.md');
+  for (const verdict of ['`updated`', '`no impact`', '`blocked`']) {
+    assert.ok(contract.includes(verdict), `missing verdict state: ${verdict}`);
+  }
+  // A bare "not relevant" must not satisfy the gate, otherwise `no impact`
+  // degrades into the skip clause this change removes.
+  assert.match(flat(contract), /not relevant.{0,80}does not satisfy/i);
+  // Both blocking branches: escalate interactively, hand off as a finding when
+  // delegated non-interactively.
+  ordered(flat(contract), 'interactive', 'non-interactive delegation');
+  assert.match(flat(contract), /non-interactive delegation.{0,400}do not abort/i);
+  assert.match(contract, /Action: \{\{SKILL:docs\}\}/);
+
+  // The clauses that made documentation optional are gone.
+  assert.doesNotMatch(source('src/tools/build.md'), /Skip user docs only with a short/);
+  assert.doesNotMatch(
+    source('src/tools/refactor.md'),
+    /do not introduce a documentation phase if the refactoring/,
+  );
+  assert.doesNotMatch(
+    source('docs/user-guide/tools-implement.md'),
+    /Introduces no documentation phase when no public behavior/,
+  );
+});
+
 test('the concept workflows keep their write boundary at the concept directory', () => {
   const concept = source('src/tools/concept.md');
   const conceptReview = source('src/tools/concept-review.md');
@@ -832,9 +978,45 @@ test('review evaluates the concept-file special case after the plan-file special
     /Evaluated \*\*after\*\* the plan-file special case and never before it: a bare four-digit value stays a\s*\nlegacy plan reference and is never read as a concept reference\./,
   );
   assert.match(review, /Read the internal instruction `\{\{SKILL:concept-review\}\}`/);
+
+  // The plan branch ends the workflow as soon as it matches, so the cross-artifact
+  // ambiguity rule only takes effect if it is decided inside that branch, before it acts.
+  // Stated in the concept branch alone it would be unreachable for exactly the ambiguous
+  // argument it exists for.
+  const planCase = review.slice(
+    review.indexOf('### Plan-file special case'),
+    review.indexOf('### Concept-file special case'),
+  );
   assert.match(
-    flat(review),
-    /An argument that matches both a plan file and a concept file is ambiguous: name both interpretations and ask, never guess\./,
+    flat(planCase),
+    /first resolve the same argument against `<concept\.dir>\/` per the concept-file special case below/,
+  );
+  assert.match(
+    flat(planCase),
+    /\*\*Plan match and concept match:\*\* the argument is ambiguous\. Name both interpretations, ask which artifact was meant, and start neither review\./,
+  );
+  assert.match(
+    flat(planCase),
+    /Only a bare file name or a title slug can be ambiguous — a full path names its directory, and a bare four-digit value stays a legacy plan reference\./,
+  );
+});
+
+test('a new concept follows the configured workflow language, not an existing corpus', () => {
+  const concept = source('src/tools/concept.md');
+
+  // Adopting the corpus language unconditionally would let one German concept silently
+  // flip an `language.workflow: en` project's next concept to German.
+  assert.match(
+    flat(concept),
+    /Their language is \*\*not\*\* adopted: a new concept follows the resolved `language\.workflow`/,
+  );
+  assert.match(
+    flat(concept),
+    /an existing concept corpus is not a language signal and never overrides it/,
+  );
+  assert.match(
+    flat(concept),
+    /Only when editing an existing concept do you preserve its clearly recognizable complete language/,
   );
 });
 
@@ -866,11 +1048,19 @@ test('the concept contract pins its four status forms and separates concept from
     assert.ok(contract.includes(marker), `concept-contract must declare ${marker}`);
   }
 
-  // A concept directory equal to the plan directory would make a plan reference and a
-  // concept reference indistinguishable for the review router, so it fails closed.
+  // A concept directory that resolves onto the plan directory would make a plan
+  // reference and a concept reference indistinguishable for the review router, so it
+  // fails closed. String inequality is not enough: `docs/plan` and `./docs/plan` are the
+  // same directory, and a concept directory nested inside the plan directory is still
+  // enumerated by the plan resolvers.
   assert.match(
     flat(contract),
-    /`<concept\.dir>` must not be identical to `<plan\.dir>`\. An identical configuration is a configuration error/,
+    /must be \*\*separate directories\*\*, compared as canonical paths rather than as configured strings/,
+  );
+  assert.match(flat(contract), /physically canonicalize them/);
+  assert.match(
+    flat(contract),
+    /Reject a configuration where the two resolve to the same directory \*\*or\*\* where one contains the other/,
   );
   assert.match(flat(contract), /A bare four-digit value is never a concept reference/);
   assert.match(flat(contract), /Concepts have no archive and no implemented state\./);

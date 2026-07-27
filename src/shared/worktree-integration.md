@@ -52,7 +52,8 @@ If the Effective Flow configuration (project setup ADR) pins corresponding value
     "baseBranch": "origin/main",
     "branchPrefix": "effective-flow",
     "completion": "merge",
-    "returnBranch": "auto"
+    "returnBranch": "auto",
+    "prReview": "ask"
   },
   "worktree": {
     "enabled": true,
@@ -68,6 +69,7 @@ Missing values have these defaults:
 - `delivery.branchPrefix`: `"effective-flow"`
 - `delivery.completion`: `"merge"` (merge into the target branch as the default completion)
 - `delivery.returnBranch`: `"auto"` (local branch part from `delivery.baseBranch`)
+- `delivery.prReview`: `"ask"` (a gated run asks once per created pull request)
 - `worktree.enabled`: `true` (implementation runs in its own worktree)
 - `worktree.setup`: `"auto"`
 - `worktree.baseDir`: `.effective-flow/.worktrees`
@@ -76,6 +78,7 @@ Valid values:
 
 - `delivery.completion`: `"pr"`, `"merge"`, `"branch"`
 - `delivery.returnBranch`: `"auto"` or a local branch name as a string
+- `delivery.prReview`: `"ask"`, `"always"`, `"off"`
 - `worktree.enabled`: `true`, `false`
 - `worktree.setup`: `"auto"`, `"none"` or an explicit setup command as a string
 
@@ -425,6 +428,18 @@ options:
      (`feat`/`fix`/`refactor`/`docs`/`chore` depending on the implementing workflow and effect) as
      a title-type hint, so the PR title carries a valid Conventional Commit type — with a squash
      merge it is the release signal.
+     Once `{{SKILL:pr}}` returned the pull request, run "PR review publication" with that pull
+     request, whether this run is gated or under an authorized goal, and either the workflow's
+     residual finding set or its explicit declaration that it has none. It uses the same verified
+     `RUNTIME_STATE_ROOT`. This stays inside step 5 deliberately: step 4 has already withdrawn an
+     Effective Flow-owned worktree and step 6 restores the checkout to the base branch, so a review
+     running after them would have no execution root and would read base-branch content.
+
+```lazy-include
+pr-review-integration
+when: the completion action created or reused a pull request and the automatic PR review may run
+```
+
 6. **Restore checkout:** For in-place delivery that switched the current checkout, after
    successful PR creation or with `branch`, switch back to `delivery.returnBranch` or, with
    `auto`, to the local branch part of `delivery.baseBranch`, provided the working tree is clean.

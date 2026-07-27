@@ -85,6 +85,7 @@ Tasks are created at **two** points in time, because the directory split in Phas
 ## Recommended skills
 
 - `codebase-improvement`
+- `pr-review`
 
 ```include
 audit-reasoning-delegation
@@ -222,9 +223,9 @@ user to `{{SKILL:setup}}`, the sole repair owner.
    memory-state mutation” against the retained absolute memory handle under `RUNTIME_STATE_ROOT`.
    Format its mapping as `R-0000001`, `R-0000002`, ... . Reserve nothing when the list is empty.
 8. The reservation must be atomically persisted and its lock released before any report, finding
-   issue, or epic is published. If reservation fails, publish nothing. If later publication fails
-   or is interrupted, report the reserved range and partial result; the unused IDs remain
-   permanent gaps and are never rolled back or reused.
+   issue, epic, or pull-request comment is published. If reservation fails, publish nothing. If
+   later publication fails or is interrupted, report the reserved range and partial result; the
+   unused IDs remain permanent gaps and are never rolled back or reused.
 
 ```lazy-include
 config-migration
@@ -283,7 +284,17 @@ Allowed forms are:
 - legacy number, e.g. `0066` (for migrated old plans, resolved primarily via the H1
   `# 0066: …`; the file name segment is only the existing secondary signal)
 
-If exactly one plan file is found:
+If exactly one plan file is found, first resolve the same argument against `<concept.dir>/` per the
+concept-file special case below. That cross-check belongs here, before the plan branch acts,
+because acting first would make the ambiguity unreachable:
+
+- **Plan match only:** continue with the plan steps below.
+- **Plan match and concept match:** the argument is ambiguous. Name both interpretations, ask which
+  artifact was meant, and start neither review. Only a bare file name or a title slug can be
+  ambiguous — a full path names its directory, and a bare four-digit value stays a legacy plan
+  reference.
+
+For an unambiguous plan match:
 
 1. Do not load any code-review configuration, tracker mode, memory file,
    cache, or wisdom file.
@@ -318,10 +329,42 @@ If exactly one concept file is found:
 3. Run it with the resolved concept file.
 4. Then end this `review` workflow; do not start a code review.
 
-An argument that matches both a plan file and a concept file is ambiguous: name both
-interpretations and ask, never guess. If no concept file or several concept files match and the
-user clearly wanted a concept review, report the missing concept or ask for the specific file
-instead of guessing a code review.
+An argument that matches both a plan file and a concept file is ambiguous. That case is decided by
+the cross-check in the plan-file special case above, which runs first and asks instead of starting
+either review; the rule is stated there so it stays reachable. If no concept file or several
+concept files match and the user clearly wanted a concept review, report the missing concept or ask
+for the specific file instead of guessing a code review.
+
+### Pull-request special case
+
+Evaluated **after** the plan-file special case and never before it: a bare four-digit value stays a
+legacy plan reference and is never read as a pull request.
+
+A PR reference is `#42`, a bare number that is not four digits, or a PR URL — the path segment
+`/pull/` (GitHub) or `/pulls/` (Forgejo) marks it, and an `/issues/` URL is not one. Resolve it
+through the PR resolution of the loaded "PR review comment integration".
+
+On a resolved pull request:
+
+1. The review scope is that pull request's changed files; Phase 1 determines no other scope.
+2. Do **not** resolve the tracker target in Phase 1 and do not apply its fail-closed classes. This
+   path is inherently forge-bound: it publishes onto the pull request and performs no tracker
+   write, so a missing `tracker.externalTool` or an unreachable external connection never aborts
+   it. Required is only the forge preflight: detect the host and CLI and probe availability and
+   authentication.
+3. Finding IDs come from the existing shared memory-state reservation as usual.
+4. Phases 2 and 3 run unchanged.
+5. Phase 4 publishes the Phase-3 finding set through the loaded "PR review publication" instead of
+   the local-mode report or the finding issues of a publishing target.
+
+An argument that plausibly matches both a plan file and a pull request is ambiguous: name both
+interpretations and ask, never guess. A merged or closed pull request, or one belonging to another
+repository, is reviewed read-only and reported as such.
+
+```lazy-include
+pr-review-integration
+when: the review argument may be a pull-request reference that must be resolved, or findings are published onto a resolved pull request
+```
 
 ### Phase 1: Scope
 

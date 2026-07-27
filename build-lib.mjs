@@ -1521,6 +1521,56 @@ export function assertNoEagerLazyOverlap(eager, lazy, { context } = {}) {
   }
 }
 
+// --- Documentation-sync consumer guard ---
+//
+// Keeping documentation in sync is a fixed part of every implementation tool,
+// not an optional phase. These consumers must embed the gate's eager core: a
+// lazy pointer carries a `when:` condition a model may judge inapplicable,
+// which is exactly the skip this gate removes. The detail contract behind the
+// core stays lazy and is deliberately not required here.
+export const DOCUMENTATION_SYNC_CONSUMERS = Object.freeze([
+  'tools/build.md',
+  'tools/fix.md',
+  'tools/refactor.md',
+  'tools/maintain.md',
+]);
+
+const DOCUMENTATION_SYNC_FRAGMENT = 'documentation-sync';
+
+// Takes a Map of context -> collectIncludeNames() result and returns one
+// violation per consumer that does not embed the fragment eagerly. A consumer
+// missing from the map has not been read at all and violates just the same.
+export function findDocumentationSyncViolations(includesByContext) {
+  const violations = [];
+  for (const context of DOCUMENTATION_SYNC_CONSUMERS) {
+    const includes = includesByContext.get(context);
+    if (!includes) {
+      violations.push({ context, reason: `${context} was not read for the eager gate include` });
+      continue;
+    }
+    if (includes.eager.has(DOCUMENTATION_SYNC_FRAGMENT)) continue;
+    const lazily = includes.lazy.has(DOCUMENTATION_SYNC_FRAGMENT);
+    violations.push({
+      context,
+      reason: lazily
+        ? `${context} defers \`${DOCUMENTATION_SYNC_FRAGMENT}\` lazily; the gate must be eager`
+        : `${context} must include \`${DOCUMENTATION_SYNC_FRAGMENT}\` eagerly`,
+    });
+  }
+  return violations;
+}
+
+export function assertDocumentationSyncConsumers(includesByContext, { context } = {}) {
+  const violations = findDocumentationSyncViolations(includesByContext);
+  if (violations.length > 0) {
+    throw new Error(
+      `documentation-sync consumer guard${contextSuffix(context)}: the documentation phase is ` +
+        'mandatory in every implementation tool:\n  ' +
+        violations.map((violation) => violation.reason).join('\n  '),
+    );
+  }
+}
+
 // --- Runtime-state write-safety coverage guard (#165) ---
 //
 // Runtime workflow sources are executable natural-language contracts. This

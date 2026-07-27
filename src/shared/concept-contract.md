@@ -11,10 +11,15 @@ status it carries, and which sections it consists of.
 plans; they are not runtime state.
 
 - Create `<concept.dir>/` on the first write if it is missing.
-- `<concept.dir>` must not be identical to `<plan.dir>`. An identical configuration is a
-  configuration error: report it with both configured values and abort instead of guessing, because
-  a plan reference and a concept reference could no longer be told apart. Refer the user to
-  `{{SKILL:setup}}`.
+- `<concept.dir>` and `<plan.dir>` must be **separate directories**, compared as canonical paths
+  rather than as configured strings. Resolve both against the repository root and physically
+  canonicalize them — resolving symlinks, `.`, `..`, trailing separators, and platform case
+  behaviour — before comparing, so aliases such as `docs/plan`, `./docs/plan`, and `docs/plan/`
+  cannot pass as different directories. Reject a configuration where the two resolve to the same
+  directory **or** where one contains the other: a concept directory nested inside the plan
+  directory would be enumerated by the plan resolvers, which is exactly the boundary this
+  separation protects. Report both configured values with their resolved paths, abort instead of
+  guessing, and refer the user to `{{SKILL:setup}}`.
 - Concepts have no archive and no implemented state. A concept hands off to plans; the plan
   lifecycle owns implementation status.
 
