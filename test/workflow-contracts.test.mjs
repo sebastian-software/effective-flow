@@ -889,3 +889,48 @@ test('review.md keeps the plan-file special case before the pull-request special
     /Evaluated \*\*after\*\* the plan-file special case and never before it: a bare four-digit value stays a\s*\nlegacy plan reference and is never read as a pull request\./,
   );
 });
+
+test('the documentation sync gate is a fixed, blocking part of every implementation tool', () => {
+  const consumers = ['build', 'fix', 'refactor', 'maintain'];
+  for (const tool of consumers) {
+    const { eager, lazy } = collectIncludeNames(source(`src/tools/${tool}.md`));
+    assert.ok(
+      eager.has('documentation-sync'),
+      `tools/${tool}.md must embed documentation-sync eagerly, so the phase cannot be deferred away`,
+    );
+    assert.ok(!lazy.has('documentation-sync'), `tools/${tool}.md must not lazy-load the gate core`);
+  }
+
+  // The eager core carries the mandate; only the detail contract is deferred.
+  const core = source('src/shared/documentation-sync.md');
+  assert.match(flat(core), /mandatory/i);
+  assert.match(flat(core), /not skippable|unskippable/i);
+  assert.ok(
+    collectIncludeNames(core).lazy.has('documentation-sync-contract'),
+    'the eager core must lazy-load its detail contract',
+  );
+
+  const contract = source('src/shared/documentation-sync-contract.md');
+  for (const verdict of ['`updated`', '`no impact`', '`blocked`']) {
+    assert.ok(contract.includes(verdict), `missing verdict state: ${verdict}`);
+  }
+  // A bare "not relevant" must not satisfy the gate, otherwise `no impact`
+  // degrades into the skip clause this change removes.
+  assert.match(flat(contract), /not relevant.{0,80}does not satisfy/i);
+  // Both blocking branches: escalate interactively, hand off as a finding when
+  // delegated non-interactively.
+  ordered(flat(contract), 'interactive', 'non-interactive delegation');
+  assert.match(flat(contract), /non-interactive delegation.{0,400}do not abort/i);
+  assert.match(contract, /Action: \{\{SKILL:docs\}\}/);
+
+  // The clauses that made documentation optional are gone.
+  assert.doesNotMatch(source('src/tools/build.md'), /Skip user docs only with a short/);
+  assert.doesNotMatch(
+    source('src/tools/refactor.md'),
+    /do not introduce a documentation phase if the refactoring/,
+  );
+  assert.doesNotMatch(
+    source('docs/user-guide/tools-implement.md'),
+    /Introduces no documentation phase when no public behavior/,
+  );
+});

@@ -207,6 +207,17 @@ skill-discovery
    - no new features
    - no unplanned bug fixes
 
+### Phase 3.5: Documentation sync
+
+Run the mandatory documentation sync gate for the files this refactoring changed, before review and
+post-validation, so both cover the documentation changes. Documentation must describe the
+restructured code, never a behavior change — a refactoring that alters no public surface commonly
+ends in `no impact` verdicts, and the gate records them instead of skipping.
+
+```include
+documentation-sync
+```
+
 ### Phase 4: Review
 
 1. Start every reviewer selected by project routing for the changed files, including
@@ -297,5 +308,4 @@ Only relevant when `codebase-improvement` is not available. Brief core guidance 
 
 - Start independent specialist phases in parallel
 - give a status update after each phase
-- do not introduce a documentation phase if the refactoring changes no public behavior
 - no new features or bug fixes during the refactoring

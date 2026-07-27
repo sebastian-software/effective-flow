@@ -280,16 +280,16 @@ Incorporate the reported gaps into the plan and clean it up before you report it
 Normalize the quality judgment from Phase 4 into the Effective Flow scorecard (the skill provides
 the judgment, Effective Flow the artifact form):
 
-| Criterion               | Target                                                                                                                               |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Clarity                 | concrete file references and clear steps, target >= 80%                                                                              |
-| Verification            | measurable acceptance criteria per requirement                                                                                       |
-| Context                 | verified code vs. assumptions, target <= 10% guessing                                                                                |
-| Big Picture             | purpose and workflow explicitly described                                                                                            |
-| No-code boundary        | no changes outside `<plan.dir>/`                                                                                                     |
-| Code frugality          | no code in the plan unless a minimal fragment is the shortest clear explanation                                                      |
-| Workflow recommendation | Feature, Bugfix, Refactoring, or Documentation is justified and fits the scope                                                       |
-| Doc target              | documentation plans contain the matching German or English doc-category and target-path fields, valid and consistent with each other |
+| Criterion               | Target                                                                                                                                                                                                          |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Clarity                 | concrete file references and clear steps, target >= 80%                                                                                                                                                         |
+| Verification            | measurable acceptance criteria per requirement                                                                                                                                                                  |
+| Context                 | verified code vs. assumptions, target <= 10% guessing                                                                                                                                                           |
+| Big Picture             | purpose and workflow explicitly described                                                                                                                                                                       |
+| No-code boundary        | no changes outside `<plan.dir>/`                                                                                                                                                                                |
+| Code frugality          | no code in the plan unless a minimal fragment is the shortest clear explanation                                                                                                                                 |
+| Workflow recommendation | Feature, Bugfix, Refactoring, or Documentation is justified and fits the scope                                                                                                                                  |
+| Doc target              | documentation plans contain the matching German or English target-path field, plus the doc-category field unless `Doc categories` sanctions its omission; a present category is consistent with its target path |
 
 If a criterion is not met, revise the plan or ask the user for the missing information.
 

@@ -184,6 +184,16 @@ skill-discovery
    - desired behavior after the fix
    - note: minimal change, no refactoring
 
+### Phase 3.5: Documentation sync
+
+Run the mandatory documentation sync gate for the files this fix changed, before verification, so
+the checks of Phase 4 cover the documentation changes as well. A minimal fix commonly ends in
+`no impact` verdicts; the gate still runs and still records them.
+
+```include
+documentation-sync
+```
+
 ### Phase 4: Verification
 
 Start in parallel if possible:
