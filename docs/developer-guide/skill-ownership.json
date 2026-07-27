@@ -70,6 +70,7 @@
         { "consumer": "plan", "classification": "route-when-relevant" },
         { "consumer": "plan-issue", "classification": "route-when-relevant" },
         { "consumer": "plan-review", "classification": "route-when-relevant" },
+        { "consumer": "docs", "classification": "route-when-relevant" },
         {
           "consumer": "generic-product-reviewer",
           "classification": "route-when-relevant"
