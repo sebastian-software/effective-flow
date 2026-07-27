@@ -1,5 +1,5 @@
 ---
-description: "Completes GitHub/Forgejo issue planning with the same quality baseline and optional deep review as {{SKILL:plan}}, persists the result idempotently in one marked comment, and releases only issues without implementation-blocking open points. Generates no code and no plan file."
+description: "Completes issue planning on the resolved tracker target (GitHub/Forgejo or an external tool) with the same quality baseline and optional deep review as {{SKILL:plan}}, persists the result idempotently in one marked comment, and releases only issues without implementation-blocking open points. Generates no code and no plan file."
 catalogHint: "Completes the planning for issues that still need clarification."
 ---
 
@@ -24,9 +24,10 @@ Hard scope boundary:
   phase. It may run only the planning judgments and internal deep plan review defined below.
 - It creates **no** `<plan.dir>/` file; the issue remains the only source. All results end up as an issue comment.
 - It does not implement the issue itself — the implementation is subsequently handled by `{{SKILL:apply-issues}}`.
-- Remote writes are limited to creating the first canonical planning comment, updating that exact
-  comment by its tracker ID, and changing the issue's planning-readiness labels. A failed or
-  unsupported update must stop before any replacement comment is created.
+- Tracker writes are limited to creating the first canonical planning comment, updating that exact
+  comment by its tracker ID, and changing the issue's planning-readiness labels. This holds on
+  every tracker target. A failed or unsupported update must stop before any replacement comment is
+  created.
 
 ```include
 language-rules
@@ -60,10 +61,15 @@ If the project contains an `AGENTS.md`, read it early in the workflow and observ
 
 ## Tracker integration
 
-This skill is **inherently remote** and always works against the issue tracker of the `origin` remote; the `tracker.mode` switch is **not** evaluated. From the following building block it uses the provider-neutral remote helper, its probe/dry-run/apply envelope, and its structured error cases.
+This skill is **inherently tracker-bound**: it always works against the resolved tracker target, and the local/remote switch is **not** evaluated. Resolve the target per "Tracker target" in the following building block. On the forge target it uses the provider-neutral remote helper, its probe/dry-run/apply envelope, and its structured error cases; on an external target the connection, capability, and write rules of the loaded `tracker-target` contract apply, including its fail-closed abort before the first write.
 
 ```include
 issue-tracker
+```
+
+```lazy-include
+tracker-target
+when: the resolved tracker target is `external`
 ```
 
 ## Comment convention
@@ -131,9 +137,9 @@ without review/open-point sections remains readable; the next baseline update ad
 
 ### Phase 1: Tracker setup & collection
 
-1. Determine the host and CLI and check availability/authentication according to "Host and CLI detection". Precondition: a Git repository with an `origin` remote. If something is missing: report clearly and abort.
+1. Resolve the tracker target according to "Tracker target". On the forge target, determine the host and CLI and check availability/authentication according to "Remote helper contract"; precondition there is a Git repository with an `origin` remote. On an external target, establish exactly one connection per the loaded `tracker-target` contract and verify the capabilities this skill needs — read issue and comments, list issues by classification, create a comment, update a comment by its ID, and add/remove a classification value. If something is missing: report clearly and abort without side effects.
 2. Determine the issues to plan:
-   - without an argument: list all open issues with the label `effective-flow-needs-planning` (also query the old label `firmo-needs-planning` as equivalent, see "Label convention").
+   - without an argument: list all open issues with the label `effective-flow-needs-planning`. On the forge target, also query the old label `firmo-needs-planning` as equivalent (see "Label convention"); on an external target that legacy prefix is forge history and is neither queried nor written there.
    - with an argument: use the passed issue references (number, `#123`, URL).
 3. If there are no matching issues: a short message ("no open `effective-flow-needs-planning` issues") and end.
 4. Show the user the found list (number, title) and let them choose which issues should be planned (one, several, or all).
@@ -210,7 +216,11 @@ Complete this entire phase for the active issue before starting another issue:
    ID and `expectedBodyHash`, then apply that same payload. On `UNSUPPORTED_CAPABILITY`,
    `TARGET_NOT_FOUND`, `AMBIGUOUS_TARGET`, or `STALE_WRITE`, stop processing this issue without
    adding a fallback comment or removing its label; report that a fresh
-   `{{SKILL:plan-issue}} <issue>` run is required.
+   `{{SKILL:plan-issue}} <issue>` run is required. On an external target the same sequence runs
+   through the resolved connection's create-comment and update-comment-by-ID capabilities under
+   the `tracker-target` write discipline: preview the payload, re-read the exact comment
+   immediately before the update, compare it verbatim, and treat a missing capability, a missing or
+   ambiguous comment, or a changed body as the same fail-closed stop.
 2. With a baseline that has no critical findings, ask for this issue only:
 
 ```ask
@@ -236,7 +246,8 @@ Do not reuse this answer for any other selected issue.
 After either branch, apply the readiness decision. If the deep review is ended, deferred after it
 starts, fails to persist, or returns a blocking open point, keep or add
 `effective-flow-needs-planning` and persist the exact re-entry need in the comment. Otherwise
-remove `effective-flow-needs-planning` and any present `firmo-needs-planning` variant. Never set
+remove `effective-flow-needs-planning`, plus any present `firmo-needs-planning` variant on the
+forge target. Never set
 `effective-flow-issue-done`.
 
 Set the issue task to `completed`, annotated `[blocked]` when it was not released, and continue

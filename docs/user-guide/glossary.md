@@ -27,8 +27,9 @@ A single, concretely locatable finding from [`/effective-flow review`](./tools-q
 e.g. a bug, missing error handling, or a security vulnerability – with severity
 (critical/important/hint), affected file, problem and recommendation text, and a proposed
 target action (`effective-flow-fix`, `effective-flow-refactor`, `effective-flow-build`, `effective-flow-docs`).
-Depending on `tracker.mode`, findings land either in a local Markdown report or as an issue on
-a remote tracker (see [Remote Tracker](./remote-tracker.md)) and are worked through by
+Depending on the [tracker target](#tracker-target), findings land either in a local Markdown
+report or as an issue on the Git forge or in an external tool (see
+[Remote Tracker](./remote-tracker.md)), and are worked through by
 [`/effective-flow apply`](./tools-implement.md).
 
 ## Goal steering
@@ -96,6 +97,18 @@ setup); the complete tool reference lives in the five guides under
 [Understanding tools](./tools-understand.md), [Implementation tools](./tools-implement.md),
 [Quality tools](./tools-quality.md), [Delivery tools](./tools-deliver.md), and
 [Setup tools](./tools-setup.md).
+
+## Tracker target
+
+The place that owns issue identity for a run, selected by `tracker.mode`: `local` (a Markdown
+report under `.effective-flow/review/`), `remote` (the issue tracker of your `origin` remote,
+GitHub or Forgejo), or `external` (the project-management tool named by `tracker.externalTool`).
+Review publication and the issue-driven tools always follow the same target within one run, while
+pull requests stay on the Git forge, plan files stay committed under `plan.dir`, and
+[investigations](./tools-understand.md) stay local – in every target. An external target needs a
+connection you already have (an MCP connection or an authenticated CLI); Effective Flow ships no
+product-specific adapter and aborts instead of guessing a target. Details in
+[Remote Tracker](./remote-tracker.md).
 
 ## Worktree
 

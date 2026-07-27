@@ -233,7 +233,12 @@ when: the Effective Flow configuration is read for the first time or an old conf
 
 ```lazy-include
 issue-tracker
-when: the tracker mode `remote` is active
+when: the resolved tracker target is the forge (`remote`) or an external tool
+```
+
+```lazy-include
+tracker-target
+when: the resolved tracker target is `external`
 ```
 
 ```lazy-include
@@ -294,10 +299,10 @@ may fall through to the normal code-review scope.
 ### Phase 1: Scope
 
 1. Read the arguments.
-2. Load the Effective Flow configuration, migrate it if necessary, and determine the review profile, DD source profile, and validation mode. Additionally determine the tracker mode according to "Issue-tracker integration (remote mode)" (config `tracker.mode`, argument/per-run signal, and possibly a first-call query). For `remote`: detect the host and CLI and check CLI availability and authentication in advance; if the CLI is missing, abort clearly (no silent fallback to `local`).
+2. Load the Effective Flow configuration, migrate it if necessary, and determine the review profile, DD source profile, and validation mode. Additionally resolve the tracker **target** according to "Issue-tracker integration (remote mode)" — not only the mode (config `tracker.mode`, argument/per-run signal, and possibly a first-call query). For the forge target: detect the host and CLI and check CLI availability and authentication in advance; if the CLI is missing, abort clearly (no silent fallback to `local`). For `external`: `tracker.externalTool` must be set, and exactly one connection is established and checked in advance against the capabilities publication needs — create an issue, list or search issues by classification and description content for the `Signature` dedup, add a classification value, and the container mechanism. Each of the four fail-closed classes aborts before the first write, and neither missing connection nor missing capability falls back to the forge or to `local`. Name the resolved target — for `external` with tool identifier, connection, and container mechanism — in the status output and in the Phase-4 summary.
 3. Resolve the concrete output language once before any Phase-2 delegation: resolve
-   `language.workflow` for local review artifacts and `language.forge` for remote review
-   artifacts, then set `<review-output-language>` from the tracker mode. Record the concrete
+   `language.workflow` for local review artifacts and `language.forge` for published tracker
+   artifacts, then set `<review-output-language>` from the resolved target. Record the concrete
    `de`/`en` value in the wisdom context and pass it to every Phase-2 agent. Do not let delegated
    agents re-read or reinterpret the project setup ADR.
 4. Without arguments:
@@ -427,7 +432,7 @@ Write all results to the wisdom file under `## Design decisions` with sub-sectio
 
 ### Phase 4: Report
 
-Phase 4 branches according to the tracker mode determined in Phase 1. In local mode a Markdown report is written as before. In remote mode finding issues and an epic issue are created, and a local report is written **only** for the findings the security classification held back. A remote run without `local-only` findings therefore writes no local report, exactly as before. The finding numbering from `.effective-flow/memory.json` applies in both modes.
+Phase 4 branches according to the tracker target resolved in Phase 1. On the `local` target a Markdown report is written as before. On a publishing target — the forge or an external tool — finding issues and a container (epic) are created, and a local report is written **only** for the findings the security classification held back. A publishing run without `local-only` findings therefore writes no local report, exactly as before. The finding numbering from `.effective-flow/memory.json` applies to every target.
 
 #### Local mode
 
@@ -451,25 +456,25 @@ Phase 4 branches according to the tracker mode determined in Phase 1. In local m
 6. Present the most important findings to the user and point to the saved report file.
 7. Delete the wisdom file.
 
-#### Remote mode
+#### Publishing target (forge or external tool)
 
-Use the formats, labels, and operations from "Issue-tracker integration (remote mode)". A local report is written only for the `local-only` findings of the security classification.
+Use the formats, labels, and operations from "Issue-tracker integration (remote mode)". The steps below are written for the forge target and apply to an external target with the resolved connection taking the place of the helper, every mutation following the write discipline, classification mapping, and container mechanism of the loaded "Tracker target" contract — and with one exception: the legacy-compatibility mechanics (`firmo-` label unions, the legacy `Signatur` field, the one-time `sf-` migration) are forge history and are neither queried nor written on an external target. A local report is written only for the `local-only` findings of the security classification.
 
-Reuse the Phase-1 `language.forge` value for finding issues, the epic, and remote comments. It may differ from `language.workflow`; labels, IDs, action values, signatures, and helper fields stay stable. The local security report keeps `language.workflow`, so one run may legitimately write in both languages — each artifact stays complete in its own language.
+Reuse the Phase-1 `language.forge` value for finding issues, the container, and tracker comments. It may differ from `language.workflow`; labels, IDs, action values, signatures, and helper fields stay stable. The local security report keeps `language.workflow`, so one run may legitimately write in both languages — each artifact stays complete in its own language.
 
-1. **Ensure labels:** Create the required labels idempotently (`effective-flow-review-finding`, `effective-flow-review-epic`, the action and severity labels, `wontfix`).
-2. **Dedup first:** Use the helper's compatibility label queries and finding-dedup operation for existing finding issues in every state. It unions current and `firmo-` label results by issue number, reads both canonical `Signature` and legacy `Signatur`, normalizes either form, and removes exact duplicates from the creation list. In case of an uncertain semantic match outside that exact identity (e.g. only a shifted line number), treat it as a new finding and note the possible relationship in the issue body. Remote dedup applies to `publishable` findings; a `local-only` finding was never published and therefore cannot match a remote issue.
+1. **Ensure labels:** Create the required labels idempotently (`effective-flow-review-finding`, `effective-flow-review-epic`, the action and severity labels, `wontfix`). On an external target, ensure the same canonical strings in the connection's classification primitive; if it exposes none, abort rather than creating findings without severity and action.
+2. **Dedup first:** On the forge target, use the helper's compatibility label queries and finding-dedup operation for existing finding issues in every state. It unions current and `firmo-` label results by issue number, reads both canonical `Signature` and legacy `Signatur`, normalizes either form, and removes exact duplicates from the creation list. On an external target, search existing findings by the canonical classification value and by `Signature` content through the resolved connection; do not query legacy `firmo-`/`Signatur` forms there, since no run has ever written them to that tool. In case of an uncertain semantic match outside that exact identity (e.g. only a shifted line number), treat it as a new finding and note the possible relationship in the issue body. Remote dedup applies to `publishable` findings; a `local-only` finding was never published and therefore cannot match a remote issue.
 3. **Dedup withheld findings:** Run the local dedup of the loaded "Security disclosure gate" for the `local-only` findings, which remote dedup cannot see. This must finish before the reservation, so a finding already recorded in an earlier report consumes no new ID.
 4. **Reserve IDs:** Reserve exactly one contiguous nonzero `R-XXXXXXX` range through the shared memory contract for the ordered list of all remaining findings of **both** classes, and release its lock. Findings dropped by remote or local dedup are not part of that list. Only after the reservation is atomically persisted may any report or issue be published; if reservation fails, publish nothing.
 5. **Run the security disclosure gate:** the local security report and then the publication offer follow the loaded "Security disclosure gate" — in that order and before any tracker mutation. Use the same report handle, directory guards, and collision mechanics as local mode, and never inspect or create a report below a linked execution worktree.
 6. **Create finding issues:** Build each canonical payload through the helper and publish one issue per reserved ID. Publish the `publishable` findings, plus the withheld findings only when the gate returned an explicit publication confirmation. Canonical writes always use `Signature`. An issue-creation failure does not roll memory back; report any created subset and leave unused reserved IDs as permanent gaps.
-7. **Create a new epic:** Create a **new** epic issue from the helper's canonical epic payload in the resolved Forge language (English title `Code review YYYY-MM-DD[-N]` and section `Skipped (design decisions)`; German title `Code-Review YYYY-MM-DD[-N]` and section `Übersprungen (Architekturentscheidungen)`), with label `effective-flow-review-epic`. The task list contains exclusively the finding issues newly created in this run. Skipped findings (design decisions) go into that non-checkable localized section and are identified by title, normalized signature, and decision reference only. They receive no issue, no `R-XXXXXXX` ID, and do not advance `lastFindingNumber`. Already-existing (deduplicated) findings are **not** referenced. An existing epic is never extended. Record the epic number in the `Epic` field of the associated finding issues.
+7. **Create a new epic:** Create a **new** epic issue from the helper's canonical epic payload in the resolved Forge language (English title `Code review YYYY-MM-DD[-N]` and section `Skipped (design decisions)`; German title `Code-Review YYYY-MM-DD[-N]` and section `Übersprungen (Architekturentscheidungen)`), with label `effective-flow-review-epic`. The task list contains exclusively the finding issues newly created in this run. Skipped findings (design decisions) go into that non-checkable localized section and are identified by title, normalized signature, and decision reference only. They receive no issue, no `R-XXXXXXX` ID, and do not advance `lastFindingNumber`. Already-existing (deduplicated) findings are **not** referenced. An existing epic is never extended. Record the epic number in the `Epic` field of the associated finding issues. On an external target, build the container with the mechanism decided in Phase 1 — the native parent/sub-issue relation when the connection exposes one, otherwise the checklist — and never mix both within one container.
 8. **Avoid an empty epic:** If no new findings remain after dedup, do **not** create an empty epic; instead report to the user that all findings already exist as issues. The same applies to the split: if every new finding of this run stayed local, create no epic and report the local report path instead.
 9. Do not rewrite `memory.json` after publication; the range was already persisted in Step 4.
-10. Report to the user the epic URL, the number of newly created findings, the number of deduplicated findings, plus the number of withheld findings and the local report path.
+10. Report to the user the resolved target (for `external` including tool identifier, connection, and container mechanism), the epic URL or identifier, the number of newly created findings, the number of deduplicated findings, plus the number of withheld findings and the local report path. If this run published to a different target than the previous run recorded, state that deduplication does not span targets and that findings may already exist in the old one.
 11. Delete the wisdom file.
 
-**Completion condition (no autonomous loop):** The review is complete when the findings that were quality-checked in Phase 3, filtered against design decisions, and classified by the security gate are available — in local mode in the report, in remote mode as finding issues plus an epic (or with the message that all findings already exist), with every withheld finding in the local security report or, if that report was blocked, reported in the chat as not persisted —, the exact published finding range was reserved atomically before publication, and the wisdom file has been deleted. The independent check is provided by the finding-quality check in Phase 3 (confidence filter, duplicate and severity consistency). This workflow only produces a report and implements nothing; therefore there is neither a bounded correction loop nor a `/goal` string.
+**Completion condition (no autonomous loop):** The review is complete when the findings that were quality-checked in Phase 3, filtered against design decisions, and classified by the security gate are available — on the `local` target in the report, on a publishing target as finding issues plus their container (or with the message that all findings already exist), with every withheld finding in the local security report or, if that report was blocked, reported in the chat as not persisted —, the exact published finding range was reserved atomically before publication, and the wisdom file has been deleted. The independent check is provided by the finding-quality check in Phase 3 (confidence filter, duplicate and severity consistency). This workflow only produces a report and implements nothing; therefore there is neither a bounded correction loop nor a `/goal` string.
 
 ```lazy-include
 review-report-format
@@ -497,7 +502,8 @@ Only relevant if `codebase-improvement` is not available. Brief core guidance fo
 - Within Phase 2a, all design-decision sources in parallel.
 - Within Phase 2c, all reviewer sub-agents in parallel (across routing buckets and across directory splits).
 - Reviewers in Phase 2c check **no** design decisions — the central filter happens in Phase 3.
-- In local mode, this skill writes the review report, temporary wisdom, memory, and valid cache entries. In remote mode, it additionally writes finding and epic issues via the tracker and writes a local report only for the findings withheld by the security gate. Every local runtime mutation uses “Runtime-state write safety”.
-- A security-classified finding never reaches the tracker without the explicit per-run confirmation from the publication gate. This overrides `tracker.mode` and every other configuration; no config key switches the gate off.
+- On the `local` target, this skill writes the review report, temporary wisdom, memory, and valid cache entries. On a publishing target, it additionally writes finding issues and their container through the resolved target and writes a local report only for the findings withheld by the security gate. Every local runtime mutation uses “Runtime-state write safety”.
+- A security-classified finding never reaches a tracker without the explicit per-run confirmation from the publication gate. This binds the forge and an external target alike, overrides `tracker.mode` and every other configuration, and no config key switches the gate off.
+- Publication never spans two targets: `Signature` dedup and the reserved `R-XXXXXXX` range see only the resolved target, so report the limitation when this run publishes to a different target than the previous one.
 - Prompt suggestions must be directly copyable without quotation marks and without escape sequences (applies to the report and the issue body alike).
 - The active finding scope (default: only critical+important) must be respected in the report or in the finding issues.

@@ -20,6 +20,27 @@ if you explicitly agree to it. Afterwards, check with `git remote get-url origin
 right host is detected; for ambiguous hosts (e.g. GitHub Enterprise),
 `tracker.remoteToolOverride` in the [Configuration](./configuration.md#block-tracker) helps.
 
+## The external tracker connection could not be resolved
+
+With `tracker.mode: external` (see [Remote tracker](./remote-tracker.md#external-target)), a run
+resolves exactly one connection to the tool named in `tracker.externalTool` before its first read.
+If that fails, the run aborts before any write and leaves your workflow state intact – it never
+falls back to the forge or to a local report, because that would either scatter your issues across
+two systems or hide work you asked to publish. Four causes, four remedies:
+
+| Message                 | Cause                                                                     | What helps                                                                                                                     |
+| ----------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Missing tool identifier | `tracker.mode: external` without a non-empty `tracker.externalTool`       | Run `/effective-flow setup` and record the identifier, or set the mode back to `local` or `remote`.                            |
+| No connection           | Neither an MCP connection nor an authenticated CLI for that tool is there | Set up the tool's MCP server in your harness, or install and log in to its CLI, then retry.                                    |
+| Ambiguous connection    | Several plausible connections and no decisive hint                        | Sharpen `tracker.externalToolHint`: name the MCP server, the workspace, or the team/project key that identifies the right one. |
+| Missing capability      | The connection cannot do what a flow needs                                | The message names the capability. Grant the connection the missing permission or scope, or use a connection that covers it.    |
+
+Typical missing capabilities are updating an existing comment – without it the canonical planning
+comment cannot stay a single comment – searching issue descriptions, which the finding
+deduplication needs, and any way to classify an issue, without which severity, action, and the
+lifecycle states cannot be stored. Once the connection is fixed, simply start the run again; it
+had not written anything.
+
 ## Worktree conflicts and uncommitted changes
 
 By default, Effective Flow works in a separate [worktree](./worktree-and-delivery.md) and does not

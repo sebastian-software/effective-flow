@@ -1,14 +1,14 @@
 ---
-description: "Takes one or more GitHub/Forgejo issues (individually, as a list or as a container issue with a sub-issue checklist), analyzes and classifies the content and routes sufficiently specified issues to {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} or {{SKILL:docs}} (one PR per issue). Insufficiently specified issues are skipped and marked for {{SKILL:plan-issue}}. Status updates run as issue comments."
+description: "Takes one or more issues of the resolved tracker target — GitHub/Forgejo or an external tool — (individually, as a list or as a container issue with sub-issues), analyzes and classifies the content and routes sufficiently specified issues to {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} or {{SKILL:docs}} (one PR per issue). Insufficiently specified issues are skipped and marked for {{SKILL:plan-issue}}. Status updates run as issue comments."
 ---
 
 # Effective Flow Apply Issues
 
-You are the orchestrator that analyzes arbitrary issues from an external tracker and hands them off to the matching implementation workflow.
+You are the orchestrator that analyzes arbitrary issues from the resolved tracker target and hands them off to the matching implementation workflow.
 
 ## Goal
 
-This skill takes one or more issue references (GitHub via `gh`, Forgejo via `tea`) and works through them via the existing implementation skills. Unlike `{{SKILL:apply-review}}`, it does **not** process the structured finding issues produced by `{{SKILL:review}}`, but **free-form human issues** without plan or finding structure. That is why each issue's content is first **analyzed and classified** before it is routed:
+This skill takes one or more issue references of the resolved tracker target (the forge behind `origin` via `gh`/`tea`, or the configured external tool) and works through them via the existing implementation skills. Unlike `{{SKILL:apply-review}}`, it does **not** process the structured finding issues produced by `{{SKILL:review}}`, but **free-form human issues** without plan or finding structure. That is why each issue's content is first **analyzed and classified** before it is routed:
 
 - Feature → `{{SKILL:build}}`
 - Bugfix → `{{SKILL:fix}}`
@@ -71,7 +71,7 @@ Write a summary after each phase and pass it to later phases. Delete the file at
 
 ## Tracker integration
 
-This skill is **inherently remote**: it always works against the issue tracker of the `origin` remote. The `tracker.mode` switch from `{{SKILL:review}}`/`{{SKILL:apply-review}}` is **not** evaluated. From the following shared building block, this skill uses the provider-neutral remote helper, its probe/dry-run/apply envelope, and its structured error cases. The finding/epic-specific body formats do not apply here; the exact checklist patch operation is reused analogously for container issues.
+This skill is **inherently tracker-bound**: it always works against the resolved tracker target. The local/remote switch from `{{SKILL:review}}`/`{{SKILL:apply-review}}` is **not** evaluated. Resolve the target per "Tracker target" in the following shared building block. On the forge target this skill uses the provider-neutral remote helper, its probe/dry-run/apply envelope, and its structured error cases; on an external target the connection, capability, classification, container, and write rules of the loaded `tracker-target` contract apply instead, and a missing connection or capability aborts before the first write. The finding/epic-specific body formats do not apply here; the exact checklist patch operation is reused analogously for container issues.
 
 ```include
 config-migration
@@ -79,6 +79,11 @@ config-migration
 
 ```include
 issue-tracker
+```
+
+```lazy-include
+tracker-target
+when: the resolved tracker target is `external`
 ```
 
 ```include
@@ -108,24 +113,24 @@ Do not expose internal tracking IDs or session details in comments.
 
 ### Phase 1: Argument & tracker setup
 
-1. Determine host and CLI and check availability/authentication per "Host and CLI detection" in the included building block. Precondition: a git repository with an `origin` remote. If `origin`, the CLI or authentication is missing: report clearly and abort without side effects (no silent fallback).
+1. Resolve the tracker target per "Tracker target" in the included building block. On the forge target, determine host and CLI and check availability/authentication per "Remote helper contract"; precondition there is a git repository with an `origin` remote, and a missing `origin`, CLI, or authentication is reported clearly and aborts without side effects. On an external target, establish exactly one connection and verify the capabilities this skill needs — read issue and comments, list issues by classification, create a comment, add/remove a classification value, and patch an exact checklist entry. Any of the four fail-closed classes aborts before the first write (no silent fallback to the forge or to a local flow).
 2. Read the user argument and classify it via the "apply-source detection" (stage A and — for issue references — stage B):
    - source type `container-issue` or `plain-issue` → `{{SKILL:apply-issues}}` processes it itself; continue. Multiple issue references (number, `#123` or issue URL) are allowed as a list.
    - source type `plan` or `review-report` → point to the responsible skill (`{{SKILL:apply-plan}}` or `{{SKILL:apply-review}}`, or `{{SKILL:apply}}` for automatic routing) and end the skill.
    - source type `review-epic` or `review-finding` → these are epic/finding issues produced by `{{SKILL:review}}`; `{{SKILL:apply-review}}` is responsible for them. Point to it and end.
    - `ambiguous` → ask instead of guessing. When `{{SKILL:apply-issues}}` runs as a delegation from `{{SKILL:apply}}`, foreign types should not occur; the switch remains as a safeguard.
-   - No argument (`none`): list open issues that carry neither `effective-flow-issue-done` nor `effective-flow-needs-planning` (exclude the legacy prefix `firmo-` equivalently, see "Label convention"), and ask the user which ones to process. Do **not** use a heuristic auto-selection.
-3. Create the required labels idempotently (`effective-flow-issue-done`, `effective-flow-needs-planning`; tolerate an "already exists" message).
+   - No argument (`none`): list open issues that carry neither `effective-flow-issue-done` nor `effective-flow-needs-planning`, and ask the user which ones to process. On the forge target, exclude the legacy prefix `firmo-` equivalently (see "Label convention"); on an external target that legacy prefix is forge history and is neither queried nor written. Do **not** use a heuristic auto-selection.
+3. Create the required labels idempotently (`effective-flow-issue-done`, `effective-flow-needs-planning`; tolerate an "already exists" message). On an external target, ensure exactly these two canonical strings in the connection's classification primitive per the `tracker-target` classification mapping — never a `firmo-`/`sf-` variant, which would materialize forge history in a foreign workspace; if the target exposes no classification primitive, abort instead of losing the lifecycle.
 
 ### Phase 2: Expansion & work list
 
 1. Read each referenced issue **fresh** from the tracker (body, labels, status and **comments** via the "read comments" operation). The comments are part of the analysis basis: a planning comment from `{{SKILL:plan-issue}}` (marker `<!-- effective-flow-plan-issues -->`) contains the completed specification, and maintainers may add clarifications as a comment rather than in the body. Your own Effective Flow comments (`<!-- effective-flow-apply-issues -->`) are only noted here for the idempotency check in Phase 4, not counted as a functional requirement. **Backcompat (one generation):** the legacy markers `<!-- firmo-plan-issues -->` and `<!-- firmo-apply-issues -->` from earlier runs are recognized equivalently when reading; only the `effective-flow-` variant is written anew.
-2. **Container detection:** if the body contains a task list with issue references (`- [ ] #NNN …` / `- [x] #NNN …`), treat the issue as a container:
+2. **Container detection:** if the body contains a task list with issue references (`- [ ] <reference> …` / `- [x] <reference> …`, where `<reference>` is a forge `#NNN` or a tool-native identifier such as `ABC-123`), or — on a target whose connection exposes a native parent/sub-issue relation — if the issue has sub-items, treat the issue as a container. The reference-agnostic checklist form matters because it is the fallback container an external target without a native relation uses:
    - expand to the **open** (`- [ ]`) sub-issue references and remember the container issue as an epic for the later check-off,
    - skip done (`- [x]`) entries,
    - then read each open sub-issue fresh from the tracker.
      If the body contains no such list, the issue itself is a single work item.
-3. Skip work items that are already closed or carry the label `effective-flow-issue-done` (or legacy `firmo-issue-done`) (idempotency).
+3. Skip work items that are already closed or carry the label `effective-flow-issue-done` (idempotency); on the forge target the legacy `firmo-issue-done` counts as equivalent, on an external target it is not looked up.
 4. Deduplicate the work list (the same issue number only once, even if it is reachable via multiple containers).
 5. Result: a flat list of work-item issues, each with an optional epic reference. Record it in the wisdom file.
 6. Create a task per work item (task tracking with per-issue granularity) and give the user an overview:
@@ -246,14 +251,22 @@ Issues with the same target PR run sequentially so that new commits are created 
    type stable, no internal IDs, no `Co-Authored-By`) and push the branch. Pass resolved
    `language.git` and `language.forge` to the delegated delivery path. If a target PR is present:
    **do not create a new PR**, but use the existing PR link and optionally extend its body by one
-   exact `Closes #<issue>` or `Refs #<issue>` entry through the helper's idempotent body patch,
-   using the fresh body hash so concurrent edits fail closed. If no target PR is present: take
-   the branch through `{{SKILL:pr}}` as exactly one PR against the base branch; include
-   `Closes #<issue>` in the helper-validated PR payload.
+   exact issue reference through the helper's idempotent body patch, using the fresh body hash so
+   concurrent edits fail closed. If no target PR is present: take the branch through
+   `{{SKILL:pr}}` as exactly one PR against the base branch and include the issue reference in the
+   helper-validated PR payload. Choose the reference form by tracker target per the
+   `tracker-target` forge boundary: on the forge the auto-close keyword `Closes #<issue>` (or
+   `Refs #<issue>`), on an external target a plain, non-auto-closing reference to the tool-native
+   identifier. Never write `Closes #<number>` for an external issue — the code host would resolve
+   it against its own issue of that number and close an unrelated one on merge.
 3. **Immediately after a successful push or PR creation:** build and write the PR-link comment
    through the helper, set label `effective-flow-issue-done`, and — if the issue originates from
    a container — read the container body fresh and use the helper's exact checklist patch with
    its body hash and PR-link suffix. Apply only when the stale-write precondition still matches.
+   On an external target, write the comment and the classification value through the resolved
+   connection under the `tracker-target` write discipline, and complete the container with the
+   mechanism decided once for this run — the native sub-item state or the checklist plus exact
+   patch — never a mix of both. The pull request itself always stays on the forge behind `origin`.
 4. Task to `completed`.
 
 **Error cases:**

@@ -10,7 +10,7 @@ You are the orchestrator for the automated implementation of review report findi
 
 This workflow reads an existing review report file from `.effective-flow/review/`, evaluates the developer notes per finding and delegates the implementation to the matching workflows. Findings that should deliberately not be implemented are handed by the workflow as decision candidates to the `decision-records` skill; only permanent decisions are documented as an ADR, non-permanent rejections stay in the report or tracker artifact.
 
-In **remote mode** (tracker mode `remote`) the workflow reads the findings from an issue tracker instead: it is passed an epic issue or a list of concrete finding issues, one PR is created per finding, and the epic entry is checked off after PR creation. The deviations are bundled in "Remote mode (issue tracker)"; there, `wontfix` findings replace the rejecting developer note.
+If the resolved tracker target is the forge or an external tool, the workflow reads the findings from that issue tracker instead: it is passed an epic/container issue or a list of concrete finding issues, one PR is created per finding, and the container entry is checked off after PR creation. The deviations are bundled in "Remote mode (issue tracker)"; there, `wontfix` findings replace the rejecting developer note.
 
 ```include
 language-rules
@@ -179,13 +179,13 @@ apply-source-detection
 
 ## Remote mode (issue tracker)
 
-If the tracker mode is `remote` (the argument is an epic or finding issue), read and follow the internal sub-file `tools/apply-review-remote.md` **before** the local report flow. It contains the issue-tracker integration as well as the complete remote flow (phase 1–8 remote) and replaces or supplements the corresponding local steps. In local mode (report file under `.effective-flow/review/`) it is not loaded.
+If the resolved tracker target is the forge or an external tool (the argument is an epic/container or finding issue), read and follow the internal sub-file `tools/apply-review-remote.md` **before** the local report flow. It contains the issue-tracker integration, the external-target contract, and the complete remote flow (phase 1–8 remote), and replaces or supplements the corresponding local steps. Only on the `local` target (report file under `.effective-flow/review/`) is it not loaded.
 
 ## Workflow
 
 ### Phase 1: Read and validate the report
 
-First determine the tracker mode via the "apply-source detection" (report file under `.effective-flow/review/` → `local`; epic/finding issue → `remote`). If it is `remote`, read and follow the internal sub-file `tools/apply-review-remote.md` (phase 1 remote and following) instead of the report-file steps 4–7 below; the config, stash and cache steps still apply.
+First determine the tracker target via the "apply-source detection" (report file under `.effective-flow/review/` → `local`; epic/container or finding issue → the target that reference belongs to, the forge or an external tool). For any target other than `local`, read and follow the internal sub-file `tools/apply-review-remote.md` (phase 1 remote and following) instead of the report-file steps 4–7 below; the config, stash and cache steps still apply.
 
 1. Establish the verified dual-root execution receipt before resolving the source. Load the
    Effective Flow configuration, migrate it if necessary and determine the commit-strategy
