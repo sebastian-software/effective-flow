@@ -29,11 +29,20 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
    `DELIVERY_APP_PRIVATE_KEY`) rather than the default `GITHUB_TOKEN`, so the delivery app is the
    identity that updates `main`. The workflow fetches that exact commit and verifies its layout.
 7. After the delivered commit is verified, a separate catalog job updates the `effective-flow`
-   entry in the team catalog repository through Dalo. A failure in this downstream job marks the
-   release workflow as failed, but does not roll back the already published release, archive, or
-   delivery commit.
+   entry in the team catalog repository through Dalo. **This job is currently disabled** — see
+   below. While it is enabled, a failure in this downstream job marks the release workflow as
+   failed, but does not roll back the already published release, archive, or delivery commit.
 
 ### Automatic team-catalog update
+
+> **Currently disabled.** The catalog side does not resolve `effective-flow` as a Dalo source, so
+> the dry run exits with `unknown source` and the job failed every created release — most recently
+> release 1.52.2 — turning an otherwise successful release run red. `update-team-catalog` is
+> therefore statically disabled with `if: false` in `.github/workflows/release.yml`. The job body
+> is unchanged, including its scoped app tokens and the checksum-pinned Dalo binary, so re-enabling
+> means restoring the created-release gate on the `release` job — nothing more. The prerequisite is
+> the reviewed `dalo.toml` declaration described at the end of this section; until it exists, the
+> catalog pin is advanced manually in the target repository.
 
 The catalog job installs the `x86_64-unknown-linux-musl` archive of Dalo 0.9.2 and verifies its
 pinned SHA-256 digest before running it. It first executes
