@@ -147,6 +147,7 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | language.forge                           | en                          |
 | language.git                             | en                          |
 | plan.dir                                 | docs/plan                   |
+| concept.dir                              | docs/concept                |
 | delivery.baseBranch                      | origin/main                 |
 | delivery.branchPrefix                    | effective-flow              |
 | delivery.completion                      | merge                       |
@@ -244,6 +245,19 @@ Plan headers, sections, review content, open points, and the status marker all u
 language. New plans follow `language.workflow`; existing German and English plans retain their
 recognizable language when read, edited, or completed.
 
+## Block `concept`
+
+Controls [`/effective-flow concept`](./tools-understand.md) and the deep concept review.
+
+| Key   | Values | Default        | Meaning                                                 |
+| ----- | ------ | -------------- | ------------------------------------------------------- |
+| `dir` | String | `docs/concept` | Directory in which concept files live (`<concept.dir>`) |
+
+`concept.dir` must differ from `plan.dir`; an identical value is rejected, because a plan
+reference and a concept reference could no longer be told apart. Concept files follow the same
+one-language rule as plans and use their own status marker
+(`**Concept status:** Draft`/`Elaborated` or `**Konzeptstatus:** Entwurf`/`Ausgearbeitet`).
+
 ## Block `delivery`
 
 Describes the delivery branch, its base, its generated name, and its completion action. There is
@@ -328,6 +342,7 @@ values are retained unless the user explicitly confirms a change.
 | `delivery.baseBranch`               | `origin/main`                |
 | `tracker.mode`                      | `local`                      |
 | `plan.dir`                          | `docs/plan`                  |
+| `concept.dir`                       | `docs/concept`               |
 
 Language overrides are absent in the safe base and therefore inherit `language.project`. If the
 entire `language.*` block is absent, the default remains `en`.

@@ -788,3 +788,127 @@ test('no source cites the non-existent "Host and CLI detection" section', () => 
     }
   }
 });
+
+test('the concept workflows keep their write boundary at the concept directory', () => {
+  const concept = source('src/tools/concept.md');
+  const conceptReview = source('src/tools/concept-review.md');
+
+  // Neither workflow may produce the artifacts of a neighboring lifecycle: a plan file
+  // would make an unimplementable concept look implementable, an ADR would break the
+  // single-file write boundary, and code would leave the analysis phase entirely.
+  assert.match(
+    flat(concept),
+    /Only analysis, follow-up questions, and one new file under `<concept\.dir>\/` are allowed\./,
+  );
+  assert.match(flat(concept), /no plan file under `<plan\.dir>\/` and no ADR under `docs\/adr\/`/);
+  assert.match(concept, /Do not start any implementation phase and create no plan file\./);
+
+  assert.match(
+    flat(conceptReview),
+    /changes to exactly one referenced concept file under `<concept\.dir>\/` are allowed\./,
+  );
+  assert.match(
+    flat(conceptReview),
+    /create no plan file under `<plan\.dir>\/` and no ADR under `docs\/adr\/`/,
+  );
+  assert.match(conceptReview, /Change only the one referenced concept file\./);
+});
+
+test('review evaluates the concept-file special case after the plan-file special case', () => {
+  const review = source('src/tools/review.md');
+
+  ordered(
+    review,
+    '### Plan-file special case',
+    '### Concept-file special case',
+    '### Phase 1: Scope',
+  );
+
+  // The precedence is stated explicitly at the concept branch, not merely implied by
+  // section order: a reordering that kept the words would still be caught by `ordered`,
+  // but a silently dropped precedence sentence would not.
+  assert.match(
+    review,
+    /Evaluated \*\*after\*\* the plan-file special case and never before it: a bare four-digit value stays a\s*\nlegacy plan reference and is never read as a concept reference\./,
+  );
+  assert.match(review, /Read the internal instruction `\{\{SKILL:concept-review\}\}`/);
+  assert.match(
+    flat(review),
+    /An argument that matches both a plan file and a concept file is ambiguous: name both interpretations and ask, never guess\./,
+  );
+});
+
+test('every concept consumer loads the concept contract exactly once and lazily', () => {
+  for (const path of [
+    'src/tools/concept.md',
+    'src/tools/concept-review.md',
+    'src/tools/review.md',
+  ]) {
+    const body = source(path);
+    const { eager, lazy } = collectIncludeNames(body);
+    assert.equal(eager.has('concept-contract'), false, `${path} must not eager-include it`);
+    assert.ok(lazy.has('concept-contract'), `${path} must reference concept-contract`);
+
+    const occurrences = [...body.matchAll(/```lazy-include\nconcept-contract\n/g)].length;
+    assert.equal(occurrences, 1, `${path} must load concept-contract exactly once`);
+  }
+});
+
+test('the concept contract pins its four status forms and separates concept from plan directory', () => {
+  const contract = source('src/shared/concept-contract.md');
+
+  for (const marker of [
+    '**Konzeptstatus:** Entwurf',
+    '**Konzeptstatus:** Ausgearbeitet',
+    '**Concept status:** Draft',
+    '**Concept status:** Elaborated',
+  ]) {
+    assert.ok(contract.includes(marker), `concept-contract must declare ${marker}`);
+  }
+
+  // A concept directory equal to the plan directory would make a plan reference and a
+  // concept reference indistinguishable for the review router, so it fails closed.
+  assert.match(
+    flat(contract),
+    /`<concept\.dir>` must not be identical to `<plan\.dir>`\. An identical configuration is a configuration error/,
+  );
+  assert.match(flat(contract), /A bare four-digit value is never a concept reference/);
+  assert.match(flat(contract), /Concepts have no archive and no implemented state\./);
+});
+
+test('the concept review gates the elaborated status and points its re-entry at review', () => {
+  const conceptReview = source('src/tools/concept-review.md');
+
+  assert.match(
+    flat(conceptReview),
+    /Set `\*\*Concept status:\*\* Elaborated` \(German: `\*\*Konzeptstatus:\*\* Ausgearbeitet`\) exactly when no critical finding and no blocking open point remains/,
+  );
+  assert.match(flat(conceptReview), /Otherwise the status stays `Draft`\/`Entwurf`/);
+  assert.match(conceptReview, /the re-entry\n\s*`\{\{SKILL:review\}\} <concept-file>`/);
+});
+
+test('the concept handoff stays self-contained text and marks ADR candidates only', () => {
+  const contract = source('src/shared/concept-contract.md');
+  const conceptReview = source('src/tools/concept-review.md');
+
+  // The handoff is a convention, not a coupling: the plan gateway knows plans, review
+  // reports and issue references, so a concept path reaches it as free-text requirement.
+  assert.match(
+    flat(contract),
+    /The handoff is \*\*self-contained text\*\*: a complete `\{\{SKILL:plan\}\}` call whose requirement string names the work package and the concept file/,
+  );
+  assert.match(flat(contract), /the concept keeps no list of the plans derived from it/);
+  assert.match(
+    flat(contract),
+    /Neither concept workflow writes an ADR, and neither asks for one\./,
+  );
+
+  assert.match(
+    flat(conceptReview),
+    /Create no plan file, maintain no list of derived plans, and change nothing about the routing of `\{\{SKILL:plan\}\}`\./,
+  );
+  assert.match(
+    flat(conceptReview),
+    /Mark durable decisions in the concept as ADR candidates with a one-line rationale\. Write no ADR/,
+  );
+});

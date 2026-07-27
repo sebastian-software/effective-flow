@@ -296,6 +296,33 @@ review, do not continue with Phase 1: report the missing plan or ask for the spe
 file instead of guessing a code review. Only arguments without clear plan-review intent
 may fall through to the normal code-review scope.
 
+### Concept-file special case
+
+Evaluated **after** the plan-file special case and never before it: a bare four-digit value stays a
+legacy plan reference and is never read as a concept reference. Like the plan-file case, this
+branch runs before Phase 1 and before any code-review-specific initialization.
+
+```lazy-include
+concept-contract
+when: the review argument may be a concept reference that must be resolved
+```
+
+`<concept.dir>` is the concept directory from the Effective Flow configuration (project-setup ADR)
+`concept.dir` (default `docs/concept`). Check whether the user argument unambiguously points to a
+concept file there. Allowed forms are the full path, the date-slug file name, and the title slug.
+
+If exactly one concept file is found:
+
+1. Do not load any code-review configuration, tracker mode, memory file, cache, or wisdom file.
+2. Read the internal instruction `{{SKILL:concept-review}}`.
+3. Run it with the resolved concept file.
+4. Then end this `review` workflow; do not start a code review.
+
+An argument that matches both a plan file and a concept file is ambiguous: name both
+interpretations and ask, never guess. If no concept file or several concept files match and the
+user clearly wanted a concept review, report the missing concept or ask for the specific file
+instead of guessing a code review.
+
 ### Phase 1: Scope
 
 1. Read the arguments.

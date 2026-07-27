@@ -56,7 +56,7 @@ toward this invariant.
 ### File name convention
 
 - topic-based slugs in kebab-case, e.g. `installation.md`, `architecture.md`, `restart-database.md`
-- no date or number prefix; the date-slug scheme (with a preserved legacy number) is exclusive to the plan directory `<plan.dir>/` (from `plan.dir` of the Effective Flow configuration/project-setup ADR, default `docs/plan`)
+- no date or number prefix; the date-slug scheme is exclusive to the two Effective Flow artifact directories — the plan directory `<plan.dir>/` (from `plan.dir` of the Effective Flow configuration/project-setup ADR, default `docs/plan`, with a preserved legacy number) and the concept directory `<concept.dir>/` (from `concept.dir`, default `docs/concept`)
 - slugs must be unique within their category
 - file extension always `.md`
 

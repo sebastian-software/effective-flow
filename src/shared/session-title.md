@@ -8,9 +8,9 @@ subject, propose a better title — once.
   session-title capability. Never call such a tool for the current session (they exclude it),
   never retitle another session, and never probe speculatively. Where a host offers a self-rename
   path, apply the title silently instead of proposing it. Otherwise stay silent.
-- **Only from work-subject tools:** `plan`, `plan-issue`, `apply`, `apply-plan`, `apply-review`,
-  `apply-issues`, `build`, `fix`, `refactor`, `docs`, `maintain`, `review`, `iterate`, and
-  `investigate`. `version`, `open-plans`, `setup`, `cleanup`, `commit`, and `pr` stay silent, and
+- **Only from work-subject tools:** `concept`, `concept-review`, `plan`, `plan-issue`, `apply`,
+  `apply-plan`, `apply-review`, `apply-issues`, `build`, `fix`, `refactor`, `docs`, `maintain`,
+  `review`, `iterate`, and `investigate`. `version`, `open-plans`, `setup`, `cleanup`, `commit`, and `pr` stay silent, and
   internal sub-agents and workers never emit.
 - **Once, as soon as the subject exists:** the issue or pull-request title has been read, the plan
   H1 has been read, the review or maintenance scope is fixed, or the requirement is clarified —
