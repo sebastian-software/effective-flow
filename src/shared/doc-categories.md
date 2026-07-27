@@ -68,6 +68,11 @@ toward this invariant.
 
 ### File name convention
 
+This convention belongs to the prescribed standard structure and applies to documents in the four
+categories. When an established repository documentation structure took precedence, that
+structure's own naming conventions apply instead: follow the neighbouring documents rather than
+renaming repository-native files to match the rules below.
+
 - topic-based slugs in kebab-case, e.g. `installation.md`, `architecture.md`, `restart-database.md`
 - no date or number prefix; the date-slug scheme (with a preserved legacy number) is exclusive to the plan directory `<plan.dir>/` (from `plan.dir` of the Effective Flow configuration/project-setup ADR, default `docs/plan`)
 - slugs must be unique within their category

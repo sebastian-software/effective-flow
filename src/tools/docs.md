@@ -194,7 +194,7 @@ the plan passes the gate:
    - for category docs: `docs/<category>/<topic-slug>.md`
    - for the marketing entry point: `README.md`
    - for an established repository structure: the path that structure prescribes for this document
-   - check the uniqueness of the slug within the category
+   - for category docs, check the uniqueness of the slug within the category; under an established repository structure, check uniqueness within that structure's own scope and keep its naming conventions
    - on collision (also for an already existing root `README.md`): clarify replacement, extension or an alternative slug with the user
 4. Clarify open questions directly with the user when the audience, scope, target, or substantive statements cannot be reliably derived.
 5. Create a short documentation plan from the owner's analysis:
@@ -248,7 +248,7 @@ options:
    is reported as an evidence gap rather than silently dropped.
 2. Check Effective Flow's write paths:
    - all newly created or changed final documents lie within the category directories from `Doc categories`, within the approved established repository structure when that structure took precedence, are the root `README.md` as the marketing entry point, or an existing file explicitly named in the plan
-   - slugs follow the convention (kebab-case, no date or number prefix)
+   - for category docs, slugs follow the convention (kebab-case, no date or number prefix); a document in an approved established repository structure follows that structure's naming instead and is never renamed to satisfy the category convention
    - for user-guide changes, `docs/user-guide/README.md` is present as soon as content exists under `docs/user-guide/`
    - for developer-guide changes, `docs/developer-guide/README.md` is present as soon as content exists under `docs/developer-guide/`
 3. For the root `README.md` as the marketing entry point, check:
