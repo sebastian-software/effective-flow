@@ -36,6 +36,16 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
 - Before analysis, they review the available host skills (see
   [Skill discovery](skill-discovery.md)) and respect their respective
   write boundary.
+- `build`, `fix`, `refactor`, and `maintain` run a **mandatory documentation sync gate** right
+  after their implementation phase. It is not skippable: for every documentation surface the
+  change could invalidate — in-code documentation and CLI help, user-facing documents, technical
+  documents, repository convention files — the run records one verdict. Either the surface was
+  updated, or it demonstrably has no impact (a bare "not relevant" does not count), or it is
+  blocked. A blocked surface stops completion the same way an open critical review finding does;
+  when the tool runs as a non-interactive sub-run of `apply-review`, `apply-issues`, or `iterate`,
+  the gap is instead carried out as an open finding with action `/effective-flow docs`. Most small
+  changes end in "no impact" verdicts — the gate makes documentation debt visible, it does not
+  manufacture busywork.
 - They classify affected files or domains independently. Specialized JavaScript/TypeScript,
   Node.js, and Rust routes remain preferred; other clearly identified product code uses a
   disclosed reduced-depth product route; tooling and configuration use a separate tooling-only
@@ -126,9 +136,11 @@ the restructured code including confirmation that the discovered repository-nati
 unchanged relative to the baseline, plus – with delivery/worktree mode active – a delivery branch
 and a completion action.
 
-**Interplay:** Introduces no documentation phase when no public behavior is
-affected, and deliberately leaves new features or unplanned bugfixes out of scope during the run
-– `/effective-flow build` or `/effective-flow fix` are responsible for those.
+**Interplay:** Runs the mandatory documentation sync gate like every other implementation tool –
+documentation must describe the restructured code, never a behavior change, so a refactoring
+without a changed public surface typically ends in "no impact" verdicts. New features or unplanned
+bugfixes stay deliberately out of scope during the run – `/effective-flow build` or
+`/effective-flow fix` are responsible for those.
 
 ## `/effective-flow docs`
 

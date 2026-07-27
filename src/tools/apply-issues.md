@@ -41,6 +41,10 @@ when: any wisdom, tracker-marker, or other runtime-state mutation is imminent
 commit-message-rules
 ```
 
+## Recommended skills
+
+- `pr-review`
+
 ## Project conventions
 
 If the project has an `AGENTS.md`, read it early in the workflow and honor its rules for routing, commits and user follow-up questions.
@@ -268,6 +272,20 @@ Issues with the same target PR run sequentially so that new commits are created 
    mechanism decided once for this run — the native sub-item state or the checklist plus exact
    patch — never a mix of both. The pull request itself always stays on the forge behind `origin`.
 4. Task to `completed`.
+
+This path creates its pull requests without the delivery completion action, so it invokes the
+automatic review itself: after step 2 created a pull request, run "PR review publication" with that
+pull request, whether the run is gated or under an authorized goal, and the residual finding set the
+delegated implementation workflow reported — or its explicit declaration that it has none.
+Because this tool creates one pull request per issue, ask the gated question only for the first
+pull request and reuse that answer for every further pull request of this run — deliberately unlike
+the security disclosure gate, whose offer is per run and never remembered, because this question
+governs comment noise rather than disclosure.
+
+```lazy-include
+pr-review-integration
+when: the completion action created or reused a pull request and the automatic PR review may run
+```
 
 **Error cases:**
 

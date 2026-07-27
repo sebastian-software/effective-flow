@@ -50,6 +50,7 @@ when: a plan artifact's fields, sections, or review prose are written or transla
 
 - `codebase-improvement`
 - `port-codebases`
+- `pr-review`
 
 ```include
 audit-reasoning-delegation
@@ -206,6 +207,17 @@ skill-discovery
    - no new features
    - no unplanned bug fixes
 
+### Phase 3.5: Documentation sync
+
+Run the mandatory documentation sync gate for the files this refactoring changed, before review and
+post-validation, so both cover the documentation changes. Documentation must describe the
+restructured code, never a behavior change — a refactoring that alters no public surface commonly
+ends in `no impact` verdicts, and the gate records them instead of skipping.
+
+```include
+documentation-sync
+```
+
 ### Phase 4: Review
 
 1. Start every reviewer selected by project routing for the changed files, including
@@ -271,7 +283,7 @@ Start in parallel:
      - begin the note with `✅`, name at least the date and workflow, and include the same finalization marker, for example `✅ Implemented on YYYY-MM-DD via {{SKILL:refactor}} (run <SESSION_ID>)`
      - before appending, read the finding again and check for an implementation note with this exact finalization marker; if one exists, do not append another note
    - delete the wisdom file
-   - if delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
+   - if delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand the **residual** finding set of the latest Phase-4 review to that handback — the findings that survived this run's correction rounds, not the full review history — so an automatic PR review publishes them instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
    - summarize what was refactored; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch)
    - confirm that the behavior stayed unchanged
 
@@ -296,5 +308,4 @@ Only relevant when `codebase-improvement` is not available. Brief core guidance 
 
 - Start independent specialist phases in parallel
 - give a status update after each phase
-- do not introduce a documentation phase if the refactoring changes no public behavior
 - no new features or bug fixes during the refactoring

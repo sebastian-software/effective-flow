@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-import { collectIncludeNames, resolveEagerIncludes } from '../build-lib.mjs';
+import {
+  assertNoUnresolvedEagerIncludes,
+  collectIncludeNames,
+  renderBody,
+  resolveEagerIncludes,
+  resolveLazyIncludes,
+} from '../build-lib.mjs';
 
 const repositoryRoot = new URL('..', import.meta.url);
 
@@ -787,4 +793,144 @@ test('no source cites the non-existent "Host and CLI detection" section', () => 
       );
     }
   }
+});
+
+test('the pr-review-integration fragment resolves through the build into all three targets', () => {
+  const fragment = source('src/shared/pr-review-integration.md');
+
+  // The fragment ships once per harness as a lazily loaded shared/pr-review-integration.md
+  // (build.mjs's #99 guard). That path resolves nested **eager** includes — the fragment loads
+  // `pr-review-comments` and `security-disclosure-gate` that way — but it never runs the lazy
+  // resolver, so a ```lazy-include fence here would survive into the shipped file unresolved.
+  assert.doesNotMatch(fragment, /```lazy-include/);
+
+  const knownTools = new Set(
+    readdirSync(new URL('src/tools/', repositoryRoot))
+      .filter((entry) => entry.endsWith('.md'))
+      .map((entry) => entry.replace(/\.md$/, '')),
+  );
+  const knownAgents = new Set(
+    readdirSync(new URL('src/agents/', repositoryRoot))
+      .filter((entry) => entry.endsWith('.md'))
+      .map((entry) => entry.replace(/\.md$/, '')),
+  );
+  const refConfig = {
+    exposedTools: [...knownTools],
+    agentPrefix: 'effective-flow-',
+    skillName: 'effective-flow',
+    knownTools,
+    knownAgents,
+  };
+
+  const resolved = resolveEagerIncludes(fragment, {
+    context: 'shared/pr-review-integration.md',
+    readFragment: (name) => source(`src/shared/${name}.md`),
+  });
+
+  for (const harness of ['claude', 'codex', 'portable']) {
+    const context = `shared/pr-review-integration.md (${harness})`;
+    const rendered = renderBody(resolved, harness, { ...refConfig, context });
+    assertNoUnresolvedEagerIncludes(rendered, { context });
+    assert.match(rendered, /review-create/, harness);
+    assert.match(rendered, /<!-- effective-flow-pr-review -->/, harness);
+    assert.match(rendered, /Never approve and never request changes/, harness);
+
+    // The security gate on this published surface is unconditional: making it switchable by a
+    // configuration key must not ship green. Pinned as the rule rather than as one sentence —
+    // any wording is accepted as long as it still binds the gate, states that no configuration
+    // key changes it, and names `delivery.prReview` as included in that.
+    const gateRule = rendered.split(/\n{2,}/).find((block) => /no configuration key/i.test(block));
+    assert.ok(
+      gateRule,
+      `${harness}: the fragment must state that no configuration key changes the security gate`,
+    );
+    assert.match(gateRule, /gate|security/i, harness);
+    assert.match(gateRule, /delivery\.prReview/, harness);
+  }
+});
+
+test('every one of the three delivery call sites and review.md load the pr-review-integration fragment exactly once', () => {
+  const callSites = [
+    'src/shared/worktree-integration.md',
+    'src/tools/apply-review-remote.md',
+    'src/tools/apply-issues.md',
+    'src/tools/review.md',
+  ];
+
+  for (const path of callSites) {
+    const body = source(path);
+    const { eager, lazy } = collectIncludeNames(body);
+    assert.equal(eager.has('pr-review-integration'), false, `${path} must not eager-include it`);
+    assert.ok(lazy.has('pr-review-integration'), `${path} must reference pr-review-integration`);
+
+    const { names } = resolveLazyIncludes(body, { context: path });
+    assert.equal(
+      names.filter((name) => name === 'pr-review-integration').length,
+      1,
+      `${path} must load pr-review-integration exactly once`,
+    );
+  }
+});
+
+test('review.md keeps the plan-file special case before the pull-request special case', () => {
+  const review = source('src/tools/review.md');
+  ordered(
+    review,
+    '### Plan-file special case',
+    '### Pull-request special case',
+    'a bare four-digit value stays a\nlegacy plan reference',
+  );
+
+  // The bare four-digit precedence is stated explicitly, right at the pull-request
+  // branch, not only implied by section order — a re-ordering that kept the words but
+  // moved the section would still be caught by `ordered` above.
+  assert.match(
+    review,
+    /Evaluated \*\*after\*\* the plan-file special case and never before it: a bare four-digit value stays a\s*\nlegacy plan reference and is never read as a pull request\./,
+  );
+});
+
+test('the documentation sync gate is a fixed, blocking part of every implementation tool', () => {
+  const consumers = ['build', 'fix', 'refactor', 'maintain'];
+  for (const tool of consumers) {
+    const { eager, lazy } = collectIncludeNames(source(`src/tools/${tool}.md`));
+    assert.ok(
+      eager.has('documentation-sync'),
+      `tools/${tool}.md must embed documentation-sync eagerly, so the phase cannot be deferred away`,
+    );
+    assert.ok(!lazy.has('documentation-sync'), `tools/${tool}.md must not lazy-load the gate core`);
+  }
+
+  // The eager core carries the mandate; only the detail contract is deferred.
+  const core = source('src/shared/documentation-sync.md');
+  assert.match(flat(core), /mandatory/i);
+  assert.match(flat(core), /not skippable|unskippable/i);
+  assert.ok(
+    collectIncludeNames(core).lazy.has('documentation-sync-contract'),
+    'the eager core must lazy-load its detail contract',
+  );
+
+  const contract = source('src/shared/documentation-sync-contract.md');
+  for (const verdict of ['`updated`', '`no impact`', '`blocked`']) {
+    assert.ok(contract.includes(verdict), `missing verdict state: ${verdict}`);
+  }
+  // A bare "not relevant" must not satisfy the gate, otherwise `no impact`
+  // degrades into the skip clause this change removes.
+  assert.match(flat(contract), /not relevant.{0,80}does not satisfy/i);
+  // Both blocking branches: escalate interactively, hand off as a finding when
+  // delegated non-interactively.
+  ordered(flat(contract), 'interactive', 'non-interactive delegation');
+  assert.match(flat(contract), /non-interactive delegation.{0,400}do not abort/i);
+  assert.match(contract, /Action: \{\{SKILL:docs\}\}/);
+
+  // The clauses that made documentation optional are gone.
+  assert.doesNotMatch(source('src/tools/build.md'), /Skip user docs only with a short/);
+  assert.doesNotMatch(
+    source('src/tools/refactor.md'),
+    /do not introduce a documentation phase if the refactoring/,
+  );
+  assert.doesNotMatch(
+    source('docs/user-guide/tools-implement.md'),
+    /Introduces no documentation phase when no public behavior/,
+  );
 });

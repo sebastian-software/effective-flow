@@ -40,7 +40,8 @@
       "consumers": [
         { "consumer": "docs", "classification": "delegate" },
         { "consumer": "docs-writer", "classification": "delegate" },
-        { "consumer": "code-documenter", "classification": "delegate" }
+        { "consumer": "code-documenter", "classification": "delegate" },
+        { "consumer": "documentation-sync-contract", "classification": "delegate" }
       ]
     },
     {
@@ -126,7 +127,18 @@
     },
     {
       "skill": "pr-review",
-      "consumers": [{ "consumer": "iterate", "classification": "delegate" }]
+      "consumers": [
+        { "consumer": "iterate", "classification": "delegate" },
+        { "consumer": "review", "classification": "delegate" },
+        { "consumer": "worktree-integration", "classification": "delegate" },
+        { "consumer": "apply-review-remote", "classification": "delegate" },
+        { "consumer": "apply-issues", "classification": "delegate" },
+        { "consumer": "build", "classification": "delegate" },
+        { "consumer": "refactor", "classification": "delegate" },
+        { "consumer": "maintain", "classification": "delegate" },
+        { "consumer": "fix", "classification": "delegate" },
+        { "consumer": "docs", "classification": "delegate" }
+      ]
     }
   ],
   "relevanceGateOwners": [
