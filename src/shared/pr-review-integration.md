@@ -135,14 +135,19 @@ withheld finding.
 The loaded "Submit a review with inline comments" performs the submission; this fragment decides its
 content. The helper's payload builder stamps the marker — never hand-write it.
 
-- Each inline comment is anchored to the finding's `file:line` **inside the diff**. A finding on a
-  line outside the diff cannot be anchored: it goes into the review body under a clearly labelled
-  section rather than onto a wrong line.
-- Below the stamped marker, every published comment body carries the finding's stable ID, its
-  severity, its problem and recommendation prose, and — as its last line — the idempotency key in
-  the canonical finding-issue form of `issue-tracker.md`:
-  `- **Signature**: <path:line> · <Area> · <short summary of the problem>`. Without that line the
-  next run cannot recognize the finding and would post it a second time.
+- Each inline comment is anchored to the finding's `file:line` **inside the diff**.
+- A finding on a line **outside the diff** cannot be anchored onto a wrong line. It does not go into
+  the review body either: the review body is not readable through the plumbing's read operations, so
+  a finding parked there would be invisible to the idempotency check below and republished on every
+  rerun. Publish those findings as one additional marked pull-request comment instead, built through
+  the loaded `pr-review-comment-build` operation, under a clearly labelled section. The review body
+  stays human-facing prose and carries no idempotency key.
+- **Every published finding, inline or outside the diff, carries its key.** Below the stamped
+  marker, its body holds the finding's stable ID, its severity, its problem and recommendation
+  prose, and — as its last line — the idempotency key in the canonical finding-issue form of
+  `issue-tracker.md`:
+  `- **Signature**: <path:line> · <Area> · <short summary of the problem>`. A finding published
+  without that line cannot be recognized next run and is posted a second time.
 - **Empty result:** on the explicit `{{SKILL:review}} <PR>` entry point, publish one short summary
   anyway so the reviewed state is visible; on the automatic trigger, publish nothing and report the
   clean result in chat instead. A submission with no inline comment at all — also the case when every
@@ -152,11 +157,16 @@ content. The helper's payload builder stamps the marker — never hand-write it.
 
 ### Idempotency
 
-Read the pull request's existing marked comments **fresh before every write**. Parse their
-`Signature` lines with the helper's `signature-parse` operation and compare the normalized values it
-returns; never hand-roll the normalization. A finding whose normalized signature already appears
-under this fragment's marker is not published again. No new persistence is introduced — the pull
-request itself is the state.
+Read **fresh before every write**, and read both surfaces this fragment publishes to: the inline
+review threads and the ordinary pull-request comments. Together they cover every published finding,
+because outside-diff findings are published as a marked pull-request comment rather than in the
+review body — a review body is not readable through those operations and would silently escape this
+check.
+
+Parse the `Signature` lines of the marked results with the helper's `signature-parse` operation and
+compare the normalized values it returns; never hand-roll the normalization. A finding whose
+normalized signature already appears under this fragment's marker is not published again. No new
+persistence is introduced — the pull request itself is the state.
 
 ### Automatic trigger after delivery
 
