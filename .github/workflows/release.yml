@@ -145,7 +145,14 @@ jobs:
   update-team-catalog:
     name: Update team catalog
     needs: release
-    if: ${{ needs.release.result == 'success' && needs.release.outputs.release_created == 'true' }}
+    # Disabled: the catalog side does not resolve `effective-flow` as a Dalo source, so Dalo exits
+    # with `unknown source` and this downstream job failed every created release — last seen on
+    # release 1.52.2 — marking an otherwise successful release run red. The job body is kept
+    # intact (scoped app tokens, checksum-pinned Dalo binary, pin update), so re-enabling is a
+    # one-line change once the target repository carries the reviewed `dalo.toml` declaration
+    # whose catalog ID is `effective-flow`: restore the gate on the `release` job's result and its
+    # created-release output. Until then the catalog pin is advanced manually.
+    if: false
     runs-on: ubuntu-latest
     permissions:
       contents: read

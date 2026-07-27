@@ -329,7 +329,7 @@ test('security findings stay local until the review publication gate is confirme
   );
 });
 
-test('release exposes verified delivery state before starting the catalog job', () => {
+test('release exposes verified delivery state to the disabled catalog job', () => {
   const release = source('.github/workflows/release.yml');
 
   assert.match(
@@ -343,13 +343,14 @@ test('release exposes verified delivery state before starting the catalog job', 
     'name: Verify delivered commit',
     'update-team-catalog:',
     'needs: release',
-    "needs.release.outputs.release_created == 'true'",
+    'if: false',
     'name: Update Effective Flow team-catalog pin',
   );
-  assert.match(
-    release,
-    /if: \$\{\{ needs\.release\.result == 'success' && needs\.release\.outputs\.release_created == 'true' \}\}/,
-  );
+  // The catalog job is statically disabled while the catalog side does not resolve
+  // `effective-flow` as a Dalo source. Its wiring stays intact so re-enabling is a one-line
+  // change, but no created-release gate may quietly put the failing job back on the release
+  // path without this contract being updated too.
+  assert.doesNotMatch(release, /if: \$\{\{[^}]*needs\.release\.outputs\.release_created[^}]*\}\}/);
   assert.match(release, /--delivery-commit "\$\{\{ needs\.release\.outputs\.delivery_commit \}\}"/);
   assert.match(release, /--release-tag "\$\{\{ needs\.release\.outputs\.tag_name \}\}"/);
 });
