@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.53.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.52.2...effective-flow-v1.53.0) (2026-07-27)
+
+
+### Features
+
+* let the project setup name an external tracker target ([#260](https://github.com/sebastian-software/effective-flow/issues/260)) ([b8322cf](https://github.com/sebastian-software/effective-flow/commit/b8322cfa7ce82f6f15d71a1b30b8ac7074b206d5))
+* propose a session title once a run knows its subject ([#258](https://github.com/sebastian-software/effective-flow/issues/258)) ([e3bfed4](https://github.com/sebastian-software/effective-flow/commit/e3bfed43772ac8d2013c6a430b91961b3dcdc61a))
+* withhold security findings from the tracker until confirmed ([#255](https://github.com/sebastian-software/effective-flow/issues/255)) ([6591a11](https://github.com/sebastian-software/effective-flow/commit/6591a11c646f98a2b6204a8c6fb8765c5d40625a))
+
 ## [1.52.2](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.52.1...effective-flow-v1.52.2) (2026-07-23)
 
 
