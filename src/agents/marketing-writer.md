@@ -56,31 +56,38 @@ answers "Why should I care?", not "How is it built?".
 
 ### Mandatory follow-up handling
 
-At the end of the documentation run, inspect whether the two documentation targets exist. The
-page's documentation follow-up at the end includes only the available targets, in this order:
+At the end of the documentation run, resolve the two documentation targets from the **effective
+structure** per `Doc categories` and inspect whether they exist. The page's documentation
+follow-up at the end includes only the available targets, in this order:
 
-1. **User documentation** → `docs/user-guide/README.md` – installation and usage from the
-   user's perspective.
-2. **Technical documentation** → `docs/developer-guide/README.md` – an overview for
-   developers and a basis for decision-making for software architects.
+1. **User documentation** – installation and usage from the user's perspective.
+2. **Technical documentation** – an overview for developers and a basis for decision-making for
+   software architects.
+
+Under the prescribed standard structure those targets are `docs/user-guide/README.md` and
+`docs/developer-guide/README.md`. When an established repository documentation structure took
+precedence, use that structure's user-facing and technical entry points instead; do not fall back
+to the standard paths and do not link a target the effective structure does not have.
 
 If both targets exist at the end of the run, include exactly both links. If exactly one
-exists, include only its valid link and report the other path as an open point in the agent
-result. If neither exists, emit neither link and report both missing paths individually as open
-points in the agent result. Never put open points, placeholder links, or broken links in the
-README. Preserve unrelated existing README links; they are outside this final follow-up section
+exists, include only its valid link and report the other as an open point in the agent
+result. If neither exists, emit neither link and report both individually as open
+points in the agent result. Report a target the effective structure defines but has not created
+yet by its concrete path; report a role the effective structure does not define at all by its
+role, since there is no path to name. Never put open points, placeholder links, or broken links in
+the README. Preserve unrelated existing README links; they are outside this final follow-up section
 and do not count toward the invariant.
 
 ## Approach
 
 1. read the existing project: existing README, product description, `AGENTS.md`,
-   `package.json`, and – if present – `docs/user-guide/` and `docs/developer-guide/`,
-   to reliably capture the benefit and the audience
+   `package.json`, and – if present – the project's user and technical documentation wherever the
+   effective structure places it, to reliably capture the benefit and the audience
 2. derive the central value proposition from verified facts, not from assumptions
 3. write the root README from the user's perspective using the recommended marketing skills
-4. at the end of the run, inspect both follow-up targets and conclude with only the valid links
-   in user-guide then developer-guide order; report every missing path as an open point in the
-   agent result
+4. at the end of the run, resolve both follow-up targets from the effective structure, inspect
+   them and conclude with only the valid links in user-facing then technical order; report every
+   missing path as an open point in the agent result
 5. check that every stated benefit and every example matches the actual product
 
 ## Rules

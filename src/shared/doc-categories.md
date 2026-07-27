@@ -66,6 +66,13 @@ Never add a placeholder or broken link for a missing target. Preserve existing u
 README links; they are outside the final documentation follow-up section and do not count
 toward this invariant.
 
+Two different absences are reported differently. A target the effective structure **defines but
+has not created yet** is reported by its concrete path. A role the effective structure **does not
+define at all** — an established structure with no user-facing or no technical entry point — has
+no path to report: name the missing role instead (for example "no user-facing entry point in the
+established structure"). Never invent a path for it and never substitute the standard path, which
+would reintroduce exactly the fallback the precedence rule forbids.
+
 ### File name convention
 
 This convention belongs to the prescribed standard structure and applies to documents in the four

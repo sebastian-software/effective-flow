@@ -1378,6 +1378,15 @@ test('central-skill adapters retain Effective Flow ownership without duplicate h
   assert.match(docCategories, /takes precedence over the prescribed standard structure/);
   assert.match(docCategories, /local test for what counts as/);
 
+  // The marketing writer restates the root README's follow-up targets, so it must
+  // resolve them from the effective structure rather than the standard paths.
+  const marketingWriter = readSource('agents/marketing-writer.md');
+  assert.match(
+    marketingWriter,
+    /resolve the two documentation targets from the \*\*effective\s+structure\*\*/,
+  );
+  assert.match(marketingWriter, /do not fall back\s+to the standard paths/);
+
   // The documentation sync gate routes documentation work and is therefore an
   // adapter surface where a second craft handbook could grow unnoticed.
   const syncContract = readSource('shared/documentation-sync-contract.md').replace(/\s+/g, ' ');
