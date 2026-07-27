@@ -61,6 +61,7 @@ If the project has an `AGENTS.md`, read it before analysis and implementation an
 
 - `tech-docs`
 - `codebase-improvement`
+- `pr-review`
 
 ```include
 skill-discovery
@@ -277,7 +278,7 @@ options:
    - add `## Review-Befunde` or `## Review findings`, matching the plan language, and use
      corresponding prose for the no-findings case
 3. Delete the wisdom file.
-4. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
+4. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Declare to that handback that this workflow supplies **no** complete finding set — it has no review phase at all — so an automatic PR review reviews the pull request itself. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
 5. Summarize:
    - changed documentation areas
    - checked sources

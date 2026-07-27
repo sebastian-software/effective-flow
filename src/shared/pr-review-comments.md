@@ -1,17 +1,22 @@
 ## PR review comment integration
 
-This shared building block connects `{{SKILL:iterate}}` with the review comments of an
+This shared building block connects Effective Flow workflows with the review comments of an
 existing pull request (GitHub via `gh`, Forgejo via `tea`). It encapsulates the
 **PR-specific plumbing** that `issue-tracker.md` deliberately does not contain: PR resolution,
-reading review threads, replying to a thread, resolving a thread, and posting a PR summary
-comment.
+reading review threads, replying to a thread, resolving a thread, submitting a review with inline
+comments, and posting a PR summary comment.
+
+It serves both directions. **Inbound**, `{{SKILL:iterate}}` reads and answers what others wrote.
+**Outbound**, "PR review publication" writes Effective Flow's own findings onto the pull request;
+that fragment owns which findings are published and which gates run first, while this one provides
+the operations.
 
 Boundary to `issue-tracker.md`: that building block is tailored to **issues** and the tracker
-target. PR review threads are a different API object. `{{SKILL:iterate}}` is **inherently
-forge-bound** in PR mode: it never evaluates the tracker target and merely needs a Git repository,
+target. PR review threads are a different API object. A workflow working on a pull request is
+**inherently forge-bound**: it never evaluates the tracker target and merely needs a Git repository,
 an `origin` remote, and an authenticated CLI. That makes it tracker-independent in the same way
 `{{SKILL:apply-issues}}`/`{{SKILL:plan-issue}}` are tracker-**bound** — those two follow the
-resolved target, while `iterate` always stays on the forge. The **host detection, CLI probing, and
+resolved target, while PR work always stays on the forge. The **host detection, CLI probing, and
 availability check** are taken from the "Remote helper contract" in `issue-tracker.md` (not
 reinvented); this building block only adds the PR operations.
 
@@ -21,15 +26,16 @@ to another tool.
 
 ### No AI attribution
 
-Do not add AI attribution to thread replies or the summary comment: no „Generated
+Do not add AI attribution to thread replies, review comments, or the summary comment: no „Generated
 with Claude Code/Codex" footers, no agent session links (e.g. `https://claude.ai/code/…`),
 and no `Co-Authored-By` trailers – not even when the harness appends them as a default.
 Reply texts in natural language according to the language rules.
 
 Resolve `language.forge` once for newly authored remote prose. A reply preserves the clearly
 recognizable language of the existing thread; otherwise it uses `language.forge`. The per-run
-summary comment uses `language.forge`. HTML markers, thread IDs, states, and helper payload fields
-remain stable and are never translated.
+summary comment and every outbound review comment and review body use `language.forge`. HTML
+markers, thread IDs, states, finding IDs, and helper payload fields remain stable and are never
+translated.
 
 ### Remote helper
 
@@ -53,8 +59,8 @@ head branch, base branch, URL, and state:
 Use helper reference parsing followed by the normalized PR read/list operations. For current-
 branch resolution, list open PRs for the exact head branch and require exactly one match.
 
-If the PR is already `merged`/`closed`: report and push no commits (see error cases in
-`{{SKILL:iterate}}`).
+If the PR is already `merged`/`closed`: report it and perform no write – no commits and no
+comments (for the inbound direction see the error cases in `{{SKILL:iterate}}`).
 
 ### Read review threads (always fresh)
 
@@ -78,6 +84,26 @@ Use the helper's review-thread reply operation. Every reply carries the marker
 Use the helper's review-thread resolve operation. On `UNSUPPORTED_CAPABILITY`, keep the reply,
 leave the thread unresolved, and note that manual resolution is needed; do not improvise.
 
+### Submit a review with inline comments
+
+The outbound direction. Use the helper's review-create operation (`review-create`, capability key
+`reviewCreate`): **one** review submission per run, carrying a review body plus an optional array of
+inline comments anchored to `file:line`. The body is mandatory, the comment array is not, so a
+body-only submission is valid. Never approve and never request changes – the submission carries
+comments only.
+
+The helper stamps the marker `<!-- effective-flow-pr-review -->` onto the review body and every
+comment body from its own marker table, idempotently. Never write that marker by hand: idempotency
+and the `{{SKILL:iterate}}` separation are exact string matches, so a hand-written variant silently
+defeats both.
+
+On `UNSUPPORTED_CAPABILITY` – Forgejo does not support review submission, just as it does not
+support thread resolution – fall back to exactly one structured PR comment carrying the `file:line`
+references in its text, and report the reduced fidelity; do not improvise a provider request. Build
+that fallback comment with the helper's `pr-review-comment-build` operation, **not** with
+`pr-comment-build`: the latter stamps `<!-- effective-flow-iterate -->`, the marker
+`{{SKILL:iterate}}` reads as its own already-processed work.
+
 ### Post summary comment
 
 Use the helper's PR-comment payload builder and PR-comment mutation. Per run, **exactly one**
@@ -85,16 +111,22 @@ summary comment with the marker `<!-- effective-flow-iterate -->` is
 posted: which points were implemented, which skipped, and which pure questions are listed as
 open/deferred.
 
-### Idempotency via the Effective Flow marker
+### Idempotency via the Effective Flow markers
 
-Replies and the summary comment carry the HTML marker `<!-- effective-flow-iterate -->`. Read
-the existing PR and review comments **fresh before every write**: a thread that is
-already `resolved` or carries an `<!-- effective-flow-iterate -->` reply is considered done and
-is not processed again. **Backcompat (one generation):** a still-present old marker
-`<!-- firmo-iterate -->` from an earlier run is recognized as equivalent on read (no
-double processing of in-flight threads); newly written is exclusively
-`<!-- effective-flow-iterate -->`. This keeps a second `{{SKILL:iterate}}` run on the same PR
-clean.
+Two distinct HTML markers keep the two directions apart:
+
+- `<!-- effective-flow-iterate -->` on thread replies and the `{{SKILL:iterate}}` summary comment.
+- `<!-- effective-flow-pr-review -->` on outbound inline review comments and the review body.
+
+Read the existing PR and review comments **fresh before every write**, in both directions: a
+thread that is already `resolved` or carries an `<!-- effective-flow-iterate -->` reply is
+considered done and is not processed again. A thread carrying `<!-- effective-flow-pr-review -->` is
+Effective Flow's own output – `{{SKILL:iterate}}` skips it unless the user names it explicitly, and
+the outbound direction uses it for repeat suppression. **Backcompat (one generation):** a
+still-present old marker `<!-- firmo-iterate -->` from an earlier run is recognized as equivalent to
+`<!-- effective-flow-iterate -->` on read (no double processing of in-flight threads); newly written
+is exclusively `<!-- effective-flow-iterate -->`. This keeps a second `{{SKILL:iterate}}` run on the
+same PR clean.
 
 ### No history rewriting
 
