@@ -109,6 +109,26 @@ release PR, changelog entries, tags, GitHub releases, and release asset upload.
 The build stamps `<manifest-version> (<git-short-hash>)` into all three routers and a
 **version-drift guard** fails the build if native Claude, native Codex, and portable outputs disagree.
 
+## Workflow actions are pinned to commits
+
+Every `uses:` in `.github/workflows/` references a 40-character commit SHA with a trailing
+`# <version>` comment — `actions/checkout@3d3c42e… # v7`, never `actions/checkout@v7`. A tag is
+movable, so an unpinned action lets upstream change what runs. That matters for every step here,
+not only the ones that take a credential: the release job holds the delivery and release App
+private keys, and any action in that job can reach them.
+
+Resolve the SHA from the tag ref rather than copying it, and dereference annotated tags to their
+commit — `pnpm/action-setup` and `googleapis/release-please-action` publish annotated tags, and
+pinning the tag object yields a reference that does not resolve at run time. Renovate maintains
+the pins and rewrites digest and comment together; it writes the upstream tag's own precision
+(`# v9`, not `# v9.0.0`), so do not tighten anything that reads the comment.
+
+A test in `test/workflow-contracts.test.mjs` scans the workflow directory and enforces this, so a
+newly added workflow cannot slip past. It is the **only** assertion that matches an action's ref:
+every other one matches the action without it, which is what keeps a Renovate digest bump from
+touching any test — and from becoming an occasion to weaken a neighbouring guard while making CI
+green.
+
 ## Language rules
 
 Target projects configure language in the project-setup ADR (see
