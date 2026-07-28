@@ -12,13 +12,27 @@ The single source of truth for the currently published version is
 fix commits. Conventional-commit messages drive the next release PR, changelog entries, tags,
 GitHub releases, and the upload of the release archive.
 
-release-please authenticates with the organization secret `RELEASE_PLEASE_TOKEN` rather than the
-default `GITHUB_TOKEN`. That is deliberate and must not be removed as redundant: the action
-defaults its `token` input to `${{ github.token }}`, and GitHub restricts what events raised by
-the default token may start, as a guard against automation loops. With the default, the release
-pull request is authored by `github-actions[bot]` and its CI run parks in `action_required`
-forever, so the release commit is never validated before it is merged (issue #279). A contract
-assertion in `test/workflow-contracts.test.mjs` keeps the explicit token in place.
+release-please authenticates with `RELEASE_PLEASE_TOKEN` rather than the default `GITHUB_TOKEN`.
+That is deliberate and must not be removed as redundant: the action defaults its `token` input to
+`${{ github.token }}`, and GitHub restricts what events raised by the default token may start, as
+a guard against automation loops. With the default, the release pull request is authored by
+`github-actions[bot]` and its CI run parks in `action_required` forever, so the release commit is
+never validated before it is merged (issue #279). A contract assertion in
+`test/workflow-contracts.test.mjs` keeps the explicit token in place.
+
+**Which identity that is.** The organization provides a secret of this name, but this repository
+defines its own, and a repository secret of the same name takes precedence. The repository one
+holds a personal access token of the `jamesfastnerbot` account, so release pull requests and the
+release commits they carry are attributed to "James Fastner Bot" rather than to whichever human
+the organization token belongs to. Nothing in the workflow makes that visible — `secrets.` reads
+the same either way — so check `gh secret list --repo sebastian-software/effective-flow` before
+concluding which identity is in play, and keep this paragraph in step when it changes.
+
+The token is person-bound and can expire. If it does, the `Release Please` step fails and no
+release pull request appears; the run goes red rather than failing silently. The longer-term
+alternative is the `ssoft-generic-release-bot` App (`contents: write`, `pull_requests: write`),
+which would mint a short-lived installation token the way the delivery and catalog jobs already
+do, and would need its Client ID and private key provisioned here first.
 
 The release workflow (`.github/workflows/release.yml`) runs on every push to the source branch
 `develop`:
