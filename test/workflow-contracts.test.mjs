@@ -1230,3 +1230,41 @@ test('a failed delivery is surfaced as an assigned issue that closes itself', ()
     /const TRUSTED_AUTOMATION = \[\n\s+join\('\.github', 'workflows', 'close-develop-issues\.yml'\),\n\s+join\('\.github', 'scripts', 'close-develop-issues\.mjs'\),\n\];/,
   );
 });
+
+test('apply-issues carries the worktree lifecycle contract instead of referring to it', () => {
+  const applyIssues = source('src/tools/apply-issues.md');
+
+  // The defect this pins: Phase 4 pointed at apply-review's copy by analogy, so an agent
+  // following apply-issues alone never learned to write a record — and cleanup, whose only
+  // ownership proof is that record, could then never remove the worktree it had created.
+  assert.match(applyIssues, /```include\nworktree-lifecycle\n```/);
+  assert.match(applyIssues, /a reference by analogy is not a contract/);
+
+  // Both ends of the lifecycle have to be instructed, not just the format.
+  assert.match(
+    flat(applyIssues),
+    /Write the record immediately after the `effective-flow-created` receipt is verified/,
+  );
+  assert.match(applyIssues, /transition its lifecycle record from `active` to `cleanup-ready`/);
+  // Every exit from the phase ends in a status, so no record is stranded at `active`.
+  // Post-delegation failures count: a rejected push or a failed PR creation must also land.
+  // Matched on flattened prose so a reflow by the formatter cannot break these.
+  const flatIssues = flat(applyIssues);
+  assert.match(
+    flatIssues,
+    /a failed delegation, a rejected push and a failed pull-request creation all set `failed`/,
+  );
+  assert.match(flatIssues, /A record must never be left at `active` once the issue is done with/);
+  assert.match(
+    flatIssues,
+    /transition its lifecycle record to `failed` with the exact reason, whether the failure happened during delegation or afterwards during push or pull-request creation/,
+  );
+
+  // The fragment must actually resolve, so the rendered tool carries the record path.
+  const rendered = resolveEagerIncludes(applyIssues, {
+    context: 'tools/apply-issues.md',
+    readFragment: (name) => source(`src/shared/${name}.md`),
+  });
+  assert.match(rendered, /\.effective-flow\/worktree-runs\/<RECORD_ID>\.json/);
+  assertNoUnresolvedEagerIncludes(rendered, 'tools/apply-issues.md');
+});
