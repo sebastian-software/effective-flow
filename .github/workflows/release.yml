@@ -22,6 +22,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # The delivery push must authenticate as the delivery GitHub App, which is
+          # the `main` ruleset's sole bypass actor. A persisted GITHUB_TOKEN lands in
+          # the repository git config as `http.https://github.com/.extraheader`, which
+          # outranks the credentials in the push URL and is inherited by `git worktree`
+          # — the push would run as github-actions[bot] and be rejected (issue #274).
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v6
 
@@ -75,9 +81,34 @@ jobs:
           gh release download "${{ steps.release.outputs.tag_name }}" --pattern "$asset" --dir "$verify_dir"
           node scripts/distribution-smoke.mjs archive "$verify_dir/$asset"
 
+      - name: Resolve delivery version
+        id: delivery-version
+        # Delivery runs on a created release and on a manual re-delivery. A release
+        # supplies its own tag; a dispatch derives it from the manifest and must prove
+        # that HEAD is exactly that tag's commit, so a re-delivery can never publish
+        # unreleased `develop` work to consumers (issue #274).
+        if: ${{ steps.release.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch' }}
+        run: |
+          if [ "${{ steps.release.outputs.release_created }}" = "true" ]; then
+            tag="${{ steps.release.outputs.tag_name }}"
+          else
+            version="$(node -p "require('./.release-please-manifest.json')['.']")"
+            tag="effective-flow-v${version}"
+            if ! tagged="$(git rev-parse --verify --quiet "refs/tags/${tag}^{commit}")"; then
+              echo "::error::Tag ${tag} not found. Re-delivery cannot verify that HEAD is a released commit."
+              exit 1
+            fi
+            head="$(git rev-parse HEAD)"
+            if [ "$tagged" != "$head" ]; then
+              echo "::error::HEAD ${head} is not the released commit ${tagged} of ${tag}. Re-delivery only runs on the released commit; cut a release instead."
+              exit 1
+            fi
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
       - name: Create delivery token
         id: delivery-token
-        if: ${{ steps.release.outputs.release_created == 'true' }}
+        if: ${{ steps.release.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch' }}
         uses: actions/create-github-app-token@v3
         with:
           client-id: ${{ vars.DELIVERY_APP_CLIENT_ID }}
@@ -109,12 +140,18 @@ jobs:
         # `renovate.json`, whose `baseBranchPatterns: ["develop"]` makes Renovate scan
         # manifests and open update PRs against the source branch `develop`, not the
         # config-less delivery `main`.
-        if: ${{ steps.release.outputs.release_created == 'true' }}
+        if: ${{ steps.release.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch' }}
         env:
           DELIVERY_TOKEN: ${{ steps.delivery-token.outputs.token }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Belt and braces with `persist-credentials: false` above: any surviving
+          # credential header outranks the delivery App token in the push URL and is
+          # inherited by the worktree below. `|| true` because the key is absent in the
+          # normal case and `git config --unset-all` exits 5 for a missing key under
+          # `bash -e`; a genuine failure still surfaces as a rejected push.
+          git config --unset-all http.https://github.com/.extraheader || true
           git fetch origin main
           work="$(mktemp -d)"
           git worktree add --force "$work" origin/main
@@ -122,9 +159,9 @@ jobs:
           node scripts/distribution-smoke.mjs delivery "$work"
           git -C "$work" add -A
           if git -C "$work" diff --cached --quiet; then
-            echo "No delivery changes for ${{ steps.release.outputs.tag_name }}"
+            echo "No delivery changes for ${{ steps.delivery-version.outputs.tag }}"
           else
-            git -C "$work" commit -m "chore(delivery): ${{ steps.release.outputs.tag_name }}"
+            git -C "$work" commit -m "chore(delivery): ${{ steps.delivery-version.outputs.tag }}"
             # Push with the dedicated delivery GitHub App token so it is the sole bypass
             # identity once the `main` ruleset restricts direct pushes (issue #143).
             git -C "$work" push "https://x-access-token:${DELIVERY_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main
@@ -133,7 +170,7 @@ jobs:
           git worktree remove --force "$work"
 
       - name: Verify delivered commit
-        if: ${{ steps.release.outputs.release_created == 'true' }}
+        if: ${{ steps.release.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch' }}
         run: |
           git fetch origin main
           test "$(git rev-parse origin/main)" = "${{ steps.deliver.outputs.commit }}"

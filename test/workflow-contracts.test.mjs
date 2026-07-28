@@ -36,6 +36,17 @@ function section(text, heading, stop = '\n### ') {
   return end === -1 ? rest : rest.slice(0, end);
 }
 
+// Slices one workflow step so a condition assertion cannot be satisfied by a
+// neighboring step that happens to carry the wanted `if:`.
+function workflowStep(text, name) {
+  const marker = `      - name: ${name}`;
+  const start = text.indexOf(marker);
+  assert.notEqual(start, -1, `missing workflow step: ${name}`);
+  const rest = text.slice(start + marker.length);
+  const end = rest.search(/\n(?: {6}- | {2}\S)/);
+  return end === -1 ? rest : rest.slice(0, end);
+}
+
 // First column of every Markdown table row in the given text, compared
 // literally so no cell value is reinterpreted as a regular expression.
 function firstColumnCells(text) {
@@ -400,6 +411,72 @@ test('release delegates the licensed develop-to-main payload to central staging'
   // `app-id` is deprecated in actions/create-github-app-token; guard the whole workflow so the
   // deprecated input cannot creep back in (issue #254).
   assert.doesNotMatch(release, /^\s*app-id:/m);
+});
+
+test('the delivery push keeps the app identity and re-delivery stays on a released commit', () => {
+  const release = source('.github/workflows/release.yml');
+
+  // A persisted GITHUB_TOKEN lands in the git config as an extraheader that outranks the
+  // delivery App token in the push URL and is inherited by `git worktree`, so the push would
+  // run as github-actions[bot] and the `main` ruleset would reject it (issue #274).
+  assert.equal(
+    release.match(/^\s*-?\s*uses: actions\/checkout@v7$/gm)?.length,
+    release.match(/^\s*persist-credentials: false$/gm)?.length,
+  );
+  // Second, independent mechanism, because the fix is only provable on a real release: any
+  // surviving header is cleared before the push. The unset must tolerate a missing key —
+  // `git config --unset-all` exits 5 for one and the step runs under `bash -e`.
+  assert.match(
+    release,
+    /git config --unset-all http\.https:\/\/github\.com\/\.extraheader \|\| true/,
+  );
+
+  // Delivery also runs on a manual re-delivery, while the release-asset steps stay
+  // release-only so a dispatch never re-uploads an archive.
+  const dispatchGate =
+    "if: ${{ steps.release.outputs.release_created == 'true' || github.event_name == 'workflow_dispatch' }}";
+  const releaseOnlyGate = "if: ${{ steps.release.outputs.release_created == 'true' }}";
+  for (const name of [
+    'Resolve delivery version',
+    'Create delivery token',
+    'Deliver portable skill, consumer docs, and trusted automation to main',
+    'Verify delivered commit',
+  ]) {
+    assert.ok(
+      workflowStep(release, name).includes(dispatchGate),
+      `delivery step must also run on workflow_dispatch: ${name}`,
+    );
+  }
+  for (const name of [
+    'Package distribution',
+    'Upload release archive',
+    'Verify uploaded release archive',
+  ]) {
+    const body = workflowStep(release, name);
+    assert.ok(body.includes(releaseOnlyGate), `release-asset step must stay gated: ${name}`);
+    assert.doesNotMatch(
+      body,
+      /workflow_dispatch/,
+      `release-asset step must not run on a dispatch: ${name}`,
+    );
+  }
+
+  // A dispatch must prove HEAD is the released commit, so re-delivery can never publish
+  // unreleased develop work to consumers.
+  ordered(
+    workflowStep(release, 'Resolve delivery version'),
+    "require('./.release-please-manifest.json')",
+    'tag="effective-flow-v${version}"',
+    'git rev-parse --verify --quiet "refs/tags/${tag}^{commit}"',
+    'not found',
+    'head="$(git rev-parse HEAD)"',
+    'if [ "$tagged" != "$head" ]; then',
+    'is not the released commit',
+    'echo "tag=${tag}" >> "$GITHUB_OUTPUT"',
+  );
+  // The delivery commit message must resolve on both paths; `tag_name` is empty on a dispatch.
+  assert.match(release, /chore\(delivery\): \$\{\{ steps\.delivery-version\.outputs\.tag \}\}/);
+  assert.doesNotMatch(release, /chore\(delivery\): \$\{\{ steps\.release\.outputs\.tag_name \}\}/);
 });
 
 test('delivery stages the canonical Renovate config from the repository root', () => {

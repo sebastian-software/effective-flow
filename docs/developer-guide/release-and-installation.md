@@ -22,13 +22,13 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
 4. The isolated distribution smoke verifies native/portable layouts and installers.
 5. On an actually created release, all three targets in `dist/` are packed as
    `effective-flow-<tag>.tar.gz`, uploaded, downloaded again, and verified.
-6. Also only on a created release, `scripts/stage-delivery.mjs` pushes the portable
-   `effective-flow/` skill, `README.md`, `docs/user-guide/`, and the two trusted issue-closing
-   automation files as a fresh commit to `main` (no force push). The push authenticates with a
-   dedicated delivery GitHub App installation token (the `DELIVERY_APP_CLIENT_ID` repository
-   variable plus the `DELIVERY_APP_PRIVATE_KEY` secret) rather than the default `GITHUB_TOKEN`, so
-   the delivery app is the identity that updates `main`. The workflow fetches that exact commit and
-   verifies its layout.
+6. On a created release — or on a manual re-delivery, see below — `scripts/stage-delivery.mjs`
+   pushes the portable `effective-flow/` skill, `README.md`, `docs/user-guide/`, and the two
+   trusted issue-closing automation files as a fresh commit to `main` (no force push). The push
+   authenticates with a dedicated delivery GitHub App installation token (the
+   `DELIVERY_APP_CLIENT_ID` repository variable plus the `DELIVERY_APP_PRIVATE_KEY` secret) rather
+   than the default `GITHUB_TOKEN`, so the delivery app is the identity that updates `main`. The
+   workflow fetches that exact commit and verifies its layout.
 7. After the delivered commit is verified, a separate catalog job updates the `effective-flow`
    entry in the team catalog repository through Dalo. **This job is currently disabled** — see
    below. While it is enabled, a failure in this downstream job marks the release workflow as
@@ -97,6 +97,33 @@ short-lived token minted from the `DELIVERY_APP_CLIENT_ID` variable and the
 and deletions are blocked, and direct pushes by any other actor —
 including human maintainers — are rejected. Consumer commit pins therefore stay valid, and the
 "only CI delivers to `main`" rule is enforced rather than merely conventional.
+
+Because the App is the sole bypass actor, the delivery push must actually _run_ as that App. The
+release job's checkout therefore sets `persist-credentials: false`, and the delivery step clears
+`http.https://github.com/.extraheader` before pushing. Without either, `actions/checkout` leaves
+the default `GITHUB_TOKEN` in the repository git config as an authorization header that outranks
+the credentials in the push URL and is inherited by `git worktree` — the push then runs as
+`github-actions[bot]`, which is not a bypass actor, and the ruleset rejects it. That is exactly how
+`v1.53.0` and `v1.54.0` failed to reach `main` (issue #274). Keep both mechanisms: the delivery
+identity is only observable on a real release, so there is no pre-merge check that would catch a
+regression here. Should the repository ever become private, clear the header rather than restoring
+credential persistence — `git fetch` would then need credentials, but persisting them reintroduces
+the defect.
+
+### Manual re-delivery
+
+A failed delivery would otherwise wait for the next release. The `Resolve delivery version`,
+`Create delivery token`, delivery, and verification steps therefore also run on a
+`workflow_dispatch` of the release workflow, which GitHub restricts to users with write access.
+
+A dispatch delivers the build of the current `develop` checkout, so it is guarded: the run derives
+the tag from `.release-please-manifest.json` and fails unless `HEAD` is exactly that tag's commit.
+Re-delivery is consequently possible only while `develop` still sits on the released commit, which
+is precisely the situation right after a failed delivery. Once `develop` has moved on, the guard
+refuses the run and the next release delivers the newer payload instead — do not weaken the guard
+to force a catch-up, because it is the only thing preventing unreleased work from reaching
+consumers. The release-asset steps stay gated on a created release, so a dispatch never re-uploads
+an archive.
 
 ### Trusted default-branch automation
 
