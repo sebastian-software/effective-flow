@@ -557,6 +557,80 @@ test('Forgejo command plans use supported tea forms and filter PR heads after re
   });
 });
 
+test('tea list results normalize labels flattened into a string', async () => {
+  const listEnvelope = async (operation, items) =>
+    executeOperation(
+      operation,
+      { repository: forgejoRepository },
+      {
+        runner: fakeRunner([
+          { status: 0, stdout: JSON.stringify(items), stderr: '' },
+          { status: 0, stdout: '[]', stderr: '' },
+        ]),
+        skipProbe: true,
+      },
+    );
+
+  // The reported crash: tea 0.14.x renders an empty label set as "" and `?? []` does not cover it.
+  const empty = await listEnvelope('pr-list', [
+    { index: 2, title: 'two', state: 'open', labels: '' },
+  ]);
+  assert.equal(empty.ok, true);
+  assert.deepEqual(empty.data.result[0].labels, []);
+
+  // Real labels are flattened into the same string, so they must be split, not discarded.
+  const flattened = await listEnvelope('pr-list', [
+    { index: 3, title: 'three', state: 'open', labels: 'one, two' },
+  ]);
+  assert.deepEqual(flattened.data.result[0].labels, ['one', 'two']);
+
+  const unpadded = await listEnvelope('pr-list', [
+    { index: 4, title: 'four', state: 'open', labels: 'one,two' },
+  ]);
+  assert.deepEqual(unpadded.data.result[0].labels, ['one', 'two']);
+
+  const separatorsOnly = await listEnvelope('pr-list', [
+    { index: 5, title: 'five', state: 'open', labels: ', ,' },
+  ]);
+  assert.deepEqual(separatorsOnly.data.result[0].labels, []);
+
+  // Existing array shapes keep working: the single-item renderer and gh both return arrays.
+  const arrays = await listEnvelope('pr-list', [
+    { index: 6, title: 'six', state: 'open', labels: [{ name: 'x' }] },
+    { index: 7, title: 'seven', state: 'open', labels: ['x'] },
+    { index: 8, title: 'eight', state: 'open' },
+  ]);
+  assert.deepEqual(
+    arrays.data.result.map((item) => item.labels),
+    [['x'], ['x'], []],
+  );
+
+  // issue-list shares the normalizer, so the same crash applied there.
+  const issues = await listEnvelope('issue-list', [
+    { index: 9, title: 'nine', state: 'open', labels: '' },
+  ]);
+  assert.equal(issues.ok, true);
+  assert.deepEqual(issues.data.result[0].labels, []);
+
+  // An item without head/base must survive normalization so callers can still hydrate it.
+  const thin = await listEnvelope('pr-list', [
+    { index: 10, title: 'ten', state: 'open', labels: '' },
+  ]);
+  assert.equal(thin.data.result[0].head, undefined);
+  assert.equal(thin.data.result[0].base, undefined);
+});
+
+test('tea pr-list requests the same fields as pr-read', () => {
+  const list = buildCommandPlan('pr-list', {}, forgejoRepository);
+  const read = buildCommandPlan('pr-read', { pullRequest: 2 }, forgejoRepository);
+  const fields = 'index,title,state,body,labels,url,head,base';
+  assert.equal(list.args.at(list.args.indexOf('--fields') + 1), fields);
+  assert.equal(read.args.at(read.args.indexOf('--fields') + 1), fields);
+
+  const github = buildCommandPlan('pr-list', {}, githubRepository);
+  assert.equal(github.args.includes('--fields'), false);
+});
+
 test('sf label migration executes add before remove and reports partial completion', async () => {
   const input = {
     repository: githubRepository,
