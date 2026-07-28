@@ -157,6 +157,23 @@ Unknown valid rows are retained across setup maintenance. The user guide's
 [configuration reference](../user-guide/configuration.md) lists all current keys, values, and
 defaults.
 
+### Bot registry encoding (`prReview.bots`)
+
+`prReview.bots` is the encoding's concrete example of a comma-separated list paired with one
+dotted key per list member: the list row holds the reviewer logins, and each login gets its own
+`prReview.bots.<login>.trigger` row for its literal trigger-comment text.
+
+```md
+| prReview.bots                            | greptile-apps[bot] |
+| prReview.bots.greptile-apps[bot].trigger | @greptileai        |
+```
+
+A login containing brackets, such as `greptile-apps[bot]`, is a valid middle segment of that
+dotted key because the encoding splits on `.` only – brackets carry no structural meaning to the
+parser. Only rows whose value differs from the source tool's default belong in a project's own
+ADR; see [`docs/adr/effective-flow-project-setup.md`](../adr/effective-flow-project-setup.md) for
+this repository's own two rows.
+
 ## Read-time backward compatibility
 
 The complete German envelope—`# Effective-Flow-Projektsetup`, `Aktiv`/`Abgelöst`,

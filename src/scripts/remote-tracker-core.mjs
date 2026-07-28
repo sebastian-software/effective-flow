@@ -29,6 +29,7 @@ const MUTATIONS = new Set([
   'pr-create',
   'pr-update-body',
   'pr-comment',
+  'pr-merge',
   'review-create',
   'review-thread-reply',
   'review-thread-resolve',
@@ -52,9 +53,12 @@ const REMOTE_OPERATIONS = new Set([
   'pr-read',
   'pr-comments-read',
   'pr-list',
+  'pr-status-read',
+  'pr-checks-wait',
   'pr-create',
   'pr-update-body',
   'pr-comment',
+  'pr-merge',
   'review-create',
   'review-threads-read',
   'review-thread-reply',
@@ -77,9 +81,12 @@ const CAPABILITY_BY_OPERATION = Object.freeze({
   'pr-read': 'pullRequestRead',
   'pr-comments-read': 'prCommentsRead',
   'pr-list': 'pullRequestList',
+  'pr-status-read': 'pullRequestStatus',
+  'pr-checks-wait': 'pullRequestChecksWait',
   'pr-create': 'pullRequestCreate',
   'pr-update-body': 'pullRequestUpdate',
   'pr-comment': 'prComment',
+  'pr-merge': 'pullRequestMerge',
   'review-create': 'reviewCreate',
   'review-threads-read': 'reviewThreads',
   'review-thread-reply': 'reviewThreadReplies',
@@ -468,15 +475,15 @@ const REVIEW_EVENTS = Object.freeze(['COMMENT']);
 const REVIEW_SIDES = Object.freeze(['LEFT', 'RIGHT']);
 
 // Deliberately not `requireNumber`: that helper guards issue and PR references and therefore
-// reports a bad value as INVALID_REFERENCE, while a comment line is payload data whose rejection
-// must stay INVALID_PAYLOAD like every other field of this builder.
-function reviewCommentLine(value, field) {
-  const line =
+// reports a bad value as INVALID_REFERENCE, while a comment line, a wait bound, or a poll interval
+// is payload data whose rejection must stay INVALID_PAYLOAD like every other field of a builder.
+function payloadInteger(value, field) {
+  const number =
     typeof value === 'string' && /^\d+$/.test(value.trim()) ? Number(value.trim()) : value;
-  if (!Number.isSafeInteger(line) || line <= 0) {
+  if (!Number.isSafeInteger(number) || number <= 0) {
     fail('INVALID_PAYLOAD', `${field} must be a positive integer`, { field, value });
   }
-  return line;
+  return number;
 }
 
 function reviewCommentSide(value, field) {
@@ -534,7 +541,7 @@ export function buildReviewPayload(input) {
       requireObject(comment, field);
       return {
         path: requireString(comment.path, `${field}.path`),
-        line: reviewCommentLine(comment.line, `${field}.line`),
+        line: payloadInteger(comment.line, `${field}.line`),
         side: reviewCommentSide(comment.side, `${field}.side`),
         body: stampMarker(marker, publishableText(comment.body, `${field}.body`)),
       };
@@ -821,6 +828,114 @@ function ghHostArgs(repository) {
   return repository.host === 'github.com' ? [] : ['--hostname', repository.host];
 }
 
+// `gh api` selects the host with `--hostname`, but the porcelain commands the pull-request gate
+// needs (`pr view`, `pr checks`, `pr merge`) take the repository as `[HOST/]OWNER/REPO` instead.
+// They are used deliberately: watching checks and merging with a head-commit guard have no `gh api`
+// equivalent, and a merge state read through the same porcelain stays consistent with them.
+function ghRepoArgs(repository) {
+  const slug = `${repository.owner}/${repository.repository}`;
+  return ['--repo', repository.host === 'github.com' ? slug : `${repository.host}/${slug}`];
+}
+
+// Field lists for the two JSON reads of the gate. Both are pinned rather than requested wholesale:
+// `gh pr view --json` rejects an unknown field, so an explicit list fails loudly on an incompatible
+// CLI instead of silently returning a differently shaped payload.
+const PR_STATUS_FIELDS =
+  'baseRefName,headRefOid,isDraft,mergeStateStatus,mergeable,number,state,statusCheckRollup,title,url';
+const PR_CHECK_FIELDS = 'bucket,link,name,state';
+
+const MERGE_METHOD_FLAGS = Object.freeze({
+  squash: '--squash',
+  merge: '--merge',
+  rebase: '--rebase',
+});
+
+const DEFAULT_CHECKS_WAIT_MINUTES = 20;
+const DEFAULT_CHECKS_INTERVAL_SECONDS = 10;
+
+// Node clamps a `setTimeout` delay above this ceiling to 1 ms. An over-large bound would therefore
+// not relax the wait but invert it into an instant, fake timeout — repeated once per gate round —
+// so it is rejected rather than accepted and silently reinterpreted.
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
+// `gh pr checks --watch` blocks until the checks finish and has no timeout flag of its own, so the
+// caller's bound travels with the plan as `timeoutMs` and the process runner enforces it. Without
+// that bound a stuck check would hold a run open indefinitely. `--required` is passed only when the
+// caller asks for the required-checks-only criterion; the default watches every check.
+function checksWaitSettings(payload) {
+  const timeoutMs =
+    payload.timeoutMs === undefined
+      ? payloadInteger(
+          payload.timeoutMinutes ?? payload.waitMinutes ?? DEFAULT_CHECKS_WAIT_MINUTES,
+          'payload.timeoutMinutes',
+        ) * 60_000
+      : payloadInteger(payload.timeoutMs, 'payload.timeoutMs');
+  if (timeoutMs > MAX_TIMEOUT_MS) {
+    fail('INVALID_PAYLOAD', 'payload.timeoutMs exceeds the supported timer ceiling', {
+      field: 'payload.timeoutMs',
+      value: timeoutMs,
+      maximum: MAX_TIMEOUT_MS,
+    });
+  }
+  return {
+    timeoutMs,
+    intervalSeconds: payloadInteger(
+      payload.intervalSeconds ?? DEFAULT_CHECKS_INTERVAL_SECONDS,
+      'payload.intervalSeconds',
+    ),
+    requiredOnly: payload.requiredOnly === true,
+  };
+}
+
+function mergeMethod(payload) {
+  const method = requireString(payload.method ?? payload.mergeMethod, 'payload.method')
+    .trim()
+    .toLowerCase();
+  if (!Object.hasOwn(MERGE_METHOD_FLAGS, method)) {
+    fail('INVALID_PAYLOAD', 'payload.method must be squash, merge, or rebase', {
+      field: 'payload.method',
+      value: method,
+      supported: Object.keys(MERGE_METHOD_FLAGS),
+    });
+  }
+  return method;
+}
+
+// A repository configured with `squash_merge_commit_title: COMMIT_OR_PR_TITLE` lets GitHub take the
+// single commit's subject instead of the pull-request title, so the subject the gate verified and
+// the subject that actually gets published can differ — and a squash subject that is not a
+// Conventional Commit drops the change from the changelog without a word. Pinning it closes that
+// gap. Only a squash carries one here: a rebase creates no commit of its own and a merge commit's
+// subject is not the release signal, so a subject supplied for either is a caller mistake rather
+// than something to swallow.
+function mergeSubject(payload, method) {
+  if (payload.subject === undefined || payload.subject === null) return undefined;
+  if (method !== 'squash') {
+    fail('INVALID_PAYLOAD', 'payload.subject applies only to a squash merge', {
+      field: 'payload.subject',
+      method,
+    });
+  }
+  return publishableText(payload.subject, 'payload.subject');
+}
+
+// The expected head SHA is the merge guard, so it is validated as a full object name rather than as
+// free text: an abbreviated or malformed value can never equal the head the forge reports, and
+// rejecting it here keeps that caller error an INVALID_PAYLOAD instead of a late, confusing
+// mismatch. Both SHA-1 and SHA-256 object names are accepted.
+function expectedHeadSha(payload) {
+  const value = requireString(
+    payload.expectedHeadSha ?? payload.headSha,
+    'payload.expectedHeadSha',
+  ).trim();
+  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(value)) {
+    fail('INVALID_PAYLOAD', 'payload.expectedHeadSha must be a full commit SHA', {
+      field: 'payload.expectedHeadSha',
+    });
+  }
+  return value.toLowerCase();
+}
+
 function jsonStdin(payload) {
   return `${JSON.stringify(payload)}\n`;
 }
@@ -992,6 +1107,37 @@ export function buildCommandPlan(operation, input, repository) {
           `${ghEndpoint('pulls')}?${query}`,
         ]);
       }
+      // One read, not two: head SHA, base ref, state, draft flag, check list, and the forge's own
+      // merge state have to describe the same instant to be usable as a merge precondition.
+      case 'pr-status-read':
+        return mutationPlan('gh', [
+          'pr',
+          'view',
+          String(prNumber(input)),
+          ...ghRepoArgs(repository),
+          '--json',
+          PR_STATUS_FIELDS,
+        ]);
+      case 'pr-checks-wait': {
+        const wait = checksWaitSettings(payload);
+        return mutationPlan(
+          'gh',
+          [
+            'pr',
+            'checks',
+            String(prNumber(input)),
+            ...ghRepoArgs(repository),
+            '--watch',
+            '--interval',
+            String(wait.intervalSeconds),
+            ...(wait.requiredOnly ? ['--required'] : []),
+            '--json',
+            PR_CHECK_FIELDS,
+          ],
+          undefined,
+          { timeoutMs: wait.timeoutMs },
+        );
+      }
       case 'pr-create':
         return mutationPlan(
           'gh',
@@ -1032,6 +1178,28 @@ export function buildCommandPlan(operation, input, repository) {
           ],
           jsonStdin({ body: assertPublishable(payload.body, 'payload.body') }),
         );
+      // The merge carries the head the caller verified. `--match-head-commit` makes the provider
+      // itself reject a moved head, so the guard survives even if the local precondition read and
+      // the merge are separated by a push; `gh pr merge` prints prose, not JSON.
+      case 'pr-merge': {
+        const method = mergeMethod(payload);
+        const subject = mergeSubject(payload, method);
+        return mutationPlan(
+          'gh',
+          [
+            'pr',
+            'merge',
+            String(prNumber(input)),
+            ...ghRepoArgs(repository),
+            MERGE_METHOD_FLAGS[method],
+            ...(subject === undefined ? [] : ['--subject', subject]),
+            '--match-head-commit',
+            expectedHeadSha(payload),
+          ],
+          undefined,
+          { expectsJson: false },
+        );
+      }
       case 'review-create':
         return mutationPlan(
           'gh',
@@ -1293,8 +1461,15 @@ export function buildCommandPlan(operation, input, repository) {
         '--fields',
         'id,body,reviewer,path,line,resolver,url',
       ]);
+    // The pull-request gate operations join this group deliberately. The installed tea adapter
+    // exposes no verified surface for a check rollup, for a blocking watch, or for a merge that
+    // honours an expected head commit, so a Forgejo run fails closed here instead of improvising a
+    // provider request around the most irreversible mutation in the set.
     case 'review-create':
     case 'review-thread-reply':
+    case 'pr-status-read':
+    case 'pr-checks-wait':
+    case 'pr-merge':
       fail('UNSUPPORTED_CAPABILITY', `installed tea adapter does not safely support ${operation}`, {
         operation,
         provider: 'forgejo',
@@ -1358,15 +1533,67 @@ function parseCommandOutput(result, plan, label) {
   };
 }
 
+// `gh pr checks` reports "the checks are still pending" through exit code 8 rather than through its
+// payload, and a wait that outruns the plan's timeout is killed by the process runner. Both are the
+// documented outcome of a bounded wait, not a failure, so they become a result here instead of a
+// COMMAND_FAILED. A watch killed while writing can leave a truncated payload behind; the truncation
+// is dropped so the timeout is still reported as a timeout and not as malformed provider JSON.
+const CHECKS_PENDING_EXIT_CODE = 8;
+
+function isChecksWaitTimeout(result) {
+  if (!result) return false;
+  if (result.status === CHECKS_PENDING_EXIT_CODE) return true;
+  if (result.timedOut === true || result.error?.code === 'ETIMEDOUT') return true;
+  return result.status === null && typeof result.signal === 'string' && result.signal !== '';
+}
+
+function parsableJsonOrEmpty(text) {
+  const value = typeof text === 'string' ? text : '';
+  if (value.trim() === '') return '';
+  try {
+    JSON.parse(value);
+    return value;
+  } catch {
+    return '';
+  }
+}
+
+function isJsonArrayPayload(text) {
+  const value = typeof text === 'string' ? text.trim() : '';
+  if (!value.startsWith('[')) return false;
+  try {
+    return Array.isArray(JSON.parse(value));
+  } catch {
+    return false;
+  }
+}
+
 async function runChecked(runner, plan, label) {
   const result = await runner(plan);
   if (result?.error?.code === 'ENOENT') {
     fail('CLI_MISSING', `${plan.executable} is not installed`, { executable: plan.executable });
   }
+  if (label === 'pr-checks-wait') {
+    if (isChecksWaitTimeout(result)) {
+      return { ...result, status: 0, stdout: parsableJsonOrEmpty(result.stdout), timedOut: true };
+    }
+    // A red check also makes `gh pr checks` exit non-zero, although it printed exactly the check
+    // list the caller asked for. A finished watch with a failing check is the outcome the gate has
+    // to read, not a failed command, so a non-zero exit that carries a check list stays a result.
+    // An operational failure — no checks, bad reference, missing auth — prints no list and keeps
+    // falling through to COMMAND_FAILED below.
+    if (result && result.status !== 0 && isJsonArrayPayload(result.stdout)) {
+      return { ...result, status: 0 };
+    }
+  }
   if (!result || result.status !== 0) {
     if (label === 'label-create' && /already[_ ]exists/i.test(result?.stderr ?? '')) {
       return { ...result, status: 0, stdout: '{"unchanged":true}' };
     }
+    // A failed merge is not safely retryable: the forge may have accepted it before the connection
+    // dropped, so a second attempt could act on a state nobody verified. The caller has to re-read
+    // instead — the same discipline the tea create fallback already states for its own writes.
+    const irreversible = label === 'pr-merge';
     fail(
       'COMMAND_FAILED',
       `${label} failed`,
@@ -1375,8 +1602,9 @@ async function runChecked(runner, plan, label) {
         args: redact(plan.args),
         status: result?.status,
         stderr: redact(result?.stderr ?? ''),
+        ...(irreversible ? { mutationMayHaveSucceeded: true } : {}),
       },
-      true,
+      !irreversible,
     );
   }
   return result;
@@ -1393,18 +1621,29 @@ function parseCliVersion(text, executable) {
   return match.slice(1).map(Number);
 }
 
-function assertMinimumVersion(actual, minimum, executable) {
+function meetsMinimumVersion(actual, minimum) {
   for (let index = 0; index < minimum.length; index += 1) {
-    if (actual[index] > minimum[index]) return;
-    if (actual[index] < minimum[index]) {
-      fail('UNSUPPORTED_CAPABILITY', `${executable} is too old for the remote-tracker adapter`, {
-        capability: 'version',
-        installed: actual.join('.'),
-        minimum: minimum.join('.'),
-      });
-    }
+    if (actual[index] > minimum[index]) return true;
+    if (actual[index] < minimum[index]) return false;
   }
+  return true;
 }
+
+function assertMinimumVersion(actual, minimum, executable) {
+  if (meetsMinimumVersion(actual, minimum)) return;
+  fail('UNSUPPORTED_CAPABILITY', `${executable} is too old for the remote-tracker adapter`, {
+    capability: 'version',
+    installed: actual.join('.'),
+    minimum: minimum.join('.'),
+  });
+}
+
+// The pull-request gate needs four flags that all postdate the adapter's general gh floor, so it
+// gets its own floor rather than a blanket "recent enough" assumption. The binding one is
+// `gh pr checks --json`, released in gh 2.50.0 (cli/cli#9079); `--watch` (2.5), `--match-head-commit`
+// (2.14), and `--required` (2.16) are older. Below this line the three capabilities are reported as
+// unsupported, so a run degrades to report-only instead of failing mid-merge on an unknown flag.
+const GH_PR_GATE_MINIMUM_VERSION = Object.freeze([2, 50, 0]);
 
 async function probeTeaHelp(runner, args, required = []) {
   const result = await runner({ executable: 'tea', args: [...args, '--help'] });
@@ -1429,8 +1668,9 @@ export async function probeProvider(repository, runner) {
     });
   }
   const version = versionResult.stdout.trim().split(/\r?\n/)[0];
+  const versionTuple = parseCliVersion(versionResult.stdout, executable);
   assertMinimumVersion(
-    parseCliVersion(versionResult.stdout, executable),
+    versionTuple,
     // tea 0.14.2 is the first release whose `pulls create` accepts a `--repo` slug together with an
     // explicit `--head`; 0.14.1 rejects that combination outright.
     repository.provider === 'github' ? [2, 0, 0] : [0, 14, 2],
@@ -1447,6 +1687,8 @@ export async function probeProvider(repository, runner) {
         stderr: redact(auth?.stderr ?? ''),
       });
     }
+    // Read from the version already parsed above — the floor costs no extra spawn.
+    const gateSupported = meetsMinimumVersion(versionTuple, GH_PR_GATE_MINIMUM_VERSION);
     return {
       executable,
       version,
@@ -1468,6 +1710,12 @@ export async function probeProvider(repository, runner) {
         pullRequestRead: true,
         prCommentsRead: true,
         pullRequestList: true,
+        // Tied to the gate's own version floor: an older gh parses none of the flags these three
+        // operations depend on, and an unsupported capability is the honest answer there — not a
+        // command plan that dies at runtime with a retryable failure.
+        pullRequestStatus: gateSupported,
+        pullRequestChecksWait: gateSupported,
+        pullRequestMerge: gateSupported,
         pullRequestCreate: true,
         pullRequestUpdate: true,
         prComment: true,
@@ -1562,6 +1810,13 @@ export async function probeProvider(repository, runner) {
       pullRequestRead: pulls,
       prCommentsRead: pulls && pullComments,
       pullRequestList: pulls,
+      // No probe is attempted for the gate operations: the installed tea adapter has no verified
+      // check rollup, no blocking watch, and no merge that honours an expected head commit, so
+      // they stay unsupported until an adapter check proves otherwise. Enabling them later is an
+      // additive change; guessing them now would put an irreversible merge behind a guess.
+      pullRequestStatus: false,
+      pullRequestChecksWait: false,
+      pullRequestMerge: false,
       pullRequestCreate: pullCreate,
       pullRequestDraftCreate: pullCreate && pullCreateDraft,
       pullRequestUpdate: pullEdit,
@@ -1637,6 +1892,101 @@ function normalizePullRequest(item, repository, metadata = {}) {
     head: item.head?.ref ?? item.headRefName ?? item.head_branch ?? item.head,
     base: item.base?.ref ?? item.baseRefName ?? item.base_branch ?? item.base,
     draft: item.draft ?? item.isDraft ?? false,
+  };
+}
+
+// A pending check has no conclusion yet. Every state that is not a finished one counts as pending,
+// so an unknown future provider state blocks a merge instead of being read as a green result.
+const PENDING_CHECK_STATES = new Set([
+  'PENDING',
+  'EXPECTED',
+  'QUEUED',
+  'WAITING',
+  'REQUESTED',
+  'IN_PROGRESS',
+]);
+
+function upperCaseField(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim().toUpperCase() : undefined;
+}
+
+// One check arrives in three provider shapes: the `CheckRun` and `StatusContext` members of
+// `statusCheckRollup`, and the flattened item `gh pr checks --json` prints. They are folded into one
+// record so `pr-status-read` and `pr-checks-wait` report the same list. Fields the provider does not
+// expose stay absent instead of being guessed — the discipline `authorType` already follows for an
+// undecidable bot flag. `required` is the concrete case: neither GitHub read exposes whether branch
+// protection marks a check as required, and Forgejo has no such flag at all.
+function normalizeCheck(item) {
+  if (!item || typeof item !== 'object') {
+    fail('INVALID_PAYLOAD', 'provider returned an invalid check');
+  }
+  const status = upperCaseField(item.status);
+  const state = upperCaseField(item.state);
+  const bucket = typeof item.bucket === 'string' ? item.bucket.trim().toLowerCase() : undefined;
+  const pending =
+    bucket !== undefined
+      ? bucket === 'pending'
+      : status !== undefined
+        ? status !== 'COMPLETED'
+        : PENDING_CHECK_STATES.has(state ?? '');
+  const conclusion = upperCaseField(item.conclusion) ?? (status === undefined ? state : undefined);
+  const url = item.detailsUrl ?? item.targetUrl ?? item.link ?? item.url;
+  const required =
+    typeof item.isRequired === 'boolean'
+      ? item.isRequired
+      : typeof item.required === 'boolean'
+        ? item.required
+        : undefined;
+  return {
+    name: item.name ?? item.context ?? item.workflowName,
+    status: pending ? 'PENDING' : 'COMPLETED',
+    ...(pending || conclusion === undefined ? {} : { conclusion }),
+    ...(typeof url === 'string' && url !== '' ? { url } : {}),
+    ...(required === undefined ? {} : { required }),
+  };
+}
+
+// The merge state is read from the forge, never inferred from the check list: a protected branch can
+// additionally require an approval, an up-to-date branch, or linear history, so "all checks green"
+// and "mergeable" are different statements and both travel in this envelope.
+function normalizePullRequestStatus(item, repository) {
+  if (!item || typeof item !== 'object') {
+    fail('INVALID_PAYLOAD', 'provider returned an invalid pull-request status');
+  }
+  const rollup = item.statusCheckRollup ?? item.checks;
+  const headSha = item.headRefOid ?? item.head?.sha ?? item.headSha;
+  const baseRef = item.baseRefName ?? item.base?.ref ?? item.baseRef;
+  const draft = item.isDraft ?? item.draft;
+  const mergeState = upperCaseField(item.mergeStateStatus ?? item.mergeState);
+  const mergeable =
+    typeof item.mergeable === 'boolean'
+      ? item.mergeable
+        ? 'MERGEABLE'
+        : 'CONFLICTING'
+      : upperCaseField(item.mergeable);
+  const checks = (Array.isArray(rollup) ? rollup : []).map(normalizeCheck);
+  return {
+    number: requireNumber(item.number ?? item.index, 'provider pull-request number'),
+    repository: repository.slug,
+    // The title rides along because the same read decides the merge: a squash merge publishes the
+    // pull-request title as the commit subject, so it is a merge precondition, not decoration.
+    title: item.title ?? '',
+    state: String(item.state ?? '').toLowerCase(),
+    // A missing draft flag is stated as missing. It is the one field whose guessed default would
+    // point toward "merge allowed", so an absent value must block the gate rather than unblock it.
+    ...(typeof draft === 'boolean' ? { draft } : {}),
+    ...(typeof headSha === 'string' && headSha !== '' ? { headSha } : {}),
+    ...(typeof baseRef === 'string' && baseRef !== '' ? { baseRef } : {}),
+    ...(mergeState === undefined ? {} : { mergeState }),
+    ...(mergeable === undefined ? {} : { mergeable }),
+    ...(item.url ? { url: item.url } : {}),
+    // "The provider reported no checks" and "the provider reported an empty list" both arrive as an
+    // empty array, and directly after a push GitHub may not have attached any run to the new head
+    // yet. Both facts are stated explicitly, because a caller that reads emptiness as green would
+    // merge a commit whose CI never ran.
+    checksReported: Array.isArray(rollup),
+    checkCount: checks.length,
+    checks,
   };
 }
 
@@ -1746,6 +2096,41 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
       return (Array.isArray(flattened) ? flattened : (flattened?.pulls ?? []))
         .map((item) => normalizePullRequest(item, repository))
         .filter((pullRequest) => !input.head || pullRequest.head === input.head);
+    case 'pr-status-read':
+      return normalizePullRequestStatus(flattened, repository);
+    // The wait reports its own outcome, so "the checks finished" and "the bound elapsed" stay
+    // distinguishable for the caller: a timed-out wait is a result to report, never a green light.
+    case 'pr-checks-wait': {
+      const reported = Array.isArray(flattened) ? flattened : flattened?.checks;
+      const checks = (Array.isArray(reported) ? reported : []).map(normalizeCheck);
+      const timedOut = metadata.timedOut === true;
+      return {
+        number: prNumber(input),
+        repository: repository.slug,
+        // An empty list is never complete. `every` on an empty array is vacuously true, so a head
+        // whose checks have not been attached yet would otherwise read exactly like a green run.
+        complete:
+          !timedOut && checks.length > 0 && checks.every((check) => check.status === 'COMPLETED'),
+        timedOut,
+        ...(metadata.forcedKill === true ? { forcedKill: true } : {}),
+        checksReported: Array.isArray(reported),
+        checkCount: checks.length,
+        checks,
+      };
+    }
+    case 'pr-merge': {
+      const payload = input.payload ?? input;
+      return {
+        number: prNumber(input),
+        repository: repository.slug,
+        merged: true,
+        method: mergeMethod(payload),
+        headSha: expectedHeadSha(payload),
+        // The only provider prose the gate publishes into its envelope: gh echoes the merged
+        // branch, and a remote URL carrying an embedded credential is exactly what redaction is for.
+        output: redact(flattened?.output ?? ''),
+      };
+    }
     case 'review-threads-read': {
       const threads =
         flattened?.data?.repository?.pullRequest?.reviewThreads?.nodes ??
@@ -1896,6 +2281,29 @@ async function staleWriteGuard(operation, input, repository, runner, conditional
     });
   }
   return { unchanged: false, current };
+}
+
+// The merge is the most irreversible mutation of the set, so the head the caller verified is
+// re-checked against a fresh read immediately before it runs. The provider-side
+// `--match-head-commit` guards the same race, but only this local check turns a moved head into the
+// tool's own structured error — with the actual head reported and `merged: false` stated — instead
+// of a generic command failure, and it keeps the guard intact for a provider without that flag.
+async function mergeHeadGuard(input, repository, runner) {
+  const expected = expectedHeadSha(input.payload ?? input);
+  const readPlan = buildCommandPlan('pr-status-read', input, repository);
+  const readResult = await runChecked(runner, readPlan, 'pr-status-read precondition');
+  const parsed = parseCommandOutput(readResult, readPlan, 'pr-status-read');
+  const status = normalizeRemoteData('pr-status-read', parsed.raw, repository, input, parsed);
+  const actual = typeof status.headSha === 'string' ? status.headSha.toLowerCase() : undefined;
+  if (actual !== expected) {
+    fail('STALE_WRITE', 'pull-request head moved after the caller verified it', {
+      number: status.number,
+      expectedHeadSha: expected,
+      actualHeadSha: actual,
+      merged: false,
+    });
+  }
+  return status;
 }
 
 async function executeSfLabelMigration(input, repository, runner, dryRun) {
@@ -2099,6 +2507,9 @@ export async function executeOperation(operation, input = {}, options = {}) {
         dryRun: true,
       };
     }
+    if (operation === 'pr-merge') {
+      await mergeHeadGuard(input, activeRepository, runner);
+    }
     const guarded = await staleWriteGuard(
       operation,
       input,
@@ -2135,6 +2546,11 @@ export async function executeOperation(operation, input = {}, options = {}) {
     }
     const result = await runChecked(runner, plan, operation);
     const parsed = parseCommandOutput(result, plan, operation);
+    // A bounded wait reports its outcome through the exit status, not through its payload, so the
+    // wait result travels next to the parsed output into the normalizer. A forced stop is reported
+    // separately from a clean one: it means the provider ignored SIGTERM, which is worth seeing.
+    if (result.timedOut === true) parsed.timedOut = true;
+    if (result.forcedKill === true) parsed.forcedKill = true;
     return {
       ok: true,
       operation,

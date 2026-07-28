@@ -62,8 +62,10 @@ The gate's completion condition is: no surface is `blocked` and none is unassess
   explicit justified downgrade to `no impact`, or accept it as an explicitly deferred follow-up),
   record that decision, and run no completion, plan-status switch or delivery action while a
   surface is still `blocked`;
-- **non-interactive delegation** (a sub-agent of `{{SKILL:apply-review}}`, `{{SKILL:apply-issues}}`
-  or `{{SKILL:iterate}}`): do not abort. Record every remaining `blocked` surface as an open
+- **non-interactive delegation** (a run anywhere below `{{SKILL:apply-review}}`,
+  `{{SKILL:apply-issues}}`, `{{SKILL:iterate}}` or `{{SKILL:pr-review}}` in the delegation chain,
+  not only a direct sub-agent of one — `{{SKILL:pr-review}}` delegates through `{{SKILL:iterate}}`
+  and runs this gate in no phase of its own): do not abort. Record every remaining `blocked` surface as an open
   finding with `Action: {{SKILL:docs}}` in the run's review report per "Open review-finding
   reports", including its prompt suggestion, and name it in the completion summary. The run
   completes and the gap is carried forward, never dropped.

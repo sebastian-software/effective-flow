@@ -52,7 +52,9 @@ falling back to `local` (see [Troubleshooting](./troubleshooting.md)).
 Minimum versions: `gh` 2.0.0 and `tea` 0.14.2. Effective Flow checks them once at the start of a
 remote run, so an unsupported CLI surfaces before any work is done rather than at the delivery
 point. `tea` 0.14.2 is the first release that can create a pull request from a repository slug
-together with an explicit head branch, which is the form Effective Flow uses.
+together with an explicit head branch, which is the form Effective Flow uses. The `pr-review` merge
+gate's three operations need a higher `gh` floor of their own; see
+[PR-review gate operations](#pr-review-gate-operations).
 
 `tracker.remoteToolOverride` is a forge setting. It is ignored while the target is `external`.
 
@@ -235,6 +237,65 @@ body discloses the same thing the gate withheld – and a PR is public as soon a
 Decide the wording of that delivery yourself, or fix security findings in a private fork before
 publishing.
 
+## PR-review gate operations
+
+[`/effective-flow pr-review`](./tools-quality.md) reads pull-request status, waits for checks, and
+merges through three additional forge operations of the same remote-tracker helper. Like all PR
+work, they are inherently forge-bound: they never evaluate `tracker.mode` and only need a Git
+repository, an `origin` remote, and an authenticated CLI.
+
+| Operation        | Capability              | What it does                                                                                                                          |
+| ---------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `pr-status-read` | `pullRequestStatus`     | Reads, in one call, the head SHA, base ref, PR state, draft flag, check list, and the forge's merge state                             |
+| `pr-checks-wait` | `pullRequestChecksWait` | Blocks inside the provider's own watch until checks complete or the supplied timeout elapses                                          |
+| `pr-merge`       | `pullRequestMerge`      | Merges the pull request with the configured method; a mutation, so a run without `--apply` produces a dry-run plan and merges nothing |
+
+**GitHub** supports all three, but only from **`gh` 2.50.0** – a higher floor than the adapter's
+general `gh` 2.0.0 minimum. `gh pr checks --json`, the flag the gate depends on most, only landed in
+2.50.0; the other three flags it uses (`--watch`, `--match-head-commit`, `--required`) are older. On
+a `gh` below 2.50.0 – common on a distro-packaged install – all three capabilities report
+`UNSUPPORTED_CAPABILITY` instead of failing mid-run on an unknown flag, and `pr-review` degrades to
+report-only exactly as on Forgejo. If you see that message on GitHub, upgrade `gh` rather than
+suspect your repository's forge access. **Forgejo** currently declares all three unsupported
+outright, so `pr-review` degrades to report-only there too and states that reason – nothing in the
+gate can run on Forgejo until the adapter supports at least `pr-status-read`.
+
+Several behaviors worth knowing if you inspect the gate's output or a `pr-review` transcript:
+
+- **A finished check run with a red check still counts as a result, not a command failure.**
+  `gh pr checks --watch` exits non-zero when a check has failed, even though it printed exactly the
+  check list that was asked for. `pr-checks-wait` recognizes this: a non-zero exit whose stdout is
+  still a parsable JSON array is normalized into a completed result carrying the failing check's
+  `conclusion: FAILURE`, so the gate can report and repair it like any other finding. Only an exit
+  with no parsable check list at all – no checks configured, a bad reference, missing auth – is
+  treated as an operational error. Separately, `gh`'s exit code 8 ("checks still pending") is
+  normalized into a timeout result, not an error either.
+- **An empty check list is not read as "all green".** Both `pr-status-read` and `pr-checks-wait`
+  report `checksReported` (whether the provider returned a check rollup at all) and `checkCount`
+  (how many checks it contains) alongside the list itself. A wait or a status read only counts as
+  complete when the list is also non-empty, so a pull request GitHub has not yet attached any check
+  runs to cannot be mistaken for one that already passed everything.
+- **A missing `draft` flag is reported as absent, not as `false`.** When the provider does not
+  expose the draft state, `pr-status-read` omits the field instead of guessing – the same "absent
+  rather than guessed" rule the check list's `required` flag already follows. Treat an absent
+  `draft` as blocking, the same as a confirmed `true`.
+- **`pr-checks-wait` may report `forcedKill: true`.** If the watching child process ignores a clean
+  `SIGTERM` and has to be escalated to `SIGKILL` after a one-second grace period, the result carries
+  that flag; a clean bounded stop simply omits it.
+- **`pr-merge` accepts an optional `payload.subject`, valid only for `delivery.mergeMethod: squash`.**
+  Supplying it together with `merge` or `rebase` fails with `INVALID_PAYLOAD`. It pins the squash
+  commit's subject to the verified pull-request title: a repository configured with
+  `COMMIT_OR_PR_TITLE` would otherwise publish a single commit's subject instead, and release-please
+  reads that subject.
+- **`pr-merge` re-verifies the head itself.** Before merging, it performs its own read of the
+  current head SHA and fails with `STALE_WRITE` if it no longer matches the SHA the caller
+  verified – in addition to the provider-side `--match-head-commit` guard. A human pushing to the
+  branch while the gate was working is therefore caught twice, not once.
+- **A failed `pr-merge` reports `retryable: false` together with `mutationMayHaveSucceeded: true`.**
+  The forge may have accepted the merge before the connection dropped, so a second attempt could act
+  on a state nobody verified. Re-read the pull-request state and report what it shows – never
+  blind-retry the mutation.
+
 ## Interplay with issue-driven tools
 
 Besides `/effective-flow review`/`/effective-flow apply`, [`/effective-flow apply` (issue mode)](./tools-implement.md)
@@ -250,8 +311,8 @@ comment on the issue.
 
 ## See also
 
-- [Configuration](./configuration.md) – complete field reference for `tracker`
-- [Quality tools](./tools-quality.md) – `/effective-flow review`
+- [Configuration](./configuration.md) – complete field reference for `tracker` and `prReview`
+- [Quality tools](./tools-quality.md) – `/effective-flow review` and `/effective-flow pr-review`
 - [Implementation tools](./tools-implement.md) – `/effective-flow apply`
 - [Troubleshooting](./troubleshooting.md) – missing or unauthenticated CLI, unresolved external
   connection
