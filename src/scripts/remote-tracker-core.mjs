@@ -1318,9 +1318,25 @@ function parseJsonOutput(result, label) {
   }
 }
 
+// tea prints result URLs as OSC 8 terminal hyperlinks, so its human output carries escape
+// sequences even when stdout is a pipe. Remove whole sequences rather than stripping ESC
+// characters: OSC 8 embeds its target URI inside the opening marker, so a character-level strip
+// would leave `]8;id=…;https://…` fragments behind and make the text harder to parse, not easier.
+// Both terminators are covered because tea's choice varies by build. An unterminated sequence
+// simply does not match and survives into the output, where it stays visible for diagnosis.
+const ANSI_SEQUENCE = /\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)|\u001b\[[0-9;?]*[ -/]*[@-~]/g;
+
+function stripAnsiSequences(text) {
+  return text.replace(ANSI_SEQUENCE, '');
+}
+
 function parseCommandOutput(result, plan, label) {
   const text = result.stdout.trim();
-  if (plan.expectsJson === false) return { raw: { completed: true, output: text } };
+  // Only the human-rendered branch is sanitized. Structured output is parsed as-is, because a
+  // stripper run over JSON could corrupt legitimate string content.
+  if (plan.expectsJson === false) {
+    return { raw: { completed: true, output: stripAnsiSequences(text) } };
+  }
   if (!plan.includesHeaders || !/^HTTP\/\S+\s+\d+/i.test(text)) {
     return { raw: parseJsonOutput(result, label) };
   }
@@ -1622,23 +1638,38 @@ function flattenPages(value) {
   return Array.isArray(value) && value.every(Array.isArray) ? value.flat() : value;
 }
 
+const URL_CANDIDATE = /https?:\/\/[^\s<>"']+/g;
+
+// tea's create commands have no `--output json`, so the result URL has to come out of the human
+// rendering. Selecting by validity instead of by position is what keeps that safe: a docs link or
+// an error hint in the output can never be reported as the created resource, because only a
+// candidate `parseReference` accepts for this repository and this kind is eligible. That makes the
+// relaxed match stricter about what it accepts than the previous whole-line match was.
+function selectTeaResultUrl(output, expectedKind, repository) {
+  if (typeof output !== 'string') return undefined;
+  const candidates = output.match(URL_CANDIDATE) ?? [];
+  for (const candidate of candidates.reverse()) {
+    const url = candidate.replace(/[.,;:!?)\]}>'"]+$/, '');
+    try {
+      parseReference(url, { expectedKind, repository });
+      return url;
+    } catch {
+      // Not the created resource; keep looking at the earlier candidates.
+    }
+  }
+  return undefined;
+}
+
 function normalizeTeaCreate(operation, raw, repository, input) {
   const output = raw?.output;
-  const url =
-    typeof output === 'string'
-      ? output
-          .split(/\r?\n/)
-          .map((line) => line.trim())
-          .reverse()
-          .find((line) => /^https?:\/\/\S+$/.test(line))
-      : undefined;
+  const kind = operation === 'issue-create' ? 'issue' : 'pull-request';
+  const url = selectTeaResultUrl(output, kind, repository);
   if (!url) {
     fail('INVALID_PAYLOAD', `${operation} succeeded without a parseable tea result URL`, {
       mutationMayHaveSucceeded: true,
       stdout: redact(output ?? ''),
     });
   }
-  const kind = operation === 'issue-create' ? 'issue' : 'pull-request';
   const reference = parseReference(url, { expectedKind: kind, repository });
   const payload = input.payload ?? input;
   const normalized = {

@@ -1102,3 +1102,13 @@ test('the concept handoff stays self-contained text and marks ADR candidates onl
     /Mark durable decisions in the concept as ADR candidates with a one-line rationale\. Write no ADR/,
   );
 });
+
+test('pr never repeats a creation whose mutation may already have succeeded', () => {
+  const pr = flat(source('src/tools/pr.md'));
+
+  assert.match(pr, /Never re-run PR creation after `mutationMayHaveSucceeded`/);
+  assert.match(pr, /repeating the mutation would create a duplicate for the same head/);
+  // The prescribed response must be a read-back, not another create.
+  assert.match(pr, /Resolve it by reading the result back through `pr-read`/);
+  assert.match(pr, /Retrying the creation is forbidden on every provider/);
+});
