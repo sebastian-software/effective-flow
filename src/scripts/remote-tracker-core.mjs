@@ -840,8 +840,11 @@ function ghRepoArgs(repository) {
 // Field lists for the two JSON reads of the gate. Both are pinned rather than requested wholesale:
 // `gh pr view --json` rejects an unknown field, so an explicit list fails loudly on an incompatible
 // CLI instead of silently returning a differently shaped payload.
+// `commits` is requested for exactly one value: the head commit's own timestamp, which the gate
+// compares against an automatic reviewer's latest comment. It rides on this read rather than on a
+// second request, so the two values it correlates describe the same instant.
 const PR_STATUS_FIELDS =
-  'baseRefName,headRefOid,isDraft,mergeStateStatus,mergeable,number,state,statusCheckRollup,title,url';
+  'baseRefName,commits,headRefOid,isDraft,mergeStateStatus,mergeable,number,state,statusCheckRollup,title,url';
 const PR_CHECK_FIELDS = 'bucket,link,name,state';
 
 const MERGE_METHOD_FLAGS = Object.freeze({
@@ -1215,7 +1218,7 @@ export function buildCommandPlan(operation, input, repository) {
           jsonStdin(buildReviewPayload(payload)),
         );
       case 'review-threads-read': {
-        const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId body path line originalLine startLine originalStartLine author{__typename login}}}}}}}}`;
+        const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId body path line originalLine startLine originalStartLine createdAt author{__typename login}}}}}}}}`;
         return mutationPlan(
           'gh',
           ['api', ...hostArgs, 'graphql', '--input', '-'],
@@ -1895,6 +1898,22 @@ function normalizePullRequest(item, repository, metadata = {}) {
   };
 }
 
+// Provider timestamps arrive under several spellings, and a caller that has to decide whether a
+// comment is newer than the head commit must not parse three shapes to do it. The first usable
+// value wins and is re-emitted in UTC: Gitea reports a local offset while GitHub reports `Z`, so
+// without canonicalization an ordinary string comparison of two instants would order them wrongly.
+// An unusable or absent value yields no field at all — the caller reads a missing timestamp as
+// "cannot prove this is current", which blocks a merge instead of waving a stale run through.
+function normalizeTimestamp(...values) {
+  for (const value of values) {
+    if (typeof value !== 'string' || value.trim() === '') continue;
+    const parsed = new Date(value.trim());
+    if (Number.isNaN(parsed.getTime())) continue;
+    return parsed.toISOString();
+  }
+  return undefined;
+}
+
 // A pending check has no conclusion yet. Every state that is not a finished one counts as pending,
 // so an unknown future provider state blocks a merge instead of being read as a green result.
 const PENDING_CHECK_STATES = new Set([
@@ -1946,6 +1965,23 @@ function normalizeCheck(item) {
   };
 }
 
+// The head commit is identified by its object name, never by its position in the commit list.
+// GitHub returns the first page of commits, so on a pull request with more than one page the last
+// entry is not the head — and a timestamp taken from the wrong commit would silently certify stale
+// bot feedback as current. Nothing matching means no field, which the caller reads as unprovable.
+function headCommitTimestamp(item, headSha) {
+  const direct = normalizeTimestamp(item.headCommittedAt, item.head?.commit?.committer?.date);
+  if (direct !== undefined) return direct;
+  if (typeof headSha !== 'string' || headSha === '') return undefined;
+  const commits = Array.isArray(item.commits) ? item.commits : [];
+  const head = commits.find(
+    (commit) =>
+      typeof commit?.oid === 'string' && commit.oid.toLowerCase() === headSha.toLowerCase(),
+  );
+  if (head === undefined) return undefined;
+  return normalizeTimestamp(head.committedDate, head.committed_date, head.authoredDate);
+}
+
 // The merge state is read from the forge, never inferred from the check list: a protected branch can
 // additionally require an approval, an up-to-date branch, or linear history, so "all checks green"
 // and "mergeable" are different statements and both travel in this envelope.
@@ -1965,6 +2001,7 @@ function normalizePullRequestStatus(item, repository) {
         : 'CONFLICTING'
       : upperCaseField(item.mergeable);
   const checks = (Array.isArray(rollup) ? rollup : []).map(normalizeCheck);
+  const headCommittedAt = headCommitTimestamp(item, headSha);
   return {
     number: requireNumber(item.number ?? item.index, 'provider pull-request number'),
     repository: repository.slug,
@@ -1976,6 +2013,9 @@ function normalizePullRequestStatus(item, repository) {
     // point toward "merge allowed", so an absent value must block the gate rather than unblock it.
     ...(typeof draft === 'boolean' ? { draft } : {}),
     ...(typeof headSha === 'string' && headSha !== '' ? { headSha } : {}),
+    // The head commit's instant, so a caller can decide from this one read whether a reviewer's
+    // feedback belongs to the commit it is about to merge or to an earlier one.
+    ...(headCommittedAt === undefined ? {} : { headCommittedAt }),
     ...(typeof baseRef === 'string' && baseRef !== '' ? { baseRef } : {}),
     ...(mergeState === undefined ? {} : { mergeState }),
     ...(mergeable === undefined ? {} : { mergeable }),
@@ -1994,11 +2034,15 @@ function normalizeComment(comment) {
   if (!comment || typeof comment !== 'object') {
     fail('INVALID_PAYLOAD', 'provider returned an invalid issue comment');
   }
+  // The timestamp is what makes an automatic reviewer's feedback attributable to one head commit
+  // rather than to the pull request as a whole, so it travels with every comment that can carry it.
+  const createdAt = normalizeTimestamp(comment.created_at, comment.createdAt, comment.created);
   return {
     id: requireNumber(comment.id, 'provider comment id'),
     body: comment.body ?? comment.content ?? '',
     author: comment.user?.login ?? comment.poster?.login ?? comment.author?.login,
     url: comment.html_url ?? comment.url,
+    ...(createdAt === undefined ? {} : { createdAt }),
   };
 }
 
@@ -2138,13 +2182,13 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
         (Array.isArray(flattened) ? flattened : []);
       return threads.map((thread) => {
         if (thread.comments?.nodes) {
-          return {
-            id: thread.id,
-            isResolved: thread.isResolved === true,
-            path: thread.path ?? thread.comments.nodes[0]?.path,
-            line: thread.line ?? thread.comments.nodes[0]?.line,
-            startLine: thread.startLine ?? thread.comments.nodes[0]?.startLine,
-            comments: thread.comments.nodes.map((comment) => ({
+          const comments = thread.comments.nodes.map((comment) => {
+            const createdAt = normalizeTimestamp(
+              comment.createdAt,
+              comment.created_at,
+              comment.created,
+            );
+            return {
               id: comment.id,
               databaseId: comment.databaseId,
               body: comment.body ?? '',
@@ -2152,14 +2196,31 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
               path: comment.path,
               line: comment.line ?? comment.originalLine,
               startLine: comment.startLine ?? comment.originalStartLine,
-            })),
+              ...(createdAt === undefined ? {} : { createdAt }),
+            };
+          });
+          // A thread has no creation time of its own in the provider's schema; its first comment is
+          // its beginning by definition. Reading it off that comment is a restatement, not a guess,
+          // and a thread whose first comment carries no timestamp still reports none. Every reply
+          // keeps its own timestamp, because a bot that answers later must count as newer.
+          const threadCreatedAt = comments[0]?.createdAt;
+          return {
+            id: thread.id,
+            isResolved: thread.isResolved === true,
+            path: thread.path ?? thread.comments.nodes[0]?.path,
+            line: thread.line ?? thread.comments.nodes[0]?.line,
+            startLine: thread.startLine ?? thread.comments.nodes[0]?.startLine,
+            ...(threadCreatedAt === undefined ? {} : { createdAt: threadCreatedAt }),
+            comments,
           };
         }
+        const createdAt = normalizeTimestamp(thread.created_at, thread.createdAt, thread.created);
         return {
           id: thread.id,
           isResolved: Boolean(thread.resolver),
           path: thread.path,
           line: thread.line,
+          ...(createdAt === undefined ? {} : { createdAt }),
           comments: [
             {
               id: thread.id,
@@ -2167,6 +2228,7 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
               author: normalizeAuthor(thread.reviewer),
               path: thread.path,
               line: thread.line,
+              ...(createdAt === undefined ? {} : { createdAt }),
             },
           ],
         };

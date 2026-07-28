@@ -273,21 +273,31 @@ options:
 
 1. Read `pr-status-read` plus the review threads and the pull-request comments **fresh** through the
    loaded operations.
-2. Partition the comment and thread authors into three classes:
-   - **configured bots** – a login listed in `prReview.bots`;
-   - **Effective Flow's own output** – a comment or reply carrying `<!-- effective-flow-iterate -->`
-     (or the legacy `<!-- firmo-iterate -->`), `<!-- effective-flow-pr-review -->`, or
-     `<!-- effective-flow-pr-gate -->`;
-   - **human** – everything else. An author whose normalized `authorType` is `unknown` counts as
-     **human**. That is the fail-safe direction: the only consequence is a narrower run.
+2. Partition the comments and threads into three classes **by author, never by body**:
+   - **configured bots** – a login listed in `prReview.bots`, or an item whose normalized
+     `authorType` is `bot`;
+   - **this run's own output** – an item this run posted itself, identified by the comment or reply
+     ID its own mutation returned. The run knows what it wrote and does not have to infer it;
+   - **human** – everything else, including an author whose normalized `authorType` is `unknown`.
+     That is the fail-safe direction: the only consequence is a narrower run.
 3. Decide **what counts** for the guard, because the two surfaces differ:
    - a **review thread** counts while it is not `resolved`;
    - a **top-level pull-request comment** has no resolved state on either provider, so it always
      counts. A single old human comment therefore keeps the guard active until it is deleted – the
      deliberate fail-safe reading, since the alternative is merging a pull request under an open
      human discussion;
-   - a comment, reply, or thread carrying one of the three Effective Flow markers never counts,
-     whoever posted it.
+   - an item is excluded only through its **author**: a configured bot or `authorType: bot`, or an
+     item this run posted itself under a returned ID. Every other item counts.
+   - **An Effective Flow marker never excludes an item on its own**, whoever the author looks like.
+     A marker is body content, and content is not authorship evidence: GitHub's quote-reply copies
+     the quoted body verbatim, HTML comment included, so a human answering one of the gate's own
+     comments would otherwise silently switch off the guard that exists to protect them. A
+     human-authored item carrying any of the three markers therefore counts, and the guard
+     activates.
+   - The markers keep a different, narrower job elsewhere: in Phase 3 and in the reply rule below
+     they suppress a **repeat write** – do not post the same trigger or the same answer twice. That
+     is repeat suppression on this workflow's own output surface, never a statement about who wrote
+     an item, and the two uses must not be conflated.
 4. **Set the guard.** If at least one counting item has a human author, the human-comment guard is
    **active**. The guard is set once, here, from this first fresh read, and stays set for the rest
    of the run. A later fresh read may only set it – a human comment that appears mid-run is new
@@ -304,7 +314,8 @@ While the guard is active:
   gate useful on an actively discussed pull request without ever landing a change out from under a
   reviewer;
 - **bot threads may still be answered**, by this gate itself, with the marker
-  `<!-- effective-flow-pr-gate -->`. A thread already carrying that marker is not answered again.
+  `<!-- effective-flow-pr-gate -->`. A thread already carrying that marker is not answered again –
+  repeat suppression on this workflow's own writes, not a claim about the thread's author.
 
 ### Phase 2: Check gate (bounded)
 
@@ -376,9 +387,18 @@ configured, and do not block the merge on it.
 
 Otherwise, for each login in `prReview.bots`:
 
-1. **Has it run for the current head?** "Has run" is a review or comment by that login that is newer
-   than the current head commit. Emoji reactions are not readable through the helper and therefore
-   never count.
+1. **Has it run for the current head?** Compare two normalized fields of the fresh read: the
+   `createdAt` timestamp of that login's newest comment, review thread, or thread reply against the
+   `headCommittedAt` timestamp from `pr-status-read`. The bot counts as having run when its newest
+   `createdAt` is later than `headCommittedAt`; both are RFC-3339 strings and are compared as
+   instants, not as text.
+   - **Fail closed when either value is absent.** The provider does not always expose them, and the
+     helper leaves an unexposed value out rather than guessing. Without both timestamps the gate
+     cannot prove the bot ran for **this** head, so it treats the bot as not having run: it may
+     trigger and wait, and it never merges on an unprovable precondition. Report the missing field
+     as the reason, so a Phase-4 block on this bot is explainable.
+   - Emoji reactions are not readable through the helper and therefore never count, whatever their
+     timing.
 2. **If not:** post its `prReview.bots.<login>.trigger` text **once** as a pull-request comment, then
    wait.
    - Build that comment body yourself: the literal configured trigger text with the marker
@@ -427,7 +447,9 @@ report naming exactly that condition, and merges nothing:
 2. the check criterion from `prReview.requireAllChecks` is satisfied;
 3. the forge reports the pull request as mergeable and **not a draft**;
 4. the human-comment guard is inactive;
-5. every login in `prReview.bots` has run for the current head;
+5. every login in `prReview.bots` has run for the current head, proven by the `createdAt` versus
+   `headCommittedAt` comparison of Phase 3 – a missing timestamp is an unmet condition, never an
+   assumed pass;
 6. every bot thread is answered or resolved;
 7. `VERIFIED_HEAD_SHA` is set and the freshly read head SHA equals it. An unset value means no
    Phase-2 round ever completed, or a Phase-3 restart discarded it: that is a blocking condition,
@@ -475,6 +497,11 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   a wrong merge.
 - **A bot posts nothing because it found nothing** is indistinguishable from "has not run yet"
   through comments alone; the same timeout applies. Known limitation.
+- **The provider exposes no `createdAt` or no `headCommittedAt`:** bot freshness is unprovable, so
+  the bot counts as not having run, the merge is blocked, and the missing field is named as the
+  reason. Never merge on an assumed precondition.
+- **A human quote-replies to one of the gate's own comments,** copying its marker into the new body:
+  the item is human-authored, so it counts and the guard activates. Only the author decides.
 - **`prReview.bots` is empty:** the bot round is skipped and the merge is not blocked on it.
 - **Branch protection requires an approval:** the forge reports a blocked merge state; report that a
   human approval is missing and never attempt to approve.
@@ -508,6 +535,11 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   commits, no force-push. The forge-side `delivery.mergeMethod` – including `squash` and `rebase` –
   is the integration of the pull request in Phase 5 and is not covered by this rule.
 - Never approve a pull request and never request changes, not even to unblock a merge.
+- Never read an Effective Flow marker as authorship evidence. The human-comment guard is decided by
+  the author – a configured or normalized bot, or an item this run posted under a returned ID –
+  while a marker only suppresses a repeated write of this workflow's own output.
+- Never treat a bot as having run for the current head without both `createdAt` and
+  `headCommittedAt`; an unprovable precondition blocks the merge.
 - Read the pull-request status, threads, and comments fresh before every write and before the merge.
 - Ask the entry gate exactly once, at the start. A configured `prReview.completion` of `merge` or
   `report` is used unchanged in every run state; only `ask` or an unset key in a non-interactive

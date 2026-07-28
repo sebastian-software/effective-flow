@@ -77,6 +77,17 @@ the login has no canonical bot suffix, `authorType` is `unknown` rather than gue
 If the provider reports that resolved status is unavailable, keep the item unresolved and expose
 that limitation in the workflow summary; do not guess.
 
+Normalized pull-request comments, review threads, and thread replies additionally carry
+`createdAt`, an RFC-3339 timestamp, whenever the provider exposes one; an unexposed value is absent
+rather than guessed. It is the only freshness evidence these reads provide – a reaction carries
+none – so a consumer that needs "newer than the current head" compares it against
+`headCommittedAt` from `pr-status-read` and fails closed when either side is missing.
+
+**The author record is the only authorship evidence.** A body never is: an Effective Flow marker
+inside a comment says which workflow's write it repeats, not who wrote that comment, and a
+quote-reply copies a quoted body verbatim, marker included. Decide "who wrote this" from `login`
+and `authorType`, or from the ID a mutation of the current run returned.
+
 ### Reply to a thread
 
 Use the helper's review-thread reply operation. Every reply carries the marker
@@ -119,9 +130,14 @@ open/deferred.
 Use the helper's `pr-status-read` operation (capability key `pullRequestStatus`). One call returns,
 in one normalized envelope read at one instant: the head SHA, the base ref, the pull-request state,
 the draft flag, a check list (name, status, conclusion, the required flag where the provider exposes
-one, URL), and the forge's own merge state. A value the provider does not expose is absent rather
-than guessed — exactly as `authorType` is for bot detection. Reading checks and mergeability in one
-call is deliberate: both values must be read at the same instant to be consistent.
+one, URL), the forge's own merge state, and `headCommittedAt` — the head commit's committer
+timestamp as an RFC-3339 string. A value the provider does not expose is absent rather than guessed
+— exactly as `authorType` is for bot detection. Reading checks and mergeability in one call is
+deliberate: both values must be read at the same instant to be consistent.
+
+`headCommittedAt` is the reference side of every "newer than the current head" question, paired with
+the `createdAt` of a comment, thread, or reply. Both sides are required: with either one absent the
+answer is unprovable, and a consumer treats it as "not newer" rather than assuming freshness.
 
 Mergeability is read here, never inferred from the check list. A protected branch can additionally
 require named checks, an approval, an up-to-date branch, or linear history, so "all checks green"

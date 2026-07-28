@@ -1244,7 +1244,17 @@ test('review-thread reads normalize file, line, author, text, and resolution', a
                           body: 'Handle this case',
                           path: 'src/a.mjs',
                           line: 42,
+                          createdAt: '2026-07-28T20:30:00Z',
                           author: { __typename: 'User', login: 'reviewer' },
+                        },
+                        {
+                          id: 'comment-1-reply',
+                          databaseId: 8,
+                          body: 'Answered',
+                          path: 'src/a.mjs',
+                          line: 42,
+                          createdAt: '2026-07-28T21:00:00Z',
+                          author: { __typename: 'Bot', login: 'review-app[bot]' },
                         },
                       ],
                     },
@@ -1286,6 +1296,9 @@ test('review-thread reads normalize file, line, author, text, and resolution', a
     path: 'src/a.mjs',
     line: 42,
     startLine: undefined,
+    // The thread's own instant is its first comment's; the reply keeps its later one, because a bot
+    // that answers after the head commit must count as newer than it.
+    createdAt: '2026-07-28T20:30:00.000Z',
     comments: [
       {
         id: 'comment-1',
@@ -1295,6 +1308,17 @@ test('review-thread reads normalize file, line, author, text, and resolution', a
         path: 'src/a.mjs',
         line: 42,
         startLine: undefined,
+        createdAt: '2026-07-28T20:30:00.000Z',
+      },
+      {
+        id: 'comment-1-reply',
+        databaseId: 8,
+        body: 'Answered',
+        author: { login: 'review-app[bot]', isBot: true, authorType: 'bot' },
+        path: 'src/a.mjs',
+        line: 42,
+        startLine: undefined,
+        createdAt: '2026-07-28T21:00:00.000Z',
       },
     ],
   });
@@ -1303,8 +1327,50 @@ test('review-thread reads normalize file, line, author, text, and resolution', a
     isBot: true,
     authorType: 'bot',
   });
+  // The second thread's fixture states no timestamp, so neither it nor its comment invents one.
+  assert.equal(Object.hasOwn(envelope.data.result[1], 'createdAt'), false);
+  assert.equal(Object.hasOwn(envelope.data.result[1].comments[0], 'createdAt'), false);
   assert.match(runner.calls[0].stdin, /reviewThreads.*path line startLine/s);
   assert.match(runner.calls[0].stdin, /author\{__typename login\}/);
+  // The timestamp has to be requested before it can be normalized.
+  assert.match(runner.calls[0].stdin, /originalStartLine createdAt author/);
+});
+
+test('a flat review-thread record carries its timestamp on the thread and its comment', async () => {
+  // The Forgejo shape has one record per thread instead of a comment list, so the same instant
+  // describes both. A record without a timestamp still produces none.
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify([
+        {
+          id: 5,
+          body: 'Automated note',
+          reviewer: { login: 'review-app[bot]' },
+          path: 'src/a.mjs',
+          line: 42,
+          created_at: '2026-07-28T22:30:00+02:00',
+        },
+        {
+          id: 6,
+          body: 'Undated note',
+          reviewer: { login: 'reviewer' },
+          path: 'src/b.mjs',
+          line: 1,
+        },
+      ]),
+      stderr: '',
+    },
+  ]);
+  const envelope = await executeOperation(
+    'review-threads-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.data.result[0].createdAt, '2026-07-28T20:30:00.000Z');
+  assert.equal(envelope.data.result[0].comments[0].createdAt, '2026-07-28T20:30:00.000Z');
+  assert.equal(Object.hasOwn(envelope.data.result[1], 'createdAt'), false);
+  assert.equal(Object.hasOwn(envelope.data.result[1].comments[0], 'createdAt'), false);
 });
 
 test('provider probes normalize missing CLI, auth failure, and Forgejo capabilities', async () => {
@@ -1904,6 +1970,8 @@ test('review-create dry-run previews the command and only mutates with apply: tr
 const gateRepository = { ...githubRepository, slug: 'example/flow' };
 const verifiedHead = 'a'.repeat(40);
 const movedHead = 'b'.repeat(40);
+const earlierHead = 'c'.repeat(40);
+const headCommittedAt = '2026-07-28T20:01:19Z';
 
 function prStatusStdout(headRefOid = verifiedHead, overrides = {}) {
   return JSON.stringify({
@@ -1916,6 +1984,10 @@ function prStatusStdout(headRefOid = verifiedHead, overrides = {}) {
     mergeStateStatus: 'BLOCKED',
     mergeable: 'MERGEABLE',
     url: 'https://github.com/example/flow/pull/12',
+    commits: [
+      { oid: earlierHead, committedDate: '2026-07-28T09:00:00Z' },
+      { oid: headRefOid, committedDate: headCommittedAt },
+    ],
     statusCheckRollup: [],
     ...overrides,
   });
@@ -1929,6 +2001,9 @@ test('pr-status-read reads head, base, merge state, and checks in a single GitHu
   const fields = plan.args.at(-1).split(',');
   for (const field of [
     'baseRefName',
+    // The head commit's timestamp comes out of this same read; a second request would describe a
+    // different instant than the checks and the merge state it is correlated with.
+    'commits',
     'headRefOid',
     'isDraft',
     'mergeStateStatus',
@@ -1992,6 +2067,8 @@ test('pr-status-read reads head, base, merge state, and checks in a single GitHu
     state: 'open',
     draft: false,
     headSha: verifiedHead,
+    // Canonical UTC, so a caller can compare it against a comment timestamp as a plain string.
+    headCommittedAt: '2026-07-28T20:01:19.000Z',
     baseRef: 'develop',
     mergeState: 'BLOCKED',
     mergeable: 'MERGEABLE',
@@ -2042,6 +2119,102 @@ test('the check list states a required flag only where the provider exposes one'
   assert.equal(envelope.data.result.checks[1].required, true);
   assert.equal(Object.hasOwn(envelope.data.result, 'mergeState'), false);
   assert.equal(Object.hasOwn(envelope.data.result, 'mergeable'), false);
+});
+
+async function statusFrom(overrides) {
+  const envelope = await executeOperation(
+    'pr-status-read',
+    { repository: gateRepository, number: 12 },
+    {
+      runner: fakeRunner([
+        { status: 0, stdout: prStatusStdout(verifiedHead, overrides), stderr: '' },
+      ]),
+      skipProbe: true,
+    },
+  );
+  return envelope.data.result;
+}
+
+test('the head commit timestamp is matched by object name, not by position', async () => {
+  // The bot-freshness precondition compares a reviewer's comment against this value, so it must
+  // belong to the commit that is about to be merged and to no other.
+  assert.equal((await statusFrom({})).headCommittedAt, '2026-07-28T20:01:19.000Z');
+
+  // A pull request with more than one page of commits returns the first page, so the last entry is
+  // not the head. Nothing matching the head SHA means no timestamp — never the newest one present.
+  const truncated = await statusFrom({
+    commits: [
+      { oid: earlierHead, committedDate: '2026-07-28T09:00:00Z' },
+      { oid: movedHead, committedDate: '2026-07-28T10:00:00Z' },
+    ],
+  });
+  assert.equal(Object.hasOwn(truncated, 'headCommittedAt'), false);
+  assert.equal(truncated.headSha, verifiedHead);
+
+  for (const commits of [undefined, [], 'not-a-list']) {
+    assert.equal(Object.hasOwn(await statusFrom({ commits }), 'headCommittedAt'), false);
+  }
+  assert.equal(
+    Object.hasOwn(await statusFrom({ commits: [{ oid: verifiedHead }] }), 'headCommittedAt'),
+    false,
+  );
+
+  // An offset-form instant is re-emitted in UTC, so comparing it against a `Z` timestamp as a
+  // string cannot order the two wrongly.
+  const offsetForm = await statusFrom({
+    commits: [{ oid: verifiedHead, committedDate: '2026-07-28T22:01:19+02:00' }],
+  });
+  assert.equal(offsetForm.headCommittedAt, '2026-07-28T20:01:19.000Z');
+
+  // A provider that states the head timestamp itself is believed without a commit list.
+  const direct = await statusFrom({ commits: undefined, headCommittedAt: '2026-07-28T20:01:19Z' });
+  assert.equal(direct.headCommittedAt, '2026-07-28T20:01:19.000Z');
+});
+
+test('comment reads carry the provider timestamp and omit it when unstated', async () => {
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify([
+        {
+          id: 7,
+          body: 'Automated note',
+          user: { login: 'review-app[bot]' },
+          html_url: 'https://github.com/example/flow/pull/12#issuecomment-7',
+          created_at: '2026-07-28T20:30:00Z',
+        },
+        { id: 8, body: 'Older note', user: { login: 'reviewer' } },
+      ]),
+      stderr: '',
+    },
+  ]);
+  const envelope = await executeOperation(
+    'pr-comments-read',
+    { repository: gateRepository, number: 12 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.data.result[0].createdAt, '2026-07-28T20:30:00.000Z');
+  // Absent, not defaulted: a comment without a timestamp cannot prove it belongs to this head.
+  assert.equal(Object.hasOwn(envelope.data.result[1], 'createdAt'), false);
+
+  // The Gitea spelling and its local offset resolve to the same canonical instant.
+  const forgejo = await executeOperation(
+    'issue-comments-read',
+    { repository: forgejoRepository, number: 12 },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify({
+            comments: [{ id: 3, body: 'Note', created: '2026-07-28T22:30:00+02:00' }],
+          }),
+          stderr: '',
+        },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(forgejo.data.result[0].createdAt, '2026-07-28T20:30:00.000Z');
 });
 
 test('an empty check list is reported as empty and never as complete', async () => {
