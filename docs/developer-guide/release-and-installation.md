@@ -22,9 +22,9 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
 4. The isolated distribution smoke verifies native/portable layouts and installers.
 5. On an actually created release, all three targets in `dist/` are packed as
    `effective-flow-<tag>.tar.gz`, uploaded, downloaded again, and verified.
-6. On a created release — or on a manual re-delivery, see below — `scripts/stage-delivery.mjs`
-   pushes the portable `effective-flow/` skill, `README.md`, `docs/user-guide/`, and the two
-   trusted issue-closing automation files as a fresh commit to `main` (no force push). The push
+6. Also only on a created release, `scripts/stage-delivery.mjs` pushes the portable
+   `effective-flow/` skill, `README.md`, `docs/user-guide/`, and the two trusted issue-closing
+   automation files as a fresh commit to `main` (no force push). The push
    authenticates with a dedicated delivery GitHub App installation token (the
    `DELIVERY_APP_CLIENT_ID` repository variable plus the `DELIVERY_APP_PRIVATE_KEY` secret) rather
    than the default `GITHUB_TOKEN`, so the delivery app is the identity that updates `main`. The
@@ -110,20 +110,10 @@ regression here. Should the repository ever become private, clear the header rat
 credential persistence — `git fetch` would then need credentials, but persisting them reintroduces
 the defect.
 
-### Manual re-delivery
-
-A failed delivery would otherwise wait for the next release. The `Resolve delivery version`,
-`Create delivery token`, delivery, and verification steps therefore also run on a
-`workflow_dispatch` of the release workflow, which GitHub restricts to users with write access.
-
-A dispatch delivers the build of the current `develop` checkout, so it is guarded: the run derives
-the tag from `.release-please-manifest.json` and fails unless `HEAD` is exactly that tag's commit.
-Re-delivery is consequently possible only while `develop` still sits on the released commit, which
-is precisely the situation right after a failed delivery. Once `develop` has moved on, the guard
-refuses the run and the next release delivers the newer payload instead — do not weaken the guard
-to force a catch-up, because it is the only thing preventing unreleased work from reaching
-consumers. The release-asset steps stay gated on a created release, so a dispatch never re-uploads
-an archive.
+Delivery runs only on a created release. A failed delivery therefore waits for the next release;
+there is currently no way to repair it sooner. The `workflow_dispatch` entry in the workflow's
+trigger list does not provide one: `workflow_dispatch` requires the workflow file to be present on
+the default branch, and `main` deliberately carries no release workflow.
 
 ### Trusted default-branch automation
 
