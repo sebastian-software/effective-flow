@@ -50,6 +50,22 @@ jobs:
       - name: Distribution and installation smoke tests
         run: pnpm test:distribution
 
+      - name: Create release token
+        id: release-token
+        # Pinned to a commit rather than the movable `v3` tag: this step receives the release
+        # App's private key, so the trusted implementation must be immutable. Renovate keeps
+        # the pin current, as it already does for the pins in close-develop-issues.yml. The
+        # other create-github-app-token steps in this workflow are still on the tag — see the
+        # follow-up issue for making that consistent.
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: effective-flow
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Release Please
         id: release
         uses: googleapis/release-please-action@v5
@@ -57,8 +73,9 @@ jobs:
           # Not redundant: the action defaults this input to `${{ github.token }}`, and
           # GitHub restricts what events raised by the default token may start. The
           # release pull request would be authored by github-actions[bot] and its CI
-          # would park in `action_required` forever (issue #279).
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          # would park in `action_required` forever (issue #279). The short-lived App
+          # token also avoids a long-lived, person-bound credential on the release path.
+          token: ${{ steps.release-token.outputs.token }}
           # The default branch is the built delivery branch `main` (no source /
           # no release-please config). release-please must target the source
           # branch `develop`, where its config and manifest live.

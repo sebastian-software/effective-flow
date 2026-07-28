@@ -423,9 +423,27 @@ test('release-please opens its pull request with an explicit non-default token',
   // matching anywhere in the file (issue #279).
   const step = workflowStep(release, 'Release Please');
   assert.match(step, /^ {8}uses: googleapis\/release-please-action@v5$/m);
-  assert.match(step, /^ {10}token: \$\{\{ secrets\.RELEASE_PLEASE_TOKEN \}\}$/m);
+  assert.match(step, /^ {10}token: \$\{\{ steps\.release-token\.outputs\.token \}\}$/m);
   assert.match(step, /^ {10}target-branch: develop$/m);
   assert.doesNotMatch(release, /^\s*token: \$\{\{ github\.token \}\}$/m);
+
+  // The token is a short-lived App installation token rather than a long-lived personal
+  // access token, so no credential on the release path expires or belongs to a person.
+  // It must be minted before release-please consumes it, hence the ordering assertion.
+  const mint = workflowStep(release, 'Create release token');
+  // Pinned to a commit, not the movable tag: this step receives the App private key, so the
+  // implementation it runs must be immutable rather than whatever `v3` points at today. The
+  // version comment is matched loosely on purpose — Renovate rewrites both the digest and the
+  // comment when it bumps a pin, and it writes the precision the upstream tag uses (`# v9`,
+  // not `# v9.0.0`, as commit 12a8cc2 did for actions/github-script here). Demanding full
+  // semver would fail that pull request even though the pin was correct.
+  assert.match(mint, /^ {8}uses: actions\/create-github-app-token@[0-9a-f]{40} # v\d+(?:\.\d+)*$/m);
+  assert.match(mint, /^ {10}client-id: \$\{\{ vars\.RELEASE_APP_CLIENT_ID \}\}$/m);
+  assert.match(mint, /^ {10}private-key: \$\{\{ secrets\.RELEASE_APP_PRIVATE_KEY \}\}$/m);
+  // release-please needs both, and the token is scoped down to exactly those.
+  assert.match(mint, /^ {10}permission-contents: write$/m);
+  assert.match(mint, /^ {10}permission-pull-requests: write$/m);
+  ordered(release, 'name: Create release token', 'name: Release Please');
 });
 
 test('the delivery push keeps the delivery app identity', () => {
