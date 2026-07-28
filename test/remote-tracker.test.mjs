@@ -557,6 +557,120 @@ test('Forgejo command plans use supported tea forms and filter PR heads after re
   });
 });
 
+const ESC = String.fromCharCode(27);
+const BEL = String.fromCharCode(7);
+const ST = `${ESC}\\`;
+const osc8 = (url, terminator = BEL) =>
+  `${ESC}]8;id=463754605;${url}${terminator}${url}${ESC}]8;;${terminator}`;
+
+async function teaCreate(operation, stdout, payload = { title: 'Title', body: 'Body' }) {
+  return executeOperation(
+    operation,
+    { repository: forgejoRepository, payload },
+    { runner: fakeRunner([{ status: 0, stdout, stderr: '' }]), skipProbe: true, apply: true },
+  );
+}
+
+test('tea create output survives the escape sequences of an OSC 8 hyperlink', async () => {
+  const prUrl = 'https://code.example.test/team/flow/pulls/2';
+  const prPayload = { title: 'Title', body: 'Body', head: 'topic', base: 'main' };
+
+  // The reported failure: a successful creation reported as INVALID_PAYLOAD.
+  const bel = await teaCreate('pr-create', `${osc8(prUrl)}\n`, prPayload);
+  assert.equal(bel.ok, true);
+  assert.equal(bel.data.result.url, prUrl);
+  assert.equal(bel.data.result.number, 2);
+
+  // tea's terminator choice varies by build, so the ST form must work too.
+  const st = await teaCreate('pr-create', `${osc8(prUrl, ST)}\n`, prPayload);
+  assert.equal(st.data.result.url, prUrl);
+
+  const colored = await teaCreate('pr-create', `${ESC}[36m${prUrl}${ESC}[0m\n`, prPayload);
+  assert.equal(colored.data.result.url, prUrl);
+
+  // The same normalizer serves issue creation, so it was broken there as well.
+  const issueUrl = 'https://code.example.test/team/flow/issues/17';
+  const issue = await teaCreate('issue-create', `${osc8(issueUrl)}\n`);
+  assert.equal(issue.data.result.url, issueUrl);
+  assert.equal(issue.data.result.number, 17);
+});
+
+test('tea create selects the result URL by reference validity, not by position', async () => {
+  const prUrl = 'https://code.example.test/team/flow/pulls/2';
+  const prPayload = { title: 'Title', body: 'Body', head: 'topic', base: 'main' };
+
+  const embedded = await teaCreate('pr-create', `Created pull request: ${prUrl}\n`, prPayload);
+  assert.equal(embedded.data.result.url, prUrl);
+
+  const punctuated = await teaCreate('pr-create', `Opened ${prUrl}.\n`, prPayload);
+  assert.equal(punctuated.data.result.url, prUrl);
+
+  // A later foreign URL must not win: only a candidate that parses for this repository and kind
+  // is eligible, so a docs or help link cannot be reported as the created pull request.
+  const withDocs = await teaCreate(
+    'pr-create',
+    `${prUrl}\nSee https://docs.example.test/help/pulls for details\n`,
+    prPayload,
+  );
+  assert.equal(withDocs.data.result.url, prUrl);
+
+  // An issue URL is the wrong kind for pr-create and must be rejected as a candidate.
+  const wrongKind = await teaCreate(
+    'pr-create',
+    `${prUrl}\nRelated: https://code.example.test/team/flow/issues/17\n`,
+    prPayload,
+  );
+  assert.equal(wrongKind.data.result.url, prUrl);
+});
+
+test('tea create keeps failing closed when no valid result URL is present', async () => {
+  const prPayload = { title: 'Title', body: 'Body', head: 'topic', base: 'main' };
+
+  for (const stdout of [
+    'See https://docs.example.test/help/pulls for details\n',
+    'https://code.example.test/other/repo/pulls/2\n',
+    'Pull request created.\n',
+    '',
+  ]) {
+    const envelope = await teaCreate('pr-create', stdout, prPayload);
+    assert.equal(envelope.ok, false, `expected failure for ${JSON.stringify(stdout)}`);
+    assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+    // The honest report for a mutation whose outcome is unknown must survive the fix.
+    assert.equal(envelope.error.details.mutationMayHaveSucceeded, true);
+  }
+});
+
+test('escape sanitization covers every non-JSON tea result and leaves JSON untouched', async () => {
+  const labelEnvelope = await executeOperation(
+    'issue-label-add',
+    { repository: forgejoRepository, number: 17, payload: { labels: ['effective-flow-fix'] } },
+    {
+      runner: fakeRunner([{ status: 0, stdout: `${ESC}[32mdone${ESC}[0m`, stderr: '' }]),
+      skipProbe: true,
+      apply: true,
+    },
+  );
+  assert.equal(labelEnvelope.data.result.output, 'done');
+
+  // Structured output is parsed as-is: a stripper over JSON could corrupt string content.
+  const body = `${ESC}]8;id=1;https://code.example.test${BEL}link${ESC}]8;;${BEL}`;
+  const readEnvelope = await executeOperation(
+    'issue-read',
+    { repository: forgejoRepository, number: 17 },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify({ index: 17, title: 'Title', body, state: 'open', labels: [] }),
+          stderr: '',
+        },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(readEnvelope.data.result.body, body);
+});
+
 test('tea list results normalize labels flattened into a string', async () => {
   const listEnvelope = async (operation, items) =>
     executeOperation(

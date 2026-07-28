@@ -1102,3 +1102,15 @@ test('the concept handoff stays self-contained text and marks ADR candidates onl
     /Mark durable decisions in the concept as ADR candidates with a one-line rationale\. Write no ADR/,
   );
 });
+
+test('pr never repeats a creation whose mutation may already have succeeded', () => {
+  const pr = flat(source('src/tools/pr.md'));
+
+  assert.match(pr, /Never re-run PR creation after `mutationMayHaveSucceeded`/);
+  assert.match(pr, /repeating the mutation would create a duplicate for the same head/);
+  // The prescribed response must be a lookup, not another create. It has to be the head/base
+  // lookup: this failure path never received a PR number, so a number-keyed read cannot run.
+  assert.match(pr, /Resolve it by repeating the step 8 existing-PR lookup/);
+  assert.match(pr, /identifies a pull request by head and base rather than by a number/);
+  assert.match(pr, /Retrying the creation is forbidden on every provider/);
+});
