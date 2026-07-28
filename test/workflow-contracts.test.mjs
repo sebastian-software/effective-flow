@@ -431,7 +431,9 @@ test('release-please opens its pull request with an explicit non-default token',
   // access token, so no credential on the release path expires or belongs to a person.
   // It must be minted before release-please consumes it, hence the ordering assertion.
   const mint = workflowStep(release, 'Create release token');
-  assert.match(mint, /^ {8}uses: actions\/create-github-app-token@v3$/m);
+  // Pinned to a commit, not the movable tag: this step receives the App private key, so the
+  // implementation it runs must be immutable rather than whatever `v3` points at today.
+  assert.match(mint, /^ {8}uses: actions\/create-github-app-token@[0-9a-f]{40} # v\d+\.\d+\.\d+$/m);
   assert.match(mint, /^ {10}client-id: \$\{\{ vars\.RELEASE_APP_CLIENT_ID \}\}$/m);
   assert.match(mint, /^ {10}private-key: \$\{\{ secrets\.RELEASE_APP_PRIVATE_KEY \}\}$/m);
   // release-please needs both, and the token is scoped down to exactly those.
