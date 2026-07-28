@@ -154,6 +154,86 @@ jobs:
           node scripts/distribution-smoke.mjs delivery "$verify_work"
           git worktree remove --force "$verify_work"
 
+      - name: Close a resolved delivery alarm
+        # A green delivery makes any open alarm obsolete. Closing it keeps the signal
+        # honest: an open alarm issue then always means real, current drift. Leaving
+        # resolved alarms open would teach the maintainer to skim past them, which is
+        # the exact failure mode issue #278 exists to fix.
+        #
+        # `continue-on-error` on purpose: the delivery has already succeeded by this
+        # point, and a stale open alarm is recoverable while a red run on a good
+        # delivery would erode trust in the very signal this adds.
+        if: ${{ steps.release.outputs.release_created == 'true' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          open="$(gh issue list --label delivery-failed --state open --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "Delivery succeeded for ${{ steps.release.outputs.tag_name }}. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            gh issue close "$open"
+          fi
+
+      - name: Report a failed delivery
+        # Detection already exists — `Verify delivered commit` above fails hard when the
+        # payload does not reach `main`. What was missing is visibility: `v1.53.0` and
+        # `v1.54.0` went undelivered for two releases because nobody was watching red
+        # release runs (issues #274, #278). A run notification scrolls past; an assigned
+        # issue stays in a list that gets worked.
+        #
+        # Gated on `release_created` so an ordinary red run — failing unit tests, a bad
+        # build — raises nothing: no release means no drift, and a signal that cries wolf
+        # gets ignored. `failure()` excludes cancellation, where the state is genuinely
+        # unknown and a false alarm would be worse than silence.
+        #
+        # The assignee is `github.actor`, the person whose push produced this release.
+        # NOT `github.repository_owner`: that is the `sebastian-software` organization,
+        # and GitHub accepts only user accounts with repository access as assignees.
+        # Assignment is best effort — losing the alarm would be worse than losing it.
+        #
+        # Repair is unchanged and deliberate: cut the next release. Re-delivery was
+        # considered and rejected in #278, because a workflow only becomes reachable on
+        # `main` after a successful delivery publishes it there.
+        if: ${{ failure() && steps.release.outputs.release_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          gh label create delivery-failed \
+            --description "A release was published but its delivery to main did not land" \
+            --color B60205 || true
+          # `origin/main` may be unfetched if the run failed before the delivery step;
+          # an unknown value is fine here, an aborted alarm is not.
+          delivered="unknown"
+          if git show origin/main:effective-flow/SKILL.md >/tmp/delivered-skill.md 2>/dev/null; then
+            delivered="$(sed -n 's/.*version \([^ )]*\).*/\1/p' /tmp/delivered-skill.md | head -n 1)"
+            delivered="${delivered:-unknown}"
+          fi
+          body="$(printf '%s\n' \
+            "Release \`$TAG\` was published, but the run then failed before the payload was confirmed on \`main\`." \
+            "" \
+            "- Released tag: \`$TAG\`" \
+            "- Currently delivered on \`main\`: \`${delivered:-unknown}\`" \
+            "- Failed run: $RUN_URL" \
+            "" \
+            "Consumers install from the default branch \`main\`, so they keep receiving the delivered version above until this is repaired." \
+            "" \
+            "**Repair:** cut the next release deliberately. There is no re-delivery path by design (#278) — a workflow only becomes reachable on \`main\` after a successful delivery publishes it there." \
+            "" \
+            "This issue closes itself once a later release delivers successfully.")"
+          existing="$(gh issue list --label delivery-failed --state open --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            # `gh issue create` prints the issue URL; it has no --json output. Assigning in a
+            # second call keeps a rejected assignee — a bot actor, or one without repository
+            # access — from aborting creation and costing the alarm itself.
+            url="$(gh issue create --title "Delivery to main failed for $TAG" --label delivery-failed --body "$body")"
+            gh issue edit "$url" --add-assignee "$ACTOR" || echo "Could not assign $ACTOR; $url stays unassigned"
+          fi
+
   update-team-catalog:
     name: Update team catalog
     needs: release

@@ -1135,3 +1135,64 @@ test('pr never repeats a creation whose mutation may already have succeeded', ()
   assert.match(pr, /identifies a pull request by head and base rather than by a number/);
   assert.match(pr, /Retrying the creation is forbidden on every provider/);
 });
+
+test('a failed delivery is surfaced as an assigned issue that closes itself', () => {
+  const release = source('.github/workflows/release.yml');
+  const alarm = section(release, '- name: Report a failed delivery', '\n  update-team-catalog');
+  const close = section(
+    release,
+    '- name: Close a resolved delivery alarm',
+    '\n      - name: Report a failed delivery',
+  );
+
+  // The gate is the whole point: an ordinary red run creates no release and therefore no
+  // drift, and an alarm that cries wolf gets ignored — the failure mode #278 is about.
+  assert.match(
+    alarm,
+    /if: \$\{\{ failure\(\) && steps\.release\.outputs\.release_created == 'true' \}\}/,
+  );
+  // failure() excludes cancellation; always() would not.
+  assert.doesNotMatch(alarm, /always\(\)/);
+
+  // github.repository_owner is the sebastian-software organization, which GitHub rejects
+  // as an assignee. The actor is the person whose push produced the release.
+  assert.match(alarm, /--add-assignee "\$ACTOR"/);
+  assert.match(alarm, /ACTOR: \$\{\{ github\.actor \}\}/);
+  // The prose comment names repository_owner to explain why it is wrong, so assert on the
+  // expression form: the value must never be interpolated into this step.
+  assert.doesNotMatch(alarm, /\$\{\{ github\.repository_owner \}\}/);
+  // A rejected assignee must not cost the alarm itself.
+  assert.match(alarm, /\|\| echo "Could not assign/);
+
+  // Needs only issues: write — never the delivery app credentials.
+  assert.match(alarm, /GH_TOKEN: \$\{\{ github\.token \}\}/);
+  for (const secret of [/DELIVERY_APP_PRIVATE_KEY/, /DELIVERY_APP_CLIENT_ID/]) {
+    assert.doesNotMatch(alarm, secret);
+    assert.doesNotMatch(close, secret);
+  }
+
+  // One open alarm at a time, so consecutive failures do not accumulate duplicates.
+  assert.match(alarm, /gh issue list --label delivery-failed --state open/);
+  assert.match(alarm, /gh issue comment "\$existing"/);
+
+  // A green delivery resolves the alarm, and a failure to close never reddens that run.
+  assert.match(close, /if: \$\{\{ steps\.release\.outputs\.release_created == 'true' \}\}/);
+  assert.match(close, /continue-on-error: true/);
+  assert.match(close, /gh issue close "\$open"/);
+
+  // Both steps run after delivery and its verification.
+  ordered(
+    release,
+    '- name: Deliver portable skill, consumer docs, and trusted automation to main',
+    '- name: Verify delivered commit',
+    '- name: Close a resolved delivery alarm',
+    '- name: Report a failed delivery',
+  );
+
+  // Re-delivery stays rejected: nothing new may reach the default branch.
+  const stageDelivery = source('scripts/stage-delivery.mjs');
+  assert.match(
+    stageDelivery,
+    /const TRUSTED_AUTOMATION = \[\n\s+join\('\.github', 'workflows', 'close-develop-issues\.yml'\),\n\s+join\('\.github', 'scripts', 'close-develop-issues\.mjs'\),\n\];/,
+  );
+});
