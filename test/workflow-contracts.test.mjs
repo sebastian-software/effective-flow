@@ -423,9 +423,21 @@ test('release-please opens its pull request with an explicit non-default token',
   // matching anywhere in the file (issue #279).
   const step = workflowStep(release, 'Release Please');
   assert.match(step, /^ {8}uses: googleapis\/release-please-action@v5$/m);
-  assert.match(step, /^ {10}token: \$\{\{ secrets\.RELEASE_PLEASE_TOKEN \}\}$/m);
+  assert.match(step, /^ {10}token: \$\{\{ steps\.release-token\.outputs\.token \}\}$/m);
   assert.match(step, /^ {10}target-branch: develop$/m);
   assert.doesNotMatch(release, /^\s*token: \$\{\{ github\.token \}\}$/m);
+
+  // The token is a short-lived App installation token rather than a long-lived personal
+  // access token, so no credential on the release path expires or belongs to a person.
+  // It must be minted before release-please consumes it, hence the ordering assertion.
+  const mint = workflowStep(release, 'Create release token');
+  assert.match(mint, /^ {8}uses: actions\/create-github-app-token@v3$/m);
+  assert.match(mint, /^ {10}client-id: \$\{\{ vars\.RELEASE_APP_CLIENT_ID \}\}$/m);
+  assert.match(mint, /^ {10}private-key: \$\{\{ secrets\.RELEASE_APP_PRIVATE_KEY \}\}$/m);
+  // release-please needs both, and the token is scoped down to exactly those.
+  assert.match(mint, /^ {10}permission-contents: write$/m);
+  assert.match(mint, /^ {10}permission-pull-requests: write$/m);
+  ordered(release, 'name: Create release token', 'name: Release Please');
 });
 
 test('the delivery push keeps the delivery app identity', () => {
