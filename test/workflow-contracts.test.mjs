@@ -36,6 +36,17 @@ function section(text, heading, stop = '\n### ') {
   return end === -1 ? rest : rest.slice(0, end);
 }
 
+// Slices one workflow step so a step-level assertion cannot be satisfied by text
+// that happens to sit in a neighboring step.
+function workflowStep(text, name) {
+  const marker = `      - name: ${name}`;
+  const start = text.indexOf(marker);
+  assert.notEqual(start, -1, `missing workflow step: ${name}`);
+  const rest = text.slice(start + marker.length);
+  const end = rest.search(/\n(?: {6}- | {2}\S)/);
+  return end === -1 ? rest : rest.slice(0, end);
+}
+
 // First column of every Markdown table row in the given text, compared
 // literally so no cell value is reinterpreted as a regular expression.
 function firstColumnCells(text) {
@@ -407,15 +418,13 @@ test('release-please opens its pull request with an explicit non-default token',
 
   // The action defaults `token` to `${{ github.token }}`, and GitHub restricts what events
   // raised by the default token may start, so the release pull request's CI parks in
-  // `action_required` and never runs. Omitting the input again would be silent, hence the
-  // assertion on the step rather than on the file (issue #279).
-  ordered(
-    release,
-    'name: Release Please',
-    'uses: googleapis/release-please-action@v5',
-    'token: ${{ secrets.RELEASE_PLEASE_TOKEN }}',
-    'target-branch: develop',
-  );
+  // `action_required` and never runs. Omitting the input again would be silent, so the
+  // assertion is scoped to the step and anchored at the `with:` key indent rather than
+  // matching anywhere in the file (issue #279).
+  const step = workflowStep(release, 'Release Please');
+  assert.match(step, /^ {8}uses: googleapis\/release-please-action@v5$/m);
+  assert.match(step, /^ {10}token: \$\{\{ secrets\.RELEASE_PLEASE_TOKEN \}\}$/m);
+  assert.match(step, /^ {10}target-branch: develop$/m);
   assert.doesNotMatch(release, /^\s*token: \$\{\{ github\.token \}\}$/m);
 });
 
