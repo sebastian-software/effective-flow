@@ -12,6 +12,14 @@ The single source of truth for the currently published version is
 fix commits. Conventional-commit messages drive the next release PR, changelog entries, tags,
 GitHub releases, and the upload of the release archive.
 
+release-please authenticates with the organization secret `RELEASE_PLEASE_TOKEN` rather than the
+default `GITHUB_TOKEN`. That is deliberate and must not be removed as redundant: the action
+defaults its `token` input to `${{ github.token }}`, and GitHub restricts what events raised by
+the default token may start, as a guard against automation loops. With the default, the release
+pull request is authored by `github-actions[bot]` and its CI run parks in `action_required`
+forever, so the release commit is never validated before it is merged (issue #279). A contract
+assertion in `test/workflow-contracts.test.mjs` keeps the explicit token in place.
+
 The release workflow (`.github/workflows/release.yml`) runs on every push to the source branch
 `develop`:
 
