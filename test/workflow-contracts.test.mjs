@@ -402,6 +402,27 @@ test('release delegates the licensed develop-to-main payload to central staging'
   assert.doesNotMatch(release, /^\s*app-id:/m);
 });
 
+test('the delivery push keeps the delivery app identity', () => {
+  const release = source('.github/workflows/release.yml');
+
+  // A persisted GITHUB_TOKEN lands in the git config as an extraheader that outranks the
+  // delivery App token in the push URL and is inherited by `git worktree`, so the push would
+  // run as github-actions[bot] — not a ruleset bypass actor — and `main` would reject it.
+  // That is how v1.53.0 and v1.54.0 failed to reach `main` (issue #274).
+  assert.equal(
+    release.match(/^\s*-?\s*uses: actions\/checkout@v7$/gm)?.length,
+    release.match(/^\s*persist-credentials: false$/gm)?.length,
+  );
+  // Second, independent mechanism, because the delivery identity is only observable on a real
+  // release and no pre-merge check would catch a regression: any surviving header is cleared
+  // before the push. The unset must tolerate a missing key — `git config --unset-all` exits 5
+  // for one and the step runs under `bash -e`.
+  assert.match(
+    release,
+    /git config --unset-all http\.https:\/\/github\.com\/\.extraheader \|\| true/,
+  );
+});
+
 test('delivery stages the canonical Renovate config from the repository root', () => {
   const renovate = JSON.parse(source('renovate.json'));
   const staging = source('scripts/stage-delivery.mjs');
