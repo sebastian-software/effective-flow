@@ -175,9 +175,12 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
 10. **Create the PR:** Build the provider-neutral PR payload, set the execution root as its `cwd`, and invoke the helper's PR-create mutation. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
     - **Never re-run PR creation after `mutationMayHaveSucceeded`:** if the structured error carries
       `mutationMayHaveSucceeded: true`, the pull request may already exist and repeating the
-      mutation would create a duplicate for the same head. Resolve it by reading the result back
-      through `pr-read`, and otherwise report the error with the preserved branch. Retrying the
-      creation is forbidden on every provider, whatever the error message suggests.
+      mutation would create a duplicate for the same head. Resolve it by repeating the step 8
+      existing-PR lookup, which identifies a pull request by head and base rather than by a number
+      this failure path never received; a single exact match is the created pull request and its
+      URL is the result. If the lookup finds no match or cannot run, report the error with the
+      preserved branch and let the user decide. Retrying the creation is forbidden on every
+      provider, whatever the error message suggests.
 11. **Restore the checkout:** After a successful PR creation or reuse, switch the invocation
     checkout — the one step 3 may have switched, never the execution root — back to
     `delivery.returnBranch`, or for `auto` to the local branch part of
