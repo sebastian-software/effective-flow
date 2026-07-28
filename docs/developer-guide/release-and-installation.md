@@ -110,10 +110,38 @@ regression here. Should the repository ever become private, clear the header rat
 credential persistence — `git fetch` would then need credentials, but persisting them reintroduces
 the defect.
 
-Delivery runs only on a created release. A failed delivery therefore waits for the next release;
-there is currently no way to repair it sooner. The `workflow_dispatch` entry in the workflow's
-trigger list does not provide one: `workflow_dispatch` requires the workflow file to be present on
-the default branch, and `main` deliberately carries no release workflow.
+Delivery runs only on a created release, so a failed delivery waits for the next one. That is
+deliberate, and it is the reason the run must be impossible to miss.
+
+Detection is already hard: `Verify delivered commit` asserts that `origin/main` equals the delivery
+commit and re-runs the delivery smoke test against it, so a payload that does not land fails the
+job. What was missing is visibility — `v1.53.0` and `v1.54.0` stayed undelivered for two releases
+because nobody was watching red release runs (issue #274). The `Report a failed delivery` step
+therefore opens an issue labelled `delivery-failed`, assigns it to the actor whose push produced the
+release, and records the released tag, the version currently on `main`, and the failed run. It is
+gated on `failure() && release_created == 'true'`, so an ordinary red run creates no alarm: without a
+release there is no drift, and an alarm that fires for unrelated failures gets ignored. Cancellation
+is excluded for the same reason. Consecutive failures comment on the open issue instead of opening a
+second one, and `Close a resolved delivery alarm` closes it once a later release delivers
+successfully — an open alarm therefore always means real, current drift. That closing step is
+`continue-on-error`: a stale open alarm is recoverable, a red run on a good delivery would erode
+trust in the signal.
+
+The assignee is `github.actor`, never `github.repository_owner`: the owner here is the
+`sebastian-software` organization, and GitHub accepts only user accounts with repository access as
+assignees. Assignment is best effort — the issue is created first and assigned afterwards, so a bot
+actor or one without access costs the assignment rather than the alarm.
+
+Both steps use `github.token` and need only the workflow-level `issues: write` permission; they must
+never touch the delivery App credentials. Note that narrowing that permission block would break them
+without failing any test — the contract assertions check the workflow text, not the granted scopes.
+
+**Re-delivery was considered and rejected** (issue #278). `workflow_dispatch` cannot provide it:
+it requires the workflow file on the default branch, and `main` deliberately carries no release
+workflow. Neither can a scheduled check, which has the same default-branch requirement. More
+fundamentally, a workflow reaches `main` only through a _successful_ delivery, so a re-delivery
+workflow would first need the very thing whose absence it was meant to repair. Repairing a failed
+delivery means cutting the next release deliberately.
 
 ### Trusted default-branch automation
 
