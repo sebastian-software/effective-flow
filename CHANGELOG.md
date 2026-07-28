@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.3](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.54.2...effective-flow-v1.54.3) (2026-07-28)
+
+
+### Bug Fixes
+
+* carry the worktree lifecycle contract in apply-issues ([5dbaec4](https://github.com/sebastian-software/effective-flow/commit/5dbaec435cef4955f48202dabd3d7b59cfeeb412)), closes [#283](https://github.com/sebastian-software/effective-flow/issues/283)
+
 ## [1.54.2](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.54.1...effective-flow-v1.54.2) (2026-07-28)
 
 
