@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.2](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.54.1...effective-flow-v1.54.2) (2026-07-28)
+
+
+### Bug Fixes
+
+* surface a failed delivery as an assigned issue ([14f797a](https://github.com/sebastian-software/effective-flow/commit/14f797a3059f1f8fca9a2cc381c9c84ad3eb4b53)), closes [#278](https://github.com/sebastian-software/effective-flow/issues/278)
+
 ## [1.54.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.54.0...effective-flow-v1.54.1) (2026-07-28)
 
 
