@@ -129,52 +129,8 @@ Both marker forms are equivalent. Only one language is used per plan file. The m
 independent language choice: it is part of the complete plan language resolved by "Language
 resolution" (`language.workflow` for a new plan, or the preserved language of an existing plan).
 
-### Canonical bilingual plan contract
-
-Readers map these complete forms to the same internal meanings; writers choose one column and
-use it consistently throughout the artifact:
-
-| Meaning              | German                                              | English                                      |
-| -------------------- | --------------------------------------------------- | -------------------------------------------- |
-| Status, open         | `**Planungsstatus:** Nicht umgesetzt`               | `**Plan status:** Not implemented`           |
-| Status, completed    | `**Planungsstatus:** Umgesetzt`                     | `**Plan status:** Implemented`               |
-| Source               | `**Quelle:**`                                       | `**Source:**`                                |
-| Workflow             | `**Empfohlener Workflow:**`                         | `**Recommended workflow:**`                  |
-| Doc category         | `**Doku-Kategorie:**`                               | `**Doc category:**`                          |
-| Target path          | `**Ziel-Pfad:**`                                    | `**Target path:**`                           |
-| Requirement          | `## Anforderung`                                    | `## Requirement`                             |
-| Architecture         | `## Architekturentscheidungen`                      | `## Architecture decisions`                  |
-| Affected files       | `## Betroffene Dateien`                             | `## Affected files`                          |
-| Implementation       | `## Implementierungsdetails`                        | `## Implementation details`                  |
-| Approach             | `### Vorgehen`                                      | `### Approach`                               |
-| Component structure  | `### Komponentenstruktur`                           | `### Component structure`                    |
-| State management     | `### Zustandsverwaltung`                            | `### State management`                       |
-| API integration      | `### API-Integration`                               | `### API integration`                        |
-| Styling approach     | `### Styling-Ansatz`                                | `### Styling approach`                       |
-| Accessibility        | `### Barrierefreiheit`                              | `### Accessibility`                          |
-| Edge cases           | `### Randfälle`                                     | `### Edge cases`                             |
-| Acceptance criteria  | `## Akzeptanzkriterien`                             | `## Acceptance criteria`                     |
-| Validation plan      | `## Validierungsplan`                               | `## Validation plan`                         |
-| Assumptions          | `## Annahmen und offene Punkte`                     | `## Assumptions and open points`             |
-| Plan review          | `## Plan-Review`                                    | `## Plan review`                             |
-| Review result        | `**Ergebnis:** Freigegeben` / `Überarbeitung nötig` | `**Result:** Approved` / `Revision required` |
-| Review summary       | `### Zusammenfassung`                               | `### Summary`                                |
-| Plan-review findings | `### Befunde`                                       | `### Findings`                               |
-| Open points          | `## Offene Punkte`                                  | `## Open points`                             |
-| Empty open points    | `- Keine offenen Punkte.`                           | `- No open points.`                          |
-| Test results         | `## Testergebnisse`                                 | `## Test results`                            |
-| Review findings      | `## Review-Befunde`                                 | `## Review findings`                         |
-
-Tables and finding prose follow the same rule. Plan file tables use `Datei` / `Beschreibung`
-and review scorecards use `Bereich` / `Kritisch` / `Wichtig` / `Hinweis` in German; English uses
-`File` / `Description` and `Area` / `Critical` / `Important` / `Note`. Review dates, reviewer
-labels, summary statuses, and no-findings prose are likewise rendered wholly in the plan
-language. Machine-stable values called out below are the only exceptions.
-
-Workflow routing values and skill references remain stable: `Feature`, `Bugfix`, `Refactoring`,
-`Documentation`, and the referenced `effective-flow build`/`effective-flow fix`/`effective-flow refactor`/
-`effective-flow docs` token are not translated. Doc-category values and target paths likewise remain
-`user-guide`, `developer-guide`, `operations`, `runbooks`, and their stable paths.
+The complete bilingual field and section mapping lives in `plan-contract`; a workflow that writes
+or translates a plan artifact loads it, a workflow that only recognizes the status does not.
 
 Rules:
 
@@ -184,9 +140,9 @@ Rules:
 - Other values such as `Open`/`Done`, `Pending`/`Complete`, or arbitrary free text do not count either.
 - Other occurrences of „Nicht umgesetzt“, „Umgesetzt“, "Not implemented", or "Implemented" in review findings, ADR rationales, or body text do not count as a plan status.
 - If the marker is missing, occurs multiple times, contains an invalid value, or uses a mixed form of key and value language, the plan status is unclear. In that case, do not automatically treat the plan as open or completed.
-- A writer must not combine fields or sections from both columns. A mixed plan is unclear and is
-  not automatically rewritten. A requested translation converts the complete plan contract.
 - When a workflow sets the status to completed, the complete plan language is preserved: a German marker becomes `**Planungsstatus:** Umgesetzt`, an English marker becomes `**Plan status:** Implemented`.
+
+**Load on demand:** Read `shared/plan-contract.md`, when a plan artifact's fields, sections, or review prose are written or translated.
 
 ## Recommended skills
 
@@ -197,8 +153,10 @@ Rules:
 - **File mode:** only analysis, user follow-up questions, and changes to exactly one referenced
   plan file under `<plan.dir>/` or `<plan.dir>/archive/` are allowed.
 - **Issue mode:** only when delegated by `effective-flow plan-issue`; only analysis, user follow-up
-  questions, and `issue-comment-update` for exactly one supplied canonical planning-comment ID are
-  allowed. Return readiness to the caller; do not change labels here.
+  questions, and the targeted update of exactly one supplied canonical planning-comment ID are
+  allowed. The tracker adapter supplied with the delegation is the resolved target's access path:
+  the helper's `issue-comment-update` on the forge, or the connection's update-comment-by-ID
+  capability on an external target. Return readiness to the caller; do not change labels here.
 - Changes to source code, tests, configuration, build files,
   README files, ADRs, review reports, and other project files are forbidden.
 - In issue mode, creating a plan file, adding a comment, updating another comment, changing the
@@ -246,11 +204,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
 
 1. **Prefer recommended skills:** Preferentially apply the skills listed further above under
    "Recommended skills", provided they are available and relevant to the concrete task.
-   "Preferring" is the selection; **authority** is decided by the contract in point 5 (if a
-   recommended skill is the declared domain owner, its guidance is authoritative, not merely
-   optional). A fallback notation `A › B` is an ordered preference: take the first available,
-   non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
-   this point does not apply.
+   "Preferring" is the selection; **authority** is decided by the contract in point 5. A fallback
+   notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
+   group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
    0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
    inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
@@ -456,6 +412,12 @@ After each decision or direct correction:
      each successful update. Never call `issue-comment`, create a file, update the issue body, or
      choose another comment. On unsupported capability, missing target, ambiguity, or stale body,
      return a blocking persistence failure to `plan-issue` without a fallback write.
+     The supplied adapter decides how that update is executed: on an external target it is the
+     resolved connection's update-comment-by-ID capability under the `tracker-target` write
+     discipline `plan-issue` has already loaded — preview the payload, re-read the exact comment
+     immediately before writing, and compare it verbatim against the retained basis. A missing
+     capability, a missing or ambiguous comment, and a changed body are the same blocking
+     persistence failure there, and never a second comment.
 2. Keep the artifact's open-points section up to date:
    - German: `## Offene Punkte` with the empty state `- Keine offenen Punkte.`
    - English: `## Open points` with the empty state `- No open points.`

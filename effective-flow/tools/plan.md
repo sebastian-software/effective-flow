@@ -9,85 +9,7 @@ This gateway delegates explicit issue references to `effective-flow plan-issue`;
 actionable, validated implementation plan in `<plan.dir>/` without code or implementation and
 recommends the appropriate follow-up workflow.
 
-## Language resolution
-
-Effective Flow resolves the language of persisted, human-readable content by **target surface**.
-The project setup ADR may contain these stable keys; each value is `de` or `en`:
-
-| Key                                | Surface                                                                     |
-| ---------------------------------- | --------------------------------------------------------------------------- |
-| `language.project`                 | Fallback for every surface; default `en`                                    |
-| `language.source`                  | Comments, test descriptions, and in-code documentation                      |
-| `language.documentation.user`      | Root README, marketing entry point, and user documentation                  |
-| `language.documentation.technical` | Developer/API documentation, operations documentation, runbooks, and ADRs   |
-| `language.workflow`                | Plans, plan reviews, local review reports, and investigation reports        |
-| `language.forge`                   | Issues, PR bodies, issue/PR comments, and remote review replies             |
-| `language.git`                     | Commit descriptions, Conventional Commit PR titles, changelog/release prose |
-
-Identifiers, public API names, config keys, encoded values, schemas, paths, label names, HTML
-markers, finding IDs, action values, Conventional Commit types, and branch slugs are not
-localized. Product UI/CLI/error text follows the target project's product-i18n rules and is not
-controlled by this configuration. Exact quotations and incoming third-party text are not
-translated unless explicitly requested.
-
-### Resolver (the single precedence rule)
-
-For each artifact, determine its target surface first and resolve exactly once:
-
-1. An explicit user language request for that artifact wins.
-2. When editing an existing artifact, preserve its clearly recognizable language unless the user
-   requests translation. If it is mixed or unclear, clarify before changing human-readable prose.
-3. For a new artifact, use the valid surface-specific `language.*` override.
-4. Otherwise use a valid `language.project`.
-5. Otherwise use `en`.
-
-Only `de` and `en` are valid. An invalid value has no special meaning: report the affected key,
-ignore it, and continue with the next fallback. A missing override means inheritance; `null` is
-not a language value. Interactive, non-persisted replies follow the user's current language,
-using `language.project` only if the conversation language is not recognizable.
-
-At overlap boundaries, the publication destination decides: local review prose uses
-`language.workflow`, remote review prose uses `language.forge`, commit prose uses `language.git`.
-A PR title that is a Conventional Commit subject uses `language.git`; its body and all comments
-use `language.forge`.
-
-An orchestrating tool resolves every required surface once per run and passes the concrete
-`de`/`en` values to delegated agents. Agents must use that supplied language context and must not
-independently re-read the project setup ADR. A directly invoked agent or standalone tool with no
-orchestrator resolves the required values itself using this same rule.
-
-### Transitional workflow fallback (read compatibility only)
-
-When no valid `language.workflow` and no valid `language.project` exist, a legacy
-`plan.markerLanguage = de|en` may temporarily supply `language.workflow`; report that the old
-marker setting now controls the **whole workflow artifact** and point to `effective-flow setup`.
-Writers never create `plan.markerLanguage`.
-
-If no `language.*` or legacy marker key exists, an unconfigured project may temporarily derive
-`language.workflow` from its existing plan corpus only when the plan prose, canonical fields,
-and status marker consistently and unambiguously use one language across the corpus. A marker
-alone is not evidence. Mixed, contradictory, empty, or unclear corpora supply no signal and fall
-through to `en`; report the setup recommendation. This fallback is read-only compatibility and
-does not authorize rewriting existing plans.
-
-### Complete artifact consistency
-
-One persisted artifact uses one language for all human-readable prose, including its headings,
-field labels, displayed status values, review sections, and open-point sections. Readers accept
-the documented complete German and English forms; writers never mix them. An explicit translation
-changes the complete artifact, not only one marker or heading.
-
-### Typography
-
-Map `de` to `de-DE` and `en` to `en-US`. Locale-specific typography of visible prose — quotation
-marks, dashes, umlauts and ß, non-breaking spaces, number and date formats — is owned by the
-central `locale-typography` skill. Its locale guidance is authoritative; Effective Flow keeps no
-second typography checklist.
-
-If the skill is unavailable (not installed, `skills.enabled: false`, or disabled via `exclude`),
-use only this minimal fallback for German prose: real umlauts and ß rather than ASCII
-transliterations, German quotation marks „…“, and a spaced en dash – for parenthetical dashes.
-Do not alter code, identifiers, commands, paths, or machine-readable values for typography.
+**Load on demand:** Read `shared/language-rules.md`, when an artifact output language or delegated language context must be resolved.
 
 ## Task tracking
 
@@ -128,52 +50,8 @@ Both marker forms are equivalent. Only one language is used per plan file. The m
 independent language choice: it is part of the complete plan language resolved by "Language
 resolution" (`language.workflow` for a new plan, or the preserved language of an existing plan).
 
-### Canonical bilingual plan contract
-
-Readers map these complete forms to the same internal meanings; writers choose one column and
-use it consistently throughout the artifact:
-
-| Meaning              | German                                              | English                                      |
-| -------------------- | --------------------------------------------------- | -------------------------------------------- |
-| Status, open         | `**Planungsstatus:** Nicht umgesetzt`               | `**Plan status:** Not implemented`           |
-| Status, completed    | `**Planungsstatus:** Umgesetzt`                     | `**Plan status:** Implemented`               |
-| Source               | `**Quelle:**`                                       | `**Source:**`                                |
-| Workflow             | `**Empfohlener Workflow:**`                         | `**Recommended workflow:**`                  |
-| Doc category         | `**Doku-Kategorie:**`                               | `**Doc category:**`                          |
-| Target path          | `**Ziel-Pfad:**`                                    | `**Target path:**`                           |
-| Requirement          | `## Anforderung`                                    | `## Requirement`                             |
-| Architecture         | `## Architekturentscheidungen`                      | `## Architecture decisions`                  |
-| Affected files       | `## Betroffene Dateien`                             | `## Affected files`                          |
-| Implementation       | `## Implementierungsdetails`                        | `## Implementation details`                  |
-| Approach             | `### Vorgehen`                                      | `### Approach`                               |
-| Component structure  | `### Komponentenstruktur`                           | `### Component structure`                    |
-| State management     | `### Zustandsverwaltung`                            | `### State management`                       |
-| API integration      | `### API-Integration`                               | `### API integration`                        |
-| Styling approach     | `### Styling-Ansatz`                                | `### Styling approach`                       |
-| Accessibility        | `### Barrierefreiheit`                              | `### Accessibility`                          |
-| Edge cases           | `### Randfälle`                                     | `### Edge cases`                             |
-| Acceptance criteria  | `## Akzeptanzkriterien`                             | `## Acceptance criteria`                     |
-| Validation plan      | `## Validierungsplan`                               | `## Validation plan`                         |
-| Assumptions          | `## Annahmen und offene Punkte`                     | `## Assumptions and open points`             |
-| Plan review          | `## Plan-Review`                                    | `## Plan review`                             |
-| Review result        | `**Ergebnis:** Freigegeben` / `Überarbeitung nötig` | `**Result:** Approved` / `Revision required` |
-| Review summary       | `### Zusammenfassung`                               | `### Summary`                                |
-| Plan-review findings | `### Befunde`                                       | `### Findings`                               |
-| Open points          | `## Offene Punkte`                                  | `## Open points`                             |
-| Empty open points    | `- Keine offenen Punkte.`                           | `- No open points.`                          |
-| Test results         | `## Testergebnisse`                                 | `## Test results`                            |
-| Review findings      | `## Review-Befunde`                                 | `## Review findings`                         |
-
-Tables and finding prose follow the same rule. Plan file tables use `Datei` / `Beschreibung`
-and review scorecards use `Bereich` / `Kritisch` / `Wichtig` / `Hinweis` in German; English uses
-`File` / `Description` and `Area` / `Critical` / `Important` / `Note`. Review dates, reviewer
-labels, summary statuses, and no-findings prose are likewise rendered wholly in the plan
-language. Machine-stable values called out below are the only exceptions.
-
-Workflow routing values and skill references remain stable: `Feature`, `Bugfix`, `Refactoring`,
-`Documentation`, and the referenced `effective-flow build`/`effective-flow fix`/`effective-flow refactor`/
-`effective-flow docs` token are not translated. Doc-category values and target paths likewise remain
-`user-guide`, `developer-guide`, `operations`, `runbooks`, and their stable paths.
+The complete bilingual field and section mapping lives in `plan-contract`; a workflow that writes
+or translates a plan artifact loads it, a workflow that only recognizes the status does not.
 
 Rules:
 
@@ -183,111 +61,13 @@ Rules:
 - Other values such as `Open`/`Done`, `Pending`/`Complete`, or arbitrary free text do not count either.
 - Other occurrences of „Nicht umgesetzt“, „Umgesetzt“, "Not implemented", or "Implemented" in review findings, ADR rationales, or body text do not count as a plan status.
 - If the marker is missing, occurs multiple times, contains an invalid value, or uses a mixed form of key and value language, the plan status is unclear. In that case, do not automatically treat the plan as open or completed.
-- A writer must not combine fields or sections from both columns. A mixed plan is unclear and is
-  not automatically rewritten. A requested translation converts the complete plan contract.
 - When a workflow sets the status to completed, the complete plan language is preserved: a German marker becomes `**Planungsstatus:** Umgesetzt`, an English marker becomes `**Plan status:** Implemented`.
+
+**Load on demand:** Read `shared/plan-contract.md`, when a plan artifact's fields, sections, or review prose are written or translated.
 
 **Load on demand:** Read `shared/plan-numbering.md`, when a plan file is created or its date-slug name is resolved.
 
-## Doc categories
-
-Final documents from the documentation workflow are placed exclusively in one of the four fixed categories under `docs/`.
-
-| Category        | Directory               | Audience                                                        |
-| --------------- | ----------------------- | --------------------------------------------------------------- |
-| User guide      | `docs/user-guide/`      | End users of the application                                    |
-| Developer guide | `docs/developer-guide/` | Developers who contribute to the project                        |
-| Operations      | `docs/operations/`      | Operations, deployment, monitoring, infrastructure              |
-| Runbooks        | `docs/runbooks/`        | Step-by-step procedures for incident response and routine tasks |
-
-### Prescribed standard doc structure
-
-Unless the user or the underlying plan specifies otherwise, this **standard structure** of
-three roles applies to the project documentation. It is a prose default: the documentation
-workflow applies it when no different structure is required; an explicit wish of the user
-(e.g. a purely technical README without marketing) always takes precedence. There is **no**
-config field for this.
-
-Resolve documentation language by target: root `README.md` and `docs/user-guide/**` use
-`language.documentation.user`; `docs/developer-guide/**`, `docs/operations/**`,
-`docs/runbooks/**`, standalone API documentation, and new ADRs use
-`language.documentation.technical`; in-code documentation uses `language.source`; explicit
-changelog/release prose uses `language.git`. Existing documents preserve their clear language
-unless translation was explicitly requested. File/directory names and category values remain
-stable and are not translated.
-
-1. **Root `README.md` – marketing entry point.** A marketing page entirely from the user's
-   perspective: value proposition first, promotional language allowed, kept short. It is
-   created by the marketing agent (not by the factual documentation agent) and applies the
-   conditional follow-up-link rule below.
-2. **User documentation → `docs/user-guide/`.** Entirely from the user's perspective:
-   describes installation and usage extensively, optionally with an FAQ and similar additions.
-   The entry point is `docs/user-guide/README.md`.
-3. **Technical documentation → `docs/developer-guide/`.** For developers and software
-   architects: developers get an overview of the software, software architects can derive from
-   it whether the software should be used from a technical standpoint. The entry point is
-   `docs/developer-guide/README.md`.
-
-**Conditional follow-up-link rule for the root README.** At the end of the documentation run,
-inspect whether `docs/user-guide/README.md` and `docs/developer-guide/README.md` exist. The
-final documentation follow-up section of the root `README.md` includes only links whose targets
-exist, in user-guide then developer-guide order:
-
-- If both targets exist at the end of the run, the section contains exactly two links:
-  first `docs/user-guide/README.md`, then `docs/developer-guide/README.md`.
-- If exactly one target exists, the section contains only that target's valid link. Report the
-  other path as an open point in the workflow or agent result.
-- If neither target exists, emit neither link. Report both missing paths individually as open
-  points in the workflow or agent result.
-
-Never add a placeholder or broken link for a missing target. Preserve existing unrelated
-README links; they are outside the final documentation follow-up section and do not count
-toward this invariant.
-
-### File name convention
-
-- topic-based slugs in kebab-case, e.g. `installation.md`, `architecture.md`, `restart-database.md`
-- no date or number prefix; the date-slug scheme (with a preserved legacy number) is exclusive to the plan directory `<plan.dir>/` (from `plan.dir` of the Effective Flow configuration/project-setup ADR, default `docs/plan`)
-- slugs must be unique within their category
-- file extension always `.md`
-
-### Directory rules
-
-- `docs/user-guide/README.md` as a curated entry point with a reading order is mandatory as soon as at least one user-guide document exists.
-- `docs/developer-guide/README.md` as a curated entry point is mandatory as soon as at least one developer-guide document exists. It gives developers an overview and software architects a basis for decision-making, and is the target of the developer-guide follow-up link when that link is included under the conditional rule (see "Prescribed standard doc structure").
-- `docs/operations/` and `docs/runbooks/` have no README by default.
-- In `docs/runbooks/`, thematic subfolders are allowed, e.g. `docs/runbooks/database/restart.md`. They are optional; mandatory only once the flat list becomes unwieldy.
-- Empty directories are not created in advance. A category directory comes into being only with the first document in it.
-
-### Write boundary
-
-- The documentation workflow may write final documents exclusively into these four directories and their subfolders.
-- **Exception root `README.md`:** As the marketing entry point of the standard doc structure, the root `README.md` is a sanctioned write target of the documentation workflow and does not need to be named individually in every plan table for that. It is written exclusively in this marketing-entry-point role; if a root README already exists, it is not silently overwritten but the replacement is clarified with the user (analogous to the collision rule for existing target paths).
-- Every **other** existing file outside these directories may only be changed if it is explicitly named in the `Affected files` table of the underlying plan file.
-
-### Plan headers for documentation plans
-
-Plan files with `**Empfohlener Workflow:** Documentation` or
-`**Recommended workflow:** Documentation` additionally contain the matching two lines directly
-under the workflow recommendation:
-
-- German: `**Doku-Kategorie:** user-guide | developer-guide | operations | runbooks` and
-  `**Ziel-Pfad:** docs/<category>/<topic-slug>.md`
-- English: `**Doc category:** user-guide | developer-guide | operations | runbooks` and
-  `**Target path:** docs/<category>/<topic-slug>.md`
-
-Rules:
-
-- Both lines must use the complete plan language and be written exactly as above, including bold
-  formatting, colon, and lowercasing of the stable category value.
-- The category field must match the directory prefix in the target-path field.
-- The target path must point to a file within the matching category directory.
-- Example: `**Doku-Kategorie:** runbooks` with `**Ziel-Pfad:** docs/runbooks/database/restart.md`,
-  or the complete English equivalent.
-- **Special case marketing entry point:** If the documentation plan targets the root `README.md`,
-  the matching target-path field contains `README.md` and the doc-category line is omitted – the
-  root README is not one of the four `docs/` categories. Only in exactly this case may the
-  category line be absent.
+**Load on demand:** Read `shared/doc-categories.md`, when the requirement is classified as Documentation and a doc category or target path is decided.
 
 ## Recommended skills
 
@@ -325,11 +105,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
 
 1. **Prefer recommended skills:** Preferentially apply the skills listed further above under
    "Recommended skills", provided they are available and relevant to the concrete task.
-   "Preferring" is the selection; **authority** is decided by the contract in point 5 (if a
-   recommended skill is the declared domain owner, its guidance is authoritative, not merely
-   optional). A fallback notation `A › B` is an ordered preference: take the first available,
-   non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
-   this point does not apply.
+   "Preferring" is the selection; **authority** is decided by the contract in point 5. A fallback
+   notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
+   group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
    0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
    inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
@@ -576,7 +354,7 @@ Rules:
 
 - Remove irrelevant optional subsections or write a brief "Not relevant" with a rationale.
 - Use concrete file references as soon as they can be derived from the codebase.
-- Formulate the acceptance criteria so that together they yield exactly one measurable completion condition. The implementing workflow derives its goal condition and the optional `/goal` string from them; avoid vague criteria without a named check.
+- Formulate the acceptance criteria so that together they yield exactly one measurable completion condition. The implementing workflow derives its completion condition from them; avoid vague criteria without a named check.
 - Write the plan as an implementation guide, not as a pre-implementation.
 - Avoid code blocks in the plan. Use them only when a short code formulation is clearer and shorter than a prose description.
 - If a code example is necessary, limit it to the smallest meaningful fragment and document that it is an example or an interface sketch.
@@ -612,16 +390,16 @@ Incorporate the reported gaps into the plan and clean it up before you report it
 Normalize the quality judgment from Phase 4 into the Effective Flow scorecard (the skill provides
 the judgment, Effective Flow the artifact form):
 
-| Criterion               | Target                                                                                                                               |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Clarity                 | concrete file references and clear steps, target >= 80%                                                                              |
-| Verification            | measurable acceptance criteria per requirement                                                                                       |
-| Context                 | verified code vs. assumptions, target <= 10% guessing                                                                                |
-| Big Picture             | purpose and workflow explicitly described                                                                                            |
-| No-code boundary        | no changes outside `<plan.dir>/`                                                                                                     |
-| Code frugality          | no code in the plan unless a minimal fragment is the shortest clear explanation                                                      |
-| Workflow recommendation | Feature, Bugfix, Refactoring, or Documentation is justified and fits the scope                                                       |
-| Doc target              | documentation plans contain the matching German or English doc-category and target-path fields, valid and consistent with each other |
+| Criterion               | Target                                                                                                                                                                                                          |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Clarity                 | concrete file references and clear steps, target >= 80%                                                                                                                                                         |
+| Verification            | measurable acceptance criteria per requirement                                                                                                                                                                  |
+| Context                 | verified code vs. assumptions, target <= 10% guessing                                                                                                                                                           |
+| Big Picture             | purpose and workflow explicitly described                                                                                                                                                                       |
+| No-code boundary        | no changes outside `<plan.dir>/`                                                                                                                                                                                |
+| Code frugality          | no code in the plan unless a minimal fragment is the shortest clear explanation                                                                                                                                 |
+| Workflow recommendation | Feature, Bugfix, Refactoring, or Documentation is justified and fits the scope                                                                                                                                  |
+| Doc target              | documentation plans contain the matching German or English target-path field, plus the doc-category field unless `Doc categories` sanctions its omission; a present category is consistent with its target path |
 
 If a criterion is not met, revise the plan or ask the user for the missing information.
 

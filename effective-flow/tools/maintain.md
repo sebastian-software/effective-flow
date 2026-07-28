@@ -238,6 +238,9 @@ language; changing `language.documentation.technical` does not translate an exis
   different from a present line with value `null` (an explicit value, semantically "ask at
   run time"). Example: no `delivery.completion` line → default `merge`; a
   `delivery.completion | null` line → ask at run time.
+- **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
+  automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
+  per the rule above.
 
 Reading a single value is a trivial line lookup (line with dotted key →
 value cell). Example excerpt (interface sketch, not full content):
@@ -301,6 +304,7 @@ still-present `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` (otherwise
 ## Recommended skills
 
 - `smart-dependency-updater`
+- `pr-review`
 
 ## Delegation contract
 
@@ -355,50 +359,14 @@ When an internal sub-agent ends without `DONE` or `ABORT`:
 
 ## Goal-driven completion control
 
-Internal "repeat until done" loops of this workflow follow a uniform goal pattern instead of an ad-hoc formulated loop. The pattern combines the native `/goal` principles (Codex and Claude Code) with visible progress control. At explicit goal gates, the directly following central `goal-start-action` fragment renders the action after an authorized autonomous choice per harness.
+Internal "repeat until done" loops of this workflow follow a uniform completion pattern instead of an ad-hoc formulated loop. The pattern pairs one declared completion goal with independent verification and visible progress control. It steers the workflow's own run; Effective Flow neither offers nor starts a harness-native autonomous run for it, and the workflow's regular approval gates always apply.
 
 ### Goal controls
 
 1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
 2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
 3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
-4. **Visible progress for an active native goal.** Once the native goal is active—whether started directly or through a pasted `/goal` prompt—the remaining workflow maintains a visible phase task list and concise chat updates even when only a few phases remain: before work, create or reconcile every known remaining numbered phase in stable order; mark each phase when it starts and reaches an end state; add findings, issues or parallel subtasks as soon as their set is known, without matching duplicates; on resume, continue the existing list; and keep more specific per-finding, per-issue, per-source and per-reviewer detail rules authoritative. Exactly one workflow owns the goal overview on the shared interaction surface: the orchestrator responsible for the remaining scope; `effective-flow apply-plan` hands ownership to its selected target workflow before that workflow’s remaining phases begin and opens no competing list, while `effective-flow apply-issues` and `effective-flow apply-review` retain ownership of their overall phases and issue or finding tasks; a non-interactively delegated subworkflow reports status and results to the owner and may keep a local detail list only in a harness-isolated subcontext, never as a second goal overview. Follow the native task tool’s state model: if only one entry may be active, keep the overall phase active while parallel detail work follows its existing rules and is summarized in chat; submit result-dependent status changes only after the determining tool result is known, never in the same parallel tool batch. After each numbered phase and each bounded correction round, post a short update with its result and the next step, adding a deviation or blocker only when present; during correction keep the phase active, report the failed check and correction result, and name the retry or escalation; these updates are not gates, so continue autonomously unless an existing approval rule or genuine blocker requires user input. Give skipped, terminally failed and aborted steps the best native end state, or an unambiguous `[skipped]`, `[failed]` or `[aborted]` suffix when none exists; keep a step awaiting user input open with its blocker, and never treat terminal failure or abort as satisfying the goal. If the task tool is unavailable, list the known remaining phases compactly in chat before continuing and carry their state in later updates; if updates fail irrecoverably, report that failure once, move all still-open tracking to chat without claiming a successful tool update, and continue the domain work. Immediately before goal success, the owner reconciles every known phase and dynamic entry—including the equivalent final chat summary in fallback mode—to a truthful visible end state, and independently verifies the domain completion condition; never complete the goal with an unresolved entry.
-
-### Explicit goal query for autonomous runs
-
-At the approval boundary of this workflow – where the completion condition is already fixed and the workflow is waiting for approval anyway – the user gets an **explicit choice** whether the remaining phases continue gated or autonomously under the native `/goal`. This replaces the earlier passive co-emitting of a `/goal` string: the option is actively queried, not merely offered. Workflows with this explicit gate include the central `goal-start-action` fragment directly after this control fragment.
-
-#### When the query is omitted
-
-Skip the goal query entirely (no extra option, no goal-start action and no `/goal` string) when the workflow runs as a **non-interactive sub-agent** of a superordinate orchestrator where no direct user interaction is intended – recognizable from the invocation context, for example "[Context from effective-flow apply-review: …]". `effective-flow apply-review` already steers its autonomous run at its own gate; an additional goal query per sub-delegation would be pointless there. Direct invocations and the handover through `effective-flow apply-plan` (interactive, individual) do **not** count as such delegation – there the goal query is retained.
-
-#### Form of the query
-
-- If the approval boundary is a yes/no approval, extend the approval question with a third option "Autonomous via `/goal`" next to "Yes" (continue gated) and "Adjust".
-- If the approval boundary is a selection question (e.g. update groups) or if there is no yes/no approval at this boundary (e.g. because a planning phase was skipped), directly ask a concise standalone follow-up question "Run the remaining phases autonomously under `/goal`?". Depending on the interaction surface, use either yes/no answers or the explicit options "Continue gated" and "Autonomous via `/goal`".
-- At the three-option approval gate, only "Autonomous via `/goal`" authorizes the harness-specific goal-start action; "Yes" continues gated and "Adjust" returns to clarification.
-- At the standalone follow-up question, "Yes" or "Autonomous via `/goal`" authorizes the harness-specific goal-start action; "No" or "Continue gated" continues gated.
-- No other response and no omitted query authorizes the goal-start action. On every gated path, **no** `/goal` string is emitted. The internal approval gates are retained in any case.
-
-Rules for the `/goal` prompt and its objective in every harness path:
-
-- **Self-sustaining:** Reference the underlying plan file, if present, and instruct to run through the remaining phases of this workflow – not "somehow make the criteria green".
-- **Measurable:** Name the completion condition with the checks actually provided in the respective workflow (e.g. acceptance criteria fulfilled, project-configured checks green and – if the workflow has a review phase – reviewer without open critical findings) and the scope boundary. Leave out checks that do not apply.
-- **Platform-neutral objective:** Restrict yourself to the condition text after `/goal `; that exact text is both the direct Codex `objective` and the objective in every prompt handoff or fallback.
-- **Copy-ready presentation:** Whenever a `/goal` prompt is output for the user to paste – including a fallback after a failed direct start – put the fully resolved single-line command as the sole content of a dedicated fenced `text` code block. Keep the cause, explanation and paste prompt outside the fence; do not add a label, comment or other text inside it.
-- **Only at gate-free boundaries:** Offer the autonomous run exclusively at approval boundaries after which no further approval gate follows, so an autonomous run does not get stuck at a later gate.
-
-Form (replace placeholders, single line):
-
-```text
-/goal Fully implement <plan file or agreed task> and run through the remaining phases of this workflow: all acceptance criteria fulfilled, project-configured checks green<, reviewer without open critical findings – only if the workflow has a review phase>. Maintain a visible phase task list and report the result and next step in chat after each major phase. Change nothing outside the scope. Stop when all criteria hold.
-```
-
-## Harness-specific goal-start action
-
-When the explicit goal query in "Goal-driven completion control" authorizes an autonomous run, perform this harness-specific action:
-
-After the user explicitly chooses the autonomous `/goal` option, output the full copy-pasteable `/goal` prompt prominently and ask the user to paste it as a new input. Use only this prompt handoff; without a pasted prompt, the workflow continues gated.
+4. **Visible progress.** Every run maintains a visible phase task list and concise chat updates even when only a few phases remain. This overview is required regardless of the generic task-tracking thresholds, which keep governing only ad-hoc subtask lists: before work, create or reconcile every known remaining numbered phase in stable order; mark each phase when it starts and reaches an end state; add findings, issues or parallel subtasks as soon as their set is known, without matching duplicates; on resume, continue the existing list; and keep more specific per-finding, per-issue, per-source and per-reviewer detail rules authoritative. Exactly one workflow owns the progress overview on the shared interaction surface: the orchestrator responsible for the remaining scope; `effective-flow apply-plan` hands ownership to its selected target workflow before that workflow’s remaining phases begin and opens no competing list, while `effective-flow apply-issues` and `effective-flow apply-review` retain ownership of their overall phases and issue or finding tasks; a non-interactively delegated subworkflow reports status and results to the owner and may keep a local detail list only in a harness-isolated subcontext, never as a second progress overview. Follow the native task tool’s state model: if only one entry may be active, keep the overall phase active while parallel detail work follows its existing rules and is summarized in chat; submit result-dependent status changes only after the determining tool result is known, never in the same parallel tool batch. After each numbered phase and each bounded correction round, post a short update with its result and the next step, adding a deviation or blocker only when present; during correction keep the phase active, report the failed check and correction result, and name the retry or escalation; these updates are not gates, so continue with the next step unless an existing approval rule or genuine blocker requires user input. Give skipped, terminally failed and aborted steps the best native end state, or an unambiguous `[skipped]`, `[failed]` or `[aborted]` suffix when none exists; keep a step awaiting user input open with its blocker, and never treat terminal failure or abort as satisfying the completion condition. If the task tool is unavailable, list the known remaining phases compactly in chat before continuing and carry their state in later updates; if updates fail irrecoverably, report that failure once, move all still-open tracking to chat without claiming a successful tool update, and continue the domain work. Immediately before reporting completion, the owner reconciles every known phase and dynamic entry—including the equivalent final chat summary in fallback mode—to a truthful visible end state, and independently verifies the domain completion condition; never report completion with an unresolved entry.
 
 ## Delivery and worktree integration
 
@@ -543,6 +511,19 @@ validated missing path segments. The result must remain below the canonical abso
 `<RUNTIME_STATE_ROOT>/.effective-flow/review/`. Reject `..`, path aliasing, or any existing
 symlink that escapes those directories. A project-relative path is only presentation; it is
 never an operational handle after the roots diverge.
+
+Root every forge operation in `RUNTIME_STATE_ROOT` as well — for a different reason than runtime
+state. A provider CLI such as `gh` or `tea` resolves its repository context from its working
+directory, and the execution worktree is not guaranteed to exist when that call happens: the
+completion action runs after an Effective Flow-owned worktree may already have been withdrawn, so
+an inherited execution directory can be a deleted path. Pass the absolute runtime root as the
+per-call working directory for every remote-helper invocation and for the repository-wide Git
+operations that accompany a completion action, such as refreshing the base ref, resolving refs and
+pushing the delivery branch. Those act on refs, not on a working tree. This holds while the
+execution worktree still exists, so the behavior does not depend on cleanup order. It never
+redirects tracked project work, and never any operation that reads or changes a working tree —
+branch creation, branch checkout, cleanliness checks and a default derived from the checked-out
+branch all stay in `EXECUTION_ROOT`.
 
 ### Harness-owned worktrees
 
@@ -832,7 +813,8 @@ If the Effective Flow configuration (project setup ADR) pins corresponding value
     "baseBranch": "origin/main",
     "branchPrefix": "effective-flow",
     "completion": "merge",
-    "returnBranch": "auto"
+    "returnBranch": "auto",
+    "prReview": "ask"
   },
   "worktree": {
     "enabled": true,
@@ -848,6 +830,7 @@ Missing values have these defaults:
 - `delivery.branchPrefix`: `"effective-flow"`
 - `delivery.completion`: `"merge"` (merge into the target branch as the default completion)
 - `delivery.returnBranch`: `"auto"` (local branch part from `delivery.baseBranch`)
+- `delivery.prReview`: `"ask"` (a gated run asks once per created pull request)
 - `worktree.enabled`: `true` (implementation runs in its own worktree)
 - `worktree.setup`: `"auto"`
 - `worktree.baseDir`: `.effective-flow/.worktrees`
@@ -856,6 +839,7 @@ Valid values:
 
 - `delivery.completion`: `"pr"`, `"merge"`, `"branch"`
 - `delivery.returnBranch`: `"auto"` or a local branch name as a string
+- `delivery.prReview`: `"ask"`, `"always"`, `"off"`
 - `worktree.enabled`: `true`, `false`
 - `worktree.setup`: `"auto"`, `"none"` or an explicit setup command as a string
 
@@ -1116,7 +1100,7 @@ normal delivery completion.
 
 ### Handback and completion action (completion phase)
 
-Following the workflow's regular completion logic (including goal verification).
+Following the workflow's regular completion logic (including completion-condition verification).
 The final status switch of the plan file to `Umgesetzt`/`Implemented` and its
 archiving is handled by step 1 below at the delivery point – the implementing workflow therefore does **not** set the
 status beforehand, but leaves it to this phase (exception: in-place without
@@ -1179,7 +1163,11 @@ If Delivery was active and no valid value for `delivery.completion` is set: Ask 
    receipts, perform no worktree cleanup and create no lifecycle state; leave handling to the
    user or harness. The verified `RUNTIME_STATE_ROOT` is never a cleanup target, and local review
    state there remains intact.
-5. **Execute action:**
+5. **Execute action:** Run this step and every Git, remote-helper and provider-CLI operation it
+   performs in `RUNTIME_STATE_ROOT`, per "Rooted operations". Step 4 may already have removed the
+   Effective Flow-owned worktree, so an inherited execution directory can be a deleted path; the
+   delivery branch and its commits are repository-wide and need no worktree. Never fall back to
+   `EXECUTION_ROOT` for this step.
    - `branch` / Branch only: leave the branch, report the name and a note about later
      PR creation.
    - `merge`: the target is the local branch part of `delivery.baseBranch` or the
@@ -1188,10 +1176,20 @@ If Delivery was active and no valid value for `delivery.completion` is set: Ask 
      behind its remote-tracking ref, point that out. Merge the delivery branch –
      prefer fast-forward, otherwise a merge commit; on conflict stop, leave the branch
      and inform the user, no automatic conflict resolution.
-   - `pr`: delegate to `effective-flow pr` and pass the delivery branch, base branch and the
-     workflow/change type (`feat`/`fix`/`refactor`/`docs`/`chore` depending on the implementing
-     workflow and effect) as a title-type hint, so the PR title carries a
-     valid Conventional Commit type — with a squash merge it is the release signal.
+   - `pr`: delegate to `effective-flow pr` and pass the delivery branch, base branch, the verified
+     `RUNTIME_STATE_ROOT` as its execution root, and the workflow/change type
+     (`feat`/`fix`/`refactor`/`docs`/`chore` depending on the implementing workflow and effect) as
+     a title-type hint, so the PR title carries a valid Conventional Commit type — with a squash
+     merge it is the release signal.
+     Once `effective-flow pr` returned the pull request, run "PR review publication" with that pull
+     request, whether this run is gated or a non-interactive delegation, and either the workflow's
+     residual finding set or its explicit declaration that it has none. It uses the same verified
+     `RUNTIME_STATE_ROOT`. This stays inside step 5 deliberately: step 4 has already withdrawn an
+     Effective Flow-owned worktree and step 6 restores the checkout to the base branch, so a review
+     running after them would have no execution root and would read base-branch content.
+
+**Load on demand:** Read `shared/pr-review-integration.md`, when the completion action created or reused a pull request and the automatic PR review may run.
+
 6. **Restore checkout:** For in-place delivery that switched the current checkout, after
    successful PR creation or with `branch`, switch back to `delivery.returnBranch` or, with
    `auto`, to the local branch part of `delivery.baseBranch`, provided the working tree is clean.
@@ -1301,8 +1299,8 @@ This report uses the same global finding IDs as `effective-flow review`.
 
 ### Report format
 
-Resolve `language.workflow` and use the matching complete canonical report format from
-`effective-flow review` section "Report format". Do not duplicate the template here. When appending to
+Resolve `language.workflow` and use the matching complete canonical report format from the shared
+`review-report-format` fragment. Do not duplicate the template here. When appending to
 an existing report, preserve its clearly recognizable report language.
 
 Additional header fields for workflow reports:
@@ -1326,6 +1324,8 @@ Rules:
   `Nicht umgesetzt (ADR: <slug>)`.
 - After writing, output the report path to the user.
 
+**Load on demand:** Read `shared/review-report-format.md`, when a review report is written or an existing one is augmented.
+
 ## Workflow
 
 ### Phase 0: Scope gate
@@ -1348,11 +1348,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
 
 1. **Prefer recommended skills:** Preferentially apply the skills listed further above under
    "Recommended skills", provided they are available and relevant to the concrete task.
-   "Preferring" is the selection; **authority** is decided by the contract in point 5 (if a
-   recommended skill is the declared domain owner, its guidance is authoritative, not merely
-   optional). A fallback notation `A › B` is an ordered preference: take the first available,
-   non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
-   this point does not apply.
+   "Preferring" is the selection; **authority** is decided by the contract in point 5. A fallback
+   notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
+   group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
    0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
    inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
@@ -1433,18 +1431,38 @@ Ask the user: **Which of the proposed update groups should be implemented now?**
 - Security only -- Apply audit/security fixes exclusively
 - Selection -- Name specific groups as free text
 
-2. From the chosen update selection, derive the explicit completion condition (implemented groups, baseline comparison green, reviewer with no open critical findings on code adaptations; see "Goal-driven completion control"); it covers phases 3–5. Since the update gate is a selection question, ask the standalone goal follow-up question directly after the selection per "Explicit goal query for autonomous runs". "Autonomous via /goal" performs the central harness-specific goal-start action for phases 3–5; "Continue gated" keeps the usual stops. The follow-up question is omitted if the workflow was delegated non-interactively.
-
-If the workflow runs interactively and was not delegated as a non-interactive sub-agent (e.g. by effective-flow apply-review): Ask the user: **Run the remaining phases autonomously under /goal?**
-- Continue gated -- The workflow continues with the usual stops
-- Autonomous via /goal -- Remaining phases autonomously under native /goal after this explicit selection
-
+2. From the chosen update selection, derive the explicit completion condition (implemented groups, baseline comparison green, reviewer with no open critical findings on code adaptations; see "Goal-driven completion control"); it covers phases 3–5.
 3. Work through the approved groups **one after another**. For each group the skill applies the version jump, updates the lockfile via the detected manager, researches breaking changes, and where needed adapts local code to the changed API – carried out via every implementer selected in phase 0. Emit the reduced-depth notice before ``effective-flow-generic-product-implementer``; reserve ``effective-flow-generic-implementer`` for tooling/CI/configuration. The task is only to adapt to the changed API, with no new behavior. Afterwards `maintain` compares against the baseline:
    - green → **one clean commit per group** (see commit rules), with the description in resolved
      `language.git` and a stable Conventional Commit type, e.g. `chore(deps): …`.
    - red and repairable → follow up with an adaptation via the implementer, validate again – limit the internal correction rounds per "Goal-driven completion control"; if the group stays red afterwards, treat it as "not sensibly repairable" instead of repeating indefinitely.
    - red and not sensibly repairable → roll the group back (manifest and lockfile to the state before the group) and mark it as "manual".
 4. Record the result and rationale per group in the wisdom file.
+
+### Phase 3.5: Documentation sync
+
+Run the mandatory documentation sync gate once for all implemented groups, after the group loop and
+before review. Typical surfaces here are documented runtime or dependency requirements, changed
+build or test commands, and migration notes for a breaking upgrade.
+
+Phase 3 already committed one clean commit per update group, so the gate's own changes get their
+own dedicated commit (Conventional Commit type `docs`) before Phase 4; never fold them into an
+unrelated group commit and never leave them uncommitted for the handback.
+
+#### Documentation sync gate
+
+Every implementation run passes this gate once its implementation is functionally complete and
+before its verification, review and completion phases. The phase is **mandatory**: it is not
+skippable, not conditional on a prior "is this user-relevant?" judgment, and not satisfied by an
+intention to document later. It runs inside the calling workflow's already verified
+execution-location receipt and owns no delivery, commit strategy, plan-status switch or worktree
+of its own.
+
+Every documentation surface the gate enumerates ends in exactly one recorded verdict — `updated`,
+`no impact` or `blocked`. A surface left unassessed is an unfinished phase, and a `blocked`
+surface prevents completion under the blocking rule of the detail contract.
+
+**Load on demand:** Read `shared/documentation-sync-contract.md`, when the documentation sync phase starts.
 
 ### Phase 4: Review
 
@@ -1470,7 +1488,7 @@ Pure dependency bumps without code adaptation need no reviewer pass; note that b
    - a reference to an offloaded review report, if present.
 3. Confirm that the behavior stayed unchanged (baseline comparison green).
 4. Delete the wisdom file.
-5. If delivery or worktree execution was active: run the handback per "Delivery and worktree integration". The per-group commits already sit on the delivery branch; the handback performs ownership-safe worktree cleanup if applicable, runs the completion action `pr`/`merge`/`branch`, and restores only an in-place checkout it switched. Name the delivery branch, the final checkout state, and the result in the summary.
+5. If delivery or worktree execution was active: run the handback per "Delivery and worktree integration". The per-group commits already sit on the delivery branch; the handback performs ownership-safe worktree cleanup if applicable, runs the completion action `pr`/`merge`/`branch`, and restores only an in-place checkout it switched. Hand the **residual** Phase-4 finding set to that handback — the findings that survived this run's correction rounds, not the full review history — so an automatic PR review publishes them instead of reviewing the pull request a second time; if Phase 4 did not run at all (pure dependency bumps without code adaptation), declare **no** complete finding set, so an automatic PR review reviews the pull request itself. Name the delivery branch, the final checkout state, and the result in the summary.
 
 ## Pre-commit gate
 

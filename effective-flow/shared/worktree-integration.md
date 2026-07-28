@@ -142,6 +142,19 @@ validated missing path segments. The result must remain below the canonical abso
 symlink that escapes those directories. A project-relative path is only presentation; it is
 never an operational handle after the roots diverge.
 
+Root every forge operation in `RUNTIME_STATE_ROOT` as well — for a different reason than runtime
+state. A provider CLI such as `gh` or `tea` resolves its repository context from its working
+directory, and the execution worktree is not guaranteed to exist when that call happens: the
+completion action runs after an Effective Flow-owned worktree may already have been withdrawn, so
+an inherited execution directory can be a deleted path. Pass the absolute runtime root as the
+per-call working directory for every remote-helper invocation and for the repository-wide Git
+operations that accompany a completion action, such as refreshing the base ref, resolving refs and
+pushing the delivery branch. Those act on refs, not on a working tree. This holds while the
+execution worktree still exists, so the behavior does not depend on cleanup order. It never
+redirects tracked project work, and never any operation that reads or changes a working tree —
+branch creation, branch checkout, cleanliness checks and a default derived from the checked-out
+branch all stay in `EXECUTION_ROOT`.
+
 ### Harness-owned worktrees
 
 - **Claude Code:** Subagents start from the parent context and directory changes do not persist
@@ -430,7 +443,8 @@ If the Effective Flow configuration (project setup ADR) pins corresponding value
     "baseBranch": "origin/main",
     "branchPrefix": "effective-flow",
     "completion": "merge",
-    "returnBranch": "auto"
+    "returnBranch": "auto",
+    "prReview": "ask"
   },
   "worktree": {
     "enabled": true,
@@ -446,6 +460,7 @@ Missing values have these defaults:
 - `delivery.branchPrefix`: `"effective-flow"`
 - `delivery.completion`: `"merge"` (merge into the target branch as the default completion)
 - `delivery.returnBranch`: `"auto"` (local branch part from `delivery.baseBranch`)
+- `delivery.prReview`: `"ask"` (a gated run asks once per created pull request)
 - `worktree.enabled`: `true` (implementation runs in its own worktree)
 - `worktree.setup`: `"auto"`
 - `worktree.baseDir`: `.effective-flow/.worktrees`
@@ -454,6 +469,7 @@ Valid values:
 
 - `delivery.completion`: `"pr"`, `"merge"`, `"branch"`
 - `delivery.returnBranch`: `"auto"` or a local branch name as a string
+- `delivery.prReview`: `"ask"`, `"always"`, `"off"`
 - `worktree.enabled`: `true`, `false`
 - `worktree.setup`: `"auto"`, `"none"` or an explicit setup command as a string
 
@@ -714,7 +730,7 @@ normal delivery completion.
 
 ### Handback and completion action (completion phase)
 
-Following the workflow's regular completion logic (including goal verification).
+Following the workflow's regular completion logic (including completion-condition verification).
 The final status switch of the plan file to `Umgesetzt`/`Implemented` and its
 archiving is handled by step 1 below at the delivery point – the implementing workflow therefore does **not** set the
 status beforehand, but leaves it to this phase (exception: in-place without
@@ -777,7 +793,11 @@ If Delivery was active and no valid value for `delivery.completion` is set: Ask 
    receipts, perform no worktree cleanup and create no lifecycle state; leave handling to the
    user or harness. The verified `RUNTIME_STATE_ROOT` is never a cleanup target, and local review
    state there remains intact.
-5. **Execute action:**
+5. **Execute action:** Run this step and every Git, remote-helper and provider-CLI operation it
+   performs in `RUNTIME_STATE_ROOT`, per "Rooted operations". Step 4 may already have removed the
+   Effective Flow-owned worktree, so an inherited execution directory can be a deleted path; the
+   delivery branch and its commits are repository-wide and need no worktree. Never fall back to
+   `EXECUTION_ROOT` for this step.
    - `branch` / Branch only: leave the branch, report the name and a note about later
      PR creation.
    - `merge`: the target is the local branch part of `delivery.baseBranch` or the
@@ -786,10 +806,23 @@ If Delivery was active and no valid value for `delivery.completion` is set: Ask 
      behind its remote-tracking ref, point that out. Merge the delivery branch –
      prefer fast-forward, otherwise a merge commit; on conflict stop, leave the branch
      and inform the user, no automatic conflict resolution.
-   - `pr`: delegate to `effective-flow pr` and pass the delivery branch, base branch and the
-     workflow/change type (`feat`/`fix`/`refactor`/`docs`/`chore` depending on the implementing
-     workflow and effect) as a title-type hint, so the PR title carries a
-     valid Conventional Commit type — with a squash merge it is the release signal.
+   - `pr`: delegate to `effective-flow pr` and pass the delivery branch, base branch, the verified
+     `RUNTIME_STATE_ROOT` as its execution root, and the workflow/change type
+     (`feat`/`fix`/`refactor`/`docs`/`chore` depending on the implementing workflow and effect) as
+     a title-type hint, so the PR title carries a valid Conventional Commit type — with a squash
+     merge it is the release signal.
+     Once `effective-flow pr` returned the pull request, run "PR review publication" with that pull
+     request, whether this run is gated or a non-interactive delegation, and either the workflow's
+     residual finding set or its explicit declaration that it has none. It uses the same verified
+     `RUNTIME_STATE_ROOT`. This stays inside step 5 deliberately: step 4 has already withdrawn an
+     Effective Flow-owned worktree and step 6 restores the checkout to the base branch, so a review
+     running after them would have no execution root and would read base-branch content.
+
+```lazy-include
+pr-review-integration
+when: the completion action created or reused a pull request and the automatic PR review may run
+```
+
 6. **Restore checkout:** For in-place delivery that switched the current checkout, after
    successful PR creation or with `branch`, switch back to `delivery.returnBranch` or, with
    `auto`, to the local branch part of `delivery.baseBranch`, provided the working tree is clean.

@@ -283,6 +283,9 @@ language; changing `language.documentation.technical` does not translate an exis
   different from a present line with value `null` (an explicit value, semantically "ask at
   run time"). Example: no `delivery.completion` line → default `merge`; a
   `delivery.completion | null` line → ask at run time.
+- **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
+  automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
+  per the rule above.
 
 Reading a single value is a trivial line lookup (line with dotted key →
 value cell). Example excerpt (interface sketch, not full content):
@@ -357,9 +360,9 @@ The Effective Flow configuration is optional and controls the defaults of the fo
   `documentation.user`, `documentation.technical`, `workflow`, `forge`, `git` overrides
   (`de`/`en`; a missing override inherits `language.project`, whose default is `en`)
 - **`plan`** (source: `effective-flow plan`): `dir` (string, default `docs/plan`) — directory of the plan files
-- **`delivery`** (source: `effective-flow build`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default `origin/main`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name)
+- **`delivery`** (source: `effective-flow build`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default `origin/main`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery)
 - **`worktree`** (source: `effective-flow build`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
-- **`tracker`** (source: `effective-flow review`, section "Issue-tracker integration" – likewise embedded in ``tools/apply-review.md`` and the other tracker workflows): `mode` (local/remote, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`)
+- **`tracker`** (source: `effective-flow review`, section "Issue-tracker integration" – likewise embedded in ``tools/apply-review.md`` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names)
 - **`skills`** (source: building block "Skill discovery"): `enabled` (bool, default `true` — toggles dynamic skill usage), `include` (list — prefer these skills project-wide), `exclude` (list — never apply these skills), `agents.<name>` and `tools.<name>` (each `include`/`exclude` for a single agent or a single tool). Keys are the source agent/tool names (e.g. `ui-implementer`, `plan`).
 
 ### Safe defaults (the single base)
@@ -482,7 +485,7 @@ Ask the user: **How would you like to set up the Effective Flow configuration?**
 
 ### Step 4: Core switches (guided path only)
 
-These five switches determine the core behavior. **Before** each question, provide a short,
+These core switches determine the everyday behavior. **Before** each question, provide a short,
 understandable explanation (what is it, why is it relevant, what does the choice mean) –
 without assuming prior knowledge of Effective Flow – and state whether and with which value the
 switch is currently set in the config (see Step 2); pre-select this value or the safe
@@ -509,6 +512,16 @@ Ask the user: **Which completion action should Effective Flow use by default?**
 Briefly explain the base branch (the branch that is delivered into) and ask for it as free text
 (`delivery.baseBranch`, default `origin/main`); the switch-back target (`delivery.returnBranch`,
 default `auto`) only optionally.
+
+**PR review.** Explain: when a run creates a pull request, Effective Flow can post that run's
+review findings on it as comments. "Ask each time" decides per run, "Always" posts without asking,
+"Never" switches the automatic step off; an explicit `effective-flow review <PR>` stays available in
+every case.
+
+Ask the user: **Should Effective Flow post its review findings on a pull request it created?**
+- Ask each time -- delivery.prReview = ask (default) — a gated run asks once per delivery
+- Always -- delivery.prReview = always — post the findings without asking
+- Never -- delivery.prReview = off — no automatic posting; an explicit review of a PR is unaffected
 
 **Project and surface languages.** Explain: the project language is the fallback for every new
 human-readable artifact, while optional surface overrides let source prose, documentation,
@@ -537,14 +550,35 @@ only when plan prose, canonical fields, and marker all consistently identify one
 propose that as `language.workflow` and point to setup. Do not infer from a marker alone, and do
 not guess for mixed, contradictory, empty, or unclear corpora.
 
-**Tracker.** Explain: where review findings end up – `local` as a Markdown report in the project
-(`.effective-flow/review/`) or `remote` as issues on GitHub/Forgejo (useful for teamwork).
+**Tracker.** Explain: where issue work ends up – `local` as a Markdown report in the project
+(`.effective-flow/review/`), `remote` as issues on GitHub/Forgejo (useful for teamwork), or
+`external` as issues in a separate project-management tool the team already uses. Mention that the
+external option needs a connection that already exists on this machine (an MCP connection or an
+authenticated CLI) and that Effective Flow ships no product-specific adapter, so a run aborts
+rather than guessing when it cannot find exactly one usable connection. Pull requests always stay
+on the Git forge, whichever option is chosen.
 
-Ask the user: **Should review findings be kept locally as a Markdown report or remotely as issues (GitHub/Forgejo)?**
+Ask the user: **Where should issue work live: locally as a Markdown report, remotely as issues (GitHub/Forgejo), or in an external tool?**
 - Local -- tracker.mode = local (default) — Markdown report under .effective-flow/review/
 - Remote -- tracker.mode = remote — findings as issues, tool automatically from origin (gh/tea)
+- External tool -- tracker.mode = external — issues live in the project-management tool named by tracker.externalTool
 
 For "Remote", ask for the tool override only if needed: the default `tracker.remoteToolOverride = auto` lets the shipped remote helper classify exact `github.com` origins and hosts that match a configured Forgejo `tea` login. Any other host returns `AMBIGUOUS_HOST` instead of guessing; then capture `github` or `forgejo` as free text. Otherwise leave `auto`.
+
+For "External tool", ask two free-text follow-ups and explain each before asking:
+
+1. `tracker.externalTool` – the short, stable identifier of the tool that holds the issues. It is
+   required for this mode, there is no list of supported tools, and Effective Flow derives no
+   capability from the name. Without a value the mode stays unusable, so ask again instead of
+   writing an empty entry.
+2. `tracker.externalToolHint` – optional free text that lets a run find the right connection at
+   run time: MCP server name, workspace, team or project key, the tool's identifier convention, and
+   the names of its states. Explain that a precise hint is what prevents an ambiguous-connection
+   abort when several candidates exist.
+
+`tracker.remoteToolOverride` stays a forge setting and is not asked for in this mode. Keep an
+already recorded `externalTool`/`externalToolHint` when the mode is `local` or `remote`: they
+document intent, are preserved unchanged, and are simply ignored for routing.
 
 ### Step 5: Advanced settings (optional gate, guided path only)
 
@@ -563,10 +597,13 @@ config value or default as the pre-selection:
 1. `review`: `review.profile` (full/focused/fast — depth of the review), `review.autoConfirmScope`, `review.designDecisionSources`, `review.validation`
 2. `applyReview`: `applyReview.defaultCommitStrategy`, `applyReview.finalValidation`, `applyReview.stashPolicy`, `applyReview.worktree.baseDir`, `applyReview.worktree.setup`
 3. `language`: the project language and six overrides already asked in Step 4 — carry over
-4. `plan`: `plan.dir` (free text, default `docs/plan` — directory of the plan files)
-5. `delivery`: `delivery.baseBranch` and `delivery.completion` (already asked in Step 4 — carry over), `delivery.branchPrefix`, `delivery.returnBranch`
+4. `plan`: `plan.dir` (free text, default `docs/plan` — directory of the plan files) and
+   `concept.dir` (free text, default `docs/concept` — directory of the concept files). Both are
+   canonicalized before they are written; reject values that resolve to the same directory or nest
+   one inside the other instead of writing them.
+5. `delivery`: `delivery.baseBranch`, `delivery.completion`, and `delivery.prReview` (already asked in Step 4 — carry over), `delivery.branchPrefix`, `delivery.returnBranch`
 6. `worktree`: `worktree.enabled` (already asked in Step 4 — carry over), `worktree.setup`, `worktree.baseDir`
-7. `tracker`: `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo)
+7. `tracker`: `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo, forge only), `tracker.externalTool` and `tracker.externalToolHint` (free text; required identifier plus optional connection hint for `mode: external`, carried over when already asked in Step 4)
 8. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (global lists) as well as – as an advanced option – `skills.agents.<name>` and `skills.tools.<name>` for individual agents/tools. Additionally offer optionally (do not force) to materialize the built-in per-agent and per-tool recommendations visibly into the config as `skills.agents.<name>.include` or `skills.tools.<name>.include`; for a fallback recommendation (`effective-web › impeccable › frontend-design`), write only the **primary** skill (`effective-web`) — the built-in fallback stays active. Flat recommendations (e.g. `locale-typography`) are carried over unchanged.
 
 Anyone who wants the former "fast solo workflow" sets, for example, `review.profile: fast`,
@@ -721,8 +758,13 @@ Report to the user:
 - which path was chosen (Express or Guided) and whether advanced settings were adjusted
 - the central behavior values (`worktree.enabled` [default `true`], `delivery.completion`
   [default `merge`] including, if applicable, `delivery.baseBranch`/`delivery.returnBranch`,
+  `delivery.prReview` [default `ask`],
   `language.project` and all explicit `language.*` overrides, `tracker.mode`, and, if applicable,
-  `tracker.remoteToolOverride`) as well as `plan.dir`, if set or changed from the default
+  `tracker.remoteToolOverride` or `tracker.externalTool` plus `tracker.externalToolHint`) as well
+  as `plan.dir` and `concept.dir`, if set or changed from the default
+- for `tracker.mode = external`: both new values verbatim, plus the note that the connection is
+  selected at run time from the hint and that a missing, ambiguous, or under-capable connection
+  aborts the run instead of falling back to the forge
 - whether `plan.markerLanguage` or a consistent existing plan corpus was proposed/migrated to
   `language.workflow`, including the visible semantic change and whether the legacy row was removed
 - for a previously existing config: which keys were changed from the old state (before/after)

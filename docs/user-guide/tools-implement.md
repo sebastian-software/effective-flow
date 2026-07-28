@@ -14,28 +14,28 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
   delivery branch or worktree; at the end there is a completion action (`pr`, `merge`, or
   `branch`). For details see [Worktree and delivery](worktree-and-delivery.md).
   `/effective-flow apply` itself implements nothing, it only delegates.
-- After the approval of an internal plan, they offer the explicit option "Autonomous via
-  `/goal`", so that the remaining phases can run autonomously instead of step-by-step gated.
-  In native Codex, this explicit choice makes one direct `create_goal` attempt. Its `objective`
-  is exactly the completion condition that a `/goal` prompt would contain; `token_budget` is
-  omitted unless you supplied one explicitly. A successful start continues without an extra
-  prompt. If the capability is unavailable or fails for a technical reason, Effective Flow
-  reports the cause and provides the complete copy-pasteable prompt instead. If another
-  unfinished goal is active, it waits for your decision without emitting a new prompt, changing
-  that goal, or continuing in gated mode.
-- Claude Code and the portable manager target retain the prompt handoff: Effective Flow outputs
-  the complete `/goal` prompt, and the autonomous run starts only after you paste it as a new
-  input. Choosing the gated or adjustment path, answering normally, and non-interactive
-  delegation do not start a goal.
-- While a native Goal is active, Effective Flow maintains a visible overview of the known
-  remaining phases and reconciles it before reporting success. After each major phase, it reports
-  the result and next step in chat, then continues autonomously unless an existing approval rule
-  or genuine blocker requires input. If task tracking is unavailable or fails irrecoverably, the
-  overview and subsequent progress move to chat; the exact visual presentation remains up to the
-  harness.
+- Before implementation starts, they declare one measurable completion condition derived from the
+  acceptance criteria and the validation plan, and they verify it through the validator and the
+  routed reviewers rather than by self-assessment. Correction rounds are bounded; if the condition
+  still does not hold, the tool escalates to you instead of looping on.
+- Every run maintains a visible overview of the known remaining phases and reconciles it before
+  reporting completion. After each major phase, it reports the result and next step in chat, then
+  continues with the next step unless an approval gate or a genuine blocker requires input. If task
+  tracking is unavailable or fails irrecoverably, the overview and subsequent progress move to
+  chat; the exact visual presentation remains up to the harness.
 - Before analysis, they review the available host skills (see
   [Skill discovery](skill-discovery.md)) and respect their respective
   write boundary.
+- `build`, `fix`, `refactor`, and `maintain` run a **mandatory documentation sync gate** right
+  after their implementation phase. It is not skippable: for every documentation surface the
+  change could invalidate — in-code documentation and CLI help, user-facing documents, technical
+  documents, repository convention files — the run records one verdict. Either the surface was
+  updated, or it demonstrably has no impact (a bare "not relevant" does not count), or it is
+  blocked. A blocked surface stops completion the same way an open critical review finding does;
+  when the tool runs as a non-interactive sub-run of `apply-review`, `apply-issues`, or `iterate`,
+  the gap is instead carried out as an open finding with action `/effective-flow docs`. Most small
+  changes end in "no impact" verdicts — the gate makes documentation debt visible, it does not
+  manufacture busywork.
 - They classify affected files or domains independently. Specialized JavaScript/TypeScript,
   Node.js, and Rust routes remain preferred; other clearly identified product code uses a
   disclosed reduced-depth product route; tooling and configuration use a separate tooling-only
@@ -47,7 +47,7 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
 ## `/effective-flow apply`
 
 **Purpose:** Pure entry router. Takes any apply source – plan file,
-local review report, remote review epic/finding, or GitHub/Forgejo issue –, classifies
+local review report, review epic/finding, or any tracker issue –, classifies
 it via the shared apply-source detection, and delegates to the responsible internal tool
 (internally `apply-plan`, `apply-review`, or `apply-issues`; these are not directly callable via
 `/effective-flow`). `apply` implements nothing itself.
@@ -58,7 +58,7 @@ decide yourself which tool is responsible.
 **Typical call:** `/effective-flow apply [<plan file>|<report path>|<issue reference>]`
 
 **Input/output:** Without an argument, `apply` lists local candidates (open plans from
-`<plan.dir>/`, report files under `.effective-flow/review/`) and, in remote tracker mode, additionally
+`<plan.dir>/`, report files under `.effective-flow/review/`) and, on a tracker target, additionally
 open review epics, and then asks for the concrete source. The output consists of the
 detected source type, the resolved handle, and the started target tool.
 
@@ -126,9 +126,11 @@ the restructured code including confirmation that the discovered repository-nati
 unchanged relative to the baseline, plus – with delivery/worktree mode active – a delivery branch
 and a completion action.
 
-**Interplay:** Introduces no documentation phase when no public behavior is
-affected, and deliberately leaves new features or unplanned bugfixes out of scope during the run
-– `/effective-flow build` or `/effective-flow fix` are responsible for those.
+**Interplay:** Runs the mandatory documentation sync gate like every other implementation tool –
+documentation must describe the restructured code, never a behavior change, so a refactoring
+without a changed public surface typically ends in "no impact" verdicts. New features or unplanned
+bugfixes stay deliberately out of scope during the run – `/effective-flow build` or
+`/effective-flow fix` are responsible for those.
 
 ## `/effective-flow docs`
 
@@ -144,9 +146,13 @@ product behavior changing. This reference document itself was created via `/effe
 
 **Input/output:** Input is the documentation requirement or a plan file with the
 header lines `**Doku-Kategorie:**` and `**Ziel-Pfad:**`. Output is the new or updated
-document within one of the four categories (`docs/user-guide/`, `docs/developer-guide/`,
-`docs/operations/`, `docs/runbooks/`); if the category or target path is missing from the plan, `docs`
-asks for it.
+document. By default it lands in one of the four categories (`docs/user-guide/`,
+`docs/developer-guide/`, `docs/operations/`, `docs/runbooks/`) – but that structure is a default,
+not a mandate: if the documentation owner's repository discovery finds an established, working
+documentation structure, `docs` writes into that structure instead and names it in the doc plan
+for your approval. The target path is always required; the category is required only for targets
+inside the four categories, and `docs` asks only when a required value is missing or a stated
+category contradicts its target path.
 
 **Interplay:** The model-configured `docs-writer` and `code-documenter` agents remain Effective
 Flow workers, but apply the authoritative `tech-docs` guidance. Effective Flow retains category,

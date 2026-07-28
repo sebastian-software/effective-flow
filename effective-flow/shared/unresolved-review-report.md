@@ -68,8 +68,8 @@ This report uses the same global finding IDs as `effective-flow review`.
 
 ### Report format
 
-Resolve `language.workflow` and use the matching complete canonical report format from
-`effective-flow review` section "Report format". Do not duplicate the template here. When appending to
+Resolve `language.workflow` and use the matching complete canonical report format from the shared
+`review-report-format` fragment. Do not duplicate the template here. When appending to
 an existing report, preserve its clearly recognizable report language.
 
 Additional header fields for workflow reports:

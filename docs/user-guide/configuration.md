@@ -147,6 +147,7 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | language.forge                           | en                          |
 | language.git                             | en                          |
 | plan.dir                                 | docs/plan                   |
+| concept.dir                              | docs/concept                |
 | delivery.baseBranch                      | origin/main                 |
 | delivery.branchPrefix                    | effective-flow              |
 | delivery.completion                      | merge                       |
@@ -165,7 +166,9 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 
 The seven explicit language rows illustrate every override. In a typical project, only
 `language.project` is needed; omit an override to inherit the project language. Omit optional
-skill override rows when no override is needed.
+skill override rows when no override is needed. `tracker.externalTool` and
+`tracker.externalToolHint` are absent because this example pins `tracker.mode: local`; they belong
+to an external target only (see [Block `tracker`](#block-tracker)).
 
 ## Block `language`
 
@@ -242,6 +245,19 @@ Plan headers, sections, review content, open points, and the status marker all u
 language. New plans follow `language.workflow`; existing German and English plans retain their
 recognizable language when read, edited, or completed.
 
+## Block `concept`
+
+Controls [`/effective-flow concept`](./tools-understand.md) and the deep concept review.
+
+| Key   | Values | Default        | Meaning                                                 |
+| ----- | ------ | -------------- | ------------------------------------------------------- |
+| `dir` | String | `docs/concept` | Directory in which concept files live (`<concept.dir>`) |
+
+`concept.dir` must differ from `plan.dir`; an identical value is rejected, because a plan
+reference and a concept reference could no longer be told apart. Concept files follow the same
+one-language rule as plans and use their own status marker
+(`**Concept status:** Draft`/`Elaborated` or `**Konzeptstatus:** Entwurf`/`Ausgearbeitet`).
+
 ## Block `delivery`
 
 Describes the delivery branch, its base, its generated name, and its completion action. There is
@@ -268,13 +284,22 @@ Controls the execution location of the overall implementation, independently of
 
 ## Block `tracker`
 
-Controls whether review findings are local Markdown reports or remote GitHub/Forgejo issues. See
-[Remote tracker](./remote-tracker.md) for mode selection and CLI requirements.
+Controls where issue-shaped work lives: in local Markdown reports, in GitHub/Forgejo issues, or in
+an external project-management tool. See [Remote tracker](./remote-tracker.md) for target
+selection, CLI requirements, and what an external target sends to a third party.
 
-| Key                  | Values                        | Default | Meaning                                              |
-| -------------------- | ----------------------------- | ------- | ---------------------------------------------------- |
-| `mode`               | `local` / `remote`            | `local` | Store findings in a Markdown report or remote issues |
-| `remoteToolOverride` | `auto` / `github` / `forgejo` | `auto`  | Override host-based CLI detection                    |
+| Key                  | Values                          | Default   | Meaning                                                                 |
+| -------------------- | ------------------------------- | --------- | ----------------------------------------------------------------------- |
+| `mode`               | `local` / `remote` / `external` | `local`   | Markdown report, forge issues, or issues in the tool named below        |
+| `remoteToolOverride` | `auto` / `github` / `forgejo`   | `auto`    | Override host-based CLI detection; forge only, ignored for `external`   |
+| `externalTool`       | Short identifier                | `(unset)` | Tool that holds the issues; required for `mode: external`, no whitelist |
+| `externalToolHint`   | Free text                       | `(unset)` | How to find the connection: MCP server, workspace, key, state names     |
+
+`externalTool` and `externalToolHint` are hints for the run, not an adapter: Effective Flow ships
+no product-specific integration and establishes every capability from the connection it resolves
+at run time. Both keys are ignored for routing while the mode is `local` or `remote`, and are kept
+in the ADR. A `mode: external` without a non-empty `externalTool` is invalid configuration: the run
+aborts instead of falling back to the forge or to `local`.
 
 ## Block `skills`
 
@@ -317,6 +342,7 @@ values are retained unless the user explicitly confirms a change.
 | `delivery.baseBranch`               | `origin/main`                |
 | `tracker.mode`                      | `local`                      |
 | `plan.dir`                          | `docs/plan`                  |
+| `concept.dir`                       | `docs/concept`               |
 
 Language overrides are absent in the safe base and therefore inherit `language.project`. If the
 entire `language.*` block is absent, the default remains `en`.

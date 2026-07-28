@@ -27,34 +27,10 @@ A single, concretely locatable finding from [`/effective-flow review`](./tools-q
 e.g. a bug, missing error handling, or a security vulnerability – with severity
 (critical/important/hint), affected file, problem and recommendation text, and a proposed
 target action (`effective-flow-fix`, `effective-flow-refactor`, `effective-flow-build`, `effective-flow-docs`).
-Depending on `tracker.mode`, findings land either in a local Markdown report or as an issue on
-a remote tracker (see [Remote Tracker](./remote-tracker.md)) and are worked through by
+Depending on the [tracker target](#tracker-target), findings land either in a local Markdown
+report or as an issue on the Git forge or in an external tool (see
+[Remote Tracker](./remote-tracker.md)), and are worked through by
 [`/effective-flow apply`](./tools-implement.md).
-
-## Goal steering
-
-A uniform pattern with which interactive Effective Flow tools offer, at an approval boundary, to
-run the remaining phases **autonomously** instead of stepwise-gated via the native `/goal` mode.
-Effective Flow formulates a measurable completion condition derived from the acceptance criteria
-and verifies it through independent instances (e.g. a validator or reviewer) rather than by
-self-assessment.
-
-In native Codex, choosing "Autonomous via `/goal`" triggers one direct `create_goal` attempt. Its
-`objective` is exactly the text that follows `/goal ` in the equivalent prompt, and no
-`token_budget` is set unless you explicitly supplied one. A successful start needs no prompt. If
-the capability is unavailable or fails for a technical reason, Effective Flow reports the cause
-and falls back to the complete copy-pasteable prompt. If an unfinished goal is already active, it
-instead waits for your decision without outputting a new prompt or changing the active goal.
-Claude Code and the portable manager target always use the prompt handoff; the autonomous run
-starts only after you paste that prompt as a new input. Other choices and non-interactive
-delegation do not start a goal.
-
-While a native Goal is active, Effective Flow maintains a visible overview of the known remaining
-phases and reconciles every entry before reporting success. After each major phase, it reports the
-result and next step in chat and continues autonomously unless an existing approval rule or genuine
-blocker requires input. If task tracking is unavailable or fails irrecoverably, the overview and
-subsequent progress are carried in chat instead. The harness determines the exact visual
-presentation.
 
 ## Harness
 
@@ -71,6 +47,36 @@ implementing tool actually starts work. If the basis does not pass the gate (e.g
 open points or missing measurable acceptance criteria), Effective Flow refers back to
 clarification instead of guessing or partially implementing. See
 [Troubleshooting](./troubleshooting.md#the-clarification-gate-was-not-passed).
+
+## Completion control
+
+The uniform pattern with which an Effective Flow tool decides that it is done; the tools and the
+developer documentation call it "Goal-driven completion control". Before the implementation work
+starts, it formulates one measurable completion condition derived from the acceptance criteria and
+the validation plan, including the scope boundary — what is deliberately not changed. It verifies
+that condition through independent instances (the validator, the routed reviewers) rather than by
+self-assessment, and it bounds its correction rounds: if the condition still does not hold, it
+escalates to you instead of looping on.
+
+Effective Flow never hands the remaining phases to a harness-native autonomous mode; the regular
+approval gates of each workflow always apply.
+
+Every run maintains a visible overview of the known remaining phases and reconciles every entry
+before reporting completion. After each major phase, it reports the result and next step in chat
+and continues with the next step unless an approval gate or a genuine blocker requires input. If
+task tracking is unavailable or fails irrecoverably, the overview and subsequent progress are
+carried in chat instead. The harness determines the exact visual presentation.
+
+## Concept (file)
+
+A Markdown file created by [`/effective-flow concept`](./tools-understand.md) under
+`<concept.dir>` (default `docs/concept`) that describes a **new application** one step before
+planning: problem, target users, use cases, first-version scope, non-goals, and a coarse technical
+direction. The file name follows the pattern `YYYY-MM-DD-<slug>.md`. Its status is
+`Draft`/`Entwurf` until the deep concept review has elaborated it to
+`Elaborated`/`Ausgearbeitet`. Unlike a plan, a concept is never implemented directly: its roadmap
+hands work packages over to `/effective-flow plan`, and concepts are neither archived nor marked as
+implemented.
 
 ## Plan (file)
 
@@ -96,6 +102,18 @@ setup); the complete tool reference lives in the five guides under
 [Understanding tools](./tools-understand.md), [Implementation tools](./tools-implement.md),
 [Quality tools](./tools-quality.md), [Delivery tools](./tools-deliver.md), and
 [Setup tools](./tools-setup.md).
+
+## Tracker target
+
+The place that owns issue identity for a run, selected by `tracker.mode`: `local` (a Markdown
+report under `.effective-flow/review/`), `remote` (the issue tracker of your `origin` remote,
+GitHub or Forgejo), or `external` (the project-management tool named by `tracker.externalTool`).
+Review publication and the issue-driven tools always follow the same target within one run, while
+pull requests stay on the Git forge, plan files stay committed under `plan.dir`, and
+[investigations](./tools-understand.md) stay local – in every target. An external target needs a
+connection you already have (an MCP connection or an authenticated CLI); Effective Flow ships no
+product-specific adapter and aborts instead of guessing a target. Details in
+[Remote Tracker](./remote-tracker.md).
 
 ## Worktree
 

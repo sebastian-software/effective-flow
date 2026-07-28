@@ -85,6 +85,7 @@ Tasks are created at **two** points in time, because the directory split in Phas
 ## Recommended skills
 
 - `codebase-improvement`
+- `pr-review`
 
 ## Delegation contract: generic audit reasoning
 
@@ -197,25 +198,7 @@ Effective Flow-internal files live under `.effective-flow/` in the project root.
 
 The file `.effective-flow/memory.json` stores persistent state across sessions. Unlike the wisdom file, it is never deleted.
 
-### Content
-
-```json
-{
-  "lastFindingNumber": 42,
-  "configMigration": {
-    "review": {
-      "version": "review-speed-profiles-v1",
-      "appliedAt": "YYYY-MM-DDTHH:mm:ssZ",
-      "addedKeys": ["review.profile"]
-    }
-  }
-}
-```
-
-`configMigration` is an object with area-specific sub-keys (`review`, `applyReview`, `tracker`, `worktree`). Each workflow area writes only its own sub-key.
-
-All updates use the “Shared memory-state mutation” contract loaded through the runtime-directory
-prerequisite. No review phase directly rewrites this file.
+**Load on demand:** Read `shared/review-state.md`, when memory or cache data is inspected, reserved, or written.
 
 ### Configuration schema
 
@@ -263,26 +246,6 @@ Explicitly set detail values take precedence over profile derivations.
 
 Reading the Effective Flow configuration from the project-setup ADR (including the `review` keys) and the one-time migration of an old config is handled centrally by the "Config migration" building block (`config-migration.md`); this building block no longer performs its own per-block migration for `review`. The `review` config schema above (defaults, profile derivation) is unaffected.
 
-### Cache file
-
-Persistent cache data lives exclusively in `.effective-flow/cache.json`, not in `.effective-flow/memory.json` and not permanently in wisdom files.
-
-`review` may use these cache areas:
-
-| Area               | Content                                                               | Invalidation                                            |
-| ------------------ | --------------------------------------------------------------------- | ------------------------------------------------------- |
-| `designDecisions`  | Extracted design decisions per source                                 | Hash or mtime of the source files, cache schema version |
-| `scopeIndex`       | File list, routing buckets, and reviewer split for whole-code reviews | Git HEAD, dirty state, and relevant file changes        |
-| `validatorScripts` | Detected check scripts and last usable validation profile             | Changes to package/build configuration files            |
-
-Rules:
-
-- Every cache entry needs `version`, `createdAt`, and `sourceHash` or equivalent invalidation data.
-- In case of uncertainty, a missing file, invalid JSON, a version change, or invalidation that cannot be checked unambiguously: ignore the cache and recompute normally.
-- Do not overwrite invalid cache files; briefly inform the user and continue without the cache.
-- Never take final review findings from the cache or replace them with cached results.
-- Wisdom files remain temporary in-run storage and are deleted at the end.
-
 ### Git tracking
 
 The entire `.effective-flow/` directory must be ignored and untracked. Review never changes
@@ -315,13 +278,17 @@ user to `effective-flow setup`, the sole repair owner.
    memory-state mutation” against the retained absolute memory handle under `RUNTIME_STATE_ROOT`.
    Format its mapping as `R-0000001`, `R-0000002`, ... . Reserve nothing when the list is empty.
 8. The reservation must be atomically persisted and its lock released before any report, finding
-   issue, or epic is published. If reservation fails, publish nothing. If later publication fails
-   or is interrupted, report the reserved range and partial result; the unused IDs remain
-   permanent gaps and are never rolled back or reused.
+   issue, epic, or pull-request comment is published. If reservation fails, publish nothing. If
+   later publication fails or is interrupted, report the reserved range and partial result; the
+   unused IDs remain permanent gaps and are never rolled back or reused.
 
 **Load on demand:** Read `shared/config-migration.md`, when the Effective Flow configuration is read for the first time or an old config is migrated.
 
-**Load on demand:** Read `shared/issue-tracker.md`, when the tracker mode `remote` is active.
+**Load on demand:** Read `shared/issue-tracker.md`, when the resolved tracker target is the forge (`remote`) or an external tool.
+
+**Load on demand:** Read `shared/tracker-target.md`, when the resolved tracker target is `external`.
+
+**Load on demand:** Read `shared/security-disclosure-gate.md`, when findings are classified for publication or a withheld security finding is persisted or published.
 
 ## Wisdom accumulation
 
@@ -360,7 +327,17 @@ Allowed forms are:
 - legacy number, e.g. `0066` (for migrated old plans, resolved primarily via the H1
   `# 0066: …`; the file name segment is only the existing secondary signal)
 
-If exactly one plan file is found:
+If exactly one plan file is found, first resolve the same argument against `<concept.dir>/` per the
+concept-file special case below. That cross-check belongs here, before the plan branch acts,
+because acting first would make the ambiguity unreachable:
+
+- **Plan match only:** continue with the plan steps below.
+- **Plan match and concept match:** the argument is ambiguous. Name both interpretations, ask which
+  artifact was meant, and start neither review. Only a bare file name or a title slug can be
+  ambiguous — a full path names its directory, and a bare four-digit value stays a legacy plan
+  reference.
+
+For an unambiguous plan match:
 
 1. Do not load any code-review configuration, tracker mode, memory file,
    cache, or wisdom file.
@@ -373,13 +350,66 @@ review, do not continue with Phase 1: report the missing plan or ask for the spe
 file instead of guessing a code review. Only arguments without clear plan-review intent
 may fall through to the normal code-review scope.
 
+### Concept-file special case
+
+Evaluated **after** the plan-file special case and never before it: a bare four-digit value stays a
+legacy plan reference and is never read as a concept reference. Like the plan-file case, this
+branch runs before Phase 1 and before any code-review-specific initialization.
+
+**Load on demand:** Read `shared/concept-contract.md`, when the review argument may be a concept reference that must be resolved.
+
+`<concept.dir>` is the concept directory from the Effective Flow configuration (project-setup ADR)
+`concept.dir` (default `docs/concept`). Check whether the user argument unambiguously points to a
+concept file there. Allowed forms are the full path, the date-slug file name, and the title slug.
+
+If exactly one concept file is found:
+
+1. Do not load any code-review configuration, tracker mode, memory file, cache, or wisdom file.
+2. Read the internal instruction ``tools/concept-review.md``.
+3. Run it with the resolved concept file.
+4. Then end this `review` workflow; do not start a code review.
+
+An argument that matches both a plan file and a concept file is ambiguous. That case is decided by
+the cross-check in the plan-file special case above, which runs first and asks instead of starting
+either review; the rule is stated there so it stays reachable. If no concept file or several
+concept files match and the user clearly wanted a concept review, report the missing concept or ask
+for the specific file instead of guessing a code review.
+
+### Pull-request special case
+
+Evaluated **after** the plan-file special case and never before it: a bare four-digit value stays a
+legacy plan reference and is never read as a pull request.
+
+A PR reference is `#42`, a bare number that is not four digits, or a PR URL — the path segment
+`/pull/` (GitHub) or `/pulls/` (Forgejo) marks it, and an `/issues/` URL is not one. Resolve it
+through the PR resolution of the loaded "PR review comment integration".
+
+On a resolved pull request:
+
+1. The review scope is that pull request's changed files; Phase 1 determines no other scope.
+2. Do **not** resolve the tracker target in Phase 1 and do not apply its fail-closed classes. This
+   path is inherently forge-bound: it publishes onto the pull request and performs no tracker
+   write, so a missing `tracker.externalTool` or an unreachable external connection never aborts
+   it. Required is only the forge preflight: detect the host and CLI and probe availability and
+   authentication.
+3. Finding IDs come from the existing shared memory-state reservation as usual.
+4. Phases 2 and 3 run unchanged.
+5. Phase 4 publishes the Phase-3 finding set through the loaded "PR review publication" instead of
+   the local-mode report or the finding issues of a publishing target.
+
+An argument that plausibly matches both a plan file and a pull request is ambiguous: name both
+interpretations and ask, never guess. A merged or closed pull request, or one belonging to another
+repository, is reviewed read-only and reported as such.
+
+**Load on demand:** Read `shared/pr-review-integration.md`, when the review argument may be a pull-request reference that must be resolved, or findings are published onto a resolved pull request.
+
 ### Phase 1: Scope
 
 1. Read the arguments.
-2. Load the Effective Flow configuration, migrate it if necessary, and determine the review profile, DD source profile, and validation mode. Additionally determine the tracker mode according to "Issue-tracker integration (remote mode)" (config `tracker.mode`, argument/per-run signal, and possibly a first-call query). For `remote`: detect the host and CLI and check CLI availability and authentication in advance; if the CLI is missing, abort clearly (no silent fallback to `local`).
+2. Load the Effective Flow configuration, migrate it if necessary, and determine the review profile, DD source profile, and validation mode. Additionally resolve the tracker **target** according to "Issue-tracker integration (remote mode)" — not only the mode (config `tracker.mode`, argument/per-run signal, and possibly a first-call query). For the forge target: detect the host and CLI and check CLI availability and authentication in advance; if the CLI is missing, abort clearly (no silent fallback to `local`). For `external`: `tracker.externalTool` must be set, and exactly one connection is established and checked in advance against the capabilities publication needs — create an issue, list or search issues by classification and description content for the `Signature` dedup, add a classification value, and the container mechanism. Each of the four fail-closed classes aborts before the first write, and neither missing connection nor missing capability falls back to the forge or to `local`. Name the resolved target — for `external` with tool identifier, connection, and container mechanism — in the status output and in the Phase-4 summary.
 3. Resolve the concrete output language once before any Phase-2 delegation: resolve
-   `language.workflow` for local review artifacts and `language.forge` for remote review
-   artifacts, then set `<review-output-language>` from the tracker mode. Record the concrete
+   `language.workflow` for local review artifacts and `language.forge` for published tracker
+   artifacts, then set `<review-output-language>` from the resolved target. Record the concrete
    `de`/`en` value in the wisdom context and pass it to every Phase-2 agent. Do not let delegated
    agents re-read or reinterpret the project setup ADR.
 4. Without arguments:
@@ -409,11 +439,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
 
 1. **Prefer recommended skills:** Preferentially apply the skills listed further above under
    "Recommended skills", provided they are available and relevant to the concrete task.
-   "Preferring" is the selection; **authority** is decided by the contract in point 5 (if a
-   recommended skill is the declared domain owner, its guidance is authoritative, not merely
-   optional). A fallback notation `A › B` is an ordered preference: take the first available,
-   non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
-   this point does not apply.
+   "Preferring" is the selection; **authority** is decided by the contract in point 5. A fallback
+   notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
+   group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
    0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
    inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
@@ -544,19 +572,20 @@ Write all results to the wisdom file under `## Design decisions` with sub-sectio
    - Check each remaining finding individually for whether it is covered by a documented design decision.
    - On a match: remove the finding from the main report and move it into the "Skipped findings (design decisions)" table with a source reference.
    - In case of uncertainty (partial overlap): keep the finding in the report but annotate it with a reference to the potentially relevant design decision.
-4. Determine the follow-up action for each remaining finding:
+4. **Central security classification:** classify every remaining finding as `local-only` or `publishable` per the loaded "Security disclosure gate". This is the only place where a finding's publication class is decided. Record the class, the exposure marking, and the reason in the wisdom file so Phase 4 does not re-derive them.
+5. Determine the follow-up action for each remaining finding:
    - defect → `effective-flow fix`
    - structural problem → `effective-flow refactor`
    - missing functionality / safeguard → `effective-flow build`
    - pure documentation gap, outdated documentation, incorrect examples, missing migration, CLI, or API documentation → `effective-flow docs`
-5. Formulate prompt suggestions:
+6. Formulate prompt suggestions:
    - directly copyable plain text
    - no surrounding quotation marks
    - no escape sequences like `\"`
 
 ### Phase 4: Report
 
-Phase 4 branches according to the tracker mode determined in Phase 1. In local mode a Markdown report is written as before. In remote mode **no** local report is written; instead, finding issues and an epic issue are created. The finding numbering from `.effective-flow/memory.json` applies in both modes.
+Phase 4 branches according to the tracker target resolved in Phase 1. On the `local` target a Markdown report is written as before. On a publishing target — the forge or an external tool — finding issues and a container (epic) are created, and a local report is written **only** for the findings the security classification held back. A publishing run without `local-only` findings therefore writes no local report, exactly as before. The finding numbering from `.effective-flow/memory.json` applies to every target.
 
 #### Local mode
 
@@ -575,96 +604,32 @@ Phase 4 branches according to the tracker mode determined in Phase 1. In local m
 3. If the active finding scope only covers critical and important findings (default):
    - do not include notes in the main report
    - briefly mention that notes were filtered out and that a comprehensive review is available on request
-4. If `review.validation: off` was active, mention in the report that technical validation was skipped.
+4. If `review.validation: off` was active, mention in the report that technical validation was skipped. Carry the Phase-3 security classification into the report as well: every finding gets its `Security` field, and a report holding at least one `local-only` finding gets the disclosure banner. The publication gate is a no-op here, because local mode publishes nothing.
 5. Update valid cache areas (`designDecisions`, `scopeIndex`, `validatorScripts`) only after a successful recomputation. Do not write review findings to the cache.
 6. Present the most important findings to the user and point to the saved report file.
 7. Delete the wisdom file.
 
-#### Remote mode
+#### Publishing target (forge or external tool)
 
-Use the formats, labels, and operations from "Issue-tracker integration (remote mode)". **No** local report is written.
+Use the formats, labels, and operations from "Issue-tracker integration (remote mode)". The steps below are written for the forge target and apply to an external target with the resolved connection taking the place of the helper, every mutation following the write discipline, classification mapping, and container mechanism of the loaded "Tracker target" contract — and with one exception: the legacy-compatibility mechanics (`firmo-` label unions, the legacy `Signatur` field, the one-time `sf-` migration) are forge history and are neither queried nor written on an external target. A local report is written only for the `local-only` findings of the security classification.
 
-Reuse the Phase-1 `language.forge` value for finding issues, the epic, and remote comments. It may
-differ from `language.workflow`; labels, IDs, action values, signatures, and helper fields stay
-stable.
+Reuse the Phase-1 `language.forge` value for finding issues, the container, and tracker comments. It may differ from `language.workflow`; labels, IDs, action values, signatures, and helper fields stay stable. The local security report keeps `language.workflow`, so one run may legitimately write in both languages — each artifact stays complete in its own language.
 
-1. **Ensure labels:** Create the required labels idempotently (`effective-flow-review-finding`, `effective-flow-review-epic`, the action and severity labels, `wontfix`).
-2. **Dedup first:** Use the helper's compatibility label queries and finding-dedup operation for existing finding issues in every state. It unions current and `firmo-` label results by issue number, reads both canonical `Signature` and legacy `Signatur`, normalizes either form, and removes exact duplicates from the creation list. In case of an uncertain semantic match outside that exact identity (e.g. only a shifted line number), treat it as a new finding and note the possible relationship in the issue body.
-3. **Reserve, then create new finding issues:** Only for the remaining **new** findings, reserve
-   their exact nonzero contiguous `R-XXXXXXX` range through the shared memory contract and release
-   its lock. Only after persistence, build each canonical payload through the helper and publish
-   one issue per reserved ID. Canonical writes always use `Signature`. An issue-creation failure
-   does not roll memory back; report any created subset and leave unused reserved IDs as permanent
-   gaps.
-4. **Create a new epic:** Create a **new** epic issue from the helper's canonical epic payload in the resolved Forge language (English title `Code review YYYY-MM-DD[-N]` and section `Skipped (design decisions)`; German title `Code-Review YYYY-MM-DD[-N]` and section `Übersprungen (Architekturentscheidungen)`), with label `effective-flow-review-epic`. The task list contains exclusively the finding issues newly created in this run. Skipped findings (design decisions) go into that non-checkable localized section and are identified by title, normalized signature, and decision reference only. They receive no issue, no `R-XXXXXXX` ID, and do not advance `lastFindingNumber`. Already-existing (deduplicated) findings are **not** referenced. An existing epic is never extended. Record the epic number in the `Epic` field of the associated finding issues.
-5. **Avoid an empty epic:** If no new findings remain after dedup, do **not** create an empty epic; instead report to the user that all findings already exist as issues.
-6. Do not rewrite `memory.json` after publication; the range was already persisted in Step 3.
-7. Report to the user the epic URL, the number of newly created findings, and the number of deduplicated findings.
-8. Delete the wisdom file.
+1. **Ensure labels:** Create the required labels idempotently (`effective-flow-review-finding`, `effective-flow-review-epic`, the action and severity labels, `wontfix`). On an external target, ensure the same canonical strings in the connection's classification primitive; if it exposes none, abort rather than creating findings without severity and action.
+2. **Dedup first:** On the forge target, use the helper's compatibility label queries and finding-dedup operation for existing finding issues in every state. It unions current and `firmo-` label results by issue number, reads both canonical `Signature` and legacy `Signatur`, normalizes either form, and removes exact duplicates from the creation list. On an external target, search existing findings by the canonical classification value and by `Signature` content through the resolved connection; do not query legacy `firmo-`/`Signatur` forms there, since no run has ever written them to that tool. In case of an uncertain semantic match outside that exact identity (e.g. only a shifted line number), treat it as a new finding and note the possible relationship in the issue body. Remote dedup applies to `publishable` findings; a `local-only` finding was never published and therefore cannot match a remote issue.
+3. **Dedup withheld findings:** Run the local dedup of the loaded "Security disclosure gate" for the `local-only` findings, which remote dedup cannot see. This must finish before the reservation, so a finding already recorded in an earlier report consumes no new ID.
+4. **Reserve IDs:** Reserve exactly one contiguous nonzero `R-XXXXXXX` range through the shared memory contract for the ordered list of all remaining findings of **both** classes, and release its lock. Findings dropped by remote or local dedup are not part of that list. Only after the reservation is atomically persisted may any report or issue be published; if reservation fails, publish nothing.
+5. **Run the security disclosure gate:** the local security report and then the publication offer follow the loaded "Security disclosure gate" — in that order and before any tracker mutation. Use the same report handle, directory guards, and collision mechanics as local mode, and never inspect or create a report below a linked execution worktree.
+6. **Create finding issues:** Build each canonical payload through the helper and publish one issue per reserved ID. Publish the `publishable` findings, plus the withheld findings only when the gate returned an explicit publication confirmation. Canonical writes always use `Signature`. An issue-creation failure does not roll memory back; report any created subset and leave unused reserved IDs as permanent gaps.
+7. **Create a new epic:** Create a **new** epic issue from the helper's canonical epic payload in the resolved Forge language (English title `Code review YYYY-MM-DD[-N]` and section `Skipped (design decisions)`; German title `Code-Review YYYY-MM-DD[-N]` and section `Übersprungen (Architekturentscheidungen)`), with label `effective-flow-review-epic`. The task list contains exclusively the finding issues newly created in this run. Skipped findings (design decisions) go into that non-checkable localized section and are identified by title, normalized signature, and decision reference only. They receive no issue, no `R-XXXXXXX` ID, and do not advance `lastFindingNumber`. Already-existing (deduplicated) findings are **not** referenced. An existing epic is never extended. Record the epic number in the `Epic` field of the associated finding issues. On an external target, build the container with the mechanism decided in Phase 1 — the native parent/sub-issue relation when the connection exposes one, otherwise the checklist — and never mix both within one container.
+8. **Avoid an empty epic:** If no new findings remain after dedup, do **not** create an empty epic; instead report to the user that all findings already exist as issues. The same applies to the split: if every new finding of this run stayed local, create no epic and report the local report path instead.
+9. Do not rewrite `memory.json` after publication; the range was already persisted in Step 4.
+10. Report to the user the resolved target (for `external` including tool identifier, connection, and container mechanism), the epic URL or identifier, the number of newly created findings, the number of deduplicated findings, plus the number of withheld findings and the local report path. If this run published to a different target than the previous run recorded, state that deduplication does not span targets and that findings may already exist in the old one.
+11. Delete the wisdom file.
 
-**Completion condition (no autonomous loop):** The review is complete when the findings that were quality-checked in Phase 3 and filtered against design decisions are available — in local mode in the report, in remote mode as finding issues plus an epic (or with the message that all findings already exist) —, the exact published finding range was reserved atomically before publication, and the wisdom file has been deleted. The independent check is provided by the finding-quality check in Phase 3 (confidence filter, duplicate and severity consistency). This workflow only produces a report and implements nothing; therefore there is neither a bounded correction loop nor a `/goal` string.
+**Completion condition (no correction loop):** The review is complete when the findings that were quality-checked in Phase 3, filtered against design decisions, and classified by the security gate are available — on the `local` target in the report, on a publishing target as finding issues plus their container (or with the message that all findings already exist), with every withheld finding in the local security report or, if that report was blocked, reported in the chat as not persisted —, the exact published finding range was reserved atomically before publication, and the wisdom file has been deleted. The independent check is provided by the finding-quality check in Phase 3 (confidence filter, duplicate and severity consistency). This workflow only produces a report and implements nothing; therefore there is no bounded correction loop.
 
-### Report format
-
-The English form is shown below. For `language.workflow = de`, render the complete report in
-German: `# Code-Review-Bericht`, `Datum`, `Umfang`, `Projekttyp`, `Zusammenfassung`,
-`Schweregrad`, `Anzahl`, `Komplexität`, `Aktion`, `Befunde`, `Titel`, `Bereich`, `Datei`,
-`Problem`, `Empfehlung`, `Prompt-Vorschlag`, `Entwicklernotiz`, and
-`Übersprungene Befunde (Architekturentscheidungen)`, with German displayed severity/complexity
-values. Keep finding IDs, paths, skill/action values, and other machine tokens unchanged. A
-report uses one complete form; readers accept both forms.
-
-```markdown
-# Code review report
-
-**Date:** YYYY-MM-DD
-**Scope:** [Entire code / Described area]
-**Project type:** [Frontend / Backend / CLI / Rust / Generic product / Tooling / Mixed]
-
-## Summary
-
-| Severity | Count |
-|---|---|
-| Critical | X |
-| Important | Y |
-| Note | Z |
-
-| Complexity | Count |
-|---|---|
-| Low | X |
-| Medium | Y |
-| High | Z |
-
-| Action | Count |
-|---|---|
-| effective-flow fix | X |
-| effective-flow refactor | Y |
-| effective-flow build | Z |
-| effective-flow docs | W |
-
-## Findings
-
-### [R-0000001] [Title]
-- **Severity**: Critical / Important / Note
-- **Complexity**: Low / Medium / High
-- **Area**: [...]
-- **File**: [path:line]
-- **Problem**: [...]
-- **Recommendation**: [...]
-- **Action**: `effective-flow fix` | `effective-flow refactor` | `effective-flow build` | `effective-flow docs`
-- **Prompt suggestion**: [...]
-- **Developer note**: <!-- to be filled in manually by the developer only; always leave empty when generating the report, never fill automatically. Later developer values: free text or "Do not implement: [reason]" (the German form "Nicht umsetzen: [reason]" is also recognized) -->
-
-## Skipped findings (design decisions)
-
-| Finding | Design decision | Source |
-|---|---|---|
-| [...] | [DD-XXX] | [...] |
-```
-
-If a finding is later implemented, augment the existing report in its preserved report language
-with a matching short status note. English and German field labels and displayed values remain
-readable; stable action values and IDs are never translated.
+**Load on demand:** Read `shared/review-report-format.md`, when a review report is written or an existing one is augmented.
 
 ## Known limitations
 
@@ -687,8 +652,8 @@ Only relevant if `codebase-improvement` is not available. Brief core guidance fo
 - Within Phase 2a, all design-decision sources in parallel.
 - Within Phase 2c, all reviewer sub-agents in parallel (across routing buckets and across directory splits).
 - Reviewers in Phase 2c check **no** design decisions — the central filter happens in Phase 3.
-- In local mode, this skill writes the review report, temporary wisdom, memory, and valid cache
-  entries. In remote mode, it additionally writes finding and epic issues via the tracker and
-  writes **no** local report. Every local runtime mutation uses “Runtime-state write safety”.
+- On the `local` target, this skill writes the review report, temporary wisdom, memory, and valid cache entries. On a publishing target, it additionally writes finding issues and their container through the resolved target and writes a local report only for the findings withheld by the security gate. Every local runtime mutation uses “Runtime-state write safety”.
+- A security-classified finding never reaches a tracker without the explicit per-run confirmation from the publication gate. This binds the forge and an external target alike, overrides `tracker.mode` and every other configuration, and no config key switches the gate off.
+- Publication never spans two targets: `Signature` dedup and the reserved `R-XXXXXXX` range see only the resolved target, so report the limitation when this run publishes to a different target than the previous one.
 - Prompt suggestions must be directly copyable without quotation marks and without escape sequences (applies to the report and the issue body alike).
 - The active finding scope (default: only critical+important) must be respected in the report or in the finding issues.

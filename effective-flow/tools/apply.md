@@ -182,6 +182,9 @@ language; changing `language.documentation.technical` does not translate an exis
   different from a present line with value `null` (an explicit value, semantically "ask at
   run time"). Example: no `delivery.completion` line → default `merge`; a
   `delivery.completion | null` line → ask at run time.
+- **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
+  automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
+  per the rule above.
 
 Reading a single value is a trivial line lookup (line with dotted key →
 value cell). Example excerpt (interface sketch, not full content):
@@ -305,11 +308,14 @@ type in this order (first matching rule wins):
    path, canonicalize the nearest existing ancestor before appending validated missing segments.
    Reject `..`, aliases, a symlink escape, and every path outside the directory. Retain the
    resulting absolute report handle and pass it unchanged to the responsible skill.
-4. **Issue reference** → `issue-reference` (continue with stage B), when the remote helper's
-   reference parser accepts the argument as a bare issue number (`123`), `#123`, or a
-   host-neutral issue URL for the current repository. Multiple references are parsed as one list
-   and classified individually in stage B; malformed or cross-repository references remain
-   structured errors instead of heuristic matches.
+4. **Issue reference** → `issue-reference` (continue with stage B), when the argument is an issue
+   reference of the resolved tracker target. On the forge target that is what the remote helper's
+   reference parser accepts: a bare issue number (`123`), `#123`, or a host-neutral issue URL for
+   the current repository. On an external target it is a tool-native identifier (e.g. `ABC-123`)
+   or a URL of the configured tool; a bare non-four-digit number is genuinely ambiguous there
+   (leftover forge issue or tool shorthand) and is asked about instead of guessed. Multiple
+   references are parsed as one list and classified individually in stage B; malformed or
+   cross-repository references remain structured errors instead of heuristic matches.
 5. **Otherwise** → `ambiguous`: the argument resolves to no category or matches
    both a plan **and** a review file at the same time. Do not guess — the caller
    asks (see "Ambiguity and fallbacks").
@@ -322,66 +328,85 @@ Distinguishing plan vs. report: primarily via the directory (`<plan.dir>/` or
 
 ### Stage B: issue subtype (tracker)
 
-Stage B refines an `issue-reference` from stage A into the concrete subtype. It
-requires the host/CLI detection and availability check from `issue-tracker.md`;
-a skill that uses stage B therefore also embeds `issue-tracker.md`.
+Stage B refines an `issue-reference` from stage A into the concrete subtype. It requires the
+resolved tracker target from "Tracker target" in `issue-tracker.md` together with its established
+access — the host/CLI detection and availability check of the "Remote helper contract" on the forge
+target, or the single established connection of the `tracker-target` contract on an external
+target; a skill that uses stage B therefore also embeds `issue-tracker.md`.
 ``tools/apply-plan.md`` does not need stage B — for a plan skill, stage A is enough
 to recognize an issue reference as a foreign type and forward it.
 
-Per issue, read labels and body **once fresh** from the tracker and determine the subtype in
-this precedence — **label before body structure**:
+Per issue, read classification values and body **once fresh** from the tracker and determine the
+subtype in this precedence — **classification before body structure**:
 
 1. Label `effective-flow-review-epic` (or old `firmo-review-epic`) → `review-epic`.
 2. Label `effective-flow-review-finding` (or old `firmo-review-finding`) → `review-finding`.
 3. no review label, but the body contains a sub-issue checklist
-   (`- [ ] #NNN …` / `- [x] #NNN …`) → `container-issue`.
+   (`- [ ] <reference> …` / `- [x] <reference> …`, where `<reference>` is a forge `#NNN` or a
+   tool-native identifier such as `ABC-123`), or the issue has native sub-items on a target that
+   models containment natively → `container-issue`.
 4. otherwise → `plain-issue`.
+
+The checklist form is reference-agnostic on purpose: an external target without a native
+parent/sub-issue relation carries exactly this checklist as the contract's fallback container, so a
+`#NNN`-only pattern would fail to re-detect a container Effective Flow itself created.
+
+On an external target the canonical label strings are read from whichever classification primitive
+that target uses (see the `tracker-target` classification mapping); the `firmo-` variants are forge
+history and are not looked up there.
 
 Secondary signal when a label is missing (e.g. removed manually): a title in the format
 `[R-XXXXXXX] …` together with a helper-parsed `Signature` field (legacy `Signatur` accepted on
 read) is treated like `review-finding`. If the subtype remains unclear afterwards → `ambiguous`.
 
 Why label before body: a `review-epic` carries — like a generic
-`container-issue` — a `- [ ] #NNN` checklist. The label `effective-flow-review-epic` or
+`container-issue` — a `- [ ] <reference>` checklist. The label `effective-flow-review-epic` or
 `effective-flow-review-finding` (old prefix `firmo-` equivalent, see "Label convention" in
 `issue-tracker.md`) is the reliable discriminator and takes precedence over the
 body structure.
 
-### Ownership and mode
+### Ownership and target
 
 From the final source type follows exactly one responsible skill and — for
-``tools/apply-review.md`` — the mode:
+``tools/apply-review.md`` — the flow:
 
-| Source type       | Responsible skill        | Mode / note                      |
-| ----------------- | ------------------------ | -------------------------------- |
-| `plan`            | ``tools/apply-plan.md``   | –                                |
-| `review-report`   | ``tools/apply-review.md`` | local report flow                |
-| `review-epic`     | ``tools/apply-review.md`` | remote mode, epic mode           |
-| `review-finding`  | ``tools/apply-review.md`` | remote mode, issue-list mode     |
-| `container-issue` | ``tools/apply-issues.md`` | container expansion in the skill |
-| `plain-issue`     | ``tools/apply-issues.md`` | single work item                 |
+| Source type       | Responsible skill        | Target / note                                    |
+| ----------------- | ------------------------ | ------------------------------------------------ |
+| `plan`            | ``tools/apply-plan.md``   | –                                                |
+| `review-report`   | ``tools/apply-review.md`` | `local` target, report flow                      |
+| `review-epic`     | ``tools/apply-review.md`` | tracker target of the reference, epic mode       |
+| `review-finding`  | ``tools/apply-review.md`` | tracker target of the reference, issue-list mode |
+| `container-issue` | ``tools/apply-issues.md`` | container expansion in the skill                 |
+| `plain-issue`     | ``tools/apply-issues.md`` | single work item                                 |
+
+"Not `local`" never means "the forge" here: an epic or finding reference of an external tool
+selects that tool, and the tracker-bound flow runs against it.
 
 Consistency with `issue-tracker.md`: the rule there, "argument type overrides the
 config mode", stays valid — a `review-report` forces `local`, a
-`review-epic`/`review-finding` forces `remote`. This building block delivers exactly that
-argument type.
+`review-epic`/`review-finding` forces the tracker target the reference belongs to (the forge for a
+forge reference, `external` for a tool-native one). This building block delivers exactly that
+argument type; report which target the argument selected.
 
 ### Ambiguity and fallbacks
 
 - **`none` (no argument):** do not heuristically pick the "newest". The caller
   lists local candidates (open plans from `<plan.dir>/`, report files under the absolute
-  `<RUNTIME_STATE_ROOT>/.effective-flow/review/` directory) and asks for the specific source. If the effective
-  tracker mode is `remote`, it additionally lists open review epics (label
-  `effective-flow-review-epic`, incl. old `firmo-review-epic`) as candidates, since in
-  remote mode no local report files exist.
+  `<RUNTIME_STATE_ROOT>/.effective-flow/review/` directory) and asks for the specific source. If the resolved
+  tracker target is the forge or an external tool, it additionally lists open review epics (label
+  `effective-flow-review-epic`, incl. old `firmo-review-epic`, or the target's equivalent
+  container) as candidates, since on those targets no local report files exist.
 - **`ambiguous`:** name the competing interpretations and ask, instead of
   guessing.
 - **Mixed issue list** (different subtypes in one call, e.g. `review-finding`
   and `plain-issue`): do not guess. Ask the user to split the list by target type,
-  or — in the router — route per issue. Conservative: ask.
-- **Issue reference, but tracker CLI missing/not authenticated:** stage B cannot
-  run → clear error message with a remediation hint per "Errors and edge cases" in
-  `issue-tracker.md`; no silent fallback to a local type.
+  or — in the router — route per issue. Conservative: ask. A list that mixes a forge reference
+  with an external-target reference is never resolved heuristically either: ask the user to split
+  the call by tracker target.
+- **Issue reference, but the target is unreachable** (forge CLI missing or not authenticated, or
+  no usable external connection): stage B cannot run → clear error message with a remediation hint
+  per "Errors and edge cases" in `issue-tracker.md`; no silent fallback to a local type and none to
+  another target.
 - **Unresolvable path:** `ambiguous` → ask or error message; note that
   `effective-flow open-plans` can list open plans.
 
@@ -450,13 +475,13 @@ to avoid duplicate maintenance.
 
 ## Issue-tracker integration (remote mode)
 
-This shared fragment connects `effective-flow review` and ``tools/apply-review.md`` with an external issue tracker (GitHub via `gh`, Forgejo via `tea`). It is **opt-in** via the Effective Flow configuration (project setup ADR) and disabled by default (`local`). In local mode both skills behave unchanged – findings run through the Markdown report file under `.effective-flow/review/`, no issues are created and no CLI is invoked.
+This shared fragment connects `effective-flow review` and ``tools/apply-review.md`` with an issue tracker. Its own mechanics describe the **forge** target: the issue tracker of the Git forge behind the `origin` remote (GitHub via `gh`, Forgejo via `tea`). A project may instead resolve the `external` target, whose contract is named under "Tracker target" below. Publication is **opt-in** via the Effective Flow configuration (project setup ADR) and disabled by default (`local`). On the `local` target both skills behave unchanged – findings run through the Markdown report file under `.effective-flow/review/`, no issues are created and no CLI is invoked. On a publishing target a local report is written only for findings withheld by the "Security disclosure gate" below.
 
-The local/remote toggle (`tracker.mode`) affects exclusively **reviews**. **Investigations** (`effective-flow investigate`) are exempt from it and remain purely local in every mode under `.effective-flow/investigation/` (never committed, never as an issue). Of the Effective Flow artifacts, only **plans** are committed.
+The tracker target (`tracker.mode`) affects exclusively **reviews**. **Investigations** (`effective-flow investigate`) are exempt from it and remain purely local on every target under `.effective-flow/investigation/` (never committed, never as an issue). Of the Effective Flow artifacts, only **plans** are committed.
 
 It encapsulates the **shared** building blocks: the `tracker` config schema including migration, the mode determination, the provider-neutral remote-helper contract, the label convention, and the canonical issue and epic body formats. The actual orchestration – when issues are **created** (`effective-flow review`) and when they are **read and processed** (``tools/apply-review.md``) – stays in the respective skill.
 
-In addition, ``tools/apply-issues.md`` and `effective-flow plan-issue` use this fragment for the same provider-neutral helper operations. These two skills process **arbitrary** human issues instead of the finding issues produced by `effective-flow review`; they are **inherently remote** and do **not** evaluate the `tracker.mode` toggle (local/remote) – they only need a Git repository, an `origin` remote and an authenticated CLI. The finding-/epic-specific sections (issue body format, epic body format, `R-XXXXXXX` convention) apply only to `effective-flow review`/``tools/apply-review.md``; the checkbox-ticking mechanics for epic bodies are used by ``tools/apply-issues.md`` analogously for container issues.
+In addition, ``tools/apply-issues.md`` and `effective-flow plan-issue` use this fragment for the same provider-neutral helper operations. These two skills process **arbitrary** human issues instead of the finding issues produced by `effective-flow review`; they are **inherently tracker-bound** and do **not** evaluate the local/remote toggle – they resolve the tracker target (see "Tracker target") and work against it. On the forge target they only need a Git repository, an `origin` remote and an authenticated CLI. The finding-/epic-specific sections (issue body format, epic body format, `R-XXXXXXX` convention) apply only to `effective-flow review`/``tools/apply-review.md``; the checkbox-ticking mechanics for epic bodies are used by ``tools/apply-issues.md`` analogously for container issues.
 
 ### Configuration
 
@@ -466,7 +491,9 @@ Remote mode works without pinned configuration (then it stays disabled, `local`)
 {
   "tracker": {
     "mode": "local",
-    "remoteToolOverride": "auto"
+    "remoteToolOverride": "auto",
+    "externalTool": null,
+    "externalToolHint": null
   }
 }
 ```
@@ -475,13 +502,20 @@ Missing values have these defaults:
 
 - `tracker.mode`: `"local"` (feature off)
 - `tracker.remoteToolOverride`: `"auto"` (tool automatically from the `origin` URL)
+- `tracker.externalTool`: `null` (no external tool named)
+- `tracker.externalToolHint`: `null` (no additional connection hint)
 
 Valid values:
 
-- `tracker.mode`: `"local"`, `"remote"`
+- `tracker.mode`: `"local"`, `"remote"`, `"external"`
 - `tracker.remoteToolOverride`: `"auto"`, `"github"`, `"forgejo"`
+- `tracker.externalTool`: a short, non-empty identifier of the tool that holds the issues. There is
+  **no** whitelist; Effective Flow neither rejects an unknown tool nor infers capabilities from the
+  name. Required when the mode is `external`.
+- `tracker.externalToolHint`: free text that lets the run-time agent pick the right connection —
+  e.g. MCP server name, workspace, team or project key, identifier convention, or state names.
 
-`remoteToolOverride` is intended only for ambiguous hosts (e.g. self-hosted GitHub Enterprise whose domain does not contain `github.com`). With `auto` the host detection below decides.
+`remoteToolOverride` is intended only for ambiguous hosts (e.g. self-hosted GitHub Enterprise whose domain does not contain `github.com`). With `auto` the host detection below decides. It names a **forge** CLI and stays forge-only.
 
 ### Config migration
 
@@ -491,8 +525,8 @@ Reading the Effective Flow configuration from the project setup ADR (including t
 
 At the start of the run, determine the effective mode in this order (the first matching rule wins):
 
-1. **Argument type:** The passed argument type overrides the config mode for this run. A report file (`*.md` under `.effective-flow/review/`) forces `local`; an issue reference (issue number, `#123` or an issue URL) forces `remote`.
-2. **Per-run wish of the user:** If the user explicitly requests issue/tracker work, `remote` is active; if they explicitly request local work ("local", "without issues", "report only"), `local` is active.
+1. **Argument type:** The passed argument type overrides the config mode for this run. A report file (`*.md` under `.effective-flow/review/`) forces `local`; a forge issue reference (issue number, `#123` or a forge issue URL) forces `remote`; a tool-native identifier or URL of the configured external tool forces `external`.
+2. **Per-run wish of the user:** A **generic** wish for issue/tracker work ("as issues", "publish to the tracker") activates the **configured** target and never redirects a run to a different one; without a configured target it selects `remote`. Only a wish that explicitly names the forge (GitHub, Forgejo, `origin`) selects `remote`, and only a wish that explicitly names the configured external tool selects `external`. If the user explicitly requests local work ("local", "without issues", "report only"), `local` is active — that stays the escape hatch on every target.
 3. **Config:** otherwise `tracker.mode` from the Effective Flow configuration (project setup ADR) applies.
 4. **First-invocation query:** If `tracker.mode` is not set in the config and neither argument nor per-run wish delivers a signal, run the first-invocation query below.
 
@@ -506,15 +540,33 @@ Ask the user: **Should review findings be tracked locally as a Markdown report o
 
 Use the chosen answer as the tracker mode **for this run**. Do **not** write it into the configuration yourself — permanently pinning `tracker.mode` in the project setup ADR is handled exclusively by `effective-flow setup`. Briefly point this out to the user, e.g. "Tracker mode `remote` used for this run; pin permanently via `effective-flow setup`."
 
+The query stays deliberately two-way: it runs only when no configuration pins a mode, and it must not write configuration itself, so it cannot obtain the tool identifier an external target requires. An external target is configured through `effective-flow setup` or named per run in an explicit user wish that supplies the tool.
+
+### Tracker target
+
+The determined mode names the **target** that owns issue identity for this run: `local` (Markdown report), `forge` (`remote` — the issue tracker of the `origin` remote), or `external` (the tool named by `tracker.externalTool`). Everything below in this fragment — the helper contract, the label convention with its `firmo-` compatibility and one-time `sf-` migration, the tracker operations, and the finding and epic body formats — describes the **forge** target.
+
+`external` requires a non-empty `tracker.externalTool`. Without it the configuration is invalid: abort before any tracker access, name the missing key, and point to `effective-flow setup`. Never guess a tool, and never fall back to the forge or to `local`. While the mode is `local` or `remote`, `tracker.externalTool` and `tracker.externalToolHint` are ignored for routing and reported once as ignored. Both issue-carrying flows follow the resolved target: the issue-driven flow (``tools/apply-issues.md``, `effective-flow plan-issue`) and review publication.
+
+The complete external contract — connection discovery with its fail-closed rules, the required capabilities, the write discipline, the classification mapping, the container mechanism, and the reference syntax — lives in the `tracker-target` fragment. Every source that embeds this fragment **must** carry its own deferred pointer to `tracker-target`, so a run loads that contract as soon as the resolved target is `external` and never for a `local` or `forge` run. A run that resolves `external` without that contract available aborts instead of improvising.
+
 ### Remote helper contract (remote mode only)
 
-All deterministic remote mechanics run through the shipped helper:
+All deterministic remote mechanics of the forge target run through the shipped helper:
 
 ```text
 node <skill-root>/scripts/remote-tracker.mjs <operation> [--apply]
 ```
 
 Pass exactly one JSON object through standard input and parse exactly one JSON result envelope from standard output. Resolve `<skill-root>` from the currently loaded Effective Flow skill; never copy the helper into the target project. The helper owns origin/provider/reference parsing, `gh`/`tea` probing, capability normalization, command construction, JSON normalization, payload validation, compatibility aliases, exact body patching, redaction, and stale-write preconditions. It never opens a shell and never prompts.
+
+Pass the verified absolute `RUNTIME_STATE_ROOT` as the top-level `cwd`. The helper runs `git`, `gh`
+and `tea` in that directory, and every provider CLI resolves its repository context from it. The
+runtime root is the one checkout guaranteed to exist for the whole run, whereas an execution
+worktree may already have been withdrawn by the time a completion action runs. The field is
+optional for compatibility — when it is absent the helper inherits the process working directory —
+but an Effective Flow workflow always sets it. A `cwd` that is not an existing directory fails with
+a structured error naming the path, never as a missing-CLI error.
 
 For `finding-build` and `epic-build`, pass the already-resolved `language.forge` as the top-level
 `language: en|de`; this applies equally when the finding or epic data is nested under its named
@@ -556,9 +608,39 @@ In remote mode, use these labels and create missing labels idempotently (tolerat
 
 **One-time `sf-` label migration:** The even older prefix `sf-` (`sf-review-finding`, `sf-review-epic`, `sf-fix`/`sf-refactor`/`sf-build`/`sf-docs`, `sf-issue-done`, `sf-needs-planning`) is **no longer** detected continuously, but **migrated once per repo**. On the **first** remote tracker access — provided the marker `labelMigration.sf.done` in the retained absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle is missing and an authenticated CLI is present — an idempotent migration moves every still-present `sf-<x>` label to `effective-flow-<x>`: first add `effective-flow-<x>` on the issue, then remove `sf-<x>` (not the other way around, so an abort leaves no issue unclassified). If the runtime directory is missing, apply the owning workflow's loaded “Runtime-state write safety” contract from `RUNTIME_STATE_ROOT` to that exact directory immediately before its `mkdir`. After the remote migration, use the loaded shared memory mutation contract against the retained absolute memory handle: acquire its lock, re-read memory, merge only `labelMigration.sf`, and atomically persist `done` plus the completion timestamp while preserving every sibling and unknown field. If this marker mutation blocks or fails, preserve local state, report that the remote labels may already have migrated, and direct the user to `effective-flow setup`; the next run may repeat the idempotent remote migration. If the migration finds no `sf-` labels, it is a silent no-op. If the marker is set, any further scan is skipped — ongoing operations know only `effective-flow-` and `firmo-`. `sf-` is referenced exclusively in this migration.
 
+### Security disclosure gate
+
+A finding classified as security relevant is **never** written to a tracker without an explicit
+per-run confirmation by the user. This gate binds every publisher of review findings and
+overrides `tracker.mode` as well as every other configuration value; there is no configuration key
+that switches it off. Publication to a third-party tracker is a disclosure with the same
+consequences as publication to a public forge, so the gate binds a forge target and an external
+target alike. The producing workflow owns the classification and the confirmation
+(see `effective-flow review`, Phase 3 and Phase 4).
+
+Rules for every publisher, on whichever tracker target the run resolved:
+
+- **Local first:** the withheld findings are persisted in a local report below
+  `.effective-flow/review/` before any tracker mutation. That report is the authoritative record
+  for them; it stays in the gitignored runtime state of the main checkout and is never committed.
+- **Confirmation before publication:** publication happens only after an explicit user decision in
+  that run, taken with knowledge of the disclosure consequence. Keeping them local is the default;
+  an unanswered, skipped, or non-interactive run publishes nothing from the withheld set.
+- **Silence in public artifacts:** epic bodies, issue bodies, and comments contain no count, title,
+  signature, ID, or other reference to a withheld finding. A public hint that unfixed security
+  findings exist is itself an exploitable signal.
+- **Conservative classification:** an uncertain or missing security assessment counts as security
+  relevant and stays local.
+- **Scope:** the gate covers the publication of review findings. It does not sanitize branch names,
+  commit subjects, or pull request bodies of a later fix; that disclosure decision belongs to the
+  delivering workflow and its user.
+
+The gate governs only the destination of a finding. It never removes a finding, changes its
+severity, or narrows the active finding scope.
+
 ### No AI attribution in issue bodies and comments
 
-Do not add AI attribution to issue bodies, epic bodies and comments: no "Generated with Claude Code/Codex" footers, no agent session links (e.g. `https://claude.ai/code/…`) and no `Co-Authored-By` trailers – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex as the target harness are allowed, generation attribution is not.
+Do not add AI attribution to issue bodies, epic bodies and comments: no "Generated with Claude Code/Codex" footers, no agent session links (e.g. `https://claude.ai/code/…`) and no `Co-Authored-By` trailers – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex as the target harness are allowed, generation attribution is not. This binds every publisher on every tracker target, the forge and an external tool alike.
 
 ### Remote prose language
 
@@ -568,8 +650,10 @@ resolved Forge language. Finding and epic bodies use one complete language for h
 titles, headings, field labels, displayed severity/complexity values, and prose.
 
 The German display mapping is `Schweregrad`, `Komplexität`, `Bereich`, `Datei`, `Problem`,
-`Empfehlung`, `Prompt-Vorschlag`, `Befunde`, and
-`Übersprungen (Architekturentscheidungen)`. English uses the template labels below. `Action`,
+`Empfehlung`, `Prompt-Vorschlag`, `Sicherheit`, `Befunde`, and
+`Übersprungen (Architekturentscheidungen)`. English uses the template labels below. The exposure
+values `external`, `internal`, and `none` of the `Security`/`Sicherheit` field are machine tokens
+and stay unlocalized in both forms. `Action`,
 `Epic`, and `Signature` are stable helper/dedup fields and remain canonical English in both
 forms, as do their action values. Displayed severities map to
 `Kritisch`/`Wichtig`/`Hinweis`, and displayed complexities map to
@@ -581,7 +665,7 @@ use `Signature`.
 
 ### Issue body format (finding issue)
 
-A finding issue must be **self-contained**: a foreign LLM session must be able to process it without access to the producing session. It contains the same content fields as a finding block of the local report format (see `effective-flow review`, "Report format").
+A finding issue must be **self-contained**: a foreign LLM session must be able to process it without access to the producing session. It contains the same content fields as a finding block of the local report format (see the shared `review-report-format` fragment).
 
 - **Title:** `[R-XXXXXXX] <short title in language.forge>`
 - **Labels:** `effective-flow-review-finding`, the action label and the severity label.
@@ -599,6 +683,10 @@ A finding issue must be **self-contained**: a foreign LLM session must be able t
 - **Epic**: #<epic number> (empty if no epic)
 - **Signature**: [path:line] · [Area] · [short summary of the problem]  <!-- Dedup key -->
 ```
+
+A finding published through the "Security disclosure gate" keeps its `Security`/`Sicherheit` field
+in the issue body, so the accepted disclosure stays visible; an ordinary finding omits that field
+instead of carrying an empty `none`.
 
 The **Signature** field fixes the content dedup key (file+line, area, problem). It is deliberately **not** the `R-XXXXXXX` ID, because that is assigned freshly per run. Canonical writes use `Signature`; helper reads and deduplication also accept the legacy field name `Signatur` and normalize both forms to the same identity.
 
@@ -670,6 +758,9 @@ Legacy-label transitions use the helper's add and remove operations in that orde
 - **No Git repository / no `origin` remote:** remote mode not possible; report.
 - **Ambiguous host:** use `remoteToolOverride` or a per-run hint; if both are unclear, ask the user.
 - **Argument type contradicts `tracker.mode`:** The argument type overrides the config mode for this run (see "Determine mode").
+- **External target:** connection discovery, its four fail-closed failure classes (missing tool identifier, no connection, ambiguous connection, missing capability) and the write discipline live in the loaded "Tracker target" fragment. There is no fallback to the forge or to `local`.
+
+**Load on demand:** Read `shared/tracker-target.md`, when the resolved tracker target is `external`.
 
 ## Workflow
 
@@ -677,30 +768,36 @@ Legacy-label transitions use the helper's add and remove operations in that orde
 
 1. Read the user argument.
 2. Apply the "apply-source detection": stage A (syntactic) and — for an
-   issue reference — stage B (tracker). For stage B, the host/CLI detection and
-   availability check from "Issue-Tracker Integration (remote mode)" apply; if the CLI
-   or authentication is missing, abort with a clear message (no silent fallback).
+   issue reference — stage B (tracker). Stage B needs the resolved tracker target from
+   "Tracker target": on the forge target the host/CLI detection and availability check from
+   "Remote helper contract" in "Issue-tracker integration (remote mode)" apply, and on an external
+   target the connection discovery of the loaded `tracker-target` contract. If the CLI, the
+   authentication, or a usable external connection is missing, abort with a clear message (no
+   silent fallback).
 3. Handle the special results:
    - **`none` (no argument):** list local candidates — open plans from
      `<plan.dir>/` (status `**Planungsstatus:** Nicht umgesetzt` or
      `**Plan status:** Not implemented`) and report files under the verified absolute
      `<RUNTIME_STATE_ROOT>/.effective-flow/review/` directory.
-     If the effective tracker mode is `remote` (see "Issue-Tracker Integration"),
-     additionally list open review epics (label `effective-flow-review-epic`, incl. legacy
-     `firmo-review-epic`) as candidates — in remote mode no local report files are written,
-     so otherwise no source would be offered. Then ask the user for the specific source.
+     If the resolved tracker target is the forge or an external tool (see "Issue-tracker
+     integration (remote mode)"), additionally list open review epics (label
+     `effective-flow-review-epic`, on the forge including legacy `firmo-review-epic`, or the
+     target's equivalent container) as candidates — on those targets no local report files are
+     written, so otherwise no source would be offered. Then ask the user for the specific source.
      Do not pick anything heuristically.
    - **`ambiguous`:** name the competing interpretations and ask.
    - **Mixed issue list:** if the passed issue references lead to different
      responsibilities (e.g. `review-finding` **and** `plain-issue`), ask the user to
      split the list by target type; do not route halfway. If all references lead to the
-     same target skill, continue normally.
+     same target skill, continue normally. A list that mixes a forge reference with an
+     external-target reference is likewise split by the user, never resolved heuristically.
 
 ### Phase 2: Delegate to the responsible skill
 
 1. Give the user a short output:
    - detected source type
-   - resolved handle (plan path, report path or issue number(s))
+   - resolved handle (plan path, report path or issue reference(s))
+   - the resolved tracker target and, for `external`, the tool identifier
    - responsible target skill (for ``tools/apply-review.md`` additionally the mode:
      local report, remote epic or remote issue list)
 2. Start the responsible skill with the original argument:
@@ -708,12 +805,11 @@ Legacy-label transitions use the helper's add and remove operations in that orde
    - `review-report` / `review-epic` / `review-finding` → ``tools/apply-review.md` <arg>`
    - `container-issue` / `plain-issue` → ``tools/apply-issues.md` <arg>`
 3. Pass as context that `effective-flow apply` has already classified the source, including
-   the detected source type. After that, the entire responsibility lies with the target skill.
+   the detected source type and the resolved tracker target. After that, the entire
+   responsibility lies with the target skill.
 4. The target skill checks the basis itself against the "clarification gate" before it
    implements. `effective-flow apply` itself does not run this check and implements
-   nothing. With a clarified basis, the target skill — after a confirmation — prefers the
-   goal-driven, autonomous implementation (see "Explicit goal query for autonomous
-   runs" in `goal-completion.md`).
+   nothing.
 
 ## Rules
 

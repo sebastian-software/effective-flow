@@ -75,7 +75,8 @@ Both managers consume the same portable `effective-flow/` candidate and its bund
 contracts from the default branch.
 
 Then, in Claude Code or Codex, call `/effective-flow plan` (Codex: `$effective-flow plan`) to
-start planning a first task.
+start planning a first task. For a brand-new application whose shape is not settled yet, start one
+step earlier with `/effective-flow concept`.
 
 ## Read on
 

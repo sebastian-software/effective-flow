@@ -33,61 +33,7 @@ If no task tool is available, give the user a short progress update after each c
 
 **Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent.
 
-# Project-role detection and routing
-
-Use this contract whenever implementation, review, testing, validation, or documentation depends on the role of an affected file. Classify the requested files or domains independently; never infer one route for the whole repository from its first manifest.
-
-## Ordered routing table
-
-The table between the marker comments is a build-validated runtime contract. Keep its columns and route IDs stable. Evaluate rows in ascending priority and stop at the first matching row for each affected file or domain.
-
-<!-- project-routing-table:start -->
-
-| Priority | Route                         | Matcher            | Implementer                                           | Reviewer                             | Decision         |
-| -------: | ----------------------------- | ------------------ | ----------------------------------------------------- | ------------------------------------ | ---------------- |
-|       10 | `excluded-generated-vendored` | `excluded`         | —                                                     | —                                    | `exclude`        |
-|       20 | `documentation`               | `documentation`    | ``effective-flow-code-documenter`` / ``effective-flow-docs-writer`` | ``effective-flow-code-validator``           | `route`          |
-|       30 | `tooling`                     | `tooling`          | ``effective-flow-generic-implementer``                       | ``effective-flow-code-validator``           | `route`          |
-|       40 | `frontend-js-ts`              | `frontend-js-ts`   | ``effective-flow-ui-implementer``                            | ``effective-flow-frontend-reviewer``        | `route`          |
-|       50 | `node-backend-cli`            | `node-backend-cli` | ``effective-flow-nodejs-implementer``                        | ``effective-flow-nodejs-reviewer``          | `route`          |
-|       60 | `rust`                        | `rust-product`     | ``effective-flow-rust-implementer``                          | ``effective-flow-rust-reviewer``            | `route`          |
-|       70 | `generic-product`             | `generic-product`  | ``effective-flow-generic-product-implementer``               | ``effective-flow-generic-product-reviewer`` | `route-degraded` |
-|       80 | `ambiguous`                   | `otherwise`        | —                                                     | —                                    | `clarify`        |
-
-<!-- project-routing-table:end -->
-
-## Matcher contract
-
-Apply the matchers in table order:
-
-- **Excluded generated or vendored content:** generated outputs, vendored dependencies, third-party source, build output, and dependency caches are excluded from direct editing and review by default. If the task explicitly changes a generator or vendor-update mechanism, route the owned source or tooling operation instead of its output.
-- **Documentation:** documentation-only files and domains use the code documenter or docs writer according to the requested audience and artifact. Technical validation remains repository-native.
-- **Tooling:** CI/CD, build and release tooling, container configuration, dependency manifests and lockfiles, repository metadata, and formatter, linter, editor, or task-runner configuration use the tooling-only generic implementer. A language manifest does not make that manifest product code.
-- **Frontend JavaScript/TypeScript:** UI components and browser-facing JavaScript/TypeScript use the UI implementer and frontend reviewer. Strong file signals include JSX/TSX, Vue or Svelte files and established frontend/client/component domains.
-- **Node.js backend or CLI:** server, API, service, worker, and CLI JavaScript/TypeScript use the Node.js implementer and reviewer. Repository dependencies, entry points, and neighboring code distinguish this route from frontend code.
-- **Rust product code:** Rust source and Cargo product domains use the Rust implementer and reviewer.
-- **Generic product fallback:** clearly identified product code outside the specialized routes uses the generic product implementer and reviewer. This includes Python, Go, JVM, .NET, Ruby, PHP, Swift, and other or unknown languages when the task, path, manifest, or neighboring code establishes the product role.
-- **Ambiguous:** if neither file role nor product/tooling ownership can be established safely, pause for one focused clarification. Never use the tooling-only generic implementer merely because no specialist language matched.
-
-Explicit task scope and the closest repository instructions take precedence over filename heuristics. Generated, vendored, documentation, and tooling roles take precedence over language signals.
-
-## Mixed repositories
-
-Partition mixed changes per affected file or coherent domain. Preserve every recognized specialist bucket, route non-specialized product files through the generic product bucket, and route tooling and documentation separately. Run only the agents needed for non-empty buckets; parallelize only when the buckets are cleanly separable.
-
-## Degraded product route
-
-Before delegating a clearly identified generic product bucket, state visibly that Effective Flow is continuing with repository-native generalist implementation and qualitative review, with reduced language-specific specialist depth. This notice is informational and does not create a routine approval gate.
-
-The generic product agents discover commands and conventions in this order:
-
-1. scoped repository instructions
-2. CI workflows and task runners
-3. manifests and lockfiles
-4. existing tests and neighboring code
-5. current library documentation through an available documentation skill
-
-Do not invent commands, install a toolchain or dependency without approval, or claim language expertise. If no safe native command or convention can be established, pause for a focused clarification. Validation and tests report unavailable checks as skipped with the reason.
+**Load on demand:** Read `shared/project-routing.md`, when an affected file or domain must be classified into a routing bucket.
 
 **Load on demand:** Read `shared/config-migration.md`, when the Effective Flow configuration is first read or a legacy config is migrated.
 
@@ -107,52 +53,8 @@ Both marker forms are equivalent. Only one language is used per plan file. The m
 independent language choice: it is part of the complete plan language resolved by "Language
 resolution" (`language.workflow` for a new plan, or the preserved language of an existing plan).
 
-### Canonical bilingual plan contract
-
-Readers map these complete forms to the same internal meanings; writers choose one column and
-use it consistently throughout the artifact:
-
-| Meaning              | German                                              | English                                      |
-| -------------------- | --------------------------------------------------- | -------------------------------------------- |
-| Status, open         | `**Planungsstatus:** Nicht umgesetzt`               | `**Plan status:** Not implemented`           |
-| Status, completed    | `**Planungsstatus:** Umgesetzt`                     | `**Plan status:** Implemented`               |
-| Source               | `**Quelle:**`                                       | `**Source:**`                                |
-| Workflow             | `**Empfohlener Workflow:**`                         | `**Recommended workflow:**`                  |
-| Doc category         | `**Doku-Kategorie:**`                               | `**Doc category:**`                          |
-| Target path          | `**Ziel-Pfad:**`                                    | `**Target path:**`                           |
-| Requirement          | `## Anforderung`                                    | `## Requirement`                             |
-| Architecture         | `## Architekturentscheidungen`                      | `## Architecture decisions`                  |
-| Affected files       | `## Betroffene Dateien`                             | `## Affected files`                          |
-| Implementation       | `## Implementierungsdetails`                        | `## Implementation details`                  |
-| Approach             | `### Vorgehen`                                      | `### Approach`                               |
-| Component structure  | `### Komponentenstruktur`                           | `### Component structure`                    |
-| State management     | `### Zustandsverwaltung`                            | `### State management`                       |
-| API integration      | `### API-Integration`                               | `### API integration`                        |
-| Styling approach     | `### Styling-Ansatz`                                | `### Styling approach`                       |
-| Accessibility        | `### Barrierefreiheit`                              | `### Accessibility`                          |
-| Edge cases           | `### Randfälle`                                     | `### Edge cases`                             |
-| Acceptance criteria  | `## Akzeptanzkriterien`                             | `## Acceptance criteria`                     |
-| Validation plan      | `## Validierungsplan`                               | `## Validation plan`                         |
-| Assumptions          | `## Annahmen und offene Punkte`                     | `## Assumptions and open points`             |
-| Plan review          | `## Plan-Review`                                    | `## Plan review`                             |
-| Review result        | `**Ergebnis:** Freigegeben` / `Überarbeitung nötig` | `**Result:** Approved` / `Revision required` |
-| Review summary       | `### Zusammenfassung`                               | `### Summary`                                |
-| Plan-review findings | `### Befunde`                                       | `### Findings`                               |
-| Open points          | `## Offene Punkte`                                  | `## Open points`                             |
-| Empty open points    | `- Keine offenen Punkte.`                           | `- No open points.`                          |
-| Test results         | `## Testergebnisse`                                 | `## Test results`                            |
-| Review findings      | `## Review-Befunde`                                 | `## Review findings`                         |
-
-Tables and finding prose follow the same rule. Plan file tables use `Datei` / `Beschreibung`
-and review scorecards use `Bereich` / `Kritisch` / `Wichtig` / `Hinweis` in German; English uses
-`File` / `Description` and `Area` / `Critical` / `Important` / `Note`. Review dates, reviewer
-labels, summary statuses, and no-findings prose are likewise rendered wholly in the plan
-language. Machine-stable values called out below are the only exceptions.
-
-Workflow routing values and skill references remain stable: `Feature`, `Bugfix`, `Refactoring`,
-`Documentation`, and the referenced `effective-flow build`/`effective-flow fix`/`effective-flow refactor`/
-`effective-flow docs` token are not translated. Doc-category values and target paths likewise remain
-`user-guide`, `developer-guide`, `operations`, `runbooks`, and their stable paths.
+The complete bilingual field and section mapping lives in `plan-contract`; a workflow that writes
+or translates a plan artifact loads it, a workflow that only recognizes the status does not.
 
 Rules:
 
@@ -162,9 +64,9 @@ Rules:
 - Other values such as `Open`/`Done`, `Pending`/`Complete`, or arbitrary free text do not count either.
 - Other occurrences of „Nicht umgesetzt“, „Umgesetzt“, "Not implemented", or "Implemented" in review findings, ADR rationales, or body text do not count as a plan status.
 - If the marker is missing, occurs multiple times, contains an invalid value, or uses a mixed form of key and value language, the plan status is unclear. In that case, do not automatically treat the plan as open or completed.
-- A writer must not combine fields or sections from both columns. A mixed plan is unclear and is
-  not automatically rewritten. A requested translation converts the complete plan contract.
 - When a workflow sets the status to completed, the complete plan language is preserved: a German marker becomes `**Planungsstatus:** Umgesetzt`, an English marker becomes `**Plan status:** Implemented`.
+
+**Load on demand:** Read `shared/plan-contract.md`, when a plan artifact's fields, sections, or review prose are written or translated.
 
 ## Doc categories
 
@@ -179,11 +81,22 @@ Final documents from the documentation workflow are placed exclusively in one of
 
 ### Prescribed standard doc structure
 
-Unless the user or the underlying plan specifies otherwise, this **standard structure** of
-three roles applies to the project documentation. It is a prose default: the documentation
-workflow applies it when no different structure is required; an explicit wish of the user
-(e.g. a purely technical README without marketing) always takes precedence. There is **no**
-config field for this.
+Unless the user, the underlying plan, or the repository itself specifies otherwise, this
+**standard structure** of three roles applies to the project documentation. It is a prose default:
+the documentation workflow applies it when no different structure is required; an explicit wish of
+the user (e.g. a purely technical README without marketing) always takes precedence. There is
+**no** config field for this.
+
+**An established repository structure takes precedence over the prescribed standard structure.**
+When the documentation owner's repository discovery reports an established, working documentation
+structure, that structure is the target and the prescribed standard structure does not override
+it. The four categories below are the default for repositories **without** an established
+structure. Effective Flow defines **no** local test for what counts as "established" — that is
+information-architecture judgment and belongs to the documentation owner; a repository whose
+structure the owner cannot establish falls back to the prescribed default. Effective Flow keeps
+the write boundary, the target-path approval, and the collision clarification in either case, and
+a divergent structure is named explicitly in the doc plan so the user approves it before
+implementation.
 
 Resolve documentation language by target: root `README.md` and `docs/user-guide/**` use
 `language.documentation.user`; `docs/developer-guide/**`, `docs/operations/**`,
@@ -206,12 +119,14 @@ stable and are not translated.
    `docs/developer-guide/README.md`.
 
 **Conditional follow-up-link rule for the root README.** At the end of the documentation run,
-inspect whether `docs/user-guide/README.md` and `docs/developer-guide/README.md` exist. The
-final documentation follow-up section of the root `README.md` includes only links whose targets
-exist, in user-guide then developer-guide order:
+inspect whether the two follow-up targets of the **effective** structure exist. Under the
+prescribed standard structure those targets are `docs/user-guide/README.md` and
+`docs/developer-guide/README.md`; under an established repository structure they are that
+structure's user-facing and technical entry points. The final documentation follow-up section of
+the root `README.md` includes only links whose targets exist, in user-facing then technical order:
 
-- If both targets exist at the end of the run, the section contains exactly two links:
-  first `docs/user-guide/README.md`, then `docs/developer-guide/README.md`.
+- If both targets exist at the end of the run, the section contains exactly two links: first the
+  user-facing entry point, then the technical one.
 - If exactly one target exists, the section contains only that target's valid link. Report the
   other path as an open point in the workflow or agent result.
 - If neither target exists, emit neither link. Report both missing paths individually as open
@@ -221,10 +136,22 @@ Never add a placeholder or broken link for a missing target. Preserve existing u
 README links; they are outside the final documentation follow-up section and do not count
 toward this invariant.
 
+Two different absences are reported differently. A target the effective structure **defines but
+has not created yet** is reported by its concrete path. A role the effective structure **does not
+define at all** — an established structure with no user-facing or no technical entry point — has
+no path to report: name the missing role instead (for example "no user-facing entry point in the
+established structure"). Never invent a path for it and never substitute the standard path, which
+would reintroduce exactly the fallback the precedence rule forbids.
+
 ### File name convention
 
+This convention belongs to the prescribed standard structure and applies to documents in the four
+categories. When an established repository documentation structure took precedence, that
+structure's own naming conventions apply instead: follow the neighbouring documents rather than
+renaming repository-native files to match the rules below.
+
 - topic-based slugs in kebab-case, e.g. `installation.md`, `architecture.md`, `restart-database.md`
-- no date or number prefix; the date-slug scheme (with a preserved legacy number) is exclusive to the plan directory `<plan.dir>/` (from `plan.dir` of the Effective Flow configuration/project-setup ADR, default `docs/plan`)
+- no date or number prefix; the date-slug scheme is exclusive to the two Effective Flow artifact directories — the plan directory `<plan.dir>/` (from `plan.dir` of the Effective Flow configuration/project-setup ADR, default `docs/plan`, with a preserved legacy number) and the concept directory `<concept.dir>/` (from `concept.dir`, default `docs/concept`)
 - slugs must be unique within their category
 - file extension always `.md`
 
@@ -238,7 +165,7 @@ toward this invariant.
 
 ### Write boundary
 
-- The documentation workflow may write final documents exclusively into these four directories and their subfolders.
+- The documentation workflow may write final documents exclusively into these four directories and their subfolders. When an established repository documentation structure took precedence over the prescribed standard structure, that approved structure replaces the four directories as the write boundary; it never widens it beyond the structure named in the doc plan.
 - **Exception root `README.md`:** As the marketing entry point of the standard doc structure, the root `README.md` is a sanctioned write target of the documentation workflow and does not need to be named individually in every plan table for that. It is written exclusively in this marketing-entry-point role; if a root README already exists, it is not silently overwritten but the replacement is clarified with the user (analogous to the collision rule for existing target paths).
 - Every **other** existing file outside these directories may only be changed if it is explicitly named in the `Affected files` table of the underlying plan file.
 
@@ -257,14 +184,16 @@ Rules:
 
 - Both lines must use the complete plan language and be written exactly as above, including bold
   formatting, colon, and lowercasing of the stable category value.
-- The category field must match the directory prefix in the target-path field.
-- The target path must point to a file within the matching category directory.
+- The target-path line is always present and names the concrete path.
+- When a category line is present, it must match the directory prefix in the target-path field, and
+  the target path must point to a file within the matching category directory.
 - Example: `**Doku-Kategorie:** runbooks` with `**Ziel-Pfad:** docs/runbooks/database/restart.md`,
   or the complete English equivalent.
-- **Special case marketing entry point:** If the documentation plan targets the root `README.md`,
-  the matching target-path field contains `README.md` and the doc-category line is omitted – the
-  root README is not one of the four `docs/` categories. Only in exactly this case may the
-  category line be absent.
+- **Sanctioned omission of the category line:** The doc-category line is omitted exactly when the
+  target lies outside the four `docs/` categories – the root `README.md` as the marketing entry
+  point (target path `README.md`), an existing file explicitly named in the plan, in-code
+  documentation, or a divergent established repository structure. In every other case the category
+  line is required.
 
 ## Project conventions
 
@@ -273,6 +202,8 @@ If the project has an `AGENTS.md`, read it before analysis and implementation an
 ## Recommended skills
 
 - `tech-docs`
+- `codebase-improvement`
+- `pr-review`
 
 ## Skill discovery
 
@@ -284,11 +215,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
 
 1. **Prefer recommended skills:** Preferentially apply the skills listed further above under
    "Recommended skills", provided they are available and relevant to the concrete task.
-   "Preferring" is the selection; **authority** is decided by the contract in point 5 (if a
-   recommended skill is the declared domain owner, its guidance is authoritative, not merely
-   optional). A fallback notation `A › B` is an ordered preference: take the first available,
-   non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
-   this point does not apply.
+   "Preferring" is the selection; **authority** is decided by the contract in point 5. A fallback
+   notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
+   group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
    0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
    inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
@@ -341,8 +270,14 @@ state, worker selection, validation phase, worktrees, commits, and delivery.
 
 When the skill is unavailable, use only a minimal repository-led fallback: derive facts from the
 implementation and neighboring docs, follow the existing structure, write the narrow requested
-change, and run an established docs check when one exists. Do not recreate a documentation
-handbook here or add tooling without approval.
+change, and run an established docs check when one exists. Ask about or mark as an assumption
+anything the implementation does not verify, and keep every example consistent with it. Do not
+recreate a documentation handbook here or add tooling without approval.
+
+A request for a repository-wide documentation audit, gap inventory, or prioritization is not this
+tool's job: route it to `codebase-improvement`, or to `effective-flow review` when the user wants the
+Effective Flow report artifact, and return here for the selected documentation work. A single
+scoped documentation change is not an audit and must not trigger this route.
 
 ## Completion protocol
 
@@ -370,50 +305,14 @@ When an internal sub-agent ends without `DONE` or `ABORT`:
 
 ## Goal-driven completion control
 
-Internal "repeat until done" loops of this workflow follow a uniform goal pattern instead of an ad-hoc formulated loop. The pattern combines the native `/goal` principles (Codex and Claude Code) with visible progress control. At explicit goal gates, the directly following central `goal-start-action` fragment renders the action after an authorized autonomous choice per harness.
+Internal "repeat until done" loops of this workflow follow a uniform completion pattern instead of an ad-hoc formulated loop. The pattern pairs one declared completion goal with independent verification and visible progress control. It steers the workflow's own run; Effective Flow neither offers nor starts a harness-native autonomous run for it, and the workflow's regular approval gates always apply.
 
 ### Goal controls
 
 1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
 2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
 3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
-4. **Visible progress for an active native goal.** Once the native goal is active—whether started directly or through a pasted `/goal` prompt—the remaining workflow maintains a visible phase task list and concise chat updates even when only a few phases remain: before work, create or reconcile every known remaining numbered phase in stable order; mark each phase when it starts and reaches an end state; add findings, issues or parallel subtasks as soon as their set is known, without matching duplicates; on resume, continue the existing list; and keep more specific per-finding, per-issue, per-source and per-reviewer detail rules authoritative. Exactly one workflow owns the goal overview on the shared interaction surface: the orchestrator responsible for the remaining scope; `effective-flow apply-plan` hands ownership to its selected target workflow before that workflow’s remaining phases begin and opens no competing list, while `effective-flow apply-issues` and `effective-flow apply-review` retain ownership of their overall phases and issue or finding tasks; a non-interactively delegated subworkflow reports status and results to the owner and may keep a local detail list only in a harness-isolated subcontext, never as a second goal overview. Follow the native task tool’s state model: if only one entry may be active, keep the overall phase active while parallel detail work follows its existing rules and is summarized in chat; submit result-dependent status changes only after the determining tool result is known, never in the same parallel tool batch. After each numbered phase and each bounded correction round, post a short update with its result and the next step, adding a deviation or blocker only when present; during correction keep the phase active, report the failed check and correction result, and name the retry or escalation; these updates are not gates, so continue autonomously unless an existing approval rule or genuine blocker requires user input. Give skipped, terminally failed and aborted steps the best native end state, or an unambiguous `[skipped]`, `[failed]` or `[aborted]` suffix when none exists; keep a step awaiting user input open with its blocker, and never treat terminal failure or abort as satisfying the goal. If the task tool is unavailable, list the known remaining phases compactly in chat before continuing and carry their state in later updates; if updates fail irrecoverably, report that failure once, move all still-open tracking to chat without claiming a successful tool update, and continue the domain work. Immediately before goal success, the owner reconciles every known phase and dynamic entry—including the equivalent final chat summary in fallback mode—to a truthful visible end state, and independently verifies the domain completion condition; never complete the goal with an unresolved entry.
-
-### Explicit goal query for autonomous runs
-
-At the approval boundary of this workflow – where the completion condition is already fixed and the workflow is waiting for approval anyway – the user gets an **explicit choice** whether the remaining phases continue gated or autonomously under the native `/goal`. This replaces the earlier passive co-emitting of a `/goal` string: the option is actively queried, not merely offered. Workflows with this explicit gate include the central `goal-start-action` fragment directly after this control fragment.
-
-#### When the query is omitted
-
-Skip the goal query entirely (no extra option, no goal-start action and no `/goal` string) when the workflow runs as a **non-interactive sub-agent** of a superordinate orchestrator where no direct user interaction is intended – recognizable from the invocation context, for example "[Context from effective-flow apply-review: …]". `effective-flow apply-review` already steers its autonomous run at its own gate; an additional goal query per sub-delegation would be pointless there. Direct invocations and the handover through `effective-flow apply-plan` (interactive, individual) do **not** count as such delegation – there the goal query is retained.
-
-#### Form of the query
-
-- If the approval boundary is a yes/no approval, extend the approval question with a third option "Autonomous via `/goal`" next to "Yes" (continue gated) and "Adjust".
-- If the approval boundary is a selection question (e.g. update groups) or if there is no yes/no approval at this boundary (e.g. because a planning phase was skipped), directly ask a concise standalone follow-up question "Run the remaining phases autonomously under `/goal`?". Depending on the interaction surface, use either yes/no answers or the explicit options "Continue gated" and "Autonomous via `/goal`".
-- At the three-option approval gate, only "Autonomous via `/goal`" authorizes the harness-specific goal-start action; "Yes" continues gated and "Adjust" returns to clarification.
-- At the standalone follow-up question, "Yes" or "Autonomous via `/goal`" authorizes the harness-specific goal-start action; "No" or "Continue gated" continues gated.
-- No other response and no omitted query authorizes the goal-start action. On every gated path, **no** `/goal` string is emitted. The internal approval gates are retained in any case.
-
-Rules for the `/goal` prompt and its objective in every harness path:
-
-- **Self-sustaining:** Reference the underlying plan file, if present, and instruct to run through the remaining phases of this workflow – not "somehow make the criteria green".
-- **Measurable:** Name the completion condition with the checks actually provided in the respective workflow (e.g. acceptance criteria fulfilled, project-configured checks green and – if the workflow has a review phase – reviewer without open critical findings) and the scope boundary. Leave out checks that do not apply.
-- **Platform-neutral objective:** Restrict yourself to the condition text after `/goal `; that exact text is both the direct Codex `objective` and the objective in every prompt handoff or fallback.
-- **Copy-ready presentation:** Whenever a `/goal` prompt is output for the user to paste – including a fallback after a failed direct start – put the fully resolved single-line command as the sole content of a dedicated fenced `text` code block. Keep the cause, explanation and paste prompt outside the fence; do not add a label, comment or other text inside it.
-- **Only at gate-free boundaries:** Offer the autonomous run exclusively at approval boundaries after which no further approval gate follows, so an autonomous run does not get stuck at a later gate.
-
-Form (replace placeholders, single line):
-
-```text
-/goal Fully implement <plan file or agreed task> and run through the remaining phases of this workflow: all acceptance criteria fulfilled, project-configured checks green<, reviewer without open critical findings – only if the workflow has a review phase>. Maintain a visible phase task list and report the result and next step in chat after each major phase. Change nothing outside the scope. Stop when all criteria hold.
-```
-
-## Harness-specific goal-start action
-
-When the explicit goal query in "Goal-driven completion control" authorizes an autonomous run, perform this harness-specific action:
-
-After the user explicitly chooses the autonomous `/goal` option, output the full copy-pasteable `/goal` prompt prominently and ask the user to paste it as a new input. Use only this prompt handoff; without a pasted prompt, the workflow continues gated.
+4. **Visible progress.** Every run maintains a visible phase task list and concise chat updates even when only a few phases remain. This overview is required regardless of the generic task-tracking thresholds, which keep governing only ad-hoc subtask lists: before work, create or reconcile every known remaining numbered phase in stable order; mark each phase when it starts and reaches an end state; add findings, issues or parallel subtasks as soon as their set is known, without matching duplicates; on resume, continue the existing list; and keep more specific per-finding, per-issue, per-source and per-reviewer detail rules authoritative. Exactly one workflow owns the progress overview on the shared interaction surface: the orchestrator responsible for the remaining scope; `effective-flow apply-plan` hands ownership to its selected target workflow before that workflow’s remaining phases begin and opens no competing list, while `effective-flow apply-issues` and `effective-flow apply-review` retain ownership of their overall phases and issue or finding tasks; a non-interactively delegated subworkflow reports status and results to the owner and may keep a local detail list only in a harness-isolated subcontext, never as a second progress overview. Follow the native task tool’s state model: if only one entry may be active, keep the overall phase active while parallel detail work follows its existing rules and is summarized in chat; submit result-dependent status changes only after the determining tool result is known, never in the same parallel tool batch. After each numbered phase and each bounded correction round, post a short update with its result and the next step, adding a deviation or blocker only when present; during correction keep the phase active, report the failed check and correction result, and name the retry or escalation; these updates are not gates, so continue with the next step unless an existing approval rule or genuine blocker requires user input. Give skipped, terminally failed and aborted steps the best native end state, or an unambiguous `[skipped]`, `[failed]` or `[aborted]` suffix when none exists; keep a step awaiting user input open with its blocker, and never treat terminal failure or abort as satisfying the completion condition. If the task tool is unavailable, list the known remaining phases compactly in chat before continuing and carry their state in later updates; if updates fail irrecoverably, report that failure once, move all still-open tracking to chat without claiming a successful tool update, and continue the domain work. Immediately before reporting completion, the owner reconciles every known phase and dynamic entry—including the equivalent final chat summary in fallback mode—to a truthful visible end state, and independently verifies the domain completion condition; never report completion with an unresolved entry.
 
 **Load on demand:** Read `shared/worktree-integration.md`, when the delivery/worktree mode is determined (Phase 2, step 0).
 
@@ -437,7 +336,7 @@ Delete the wisdom file at the end.
 - In-code API documentation, inline comments, and CLI help texts: ``effective-flow-code-documenter``
 - Technical check for generated artifacts, CLI help, build files or code files: ``effective-flow-code-validator``
 
-The roles and the standard structure (marketing root README, user docs, technical docs) are described in `Doc categories` under "Prescribed standard doc structure"; they apply as the prose default as long as the user or plan does not specify otherwise.
+The roles and the standard structure (marketing root README, user docs, technical docs) are described in `Doc categories` under "Prescribed standard doc structure"; they apply as the prose default as long as neither the user, the plan, nor an established repository documentation structure reported by the documentation owner specifies otherwise.
 
 ### Language/project awareness
 
@@ -520,9 +419,9 @@ the plan passes the gate:
 - use the plan file's contents as the agreed documentation basis
 - read the matching `**Doku-Kategorie:**` / `**Ziel-Pfad:**` or
   `**Doc category:**` / `**Target path:**` from the header area
-- if both lines are missing or inconsistent: ask the user for the category and target path per `Doc categories` and add the lines in the plan file before implementation
+- the target-path line is always required; the doc-category line is required only when the target lies inside the four `docs/` categories, since `Doc categories` sanctions its omission for the root `README.md`, an explicitly named existing file, in-code documentation, and a divergent established structure
+- ask the user for the missing value only when a required line is absent or when a present category contradicts its target path, and add the lines in the plan file before implementation
 - if the target path points to an existing file: clarify replacement or a new slug with the user before ``effective-flow-docs-writer`` starts
-- if a "clarified + goal-driven" context was already passed from the apply chain (basis clarified, confirmation for the autonomous run already given), honor it: skip the goal query in Phase 1 and run through phases 2–4 under the "Goal-driven completion control".
 
 ## Workflow
 
@@ -536,10 +435,12 @@ the plan passes the gate:
    - User guide, developer guide, operations or runbooks
    - for the marketing entry point (root `README.md`) the category is omitted: it is not one of the four `docs/` categories, the target path is `README.md` and the implementation goes to ``effective-flow-marketing-writer``
    - for in-code documentation or for an existing file explicitly named in the plan outside the category directories, the category may be omitted; record this explicitly in the doc plan
+   - when the owner reports an established repository documentation structure, that structure takes precedence per `Doc categories`: the category is omitted, and the divergent structure is named in the doc plan for the user's approval
 3. Set the target path for the final document:
    - for category docs: `docs/<category>/<topic-slug>.md`
    - for the marketing entry point: `README.md`
-   - check the uniqueness of the slug within the category
+   - for an established repository structure: the path that structure prescribes for this document
+   - for category docs, check the uniqueness of the slug within the category; under an established repository structure, check uniqueness within that structure's own scope and keep its naming conventions
    - on collision (also for an already existing root `README.md`): clarify replacement, extension or an alternative slug with the user
 4. Clarify open questions directly with the user when the audience, scope, target, or substantive statements cannot be reliably derived.
 5. Create a short documentation plan from the owner's analysis:
@@ -548,11 +449,11 @@ the plan passes the gate:
    - affected files
    - planned content changes
    - validation strategy
-6. Derive the explicit completion condition from the validation strategy and the planned changes (see "Goal-driven completion control"); it covers phases 2–4 and feeds the explicit goal query in the approval question below. Handle the goal query per "Explicit goal query for autonomous runs": if "Autonomous via /goal" is chosen, perform the central harness-specific goal-start action for phases 2–4; the option is omitted when the workflow was delegated non-interactively.
+6. Derive the explicit completion condition from the validation strategy and the planned changes (see "Goal-driven completion control"); it covers phases 2–4.
+7. Obtain approval.
 
 Ask the user: **Documentation plan approved?**
-- Yes -- Approval granted, workflow continues gated
-- Autonomous via /goal -- Remaining phases autonomous under the native /goal after this explicit selection (omitted for non-interactive delegation)
+- Yes -- Approval granted, the workflow continues with Phase 2
 - Adjust -- Enter feedback as free text
 
 ### Phase 2: Implementation
@@ -580,21 +481,28 @@ Ask the user: **Documentation plan approved?**
 ### Phase 3: Validation
 
 1. Have the active `tech-docs` owner verify the changed documentation against its owning
-   implementation and examples, and return the exact evidence and remaining gaps.
+   implementation and examples, and return the exact evidence and remaining gaps. The owner designs
+   the verification and judges the evidence; ``effective-flow-code-validator`` executes the established
+   repository checks (step 4). Neither re-runs the other's work, and a check that neither can run
+   is reported as an evidence gap rather than silently dropped.
 2. Check Effective Flow's write paths:
-   - all newly created or changed final documents lie within the category directories from `Doc categories`, are the root `README.md` as the marketing entry point, or an existing file explicitly named in the plan
-   - slugs follow the convention (kebab-case, no date or number prefix)
+   - all newly created or changed final documents lie within the category directories from `Doc categories`, within the approved established repository structure when that structure took precedence, are the root `README.md` as the marketing entry point, or an existing file explicitly named in the plan
+   - for category docs, slugs follow the convention (kebab-case, no date or number prefix); a document in an approved established repository structure follows that structure's naming instead and is never renamed to satisfy the category convention
    - for user-guide changes, `docs/user-guide/README.md` is present as soon as content exists under `docs/user-guide/`
    - for developer-guide changes, `docs/developer-guide/README.md` is present as soon as content exists under `docs/developer-guide/`
 3. For the root `README.md` as the marketing entry point, check:
    - it is written from the user's perspective (value proposition, no internal architecture details)
    - at the end of the run, its final documentation follow-up section satisfies the conditional
-     rule from `Doc categories`: if both `docs/user-guide/README.md` and
-     `docs/developer-guide/README.md` exist, it has exactly those two links in user-guide then
-     developer-guide order; if exactly one exists, it has only that valid link; if neither
-     exists, it has neither link
+     rule from `Doc categories`, evaluated against the **effective** structure's two entry points:
+     `docs/user-guide/README.md` and `docs/developer-guide/README.md` under the prescribed standard
+     structure, or the established structure's user-facing and technical entry points when that
+     structure took precedence. If both exist, the section has exactly those two links in
+     user-facing then technical order; if exactly one exists, it has only that valid link; if
+     neither exists, it has neither link. A link to a standard path that the effective structure
+     does not have is a validation failure, not a permitted fallback
    - each missing target is reported individually as an open point in the workflow or agent
-     result, never as a placeholder or broken README link
+     result, never as a placeholder or broken README link; an entry point the effective structure
+     does not define at all is reported by its role rather than by an invented path
    - existing unrelated README links are preserved and excluded from the final documentation
      follow-up-section invariant
 4. Start ``effective-flow-code-validator`` when doc changes affect technical artifacts or the project build can plausibly check the change.
@@ -612,7 +520,7 @@ Ask the user: **Documentation plan approved?**
    - add `## Review-Befunde` or `## Review findings`, matching the plan language, and use
      corresponding prose for the no-findings case
 3. Delete the wisdom file.
-4. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
+4. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Declare to that handback that this workflow supplies **no** complete finding set — it has no review phase at all — so an automatic PR review reviews the pull request itself. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
 5. Summarize:
    - changed documentation areas
    - checked sources
@@ -628,26 +536,10 @@ Before every commit, the checks configured in the project must pass without erro
 - Never commit code that does not pass these checks.
 - This rule applies even when a separate verification phase exists — it is an additional safeguard, not a replacement.
 
-## Commit message rules
-
-- Resolve `language.git` through the shared language rule and write the human-readable subject
-  description and body in that language. Preserve a valid user-supplied message. Conventional
-  Commit types, optional scopes, `!`, trailer keys, issue references, and other machine tokens
-  remain English/ASCII. This rule also governs Conventional Commit PR-title descriptions and
-  explicitly generated changelog/release-note prose.
-- **Never set `Co-Authored-By` trailers in commit messages**, regardless of whether an LLM (Claude, Codex, GPT, …) or another tool suggests the line or inserts it as a default.
-- If a `Co-Authored-By` line is already present in a commit template, `commit.template`, a `--trailer` invocation, or a draft message: remove it before committing.
-- **Do not add AI attribution:** no „Generated with Claude Code/Codex" footers and no agent session links (e.g. `https://claude.ai/code/…`) in commit messages – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex remain allowed, generation attribution does not.
-- Avoid generic messages like `update files` or `misc changes`.
-- Describe concretely what was changed and why.
-- Use Conventional Commit prefixes: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
-- Choose the commit type by **effect**, not by file type: behavior-changing changes – including pure **config/env/secrets/CI** with deployment or runtime effect (e.g. corrected values in env/secret artifacts that take effect remotely via sync) – are `fix:` (or `feat:` for new functionality). `chore:` only for **deploy-neutral** changes without behavioral effect (pure maintenance, formatting, tooling without runtime effect). This also applies to the **squash PR title**, which determines the release-please bump on a squash merge.
-- Do not expose internal tracking IDs in commit messages, e.g. review finding IDs like `R-0000001`, local plan/review IDs like `F1`, or placeholders like `[Finding-ID]`. Such IDs belong in wisdom/report context, not in the Git history.
+**Load on demand:** Read `shared/commit-message-rules.md`, when a commit message or Conventional Commit title is written.
 
 ## Rules
 
 - Do not change product logic.
 - Documentation-adjacent code changes are only allowed if they are documentation themselves, for example comments, JSDoc/TSDoc or CLI help texts.
-- Do not invent substantive statements. If something is not verifiable, mark it as an assumption or ask.
-- Keep examples runnable and in sync with the code.
 - Give the user a short status update after each phase.

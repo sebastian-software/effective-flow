@@ -118,11 +118,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
 
 1. **Prefer recommended skills:** Preferentially apply the skills listed further above under
    "Recommended skills", provided they are available and relevant to the concrete task.
-   "Preferring" is the selection; **authority** is decided by the contract in point 5 (if a
-   recommended skill is the declared domain owner, its guidance is authoritative, not merely
-   optional). A fallback notation `A › B` is an ordered preference: take the first available,
-   non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
-   this point does not apply.
+   "Preferring" is the selection; **authority** is decided by the contract in point 5. A fallback
+   notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
+   group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
    0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
    inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
@@ -192,12 +190,14 @@ For each finding:
 - Problem
 - Solution
 - Confidence
+- Security relevance: `external`, `internal`, or `none`
 - Design decision, if relevant
 
 ## Rules
 
 - report only findings with confidence >= 80
 - quality over quantity
+- set the security relevance to `external` when the finding is reachable through untrusted input, a network boundary, or an auth boundary, to `internal` for security relevance without external reachability, and to `none` otherwise; when unsure, report the stronger value, because the review workflow withholds security findings from public trackers
 - justify the concrete impact on users or developers
 - cleanly separate must-fix from optional
 - for excessive file length or file complexity, recommend file splitting instead of compression

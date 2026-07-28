@@ -10,7 +10,7 @@ You are the orchestrator for the automated implementation of review report findi
 
 This workflow reads an existing review report file from `.effective-flow/review/`, evaluates the developer notes per finding and delegates the implementation to the matching workflows. Findings that should deliberately not be implemented are handed by the workflow as decision candidates to the `decision-records` skill; only permanent decisions are documented as an ADR, non-permanent rejections stay in the report or tracker artifact.
 
-In **remote mode** (tracker mode `remote`) the workflow reads the findings from an issue tracker instead: it is passed an epic issue or a list of concrete finding issues, one PR is created per finding, and the epic entry is checked off after PR creation. The deviations are bundled in "Remote mode (issue tracker)"; there, `wontfix` findings replace the rejecting developer note.
+If the resolved tracker target is the forge or an external tool, the workflow reads the findings from that issue tracker instead: it is passed an epic/container issue or a list of concrete finding issues, one PR is created per finding, and the container entry is checked off after PR creation. The deviations are bundled in "Remote mode (issue tracker)"; there, `wontfix` findings replace the rejecting developer note.
 
 ## Language resolution
 
@@ -176,6 +176,9 @@ language; changing `language.documentation.technical` does not translate an exis
   different from a present line with value `null` (an explicit value, semantically "ask at
   run time"). Example: no `delivery.completion` line → default `merge`; a
   `delivery.completion | null` line → ask at run time.
+- **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
+  automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
+  per the rule above.
 
 Reading a single value is a trivial line lookup (line with dotted key →
 value cell). Example excerpt (interface sketch, not full content):
@@ -424,44 +427,14 @@ When an internal sub-agent ends without `DONE` or `ABORT`:
 
 ## Goal-driven completion control
 
-Internal "repeat until done" loops of this workflow follow a uniform goal pattern instead of an ad-hoc formulated loop. The pattern combines the native `/goal` principles (Codex and Claude Code) with visible progress control. At explicit goal gates, the directly following central `goal-start-action` fragment renders the action after an authorized autonomous choice per harness.
+Internal "repeat until done" loops of this workflow follow a uniform completion pattern instead of an ad-hoc formulated loop. The pattern pairs one declared completion goal with independent verification and visible progress control. It steers the workflow's own run; Effective Flow neither offers nor starts a harness-native autonomous run for it, and the workflow's regular approval gates always apply.
 
 ### Goal controls
 
 1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
 2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
 3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
-4. **Visible progress for an active native goal.** Once the native goal is active—whether started directly or through a pasted `/goal` prompt—the remaining workflow maintains a visible phase task list and concise chat updates even when only a few phases remain: before work, create or reconcile every known remaining numbered phase in stable order; mark each phase when it starts and reaches an end state; add findings, issues or parallel subtasks as soon as their set is known, without matching duplicates; on resume, continue the existing list; and keep more specific per-finding, per-issue, per-source and per-reviewer detail rules authoritative. Exactly one workflow owns the goal overview on the shared interaction surface: the orchestrator responsible for the remaining scope; `effective-flow apply-plan` hands ownership to its selected target workflow before that workflow’s remaining phases begin and opens no competing list, while `effective-flow apply-issues` and `effective-flow apply-review` retain ownership of their overall phases and issue or finding tasks; a non-interactively delegated subworkflow reports status and results to the owner and may keep a local detail list only in a harness-isolated subcontext, never as a second goal overview. Follow the native task tool’s state model: if only one entry may be active, keep the overall phase active while parallel detail work follows its existing rules and is summarized in chat; submit result-dependent status changes only after the determining tool result is known, never in the same parallel tool batch. After each numbered phase and each bounded correction round, post a short update with its result and the next step, adding a deviation or blocker only when present; during correction keep the phase active, report the failed check and correction result, and name the retry or escalation; these updates are not gates, so continue autonomously unless an existing approval rule or genuine blocker requires user input. Give skipped, terminally failed and aborted steps the best native end state, or an unambiguous `[skipped]`, `[failed]` or `[aborted]` suffix when none exists; keep a step awaiting user input open with its blocker, and never treat terminal failure or abort as satisfying the goal. If the task tool is unavailable, list the known remaining phases compactly in chat before continuing and carry their state in later updates; if updates fail irrecoverably, report that failure once, move all still-open tracking to chat without claiming a successful tool update, and continue the domain work. Immediately before goal success, the owner reconciles every known phase and dynamic entry—including the equivalent final chat summary in fallback mode—to a truthful visible end state, and independently verifies the domain completion condition; never complete the goal with an unresolved entry.
-
-### Explicit goal query for autonomous runs
-
-At the approval boundary of this workflow – where the completion condition is already fixed and the workflow is waiting for approval anyway – the user gets an **explicit choice** whether the remaining phases continue gated or autonomously under the native `/goal`. This replaces the earlier passive co-emitting of a `/goal` string: the option is actively queried, not merely offered. Workflows with this explicit gate include the central `goal-start-action` fragment directly after this control fragment.
-
-#### When the query is omitted
-
-Skip the goal query entirely (no extra option, no goal-start action and no `/goal` string) when the workflow runs as a **non-interactive sub-agent** of a superordinate orchestrator where no direct user interaction is intended – recognizable from the invocation context, for example "[Context from effective-flow apply-review: …]". `effective-flow apply-review` already steers its autonomous run at its own gate; an additional goal query per sub-delegation would be pointless there. Direct invocations and the handover through `effective-flow apply-plan` (interactive, individual) do **not** count as such delegation – there the goal query is retained.
-
-#### Form of the query
-
-- If the approval boundary is a yes/no approval, extend the approval question with a third option "Autonomous via `/goal`" next to "Yes" (continue gated) and "Adjust".
-- If the approval boundary is a selection question (e.g. update groups) or if there is no yes/no approval at this boundary (e.g. because a planning phase was skipped), directly ask a concise standalone follow-up question "Run the remaining phases autonomously under `/goal`?". Depending on the interaction surface, use either yes/no answers or the explicit options "Continue gated" and "Autonomous via `/goal`".
-- At the three-option approval gate, only "Autonomous via `/goal`" authorizes the harness-specific goal-start action; "Yes" continues gated and "Adjust" returns to clarification.
-- At the standalone follow-up question, "Yes" or "Autonomous via `/goal`" authorizes the harness-specific goal-start action; "No" or "Continue gated" continues gated.
-- No other response and no omitted query authorizes the goal-start action. On every gated path, **no** `/goal` string is emitted. The internal approval gates are retained in any case.
-
-Rules for the `/goal` prompt and its objective in every harness path:
-
-- **Self-sustaining:** Reference the underlying plan file, if present, and instruct to run through the remaining phases of this workflow – not "somehow make the criteria green".
-- **Measurable:** Name the completion condition with the checks actually provided in the respective workflow (e.g. acceptance criteria fulfilled, project-configured checks green and – if the workflow has a review phase – reviewer without open critical findings) and the scope boundary. Leave out checks that do not apply.
-- **Platform-neutral objective:** Restrict yourself to the condition text after `/goal `; that exact text is both the direct Codex `objective` and the objective in every prompt handoff or fallback.
-- **Copy-ready presentation:** Whenever a `/goal` prompt is output for the user to paste – including a fallback after a failed direct start – put the fully resolved single-line command as the sole content of a dedicated fenced `text` code block. Keep the cause, explanation and paste prompt outside the fence; do not add a label, comment or other text inside it.
-- **Only at gate-free boundaries:** Offer the autonomous run exclusively at approval boundaries after which no further approval gate follows, so an autonomous run does not get stuck at a later gate.
-
-Form (replace placeholders, single line):
-
-```text
-/goal Fully implement <plan file or agreed task> and run through the remaining phases of this workflow: all acceptance criteria fulfilled, project-configured checks green<, reviewer without open critical findings – only if the workflow has a review phase>. Maintain a visible phase task list and report the result and next step in chat after each major phase. Change nothing outside the scope. Stop when all criteria hold.
-```
+4. **Visible progress.** Every run maintains a visible phase task list and concise chat updates even when only a few phases remain. This overview is required regardless of the generic task-tracking thresholds, which keep governing only ad-hoc subtask lists: before work, create or reconcile every known remaining numbered phase in stable order; mark each phase when it starts and reaches an end state; add findings, issues or parallel subtasks as soon as their set is known, without matching duplicates; on resume, continue the existing list; and keep more specific per-finding, per-issue, per-source and per-reviewer detail rules authoritative. Exactly one workflow owns the progress overview on the shared interaction surface: the orchestrator responsible for the remaining scope; `effective-flow apply-plan` hands ownership to its selected target workflow before that workflow’s remaining phases begin and opens no competing list, while `effective-flow apply-issues` and `effective-flow apply-review` retain ownership of their overall phases and issue or finding tasks; a non-interactively delegated subworkflow reports status and results to the owner and may keep a local detail list only in a harness-isolated subcontext, never as a second progress overview. Follow the native task tool’s state model: if only one entry may be active, keep the overall phase active while parallel detail work follows its existing rules and is summarized in chat; submit result-dependent status changes only after the determining tool result is known, never in the same parallel tool batch. After each numbered phase and each bounded correction round, post a short update with its result and the next step, adding a deviation or blocker only when present; during correction keep the phase active, report the failed check and correction result, and name the retry or escalation; these updates are not gates, so continue with the next step unless an existing approval rule or genuine blocker requires user input. Give skipped, terminally failed and aborted steps the best native end state, or an unambiguous `[skipped]`, `[failed]` or `[aborted]` suffix when none exists; keep a step awaiting user input open with its blocker, and never treat terminal failure or abort as satisfying the completion condition. If the task tool is unavailable, list the known remaining phases compactly in chat before continuing and carry their state in later updates; if updates fail irrecoverably, report that failure once, move all still-open tracking to chat without claiming a successful tool update, and continue the domain work. Immediately before reporting completion, the owner reconciles every known phase and dynamic entry—including the equivalent final chat summary in fallback mode—to a truthful visible end state, and independently verifies the domain completion condition; never report completion with an unresolved entry.
 
 ## Wisdom Accumulation
 
@@ -601,11 +574,14 @@ type in this order (first matching rule wins):
    path, canonicalize the nearest existing ancestor before appending validated missing segments.
    Reject `..`, aliases, a symlink escape, and every path outside the directory. Retain the
    resulting absolute report handle and pass it unchanged to the responsible skill.
-4. **Issue reference** → `issue-reference` (continue with stage B), when the remote helper's
-   reference parser accepts the argument as a bare issue number (`123`), `#123`, or a
-   host-neutral issue URL for the current repository. Multiple references are parsed as one list
-   and classified individually in stage B; malformed or cross-repository references remain
-   structured errors instead of heuristic matches.
+4. **Issue reference** → `issue-reference` (continue with stage B), when the argument is an issue
+   reference of the resolved tracker target. On the forge target that is what the remote helper's
+   reference parser accepts: a bare issue number (`123`), `#123`, or a host-neutral issue URL for
+   the current repository. On an external target it is a tool-native identifier (e.g. `ABC-123`)
+   or a URL of the configured tool; a bare non-four-digit number is genuinely ambiguous there
+   (leftover forge issue or tool shorthand) and is asked about instead of guessed. Multiple
+   references are parsed as one list and classified individually in stage B; malformed or
+   cross-repository references remain structured errors instead of heuristic matches.
 5. **Otherwise** → `ambiguous`: the argument resolves to no category or matches
    both a plan **and** a review file at the same time. Do not guess — the caller
    asks (see "Ambiguity and fallbacks").
@@ -618,66 +594,85 @@ Distinguishing plan vs. report: primarily via the directory (`<plan.dir>/` or
 
 ### Stage B: issue subtype (tracker)
 
-Stage B refines an `issue-reference` from stage A into the concrete subtype. It
-requires the host/CLI detection and availability check from `issue-tracker.md`;
-a skill that uses stage B therefore also embeds `issue-tracker.md`.
+Stage B refines an `issue-reference` from stage A into the concrete subtype. It requires the
+resolved tracker target from "Tracker target" in `issue-tracker.md` together with its established
+access — the host/CLI detection and availability check of the "Remote helper contract" on the forge
+target, or the single established connection of the `tracker-target` contract on an external
+target; a skill that uses stage B therefore also embeds `issue-tracker.md`.
 ``tools/apply-plan.md`` does not need stage B — for a plan skill, stage A is enough
 to recognize an issue reference as a foreign type and forward it.
 
-Per issue, read labels and body **once fresh** from the tracker and determine the subtype in
-this precedence — **label before body structure**:
+Per issue, read classification values and body **once fresh** from the tracker and determine the
+subtype in this precedence — **classification before body structure**:
 
 1. Label `effective-flow-review-epic` (or old `firmo-review-epic`) → `review-epic`.
 2. Label `effective-flow-review-finding` (or old `firmo-review-finding`) → `review-finding`.
 3. no review label, but the body contains a sub-issue checklist
-   (`- [ ] #NNN …` / `- [x] #NNN …`) → `container-issue`.
+   (`- [ ] <reference> …` / `- [x] <reference> …`, where `<reference>` is a forge `#NNN` or a
+   tool-native identifier such as `ABC-123`), or the issue has native sub-items on a target that
+   models containment natively → `container-issue`.
 4. otherwise → `plain-issue`.
+
+The checklist form is reference-agnostic on purpose: an external target without a native
+parent/sub-issue relation carries exactly this checklist as the contract's fallback container, so a
+`#NNN`-only pattern would fail to re-detect a container Effective Flow itself created.
+
+On an external target the canonical label strings are read from whichever classification primitive
+that target uses (see the `tracker-target` classification mapping); the `firmo-` variants are forge
+history and are not looked up there.
 
 Secondary signal when a label is missing (e.g. removed manually): a title in the format
 `[R-XXXXXXX] …` together with a helper-parsed `Signature` field (legacy `Signatur` accepted on
 read) is treated like `review-finding`. If the subtype remains unclear afterwards → `ambiguous`.
 
 Why label before body: a `review-epic` carries — like a generic
-`container-issue` — a `- [ ] #NNN` checklist. The label `effective-flow-review-epic` or
+`container-issue` — a `- [ ] <reference>` checklist. The label `effective-flow-review-epic` or
 `effective-flow-review-finding` (old prefix `firmo-` equivalent, see "Label convention" in
 `issue-tracker.md`) is the reliable discriminator and takes precedence over the
 body structure.
 
-### Ownership and mode
+### Ownership and target
 
 From the final source type follows exactly one responsible skill and — for
-``tools/apply-review.md`` — the mode:
+``tools/apply-review.md`` — the flow:
 
-| Source type       | Responsible skill        | Mode / note                      |
-| ----------------- | ------------------------ | -------------------------------- |
-| `plan`            | ``tools/apply-plan.md``   | –                                |
-| `review-report`   | ``tools/apply-review.md`` | local report flow                |
-| `review-epic`     | ``tools/apply-review.md`` | remote mode, epic mode           |
-| `review-finding`  | ``tools/apply-review.md`` | remote mode, issue-list mode     |
-| `container-issue` | ``tools/apply-issues.md`` | container expansion in the skill |
-| `plain-issue`     | ``tools/apply-issues.md`` | single work item                 |
+| Source type       | Responsible skill        | Target / note                                    |
+| ----------------- | ------------------------ | ------------------------------------------------ |
+| `plan`            | ``tools/apply-plan.md``   | –                                                |
+| `review-report`   | ``tools/apply-review.md`` | `local` target, report flow                      |
+| `review-epic`     | ``tools/apply-review.md`` | tracker target of the reference, epic mode       |
+| `review-finding`  | ``tools/apply-review.md`` | tracker target of the reference, issue-list mode |
+| `container-issue` | ``tools/apply-issues.md`` | container expansion in the skill                 |
+| `plain-issue`     | ``tools/apply-issues.md`` | single work item                                 |
+
+"Not `local`" never means "the forge" here: an epic or finding reference of an external tool
+selects that tool, and the tracker-bound flow runs against it.
 
 Consistency with `issue-tracker.md`: the rule there, "argument type overrides the
 config mode", stays valid — a `review-report` forces `local`, a
-`review-epic`/`review-finding` forces `remote`. This building block delivers exactly that
-argument type.
+`review-epic`/`review-finding` forces the tracker target the reference belongs to (the forge for a
+forge reference, `external` for a tool-native one). This building block delivers exactly that
+argument type; report which target the argument selected.
 
 ### Ambiguity and fallbacks
 
 - **`none` (no argument):** do not heuristically pick the "newest". The caller
   lists local candidates (open plans from `<plan.dir>/`, report files under the absolute
-  `<RUNTIME_STATE_ROOT>/.effective-flow/review/` directory) and asks for the specific source. If the effective
-  tracker mode is `remote`, it additionally lists open review epics (label
-  `effective-flow-review-epic`, incl. old `firmo-review-epic`) as candidates, since in
-  remote mode no local report files exist.
+  `<RUNTIME_STATE_ROOT>/.effective-flow/review/` directory) and asks for the specific source. If the resolved
+  tracker target is the forge or an external tool, it additionally lists open review epics (label
+  `effective-flow-review-epic`, incl. old `firmo-review-epic`, or the target's equivalent
+  container) as candidates, since on those targets no local report files exist.
 - **`ambiguous`:** name the competing interpretations and ask, instead of
   guessing.
 - **Mixed issue list** (different subtypes in one call, e.g. `review-finding`
   and `plain-issue`): do not guess. Ask the user to split the list by target type,
-  or — in the router — route per issue. Conservative: ask.
-- **Issue reference, but tracker CLI missing/not authenticated:** stage B cannot
-  run → clear error message with a remediation hint per "Errors and edge cases" in
-  `issue-tracker.md`; no silent fallback to a local type.
+  or — in the router — route per issue. Conservative: ask. A list that mixes a forge reference
+  with an external-target reference is never resolved heuristically either: ask the user to split
+  the call by tracker target.
+- **Issue reference, but the target is unreachable** (forge CLI missing or not authenticated, or
+  no usable external connection): stage B cannot run → clear error message with a remediation hint
+  per "Errors and edge cases" in `issue-tracker.md`; no silent fallback to a local type and none to
+  another target.
 - **Unresolvable path:** `ambiguous` → ask or error message; note that
   `effective-flow open-plans` can list open plans.
 
@@ -703,13 +698,13 @@ argument type.
 
 ## Remote mode (issue tracker)
 
-If the tracker mode is `remote` (the argument is an epic or finding issue), read and follow the internal sub-file `tools/apply-review-remote.md` **before** the local report flow. It contains the issue-tracker integration as well as the complete remote flow (phase 1–8 remote) and replaces or supplements the corresponding local steps. In local mode (report file under `.effective-flow/review/`) it is not loaded.
+If the resolved tracker target is the forge or an external tool (the argument is an epic/container or finding issue), read and follow the internal sub-file `tools/apply-review-remote.md` **before** the local report flow. It contains the issue-tracker integration, the external-target contract, and the complete remote flow (phase 1–8 remote), and replaces or supplements the corresponding local steps. Only on the `local` target (report file under `.effective-flow/review/`) is it not loaded.
 
 ## Workflow
 
 ### Phase 1: Read and validate the report
 
-First determine the tracker mode via the "apply-source detection" (report file under `.effective-flow/review/` → `local`; epic/finding issue → `remote`). If it is `remote`, read and follow the internal sub-file `tools/apply-review-remote.md` (phase 1 remote and following) instead of the report-file steps 4–7 below; the config, stash and cache steps still apply.
+First determine the tracker target via the "apply-source detection" (report file under `.effective-flow/review/` → `local`; epic/container or finding issue → the target that reference belongs to, the forge or an external tool). For any target other than `local`, read and follow the internal sub-file `tools/apply-review-remote.md` (phase 1 remote and following) instead of the report-file steps 4–7 below; the config, stash and cache steps still apply.
 
 1. Establish the verified dual-root execution receipt before resolving the source. Load the
    Effective Flow configuration, migrate it if necessary and determine the commit-strategy
@@ -752,8 +747,9 @@ First determine the tracker mode via the "apply-source detection" (report file u
 
 7. Classify each finding:
    - **Already implemented:** the finding already has a ✅ hint → skip
+   - **Already published as an issue:** the finding carries a 🔓 publication note (`Published as #<nr>` / `Veröffentlicht als #<nr>`) from the security disclosure gate → do not implement it from the report, because the local report and the issue would otherwise be implemented twice. Collect these findings with their issue numbers for the handover in step 9; the local flow never processes them silently. If a note is present but its issue number is unreadable or ambiguous, ask instead of guessing, and do not treat the finding as implementable in the meantime.
    - **Do not implement:** the developer note begins with "Do not implement" (the German form "Nicht umsetzen" is also recognized) → hand to `decision-records` as a decision candidate (ADR only for a permanent decision)
-   - **Implement:** no ✅ hint and no rejecting note → delegate to a skill
+   - **Implement:** no ✅ hint, no rejecting note, and no publication note → delegate to a skill
    - **Implement with context:** a developer note is present that does not begin with "Do not implement" / "Nicht umsetzen" → delegate to a skill, passing the note as additional context
 8. Give the user an overview:
 
@@ -766,14 +762,16 @@ First determine the tracker mode via the "apply-source detection" (report file u
 | To implement | X |
 | Do not implement (→ decision-records) | Y |
 | Already implemented | Z |
+| Already published (→ issue) | P |
 | Total | N |
 ```
 
-9. If there are no implementable findings and no rejected findings to handle: short message and abort.
+9. **Hand over published findings:** If findings carry a publication note, name each one with its issue number and output the concrete re-entry `effective-flow apply #<nr> [#<nr> …]`, which processes them through the remote flow. Never drop them silently — the argument type decides the mode, so a report file cannot enter the remote flow by itself.
+10. If no implementable findings and no rejected findings remain: report that briefly. If published findings exist, the message is the handover from step 9 rather than a bare abort, so a report consisting only of published findings ends with an executable next step instead of an apparent dead end. Then end the workflow.
 
 ### Phase 2: Commit and stash strategy
 
-This phase is the workflow's only up-front strategy gate: the commit strategy and stash policy are determined here together, before the findings are worked through. After that no further **regular** approval gate follows; the remaining stops are exclusively conflict-driven data-integrity escalations: an `apply` merge conflict in Phase 6, a high-risk cherry-pick conflict in Phase 4.3 under the "Individually with worktrees" strategy and — rarely — an orphaned commit lock under the "Individually" strategy. If no such escalation occurs, phases 3–8 run autonomously under native `/goal`.
+This phase is the workflow's only up-front strategy gate: the commit strategy and stash policy are determined here together, before the findings are worked through. After that no further **regular** approval gate follows; the remaining stops are exclusively conflict-driven data-integrity escalations: an `apply` merge conflict in Phase 6, a high-risk cherry-pick conflict in Phase 4.3 under the "Individually with worktrees" strategy and — rarely — an orphaned commit lock under the "Individually" strategy. With a non-`interactive` `applyReview.stashPolicy`, phases 3–8 therefore run through without a further stop if no such escalation occurs; with the default `interactive` policy, the stash decisions in Phase 6 and Phase 4.3 are additional stops.
 
 If `applyReview.defaultCommitStrategy` is validly set, skip the ASK question and use the configured strategy:
 
@@ -796,21 +794,17 @@ Record the answer and pass it to each delegated skill as an instruction:
 
 #### Stash policy
 
-Part of the same up-front gate: the stash policy determines in advance how the stash cleanup in Phase 6 (classes B/C/D) and the abort cleanup in Phase 4.3 handle stashes left behind — without a later follow-up question. Concrete stashes do not yet exist at the start; therefore the policy is decided, not the individual case.
+Part of the same up-front gate: the stash policy determines in advance how the stash cleanup in Phase 6 (classes B/C/D) and the abort cleanup in Phase 4.3 handle stashes left behind — for every value except the default `interactive`, without a later follow-up question. Concrete stashes do not yet exist at the start; therefore the policy is decided, not the individual case.
 
 If `applyReview.stashPolicy` is validly set, skip the ASK question and use the value; briefly report that the stash policy was taken from the Effective Flow configuration (project-setup ADR). If no valid value is set, ask at the same gate as the commit strategy:
 
 If no valid value is set for `applyReview.stashPolicy`: Ask the user: **How should stashes left behind during the run be handled when a decision is needed?**
-- Interactive -- Ask per affected stash (today's behavior, blocks autonomous runs)
-- Keep -- Keep unclear stashes unchanged and report at the end (safe for autonomous runs)
+- Interactive -- Ask per affected stash (today's behavior, blocks unattended runs)
+- Keep -- Keep unclear stashes unchanged and report at the end (safe for unattended runs)
 - Discard -- Discard unclear stashes (git stash drop) — possible data loss
 - Apply -- Apply unclear stashes (git stash pop); on a merge conflict it still asks
 
-Value mapping: Interactive → `interactive`, Keep → `keep`, Discard → `discard`, Apply → `apply`. Record the chosen policy in the wisdom file. For unattended `/goal` runs, `keep` is the safe value; `interactive` blocks such runs at Phase 6 and Phase 4.3.
-
-#### Optional `/goal` string
-
-Once the commit strategy and stash policy are fixed, output the optional `/goal` string per "Goal-driven completion control"; it covers phases 3–8. The string references the report file and instructs the user to run through the remaining phases. With `stashPolicy != interactive` (recommended `keep`), these phases run without a regular approval gate; the remaining stops are only the conflict-driven escalations from the phase intro (`apply` merge conflict, high-risk cherry-pick conflict with worktrees, rarely an orphaned lock).
+Value mapping: Interactive → `interactive`, Keep → `keep`, Discard → `discard`, Apply → `apply`. Record the chosen policy in the wisdom file. For an unattended non-interactive delegation, `keep` is the safe value; `interactive` blocks such runs at Phase 6 and Phase 4.3.
 
 #### Commit mechanics per strategy
 
@@ -832,11 +826,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
 
 1. **Prefer recommended skills:** Preferentially apply the skills listed further above under
    "Recommended skills", provided they are available and relevant to the concrete task.
-   "Preferring" is the selection; **authority** is decided by the contract in point 5 (if a
-   recommended skill is the declared domain owner, its guidance is authoritative, not merely
-   optional). A fallback notation `A › B` is an ordered preference: take the first available,
-   non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
-   this point does not apply.
+   "Preferring" is the selection; **authority** is decided by the contract in point 5. A fallback
+   notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
+   group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
    0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
    inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
@@ -965,7 +957,7 @@ Example (across actions) with five findings over multiple actions:
      - action docs: `Use the skill effective-flow docs for this finding.`
    - the prompt suggestion from the report as the task description
    - **Stash convention:** if any stash arises during the implementation of this finding (through a pre-commit hook, a manual `git stash` in the sub-skill or a tool-triggered stash), **the stash message must contain the finding ID**, e.g. `apply-review R-XXXXXXX <short description>`. This allows the stash cleanup in Phase 6 to reliably assign the stash to the finding.
-   - the note that the sub-agent runs as a **non-interactive** delegation sub-agent of `effective-flow apply-review` and therefore skips the explicit goal query per "Explicit goal query for autonomous runs": no extra option "Autonomous via /goal", no `/goal` string. `effective-flow apply-review` steers the autonomous run at its own gate.
+   - the note that the sub-agent runs as a **non-interactive** delegation sub-agent of `effective-flow apply-review` and therefore opens no approval gate of its own. `effective-flow apply-review` steers the run at its own gate.
    - the completion protocol
 3. Check each sub-agent for `DONE` or `ABORT`.
 4. On `ABORT`:
@@ -1042,7 +1034,7 @@ During the delegation in Phase 4, the called sub-skills or pre-commit hooks may 
 
 6. **Handle each stash based on its classification:**
 
-   **Apply the stash policy from Phase 2:** class A remains auto-drop in all policies. Classes B/C/D follow the `stashPolicy`. The class steps below describe the case `stashPolicy = interactive` (default), which asks the stash question per stash. With the other values the question is omitted and you act directly: `keep` → keep the stash unchanged and note it as "kept" for the Phase 8 summary; `discard` → `git stash drop`; `apply` → `git stash pop` and on a merge conflict do **not** drop, but escalate to the user (the only remaining stop in the autonomous run).
+   **Apply the stash policy from Phase 2:** class A remains auto-drop in all policies. Classes B/C/D follow the `stashPolicy`. The class steps below describe the case `stashPolicy = interactive` (default), which asks the stash question per stash. With the other values the question is omitted and you act directly: `keep` → keep the stash unchanged and note it as "kept" for the Phase 8 summary; `discard` → `git stash drop`; `apply` → `git stash pop` and on a merge conflict do **not** drop, but escalate to the user (the only remaining stop in the otherwise unattended run).
 
    - **Class A:** drop without asking.
      - `git stash drop stash@{N}`

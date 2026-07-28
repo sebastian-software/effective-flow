@@ -1,14 +1,14 @@
 ---
 name: effective-flow
-description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: build, fix, plan, refactor, docs, review, apply, plan-issue, maintain, commit, pr, setup, cleanup, open-plans, investigate, version."
-argument-hint: "[investigate|plan|open-plans|plan-issue|apply|build|fix|refactor|docs|maintain|iterate|review|commit|pr|setup|cleanup|version]"
+description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: build, fix, plan, refactor, docs, review, apply, concept, plan-issue, maintain, commit, pr, setup, cleanup, open-plans, investigate, version."
+argument-hint: "[concept|investigate|plan|open-plans|plan-issue|apply|build|fix|refactor|docs|maintain|iterate|review|commit|pr|setup|cleanup|version]"
 ---
 
 # Effective Flow
 
-Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.52.2 (8190c40)).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.54.1 (dcf1183)).
 
-This router skill is deliberately **thin**. It contains only the tool catalog and the dispatch rule; a tool's full instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the session lean and avoids token exhaustion from preloading all tools.
+This router skill is deliberately **thin**. Beyond the tool catalog, the dispatch rule and the session-title contract it carries nothing; a tool's full instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the session lean and avoids token exhaustion from preloading all tools.
 
 ## Invocation
 
@@ -24,6 +24,36 @@ The portable instructions below use `effective-flow <tool>` as harness-neutral n
 
 For the `apply` tool, its instructions may in turn load an appropriate **internal** file (`tools/apply-plan.md`, `tools/apply-review.md`, or `tools/apply-issues.md`), depending on the detected source. These internal files are not directly invocable via `effective-flow`.
 
+## Session title
+
+Hosts derive a session title from the **first** message, so a run is listed as
+`Effective-flow plan R-0000010` long before its subject is known. Once the running tool knows that
+subject, propose a better title — once.
+
+- **Only where sessions carry titles:** emit only when the host exposes a session-management or
+  session-title capability. Never call such a tool for the current session (they exclude it),
+  never retitle another session, and never probe speculatively. Where a host offers a self-rename
+  path, apply the title silently instead of proposing it. Otherwise stay silent.
+- **Only from work-subject tools:** `concept`, `concept-review`, `plan`, `plan-issue`, `apply`,
+  `apply-plan`, `apply-review`, `apply-issues`, `build`, `fix`, `refactor`, `docs`, `maintain`,
+  `review`, `iterate`, and `investigate`. `version`, `open-plans`, `setup`, `cleanup`, `commit`, and `pr` stay silent, and
+  internal sub-agents and workers never emit.
+- **Once, as soon as the subject exists:** the issue or pull-request title has been read, the plan
+  H1 has been read, the review or maintenance scope is fixed, or the requirement is clarified —
+  whichever comes first for the running tool. A delegating parent leaves the emission to its
+  delegate, and a delegate never repeats a subject its parent already proposed. Restate the title
+  in the completion report only if the final scope diverged from it.
+- **Subject first:** `<Subject> · <tool>`, at most 60 characters, cut at a word boundary. Reuse an
+  existing artifact title verbatim — plan H1 without a legacy number, issue title without its
+  `[R-XXXXXXX]` prefix, pull-request title without its Conventional Commit type — instead of
+  paraphrasing it; otherwise use a short noun phrase from the requirement. For several issues, name
+  the first subject and append `+N`. Append an identifier such as `#123` only where it aids lookup,
+  never in front. No workflow-name prefix, no echo of the invocation, no AI attribution.
+- **One line, never blocking:** output `**Suggested session title:** <title>` and nothing else — no
+  explanation, no follow-up question, and never in place of the run's own output. The label follows
+  the conversation language while a reused artifact title keeps its own. Never put secrets or
+  credential values in a title; the session list is a persistent visible surface.
+
 ## Tools
 
 The tools are grouped below by usage intent.
@@ -31,6 +61,7 @@ The tools are grouped below by usage intent.
 ### Understand what to do
 _Analysis & planning before code_
 
+- `effective-flow concept` — Creates the concept for a new application – complete, but still on the surface.
 - `effective-flow investigate` — Finds the cause of a bug or surprising behavior – pure analysis, no code.
 - `effective-flow plan` — Routes issue references to issue planning or writes an actionable local plan – without code.
 - `effective-flow open-plans` — Shows which plans are still open when you pick the thread back up.

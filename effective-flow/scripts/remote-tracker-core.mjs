@@ -29,6 +29,7 @@ const MUTATIONS = new Set([
   'pr-create',
   'pr-update-body',
   'pr-comment',
+  'review-create',
   'review-thread-reply',
   'review-thread-resolve',
 ]);
@@ -54,6 +55,7 @@ const REMOTE_OPERATIONS = new Set([
   'pr-create',
   'pr-update-body',
   'pr-comment',
+  'review-create',
   'review-threads-read',
   'review-thread-reply',
   'review-thread-resolve',
@@ -78,6 +80,7 @@ const CAPABILITY_BY_OPERATION = Object.freeze({
   'pr-create': 'pullRequestCreate',
   'pr-update-body': 'pullRequestUpdate',
   'pr-comment': 'prComment',
+  'review-create': 'reviewCreate',
   'review-threads-read': 'reviewThreads',
   'review-thread-reply': 'reviewThreadReplies',
   'review-thread-resolve': 'reviewThreadResolution',
@@ -426,17 +429,117 @@ const COMMENT_MARKERS = Object.freeze({
   planning: 'effective-flow-plan-issues',
   apply: 'effective-flow-apply-issues',
   pr: 'effective-flow-iterate',
+  'pr-review': 'effective-flow-pr-review',
 });
 
-export function buildCommentPayload(kind, input) {
+function commentMarker(kind) {
   if (!Object.hasOwn(COMMENT_MARKERS, kind)) {
-    fail('INVALID_PAYLOAD', 'comment kind must be planning, apply, or pr', { kind });
+    fail(
+      'INVALID_PAYLOAD',
+      `comment kind must be one of ${Object.keys(COMMENT_MARKERS).join(', ')}`,
+      { kind },
+    );
   }
+  return COMMENT_MARKERS[kind];
+}
+
+// Stamps the marker of one kind onto a body. Idempotent on purpose: repeat suppression and the
+// separation between the tool's own output and third-party threads are plain string matches, so
+// a body that already carries its marker is returned unchanged instead of collecting a second one.
+function stampMarker(marker, content) {
+  const text = content.trim();
+  return text.includes(`<!-- ${marker} -->`) ? text : `<!-- ${marker} -->\n${text}`;
+}
+
+function publishableText(value, field) {
+  const text = assertPublishable(value, field);
+  if (text.trim() === '') fail('INVALID_PAYLOAD', `${field} must not be empty`, { field });
+  return text;
+}
+
+export function buildCommentPayload(kind, input) {
+  const marker = commentMarker(kind);
   requireObject(input, 'comment');
-  const content = assertPublishable(input.body, 'comment.body').trim();
-  if (content === '') fail('INVALID_PAYLOAD', 'comment.body must not be empty');
-  const marker = COMMENT_MARKERS[kind];
-  return { kind, marker, body: `<!-- ${marker} -->\n${content}` };
+  const content = publishableText(input.body, 'comment.body');
+  return { kind, marker, body: stampMarker(marker, content) };
+}
+
+const REVIEW_EVENTS = Object.freeze(['COMMENT']);
+const REVIEW_SIDES = Object.freeze(['LEFT', 'RIGHT']);
+
+// Deliberately not `requireNumber`: that helper guards issue and PR references and therefore
+// reports a bad value as INVALID_REFERENCE, while a comment line is payload data whose rejection
+// must stay INVALID_PAYLOAD like every other field of this builder.
+function reviewCommentLine(value, field) {
+  const line =
+    typeof value === 'string' && /^\d+$/.test(value.trim()) ? Number(value.trim()) : value;
+  if (!Number.isSafeInteger(line) || line <= 0) {
+    fail('INVALID_PAYLOAD', `${field} must be a positive integer`, { field, value });
+  }
+  return line;
+}
+
+function reviewCommentSide(value, field) {
+  const side =
+    value === undefined || value === null
+      ? 'RIGHT'
+      : requireString(value, field).trim().toUpperCase();
+  if (!REVIEW_SIDES.includes(side)) {
+    fail('INVALID_PAYLOAD', `${field} must be LEFT or RIGHT`, {
+      field,
+      value,
+      supported: [...REVIEW_SIDES],
+    });
+  }
+  return side;
+}
+
+// Builds the provider-neutral payload for one pull-request review carrying inline comments.
+// The event is pinned to the neutral comment event: this operation never approves a pull
+// request and never requests changes, so any other event value is rejected here instead of
+// being forwarded to the provider. Every input is validated before a request is planned, so
+// an invalid comment fails closed with the same structured error shape as every other payload.
+// The review body is mandatory and the comment array is optional: the publication contract
+// requires body-only submissions — a short summary when nothing was found, and a finding on a
+// line outside the diff that must not be anchored onto a wrong line — while a submission
+// without body text carries nothing to publish and would be rejected by the provider anyway.
+// Body and comment bodies are stamped with the `pr-review` marker from the marker table, so no
+// caller has to hand-write it and repeat suppression cannot be defeated by a reworded marker.
+export function buildReviewPayload(input) {
+  requireObject(input, 'payload');
+  const event =
+    input.event === undefined || input.event === null
+      ? 'COMMENT'
+      : requireString(input.event, 'payload.event').trim().toUpperCase();
+  if (!REVIEW_EVENTS.includes(event)) {
+    fail('INVALID_PAYLOAD', 'payload.event must be COMMENT', {
+      field: 'payload.event',
+      value: input.event,
+      supported: [...REVIEW_EVENTS],
+    });
+  }
+  const marker = commentMarker('pr-review');
+  const body = stampMarker(marker, publishableText(input.body, 'payload.body'));
+  const comments = input.comments ?? [];
+  if (!Array.isArray(comments)) {
+    fail('INVALID_PAYLOAD', 'payload.comments must be an array', {
+      field: 'payload.comments',
+    });
+  }
+  return {
+    body,
+    event,
+    comments: comments.map((comment, index) => {
+      const field = `payload.comments[${index}]`;
+      requireObject(comment, field);
+      return {
+        path: requireString(comment.path, `${field}.path`),
+        line: reviewCommentLine(comment.line, `${field}.line`),
+        side: reviewCommentSide(comment.side, `${field}.side`),
+        body: stampMarker(marker, publishableText(comment.body, `${field}.body`)),
+      };
+    }),
+  };
 }
 
 export function buildSkippedFindingEntry(input, options = {}) {
@@ -929,6 +1032,20 @@ export function buildCommandPlan(operation, input, repository) {
           ],
           jsonStdin({ body: assertPublishable(payload.body, 'payload.body') }),
         );
+      case 'review-create':
+        return mutationPlan(
+          'gh',
+          [
+            'api',
+            ...hostArgs,
+            '-X',
+            'POST',
+            ghEndpoint(`pulls/${prNumber(input)}/reviews`),
+            '--input',
+            '-',
+          ],
+          jsonStdin(buildReviewPayload(payload)),
+        );
       case 'review-threads-read': {
         const query = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved path line startLine diffSide comments(first:100){nodes{id databaseId body path line originalLine startLine originalStartLine author{__typename login}}}}}}}}`;
         return mutationPlan(
@@ -1119,6 +1236,11 @@ export function buildCommandPlan(operation, input, repository) {
         String(input.page ?? 1),
         '--limit',
         String(input.limit ?? 100),
+        // Same field list as `pr-read`: without it tea's list renderer omits head and base, and
+        // every item has to be hydrated through a separate read. Purely additive — callers keep
+        // hydrating an incomplete item, so a tea that ignores the request behaves as before.
+        '--fields',
+        'index,title,state,body,labels,url,head,base',
       ]);
     }
     case 'pr-create':
@@ -1171,6 +1293,7 @@ export function buildCommandPlan(operation, input, repository) {
         '--fields',
         'id,body,reviewer,path,line,resolver,url',
       ]);
+    case 'review-create':
     case 'review-thread-reply':
       fail('UNSUPPORTED_CAPABILITY', `installed tea adapter does not safely support ${operation}`, {
         operation,
@@ -1200,9 +1323,25 @@ function parseJsonOutput(result, label) {
   }
 }
 
+// tea prints result URLs as OSC 8 terminal hyperlinks, so its human output carries escape
+// sequences even when stdout is a pipe. Remove whole sequences rather than stripping ESC
+// characters: OSC 8 embeds its target URI inside the opening marker, so a character-level strip
+// would leave `]8;id=…;https://…` fragments behind and make the text harder to parse, not easier.
+// Both terminators are covered because tea's choice varies by build. An unterminated sequence
+// simply does not match and survives into the output, where it stays visible for diagnosis.
+const ANSI_SEQUENCE = /\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)|\u001b\[[0-9;?]*[ -/]*[@-~]/g;
+
+function stripAnsiSequences(text) {
+  return text.replace(ANSI_SEQUENCE, '');
+}
+
 function parseCommandOutput(result, plan, label) {
   const text = result.stdout.trim();
-  if (plan.expectsJson === false) return { raw: { completed: true, output: text } };
+  // Only the human-rendered branch is sanitized. Structured output is parsed as-is, because a
+  // stripper run over JSON could corrupt legitimate string content.
+  if (plan.expectsJson === false) {
+    return { raw: { completed: true, output: stripAnsiSequences(text) } };
+  }
   if (!plan.includesHeaders || !/^HTTP\/\S+\s+\d+/i.test(text)) {
     return { raw: parseJsonOutput(result, label) };
   }
@@ -1292,7 +1431,9 @@ export async function probeProvider(repository, runner) {
   const version = versionResult.stdout.trim().split(/\r?\n/)[0];
   assertMinimumVersion(
     parseCliVersion(versionResult.stdout, executable),
-    repository.provider === 'github' ? [2, 0, 0] : [0, 9, 0],
+    // tea 0.14.2 is the first release whose `pulls create` accepts a `--repo` slug together with an
+    // explicit `--head`; 0.14.1 rejects that combination outright.
+    repository.provider === 'github' ? [2, 0, 0] : [0, 14, 2],
     executable,
   );
   if (repository.provider === 'github') {
@@ -1333,6 +1474,7 @@ export async function probeProvider(repository, runner) {
         comments: true,
         labels: true,
         labelCreate: true,
+        reviewCreate: true,
         reviewThreads: true,
         reviewThreadReplies: true,
         reviewThreadResolution: true,
@@ -1427,6 +1569,7 @@ export async function probeProvider(repository, runner) {
       comments: comment,
       labels: labelCreate && issueLabelAdd && issueLabelRemove,
       labelCreate,
+      reviewCreate: false,
       reviewThreads: pullReviewComments,
       reviewThreadReplies: false,
       reviewThreadResolution: pullResolve,
@@ -1437,6 +1580,19 @@ export async function probeProvider(repository, runner) {
 
 function normalizeLabel(label) {
   return typeof label === 'string' ? label : label?.name;
+}
+
+// tea's list renderer flattens `labels` into a comma-separated string while its single-item
+// renderer returns an array, so the same field arrives in two shapes one call apart. Splitting
+// the string rather than discarding it matters: an `Array.isArray(...) ? ... : []` guard would
+// stop the crash but silently drop every label the list form actually carries.
+function normalizeLabels(value) {
+  const items = typeof value === 'string' ? value.split(',') : value;
+  if (!Array.isArray(items)) return [];
+  return items
+    .map(normalizeLabel)
+    .map((label) => (typeof label === 'string' ? label.trim() : label))
+    .filter(Boolean);
 }
 
 function normalizeAuthor(author) {
@@ -1467,7 +1623,7 @@ function normalizeIssue(item, repository, metadata = {}) {
     title: item.title ?? '',
     body: item.body ?? item.description ?? '',
     state: String(item.state ?? '').toLowerCase(),
-    labels: (item.labels ?? []).map(normalizeLabel).filter(Boolean),
+    labels: normalizeLabels(item.labels),
     url: item.html_url ?? item.url ?? item.web_url,
     repository: repository.slug,
     ...(metadata.version ? { version: metadata.version } : {}),
@@ -1500,23 +1656,38 @@ function flattenPages(value) {
   return Array.isArray(value) && value.every(Array.isArray) ? value.flat() : value;
 }
 
+const URL_CANDIDATE = /https?:\/\/[^\s<>"']+/g;
+
+// tea's create commands have no `--output json`, so the result URL has to come out of the human
+// rendering. Selecting by validity instead of by position is what keeps that safe: a docs link or
+// an error hint in the output can never be reported as the created resource, because only a
+// candidate `parseReference` accepts for this repository and this kind is eligible. That makes the
+// relaxed match stricter about what it accepts than the previous whole-line match was.
+function selectTeaResultUrl(output, expectedKind, repository) {
+  if (typeof output !== 'string') return undefined;
+  const candidates = output.match(URL_CANDIDATE) ?? [];
+  for (const candidate of candidates.reverse()) {
+    const url = candidate.replace(/[.,;:!?)\]}>'"]+$/, '');
+    try {
+      parseReference(url, { expectedKind, repository });
+      return url;
+    } catch {
+      // Not the created resource; keep looking at the earlier candidates.
+    }
+  }
+  return undefined;
+}
+
 function normalizeTeaCreate(operation, raw, repository, input) {
   const output = raw?.output;
-  const url =
-    typeof output === 'string'
-      ? output
-          .split(/\r?\n/)
-          .map((line) => line.trim())
-          .reverse()
-          .find((line) => /^https?:\/\/\S+$/.test(line))
-      : undefined;
+  const kind = operation === 'issue-create' ? 'issue' : 'pull-request';
+  const url = selectTeaResultUrl(output, kind, repository);
   if (!url) {
     fail('INVALID_PAYLOAD', `${operation} succeeded without a parseable tea result URL`, {
       mutationMayHaveSucceeded: true,
       stdout: redact(output ?? ''),
     });
   }
-  const kind = operation === 'issue-create' ? 'issue' : 'pull-request';
   const reference = parseReference(url, { expectedKind: kind, repository });
   const payload = input.payload ?? input;
   const normalized = {
@@ -1639,6 +1810,11 @@ function localOperation(operation, input) {
       return buildCommentPayload('apply', input.comment ?? input);
     case 'pr-comment-build':
       return buildCommentPayload('pr', input.comment ?? input);
+    // The Forgejo fallback for `review-create` posts one ordinary pull-request comment. It must
+    // not use the `pr` kind: that stamps the iterate marker, which iterate reads as its own
+    // completed work, so the fallback would feed the tool its own findings back.
+    case 'pr-review-comment-build':
+      return buildCommentPayload('pr-review', input.comment ?? input);
     case 'finding-deduplicate':
       return deduplicateFindings(input.existingIssues, input.findings);
     case 'label-query-variants':
@@ -1832,9 +2008,24 @@ export async function executeOperation(operation, input = {}, options = {}) {
       fail('INVALID_PAYLOAD', `unknown operation: ${operation}`, { operation });
     }
 
-    const runner =
+    const baseRunner =
       options.runner ??
       (async () => fail('INVALID_PAYLOAD', 'remote operations require an injected process runner'));
+    if (input.cwd !== undefined) requireString(input.cwd, 'cwd');
+    // Single choke point: every provider CLI resolves its repository from the working directory,
+    // so root all of them - repository resolution, probe, command plan, pagination, guards - in
+    // the caller's `cwd` rather than in whatever directory the process happens to sit in.
+    const runner = async (call) => {
+      const result = await baseRunner(
+        call?.cwd === undefined && input.cwd !== undefined ? { ...call, cwd: input.cwd } : call,
+      );
+      if (result?.error?.code === 'INVALID_CWD') {
+        fail('INVALID_PAYLOAD', 'working directory is not an existing directory', {
+          cwd: result.error.path,
+        });
+      }
+      return result;
+    };
     const repository = await resolveRepositoryInput(input, runner);
     if (operation === 'repository-resolve') {
       return {

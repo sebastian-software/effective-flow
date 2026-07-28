@@ -123,11 +123,9 @@ no skill directory or none fits, this step is a no-op — continue without an er
 
 1. **Prefer recommended skills:** Preferentially apply the skills listed further above under
    "Recommended skills", provided they are available and relevant to the concrete task.
-   "Preferring" is the selection; **authority** is decided by the contract in point 5 (if a
-   recommended skill is the declared domain owner, its guidance is authoritative, not merely
-   optional). A fallback notation `A › B` is an ordered preference: take the first available,
-   non-excluded skill in the group, never both. If no such section exists (e.g. for tools),
-   this point does not apply.
+   "Preferring" is the selection; **authority** is decided by the contract in point 5. A fallback
+   notation `A › B` is an ordered preference: take the first available, non-excluded skill in the
+   group, never both. If no such section exists (e.g. for tools), this point does not apply.
 2. **Judge relevance:** Pull in only skills that clearly fit the **concrete** task (typically
    0–2), never "on suspicion". Never load the alternative orchestrator `effective-workflow`
    inside Effective Flow: nesting it would create competing lifecycle and delivery owners.
@@ -248,7 +246,6 @@ documentation check that could not run. Add no generator or dependency.
   translation was requested. Only a direct invocation resolves the shared language rule itself.
 - Touch only assigned documentation comments, doc examples, or CLI help surfaces; change no
   runtime logic.
-- Prefer self-documenting code and avoid redundant narration.
 - Tell ``effective-flow-code-validator`` which established documentation check applies, or report that no
   safe check was found.
 - Return changed files, checked interfaces, evidence, and remaining gaps to the caller.

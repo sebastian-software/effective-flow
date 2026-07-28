@@ -61,11 +61,14 @@ type in this order (first matching rule wins):
    path, canonicalize the nearest existing ancestor before appending validated missing segments.
    Reject `..`, aliases, a symlink escape, and every path outside the directory. Retain the
    resulting absolute report handle and pass it unchanged to the responsible skill.
-4. **Issue reference** → `issue-reference` (continue with stage B), when the remote helper's
-   reference parser accepts the argument as a bare issue number (`123`), `#123`, or a
-   host-neutral issue URL for the current repository. Multiple references are parsed as one list
-   and classified individually in stage B; malformed or cross-repository references remain
-   structured errors instead of heuristic matches.
+4. **Issue reference** → `issue-reference` (continue with stage B), when the argument is an issue
+   reference of the resolved tracker target. On the forge target that is what the remote helper's
+   reference parser accepts: a bare issue number (`123`), `#123`, or a host-neutral issue URL for
+   the current repository. On an external target it is a tool-native identifier (e.g. `ABC-123`)
+   or a URL of the configured tool; a bare non-four-digit number is genuinely ambiguous there
+   (leftover forge issue or tool shorthand) and is asked about instead of guessed. Multiple
+   references are parsed as one list and classified individually in stage B; malformed or
+   cross-repository references remain structured errors instead of heuristic matches.
 5. **Otherwise** → `ambiguous`: the argument resolves to no category or matches
    both a plan **and** a review file at the same time. Do not guess — the caller
    asks (see "Ambiguity and fallbacks").
@@ -78,66 +81,85 @@ Distinguishing plan vs. report: primarily via the directory (`<plan.dir>/` or
 
 ### Stage B: issue subtype (tracker)
 
-Stage B refines an `issue-reference` from stage A into the concrete subtype. It
-requires the host/CLI detection and availability check from `issue-tracker.md`;
-a skill that uses stage B therefore also embeds `issue-tracker.md`.
+Stage B refines an `issue-reference` from stage A into the concrete subtype. It requires the
+resolved tracker target from "Tracker target" in `issue-tracker.md` together with its established
+access — the host/CLI detection and availability check of the "Remote helper contract" on the forge
+target, or the single established connection of the `tracker-target` contract on an external
+target; a skill that uses stage B therefore also embeds `issue-tracker.md`.
 ``tools/apply-plan.md`` does not need stage B — for a plan skill, stage A is enough
 to recognize an issue reference as a foreign type and forward it.
 
-Per issue, read labels and body **once fresh** from the tracker and determine the subtype in
-this precedence — **label before body structure**:
+Per issue, read classification values and body **once fresh** from the tracker and determine the
+subtype in this precedence — **classification before body structure**:
 
 1. Label `effective-flow-review-epic` (or old `firmo-review-epic`) → `review-epic`.
 2. Label `effective-flow-review-finding` (or old `firmo-review-finding`) → `review-finding`.
 3. no review label, but the body contains a sub-issue checklist
-   (`- [ ] #NNN …` / `- [x] #NNN …`) → `container-issue`.
+   (`- [ ] <reference> …` / `- [x] <reference> …`, where `<reference>` is a forge `#NNN` or a
+   tool-native identifier such as `ABC-123`), or the issue has native sub-items on a target that
+   models containment natively → `container-issue`.
 4. otherwise → `plain-issue`.
+
+The checklist form is reference-agnostic on purpose: an external target without a native
+parent/sub-issue relation carries exactly this checklist as the contract's fallback container, so a
+`#NNN`-only pattern would fail to re-detect a container Effective Flow itself created.
+
+On an external target the canonical label strings are read from whichever classification primitive
+that target uses (see the `tracker-target` classification mapping); the `firmo-` variants are forge
+history and are not looked up there.
 
 Secondary signal when a label is missing (e.g. removed manually): a title in the format
 `[R-XXXXXXX] …` together with a helper-parsed `Signature` field (legacy `Signatur` accepted on
 read) is treated like `review-finding`. If the subtype remains unclear afterwards → `ambiguous`.
 
 Why label before body: a `review-epic` carries — like a generic
-`container-issue` — a `- [ ] #NNN` checklist. The label `effective-flow-review-epic` or
+`container-issue` — a `- [ ] <reference>` checklist. The label `effective-flow-review-epic` or
 `effective-flow-review-finding` (old prefix `firmo-` equivalent, see "Label convention" in
 `issue-tracker.md`) is the reliable discriminator and takes precedence over the
 body structure.
 
-### Ownership and mode
+### Ownership and target
 
 From the final source type follows exactly one responsible skill and — for
-``tools/apply-review.md`` — the mode:
+``tools/apply-review.md`` — the flow:
 
-| Source type       | Responsible skill        | Mode / note                      |
-| ----------------- | ------------------------ | -------------------------------- |
-| `plan`            | ``tools/apply-plan.md``   | –                                |
-| `review-report`   | ``tools/apply-review.md`` | local report flow                |
-| `review-epic`     | ``tools/apply-review.md`` | remote mode, epic mode           |
-| `review-finding`  | ``tools/apply-review.md`` | remote mode, issue-list mode     |
-| `container-issue` | ``tools/apply-issues.md`` | container expansion in the skill |
-| `plain-issue`     | ``tools/apply-issues.md`` | single work item                 |
+| Source type       | Responsible skill        | Target / note                                    |
+| ----------------- | ------------------------ | ------------------------------------------------ |
+| `plan`            | ``tools/apply-plan.md``   | –                                                |
+| `review-report`   | ``tools/apply-review.md`` | `local` target, report flow                      |
+| `review-epic`     | ``tools/apply-review.md`` | tracker target of the reference, epic mode       |
+| `review-finding`  | ``tools/apply-review.md`` | tracker target of the reference, issue-list mode |
+| `container-issue` | ``tools/apply-issues.md`` | container expansion in the skill                 |
+| `plain-issue`     | ``tools/apply-issues.md`` | single work item                                 |
+
+"Not `local`" never means "the forge" here: an epic or finding reference of an external tool
+selects that tool, and the tracker-bound flow runs against it.
 
 Consistency with `issue-tracker.md`: the rule there, "argument type overrides the
 config mode", stays valid — a `review-report` forces `local`, a
-`review-epic`/`review-finding` forces `remote`. This building block delivers exactly that
-argument type.
+`review-epic`/`review-finding` forces the tracker target the reference belongs to (the forge for a
+forge reference, `external` for a tool-native one). This building block delivers exactly that
+argument type; report which target the argument selected.
 
 ### Ambiguity and fallbacks
 
 - **`none` (no argument):** do not heuristically pick the "newest". The caller
   lists local candidates (open plans from `<plan.dir>/`, report files under the absolute
-  `<RUNTIME_STATE_ROOT>/.effective-flow/review/` directory) and asks for the specific source. If the effective
-  tracker mode is `remote`, it additionally lists open review epics (label
-  `effective-flow-review-epic`, incl. old `firmo-review-epic`) as candidates, since in
-  remote mode no local report files exist.
+  `<RUNTIME_STATE_ROOT>/.effective-flow/review/` directory) and asks for the specific source. If the resolved
+  tracker target is the forge or an external tool, it additionally lists open review epics (label
+  `effective-flow-review-epic`, incl. old `firmo-review-epic`, or the target's equivalent
+  container) as candidates, since on those targets no local report files exist.
 - **`ambiguous`:** name the competing interpretations and ask, instead of
   guessing.
 - **Mixed issue list** (different subtypes in one call, e.g. `review-finding`
   and `plain-issue`): do not guess. Ask the user to split the list by target type,
-  or — in the router — route per issue. Conservative: ask.
-- **Issue reference, but tracker CLI missing/not authenticated:** stage B cannot
-  run → clear error message with a remediation hint per "Errors and edge cases" in
-  `issue-tracker.md`; no silent fallback to a local type.
+  or — in the router — route per issue. Conservative: ask. A list that mixes a forge reference
+  with an external-target reference is never resolved heuristically either: ask the user to split
+  the call by tracker target.
+- **Issue reference, but the target is unreachable** (forge CLI missing or not authenticated, or
+  no usable external connection): stage B cannot run → clear error message with a remediation hint
+  per "Errors and edge cases" in `issue-tracker.md`; no silent fallback to a local type and none to
+  another target.
 - **Unresolvable path:** `ambiguous` → ask or error message; note that
   `effective-flow open-plans` can list open plans.
 
