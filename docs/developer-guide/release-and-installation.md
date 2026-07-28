@@ -25,9 +25,10 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
 6. Also only on a created release, `scripts/stage-delivery.mjs` pushes the portable
    `effective-flow/` skill, `README.md`, `docs/user-guide/`, and the two trusted issue-closing
    automation files as a fresh commit to `main` (no force push). The push authenticates with a
-   dedicated delivery GitHub App installation token (`DELIVERY_APP_ID` /
-   `DELIVERY_APP_PRIVATE_KEY`) rather than the default `GITHUB_TOKEN`, so the delivery app is the
-   identity that updates `main`. The workflow fetches that exact commit and verifies its layout.
+   dedicated delivery GitHub App installation token (the `DELIVERY_APP_CLIENT_ID` repository
+   variable plus the `DELIVERY_APP_PRIVATE_KEY` secret) rather than the default `GITHUB_TOKEN`, so
+   the delivery app is the identity that updates `main`. The workflow fetches that exact commit and
+   verifies its layout.
 7. After the delivered commit is verified, a separate catalog job updates the `effective-flow`
    entry in the team catalog repository through Dalo. **This job is currently disabled** — see
    below. While it is enabled, a failure in this downstream job marks the release workflow as
@@ -91,8 +92,9 @@ is not a supported end-user installation interface.
 
 `main` is protected by a branch ruleset so its built payload can change only through the verified
 release delivery. Only the dedicated delivery GitHub App may update the branch (through the
-short-lived `DELIVERY_APP_ID` / `DELIVERY_APP_PRIVATE_KEY` token, which is the ruleset's sole
-bypass actor); force-pushes and deletions are blocked, and direct pushes by any other actor —
+short-lived token minted from the `DELIVERY_APP_CLIENT_ID` variable and the
+`DELIVERY_APP_PRIVATE_KEY` secret, and that app is the ruleset's sole bypass actor); force-pushes
+and deletions are blocked, and direct pushes by any other actor —
 including human maintainers — are rejected. Consumer commit pins therefore stay valid, and the
 "only CI delivers to `main`" rule is enforced rather than merely conventional.
 

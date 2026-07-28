@@ -80,7 +80,7 @@ jobs:
         if: ${{ steps.release.outputs.release_created == 'true' }}
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.DELIVERY_APP_ID }}
+          client-id: ${{ vars.DELIVERY_APP_CLIENT_ID }}
           private-key: ${{ secrets.DELIVERY_APP_PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
           repositories: effective-flow

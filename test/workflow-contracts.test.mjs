@@ -392,11 +392,14 @@ test('release delegates the licensed develop-to-main payload to central staging'
     release,
     'name: Create delivery token',
     'uses: actions/create-github-app-token@v3',
-    'app-id: ${{ secrets.DELIVERY_APP_ID }}',
+    'client-id: ${{ vars.DELIVERY_APP_CLIENT_ID }}',
     'private-key: ${{ secrets.DELIVERY_APP_PRIVATE_KEY }}',
     'permission-contents: write',
     'DELIVERY_TOKEN: ${{ steps.delivery-token.outputs.token }}',
   );
+  // `app-id` is deprecated in actions/create-github-app-token; guard the whole workflow so the
+  // deprecated input cannot creep back in (issue #254).
+  assert.doesNotMatch(release, /^\s*app-id:/m);
 });
 
 test('delivery stages the canonical Renovate config from the repository root', () => {
@@ -426,9 +429,6 @@ test('catalog job uses scoped app tokens and a checksum-pinned Dalo binary', () 
     release.match(/client-id: \$\{\{ vars\.DALO_CATALOG_APP_CLIENT_ID \}\}/g)?.length,
     2,
   );
-  // The catalog job authenticates through client-id; the only app-id in the workflow is the
-  // dedicated delivery token (issue #143).
-  assert.equal(release.match(/\bapp-id: \$\{\{ secrets\.DELIVERY_APP_ID \}\}/g)?.length, 1);
   assert.equal(
     release.match(/private-key: \$\{\{ secrets\.DALO_CATALOG_APP_PRIVATE_KEY \}\}/g)?.length,
     2,
