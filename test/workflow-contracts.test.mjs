@@ -1286,6 +1286,230 @@ test('apply-issues carries the worktree lifecycle contract instead of referring 
   assertNoUnresolvedEagerIncludes(rendered, 'tools/apply-issues.md');
 });
 
+// The three pull-request markers the gate, `iterate`, and the outbound publication share.
+// Pinned in one place so every assertion below reads the same contract.
+const PULL_REQUEST_MARKERS = [
+  '<!-- effective-flow-iterate -->', // iterate's own replies on a pull request
+  '<!-- effective-flow-pr-review -->', // Effective Flow's published review findings
+  '<!-- effective-flow-pr-gate -->', // the pr-review merge gate's own replies
+];
+
+test('the pr-review merge gate is exposed in the "Ensure quality" group', () => {
+  assert.ok(
+    existsSync(new URL('src/tools/pr-review.md', repositoryRoot)),
+    'the exposed pr-review gate needs its own tool source',
+  );
+
+  // `TOOL_GROUPS` cannot be imported: build.mjs runs the entire build on load. The group is
+  // sliced instead, so a `pr-review` entry that drifted into a neighboring intent group
+  // cannot satisfy this — the duplicate case is already covered by build.mjs's own guard.
+  const quality = section(source('build.mjs'), "title: 'Ensure quality',", '\n  {');
+  assert.match(quality, /tools: \[[^\]]*'review'[^\]]*\]/);
+  assert.match(quality, /tools: \[[^\]]*'pr-review'[^\]]*\]/);
+});
+
+test('the three pull-request markers stay distinct and free of substring collisions', () => {
+  // Distinctness alone is not enough. Every consumer decides idempotency by an exact string
+  // match, so if one marker contained another, a check for the shorter one would also fire
+  // on a comment carrying the longer one and the wrong consumer would treat the thread as
+  // already handled.
+  assert.equal(
+    new Set(PULL_REQUEST_MARKERS).size,
+    PULL_REQUEST_MARKERS.length,
+    'the pull-request markers must be pairwise distinct',
+  );
+
+  // The comparison set is derived from the sources rather than listed, so a fourth marker
+  // cannot be introduced with a colliding name either. Collecting it also keeps the pinned
+  // literals honest: a rename in the sources drops the marker from `used` and fails here.
+  const used = new Set();
+  for (const directory of ['src/shared', 'src/tools', 'src/agents']) {
+    const sources = readdirSync(new URL(`${directory}/`, repositoryRoot)).filter((entry) =>
+      entry.endsWith('.md'),
+    );
+    assert.ok(sources.length > 0, `${directory} must contain sources to check`);
+    for (const file of sources) {
+      for (const [marker] of source(`${directory}/${file}`).matchAll(
+        /<!-- effective-flow-[a-z0-9-]+ -->/g,
+      )) {
+        used.add(marker);
+      }
+    }
+  }
+
+  for (const marker of PULL_REQUEST_MARKERS) {
+    assert.ok(used.has(marker), `pinned pull-request marker is used by no source: ${marker}`);
+    for (const other of used) {
+      if (other === marker) continue;
+      assert.equal(other.includes(marker), false, `marker collision: ${other} contains ${marker}`);
+      assert.equal(marker.includes(other), false, `marker collision: ${marker} contains ${other}`);
+    }
+  }
+});
+
+test('iterate excludes the merge gate marker from the threads it classifies', () => {
+  const classification = section(source('src/tools/iterate.md'), '### Phase 2: Classification');
+
+  for (const marker of PULL_REQUEST_MARKERS) {
+    assert.ok(classification.includes(marker), `Phase 2 must exclude threads carrying ${marker}`);
+  }
+
+  // The gate's replies are Effective Flow's own output just like `iterate`'s and the
+  // published findings. Without the exclusion, a gate-delegated `iterate` round would read
+  // the gate's own reply back as third-party input and implement it.
+  assert.match(
+    flat(classification),
+    /Exclude[\s\S]{0,600}<!-- effective-flow-pr-gate -->/,
+    'the gate marker must sit in the exclusion prose, not merely somewhere in the phase',
+  );
+});
+
+test('pr-review states its no-commit/no-push boundary and delegates every other change to iterate', () => {
+  const prReview = flat(source('src/tools/pr-review.md'));
+
+  // Both prohibitions must sit close to the stated exception, so a later edit that keeps
+  // "no commit" but drops "no push" (or vice versa) cannot pass silently.
+  assert.match(prReview, /performs no `git commit` and no push of its own/);
+  assert.match(
+    prReview,
+    /with exactly one exception:.{0,400}`BEHIND`.{0,400}merges `origin\/<base>` into the head branch as\s*a merge commit and pushes that branch normally/,
+  );
+  // Two separate contracts, each asserted on meaning rather than on a sentence, so that rewording
+  // the paragraph cannot fail the suite while weakening it still does.
+  //
+  // (a) The exception is exhaustive: nothing else may be committed or pushed.
+  assert.match(
+    prReview,
+    /(complete set of Git writes|no Git write of any other kind|no other (?:Git )?write)/,
+  );
+  // (b) The exception is a KIND of write, not a one-time allowance. A branch can fall behind again
+  //     in a later round, and a "single write" reading would refuse that second, legitimate repair.
+  assert.match(prReview, /(a \*\*kind\*\* of write|every Phase-2 round|each occurrence)/);
+  assert.match(prReview, /Every other code change is delegated to `\{\{SKILL:iterate\}\}`/);
+});
+
+test('setup carries the prReview.* and delivery.mergeMethod configuration keys with their defaults', () => {
+  const setup = source('src/tools/setup.md');
+
+  // The block-9 wizard table pairs each dotted key with its default in the third column.
+  const table = section(
+    setup,
+    '| Key                             | Values                       | Default   |',
+  );
+  for (const [key, value] of [
+    ['prReview.completion', 'ask'],
+    ['prReview.requireAllChecks', 'true'],
+    ['prReview.checkWaitMinutes', '20'],
+    ['prReview.maxRounds', '3'],
+    ['prReview.botWaitMinutes', '10'],
+    ['prReview.bots', '(empty)'],
+  ]) {
+    assert.match(
+      tableRow(table, `\`${key}\``),
+      new RegExp(`\\| \`${value.replace(/[().]/g, '\\$&')}\``),
+      `setup.md's block-9 table must pair ${key} with its default ${value}`,
+    );
+  }
+  assert.match(table, /`prReview\.bots\.<login>\.trigger`/);
+
+  // delivery.mergeMethod is asked in block 5 (delivery), documented as prose rather than a
+  // table row, so its default is matched by proximity to the key instead.
+  assert.match(flat(setup), /`delivery\.mergeMethod` \(squash\/merge\/rebase, default `squash`/);
+});
+
+test('the user guide disambiguates prReview.* from the pre-existing delivery.prReview key', () => {
+  const docs = source('docs/user-guide/configuration.md');
+  const flatDocs = flat(docs);
+
+  for (const key of [
+    'prReview.completion',
+    'prReview.requireAllChecks',
+    'prReview.checkWaitMinutes',
+    'prReview.maxRounds',
+    'prReview.botWaitMinutes',
+    'delivery.mergeMethod',
+  ]) {
+    assert.match(flatDocs, new RegExp(key.replace(/\./g, '\\.')));
+  }
+
+  // The dedicated "Block `prReview`" table carries the untraded key/default pairs.
+  const block = section(docs, '## Block `prReview`', '\n## ');
+  assert.match(tableRow(block, '`completion`'), /`ask`/);
+  assert.match(tableRow(block, '`requireAllChecks`'), /`true`/);
+  assert.match(tableRow(block, '`checkWaitMinutes`'), /`20`/);
+  assert.match(tableRow(block, '`maxRounds`'), /`3`/);
+  assert.match(tableRow(block, '`botWaitMinutes`'), /`10`/);
+  assert.match(tableRow(block, '`bots`'), /`\(empty\)`/);
+
+  // The two keys sort adjacent in the flat dotted-key table, so the disambiguation must be
+  // an explicit sentence naming both, not merely implied by separate sections.
+  assert.match(
+    flat(block),
+    /Do not confuse `prReview\.\*` with the pre-existing `delivery\.prReview`/,
+  );
+});
+
+test('skill-ownership.json lists pr-review as a delegate consumer of the pr-review skill', () => {
+  const ownership = JSON.parse(source('docs/developer-guide/skill-ownership.json'));
+  const entry = ownership.relationships.find((skill) => skill.skill === 'pr-review');
+  assert.ok(entry, 'skill-ownership.json must list a "pr-review" skill entry');
+  const consumer = entry.consumers.find((c) => c.consumer === 'pr-review');
+  assert.ok(consumer, 'the "pr-review" skill entry must list "pr-review" as a consumer');
+  assert.equal(consumer.classification, 'delegate');
+
+  const explanation = source('docs/developer-guide/skill-ownership.md');
+  assert.match(
+    explanation,
+    /`pr-review` the Effective Flow tool, and `pr-review` the central skill/,
+  );
+});
+
+test('iterate documents an optional item filter that never falls back to all items', () => {
+  const iterate = source('src/tools/iterate.md');
+
+  // The filter is what makes the gate's phase order binding rather than descriptive: an
+  // unfiltered delegation classifies every unaddressed thread, so a run meant to repair one
+  // failing check would silently implement every open bot finding along with it.
+  assert.match(
+    section(iterate, '### Phase 0: Target detection and input parsing'),
+    /filter/i,
+    'Phase 0 must parse the optional item filter out of the invocation',
+  );
+  assert.match(
+    section(iterate, '### Phase 2: Classification'),
+    /filter/i,
+    'Phase 2 must apply the item filter to the items it classifies',
+  );
+
+  const blocks = iterate.split(/\n{2,}/).filter((block) => /filter/i.test(block));
+  assert.ok(blocks.length > 0, 'iterate.md must document the optional item filter');
+  const contract = flat(blocks.join('\n\n'));
+
+  assert.match(contract, /item filter/i);
+  assert.match(contract, /optional/i);
+  // Both selectable scopes: the free-text items alone, or an explicit list of thread IDs.
+  assert.match(contract, /free[- ]text/i);
+  assert.match(contract, /thread ID/i);
+  // Additive by construction — an unfiltered invocation keeps the current all-items behavior.
+  assert.match(
+    contract,
+    /unfiltered|without (?:an? )?(?:item )?filter|no (?:item )?filter/i,
+    'the contract must state what an unfiltered invocation does',
+  );
+  // The filter's most important failure mode: matching nothing yields an empty run, never a
+  // silent fallback to processing every item.
+  assert.match(
+    contract,
+    /matche?s? (?:no|nothing)|no item|nothing/i,
+    'the contract must cover a filter that matches no item',
+  );
+  assert.match(
+    contract,
+    /fall(?:s|ing)? back|fallback/i,
+    'the contract must rule out the fallback to all items explicitly',
+  );
+});
+
 test('every workflow action is pinned to a commit', () => {
   // Movable tags let upstream change what runs in a job where the App private keys are in
   // scope — including for actions that receive no credential of their own. This scans the

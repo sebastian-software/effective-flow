@@ -150,7 +150,8 @@
         { "consumer": "refactor", "classification": "delegate" },
         { "consumer": "maintain", "classification": "delegate" },
         { "consumer": "fix", "classification": "delegate" },
-        { "consumer": "docs", "classification": "delegate" }
+        { "consumer": "docs", "classification": "delegate" },
+        { "consumer": "pr-review", "classification": "delegate" }
       ]
     }
   ],

@@ -114,7 +114,7 @@ const TOOL_GROUPS = [
   },
   {
     title: 'Ensure quality',
-    tools: ['review'],
+    tools: ['review', 'pr-review'],
   },
   {
     title: 'Deliver changes',

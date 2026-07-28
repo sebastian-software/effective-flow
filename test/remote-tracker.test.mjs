@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import {
   bodyHash,
@@ -1241,7 +1244,17 @@ test('review-thread reads normalize file, line, author, text, and resolution', a
                           body: 'Handle this case',
                           path: 'src/a.mjs',
                           line: 42,
+                          createdAt: '2026-07-28T20:30:00Z',
                           author: { __typename: 'User', login: 'reviewer' },
+                        },
+                        {
+                          id: 'comment-1-reply',
+                          databaseId: 8,
+                          body: 'Answered',
+                          path: 'src/a.mjs',
+                          line: 42,
+                          createdAt: '2026-07-28T21:00:00Z',
+                          author: { __typename: 'Bot', login: 'review-app[bot]' },
                         },
                       ],
                     },
@@ -1283,6 +1296,9 @@ test('review-thread reads normalize file, line, author, text, and resolution', a
     path: 'src/a.mjs',
     line: 42,
     startLine: undefined,
+    // The thread's own instant is its first comment's; the reply keeps its later one, because a bot
+    // that answers after the head commit must count as newer than it.
+    createdAt: '2026-07-28T20:30:00.000Z',
     comments: [
       {
         id: 'comment-1',
@@ -1292,6 +1308,17 @@ test('review-thread reads normalize file, line, author, text, and resolution', a
         path: 'src/a.mjs',
         line: 42,
         startLine: undefined,
+        createdAt: '2026-07-28T20:30:00.000Z',
+      },
+      {
+        id: 'comment-1-reply',
+        databaseId: 8,
+        body: 'Answered',
+        author: { login: 'review-app[bot]', isBot: true, authorType: 'bot' },
+        path: 'src/a.mjs',
+        line: 42,
+        startLine: undefined,
+        createdAt: '2026-07-28T21:00:00.000Z',
       },
     ],
   });
@@ -1300,8 +1327,50 @@ test('review-thread reads normalize file, line, author, text, and resolution', a
     isBot: true,
     authorType: 'bot',
   });
+  // The second thread's fixture states no timestamp, so neither it nor its comment invents one.
+  assert.equal(Object.hasOwn(envelope.data.result[1], 'createdAt'), false);
+  assert.equal(Object.hasOwn(envelope.data.result[1].comments[0], 'createdAt'), false);
   assert.match(runner.calls[0].stdin, /reviewThreads.*path line startLine/s);
   assert.match(runner.calls[0].stdin, /author\{__typename login\}/);
+  // The timestamp has to be requested before it can be normalized.
+  assert.match(runner.calls[0].stdin, /originalStartLine createdAt author/);
+});
+
+test('a flat review-thread record carries its timestamp on the thread and its comment', async () => {
+  // The Forgejo shape has one record per thread instead of a comment list, so the same instant
+  // describes both. A record without a timestamp still produces none.
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify([
+        {
+          id: 5,
+          body: 'Automated note',
+          reviewer: { login: 'review-app[bot]' },
+          path: 'src/a.mjs',
+          line: 42,
+          created_at: '2026-07-28T22:30:00+02:00',
+        },
+        {
+          id: 6,
+          body: 'Undated note',
+          reviewer: { login: 'reviewer' },
+          path: 'src/b.mjs',
+          line: 1,
+        },
+      ]),
+      stderr: '',
+    },
+  ]);
+  const envelope = await executeOperation(
+    'review-threads-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.data.result[0].createdAt, '2026-07-28T20:30:00.000Z');
+  assert.equal(envelope.data.result[0].comments[0].createdAt, '2026-07-28T20:30:00.000Z');
+  assert.equal(Object.hasOwn(envelope.data.result[1], 'createdAt'), false);
+  assert.equal(Object.hasOwn(envelope.data.result[1].comments[0], 'createdAt'), false);
 });
 
 test('provider probes normalize missing CLI, auth failure, and Forgejo capabilities', async () => {
@@ -1897,6 +1966,825 @@ test('review-create dry-run previews the command and only mutates with apply: tr
   assert.equal(submitted.comments[0].line, 3);
 });
 
+// The pull-request gate reports the repository slug in every envelope, so its cases carry one.
+const gateRepository = { ...githubRepository, slug: 'example/flow' };
+const verifiedHead = 'a'.repeat(40);
+const movedHead = 'b'.repeat(40);
+const earlierHead = 'c'.repeat(40);
+const headCommittedAt = '2026-07-28T20:01:19Z';
+
+function prStatusStdout(headRefOid = verifiedHead, overrides = {}) {
+  return JSON.stringify({
+    number: 12,
+    title: 'feat: add the gate',
+    state: 'OPEN',
+    isDraft: false,
+    headRefOid,
+    baseRefName: 'develop',
+    mergeStateStatus: 'BLOCKED',
+    mergeable: 'MERGEABLE',
+    url: 'https://github.com/example/flow/pull/12',
+    commits: [
+      { oid: earlierHead, committedDate: '2026-07-28T09:00:00Z' },
+      { oid: headRefOid, committedDate: headCommittedAt },
+    ],
+    statusCheckRollup: [],
+    ...overrides,
+  });
+}
+
+test('pr-status-read reads head, base, merge state, and checks in a single GitHub call', async () => {
+  const plan = buildCommandPlan('pr-status-read', { number: 12 }, githubRepository);
+  assert.equal(plan.executable, 'gh');
+  assert.deepEqual(plan.args.slice(0, 5), ['pr', 'view', '12', '--repo', 'example/flow']);
+  assert.equal(plan.args.at(-2), '--json');
+  const fields = plan.args.at(-1).split(',');
+  for (const field of [
+    'baseRefName',
+    // The head commit's timestamp comes out of this same read; a second request would describe a
+    // different instant than the checks and the merge state it is correlated with.
+    'commits',
+    'headRefOid',
+    'isDraft',
+    'mergeStateStatus',
+    'mergeable',
+    'state',
+    'statusCheckRollup',
+  ]) {
+    assert.ok(fields.includes(field), `missing requested field ${field}`);
+  }
+  assert.deepEqual(
+    buildCommandPlan(
+      'pr-status-read',
+      { number: 12 },
+      { ...githubRepository, host: 'code.example.test' },
+    ).args.slice(3, 5),
+    ['--repo', 'code.example.test/example/flow'],
+  );
+
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: prStatusStdout(verifiedHead, {
+        statusCheckRollup: [
+          {
+            __typename: 'CheckRun',
+            name: 'unit',
+            status: 'COMPLETED',
+            conclusion: 'SUCCESS',
+            detailsUrl: 'https://github.com/example/flow/actions/runs/1',
+          },
+          {
+            __typename: 'CheckRun',
+            name: 'lint',
+            status: 'IN_PROGRESS',
+            conclusion: null,
+            detailsUrl: '',
+          },
+          {
+            __typename: 'StatusContext',
+            context: 'ci/legacy',
+            state: 'FAILURE',
+            targetUrl: 'https://ci.example.test/9',
+          },
+        ],
+      }),
+      stderr: '',
+    },
+  ]);
+  const envelope = await executeOperation(
+    'pr-status-read',
+    { repository: gateRepository, number: 12 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.dryRun, false);
+  assert.deepEqual(envelope.data.result, {
+    number: 12,
+    repository: 'example/flow',
+    // The squash subject is the release signal, so the same read carries the title.
+    title: 'feat: add the gate',
+    state: 'open',
+    draft: false,
+    headSha: verifiedHead,
+    // Canonical UTC, so a caller can compare it against a comment timestamp as a plain string.
+    headCommittedAt: '2026-07-28T20:01:19.000Z',
+    baseRef: 'develop',
+    mergeState: 'BLOCKED',
+    mergeable: 'MERGEABLE',
+    url: 'https://github.com/example/flow/pull/12',
+    checksReported: true,
+    checkCount: 3,
+    checks: [
+      {
+        name: 'unit',
+        status: 'COMPLETED',
+        conclusion: 'SUCCESS',
+        url: 'https://github.com/example/flow/actions/runs/1',
+      },
+      { name: 'lint', status: 'PENDING' },
+      {
+        name: 'ci/legacy',
+        status: 'COMPLETED',
+        conclusion: 'FAILURE',
+        url: 'https://ci.example.test/9',
+      },
+    ],
+  });
+});
+
+test('the check list states a required flag only where the provider exposes one', async () => {
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: prStatusStdout(verifiedHead, {
+        mergeStateStatus: undefined,
+        mergeable: undefined,
+        // Neither GitHub read exposes a required flag, so the second entry stands for a forge that
+        // does: the flag is passed through where it exists and stays absent where it does not.
+        statusCheckRollup: [
+          { name: 'unit', status: 'COMPLETED', conclusion: 'SUCCESS' },
+          { name: 'gate', status: 'COMPLETED', conclusion: 'SUCCESS', isRequired: true },
+        ],
+      }),
+      stderr: '',
+    },
+  ]);
+  const envelope = await executeOperation(
+    'pr-status-read',
+    { repository: gateRepository, number: 12 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(Object.hasOwn(envelope.data.result.checks[0], 'required'), false);
+  assert.equal(envelope.data.result.checks[1].required, true);
+  assert.equal(Object.hasOwn(envelope.data.result, 'mergeState'), false);
+  assert.equal(Object.hasOwn(envelope.data.result, 'mergeable'), false);
+});
+
+async function statusFrom(overrides) {
+  const envelope = await executeOperation(
+    'pr-status-read',
+    { repository: gateRepository, number: 12 },
+    {
+      runner: fakeRunner([
+        { status: 0, stdout: prStatusStdout(verifiedHead, overrides), stderr: '' },
+      ]),
+      skipProbe: true,
+    },
+  );
+  return envelope.data.result;
+}
+
+test('the head commit timestamp is matched by object name, not by position', async () => {
+  // The bot-freshness precondition compares a reviewer's comment against this value, so it must
+  // belong to the commit that is about to be merged and to no other.
+  assert.equal((await statusFrom({})).headCommittedAt, '2026-07-28T20:01:19.000Z');
+
+  // A pull request with more than one page of commits returns the first page, so the last entry is
+  // not the head. Nothing matching the head SHA means no timestamp — never the newest one present.
+  const truncated = await statusFrom({
+    commits: [
+      { oid: earlierHead, committedDate: '2026-07-28T09:00:00Z' },
+      { oid: movedHead, committedDate: '2026-07-28T10:00:00Z' },
+    ],
+  });
+  assert.equal(Object.hasOwn(truncated, 'headCommittedAt'), false);
+  assert.equal(truncated.headSha, verifiedHead);
+
+  for (const commits of [undefined, [], 'not-a-list']) {
+    assert.equal(Object.hasOwn(await statusFrom({ commits }), 'headCommittedAt'), false);
+  }
+  assert.equal(
+    Object.hasOwn(await statusFrom({ commits: [{ oid: verifiedHead }] }), 'headCommittedAt'),
+    false,
+  );
+
+  // An offset-form instant is re-emitted in UTC, so comparing it against a `Z` timestamp as a
+  // string cannot order the two wrongly.
+  const offsetForm = await statusFrom({
+    commits: [{ oid: verifiedHead, committedDate: '2026-07-28T22:01:19+02:00' }],
+  });
+  assert.equal(offsetForm.headCommittedAt, '2026-07-28T20:01:19.000Z');
+
+  // A provider that states the head timestamp itself is believed without a commit list.
+  const direct = await statusFrom({ commits: undefined, headCommittedAt: '2026-07-28T20:01:19Z' });
+  assert.equal(direct.headCommittedAt, '2026-07-28T20:01:19.000Z');
+});
+
+test('comment reads carry the provider timestamp and omit it when unstated', async () => {
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify([
+        {
+          id: 7,
+          body: 'Automated note',
+          user: { login: 'review-app[bot]' },
+          html_url: 'https://github.com/example/flow/pull/12#issuecomment-7',
+          created_at: '2026-07-28T20:30:00Z',
+        },
+        { id: 8, body: 'Older note', user: { login: 'reviewer' } },
+      ]),
+      stderr: '',
+    },
+  ]);
+  const envelope = await executeOperation(
+    'pr-comments-read',
+    { repository: gateRepository, number: 12 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.data.result[0].createdAt, '2026-07-28T20:30:00.000Z');
+  // Absent, not defaulted: a comment without a timestamp cannot prove it belongs to this head.
+  assert.equal(Object.hasOwn(envelope.data.result[1], 'createdAt'), false);
+
+  // The Gitea spelling and its local offset resolve to the same canonical instant.
+  const forgejo = await executeOperation(
+    'issue-comments-read',
+    { repository: forgejoRepository, number: 12 },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify({
+            comments: [{ id: 3, body: 'Note', created: '2026-07-28T22:30:00+02:00' }],
+          }),
+          stderr: '',
+        },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(forgejo.data.result[0].createdAt, '2026-07-28T20:30:00.000Z');
+});
+
+test('an empty check list is reported as empty and never as complete', async () => {
+  // The head has no runs attached yet — the state right after a fix push. "No checks" and "all
+  // checks green" must not collapse into the same answer.
+  const status = await executeOperation(
+    'pr-status-read',
+    { repository: gateRepository, number: 12 },
+    {
+      runner: fakeRunner([
+        { status: 0, stdout: prStatusStdout(verifiedHead, { statusCheckRollup: [] }), stderr: '' },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(status.data.result.checksReported, true);
+  assert.equal(status.data.result.checkCount, 0);
+  assert.deepEqual(status.data.result.checks, []);
+
+  // A provider that omits the rollup entirely is a third state again, and is reported as such.
+  const withoutRollup = await executeOperation(
+    'pr-status-read',
+    { repository: gateRepository, number: 12 },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: prStatusStdout(verifiedHead, { statusCheckRollup: undefined }),
+          stderr: '',
+        },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(withoutRollup.data.result.checksReported, false);
+  assert.equal(withoutRollup.data.result.checkCount, 0);
+
+  const wait = await executeOperation(
+    'pr-checks-wait',
+    { repository: gateRepository, number: 12 },
+    { runner: fakeRunner([{ status: 0, stdout: '[]', stderr: '' }]), skipProbe: true },
+  );
+  assert.equal(wait.ok, true);
+  assert.equal(wait.data.result.timedOut, false);
+  // The load-bearing assertion: `every` over an empty list is vacuously true, and a gate that
+  // believed it would merge a commit whose CI never ran.
+  assert.equal(wait.data.result.complete, false);
+  assert.equal(wait.data.result.checksReported, true);
+  assert.equal(wait.data.result.checkCount, 0);
+});
+
+test('a missing draft flag stays missing instead of defaulting to mergeable', async () => {
+  const envelope = await executeOperation(
+    'pr-status-read',
+    { repository: gateRepository, number: 12 },
+    {
+      runner: fakeRunner([
+        { status: 0, stdout: prStatusStdout(verifiedHead, { isDraft: undefined }), stderr: '' },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(Object.hasOwn(envelope.data.result, 'draft'), false);
+
+  for (const [reported, expected] of [
+    [true, true],
+    [false, false],
+  ]) {
+    const stated = await executeOperation(
+      'pr-status-read',
+      { repository: gateRepository, number: 12 },
+      {
+        runner: fakeRunner([
+          { status: 0, stdout: prStatusStdout(verifiedHead, { isDraft: reported }), stderr: '' },
+        ]),
+        skipProbe: true,
+      },
+    );
+    assert.equal(stated.data.result.draft, expected);
+  }
+});
+
+test('the GitHub probe ties the gate capabilities to the gh version the flags need', async () => {
+  const probeAt = async (version) =>
+    probeProvider(
+      githubRepository,
+      fakeRunner([
+        { status: 0, stdout: `gh version ${version}\n`, stderr: '' },
+        { status: 0, stdout: '', stderr: '' },
+      ]),
+    );
+
+  // `gh pr checks --json` arrived in gh 2.50.0 and is the newest of the four flags the gate needs.
+  const tooOld = await probeAt('2.49.2');
+  assert.equal(tooOld.capabilities.pullRequestStatus, false);
+  assert.equal(tooOld.capabilities.pullRequestChecksWait, false);
+  assert.equal(tooOld.capabilities.pullRequestMerge, false);
+  // Everything the older line does support keeps working; only the gate degrades.
+  assert.equal(tooOld.capabilities.pullRequestRead, true);
+  assert.equal(tooOld.capabilities.reviewCreate, true);
+
+  for (const version of ['2.50.0', '2.70.0', '3.0.0']) {
+    const supported = await probeAt(version);
+    assert.equal(supported.capabilities.pullRequestStatus, true);
+    assert.equal(supported.capabilities.pullRequestChecksWait, true);
+    assert.equal(supported.capabilities.pullRequestMerge, true);
+  }
+
+  // An old gh reports the honest reason instead of dying on an unknown flag mid-merge.
+  const envelope = await executeOperation(
+    'pr-merge',
+    {
+      repository: gateRepository,
+      number: 12,
+      probe: tooOld,
+      payload: { method: 'squash', expectedHeadSha: verifiedHead },
+    },
+    { runner: fakeRunner([]), skipProbe: true, apply: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(envelope.error.details.capability, 'pullRequestMerge');
+});
+
+test('pr-merge builds the GitHub merge command with the method flag and the expected head', () => {
+  const plan = buildCommandPlan(
+    'pr-merge',
+    { number: 12, payload: { method: 'squash', expectedHeadSha: verifiedHead } },
+    githubRepository,
+  );
+  assert.deepEqual(plan.args, [
+    'pr',
+    'merge',
+    '12',
+    '--repo',
+    'example/flow',
+    '--squash',
+    '--match-head-commit',
+    verifiedHead,
+  ]);
+  assert.equal(plan.expectsJson, false);
+
+  for (const [method, flag] of [
+    ['merge', '--merge'],
+    ['rebase', '--rebase'],
+  ]) {
+    const methodPlan = buildCommandPlan(
+      'pr-merge',
+      { number: 12, payload: { method, expectedHeadSha: verifiedHead } },
+      githubRepository,
+    );
+    assert.ok(methodPlan.args.includes(flag));
+  }
+
+  assert.throws(
+    () =>
+      buildCommandPlan(
+        'pr-merge',
+        { number: 12, payload: { method: 'fast-forward', expectedHeadSha: verifiedHead } },
+        githubRepository,
+      ),
+    (error) => error.code === 'INVALID_PAYLOAD' && error.details.field === 'payload.method',
+  );
+  assert.throws(
+    () =>
+      buildCommandPlan(
+        'pr-merge',
+        { number: 12, payload: { method: 'squash', expectedHeadSha: 'aaaaaaa' } },
+        githubRepository,
+      ),
+    (error) =>
+      error.code === 'INVALID_PAYLOAD' && error.details.field === 'payload.expectedHeadSha',
+  );
+});
+
+test('a squash merge pins its subject so the published one cannot diverge', () => {
+  // With `squash_merge_commit_title: COMMIT_OR_PR_TITLE` GitHub may publish the single commit's
+  // subject instead of the verified pull-request title, and release-please reads that subject.
+  const plan = buildCommandPlan(
+    'pr-merge',
+    {
+      number: 12,
+      payload: {
+        method: 'squash',
+        subject: 'feat: add the gate',
+        expectedHeadSha: verifiedHead,
+      },
+    },
+    githubRepository,
+  );
+  assert.deepEqual(plan.args.slice(5), [
+    '--squash',
+    '--subject',
+    'feat: add the gate',
+    '--match-head-commit',
+    verifiedHead,
+  ]);
+
+  // Omitting it stays valid and adds no flag.
+  assert.equal(
+    buildCommandPlan(
+      'pr-merge',
+      { number: 12, payload: { method: 'squash', expectedHeadSha: verifiedHead } },
+      githubRepository,
+    ).args.includes('--subject'),
+    false,
+  );
+
+  // A subject for a method that publishes no release signal is a caller mistake, not a no-op.
+  for (const method of ['merge', 'rebase']) {
+    assert.throws(
+      () =>
+        buildCommandPlan(
+          'pr-merge',
+          { number: 12, payload: { method, subject: 'feat: x', expectedHeadSha: verifiedHead } },
+          githubRepository,
+        ),
+      (error) => error.code === 'INVALID_PAYLOAD' && error.details.field === 'payload.subject',
+    );
+  }
+
+  for (const subject of ['', '   ', 'feat: x\n\nGenerated with Claude Code']) {
+    assert.throws(
+      () =>
+        buildCommandPlan(
+          'pr-merge',
+          {
+            number: 12,
+            payload: { method: 'squash', subject, expectedHeadSha: verifiedHead },
+          },
+          githubRepository,
+        ),
+      (error) => error.code === 'INVALID_PAYLOAD',
+    );
+  }
+});
+
+test('pr-merge without an expected head SHA fails before anything is planned or sent', async () => {
+  for (const payload of [
+    { method: 'squash' },
+    { method: 'squash', expectedHeadSha: '' },
+    { method: 'squash', expectedHeadSha: null },
+  ]) {
+    const runner = fakeRunner([]);
+    const envelope = await executeOperation(
+      'pr-merge',
+      { repository: gateRepository, number: 12, payload },
+      { runner, skipProbe: true, apply: true },
+    );
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+    // The guard is never allowed to become "merge whatever head we just read".
+    assert.equal(runner.calls.length, 0);
+  }
+});
+
+test('a failed merge is reported as possibly applied and never as retryable', async () => {
+  const runner = fakeRunner([
+    { status: 0, stdout: prStatusStdout(verifiedHead), stderr: '' },
+    { status: 1, stdout: '', stderr: 'connection reset by peer' },
+  ]);
+  const envelope = await executeOperation(
+    'pr-merge',
+    {
+      repository: gateRepository,
+      number: 12,
+      payload: { method: 'squash', expectedHeadSha: verifiedHead },
+    },
+    { runner, skipProbe: true, apply: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'COMMAND_FAILED');
+  // The forge may have accepted the merge before the connection dropped, so the caller must
+  // re-read instead of firing a second merge at an unverified state.
+  assert.equal(envelope.error.retryable, false);
+  assert.equal(envelope.error.details.mutationMayHaveSucceeded, true);
+
+  // Every other operation keeps its retryable command failure.
+  const readFailure = await executeOperation(
+    'pr-status-read',
+    { repository: gateRepository, number: 12 },
+    {
+      runner: fakeRunner([{ status: 1, stdout: '', stderr: 'connection reset by peer' }]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(readFailure.error.retryable, true);
+  assert.equal(Object.hasOwn(readFailure.error.details, 'mutationMayHaveSucceeded'), false);
+});
+
+test('pr-merge without apply previews the merge and executes nothing', async () => {
+  const runner = fakeRunner([]);
+  const envelope = await executeOperation(
+    'pr-merge',
+    {
+      repository: gateRepository,
+      number: 12,
+      payload: { method: 'squash', expectedHeadSha: verifiedHead },
+    },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.dryRun, true);
+  assert.equal(envelope.data.command.executable, 'gh');
+  assert.deepEqual(envelope.data.command.args.slice(0, 3), ['pr', 'merge', '12']);
+  assert.equal(envelope.data.command.args.at(-2), '--match-head-commit');
+  assert.equal(envelope.data.command.args.at(-1), verifiedHead);
+  // Not even the precondition read runs: a dry run touches the forge zero times.
+  assert.equal(runner.calls.length, 0);
+});
+
+test('pr-merge fails closed when the head moved and merges only the verified commit', async () => {
+  const movedRunner = fakeRunner([{ status: 0, stdout: prStatusStdout(movedHead), stderr: '' }]);
+  const moved = await executeOperation(
+    'pr-merge',
+    {
+      repository: gateRepository,
+      number: 12,
+      payload: { method: 'squash', expectedHeadSha: verifiedHead },
+    },
+    { runner: movedRunner, skipProbe: true, apply: true },
+  );
+  assert.equal(moved.ok, false);
+  assert.equal(moved.error.code, 'STALE_WRITE');
+  assert.equal(moved.error.details.expectedHeadSha, verifiedHead);
+  assert.equal(moved.error.details.actualHeadSha, movedHead);
+  assert.equal(moved.error.details.merged, false);
+  // Only the precondition read reached the forge; no merge command was issued.
+  assert.equal(movedRunner.calls.length, 1);
+  assert.deepEqual(movedRunner.calls[0].args.slice(0, 2), ['pr', 'view']);
+
+  const mergeRunner = fakeRunner([
+    { status: 0, stdout: prStatusStdout(verifiedHead), stderr: '' },
+    {
+      status: 0,
+      // gh echoes the remote it pushed to, and that string can carry an embedded credential.
+      stdout: 'Merged pull request #12 from https://user:ghp_secrettoken@github.com/example/flow\n',
+      stderr: '',
+    },
+  ]);
+  const merged = await executeOperation(
+    'pr-merge',
+    {
+      repository: gateRepository,
+      number: 12,
+      payload: { method: 'squash', expectedHeadSha: verifiedHead },
+    },
+    { runner: mergeRunner, skipProbe: true, apply: true },
+  );
+  assert.equal(merged.ok, true);
+  assert.equal(merged.dryRun, false);
+  assert.deepEqual(merged.data.result, {
+    number: 12,
+    repository: 'example/flow',
+    merged: true,
+    method: 'squash',
+    headSha: verifiedHead,
+    output: 'Merged pull request #12 from https://[REDACTED]@github.com/example/flow',
+  });
+  assert.doesNotMatch(JSON.stringify(merged), /ghp_secrettoken/);
+  assert.equal(mergeRunner.calls.length, 2);
+  assert.deepEqual(mergeRunner.calls[1].args.slice(-2), ['--match-head-commit', verifiedHead]);
+});
+
+test('pr-checks-wait watches with the supplied bound and requests required checks on demand', () => {
+  const plan = buildCommandPlan(
+    'pr-checks-wait',
+    { number: 12, timeoutMinutes: 20, intervalSeconds: 15 },
+    githubRepository,
+  );
+  assert.deepEqual(plan.args.slice(0, 5), ['pr', 'checks', '12', '--repo', 'example/flow']);
+  assert.ok(plan.args.includes('--watch'));
+  assert.equal(plan.args.at(plan.args.indexOf('--interval') + 1), '15');
+  // `gh pr checks` has no timeout flag of its own, so the bound travels with the plan.
+  assert.equal(plan.timeoutMs, 20 * 60 * 1000);
+  assert.equal(plan.args.includes('--required'), false);
+  assert.equal(plan.args.at(-2), '--json');
+
+  const requiredOnly = buildCommandPlan(
+    'pr-checks-wait',
+    { number: 12, timeoutMinutes: 5, requiredOnly: true },
+    githubRepository,
+  );
+  assert.ok(requiredOnly.args.includes('--required'));
+  assert.equal(requiredOnly.timeoutMs, 5 * 60 * 1000);
+
+  const defaults = buildCommandPlan('pr-checks-wait', { number: 12 }, githubRepository);
+  assert.equal(defaults.timeoutMs, 20 * 60 * 1000);
+  assert.equal(defaults.args.at(defaults.args.indexOf('--interval') + 1), '10');
+  assert.equal(defaults.args.includes('--required'), false);
+
+  // The wait settings resolve through `payload` like every other builder input, so a caller that
+  // wraps its arguments does not silently fall back to the defaults.
+  const wrapped = buildCommandPlan(
+    'pr-checks-wait',
+    { number: 12, payload: { timeoutMinutes: 5, intervalSeconds: 30, requiredOnly: true } },
+    githubRepository,
+  );
+  assert.equal(wrapped.timeoutMs, 5 * 60 * 1000);
+  assert.equal(wrapped.args.at(wrapped.args.indexOf('--interval') + 1), '30');
+  assert.ok(wrapped.args.includes('--required'));
+});
+
+test('the wait bound rejects unusable numbers as payload errors, not reference errors', () => {
+  for (const [field, input] of [
+    ['payload.timeoutMinutes', { number: 12, timeoutMinutes: 0 }],
+    ['payload.timeoutMinutes', { number: 12, timeoutMinutes: -5 }],
+    ['payload.timeoutMinutes', { number: 12, timeoutMinutes: 1.5 }],
+    ['payload.timeoutMinutes', { number: 12, timeoutMinutes: 'soon' }],
+    ['payload.timeoutMs', { number: 12, timeoutMs: 0 }],
+    ['payload.intervalSeconds', { number: 12, intervalSeconds: 0 }],
+  ]) {
+    assert.throws(
+      () => buildCommandPlan('pr-checks-wait', input, githubRepository),
+      (error) => error.code === 'INVALID_PAYLOAD' && error.details.field === field,
+      `expected ${field} to fail as INVALID_PAYLOAD`,
+    );
+  }
+
+  // Above the timer ceiling Node clamps the delay to 1 ms, which would turn the bound into an
+  // instant fake timeout on every round rather than a longer wait.
+  for (const input of [
+    { number: 12, timeoutMs: 2_147_483_648 },
+    { number: 12, timeoutMinutes: 40_000 },
+  ]) {
+    assert.throws(
+      () => buildCommandPlan('pr-checks-wait', input, githubRepository),
+      (error) =>
+        error.code === 'INVALID_PAYLOAD' &&
+        error.details.field === 'payload.timeoutMs' &&
+        error.details.maximum === 2_147_483_647,
+    );
+  }
+  assert.equal(
+    buildCommandPlan('pr-checks-wait', { number: 12, timeoutMs: 2_147_483_647 }, githubRepository)
+      .timeoutMs,
+    2_147_483_647,
+  );
+});
+
+test('a pending exit code and a killed watch become a timeout result, not an error', async () => {
+  const waitInput = { repository: gateRepository, number: 12, timeoutMinutes: 1 };
+  const pendingRunner = fakeRunner([
+    {
+      status: 8,
+      stdout: JSON.stringify([
+        { name: 'unit', state: 'SUCCESS', bucket: 'pass', link: 'https://ci.example.test/1' },
+        { name: 'e2e', state: 'PENDING', bucket: 'pending', link: '' },
+      ]),
+      stderr: '',
+    },
+  ]);
+  const pending = await executeOperation('pr-checks-wait', waitInput, {
+    runner: pendingRunner,
+    skipProbe: true,
+  });
+  assert.equal(pending.ok, true);
+  assert.deepEqual(pending.data.result, {
+    number: 12,
+    repository: 'example/flow',
+    complete: false,
+    timedOut: true,
+    checksReported: true,
+    checkCount: 2,
+    checks: [
+      {
+        name: 'unit',
+        status: 'COMPLETED',
+        conclusion: 'SUCCESS',
+        url: 'https://ci.example.test/1',
+      },
+      { name: 'e2e', status: 'PENDING' },
+    ],
+  });
+
+  // A watch killed on the plan's bound can leave a truncated payload behind; that is still a
+  // timeout, never malformed provider JSON.
+  const killed = await executeOperation('pr-checks-wait', waitInput, {
+    runner: fakeRunner([{ status: null, signal: 'SIGTERM', stdout: '[{"name":"e2e"', stderr: '' }]),
+    skipProbe: true,
+  });
+  assert.equal(killed.ok, true);
+  assert.equal(killed.data.result.timedOut, true);
+  assert.equal(killed.data.result.complete, false);
+  assert.equal(killed.data.result.checksReported, false);
+  assert.equal(killed.data.result.checkCount, 0);
+  assert.deepEqual(killed.data.result.checks, []);
+
+  // A finished watch is a completed result — including the run whose red check makes gh exit
+  // non-zero while it still prints the list the gate has to read.
+  const green = await executeOperation('pr-checks-wait', waitInput, {
+    runner: fakeRunner([
+      { status: 0, stdout: JSON.stringify([{ name: 'unit', state: 'SUCCESS', bucket: 'pass' }]) },
+    ]),
+    skipProbe: true,
+  });
+  assert.equal(green.data.result.complete, true);
+  assert.equal(green.data.result.timedOut, false);
+
+  const red = await executeOperation('pr-checks-wait', waitInput, {
+    runner: fakeRunner([
+      {
+        status: 1,
+        stdout: JSON.stringify([{ name: 'unit', state: 'FAILURE', bucket: 'fail' }]),
+        stderr: '',
+      },
+    ]),
+    skipProbe: true,
+  });
+  assert.equal(red.ok, true);
+  assert.equal(red.data.result.complete, true);
+  assert.equal(red.data.result.timedOut, false);
+  assert.deepEqual(red.data.result.checks, [
+    { name: 'unit', status: 'COMPLETED', conclusion: 'FAILURE' },
+  ]);
+
+  // An operational failure prints no check list and stays a failure.
+  const broken = await executeOperation('pr-checks-wait', waitInput, {
+    runner: fakeRunner([{ status: 1, stdout: '', stderr: 'no checks reported' }]),
+    skipProbe: true,
+  });
+  assert.equal(broken.ok, false);
+  assert.equal(broken.error.code, 'COMMAND_FAILED');
+});
+
+test('the Forgejo probe reports every pull-request gate operation as unsupported', async () => {
+  const probe = await probeProvider(forgejoRepository, fakeRunner(teaProbeResults()));
+  assert.equal(probe.capabilities.pullRequestStatus, false);
+  assert.equal(probe.capabilities.pullRequestChecksWait, false);
+  assert.equal(probe.capabilities.pullRequestMerge, false);
+  // The reads the adapter does support stay untouched by the new capabilities.
+  assert.equal(probe.capabilities.pullRequestRead, true);
+
+  for (const [operation, capability] of [
+    ['pr-status-read', 'pullRequestStatus'],
+    ['pr-checks-wait', 'pullRequestChecksWait'],
+    ['pr-merge', 'pullRequestMerge'],
+  ]) {
+    const runner = fakeRunner([]);
+    const envelope = await executeOperation(
+      operation,
+      {
+        repository: forgejoRepository,
+        number: 12,
+        probe,
+        payload: { method: 'squash', expectedHeadSha: verifiedHead },
+      },
+      { runner, skipProbe: true, apply: true },
+    );
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'UNSUPPORTED_CAPABILITY');
+    assert.equal(envelope.error.details.capability, capability);
+    assert.equal(runner.calls.length, 0);
+
+    // Even a caller that bypasses the capability gate cannot get a tea command for them.
+    assert.throws(
+      () =>
+        buildCommandPlan(
+          operation,
+          {
+            number: 12,
+            payload: { method: 'squash', expectedHeadSha: verifiedHead },
+          },
+          forgejoRepository,
+        ),
+      (error) => error.code === 'UNSUPPORTED_CAPABILITY' && error.details.provider === 'forgejo',
+    );
+  }
+});
+
 test('a supplied cwd roots every process invocation of an operation', async () => {
   const runner = fakeRunner([
     { status: 0, stdout: 'true\n', stderr: '' },
@@ -1947,6 +2835,109 @@ test('an unusable working directory is reported as such, not as a missing CLI', 
   assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
   assert.notEqual(envelope.error.code, 'CLI_MISSING');
   assert.equal(envelope.error.details.cwd, '/removed/tree');
+});
+
+// A stand-in for the gh CLI. It answers the probe, blocks far beyond any bound on a watch, and
+// needs a moment for an ordinary read — the cases that show what the plan's bound applies to, and
+// what happens when the child refuses the polite stop. `exec` matters: the sleeping process must be
+// the spawned child itself, so the runner's signal reaches it directly instead of leaving an orphan
+// holding the child's pipes open. An ignored disposition survives `exec`, so the deaf branch really
+// does produce a process that cannot be stopped with SIGTERM.
+const FAKE_GH = `#!/bin/sh
+case "$1" in
+  --version) echo 'gh version 2.70.0 (2026-01-01)'; exit 0 ;;
+  auth) exit 0 ;;
+esac
+case "$2" in
+  checks)
+    if [ -n "$FAKE_GH_IGNORE_TERM" ]; then trap '' TERM; fi
+    exec sleep 30
+    ;;
+  view)
+    sleep 1
+    printf '%s' '{"number":12,"title":"feat: add the gate","state":"OPEN","isDraft":false,"headRefOid":"${verifiedHead}","baseRefName":"develop","mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","statusCheckRollup":[]}'
+    exit 0
+    ;;
+esac
+exit 1
+`;
+
+function runShippedCli(operation, input, env = {}) {
+  const directory = mkdtempSync(join(tmpdir(), 'effective-flow-runner-'));
+  try {
+    writeFileSync(join(directory, 'gh'), FAKE_GH, { mode: 0o755 });
+    const result = spawnSync(process.execPath, ['src/scripts/remote-tracker.mjs', operation], {
+      cwd: new URL('..', import.meta.url),
+      input: JSON.stringify(input),
+      encoding: 'utf8',
+      env: { ...process.env, ...env, PATH: `${directory}:${process.env.PATH}` },
+    });
+    return { ...result, envelope: JSON.parse(result.stdout) };
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+test('the shipped process runner bounds a watch and leaves every other spawn unbounded', () => {
+  const repository = { host: 'github.com', owner: 'example', repository: 'flow' };
+
+  // Only the wait carries a bound; no other plan does, so no other spawn can be cut short.
+  assert.equal(
+    buildCommandPlan('pr-checks-wait', { number: 12, timeoutMinutes: 20 }, githubRepository)
+      .timeoutMs,
+    20 * 60 * 1000,
+  );
+  for (const operation of ['pr-status-read', 'pr-read', 'issue-list']) {
+    assert.equal(
+      buildCommandPlan(operation, { number: 12 }, githubRepository).timeoutMs,
+      undefined,
+    );
+  }
+
+  // The watch blocks for 30 seconds; the plan allows 250 ms. The killed child reports a null status
+  // plus its signal, which the core turns into a timeout result instead of a failure.
+  const startedAt = Date.now();
+  const bounded = runShippedCli('pr-checks-wait', { repository, number: 12, timeoutMs: 250 });
+  const elapsed = Date.now() - startedAt;
+  assert.ok(elapsed < 15_000, `the bound did not stop the watch (${elapsed}ms)`);
+  assert.equal(bounded.status, 0);
+  assert.equal(bounded.envelope.ok, true);
+  assert.equal(bounded.envelope.error, undefined);
+  assert.equal(bounded.envelope.data.result.timedOut, true);
+  assert.equal(bounded.envelope.data.result.complete, false);
+  assert.deepEqual(bounded.envelope.data.result.checks, []);
+  // A child that stops on SIGTERM was stopped cleanly, and the result says so by omission.
+  assert.equal(Object.hasOwn(bounded.envelope.data.result, 'forcedKill'), false);
+
+  // The same fake CLI, an operation without a bound: a read that outlives the wait's limit still
+  // runs to completion, so the timeout reaches exactly the plan that asked for one.
+  const unbounded = runShippedCli('pr-status-read', { repository, number: 12 });
+  assert.equal(unbounded.envelope.ok, true);
+  assert.equal(unbounded.envelope.data.result.headSha, verifiedHead);
+  assert.equal(unbounded.envelope.data.result.baseRef, 'develop');
+});
+
+test('a watch that ignores the polite stop is killed and reported as forced', () => {
+  // SIGTERM is catchable, so a bound enforced with SIGTERM alone is only a request. This child
+  // ignores it outright — without the escalation the run would hang for the full 30 seconds.
+  const startedAt = Date.now();
+  const forced = runShippedCli(
+    'pr-checks-wait',
+    {
+      repository: { host: 'github.com', owner: 'example', repository: 'flow' },
+      number: 12,
+      timeoutMs: 250,
+    },
+    { FAKE_GH_IGNORE_TERM: '1' },
+  );
+  const elapsed = Date.now() - startedAt;
+  assert.ok(elapsed < 20_000, `the escalation did not stop the watch (${elapsed}ms)`);
+  assert.equal(forced.status, 0);
+  assert.equal(forced.envelope.ok, true);
+  assert.equal(forced.envelope.data.result.timedOut, true);
+  assert.equal(forced.envelope.data.result.complete, false);
+  // Distinguishable from a clean bounded stop: the provider had to be killed.
+  assert.equal(forced.envelope.data.result.forcedKill, true);
 });
 
 test('the shipped process runner detects a removed working directory before spawning', () => {

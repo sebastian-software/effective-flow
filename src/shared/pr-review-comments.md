@@ -4,12 +4,15 @@ This shared building block connects Effective Flow workflows with the review com
 existing pull request (GitHub via `gh`, Forgejo via `tea`). It encapsulates the
 **PR-specific plumbing** that `issue-tracker.md` deliberately does not contain: PR resolution,
 reading review threads, replying to a thread, resolving a thread, submitting a review with inline
-comments, and posting a PR summary comment.
+comments, posting a PR summary comment, reading the pull-request status, waiting for pending
+checks, and merging the pull request.
 
-It serves both directions. **Inbound**, `{{SKILL:iterate}}` reads and answers what others wrote.
-**Outbound**, "PR review publication" writes Effective Flow's own findings onto the pull request;
-that fragment owns which findings are published and which gates run first, while this one provides
-the operations.
+It serves both directions plus the merge gate. **Inbound**, `{{SKILL:iterate}}` reads and answers
+what others wrote. **Outbound**, "PR review publication" writes Effective Flow's own findings onto
+the pull request; that fragment owns which findings are published and which gates run first, while
+this one provides the operations. **The gate**, `{{SKILL:pr-review}}`, reads status and checks,
+waits, and finally merges; it owns the ordered gate and the merge decision, while this one again
+provides the operations.
 
 Boundary to `issue-tracker.md`: that building block is tailored to **issues** and the tracker
 target. PR review threads are a different API object. A workflow working on a pull request is
@@ -74,6 +77,17 @@ the login has no canonical bot suffix, `authorType` is `unknown` rather than gue
 If the provider reports that resolved status is unavailable, keep the item unresolved and expose
 that limitation in the workflow summary; do not guess.
 
+Normalized pull-request comments, review threads, and thread replies additionally carry
+`createdAt`, an RFC-3339 timestamp, whenever the provider exposes one; an unexposed value is absent
+rather than guessed. It is the only freshness evidence these reads provide – a reaction carries
+none – so a consumer that needs "newer than the current head" compares it against
+`headCommittedAt` from `pr-status-read` and fails closed when either side is missing.
+
+**The author record is the only authorship evidence.** A body never is: an Effective Flow marker
+inside a comment says which workflow's write it repeats, not who wrote that comment, and a
+quote-reply copies a quoted body verbatim, marker included. Decide "who wrote this" from `login`
+and `authorType`, or from the ID a mutation of the current run returned.
+
 ### Reply to a thread
 
 Use the helper's review-thread reply operation. Every reply carries the marker
@@ -111,12 +125,73 @@ summary comment with the marker `<!-- effective-flow-iterate -->` is
 posted: which points were implemented, which skipped, and which pure questions are listed as
 open/deferred.
 
+### Read the pull-request status
+
+Use the helper's `pr-status-read` operation (capability key `pullRequestStatus`). One call returns,
+in one normalized envelope read at one instant: the head SHA, the base ref, the pull-request state,
+the draft flag, a check list (name, status, conclusion, the required flag where the provider exposes
+one, URL), the forge's own merge state, and `headCommittedAt` — the head commit's committer
+timestamp as an RFC-3339 string. A value the provider does not expose is absent rather than guessed
+— exactly as `authorType` is for bot detection. Reading checks and mergeability in one call is
+deliberate: both values must be read at the same instant to be consistent.
+
+`headCommittedAt` is the reference side of every "newer than the current head" question, paired with
+the `createdAt` of a comment, thread, or reply. Both sides are required: with either one absent the
+answer is unprovable, and a consumer treats it as "not newer" rather than assuming freshness.
+
+Mergeability is read here, never inferred from the check list. A protected branch can additionally
+require named checks, an approval, an up-to-date branch, or linear history, so "all checks green"
+and "mergeable" are different statements. The forge's merge state is authoritative; a blocked state
+is reported, never worked around.
+
+### Wait for pending checks
+
+Use the helper's `pr-checks-wait` operation (capability key `pullRequestChecksWait`). It blocks
+inside the provider CLI until the checks are complete or the supplied timeout elapses and returns
+the same normalized check list; a timeout is a normalized timeout result, not an error. It is a read
+operation and needs an explicit timeout so it cannot hang a run indefinitely.
+
+Never rebuild this wait as a prompt-driven poll loop around the status read: that spends a model
+turn per interval for no additional information. On a timeout, or on `UNSUPPORTED_CAPABILITY`,
+report the still-pending checks and ask the user once instead.
+
+### Merge a pull request
+
+Use the helper's `pr-merge` operation (capability key `pullRequestMerge`). It is a **mutation**, so a
+run without `apply` produces a dry-run plan and merges nothing. It takes the pull-request number,
+the merge method (`delivery.mergeMethod`), and the **expected head SHA**: the merge must apply to
+exactly the commit that was verified, so a head that moved in the meantime fails closed instead of
+merging a state nobody checked. Never re-run the mutation after a structured error carrying
+`mutationMayHaveSucceeded: true` — re-read the pull-request state and report what it shows.
+
+Merging is the most irreversible mutation in this tool set and belongs to `{{SKILL:pr-review}}`. It
+is never used to work around a blocked merge state, and this building block still never approves a
+pull request and never requests changes — not even to unblock a merge.
+
+**Forgejo limitation:** `pr-status-read`, `pr-checks-wait`, and `pr-merge` are all unsupported there
+and return `UNSUPPORTED_CAPABILITY`. The gate fails closed: it degrades to report-only, states that
+reason, and improvises no provider request.
+
 ### Idempotency via the Effective Flow markers
 
-Two distinct HTML markers keep the two directions apart:
+Three distinct HTML markers keep the directions and the writers apart:
 
 - `<!-- effective-flow-iterate -->` on thread replies and the `{{SKILL:iterate}}` summary comment.
 - `<!-- effective-flow-pr-review -->` on outbound inline review comments and the review body.
+- `<!-- effective-flow-pr-gate -->` on the thread replies and bot-trigger comments that
+  `{{SKILL:pr-review}}` writes itself.
+
+The three strings are **pairwise distinct and none is a substring of another**; every match is an
+exact string match. Reusing one for another writer would make `{{SKILL:iterate}}` treat foreign
+replies as its own already-processed work, or make the outbound direction suppress a finding it
+never published.
+
+The helper's marker table stamps only the first two. The gate marker is caller-written: the
+review-thread reply and PR-comment operations take the body as supplied, so `{{SKILL:pr-review}}`
+puts `<!-- effective-flow-pr-gate -->` into the body it hands over. It must not use the `pr`
+comment-kind builder for that, which stamps `<!-- effective-flow-iterate -->`. A thread that already
+carries the gate marker was answered by the gate and is not answered again; `{{SKILL:iterate}}`
+skips it like Effective Flow's own review output unless it is named explicitly.
 
 Read the existing PR and review comments **fresh before every write**, in both directions: a
 thread that is already `resolved` or carries an `<!-- effective-flow-iterate -->` reply is
@@ -135,3 +210,8 @@ consistent with `{{SKILL:pr}}` and "Updating existing PRs" in the delivery
 and worktree integration. No `commit --amend`, no rebase, no squash, no force-push.
 If the push is rejected because of diverged remote history, stop and report the conflict
 instead of overwriting history.
+
+A head branch that has fallen **behind** its base is brought forward the same way: merge
+`origin/<base>` into the head branch as a merge commit and push normally. That merge, performed by
+`{{SKILL:pr-review}}`, is the sanctioned repair; a rebase or a force-push of the head branch is not,
+whatever the forge suggests.

@@ -85,7 +85,7 @@ the manifest is authoritative for their structured values.
 | `product-design`           | `plan`, `plan-review`, `concept`, `concept-review` via relevance gate                                                                     | route-when-relevant                                                                  | The available central skill owns research, problem framing, information architecture, flows, and prototyping when a plan or concept crosses the design boundary.                                                                                                                                                                                                                                                                                |
 | `metro-english`            | `iterate`, `pr`, `docs-writer`, `code-documenter`                                                                                         | route-when-relevant                                                                  | The skill owns professional English prose for thread replies, PR text, and documentation prose. Effective Flow retains workflow state, forge interaction, and document structure.                                                                                                                                                                                                                                                               |
 | `web-legal-compliance`     | `plan`, `plan-review`, `concept-review` via relevance gate                                                                                | route-when-relevant                                                                  | The skill owns legal-disclosure and compliance judgment when a plan or concept crosses the web-legal boundary. Effective Flow retains the plan and concept lifecycle and their no-code boundary.                                                                                                                                                                                                                                                |
-| `pr-review`                | `iterate`; `review`, `worktree-integration`, `apply-review-remote`, `apply-issues`                                                        | delegate                                                                             | The skill owns reusable PR-level review-item judgment through its read-only caller-owned Mode C handoff, for both externally authored feedback and Effective Flow's own reviewer findings. Effective Flow retains scope, agent fan-out, the design-decision filter, the security disclosure gate, finding IDs, publication, idempotency, freshness, current-context gathering, approval, implementation, commits, forge plumbing, and delivery. |
+| `pr-review`                | `iterate`; `review`, `worktree-integration`, `apply-review-remote`, `apply-issues`, `pr-review` (tool)                                    | delegate                                                                             | The skill owns reusable PR-level review-item judgment through its read-only caller-owned Mode C handoff, for both externally authored feedback and Effective Flow's own reviewer findings. Effective Flow retains scope, agent fan-out, the design-decision filter, the security disclosure gate, finding IDs, publication, idempotency, freshness, current-context gathering, approval, implementation, commits, forge plumbing, and delivery. |
 
 <!-- skill-ownership-table:end -->
 
@@ -140,6 +140,20 @@ mistaken for an external skill.
   Nesting one inside the other would create competing lifecycle and delivery owners, so the
   central skill remains a direct-use alternative and is never dynamically loaded by an active
   Effective Flow tool or agent.
+- **`pr-review` the Effective Flow tool, and `pr-review` the central skill — the naming collision
+  is deliberate, not an editing mistake.** The exposed tool `/effective-flow pr-review` is the
+  merge gate: it resolves a pull request, waits for checks, runs the automatic-reviewer round, and
+  merges. It never performs review-item judgment itself; every code-affecting decision is
+  delegated to `{{SKILL:iterate}}` (the `iterate` tool), which is where the central `pr-review`
+  skill's caller-owned Mode C handoff actually runs (see the two bullets above). So the tool's own
+  relationship to the skill is indirect — one hop through `iterate` — while the entry in the table
+  above records it
+  directly because the tool's `## Recommended skills` section names the skill explicitly, exactly
+  as `build`, `refactor`, `maintain`, `fix`, and `docs` already do so the recommendation is not
+  silently skipped on that entry point. Every source that mentions both — this document, the tool
+  source, and any review of either — must state which of the two is meant; "`pr-review` delegates
+  to `pr-review`" is only unambiguous once the reader knows one is a `/effective-flow` tool and the
+  other is a host skill.
 - **Remote tracker adapter:** Effective Flow owns its issue/finding schemas, IDs, compatibility
   aliases, Forgejo support, provider-neutral helper, and orchestration. `pr-review` continues to
   own reusable GitHub PR review judgment; the helper centralizes deterministic transport and

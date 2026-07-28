@@ -99,6 +99,7 @@ At the start, generate a session ID (e.g. via timestamp) and use
 `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` for:
 
 - the resolved PR (number, head/base branch, URL) or the local target diff
+- the received item filter (free-text-only, an explicit thread-ID list, or none)
 - the review threads read, with author, file/line, and resolved status
 - the classification per item (actionable/not actionable, action type, already addressed)
 - implemented items, commits created, threads replied to/resolved
@@ -121,6 +122,28 @@ end.
    instead of guessing.
 4. `iterate` always continues an **existing** change; there is no full intent gate as
    in {{SKILL:build}}.
+5. **Optional item filter.** A delegating workflow may restrict the run to a subset of the items.
+   The filter is a caller contract, not user free text: only a delegation such as
+   {{SKILL:pr-review}} sets it, and an interactive invocation never has one. It is announced on its
+   own line, in exactly one of two literal forms:
+   - `Item filter: free-text-only` — process the free-text instructions and classify **no** review
+     thread;
+   - `Item filter: threads=<id>,<id>` — process exactly the review threads whose thread ID appears
+     in that comma-separated list, plus the free text only when free text was supplied as well.
+
+   Two invariants bind this filter:
+   - **An invocation without a filter keeps the current behavior exactly**: every unaddressed
+     review thread plus the free text is classified, as before. The filter is purely additive.
+   - **A filter that matches no item yields a clean empty run.** It never falls back to processing
+     all items; see Phase 2.
+
+   **Fail closed on an unparseable filter.** An invocation that announces `Item filter:` in any
+   other form — a different keyword, a missing list, an unreadable ID — is a broken caller contract:
+   return `ABORT: unparseable item filter` immediately, before Phase 1. Never continue such a run as
+   an unfiltered one: that would silently classify and implement every open item of the pull request
+   while the caller believes the run was scoped to one failing check.
+
+   Record the received filter (or its absence) in the wisdom file and carry it into Phase 2.
 
 ### Phase 1: Gather context
 
@@ -139,11 +162,29 @@ end.
 1. Exclude an already addressed thread when it is `resolved` or carries an
    `<!-- effective-flow-iterate -->` reply. Exclude a thread carrying
    `<!-- effective-flow-pr-review -->` as well — that is Effective Flow's own published review
-   output, not third-party input — unless the user names those threads explicitly.
-2. Send every remaining review thread and free-text instruction to `pr-review` Mode C with the
+   output, not third-party input — unless the user names those threads explicitly. Exclude a thread
+   carrying `<!-- effective-flow-pr-gate -->` on the same grounds: that is the {{SKILL:pr-review}}
+   gate's own reply, written while its human-comment guard blocked the implementation, and not
+   third-party input.
+2. **Apply the optional item filter** from Phase 0, after the exclusions above:
+   - **no filter** — every remaining thread plus the free text enters classification. This is the
+     unchanged default and the only behavior an interactive invocation ever sees.
+   - **`free-text-only`** — no review thread enters classification, whatever the exclusions left;
+     only the free-text instructions do.
+   - **`threads=<id>,<id>`** — exactly the threads whose ID is in the list, plus the free text only
+     when the delegation supplied free text as well. A caller-supplied ID names its thread
+     explicitly, so the marker-based exclusions above do not remove it; a `resolved` thread and a
+     thread already carrying an `<!-- effective-flow-iterate -->` reply stay excluded, because this
+     workflow already addressed them.
+   - **An empty selection is a valid result.** If the filter matches no item — every named thread
+     was resolved between the caller's read and this delegation — continue with **no** items:
+     report the empty selection, implement nothing, push nothing, reply to nothing, resolve
+     nothing, post no summary comment, and end cleanly with `DONE`. Never fall back to processing
+     all items, and never read an empty selection as a missing filter.
+3. Send every remaining review thread and free-text instruction to `pr-review` Mode C with the
    caller constraints: Effective Flow owns authority, approval, implementation, commits,
    delivery, replies, and resolution; the analysis may only classify supplied context.
-3. Require one returned item for every supplied stable ID and map the contract as follows:
+4. Require one returned item for every supplied stable ID and map the contract as follows:
    - `valid_in_scope` + `caller_fix` → actionable. Include valid nitpicks and low-priority bot
      findings by default; Phase 2.5 may deselect them.
    - `valid_out_of_scope` → follow-up or no action, never silently widen this PR.
@@ -152,13 +193,13 @@ end.
      assumption.
    - `needs_evidence` → gather the named evidence when it is already within the read-only scope
      and submit the item once more; otherwise defer it with the exact missing evidence.
-4. For every actionable item, derive the Effective Flow **action type**:
+5. For every actionable item, derive the Effective Flow **action type**:
    - {{SKILL:fix}} for a bug/correction,
    - {{SKILL:refactor}} for structure without behavior change,
    - {{SKILL:build}} for small new functionality,
    - {{SKILL:docs}} for pure documentation.
      Treat human and bot comments equally.
-5. Create a task per actionable item (per-item granularity).
+6. Create a task per actionable item (per-item granularity).
 
 If `pr-review` is unavailable, apply only the same five classifications from supplied evidence;
 never invent missing context, and report that the authoritative review owner was unavailable.
