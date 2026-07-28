@@ -54,6 +54,11 @@ jobs:
         id: release
         uses: googleapis/release-please-action@v5
         with:
+          # Not redundant: the action defaults this input to `${{ github.token }}`, and
+          # GitHub restricts what events raised by the default token may start. The
+          # release pull request would be authored by github-actions[bot] and its CI
+          # would park in `action_required` forever (issue #279).
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           # The default branch is the built delivery branch `main` (no source /
           # no release-please config). release-please must target the source
           # branch `develop`, where its config and manifest live.
