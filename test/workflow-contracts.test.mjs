@@ -1242,14 +1242,22 @@ test('apply-issues carries the worktree lifecycle contract instead of referring 
 
   // Both ends of the lifecycle have to be instructed, not just the format.
   assert.match(
-    applyIssues,
-    /Write the record immediately after the\n`effective-flow-created` receipt is verified/,
+    flat(applyIssues),
+    /Write the record immediately after the `effective-flow-created` receipt is verified/,
   );
   assert.match(applyIssues, /transition its lifecycle record from `active` to `cleanup-ready`/);
-  // A failed run must not be released for removal.
+  // Every exit from the phase ends in a status, so no record is stranded at `active`.
+  // Post-delegation failures count: a rejected push or a failed PR creation must also land.
+  // Matched on flattened prose so a reflow by the formatter cannot break these.
+  const flatIssues = flat(applyIssues);
   assert.match(
-    applyIssues,
-    /A failed or aborted delegation\n\s+sets `failed` or `aborted` instead, never `cleanup-ready`/,
+    flatIssues,
+    /a failed delegation, a rejected push and a failed pull-request creation all set `failed`/,
+  );
+  assert.match(flatIssues, /A record must never be left at `active` once the issue is done with/);
+  assert.match(
+    flatIssues,
+    /transition its lifecycle record to `failed` with the exact reason, whether the failure happened during delegation or afterwards during push or pull-request creation/,
   );
 
   // The fragment must actually resolve, so the rendered tool carries the record path.

@@ -277,8 +277,10 @@ Issues with the same target PR run sequentially so that new commits are created 
    transition its lifecycle record from `active` to `cleanup-ready` under the record lock, per the
    embedded contract. The work is durably secured at this point — the branch is pushed and its pull
    request exists — so the worktree itself is no longer needed. Skipping this leaves a record stuck
-   at `active`, which `{{SKILL:cleanup}}` must then retain forever. A failed or aborted delegation
-   sets `failed` or `aborted` instead, never `cleanup-ready`.
+   at `active`, which `{{SKILL:cleanup}}` must then retain forever. Every path out of this phase
+   ends in a status: a failed delegation, a rejected push and a failed pull-request creation all set
+   `failed`, a controlled stop sets `aborted`, and only a completed pull request sets
+   `cleanup-ready`. A record must never be left at `active` once the issue is done with.
 5. Task to `completed`.
 
 This path creates its pull requests without the delivery completion action, so it invokes the
@@ -298,6 +300,11 @@ when: the completion action created or reused a pull request and the automatic P
 **Error cases:**
 
 - If the delegation (`ABORT`), the push to the target PR or the PR creation fails: do **not** mark the issue as done, do not set `effective-flow-issue-done`, do **not** check off the epic entry, append a failed comment and continue with the next issue. Task to `completed` with the addition `[failed]`.
+  If the issue ran in a worktree this workflow created, transition its lifecycle record to `failed`
+  with the exact reason, whether the failure happened during delegation or afterwards during push
+  or pull-request creation. Retain the worktree and the branch so the work stays recoverable —
+  `failed` is what makes that retention legible, where a record left at `active` would claim a run
+  that may still be going.
 - If an issue passed as part of a list lacks an assigned epic: implement it anyway and create a PR; the check-off is omitted and reported to the user.
 
 Give a short status update after each completed issue.
