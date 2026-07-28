@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.54.4](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.54.3...effective-flow-v1.54.4) (2026-07-28)
+
+
+### Bug Fixes
+
+* **deps:** update actions/github-script action to v9 ([#290](https://github.com/sebastian-software/effective-flow/issues/290)) ([12a8cc2](https://github.com/sebastian-software/effective-flow/commit/12a8cc2f24028d901bc87ee0aaaf6e3356c2e509))
+* **deps:** update oxc toolchain to ^0.60.0 ([#288](https://github.com/sebastian-software/effective-flow/issues/288)) ([07c19e5](https://github.com/sebastian-software/effective-flow/commit/07c19e50934050efbe32b5ba9bb4781db3927198))
+* **deps:** update pnpm to v11.17.0 ([#289](https://github.com/sebastian-software/effective-flow/issues/289)) ([2bcc176](https://github.com/sebastian-software/effective-flow/commit/2bcc176e94fec93a06995f3d71e5997222ebc3a4))
+
 ## [1.54.3](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.54.2...effective-flow-v1.54.3) (2026-07-28)
 
 
