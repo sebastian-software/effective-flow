@@ -402,7 +402,7 @@ test('release delegates the licensed develop-to-main payload to central staging'
   ordered(
     release,
     'name: Create delivery token',
-    'uses: actions/create-github-app-token@v3',
+    'uses: actions/create-github-app-token@',
     'client-id: ${{ vars.DELIVERY_APP_CLIENT_ID }}',
     'private-key: ${{ secrets.DELIVERY_APP_PRIVATE_KEY }}',
     'permission-contents: write',
@@ -422,7 +422,7 @@ test('release-please opens its pull request with an explicit non-default token',
   // assertion is scoped to the step and anchored at the `with:` key indent rather than
   // matching anywhere in the file (issue #279).
   const step = workflowStep(release, 'Release Please');
-  assert.match(step, /^ {8}uses: googleapis\/release-please-action@v5$/m);
+  assert.match(step, /^ {8}uses: googleapis\/release-please-action@/m);
   assert.match(step, /^ {10}token: \$\{\{ steps\.release-token\.outputs\.token \}\}$/m);
   assert.match(step, /^ {10}target-branch: develop$/m);
   assert.doesNotMatch(release, /^\s*token: \$\{\{ github\.token \}\}$/m);
@@ -431,13 +431,9 @@ test('release-please opens its pull request with an explicit non-default token',
   // access token, so no credential on the release path expires or belongs to a person.
   // It must be minted before release-please consumes it, hence the ordering assertion.
   const mint = workflowStep(release, 'Create release token');
-  // Pinned to a commit, not the movable tag: this step receives the App private key, so the
-  // implementation it runs must be immutable rather than whatever `v3` points at today. The
-  // version comment is matched loosely on purpose — Renovate rewrites both the digest and the
-  // comment when it bumps a pin, and it writes the precision the upstream tag uses (`# v9`,
-  // not `# v9.0.0`, as commit 12a8cc2 did for actions/github-script here). Demanding full
-  // semver would fail that pull request even though the pin was correct.
-  assert.match(mint, /^ {8}uses: actions\/create-github-app-token@[0-9a-f]{40} # v\d+(?:\.\d+)*$/m);
+  // Matched without the ref: that this step runs a pinned implementation is asserted once, by
+  // the workflow-pinning test below, so a Renovate digest bump touches no assertion at all.
+  assert.match(mint, /^ {8}uses: actions\/create-github-app-token@/m);
   assert.match(mint, /^ {10}client-id: \$\{\{ vars\.RELEASE_APP_CLIENT_ID \}\}$/m);
   assert.match(mint, /^ {10}private-key: \$\{\{ secrets\.RELEASE_APP_PRIVATE_KEY \}\}$/m);
   // release-please needs both, and the token is scoped down to exactly those.
@@ -453,8 +449,11 @@ test('the delivery push keeps the delivery app identity', () => {
   // delivery App token in the push URL and is inherited by `git worktree`, so the push would
   // run as github-actions[bot] — not a ruleset bypass actor — and `main` would reject it.
   // That is how v1.53.0 and v1.54.0 failed to reach `main` (issue #274).
+  // Matched without the ref so a re-pin cannot quietly turn this into `undefined === undefined`
+  // and take the guard with it. The invariant is the count, not which version is referenced;
+  // the pinning convention itself is asserted once, in the workflow-pinning test below.
   assert.equal(
-    release.match(/^\s*-?\s*uses: actions\/checkout@v7$/gm)?.length,
+    release.match(/^\s*-?\s*uses: actions\/checkout@/gm)?.length,
     release.match(/^\s*persist-credentials: false$/gm)?.length,
   );
   // Second, independent mechanism, because the delivery identity is only observable on a real
@@ -489,7 +488,7 @@ test('delivery stages the canonical Renovate config from the repository root', (
 test('catalog job uses scoped app tokens and a checksum-pinned Dalo binary', () => {
   const release = source('.github/workflows/release.yml');
 
-  assert.match(release, /actions\/create-github-app-token@v3/g);
+  assert.match(release, /actions\/create-github-app-token@/g);
   assert.equal(
     release.match(/client-id: \$\{\{ vars\.DALO_CATALOG_APP_CLIENT_ID \}\}/g)?.length,
     2,
@@ -1285,4 +1284,39 @@ test('apply-issues carries the worktree lifecycle contract instead of referring 
   });
   assert.match(rendered, /\.effective-flow\/worktree-runs\/<RECORD_ID>\.json/);
   assertNoUnresolvedEagerIncludes(rendered, 'tools/apply-issues.md');
+});
+
+test('every workflow action is pinned to a commit', () => {
+  // Movable tags let upstream change what runs in a job where the App private keys are in
+  // scope — including for actions that receive no credential of their own. This scans the
+  // directory rather than a file list so a newly added workflow cannot slip past (issue #293).
+  //
+  // Only the ref shape is asserted here. Every other assertion in this file matches actions
+  // without their ref, so a Renovate digest bump touches no test at all; concentrating the
+  // format in one place is what keeps those bumps from becoming an occasion to weaken a guard.
+  const directory = new URL('.github/workflows/', repositoryRoot);
+  const workflows = readdirSync(directory).filter((entry) => entry.endsWith('.yml'));
+  assert.ok(workflows.length >= 3, 'expected the workflow directory to be populated');
+
+  for (const workflow of workflows) {
+    const lines = source(`.github/workflows/${workflow}`).split('\n');
+    for (const [index, line] of lines.entries()) {
+      const step = line.match(/^\s*-?\s*uses:\s*(\S+)\s*(.*)$/);
+      if (!step) continue;
+      const [, reference, trailer] = step;
+      assert.match(
+        reference,
+        /@[0-9a-f]{40}$/,
+        `${workflow}:${index + 1} must pin its action to a commit, found ${reference}`,
+      );
+      // The version comment is what Renovate reads to know which release the digest belongs
+      // to; without it the pin becomes an opaque hash nobody can place. Its precision is left
+      // to Renovate, which writes the upstream tag's own (`# v9`, not `# v9.0.0`).
+      assert.match(
+        trailer,
+        /^# v\d+(?:\.\d+)*$/,
+        `${workflow}:${index + 1} must carry a version comment, found "${trailer}"`,
+      );
+    }
+  }
 });
