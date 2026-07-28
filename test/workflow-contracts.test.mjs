@@ -1176,9 +1176,17 @@ test('a failed delivery is surfaced as an assigned issue that closes itself', ()
   assert.match(alarm, /gh issue comment "\$existing"/);
 
   // A green delivery resolves the alarm, and a failure to close never reddens that run.
-  assert.match(close, /if: \$\{\{ steps\.release\.outputs\.release_created == 'true' \}\}/);
+  // success() is explicit: relying on the implicit rule would risk a false success comment
+  // on a live alarm if it were ever misread or changed.
+  assert.match(
+    close,
+    /if: \$\{\{ success\(\) && steps\.release\.outputs\.release_created == 'true' \}\}/,
+  );
   assert.match(close, /continue-on-error: true/);
-  assert.match(close, /gh issue close "\$open"/);
+  // Every open alarm is closed: without a concurrency group two failing runs can each open
+  // one, and closing a single issue would strand the other permanently.
+  assert.match(close, /--limit 50 --json number --jq '\.\[\]\.number'/);
+  assert.match(close, /gh issue close "\$number"/);
 
   // Both steps run after delivery and its verification.
   ordered(

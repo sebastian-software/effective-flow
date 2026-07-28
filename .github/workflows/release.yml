@@ -163,16 +163,27 @@ jobs:
         # `continue-on-error` on purpose: the delivery has already succeeded by this
         # point, and a stale open alarm is recoverable while a red run on a good
         # delivery would erode trust in the very signal this adds.
-        if: ${{ steps.release.outputs.release_created == 'true' }}
+        # `success()` is spelled out rather than relied upon implicitly. A custom `if`
+        # without a status check function already gets `success()` applied, so this is a
+        # no-op — but the consequence of being wrong is a false "delivery succeeded"
+        # comment on a live alarm, and the implicit rule is easy to misread.
+        if: ${{ success() && steps.release.outputs.release_created == 'true' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          open="$(gh issue list --label delivery-failed --state open --limit 1 --json number --jq '.[0].number // empty')"
-          if [ -n "$open" ]; then
-            gh issue comment "$open" --body "Delivery succeeded for ${{ steps.release.outputs.tag_name }}. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-            gh issue close "$open"
-          fi
+          # Closes every open alarm, not just the first. The workflow has no concurrency
+          # group, so two failing runs can race past the lookup below and open one alarm
+          # each; closing only one would leave a stale alarm behind forever, which is the
+          # noise this whole mechanism exists to avoid.
+          gh issue list --label delivery-failed --state open --limit 50 --json number --jq '.[].number' |
+            while read -r number; do
+              [ -n "$number" ] || continue
+              gh issue comment "$number" --body "Delivery succeeded for \`$TAG\`. Run: $RUN_URL"
+              gh issue close "$number"
+            done
 
       - name: Report a failed delivery
         # Detection already exists — `Verify delivered commit` above fails hard when the
