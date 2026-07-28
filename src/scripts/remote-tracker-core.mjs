@@ -1236,6 +1236,11 @@ export function buildCommandPlan(operation, input, repository) {
         String(input.page ?? 1),
         '--limit',
         String(input.limit ?? 100),
+        // Same field list as `pr-read`: without it tea's list renderer omits head and base, and
+        // every item has to be hydrated through a separate read. Purely additive — callers keep
+        // hydrating an incomplete item, so a tea that ignores the request behaves as before.
+        '--fields',
+        'index,title,state,body,labels,url,head,base',
       ]);
     }
     case 'pr-create':
@@ -1577,6 +1582,19 @@ function normalizeLabel(label) {
   return typeof label === 'string' ? label : label?.name;
 }
 
+// tea's list renderer flattens `labels` into a comma-separated string while its single-item
+// renderer returns an array, so the same field arrives in two shapes one call apart. Splitting
+// the string rather than discarding it matters: an `Array.isArray(...) ? ... : []` guard would
+// stop the crash but silently drop every label the list form actually carries.
+function normalizeLabels(value) {
+  const items = typeof value === 'string' ? value.split(',') : value;
+  if (!Array.isArray(items)) return [];
+  return items
+    .map(normalizeLabel)
+    .map((label) => (typeof label === 'string' ? label.trim() : label))
+    .filter(Boolean);
+}
+
 function normalizeAuthor(author) {
   const login =
     typeof author === 'string'
@@ -1605,7 +1623,7 @@ function normalizeIssue(item, repository, metadata = {}) {
     title: item.title ?? '',
     body: item.body ?? item.description ?? '',
     state: String(item.state ?? '').toLowerCase(),
-    labels: (item.labels ?? []).map(normalizeLabel).filter(Boolean),
+    labels: normalizeLabels(item.labels),
     url: item.html_url ?? item.url ?? item.web_url,
     repository: repository.slug,
     ...(metadata.version ? { version: metadata.version } : {}),
