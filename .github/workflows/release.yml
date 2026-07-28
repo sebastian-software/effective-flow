@@ -57,7 +57,7 @@ jobs:
         # the pin current, as it already does for the pins in close-develop-issues.yml. The
         # other create-github-app-token steps in this workflow are still on the tag — see the
         # follow-up issue for making that consistent.
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
           client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
