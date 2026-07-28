@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.54.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.54.0...effective-flow-v1.54.1) (2026-07-28)
+
+
+### Bug Fixes
+
+* deliver to main as the delivery app instead of github-actions[bot] ([#277](https://github.com/sebastian-software/effective-flow/issues/277)) ([4ff4584](https://github.com/sebastian-software/effective-flow/commit/4ff4584b95f5b7fd6a4a962615c08515ba6ed618))
+* normalize tea list labels flattened into a string ([#273](https://github.com/sebastian-software/effective-flow/issues/273)) ([e91cdf4](https://github.com/sebastian-software/effective-flow/commit/e91cdf4db05bd879a506f4dcecc60431840172d3)), closes [#257](https://github.com/sebastian-software/effective-flow/issues/257)
+* recover the tea result URL from escaped create output ([f9ccd9b](https://github.com/sebastian-software/effective-flow/commit/f9ccd9b1e5df6111ebebe53b2c532b7f4d776f9f)), closes [#270](https://github.com/sebastian-software/effective-flow/issues/270)
+
 ## [1.54.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.53.0...effective-flow-v1.54.0) (2026-07-27)
 
 
