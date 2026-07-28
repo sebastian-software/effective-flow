@@ -210,6 +210,19 @@ options:
 
 The commit/PR strategy is by default **"one PR per issue"** (no commit-strategy question). Every implementable issue without a target PR is its own sub-group in its own delivery branch, preferably with worktree isolation, analogous to the remote mode of `{{SKILL:apply-review}}` (Phase 4 remote): branch off the base branch from the `delivery` config block (legacy fallback: old `worktree.baseBranch`/`worktree.branchPrefix` values), one PR via `{{SKILL:pr}}`. File-overlapping issues run sequentially to avoid working-tree conflicts; non-overlapping ones run in parallel.
 
+Every worktree this workflow creates carries the lifecycle contract below. It is embedded here
+rather than referenced through `{{SKILL:apply-review}}`: a reference by analogy is not a contract,
+and a worktree created without its record can never be removed by `{{SKILL:cleanup}}`, which
+requires that record as its only proof of ownership. Write the record immediately after the
+`effective-flow-created` receipt is verified, and transition it to `cleanup-ready` once the issue's
+work is durably secured on the pushed branch — for the default strategy that is after its pull
+request exists. A worktree reused from the harness or created by the user keeps its own ownership
+and never receives a record.
+
+```include
+worktree-lifecycle
+```
+
 If an issue body or non-Effective Flow comment names a target PR (`Ziel-PR: #<nr>`, `Target PR: #<nr>` or a PR URL), **"new commit on existing PR"** applies instead:
 
 1. Do not create a new delivery branch and no new PR.
@@ -260,7 +273,13 @@ Issues with the same target PR run sequentially so that new commits are created 
    connection under the `tracker-target` write discipline, and complete the container with the
    mechanism decided once for this run — the native sub-item state or the checklist plus exact
    patch — never a mix of both. The pull request itself always stays on the forge behind `origin`.
-4. Task to `completed`.
+4. **Release the worktree for cleanup:** if this issue ran in a worktree this workflow created,
+   transition its lifecycle record from `active` to `cleanup-ready` under the record lock, per the
+   embedded contract. The work is durably secured at this point — the branch is pushed and its pull
+   request exists — so the worktree itself is no longer needed. Skipping this leaves a record stuck
+   at `active`, which `{{SKILL:cleanup}}` must then retain forever. A failed or aborted delegation
+   sets `failed` or `aborted` instead, never `cleanup-ready`.
+5. Task to `completed`.
 
 This path creates its pull requests without the delivery completion action, so it invokes the
 automatic review itself: after step 2 created a pull request, run "PR review publication" with that

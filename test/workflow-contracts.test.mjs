@@ -1230,3 +1230,33 @@ test('a failed delivery is surfaced as an assigned issue that closes itself', ()
     /const TRUSTED_AUTOMATION = \[\n\s+join\('\.github', 'workflows', 'close-develop-issues\.yml'\),\n\s+join\('\.github', 'scripts', 'close-develop-issues\.mjs'\),\n\];/,
   );
 });
+
+test('apply-issues carries the worktree lifecycle contract instead of referring to it', () => {
+  const applyIssues = source('src/tools/apply-issues.md');
+
+  // The defect this pins: Phase 4 pointed at apply-review's copy by analogy, so an agent
+  // following apply-issues alone never learned to write a record — and cleanup, whose only
+  // ownership proof is that record, could then never remove the worktree it had created.
+  assert.match(applyIssues, /```include\nworktree-lifecycle\n```/);
+  assert.match(applyIssues, /a reference by analogy is not a contract/);
+
+  // Both ends of the lifecycle have to be instructed, not just the format.
+  assert.match(
+    applyIssues,
+    /Write the record immediately after the\n`effective-flow-created` receipt is verified/,
+  );
+  assert.match(applyIssues, /transition its lifecycle record from `active` to `cleanup-ready`/);
+  // A failed run must not be released for removal.
+  assert.match(
+    applyIssues,
+    /A failed or aborted delegation\n\s+sets `failed` or `aborted` instead, never `cleanup-ready`/,
+  );
+
+  // The fragment must actually resolve, so the rendered tool carries the record path.
+  const rendered = resolveEagerIncludes(applyIssues, {
+    context: 'tools/apply-issues.md',
+    readFragment: (name) => source(`src/shared/${name}.md`),
+  });
+  assert.match(rendered, /\.effective-flow\/worktree-runs\/<RECORD_ID>\.json/);
+  assertNoUnresolvedEagerIncludes(rendered, 'tools/apply-issues.md');
+});
