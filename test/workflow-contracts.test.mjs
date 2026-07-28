@@ -1295,7 +1295,11 @@ test('every workflow action is pinned to a commit', () => {
   // without their ref, so a Renovate digest bump touches no test at all; concentrating the
   // format in one place is what keeps those bumps from becoming an occasion to weaken a guard.
   const directory = new URL('.github/workflows/', repositoryRoot);
-  const workflows = readdirSync(directory).filter((entry) => entry.endsWith('.yml'));
+  // Both extensions, because GitHub runs both — filtering `.yml` alone would let a `.yaml`
+  // workflow carry movable tags past the very scan that exists to catch new files.
+  const workflows = readdirSync(directory).filter(
+    (entry) => entry.endsWith('.yml') || entry.endsWith('.yaml'),
+  );
   assert.ok(workflows.length >= 3, 'expected the workflow directory to be populated');
 
   for (const workflow of workflows) {
