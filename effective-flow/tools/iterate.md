@@ -18,7 +18,7 @@ validation, and delivering back as new commits on the same PR branch.
    PR URL) or from the currently checked-out branch. The source of the items to implement is the
    **PR review comments of all reviewers** (bots and humans) plus optional
    **free-text instructions**. Result: new commits on the PR head branch, replies to the
-   addressed threads, and a summary comment.
+   addressed threads, and a summary comment — the last of which a delegating caller may suppress.
 2. **Local mode**: no PR present or intended. `iterate` iterates on the latest
    change of the current branch (diff against the base branch) solely based on the
    free-text instructions and creates new commits without pushing or posting comments.
@@ -1196,8 +1196,8 @@ It serves both directions plus the merge gate. **Inbound**, `effective-flow iter
 what others wrote. **Outbound**, "PR review publication" writes Effective Flow's own findings onto
 the pull request; that fragment owns which findings are published and which gates run first, while
 this one provides the operations. **The gate**, `effective-flow pr-review`, reads status and checks,
-waits, and finally merges; it owns the ordered gate and the merge decision, while this one again
-provides the operations.
+waits, posts its configured bot trigger — its only own write — and finally merges; it owns the
+ordered gate and the merge decision, while this one again provides the operations.
 
 Boundary to `issue-tracker.md`: that building block is tailored to **issues** and the tracker
 target. PR review threads are a different API object. A workflow working on a pull request is
@@ -1271,7 +1271,28 @@ none – so a consumer that needs "newer than the current head" compares it agai
 **The author record is the only authorship evidence.** A body never is: an Effective Flow marker
 inside a comment says which workflow's write it repeats, not who wrote that comment, and a
 quote-reply copies a quoted body verbatim, marker included. Decide "who wrote this" from `login`
-and `authorType`, or from the ID a mutation of the current run returned.
+and `authorType` — and, where the question is "did _I_ write this?", by comparing that `login`
+against the authenticated identity below.
+
+### Read the authenticated identity
+
+Use the helper's `viewer-read` operation (capability key `viewerRead`). It is a **read**, not a
+mutation, so it needs no `apply` gate. It returns the login the provider CLI is authenticated as
+plus that account's type, which lets one call tell a caller whether it is posting as a bot or as a
+person. A value the provider does not expose stays absent rather than being guessed.
+
+This is the only authorship evidence that **survives a run**. The ID a mutation returned identifies
+a write only inside the run that performed it, so a workflow asking "did I write this on an earlier
+run?" has nothing to compare it against and must use the authenticated login instead.
+`effective-flow pr-review` is that consumer: it pairs the login with the exact configured body of its
+trigger comment.
+
+Do not scrape the login out of the probe's authentication-status output. That is human-readable CLI
+prose, and this building block reads normalized JSON only.
+
+**Forgejo limitation:** `viewerRead` is unsupported there and returns `UNSUPPORTED_CAPABILITY`. A
+consumer that cannot establish the identity fails closed and treats an item it cannot prove to be
+its own as someone else's.
 
 ### Reply to a thread
 
@@ -1305,10 +1326,16 @@ that fallback comment with the helper's `pr-review-comment-build` operation, **n
 
 ### Post summary comment
 
-Use the helper's PR-comment payload builder and PR-comment mutation. Per run, **exactly one**
+Use the helper's PR-comment payload builder and PR-comment mutation. Per run, **at most one**
 summary comment with the marker `<!-- effective-flow-iterate -->` is
 posted: which points were implemented, which skipped, and which pure questions are listed as
 open/deferred.
+
+A delegating caller may suppress that comment, and `effective-flow pr-review` does so for every round it
+delegates. The reason is the guard: the delegated run posts under the same account in manual mode,
+so a summary comment left on the pull request would be a top-level, unresolvable item that the next
+authorship evaluation counts as a human comment. The content is handed back to the caller instead of
+being dropped.
 
 ### Read the pull-request status
 
@@ -1359,24 +1386,37 @@ reason, and improvises no provider request.
 
 ### Idempotency via the Effective Flow markers
 
-Three distinct HTML markers keep the directions and the writers apart:
+Two distinct HTML markers keep the directions and the writers apart:
 
 - `<!-- effective-flow-iterate -->` on thread replies and the `effective-flow iterate` summary comment.
 - `<!-- effective-flow-pr-review -->` on outbound inline review comments and the review body.
-- `<!-- effective-flow-pr-gate -->` on the thread replies and bot-trigger comments that
-  `effective-flow pr-review` writes itself.
 
-The three strings are **pairwise distinct and none is a substring of another**; every match is an
-exact string match. Reusing one for another writer would make `effective-flow iterate` treat foreign
-replies as its own already-processed work, or make the outbound direction suppress a finding it
-never published.
+**A marker is stamped as the body's leading line, and only that position counts as a marker.** The
+helper's payload builder prepends it, so every body this tool writes begins with it. A reader must
+require that position rather than searching the whole body: both providers prefix a quoted body with
+`>`, so a quote-reply carries a copied marker inside a blockquote where it no longer opens the body.
+Treating a marker found anywhere as authoritative lets any person reproduce one by pressing quote —
+which is how a reader that trusts a marker's mere presence ends up misreading a human's comment as
+this tool's own.
 
-The helper's marker table stamps only the first two. The gate marker is caller-written: the
-review-thread reply and PR-comment operations take the body as supplied, so `effective-flow pr-review`
-puts `<!-- effective-flow-pr-gate -->` into the body it hands over. It must not use the `pr`
-comment-kind builder for that, which stamps `<!-- effective-flow-iterate -->`. A thread that already
-carries the gate marker was answered by the gate and is not answered again; `effective-flow iterate`
-skips it like Effective Flow's own review output unless it is named explicitly.
+**`effective-flow pr-review`, the merge gate, writes no marker at all — by design, not by oversight.** A
+marker left in a raw comment body keeps announcing which tool composed that comment, and removing
+that disclosure is exactly why the gate's former third marker (`effective-flow-pr-gate`) is gone.
+The gate's only own write is its configured trigger comment, and it recognizes that comment again
+through the authenticated login plus the comment's exact configured body — evidence that discloses
+nothing and needs no persistence. Do not reintroduce a gate marker.
+
+Both strings are **distinct and neither is a substring of the other**; every match is an exact
+string match. Reusing one for another writer would make `effective-flow iterate` treat foreign replies as
+its own already-processed work, or make the outbound direction suppress a finding it never
+published.
+
+The helper's marker table stamps both of them, so neither is ever written by hand: idempotency and
+the `effective-flow iterate` separation are exact string matches that a hand-written variant silently
+defeats. A caller that supplies a body itself — as `effective-flow pr-review` does for its trigger
+comment — must therefore not use the `pr` comment-kind builder, which stamps
+`<!-- effective-flow-iterate -->`, the marker `effective-flow iterate` reads as its own already-processed
+work.
 
 Read the existing PR and review comments **fresh before every write**, in both directions: a
 thread that is already `resolved` or carries an `<!-- effective-flow-iterate -->` reply is
@@ -1419,7 +1459,8 @@ At the start, generate a session ID (e.g. via timestamp) and use
 `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` for:
 
 - the resolved PR (number, head/base branch, URL) or the local target diff
-- the received item filter (free-text-only, an explicit thread-ID list, or none)
+- the received item filter (free-text-only, an explicit thread-ID list, or none) and whether the
+  caller suppressed the summary comment
 - the review threads read, with author, file/line, and resolved status
 - the classification per item (actionable/not actionable, action type, already addressed)
 - implemented items, commits created, threads replied to/resolved
@@ -1465,6 +1506,27 @@ end.
 
    Record the received filter (or its absence) in the wisdom file and carry it into Phase 2.
 
+6. **Optional summary-comment suppression.** A delegating workflow may suppress this run's
+   pull-request summary comment. Like the item filter this is a caller contract and never user free
+   text, and it is announced on its own line in exactly this literal form:
+   - `Summary comment: suppressed` — post **no** summary comment in Phase 5 and hand the same
+     content back to the caller, which reports it instead.
+
+   The same two invariants bind it:
+   - **An invocation without that line keeps the current behavior exactly**: Phase 5 posts its one
+     summary comment, as before. The switch is purely additive, and an interactive invocation never
+     carries it.
+   - **Fail closed on an unparseable switch.** A line announcing `Summary comment:` in any other
+     form is a broken caller contract: return `ABORT: unparseable summary-comment switch`
+     immediately, before Phase 1. Never continue such a run as an unsuppressed one — a caller
+     suppresses that comment because its own delegated output would otherwise be read back as a
+     third party's writing on a later run.
+
+   Suppression removes the **summary comment only**. The thread replies for implemented items,
+   their resolution, the commits, and the push are unaffected.
+
+   Record the switch (or its absence) in the wisdom file and carry it into Phase 5.
+
 ### Phase 1: Gather context
 
 - **PR mode:** Detect the host and CLI and check availability (see
@@ -1482,10 +1544,9 @@ end.
 1. Exclude an already addressed thread when it is `resolved` or carries an
    `<!-- effective-flow-iterate -->` reply. Exclude a thread carrying
    `<!-- effective-flow-pr-review -->` as well — that is Effective Flow's own published review
-   output, not third-party input — unless the user names those threads explicitly. Exclude a thread
-   carrying `<!-- effective-flow-pr-gate -->` on the same grounds: that is the effective-flow pr-review
-   gate's own reply, written while its human-comment guard blocked the implementation, and not
-   third-party input.
+   output, not third-party input — unless the user names those threads explicitly. The
+   effective-flow pr-review gate needs no exclusion of its own: it writes nothing into a review thread,
+   so no thread on a pull request is ever the gate's own reply.
 2. **Apply the optional item filter** from Phase 0, after the exclusions above:
    - **no filter** — every remaining thread plus the free text enters classification. This is the
      unchanged default and the only behavior an interactive invocation ever sees.
@@ -1628,7 +1689,9 @@ and stop delivery for reconciliation.
 3. Post **one** summary comment on the PR in resolved `language.forge` (marker
    `<!-- effective-flow-iterate -->`): which items
    were implemented or skipped and which pure questions are open/deferred (without a
-   substantive auto-reply).
+   substantive auto-reply). **Skip this step entirely when Phase 0 received
+   `Summary comment: suppressed`**: post nothing at all and hand exactly that content back to the
+   caller in the Phase 6 summary instead.
 4. Declare to the handback of "Delivery and worktree integration" that this workflow supplies
    **no** complete finding set — it has no reviewer phase at all — so an automatic PR review
    reviews the pull request itself.
@@ -1673,6 +1736,8 @@ Before every commit, the checks configured in the project must pass without erro
 - In PR mode, create no new delivery branch and no new PR.
 - Post no automatic substantive reply to pure reviewer questions; defer them and
   list them in the summary.
+- Post **at most one** summary comment per run, and none at all when the caller announced
+  `Summary comment: suppressed`; that content then goes back to the caller instead.
 - Never set a `Co-Authored-By` trailer and add no AI attribution in commits,
   thread replies, the summary comment, or the PR body.
 - Give the user a brief status update after each phase.

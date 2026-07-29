@@ -665,7 +665,11 @@ value or default as the pre-selection:
   and the bot round is skipped rather than blocking the merge forever.
 - `prReview.bots.<login>.trigger`: free text, the literal comment that re-triggers exactly that bot
   (e.g. `@greptileai`). Ask for it once per login named in `prReview.bots`. A login containing
-  brackets is a valid middle segment, because the table encoding splits on `.` only.
+  brackets is a valid middle segment, because the table encoding splits on `.` only. Say when asking
+  that this should be a **distinctive mention** such as `@greptileai`, not generic prose such as
+  `please review`, because the gate recognizes its own trigger comment by an exact match against
+  this string — a generic value could be matched by an ordinary human comment, which would then be
+  excluded from the human-comment guard.
 
 `delivery.mergeMethod` (block 5) decides **how** the gate merges; it stays in the `delivery` block
 because it is a property of this project's delivery, not of the gate.
