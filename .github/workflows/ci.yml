@@ -92,6 +92,11 @@ jobs:
             --pattern '*-x86_64-unknown-linux-musl.tar.gz' \
             --pattern '*-x86_64-unknown-linux-musl.tar.gz.sha256' \
             --dir "$download_dir"
+          # Drop the token before anything downloaded is executed. `env:` covers the whole step,
+          # so without this the freshly downloaded DALO would run with the repository token in
+          # its environment — and this job deliberately made that binary a moving upstream
+          # target. Read-only or not, an unpinned executable has no business seeing it.
+          unset GH_TOKEN
           # The sidecar names a bare filename, so the check must run in the download directory.
           # A missing sidecar makes this fail rather than silently skip verification: the glob
           # would expand to a literal that `--check` cannot open.
