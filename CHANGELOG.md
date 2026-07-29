@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.55.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.54.4...effective-flow-v1.55.0) (2026-07-28)
+
+
+### Features
+
+* add a pull-request merge gate as /effective-flow pr-review ([#295](https://github.com/sebastian-software/effective-flow/issues/295)) ([e92401e](https://github.com/sebastian-software/effective-flow/commit/e92401e312d759b43ef3876181eb8795f5c51411))
+
 ## [1.54.4](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.54.3...effective-flow-v1.54.4) (2026-07-28)
 
 
