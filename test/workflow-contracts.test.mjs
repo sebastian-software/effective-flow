@@ -1443,14 +1443,25 @@ test("a resolved thread excludes only this tool's own items", () => {
   const rule = phase1.split(/(?=\s\d+\.\s)/).find((item) => /\bresolved\b/i.test(item));
   assert.ok(rule, 'Phase 1 must carry a rule about items inside a resolved thread');
 
-  // The author condition is the contract. Author-agnostic reads as "resolved means settled",
-  // but neither provider auto-unresolves a thread when someone replies into it: a human
-  // objecting inside a thread `iterate` resolved would be discarded and the gate would merge
-  // under an open objection — fail-open, in the one place this guard exists to be fail-safe.
+  // The author condition is the first half of the contract. Author-agnostic reads as "resolved
+  // means settled", but neither provider auto-unresolves a thread when someone replies into it: a
+  // reviewer objecting inside a thread `iterate` resolved would be discarded and the gate would
+  // merge under an open objection — fail-open, in the one place this guard exists to be fail-safe.
   assert.match(
     rule,
     /viewer-?read|`?authorType`?|\bbot\b/i,
     'an item in a resolved thread may only be excluded through its author',
+  );
+
+  // The second half, and the one the author condition cannot cover: in manual mode the operator
+  // and this tool are the SAME account, so authorship alone still discards an objection the
+  // operator types into such a thread. `iterate` stamps every reply it writes, so the marker is
+  // what separates its reply from a hand-typed one. Dropping this condition reopens the fail-open
+  // path for the single most likely objector on a manually driven pull request.
+  assert.match(
+    rule,
+    /<!-- effective-flow-iterate -->/,
+    'an item in a resolved thread must also carry the iterate marker to be excluded',
   );
 
   // The rule's other property — that it decides per item rather than per thread, so it reaches

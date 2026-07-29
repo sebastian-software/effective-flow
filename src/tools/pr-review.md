@@ -297,18 +297,26 @@ options:
       consulted for such an item.** `viewer-read` can legitimately fail on an installation token, so
       a rule that reached the identity here would fail closed and block precisely the one mode that
       never needed an identity.
-   2. **The item sits inside a `resolved` review thread _and_ its author is this tool's own** – the
-      login `viewer-read` returned, or a bot under rule 1's two cases. Then it does **not** count.
-      This is stated for the individual comments, not only for the thread, because it has to cover
-      the replies `{{SKILL:iterate}}` writes and resolves: in manual mode those carry the same
-      account as the operator, so without this rule the guard would stay active for exactly the pull
-      requests this tool successfully worked on.
+   2. **The item sits inside a `resolved` review thread, its author is this tool's own, _and_ it
+      carries `<!-- effective-flow-iterate -->`** – the author being the login `viewer-read`
+      returned, or a bot under rule 1's two cases. Only then does it **not** count. All three
+      conditions are required. This is stated for the individual comments, not only for the thread,
+      because it has to cover the replies `{{SKILL:iterate}}` writes and resolves: in manual mode
+      those carry the same account as the operator, so without this rule the guard would stay active
+      for exactly the pull requests this tool successfully worked on.
 
-      **The author condition is not decoration.** A resolved thread is not a closed discussion:
-      neither provider auto-unresolves a thread when someone replies into it, so a human reviewer
-      can object inside a thread `{{SKILL:iterate}}` resolved – "this fix is wrong, do not merge" –
-      and that reply must still count. Discarding every item in a resolved thread would let the gate
-      merge under an open objection, which is the one outcome this guard exists to prevent.
+      **Each condition removes a different way the guard could fail open.** A resolved thread is not
+      a closed discussion: neither provider auto-unresolves a thread when someone replies into it,
+      so a reviewer can object inside a thread `{{SKILL:iterate}}` resolved – "this fix is wrong, do
+      not merge" – and that reply must still count. The author condition alone does not achieve
+      that in manual mode, because there the operator and this tool **are the same account**: an
+      objection the operator types themselves into such a thread would otherwise be read as this
+      tool's own output and discarded. The marker is what separates the two, and it is legitimate
+      evidence **here** precisely because it is not doing the work alone – `{{SKILL:iterate}}` stamps
+      every reply it writes, so a reply from the right account, in a resolved thread, carrying that
+      stamp is this tool's; a hand-typed objection in the same place carries no stamp and counts.
+      This does not soften the rule that a marker never excludes an item on its own: it is the third
+      condition here, never the first.
 
    3. **Otherwise the item is this gate's own output only when both hold:** its author's normalized
       `login` equals the login `viewer-read` returned, **and** its complete body equals the
