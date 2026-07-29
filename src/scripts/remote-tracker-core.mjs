@@ -452,12 +452,17 @@ function commentMarker(kind) {
   return COMMENT_MARKERS[kind];
 }
 
-// Stamps the marker of one kind onto a body. Idempotent on purpose: repeat suppression and the
-// separation between the tool's own output and third-party threads are plain string matches, so
-// a body that already carries its marker is returned unchanged instead of collecting a second one.
+// Stamps the marker of one kind onto a body as its leading line. Idempotent on purpose: a body
+// that already opens with its marker is returned unchanged instead of collecting a second one.
+//
+// The check is anchored to the start rather than searching the whole body, and that is a
+// correctness requirement, not a style choice. A quote-reply body literally contains an earlier
+// marker behind a `>` prefix; a containment check would read that as already stamped and publish
+// the reply unmarked. Readers likewise only honour a marker that opens a body, because a marker
+// anywhere else is quoted text any person can reproduce by pressing quote.
 function stampMarker(marker, content) {
   const text = content.trim();
-  return text.includes(`<!-- ${marker} -->`) ? text : `<!-- ${marker} -->\n${text}`;
+  return text.startsWith(`<!-- ${marker} -->`) ? text : `<!-- ${marker} -->\n${text}`;
 }
 
 function publishableText(value, field) {

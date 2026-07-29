@@ -1464,6 +1464,16 @@ test("a resolved thread excludes only this tool's own items", () => {
     'an item in a resolved thread must also carry the iterate marker to be excluded',
   );
 
+  // And the marker only counts where a quote-reply cannot put it. Both providers prefix a quoted
+  // body with `>`, so a copied marker lands inside a blockquote instead of opening the body.
+  // Without the position requirement the operator's own quoted objection carries the marker along
+  // and is discarded — the same bypass, one press of the quote button away.
+  assert.match(
+    rule,
+    /first line|leading line|opens the body|begins with it/i,
+    'the marker must only count as the body’s leading line, not anywhere in it',
+  );
+
   // The rule's other property — that it decides per item rather than per thread, so it reaches
   // `iterate`'s replies inside a resolved thread — is carried by the shape of the rule itself
   // and is deliberately not asserted separately: every wording that survives the assertion

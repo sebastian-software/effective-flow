@@ -206,6 +206,14 @@ Two distinct HTML markers keep the directions and the writers apart:
 - `<!-- effective-flow-iterate -->` on thread replies and the `{{SKILL:iterate}}` summary comment.
 - `<!-- effective-flow-pr-review -->` on outbound inline review comments and the review body.
 
+**A marker is stamped as the body's leading line, and only that position counts as a marker.** The
+helper's payload builder prepends it, so every body this tool writes begins with it. A reader must
+require that position rather than searching the whole body: both providers prefix a quoted body with
+`>`, so a quote-reply carries a copied marker inside a blockquote where it no longer opens the body.
+Treating a marker found anywhere as authoritative lets any person reproduce one by pressing quote —
+which is how a reader that trusts a marker's mere presence ends up misreading a human's comment as
+this tool's own.
+
 **`{{SKILL:pr-review}}`, the merge gate, writes no marker at all — by design, not by oversight.** A
 marker left in a raw comment body keeps announcing which tool composed that comment, and removing
 that disclosure is exactly why the gate's former third marker (`effective-flow-pr-gate`) is gone.

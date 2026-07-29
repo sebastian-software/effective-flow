@@ -1753,6 +1753,41 @@ test('the Forgejo review fallback comment carries the pr-review marker, not the 
   assert.doesNotMatch(envelope.data.body, /effective-flow-iterate/);
 });
 
+test('a stamped marker opens the body, which is what a quote-reply cannot reproduce', async () => {
+  // The merge gate's human-comment guard excludes an `iterate` reply inside a resolved thread by
+  // its marker, because in manual mode the tool and the operator share one account and authorship
+  // alone cannot separate them. That rule is only safe while the marker is the body's LEADING
+  // line: both providers prefix a quoted body with `>`, so a quote-reply carries a copied marker
+  // inside a blockquote where it no longer opens the body. If the helper ever appended the marker
+  // instead, or tolerated it mid-body, any person could reproduce one by pressing quote and have
+  // their own objection read as this tool's output.
+  for (const kind of ['pr', 'pr-review']) {
+    const operation = kind === 'pr' ? 'pr-comment-build' : 'pr-review-comment-build';
+    const envelope = await executeOperation(operation, { body: 'first line\nsecond line' });
+    assert.equal(envelope.ok, true);
+    const [leading, ...rest] = envelope.data.body.split('\n');
+    assert.equal(
+      leading,
+      `<!-- ${envelope.data.marker} -->`,
+      `${operation} must stamp its marker as the body's first line`,
+    );
+    assert.deepEqual(rest, ['first line', 'second line']);
+  }
+});
+
+test('an already-quoted marker is not treated as a stamp and does not suppress a new one', async () => {
+  // A quote-reply body literally contains the marker behind a `>` prefix. The stamper's
+  // idempotency check must not mistake that for an existing stamp, or a genuine reply quoting an
+  // earlier one would go out unmarked and the guard would later read it as a human's.
+  const quoted = '> <!-- effective-flow-iterate -->\n> earlier reply\n\nmy answer';
+  const envelope = await executeOperation('pr-comment-build', { body: quoted });
+  assert.equal(envelope.ok, true);
+  assert.ok(
+    envelope.data.body.startsWith('<!-- effective-flow-iterate -->\n>'),
+    'a body whose only marker is quoted must still receive its own leading stamp',
+  );
+});
+
 test('review-create on Forgejo fails with UNSUPPORTED_CAPABILITY and performs no runner call', async () => {
   const runner = fakeRunner([]);
   const envelope = await executeOperation(

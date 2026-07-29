@@ -318,6 +318,16 @@ options:
       This does not soften the rule that a marker never excludes an item on its own: it is the third
       condition here, never the first.
 
+      **The marker counts only as the body's first line.** The helper stamps it as a leading line,
+      so every reply this tool writes begins with it. A quote-reply does not: both providers prefix
+      the quoted body with `>`, so a copied marker lands inside a blockquote and no longer opens the
+      body. That distinction is the whole reason the position is part of the rule – an operator
+      quote-replying their objection into a resolved thread would otherwise carry the marker along
+      and have their own objection discarded. A marker found anywhere else in a body is quoted text
+      and is disregarded. An operator who hand-writes the marker as their opening line is overriding
+      their own guard deliberately, which is a different thing from being caught out by a quote
+      button.
+
    3. **Otherwise the item is this gate's own output only when both hold:** its author's normalized
       `login` equals the login `viewer-read` returned, **and** its complete body equals the
       configured `prReview.bots.<login>.trigger` value of some configured bot. Compare the `login`
