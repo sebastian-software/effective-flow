@@ -16,8 +16,14 @@ function isUsableDirectory(path) {
   }
 }
 
+// A bounded spawn is stopped with SIGTERM so the child can still flush and exit cleanly. SIGTERM is
+// catchable and ignorable, though, so a child that swallows it would keep the run open — exactly the
+// hang the bound exists to prevent. After this grace period the stop is forced with SIGKILL, which
+// no process can refuse. One second is ample for a CLI that holds no state worth flushing.
+const FORCED_KILL_GRACE_MS = 1000;
+
 function createProcessRunner() {
-  return ({ executable, args = [], stdin, cwd, env }) =>
+  return ({ executable, args = [], stdin, cwd, env, timeoutMs }) =>
     new Promise((resolve) => {
       if (cwd !== undefined && !isUsableDirectory(cwd)) {
         resolve({
@@ -33,15 +39,38 @@ function createProcessRunner() {
         env: env ? { ...process.env, ...env } : process.env,
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
+        // Only a plan that carries its own bound is bounded. A blocking provider watch has no
+        // timeout flag of its own, so the limit travels with the plan and is enforced here, at the
+        // single process boundary; every other spawn stays unbounded exactly as before.
+        ...(timeoutMs === undefined ? {} : { timeout: timeoutMs, killSignal: 'SIGTERM' }),
       });
       let stdout = '';
       let stderr = '';
+      let forcedKill = false;
+      // Armed only for a bounded spawn, so an unbounded one creates no timer at all. It fires once,
+      // after the bound plus the grace period, and is cleared as soon as the child is gone — a
+      // child that stops on its own never sees it.
+      const escalation =
+        timeoutMs === undefined
+          ? undefined
+          : setTimeout(() => {
+              if (child.exitCode === null && child.signalCode === null) {
+                forcedKill = true;
+                child.kill('SIGKILL');
+              }
+            }, timeoutMs + FORCED_KILL_GRACE_MS);
+      const settle = (result) => {
+        if (escalation !== undefined) clearTimeout(escalation);
+        resolve(forcedKill ? { ...result, forcedKill: true } : result);
+      };
       child.stdout.setEncoding('utf8');
       child.stderr.setEncoding('utf8');
       child.stdout.on('data', (chunk) => (stdout += chunk));
       child.stderr.on('data', (chunk) => (stderr += chunk));
-      child.on('error', (error) => resolve({ status: null, stdout, stderr, error }));
-      child.on('close', (status) => resolve({ status, stdout, stderr }));
+      child.on('error', (error) => settle({ status: null, stdout, stderr, error }));
+      // The terminating signal travels with the result: a child killed on its bound exits with a
+      // null status, and only the signal distinguishes that bounded stop from a crash.
+      child.on('close', (status, signal) => settle({ status, signal, stdout, stderr }));
       child.stdin.end(stdin);
     });
 }

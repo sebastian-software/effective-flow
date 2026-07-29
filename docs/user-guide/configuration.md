@@ -139,6 +139,12 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | applyReview.stashPolicy                  | interactive                 |
 | applyReview.worktree.baseDir             | .effective-flow/.worktrees  |
 | applyReview.worktree.setup               | auto                        |
+| prReview.completion                      | ask                         |
+| prReview.requireAllChecks                | true                        |
+| prReview.checkWaitMinutes                | 20                          |
+| prReview.maxRounds                       | 3                           |
+| prReview.botWaitMinutes                  | 10                          |
+| prReview.bots                            | (empty)                     |
 | language.project                         | en                          |
 | language.source                          | en                          |
 | language.documentation.user              | en                          |
@@ -152,6 +158,7 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | delivery.branchPrefix                    | effective-flow              |
 | delivery.completion                      | merge                       |
 | delivery.returnBranch                    | auto                        |
+| delivery.mergeMethod                     | squash                      |
 | worktree.enabled                         | true                        |
 | worktree.setup                           | auto                        |
 | worktree.baseDir                         | .effective-flow/.worktrees  |
@@ -232,6 +239,39 @@ Controls [`/effective-flow apply`](./tools-implement.md) when it processes revie
 parallel review findings and cherry-picks their commits, while the latter selects the execution
 location of the overall workflow. See [Worktree and delivery](./worktree-and-delivery.md).
 
+## Block `prReview`
+
+Controls [`/effective-flow pr-review`](./tools-quality.md), the merge gate that drives an
+already-open pull request to merge-readiness and, if allowed, merges it.
+
+| Key                    | Values                              | Default   | Meaning                                                                  |
+| ---------------------- | ----------------------------------- | --------- | ------------------------------------------------------------------------ |
+| `completion`           | `ask` / `merge` / `report` / `null` | `ask`     | May the run merge at the end, or only report merge-readiness             |
+| `requireAllChecks`     | `true` / `false`                    | `true`    | Require every reported check green, not only the forge's required ones   |
+| `checkWaitMinutes`     | Positive integer                    | `20`      | Timeout, in minutes, for one wait on pending checks                      |
+| `maxRounds`            | Positive integer                    | `3`       | Upper bound on check-gate rounds for the whole run                       |
+| `botWaitMinutes`       | Positive integer                    | `10`      | Timeout, in minutes, for one wait after triggering an automatic reviewer |
+| `bots`                 | Comma list of logins                | `(empty)` | Automatic reviewers (e.g. Greptile) the gate waits for and answers       |
+| `bots.<login>.trigger` | Literal trigger comment text        | `(unset)` | Comment posted to re-trigger that reviewer when it has not run yet       |
+
+`prReview.completion: ask` (or an unset key) poses the entry question exactly once, at the start of
+a gated run; a non-interactive delegation cannot be asked and behaves as `report`. An empty
+`prReview.bots` list means no automatic reviewer is expected, so the bot round is skipped rather
+than blocking the merge forever. `prReview.bots.<login>.trigger` is one dotted key per bot; a login
+containing brackets (for example `greptile-apps[bot]`) is a valid middle segment because the
+encoding splits on `.` only.
+
+**Do not confuse `prReview.*` with the pre-existing `delivery.prReview`.** `delivery.prReview`
+controls whether a delivery workflow (`build`, `fix`, `refactor`, and comparable tools) publishes
+**its own review findings** onto the pull request it just created. `prReview.*` configures the
+**separate `pr-review` gate tool**: whether that tool may merge, how long it waits, and which
+automatic reviewers it expects. The two keys sit next to each other alphabetically in this flat
+table and read similarly, but they control unrelated things – one is about publishing your own
+findings, the other is about driving somebody else's pull request to merge.
+
+The merge method itself is a delivery property, not a gate property, and lives under
+[Block `delivery`](#block-delivery) as `delivery.mergeMethod`.
+
 ## Block `plan`
 
 Controls [`/effective-flow plan`](./tools-understand.md) and every tool that reads or writes plan
@@ -270,6 +310,7 @@ dedicated delivery branch.
 | `branchPrefix` | String                             | `effective-flow` | Prefix of generated branch names (`<branchPrefix>/<skill>/<slug>`) |
 | `completion`   | `pr` / `merge` / `branch` / `null` | `merge`          | Open a PR, merge locally, retain the branch, or ask at run time    |
 | `returnBranch` | `auto` or a local branch name      | `auto`           | Checkout to restore after completion                               |
+| `mergeMethod`  | `squash` / `merge` / `rebase`      | `squash`         | Merge method used both by `pr` completion and by `pr-review`       |
 
 ## Block `worktree`
 
@@ -336,10 +377,16 @@ values are retained unless the user explicitly confirms a change.
 | `applyReview.stashPolicy`           | `interactive`                |
 | `applyReview.worktree.baseDir`      | `.effective-flow/.worktrees` |
 | `applyReview.worktree.setup`        | `auto`                       |
+| `prReview.completion`               | `ask` (ask at run time)      |
+| `prReview.requireAllChecks`         | `true`                       |
+| `prReview.checkWaitMinutes`         | `20`                         |
+| `prReview.maxRounds`                | `3`                          |
+| `prReview.botWaitMinutes`           | `10`                         |
 | `language.project`                  | `en`                         |
 | `worktree.enabled`                  | `true`                       |
 | `delivery.completion`               | `merge`                      |
 | `delivery.baseBranch`               | `origin/main`                |
+| `delivery.mergeMethod`              | `squash`                     |
 | `tracker.mode`                      | `local`                      |
 | `plan.dir`                          | `docs/plan`                  |
 | `concept.dir`                       | `docs/concept`               |

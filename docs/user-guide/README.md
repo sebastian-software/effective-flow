@@ -16,7 +16,7 @@ New to Effective Flow? Read in this order:
      `open-plans`, `plan-issue`.
    - [Implement a change](tools-implement.md) – `apply`, `build`, `fix`,
      `refactor`, `docs`, `maintain`, `iterate`.
-   - [Ensure quality](tools-quality.md) – `review`.
+   - [Ensure quality](tools-quality.md) – `review`, `pr-review`.
    - [Deliver changes](tools-deliver.md) – `commit`, `pr`.
    - [Set up & info](tools-setup.md) – `setup`, `cleanup`, `version`.
 3. In-depth guides:
@@ -39,7 +39,7 @@ New to Effective Flow? Read in this order:
 | [getting-started.md](getting-started.md)             | Installation, first invocation, typical flow, recipes |
 | [tools-understand.md](tools-understand.md)           | Tool reference: analysis & planning                   |
 | [tools-implement.md](tools-implement.md)             | Tool reference: implementation                        |
-| [tools-quality.md](tools-quality.md)                 | Tool reference: review                                |
+| [tools-quality.md](tools-quality.md)                 | Tool reference: review & pr-review                    |
 | [tools-deliver.md](tools-deliver.md)                 | Tool reference: commit & pull request                 |
 | [tools-setup.md](tools-setup.md)                     | Tool reference: setup, cleanup & version              |
 | [configuration.md](configuration.md)                 | Complete project-setup ADR reference                  |

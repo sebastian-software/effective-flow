@@ -1,7 +1,8 @@
 # Tool reference: Ensure quality
 
-This group comprises exactly one tool: `review`. It checks existing code for quality and
-delivers structured findings that serve directly as input for the implementation tools.
+This group comprises two tools: `review`, which checks existing code for quality and delivers
+structured findings that serve directly as input for the implementation tools, and `pr-review`,
+which drives an already-open pull request from ready-for-review to merged.
 
 ## `/effective-flow review`
 
@@ -65,6 +66,62 @@ epic is typically picked up via `/effective-flow apply`. The behavior and depth 
 can be controlled via `review.profile` (`full`/`focused`/`fast`) in the project-setup ADR; see
 [Configuration](configuration.md#block-review). The tracker targets are described in
 [Remote tracker](remote-tracker.md).
+
+## `/effective-flow pr-review [<PR reference>]`
+
+**Purpose:** Shepherds an already-open pull request from "open" to "merged". `build`, `pr`, and
+`review` create a pull request and can publish findings onto it, and `iterate` feeds review notes
+back into it as new commits – but none of them decides when a pull request is genuinely ready and
+presses merge. `pr-review` owns exactly that gap. It resolves the pull request, asks once whether
+the run may merge at the end or only report merge-readiness, then drives an ordered gate:
+
+1. **Check gate** – waits for pending checks and, once they complete, repairs any failure by
+   delegating to `/effective-flow iterate`. A branch that has fallen behind its base is brought
+   forward with a merge commit; a branch that conflicts with its base is reported, not repaired.
+2. **Automatic-reviewer round** – for each configured bot (Greptile and comparable tools), re-
+   triggers it if it has not yet run for the current head, then delegates its findings to
+   `/effective-flow iterate`, which fixes the valid ones, replies, and resolves the threads.
+3. **Human-comment guard** – if any unresolved comment or thread has a human author, the run
+   implements no review note and merges nothing. CI repair stays permitted even then, and bot
+   threads are still answered by the gate itself.
+4. **Merge** – only once every precondition holds (all checks green, the forge reports the pull
+   request mergeable, the human guard is inactive, every configured bot has answered), the run
+   merges with the configured merge method, guarded by the expected head commit.
+
+**When to use:** On a pull request that is otherwise done and only needs CI to pass, its automatic
+reviewers to be satisfied, and the merge button pressed – so you do not have to babysit checks and
+bot notes by hand. Also useful as a pure merge-readiness report: run it in report mode to see
+exactly what is still blocking a pull request.
+
+**What it never does:** It never approves a pull request or submits a "request changes" review,
+never rewrites history (no amend, rebase, squash, or force-push of the head branch – a branch
+behind its base is only ever brought forward with a merge commit), and never merges past an open
+human comment. It implements no code itself: every code change – CI repairs and bot-finding fixes
+alike – is delegated to `/effective-flow iterate`.
+
+**Typical call:**
+
+- `/effective-flow pr-review` – resolves the pull request of the current branch
+- `/effective-flow pr-review 42` / `/effective-flow pr-review #42` / a pull-request URL – resolves
+  that specific pull request
+
+**Input/output:**
+
+- The entry question ("merge at the end, or only report merge-readiness?") is asked exactly once,
+  at the start; a non-interactive run behaves as report-only.
+- The result is either a merged pull request or a chat report naming the exact condition that is
+  still blocking the merge (pending or failing checks, an unanswered bot, an open human comment, a
+  non-mergeable state, or a squash-merge title that is not a Conventional Commit).
+- On GitHub, the check gate and the merge are performed by the remote-tracker helper described in
+  [Remote tracker](remote-tracker.md#pr-review-gate-operations). Forgejo does not yet support the
+  underlying operations, so a Forgejo run degrades to report-only there.
+
+**Interplay:** Configured entirely under `prReview.*` in the project-setup ADR (completion mode,
+check-wait timeout, round budget, bot registry) plus `delivery.mergeMethod`; see
+[Configuration](configuration.md#block-prreview). Do not confuse `prReview.*` with the pre-existing
+`delivery.prReview`, which controls whether a delivery workflow publishes its own findings onto the
+pull request it just created – the two sit next to each other alphabetically but configure
+different things.
 
 ## Further reading
 

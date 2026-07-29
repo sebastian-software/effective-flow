@@ -1,12 +1,12 @@
 ---
 name: effective-flow
 description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: build, fix, plan, refactor, docs, review, apply, concept, plan-issue, maintain, commit, pr, setup, cleanup, open-plans, investigate, version."
-argument-hint: "[concept|investigate|plan|open-plans|plan-issue|apply|build|fix|refactor|docs|maintain|iterate|review|commit|pr|setup|cleanup|version]"
+argument-hint: "[concept|investigate|plan|open-plans|plan-issue|apply|build|fix|refactor|docs|maintain|iterate|review|pr-review|commit|pr|setup|cleanup|version]"
 ---
 
 # Effective Flow
 
-Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.54.4 (ae547e9)).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.55.0 (69bd905)).
 
 This router skill is deliberately **thin**. Beyond the tool catalog, the dispatch rule and the session-title contract it carries nothing; a tool's full instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the session lean and avoids token exhaustion from preloading all tools.
 
@@ -81,6 +81,7 @@ _from a clarified plan/issue to code_
 ### Ensure quality
 
 - `effective-flow review` — Checks code for quality and findings – or, more deeply, an existing plan.
+- `effective-flow pr-review` — Drives an open pull request through checks, bot notes, and – if allowed – the merge.
 
 ### Deliver changes
 
