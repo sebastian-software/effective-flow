@@ -31,14 +31,14 @@ If you use only one harness, run only its `dalo target link` command. `dalo sync
 selected skill into every linked target. Run it again after a new Effective Flow release to
 refresh the installation.
 
-### Alternative: Skills CLI 1.5.19
+### Alternative: Skills CLI
 
 [Skills CLI](https://skills.sh/) is the supported alternative. Run the command for each harness
 you use:
 
 ```sh
-npx skills@1.5.19 add sebastian-software/effective-flow --agent claude-code --skill effective-flow --global --yes --copy
-npx skills@1.5.19 add sebastian-software/effective-flow --agent codex --skill effective-flow --global --yes --copy
+npx skills@^1 add sebastian-software/effective-flow --agent claude-code --skill effective-flow --global --yes --copy
+npx skills@^1 add sebastian-software/effective-flow --agent codex --skill effective-flow --global --yes --copy
 ```
 
 `--global` installs outside the current project, and `--copy` creates a manager-owned copy rather

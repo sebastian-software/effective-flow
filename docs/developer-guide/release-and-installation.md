@@ -257,8 +257,8 @@ makes the build fail unless native Claude, native Codex, and portable output agr
 
 ## Consumer installation through DALO or Skills CLI
 
-The default branch is a portable catalog with one `effective-flow` skill slot. DALO 0.8.2 selects
-that slot and materializes it into linked Claude Code and Codex targets:
+The default branch is a portable catalog with one `effective-flow` skill slot. DALO selects that
+slot and materializes it into linked Claude Code and Codex targets:
 
 ```sh
 dalo init
@@ -274,12 +274,12 @@ Selection runs DALO's audit. The explicit approval is scoped to the selected con
 records why its persistence finding is accepted; users must review the findings before granting
 it, and changed content requires another approval.
 
-[Skills CLI](https://skills.sh/) 1.5.19 installs the same portable directory globally for either
+[Skills CLI](https://skills.sh/) installs the same portable directory globally for either
 harness:
 
 ```sh
-npx skills@1.5.19 add sebastian-software/effective-flow --agent claude-code --skill effective-flow --global --yes --copy
-npx skills@1.5.19 add sebastian-software/effective-flow --agent codex --skill effective-flow --global --yes --copy
+npx skills@^1 add sebastian-software/effective-flow --agent claude-code --skill effective-flow --global --yes --copy
+npx skills@^1 add sebastian-software/effective-flow --agent codex --skill effective-flow --global --yes --copy
 ```
 
 Both paths consume the built default-branch payload, intentionally avoid native agent-directory
@@ -289,6 +289,20 @@ worker ran.
 
 The repository is public, so these managers read `main` without any authentication — no token or
 deploy key is required for a `dalo` / `npx skills` install.
+
+Neither manager is pinned to an exact version any more. The `Manager compatibility` CI job resolves
+the newest DALO release at run time and tests `skills@latest`, so the smoke exercises what
+consumers actually install rather than reporting green about versions nobody runs — the previous
+DALO pin had drifted three minors behind before anyone noticed (issue #299). The DALO archive is
+verified against the `.sha256` sidecar published with the release, and the resolved versions are
+printed so a failure can be attributed to a concrete release.
+
+The documented command deliberately says `skills@^1` while CI tests `latest`. Today both resolve to
+the same release, so the smoke still covers the documented quick start; they diverge only on a
+Skills CLI major, and that is the point — CI meets the new major before any reader is told to
+install it. Do not "harmonise" the two back together. For the same reason the job is **not** a
+required status check: it tracks moving upstream releases, so requiring it would let an unrelated
+release block every merge (issue #282).
 
 ## Checkout and release-maintenance utilities
 

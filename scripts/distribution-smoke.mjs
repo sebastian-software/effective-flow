@@ -393,9 +393,12 @@ function parseJson(output, label) {
 }
 
 function runDaloSmoke(delivery) {
-  if (run('dalo', ['--version']) !== 'dalo 0.8.2') {
-    fail('manager smoke requires exactly dalo 0.8.2');
-  }
+  // Whichever DALO the workflow resolved, not a pinned one — the point is to exercise what
+  // consumers install. The version is reported rather than asserted so a failure below can be
+  // attributed to a concrete release (issue #299).
+  const version = run('dalo', ['--version']);
+  if (!version.startsWith('dalo ')) fail(`unexpected DALO version output: ${version}`);
+  console.log(`distribution-smoke: using ${version}`);
   const temp = mkdtempSync(join(tmpdir(), 'effective-flow-dalo-smoke-'));
   try {
     const repo = join(temp, 'delivery');
@@ -476,8 +479,13 @@ function runDaloSmoke(delivery) {
 }
 
 function runSkillsCliSmoke(delivery) {
-  const version = run('pnpm', ['dlx', 'skills@1.5.19', '--version']);
-  if (!version.includes('1.5.19')) fail(`unexpected Skills CLI version: ${version}`);
+  // `latest`, while the documented install command uses `skills@^1`. Today both resolve to the
+  // same release, so this still covers the documented quick start. They diverge only on a
+  // Skills CLI major, and that divergence is the intended early warning: CI meets the new major
+  // before any user is told to install it (issue #299).
+  const version = run('pnpm', ['dlx', 'skills@latest', '--version']);
+  if (!version.trim()) fail('Skills CLI reported no version');
+  console.log(`distribution-smoke: using Skills CLI ${version.trim()}`);
 
   const expected = snapshotTree(join(delivery, 'effective-flow'));
   const fixture = mkdtempSync(join(tmpdir(), 'effective-flow-skills-sources-'));
@@ -505,7 +513,7 @@ function runSkillsCliSmoke(delivery) {
           'pnpm',
           [
             'dlx',
-            'skills@1.5.19',
+            'skills@latest',
             'add',
             source,
             '--agent',
