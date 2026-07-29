@@ -82,8 +82,11 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    triggers it if it has not yet run for the current head, then delegates its findings to
    `/effective-flow iterate`, which fixes the valid ones, replies, and resolves the threads.
 3. **Human-comment guard** – if any unresolved comment or thread has a human author, the run
-   implements no review note and merges nothing. CI repair stays permitted even then, and bot
-   threads are still answered by the gate itself.
+   implements no review note and merges nothing. CI repair stays permitted even then. A bot finding
+   the run assesses but does not implement – because the guard is active, or because the finding was
+   rejected – gets no thread reply at all: it is named in the run's chat summary instead, and the
+   thread is left untouched and unresolved. See
+   [Recognizing its own writes across runs](#recognizing-its-own-writes-across-runs).
 4. **Merge** – only once every precondition holds (all checks green, the forge reports the pull
    request mergeable, the human guard is inactive, every configured bot has answered), the run
    merges with the configured merge method, guarded by the expected head commit.
@@ -99,6 +102,38 @@ behind its base is only ever brought forward with a merge commit), and never mer
 human comment. It implements no code itself: every code change – CI repairs and bot-finding fixes
 alike – is delegated to `/effective-flow iterate`.
 
+#### Recognizing its own writes across runs
+
+The human-comment guard only works if the gate can tell its own writes apart from a person's, and
+it has to do that again on every later run – not only inside the run that wrote them. Two operating
+modes exist:
+
+- **App mode:** the gate posts as a dedicated bot account (planned, the way Greptile does today).
+  Its writes are recognized by authorship alone – a login listed in `prReview.bots`, or a
+  normalized bot account type – so no identity lookup is involved and nothing further is needed.
+- **Manual mode (today):** the gate posts as the operator's own account, the same account a human
+  might also comment from. Its one own write, the trigger comment posted in the automatic-reviewer
+  round, is recognized by that account's authenticated identity **plus** an exact match against the
+  configured `prReview.bots.<login>.trigger` text. A comment that matches only one of the two – the
+  right account with different wording, or the right wording from a different account – does not
+  count as the gate's own.
+
+Because manual mode matches on exact wording, **the configured trigger text should be a distinctive
+mention.** A generic value such as `please review` could be typed by a person who genuinely wants a
+discussion; that comment would then match exactly and be excluded from the guard. A mention like
+`@greptileai` does not have this problem.
+
+Two further things worth knowing about what the gate writes:
+
+- **A bot finding it assesses but does not implement gets no thread reply.** Whether the human
+  guard is active or the finding was rejected, the gate reports that to you in the run's chat
+  summary and writes nothing into the thread. Replies for findings the run does implement come from
+  the delegated `iterate` run, not from the gate itself.
+- **The gate writes no Effective Flow marker.** A marker in the raw comment body would keep
+  announcing which tool composed it, so the trigger comment carries only the configured text and
+  nothing else. Reading the raw body of anything the gate posted shows no tool or model attribution
+  beyond the posting account itself.
+
 **Typical call:**
 
 - `/effective-flow pr-review` – resolves the pull request of the current branch
@@ -111,7 +146,8 @@ alike – is delegated to `/effective-flow iterate`.
   at the start; a non-interactive run behaves as report-only.
 - The result is either a merged pull request or a chat report naming the exact condition that is
   still blocking the merge (pending or failing checks, an unanswered bot, an open human comment, a
-  non-mergeable state, or a squash-merge title that is not a Conventional Commit).
+  non-mergeable state, or a squash-merge title that is not a Conventional Commit). The report also
+  names every bot finding the run assessed but did not implement, since those get no thread reply.
 - On GitHub, the check gate and the merge are performed by the remote-tracker helper described in
   [Remote tracker](remote-tracker.md#pr-review-gate-operations). Forgejo does not yet support the
   underlying operations, so a Forgejo run degrades to report-only there.

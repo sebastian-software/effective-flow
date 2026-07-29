@@ -52,8 +52,8 @@ falling back to `local` (see [Troubleshooting](./troubleshooting.md)).
 Minimum versions: `gh` 2.0.0 and `tea` 0.14.2. Effective Flow checks them once at the start of a
 remote run, so an unsupported CLI surfaces before any work is done rather than at the delivery
 point. `tea` 0.14.2 is the first release that can create a pull request from a repository slug
-together with an explicit head branch, which is the form Effective Flow uses. The `pr-review` merge
-gate's three operations need a higher `gh` floor of their own; see
+together with an explicit head branch, which is the form Effective Flow uses. Three of the
+`pr-review` merge gate's operations need a higher `gh` floor of their own; see
 [PR-review gate operations](#pr-review-gate-operations).
 
 `tracker.remoteToolOverride` is a forge setting. It is ignored while the target is `external`.
@@ -240,25 +240,32 @@ publishing.
 ## PR-review gate operations
 
 [`/effective-flow pr-review`](./tools-quality.md) reads pull-request status, waits for checks, and
-merges through three additional forge operations of the same remote-tracker helper. Like all PR
+merges through four additional forge operations of the same remote-tracker helper. Like all PR
 work, they are inherently forge-bound: they never evaluate `tracker.mode` and only need a Git
 repository, an `origin` remote, and an authenticated CLI.
 
-| Operation        | Capability              | What it does                                                                                                                          |
-| ---------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `pr-status-read` | `pullRequestStatus`     | Reads, in one call, the head SHA, base ref, PR state, draft flag, check list, and the forge's merge state                             |
-| `pr-checks-wait` | `pullRequestChecksWait` | Blocks inside the provider's own watch until checks complete or the supplied timeout elapses                                          |
-| `pr-merge`       | `pullRequestMerge`      | Merges the pull request with the configured method; a mutation, so a run without `--apply` produces a dry-run plan and merges nothing |
+| Operation        | Capability              | What it does                                                                                                                                                                                   |
+| ---------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pr-status-read` | `pullRequestStatus`     | Reads, in one call, the head SHA, base ref, PR state, draft flag, check list, and the forge's merge state                                                                                      |
+| `pr-checks-wait` | `pullRequestChecksWait` | Blocks inside the provider's own watch until checks complete or the supplied timeout elapses                                                                                                   |
+| `pr-merge`       | `pullRequestMerge`      | Merges the pull request with the configured method; a mutation, so a run without `--apply` produces a dry-run plan and merges nothing                                                          |
+| `viewer-read`    | `viewerRead`            | A read, not a mutation. Returns the authenticated login and, where the provider states it, the account type (`User` or `Bot`), so the gate can tell its own writes from a person's across runs |
 
-**GitHub** supports all three, but only from **`gh` 2.50.0** – a higher floor than the adapter's
-general `gh` 2.0.0 minimum. `gh pr checks --json`, the flag the gate depends on most, only landed in
-2.50.0; the other three flags it uses (`--watch`, `--match-head-commit`, `--required`) are older. On
-a `gh` below 2.50.0 – common on a distro-packaged install – all three capabilities report
-`UNSUPPORTED_CAPABILITY` instead of failing mid-run on an unknown flag, and `pr-review` degrades to
-report-only exactly as on Forgejo. If you see that message on GitHub, upgrade `gh` rather than
-suspect your repository's forge access. **Forgejo** currently declares all three unsupported
-outright, so `pr-review` degrades to report-only there too and states that reason – nothing in the
-gate can run on Forgejo until the adapter supports at least `pr-status-read`.
+**GitHub** supports `pr-status-read`, `pr-checks-wait`, and `pr-merge`, but only from **`gh`
+2.50.0** – a higher floor than the adapter's general `gh` 2.0.0 minimum. `gh pr checks --json`, the
+flag the gate depends on most, only landed in 2.50.0; the other flags those three operations use
+(`--watch`, `--match-head-commit`, `--required`) are older. On a `gh` below 2.50.0 – common on a
+distro-packaged install – those three capabilities report `UNSUPPORTED_CAPABILITY` instead of
+failing mid-run on an unknown flag, and `pr-review` degrades to report-only exactly as on Forgejo.
+If you see that message on GitHub, upgrade `gh` rather than suspect your repository's forge access.
+`viewer-read` needs no flag beyond every `gh` 2.x line and no scope beyond an authenticated `gh`
+already holds, so it is unaffected by that version floor; it maps to `gh api user`. **Forgejo**
+currently declares all four operations unsupported outright, so `pr-review` degrades to
+report-only there too and states that reason – nothing in the gate can run on Forgejo until the
+adapter supports at least `pr-status-read`. `viewer-read` stays unsupported on Forgejo by design,
+not by version: the installed `tea` adapter only exposes the locally configured login, which is a
+client-side setting rather than the account the forge attributes a write to, and reporting one as
+the other would let the gate mistake a stranger's comment for its own.
 
 Several behaviors worth knowing if you inspect the gate's output or a `pr-review` transcript:
 

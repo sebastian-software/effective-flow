@@ -19,7 +19,7 @@ validation, and delivering back as new commits on the same PR branch.
    PR URL) or from the currently checked-out branch. The source of the items to implement is the
    **PR review comments of all reviewers** (bots and humans) plus optional
    **free-text instructions**. Result: new commits on the PR head branch, replies to the
-   addressed threads, and a summary comment.
+   addressed threads, and a summary comment — the last of which a delegating caller may suppress.
 2. **Local mode**: no PR present or intended. `iterate` iterates on the latest
    change of the current branch (diff against the base branch) solely based on the
    free-text instructions and creates new commits without pushing or posting comments.
@@ -99,7 +99,8 @@ At the start, generate a session ID (e.g. via timestamp) and use
 `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` for:
 
 - the resolved PR (number, head/base branch, URL) or the local target diff
-- the received item filter (free-text-only, an explicit thread-ID list, or none)
+- the received item filter (free-text-only, an explicit thread-ID list, or none) and whether the
+  caller suppressed the summary comment
 - the review threads read, with author, file/line, and resolved status
 - the classification per item (actionable/not actionable, action type, already addressed)
 - implemented items, commits created, threads replied to/resolved
@@ -145,6 +146,27 @@ end.
 
    Record the received filter (or its absence) in the wisdom file and carry it into Phase 2.
 
+6. **Optional summary-comment suppression.** A delegating workflow may suppress this run's
+   pull-request summary comment. Like the item filter this is a caller contract and never user free
+   text, and it is announced on its own line in exactly this literal form:
+   - `Summary comment: suppressed` — post **no** summary comment in Phase 5 and hand the same
+     content back to the caller, which reports it instead.
+
+   The same two invariants bind it:
+   - **An invocation without that line keeps the current behavior exactly**: Phase 5 posts its one
+     summary comment, as before. The switch is purely additive, and an interactive invocation never
+     carries it.
+   - **Fail closed on an unparseable switch.** A line announcing `Summary comment:` in any other
+     form is a broken caller contract: return `ABORT: unparseable summary-comment switch`
+     immediately, before Phase 1. Never continue such a run as an unsuppressed one — a caller
+     suppresses that comment because its own delegated output would otherwise be read back as a
+     third party's writing on a later run.
+
+   Suppression removes the **summary comment only**. The thread replies for implemented items,
+   their resolution, the commits, and the push are unaffected.
+
+   Record the switch (or its absence) in the wisdom file and carry it into Phase 5.
+
 ### Phase 1: Gather context
 
 - **PR mode:** Detect the host and CLI and check availability (see
@@ -162,10 +184,9 @@ end.
 1. Exclude an already addressed thread when it is `resolved` or carries an
    `<!-- effective-flow-iterate -->` reply. Exclude a thread carrying
    `<!-- effective-flow-pr-review -->` as well — that is Effective Flow's own published review
-   output, not third-party input — unless the user names those threads explicitly. Exclude a thread
-   carrying `<!-- effective-flow-pr-gate -->` on the same grounds: that is the {{SKILL:pr-review}}
-   gate's own reply, written while its human-comment guard blocked the implementation, and not
-   third-party input.
+   output, not third-party input — unless the user names those threads explicitly. The
+   {{SKILL:pr-review}} gate needs no exclusion of its own: it writes nothing into a review thread,
+   so no thread on a pull request is ever the gate's own reply.
 2. **Apply the optional item filter** from Phase 0, after the exclusions above:
    - **no filter** — every remaining thread plus the free text enters classification. This is the
      unchanged default and the only behavior an interactive invocation ever sees.
@@ -314,7 +335,9 @@ and stop delivery for reconciliation.
 3. Post **one** summary comment on the PR in resolved `language.forge` (marker
    `<!-- effective-flow-iterate -->`): which items
    were implemented or skipped and which pure questions are open/deferred (without a
-   substantive auto-reply).
+   substantive auto-reply). **Skip this step entirely when Phase 0 received
+   `Summary comment: suppressed`**: post nothing at all and hand exactly that content back to the
+   caller in the Phase 6 summary instead.
 4. Declare to the handback of "Delivery and worktree integration" that this workflow supplies
    **no** complete finding set — it has no reviewer phase at all — so an automatic PR review
    reviews the pull request itself.
@@ -343,6 +366,8 @@ commit-message-rules
 - In PR mode, create no new delivery branch and no new PR.
 - Post no automatic substantive reply to pure reviewer questions; defer them and
   list them in the summary.
+- Post **at most one** summary comment per run, and none at all when the caller announced
+  `Summary comment: suppressed`; that content then goes back to the caller instead.
 - Never set a `Co-Authored-By` trailer and add no AI attribution in commits,
   thread replies, the summary comment, or the PR body.
 - Give the user a brief status update after each phase.

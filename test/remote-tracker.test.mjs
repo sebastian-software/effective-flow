@@ -1753,6 +1753,41 @@ test('the Forgejo review fallback comment carries the pr-review marker, not the 
   assert.doesNotMatch(envelope.data.body, /effective-flow-iterate/);
 });
 
+test('a stamped marker opens the body, which is what a quote-reply cannot reproduce', async () => {
+  // The merge gate's human-comment guard excludes an `iterate` reply inside a resolved thread by
+  // its marker, because in manual mode the tool and the operator share one account and authorship
+  // alone cannot separate them. That rule is only safe while the marker is the body's LEADING
+  // line: both providers prefix a quoted body with `>`, so a quote-reply carries a copied marker
+  // inside a blockquote where it no longer opens the body. If the helper ever appended the marker
+  // instead, or tolerated it mid-body, any person could reproduce one by pressing quote and have
+  // their own objection read as this tool's output.
+  for (const kind of ['pr', 'pr-review']) {
+    const operation = kind === 'pr' ? 'pr-comment-build' : 'pr-review-comment-build';
+    const envelope = await executeOperation(operation, { body: 'first line\nsecond line' });
+    assert.equal(envelope.ok, true);
+    const [leading, ...rest] = envelope.data.body.split('\n');
+    assert.equal(
+      leading,
+      `<!-- ${envelope.data.marker} -->`,
+      `${operation} must stamp its marker as the body's first line`,
+    );
+    assert.deepEqual(rest, ['first line', 'second line']);
+  }
+});
+
+test('an already-quoted marker is not treated as a stamp and does not suppress a new one', async () => {
+  // A quote-reply body literally contains the marker behind a `>` prefix. The stamper's
+  // idempotency check must not mistake that for an existing stamp, or a genuine reply quoting an
+  // earlier one would go out unmarked and the guard would later read it as a human's.
+  const quoted = '> <!-- effective-flow-iterate -->\n> earlier reply\n\nmy answer';
+  const envelope = await executeOperation('pr-comment-build', { body: quoted });
+  assert.equal(envelope.ok, true);
+  assert.ok(
+    envelope.data.body.startsWith('<!-- effective-flow-iterate -->\n>'),
+    'a body whose only marker is quoted must still receive its own leading stamp',
+  );
+});
+
 test('review-create on Forgejo fails with UNSUPPORTED_CAPABILITY and performs no runner call', async () => {
   const runner = fakeRunner([]);
   const envelope = await executeOperation(
@@ -2783,6 +2818,183 @@ test('the Forgejo probe reports every pull-request gate operation as unsupported
       (error) => error.code === 'UNSUPPORTED_CAPABILITY' && error.details.provider === 'forgejo',
     );
   }
+});
+
+test('viewer-read asks GitHub for the authenticated account and stays a read', async () => {
+  const plan = buildCommandPlan('viewer-read', {}, githubRepository);
+  assert.equal(plan.executable, 'gh');
+  assert.deepEqual(plan.args, ['api', 'user']);
+  // The credential is selected per host, so the identity is read against the same host the
+  // repository lives on rather than against whichever one gh happens to consider its default.
+  assert.deepEqual(
+    buildCommandPlan('viewer-read', {}, { ...githubRepository, host: 'code.example.test' }).args,
+    ['api', '--hostname', 'code.example.test', 'user'],
+  );
+
+  const runner = fakeRunner([
+    { status: 0, stdout: '{"id":209969,"login":"fastner","type":"User"}', stderr: '' },
+  ]);
+  // No `apply`: the identity read is not a mutation, so it runs instead of returning a dry-run
+  // preview. A caller that had to opt in with an apply flag would never get an identity at all.
+  const envelope = await executeOperation(
+    'viewer-read',
+    { repository: gateRepository },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.dryRun, false);
+  assert.equal(runner.calls.length, 1);
+  assert.deepEqual(envelope.data.result, { login: 'fastner', type: 'User' });
+
+  // The account type is the discriminator between the two operating modes, so it survives the
+  // normalizer unchanged for a dedicated bot account as well.
+  const asBot = await executeOperation(
+    'viewer-read',
+    { repository: gateRepository },
+    {
+      runner: fakeRunner([
+        { status: 0, stdout: '{"id":42,"login":"flow-gate[bot]","type":"Bot"}', stderr: '' },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.deepEqual(asBot.data.result, { login: 'flow-gate[bot]', type: 'Bot' });
+});
+
+test('the GitHub probe reports the identity read independently of the gate version floor', async () => {
+  const probeAt = async (version) =>
+    probeProvider(
+      githubRepository,
+      fakeRunner([
+        { status: 0, stdout: `gh version ${version}\n`, stderr: '' },
+        { status: 0, stdout: '', stderr: '' },
+      ]),
+    );
+
+  // `gh api user` needs none of the four flags the gate's floor exists for, so an older gh that
+  // cannot merge can still say who it is authenticated as.
+  for (const version of ['2.0.0', '2.49.2', '2.70.0']) {
+    const probe = await probeAt(version);
+    assert.equal(probe.capabilities.viewerRead, true);
+  }
+  assert.equal((await probeAt('2.49.2')).capabilities.pullRequestMerge, false);
+});
+
+async function viewerEnvelope(stdout) {
+  return executeOperation(
+    'viewer-read',
+    { repository: gateRepository },
+    { runner: fakeRunner([{ status: 0, stdout, stderr: '' }]), skipProbe: true },
+  );
+}
+
+async function viewerResult(stdout) {
+  const envelope = await viewerEnvelope(stdout);
+  assert.equal(envelope.ok, true, `expected a stated identity for ${stdout}`);
+  return envelope.data.result;
+}
+
+async function viewerRejection(stdout) {
+  const envelope = await viewerEnvelope(stdout);
+  assert.equal(envelope.ok, false, `expected no identity for ${stdout}`);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+  return envelope.error;
+}
+
+test('an unstated account type yields no field instead of a default', async () => {
+  // A guessed default here would let a caller claim a stranger's comment as its own, so an absent
+  // provider value stays absent and the caller reads the account class as unprovable.
+  const withoutType = await viewerResult('{"id":209969,"login":"fastner"}');
+  assert.deepEqual(withoutType, { login: 'fastner' });
+  assert.equal(Object.hasOwn(withoutType, 'type'), false);
+
+  // An empty string is no more a stated value than a missing key.
+  assert.deepEqual(await viewerResult('{"login":"fastner","type":"   "}'), { login: 'fastner' });
+
+  // Nor is a value that is not a string at all. Pinned because a coercing rewrite of the field
+  // reader — `String(value ?? '').trim()` — would keep every other case green while inventing a
+  // type out of a number or a boolean.
+  for (const stdout of [
+    '{"login":"fastner","type":42}',
+    '{"login":"fastner","type":true}',
+    '{"login":"fastner","type":["User"]}',
+    '{"login":"fastner","type":{"name":"User"}}',
+    '{"login":"fastner","type":null}',
+  ]) {
+    assert.deepEqual(await viewerResult(stdout), { login: 'fastner' });
+  }
+});
+
+test('an account class outside User and Bot is reported as unprovable, not passed through', async () => {
+  // A consumer that branches `type === 'User'` for the shared-account path would read any other
+  // class as a dedicated bot account and skip the identity comparison — the fail-open direction.
+  for (const type of ['EnterpriseUserAccount', 'Mannequin', 'Organization', 'user_or_bot']) {
+    assert.deepEqual(await viewerResult(`{"login":"fastner","type":"${type}"}`), {
+      login: 'fastner',
+    });
+  }
+
+  // Case is spelling, not class, so it is normalized to the form a caller compares against.
+  for (const [stated, canonical] of [
+    ['User', 'User'],
+    ['user', 'User'],
+    ['Bot', 'Bot'],
+    ['BOT', 'Bot'],
+    [' bot ', 'Bot'],
+  ]) {
+    assert.deepEqual(await viewerResult(`{"login":"fastner","type":"${stated}"}`), {
+      login: 'fastner',
+      type: canonical,
+    });
+  }
+});
+
+test('a viewer-read that states no login fails instead of answering with an empty identity', async () => {
+  // The login is not one field among many — it is the entire purpose of this read, so a response
+  // without one is no answer rather than a partial one, and the caller cannot mistake it for a
+  // proven identity. Every unprovable case therefore ends in the same structured error.
+  for (const stdout of [
+    '{}',
+    '{"id":209969,"type":"Bot"}',
+    '{"login":""}',
+    '{"login":"   "}',
+    // A coercing field reader would turn each of these into a present, fabricated login.
+    '{"login":42}',
+    '{"login":null}',
+    '{"login":true}',
+    '{"login":["fastner"]}',
+    '{"login":{"login":"fastner"}}',
+    // Not an identity object at all: an array, a bare string, and an empty provider response.
+    '["fastner"]',
+    '"fastner"',
+    '',
+  ]) {
+    await viewerRejection(stdout);
+  }
+});
+
+test('the Forgejo probe reports viewer-read as unsupported', async () => {
+  const probe = await probeProvider(forgejoRepository, fakeRunner(teaProbeResults()));
+  assert.equal(probe.capabilities.viewerRead, false);
+  // The reads the adapter does support are untouched by the new capability.
+  assert.equal(probe.capabilities.pullRequestRead, true);
+
+  const runner = fakeRunner([]);
+  const envelope = await executeOperation(
+    'viewer-read',
+    { repository: forgejoRepository, probe },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(envelope.error.details.capability, 'viewerRead');
+  assert.equal(runner.calls.length, 0);
+
+  // Even a caller that bypasses the capability gate gets no invented tea equivalent.
+  assert.throws(
+    () => buildCommandPlan('viewer-read', {}, forgejoRepository),
+    (error) => error.code === 'UNSUPPORTED_CAPABILITY' && error.details.provider === 'forgejo',
+  );
 });
 
 test('a supplied cwd roots every process invocation of an operation', async () => {
