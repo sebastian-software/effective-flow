@@ -38,6 +38,7 @@ const MUTATIONS = new Set([
 const REMOTE_OPERATIONS = new Set([
   'repository-resolve',
   'probe',
+  'viewer-read',
   'label-create',
   'issue-read',
   'issue-comments-read',
@@ -66,6 +67,7 @@ const REMOTE_OPERATIONS = new Set([
 ]);
 
 const CAPABILITY_BY_OPERATION = Object.freeze({
+  'viewer-read': 'viewerRead',
   'label-create': 'labelCreate',
   'issue-read': 'issueRead',
   'issue-comments-read': 'issueCommentsRead',
@@ -966,6 +968,12 @@ export function buildCommandPlan(operation, input, repository) {
   if (provider === 'github') {
     const hostArgs = ghHostArgs(repository);
     switch (operation) {
+      // The account the current authentication belongs to. `gh auth status` prints the same login
+      // inside human-readable prose, but this adapter reads provider JSON and nothing else, so the
+      // identity is asked for as data. It rides on the repository only for its host: the credential
+      // is selected per host, so the identity has to be read against the same one.
+      case 'viewer-read':
+        return mutationPlan('gh', ['api', ...hostArgs, 'user']);
       case 'label-create':
         return mutationPlan(
           'gh',
@@ -1464,6 +1472,12 @@ export function buildCommandPlan(operation, input, repository) {
         '--fields',
         'id,body,reviewer,path,line,resolver,url',
       ]);
+    // The identity read joins the same group for a reason of its own. `tea logins list` reports the
+    // locally configured logins, which is a client-side setting rather than the account the forge
+    // attributes a write to; the two can differ, and a caller that separates its own comments from a
+    // person's would then claim a stranger's comment as its own. No verified tea surface states the
+    // authenticated account, so this is declared absent instead of guessed from local configuration.
+    case 'viewer-read':
     // The pull-request gate operations join this group deliberately. The installed tea adapter
     // exposes no verified surface for a check rollup, for a blocking watch, or for a merge that
     // honours an expected head commit, so a Forgejo run fails closed here instead of improvising a
@@ -1698,6 +1712,9 @@ export async function probeProvider(repository, runner) {
       authenticated: true,
       capabilities: {
         json: true,
+        // `gh api user` needs no flag beyond the ones every 2.x line has and no scope beyond the
+        // ones an authenticated gh already holds, so it is not tied to the gate's version floor.
+        viewerRead: true,
         issues: true,
         issueRead: true,
         issueCommentsRead: true,
@@ -1798,6 +1815,10 @@ export async function probeProvider(repository, runner) {
     authenticated: true,
     capabilities: {
       json: true,
+      // No probe is attempted for the identity read either: the login this adapter knows is the one
+      // configured locally, not the one the forge attributes a write to, so the capability is
+      // reported as absent rather than answered from a client-side setting.
+      viewerRead: false,
       issues,
       issueRead: issues,
       issueCommentsRead: issues && issueComments,
@@ -2030,6 +2051,41 @@ function normalizePullRequestStatus(item, repository) {
   };
 }
 
+// The only two account classes this read can prove. A class outside them — a GHES
+// `EnterpriseUserAccount`, a migration `Mannequin`, an `Organization` — is reported as no type at
+// all rather than passed through: a caller branching `type === 'User'` for the shared-account path
+// would read every unknown class as a dedicated bot account and skip the identity comparison
+// entirely, which is the one direction this read exists to prevent. Matching ignores case, because
+// case is spelling rather than class, and the canonical form is what a caller compares against.
+const VIEWER_ACCOUNT_TYPES = Object.freeze(['User', 'Bot']);
+
+// The identity the current authentication belongs to. A caller that has to tell its own writes from
+// a person's cannot use the comment ID its own mutation returned: that ID lives only as long as the
+// process that created it, while the forge's authorship record survives every later run and cannot
+// be forged by a commenter. Only a value the provider actually states as a string is reported, so a
+// numeric, boolean, or structured field can never be coerced into a plausible-looking identity — a
+// fabricated login would let a caller claim a stranger's comment as its own.
+// The login is not one field among many but the whole answer, so a response that states none is a
+// failure rather than an empty result: the caller must not have to tell "no login" apart from
+// "login unknown" in prose. `type` stays optional and only distinguishes an account shared with a
+// person from a dedicated bot account.
+function normalizeViewer(item) {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    fail('INVALID_PAYLOAD', 'provider returned an invalid viewer identity');
+  }
+  const stated = (value) =>
+    typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+  const login = stated(item.login);
+  if (login === undefined) {
+    fail('INVALID_PAYLOAD', 'provider stated no authenticated login');
+  }
+  const declared = stated(item.type);
+  const type = VIEWER_ACCOUNT_TYPES.find(
+    (candidate) => candidate.toLowerCase() === declared?.toLowerCase(),
+  );
+  return { login, ...(type === undefined ? {} : { type }) };
+}
+
 function normalizeComment(comment) {
   if (!comment || typeof comment !== 'object') {
     fail('INVALID_PAYLOAD', 'provider returned an invalid issue comment');
@@ -2107,6 +2163,8 @@ function normalizeTeaCreate(operation, raw, repository, input) {
 function normalizeRemoteData(operation, raw, repository, input = {}, metadata = {}) {
   const flattened = flattenPages(raw);
   switch (operation) {
+    case 'viewer-read':
+      return normalizeViewer(flattened);
     case 'issue-read':
     case 'issue-update-body':
       return flattened?.output !== undefined
