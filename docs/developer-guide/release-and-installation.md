@@ -132,6 +132,42 @@ regression here. Should the repository ever become private, clear the header rat
 credential persistence — `git fetch` would then need credentials, but persisting them reintroduces
 the defect.
 
+`develop` carries its own ruleset, with a deliberately different shape. `main` blocks `update`
+outright and grants a single bypass, because the delivery App pushes to it directly; `develop` must
+keep accepting merges, so it requires a **pull request** instead and exempts nobody. Its rules are
+`pull_request`, `required_status_checks`, `deletion`, and `non_fast_forward`, and its
+`bypass_actors` list is **empty** — including for administrators, since repository rulesets have no
+"do not enforce for administrators" toggle. A direct `git push origin develop` is therefore rejected
+for every actor, which is the point: `.github/workflows/release.yml` triggers on `push` to
+`develop`, so an unreviewed direct push could otherwise cut a release and deliver arbitrary content
+to `main` without ever touching the `main` ruleset (issue #282).
+
+No bypass actor is needed for release-please. It pushes only to its own
+`release-please--branches--develop--components--effective-flow` branch and reaches `develop` through
+its pull request, which a ruleset scoped to `refs/heads/develop` never sees. The release commit
+lands when that pull request is merged, exactly as before.
+
+The `pull_request` rule requires **zero** approving reviews. What closes the accident path is that a
+pull request exists at all, not that someone signed it off; with a single maintainer a required
+review would only mean self-approval. Required status checks are `Format, test and build` and
+`Shellcheck`, without the strict up-to-date policy, which would make every merge invalidate the
+other open pull requests. The managers job is deliberately **not** required: it exercises externally
+published DALO and Skills CLI releases, so requiring it would let an unrelated upstream release
+block every merge, the release pull request included.
+
+Two constraints follow from that and are easy to trip over later. First, those two required contexts
+are `name:` values of jobs in `.github/workflows/ci.yml`; renaming a job stops the check from
+reporting and blocks every pull request permanently, so `test/workflow-contracts.test.mjs` asserts
+both strings. Second, `ci.yml` currently runs on every `pull_request` with no `paths:` filter, which
+is what lets a docs-only pull request satisfy the requirement — adding a path filter would deadlock
+every filtered pull request.
+
+Inspect either ruleset with `gh api repos/sebastian-software/effective-flow/rulesets`, and check
+what actually applies to a branch for the calling user with
+`gh api repos/sebastian-software/effective-flow/rules/branches/develop`. Prefer that read over
+testing the rule with a real push: if the rule were misconfigured, the push would land on `develop`
+and start the release workflow — the exact accident the ruleset exists to prevent.
+
 Delivery runs only on a created release, so a failed delivery waits for the next one. That is
 deliberate, and it is the reason the run must be impossible to miss.
 

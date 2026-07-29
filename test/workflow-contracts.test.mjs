@@ -1914,6 +1914,25 @@ test('iterate documents an optional item filter that never falls back to all ite
   );
 });
 
+test('ci.yml keeps the job names the develop ruleset requires', () => {
+  // The `develop` ruleset lists these two strings as required status checks, and GitHub matches
+  // a required check by its exact name. Renaming either job would not fail anything here or on
+  // GitHub — the check would simply stop reporting, and every pull request into `develop` would
+  // block forever with no timeout, no override short of editing the ruleset, and nothing naming
+  // the cause (issue #282).
+  //
+  // Only these two are required, deliberately. The managers job exercises externally published
+  // manager releases, so requiring it would let an unrelated upstream release block every merge,
+  // including the release pull request. That is also why its name is left alone here.
+  const ci = source('.github/workflows/ci.yml');
+  for (const name of ['Format, test and build', 'Shellcheck']) {
+    assert.ok(
+      ci.includes(`name: ${name}\n`),
+      `ci.yml must keep the job name "${name}"; the develop ruleset requires it by that exact string`,
+    );
+  }
+});
+
 test('every workflow action is pinned to a commit', () => {
   // Movable tags let upstream change what runs in a job where the App private keys are in
   // scope — including for actions that receive no credential of their own. This scans the
