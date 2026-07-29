@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.55.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.55.0...effective-flow-v1.55.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* recognize the merge gate's own comments across runs ([#297](https://github.com/sebastian-software/effective-flow/issues/297)) ([e9ebb0e](https://github.com/sebastian-software/effective-flow/commit/e9ebb0e8f10e4cae6dcd9bf9aed1905e7d9c4364))
+
 ## [1.55.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.54.4...effective-flow-v1.55.0) (2026-07-28)
 
 
