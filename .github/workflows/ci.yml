@@ -51,7 +51,14 @@ jobs:
         run: shellcheck --severity=error install-skill.sh local-common.sh local-link.sh
 
   managers:
-    name: DALO 0.8.2 and Skills CLI 1.5.19
+    # No version in the name, and none in the job below either. This exercises the manager
+    # releases consumers actually install; pinning them meant reporting green about versions
+    # nobody runs — DALO drifted three minors behind before anyone noticed (issue #299).
+    #
+    # Deliberately NOT a required status check. It tracks moving upstream releases, so making
+    # it required would let an unrelated DALO or Skills CLI release block every merge, the
+    # release pull request included (issue #282).
+    name: Manager compatibility
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -68,19 +75,36 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: node build.mjs
 
-      - name: Install pinned DALO 0.8.2
+      - name: Install the current DALO release
         env:
-          DALO_VERSION: 0.8.2
-          DALO_SHA256: 1988645d39f68fbea917d3c852e047abe988d5fcbae96f62d9ea961ae4e4b633
+          # Reading a public release of another repository in this organization. Authenticated
+          # rather than a bare curl: unauthenticated API calls are limited to 60 per hour and
+          # counted per IP, which shared runners share.
+          GH_TOKEN: ${{ github.token }}
         run: |
-          asset="dalo-${DALO_VERSION}-x86_64-unknown-linux-musl.tar.gz"
-          url="https://github.com/sebastian-software/dalo/releases/download/dalo-v${DALO_VERSION}/${asset}"
-          install_dir="$RUNNER_TEMP/dalo-${DALO_VERSION}"
-          mkdir -p "$install_dir"
-          curl --fail --location --silent --show-error "$url" --output "$RUNNER_TEMP/$asset"
-          printf '%s  %s\n' "$DALO_SHA256" "$RUNNER_TEMP/$asset" | sha256sum --check -
-          tar -xzf "$RUNNER_TEMP/$asset" -C "$install_dir" --strip-components=1
+          download_dir="$RUNNER_TEMP/dalo-download"
+          install_dir="$RUNNER_TEMP/dalo"
+          mkdir -p "$download_dir" "$install_dir"
+          # No tag argument: `gh release download` then resolves the newest release itself, and
+          # the glob patterns match the version-bearing asset names. Nothing has to parse a
+          # version out of a tag, so there is no second place where a version format can drift.
+          gh release download --repo sebastian-software/dalo \
+            --pattern '*-x86_64-unknown-linux-musl.tar.gz' \
+            --pattern '*-x86_64-unknown-linux-musl.tar.gz.sha256' \
+            --dir "$download_dir"
+          # Drop the token before anything downloaded is executed. `env:` covers the whole step,
+          # so without this the freshly downloaded DALO would run with the repository token in
+          # its environment — and this job deliberately made that binary a moving upstream
+          # target. Read-only or not, an unpinned executable has no business seeing it.
+          unset GH_TOKEN
+          # The sidecar names a bare filename, so the check must run in the download directory.
+          # A missing sidecar makes this fail rather than silently skip verification: the glob
+          # would expand to a literal that `--check` cannot open.
+          (cd "$download_dir" && sha256sum --check ./*.tar.gz.sha256)
+          tar -xzf "$download_dir"/*.tar.gz -C "$install_dir" --strip-components=1
           printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
+          # Record what was actually resolved. With a moving target, a red run is only
+          # actionable if the log says which version produced it.
           "$install_dir/dalo" --version
 
       - name: Stage the default-branch payload
