@@ -325,9 +325,16 @@ Several behaviors worth knowing if you inspect the gate's output or a `pr-review
   instant, but the query additionally states each context's requiredness, which the older
   projection had no field for at all. The `required` flag is purely additive: it is present on a
   check where the forge states its requiredness and absent, never guessed, when the forge does
-  not. The query pages the rollup, so if a pull request carries more contexts than the page
-  returned, the operation fails with `INVALID_PAYLOAD` naming both the total and the returned
-  count rather than evaluating a merge criterion on a partial check list.
+  not. The rollup is read from the commit whose object name matches the head SHA, never from
+  whichever commit the provider happened to return last: a pull request's commit list is
+  materialized asynchronously and can trail the head right after a push, and reporting an earlier
+  commit's green checks against the head is how a commit whose CI never ran gets merged. When no
+  returned commit matches the head, the check list is reported as absent rather than guessed.
+  The query requests **one page** of the rollup, currently a hundred contexts, and refuses a
+  partial one: if the provider reports more contexts than it returned, the operation fails with
+  `INVALID_PAYLOAD` naming both the total and the returned count rather than evaluating a merge
+  criterion on a partial check list. A pull request that genuinely exceeds that ceiling therefore
+  fails this read until the query learns to page.
 - **`pr-checks-wait` may report `forcedKill: true`.** If the watching child process ignores a clean
   `SIGTERM` and has to be escalated to `SIGKILL` after a one-second grace period, the result carries
   that flag; a clean bounded stop simply omits it.

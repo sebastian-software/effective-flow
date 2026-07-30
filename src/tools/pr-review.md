@@ -463,9 +463,13 @@ run can push an unbounded number of commits onto someone's pull request.
      substitute: "all checks green" and "mergeable" are different statements, and a protected branch
      can additionally require named checks, an approval, an up-to-date branch, or linear history.
 
-Leave the loop when the check criterion is satisfied and the merge state is neither `BEHIND` nor
-`DIRTY`. Record the head SHA of that last read as **`VERIFIED_HEAD_SHA`** – the one commit this run
-has verified as green and mergeable. Phases 4 and 5 use only that value, and nothing else in this
+Leave the loop when the check criterion is satisfied and the merge state is **stated** and is
+neither `BEHIND` nor `DIRTY`. An unstated merge state fails closed and keeps the loop running, for
+the same reason an absent `draft` flag blocks and an unstated requiredness blocks: "neither `BEHIND`
+nor `DIRTY`" is vacuously true of a field the provider never reported, and the criterion above
+delegates its own safety to this condition. A compensating condition that disappears when the
+provider goes quiet compensates for nothing. Record the head SHA of that last read as
+**`VERIFIED_HEAD_SHA`** – the one commit this run has verified as green and mergeable. Phases 4 and 5 use only that value, and nothing else in this
 workflow records a head SHA for later use.
 
 #### Round accounting

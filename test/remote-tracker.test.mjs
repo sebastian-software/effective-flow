@@ -2245,6 +2245,10 @@ test('the head commit timestamp is matched by object name, not by position', asy
   });
   assert.equal(Object.hasOwn(mismatched, 'headCommittedAt'), false);
   assert.equal(mismatched.headSha, verifiedHead);
+  // The rollup is selected by the same match, because a check list belonging to an earlier commit
+  // is the more dangerous of the two values: reported as the head's it would let "all checks green"
+  // pass on checks the commit about to be merged never ran.
+  assert.equal(mismatched.checksReported, false);
 
   // An omitted or empty `commits` selection carries no timestamp either.
   for (const commits of [undefined, []]) {

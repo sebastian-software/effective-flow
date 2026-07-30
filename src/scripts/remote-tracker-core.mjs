@@ -2115,7 +2115,15 @@ function headCommitTimestamp(item, headSha) {
 // them here keeps `normalizePullRequestStatus` written against one record shape instead of teaching
 // it a second one, and hands the rollup over as the plain array of contexts the previous `--json`
 // read produced. The commits stay an array so the head timestamp is still attached by matching
-// `oid` against the head SHA rather than by trusting a position in a list.
+// `oid` against the head SHA rather than by trusting a position in a list, and the rollup is
+// selected by that same match. GitHub materializes the `commits` connection asynchronously, so
+// shortly after a push the returned node can still be the previous commit while `headRefOid`
+// already names the new one; taking the rollup from whichever node happens to come last would then
+// report that earlier commit's green checks as the head's, and "every reported check completed
+// successfully" would be satisfied by checks belonging to a commit that is not the one about to be
+// merged. No node matching the head SHA therefore yields no rollup at all, which the caller reads
+// as `checksReported: false` and the gate blocks on — the same answer an empty `commits` selection
+// already gives.
 //
 // A truncated rollup fails the read outright. `contexts(first:100)` is a page, and a pull request
 // can carry more contexts than that; a caller that evaluated "all checks green" against a page
@@ -2132,7 +2140,15 @@ function flattenPullRequestStatus(raw) {
   const commits = commitNodes
     .map((node) => node?.commit)
     .filter((commit) => commit !== null && typeof commit === 'object');
-  const contexts = commits.at(-1)?.statusCheckRollup?.contexts;
+  const headRefOid = pullRequest.headRefOid;
+  const headCommit =
+    typeof headRefOid === 'string' && headRefOid !== ''
+      ? commits.find(
+          (commit) =>
+            typeof commit.oid === 'string' && commit.oid.toLowerCase() === headRefOid.toLowerCase(),
+        )
+      : undefined;
+  const contexts = headCommit?.statusCheckRollup?.contexts;
   // `null` — the rollup itself, its contexts, or its nodes — means the provider reported nothing
   // here, which is a different fact from an empty list and stays distinguishable by omitting the
   // field entirely rather than substituting an empty array.
