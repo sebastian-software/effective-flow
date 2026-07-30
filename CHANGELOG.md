@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.55.3](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.55.2...effective-flow-v1.55.3) (2026-07-30)
+
+
+### Bug Fixes
+
+* **deps:** update oxc toolchain to ^0.61.0 ([#309](https://github.com/sebastian-software/effective-flow/issues/309)) ([3e4e4dc](https://github.com/sebastian-software/effective-flow/commit/3e4e4dc9a729a329e753b2f6c1537c22d0600c41))
+* stop pr-checks-wait failing when no required check has reported ([2042371](https://github.com/sebastian-software/effective-flow/commit/2042371af5906cf94d6e9d99f98b29428df81bf1))
+
 ## [1.55.2](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.55.1...effective-flow-v1.55.2) (2026-07-30)
 
 
