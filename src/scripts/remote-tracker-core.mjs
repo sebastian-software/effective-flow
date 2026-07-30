@@ -239,6 +239,10 @@ export function parseRemote(remote, options = {}) {
   let host;
   let path;
   try {
+    // A failure below funnels this raw string into the error envelope, where `redact` is the only
+    // thing between its userinfo and the caller. The two scheme grammars are therefore meant to
+    // stay identical — anything accepted as a URL here must be redactable there. Narrowing either
+    // one alone reopens that gap.
     if (/^[a-z][a-z\d+.-]*:\/\//i.test(remote)) {
       const parsed = new URL(remote);
       host = parsed.hostname;
@@ -763,8 +767,29 @@ export function redact(value) {
     );
   }
   if (typeof value !== 'string') return value;
+  // Two guards keep the URL-credential pattern linear, because it runs over whatever an issue or
+  // pull-request body carried into a command plan — text this repository does not control. Both
+  // guard against the same failure: a quantifier handing its match back one character at a time.
+  //
+  // The lookbehind is the load-bearing one. `[a-z\d+.-]*` is anchored to the start of a run of
+  // those characters, so a 128 000-character run offers the engine one start position instead of
+  // 128 000. Without it, every position starts a doomed scan that gives the run back character by
+  // character, which is O(n) per position and quadratic over the string. It costs no coverage: a
+  // scheme cannot begin midway through such a run anyway, so every start it rejects could only
+  // have produced a match another start already covers.
+  //
+  // The second is the absent `(?::[^\s/@]*)?` after the userinfo. That group used to let its `*`
+  // re-consume to the end at every backtrack step of the `+` over the same character class. It was
+  // redundant — `[^\s/@]+` already accepts the colon between user and password — so dropping it
+  // removed the overlap without narrowing anything.
+  //
+  // Do not bound the scheme instead. A bound is the obvious fix and it is worse on both counts: it
+  // still does its bounded amount of work at every position, and it silently stops redacting a
+  // scheme longer than the bound whose tail holds no letter to restart from, while `parseRemote`
+  // (see its scheme guard) keeps accepting that same string as a URL. The grammar here is
+  // deliberately identical to that guard's.
   return value
-    .replace(/([a-z][a-z\d+.-]*:\/\/)[^\s/@]+(?::[^\s/@]*)?@/gi, '$1[REDACTED]@')
+    .replace(/(?<![a-z\d+.-])([a-z][a-z\d+.-]*:\/\/)[^\s/@]+@/gi, '$1[REDACTED]@')
     .replace(/\b(?:gh[opusr]_|github_pat_|gitea_)[A-Za-z0-9_=-]+\b/g, '[REDACTED]')
     .replace(/(Authorization\s*:\s*(?:Bearer|token)\s+)\S+/gi, '$1[REDACTED]')
     .replace(/([?&](?:access_)?token=)[^&\s]+/gi, '$1[REDACTED]');
