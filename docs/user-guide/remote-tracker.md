@@ -247,7 +247,7 @@ repository, an `origin` remote, and an authenticated CLI.
 | Operation        | Capability              | What it does                                                                                                                                                                                   |
 | ---------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pr-status-read` | `pullRequestStatus`     | Reads, in one call, the head SHA, base ref, PR state, draft flag, check list, and the forge's merge state                                                                                      |
-| `pr-checks-wait` | `pullRequestChecksWait` | Blocks inside the provider's own watch until checks complete or the supplied timeout elapses                                                                                                   |
+| `pr-checks-wait` | `pullRequestChecksWait` | Blocks inside the provider's own watch until checks complete or the supplied timeout elapses, then reads back the normalized check list as a second call                                       |
 | `pr-merge`       | `pullRequestMerge`      | Merges the pull request with the configured method; a mutation, so a run without `--apply` produces a dry-run plan and merges nothing                                                          |
 | `viewer-read`    | `viewerRead`            | A read, not a mutation. Returns the authenticated login and, where the provider states it, the account type (`User` or `Bot`), so the gate can tell its own writes from a person's across runs |
 
@@ -269,14 +269,27 @@ the other would let the gate mistake a stranger's comment for its own.
 
 Several behaviors worth knowing if you inspect the gate's output or a `pr-review` transcript:
 
-- **A finished check run with a red check still counts as a result, not a command failure.**
-  `gh pr checks --watch` exits non-zero when a check has failed, even though it printed exactly the
-  check list that was asked for. `pr-checks-wait` recognizes this: a non-zero exit whose stdout is
+- **`pr-checks-wait` runs two `gh` commands, not one.** `gh` rejects `--watch` together with
+  `--json` outright, so a single call can no longer do both jobs. The operation first watches the
+  checks to their natural conclusion (or the supplied timeout) and discards that step's exit
+  status entirely, then issues a second, plain `gh pr checks --json` call that is the sole
+  authority for the payload and for any operational error.
+- **A finished check run with a red check still counts as a result, not a command failure.** Because
+  the watch step's exit status is discarded, a failed check can no longer fail the operation by
+  itself. The read step carries the old discriminator instead: a non-zero exit whose stdout is
   still a parsable JSON array is normalized into a completed result carrying the failing check's
   `conclusion: FAILURE`, so the gate can report and repair it like any other finding. Only an exit
   with no parsable check list at all – no checks configured, a bad reference, missing auth – is
-  treated as an operational error. Separately, `gh`'s exit code 8 ("checks still pending") is
-  normalized into a timeout result, not an error either.
+  treated as an operational error. Separately, the read step's exit code 8 ("checks still pending")
+  is normalized into a timeout result, not an error either.
+- **A timed-out wait still reports the real pending check list.** The read step runs even after the
+  watch step times out, so `pr-checks-wait` no longer returns an empty list on a timeout – it
+  reports whatever check states the provider had at that point, letting the gate show what was
+  actually still pending instead of nothing at all.
+- **`pr-checks-wait`'s result envelope carries `data.commands`, not `data.command`.** Because the
+  operation issues two `gh` commands in sequence, it reports both command previews, in execution
+  order, in a `commands` array; every other operation in this table still reports a single
+  `data.command`.
 - **An empty check list is not read as "all green".** Both `pr-status-read` and `pr-checks-wait`
   report `checksReported` (whether the provider returned a check rollup at all) and `checkCount`
   (how many checks it contains) alongside the list itself. A wait or a status read only counts as
