@@ -863,6 +863,13 @@ const MERGE_METHOD_FLAGS = Object.freeze({
 const DEFAULT_CHECKS_WAIT_MINUTES = 20;
 const DEFAULT_CHECKS_INTERVAL_SECONDS = 10;
 
+// The wait's structured read carries a fixed bound of its own instead of a share of the caller's.
+// As a single bounded command the operation had a guaranteed end-to-end ceiling, and splitting it
+// into a watch plus a read must not drop that property silently: an unbounded read could hold a run
+// open long after the watch it followed was already stopped. The value bounds one JSON read, not a
+// wait — waiting is the watch's job — so it is deliberately not derived from `payload.timeoutMs`.
+const CHECKS_READ_TIMEOUT_MS = 60_000;
+
 // Node clamps a `setTimeout` delay above this ceiling to 1 ms. An over-large bound would therefore
 // not relax the wait but invert it into an instant, fake timeout — repeated once per gate round —
 // so it is rejected rather than accepted and silently reinterpreted.
@@ -895,6 +902,30 @@ function checksWaitSettings(payload) {
     ),
     requiredOnly: payload.requiredOnly === true,
   };
+}
+
+// The structured half of the wait. `gh pr checks` rejects `--watch` together with `--json`, so the
+// blocking watch cannot also be the read; `--required` and `--json` do combine, which is why the
+// read applies the very criterion the watch just applied instead of widening it. It resolves that
+// criterion through `checksWaitSettings` so the two commands cannot drift apart. It stays out of
+// `buildCommandPlan` on purpose: that builder answers `pr-checks-wait` with the watch, which is the
+// plan a caller previews and the only one carrying a caller-supplied bound.
+function buildChecksReadPlan(input, repository) {
+  const { requiredOnly } = checksWaitSettings(input.payload ?? input);
+  return mutationPlan(
+    'gh',
+    [
+      'pr',
+      'checks',
+      String(prNumber(input)),
+      ...ghRepoArgs(repository),
+      ...(requiredOnly ? ['--required'] : []),
+      '--json',
+      PR_CHECK_FIELDS,
+    ],
+    undefined,
+    { timeoutMs: CHECKS_READ_TIMEOUT_MS },
+  );
 }
 
 function mergeMethod(payload) {
@@ -1134,6 +1165,9 @@ export function buildCommandPlan(operation, input, repository) {
           '--json',
           PR_STATUS_FIELDS,
         ]);
+      // The watch and nothing else: `gh pr checks` refuses `--watch` together with `--json` outright,
+      // so a plan carrying both is not a slow read but a guaranteed failure on every invocation.
+      // `executeOperation` runs `buildChecksReadPlan` after this one for the payload.
       case 'pr-checks-wait': {
         const wait = checksWaitSettings(payload);
         return mutationPlan(
@@ -1147,8 +1181,6 @@ export function buildCommandPlan(operation, input, repository) {
             '--interval',
             String(wait.intervalSeconds),
             ...(wait.requiredOnly ? ['--required'] : []),
-            '--json',
-            PR_CHECK_FIELDS,
           ],
           undefined,
           { timeoutMs: wait.timeoutMs },
@@ -1595,6 +1627,16 @@ async function runChecked(runner, plan, label) {
   if (result?.error?.code === 'ENOENT') {
     fail('CLI_MISSING', `${plan.executable} is not installed`, { executable: plan.executable });
   }
+  // The watch half of the wait is asked for nothing but the blocking itself. Its stdout is a TSV
+  // table it may reprint several times, and its exit status conflates a red check with a broken
+  // invocation, so both belong to the JSON read that follows rather than here. Exactly one fact
+  // survives — that the bound elapsed or the checks were still pending when gh gave up — because
+  // nothing downstream can observe it. Treating any other exit as a failure would turn a finished
+  // watch over a red check into a COMMAND_FAILED and withhold the list the caller waited for; a
+  // missing gh is already caught above and stays a CLI_MISSING.
+  if (label === 'pr-checks-watch') {
+    return isChecksWaitTimeout(result) ? { ...result, timedOut: true } : result;
+  }
   if (label === 'pr-checks-wait') {
     if (isChecksWaitTimeout(result)) {
       return { ...result, status: 0, stdout: parsableJsonOrEmpty(result.stdout), timedOut: true };
@@ -1665,6 +1707,10 @@ function assertMinimumVersion(actual, minimum, executable) {
 // `gh pr checks --json`, released in gh 2.50.0 (cli/cli#9079); `--watch` (2.5), `--match-head-commit`
 // (2.14), and `--required` (2.16) are older. Below this line the three capabilities are reported as
 // unsupported, so a run degrades to report-only instead of failing mid-merge on an unknown flag.
+// Availability is not compatibility: at and above this floor `gh pr checks` still rejects `--watch`
+// together with `--json`, which is why the wait runs a watch and a read as two commands instead of
+// one. `--required` does combine with `--json`, so the criterion rides along on the read. The floor
+// stays where it is regardless — the read still needs `--json`.
 const GH_PR_GATE_MINIMUM_VERSION = Object.freeze([2, 50, 0]);
 
 async function probeTeaHelp(runner, args, required = []) {
@@ -2665,6 +2711,39 @@ export async function executeOperation(operation, input = {}, options = {}) {
           commands: paginated.commands,
           pagesFetched: paginated.pagesFetched,
           conditionalWriteAvailable: false,
+        },
+        dryRun: false,
+      };
+    }
+    // The wait is two gh invocations because one cannot exist: `gh pr checks` rejects `--watch`
+    // together with `--json`, so the blocking watch and the structured read never share an argument
+    // vector. It stays a single blocking wait for the caller, not a prompt-driven poll loop — the
+    // watch does all the waiting under the caller's bound, and the read that follows is the sole
+    // authority for the payload and for any operational error. The read runs in every case,
+    // including after a timeout, because a timed-out wait that reported no checks would withhold
+    // exactly the pending list the caller has to act on.
+    if (operation === 'pr-checks-wait') {
+      const watch = await runChecked(runner, plan, 'pr-checks-watch');
+      const readPlan = buildChecksReadPlan(input, activeRepository);
+      const readResult = await runChecked(runner, readPlan, operation);
+      const parsed = parseCommandOutput(readResult, readPlan, operation);
+      // Either step can report that the checks were not finished, and both statements count. The
+      // watch says so by running out of its bound; the read says so independently through exit code
+      // 8, which is the provider's own "still pending" and the only such signal when the watch
+      // returned cleanly. Dropping either would call a wait clean that the provider called pending,
+      // and a timeout keeps `complete` false even when the read comes back all green — the wait was
+      // cut short, so nothing about it is proven done. `forcedKill` stays the watch's alone: it
+      // describes a child that had to be killed, which says nothing about the read.
+      if (watch?.timedOut === true || readResult?.timedOut === true) parsed.timedOut = true;
+      if (watch?.forcedKill === true) parsed.forcedKill = true;
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: normalizeRemoteData(operation, parsed.raw, activeRepository, input, parsed),
+          commands: [preview, redact(readPlan)],
+          conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
         },
         dryRun: false,
       };
