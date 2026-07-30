@@ -905,9 +905,11 @@ function checksWaitSettings(payload) {
 }
 
 // The structured half of the wait. `gh pr checks` rejects `--watch` together with `--json`, so the
-// blocking watch cannot also be the read; `--required` and `--json` do combine, which is why the
-// read applies the very criterion the watch just applied instead of widening it. It resolves that
-// criterion through `checksWaitSettings` so the two commands cannot drift apart. It stays out of
+// blocking watch cannot also be the read; `--required` and `--json` do combine, which is why this
+// read is the only place the required-checks criterion is applied at all. The watch deliberately
+// waits on every check, so the narrowing happens here, once, on a payload rather than on the
+// blocking. It resolves that criterion through `checksWaitSettings`, the same helper the watch uses
+// for its bound, so both commands stay derived from one settings object. It stays out of
 // `buildCommandPlan` on purpose: that builder answers `pr-checks-wait` with the watch, which is the
 // plan a caller previews and the only one carrying a caller-supplied bound.
 function buildChecksReadPlan(input, repository) {
@@ -1168,6 +1170,13 @@ export function buildCommandPlan(operation, input, repository) {
       // The watch and nothing else: `gh pr checks` refuses `--watch` together with `--json` outright,
       // so a plan carrying both is not a slow read but a guaranteed failure on every invocation.
       // `executeOperation` runs `buildChecksReadPlan` after this one for the payload.
+      // The watch never carries `--required` either, no matter how the caller set that criterion.
+      // `--required` filters the rollup by a per-context flag that only a context which has already
+      // reported can carry, so on a branch where no required check has reported yet the filtered
+      // watch finds nothing to watch and returns immediately — the wait stops waiting, which is the
+      // one thing it exists for. Waiting on every check is a superset of waiting on the required
+      // ones and stays bounded by the caller's `timeoutMs`, so the criterion loses nothing by
+      // riding on the structured read alone.
       case 'pr-checks-wait': {
         const wait = checksWaitSettings(payload);
         return mutationPlan(
@@ -1180,7 +1189,6 @@ export function buildCommandPlan(operation, input, repository) {
             '--watch',
             '--interval',
             String(wait.intervalSeconds),
-            ...(wait.requiredOnly ? ['--required'] : []),
           ],
           undefined,
           { timeoutMs: wait.timeoutMs },
@@ -1622,13 +1630,18 @@ function isJsonArrayPayload(text) {
   }
 }
 
-// A branch for which the forge defines no required checks at all makes `gh pr checks --required`
-// exit non-zero with an empty payload and say so on stderr alone. Both halves of the match carry
-// weight: without the flag this would reach reads that never asked for the criterion, and without
-// the phrase every failed `--required` read — an unresolvable reference, an expired token — would
-// pass as satisfied, which is the exact class of defect the surrounding rules were written against.
-// The message names the head branch rather than the base, so the branch name inside it proves
-// nothing about the criterion and is deliberately not part of the match.
+// `gh pr checks --required` filters the rollup by a per-context `isRequired` flag, and only a
+// context that has already reported carries one. The filtered list therefore comes back empty in
+// two different situations — the forge defines no required checks, and required checks are defined
+// but none of them has reported yet — and gh answers both the same way: a non-zero exit, an empty
+// payload, and a stderr line claiming no more than that no required check was reported. This
+// predicate recognizes that response and nothing beyond it, which is why what follows from it is
+// deliberately weak. Both halves of the match carry weight: without the flag this would reach reads
+// that never asked for the criterion, and without the phrase every failed `--required` read — an
+// unresolvable reference, an expired token — would pass as satisfied, which is the exact class of
+// defect the surrounding rules were written against. The message names the head branch rather than
+// the base, so the branch name inside it proves nothing about the criterion and is deliberately not
+// part of the match.
 const NO_REQUIRED_CHECKS_STDERR = 'no required checks reported';
 
 function isNoRequiredChecksResponse(result, plan) {
@@ -1664,8 +1677,10 @@ async function runChecked(runner, plan, label) {
     if (result && result.status !== 0 && isJsonArrayPayload(result.stdout)) {
       return { ...result, status: 0 };
     }
-    // "No required checks are defined" is a criterion that is trivially satisfied, not an
-    // operational failure, so it becomes an empty success instead of a COMMAND_FAILED. The rule sits
+    // "No required check was reported" describes an empty query result, not a broken command, so it
+    // becomes a successful envelope carrying a discriminator instead of a COMMAND_FAILED. The
+    // discriminator records what gh reported and stops there: it does not prove that the branch
+    // defines no required checks, so nothing here concludes that the wait is over. The rule sits
     // last on purpose: the timeout and the red-check rules above still decide everything they
     // decided before, and only what would otherwise fail reaches this point. stdout is emptied
     // rather than filled with a synthetic list, because an empty payload is what already makes the
@@ -2281,22 +2296,24 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
       const reported = Array.isArray(flattened) ? flattened : flattened?.checks;
       const checks = (Array.isArray(reported) ? reported : []).map(normalizeCheck);
       const timedOut = metadata.timedOut === true;
-      // The single case in which nothing to wait for is the answer rather than a missing one: the
-      // forge defines no required checks, so a caller who asked for the required ones is done. The
-      // flag is reported only when the read actually observed it, never as `true` and never on any
-      // other path, so a consumer cannot mistake an unproven assumption for a queried fact.
+      // What gh reported, not what branch protection says: the `--required` read came back empty,
+      // which happens both when no required check exists and when none has reported yet. The flag
+      // passes that observation on so a consumer can tell this empty list apart from an ordinary
+      // one, and it is set only when the read actually saw that response, never as `true` and never
+      // on any other path. It deliberately says nothing about completeness — see below.
       const noRequiredChecks = metadata.requiredChecksDefined === false;
       return {
         number: prNumber(input),
         repository: repository.slug,
         // An empty list is never complete. `every` on an empty array is vacuously true, so a head
         // whose checks have not been attached yet would otherwise read exactly like a green run.
-        // A branch without any required checks is the one exception, and a timeout still overrides
-        // it: the wait was cut short, so even a vacuous criterion was never watched to its end.
+        // `requiredChecksDefined: false` is no exception: it only says gh reported no required
+        // check, which a branch whose required checks are all still pending produces just as well,
+        // so accepting it here would call an unfinished run finished. Nothing downstream loses by
+        // that — the gate takes its criterion from a fresh `pr-status-read`, and the wait matters
+        // through its blocking and its `timedOut` flag.
         complete:
-          !timedOut &&
-          (noRequiredChecks ||
-            (checks.length > 0 && checks.every((check) => check.status === 'COMPLETED'))),
+          !timedOut && checks.length > 0 && checks.every((check) => check.status === 'COMPLETED'),
         timedOut,
         ...(metadata.forcedKill === true ? { forcedKill: true } : {}),
         ...(noRequiredChecks ? { requiredChecksDefined: false } : {}),
@@ -2770,10 +2787,12 @@ export async function executeOperation(operation, input = {}, options = {}) {
       // describes a child that had to be killed, which says nothing about the read.
       if (watch?.timedOut === true || readResult?.timedOut === true) parsed.timedOut = true;
       if (watch?.forcedKill === true) parsed.forcedKill = true;
-      // The read is also the only step that can observe that the branch defines no required checks
-      // at all — the watch hits the same wall but its exit status is discarded. The fact rides the
-      // same metadata channel because the payload it explains is empty by definition, and the
-      // normalizer needs it to tell that emptiness apart from checks that simply have not run yet.
+      // The read is also the only step that can observe gh reporting no required check for this
+      // branch — the watch never applies `--required` at all, and its exit status is discarded
+      // regardless. The fact rides the same metadata channel because the payload it explains is
+      // empty by definition, and the normalizer needs it to tell an empty `--required` response
+      // apart from a read that returned a rollup. It stays a record of what gh reported rather than
+      // a statement about branch protection, which is why it never makes the wait complete.
       if (readResult?.requiredChecksDefined === false) parsed.requiredChecksDefined = false;
       return {
         ok: true,

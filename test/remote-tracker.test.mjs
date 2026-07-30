@@ -2626,7 +2626,7 @@ test('pr-merge fails closed when the head moved and merges only the verified com
   assert.deepEqual(mergeRunner.calls[1].args.slice(-2), ['--match-head-commit', verifiedHead]);
 });
 
-test('pr-checks-wait watches with the supplied bound and requests required checks on demand', () => {
+test('pr-checks-wait watches with the supplied bound and never filters the watch itself', () => {
   const plan = buildCommandPlan(
     'pr-checks-wait',
     { number: 12, timeoutMinutes: 20, intervalSeconds: 15 },
@@ -2644,12 +2644,16 @@ test('pr-checks-wait watches with the supplied bound and requests required check
   assert.equal(plan.args.at(-1), '15');
   assert.equal(plan.args.includes('--json'), false);
 
+  // `--required` on the watch is what made it exit the moment gh has nothing to report yet instead
+  // of blocking, so a caller asking for the required-checks-only criterion still gets a watch that
+  // waits for every check. The criterion itself rides on `buildChecksReadPlan` alone, where
+  // `--required` and `--json` do combine.
   const requiredOnly = buildCommandPlan(
     'pr-checks-wait',
     { number: 12, timeoutMinutes: 5, requiredOnly: true },
     githubRepository,
   );
-  assert.ok(requiredOnly.args.includes('--required'));
+  assert.equal(requiredOnly.args.includes('--required'), false);
   assert.equal(requiredOnly.timeoutMs, 5 * 60 * 1000);
 
   const defaults = buildCommandPlan('pr-checks-wait', { number: 12 }, githubRepository);
@@ -2666,7 +2670,7 @@ test('pr-checks-wait watches with the supplied bound and requests required check
   );
   assert.equal(wrapped.timeoutMs, 5 * 60 * 1000);
   assert.equal(wrapped.args.at(wrapped.args.indexOf('--interval') + 1), '30');
-  assert.ok(wrapped.args.includes('--required'));
+  assert.equal(wrapped.args.includes('--required'), false);
 });
 
 test('pr-checks-wait never combines --watch with --json, which gh rejects outright', () => {
@@ -2850,11 +2854,13 @@ test("the structured read after the watch carries --json and the caller's --requ
   assert.equal(withoutRequired.calls[1].args.includes('--required'), false);
 });
 
-test('a branch with no required checks defined satisfies requiredOnly instead of failing', async () => {
-  // Real gh (2.96.0) exits 1 on `--required` the moment the forge defines no required checks at
-  // all, on both the watch and the structured read behind it — the watch carries `--required` too,
-  // so it hits the identical wall. "No required checks are defined" is a trivially satisfied
-  // criterion, not an operational failure, so this must not fall through to COMMAND_FAILED.
+test('a branch with no required checks reported becomes a discriminated envelope instead of COMMAND_FAILED', async () => {
+  // `gh pr checks --required` (2.96.0) filters `statusCheckRollup.contexts` by a per-context
+  // `isRequired` flag that only ever accompanies a context that has already reported. A required
+  // check that has not reported yet is therefore absent from the list exactly like a branch with no
+  // required checks defined at all, so this stderr proves only that gh found nothing to report —
+  // never that the forge defines no required checks. `complete` stays false because that is unproven;
+  // this only has to stop being an operational failure.
   const noRequiredChecks = {
     status: 1,
     stdout: '',
@@ -2870,7 +2876,7 @@ test('a branch with no required checks defined satisfies requiredOnly instead of
   assert.deepEqual(result.data.result, {
     number: 12,
     repository: 'example/flow',
-    complete: true,
+    complete: false,
     timedOut: false,
     requiredChecksDefined: false,
     // `checksReported` stays part of the envelope and stays false: gh returned no rollup at all
@@ -2899,6 +2905,55 @@ test('a different `--required` failure stays a COMMAND_FAILED, not the no-requir
   );
   assert.equal(result.ok, false);
   assert.equal(result.error.code, 'COMMAND_FAILED');
+});
+
+test('the no-required-checks stderr only pardons a read that actually asked for --required', async () => {
+  // `isNoRequiredChecksResponse` guards on the plan carrying `--required`, not merely on the stderr
+  // text. A caller who never asked for the required-checks-only criterion has no criterion to
+  // trivially satisfy, so the identical stderr on its read must still surface as an operational
+  // failure. Removing that guard from the predicate keeps every other test in this file green, which
+  // is exactly what this one exists to catch.
+  const noRequiredChecks = {
+    status: 1,
+    stdout: '',
+    stderr: "no required checks reported on the 'some-branch' branch\n",
+  };
+  const runner = fakeRunner([noRequiredChecks, noRequiredChecks]);
+  const result = await executeOperation(
+    'pr-checks-wait',
+    { repository: gateRepository, number: 12 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'COMMAND_FAILED');
+});
+
+test('the no-required-checks fact rides on the read, not on a watch that hit the identical stderr', async () => {
+  // The watch is asked for nothing but the blocking itself — its exit status and stderr are
+  // discarded entirely — so a watch that happens to fail with the exact "no required checks
+  // reported" text must not let that leak into the envelope. Only the read that follows is the
+  // authority for `requiredChecksDefined`, and here it comes back with an ordinary, still-pending
+  // payload instead.
+  const watchNoRequiredChecks = {
+    status: 1,
+    stdout: '',
+    stderr: "no required checks reported on the 'some-branch' branch\n",
+  };
+  const readPending = {
+    status: 8,
+    stdout: JSON.stringify([{ name: 'e2e', state: 'PENDING', bucket: 'pending', link: '' }]),
+    stderr: '',
+  };
+  const runner = fakeRunner([watchNoRequiredChecks, readPending]);
+  const result = await executeOperation(
+    'pr-checks-wait',
+    { repository: gateRepository, number: 12, requiredOnly: true },
+    { runner, skipProbe: true },
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.data.result.complete, false);
+  assert.equal(result.data.result.checkCount, 1);
+  assert.equal('requiredChecksDefined' in result.data.result, false);
 });
 
 test('the read bound stays fixed at 60 seconds no matter what the caller asks the watch to wait', async () => {
