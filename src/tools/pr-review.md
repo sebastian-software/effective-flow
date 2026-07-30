@@ -727,10 +727,11 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   commits, no force-push. The forge-side `delivery.mergeMethod` – including `squash` and `rebase` –
   is the integration of the pull request in Phase 5 and is not covered by this rule.
 - Never approve a pull request and never request changes, not even to unblock a merge.
-- Never read an Effective Flow marker as authorship evidence, and write none. Evaluate the guard in
-  Phase 1's order – bot authorship first, then this tool's own comments inside a resolved thread,
-  then the authenticated login plus the exact configured trigger text – and count everything else as
-  human.
+- Never read an Effective Flow marker as authorship evidence **on its own**, and write none. A
+  marker is only ever one condition beside the author, and only as the body's leading line.
+  Evaluate the guard in Phase 1's order – bot authorship first, then this tool's own items inside a
+  resolved thread, then the authenticated login plus the exact configured trigger text, then this
+  tool's own top-level comment by its leading iterate marker – and count everything else as human.
 - Never let an unprovable identity clear the guard. A failed, unsupported, or login-less
   `viewer-read` makes every remaining non-bot item count, which activates the guard wherever such an
   item exists and leaves a pull request without one unblocked; report the missing identity as the
