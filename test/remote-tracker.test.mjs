@@ -2307,6 +2307,10 @@ test('an empty check list is reported as empty and never as complete', async () 
   assert.equal(wait.data.result.complete, false);
   assert.equal(wait.data.result.checksReported, true);
   assert.equal(wait.data.result.checkCount, 0);
+  // This is a different fact from "no required checks are defined": here gh queried checks
+  // successfully and reported none attached yet, so `requiredChecksDefined` must not appear —
+  // that discriminator is reserved for the detected no-required-checks case.
+  assert.equal('requiredChecksDefined' in wait.data.result, false);
 });
 
 test('a missing draft flag stays missing instead of defaulting to mergeable', async () => {
@@ -2844,6 +2848,57 @@ test("the structured read after the watch carries --json and the caller's --requ
     { runner: withoutRequired, skipProbe: true },
   );
   assert.equal(withoutRequired.calls[1].args.includes('--required'), false);
+});
+
+test('a branch with no required checks defined satisfies requiredOnly instead of failing', async () => {
+  // Real gh (2.96.0) exits 1 on `--required` the moment the forge defines no required checks at
+  // all, on both the watch and the structured read behind it — the watch carries `--required` too,
+  // so it hits the identical wall. "No required checks are defined" is a trivially satisfied
+  // criterion, not an operational failure, so this must not fall through to COMMAND_FAILED.
+  const noRequiredChecks = {
+    status: 1,
+    stdout: '',
+    stderr: "no required checks reported on the 'some-branch' branch\n",
+  };
+  const runner = fakeRunner([noRequiredChecks, noRequiredChecks]);
+  const result = await executeOperation(
+    'pr-checks-wait',
+    { repository: gateRepository, number: 12, requiredOnly: true },
+    { runner, skipProbe: true },
+  );
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.data.result, {
+    number: 12,
+    repository: 'example/flow',
+    complete: true,
+    timedOut: false,
+    requiredChecksDefined: false,
+    // `checksReported` stays part of the envelope and stays false: gh returned no rollup at all
+    // here. Dropping the field in this one case would make the shape irregular for a consumer that
+    // reads it unconditionally, and `requiredChecksDefined` is what explains the empty list.
+    checksReported: false,
+    checkCount: 0,
+    checks: [],
+  });
+});
+
+test('a different `--required` failure stays a COMMAND_FAILED, not the no-required-checks pass', async () => {
+  // This guards against the fix above being written too broadly: only the specific "no required
+  // checks reported" stderr may be normalized into a pass. Any other `--required` failure — an
+  // unresolvable PR here — still has to surface as an operational failure.
+  const unresolvable = {
+    status: 1,
+    stdout: '',
+    stderr: 'could not resolve to a PullRequest with the number of 12.',
+  };
+  const runner = fakeRunner([unresolvable, unresolvable]);
+  const result = await executeOperation(
+    'pr-checks-wait',
+    { repository: gateRepository, number: 12, requiredOnly: true },
+    { runner, skipProbe: true },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'COMMAND_FAILED');
 });
 
 test('the read bound stays fixed at 60 seconds no matter what the caller asks the watch to wait', async () => {

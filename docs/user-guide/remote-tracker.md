@@ -294,7 +294,21 @@ Several behaviors worth knowing if you inspect the gate's output or a `pr-review
   report `checksReported` (whether the provider returned a check rollup at all) and `checkCount`
   (how many checks it contains) alongside the list itself. A wait or a status read only counts as
   complete when the list is also non-empty, so a pull request GitHub has not yet attached any check
-  runs to cannot be mistaken for one that already passed everything.
+  runs to cannot be mistaken for one that already passed everything. This is a different empty
+  case from the one below, where `requiredChecksDefined` tells the two apart.
+- **A repository with no required checks defined is a satisfied criterion, not a failure.** `gh pr
+checks --required` exits non-zero with an empty payload and a stderr message of "no required
+  checks reported" whenever the forge defines no required checks for the branch – which is every
+  repository without branch protection. The read step recognizes exactly that combination (the
+  `--required` flag plus that stderr phrase) and turns it into a successful result with
+  `requiredChecksDefined: false`, `checksReported: false`, `checkCount: 0`, an empty `checks` list,
+  and `complete: true`, because a requirement that does not exist cannot be unmet. Without this,
+  `prReview.requireAllChecks: false` would fail the wait on every such repository instead of
+  letting it through. `requiredChecksDefined` appears only in this detected case and is never
+  emitted as `true` or on any other path; any other non-zero exit of the read (an unresolvable
+  reference, a missing token) still counts as an operational error, and the pre-existing rule above
+  that an empty list from "no checks attached yet" is not "all green" is untouched – the two empty
+  results are different facts, which is exactly what `requiredChecksDefined` distinguishes.
 - **A missing `draft` flag is reported as absent, not as `false`.** When the provider does not
   expose the draft state, `pr-status-read` omits the field instead of guessing – the same "absent
   rather than guessed" rule the check list's `required` flag already follows. Treat an absent

@@ -1622,6 +1622,21 @@ function isJsonArrayPayload(text) {
   }
 }
 
+// A branch for which the forge defines no required checks at all makes `gh pr checks --required`
+// exit non-zero with an empty payload and say so on stderr alone. Both halves of the match carry
+// weight: without the flag this would reach reads that never asked for the criterion, and without
+// the phrase every failed `--required` read — an unresolvable reference, an expired token — would
+// pass as satisfied, which is the exact class of defect the surrounding rules were written against.
+// The message names the head branch rather than the base, so the branch name inside it proves
+// nothing about the criterion and is deliberately not part of the match.
+const NO_REQUIRED_CHECKS_STDERR = 'no required checks reported';
+
+function isNoRequiredChecksResponse(result, plan) {
+  if (!result || result.status === 0) return false;
+  if (!plan.args.includes('--required')) return false;
+  return (result.stderr ?? '').includes(NO_REQUIRED_CHECKS_STDERR);
+}
+
 async function runChecked(runner, plan, label) {
   const result = await runner(plan);
   if (result?.error?.code === 'ENOENT') {
@@ -1648,6 +1663,15 @@ async function runChecked(runner, plan, label) {
     // falling through to COMMAND_FAILED below.
     if (result && result.status !== 0 && isJsonArrayPayload(result.stdout)) {
       return { ...result, status: 0 };
+    }
+    // "No required checks are defined" is a criterion that is trivially satisfied, not an
+    // operational failure, so it becomes an empty success instead of a COMMAND_FAILED. The rule sits
+    // last on purpose: the timeout and the red-check rules above still decide everything they
+    // decided before, and only what would otherwise fail reaches this point. stdout is emptied
+    // rather than filled with a synthetic list, because an empty payload is what already makes the
+    // normalizer report no rollup and an empty list; inventing one would claim checks that ran.
+    if (isNoRequiredChecksResponse(result, plan)) {
+      return { ...result, status: 0, stdout: '', requiredChecksDefined: false };
     }
   }
   if (!result || result.status !== 0) {
@@ -2257,15 +2281,25 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
       const reported = Array.isArray(flattened) ? flattened : flattened?.checks;
       const checks = (Array.isArray(reported) ? reported : []).map(normalizeCheck);
       const timedOut = metadata.timedOut === true;
+      // The single case in which nothing to wait for is the answer rather than a missing one: the
+      // forge defines no required checks, so a caller who asked for the required ones is done. The
+      // flag is reported only when the read actually observed it, never as `true` and never on any
+      // other path, so a consumer cannot mistake an unproven assumption for a queried fact.
+      const noRequiredChecks = metadata.requiredChecksDefined === false;
       return {
         number: prNumber(input),
         repository: repository.slug,
         // An empty list is never complete. `every` on an empty array is vacuously true, so a head
         // whose checks have not been attached yet would otherwise read exactly like a green run.
+        // A branch without any required checks is the one exception, and a timeout still overrides
+        // it: the wait was cut short, so even a vacuous criterion was never watched to its end.
         complete:
-          !timedOut && checks.length > 0 && checks.every((check) => check.status === 'COMPLETED'),
+          !timedOut &&
+          (noRequiredChecks ||
+            (checks.length > 0 && checks.every((check) => check.status === 'COMPLETED'))),
         timedOut,
         ...(metadata.forcedKill === true ? { forcedKill: true } : {}),
+        ...(noRequiredChecks ? { requiredChecksDefined: false } : {}),
         checksReported: Array.isArray(reported),
         checkCount: checks.length,
         checks,
@@ -2736,6 +2770,11 @@ export async function executeOperation(operation, input = {}, options = {}) {
       // describes a child that had to be killed, which says nothing about the read.
       if (watch?.timedOut === true || readResult?.timedOut === true) parsed.timedOut = true;
       if (watch?.forcedKill === true) parsed.forcedKill = true;
+      // The read is also the only step that can observe that the branch defines no required checks
+      // at all — the watch hits the same wall but its exit status is discarded. The fact rides the
+      // same metadata channel because the payload it explains is empty by definition, and the
+      // normalizer needs it to tell that emptiness apart from checks that simply have not run yet.
+      if (readResult?.requiredChecksDefined === false) parsed.requiredChecksDefined = false;
       return {
         ok: true,
         operation,
