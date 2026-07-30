@@ -2097,6 +2097,14 @@ function normalizeCheck(item) {
 // entry is not the head — and a timestamp taken from the wrong commit would silently certify stale
 // bot feedback as current. Nothing matching means no field, which the caller reads as unprovable.
 function headCommitTimestamp(item, headSha) {
+  // Through the only caller this branch cannot fire: `PR_STATUS_QUERY` selects no top-level
+  // timestamp, and the flattener builds the record from the head commit node itself, so no directly
+  // stated field ever reaches it. It stays because it deliberately outranks the `oid` comparison
+  // below: a value the provider states outright is its own answer rather than one this code
+  // reconstructed. That precedence is the hazard, not the branch. Adding such a field to the query
+  // or to the flattener as a convenience switches head verification off without touching a line of
+  // this function, so anyone introducing one has to decide here whether the stated value may still
+  // skip the match.
   const direct = normalizeTimestamp(item.headCommittedAt, item.head?.commit?.committer?.date);
   if (direct !== undefined) return direct;
   if (typeof headSha !== 'string' || headSha === '') return undefined;
@@ -2132,6 +2140,23 @@ function headCommitTimestamp(item, headSha) {
 // of the returned nodes is reported as an invalid payload naming both numbers instead of being
 // passed on as a plausible-looking shorter list.
 function flattenPullRequestStatus(raw) {
+  // GraphQL answers a partial failure with both halves at once: a `data` block for the fields that
+  // resolved and an `errors` array for the ones that did not — a sub-resolver that failed, a field
+  // the token may not read, a rate limit reached mid-query. Read as a clean payload, such a response
+  // would let the merge gate decide on a check list the provider never finished assembling. Whether
+  // `gh` also exits non-zero for it is the CLI's business and nothing here pins it, so the one read
+  // that gates a merge states the failure on its own evidence instead. The provider's wording
+  // travels along redacted, like every other piece of provider text this file reports.
+  const errors = Array.isArray(raw?.errors) ? raw.errors : [];
+  if (errors.length > 0) {
+    fail('INVALID_PAYLOAD', 'provider reported GraphQL errors for the status read', {
+      messages: redact(
+        errors.map((entry) =>
+          typeof entry?.message === 'string' ? entry.message : 'provider stated no message',
+        ),
+      ),
+    });
+  }
   const pullRequest = raw?.data?.repository?.pullRequest;
   if (!pullRequest || typeof pullRequest !== 'object') {
     fail('INVALID_PAYLOAD', 'provider returned no pull request for the status read');

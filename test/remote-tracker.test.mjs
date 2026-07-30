@@ -2267,6 +2267,25 @@ test('the head commit timestamp is matched by object name, not by position', asy
   assert.equal(offsetForm.headCommittedAt, '2026-07-28T20:01:19.000Z');
 });
 
+test('a directly stated head timestamp outranks the object-name match', async () => {
+  // The query selects no top-level timestamp, so today nothing can produce this shape; the field
+  // reaches the record only if someone adds one to `PR_STATUS_QUERY` or to the flattener as a
+  // convenience. This case pins what happens at that moment: the stated value is taken as it is and
+  // the `oid` comparison below it never runs, so head verification would disappear without any other
+  // test noticing. The read stays the merge gate's evidence, so that precedence must be a decision
+  // somebody makes deliberately rather than a side effect of adding a field.
+  const stated = await statusFrom({
+    headCommittedAt: '2026-07-28T09:00:00Z',
+    commits: [{ oid: earlierHead, committedDate: '2026-07-27T09:00:00Z' }],
+  });
+  assert.equal(stated.headSha, verifiedHead);
+  assert.equal(stated.headCommittedAt, '2026-07-28T09:00:00.000Z');
+  // The rollup is still chosen by the `oid` match, so the very same read reports no checks while
+  // handing back a timestamp for a commit it never identified — the asymmetry this precedence
+  // creates, stated here so it cannot be introduced unnoticed.
+  assert.equal(stated.checksReported, false);
+});
+
 test('comment reads carry the provider timestamp and omit it when unstated', async () => {
   const runner = fakeRunner([
     {
@@ -2428,6 +2447,47 @@ test('a rollup whose totalCount exceeds its returned nodes fails closed instead 
   );
   assert.equal(complete.ok, true);
   assert.equal(complete.data.result.checkCount, 1);
+});
+
+test('a status read carrying GraphQL errors is refused even when it also carries data', async () => {
+  // GraphQL answers a partial failure with both halves at once: `data` for the fields that resolved
+  // and `errors` for the ones that did not. Reading such a response as a clean payload would let the
+  // merge gate decide on a check list the provider never finished assembling, and nothing in this
+  // repository pins that `gh` exits non-zero for it, so the envelope has to state the failure on its
+  // own evidence.
+  const clean = JSON.parse(prStatusStdout(verifiedHead, { statusCheckRollup: [] }));
+  const readWith = (extra) =>
+    executeOperation(
+      'pr-status-read',
+      { repository: gateRepository, number: 12 },
+      {
+        runner: fakeRunner([
+          { status: 0, stdout: JSON.stringify({ ...clean, ...extra }), stderr: '' },
+        ]),
+        skipProbe: true,
+      },
+    );
+
+  const partial = await readWith({
+    errors: [
+      { message: 'API rate limit exceeded for installation ID 42' },
+      { type: 'FORBIDDEN', message: 'Resource not accessible by integration' },
+    ],
+  });
+  assert.equal(partial.ok, false);
+  assert.equal(partial.error.code, 'INVALID_PAYLOAD');
+  // The provider's own wording travels with the failure, so a caller can tell a rate limit from a
+  // permission problem without a second read.
+  assert.deepEqual(partial.error.details.messages, [
+    'API rate limit exceeded for installation ID 42',
+    'Resource not accessible by integration',
+  ]);
+
+  // An empty `errors` array is not a failure, and refusing it would turn a perfectly good read into
+  // a blocked merge.
+  const stated = await readWith({ errors: [] });
+  assert.equal(stated.ok, true);
+  assert.equal(stated.data.result.headSha, verifiedHead);
 });
 
 test('a missing draft flag stays missing instead of defaulting to mergeable', async () => {
@@ -3473,17 +3533,27 @@ esac
 exit 1
 `;
 
-function runShippedCli(operation, input, env = {}) {
+function runShippedCli(operation, input, env = {}, flags = []) {
   const directory = mkdtempSync(join(tmpdir(), 'effective-flow-runner-'));
   try {
     writeFileSync(join(directory, 'gh'), FAKE_GH, { mode: 0o755 });
-    const result = spawnSync(process.execPath, ['src/scripts/remote-tracker.mjs', operation], {
-      cwd: new URL('..', import.meta.url),
-      input: JSON.stringify(input),
-      encoding: 'utf8',
-      env: { ...process.env, ...env, PATH: `${directory}:${process.env.PATH}` },
-    });
-    return { ...result, envelope: JSON.parse(result.stdout) };
+    const result = spawnSync(
+      process.execPath,
+      ['src/scripts/remote-tracker.mjs', operation, ...flags],
+      {
+        cwd: new URL('..', import.meta.url),
+        input: JSON.stringify(input),
+        encoding: 'utf8',
+        env: { ...process.env, ...env, PATH: `${directory}:${process.env.PATH}` },
+      },
+    );
+    // A run that dies before printing anything is itself a result worth asserting on, so an empty
+    // stdout arrives at the caller as a missing envelope instead of as a parse error raised here,
+    // where no test could say what it was looking at.
+    return {
+      ...result,
+      envelope: result.stdout.trim() === '' ? undefined : JSON.parse(result.stdout),
+    };
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -3549,6 +3619,37 @@ test('a watch that ignores the polite stop is killed and reported as forced', ()
   assert.equal(forced.envelope.data.result.complete, false);
   // Distinguishable from a clean bounded stop: the provider had to be killed.
   assert.equal(forced.envelope.data.result.forcedKill, true);
+});
+
+test('the shipped process runner reports a child that dies before its payload lands', () => {
+  // Every `gh api --input -` plan hands its payload to the child on stdin, and `pr-status-read` —
+  // the read the merge gate performs immediately before merging — travels on that path too. A child
+  // that fails at once closes the pipe while the write is still outstanding, and the EPIPE that
+  // follows is emitted on the stdin stream, not on the child: without a listener there it becomes an
+  // uncaught exception, the process dies, and the caller waiting for a structured envelope receives
+  // nothing at all. The payload is deliberately larger than the kernel's pipe buffer on either
+  // platform, because a smaller one is accepted whole before the child can exit and the write then
+  // never fails — the same reason this gap survived unnoticed for so long. It is ordinary prose
+  // rather than one long token so that the redaction pass over the plan stays linear in its length.
+  const failed = runShippedCli(
+    'issue-comment',
+    {
+      repository: { host: 'github.com', owner: 'example', repository: 'flow' },
+      number: 12,
+      payload: { body: 'review note '.repeat(30_000) },
+    },
+    {},
+    ['--apply'],
+  );
+  assert.notEqual(
+    failed.envelope,
+    undefined,
+    `the runner crashed instead of reporting the failure: ${failed.stderr}`,
+  );
+  assert.equal(failed.envelope.ok, false);
+  // The child's own outcome is what the caller must see, not a stream error raised in the parent.
+  assert.equal(failed.envelope.error.code, 'COMMAND_FAILED');
+  assert.equal(failed.status, 1);
 });
 
 test('the shipped process runner detects a removed working directory before spawning', () => {

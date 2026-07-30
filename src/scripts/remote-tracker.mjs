@@ -71,6 +71,15 @@ function createProcessRunner() {
       // The terminating signal travels with the result: a child killed on its bound exits with a
       // null status, and only the signal distinguishes that bounded stop from a crash.
       child.on('close', (status, signal) => settle({ status, signal, stdout, stderr }));
+      // A child that fails at once — an unauthenticated or instantly exiting gh — closes its end of
+      // the pipe while this write is still outstanding, and the EPIPE that follows is emitted on the
+      // stdin stream rather than on the child. A stream with no `error` listener turns that into an
+      // uncaught exception, so the process would die before `main` printed anything and a caller
+      // waiting for a structured envelope would receive none at all. The listener stays empty on
+      // purpose: the child's own `error` and `close` handlers above already carry the real outcome
+      // and report it as a COMMAND_FAILED, and a second reading of the same failure here could only
+      // contradict them.
+      child.stdin.on('error', () => {});
       child.stdin.end(stdin);
     });
 }
