@@ -111,8 +111,11 @@ its own as someone else's.
 
 ### Reply to a thread
 
-Use the helper's review-thread reply operation. Every reply carries the marker
-`<!-- effective-flow-iterate -->` (see idempotency).
+Use the helper's review-thread reply operation. It stamps the marker
+`<!-- effective-flow-iterate -->` onto the reply body from its own marker table, idempotently, so
+never write that marker by hand (see idempotency). This matters beyond tidiness: `{{SKILL:pr-review}}`
+matches the marker as an exact string when it decides whether an item in a resolved thread is this
+tool's own, so an unstamped reply is later read as a human's and blocks the merge.
 
 ### Resolve a thread
 

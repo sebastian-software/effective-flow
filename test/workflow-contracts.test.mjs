@@ -1455,14 +1455,23 @@ test("a resolved thread excludes only this tool's own items", () => {
 
   // The second half, and the one the author condition cannot cover: in manual mode the operator
   // and this tool are the SAME account, so authorship alone still discards an objection the
-  // operator types into such a thread. `iterate` stamps every reply it writes, so the marker is
-  // what separates its reply from a hand-typed one. Dropping this condition reopens the fail-open
-  // path for the single most likely objector on a manually driven pull request.
-  assert.match(
-    rule,
-    /<!-- effective-flow-iterate -->/,
-    'an item in a resolved thread must also carry the iterate marker to be excluded',
-  );
+  // operator types into such a thread. The helper stamps every item this tool writes into a
+  // thread, so the marker is what separates it from a hand-typed one. Dropping this condition
+  // reopens the fail-open path for the single most likely objector on a manually driven pull
+  // request.
+  //
+  // BOTH pull-request markers must appear. The two directions stamp different ones by design —
+  // idempotency needs to tell which writer produced a body — while this rule needs the union.
+  // A rule that knew only the iterate marker could never exclude an outbound review comment,
+  // however resolved its thread and whoever wrote it, which is exactly the defect that made the
+  // gate refuse to merge a pull request this product had annotated itself.
+  for (const marker of ['effective-flow-iterate', 'effective-flow-pr-review']) {
+    assert.match(
+      rule,
+      new RegExp(`<!-- ${marker} -->`),
+      `an item in a resolved thread must be excludable by the ${marker} marker`,
+    );
+  }
 
   // And the marker only counts where a quote-reply cannot put it. Both providers prefix a quoted
   // body with `>`, so a copied marker lands inside a blockquote instead of opening the body.
@@ -1479,6 +1488,71 @@ test("a resolved thread excludes only this tool's own items", () => {
   // and is deliberately not asserted separately: every wording that survives the assertion
   // above already speaks about an item's author, and every token set tried for the per-item
   // half matched a thread-level rule too.
+});
+
+test("rule 2's marker enumeration stays in step with the helper's marker table", async () => {
+  // The rule names its markers literally instead of referring to the table, and that is deliberate:
+  // a reference would let a future comment kind join a fail-open exclusion automatically, with
+  // nobody deciding that it should. This test is the other half of that bargain — it turns the
+  // divergence into a build failure, so adding a writer forces a conscious choice about the guard
+  // rather than silently widening or silently under-covering it.
+  const { COMMENT_MARKERS } = await import('../src/scripts/remote-tracker-core.mjs');
+  const phase1 = flat(section(source('src/tools/pr-review.md'), '### Phase 1'));
+  const rule = phase1.split(/(?=\s\d+\.\s)/).find((item) => /\bresolved\b/i.test(item));
+
+  // Only the pull-request writers belong in this rule. `planning` and `apply` stamp issue
+  // comments, which never appear on a pull request's threads.
+  const pullRequestKinds = ['pr', 'pr-review'];
+  for (const kind of pullRequestKinds) {
+    assert.ok(
+      Object.hasOwn(COMMENT_MARKERS, kind),
+      `the marker table must still carry the ${kind} comment kind`,
+    );
+    assert.match(
+      rule,
+      new RegExp(`<!-- ${COMMENT_MARKERS[kind]} -->`),
+      `rule 2 must name the ${kind} marker ${COMMENT_MARKERS[kind]} from the marker table`,
+    );
+  }
+
+  // If a new pull-request-facing kind appears, this fails and the guard gets a decision instead of
+  // a default.
+  assert.deepEqual(
+    Object.keys(COMMENT_MARKERS).sort(),
+    ['apply', 'planning', 'pr', 'pr-review'],
+    'a new comment kind must be assessed against the merge gate guard before this list is updated',
+  );
+});
+
+test('the merge gate excludes its own top-level summary comment by author plus leading marker', () => {
+  const phase1 = flat(section(source('src/tools/pr-review.md'), '### Phase 1'));
+
+  // A top-level comment has no resolved state, so before this rule existed a summary comment from
+  // a directly invoked `iterate` run fell through to the catch-all and blocked the merge forever.
+  // The rule is sliced out by the property no other rule has: it is about a top-level comment and
+  // it names the iterate marker.
+  const rule = phase1
+    .split(/(?=\s\d+\.\s)/)
+    .find((item) => /top-level/i.test(item) && /<!-- effective-flow-iterate -->/.test(item));
+  assert.ok(rule, 'Phase 1 must carry a rule excluding this tool’s own top-level comment');
+
+  // Author remains a required condition — the marker never excludes an item on its own.
+  assert.match(
+    rule,
+    /viewer-?read|`?authorType`?|\bbot\b/i,
+    'a top-level comment may only be excluded when its author is this tool’s own',
+  );
+
+  // And the marker only counts where a quote-reply cannot put it, exactly as in rule 2.
+  assert.match(
+    rule,
+    /first line|leading line|opens the body|begins with it/i,
+    'the marker must only count as the body’s leading line, not anywhere in it',
+  );
+
+  // The catch-all must still come last. If the new rule were appended after it, it would never be
+  // reached, and the evaluation order is what this whole section is built on.
+  ordered(phase1, 'top-level', 'Everything else counts as human');
 });
 
 test('the merge gate recognizes its own trigger comment by identity plus the complete trigger text', () => {
