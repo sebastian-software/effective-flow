@@ -1625,23 +1625,24 @@ test('structured parse failures redact URL userinfo', async () => {
 });
 
 // `redact` runs over every command plan, including its stdin, so its input is whatever an issue or
-// pull-request body carried — text the repository does not control. Both shapes below cost seconds
-// against a pattern that can backtrack across an unbroken run, and stay under a millisecond against
-// one that cannot. The bound sits far above the linear cost, so a loaded machine is very unlikely to
-// fail it; a return to quadratic behaviour is what it is built to catch. Both shapes are sized so
-// the quadratic cost clears the bound by an order of magnitude — a thin margin would decay into a
-// silent pass as machines get faster.
+// pull-request body carried — text the repository does not control. The pattern has two independent
+// guards against backtracking, and one shape below catches the loss of each. Neither shape catches
+// both, so removing either would be a silent half-fix without the pair.
+//
+// The time bound sits three to four orders of magnitude above the linear cost, so a loaded machine
+// is very unlikely to fail it; quadratic behaviour is what it is built to catch. Both shapes are
+// sized so the quadratic cost clears the bound by more than an order of magnitude — a thin margin
+// would decay into a silent pass as machines get faster.
 test('redaction stays linear on unbroken runs', () => {
   const shapes = {
-    // No `://` ever matches here: the cost is the scheme prefix giving back one character at a
-    // time at every start position. Roughly 7 s before the fix, 8 ms after.
+    // Catches the loss of the lookbehind. No `://` ever matches here, so the whole cost is the
+    // scheme prefix giving its run back one character at a time at every start position: ~7 s
+    // without the lookbehind, ~1 ms with it.
     'plain run': 'x'.repeat(128_000),
-    // Here `://` does match, and the cost moves to the userinfo tail: two quantifiers over the
-    // same character class, so every backtrack step of the outer one lets the inner one re-consume
-    // to the end. Bounding the scheme alone leaves this shape quadratic, which makes it the only
-    // one of the two that catches a half-fix — so it is the shape whose margin has to be widest.
-    // Twice as long as it needs to be to reproduce: ~14 s before the fix, under a millisecond
-    // after, for about 16 ms of suite time.
+    // Catches the return of the optional `(?::[^\s/@]*)?` after the userinfo. Here `://` does
+    // match, and that group would let its `*` re-consume to the end at every backtrack step of the
+    // preceding `+` over the same class: ~14 s with the group, ~1 ms without. Twice as long as it
+    // needs to be to reproduce, for about 16 ms of suite time.
     'colon run': `a://${'x:'.repeat(128_000)}`,
   };
   for (const [name, input] of Object.entries(shapes)) {
@@ -1653,23 +1654,18 @@ test('redaction stays linear on unbroken runs', () => {
 });
 
 // The cost bound above is satisfied by any pattern that stops matching, so it has to be paired
-// with the coverage it must not buy back. The empty-username case is the trap: excluding colons
-// from the userinfo is the obvious way to break the quantifier overlap, and it silently stops
-// redacting a password that has no username in front of it.
+// with the coverage it must not buy back. Two shapes are the traps.
 //
-// The last two redacted cases and the last untouched one pin the scheme bound of 32, which is
-// otherwise recorded nowhere a test could catch. Tightening it — plausible, since a bound whose
-// only stated justification is "long enough for the schemes we see" invites trimming — would stop
-// redacting real credentials while every ordinary case here stayed green.
+// The empty username is the first: excluding colons from the userinfo is the obvious way to break
+// the quantifier overlap, and it silently stops redacting a password with no username in front of
+// it.
 //
-// Only the digit pair does that pinning, and the reason is worth stating, because the obvious
-// all-letter case does not work. The bound does not mean "a scheme longer than 32 characters is not
-// matched": the engine slides the start position, so `aaa…aaa://u:p@h` still matches under *any*
-// bound — the match simply begins later and the skipped prefix is copied through. That is what the
-// 40-character case documents, and it is why it is not a guard. Coverage is lost only when the
-// scheme is at least 33 characters *and* its last 32 hold no ASCII letter to restart from. Digits
-// are such a tail, so `a` + 31 digits must redact and `a` + 32 must not, and the pair moves for
-// every change to the bound in either direction. No real scheme comes near this shape.
+// A long scheme is the second, and it is the one a reviewer caught here. Bounding the scheme is
+// the obvious way to stop the prefix backtracking, and it stops redacting any scheme longer than
+// the bound whose last characters hold no letter for the engine to restart from — while
+// `parseRemote` goes on accepting that same string as a URL and funnelling it into an error
+// envelope. The three long-scheme cases below cover exactly that: each one must survive any future
+// attempt to reintroduce a bound.
 test('redaction keeps covering every URL userinfo shape', () => {
   for (const remote of [
     'https://alice:verysecret@github.com/example/flow.git',
@@ -1683,6 +1679,7 @@ test('redaction keeps covering every URL userinfo shape', () => {
     'https://u:p@h/a@b',
     `${'a'.repeat(40)}://u:p@h/x`,
     `a${'0'.repeat(31)}://u:p@h/x`,
+    `a${'1'.repeat(33)}://user:secret@host`,
   ]) {
     assert.match(redact(remote), /:\/\/\[REDACTED\]@/, remote);
   }
@@ -1691,7 +1688,6 @@ test('redaction keeps covering every URL userinfo shape', () => {
     'https://@host/x',
     'mailto:a@b.c',
     'no scheme user:pw@host',
-    `a${'0'.repeat(32)}://u:p@h/x`,
   ]) {
     assert.equal(redact(untouched), untouched);
   }
