@@ -246,7 +246,7 @@ repository, an `origin` remote, and an authenticated CLI.
 
 | Operation        | Capability              | What it does                                                                                                                                                                                   |
 | ---------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pr-status-read` | `pullRequestStatus`     | Reads, in one call, the head SHA, base ref, PR state, draft flag, check list, and the forge's merge state                                                                                      |
+| `pr-status-read` | `pullRequestStatus`     | Reads, in one call, the head SHA, base ref, PR state, draft flag, check list (with requiredness), and the forge's merge state                                                                  |
 | `pr-checks-wait` | `pullRequestChecksWait` | Blocks inside the provider's own watch until checks complete or the supplied timeout elapses, then reads back the normalized check list as a second call                                       |
 | `pr-merge`       | `pullRequestMerge`      | Merges the pull request with the configured method; a mutation, so a run without `--apply` produces a dry-run plan and merges nothing                                                          |
 | `viewer-read`    | `viewerRead`            | A read, not a mutation. Returns the authenticated login and, where the provider states it, the account type (`User` or `Bot`), so the gate can tell its own writes from a person's across runs |
@@ -317,8 +317,24 @@ Several behaviors worth knowing if you inspect the gate's output or a `pr-review
   just as well mean a branch whose required checks are all still pending.
 - **A missing `draft` flag is reported as absent, not as `false`.** When the provider does not
   expose the draft state, `pr-status-read` omits the field instead of guessing – the same "absent
-  rather than guessed" rule the check list's `required` flag already follows. Treat an absent
-  `draft` as blocking, the same as a confirmed `true`.
+  rather than guessed" rule the check list's `required` flag already follows, except that the
+  `required` flag now does come back on every check the forge states a requiredness for. Treat an
+  absent `draft` as blocking, the same as a confirmed `true`.
+- **`pr-status-read` reads its check list through one GraphQL query, not `gh pr view --json`.**
+  That is still a single call, so the check list and the merge state continue to describe the same
+  instant, but the query additionally states each context's requiredness, which the older
+  projection had no field for at all. The `required` flag is purely additive: it is present on a
+  check where the forge states its requiredness and absent, never guessed, when the forge does
+  not. The rollup is read from the commit whose object name matches the head SHA, never from
+  whichever commit the provider happened to return last: a pull request's commit list is
+  materialized asynchronously and can trail the head right after a push, and reporting an earlier
+  commit's green checks against the head is how a commit whose CI never ran gets merged. When no
+  returned commit matches the head, the check list is reported as absent rather than guessed.
+  The query requests **one page** of the rollup, currently a hundred contexts, and refuses a
+  partial one: if the provider reports more contexts than it returned, the operation fails with
+  `INVALID_PAYLOAD` naming both the total and the returned count rather than evaluating a merge
+  criterion on a partial check list. A pull request that genuinely exceeds that ceiling therefore
+  fails this read until the query learns to page.
 - **`pr-checks-wait` may report `forcedKill: true`.** If the watching child process ignores a clean
   `SIGTERM` and has to be escalated to `SIGKILL` after a one-second grace period, the result carries
   that flag; a clean bounded stop simply omits it.

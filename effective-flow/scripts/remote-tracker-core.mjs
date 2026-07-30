@@ -239,6 +239,10 @@ export function parseRemote(remote, options = {}) {
   let host;
   let path;
   try {
+    // A failure below funnels this raw string into the error envelope, where `redact` is the only
+    // thing between its userinfo and the caller. The two scheme grammars are therefore meant to
+    // stay identical — anything accepted as a URL here must be redactable there. Narrowing either
+    // one alone reopens that gap.
     if (/^[a-z][a-z\d+.-]*:\/\//i.test(remote)) {
       const parsed = new URL(remote);
       host = parsed.hostname;
@@ -434,7 +438,11 @@ export function buildFindingPayload(input, options = {}) {
   };
 }
 
-const COMMENT_MARKERS = Object.freeze({
+// Exported so the merge gate's contract test can compare its rule-2 enumeration against the real
+// set of writers. The guard names both pull-request markers literally rather than referring to this
+// table, so that adding a comment kind cannot widen a fail-open exclusion by itself; the test is
+// what turns that divergence into a build failure instead of a silent one.
+export const COMMENT_MARKERS = Object.freeze({
   planning: 'effective-flow-plan-issues',
   apply: 'effective-flow-apply-issues',
   pr: 'effective-flow-iterate',
@@ -476,6 +484,16 @@ export function buildCommentPayload(kind, input) {
   requireObject(input, 'comment');
   const content = publishableText(input.body, 'comment.body');
   return { kind, marker, body: stampMarker(marker, content) };
+}
+
+// A thread reply is an `iterate` write, so it carries the same marker as that direction's summary
+// comment. It is stamped here rather than left to the caller because the marker contract states
+// that these markers are never written by hand: the merge gate's guard matches them as exact
+// strings, and a caller that forgot the stamp — or reworded it — produced a reply the guard later
+// read as a human's, blocking the merge on this tool's own output.
+function buildThreadReplyBody(payload) {
+  const marker = commentMarker('pr');
+  return stampMarker(marker, publishableText(payload.body, 'payload.body'));
 }
 
 const REVIEW_EVENTS = Object.freeze(['COMMENT']);
@@ -749,8 +767,29 @@ export function redact(value) {
     );
   }
   if (typeof value !== 'string') return value;
+  // Two guards keep the URL-credential pattern linear, because it runs over whatever an issue or
+  // pull-request body carried into a command plan — text this repository does not control. Both
+  // guard against the same failure: a quantifier handing its match back one character at a time.
+  //
+  // The lookbehind is the load-bearing one. `[a-z\d+.-]*` is anchored to the start of a run of
+  // those characters, so a 128 000-character run offers the engine one start position instead of
+  // 128 000. Without it, every position starts a doomed scan that gives the run back character by
+  // character, which is O(n) per position and quadratic over the string. It costs no coverage: a
+  // scheme cannot begin midway through such a run anyway, so every start it rejects could only
+  // have produced a match another start already covers.
+  //
+  // The second is the absent `(?::[^\s/@]*)?` after the userinfo. That group used to let its `*`
+  // re-consume to the end at every backtrack step of the `+` over the same character class. It was
+  // redundant — `[^\s/@]+` already accepts the colon between user and password — so dropping it
+  // removed the overlap without narrowing anything.
+  //
+  // Do not bound the scheme instead. A bound is the obvious fix and it is worse on both counts: it
+  // still does its bounded amount of work at every position, and it silently stops redacting a
+  // scheme longer than the bound whose tail holds no letter to restart from, while `parseRemote`
+  // (see its scheme guard) keeps accepting that same string as a URL. The grammar here is
+  // deliberately identical to that guard's.
   return value
-    .replace(/([a-z][a-z\d+.-]*:\/\/)[^\s/@]+(?::[^\s/@]*)?@/gi, '$1[REDACTED]@')
+    .replace(/(?<![a-z\d+.-])([a-z][a-z\d+.-]*:\/\/)[^\s/@]+@/gi, '$1[REDACTED]@')
     .replace(/\b(?:gh[opusr]_|github_pat_|gitea_)[A-Za-z0-9_=-]+\b/g, '[REDACTED]')
     .replace(/(Authorization\s*:\s*(?:Bearer|token)\s+)\S+/gi, '$1[REDACTED]')
     .replace(/([?&](?:access_)?token=)[^&\s]+/gi, '$1[REDACTED]');
@@ -844,14 +883,27 @@ function ghRepoArgs(repository) {
   return ['--repo', repository.host === 'github.com' ? slug : `${repository.host}/${slug}`];
 }
 
-// Field lists for the two JSON reads of the gate. Both are pinned rather than requested wholesale:
-// `gh pr view --json` rejects an unknown field, so an explicit list fails loudly on an incompatible
-// CLI instead of silently returning a differently shaped payload.
-// `commits` is requested for exactly one value: the head commit's own timestamp, which the gate
-// compares against an automatic reviewer's latest comment. It rides on this read rather than on a
-// second request, so the two values it correlates describe the same instant.
-const PR_STATUS_FIELDS =
-  'baseRefName,commits,headRefOid,isDraft,mergeStateStatus,mergeable,number,state,statusCheckRollup,title,url';
+// The selections of the two JSON reads of the gate. Both are pinned rather than requested
+// wholesale: an unknown field is rejected outright, so naming every field fails loudly on an
+// incompatible provider instead of silently returning a differently shaped payload.
+//
+// The status read has to be GraphQL rather than `gh pr view --json`, because requiredness is the one
+// fact the porcelain projection cannot express at all: none of its fields states whether branch
+// protection marks a check as required, so `prReview.requireAllChecks: false` — documented as "the
+// forge's own required-checks definition decides" — had no definition to consult, and the check list
+// correctly reported no `required` flag rather than guessing one. GraphQL states it per context as
+// `isRequired(pullRequestNumber:)`, on both members of the rollup union, and a single query returns
+// it together with everything the old projection returned. That is what makes the switch worth it:
+// head SHA, base ref, state, draft flag, check list, requiredness, and the forge's own merge state
+// stay read at one instant instead of being correlated across two requests, which is the property
+// that makes them usable as a merge precondition at all.
+//
+// `commits(last:1)` is requested for exactly one value: the head commit's own timestamp, which the
+// gate compares against an automatic reviewer's latest comment. It rides on this read rather than on
+// a second request, so the two values it correlates describe the same instant. `contexts` reports
+// its `totalCount` alongside its nodes so a truncated page can be detected — see
+// `flattenPullRequestStatus`, which is where that count is acted on.
+const PR_STATUS_QUERY = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number)} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number)}}}}}}}}}}`;
 const PR_CHECK_FIELDS = 'bucket,link,name,state';
 
 const MERGE_METHOD_FLAGS = Object.freeze({
@@ -1156,17 +1208,18 @@ export function buildCommandPlan(operation, input, repository) {
           `${ghEndpoint('pulls')}?${query}`,
         ]);
       }
-      // One read, not two: head SHA, base ref, state, draft flag, check list, and the forge's own
-      // merge state have to describe the same instant to be usable as a merge precondition.
+      // One read, not two: head SHA, base ref, state, draft flag, check list, per-check requiredness,
+      // and the forge's own merge state have to describe the same instant to be usable as a merge
+      // precondition. `PR_STATUS_QUERY` explains why that one read is a GraphQL query.
       case 'pr-status-read':
-        return mutationPlan('gh', [
-          'pr',
-          'view',
-          String(prNumber(input)),
-          ...ghRepoArgs(repository),
-          '--json',
-          PR_STATUS_FIELDS,
-        ]);
+        return mutationPlan(
+          'gh',
+          ['api', ...hostArgs, 'graphql', '--input', '-'],
+          jsonStdin({
+            query: PR_STATUS_QUERY,
+            variables: { owner, repo, number: prNumber(input) },
+          }),
+        );
       // The watch and nothing else: `gh pr checks` refuses `--watch` together with `--json` outright,
       // so a plan carrying both is not a slow read but a guaranteed failure on every invocation.
       // `executeOperation` runs `buildChecksReadPlan` after this one for the payload.
@@ -1292,7 +1345,7 @@ export function buildCommandPlan(operation, input, repository) {
             '--input',
             '-',
           ],
-          jsonStdin({ body: assertPublishable(payload.body, 'payload.body') }),
+          jsonStdin({ body: buildThreadReplyBody(payload) }),
         );
       case 'review-thread-resolve': {
         const query = `mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`;
@@ -2044,8 +2097,10 @@ function upperCaseField(value) {
 // `statusCheckRollup`, and the flattened item `gh pr checks --json` prints. They are folded into one
 // record so `pr-status-read` and `pr-checks-wait` report the same list. Fields the provider does not
 // expose stay absent instead of being guessed — the discipline `authorType` already follows for an
-// undecidable bot flag. `required` is the concrete case: neither GitHub read exposes whether branch
-// protection marks a check as required, and Forgejo has no such flag at all.
+// undecidable bot flag. `required` is the concrete case: only the GraphQL status read states per
+// context whether branch protection marks a check as required, `gh pr checks --json` never does, and
+// Forgejo has no such flag at all — so a check from either of the latter two reports no flag rather
+// than a guessed one, which a caller reads as "requiredness unknown" instead of "not required".
 function normalizeCheck(item) {
   if (!item || typeof item !== 'object') {
     fail('INVALID_PAYLOAD', 'provider returned an invalid check');
@@ -2081,6 +2136,14 @@ function normalizeCheck(item) {
 // entry is not the head — and a timestamp taken from the wrong commit would silently certify stale
 // bot feedback as current. Nothing matching means no field, which the caller reads as unprovable.
 function headCommitTimestamp(item, headSha) {
+  // Through the only caller this branch cannot fire: `PR_STATUS_QUERY` selects no top-level
+  // timestamp, and the flattener builds the record from the head commit node itself, so no directly
+  // stated field ever reaches it. It stays because it deliberately outranks the `oid` comparison
+  // below: a value the provider states outright is its own answer rather than one this code
+  // reconstructed. That precedence is the hazard, not the branch. Adding such a field to the query
+  // or to the flattener as a convenience switches head verification off without touching a line of
+  // this function, so anyone introducing one has to decide here whether the stated value may still
+  // skip the match.
   const direct = normalizeTimestamp(item.headCommittedAt, item.head?.commit?.committer?.date);
   if (direct !== undefined) return direct;
   if (typeof headSha !== 'string' || headSha === '') return undefined;
@@ -2091,6 +2154,84 @@ function headCommitTimestamp(item, headSha) {
   );
   if (head === undefined) return undefined;
   return normalizeTimestamp(head.committedDate, head.committed_date, head.authoredDate);
+}
+
+// The GraphQL envelope, restated as the flat provider record the status normalizer already reads.
+// The query nests the head commit's timestamp and its check rollup under `commits(last:1)` because
+// that is where the schema keeps them, not because the gate wants two levels of nesting; unfolding
+// them here keeps `normalizePullRequestStatus` written against one record shape instead of teaching
+// it a second one, and hands the rollup over as the plain array of contexts the previous `--json`
+// read produced. The commits stay an array so the head timestamp is still attached by matching
+// `oid` against the head SHA rather than by trusting a position in a list, and the rollup is
+// selected by that same match. GitHub materializes the `commits` connection asynchronously, so
+// shortly after a push the returned node can still be the previous commit while `headRefOid`
+// already names the new one; taking the rollup from whichever node happens to come last would then
+// report that earlier commit's green checks as the head's, and "every reported check completed
+// successfully" would be satisfied by checks belonging to a commit that is not the one about to be
+// merged. No node matching the head SHA therefore yields no rollup at all, which the caller reads
+// as `checksReported: false` and the gate blocks on — the same answer an empty `commits` selection
+// already gives.
+//
+// A truncated rollup fails the read outright. `contexts(first:100)` is a page, and a pull request
+// can carry more contexts than that; a caller that evaluated "all checks green" against a page
+// which silently dropped contexts would merge a commit whose actual check list it never saw in
+// full. A merge criterion must never be evaluated on a partial check list, so a `totalCount` ahead
+// of the returned nodes is reported as an invalid payload naming both numbers instead of being
+// passed on as a plausible-looking shorter list.
+function flattenPullRequestStatus(raw) {
+  // GraphQL answers a partial failure with both halves at once: a `data` block for the fields that
+  // resolved and an `errors` array for the ones that did not — a sub-resolver that failed, a field
+  // the token may not read, a rate limit reached mid-query. Read as a clean payload, such a response
+  // would let the merge gate decide on a check list the provider never finished assembling. Whether
+  // `gh` also exits non-zero for it is the CLI's business and nothing here pins it, so the one read
+  // that gates a merge states the failure on its own evidence instead. The provider's wording
+  // travels along redacted, like every other piece of provider text this file reports.
+  const errors = Array.isArray(raw?.errors) ? raw.errors : [];
+  if (errors.length > 0) {
+    fail('INVALID_PAYLOAD', 'provider reported GraphQL errors for the status read', {
+      messages: redact(
+        errors.map((entry) =>
+          typeof entry?.message === 'string' ? entry.message : 'provider stated no message',
+        ),
+      ),
+    });
+  }
+  const pullRequest = raw?.data?.repository?.pullRequest;
+  if (!pullRequest || typeof pullRequest !== 'object') {
+    fail('INVALID_PAYLOAD', 'provider returned no pull request for the status read');
+  }
+  const commitNodes = Array.isArray(pullRequest.commits?.nodes) ? pullRequest.commits.nodes : [];
+  const commits = commitNodes
+    .map((node) => node?.commit)
+    .filter((commit) => commit !== null && typeof commit === 'object');
+  const headRefOid = pullRequest.headRefOid;
+  const headCommit =
+    typeof headRefOid === 'string' && headRefOid !== ''
+      ? commits.find(
+          (commit) =>
+            typeof commit.oid === 'string' && commit.oid.toLowerCase() === headRefOid.toLowerCase(),
+        )
+      : undefined;
+  const contexts = headCommit?.statusCheckRollup?.contexts;
+  // `null` — the rollup itself, its contexts, or its nodes — means the provider reported nothing
+  // here, which is a different fact from an empty list and stays distinguishable by omitting the
+  // field entirely rather than substituting an empty array.
+  const rollup = Array.isArray(contexts?.nodes) ? contexts.nodes : undefined;
+  if (
+    rollup !== undefined &&
+    typeof contexts.totalCount === 'number' &&
+    contexts.totalCount > rollup.length
+  ) {
+    fail('INVALID_PAYLOAD', 'provider returned a truncated check rollup', {
+      totalCount: contexts.totalCount,
+      returnedCount: rollup.length,
+    });
+  }
+  return {
+    ...pullRequest,
+    commits,
+    ...(rollup === undefined ? {} : { statusCheckRollup: rollup }),
+  };
 }
 
 // The merge state is read from the forge, never inferred from the check list: a protected branch can
@@ -2289,7 +2430,7 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
         .map((item) => normalizePullRequest(item, repository))
         .filter((pullRequest) => !input.head || pullRequest.head === input.head);
     case 'pr-status-read':
-      return normalizePullRequestStatus(flattened, repository);
+      return normalizePullRequestStatus(flattenPullRequestStatus(flattened), repository);
     // The wait reports its own outcome, so "the checks finished" and "the bound elapsed" stay
     // distinguishable for the caller: a timed-out wait is a result to report, never a green light.
     case 'pr-checks-wait': {

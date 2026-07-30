@@ -1348,8 +1348,11 @@ its own as someone else's.
 
 ### Reply to a thread
 
-Use the helper's review-thread reply operation. Every reply carries the marker
-`<!-- effective-flow-iterate -->` (see idempotency).
+Use the helper's review-thread reply operation. It stamps the marker
+`<!-- effective-flow-iterate -->` onto the reply body from its own marker table, idempotently, so
+never write that marker by hand (see idempotency). This matters beyond tidiness: `effective-flow pr-review`
+matches the marker as an exact string when it decides whether an item in a resolved thread is this
+tool's own, so an unstamped reply is later read as a human's and blocks the merge.
 
 ### Resolve a thread
 
@@ -1651,12 +1654,25 @@ If `prReview.completion` is `ask` or unset and the run is gated: Ask the user: *
       a rule that reached the identity here would fail closed and block precisely the one mode that
       never needed an identity.
    2. **The item sits inside a `resolved` review thread, its author is this tool's own, _and_ it
-      carries `<!-- effective-flow-iterate -->`** – the author being the login `viewer-read`
-      returned, or a bot under rule 1's two cases. Only then does it **not** count. All three
-      conditions are required. This is stated for the individual comments, not only for the thread,
-      because it has to cover the replies `effective-flow iterate` writes and resolves: in manual mode
-      those carry the same account as the operator, so without this rule the guard would stay active
-      for exactly the pull requests this tool successfully worked on.
+      carries `<!-- effective-flow-iterate -->` or `<!-- effective-flow-pr-review -->`** – the author
+      being the login `viewer-read` returned, or a bot under rule 1's two cases. Only then does it
+      **not** count. All three conditions are required. This is stated for the individual comments,
+      not only for the thread, because it has to cover both directions this tool writes into a
+      thread: the replies `effective-flow iterate` writes and resolves, and the inline review comments the
+      outbound direction publishes. In manual mode both carry the same account as the operator, so
+      without this rule the guard would stay active for exactly the pull requests this tool
+      successfully worked on — including the ones it annotated itself through `delivery.prReview`.
+
+      **Both markers count, and the enumeration is pinned to the helper's marker table.** The two
+      directions stamp different markers by design, because idempotency and repeat suppression need
+      to tell _which_ writer produced a body. This rule needs the opposite granularity: _whether any_
+      Effective Flow writer produced it. Naming both is therefore the point, not an oversight — a
+      rule that knew only the `effective-flow iterate` marker could never exclude an outbound review
+      comment, whatever its author and however resolved its thread. The enumeration is deliberately
+      not replaced by a reference to the marker table: a future comment kind must not join a
+      fail-open exclusion automatically, so a contract test compares this list against
+      `COMMENT_MARKERS` and fails when they diverge. Adding a writer is then a decision someone
+      makes, not a silent widening.
 
       **Each condition removes a different way the guard could fail open.** A resolved thread is not
       a closed discussion: neither provider auto-unresolves a thread when someone replies into it,
@@ -1665,14 +1681,15 @@ If `prReview.completion` is `ask` or unset and the run is gated: Ask the user: *
       that in manual mode, because there the operator and this tool **are the same account**: an
       objection the operator types themselves into such a thread would otherwise be read as this
       tool's own output and discarded. The marker is what separates the two, and it is legitimate
-      evidence **here** precisely because it is not doing the work alone – `effective-flow iterate` stamps
-      every reply it writes, so a reply from the right account, in a resolved thread, carrying that
-      stamp is this tool's; a hand-typed objection in the same place carries no stamp and counts.
-      This does not soften the rule that a marker never excludes an item on its own: it is the third
-      condition here, never the first.
+      evidence **here** precisely because it is not doing the work alone – the helper stamps every
+      reply `effective-flow iterate` writes and every inline comment the outbound direction publishes, so
+      an item from the right account, in a resolved thread, carrying either stamp is this tool's; a
+      hand-typed objection in the same place carries no stamp and counts. This does not soften the
+      rule that a marker never excludes an item on its own: it is the third condition here, never the
+      first.
 
-      **The marker counts only as the body's first line.** The helper stamps it as a leading line,
-      so every reply this tool writes begins with it. A quote-reply does not: both providers prefix
+      **A marker counts only as the body's first line.** The helper stamps it as a leading line,
+      so every item this tool writes begins with one. A quote-reply does not: both providers prefix
       the quoted body with `>`, so a copied marker lands inside a blockquote and no longer opens the
       body. That distinction is the whole reason the position is part of the rule – an operator
       quote-replying their objection into a resolved thread would otherwise carry the marker along
@@ -1689,38 +1706,71 @@ If `prReview.completion` is `ask` or unset and the run is gated: Ask the user: *
       substring, a quoted copy, or any other partial or fuzzy match never qualifies. Such an item is
       excluded.
 
-      **This is the only shape the rule has to recognize**, because a gate-initiated run leaves
+      **This is the only shape this rule has to recognize**, because a gate-initiated run leaves
       exactly one item of its own on the pull request: this trigger comment. The delegated
       `effective-flow iterate` run's summary comment is suppressed (see "Delegation contract") and its
-      thread replies are resolved along with their threads, where rule 2 catches them.
+      thread replies are resolved along with their threads, where rule 2 catches them. A
+      `effective-flow iterate` run the operator started **themselves** is a different case, and rule 4
+      covers it.
 
-   4. **Everything else counts as human**, including an item whose normalized `authorType` is
+   4. **A top-level pull-request comment is this tool's own when both hold:** its author is this
+      tool's own – the login `viewer-read` returned, or a bot under rule 1's two cases – **and** its
+      body's leading line is `<!-- effective-flow-iterate -->`. Such an item is excluded. This
+      reaches the summary comment a directly invoked `effective-flow iterate` run posts, which rule 3
+      cannot: that rule matches one exact configured trigger text, and a summary comment is not it.
+      Without this rule, running `effective-flow iterate` by hand and then asking this gate to merge would
+      block on the tool's own report, permanently.
+
+      **Two conditions here, three in rule 2 – and the missing one has no analogue.** Rule 2's
+      `resolved` condition exists because a resolved thread is a container this tool marked handled,
+      and an objection can be typed _inside_ it. A top-level comment has no such container: an
+      objection is its own comment, carries no stamp of its own, and still counts under rule 5. The
+      leading-line requirement carries the same weight it does in rule 2 – a quote-reply's copied
+      marker sits behind a `>` and no longer opens the body – and a hand-written opening marker
+      remains the same deliberate self-override.
+
+      **The excluded summary comment hides no open question.** `effective-flow iterate` posts no
+      substantive reply to a pure reviewer question and defers it, and it replies to and resolves
+      only the threads it addressed. A deferred question therefore keeps its own unresolved thread,
+      and that thread still counts. The summary comment reports on those threads; it never replaces
+      them.
+
+   5. **Everything else counts as human**, including an item whose normalized `authorType` is
       `unknown`. That is the fail-safe direction: the only consequence is a narrower run.
 
    **Fail closed – but never on rule 1.** A `viewer-read` that fails, is unsupported, or states no
    authenticated login leaves the identity unknown. A non-bot item can then not be _proven_ to be
-   the gate's own under rule 3, and rule 2's `viewer-read` half is unprovable in exactly the same
-   way; every such item therefore counts and the guard activates. Report the missing identity as the
-   reason, so the block is explainable instead of mysterious. **Rule 1 needs no identity and stays
-   untouched by this** – bot authorship is read from the item itself, as is rule 2's bot half – and
-   that is what keeps app mode running when the identity lookup does not.
+   the gate's own under rule 3, and the `viewer-read` half of rules 2 and 4 is unprovable in exactly
+   the same way; every such item therefore counts and the guard activates. Report the missing
+   identity as the reason, so the block is explainable instead of mysterious. **Rule 1 needs no
+   identity and stays untouched by this** – bot authorship is read from the item itself, as is the
+   bot half of rules 2 and 4 – and that is what keeps app mode running when the identity lookup does
+   not.
+
+   **This is a same-account contract.** Rules 2 and 4 recognize an item only when the account that
+   wrote it is the one `viewer-read` returns, or is bot-typed. A pull request annotated through
+   `delivery.prReview` under one account and then merged by a gate running under another – an
+   operator-driven delivery and an app-driven gate, for instance – fails that condition and still
+   blocks. That is the accepted residual gap, not an oversight: closing it would mean letting a
+   marker prove authorship on its own, which this guard refuses everywhere else.
 
 3. Decide **what counts** for the guard, because the two surfaces differ:
    - a **review thread** counts while it is not `resolved`, and rule 2 above extends that to this
      tool's own comments inside a resolved one;
    - a **top-level pull-request comment** has no resolved state on either provider, so it always
-     counts unless rule 1 or rule 3 excluded it. A single old human comment therefore keeps the
-     guard active until it is deleted – the deliberate fail-safe reading, since the alternative is
-     merging a pull request under an open human discussion;
-   - **an item is excluded only through the rules above.** Only rule 3 reads a body at all, and it
-     reads it as an exact match against a value this project configured – never as a search for a
-     tool's signature.
-   - **An Effective Flow marker never excludes an item**, whoever the author looks like. A marker is
-     body content, and content is not authorship evidence: GitHub's quote-reply copies the quoted
-     body verbatim, HTML comment included, so a human answering one of `effective-flow iterate`'s replies
-     would otherwise silently switch off the guard that exists to protect them. This gate writes no
-     marker of its own at all (Phase 3), so no marker on this pull request was ever evidence about
-     it.
+     counts unless rule 1, rule 3, or rule 4 excluded it. A single old human comment therefore keeps
+     the guard active until it is deleted – the deliberate fail-safe reading, since the alternative
+     is merging a pull request under an open human discussion;
+   - **an item is excluded only through the rules above.** Three of them read a body, and each reads
+     it narrowly: rule 3 as an exact match against a value this project configured, rules 2 and 4 as
+     a marker occupying the body's first line. None of them searches a body for a tool's signature.
+   - **An Effective Flow marker never excludes an item on its own**, whoever the author looks like.
+     A marker is body content, and content is not authorship evidence: GitHub's quote-reply copies
+     the quoted body verbatim, HTML comment included, so a human answering one of
+     `effective-flow iterate`'s replies would otherwise silently switch off the guard that exists to
+     protect them. That is why a marker never appears as a rule's only condition, and never counts
+     anywhere but as the body's leading line. This gate writes no marker of its own at all
+     (Phase 3), so no marker on this pull request is ever evidence about the gate itself.
 4. **Set the guard.** If at least one counting item has a human author, the human-comment guard is
    **active**. The guard is set once, here, from this first fresh read, and stays set for the rest
    of the run. A later fresh read may only set it – a human comment that appears mid-run is new
@@ -1799,15 +1849,30 @@ run can push an unbounded number of commits onto someone's pull request.
    - `prReview.requireAllChecks: true` (default) – **every** reported check must have completed
      successfully. A failed, cancelled, or timed-out check is a failure; a still-pending check ends
      this round and the next round starts again at step 1.
-   - `prReview.requireAllChecks: false` – the forge's own required-checks definition decides. A red
-     optional check is reported but is not a blocker.
+   - `prReview.requireAllChecks: false` – only checks the forge marks as required count, read from
+     the `required` flag `pr-status-read` reports per check. A red optional check is reported but is
+     not a blocker. A check whose requiredness the provider does not state **fails closed** and is
+     treated as blocking, because an unproven "optional" is exactly the value that would wave a red
+     check through. An **empty** required subset counts as satisfied: no reported check is required,
+     so nothing required is outstanding, and the merge state below decides the rest.
+   - That last rule is deliberate and has a known limit worth stating. The `required` flag exists
+     only on checks that have **already reported**, so a required check which has not reported yet is
+     absent from the list entirely and cannot be counted. This criterion therefore cannot distinguish
+     "nothing is required here" from "a required check has not started". The merge state is what
+     covers the difference — a forge blocks the merge while its required checks are unmet — which is
+     why that condition is necessary rather than decorative. Do not read a satisfied criterion as
+     proof that every required check has run.
    - In **both** cases the forge's merge state stays an **additional necessary condition**, never a
      substitute: "all checks green" and "mergeable" are different statements, and a protected branch
      can additionally require named checks, an approval, an up-to-date branch, or linear history.
 
-Leave the loop when the check criterion is satisfied and the merge state is neither `BEHIND` nor
-`DIRTY`. Record the head SHA of that last read as **`VERIFIED_HEAD_SHA`** – the one commit this run
-has verified as green and mergeable. Phases 4 and 5 use only that value, and nothing else in this
+Leave the loop when the check criterion is satisfied and the merge state is **stated** and is
+neither `BEHIND` nor `DIRTY`. An unstated merge state fails closed and keeps the loop running, for
+the same reason an absent `draft` flag blocks and an unstated requiredness blocks: "neither `BEHIND`
+nor `DIRTY`" is vacuously true of a field the provider never reported, and the criterion above
+delegates its own safety to this condition. A compensating condition that disappears when the
+provider goes quiet compensates for nothing. Record the head SHA of that last read as
+**`VERIFIED_HEAD_SHA`** – the one commit this run has verified as green and mergeable. Phases 4 and 5 use only that value, and nothing else in this
 workflow records a head SHA for later use.
 
 #### Round accounting
@@ -1991,8 +2056,14 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   Forgejo, where this gate is report-only anyway, so this costs a merge that was unavailable
   regardless – named here so it is not later read as an oversight.
 - **The delegated run's summary comment:** it is suppressed for every gate-initiated round, so it
-  never becomes such an item. Were it posted, it would be top-level, unresolvable, and not the
-  trigger text – human by rule 4, blocking the merge in the same run that earned it.
+  never becomes such an item. A summary comment from a `effective-flow iterate` run the operator started
+  themselves does exist, and rule 4 excludes it by its author plus its leading marker; before that
+  rule it fell through to the catch-all and blocked the merge permanently.
+- **A pull request this delivery annotated itself** (`delivery.prReview` published inline findings):
+  once a finding is implemented, answered, and its thread resolved, rule 2 excludes the outbound
+  comment by the `<!-- effective-flow-pr-review -->` marker, so the gate can merge the pull request
+  its own product wrote on. While such a thread is still unresolved the finding is unhandled and it
+  keeps counting, which is the intended block.
 - **`prReview.bots` is empty:** the bot round is skipped and the merge is not blocked on it.
 - **Branch protection requires an approval:** the forge reports a blocked merge state; report that a
   human approval is missing and never attempt to approve.
@@ -2027,10 +2098,11 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   commits, no force-push. The forge-side `delivery.mergeMethod` – including `squash` and `rebase` –
   is the integration of the pull request in Phase 5 and is not covered by this rule.
 - Never approve a pull request and never request changes, not even to unblock a merge.
-- Never read an Effective Flow marker as authorship evidence, and write none. Evaluate the guard in
-  Phase 1's order – bot authorship first, then this tool's own comments inside a resolved thread,
-  then the authenticated login plus the exact configured trigger text – and count everything else as
-  human.
+- Never read an Effective Flow marker as authorship evidence **on its own**, and write none. A
+  marker is only ever one condition beside the author, and only as the body's leading line.
+  Evaluate the guard in Phase 1's order – bot authorship first, then this tool's own items inside a
+  resolved thread, then the authenticated login plus the exact configured trigger text, then this
+  tool's own top-level comment by its leading iterate marker – and count everything else as human.
 - Never let an unprovable identity clear the guard. A failed, unsupported, or login-less
   `viewer-read` makes every remaining non-bot item count, which activates the guard wherever such an
   item exists and leaves a pull request without one unblocked; report the missing identity as the

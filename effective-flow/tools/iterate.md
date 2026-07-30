@@ -1296,8 +1296,11 @@ its own as someone else's.
 
 ### Reply to a thread
 
-Use the helper's review-thread reply operation. Every reply carries the marker
-`<!-- effective-flow-iterate -->` (see idempotency).
+Use the helper's review-thread reply operation. It stamps the marker
+`<!-- effective-flow-iterate -->` onto the reply body from its own marker table, idempotently, so
+never write that marker by hand (see idempotency). This matters beyond tidiness: `effective-flow pr-review`
+matches the marker as an exact string when it decides whether an item in a resolved thread is this
+tool's own, so an unstamped reply is later read as a human's and blocks the merge.
 
 ### Resolve a thread
 
@@ -1685,7 +1688,8 @@ and stop delivery for reconciliation.
 2. Reply briefly per addressed thread, preserving the clearly established thread language or
    otherwise using resolved `language.forge`, and resolve it through the remote helper's normalized
    review-thread operations. If resolution is an unsupported provider capability, keep the reply
-   and report the required manual resolution. Use the marker `<!-- effective-flow-iterate -->`.
+   and report the required manual resolution. The helper stamps the marker
+   `<!-- effective-flow-iterate -->` onto every reply; do not write it by hand.
 3. Post **one** summary comment on the PR in resolved `language.forge` (marker
    `<!-- effective-flow-iterate -->`): which items
    were implemented or skipped and which pure questions are open/deferred (without a
