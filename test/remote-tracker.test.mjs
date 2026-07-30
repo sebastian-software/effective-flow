@@ -1626,18 +1626,23 @@ test('structured parse failures redact URL userinfo', async () => {
 
 // `redact` runs over every command plan, including its stdin, so its input is whatever an issue or
 // pull-request body carried — text the repository does not control. Both shapes below cost seconds
-// against a pattern that can backtrack across an unbroken run, and both stay in the single-digit
-// milliseconds against one that cannot. The bound is deliberately far above the linear cost so a
-// loaded machine cannot fail it; only a return to quadratic behaviour can.
+// against a pattern that can backtrack across an unbroken run, and stay under a millisecond against
+// one that cannot. The bound sits far above the linear cost, so a loaded machine is very unlikely to
+// fail it; a return to quadratic behaviour is what it is built to catch. Both shapes are sized so
+// the quadratic cost clears the bound by an order of magnitude — a thin margin would decay into a
+// silent pass as machines get faster.
 test('redaction stays linear on unbroken runs', () => {
   const shapes = {
     // No `://` ever matches here: the cost is the scheme prefix giving back one character at a
-    // time at every start position.
+    // time at every start position. Roughly 7 s before the fix, 8 ms after.
     'plain run': 'x'.repeat(128_000),
     // Here `://` does match, and the cost moves to the userinfo tail: two quantifiers over the
     // same character class, so every backtrack step of the outer one lets the inner one re-consume
-    // to the end. Bounding the scheme alone leaves this shape quadratic.
-    'colon run': `a://${'x:'.repeat(64_000)}`,
+    // to the end. Bounding the scheme alone leaves this shape quadratic, which makes it the only
+    // one of the two that catches a half-fix — so it is the shape whose margin has to be widest.
+    // Twice as long as it needs to be to reproduce: ~14 s before the fix, under a millisecond
+    // after, for about 16 ms of suite time.
+    'colon run': `a://${'x:'.repeat(128_000)}`,
   };
   for (const [name, input] of Object.entries(shapes)) {
     const startedAt = Date.now();
