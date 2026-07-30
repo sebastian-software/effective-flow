@@ -1666,22 +1666,29 @@ test('redaction stays linear on unbroken runs', () => {
 // `parseRemote` goes on accepting that same string as a URL and funnelling it into an error
 // envelope. The three long-scheme cases below cover exactly that: each one must survive any future
 // attempt to reintroduce a bound.
+//
+// Both loops assert the whole output rather than a match. A `match` on `://[REDACTED]@` proves
+// that *a* redaction happened somewhere and would accept an output that redacted one userinfo and
+// left a second credential standing later in the string.
 test('redaction keeps covering every URL userinfo shape', () => {
-  for (const remote of [
-    'https://alice:verysecret@github.com/example/flow.git',
-    'ssh://git@github.com/example/flow.git',
-    'git+ssh://user:pw@host/p',
-    'mongodb+srv://u:p@cluster.example.com/db',
-    'HTTPS://Alice:S3cret@GitHub.com/x',
-    'https://a:b:c@host/x',
-    'https://:onlypass@host/x',
-    'https://user:@host/x',
-    'https://u:p@h/a@b',
-    `${'a'.repeat(40)}://u:p@h/x`,
-    `a${'0'.repeat(31)}://u:p@h/x`,
-    `a${'1'.repeat(33)}://user:secret@host`,
+  for (const [remote, expected] of [
+    [
+      'https://alice:verysecret@github.com/example/flow.git',
+      'https://[REDACTED]@github.com/example/flow.git',
+    ],
+    ['ssh://git@github.com/example/flow.git', 'ssh://[REDACTED]@github.com/example/flow.git'],
+    ['git+ssh://user:pw@host/p', 'git+ssh://[REDACTED]@host/p'],
+    ['mongodb+srv://u:p@cluster.example.com/db', 'mongodb+srv://[REDACTED]@cluster.example.com/db'],
+    ['HTTPS://Alice:S3cret@GitHub.com/x', 'HTTPS://[REDACTED]@GitHub.com/x'],
+    ['https://a:b:c@host/x', 'https://[REDACTED]@host/x'],
+    ['https://:onlypass@host/x', 'https://[REDACTED]@host/x'],
+    ['https://user:@host/x', 'https://[REDACTED]@host/x'],
+    ['https://u:p@h/a@b', 'https://[REDACTED]@h/a@b'],
+    [`${'a'.repeat(40)}://u:p@h/x`, `${'a'.repeat(40)}://[REDACTED]@h/x`],
+    [`a${'0'.repeat(31)}://u:p@h/x`, `a${'0'.repeat(31)}://[REDACTED]@h/x`],
+    [`a${'1'.repeat(33)}://user:secret@host`, `a${'1'.repeat(33)}://[REDACTED]@host`],
   ]) {
-    assert.match(redact(remote), /:\/\/\[REDACTED\]@/, remote);
+    assert.equal(redact(remote), expected);
   }
   for (const untouched of [
     'https://github.com/example/flow.git',
