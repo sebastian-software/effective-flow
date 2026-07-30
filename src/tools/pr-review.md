@@ -446,8 +446,19 @@ run can push an unbounded number of commits onto someone's pull request.
    - `prReview.requireAllChecks: true` (default) – **every** reported check must have completed
      successfully. A failed, cancelled, or timed-out check is a failure; a still-pending check ends
      this round and the next round starts again at step 1.
-   - `prReview.requireAllChecks: false` – the forge's own required-checks definition decides. A red
-     optional check is reported but is not a blocker.
+   - `prReview.requireAllChecks: false` – only checks the forge marks as required count, read from
+     the `required` flag `pr-status-read` reports per check. A red optional check is reported but is
+     not a blocker. A check whose requiredness the provider does not state **fails closed** and is
+     treated as blocking, because an unproven "optional" is exactly the value that would wave a red
+     check through. An **empty** required subset counts as satisfied: no reported check is required,
+     so nothing required is outstanding, and the merge state below decides the rest.
+   - That last rule is deliberate and has a known limit worth stating. The `required` flag exists
+     only on checks that have **already reported**, so a required check which has not reported yet is
+     absent from the list entirely and cannot be counted. This criterion therefore cannot distinguish
+     "nothing is required here" from "a required check has not started". The merge state is what
+     covers the difference — a forge blocks the merge while its required checks are unmet — which is
+     why that condition is necessary rather than decorative. Do not read a satisfied criterion as
+     proof that every required check has run.
    - In **both** cases the forge's merge state stays an **additional necessary condition**, never a
      substitute: "all checks green" and "mergeable" are different statements, and a protected branch
      can additionally require named checks, an approval, an up-to-date branch, or linear history.

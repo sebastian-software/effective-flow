@@ -2008,53 +2008,100 @@ const movedHead = 'b'.repeat(40);
 const earlierHead = 'c'.repeat(40);
 const headCommittedAt = '2026-07-28T20:01:19Z';
 
+// Builds the GraphQL envelope `pr-status-read` reads: one query, `data.repository.pullRequest`,
+// with the head commit's own instant and its check rollup nested under a single `commits(last:1)`
+// selection so the two describe the same instant as the merge state next to them.
+// `commits` and `statusCheckRollup` are handled apart from the flat `...overrides` spread because
+// they no longer live at the top level of the provider record; every other field still does, and a
+// value explicitly set to `undefined` there is still dropped by `JSON.stringify` exactly as before,
+// so "the provider states no draft flag" keeps meaning what it always meant.
 function prStatusStdout(headRefOid = verifiedHead, overrides = {}) {
+  const { commits, statusCheckRollup, totalCount, ...rest } = overrides;
+  // `commits(last:1)` returns exactly one node, so the fixture defaults to exactly one — the head
+  // commit itself, named by `oid` rather than by its place in a list gh could otherwise paginate.
+  const commitList = Object.prototype.hasOwnProperty.call(overrides, 'commits')
+    ? commits
+    : [{ oid: headRefOid, committedDate: headCommittedAt }];
+  // `null` is the real GraphQL shape for "the provider has nothing to report here" — distinct from
+  // an empty `contexts.nodes`, which says the rollup exists and is simply empty.
+  const rollup =
+    statusCheckRollup === null
+      ? null
+      : {
+          contexts: {
+            totalCount: totalCount ?? (statusCheckRollup ?? []).length,
+            nodes: statusCheckRollup ?? [],
+          },
+        };
+  const nodes = Array.isArray(commitList)
+    ? commitList.map((commit, index) => ({
+        commit: index === commitList.length - 1 ? { ...commit, statusCheckRollup: rollup } : commit,
+      }))
+    : [];
   return JSON.stringify({
-    number: 12,
-    title: 'feat: add the gate',
-    state: 'OPEN',
-    isDraft: false,
-    headRefOid,
-    baseRefName: 'develop',
-    mergeStateStatus: 'BLOCKED',
-    mergeable: 'MERGEABLE',
-    url: 'https://github.com/example/flow/pull/12',
-    commits: [
-      { oid: earlierHead, committedDate: '2026-07-28T09:00:00Z' },
-      { oid: headRefOid, committedDate: headCommittedAt },
-    ],
-    statusCheckRollup: [],
-    ...overrides,
+    data: {
+      repository: {
+        pullRequest: {
+          number: 12,
+          title: 'feat: add the gate',
+          state: 'OPEN',
+          isDraft: false,
+          headRefOid,
+          baseRefName: 'develop',
+          mergeStateStatus: 'BLOCKED',
+          mergeable: 'MERGEABLE',
+          url: 'https://github.com/example/flow/pull/12',
+          ...rest,
+          commits: { nodes },
+        },
+      },
+    },
   });
 }
 
 test('pr-status-read reads head, base, merge state, and checks in a single GitHub call', async () => {
   const plan = buildCommandPlan('pr-status-read', { number: 12 }, githubRepository);
   assert.equal(plan.executable, 'gh');
-  assert.deepEqual(plan.args.slice(0, 5), ['pr', 'view', '12', '--repo', 'example/flow']);
-  assert.equal(plan.args.at(-2), '--json');
-  const fields = plan.args.at(-1).split(',');
+  // One GraphQL call, not `gh pr view --json` plus a second request for requiredness: only a query
+  // that can carry `isRequired` alongside the merge state keeps "checks and mergeability read at one
+  // instant" true, the same invariant the REST-era read was pinned to guard.
+  assert.deepEqual(plan.args.slice(0, 2), ['api', 'graphql']);
+  assert.deepEqual(plan.args.slice(-2), ['--input', '-']);
+  const payload = JSON.parse(plan.stdin);
+  assert.equal(typeof payload.query, 'string');
+  assert.deepEqual(payload.variables, { owner: 'example', repo: 'flow', number: 12 });
   for (const field of [
     'baseRefName',
-    // The head commit's timestamp comes out of this same read; a second request would describe a
-    // different instant than the checks and the merge state it is correlated with.
-    'commits',
     'headRefOid',
     'isDraft',
     'mergeStateStatus',
     'mergeable',
     'state',
+    // The head commit's timestamp and its check rollup come out of this same selection; a second
+    // request would describe a different instant than the merge state it is correlated with.
+    'commits',
+    'committedDate',
     'statusCheckRollup',
+    'contexts',
+    'totalCount',
+    // The one field the old `--json` projection could never expose at all.
+    'isRequired',
   ]) {
-    assert.ok(fields.includes(field), `missing requested field ${field}`);
+    assert.ok(payload.query.includes(field), `query does not request ${field}`);
   }
+  // Both inline-fragment shapes the rollup can hand back must carry `isRequired`, or a caller that
+  // landed on the plain `StatusContext` fragment would silently lose requiredness the `CheckRun`
+  // fragment does report.
+  assert.match(payload.query, /CheckRun[^{]*\{[^}]*isRequired/);
+  assert.match(payload.query, /StatusContext[^{]*\{[^}]*isRequired/);
+
   assert.deepEqual(
     buildCommandPlan(
       'pr-status-read',
       { number: 12 },
       { ...githubRepository, host: 'code.example.test' },
-    ).args.slice(3, 5),
-    ['--repo', 'code.example.test/example/flow'],
+    ).args.slice(0, 4),
+    ['api', '--hostname', 'code.example.test', 'graphql'],
   );
 
   const runner = fakeRunner([
@@ -2135,11 +2182,24 @@ test('the check list states a required flag only where the provider exposes one'
       stdout: prStatusStdout(verifiedHead, {
         mergeStateStatus: undefined,
         mergeable: undefined,
-        // Neither GitHub read exposes a required flag, so the second entry stands for a forge that
-        // does: the flag is passed through where it exists and stays absent where it does not.
+        // The GraphQL rollup is the one read that exposes `isRequired` per context at all: the first
+        // entry stands for a context the query asked about but the provider stated nothing for, the
+        // second and third for the two answers the same query can hand back for the same field.
         statusCheckRollup: [
-          { name: 'unit', status: 'COMPLETED', conclusion: 'SUCCESS' },
-          { name: 'gate', status: 'COMPLETED', conclusion: 'SUCCESS', isRequired: true },
+          { __typename: 'CheckRun', name: 'unit', status: 'COMPLETED', conclusion: 'SUCCESS' },
+          {
+            __typename: 'CheckRun',
+            name: 'gate',
+            status: 'COMPLETED',
+            conclusion: 'SUCCESS',
+            isRequired: true,
+          },
+          {
+            __typename: 'StatusContext',
+            context: 'ci/optional',
+            state: 'SUCCESS',
+            isRequired: false,
+          },
         ],
       }),
       stderr: '',
@@ -2152,6 +2212,7 @@ test('the check list states a required flag only where the provider exposes one'
   );
   assert.equal(Object.hasOwn(envelope.data.result.checks[0], 'required'), false);
   assert.equal(envelope.data.result.checks[1].required, true);
+  assert.equal(envelope.data.result.checks[2].required, false);
   assert.equal(Object.hasOwn(envelope.data.result, 'mergeState'), false);
   assert.equal(Object.hasOwn(envelope.data.result, 'mergeable'), false);
 });
@@ -2175,18 +2236,18 @@ test('the head commit timestamp is matched by object name, not by position', asy
   // belong to the commit that is about to be merged and to no other.
   assert.equal((await statusFrom({})).headCommittedAt, '2026-07-28T20:01:19.000Z');
 
-  // A pull request with more than one page of commits returns the first page, so the last entry is
-  // not the head. Nothing matching the head SHA means no timestamp — never the newest one present.
-  const truncated = await statusFrom({
-    commits: [
-      { oid: earlierHead, committedDate: '2026-07-28T09:00:00Z' },
-      { oid: movedHead, committedDate: '2026-07-28T10:00:00Z' },
-    ],
+  // `commits(last:1)` returns exactly one node instead of a paginated list, but the timestamp is
+  // still attached by comparing that node's `oid` against `headRefOid` rather than assumed from its
+  // position: a provider inconsistency between the two fields must not silently certify a stale
+  // instant as belonging to the commit that is about to be merged.
+  const mismatched = await statusFrom({
+    commits: [{ oid: earlierHead, committedDate: '2026-07-28T09:00:00Z' }],
   });
-  assert.equal(Object.hasOwn(truncated, 'headCommittedAt'), false);
-  assert.equal(truncated.headSha, verifiedHead);
+  assert.equal(Object.hasOwn(mismatched, 'headCommittedAt'), false);
+  assert.equal(mismatched.headSha, verifiedHead);
 
-  for (const commits of [undefined, [], 'not-a-list']) {
+  // An omitted or empty `commits` selection carries no timestamp either.
+  for (const commits of [undefined, []]) {
     assert.equal(Object.hasOwn(await statusFrom({ commits }), 'headCommittedAt'), false);
   }
   assert.equal(
@@ -2200,10 +2261,6 @@ test('the head commit timestamp is matched by object name, not by position', asy
     commits: [{ oid: verifiedHead, committedDate: '2026-07-28T22:01:19+02:00' }],
   });
   assert.equal(offsetForm.headCommittedAt, '2026-07-28T20:01:19.000Z');
-
-  // A provider that states the head timestamp itself is believed without a commit list.
-  const direct = await statusFrom({ commits: undefined, headCommittedAt: '2026-07-28T20:01:19Z' });
-  assert.equal(direct.headCommittedAt, '2026-07-28T20:01:19.000Z');
 });
 
 test('comment reads carry the provider timestamp and omit it when unstated', async () => {
@@ -2269,7 +2326,8 @@ test('an empty check list is reported as empty and never as complete', async () 
   assert.equal(status.data.result.checkCount, 0);
   assert.deepEqual(status.data.result.checks, []);
 
-  // A provider that omits the rollup entirely is a third state again, and is reported as such.
+  // A provider that reports the rollup itself as `null` is a third state again — the real GraphQL
+  // shape for "nothing to report here" — and is reported as such.
   const withoutRollup = await executeOperation(
     'pr-status-read',
     { repository: gateRepository, number: 12 },
@@ -2277,7 +2335,7 @@ test('an empty check list is reported as empty and never as complete', async () 
       runner: fakeRunner([
         {
           status: 0,
-          stdout: prStatusStdout(verifiedHead, { statusCheckRollup: undefined }),
+          stdout: prStatusStdout(verifiedHead, { statusCheckRollup: null }),
           stderr: '',
         },
       ]),
@@ -2311,6 +2369,61 @@ test('an empty check list is reported as empty and never as complete', async () 
   // successfully and reported none attached yet, so `requiredChecksDefined` must not appear —
   // that discriminator is reserved for the detected no-required-checks case.
   assert.equal('requiredChecksDefined' in wait.data.result, false);
+});
+
+test('a rollup whose totalCount exceeds its returned nodes fails closed instead of merging on a partial list', async () => {
+  // `contexts(first:100)` can itself be paginated on a pull request with more than a hundred
+  // contexts. A caller that evaluated "all checks green" against a page that silently dropped
+  // contexts would merge a commit whose actual check list it never saw in full, so a `totalCount`
+  // ahead of the returned nodes has to fail the read outright rather than report a plausible-looking
+  // partial list.
+  const truncated = await executeOperation(
+    'pr-status-read',
+    { repository: gateRepository, number: 12 },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: prStatusStdout(verifiedHead, {
+            statusCheckRollup: [
+              { __typename: 'CheckRun', name: 'unit', status: 'COMPLETED', conclusion: 'SUCCESS' },
+            ],
+            totalCount: 2,
+          }),
+          stderr: '',
+        },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(truncated.ok, false);
+  assert.equal(truncated.error.code, 'INVALID_PAYLOAD');
+  // Both numbers the mismatch is between, so the failure names what it saw and what it was told.
+  assert.equal(truncated.error.details.totalCount, 2);
+  assert.equal(truncated.error.details.returnedCount, 1);
+
+  // The equal-counts case is the ordinary one and must keep succeeding.
+  const complete = await executeOperation(
+    'pr-status-read',
+    { repository: gateRepository, number: 12 },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: prStatusStdout(verifiedHead, {
+            statusCheckRollup: [
+              { __typename: 'CheckRun', name: 'unit', status: 'COMPLETED', conclusion: 'SUCCESS' },
+            ],
+            totalCount: 1,
+          }),
+          stderr: '',
+        },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(complete.ok, true);
+  assert.equal(complete.data.result.checkCount, 1);
 });
 
 test('a missing draft flag stays missing instead of defaulting to mergeable', async () => {
@@ -2591,7 +2704,7 @@ test('pr-merge fails closed when the head moved and merges only the verified com
   assert.equal(moved.error.details.merged, false);
   // Only the precondition read reached the forge; no merge command was issued.
   assert.equal(movedRunner.calls.length, 1);
-  assert.deepEqual(movedRunner.calls[0].args.slice(0, 2), ['pr', 'view']);
+  assert.deepEqual(movedRunner.calls[0].args.slice(0, 2), ['api', 'graphql']);
 
   const mergeRunner = fakeRunner([
     { status: 0, stdout: prStatusStdout(verifiedHead), stderr: '' },
@@ -3347,9 +3460,9 @@ case "$2" in
     printf '%s' '[]'
     exit 0
     ;;
-  view)
+  graphql)
     sleep 1
-    printf '%s' '{"number":12,"title":"feat: add the gate","state":"OPEN","isDraft":false,"headRefOid":"${verifiedHead}","baseRefName":"develop","mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","statusCheckRollup":[]}'
+    printf '%s' '{"data":{"repository":{"pullRequest":{"number":12,"title":"feat: add the gate","url":"https://github.com/example/flow/pull/12","state":"OPEN","isDraft":false,"headRefOid":"${verifiedHead}","baseRefName":"develop","mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","commits":{"nodes":[{"commit":{"oid":"${verifiedHead}","committedDate":"2026-07-28T20:01:19Z","statusCheckRollup":{"contexts":{"totalCount":0,"nodes":[]}}}}]}}}}}'
     exit 0
     ;;
 esac
