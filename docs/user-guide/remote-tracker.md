@@ -294,7 +294,27 @@ Several behaviors worth knowing if you inspect the gate's output or a `pr-review
   report `checksReported` (whether the provider returned a check rollup at all) and `checkCount`
   (how many checks it contains) alongside the list itself. A wait or a status read only counts as
   complete when the list is also non-empty, so a pull request GitHub has not yet attached any check
-  runs to cannot be mistaken for one that already passed everything.
+  runs to cannot be mistaken for one that already passed everything. This is a different empty
+  case from the one below, where `requiredChecksDefined` records what gh reported without claiming
+  completeness either way.
+- **An empty `--required` result is recorded, not interpreted.** `gh pr checks --required` filters
+  the check rollup by a per-context `isRequired` flag, and only a context that has already reported
+  carries that flag at all, so the filtered list comes back empty both when the forge defines no
+  required checks for the branch and when required checks are defined but none of them has reported
+  yet – `gh` exits non-zero with an empty payload and a stderr message of "no required checks
+  reported" in either case, and the two are not distinguishable from that message alone. The read
+  step recognizes exactly that combination (the `--required` flag plus that stderr phrase) and turns
+  it into a successful result with `requiredChecksDefined: false` instead of failing the operation
+  with `COMMAND_FAILED`; without this, `prReview.requireAllChecks: false` would fail the wait on
+  every repository where required checks simply have not reported yet. The watch step never carries
+  `--required` for this reason – filtering it would make it return immediately on such a branch
+  instead of blocking, which is the one thing it exists for, so the required-checks criterion is
+  applied only by the structured read that follows. `requiredChecksDefined` appears only in this
+  detected case and is never emitted as `true` or on any other path; any other non-zero exit of the
+  read (an unresolvable reference, a missing token) still counts as an operational error.
+  `complete` follows the ordinary rule regardless – it is `true` only when the list is non-empty and
+  every check has finished, so `requiredChecksDefined: false` does not shortcut it, because it can
+  just as well mean a branch whose required checks are all still pending.
 - **A missing `draft` flag is reported as absent, not as `false`.** When the provider does not
   expose the draft state, `pr-status-read` omits the field instead of guessing – the same "absent
   rather than guessed" rule the check list's `required` flag already follows. Treat an absent
