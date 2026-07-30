@@ -1788,6 +1788,80 @@ test('an already-quoted marker is not treated as a stamp and does not suppress a
   );
 });
 
+test('review-thread-reply stamps the iterate marker as the reply body’s leading line', () => {
+  // The marker contract states that these markers are never written by hand, but this operation
+  // used to pass the caller's body through untouched — no payload builder involved — while
+  // `iterate` was told to "use the marker". The merge gate matches it as an exact string, so an
+  // unstamped reply came back on the next run as a human comment and blocked the merge on this
+  // tool's own output.
+  const plan = buildCommandPlan(
+    'review-thread-reply',
+    { number: 7, commentId: 42, payload: { body: 'Fixed in the latest commit.' } },
+    githubRepository,
+  );
+  assert.deepEqual(plan.args, [
+    'api',
+    '-X',
+    'POST',
+    'repos/example/flow/pulls/7/comments/42/replies',
+    '--input',
+    '-',
+  ]);
+  assert.deepEqual(JSON.parse(plan.stdin), {
+    body: '<!-- effective-flow-iterate -->\nFixed in the latest commit.',
+  });
+});
+
+test('review-thread-reply stamps the iterate marker exactly once and never the pr-review marker', () => {
+  // Idempotency: a caller that already built its body through the `pr` payload builder must not
+  // collect a second marker. And the direction matters — stamping the pr-review marker here would
+  // make `iterate` read foreign replies as its own already-processed work.
+  const preStamped = buildCommandPlan(
+    'review-thread-reply',
+    {
+      number: 7,
+      commentId: 42,
+      payload: { body: '<!-- effective-flow-iterate -->\nAlready stamped.' },
+    },
+    githubRepository,
+  );
+  const body = JSON.parse(preStamped.stdin).body;
+  assert.equal(body, '<!-- effective-flow-iterate -->\nAlready stamped.');
+  assert.equal(body.match(/<!-- effective-flow-iterate -->/g).length, 1);
+  assert.doesNotMatch(body, /effective-flow-pr-review/);
+
+  // A quoted marker is not a stamp: it sits behind a `>` and no longer opens the body, so the
+  // reply still needs its own leading one.
+  const quoted = buildCommandPlan(
+    'review-thread-reply',
+    {
+      number: 7,
+      commentId: 42,
+      payload: { body: '> <!-- effective-flow-iterate -->\n> earlier reply\n\nmy answer' },
+    },
+    githubRepository,
+  );
+  assert.ok(
+    JSON.parse(quoted.stdin).body.startsWith('<!-- effective-flow-iterate -->\n>'),
+    'a reply whose only marker is quoted must still receive its own leading stamp',
+  );
+});
+
+test('review-thread-reply rejects an empty body instead of publishing a marker-only reply', () => {
+  for (const body of [undefined, '', '   ']) {
+    assert.throws(
+      () =>
+        buildCommandPlan(
+          'review-thread-reply',
+          { number: 7, commentId: 42, payload: { body } },
+          githubRepository,
+        ),
+      (error) => error.code === 'INVALID_PAYLOAD' && error.details.field === 'payload.body',
+      `body ${JSON.stringify(body)} must be rejected`,
+    );
+  }
+});
+
 test('review-create on Forgejo fails with UNSUPPORTED_CAPABILITY and performs no runner call', async () => {
   const runner = fakeRunner([]);
   const envelope = await executeOperation(

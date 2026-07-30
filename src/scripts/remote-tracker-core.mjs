@@ -434,7 +434,11 @@ export function buildFindingPayload(input, options = {}) {
   };
 }
 
-const COMMENT_MARKERS = Object.freeze({
+// Exported so the merge gate's contract test can compare its rule-2 enumeration against the real
+// set of writers. The guard names both pull-request markers literally rather than referring to this
+// table, so that adding a comment kind cannot widen a fail-open exclusion by itself; the test is
+// what turns that divergence into a build failure instead of a silent one.
+export const COMMENT_MARKERS = Object.freeze({
   planning: 'effective-flow-plan-issues',
   apply: 'effective-flow-apply-issues',
   pr: 'effective-flow-iterate',
@@ -476,6 +480,16 @@ export function buildCommentPayload(kind, input) {
   requireObject(input, 'comment');
   const content = publishableText(input.body, 'comment.body');
   return { kind, marker, body: stampMarker(marker, content) };
+}
+
+// A thread reply is an `iterate` write, so it carries the same marker as that direction's summary
+// comment. It is stamped here rather than left to the caller because the marker contract states
+// that these markers are never written by hand: the merge gate's guard matches them as exact
+// strings, and a caller that forgot the stamp — or reworded it — produced a reply the guard later
+// read as a human's, blocking the merge on this tool's own output.
+function buildThreadReplyBody(payload) {
+  const marker = commentMarker('pr');
+  return stampMarker(marker, publishableText(payload.body, 'payload.body'));
 }
 
 const REVIEW_EVENTS = Object.freeze(['COMMENT']);
@@ -1292,7 +1306,7 @@ export function buildCommandPlan(operation, input, repository) {
             '--input',
             '-',
           ],
-          jsonStdin({ body: assertPublishable(payload.body, 'payload.body') }),
+          jsonStdin({ body: buildThreadReplyBody(payload) }),
         );
       case 'review-thread-resolve': {
         const query = `mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{id isResolved}}}`;
