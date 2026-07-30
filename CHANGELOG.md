@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.55.2](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.55.1...effective-flow-v1.55.2) (2026-07-30)
+
+
+### Bug Fixes
+
+* split pr-checks-wait into a watch and a JSON read ([83c5ad9](https://github.com/sebastian-software/effective-flow/commit/83c5ad96694cdc199ac55292b253410a54013dc0)), closes [#303](https://github.com/sebastian-software/effective-flow/issues/303)
+
 ## [1.55.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.55.0...effective-flow-v1.55.1) (2026-07-29)
 
 
