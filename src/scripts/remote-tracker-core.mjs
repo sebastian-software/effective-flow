@@ -767,9 +767,15 @@ export function redact(value) {
   // whatever an issue or pull-request body carried into a command plan. `[a-z\d+.-]*` would give
   // its match back one character at a time at every start position of an unbroken run, and a
   // `[^\s/@]+(?::[^\s/@]*)?` tail would let the optional group re-consume to the end at every
-  // backtrack step of the `+`. Either one costs seconds on 128 000 characters. The scheme bound is
-  // generous — `mongodb+srv` is the longest in play — and the dropped group changed nothing, since
-  // `[^\s/@]+` already accepts the colon between user and password.
+  // backtrack step of the `+`. Either one costs seconds on 128 000 characters. The dropped group
+  // changed nothing, since `[^\s/@]+` already accepts the colon between user and password.
+  //
+  // 32 is the deliberate scheme cutoff, not a value to tighten later: `mongodb+srv` is the longest
+  // scheme in play at 11, so the margin absorbs anything a provider or a Git remote can hand over.
+  // It costs even less coverage than it looks like. The engine slides the start position, so a
+  // longer all-letter scheme still matches — later, with the skipped prefix copied through. Only a
+  // scheme of 33 or more characters whose last 32 hold no ASCII letter falls out, which
+  // `test/remote-tracker.test.mjs` pins from both sides.
   return value
     .replace(/([a-z][a-z\d+.-]{0,31}:\/\/)[^\s/@]+@/gi, '$1[REDACTED]@')
     .replace(/\b(?:gh[opusr]_|github_pat_|gitea_)[A-Za-z0-9_=-]+\b/g, '[REDACTED]')

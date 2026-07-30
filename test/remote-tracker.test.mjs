@@ -1656,6 +1656,20 @@ test('redaction stays linear on unbroken runs', () => {
 // with the coverage it must not buy back. The empty-username case is the trap: excluding colons
 // from the userinfo is the obvious way to break the quantifier overlap, and it silently stops
 // redacting a password that has no username in front of it.
+//
+// The last two redacted cases and the last untouched one pin the scheme bound of 32, which is
+// otherwise recorded nowhere a test could catch. Tightening it — plausible, since a bound whose
+// only stated justification is "long enough for the schemes we see" invites trimming — would stop
+// redacting real credentials while every ordinary case here stayed green.
+//
+// Only the digit pair does that pinning, and the reason is worth stating, because the obvious
+// all-letter case does not work. The bound does not mean "a scheme longer than 32 characters is not
+// matched": the engine slides the start position, so `aaa…aaa://u:p@h` still matches under *any*
+// bound — the match simply begins later and the skipped prefix is copied through. That is what the
+// 40-character case documents, and it is why it is not a guard. Coverage is lost only when the
+// scheme is at least 33 characters *and* its last 32 hold no ASCII letter to restart from. Digits
+// are such a tail, so `a` + 31 digits must redact and `a` + 32 must not, and the pair moves for
+// every change to the bound in either direction. No real scheme comes near this shape.
 test('redaction keeps covering every URL userinfo shape', () => {
   for (const remote of [
     'https://alice:verysecret@github.com/example/flow.git',
@@ -1667,6 +1681,8 @@ test('redaction keeps covering every URL userinfo shape', () => {
     'https://:onlypass@host/x',
     'https://user:@host/x',
     'https://u:p@h/a@b',
+    `${'a'.repeat(40)}://u:p@h/x`,
+    `a${'0'.repeat(31)}://u:p@h/x`,
   ]) {
     assert.match(redact(remote), /:\/\/\[REDACTED\]@/, remote);
   }
@@ -1675,6 +1691,7 @@ test('redaction keeps covering every URL userinfo shape', () => {
     'https://@host/x',
     'mailto:a@b.c',
     'no scheme user:pw@host',
+    `a${'0'.repeat(32)}://u:p@h/x`,
   ]) {
     assert.equal(redact(untouched), untouched);
   }
