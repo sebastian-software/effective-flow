@@ -763,8 +763,15 @@ export function redact(value) {
     );
   }
   if (typeof value !== 'string') return value;
+  // The scheme is bounded and the userinfo is one unambiguous run, because this pattern runs over
+  // whatever an issue or pull-request body carried into a command plan. `[a-z\d+.-]*` would give
+  // its match back one character at a time at every start position of an unbroken run, and a
+  // `[^\s/@]+(?::[^\s/@]*)?` tail would let the optional group re-consume to the end at every
+  // backtrack step of the `+`. Either one costs seconds on 128 000 characters. The scheme bound is
+  // generous — `mongodb+srv` is the longest in play — and the dropped group changed nothing, since
+  // `[^\s/@]+` already accepts the colon between user and password.
   return value
-    .replace(/([a-z][a-z\d+.-]*:\/\/)[^\s/@]+(?::[^\s/@]*)?@/gi, '$1[REDACTED]@')
+    .replace(/([a-z][a-z\d+.-]{0,31}:\/\/)[^\s/@]+@/gi, '$1[REDACTED]@')
     .replace(/\b(?:gh[opusr]_|github_pat_|gitea_)[A-Za-z0-9_=-]+\b/g, '[REDACTED]')
     .replace(/(Authorization\s*:\s*(?:Bearer|token)\s+)\S+/gi, '$1[REDACTED]')
     .replace(/([?&](?:access_)?token=)[^&\s]+/gi, '$1[REDACTED]');

@@ -1624,6 +1624,57 @@ test('structured parse failures redact URL userinfo', async () => {
   assert.match(envelope.error.details.remote, /\[REDACTED\]@github\.com/);
 });
 
+// `redact` runs over every command plan, including its stdin, so its input is whatever an issue or
+// pull-request body carried — text the repository does not control. Both shapes below cost seconds
+// against a pattern that can backtrack across an unbroken run, and both stay in the single-digit
+// milliseconds against one that cannot. The bound is deliberately far above the linear cost so a
+// loaded machine cannot fail it; only a return to quadratic behaviour can.
+test('redaction stays linear on unbroken runs', () => {
+  const shapes = {
+    // No `://` ever matches here: the cost is the scheme prefix giving back one character at a
+    // time at every start position.
+    'plain run': 'x'.repeat(128_000),
+    // Here `://` does match, and the cost moves to the userinfo tail: two quantifiers over the
+    // same character class, so every backtrack step of the outer one lets the inner one re-consume
+    // to the end. Bounding the scheme alone leaves this shape quadratic.
+    'colon run': `a://${'x:'.repeat(64_000)}`,
+  };
+  for (const [name, input] of Object.entries(shapes)) {
+    const startedAt = Date.now();
+    redact(input);
+    const elapsed = Date.now() - startedAt;
+    assert.ok(elapsed < 1000, `redacting a ${name} took ${elapsed}ms`);
+  }
+});
+
+// The cost bound above is satisfied by any pattern that stops matching, so it has to be paired
+// with the coverage it must not buy back. The empty-username case is the trap: excluding colons
+// from the userinfo is the obvious way to break the quantifier overlap, and it silently stops
+// redacting a password that has no username in front of it.
+test('redaction keeps covering every URL userinfo shape', () => {
+  for (const remote of [
+    'https://alice:verysecret@github.com/example/flow.git',
+    'ssh://git@github.com/example/flow.git',
+    'git+ssh://user:pw@host/p',
+    'mongodb+srv://u:p@cluster.example.com/db',
+    'HTTPS://Alice:S3cret@GitHub.com/x',
+    'https://a:b:c@host/x',
+    'https://:onlypass@host/x',
+    'https://user:@host/x',
+    'https://u:p@h/a@b',
+  ]) {
+    assert.match(redact(remote), /:\/\/\[REDACTED\]@/, remote);
+  }
+  for (const untouched of [
+    'https://github.com/example/flow.git',
+    'https://@host/x',
+    'mailto:a@b.c',
+    'no scheme user:pw@host',
+  ]) {
+    assert.equal(redact(untouched), untouched);
+  }
+});
+
 test('CLI reads JSON stdin and returns stable success/error envelopes and exit codes', () => {
   const success = spawnSync(process.execPath, ['src/scripts/remote-tracker.mjs', 'remote-parse'], {
     cwd: new URL('..', import.meta.url),
