@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.55.4](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.55.3...effective-flow-v1.55.4) (2026-07-30)
+
+
+### Bug Fixes
+
+* keep redaction linear on an unbroken token run ([#316](https://github.com/sebastian-software/effective-flow/issues/316)) ([eca5aef](https://github.com/sebastian-software/effective-flow/commit/eca5aef4a4cb558cca4a9fb31b5e2929d3a27a2e)), closes [#315](https://github.com/sebastian-software/effective-flow/issues/315)
+* read check requiredness so requireAllChecks can decide ([b911ea6](https://github.com/sebastian-software/effective-flow/commit/b911ea603f37e83e9c4eb3448980655a0461459e))
+* stop the merge gate counting its own output as human discussion ([#312](https://github.com/sebastian-software/effective-flow/issues/312)) ([fa92d81](https://github.com/sebastian-software/effective-flow/commit/fa92d81e52ac0f3c6b740b2dfa9baeef4b467e37))
+
 ## [1.55.3](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.55.2...effective-flow-v1.55.3) (2026-07-30)
 
 
