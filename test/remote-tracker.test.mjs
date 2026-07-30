@@ -2290,7 +2290,15 @@ test('an empty check list is reported as empty and never as complete', async () 
   const wait = await executeOperation(
     'pr-checks-wait',
     { repository: gateRepository, number: 12 },
-    { runner: fakeRunner([{ status: 0, stdout: '[]', stderr: '' }]), skipProbe: true },
+    {
+      // The watch step's own result is discarded except for its timeout signal, so its exact shape
+      // does not matter here — only the read step's empty array does.
+      runner: fakeRunner([
+        { status: 0, stdout: '', stderr: '' },
+        { status: 0, stdout: '[]', stderr: '' },
+      ]),
+      skipProbe: true,
+    },
   );
   assert.equal(wait.ok, true);
   assert.equal(wait.data.result.timedOut, false);
@@ -2626,7 +2634,11 @@ test('pr-checks-wait watches with the supplied bound and requests required check
   // `gh pr checks` has no timeout flag of its own, so the bound travels with the plan.
   assert.equal(plan.timeoutMs, 20 * 60 * 1000);
   assert.equal(plan.args.includes('--required'), false);
-  assert.equal(plan.args.at(-2), '--json');
+  // This is the watch alone, not the structured read that follows it: `gh pr checks` rejects
+  // `--watch` together with `--json` outright, so the plan a caller previews here never carries
+  // `--json` and ends with the interval value instead.
+  assert.equal(plan.args.at(-1), '15');
+  assert.equal(plan.args.includes('--json'), false);
 
   const requiredOnly = buildCommandPlan(
     'pr-checks-wait',
@@ -2651,6 +2663,27 @@ test('pr-checks-wait watches with the supplied bound and requests required check
   assert.equal(wrapped.timeoutMs, 5 * 60 * 1000);
   assert.equal(wrapped.args.at(wrapped.args.indexOf('--interval') + 1), '30');
   assert.ok(wrapped.args.includes('--required'));
+});
+
+test('pr-checks-wait never combines --watch with --json, which gh rejects outright', () => {
+  // `gh pr checks` refuses the combination with a hard `cannot use --watch with --json flag`
+  // error (exit 1), even though each flag works perfectly well on its own. Any plan that carries
+  // both is therefore not a slow poll, it's a guaranteed COMMAND_FAILED on every invocation.
+  const defaults = buildCommandPlan('pr-checks-wait', { number: 12 }, githubRepository);
+  assert.ok(
+    !(defaults.args.includes('--watch') && defaults.args.includes('--json')),
+    'default pr-checks-wait plan must not combine --watch and --json',
+  );
+
+  const requiredOnly = buildCommandPlan(
+    'pr-checks-wait',
+    { number: 12, requiredOnly: true },
+    githubRepository,
+  );
+  assert.ok(
+    !(requiredOnly.args.includes('--watch') && requiredOnly.args.includes('--json')),
+    'requiredOnly pr-checks-wait plan must not combine --watch and --json',
+  );
 });
 
 test('the wait bound rejects unusable numbers as payload errors, not reference errors', () => {
@@ -2692,16 +2725,17 @@ test('the wait bound rejects unusable numbers as payload errors, not reference e
 
 test('a pending exit code and a killed watch become a timeout result, not an error', async () => {
   const waitInput = { repository: gateRepository, number: 12, timeoutMinutes: 1 };
-  const pendingRunner = fakeRunner([
-    {
-      status: 8,
-      stdout: JSON.stringify([
-        { name: 'unit', state: 'SUCCESS', bucket: 'pass', link: 'https://ci.example.test/1' },
-        { name: 'e2e', state: 'PENDING', bucket: 'pending', link: '' },
-      ]),
-      stderr: '',
-    },
-  ]);
+  // The wait is two `gh` invocations now, so every case below has to feed `fakeRunner` a result
+  // for the watch and a second one for the read that follows it.
+  const pendingChecks = {
+    status: 8,
+    stdout: JSON.stringify([
+      { name: 'unit', state: 'SUCCESS', bucket: 'pass', link: 'https://ci.example.test/1' },
+      { name: 'e2e', state: 'PENDING', bucket: 'pending', link: '' },
+    ]),
+    stderr: '',
+  };
+  const pendingRunner = fakeRunner([pendingChecks, pendingChecks]);
   const pending = await executeOperation('pr-checks-wait', waitInput, {
     runner: pendingRunner,
     skipProbe: true,
@@ -2726,9 +2760,11 @@ test('a pending exit code and a killed watch become a timeout result, not an err
   });
 
   // A watch killed on the plan's bound can leave a truncated payload behind; that is still a
-  // timeout, never malformed provider JSON.
+  // timeout, never malformed provider JSON. The read that follows is killed the same way here, so
+  // the pending list stays unreported rather than being fabricated from a truncated read.
+  const killedResult = { status: null, signal: 'SIGTERM', stdout: '[{"name":"e2e"', stderr: '' };
   const killed = await executeOperation('pr-checks-wait', waitInput, {
-    runner: fakeRunner([{ status: null, signal: 'SIGTERM', stdout: '[{"name":"e2e"', stderr: '' }]),
+    runner: fakeRunner([killedResult, killedResult]),
     skipProbe: true,
   });
   assert.equal(killed.ok, true);
@@ -2740,23 +2776,27 @@ test('a pending exit code and a killed watch become a timeout result, not an err
 
   // A finished watch is a completed result — including the run whose red check makes gh exit
   // non-zero while it still prints the list the gate has to read.
+  const greenChecks = {
+    status: 0,
+    stdout: JSON.stringify([{ name: 'unit', state: 'SUCCESS', bucket: 'pass' }]),
+  };
   const green = await executeOperation('pr-checks-wait', waitInput, {
-    runner: fakeRunner([
-      { status: 0, stdout: JSON.stringify([{ name: 'unit', state: 'SUCCESS', bucket: 'pass' }]) },
-    ]),
+    runner: fakeRunner([greenChecks, greenChecks]),
     skipProbe: true,
   });
   assert.equal(green.data.result.complete, true);
   assert.equal(green.data.result.timedOut, false);
 
+  // A red check makes `gh pr checks` exit 1 whichever step runs it, and neither one turns that
+  // into a COMMAND_FAILED: the watch's exit status is discarded entirely, and the read's non-zero
+  // exit still carries the check list the caller waited for.
+  const redChecks = {
+    status: 1,
+    stdout: JSON.stringify([{ name: 'unit', state: 'FAILURE', bucket: 'fail' }]),
+    stderr: '',
+  };
   const red = await executeOperation('pr-checks-wait', waitInput, {
-    runner: fakeRunner([
-      {
-        status: 1,
-        stdout: JSON.stringify([{ name: 'unit', state: 'FAILURE', bucket: 'fail' }]),
-        stderr: '',
-      },
-    ]),
+    runner: fakeRunner([redChecks, redChecks]),
     skipProbe: true,
   });
   assert.equal(red.ok, true);
@@ -2766,13 +2806,136 @@ test('a pending exit code and a killed watch become a timeout result, not an err
     { name: 'unit', status: 'COMPLETED', conclusion: 'FAILURE' },
   ]);
 
-  // An operational failure prints no check list and stays a failure.
+  // An operational failure prints no check list and stays a failure. The watch alone can never
+  // report it — its exit status is discarded — so the read is the only step that has to fail here.
+  const brokenResult = { status: 1, stdout: '', stderr: 'no checks reported' };
   const broken = await executeOperation('pr-checks-wait', waitInput, {
-    runner: fakeRunner([{ status: 1, stdout: '', stderr: 'no checks reported' }]),
+    runner: fakeRunner([brokenResult, brokenResult]),
     skipProbe: true,
   });
   assert.equal(broken.ok, false);
   assert.equal(broken.error.code, 'COMMAND_FAILED');
+});
+
+test("the structured read after the watch carries --json and the caller's --required criterion, never --watch", async () => {
+  const readResult = {
+    status: 0,
+    stdout: JSON.stringify([{ name: 'unit', state: 'SUCCESS', bucket: 'pass' }]),
+    stderr: '',
+  };
+  const runner = fakeRunner([{ status: 0, stdout: '', stderr: '' }, readResult]);
+  await executeOperation(
+    'pr-checks-wait',
+    { repository: gateRepository, number: 12, requiredOnly: true },
+    { runner, skipProbe: true },
+  );
+  // `runner.calls[1]` is what actually executed for the read, which is stronger evidence than the
+  // preview: `buildChecksReadPlan` is not exported, so nothing else lets a test observe its output.
+  const readArgs = runner.calls[1].args;
+  assert.equal(readArgs.includes('--watch'), false);
+  assert.ok(readArgs.includes('--required'));
+  assert.equal(readArgs.at(-2), '--json');
+  assert.equal(readArgs.at(-1), 'bucket,link,name,state');
+
+  const withoutRequired = fakeRunner([{ status: 0, stdout: '', stderr: '' }, readResult]);
+  await executeOperation(
+    'pr-checks-wait',
+    { repository: gateRepository, number: 12 },
+    { runner: withoutRequired, skipProbe: true },
+  );
+  assert.equal(withoutRequired.calls[1].args.includes('--required'), false);
+});
+
+test('the read bound stays fixed at 60 seconds no matter what the caller asks the watch to wait', async () => {
+  const readResult = {
+    status: 0,
+    stdout: JSON.stringify([{ name: 'unit', state: 'SUCCESS', bucket: 'pass' }]),
+    stderr: '',
+  };
+  for (const timeoutMinutes of [1, 5, 45]) {
+    const runner = fakeRunner([{ status: 0, stdout: '', stderr: '' }, readResult]);
+    await executeOperation(
+      'pr-checks-wait',
+      { repository: gateRepository, number: 12, timeoutMinutes },
+      { runner, skipProbe: true },
+    );
+    // The watch's bound tracks the caller; the read's bound stays the fixed constant regardless —
+    // that fixed ceiling is the guarantee that the split operation still has an end-to-end limit.
+    assert.equal(runner.calls[0].timeoutMs, timeoutMinutes * 60 * 1000);
+    assert.equal(runner.calls[1].timeoutMs, 60_000);
+  }
+});
+
+test('a red check that only makes the watch exit non-zero still reaches the read and its payload', async () => {
+  // The watch's own exit status never reaches the caller, so a red check on the watch alone — with
+  // a clean read behind it — must not turn into a COMMAND_FAILED either.
+  const runner = fakeRunner([
+    { status: 1, stdout: '', stderr: 'checks failing' },
+    { status: 0, stdout: JSON.stringify([{ name: 'unit', state: 'SUCCESS', bucket: 'pass' }]) },
+  ]);
+  const result = await executeOperation(
+    'pr-checks-wait',
+    { repository: gateRepository, number: 12 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.data.result.complete, true);
+  assert.equal(result.data.result.timedOut, false);
+});
+
+test('a timed-out watch still lets the read report the real, non-empty pending list', async () => {
+  // This is the behaviour the split was made for: a watch that ran out of its bound must not
+  // withhold the pending check list the caller has to act on, because the read runs regardless.
+  const runner = fakeRunner([
+    { status: 8, stdout: '', stderr: '' },
+    {
+      status: 0,
+      stdout: JSON.stringify([
+        { name: 'unit', state: 'SUCCESS', bucket: 'pass' },
+        { name: 'e2e', state: 'PENDING', bucket: 'pending' },
+      ]),
+      stderr: '',
+    },
+  ]);
+  const result = await executeOperation(
+    'pr-checks-wait',
+    { repository: gateRepository, number: 12 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(result.data.result.timedOut, true);
+  assert.equal(result.data.result.complete, false);
+  assert.equal(result.data.result.checksReported, true);
+  assert.equal(result.data.result.checkCount, 2);
+});
+
+test('pr-checks-wait reports both command previews in execution order, unlike a single-command operation', async () => {
+  const runner = fakeRunner([
+    { status: 0, stdout: '', stderr: '' },
+    { status: 0, stdout: '[]', stderr: '' },
+  ]);
+  const wait = await executeOperation(
+    'pr-checks-wait',
+    { repository: gateRepository, number: 12 },
+    { runner, skipProbe: true },
+  );
+  assert.ok(Array.isArray(wait.data.commands));
+  assert.equal(wait.data.commands.length, 2);
+  assert.ok(wait.data.commands[0].args.includes('--watch'));
+  assert.equal(wait.data.commands[1].args.includes('--watch'), false);
+  assert.equal(wait.data.commands[1].args.at(-2), '--json');
+  assert.equal(Object.hasOwn(wait.data, 'command'), false);
+
+  // A single-command operation is unaffected by the split and still reports one preview.
+  const status = await executeOperation(
+    'pr-status-read',
+    { repository: gateRepository, number: 12 },
+    {
+      runner: fakeRunner([{ status: 0, stdout: prStatusStdout(verifiedHead), stderr: '' }]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(status.data.command.executable, 'gh');
+  assert.equal(Object.hasOwn(status.data, 'commands'), false);
 });
 
 test('the Forgejo probe reports every pull-request gate operation as unsupported', async () => {
@@ -3049,12 +3212,15 @@ test('an unusable working directory is reported as such, not as a missing CLI', 
   assert.equal(envelope.error.details.cwd, '/removed/tree');
 });
 
-// A stand-in for the gh CLI. It answers the probe, blocks far beyond any bound on a watch, and
+// A stand-in for the gh CLI. It answers the probe, blocks far beyond any bound on the watch, and
 // needs a moment for an ordinary read — the cases that show what the plan's bound applies to, and
 // what happens when the child refuses the polite stop. `exec` matters: the sleeping process must be
 // the spawned child itself, so the runner's signal reaches it directly instead of leaving an orphan
 // holding the child's pipes open. An ignored disposition survives `exec`, so the deaf branch really
-// does produce a process that cannot be stopped with SIGTERM.
+// does produce a process that cannot be stopped with SIGTERM. The wait now runs `gh pr checks`
+// twice, and only the first of the two — the one carrying `--watch` — is the one that must hang;
+// the structured read that follows carries no `--watch` at all and has to answer immediately, or
+// this fixture would make the read sleep out its own 60-second bound on every single test run.
 const FAKE_GH = `#!/bin/sh
 case "$1" in
   --version) echo 'gh version 2.70.0 (2026-01-01)'; exit 0 ;;
@@ -3062,8 +3228,14 @@ case "$1" in
 esac
 case "$2" in
   checks)
-    if [ -n "$FAKE_GH_IGNORE_TERM" ]; then trap '' TERM; fi
-    exec sleep 30
+    case " $* " in
+      *' --watch '*)
+        if [ -n "$FAKE_GH_IGNORE_TERM" ]; then trap '' TERM; fi
+        exec sleep 30
+        ;;
+    esac
+    printf '%s' '[]'
+    exit 0
     ;;
   view)
     sleep 1
