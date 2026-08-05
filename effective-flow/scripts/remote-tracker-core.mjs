@@ -889,7 +889,7 @@ function ghRepoArgs(repository) {
 //
 // The status read has to be GraphQL rather than `gh pr view --json`, because requiredness is the one
 // fact the porcelain projection cannot express at all: none of its fields states whether branch
-// protection marks a check as required, so `prReview.requireAllChecks: false` — documented as "the
+// protection marks a check as required, so `mergeGate.requireAllChecks: false` — documented as "the
 // forge's own required-checks definition decides" — had no definition to consult, and the check list
 // correctly reported no `required` flag rather than guessing one. GraphQL states it per context as
 // `isRequired(pullRequestNumber:)`, on both members of the rollup union, and a single query returns

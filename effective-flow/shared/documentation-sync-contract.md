@@ -67,8 +67,8 @@ The gate's completion condition is: no surface is `blocked` and none is unassess
   record that decision, and run no completion, plan-status switch or delivery action while a
   surface is still `blocked`;
 - **non-interactive delegation** (a run anywhere below ``tools/apply-review.md``,
-  ``tools/apply-issues.md``, `effective-flow iterate` or `effective-flow pr-review` in the delegation chain,
-  not only a direct sub-agent of one — `effective-flow pr-review` delegates through `effective-flow iterate`
+  ``tools/apply-issues.md``, `effective-flow iterate` or `effective-flow merge-gate` in the delegation chain,
+  not only a direct sub-agent of one — `effective-flow merge-gate` delegates through `effective-flow iterate`
   and runs this gate in no phase of its own): do not abort. Record every remaining `blocked` surface as an open
   finding with `Action: effective-flow docs` in the run's review report per "Open review-finding
   reports", including its prompt suggestion, and name it in the completion summary. The run

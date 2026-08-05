@@ -26,7 +26,7 @@ checks, and merging the pull request.
 It serves both directions plus the merge gate. **Inbound**, `effective-flow iterate` reads and answers
 what others wrote. **Outbound**, "PR review publication" writes Effective Flow's own findings onto
 the pull request; that fragment owns which findings are published and which gates run first, while
-this one provides the operations. **The gate**, `effective-flow pr-review`, reads status and checks,
+this one provides the operations. **The gate**, `effective-flow merge-gate`, reads status and checks,
 waits, posts its configured bot trigger — its only own write — and finally merges; it owns the
 ordered gate and the merge decision, while this one again provides the operations.
 
@@ -115,7 +115,7 @@ person. A value the provider does not expose stays absent rather than being gues
 This is the only authorship evidence that **survives a run**. The ID a mutation returned identifies
 a write only inside the run that performed it, so a workflow asking "did I write this on an earlier
 run?" has nothing to compare it against and must use the authenticated login instead.
-`effective-flow pr-review` is that consumer: it pairs the login with the exact configured body of its
+`effective-flow merge-gate` is that consumer: it pairs the login with the exact configured body of its
 trigger comment.
 
 Do not scrape the login out of the probe's authentication-status output. That is human-readable CLI
@@ -129,7 +129,7 @@ its own as someone else's.
 
 Use the helper's review-thread reply operation. It stamps the marker
 `<!-- effective-flow-iterate -->` onto the reply body from its own marker table, idempotently, so
-never write that marker by hand (see idempotency). This matters beyond tidiness: `effective-flow pr-review`
+never write that marker by hand (see idempotency). This matters beyond tidiness: `effective-flow merge-gate`
 matches the marker as an exact string when it decides whether an item in a resolved thread is this
 tool's own, so an unstamped reply is later read as a human's and blocks the merge.
 
@@ -165,7 +165,7 @@ summary comment with the marker `<!-- effective-flow-iterate -->` is
 posted: which points were implemented, which skipped, and which pure questions are listed as
 open/deferred.
 
-A delegating caller may suppress that comment, and `effective-flow pr-review` does so for every round it
+A delegating caller may suppress that comment, and `effective-flow merge-gate` does so for every round it
 delegates. The reason is the guard: the delegated run posts under the same account in manual mode,
 so a summary comment left on the pull request would be a top-level, unresolvable item that the next
 authorship evaluation counts as a human comment. The content is handed back to the caller instead of
@@ -210,7 +210,7 @@ exactly the commit that was verified, so a head that moved in the meantime fails
 merging a state nobody checked. Never re-run the mutation after a structured error carrying
 `mutationMayHaveSucceeded: true` — re-read the pull-request state and report what it shows.
 
-Merging is the most irreversible mutation in this tool set and belongs to `effective-flow pr-review`. It
+Merging is the most irreversible mutation in this tool set and belongs to `effective-flow merge-gate`. It
 is never used to work around a blocked merge state, and this building block still never approves a
 pull request and never requests changes — not even to unblock a merge.
 
@@ -223,7 +223,8 @@ reason, and improvises no provider request.
 Two distinct HTML markers keep the directions and the writers apart:
 
 - `<!-- effective-flow-iterate -->` on thread replies and the `effective-flow iterate` summary comment.
-- `<!-- effective-flow-pr-review -->` on outbound inline review comments and the review body.
+- `<!-- effective-flow-pr-review -->` on outbound inline review comments, the review body, and the
+  top-level pull-request comment that carries the findings whose line lies outside the diff.
 
 **A marker is stamped as the body's leading line, and only that position counts as a marker.** The
 helper's payload builder prepends it, so every body this tool writes begins with it. A reader must
@@ -233,7 +234,7 @@ Treating a marker found anywhere as authoritative lets any person reproduce one 
 which is how a reader that trusts a marker's mere presence ends up misreading a human's comment as
 this tool's own.
 
-**`effective-flow pr-review`, the merge gate, writes no marker at all — by design, not by oversight.** A
+**`effective-flow merge-gate`, the merge gate, writes no marker at all — by design, not by oversight.** A
 marker left in a raw comment body keeps announcing which tool composed that comment, and removing
 that disclosure is exactly why the gate's former third marker (`effective-flow-pr-gate`) is gone.
 The gate's only own write is its configured trigger comment, and it recognizes that comment again
@@ -247,7 +248,7 @@ published.
 
 The helper's marker table stamps both of them, so neither is ever written by hand: idempotency and
 the `effective-flow iterate` separation are exact string matches that a hand-written variant silently
-defeats. A caller that supplies a body itself — as `effective-flow pr-review` does for its trigger
+defeats. A caller that supplies a body itself — as `effective-flow merge-gate` does for its trigger
 comment — must therefore not use the `pr` comment-kind builder, which stamps
 `<!-- effective-flow-iterate -->`, the marker `effective-flow iterate` reads as its own already-processed
 work.
@@ -272,7 +273,7 @@ instead of overwriting history.
 
 A head branch that has fallen **behind** its base is brought forward the same way: merge
 `origin/<base>` into the head branch as a merge commit and push normally. That merge, performed by
-`effective-flow pr-review`, is the sanctioned repair; a rebase or a force-push of the head branch is not,
+`effective-flow merge-gate`, is the sanctioned repair; a rebase or a force-push of the head branch is not,
 whatever the forge suggests.
 
 ## Security disclosure gate

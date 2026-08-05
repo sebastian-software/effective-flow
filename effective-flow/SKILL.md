@@ -1,12 +1,12 @@
 ---
 name: effective-flow
-description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: build, fix, plan, refactor, docs, review, apply, concept, plan-issue, maintain, commit, pr, setup, cleanup, open-plans, investigate, version."
-argument-hint: "[concept|investigate|plan|open-plans|plan-issue|apply|build|fix|refactor|docs|maintain|iterate|review|pr-review|commit|pr|setup|cleanup|version]"
+description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: build, fix, plan, refactor, docs, review, apply, concept, plan-issue, maintain, iterate, commit, pr, merge-gate, setup, cleanup, open-plans, investigate, version."
+argument-hint: "[concept|investigate|plan|open-plans|plan-issue|apply|build|fix|refactor|docs|maintain|iterate|review|commit|pr|merge-gate|setup|cleanup|version]"
 ---
 
 # Effective Flow
 
-Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.55.4 (ad5462e)).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.56.0 (051893b)).
 
 This router skill is deliberately **thin**. Beyond the tool catalog, the dispatch rule and the session-title contract it carries nothing; a tool's full instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the session lean and avoids token exhaustion from preloading all tools.
 
@@ -23,6 +23,10 @@ The portable instructions below use `effective-flow <tool>` as harness-neutral n
 2. **Valid `<tool>`:** Read the file `tools/<tool>.md` in this skill directory and follow it verbatim. Pass the remaining arguments through to the tool unchanged. Do **not** read any further tool files in the process — only the one that corresponds to the invoked tool.
 
 For the `apply` tool, its instructions may in turn load an appropriate **internal** file (`tools/apply-plan.md`, `tools/apply-review.md`, or `tools/apply-issues.md`), depending on the detected source. These internal files are not directly invocable via `effective-flow`.
+
+Some retired tool names stay invocable as **deprecated aliases**. They are deliberately absent from the catalog below, so rule 1 does not apply to them, and the tool file of an alias is the one case in which rule 2 allows a second tool file to be read:
+
+- `effective-flow pr-review` is the deprecated former name of `effective-flow merge-gate`. Read `tools/pr-review.md`, which reports the deprecation and then follows `tools/merge-gate.md` with the arguments unchanged.
 
 ## Session title
 
@@ -81,12 +85,12 @@ _from a clarified plan/issue to code_
 ### Ensure quality
 
 - `effective-flow review` — Checks code for quality and findings – or, more deeply, an existing plan.
-- `effective-flow pr-review` — Drives an open pull request through checks, bot notes, and – if allowed – the merge.
 
 ### Deliver changes
 
 - `effective-flow commit` — Commits the staged changes with a fitting commit message.
 - `effective-flow pr` — Opens a pull request from your branch (GitHub or Forgejo).
+- `effective-flow merge-gate` — Drives an open pull request through checks, bot notes, and – if allowed – the merge.
 
 ### Set up & info
 
@@ -110,4 +114,4 @@ clarification instead of a guess.
 ## Rules
 
 - Never load multiple tool files "just in case"; always only the currently invoked tool (plus, if applicable, the single internal `apply` source).
-- Specialist workers (implementers, reviewers, validators, test/docs writers …) are **not** `effective-flow` tools. Tools invoke them internally through bundled `workers/effective-flow-<worker>.md` contracts delegated through the host harness's built-in general-purpose subagent mechanism. Load or delegate only the selected worker, never the full worker set.
+- Specialist workers (implementers, reviewers, validators, test/docs writers …) are **not** `effective-flow` tools. Tools invoke them internally through bundled `workers/effective-flow-<worker>.md` contracts delegated through the host harness's built-in general-purpose subagent mechanism. Invoking a tool is the user's standing request for exactly that internal delegation. Load or delegate only the selected worker, never the full worker set.

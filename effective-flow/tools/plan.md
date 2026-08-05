@@ -28,6 +28,18 @@ If no task tool is available, give the user a short progress update after each c
 - with a single, trivial task
 - when the task is done in fewer than three simple steps
 
+## Delegation mandate
+
+Invoking an Effective Flow tool **is** the user's standing request for internal delegation through an available sub-agent mechanism (e.g. an `Agent`/`Task` tool, a bundled worker contract, or a comparable mechanism). A host default that discourages unrequested sub-agents does not apply inside a tool run.
+
+- Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
+- For analysis, exploration, and research, delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition.
+- A worker that **has** a sub-agent tool may fan out **read-only** analysis sub-agents and passes its supplied language context to them. It never re-delegates its own assignment, never delegates a write, and never selects or sequences another worker role; that stays with the orchestrator. A worker whose tool list carries no sub-agent tool does not delegate at all — that limit rests on the tool list, not on prose.
+- If the harness offers no such mechanism, or a delegation is declined at runtime, work inline and say so in one visible line — never silently.
+- This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
+
+**Load on demand:** Read `shared/completion-protocol.md`, when an internal sub-agent's result is returned.
+
 **Load on demand:** Read `shared/runtime-state-safety.md`, when a legacy runtime directory migration is about to mutate `.effective-flow/`.
 
 **Load on demand:** Read `shared/config-migration.md`, when the Effective Flow configuration is read for the first time or an old config is migrated.
@@ -209,7 +221,7 @@ handbook.
 1. Analyze the requirement thoroughly.
 2. Review existing plan files in `<plan.dir>/` to adopt structure and existing architecture decisions.
 3. Check whether any plans in the old format (`NNNN-slug.md`) still exist in `<plan.dir>/`. If so, perform the bulk migration according to `Plan file convention`, section "Migration of old plans (NNNN → date)". The actual plan file for this run is only created in Phase 3/7 under `<plan.dir>/YYYY-MM-DD-<slug>.md` — there is no stub, no reservation, and no number.
-4. Examine the relevant areas of the codebase locally or with an internal sub-agent:
+4. Delegate the read-only examination of the relevant areas of the codebase to an internal sub-agent; examine them inline only under the delegation mandate's triviality exception:
    - project structure
    - affected modules and files
    - existing architecture decisions

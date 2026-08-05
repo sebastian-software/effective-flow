@@ -6,14 +6,14 @@ clarification through implementation to handover – invoked via `/effective-flo
 
 Not a grab-bag of individual prompts, but a coherent set of tools that know one another:
 `plan` recommends the matching follow-up workflow; `build`, `fix`, `refactor` and `docs`
-share the same conventions for tests, review and completion; and `commit`/`pr`/`pr-review`
+share the same conventions for tests, review and completion; and `commit`/`pr`/`merge-gate`
 close the loop all the way to the merge.
 
 ## Why Effective Flow
 
 - **One tool for the whole cycle.** `investigate` and `plan` clarify the task,
   `build`, `fix`, `refactor`, `docs` and `maintain` implement it, `review` checks it,
-  `commit` and `pr` bring the change in, and `pr-review` drives an open pull request the rest
+  `commit` and `pr` bring the change in, and `merge-gate` drives an open pull request the rest
   of the way – answering automatic reviewers and merging once it is genuinely clean, but
   never past an open human comment – with no break between the phases.
 - **Thin router, lazy loading.** Effective Flow loads only the tool catalog at startup; the

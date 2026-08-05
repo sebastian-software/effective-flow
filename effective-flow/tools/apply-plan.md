@@ -199,6 +199,38 @@ If the table is invalid or ambiguous (missing key, unknown encoding): use a
 safe default for the run, inform the user about the affected key,
 do **not** guess.
 
+### Merge-gate keys (`mergeGate.*`) and their legacy namespace
+
+effective-flow merge-gate reads the keys below; effective-flow iterate reads the `bots` entries for its
+review-in-flight guard. A missing line means the default, per the encoding rule above.
+
+| Key                              | Values                             | Default   |
+| -------------------------------- | ---------------------------------- | --------- |
+| `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
+| `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
+| `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
+| `mergeGate.maxRounds`            | positive integer                   | `3`       |
+| `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
+| `mergeGate.bots`                 | comma list of logins               | `(empty)` |
+| `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
+| `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
+
+A login containing brackets (`greptileai[bot]`) is a valid middle segment, because the encoding
+splits on `.` only.
+
+**Backcompat (one generation):** these keys were formerly named `prReview.*`. Where a
+`mergeGate.<key>` line is absent, read `prReview.<key>` and use its value; report **once per run**
+that the legacy namespace was read and that effective-flow setup migrates it. Precedence is per key: a
+present `mergeGate.<key>` always wins over a present `prReview.<key>`, and the two namespaces are
+never merged at a finer grain than the individual key. Reading is all this fallback does — only
+effective-flow setup writes configuration, and it rewrites a legacy block in place (carry the values
+over, remove the old rows, report a shadowed key). Once every project has run effective-flow setup once,
+the fallback has no remaining reader and is removable rather than load-bearing.
+
+**`delivery.prReview` is not part of this block** and is never migrated: it decides whether a run
+publishes **its own review findings** onto a pull request it created (see the encoding rule above),
+while `mergeGate.*` configures the gate that takes an **existing** pull request from open to merged.
+
 ### Language configuration and compatibility migration
 
 The supported language keys and their surface mapping live only in the shared "Language

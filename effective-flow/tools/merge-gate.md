@@ -2,30 +2,39 @@
 
 Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with that contract as the worker instructions. Do not request a custom role by the contract name. If built-in subagent delegation is unavailable, stop with a clear explanation; never claim that an undiscoverable worker ran.
 
-# Effective Flow Iterate
+# Effective Flow Merge Gate
 
-You are the orchestrator that **further changes an already delivered change** instead of
-starting from scratch. Typical occasion: a workflow like effective-flow build created a pull request,
-and afterwards a review bot like Greptile or a human reviewer leaves notes on the PR that should
-flow back in. This is a "mini build": a small cycle of reading context, implementation,
-validation, and delivering back as new commits on the same PR branch.
+You are the gate between an open pull request and its merge. `effective-flow build`, `effective-flow pr`, and
+`effective-flow review` create a pull request and publish onto it; `effective-flow iterate` feeds notes back
+into it as new commits. None of them decides when the pull request is genuinely ready and presses
+merge. This workflow owns exactly that gap.
 
 ## Goal
 
-`iterate` covers two target modes:
+Resolve a pull request from an argument or the current branch and drive an ordered gate:
 
-1. **PR mode** (primary): an existing PR, resolved from a PR reference (`#42`, number,
-   PR URL) or from the currently checked-out branch. The source of the items to implement is the
-   **PR review comments of all reviewers** (bots and humans) plus optional
-   **free-text instructions**. Result: new commits on the PR head branch, replies to the
-   addressed threads, and a summary comment — the last of which a delegating caller may suppress.
-2. **Local mode**: no PR present or intended. `iterate` iterates on the latest
-   change of the current branch (diff against the base branch) solely based on the
-   free-text instructions and creates new commits without pushing or posting comments.
+1. every check green – otherwise repair the pull request first;
+2. once green, hand the notes of the configured automatic reviewers (Greptile and comparable bots)
+   to `effective-flow iterate`, which fixes the valid ones and answers and resolves their threads, and
+   re-trigger the reviewer where needed;
+3. if human pull-request comments exist, implement no review note and merge nothing – CI repair
+   stays permitted (see "Human-comment guard");
+4. if no human comments exist, everything is green, every configured automatic reviewer has run for
+   the current head, and its comments have been answered – merge.
 
-`iterate` does not implement itself but classifies each item and delegates to
-effective-flow fix, effective-flow refactor, effective-flow build, or effective-flow docs. It never rewrites
-existing PR history.
+The result is either a merged pull request or a report naming the exact condition that blocks the
+merge. This workflow implements nothing itself and produces no review findings of its own.
+
+## The central `pr-review` skill stays out of this run
+
+**Do not load the central `pr-review` skill here.** That is why it is deliberately absent from a
+recommended-skills section: a recommended skill is authoritative for its domain, and this one brings
+its own approve and request-changes submissions, its own CI recovery, and its own summary
+conventions — three things this workflow forbids.
+
+The judgment that skill owns still happens, one delegation away. `effective-flow iterate` loads it and
+performs the caller-owned Mode C handoff, which is the one place that judgment belongs. This
+workflow adds no second judgment layer and consumes `effective-flow iterate`'s reported outcome per item.
 
 ## Language resolution
 
@@ -123,16 +132,6 @@ If no task tool is available, give the user a short progress update after each c
 
 - with a single, trivial task
 - when the task is done in fewer than three simple steps
-
-## Delegation mandate
-
-Invoking an Effective Flow tool **is** the user's standing request for internal delegation through an available sub-agent mechanism (e.g. an `Agent`/`Task` tool, a bundled worker contract, or a comparable mechanism). A host default that discourages unrequested sub-agents does not apply inside a tool run.
-
-- Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
-- For analysis, exploration, and research, delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition.
-- A worker that **has** a sub-agent tool may fan out **read-only** analysis sub-agents and passes its supplied language context to them. It never re-delegates its own assignment, never delegates a write, and never selects or sequences another worker role; that stays with the orchestrator. A worker whose tool list carries no sub-agent tool does not delegate at all — that limit rests on the tool list, not on prose.
-- If the harness offers no such mechanism, or a delegation is declined at runtime, work inline and say so in one visible line — never silently.
-- This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
 
 **Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent.
 
@@ -296,12 +295,6 @@ still-present `<RUNTIME_STATE_ROOT>/.effective-flow/config.json` (otherwise
 
 <!-- runtime-state-safety: setup-repair-only:end -->
 
-## Recommended skills
-
-- `pr-review`
-- `metro-english › humanizer` (fallback) – for thread replies and the summary comment only when
-  resolved `language.forge` is `en`; do not apply English rewriting to German output
-
 ## Skill discovery
 
 Before you start the actual implementation, planning, or review, survey the skills available in
@@ -357,10 +350,15 @@ no skill directory or none fits, this step is a no-op — continue without an er
 7. **Report:** Briefly name which skills were used (or that none fit). If an orchestrator tool
    already handed you relevant skills, apply them and do not run a redundant full discovery.
 
+This workflow recommends **no** central skill of its own: it orchestrates and delegates, and the one
+skill its domain would suggest is excluded above. Discovery therefore has no preferred list to apply
+here and stays a no-op unless the project's own `skills.tools.merge-gate` configuration adds one.
+
 ## Project conventions
 
-If the project contains an `AGENTS.md`, read it early in the workflow and observe its
-specifications for implementation, commits, branch/PR conventions, and quality criteria.
+If the project contains an `AGENTS.md`, read it early in the workflow and observe its specifications
+for branch and pull-request conventions, merge method, and quality criteria. A project rule about
+how pull requests are merged wins over the defaults below.
 
 ## Completion protocol
 
@@ -396,6 +394,43 @@ Internal "repeat until done" loops of this workflow follow a uniform completion 
 2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
 3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
 4. **Visible progress.** Every run maintains a visible phase task list and concise chat updates even when only a few phases remain. This overview is required regardless of the generic task-tracking thresholds, which keep governing only ad-hoc subtask lists: before work, create or reconcile every known remaining numbered phase in stable order; mark each phase when it starts and reaches an end state; add findings, issues or parallel subtasks as soon as their set is known, without matching duplicates; on resume, continue the existing list; and keep more specific per-finding, per-issue, per-source and per-reviewer detail rules authoritative. Exactly one workflow owns the progress overview on the shared interaction surface: the orchestrator responsible for the remaining scope; `effective-flow apply-plan` hands ownership to its selected target workflow before that workflow’s remaining phases begin and opens no competing list, while `effective-flow apply-issues` and `effective-flow apply-review` retain ownership of their overall phases and issue or finding tasks; a non-interactively delegated subworkflow reports status and results to the owner and may keep a local detail list only in a harness-isolated subcontext, never as a second progress overview. Follow the native task tool’s state model: if only one entry may be active, keep the overall phase active while parallel detail work follows its existing rules and is summarized in chat; submit result-dependent status changes only after the determining tool result is known, never in the same parallel tool batch. After each numbered phase and each bounded correction round, post a short update with its result and the next step, adding a deviation or blocker only when present; during correction keep the phase active, report the failed check and correction result, and name the retry or escalation; these updates are not gates, so continue with the next step unless an existing approval rule or genuine blocker requires user input. Give skipped, terminally failed and aborted steps the best native end state, or an unambiguous `[skipped]`, `[failed]` or `[aborted]` suffix when none exists; keep a step awaiting user input open with its blocker, and never treat terminal failure or abort as satisfying the completion condition. If the task tool is unavailable, list the known remaining phases compactly in chat before continuing and carry their state in later updates; if updates fail irrecoverably, report that failure once, move all still-open tracking to chat without claiming a successful tool update, and continue the domain work. Immediately before reporting completion, the owner reconciles every known phase and dynamic entry—including the equivalent final chat summary in fallback mode—to a truthful visible end state, and independently verifies the domain completion condition; never report completion with an unresolved entry.
+
+Scope of that completion control here: the bounded correction rounds and the visible phase list
+apply, and `mergeGate.maxRounds` is this workflow's concrete bound. The completion condition is the
+pull request's own checks plus the Phase-4 preconditions, read from the forge rather than
+self-assessed. This workflow therefore starts **no** validator and **no** reviewer of its own; the
+independent verification happens in CI and inside the delegated `effective-flow iterate` run.
+
+## Checkout provisioning boundary
+
+Read this before the delivery and worktree integration below, because only a narrow part of that
+fragment applies here. Two things are used: the verified execution location with its two roots, and
+provisioning a checkout for the one Git write of Phase 2 step 1.
+
+Provision that checkout the way `effective-flow iterate` does: fetch the pull request's **existing** head
+branch and provide it in a clean checkout or isolated worktree, updated via fetch/pull. Never create
+a branch (no `-b` on `git worktree add`, no `git checkout -b`), never rebase, never force.
+
+Everything else in that fragment stays off:
+
+- no delivery branch and no branch-name construction – the head branch already exists;
+- no plan-file status switch and no archiving;
+- no completion action (`pr`, `merge`, `branch`) and no `effective-flow pr` call – the pull request
+  already exists, and Phase 5 merges it on the forge instead;
+- no "PR review publication" and no lazily loaded `pr-review-integration`. Its trigger condition –
+  a workflow holding a pull request – matches this tool by accident. This workflow produces no
+  findings of its own and never publishes under the outbound `<!-- effective-flow-pr-review -->`
+  marker.
+
+**The checkout's lifecycle is closed by this workflow.** Prefer the invocation checkout when it
+already has the head branch checked out and clean: work in place, create no worktree, and create no
+lifecycle record. Otherwise create one Effective Flow-owned worktree with the fragment's receipt and
+its version 1 lifecycle record, and close that record in the same run: after the push of Phase 2
+step 1 is confirmed, transition `active` to `cleanup-ready` and run the shared
+claim/remove/reconcile sequence; on a controlled stop before the push transition it to `aborted`; on
+an error transition it to `failed`. `aborted` and `failed` retain the worktree and the branch for
+inspection. Never end a run leaving an `active` record behind – `effective-flow cleanup` will correctly
+refuse to remove it.
 
 ## Delivery and worktree integration
 
@@ -1604,419 +1639,774 @@ Where each consumer discharges that obligation, so the two stay in step with thi
 - **`effective-flow iterate`** through the fresh read it performs before every write, which is what keeps
   a late thread out of a reply it would otherwise contradict.
 
-## Classification delegation
+## Git write boundary
 
-`pr-review` is the declared domain owner for review-item judgment. Supply its caller-owned Mode C
-with the already gathered change context, stable item IDs, authors and locations, thread state,
-surrounding-code evidence, linked intent, and Effective Flow's authority constraints. It returns
-the provider-neutral `pr-review-handoff/v1` JSON and performs no discovery, implementation, Git,
-CI, forge, reply, or resolution action.
+**This workflow performs no `git commit` and no push of its own, with exactly one exception:** when
+the forge reports the branch as `BEHIND` its base, it merges `origin/<base>` into the head branch as
+a merge commit and pushes that branch normally. That exception is a **kind** of write, not a
+one-time allowance: it applies in every Phase-2 round whose fresh read reports `BEHIND`, each
+occurrence is exactly one merge commit plus one normal push of the head branch, and no Git write of
+any other kind is permitted at any point.
 
-Effective Flow remains the caller and owns freshness, approval, action routing, implementation,
-one-commit-per-item delivery, replies, and thread resolution. If `pr-review` is unavailable, use
-the minimal local classification fallback in Phase 2 and disclose the reduced review depth.
+**Every other code change is delegated to `effective-flow iterate`** – CI failures as free-text
+instructions, bot findings as the review threads it already reads. This workflow therefore inherits
+`effective-flow iterate`'s classification, action routing, path-ownership analysis, commit-integrity
+mutex, validation phase, and push rules unchanged, and carries no second implementation, staging, or
+push path.
 
-## Wisdom Accumulation
+Never rewrite the **head branch's** history – no rebase, no squashing of its commits, no
+`commit --amend`, no force-push – here or in a delegation. A branch behind its base is fixed by
+merging the base into it, never by replaying it.
+
+The forge-side merge method from `delivery.mergeMethod` (`squash`, `merge`, or `rebase`) is a
+different thing and is untouched by that rule: it is how the forge **integrates** the pull request
+into the base branch in Phase 5, not a rewrite of the head branch.
+
+The base-into-head merge must be **completed and pushed before any `effective-flow iterate` delegation
+starts**, so the gate and the delegation never write the same branch concurrently.
+
+## Delegation contract
+
+Every delegation goes to `effective-flow iterate <PR>` and carries:
+
+- the resolved pull request;
+- the **item filter**, on its own line, in the exact literal form `effective-flow iterate` Phase 0 parses:
+  - `Item filter: free-text-only` for a CI repair,
+  - `Item filter: threads=<id>,<id>` for the bot round, with the thread IDs as read.
+
+  The filter is mandatory in every delegation from this gate – an unfiltered delegation would
+  silently pull in every open item and make the phase order unenforceable. Write the form exactly:
+  `effective-flow iterate` returns `ABORT` for an announced filter it cannot parse and never falls back
+  to an unfiltered run, so a typo costs a round instead of implementing every open finding;
+
+- the **summary-comment suppression**, on its own line, in the exact literal form
+  `Summary comment: suppressed`. This is mandatory in every delegation from this gate. In manual
+  mode the delegated run posts under the same account as the gate and the operator, so its per-round
+  summary comment would be a top-level, unresolvable, non-trigger item that the next fresh read –
+  including **this run's own Phase 4 read** – counts as human. An unsuppressed summary would
+  therefore activate the guard against the very work the round just completed, and up to
+  `mergeGate.maxRounds` such comments per run were noise on the pull request besides. Nothing is
+  lost: `effective-flow iterate` hands that content back and Phase 6 reports it in chat;
+- the **review-guard exemption**, on its own line, in the exact literal form
+  `Review guard: established`. This is mandatory in **every** delegation from this gate, and the two
+  kinds of delegation earn it differently – the mandatory rule is not one precondition applied twice:
+  - a **CI repair** carries `Item filter: free-text-only`, so the delegated run classifies no review
+    thread at all and a review-in-flight guard would protect nothing. That delegation is issued from
+    Phase 2 step 4, **before** this run has observed any reviewer, and the exemption is correct there
+    precisely because the run's scope excludes every item a reviewer could still be adding to;
+  - a **bot round** carries thread IDs and is issued from Phase 3, after this run has observed the
+    state of every configured reviewer. A delegated run that re-derived it would either duplicate
+    this run's wait or block against a reviewer the gate is deliberately not waiting for.
+
+  Write the form exactly: `effective-flow iterate` returns `ABORT` for an announced review-guard line it
+  cannot parse and never continues as an unguarded run, so a typo costs a round instead of silently
+  removing the guard. Omitting the line is worse: a non-interactive gate run cannot answer the
+  guard's question and comes back as `ABORT: review still in flight`.
+
+  The line stays its own and is deliberately **not** derived from `Item filter:`. A filter states the
+  scope of a run; only the caller knows whether that scope, or its own prior observation, makes the
+  guard unnecessary. Deriving one from the other would hand the exemption to any future workflow that
+  filters merely for scoping, without it ever having earned it;
+
+- for a CI repair, the free-text instruction derived from the failing check names and their reported
+  failure detail;
+- **this run's own run state** – gated or non-interactive delegation. A gated gate run therefore
+  still gets `effective-flow iterate`'s Phase 2.5 item approval once per round, and a gate run that is
+  itself a non-interactive delegation passes that state on so the delegated run does not hang on a
+  question nobody can answer;
+- the resolved language values, so the delegated run does not re-read the project setup ADR.
+
+Consume `effective-flow iterate`'s reported outcome per item. On `ABORT` for an item, the round counts as
+unsuccessful: do not merge, and report the failed item.
+
+## Configuration
+
+Read from the Effective Flow configuration (project setup ADR) per the loaded configuration
+building block. A missing line means the default.
+
+| Key                              | Values                             | Default   |
+| -------------------------------- | ---------------------------------- | --------- |
+| `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
+| `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
+| `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
+| `mergeGate.maxRounds`            | positive integer                   | `3`       |
+| `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
+| `mergeGate.bots`                 | comma list of logins               | `(empty)` |
+| `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
+| `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
+| `delivery.mergeMethod`           | `squash`, `merge`, `rebase`        | `squash`  |
+
+- `mergeGate.bots` is a flat comma list of reviewer logins; the trigger text and the check context of
+  each bot are their own dotted keys. A login containing brackets (`greptileai[bot]`) is a valid
+  middle segment, because the encoding splits on `.` only.
+- An empty `mergeGate.bots` list means no automatic reviewer is expected. The bot round is then
+  skipped instead of blocking the merge forever.
+- `mergeGate.bots.<login>.check` names the commit status or check run that reviewer publishes, for
+  example `recensor/review`. It is matched against the normalized `name` of an entry in
+  `pr-status-read`'s check list, per the loaded "Automatic reviewer state". Unset is the default and
+  selects that block's fallback signal, so a project that configures nothing keeps its previous
+  behavior exactly.
+- The legacy `prReview.*` names are still read: the loaded configuration building block resolves
+  `mergeGate.<key>` first, falls back to `prReview.<key>`, and reports once that it did. This
+  workflow never writes configuration – `effective-flow setup` migrates the block.
+- `delivery.mergeMethod` is a delivery property, not a gate property: it describes how this project
+  integrates a pull request.
+- **`mergeGate.*` is not `delivery.prReview`.** The pre-existing `delivery.prReview` decides whether a
+  workflow publishes **its own review findings** onto a pull request it just created. The
+  `mergeGate.*` keys configure **this gate**. They mean entirely different things; never read one for
+  the other, and never let the rename of this gate's namespace reach `delivery.prReview`.
+
+## Wisdom accumulation
 
 At the start, generate a session ID (e.g. via timestamp) and use
 `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` for:
 
-- the resolved PR (number, head/base branch, head SHA, URL) or the local target diff
-- the received item filter (free-text-only, an explicit thread-ID list, or none), whether the
-  caller suppressed the summary comment, and whether it announced an established review guard
-- the pull-request status read alongside the threads (head SHA, `headCommittedAt`, `checksReported`),
-  or the reason it was unavailable
-- the observed state of every configured automatic reviewer with the evidence that established it,
-  and the branch the review-in-flight guard took (skipped with its reason, waited, proceeded, or
-  aborted)
-- the review threads read, with author, file/line, and resolved status
-- the classification per item (actionable/not actionable, action type, already addressed)
-- implemented items, commits created, threads replied to/resolved
-- deferred pure questions and failed items
+- the resolved pull request (number, head/base branch, head SHA, URL) and the resolved completion
+  mode with its source (configuration or entry gate)
+- the authenticated login `viewer-read` returned, or the reason it could not be read
+- the human-comment guard state and the evidence that set it
+- per round: the round number, the check result, the merge state, what was delegated, and what came
+  back; plus `VERIFIED_HEAD_SHA` once a round sets it, and its discard on a Phase-3 restart
+- the provisioned checkout: reused in place, or the Effective Flow-owned worktree with its lifecycle
+  record handle and that record's last transition
+- the bot round: the observed state of every configured reviewer – **running**, **not started**, or
+  **has run** – together with the evidence that established it (the check context with its status,
+  the two timestamps, or the value that was missing), which trigger was posted, which threads went to
+  `effective-flow iterate`, and which findings were deferred and reported in chat instead
+- the merge preconditions verified in Phase 4 and the merge result or the blocking condition
 
-Write a summary after each phase and pass it on to later phases. Delete the file at the
-end.
+Write a summary after each phase and pass it on to later phases. Delete the file at the end.
 
 ## Workflow
 
-### Phase 0: Target detection and input parsing
+### Phase 0: Resolve the pull request and the completion mode
 
-1. Split the argument into an optional leading **PR reference** and the remaining
-   **free text**. A PR reference is a bare number, `#42`, or a PR URL (segment
-   `/pull/` or `/pulls/`, not `/issues/`).
-2. Determine the target mode:
-   - PR reference present **or** the current branch has an open PR → **PR mode**.
-   - otherwise → **Local mode**.
-3. On ambiguity (e.g. a bare number that could also be an issue) ask,
-   instead of guessing.
-4. `iterate` always continues an **existing** change; there is no full intent gate as
-   in effective-flow build.
-5. **Optional item filter.** A delegating workflow may restrict the run to a subset of the items.
-   The filter is a caller contract, not user free text: only a delegation such as
-   effective-flow merge-gate sets it, and an interactive invocation never has one. It is announced on its
-   own line, in exactly one of two literal forms:
-   - `Item filter: free-text-only` — process the free-text instructions and classify **no** review
-     thread;
-   - `Item filter: threads=<id>,<id>` — process exactly the review threads whose thread ID appears
-     in that comma-separated list, plus the free text only when free text was supplied as well.
+1. Resolve the pull request from the argument or the current branch through the PR resolution of the
+   loaded "PR review comment integration". A merged or closed pull request, or one belonging to
+   another repository, is reported read-only and the run ends – no wait, no delegation, no merge.
+2. Run the forge preflight: detect the host and CLI, probe availability and authentication, and read
+   the capabilities `pullRequestStatus`, `pullRequestChecksWait`, and `pullRequestMerge`. On
+   `CLI_MISSING` or `AUTH_FAILED`, abort without side effects. On `AMBIGUOUS_HOST`, ask for the
+   provider once and retry.
+   - Without `pullRequestStatus` nothing in this gate can run: report that and end.
+   - Without `pullRequestChecksWait`, the wait step reports and asks instead of waiting (Phase 2).
+   - Without `pullRequestMerge`, the run degrades to `report` and states that reason.
+   - **Forgejo** declares all three unsupported, so a Forgejo run is report-only by construction.
+3. Resolve the completion mode from `mergeGate.completion`:
+   - a configured `merge` or `report` is used unchanged, in every run state, and the report states
+     that it came from configuration;
+   - `ask` or an unset key poses the entry gate **exactly once**, before any wait, delegation, or
+     write. Never ask it again later in the run.
+   - `ask` or an unset key in a **non-interactive delegation** cannot pose the question, so that
+     combination – and only that combination – behaves as `report`. Name
+     `mergeGate.completion: merge` as the setting that would authorize a merge in such a run.
 
-   Two invariants bind this filter:
-   - **An invocation without a filter keeps the current behavior exactly**: every unaddressed
-     review thread plus the free text is classified, as before. The filter is purely additive.
-   - **A filter that matches no item yields a clean empty run.** It never falls back to processing
-     all items; see Phase 2.
+**`report` scopes the merge, not the run.** In both modes the gate waits for the checks, has failing
+checks repaired through `effective-flow iterate`, posts a configured bot trigger where a bot has **not
+started**, and has the bot threads answered and resolved through `effective-flow iterate`. `report`
+withholds exactly one action: the merge in Phase 5. What differs is the ending, not the work.
 
-   **Fail closed on an unparseable filter.** An invocation that announces `Item filter:` in any
-   other form — a different keyword, a missing list, an unreadable ID — is a broken caller contract:
-   return `ABORT: unparseable item filter` immediately, before Phase 1. Never continue such a run as
-   an unfiltered one: that would silently classify and implement every open item of the pull request
-   while the caller believes the run was scoped to one failing check.
+If `mergeGate.completion` is `ask` or unset and the run is gated: Ask the user: **May this run merge the pull request once every gate passes, or only report merge-readiness?**
+- Merge -- mergeGate.completion = merge — repair, have the bot threads answered by the delegated iterate run, and merge with delivery.mergeMethod once every precondition holds
+- No merge -- mergeGate.completion = report — still repair failing checks and have the bot threads answered by the delegated iterate run, but never merge; the run ends with a merge-readiness report
 
-   Record the received filter (or its absence) in the wisdom file and carry it into Phase 2.
+### Phase 1: Read the state fresh and set the human-comment guard once
 
-6. **Optional summary-comment suppression.** A delegating workflow may suppress this run's
-   pull-request summary comment. Like the item filter this is a caller contract and never user free
-   text, and it is announced on its own line in exactly this literal form:
-   - `Summary comment: suppressed` — post **no** summary comment in Phase 5 and hand the same
-     content back to the caller, which reports it instead.
+1. Read `pr-status-read` plus the review threads and the pull-request comments **fresh** through the
+   loaded operations. Read the authenticated identity once through the loaded `viewer-read`
+   operation (capability key `viewerRead`): the login it returns is what lets this run recognize a
+   comment an **earlier** run of this gate wrote under the same account. Nothing else survives
+   between runs – the comment or reply ID a mutation returned is known only to the run that
+   performed that mutation, so a rule built on it reads every earlier run's output as a stranger's.
+2. Evaluate every comment and thread in **exactly this order** and stop at the first rule that
+   matches. The order is load-bearing, not cosmetic:
+   1. **The author is a bot** – either a login listed in `mergeGate.bots`, or an item whose
+      normalized `authorType` is `bot`. Two disjoint cases, and the second one carries app mode: the
+      account this gate posts as appears in no configuration table, so it is recognized by
+      `authorType` alone. The item is **excluded** and the evaluation stops there – the forge's own
+      authorship record already separates those writes. **The identity lookup is deliberately not
+      consulted for such an item.** `viewer-read` can legitimately fail on an installation token, so
+      a rule that reached the identity here would fail closed and block precisely the one mode that
+      never needed an identity.
+   2. **The item sits inside a `resolved` review thread, its author is this tool's own, _and_ it
+      carries `<!-- effective-flow-iterate -->` or `<!-- effective-flow-pr-review -->`** – the author
+      being the login `viewer-read` returned, or a bot under rule 1's two cases. Only then does it
+      **not** count. All three conditions are required. This is stated for the individual comments,
+      not only for the thread, because it has to cover both directions this tool writes into a
+      thread: the replies `effective-flow iterate` writes and resolves, and the inline review comments the
+      outbound direction publishes. In manual mode both carry the same account as the operator, so
+      without this rule the guard would stay active for exactly the pull requests this tool
+      successfully worked on — including the ones it annotated itself through `delivery.prReview`.
 
-   The same two invariants bind it:
-   - **An invocation without that line keeps the current behavior exactly**: Phase 5 posts its one
-     summary comment, as before. The switch is purely additive, and an interactive invocation never
-     carries it.
-   - **Fail closed on an unparseable switch.** A line announcing `Summary comment:` in any other
-     form is a broken caller contract: return `ABORT: unparseable summary-comment switch`
-     immediately, before Phase 1. Never continue such a run as an unsuppressed one — a caller
-     suppresses that comment because its own delegated output would otherwise be read back as a
-     third party's writing on a later run.
+      **Both markers count, and the enumeration is pinned to the helper's marker table.** The two
+      directions stamp different markers by design, because idempotency and repeat suppression need
+      to tell _which_ writer produced a body. This rule needs the opposite granularity: _whether any_
+      Effective Flow writer produced it. Naming both is therefore the point, not an oversight — a
+      rule that knew only the `effective-flow iterate` marker could never exclude an outbound review
+      comment, whatever its author and however resolved its thread. The enumeration is deliberately
+      not replaced by a reference to the marker table: a future comment kind must not join a
+      fail-open exclusion automatically, so a contract test compares this list against
+      `COMMENT_MARKERS` and fails when they diverge. Adding a writer is then a decision someone
+      makes, not a silent widening.
 
-   Suppression removes the **summary comment only**. The thread replies for implemented items,
-   their resolution, the commits, and the push are unaffected.
+      **Each condition removes a different way the guard could fail open.** A resolved thread is not
+      a closed discussion: neither provider auto-unresolves a thread when someone replies into it,
+      so a reviewer can object inside a thread `effective-flow iterate` resolved – "this fix is wrong, do
+      not merge" – and that reply must still count. The author condition alone does not achieve
+      that in manual mode, because there the operator and this tool **are the same account**: an
+      objection the operator types themselves into such a thread would otherwise be read as this
+      tool's own output and discarded. The marker is what separates the two, and it is legitimate
+      evidence **here** precisely because it is not doing the work alone – the helper stamps every
+      reply `effective-flow iterate` writes and every inline comment the outbound direction publishes, so
+      an item from the right account, in a resolved thread, carrying either stamp is this tool's; a
+      hand-typed objection in the same place carries no stamp and counts. This does not soften the
+      rule that a marker never excludes an item on its own: it is the third condition here, never the
+      first.
 
-   Record the switch (or its absence) in the wisdom file and carry it into Phase 5.
+      **A marker counts only as the body's first line.** The helper stamps it as a leading line,
+      so every item this tool writes begins with one. A quote-reply does not: both providers prefix
+      the quoted body with `>`, so a copied marker lands inside a blockquote and no longer opens the
+      body. That distinction is the whole reason the position is part of the rule – an operator
+      quote-replying their objection into a resolved thread would otherwise carry the marker along
+      and have their own objection discarded. A marker found anywhere else in a body is quoted text
+      and is disregarded. An operator who hand-writes the marker as their opening line is overriding
+      their own guard deliberately, which is a different thing from being caught out by a quote
+      button.
 
-7. **Optional review-guard exemption.** A delegating workflow may exempt this run from the
-   review-in-flight guard of Phase 1.5 on either of two grounds: it observed the state of every
-   configured automatic reviewer itself before delegating, or it scoped the delegation to items no
-   reviewer is adding to, which leaves the guard nothing to protect. effective-flow merge-gate announces
-   the line for both of its delegations, one on each ground — a CI repair carries
-   `Item filter: free-text-only` and therefore classifies no review thread at all, and a bot round is
-   issued only after that gate has observed every reviewer. Like the two switches above this is a
-   caller contract and never user free text, and it is announced on its own line in exactly this
-   literal form:
-   - `Review guard: established` — skip Phase 1.5 and record that the caller answered for the
-     reviewer state, together with the filter the same delegation announced.
+   3. **Otherwise the item is this gate's own output only when both hold:** its author's normalized
+      `login` equals the login `viewer-read` returned, **and** its complete body equals the
+      configured `mergeGate.bots.<login>.trigger` value of some configured bot. Compare the `login`
+      exactly and compare no other author field – display name, profile URL, and account ID take no
+      part in it. Compare the **whole** body after trimming surrounding whitespace; a prefix, a
+      substring, a quoted copy, or any other partial or fuzzy match never qualifies. Such an item is
+      excluded.
 
-   The same two invariants bind it:
-   - **An invocation without that line keeps the guard**: Phase 1.5 observes the reviewer state
-     itself, as it does for every interactive invocation.
-   - **Fail closed on an unparseable switch.** A line announcing `Review guard:` in any other form is
-     a broken caller contract: return `ABORT: unparseable review-guard switch` immediately, before
-     Phase 1. Never continue such a run as an unguarded one — the caller believes the guard is
-     answered for, so a misread line would silently let the run classify a thread set a reviewer is
-     still adding to.
+      **This is the only shape this rule has to recognize**, because a gate-initiated run leaves at
+      most one item of its own on the pull request: this trigger comment. It is **at most** rather
+      than exactly one because Phase 3 posts no trigger for a bot it observed as **running**; a run
+      that leaves nothing behind narrows nothing here. The delegated
+      `effective-flow iterate` run's summary comment is suppressed (see "Delegation contract") and its
+      thread replies are resolved along with their threads, where rule 2 catches them. A
+      `effective-flow iterate` run the operator started **themselves** is a different case, and rule 4
+      covers it.
 
-   It stays a line of its own and is never **derived** from `Item filter:`, even though one caller's
-   ground for sending it is its filter. A filter states the scope of a run; only the caller knows
-   whether that scope, or its own prior observation, makes the guard unnecessary. Reading the
-   exemption out of the filter instead would hand it to any future workflow that filters merely for
-   scoping, which is the exact failure the guard exists to prevent. Non-interactivity is not the
-   switch either: `tools/apply-review.md` delegates non-interactively and knows nothing about reviewer
-   state, so exempting every delegated run would remove the guard from precisely the runs that need
-   it.
+   4. **A top-level pull-request comment is this tool's own when both hold:** its author is this
+      tool's own – the login `viewer-read` returned, or a bot under rule 1's two cases – **and** its
+      body's leading line is `<!-- effective-flow-iterate -->` or `<!-- effective-flow-pr-review -->`.
+      Such an item is excluded. This reaches both top-level comments this tool leaves behind: the
+      summary comment a directly invoked `effective-flow iterate` run posts, and the comment the outbound
+      direction publishes for findings whose line lies **outside the diff**. Rule 3 reaches neither:
+      it matches one exact configured trigger text, and neither of those bodies is it. Without this
+      rule, running `effective-flow iterate` by hand – or letting `delivery.prReview` annotate a line
+      outside the diff – and then asking this gate to merge would block on the tool's own output,
+      permanently.
 
-   Record the switch (or its absence) in the wisdom file and carry it into Phase 1.5.
+      **Both markers count, and the enumeration is pinned to the helper's marker table**, for the
+      same reason rule 2 names both. The outside-diff case is the one that cannot resolve itself: an
+      inline finding is anchored in a thread and stops counting once that thread is resolved, but a
+      top-level comment has no resolved state, and `effective-flow iterate` skips an item carrying the
+      outbound marker as this tool's own published output rather than as input awaiting action.
+      Nothing would ever clear it. The enumeration is deliberately not
+      replaced by a reference to the marker table: a future comment kind must not join a fail-open
+      exclusion automatically, so a contract test compares this list against `COMMENT_MARKERS` and
+      fails when they diverge.
 
-### Phase 1: Gather context
+      **Two conditions here, three in rule 2 – and the missing one has no analogue.** Rule 2's
+      `resolved` condition exists because a resolved thread is a container this tool marked handled,
+      and an objection can be typed _inside_ it. A top-level comment has no such container: an
+      objection is its own comment, carries no stamp of its own, and still counts under rule 5.
+      Requiring resolution here would not tighten the rule but disable it, because the surface it
+      covers is never resolved – which is why the two-condition shape is pinned by the same contract
+      test. The leading-line requirement carries the same weight it does in rule 2 – a quote-reply's
+      copied marker sits behind a `>` and no longer opens the body – and a hand-written opening
+      marker remains the same deliberate self-override.
 
-- **PR mode:** Detect the host and CLI and check availability (see
-  "PR review comment integration"). Resolve the PR and read the review threads **fresh**. Read the
-  pull-request status through `pr-status-read` (capability key `pullRequestStatus`) at the **same
-  instant** as those threads, and carry its head SHA, `headCommittedAt`, `checksReported`, and
-  normalized `checks` array into Phase 1.5 — that phase observes every reviewer against exactly this
-  one read, so a status read taken at another instant would describe a state the pull request never
-  had. On `UNSUPPORTED_CAPABILITY` or a failed read, record that the status is unavailable and
-  continue; Phase 1.5 states what that costs. Take the free-text instructions in as additional items.
-  Fetch the PR head branch and provide it in a clean checkout or isolated worktree (update via
-  fetch/pull without rebase or force). If the PR is already merged/closed, report that and optionally
-  offer local mode.
-- **Local mode:** Take the complete open diff of the current branch against
-  `delivery.baseBranch` (`git diff <base>...HEAD`) as context. The source of the items to
-  implement is only the free text.
+      **Neither excluded comment hides an open question.** `effective-flow iterate` posts no substantive
+      reply to a pure reviewer question and defers it, and it replies to and resolves only the
+      threads it addressed. A deferred question therefore keeps its own unresolved thread, and that
+      thread still counts. The summary comment reports on those threads; it never replaces them. An
+      outside-diff finding is not a question at all: it is this product's own review output, which
+      stays on the pull request to be read, and which no run was ever going to act on.
 
-### Phase 1.5: Review-in-flight guard (PR mode only)
+   5. **Everything else counts as human**, including an item whose normalized `authorType` is
+      `unknown`. That is the fail-safe direction: the only consequence is a narrower run.
 
-Classifying a thread set that an automatic reviewer is still adding to is what this phase prevents.
-The run would implement, reply, resolve, and push against a partial set, and the reviewer would then
-have to start over on a head that moved. The phase sits after Phase 1 because it needs the resolved
-pull request, the head SHA, and the pull-request status of that one fresh read, and before Phase 2
-because classification is the thing being protected.
+   **Fail closed – but never on rule 1.** A `viewer-read` that fails, is unsupported, or states no
+   authenticated login leaves the identity unknown. A non-bot item can then not be _proven_ to be
+   the gate's own under rule 3, and the `viewer-read` half of rules 2 and 4 is unprovable in exactly
+   the same way; every such item therefore counts and the guard activates. Report the missing
+   identity as the reason, so the block is explainable instead of mysterious. **Rule 1 needs no
+   identity and stays untouched by this** – bot authorship is read from the item itself, as is the
+   bot half of rules 2 and 4 – and that is what keeps app mode running when the identity lookup does
+   not.
 
-1. **Skip conditions, checked first.** Skip the phase entirely and record which one applied:
-   - **local mode** — there is no pull request and no reviewer;
-   - **`Review guard: established`** — the caller either observed the reviewer state itself before
-     delegating, or scoped this run to items no reviewer is adding to. Re-deriving the state here
-     would duplicate the caller's wait or block against a reviewer the caller is deliberately not
-     waiting for;
-   - **no configured reviewers** — `mergeGate.bots` is empty, so there is nothing to observe;
-   - **no pull-request status** — Phase 1's `pr-status-read` was unsupported or failed, so neither
-     the check list nor `headCommittedAt` exists. This is a third kind of unavailability and the
-     precedence resolves none of it: `UNSUPPORTED_CAPABILITY` is not `checksReported: false`, which
-     selects the fallback signal, and it is not an absent field, which the fallback reads as **not
-     started**. With no read at all there is nothing for either rule to work on. Skip the phase and
-     **report that this run is unguarded and why** rather than letting the guard evaporate silently.
-     On Forgejo that is the permanent state — `pr-status-read` is unsupported there, which is also
-     why effective-flow merge-gate degrades to report-only on that provider.
-2. **Observe** the state of every configured reviewer through the loaded "Automatic reviewer state",
-   against the head SHA and the status read Phase 1 carried in, and the threads read at that same
-   instant. Record each state with the evidence that established it.
-3. **Only "running" holds this run.** A reviewer observed as **has run** or **not started** lets the
-   run continue: this guard waits for output that is already coming, and it never summons output
-   nobody asked for — posting a trigger belongs to effective-flow merge-gate, and this workflow writes no
-   trigger comment of any kind.
+   **This is a same-account contract.** Rules 2 and 4 recognize an item only when the account that
+   wrote it is the one `viewer-read` returns, or is bot-typed. A pull request annotated through
+   `delivery.prReview` under one account and then merged by a gate running under another – an
+   operator-driven delivery and an app-driven gate, for instance – fails that condition and still
+   blocks. That is the accepted residual gap, not an oversight: closing it would mean letting a
+   marker prove authorship on its own, which this guard refuses everywhere else.
 
-   One further piece of evidence counts as running **here**: a reviewer observed as **not started**
-   for which a comment exists whose body equals that reviewer's configured
-   `mergeGate.bots.<login>.trigger` text after trimming surrounding whitespace and whose `createdAt`
-   is **not older than** `headCommittedAt`. Someone asked that reviewer to run for exactly this head
-   and its output has not arrived. The shared block does not report that as **running** because it is
-   evidence about the request rather than about the reviewer; this phase acts on it because a request
-   for the current head is precisely what makes a growing thread set likely.
+3. Decide **what counts** for the guard, because the two surfaces differ:
+   - a **review thread** counts while it is not `resolved`, and rule 2 above extends that to this
+     tool's own comments inside a resolved one;
+   - a **top-level pull-request comment** has no resolved state on either provider, so it always
+     counts unless rule 1, rule 3, or rule 4 excluded it. A single old human comment therefore keeps
+     the guard active until it is deleted – the deliberate fail-safe reading, since the alternative
+     is merging a pull request under an open human discussion;
+   - **an item is excluded only through the rules above.** Three of them read a body, and each reads
+     it narrowly: rule 3 as an exact match against a value this project configured, rules 2 and 4 as
+     a marker occupying the body's first line. None of them searches a body for a tool's signature.
+   - **An Effective Flow marker never excludes an item on its own**, whoever the author looks like.
+     A marker is body content, and content is not authorship evidence: GitHub's quote-reply copies
+     the quoted body verbatim, HTML comment included, so a human answering one of
+     `effective-flow iterate`'s replies would otherwise silently switch off the guard that exists to
+     protect them. That is why a marker never appears as a rule's only condition, and never counts
+     anywhere but as the body's leading line. This gate writes no marker of its own at all
+     (Phase 3), so no marker on this pull request is ever evidence about the gate itself.
+4. **Set the guard.** If at least one counting item has a human author, the human-comment guard is
+   **active**. The guard is set once, here, from this first fresh read, and stays set for the rest
+   of the run. A later fresh read may only set it – a human comment that appears mid-run is new
+   information in the fail-safe direction – and nothing ever moves it from active back to inactive.
 
-4. **Ask once** when at least one reviewer counts as running, naming each one and what proved it —
-   the check context with its status, or the trigger comment and its timestamp. Ask exactly once per
-   run, whatever the answer leads to.
+#### Human-comment guard
 
-If at least one configured automatic reviewer counts as running for the current head: Ask the user: **An automatic reviewer is still working on the current head. Wait for it, work with the notes that are already there, or stop?**
-- Wait -- Block once for mergeGate.botWaitMinutes and re-read; continue with the reviewer's notes if it finished by then, otherwise end the run with a report
-- Proceed -- Classify the threads that are there now; notes arriving afterwards stay for a later run
-- Abort -- End the run without classifying, implementing, replying, or pushing
+While the guard is active:
 
-5. **"Wait" is one bounded blocking wait, never a poll loop.** Block once for
-   `mergeGate.botWaitMinutes` — a single `sleep` of that span in the shell, or the harness's
-   equivalent single blocking wait — the same single-wait shape effective-flow merge-gate Phase 3 uses.
-   Then re-read the pull request, its review threads, and `pr-status-read` once per Phase 1, at one
-   instant as before, and observe the state again. If every reviewer has finished, continue into
-   Phase 2 with what they produced. If one is still running, end the run with a report naming it
-   instead of chaining a second wait or asking again. If the harness cannot block that long, block
-   for the longest single span it allows and re-read once; do not make up the difference with further
-   waits.
-6. **Fail closed when the question cannot be asked.** A non-interactive run that did not receive
-   `Review guard: established` returns `ABORT: review still in flight`, naming the reviewers and the
-   evidence. Never continue such a run silently: it has a caller that can be told, and classifying a
-   growing thread set is the outcome this phase exists to prevent.
-7. **Record** the observed state per reviewer, the branch taken, and any wait in the wisdom file.
+- **no review-driven implementation** – Phase 3 delegates nothing to `effective-flow iterate`;
+- **no merge** – Phase 4 fails on this condition and the run ends with a report;
+- **CI repair stays permitted** – a failing check is an objective defect, not an opinion a human is
+  currently negotiating, so Phase 2 may still repair it. This narrowing is deliberate: it keeps the
+  gate useful on an actively discussed pull request without ever landing a change out from under a
+  reviewer;
+- **no thread reply, and no thread resolution, of any kind** – see the rule below.
 
-The guard narrows the window; it does not close it. A reviewer's threads can still arrive moments
-after its state turned terminal, so Phase 1's fresh read before every write keeps its full weight.
+#### A deferred finding gets no thread reply
 
-### Phase 2: Classification
+When this gate assesses a bot finding but does not implement it – because the human-comment guard is
+active, or because the finding was rejected – it names that finding **to the user in chat** and
+writes **nothing** into its thread. It resolves nothing either.
 
-1. Exclude an already addressed thread when it is `resolved` or carries an
-   `<!-- effective-flow-iterate -->` reply. Exclude a thread carrying
-   `<!-- effective-flow-pr-review -->` as well — that is Effective Flow's own published review
-   output, not third-party input — unless the user names those threads explicitly. The
-   effective-flow merge-gate gate needs no exclusion of its own: it writes nothing into a review thread,
-   so no thread on a pull request is ever the gate's own reply.
-2. **Apply the optional item filter** from Phase 0, after the exclusions above:
-   - **no filter** — every remaining thread plus the free text enters classification. This is the
-     unchanged default and the only behavior an interactive invocation ever sees.
-   - **`free-text-only`** — no review thread enters classification, whatever the exclusions left;
-     only the free-text instructions do.
-   - **`threads=<id>,<id>`** — exactly the threads whose ID is in the list, plus the free text only
-     when the delegation supplied free text as well. A caller-supplied ID names its thread
-     explicitly, so the marker-based exclusions above do not remove it; a `resolved` thread and a
-     thread already carrying an `<!-- effective-flow-iterate -->` reply stay excluded, because this
-     workflow already addressed them.
-   - **An empty selection is a valid result.** If the filter matches no item — every named thread
-     was resolved between the caller's read and this delegation — continue with **no** items:
-     report the empty selection, implement nothing, push nothing, reply to nothing, resolve
-     nothing, post no summary comment, and end cleanly with `DONE`. Never fall back to processing
-     all items, and never read an empty selection as a missing filter.
-3. Send every remaining review thread and free-text instruction to `pr-review` Mode C with the
-   caller constraints: Effective Flow owns authority, approval, implementation, commits,
-   delivery, replies, and resolution; the analysis may only classify supplied context.
-4. Require one returned item for every supplied stable ID and map the contract as follows:
-   - `valid_in_scope` + `caller_fix` → actionable. Include valid nitpicks and low-priority bot
-     findings by default; Phase 2.5 may deselect them.
-   - `valid_out_of_scope` → follow-up or no action, never silently widen this PR.
-   - `unsupported` → skipped with the returned rationale and optional proposed reply.
-   - `question_or_information` → deferred or proposed reply; never implement it as code by
-     assumption.
-   - `needs_evidence` → gather the named evidence when it is already within the read-only scope
-     and submit the item once more; otherwise defer it with the exact missing evidence.
-5. For every actionable item, derive the Effective Flow **action type**:
-   - effective-flow fix for a bug/correction,
-   - effective-flow refactor for structure without behavior change,
-   - effective-flow build for small new functionality,
-   - effective-flow docs for pure documentation.
-     Treat human and bot comments equally.
-6. Create a task per actionable item (per-item granularity).
+This **supersedes** the earlier rule that the guard permits the gate to answer bot threads itself.
+The two are not two standing options: the later decision replaces the earlier one, and it is written
+here so that the two are not read as a contradiction. Resolving such a thread would signal "handled"
+for a finding nobody handled, and leaving an unresolved reply behind is precisely what makes the
+next run read its predecessor's output as a human comment.
 
-If `pr-review` is unavailable, apply only the same five classifications from supplied evidence;
-never invent missing context, and report that the authoritative review owner was unavailable.
+The consequence, stated plainly: **the gate's only own write is the trigger comment** of Phase 3,
+and a **gate-initiated run leaves at most that one item of its own on the pull request** – because
+the delegated run's summary comment is suppressed (see "Delegation contract") and its thread replies
+are resolved along with their threads. At most, not exactly: Phase 3 posts no trigger for a bot it
+observed as **running**, and a run that writes nothing at all is the same guarantee one write
+further in the safe direction. Every reply for a finding that _is_ implemented is written
+and resolved by `effective-flow iterate`, as before, and Phase 1's rule 2 keeps those replies out of the
+guard.
 
-### Phase 2.5: Approval
+### Phase 2: Check gate (bounded)
 
-Show the classified items (actionable, skipped, deferred questions) and obtain an
-approval. Without approval **no** externally visible action takes place (no push, no
-comment). The approval is omitted if `iterate` was delegated non-interactively
-(e.g. by effective-flow apply-review).
+Repeat the round below at most `mergeGate.maxRounds` times. Run its steps in exactly this order – the
+branch repair comes first so its push is finished before any delegation starts.
 
-Ask the user: **Approve and implement the classified items?**
-- Yes -- Approval granted, implementation and delivery-back continue
-- Adjust -- Enter feedback as free text, e.g. deselect individual items
+**A round runs forward only.** There is no backward jump inside it: whenever the round would return
+to the wait or the repair step – a check is still pending after the wait, a repair changed the head,
+a re-read shows a new failure – the current round **ends** there and the run continues with a new
+round under "Round accounting". Every wait and every repair is therefore counted and bounded, and no
+run can push an unbounded number of commits onto someone's pull request.
 
-### Phase 3: Implementation
+1. **Branch behind its base (`BEHIND`).** Provision a checkout of the existing head branch per
+   "Checkout provisioning boundary" (verified execution location, rooted operations), fetch the
+   base, merge `origin/<base>` into the head branch as a **merge commit**, and push the branch
+   normally. Then re-read the status. This is the only kind of Git write this workflow performs; see
+   "Git write boundary". It must be completed and pushed **before** any `effective-flow iterate`
+   delegation in this or a later round. Use Git's default merge-commit message; add no
+   `Co-Authored-By` trailer and no AI attribution.
+   - **Close the checkout's lifecycle in the same step.** Once the push is confirmed, an Effective
+     Flow-owned worktree goes `active` → `cleanup-ready` and through the shared
+     claim/remove/reconcile sequence; a reused in-place checkout has no record to close. A later
+     round that needs this step again provisions a checkout again.
+   - If the merge conflicts or the push is rejected because of diverged remote history: stop,
+     report, rewrite no history, and merge nothing. Transition an Effective Flow-owned worktree to
+     `aborted` for a controlled stop or `failed` for an error, retaining the worktree and its branch
+     for inspection.
+2. **Conflict with the base (`DIRTY`).** Not repaired automatically: stop, report the conflict, and
+   do not merge.
+3. **Pending checks.** Call `pr-checks-wait` with `mergeGate.checkWaitMinutes` as its timeout and let
+   the CLI block; the run consumes no tokens while CI runs. Restrict the wait to the forge's own
+   required checks exactly when `mergeGate.requireAllChecks` is `false`; the helper owns the provider
+   form of that restriction.
+   - On a **timeout result** or when the provider has **no watch capability**: do **not** fall back
+     to a prompt-driven poll loop. Report the still-pending checks by name and ask the user once.
+   - An **unanswered or non-interactive** run ends there with a report and never merges.
+4. **Failed checks.** Delegate to `effective-flow iterate <PR>` with the item filter set to
+   **free-text-only** and an instruction derived from the failing check names and their reported
+   failure detail. The human-comment guard does **not** block this delegation.
+5. **Re-read the status** and evaluate the check criterion:
+   - `mergeGate.requireAllChecks: true` (default) – **every** reported check must have completed
+     successfully. A failed, cancelled, or timed-out check is a failure; a still-pending check ends
+     this round and the next round starts again at step 1.
+   - `mergeGate.requireAllChecks: false` – only checks the forge marks as required count, read from
+     the `required` flag `pr-status-read` reports per check. A red optional check is reported but is
+     not a blocker. A check whose requiredness the provider does not state **fails closed** and is
+     treated as blocking, because an unproven "optional" is exactly the value that would wave a red
+     check through. An **empty** required subset counts as satisfied: no reported check is required,
+     so nothing required is outstanding, and the merge state below decides the rest.
+   - That last rule is deliberate and has a known limit worth stating. The `required` flag exists
+     only on checks that have **already reported**, so a required check which has not reported yet is
+     absent from the list entirely and cannot be counted. This criterion therefore cannot distinguish
+     "nothing is required here" from "a required check has not started". The merge state is what
+     covers the difference — a forge blocks the merge while its required checks are unmet — which is
+     why that condition is necessary rather than decorative. Do not read a satisfied criterion as
+     proof that every required check has run.
+   - In **both** cases the forge's merge state stays an **additional necessary condition**, never a
+     substitute: "all checks green" and "mergeable" are different statements, and a protected branch
+     can additionally require named checks, an approval, an up-to-date branch, or linear history.
 
-1. Before delegation, record the analyzed file ownership of every actionable item. Items whose
-   analyzed file sets overlap run sequentially; only items with disjoint sets may implement in
-   parallel.
-2. Delegate each actionable item to the appropriate skill (effective-flow fix, effective-flow refactor,
-   effective-flow build, or effective-flow docs), on the PR head branch (PR mode) or the current
-   branch (local mode). Each delegation receives its analyzed owned paths and reports its actual
-   paths. If it discovers that it must touch a path outside its analyzed set, it must stop before
-   modifying that path and return it to the orchestrator. Add the path to the item's actual
-   ownership, compare it with every active item's analyzed and actual paths, and serialize the
-   affected items before allowing work on that path to continue. Never let two active items edit
-   the same path based only on the original analysis.
-3. **One commit per thread/item** with a clean conventional-commit message without internal
-   IDs or a thread reference and without `Co-Authored-By`. Independent items may implement in
-   parallel, but every item uses the commit-integrity mutex below for staging and committing.
-   Resolve `language.git` once and pass it to every item for its commit description.
-4. Give internal delegation sub-agents the completion protocol and check for `DONE` or
-   `ABORT`. On `ABORT`: mark the item as failed and continue with the next.
+Leave the loop when the check criterion is satisfied and the merge state is **stated** and is
+neither `BEHIND` nor `DIRTY`. An unstated merge state fails closed and keeps the loop running, for
+the same reason an absent `draft` flag blocks and an unstated requiredness blocks: "neither `BEHIND`
+nor `DIRTY`" is vacuously true of a field the provider never reported, and the criterion above
+delegates its own safety to this condition. A compensating condition that disappears when the
+provider goes quiet compensates for nothing. Record the head SHA of that last read as
+**`VERIFIED_HEAD_SHA`** – the one commit this run has verified as green and mergeable. Phases 4 and 5 use only that value, and nothing else in this
+workflow records a head SHA for later use.
 
-#### Commit integrity for parallel items
+#### Round accounting
 
-The following mutex applies in both PR and local mode. Parallel delegations may edit disjoint
-files concurrently, but all operations that mutate or inspect the shared Git index and `HEAD`
-for an item run in one critical section.
+`mergeGate.maxRounds` bounds the **whole run**, not one phase. A counter starts at zero and increases
+by one every time a Phase-2 round begins – **including** a round that only waits again after a
+still-pending check, and **including** a Phase-2 restart that a Phase-3 bot round triggered – and by
+one more for every **return into Phase 3** that Phase 4's condition 7 performs. That return is
+counted here explicitly because it begins no Phase-2 round of its own; uncounted, a reviewer that
+keeps publishing threads would cycle between Phase 4 and Phase 3 without a bound. Nothing resets the
+counter and nothing bypasses it, because a round never jumps backwards into itself: a bot round that
+produced an implementation and sent the run back into Phase 2 **consumes a round** like any other,
+and so does the return into Phase 3. When the counter reaches `mergeGate.maxRounds`, the run ends
+with a report naming the still-unmet condition, never with a merge.
 
-Mutex convention:
+### Phase 3: Automatic reviewer round
 
-- Retain one absolute lock handle for the repository at
-  `<RUNTIME_STATE_ROOT>/.effective-flow/iterate-commit.lock`. Every item delegation in this
-  `iterate` run uses that same handle, including when the execution checkout is an isolated
-  worktree.
-- Apply "Runtime-state write safety" from `RUNTIME_STATE_ROOT` separately and immediately before
-  every mutation of the exact lock directory or its `owner` file. Guard the repository-relative
-  target `.effective-flow/iterate-commit.lock` before each acquisition attempt; do not create,
-  remove, or modify the lock when a guard blocks.
-- Acquire the lock atomically with `mkdir <absolute-lock-handle>`. Immediately after successful
-  acquisition, write `<absolute-lock-handle>/owner` with the item identity, delegation identity,
-  a unique acquisition token, and timestamp. The successful acquisition and matching owner
-  record together prove ownership.
-- If the lock exists, read its owner for diagnostics, wait, and retry without touching the index.
-  Never infer permission to remove it from age alone. If it appears orphaned, obtain explicit
-  user confirmation before removal, then rerun the runtime-state guards for the exact owner file
-  and lock directory immediately before deleting either.
-- Release the lock on every success, abort, and error path, but only after rereading the owner
-  file and verifying that its complete identity and acquisition token match the current item.
-  If ownership cannot be verified, do not remove or alter the lock; fail closed and report the
-  mismatch.
+If `mergeGate.bots` is empty, skip this phase entirely, record that no automatic reviewer is
+configured, and do not block the merge on it.
 
-Before acquiring the mutex, finish the item's configured pre-commit checks. Then, while holding
-the lock for the entire sequence:
+Otherwise, for each login in `mergeGate.bots`:
 
-1. Run `git status --porcelain` and inspect `git diff --cached --name-only` and
-   `git diff --cached`. If any staged state already exists, treat it as foreign: do not commit,
-   take it over, or clean it up. Release the verified-owned lock and return `ABORT` for the item.
-2. Reconfirm that the item's explicit stage list contains only its analyzed and dynamically
-   approved actual paths. Stage exactly those paths. Never use `git add .`, `git add -A`,
-   `git commit -a`, or an equivalent blanket operation.
-3. Inspect `git diff --cached --name-only` and require it to equal the explicit item-owned path
-   set, then inspect the complete `git diff --cached` and require every staged hunk to belong to
-   the current item. Record the verified staged paths and content before committing.
-4. Create the item's conventional commit, capture its hash immediately with
-   `git rev-parse HEAD`, and write the `item identity -> commit hash` mapping to the wisdom file.
-5. Immediately confirm the committed paths and content against the recorded staged diff. Run
-   `git status --porcelain`, require `git diff --cached` to be empty, and inspect the remaining
-   working-tree diff. Changes from other active items may remain only when they are unstaged and
-   outside this item's owned paths; record that residual state in the wisdom file.
+1. **Observe its state** through the loaded "Automatic reviewer state", against the fresh read: one
+   of **running**, **not started**, or **has run**. Record the state together with the evidence that
+   established it – the check context with its status, the two timestamps, or the value that was
+   missing – so a Phase-4 block on this bot is explainable instead of mysterious.
+   - **A bot with a configured `mergeGate.bots.<login>.check`** takes the primary signal, and only
+     that signal can report **running**.
+   - **A bot without one** takes the fallback signal, which distinguishes **has run** from **not
+     started** and nothing else. That is exactly the two-way behavior this phase had before, so an
+     existing project sees no change.
+   - **An unprovable state is not started**, never an assumed pass: the gate may trigger and wait,
+     and it never merges on an unprovable precondition.
+2. **Running: wait, and post nothing.** The bot is already working for this head. Post **no** trigger
+   comment: a mention would either queue a redundant second run or, for a reviewer that reads a
+   mention as a fresh request, discard the one in flight. Apply the single wait of step 4.
+3. **Not started: post its `mergeGate.bots.<login>.trigger` text once** as a pull-request comment,
+   then apply the single wait of step 4.
+   - Build that comment body yourself: the literal configured trigger text and **nothing else** –
+     no marker, no preamble, no signature – posted through the helper's PR-comment mutation. That
+     exact body is what Phase 1's rule 3 recognizes as this gate's own on the next run, and it is
+     also what keeps the raw comment from announcing which tool composed it. Do **not** use the `pr`
+     comment-kind builder – it stamps `<!-- effective-flow-iterate -->`, the marker
+     `effective-flow iterate` reads as its own already processed work, and any marker at all would defeat
+     both purposes above.
+   - **Idempotency without a marker.** A trigger has already been posted for the current head when a
+     comment exists whose body equals the configured trigger text after trimming surrounding
+     whitespace, whose author is established as this gate's own, and whose `createdAt` is **not
+     older than** `headCommittedAt`. Both timestamp fields are part of the normalized envelopes
+     already. Post no second trigger then, and apply the wait instead.
+   - **Establishing that author differs by mode**, and neither case reads a configured login: in
+     manual mode the author's `login` equals the one `viewer-read` returned; in app mode the
+     author's normalized `authorType` is `bot`. **No configuration names the account this gate posts
+     as** – a `mergeGate.bots` entry is a reviewer the gate waits for, never the author of the
+     trigger – so matching the trigger's author against that list would look for a comment that
+     cannot exist.
+   - If a timestamp is absent, or the author cannot be established at all, the comparison is
+     unprovable. Treat the trigger as **not yet posted for this head** and post it: a redundant
+     mention costs one extra bot run, a wrongly suppressed one costs the merge. This is the same
+     direction step 1 fails in.
+   - If no trigger text is configured for that login, post nothing and apply the same single wait for
+     the bot's own schedule; report that no trigger is configured.
+4. **The wait is one blocking wait, not a poll.** Both states above end in the same wait. There is no
+   helper operation for a bot the way `pr-checks-wait` exists for the checks, so block once for
+   `mergeGate.botWaitMinutes` – a single `sleep` of that span in the shell, or the harness's
+   equivalent single blocking wait – then re-read exactly once and observe the state again. Never
+   substitute a sequence of status reads: that is the per-interval model turn the design rejects.
+   - If the harness cannot block that long (a tool timeout below the configured span), block for the
+     longest single span it allows, re-read once, and, if the bot still has not run, end with a
+     report naming it. Do not chain further waits to make up the difference.
+   - If the bot is still not **has run** after the wait, the run ends with a report naming that bot
+     and its observed state as the blocking condition. A timeout here is always a report, never a
+     merge – and that holds for **running** exactly as it does for **not started**: a reviewer this
+     run watched working is still a reviewer whose notes nobody has answered.
+5. **When the bot has run:** hand its unresolved threads to `effective-flow iterate <PR>` with the item
+   filter set to **exactly those thread IDs**. `effective-flow iterate` classifies them, implements the
+   valid ones as new commits, replies, and resolves them.
+6. **Any implementation restarts Phase 2** – new commits invalidate both the check result and every
+   bot's state. Discard `VERIFIED_HEAD_SHA`; the new head is unverified until a Phase-2 round
+   sets it again. The restart consumes a round per "Round accounting".
 
-If a check fails before the commit, unstage only paths whose staging is provably attributable to
-this item in the current lock acquisition, verify the resulting cached state, release the lock
-only after owner verification, and return `ABORT`. Never unstage or otherwise clean foreign
-changes. If immediate post-commit confirmation fails, do not amend, reset, rebase, or otherwise
-rewrite history: record the discrepancy, release the verified-owned lock, mark the item failed,
-and stop delivery for reconciliation.
+**With the human-comment guard active,** this phase neither delegates nor triggers: the trigger
+comment and its wait are skipped as well, because the outcome they wait for – an implementation – is
+unreachable, and an automated mention on an actively discussed pull request costs
+`mergeGate.botWaitMinutes` per bot for nothing. The gate writes **nothing** into the already present
+bot threads either: per "A deferred finding gets no thread reply" it leaves every one of them
+untouched and unresolved, and names the findings it did not implement in its chat summary instead.
 
-### Phase 4: Validation
+**This workflow never approves a pull request and never requests changes** – not even to unblock a
+merge. A protected branch that requires an approval is reported as needing a human approval.
 
-1. Start `effective-flow-code-validator` or the project-wide quality gate.
-2. Fix errors found and verify again per "Goal-driven completion control":
-   limit the internal correction rounds and escalate to the user if the checks still fail
-   afterwards.
+### Phase 4: Merge preconditions
 
-### Phase 5: Delivery back (PR mode only)
+Verify every one of the following against a **fresh** read. Any unmet condition ends the run with a
+report naming exactly that condition, and merges nothing – with the single exception condition 7
+states for itself, which sends the run back into Phase 3 while rounds remain instead of ending it:
 
-1. Push the head branch normally (no force). If the push fails due to diverged remote history:
-   stop, report the conflict, overwrite no history, and resolve no threads.
-2. Reply briefly per addressed thread, preserving the clearly established thread language or
-   otherwise using resolved `language.forge`, and resolve it through the remote helper's normalized
-   review-thread operations. If resolution is an unsupported provider capability, keep the reply
-   and report the required manual resolution. The helper stamps the marker
-   `<!-- effective-flow-iterate -->` onto every reply; do not write it by hand.
-3. Post **one** summary comment on the PR in resolved `language.forge` (marker
-   `<!-- effective-flow-iterate -->`): which items
-   were implemented or skipped and which pure questions are open/deferred (without a
-   substantive auto-reply). **Skip this step entirely when Phase 0 received
-   `Summary comment: suppressed`**: post nothing at all and hand exactly that content back to the
-   caller in the Phase 6 summary instead.
-4. Declare to the handback of "Delivery and worktree integration" that this workflow supplies
-   **no** complete finding set — it has no reviewer phase at all — so an automatic PR review
-   reviews the pull request itself.
+1. the resolved completion mode is `merge`;
+2. the check criterion from `mergeGate.requireAllChecks` is satisfied;
+3. the forge reports the pull request as mergeable and **not a draft**;
+4. the human-comment guard is inactive;
+5. every login in `mergeGate.bots` is observed as **has run** for the current head through the loaded
+   "Automatic reviewer state" – **running** and **not started** are both unmet conditions, and an
+   unprovable state is **not started**, never an assumed pass;
+6. every bot thread **whose finding this run implemented** is answered and resolved – those are
+   written and resolved by `effective-flow iterate`. A finding this run deferred or rejected does
+   **not** block the merge: it is named in the Phase-6 chat summary and its thread is deliberately
+   left untouched. That scoping is deliberate, not an oversight – nothing in this workflow may write
+   into such a thread any more (see "A deferred finding gets no thread reply"), so requiring an
+   answer there would be a condition no run could ever satisfy;
+7. **every unresolved thread of a configured reviewer has been assessed by this run** – implemented,
+   or deliberately deferred or rejected. Take every unresolved thread of the same fresh read whose
+   author is a login in `mergeGate.bots`, and match it against the record this run kept per round:
+   the thread IDs it handed to `effective-flow iterate`, plus the threads whose findings it deferred or
+   rejected. A thread in neither list arrived after the Phase-3 observation that fixed this run's
+   item filter – the reviewer's check had gone terminal by then, which states that the reviewer
+   finished and never that every thread it wrote had already arrived (see "Automatic reviewer
+   state") – so nobody reached any outcome about it, and it blocks. An **empty** `mergeGate.bots`
+   list produces no such thread and satisfies this condition, as it satisfies condition 5.
+
+   **This is not condition 6 widened, and the two must never be folded into one.** Condition 6 asks
+   whether a thread this run **implemented** was answered and resolved, and its narrow scope stays
+   correct for the reason stated there. This condition asks a different question: whether the thread
+   was **assessed at all**. Deferred and rejected are outcomes this run reached about a finding it
+   read; **never assessed** is the absence of any outcome, about a finding nobody read. A finding
+   that was judged and set aside is therefore silent in both conditions, and an unjudged thread
+   blocks here and only here. A future simplification that merges the two restores the defect this
+   condition exists for: it would either demand a reply no run may write, or wave through a finding
+   no run ever saw.
+
+   **Unmet while rounds remain: return to Phase 3** with exactly those threads, instead of ending
+   the run. That return **consumes a round** under "Round accounting", precisely as a Phase-3
+   restart does – the round counter is the only thing that bounds a reviewer which keeps publishing.
+   Once the counter has reached `mergeGate.maxRounds`, the run ends with a report naming every
+   unassessed thread; never with a merge.
+
+   **Fail closed.** Whenever the fresh read cannot establish that a thread was assessed – an
+   unreadable thread list, an author that cannot be established, an unstated resolution state – the
+   thread counts as unassessed and blocks. An unprovable assessment is treated exactly as an
+   unprovable reviewer state is in condition 5: never as an assumed pass;
+
+8. `VERIFIED_HEAD_SHA` is set and the freshly read head SHA equals it. An unset value means no
+   Phase-2 round ever completed, or a Phase-3 restart discarded it: that is a blocking condition,
+   never a reason to verify the merge against the head just read;
+9. for `delivery.mergeMethod: squash`, the pull-request title parses as a Conventional Commit
+   (`<type>[(scope)][!]: <description>`). On a squash merge the title becomes the subject of the
+   single commit and is therefore the release signal; an untyped title would silently drop the
+   change from the changelog. Report the invalid title as the blocking condition – do not rewrite it
+   here.
+
+### Phase 5: Merge
+
+In mode `report`, or when any Phase-4 condition failed, report the exact unmet condition and perform
+no merge. In mode `report` that is the only thing withheld: the repairs, any bot trigger Phase 3
+posted, and the delegated `effective-flow iterate` rounds of the earlier phases have already happened, and
+the run ends by reporting whether the pull request is merge-ready and what a merge run would still
+need.
+
+Otherwise call `pr-merge` with `delivery.mergeMethod` and `VERIFIED_HEAD_SHA` as the expected head.
+Inspect the default dry-run command preview, then repeat with `--apply`.
+
+- If the expected head SHA no longer matches the current head, the operation **fails closed**: a
+  human pushed while the gate was working. Report that and do not retry blindly.
+- Never re-run the mutation after a structured error carrying `mutationMayHaveSucceeded: true` –
+  re-read the pull-request state instead and report what it shows.
 
 ### Phase 6: Summary
 
 1. Delete the wisdom file.
-2. Give the user a summary:
-   - table: implemented / skipped / deferred questions / failed
-   - PR URL, pushed commits, resolved threads, final checkout state
-   - in local mode: which commits were created on which branch
+2. Report to the user in chat. **Neither this workflow nor any run it delegates posts a summary
+   comment onto the pull request:** the gate has none of its own, and `effective-flow iterate`'s
+   per-round summary is suppressed for every gate-initiated round, so its content arrives here
+   instead. The merge itself is visible on the pull request anyway. Report:
+   - the resolved pull request and the resolved mode with its source;
+   - the check outcome per round;
+   - the delegated `effective-flow iterate` rounds and their results, including the summary content each
+     one handed back instead of posting;
+   - the bot round per configured login: the observed state, the evidence that established it, and
+     whether the run triggered, waited, or proceeded;
+   - whether human comments were found and what that blocked;
+   - **every bot finding this run assessed but did not implement**, named here rather than answered
+     in its thread;
+   - the merge result, or the precise blocking condition.
+
+## Edge cases
+
+- **The head moves during the run:** the SHA guard on `pr-merge` rejects the merge; report and do not
+  retry blindly.
+- **A bot acknowledges with an emoji reaction instead of a comment.** Greptile does this. Reactions
+  are not readable through the helper, so on the fallback signal that acknowledgment never counts and
+  the bot times out and blocks the merge – a report, never a wrong merge. **An acknowledgment is not
+  a check.** Greptile also publishes a `Greptile Review` check context, so configuring `.check` for
+  it removes this limitation entirely; do not read the reaction as evidence that a reviewer has no
+  check to configure.
+- **A bot edits one sticky comment in place instead of posting a new one.** Its `createdAt` never
+  moves past `headCommittedAt`, so that edit is invisible to the fallback signal. The fallback reads
+  the newest comment, review **thread**, or thread reply, so a review that also opens a thread for
+  this head is still seen; on a head whose **only** output is that edit it is not, and the fallback
+  reports **not started** for a reviewer that has in fact reviewed – a merge precondition that can no
+  longer become true. recensor edits its summary comment this way, and Greptile did exactly this on
+  the pull request that introduced the check-based signal: it found nothing, therefore opened no
+  thread, and its frozen summary edit was its whole output for that head. Only a configured `.check`
+  resolves it: the fallback cannot, by construction, because the one timestamp it reads is the one
+  the reviewer stopped moving.
+- **A bot posts nothing because it found nothing** is indistinguishable from "has not run yet" on
+  the fallback signal; the same timeout applies. A configured `.check` removes this limitation for
+  the bots that publish one.
+- **The provider exposes no `createdAt` or no `headCommittedAt`:** bot freshness is unprovable on the
+  fallback signal, so the bot counts as **not started**, the merge is blocked, and the missing field
+  is named as the reason. Never merge on an assumed precondition.
+- **A bot's configured `.check` context never appears** – a misconfigured value, or an app that is
+  not installed: it is indistinguishable from a context about to appear, so the bot counts as **not
+  started**. The gate triggers, waits, and finally blocks the merge naming the missing context, which
+  is what makes the misconfiguration visible instead of silent.
+- **A bot's configured `.check` is non-terminal:** the bot is **running**, so this run waits for it
+  and posts **no** trigger. That is the one behavioral difference a configured `.check` makes to this
+  phase; a bot without one keeps the previous two-way behavior exactly.
+- **A bot's `.check` is terminal but failed:** it has run. The conclusion states what the reviewer
+  found, not whether it ran, so its threads are handed to `effective-flow iterate` like any other.
+- **A bot's `.check` goes terminal before its last thread is published:** the threads that land
+  afterwards were in no Phase-3 item filter, so Phase 4's condition 7 finds them unassessed, sends
+  the run back into Phase 3 for exactly those threads at the cost of a round, and blocks the merge
+  outright once the rounds are used up. This is the window "Automatic reviewer state" narrows and
+  leaves to its consumer to close.
+- **A human quote-replies to the gate's trigger comment,** copying its body: the item is
+  human-authored, so it counts and the guard activates. With no marker left to copy there is nothing
+  in the body that could mislead the guard, and a quoted body carries the quote markup and therefore
+  no longer equals the trigger text exactly.
+- **The operator writes the configured trigger text by hand:** it matches rule 3 and is excluded.
+  That is correct – a trigger is not a discussion, and treating it as one would block the merge for
+  no reason. It also means the configured trigger should be a distinctive mention: a
+  non-distinctive text such as `please review` could be typed by a person who genuinely wants a
+  discussion and would then be excluded too.
+- **`viewer-read` fails, is unsupported, or exposes no login:** the gate cannot identify its own
+  writes on the manual path, so every remaining non-bot item counts, the guard activates, and the
+  missing identity is reported as the reason for the block.
+- **App mode with an installation token:** `viewer-read` may fail there, but every item the gate
+  wrote is already excluded by rule 1 before the identity is consulted, so the run proceeds
+  normally. This is the case the evaluation order exists for.
+- **The authenticated identity changes between runs** (a different token): earlier writes are no
+  longer recognized as own output and count as human. Fail-safe and correct – the gate genuinely
+  cannot prove they were its own.
+- **A thread `effective-flow iterate` answered and resolved:** rule 2 keeps its replies out of the guard,
+  so a successful earlier run does not block the next one. A reply from **any other** account inside
+  that same resolved thread still counts – resolution is not consent.
+- **`effective-flow iterate` could not resolve a thread it answered:** it keeps its reply and reports the
+  manual resolution, which leaves an unresolved item behind that carries the operator's account in
+  manual mode. On a later run that item is in no resolved thread and its body is not the trigger
+  text, so it counts as human and the guard activates. Thread resolution is unsupported only on
+  Forgejo, where this gate is report-only anyway, so this costs a merge that was unavailable
+  regardless – named here so it is not later read as an oversight.
+- **The delegated run's summary comment:** it is suppressed for every gate-initiated round, so it
+  never becomes such an item. A summary comment from a `effective-flow iterate` run the operator started
+  themselves does exist, and rule 4 excludes it by its author plus its leading marker; before that
+  rule it fell through to the catch-all and blocked the merge permanently.
+- **A pull request this delivery annotated itself** (`delivery.prReview` published inline findings):
+  once a finding is implemented, answered, and its thread resolved, rule 2 excludes the outbound
+  comment by the `<!-- effective-flow-pr-review -->` marker, so the gate can merge the pull request
+  its own product wrote on. While such a thread is still unresolved the finding is unhandled and it
+  keeps counting, which is the intended block.
+- **The same delivery's outside-diff findings:** they are published as one top-level comment carrying
+  the same marker, and rule 4 excludes it by author plus leading marker. The two surfaces therefore
+  block differently on purpose – an inline finding blocks until its thread is resolved, an
+  outside-diff finding never blocks – because a top-level comment has no resolved state to clear.
+  Before rule 4 named this marker, such a comment blocked the merge with no recovery short of
+  deleting the record, since implementing the finding leaves the comment in place and
+  `effective-flow iterate` skips the marker as this tool's own output.
+- **A review body carrying an Effective Flow marker:** no rule covers it, and none is needed. The
+  guard reads the review threads and the pull-request comments; a review body is in neither, so it
+  can never hold the guard.
+- **`mergeGate.bots` is empty:** the bot round is skipped and the merge is not blocked on it.
+- **Branch protection requires an approval:** the forge reports a blocked merge state; report that a
+  human approval is missing and never attempt to approve.
+- **A non-required check is red while the required ones are green:** with the default
+  `mergeGate.requireAllChecks: true` this blocks the merge and enters the repair loop like any other
+  failure. With `false` the forge merge state decides and the red optional check is reported but not
+  treated as a blocker.
+- **A check is red and a human comment is open:** the CI repair runs, the merge does not. This is the
+  one case where the guard is deliberately narrow.
+- **`pr-checks-wait` times out or is unsupported:** report the pending checks and ask once; never
+  fall back to a prompt-driven poll loop.
+- **Forgejo:** `pr-status-read`, `pr-checks-wait`, `pr-merge`, and `viewer-read` are all unsupported,
+  so the run degrades to report-only and states the reason. The guard therefore stays active there,
+  which blocks a merge that was unavailable anyway – nothing is lost. Every bot takes the fallback
+  signal there as well, because no check rollup is reported at all.
+- **`effective-flow iterate` returns `ABORT` for an item:** the round counts as unsuccessful, the run does
+  not merge, and the failed item is reported.
+- **The item filter matches nothing** (every named thread was resolved between the read and the
+  delegation): `effective-flow iterate` returns cleanly with no items and never falls back to processing
+  everything.
+- **The pull request is a draft:** report and do not merge.
+- **The pull-request title is not a Conventional Commit and the merge method is `squash`:** report
+  the invalid title as the blocking condition and do not merge.
+- **Concurrent gate runs on the same pull request:** this workflow holds no lock of its own.
+  `effective-flow iterate`'s commit mutex protects the index, but two gate runs could both wait. Out of
+  scope; the merge SHA guard makes the second merge fail closed rather than duplicate work.
 
 ## Rules
 
-## Pre-commit gate
-
-Before every commit, the checks configured in the project must pass without errors. Typical checks are type-checking, linting, and tests — use the scripts defined in the project (e.g. `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm agent:check`).
-
-- If a check reports errors: fix the errors first, then check again.
-- Never commit code that does not pass these checks.
-- This rule applies even when a separate verification phase exists — it is an additional safeguard, not a replacement.
-
-## Commit message rules
-
-- Resolve `language.git` through the shared language rule and write the human-readable subject
-  description and body in that language. Preserve a valid user-supplied message. Conventional
-  Commit types, optional scopes, `!`, trailer keys, issue references, and other machine tokens
-  remain English/ASCII. This rule also governs Conventional Commit PR-title descriptions and
-  explicitly generated changelog/release-note prose.
-- **Never set `Co-Authored-By` trailers in commit messages**, regardless of whether an LLM (Claude, Codex, GPT, …) or another tool suggests the line or inserts it as a default.
-- If a `Co-Authored-By` line is already present in a commit template, `commit.template`, a `--trailer` invocation, or a draft message: remove it before committing.
-- **Do not add AI attribution:** no „Generated with Claude Code/Codex" footers and no agent session links (e.g. `https://claude.ai/code/…`) in commit messages – not even when the harness appends them as a default. Factual mentions of Claude Code or Codex remain allowed, generation attribution does not.
-- Avoid generic messages like `update files` or `misc changes`.
-- Describe concretely what was changed and why.
-- Use Conventional Commit prefixes: `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`.
-- Choose the commit type by **effect**, not by file type: behavior-changing changes – including pure **config/env/secrets/CI** with deployment or runtime effect (e.g. corrected values in env/secret artifacts that take effect remotely via sync) – are `fix:` (or `feat:` for new functionality). `chore:` only for **deploy-neutral** changes without behavioral effect (pure maintenance, formatting, tooling without runtime effect). This also applies to the **squash PR title**, which determines the release-please bump on a squash merge.
-- Do not expose internal tracking IDs in commit messages, e.g. review finding IDs like `R-0000001`, local plan/review IDs like `F1`, or placeholders like `[Finding-ID]`. Such IDs belong in wisdom/report context, not in the Git history.
-
-- Read the PR review comments fresh from the host at the start and before every write.
-- Never classify a pull request's threads while a configured automatic reviewer counts as running for
-  the current head: ask once per Phase 1.5, wait at most once, and return
-  `ABORT: review still in flight` when there is nobody to ask and no caller announced
-  `Review guard: established`. When the pull-request status cannot be read at all, the guard has no
-  signal to observe: skip it and report the run as unguarded, never claim it passed.
-- Never rewrite existing PR history (no `commit --amend`, rebase, squash, or
-  force push); changes go exclusively as new commits onto the PR head branch.
-- In PR mode, create no new delivery branch and no new PR.
-- Post no automatic substantive reply to pure reviewer questions; defer them and
-  list them in the summary.
-- Post **at most one** summary comment per run, and none at all when the caller announced
-  `Summary comment: suppressed`; that content then goes back to the caller instead.
-- Never set a `Co-Authored-By` trailer and add no AI attribution in commits,
-  thread replies, the summary comment, or the PR body.
+- Perform **no** `git commit` and **no** push other than the base-into-head merge that Phase 2 step 1
+  allows. Delegate every other code change to `effective-flow iterate`.
+- Never rewrite the head branch's history: no `commit --amend`, no rebase, no squashing of its
+  commits, no force-push. The forge-side `delivery.mergeMethod` – including `squash` and `rebase` –
+  is the integration of the pull request in Phase 5 and is not covered by this rule.
+- Never approve a pull request and never request changes, not even to unblock a merge.
+- Never read an Effective Flow marker as authorship evidence **on its own**, and write none. A
+  marker is only ever one condition beside the author, and only as the body's leading line.
+  Evaluate the guard in Phase 1's order – bot authorship first, then this tool's own items inside a
+  resolved thread, then the authenticated login plus the exact configured trigger text, then this
+  tool's own top-level comment by its leading iterate marker – and count everything else as human.
+- Never let an unprovable identity clear the guard. A failed, unsupported, or login-less
+  `viewer-read` makes every remaining non-bot item count, which activates the guard wherever such an
+  item exists and leaves a pull request without one unblocked; report the missing identity as the
+  reason. The identity is never consulted for an item rule 1 already excluded.
+- Write nothing into the thread of a bot finding this run did not implement – no reply, no
+  resolution. Name it in the chat summary instead. The trigger comment is this workflow's only own
+  write, and suppressing the delegated run's summary comment keeps it the only item a gate-initiated
+  run can leave on the pull request – at most one, since a bot observed as **running** gets no
+  trigger at all.
+- Announce `Summary comment: suppressed` and `Review guard: established` in every delegation, each on
+  its own line and in exactly that literal form, and never delegate without either of them.
+- Take every bot's state from the loaded "Automatic reviewer state" and never treat an unprovable
+  state as **has run**; an unprovable precondition blocks the merge. Trigger only a bot that has
+  **not started**, never one that is **running** – a mention aimed at a reviewer already working
+  costs the run in flight or queues a redundant one.
+- Read the pull-request status, threads, and comments fresh before every write and before the merge.
+- Ask the entry gate exactly once, at the start. A configured `mergeGate.completion` of `merge` or
+  `report` is used unchanged in every run state; only `ask` or an unset key in a non-interactive
+  delegation behaves as `report`.
+- `report` withholds the merge and nothing else: repairs, the bot trigger for a bot that has **not
+  started**, and the delegated `effective-flow iterate` rounds still run.
+- Never fall back to a prompt-driven poll loop when a wait times out; report and ask once.
+- Never exceed `mergeGate.maxRounds`, never reset the counter, and never jump backwards inside a
+  round – a repeated wait, a repair, a Phase-2 restart from the bot round, and a Phase-4 return into
+  Phase 3 each consume a round.
+- Post no summary comment of your own; the run summary goes to the user in chat.
+- Never set a `Co-Authored-By` trailer and add no AI attribution in the merge commit, in trigger
+  comments, or in any other published text.
+- Do not start project validation such as linting, tests, or builds yourself; the pull request's own
+  checks are the criterion, and repairs run through `effective-flow iterate`.
 - Give the user a brief status update after each phase.
-- On a missing or unauthenticated CLI: abort cleanly, do not secretly push a local
-  implementation.
+- On a missing or unauthenticated CLI: abort cleanly and perform no local side effects.

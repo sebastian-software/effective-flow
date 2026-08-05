@@ -219,6 +219,20 @@ not automatically answered on the merits. Without a PR (**local mode**), `iterat
 based on the free-text instructions on the diff of the current branch against the base branch
 and commits locally, without pushing or commenting.
 
+**Review still in flight:** In PR mode, before it classifies anything, `iterate` checks whether a
+configured automatic reviewer is still running against the current head. Classifying a thread set
+that is still growing is the problem this prevents: `iterate` would implement, reply, resolve and
+push, and the reviewer would then have to start over against a head that has moved. If a reviewer
+is still running, `iterate` names it and what proved it – a configured check context in a
+non-terminal state, or a trigger comment for this head with no reviewer output yet – and asks once
+whether to **wait** for it, **proceed** anyway, or **abort**. "Wait" is one bounded wait followed by
+one fresh read, not a poll loop; if the reviewer is still running after that, the run ends with a
+report instead of waiting again. A run that cannot be asked returns `ABORT: review still in flight`
+and names the reviewers. Runs delegated by [`/effective-flow merge-gate`](tools-deliver.md) are
+exempt, because the gate has already established the reviewer state and says so explicitly; the
+exemption rides on that announcement alone, not on a run being scoped to certain threads or merely
+running non-interactively. Local mode has no pull request and is unaffected.
+
 **Interplay:** Extends the apply chain by the previously missing source
 "PR review comments": `/effective-flow apply` reads Effective Flow's own reports or issues, `iterate` reads
 the threads left directly on the PR. The actual implementation is handled by the existing
