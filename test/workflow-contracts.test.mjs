@@ -1845,6 +1845,107 @@ test('only the bot threads this run implemented can block the merge', () => {
   );
 });
 
+test('a reviewer thread no round assessed blocks the merge in a condition of its own', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const phase4 = section(gate, '### Phase 4');
+
+  // The window: a reviewer's check goes terminal before the reviewer's last thread is published,
+  // so Phase 3 delegates only the thread IDs it could see and the thread that lands afterwards was
+  // assessed by nobody. Condition 6 cannot catch it — that one asks about the findings this run
+  // *implemented* — so without a condition of its own the gate merges a pull request carrying a
+  // reviewer finding no run ever read. `src/shared/review-bot-state.md` names this window and
+  // assigns closing it to the consumer; these assertions are that consumer discharging it.
+  //
+  // Sliced per numbered condition, because condition 6 already carries the "deferred or rejected"
+  // vocabulary: matched against the whole Phase-4 section, the assertions below would stay green
+  // with the new condition deleted outright.
+  const conditions = phase4.split(/(?=\n\d+\.\s)/).slice(1);
+  const unassessedIndex = conditions.findIndex((item) => /assessed/i.test(item));
+  const implementedIndex = conditions.findIndex((item) =>
+    /implement[a-z]*[\s\S]{0,160}(?:answered|resolved)/i.test(item),
+  );
+  assert.notEqual(unassessedIndex, -1, 'Phase 4 must carry a never-assessed precondition');
+  assert.notEqual(implementedIndex, -1, 'Phase 4 must keep its implemented-and-answered condition');
+
+  // Two conditions, never one. Folding them back together is the realistic regression — they read
+  // as near-duplicates — and each direction of that fold reintroduces a defect: widening
+  // condition 6 demands a thread reply for a deferred finding, which nothing may write and no run
+  // could satisfy, while narrowing this one to implemented findings merges past the unread thread.
+  assert.notEqual(
+    unassessedIndex,
+    implementedIndex,
+    'the never-assessed rule must be its own condition, not folded into the implemented one',
+  );
+
+  const unassessed = flat(conditions[unassessedIndex]);
+
+  // What "assessed" covers has to be enumerated, or the condition is unexecutable: a deferred or
+  // rejected finding is an outcome this run reached and must not block a second time.
+  for (const outcome of ['implement', 'defer', 'reject']) {
+    assert.match(
+      unassessed,
+      new RegExp(outcome, 'i'),
+      `the condition must name ${outcome} as an outcome that counts as assessed`,
+    );
+  }
+  assert.match(
+    unassessed,
+    near('(?:nobody|no round|neither)', 'block', 300),
+    'a thread nobody reached an outcome about must be stated to block the merge',
+  );
+
+  // The distinction itself is load-bearing prose, not decoration: it is what stops the next reader
+  // from simplifying the two conditions back into one.
+  assert.match(
+    unassessed,
+    near('condition 6', '(?:folded|widened|different question|assessed at all)', 400),
+    'the condition must state how it differs from the implemented-and-answered one',
+  );
+
+  // Blocking alone would end the run; the agreed behaviour is to pull the round back and let the
+  // late threads be assessed. Bounded by the same counter as every other round, or a reviewer that
+  // keeps publishing holds the run open forever.
+  assert.match(
+    unassessed,
+    near('Phase 3', 'consumes a round', 300),
+    'the return to Phase 3 must consume a round',
+  );
+  assert.match(
+    unassessed,
+    near('`mergeGate\\.maxRounds`', '(?:never with a merge|never a merge)', 300),
+    'an exhausted round budget must end the run with a report, never with a merge',
+  );
+
+  // And the counter has to know about it. "Consumes a round" is only true if round accounting
+  // counts an event that begins no Phase-2 round — the pre-existing rule counts Phase-2 starts
+  // alone, so a Phase-4 return would otherwise be free and unbounded.
+  const accounting = flat(section(gate, '#### Round accounting', '\n### '));
+  assert.match(
+    accounting,
+    near('(?:Phase 4|condition 7)', '(?:by one more|consumes a round)', 400),
+    'round accounting must count the Phase-4 return, which begins no Phase-2 round of its own',
+  );
+
+  // Fail closed, like every other precondition here: an assessment the read cannot establish is
+  // not an assessment.
+  assert.match(
+    unassessed,
+    near('(?:cannot establish|unprovable|unreadable)', '(?:unassessed|blocks)', 300),
+    'an assessment the fresh read cannot establish must block rather than pass',
+  );
+
+  // The shared contract states the obligation; a contract whose consumer never discharges it is
+  // the defect this closes. Both ends are asserted so neither can drift away from the other.
+  const window = flat(
+    section(source('src/shared/review-bot-state.md'), '### This narrows the window'),
+  );
+  assert.match(
+    window,
+    near('\\{\\{SKILL:merge-gate\\}\\}', '(?:Phase-4|Phase 4|precondition)', 300),
+    'the shared contract must name where its consumer closes the window it leaves open',
+  );
+});
+
 test('the trigger idempotency check rests on evidence the forge actually exposes', () => {
   const phase3 = flat(section(source('src/tools/merge-gate.md'), '### Phase 3'));
   const IDEMPOTENCY = '(?:idempot|second trigger|already been posted|already posted)';

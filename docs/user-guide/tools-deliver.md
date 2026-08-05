@@ -101,8 +101,11 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    thread is left untouched and unresolved. See
    [Recognizing its own writes across runs](#recognizing-its-own-writes-across-runs).
 4. **Merge** – only once every precondition holds (all checks green, the forge reports the pull
-   request mergeable, the human guard is inactive, every configured bot has answered), the run
-   merges with the configured merge method, guarded by the expected head commit.
+   request mergeable, the human guard is inactive, every configured bot has run, and every one of
+   their open threads has actually been looked at by this run), the run merges with the configured
+   merge method, guarded by the expected head commit. A reviewer thread that turned up after the
+   round that handled its reviewer sends the run back for another round instead; see
+   [A reviewer thread that arrives late](#a-reviewer-thread-that-arrives-late).
 
 **When to use:** On a pull request that is otherwise done and only needs CI to pass, its automatic
 reviewers to be satisfied, and the merge button pressed – so you do not have to babysit checks and
@@ -127,7 +130,10 @@ differently:
 - **Not started** – no evidence that the reviewer has run or is running for the current head. This
   is the only state that gets the trigger comment, followed by a wait.
 - **Has run** – a configured check reached a terminal state against the current head, or the
-  reviewer's own output is newer than the head commit. The gate proceeds to its findings.
+  reviewer's own output is newer than the head commit. The gate proceeds to its findings. Note what
+  this state does and does not say: the reviewer **finished**, not that every thread it wrote has
+  already appeared on the pull request. The gate therefore checks again before merging – see
+  [A reviewer thread that arrives late](#a-reviewer-thread-that-arrives-late).
 
 A reviewer **without** a configured `.check` context keeps the previous two-state behavior – "has
 run" or "not started" – because the fallback signal (comparing the reviewer's newest comment against
@@ -141,6 +147,28 @@ a pull request where a configured reviewer is still running, `iterate` no longer
 set that is still growing: it names the reviewer, says what proved it, and asks once whether to wait
 for it, proceed anyway, or abort. A non-interactive run that has nobody to ask aborts instead. A run
 the gate delegated is exempt, because the gate has already established the state.
+
+#### A reviewer thread that arrives late
+
+A reviewer's check can go green while some of its threads are still on their way to the pull
+request. The automatic-reviewer round works on the threads that were visible when it looked, so a
+thread that lands a moment later was seen by nobody – and a finding nobody read is exactly what a
+merge must not step over.
+
+Right before merging, the gate therefore re-reads the pull request and requires that **every open
+thread from a configured reviewer has an outcome from this run**: implemented, deferred, or
+rejected. It is a deliberately different question from "was every thread answered and resolved". A
+finding the run assessed and set aside gets no thread reply by design, so it is silent here; a
+thread that was never assessed at all is what blocks.
+
+What you will see when a late thread turns up:
+
+- **While rounds remain:** the run goes back to the automatic-reviewer round for exactly those
+  threads and handles them like any other reviewer finding. That return costs one of the rounds
+  allowed by `mergeGate.maxRounds`, which is what keeps a reviewer that keeps publishing from
+  cycling forever.
+- **With the round budget exhausted:** the run ends with a report naming every thread that was
+  never assessed. It does not merge, and it never merges "because the checks were green anyway".
 
 #### Recognizing its own writes across runs
 
@@ -186,9 +214,10 @@ Two further things worth knowing about what the gate writes:
   at the start; a non-interactive run behaves as report-only.
 - The result is either a merged pull request or a chat report naming the exact condition that is
   still blocking the merge (pending or failing checks, a reviewer still running or not yet answered,
-  an open human comment, a non-mergeable state, or a squash-merge title that is not a Conventional
-  Commit). The report also names every bot finding the run assessed but did not implement, since
-  those get no thread reply, and every configured `.check` context that never appeared at all.
+  a reviewer thread that arrived too late for any round to assess it, an open human comment, a
+  non-mergeable state, or a squash-merge title that is not a Conventional Commit). The report also
+  names every bot finding the run assessed but did not implement, since those get no thread reply,
+  and every configured `.check` context that never appeared at all.
 - On GitHub, the check gate and the merge are performed by the remote-tracker helper described in
   [Remote tracker](remote-tracker.md#merge-gate-operations). Forgejo does not yet support the
   underlying operations, so a Forgejo run degrades to report-only there.

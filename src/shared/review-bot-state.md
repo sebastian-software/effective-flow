@@ -103,5 +103,14 @@ without a reason sends someone looking in the wrong place.
 ### This narrows the window; it does not close it
 
 A terminal check states that the reviewer finished, not that every thread it wrote has already
-arrived — threads can land moments later. This contract makes that window small, and the consumer's
-own fresh read before every write is what covers the rest. Nothing here replaces that read.
+arrived — threads can land moments later. This contract makes that window small; closing it belongs
+to the consumer, and each one closes it with a read of its own. Nothing here replaces that read, and
+nothing here gates anything: this block observes state, and a merge is not its to hold.
+
+Where each consumer discharges that obligation, so the two stay in step with this contract:
+
+- **`{{SKILL:merge-gate}}`** in its Phase-4 merge preconditions. A thread that arrived after the
+  round's own observation is one no round assessed, which blocks the merge and sends the run back
+  for another round — the gate never merges past a reviewer finding nobody reached an outcome about.
+- **`{{SKILL:iterate}}`** through the fresh read it performs before every write, which is what keeps
+  a late thread out of a reply it would otherwise contradict.

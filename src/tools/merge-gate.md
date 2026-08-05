@@ -556,11 +556,14 @@ workflow records a head SHA for later use.
 
 `mergeGate.maxRounds` bounds the **whole run**, not one phase. A counter starts at zero and increases
 by one every time a Phase-2 round begins – **including** a round that only waits again after a
-still-pending check, and **including** a Phase-2 restart that a Phase-3 bot round triggered. Nothing
-resets the counter and nothing bypasses it, because a round never jumps backwards into itself: a bot
-round that produced an implementation and sent the run back into Phase 2 **consumes a round** like
-any other. When the counter reaches `mergeGate.maxRounds`, the run ends with a report naming the
-still-unmet condition, never with a merge.
+still-pending check, and **including** a Phase-2 restart that a Phase-3 bot round triggered – and by
+one more for every **return into Phase 3** that Phase 4's condition 7 performs. That return is
+counted here explicitly because it begins no Phase-2 round of its own; uncounted, a reviewer that
+keeps publishing threads would cycle between Phase 4 and Phase 3 without a bound. Nothing resets the
+counter and nothing bypasses it, because a round never jumps backwards into itself: a bot round that
+produced an implementation and sent the run back into Phase 2 **consumes a round** like any other,
+and so does the return into Phase 3. When the counter reaches `mergeGate.maxRounds`, the run ends
+with a report naming the still-unmet condition, never with a merge.
 
 ### Phase 3: Automatic reviewer round
 
@@ -641,7 +644,8 @@ merge. A protected branch that requires an approval is reported as needing a hum
 ### Phase 4: Merge preconditions
 
 Verify every one of the following against a **fresh** read. Any unmet condition ends the run with a
-report naming exactly that condition, and merges nothing:
+report naming exactly that condition, and merges nothing – with the single exception condition 7
+states for itself, which sends the run back into Phase 3 while rounds remain instead of ending it:
 
 1. the resolved completion mode is `merge`;
 2. the check criterion from `mergeGate.requireAllChecks` is satisfied;
@@ -656,10 +660,41 @@ report naming exactly that condition, and merges nothing:
    left untouched. That scoping is deliberate, not an oversight – nothing in this workflow may write
    into such a thread any more (see "A deferred finding gets no thread reply"), so requiring an
    answer there would be a condition no run could ever satisfy;
-7. `VERIFIED_HEAD_SHA` is set and the freshly read head SHA equals it. An unset value means no
+7. **every unresolved thread of a configured reviewer has been assessed by this run** – implemented,
+   or deliberately deferred or rejected. Take every unresolved thread of the same fresh read whose
+   author is a login in `mergeGate.bots`, and match it against the record this run kept per round:
+   the thread IDs it handed to `{{SKILL:iterate}}`, plus the threads whose findings it deferred or
+   rejected. A thread in neither list arrived after the Phase-3 observation that fixed this run's
+   item filter – the reviewer's check had gone terminal by then, which states that the reviewer
+   finished and never that every thread it wrote had already arrived (see "Automatic reviewer
+   state") – so nobody reached any outcome about it, and it blocks. An **empty** `mergeGate.bots`
+   list produces no such thread and satisfies this condition, as it satisfies condition 5.
+
+   **This is not condition 6 widened, and the two must never be folded into one.** Condition 6 asks
+   whether a thread this run **implemented** was answered and resolved, and its narrow scope stays
+   correct for the reason stated there. This condition asks a different question: whether the thread
+   was **assessed at all**. Deferred and rejected are outcomes this run reached about a finding it
+   read; **never assessed** is the absence of any outcome, about a finding nobody read. A finding
+   that was judged and set aside is therefore silent in both conditions, and an unjudged thread
+   blocks here and only here. A future simplification that merges the two restores the defect this
+   condition exists for: it would either demand a reply no run may write, or wave through a finding
+   no run ever saw.
+
+   **Unmet while rounds remain: return to Phase 3** with exactly those threads, instead of ending
+   the run. That return **consumes a round** under "Round accounting", precisely as a Phase-3
+   restart does – the round counter is the only thing that bounds a reviewer which keeps publishing.
+   Once the counter has reached `mergeGate.maxRounds`, the run ends with a report naming every
+   unassessed thread; never with a merge.
+
+   **Fail closed.** Whenever the fresh read cannot establish that a thread was assessed – an
+   unreadable thread list, an author that cannot be established, an unstated resolution state – the
+   thread counts as unassessed and blocks. An unprovable assessment is treated exactly as an
+   unprovable reviewer state is in condition 5: never as an assumed pass;
+
+8. `VERIFIED_HEAD_SHA` is set and the freshly read head SHA equals it. An unset value means no
    Phase-2 round ever completed, or a Phase-3 restart discarded it: that is a blocking condition,
    never a reason to verify the merge against the head just read;
-8. for `delivery.mergeMethod: squash`, the pull-request title parses as a Conventional Commit
+9. for `delivery.mergeMethod: squash`, the pull-request title parses as a Conventional Commit
    (`<type>[(scope)][!]: <description>`). On a squash merge the title becomes the subject of the
    single commit and is therefore the release signal; an untyped title would silently drop the
    change from the changelog. Report the invalid title as the blocking condition – do not rewrite it
@@ -721,6 +756,11 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   phase; a bot without one keeps the previous two-way behavior exactly.
 - **A bot's `.check` is terminal but failed:** it has run. The conclusion states what the reviewer
   found, not whether it ran, so its threads are handed to `{{SKILL:iterate}}` like any other.
+- **A bot's `.check` goes terminal before its last thread is published:** the threads that land
+  afterwards were in no Phase-3 item filter, so Phase 4's condition 7 finds them unassessed, sends
+  the run back into Phase 3 for exactly those threads at the cost of a round, and blocks the merge
+  outright once the rounds are used up. This is the window "Automatic reviewer state" narrows and
+  leaves to its consumer to close.
 - **A human quote-replies to the gate's trigger comment,** copying its body: the item is
   human-authored, so it counts and the guard activates. With no marker left to copy there is nothing
   in the body that could mislead the guard, and a quoted body carries the quote markup and therefore
@@ -820,7 +860,8 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   started**, and the delegated `{{SKILL:iterate}}` rounds still run.
 - Never fall back to a prompt-driven poll loop when a wait times out; report and ask once.
 - Never exceed `mergeGate.maxRounds`, never reset the counter, and never jump backwards inside a
-  round – a repeated wait, a repair, and a Phase-2 restart from the bot round each consume a round.
+  round – a repeated wait, a repair, a Phase-2 restart from the bot round, and a Phase-4 return into
+  Phase 3 each consume a round.
 - Post no summary comment of your own; the run summary goes to the user in chat.
 - Never set a `Co-Authored-By` trailer and add no AI attribution in the merge commit, in trigger
   comments, or in any other published text.
