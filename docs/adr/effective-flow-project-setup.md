@@ -41,3 +41,4 @@ a pure runtime directory and completely gitignored.
 | tracker.remoteToolOverride                | auto                       |
 | mergeGate.bots                            | greptile-apps[bot]         |
 | mergeGate.bots.greptile-apps[bot].trigger | @greptileai                |
+| mergeGate.bots.greptile-apps[bot].check   | Greptile Review            |
