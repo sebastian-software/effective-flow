@@ -81,9 +81,10 @@ it does not fail the read.
 
 The two surfaces do not spell one bot account identically: GitHub's REST API reports it with the
 `[bot]` suffix and its GraphQL API without. The record preserves whatever the provider reported —
-the suffix is what `isBot` is inferred from on the REST side — so a consumer comparing a reported
-login against a configured one resolves it through "Matching a configured login" instead of
-comparing the two strings literally.
+`isBot` is decided by the account class the provider states, `type` on REST and `__typename` on
+GraphQL, and the suffix is only the fallback for a payload that states no class — so a consumer
+comparing a reported login against a configured one resolves it through "Matching a configured
+login" instead of comparing the two strings literally.
 If the provider reports that resolved status is unavailable, keep the item unresolved and expose
 that limitation in the workflow summary; do not guess.
 
