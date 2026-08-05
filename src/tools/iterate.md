@@ -81,6 +81,10 @@ worktree-integration
 pr-review-comments
 ```
 
+```include
+review-bot-state
+```
+
 ## Classification delegation
 
 `pr-review` is the declared domain owner for review-item judgment. Supply its caller-owned Mode C
@@ -98,9 +102,14 @@ the minimal local classification fallback in Phase 2 and disclose the reduced re
 At the start, generate a session ID (e.g. via timestamp) and use
 `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` for:
 
-- the resolved PR (number, head/base branch, URL) or the local target diff
-- the received item filter (free-text-only, an explicit thread-ID list, or none) and whether the
-  caller suppressed the summary comment
+- the resolved PR (number, head/base branch, head SHA, URL) or the local target diff
+- the received item filter (free-text-only, an explicit thread-ID list, or none), whether the
+  caller suppressed the summary comment, and whether it announced an established review guard
+- the pull-request status read alongside the threads (head SHA, `headCommittedAt`, `checksReported`),
+  or the reason it was unavailable
+- the observed state of every configured automatic reviewer with the evidence that established it,
+  and the branch the review-in-flight guard took (skipped with its reason, waited, proceeded, or
+  aborted)
 - the review threads read, with author, file/line, and resolved status
 - the classification per item (actionable/not actionable, action type, already addressed)
 - implemented items, commits created, threads replied to/resolved
@@ -125,7 +134,7 @@ end.
    in {{SKILL:build}}.
 5. **Optional item filter.** A delegating workflow may restrict the run to a subset of the items.
    The filter is a caller contract, not user free text: only a delegation such as
-   {{SKILL:pr-review}} sets it, and an interactive invocation never has one. It is announced on its
+   {{SKILL:merge-gate}} sets it, and an interactive invocation never has one. It is announced on its
    own line, in exactly one of two literal forms:
    - `Item filter: free-text-only` — process the free-text instructions and classify **no** review
      thread;
@@ -167,17 +176,128 @@ end.
 
    Record the switch (or its absence) in the wisdom file and carry it into Phase 5.
 
+7. **Optional review-guard exemption.** A delegating workflow may exempt this run from the
+   review-in-flight guard of Phase 1.5 on either of two grounds: it observed the state of every
+   configured automatic reviewer itself before delegating, or it scoped the delegation to items no
+   reviewer is adding to, which leaves the guard nothing to protect. {{SKILL:merge-gate}} announces
+   the line for both of its delegations, one on each ground — a CI repair carries
+   `Item filter: free-text-only` and therefore classifies no review thread at all, and a bot round is
+   issued only after that gate has observed every reviewer. Like the two switches above this is a
+   caller contract and never user free text, and it is announced on its own line in exactly this
+   literal form:
+   - `Review guard: established` — skip Phase 1.5 and record that the caller answered for the
+     reviewer state, together with the filter the same delegation announced.
+
+   The same two invariants bind it:
+   - **An invocation without that line keeps the guard**: Phase 1.5 observes the reviewer state
+     itself, as it does for every interactive invocation.
+   - **Fail closed on an unparseable switch.** A line announcing `Review guard:` in any other form is
+     a broken caller contract: return `ABORT: unparseable review-guard switch` immediately, before
+     Phase 1. Never continue such a run as an unguarded one — the caller believes the guard is
+     answered for, so a misread line would silently let the run classify a thread set a reviewer is
+     still adding to.
+
+   It stays a line of its own and is never **derived** from `Item filter:`, even though one caller's
+   ground for sending it is its filter. A filter states the scope of a run; only the caller knows
+   whether that scope, or its own prior observation, makes the guard unnecessary. Reading the
+   exemption out of the filter instead would hand it to any future workflow that filters merely for
+   scoping, which is the exact failure the guard exists to prevent. Non-interactivity is not the
+   switch either: {{SKILL:apply-review}} delegates non-interactively and knows nothing about reviewer
+   state, so exempting every delegated run would remove the guard from precisely the runs that need
+   it.
+
+   Record the switch (or its absence) in the wisdom file and carry it into Phase 1.5.
+
 ### Phase 1: Gather context
 
 - **PR mode:** Detect the host and CLI and check availability (see
-  "PR review comment integration"). Resolve the PR and read the review threads **fresh**.
-  Take the free-text instructions in as additional items. Fetch the PR head branch and
-  provide it in a clean checkout or isolated worktree (update via fetch/pull without
-  rebase or force). If the PR is already merged/closed, report that and optionally offer
-  local mode.
+  "PR review comment integration"). Resolve the PR and read the review threads **fresh**. Read the
+  pull-request status through `pr-status-read` (capability key `pullRequestStatus`) at the **same
+  instant** as those threads, and carry its head SHA, `headCommittedAt`, `checksReported`, and
+  normalized `checks` array into Phase 1.5 — that phase observes every reviewer against exactly this
+  one read, so a status read taken at another instant would describe a state the pull request never
+  had. On `UNSUPPORTED_CAPABILITY` or a failed read, record that the status is unavailable and
+  continue; Phase 1.5 states what that costs. Take the free-text instructions in as additional items.
+  Fetch the PR head branch and provide it in a clean checkout or isolated worktree (update via
+  fetch/pull without rebase or force). If the PR is already merged/closed, report that and optionally
+  offer local mode.
 - **Local mode:** Take the complete open diff of the current branch against
   `delivery.baseBranch` (`git diff <base>...HEAD`) as context. The source of the items to
   implement is only the free text.
+
+### Phase 1.5: Review-in-flight guard (PR mode only)
+
+Classifying a thread set that an automatic reviewer is still adding to is what this phase prevents.
+The run would implement, reply, resolve, and push against a partial set, and the reviewer would then
+have to start over on a head that moved. The phase sits after Phase 1 because it needs the resolved
+pull request, the head SHA, and the pull-request status of that one fresh read, and before Phase 2
+because classification is the thing being protected.
+
+1. **Skip conditions, checked first.** Skip the phase entirely and record which one applied:
+   - **local mode** — there is no pull request and no reviewer;
+   - **`Review guard: established`** — the caller either observed the reviewer state itself before
+     delegating, or scoped this run to items no reviewer is adding to. Re-deriving the state here
+     would duplicate the caller's wait or block against a reviewer the caller is deliberately not
+     waiting for;
+   - **no configured reviewers** — `mergeGate.bots` is empty, so there is nothing to observe;
+   - **no pull-request status** — Phase 1's `pr-status-read` was unsupported or failed, so neither
+     the check list nor `headCommittedAt` exists. This is a third kind of unavailability and the
+     precedence resolves none of it: `UNSUPPORTED_CAPABILITY` is not `checksReported: false`, which
+     selects the fallback signal, and it is not an absent field, which the fallback reads as **not
+     started**. With no read at all there is nothing for either rule to work on. Skip the phase and
+     **report that this run is unguarded and why** rather than letting the guard evaporate silently.
+     On Forgejo that is the permanent state — `pr-status-read` is unsupported there, which is also
+     why {{SKILL:merge-gate}} degrades to report-only on that provider.
+2. **Observe** the state of every configured reviewer through the loaded "Automatic reviewer state",
+   against the head SHA and the status read Phase 1 carried in, and the threads read at that same
+   instant. Record each state with the evidence that established it.
+3. **Only "running" holds this run.** A reviewer observed as **has run** or **not started** lets the
+   run continue: this guard waits for output that is already coming, and it never summons output
+   nobody asked for — posting a trigger belongs to {{SKILL:merge-gate}}, and this workflow writes no
+   trigger comment of any kind.
+
+   One further piece of evidence counts as running **here**: a reviewer observed as **not started**
+   for which a comment exists whose body equals that reviewer's configured
+   `mergeGate.bots.<login>.trigger` text after trimming surrounding whitespace and whose `createdAt`
+   is **not older than** `headCommittedAt`. Someone asked that reviewer to run for exactly this head
+   and its output has not arrived. The shared block does not report that as **running** because it is
+   evidence about the request rather than about the reviewer; this phase acts on it because a request
+   for the current head is precisely what makes a growing thread set likely.
+
+4. **Ask once** when at least one reviewer counts as running, naming each one and what proved it —
+   the check context with its status, or the trigger comment and its timestamp. Ask exactly once per
+   run, whatever the answer leads to.
+
+```ask
+when: at least one configured automatic reviewer counts as running for the current head
+header: In flight
+question: An automatic reviewer is still working on the current head. Wait for it, work with the notes that are already there, or stop?
+options:
+  - label: Wait
+    description: Block once for mergeGate.botWaitMinutes and re-read; continue with the reviewer's notes if it finished by then, otherwise end the run with a report
+  - label: Proceed
+    description: Classify the threads that are there now; notes arriving afterwards stay for a later run
+  - label: Abort
+    description: End the run without classifying, implementing, replying, or pushing
+```
+
+5. **"Wait" is one bounded blocking wait, never a poll loop.** Block once for
+   `mergeGate.botWaitMinutes` — a single `sleep` of that span in the shell, or the harness's
+   equivalent single blocking wait — the same single-wait shape {{SKILL:merge-gate}} Phase 3 uses.
+   Then re-read the pull request, its review threads, and `pr-status-read` once per Phase 1, at one
+   instant as before, and observe the state again. If every reviewer has finished, continue into
+   Phase 2 with what they produced. If one is still running, end the run with a report naming it
+   instead of chaining a second wait or asking again. If the harness cannot block that long, block
+   for the longest single span it allows and re-read once; do not make up the difference with further
+   waits.
+6. **Fail closed when the question cannot be asked.** A non-interactive run that did not receive
+   `Review guard: established` returns `ABORT: review still in flight`, naming the reviewers and the
+   evidence. Never continue such a run silently: it has a caller that can be told, and classifying a
+   growing thread set is the outcome this phase exists to prevent.
+7. **Record** the observed state per reviewer, the branch taken, and any wait in the wisdom file.
+
+The guard narrows the window; it does not close it. A reviewer's threads can still arrive moments
+after its state turned terminal, so Phase 1's fresh read before every write keeps its full weight.
 
 ### Phase 2: Classification
 
@@ -185,7 +305,7 @@ end.
    `<!-- effective-flow-iterate -->` reply. Exclude a thread carrying
    `<!-- effective-flow-pr-review -->` as well — that is Effective Flow's own published review
    output, not third-party input — unless the user names those threads explicitly. The
-   {{SKILL:pr-review}} gate needs no exclusion of its own: it writes nothing into a review thread,
+   {{SKILL:merge-gate}} gate needs no exclusion of its own: it writes nothing into a review thread,
    so no thread on a pull request is ever the gate's own reply.
 2. **Apply the optional item filter** from Phase 0, after the exclusions above:
    - **no filter** — every remaining thread plus the free text enters classification. This is the
@@ -362,6 +482,11 @@ commit-message-rules
 ```
 
 - Read the PR review comments fresh from the host at the start and before every write.
+- Never classify a pull request's threads while a configured automatic reviewer counts as running for
+  the current head: ask once per Phase 1.5, wait at most once, and return
+  `ABORT: review still in flight` when there is nobody to ask and no caller announced
+  `Review guard: established`. When the pull-request status cannot be read at all, the guard has no
+  signal to observe: skip it and report the run as unguarded, never claim it passed.
 - Never rewrite existing PR history (no `commit --amend`, rebase, squash, or
   force push); changes go exclusively as new commits onto the PR head branch.
 - In PR mode, create no new delivery branch and no new PR.

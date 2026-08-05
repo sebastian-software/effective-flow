@@ -63,8 +63,8 @@ The gate's completion condition is: no surface is `blocked` and none is unassess
   record that decision, and run no completion, plan-status switch or delivery action while a
   surface is still `blocked`;
 - **non-interactive delegation** (a run anywhere below `{{SKILL:apply-review}}`,
-  `{{SKILL:apply-issues}}`, `{{SKILL:iterate}}` or `{{SKILL:pr-review}}` in the delegation chain,
-  not only a direct sub-agent of one — `{{SKILL:pr-review}}` delegates through `{{SKILL:iterate}}`
+  `{{SKILL:apply-issues}}`, `{{SKILL:iterate}}` or `{{SKILL:merge-gate}}` in the delegation chain,
+  not only a direct sub-agent of one — `{{SKILL:merge-gate}}` delegates through `{{SKILL:iterate}}`
   and runs this gate in no phase of its own): do not abort. Record every remaining `blocked` surface as an open
   finding with `Action: {{SKILL:docs}}` in the run's review report per "Open review-finding
   reports", including its prompt suggestion, and name it in the completion summary. The run

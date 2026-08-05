@@ -30,12 +30,12 @@ runtime directory and completely gitignored.
 
 ## Configuration
 
-| Key              | Value       |
-| ---------------- | ----------- |
-| review.profile   | focused     |
-| worktree.enabled | true        |
-| tracker.mode     | local       |
-| skills.exclude   | (empty)     |
+| Key              | Value   |
+| ---------------- | ------- |
+| review.profile   | focused |
+| worktree.enabled | true    |
+| tracker.mode     | local   |
+| skills.exclude   | (empty) |
 ```
 
 The same configuration in a German envelope starts like this:
@@ -128,47 +128,47 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 ```md
 ## Configuration
 
-| Key                                      | Value                       |
-| ---------------------------------------- | --------------------------- |
-| review.profile                           | focused                     |
-| review.autoConfirmScope                  | false                       |
-| review.designDecisionSources             | standard                    |
-| review.validation                        | full                        |
-| applyReview.defaultCommitStrategy        | null                        |
-| applyReview.finalValidation              | full                        |
-| applyReview.stashPolicy                  | interactive                 |
-| applyReview.worktree.baseDir             | .effective-flow/.worktrees  |
-| applyReview.worktree.setup               | auto                        |
-| prReview.completion                      | ask                         |
-| prReview.requireAllChecks                | true                        |
-| prReview.checkWaitMinutes                | 20                          |
-| prReview.maxRounds                       | 3                           |
-| prReview.botWaitMinutes                  | 10                          |
-| prReview.bots                            | (empty)                     |
-| language.project                         | en                          |
-| language.source                          | en                          |
-| language.documentation.user              | en                          |
-| language.documentation.technical         | en                          |
-| language.workflow                        | en                          |
-| language.forge                           | en                          |
-| language.git                             | en                          |
-| plan.dir                                 | docs/plan                   |
-| concept.dir                              | docs/concept                |
-| delivery.baseBranch                      | origin/main                 |
-| delivery.branchPrefix                    | effective-flow              |
-| delivery.completion                      | merge                       |
-| delivery.returnBranch                    | auto                        |
-| delivery.mergeMethod                     | squash                      |
-| worktree.enabled                         | true                        |
-| worktree.setup                           | auto                        |
-| worktree.baseDir                         | .effective-flow/.worktrees  |
-| tracker.mode                             | local                       |
-| tracker.remoteToolOverride               | auto                        |
-| skills.enabled                           | true                        |
-| skills.include                           | (empty)                     |
-| skills.exclude                           | (empty)                     |
-| skills.agents.ui-implementer.include     | effective-web               |
-| skills.tools.docs.exclude                | humanizer                   |
+| Key                                  | Value                      |
+| ------------------------------------ | -------------------------- |
+| review.profile                       | focused                    |
+| review.autoConfirmScope              | false                      |
+| review.designDecisionSources         | standard                   |
+| review.validation                    | full                       |
+| applyReview.defaultCommitStrategy    | null                       |
+| applyReview.finalValidation          | full                       |
+| applyReview.stashPolicy              | interactive                |
+| applyReview.worktree.baseDir         | .effective-flow/.worktrees |
+| applyReview.worktree.setup           | auto                       |
+| mergeGate.completion                 | ask                        |
+| mergeGate.requireAllChecks           | true                       |
+| mergeGate.checkWaitMinutes           | 20                         |
+| mergeGate.maxRounds                  | 3                          |
+| mergeGate.botWaitMinutes             | 10                         |
+| mergeGate.bots                       | (empty)                    |
+| language.project                     | en                         |
+| language.source                      | en                         |
+| language.documentation.user          | en                         |
+| language.documentation.technical     | en                         |
+| language.workflow                    | en                         |
+| language.forge                       | en                         |
+| language.git                         | en                         |
+| plan.dir                             | docs/plan                  |
+| concept.dir                          | docs/concept               |
+| delivery.baseBranch                  | origin/main                |
+| delivery.branchPrefix                | effective-flow             |
+| delivery.completion                  | merge                      |
+| delivery.returnBranch                | auto                       |
+| delivery.mergeMethod                 | squash                     |
+| worktree.enabled                     | true                       |
+| worktree.setup                       | auto                       |
+| worktree.baseDir                     | .effective-flow/.worktrees |
+| tracker.mode                         | local                      |
+| tracker.remoteToolOverride           | auto                       |
+| skills.enabled                       | true                       |
+| skills.include                       | (empty)                    |
+| skills.exclude                       | (empty)                    |
+| skills.agents.ui-implementer.include | effective-web              |
+| skills.tools.docs.exclude            | humanizer                  |
 ```
 
 The seven explicit language rows illustrate every override. In a typical project, only
@@ -239,9 +239,9 @@ Controls [`/effective-flow apply`](./tools-implement.md) when it processes revie
 parallel review findings and cherry-picks their commits, while the latter selects the execution
 location of the overall workflow. See [Worktree and delivery](./worktree-and-delivery.md).
 
-## Block `prReview`
+## Block `mergeGate`
 
-Controls [`/effective-flow pr-review`](./tools-quality.md), the merge gate that drives an
+Controls [`/effective-flow merge-gate`](./tools-deliver.md), the merge gate that drives an
 already-open pull request to merge-readiness and, if allowed, merges it.
 
 | Key                    | Values                              | Default   | Meaning                                                                  |
@@ -252,22 +252,38 @@ already-open pull request to merge-readiness and, if allowed, merges it.
 | `maxRounds`            | Positive integer                    | `3`       | Upper bound on check-gate rounds for the whole run                       |
 | `botWaitMinutes`       | Positive integer                    | `10`      | Timeout, in minutes, for one wait after triggering an automatic reviewer |
 | `bots`                 | Comma list of logins                | `(empty)` | Automatic reviewers (e.g. Greptile) the gate waits for and answers       |
-| `bots.<login>.trigger` | Literal trigger comment text        | `(unset)` | Comment posted to re-trigger that reviewer when it has not run yet       |
+| `bots.<login>.trigger` | Literal trigger comment text        | `(unset)` | Comment posted to re-trigger that reviewer when it has not started yet   |
+| `bots.<login>.check`   | Commit-status or check-run context  | `(unset)` | Check that proves whether that reviewer is running or has run            |
 
-`prReview.completion: ask` (or an unset key) poses the entry question exactly once, at the start of
+`mergeGate.completion: ask` (or an unset key) poses the entry question exactly once, at the start of
 a gated run; a non-interactive delegation cannot be asked and behaves as `report`. An empty
-`prReview.bots` list means no automatic reviewer is expected, so the bot round is skipped rather
-than blocking the merge forever. `prReview.bots.<login>.trigger` is one dotted key per bot; a login
-containing brackets (for example `greptile-apps[bot]`) is a valid middle segment because the
-encoding splits on `.` only.
+`mergeGate.bots` list means no automatic reviewer is expected, so the bot round is skipped rather
+than blocking the merge forever. `mergeGate.bots.<login>.trigger` and `mergeGate.bots.<login>.check`
+are one dotted key each per bot; a login containing brackets (for example `greptile-apps[bot]`) is a
+valid middle segment because the encoding splits on `.` only.
 
-**Do not confuse `prReview.*` with the pre-existing `delivery.prReview`.** `delivery.prReview`
+`bots.<login>.check` names a commit status or check run that reviewer publishes, for example
+`recensor/review`. With it, the gate can tell a reviewer that is **still running** from one that has
+**not started**: it waits for the former and triggers only the latter. Leave it unset for a reviewer
+that publishes no such check (Greptile today), and the gate keeps its previous two-state behavior
+for that reviewer. See
+[Three reviewer states, not two](./tools-deliver.md#three-reviewer-states-not-two).
+
+**Do not confuse `mergeGate.*` with the pre-existing `delivery.prReview`.** `delivery.prReview`
 controls whether a delivery workflow (`build`, `fix`, `refactor`, and comparable tools) publishes
-**its own review findings** onto the pull request it just created. `prReview.*` configures the
-**separate `pr-review` gate tool**: whether that tool may merge, how long it waits, and which
-automatic reviewers it expects. The two keys sit next to each other alphabetically in this flat
-table and read similarly, but they control unrelated things – one is about publishing your own
-findings, the other is about driving somebody else's pull request to merge.
+**its own review findings** onto the pull request it just created. `mergeGate.*` configures the
+**separate merge-gate tool**: whether that tool may merge, how long it waits, and which automatic
+reviewers it expects. They control unrelated things – one is about publishing your own findings,
+the other is about driving somebody else's pull request to merge.
+
+**Legacy `prReview.*` keys.** The gate's keys were called `prReview.*` before the tool was renamed
+to `merge-gate`. A run still reads each legacy key when its `mergeGate.*` counterpart is absent, so
+an unmigrated project keeps its configured behavior instead of silently falling back to the
+defaults; the run reports once that it did so. A present `mergeGate.<key>` always wins over the
+legacy name, per key. This fallback lasts one generation: run
+[`/effective-flow setup`](./tools-setup.md), which carries the values over, removes the old rows,
+and names any legacy key it discarded because a `mergeGate.*` value already existed. No other tool
+writes configuration.
 
 The merge method itself is a delivery property, not a gate property, and lives under
 [Block `delivery`](#block-delivery) as `delivery.mergeMethod`.
@@ -310,7 +326,7 @@ dedicated delivery branch.
 | `branchPrefix` | String                             | `effective-flow` | Prefix of generated branch names (`<branchPrefix>/<skill>/<slug>`) |
 | `completion`   | `pr` / `merge` / `branch` / `null` | `merge`          | Open a PR, merge locally, retain the branch, or ask at run time    |
 | `returnBranch` | `auto` or a local branch name      | `auto`           | Checkout to restore after completion                               |
-| `mergeMethod`  | `squash` / `merge` / `rebase`      | `squash`         | Merge method used both by `pr` completion and by `pr-review`       |
+| `mergeMethod`  | `squash` / `merge` / `rebase`      | `squash`         | Merge method used both by `pr` completion and by `merge-gate`      |
 
 ## Block `worktree`
 
@@ -377,11 +393,11 @@ values are retained unless the user explicitly confirms a change.
 | `applyReview.stashPolicy`           | `interactive`                |
 | `applyReview.worktree.baseDir`      | `.effective-flow/.worktrees` |
 | `applyReview.worktree.setup`        | `auto`                       |
-| `prReview.completion`               | `ask` (ask at run time)      |
-| `prReview.requireAllChecks`         | `true`                       |
-| `prReview.checkWaitMinutes`         | `20`                         |
-| `prReview.maxRounds`                | `3`                          |
-| `prReview.botWaitMinutes`           | `10`                         |
+| `mergeGate.completion`              | `ask` (ask at run time)      |
+| `mergeGate.requireAllChecks`        | `true`                       |
+| `mergeGate.checkWaitMinutes`        | `20`                         |
+| `mergeGate.maxRounds`               | `3`                          |
+| `mergeGate.botWaitMinutes`          | `10`                         |
 | `language.project`                  | `en`                         |
 | `worktree.enabled`                  | `true`                       |
 | `delivery.completion`               | `merge`                      |

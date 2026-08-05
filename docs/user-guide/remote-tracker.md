@@ -53,8 +53,8 @@ Minimum versions: `gh` 2.0.0 and `tea` 0.14.2. Effective Flow checks them once a
 remote run, so an unsupported CLI surfaces before any work is done rather than at the delivery
 point. `tea` 0.14.2 is the first release that can create a pull request from a repository slug
 together with an explicit head branch, which is the form Effective Flow uses. Three of the
-`pr-review` merge gate's operations need a higher `gh` floor of their own; see
-[PR-review gate operations](#pr-review-gate-operations).
+operations behind the `merge-gate` tool need a higher `gh` floor of their own; see
+[Merge gate operations](#merge-gate-operations).
 
 `tracker.remoteToolOverride` is a forge setting. It is ignored while the target is `external`.
 
@@ -237,9 +237,9 @@ body discloses the same thing the gate withheld – and a PR is public as soon a
 Decide the wording of that delivery yourself, or fix security findings in a private fork before
 publishing.
 
-## PR-review gate operations
+## Merge gate operations
 
-[`/effective-flow pr-review`](./tools-quality.md) reads pull-request status, waits for checks, and
+[`/effective-flow merge-gate`](./tools-deliver.md) reads pull-request status, waits for checks, and
 merges through four additional forge operations of the same remote-tracker helper. Like all PR
 work, they are inherently forge-bound: they never evaluate `tracker.mode` and only need a Git
 repository, an `origin` remote, and an authenticated CLI.
@@ -256,19 +256,24 @@ repository, an `origin` remote, and an authenticated CLI.
 flag the gate depends on most, only landed in 2.50.0; the other flags those three operations use
 (`--watch`, `--match-head-commit`, `--required`) are older. On a `gh` below 2.50.0 – common on a
 distro-packaged install – those three capabilities report `UNSUPPORTED_CAPABILITY` instead of
-failing mid-run on an unknown flag, and `pr-review` degrades to report-only exactly as on Forgejo.
+failing mid-run on an unknown flag, and `merge-gate` degrades to report-only exactly as on Forgejo.
 If you see that message on GitHub, upgrade `gh` rather than suspect your repository's forge access.
 `viewer-read` needs no flag beyond every `gh` 2.x line and no scope beyond an authenticated `gh`
 already holds, so it is unaffected by that version floor; it maps to `gh api user`. **Forgejo**
-currently declares all four operations unsupported outright, so `pr-review` degrades to
+currently declares all four operations unsupported outright, so `merge-gate` degrades to
 report-only there too and states that reason – nothing in the gate can run on Forgejo until the
 adapter supports at least `pr-status-read`. `viewer-read` stays unsupported on Forgejo by design,
 not by version: the installed `tea` adapter only exposes the locally configured login, which is a
 client-side setting rather than the account the forge attributes a write to, and reporting one as
 the other would let the gate mistake a stranger's comment for its own.
 
-Several behaviors worth knowing if you inspect the gate's output or a `pr-review` transcript:
+Several behaviors worth knowing if you inspect the gate's output or a `merge-gate` transcript:
 
+- **A configured reviewer check is read from the same check list, not from a separate call.** The
+  context named in `mergeGate.bots.<login>.check` is matched against the normalized check list that
+  `pr-status-read` already returns. A GitHub commit status (such as `recensor/review`) and a check
+  run are indistinguishable there, so either form works, and a context that never appears at all is
+  reported by name rather than treated as passed.
 - **`pr-checks-wait` runs two `gh` commands, not one.** `gh` rejects `--watch` together with
   `--json` outright, so a single call can no longer do both jobs. The operation first watches the
   checks to their natural conclusion (or the supplied timeout) and discards that step's exit
@@ -305,7 +310,7 @@ Several behaviors worth knowing if you inspect the gate's output or a `pr-review
   reported" in either case, and the two are not distinguishable from that message alone. The read
   step recognizes exactly that combination (the `--required` flag plus that stderr phrase) and turns
   it into a successful result with `requiredChecksDefined: false` instead of failing the operation
-  with `COMMAND_FAILED`; without this, `prReview.requireAllChecks: false` would fail the wait on
+  with `COMMAND_FAILED`; without this, `mergeGate.requireAllChecks: false` would fail the wait on
   every repository where required checks simply have not reported yet. The watch step never carries
   `--required` for this reason – filtering it would make it return immediately on such a branch
   instead of blocking, which is the one thing it exists for, so the required-checks criterion is
@@ -367,8 +372,9 @@ comment on the issue.
 
 ## See also
 
-- [Configuration](./configuration.md) – complete field reference for `tracker` and `prReview`
-- [Quality tools](./tools-quality.md) – `/effective-flow review` and `/effective-flow pr-review`
+- [Configuration](./configuration.md) – complete field reference for `tracker` and `mergeGate`
+- [Quality tools](./tools-quality.md) – `/effective-flow review`
+- [Delivery tools](./tools-deliver.md) – `/effective-flow merge-gate`
 - [Implementation tools](./tools-implement.md) – `/effective-flow apply`
 - [Troubleshooting](./troubleshooting.md) – missing or unauthenticated CLI, unresolved external
   connection

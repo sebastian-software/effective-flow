@@ -1307,20 +1307,50 @@ const PULL_REQUEST_MARKERS = [
 // The merge gate writes none. It recognizes its own trigger comment across runs through
 // authorship plus the configured trigger text, so a marker would only put the tool's name
 // into a body posted under the operator's own account.
-const GATE_MARKER_TOKEN = /effective-flow-pr-gate/;
+//
+// The retired literal is read out of the marker contract that documents its removal instead of
+// being pinned here. Pinning it is what let the token rot through the rename: a marker
+// reintroduced today would be spelled after the tool's current name, and a token frozen on the
+// old spelling cannot see it. The current name is therefore covered too, and the enumeration
+// below makes the spelling question moot for anything shaped like a marker.
+function gateMarkerToken() {
+  const contract = source('src/shared/pr-review-comments.md');
+  const [, retired] = contract.match(/former third marker \(`(effective-flow-[a-z0-9-]+)`\)/) ?? [];
+  assert.ok(retired, 'the marker contract must still name the retired gate marker it removed');
+  return new RegExp(`${retired}|effective-flow-merge-gate`);
+}
 
-test('the pr-review merge gate is exposed in the "Ensure quality" group', () => {
+// Every HTML marker a source stamps or reads, as that source spells it.
+function markersIn(text) {
+  return new Set(
+    Array.from(text.matchAll(/<!-- (effective-flow-[a-z0-9-]+) -->/g), ([, name]) => name),
+  );
+}
+
+test('the merge gate is exposed in the "Deliver changes" group', () => {
   assert.ok(
-    existsSync(new URL('src/tools/pr-review.md', repositoryRoot)),
-    'the exposed pr-review gate needs its own tool source',
+    existsSync(new URL('src/tools/merge-gate.md', repositoryRoot)),
+    'the exposed merge gate needs its own tool source',
   );
 
   // `TOOL_GROUPS` cannot be imported: build.mjs runs the entire build on load. The group is
-  // sliced instead, so a `pr-review` entry that drifted into a neighboring intent group
+  // sliced instead, so a `merge-gate` entry that drifted into a neighboring intent group
   // cannot satisfy this — the duplicate case is already covered by build.mjs's own guard.
+  // The gate belongs beside `commit` and `pr`: it drives an existing pull request to merge,
+  // it produces no findings of its own, and grouping it under "Ensure quality" is what made
+  // it read as a reviewer.
+  //
+  // Membership is not enough: the router renders a group's members in array order, and
+  // `commit` → `pr` → `merge-gate` is the delivery chain in the order it is walked. A gate
+  // listed first would present the group as "merge, then commit", which is the reading the
+  // group move exists to remove. The whole sequence is therefore pinned.
+  const deliver = section(source('build.mjs'), "title: 'Deliver changes',", '\n  {');
+  assert.match(deliver, /tools: \['commit', 'pr', 'merge-gate'\]/);
+
+  // And the group it left keeps only the tool that actually reviews.
   const quality = section(source('build.mjs'), "title: 'Ensure quality',", '\n  {');
   assert.match(quality, /tools: \[[^\]]*'review'[^\]]*\]/);
-  assert.match(quality, /tools: \[[^\]]*'pr-review'[^\]]*\]/);
+  assert.doesNotMatch(quality, /'merge-gate'/);
 });
 
 test('the two pull-request markers stay distinct and free of substring collisions', () => {
@@ -1388,8 +1418,9 @@ test('the merge gate writes no marker of its own', () => {
   // authorship plus the configured trigger text now identify its one own write across runs,
   // and a marker in the raw body would announce which tool composed a comment that manual
   // mode posts under the operator's own account.
+  const token = gateMarkerToken();
   assert.equal(
-    PULL_REQUEST_MARKERS.some((marker) => GATE_MARKER_TOKEN.test(marker)),
+    PULL_REQUEST_MARKERS.some((marker) => token.test(marker)),
     false,
     'the gate marker must not be listed among the markers that are written',
   );
@@ -1398,26 +1429,37 @@ test('the merge gate writes no marker of its own', () => {
   // a marker nobody may write, or a check for one nobody writes — the dead contract this
   // change removes. The historical note belongs in the marker contract in
   // `src/shared/pr-review-comments.md`, which is why that file is not scanned here.
-  for (const file of ['src/tools/pr-review.md', 'src/tools/iterate.md']) {
+  //
+  // The named token catches the two spellings a reintroduction would plausibly use; the
+  // enumeration below catches every other one, because it accepts no marker in these two files
+  // beyond the two that are actually written. A third marker of any name — gate-flavored or
+  // not — fails here rather than waiting for someone to guess its spelling.
+  for (const file of ['src/tools/merge-gate.md', 'src/tools/iterate.md']) {
     assert.doesNotMatch(
       source(file),
-      GATE_MARKER_TOKEN,
+      token,
       `${file} must neither write nor read the merge gate marker`,
     );
+    for (const marker of markersIn(source(file))) {
+      assert.ok(
+        PULL_REQUEST_MARKERS.includes(`<!-- ${marker} -->`),
+        `${file} names a marker outside the two that are written: ${marker}`,
+      );
+    }
   }
 });
 
 test('the merge gate evaluates bot authorship before it consults the identity lookup', () => {
-  const phase1 = flat(section(source('src/tools/pr-review.md'), '### Phase 1'));
+  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
 
   // The rules are an ordered evaluation, not a set of independent conditions.
   assert.match(phase1, /\border\b/i, 'Phase 1 must state that its rules are evaluated in order');
 
   // Anchored on the tokens that carry each rule — the configured-bot key, the thread state,
   // and the key that supplies the trigger text — so the order can be pinned without pinning a
-  // sentence. `prReview.bots` is matched with its backticks, which keeps the bot rule apart
+  // sentence. `mergeGate.bots` is matched with its backticks, which keeps the bot rule apart
   // from the longer trigger key that contains it.
-  ordered(phase1, '`prReview.bots`', 'resolved', '`prReview.bots.<login>.trigger`');
+  ordered(phase1, '`mergeGate.bots`', 'resolved', '`mergeGate.bots.<login>.trigger`');
 
   // This is the assertion that guards app mode. `viewer-read` maps to `gh api user`, which
   // can legitimately fail on an installation token, so the bot rule must be decided from
@@ -1426,7 +1468,7 @@ test('the merge gate evaluates bot authorship before it consults the identity lo
   assert.match(
     phase1,
     near(
-      '(?:`prReview\\.bots`|`authorType`)',
+      '(?:`mergeGate\\.bots`|`authorType`)',
       '(?:(?:not|never|no|without)[^.]{0,60}(?:identity|viewer-?read)|(?:identity|viewer-?read)[^.]{0,60}(?:not|never)\\b)',
       700,
     ),
@@ -1435,7 +1477,7 @@ test('the merge gate evaluates bot authorship before it consults the identity lo
 });
 
 test("a resolved thread excludes only this tool's own items", () => {
-  const phase1 = flat(section(source('src/tools/pr-review.md'), '### Phase 1'));
+  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
 
   // The evaluation is a numbered list, so the rule that carries the resolved-thread case is
   // sliced out of it: a neighbouring rule names `viewer-read` and bot authorship too, and
@@ -1497,7 +1539,7 @@ test("rule 2's marker enumeration stays in step with the helper's marker table",
   // divergence into a build failure, so adding a writer forces a conscious choice about the guard
   // rather than silently widening or silently under-covering it.
   const { COMMENT_MARKERS } = await import('../src/scripts/remote-tracker-core.mjs');
-  const phase1 = flat(section(source('src/tools/pr-review.md'), '### Phase 1'));
+  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
   const rule = phase1.split(/(?=\s\d+\.\s)/).find((item) => /\bresolved\b/i.test(item));
 
   // Only the pull-request writers belong in this rule. `planning` and `apply` stamp issue
@@ -1525,7 +1567,7 @@ test("rule 2's marker enumeration stays in step with the helper's marker table",
 });
 
 test('the merge gate excludes its own top-level summary comment by author plus leading marker', () => {
-  const phase1 = flat(section(source('src/tools/pr-review.md'), '### Phase 1'));
+  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
 
   // A top-level comment has no resolved state, so before this rule existed a summary comment from
   // a directly invoked `iterate` run fell through to the catch-all and blocked the merge forever.
@@ -1556,14 +1598,14 @@ test('the merge gate excludes its own top-level summary comment by author plus l
 });
 
 test('the merge gate recognizes its own trigger comment by identity plus the complete trigger text', () => {
-  const phase1 = flat(section(source('src/tools/pr-review.md'), '### Phase 1'));
+  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
 
   // Both halves are one rule, and both are anchored on machine tokens: the operation that
   // supplies the authenticated login, and the configuration key that supplies the text.
   assert.match(phase1, /viewer-?read/i, 'Phase 1 must name the identity operation');
   assert.match(
     phase1,
-    near('viewer-?read', '`prReview\\.bots\\.<login>\\.trigger`', 500),
+    near('viewer-?read', '`mergeGate\\.bots\\.<login>\\.trigger`', 500),
     'identity and configured trigger text must be one rule, not two independent ones',
   );
 
@@ -1582,13 +1624,13 @@ test('the merge gate recognizes its own trigger comment by identity plus the com
 });
 
 test('a deferred bot finding is named in chat instead of answered in its thread', () => {
-  const prReview = flat(source('src/tools/pr-review.md'));
+  const mergeGate = flat(source('src/tools/merge-gate.md'));
 
   // The gate's own writes are what broke the previous contract across runs: an unresolved
   // reply left behind is read as a human comment by the next run. The report therefore leaves
   // the pull request entirely.
   assert.match(
-    prReview,
+    mergeGate,
     near(
       '\\bchat\\b',
       '(?:writes? nothing|no (?:thread )?repl|not repl|never repl|leaves? [^.]{0,40}untouched)',
@@ -1600,14 +1642,14 @@ test('a deferred bot finding is named in chat instead of answered in its thread'
   // Resolving such a thread would signal "handled" for a finding nobody handled, so the gate
   // resolves nothing of its own either.
   assert.match(
-    prReview,
+    mergeGate,
     /(?:resolves? nothing|no thread resolution|resolution of any kind|nothing[^.]{0,40}resolv)/i,
     'the gate must resolve no thread of its own',
   );
 });
 
 test('an unprovable identity activates the merge gate guard and binds only the identity rule', () => {
-  const phase1 = flat(section(source('src/tools/pr-review.md'), '### Phase 1'));
+  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
 
   // Fail-closed direction: an identity the gate cannot establish makes the item count and the
   // guard activate, never the reverse. The reverse reading is the one that merges a pull
@@ -1718,7 +1760,7 @@ test('iterate lets a caller suppress its summary comment and posts it by default
 });
 
 test('the merge gate announces the exact suppression literal iterate parses', () => {
-  const contract = section(source('src/tools/pr-review.md'), '## Delegation contract', '\n## ');
+  const contract = section(source('src/tools/merge-gate.md'), '## Delegation contract', '\n## ');
 
   // The suppression belongs in the delegation contract rather than in one phase: `iterate`
   // posts one summary comment per delegated round under the operator's own account in manual
@@ -1743,7 +1785,7 @@ test('the merge gate announces the exact suppression literal iterate parses', ()
 });
 
 test('every claim that the trigger comment is the only own write names what makes it true', () => {
-  const prReview = flat(source('src/tools/pr-review.md'));
+  const mergeGate = flat(source('src/tools/merge-gate.md'));
 
   // The claim is only true together with the suppression of the delegated run's summary
   // comment, so a sentence that makes it without naming that qualifier is the contradiction
@@ -1753,7 +1795,7 @@ test('every claim that the trigger comment is the only own write names what make
   // Restricted to claims that mention the trigger comment. Without that, "This is the only kind
   // of Git write this workflow performs" would demand a summary-comment qualifier it has no
   // business carrying.
-  const claims = prReview
+  const claims = mergeGate
     .split(/(?<=\.)\s+/)
     .filter(
       (sentence) =>
@@ -1761,8 +1803,8 @@ test('every claim that the trigger comment is the only own write names what make
     );
 
   for (const claim of claims) {
-    const start = prReview.indexOf(claim);
-    const window = prReview.slice(Math.max(0, start - 400), start + claim.length + 400);
+    const start = mergeGate.indexOf(claim);
+    const window = mergeGate.slice(Math.max(0, start - 400), start + claim.length + 400);
     assert.match(
       window,
       /suppress|no summary|without[^.]{0,40}summary/i,
@@ -1772,7 +1814,7 @@ test('every claim that the trigger comment is the only own write names what make
 });
 
 test('only the bot threads this run implemented can block the merge', () => {
-  const preconditions = flat(section(source('src/tools/pr-review.md'), '### Phase 4'));
+  const preconditions = flat(section(source('src/tools/merge-gate.md'), '### Phase 4'));
 
   // Unscoped, this precondition was unsatisfiable by construction: a deferred or rejected
   // finding gets no reply and no resolution by design, so "every bot thread is answered or
@@ -1804,12 +1846,12 @@ test('only the bot threads this run implemented can block the merge', () => {
 });
 
 test('the trigger idempotency check rests on evidence the forge actually exposes', () => {
-  const phase3 = flat(section(source('src/tools/pr-review.md'), '### Phase 3'));
+  const phase3 = flat(section(source('src/tools/merge-gate.md'), '### Phase 3'));
   const IDEMPOTENCY = '(?:idempot|second trigger|already been posted|already posted)';
 
   // The evidence is authorship plus the exact body plus the timestamps — all normalized
   // fields. The earlier form asked for "the configured bot login", a value no configuration
-  // holds: a `prReview.bots` entry is a reviewer the gate waits for, never the account it
+  // holds: a `mergeGate.bots` entry is a reviewer the gate waits for, never the account it
   // posts as. App mode therefore had no idempotency at all and re-triggered on every run.
   assert.match(phase3, near(IDEMPOTENCY, 'trigger text', 500), 'the body is the trigger text');
   assert.match(
@@ -1829,7 +1871,7 @@ test('the trigger idempotency check rests on evidence the forge actually exposes
   );
   assert.match(
     phase3,
-    near('`prReview\\.bots`', '(?:never the author|cannot exist|no configuration names)', 500),
+    near('`mergeGate\\.bots`', '(?:never the author|cannot exist|no configuration names)', 500),
     'the configured reviewer list must be stated not to name the account the gate posts as',
   );
 
@@ -1842,14 +1884,14 @@ test('the trigger idempotency check rests on evidence the forge actually exposes
   );
 });
 
-test('pr-review states its no-commit/no-push boundary and delegates every other change to iterate', () => {
-  const prReview = flat(source('src/tools/pr-review.md'));
+test('merge-gate states its no-commit/no-push boundary and delegates every other change to iterate', () => {
+  const mergeGate = flat(source('src/tools/merge-gate.md'));
 
   // Both prohibitions must sit close to the stated exception, so a later edit that keeps
   // "no commit" but drops "no push" (or vice versa) cannot pass silently.
-  assert.match(prReview, /performs no `git commit` and no push of its own/);
+  assert.match(mergeGate, /performs no `git commit` and no push of its own/);
   assert.match(
-    prReview,
+    mergeGate,
     /with exactly one exception:.{0,400}`BEHIND`.{0,400}merges `origin\/<base>` into the head branch as\s*a merge commit and pushes that branch normally/,
   );
   // Two separate contracts, each asserted on meaning rather than on a sentence, so that rewording
@@ -1857,30 +1899,30 @@ test('pr-review states its no-commit/no-push boundary and delegates every other 
   //
   // (a) The exception is exhaustive: nothing else may be committed or pushed.
   assert.match(
-    prReview,
+    mergeGate,
     /(complete set of Git writes|no Git write of any other kind|no other (?:Git )?write)/,
   );
   // (b) The exception is a KIND of write, not a one-time allowance. A branch can fall behind again
   //     in a later round, and a "single write" reading would refuse that second, legitimate repair.
-  assert.match(prReview, /(a \*\*kind\*\* of write|every Phase-2 round|each occurrence)/);
-  assert.match(prReview, /Every other code change is delegated to `\{\{SKILL:iterate\}\}`/);
+  assert.match(mergeGate, /(a \*\*kind\*\* of write|every Phase-2 round|each occurrence)/);
+  assert.match(mergeGate, /Every other code change is delegated to `\{\{SKILL:iterate\}\}`/);
 });
 
-test('setup carries the prReview.* and delivery.mergeMethod configuration keys with their defaults', () => {
+test('setup carries the mergeGate.* and delivery.mergeMethod configuration keys with their defaults', () => {
   const setup = source('src/tools/setup.md');
 
   // The block-9 wizard table pairs each dotted key with its default in the third column.
   const table = section(
     setup,
-    '| Key                             | Values                       | Default   |',
+    '| Key                              | Values                             | Default   |',
   );
   for (const [key, value] of [
-    ['prReview.completion', 'ask'],
-    ['prReview.requireAllChecks', 'true'],
-    ['prReview.checkWaitMinutes', '20'],
-    ['prReview.maxRounds', '3'],
-    ['prReview.botWaitMinutes', '10'],
-    ['prReview.bots', '(empty)'],
+    ['mergeGate.completion', 'ask'],
+    ['mergeGate.requireAllChecks', 'true'],
+    ['mergeGate.checkWaitMinutes', '20'],
+    ['mergeGate.maxRounds', '3'],
+    ['mergeGate.botWaitMinutes', '10'],
+    ['mergeGate.bots', '(empty)'],
   ]) {
     assert.match(
       tableRow(table, `\`${key}\``),
@@ -1888,30 +1930,31 @@ test('setup carries the prReview.* and delivery.mergeMethod configuration keys w
       `setup.md's block-9 table must pair ${key} with its default ${value}`,
     );
   }
-  assert.match(table, /`prReview\.bots\.<login>\.trigger`/);
+  assert.match(table, /`mergeGate\.bots\.<login>\.trigger`/);
+  assert.match(table, /`mergeGate\.bots\.<login>\.check`/);
 
   // delivery.mergeMethod is asked in block 5 (delivery), documented as prose rather than a
   // table row, so its default is matched by proximity to the key instead.
   assert.match(flat(setup), /`delivery\.mergeMethod` \(squash\/merge\/rebase, default `squash`/);
 });
 
-test('the user guide disambiguates prReview.* from the pre-existing delivery.prReview key', () => {
+test('the user guide disambiguates mergeGate.* from the pre-existing delivery.prReview key', () => {
   const docs = source('docs/user-guide/configuration.md');
   const flatDocs = flat(docs);
 
   for (const key of [
-    'prReview.completion',
-    'prReview.requireAllChecks',
-    'prReview.checkWaitMinutes',
-    'prReview.maxRounds',
-    'prReview.botWaitMinutes',
+    'mergeGate.completion',
+    'mergeGate.requireAllChecks',
+    'mergeGate.checkWaitMinutes',
+    'mergeGate.maxRounds',
+    'mergeGate.botWaitMinutes',
     'delivery.mergeMethod',
   ]) {
     assert.match(flatDocs, new RegExp(key.replace(/\./g, '\\.')));
   }
 
-  // The dedicated "Block `prReview`" table carries the untraded key/default pairs.
-  const block = section(docs, '## Block `prReview`', '\n## ');
+  // The dedicated "Block `mergeGate`" table carries the untraded key/default pairs.
+  const block = section(docs, '## Block `mergeGate`', '\n## ');
   assert.match(tableRow(block, '`completion`'), /`ask`/);
   assert.match(tableRow(block, '`requireAllChecks`'), /`true`/);
   assert.match(tableRow(block, '`checkWaitMinutes`'), /`20`/);
@@ -1919,27 +1962,423 @@ test('the user guide disambiguates prReview.* from the pre-existing delivery.prR
   assert.match(tableRow(block, '`botWaitMinutes`'), /`10`/);
   assert.match(tableRow(block, '`bots`'), /`\(empty\)`/);
 
-  // The two keys sort adjacent in the flat dotted-key table, so the disambiguation must be
-  // an explicit sentence naming both, not merely implied by separate sections.
+  // The rename removed the shared name but not the confusion: `delivery.prReview` is still a
+  // configuration key about publishing this run's own findings, while the gate's block is about
+  // driving somebody else's pull request. The disambiguation must stay an explicit sentence
+  // naming both, not merely implied by separate sections.
   assert.match(
     flat(block),
-    /Do not confuse `prReview\.\*` with the pre-existing `delivery\.prReview`/,
+    /Do not confuse `mergeGate\.\*` with the pre-existing `delivery\.prReview`/,
   );
 });
 
-test('skill-ownership.json lists pr-review as a delegate consumer of the pr-review skill', () => {
+test('skill-ownership.json names no merge gate among the consumers of the pr-review skill', () => {
+  // The manifest used to declare the gate as a delegate consumer of the central `pr-review`
+  // skill, which the gate's own source forbids in bold: that skill brings its own approve and
+  // request-changes submissions, its own CI recovery, and its own summary conventions, and this
+  // workflow allows none of them. The row survived only because consumer and skill shared a
+  // name and it read as a tautology. Asserted for both names, so the entry cannot come back
+  // under the new one either.
   const ownership = JSON.parse(source('docs/developer-guide/skill-ownership.json'));
   const entry = ownership.relationships.find((skill) => skill.skill === 'pr-review');
   assert.ok(entry, 'skill-ownership.json must list a "pr-review" skill entry');
-  const consumer = entry.consumers.find((c) => c.consumer === 'pr-review');
-  assert.ok(consumer, 'the "pr-review" skill entry must list "pr-review" as a consumer');
-  assert.equal(consumer.classification, 'delegate');
+  for (const forbidden of ['pr-review', 'merge-gate']) {
+    assert.equal(
+      entry.consumers.some((consumer) => consumer.consumer === forbidden),
+      false,
+      `the "pr-review" skill entry must not list "${forbidden}" as a consumer`,
+    );
+  }
 
-  const explanation = source('docs/developer-guide/skill-ownership.md');
+  // The empty slot needs its reason asserted too. An absence proves nothing on its own: delete the
+  // gate's exclusion section and the manifest row above stays correct-looking while the rule that
+  // makes it correct is gone — and the next person reading a missing row reads it as an oversight
+  // and puts it back. The three named behaviours are the substance: they are what the skill would
+  // bring and what this workflow forbids, and they are why the gate is a non-consumer rather than
+  // an unlisted one.
+  const gate = flat(source('src/tools/merge-gate.md'));
   assert.match(
-    explanation,
-    /`pr-review` the Effective Flow tool, and `pr-review` the central skill/,
+    gate,
+    /Do not load the central `pr-review` skill/,
+    'the gate must forbid loading the central pr-review skill',
   );
+  for (const forbidden of [
+    'approve and request-changes submissions',
+    'CI recovery',
+    'summary conventions',
+  ]) {
+    assert.ok(
+      gate.includes(forbidden),
+      `the exclusion must name what the skill brings that this workflow forbids: ${forbidden}`,
+    );
+  }
+
+  // And the judgment itself is not dropped, only relocated — otherwise the exclusion would read as
+  // "this gate reviews without a reviewer".
+  assert.match(
+    gate,
+    near('`\\{\\{SKILL:iterate\\}\\}` loads it', '(?:Mode C|handoff)', 200),
+    'the excluded judgment must be stated as happening one delegation away',
+  );
+});
+
+test('the review-publication fragments and their marker survive the merge-gate rename', () => {
+  // These three carry the *review-publication* concept, not the gate: the fragments describe how
+  // a delivery publishes its own findings onto a pull request, and the marker stamps those
+  // comments. An over-eager `pr-review` → `merge-gate` sweep would rename them along with the
+  // gate and recreate exactly the confusion the rename removed — and the marker rename would
+  // additionally break idempotency against every comment already posted under the old literal.
+  for (const path of ['src/shared/pr-review-comments.md', 'src/shared/pr-review-integration.md']) {
+    assert.ok(existsSync(new URL(path, repositoryRoot)), `${path} must keep its name`);
+  }
+
+  // Collected from the sources rather than pinned to one file, so moving the marker between
+  // fragments stays green while dropping or renaming it fails.
+  const marker = '<!-- effective-flow-pr-review -->';
+  const carriers = ['src/shared', 'src/tools', 'src/agents'].flatMap((directory) =>
+    readdirSync(new URL(`${directory}/`, repositoryRoot))
+      .filter((entry) => entry.endsWith('.md'))
+      .filter((entry) => source(`${directory}/${entry}`).includes(marker)),
+  );
+  assert.ok(carriers.length > 0, `no source carries the review-publication marker ${marker}`);
+});
+
+test('the shared reviewer-state contract is loaded by the gate and by the guard', () => {
+  // One block, two consumers, on purpose: the gate decides whether to trigger and wait, and
+  // `iterate`'s guard decides whether to classify at all. If each derived "is this reviewer
+  // still running?" for itself, the two could disagree about the same pull request — the gate
+  // waiting for a reviewer the guard just declared finished, or the reverse.
+  assert.ok(
+    existsSync(new URL('src/shared/review-bot-state.md', repositoryRoot)),
+    'the shared reviewer-state contract needs its own fragment',
+  );
+
+  for (const path of ['src/tools/merge-gate.md', 'src/tools/iterate.md']) {
+    // The include fence, not a mere mention: a tool that only names the fragment in prose never
+    // receives its rules.
+    assert.match(
+      source(path),
+      /```(?:lazy-)?include\n(?:[a-z0-9-]+\n)*review-bot-state\n(?:[a-z0-9-]+\n)*```/,
+      `${path} must load review-bot-state through an include fence`,
+    );
+  }
+});
+
+test('the reviewer-state contract pins its three states and its fail-closed precedence', () => {
+  const state = source('src/shared/review-bot-state.md');
+  const states = flat(section(state, '### The three states'));
+  const precedence = flat(section(state, '### Precedence'));
+
+  // Being included proves nothing about what is included. This fragment is the single source of
+  // the reviewer-state rules for both consumers, and every rule below decides a merge
+  // precondition: each one, silently inverted, merges a head no reviewer looked at.
+  for (const name of ['running', 'not started', 'has run']) {
+    assert.match(
+      states,
+      new RegExp(`\\*\\*${name}\\*\\*`),
+      `the contract must define the ${name} state`,
+    );
+  }
+
+  // Only the primary signal can prove "running". A consumer that read the fallback's
+  // "not started" as "nothing is happening" would trigger a reviewer already at work.
+  assert.match(
+    precedence,
+    near('`status: PENDING`', '\\*\\*running\\*\\*', 120),
+    'a pending check must map to running',
+  );
+
+  // A terminal check is a finished review whatever it concluded. Reading a red review as
+  // "has not run" re-triggers a reviewer that already answered.
+  assert.match(
+    precedence,
+    near('`status: COMPLETED`', '\\*\\*has run\\*\\*', 120),
+    'a completed check must map to has run',
+  );
+  assert.match(
+    precedence,
+    near('\\*\\*has run\\*\\*', 'whatever its `conclusion`', 120),
+    'the conclusion must be stated not to decide whether the reviewer ran',
+  );
+
+  // The three fail-closed rules, each asserted in its own direction. Flipping any one of them
+  // makes the gate's merge precondition pass for a reviewer that never ran — a misconfigured
+  // context, an app that is not installed, or a queued run.
+  assert.match(
+    precedence,
+    near('no matching entry', '\\*\\*not started\\*\\*', 200),
+    'a context that never appears must count as not started, never as has run',
+  );
+  // Bound tightly and matched on the resolution itself: a wider window reaches the word
+  // "fallback" in rule 2's own opening and would hold even for a `checksReported: false` that
+  // resolved a state outright, which is the difference between "unavailable" and "negative".
+  assert.match(
+    precedence,
+    near(
+      '`checksReported: false`',
+      '(?:falls through to rule 2|unavailable rather than negative)',
+      160,
+    ),
+    'an unavailable check list must fall through to the fallback rather than resolve a state',
+  );
+  assert.match(
+    precedence,
+    near('unprovable', 'not started', 200),
+    'anything unprovable must count as not started',
+  );
+  assert.match(
+    precedence,
+    near('unprovable', '(?:in no other|and in no other direction|never the opposite)', 300),
+    'the fail-closed direction must be stated as the only one, not as a preference',
+  );
+
+  // And the fallback must not be readable as a running signal, which is the drift that would let
+  // the two consumers disagree about the same pull request: the gate waiting for a reviewer the
+  // guard just declared finished, or the guard holding a run the gate is not waiting for.
+  assert.match(
+    precedence,
+    /never reports? running|says nothing whatsoever about what is in flight/i,
+    'the fallback must state that it can never report running',
+  );
+});
+
+test('the review-guard switch is announced by the gate and required by iterate', () => {
+  // A caller-contract line is a literal two files must agree on, and the failure is silent on
+  // one side: if the gate stops announcing it, every delegated round re-derives the reviewer
+  // state and either duplicates the gate's wait or blocks against a reviewer the gate is
+  // deliberately not waiting for. Both ends are therefore asserted in one test.
+  const SWITCH = 'Review guard: established';
+
+  // The requiring end. Sliced to its own Phase 0 item, because the item filter and the
+  // summary-comment suppression are almost identically shaped contracts with their own `ABORT`.
+  const exemption = flat(
+    section(source('src/tools/iterate.md'), '### Phase 0')
+      .split(/(?=\n\d+\.\s)/)
+      .find((item) => item.includes(SWITCH)) ?? '',
+  );
+  assert.ok(exemption, `iterate Phase 0 must parse the literal \`${SWITCH}\` switch`);
+  assert.match(exemption, /caller|delegat/i, 'the switch must be a caller contract, not user text');
+  assert.match(
+    exemption,
+    /(?:without that line|absent|unset|not announced|no such line)/i,
+    'the unannounced case must be named, so the guard stays the default',
+  );
+
+  // Fail closed on a form it cannot parse. Continuing as an unguarded run is the resolution that
+  // must not happen: the caller believes the guard is answered for, so a misread line would let
+  // the run classify a thread set a reviewer is still adding to.
+  //
+  // The exact return value, not a bare `ABORT`: this item also contains the word inside prose
+  // about what the run does *not* do, so a rule rewritten to "ignore the line and continue —
+  // never `ABORT` for a misread switch" would satisfy a bare token while inverting the contract.
+  assert.match(
+    exemption,
+    /ABORT: unparseable review-guard switch/,
+    'an unparseable review-guard switch must return that exact literal',
+  );
+
+  // Anchored on `unguarded`, which occurs only in the sentence being protected. `guard` alone
+  // matches the item's own opening sentence and would hold whatever the fail-closed rule said.
+  assert.match(
+    exemption,
+    near('(?:never|not)\\s+continue', 'unguarded', 120),
+    'the aborting run must be stated not to continue as an unguarded one',
+  );
+
+  // The announcing end.
+  const contract = section(source('src/tools/merge-gate.md'), '## Delegation contract', '\n## ');
+  const item = flat(contract.split(/\n-\s/).find((entry) => entry.includes(SWITCH)) ?? '');
+  assert.ok(item, `the delegation contract must announce the literal \`${SWITCH}\``);
+  assert.match(
+    item,
+    /mandatory|every delegation|never delegate without/i,
+    'the exemption must bind every delegation, not an unspecified subset',
+  );
+});
+
+test("iterate's review-in-flight guard is exempted by the switch, never by a filter", () => {
+  const guard = flat(section(source('src/tools/iterate.md'), '### Phase 1.5'));
+  assert.ok(guard, 'iterate must carry a review-in-flight guard phase');
+
+  // The exemption is its own caller-contract line. Coupling it to `Item filter:` was the obvious
+  // shortcut and the wrong one: a filter states the scope of a run, never that the reviewer state
+  // is known, so any future workflow that filtered for scoping would lose the guard silently.
+  assert.match(
+    guard,
+    /`?Review guard: established`?/,
+    'the guard must name the caller-contract switch that exempts it',
+  );
+
+  // The negative belongs on the skip list, which is the only place an exemption can be added, and
+  // it is checked per bullet. The switch's own bullet may explain why a caller sends the line —
+  // including that it scoped the run — because that run still has to send it. What must not exist
+  // is a *separate* condition that skips the guard on scope alone: any future workflow that
+  // filtered for scoping would then lose the guard without ever deciding to.
+  const skipItem =
+    section(source('src/tools/iterate.md'), '### Phase 1.5')
+      .split(/(?=\n\d+\.\s)/)
+      .find((item) => /skip conditions/i.test(item)) ?? '';
+  assert.ok(skipItem, 'Phase 1.5 must carry an explicit skip-condition list');
+
+  const skipBullets = skipItem.split(/\n\s*-\s+/).slice(1);
+  assert.ok(skipBullets.length >= 2, 'the skip-condition list must enumerate its cases as bullets');
+  for (const bullet of skipBullets) {
+    if (bullet.includes('Review guard: established')) continue;
+    assert.doesNotMatch(
+      flat(bullet),
+      /filter|scop(?:e|ed|ing)/i,
+      'no skip condition beside the caller-contract switch may rest on the run being scoped',
+    );
+  }
+
+  // And non-interactivity is not the exemption either — `apply-review` also delegates
+  // non-interactively and knows nothing about reviewer state, so precisely the runs that need the
+  // guard would lose it. Such a run aborts with the exact literal instead.
+  assert.match(
+    guard,
+    /ABORT: review still in flight/,
+    'a non-interactive run without the switch must abort with the exact literal',
+  );
+  assert.match(
+    guard,
+    near('non-interactive', 'ABORT: review still in flight', 300),
+    'the abort must be tied to the run that cannot be asked, not to an unspecified failure',
+  );
+});
+
+test('the gate branches on three reviewer states and triggers only on "not started"', () => {
+  const phase3 = flat(section(source('src/tools/merge-gate.md'), '### Phase 3'));
+
+  // Three states, not two. Under a check-based signal the old "has run" / "has not run" split is
+  // wrong: a reviewer whose check is still pending has not run and must not be triggered — a
+  // mention would queue a redundant second run or, for a reviewer that reads one as a fresh
+  // request, discard the review already in flight.
+  for (const state of ['running', 'not started', 'has run']) {
+    assert.match(
+      phase3,
+      new RegExp(`\\*\\*${state}\\*\\*`, 'i'),
+      `Phase 3 must distinguish the ${state} state`,
+    );
+  }
+
+  // The trigger hangs off "not started" specifically. Asserted on the step that posts the trigger
+  // text, so a step that reverted to "has not run" cannot satisfy it.
+  assert.match(
+    phase3,
+    near('\\*\\*Not started', '`mergeGate\\.bots\\.<login>\\.trigger`', 200),
+    'the trigger step must be conditioned on the not-started state',
+  );
+
+  // And the running state is a wait with no write at all.
+  assert.match(
+    phase3,
+    near('\\*\\*Running', '(?:post \\*\\*no\\*\\* trigger|no trigger comment|post nothing)', 300),
+    'a running reviewer must be waited for and never triggered',
+  );
+
+  // An unprovable state still falls to the safe side, exactly as before the three-way split.
+  assert.match(
+    phase3,
+    near('(?:unprovable|cannot be established)', 'not started', 200),
+    'an unprovable reviewer state must count as not started, never as an assumed pass',
+  );
+});
+
+test('setup rewrites a legacy prReview.* block in place instead of leaving both standing', () => {
+  // Without the in-place rewrite a migrated project ends up with two adjacent blocks of
+  // plausible-looking configuration, one of them inert — the artifact a later maintainer edits
+  // without effect. Sliced to setup's own migration section so a sentence elsewhere in the file
+  // cannot satisfy these.
+  const migration = flat(
+    section(
+      source('src/tools/setup.md'),
+      '#### Rewriting a legacy `prReview.*` merge-gate block in place',
+    ),
+  );
+
+  assert.match(
+    migration,
+    near('carry', '`mergeGate\\.', 300),
+    'every legacy row must be carried over to the identical trailing key under mergeGate',
+  );
+  assert.match(
+    migration,
+    /(?:Remove the old rows|remove the legacy rows)/i,
+    'the old rows must be removed, not left beside the new ones',
+  );
+
+  // A shadowed key is reported rather than merged: merging two differing values into one setting
+  // would invent a configuration nobody chose.
+  assert.match(
+    migration,
+    near(
+      '(?:shadow|both present|both.{0,30}different values)',
+      '(?:do not merge|never combine|not merge)',
+      400,
+    ),
+    'a shadowed legacy key must be reported and never merged with its mergeGate counterpart',
+  );
+
+  // The write authority boundary the migration rests on: only setup writes configuration.
+  assert.match(
+    flat(source('src/tools/setup.md')),
+    near('only', 'writer of the configuration', 200),
+    'setup must state that it is the only writer of the configuration',
+  );
+});
+
+test('the shared configuration fragment documents every merge-gate key and the legacy fallback', () => {
+  // The fragment is what every consumer loads, so a key missing here is a key no run resolves —
+  // it silently falls back to a default instead, turning a configured `merge` completion into
+  // `ask` or a configured bot list into "no bots expected".
+  const migration = source('src/shared/config-migration.md');
+  const block = section(
+    migration,
+    '### Merge-gate keys (`mergeGate.*`) and their legacy namespace',
+    '\n### ',
+  );
+
+  for (const key of [
+    'mergeGate.completion',
+    'mergeGate.requireAllChecks',
+    'mergeGate.checkWaitMinutes',
+    'mergeGate.maxRounds',
+    'mergeGate.botWaitMinutes',
+    'mergeGate.bots',
+    'mergeGate.bots.<login>.trigger',
+    'mergeGate.bots.<login>.check',
+  ]) {
+    assert.ok(block.includes(`\`${key}\``), `the configuration fragment must document ${key}`);
+  }
+
+  // The read fallback with its per-key precedence. A whole-block fallback would let one migrated
+  // key hide every unmigrated one.
+  const flatBlock = flat(block);
+  assert.match(
+    flatBlock,
+    near('`prReview\\.<key>`', '(?:absent|missing|where a)', 300),
+    'the legacy namespace must be read where the mergeGate key is absent',
+  );
+  assert.match(
+    flatBlock,
+    near('per key', '(?:wins|precedence)', 300),
+    'precedence must be stated per key, not per block',
+  );
+});
+
+test("the router's description names both iterate and the merge gate", () => {
+  // The frontmatter description is the only catalog a harness sees before it loads anything, so a
+  // tool missing from it is a tool nobody discovers by name.
+  const [, description] = source('src/SKILL.md').match(/^description:\s*(.+)$/m) ?? [];
+  assert.ok(description, 'SKILL.md must carry a frontmatter description');
+  for (const tool of ['iterate', 'merge-gate']) {
+    assert.match(
+      description,
+      new RegExp(`\\b${tool}\\b`),
+      `the router description must name the ${tool} tool`,
+    );
+  }
+  assert.doesNotMatch(description, /\bpr-review\b/, 'the renamed tool must not linger in the list');
 });
 
 test('iterate documents an optional item filter that never falls back to all items', () => {

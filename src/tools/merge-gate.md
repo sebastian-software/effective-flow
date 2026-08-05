@@ -3,7 +3,7 @@ description: "Shepherds an existing pull request from open to merged: resolves t
 catalogHint: "Drives an open pull request through checks, bot notes, and – if allowed – the merge."
 ---
 
-# Effective Flow PR Review
+# Effective Flow Merge Gate
 
 You are the gate between an open pull request and its merge. `{{SKILL:build}}`, `{{SKILL:pr}}`, and
 `{{SKILL:review}}` create a pull request and publish onto it; `{{SKILL:iterate}}` feeds notes back
@@ -26,23 +26,16 @@ Resolve a pull request from an argument or the current branch and drive an order
 The result is either a merged pull request or a report naming the exact condition that blocks the
 merge. This workflow implements nothing itself and produces no review findings of its own.
 
-## The two things called "pr-review"
+## The central `pr-review` skill stays out of this run
 
-The name collides deliberately. In this source:
+**Do not load the central `pr-review` skill here.** That is why it is deliberately absent from a
+recommended-skills section: a recommended skill is authoritative for its domain, and this one brings
+its own approve and request-changes submissions, its own CI recovery, and its own summary
+conventions — three things this workflow forbids.
 
-- **`{{SKILL:pr-review}}`** (this file) always means the Effective Flow **tool** – the gate below.
-- **the central `pr-review` skill** always means the host **skill** that owns review-item judgment.
-
-The gate never calls that skill directly: the judgment happens inside `{{SKILL:iterate}}`, which
-already performs the caller-owned Mode C handoff. This workflow adds no second judgment layer and
-consumes `{{SKILL:iterate}}`'s reported outcome per item.
-
-**Do not load the central `pr-review` skill in this run**, and do not treat the name of this tool as
-a reason to. That is why it is deliberately absent from a recommended-skills section here: a
-recommended skill is authoritative for its domain, and this one brings its own approve and
-request-changes submissions, its own CI recovery, and its own summary conventions — three things
-this workflow forbids. The delegated `{{SKILL:iterate}}` run loads it, in the one place where its
-judgment belongs.
+The judgment that skill owns still happens, one delegation away. `{{SKILL:iterate}}` loads it and
+performs the caller-owned Mode C handoff, which is the one place that judgment belongs. This
+workflow adds no second judgment layer and consumes `{{SKILL:iterate}}`'s reported outcome per item.
 
 ```include
 language-rules
@@ -72,7 +65,7 @@ skill-discovery
 
 This workflow recommends **no** central skill of its own: it orchestrates and delegates, and the one
 skill its domain would suggest is excluded above. Discovery therefore has no preferred list to apply
-here and stays a no-op unless the project's own `skills.tools.pr-review` configuration adds one.
+here and stays a no-op unless the project's own `skills.tools.merge-gate` configuration adds one.
 
 ## Project conventions
 
@@ -89,7 +82,7 @@ goal-completion
 ```
 
 Scope of that completion control here: the bounded correction rounds and the visible phase list
-apply, and `prReview.maxRounds` is this workflow's concrete bound. The completion condition is the
+apply, and `mergeGate.maxRounds` is this workflow's concrete bound. The completion condition is the
 pull request's own checks plus the Phase-4 preconditions, read from the forge rather than
 self-assessed. This workflow therefore starts **no** validator and **no** reviewer of its own; the
 independent verification happens in CI and inside the delegated `{{SKILL:iterate}}` run.
@@ -131,6 +124,10 @@ worktree-integration
 
 ```include
 pr-review-comments
+```
+
+```include
+review-bot-state
 ```
 
 ## Git write boundary
@@ -179,8 +176,29 @@ Every delegation goes to `{{SKILL:iterate}} <PR>` and carries:
   summary comment would be a top-level, unresolvable, non-trigger item that the next fresh read –
   including **this run's own Phase 4 read** – counts as human. An unsuppressed summary would
   therefore activate the guard against the very work the round just completed, and up to
-  `prReview.maxRounds` such comments per run were noise on the pull request besides. Nothing is
+  `mergeGate.maxRounds` such comments per run were noise on the pull request besides. Nothing is
   lost: `{{SKILL:iterate}}` hands that content back and Phase 6 reports it in chat;
+- the **review-guard exemption**, on its own line, in the exact literal form
+  `Review guard: established`. This is mandatory in **every** delegation from this gate, and the two
+  kinds of delegation earn it differently – the mandatory rule is not one precondition applied twice:
+  - a **CI repair** carries `Item filter: free-text-only`, so the delegated run classifies no review
+    thread at all and a review-in-flight guard would protect nothing. That delegation is issued from
+    Phase 2 step 4, **before** this run has observed any reviewer, and the exemption is correct there
+    precisely because the run's scope excludes every item a reviewer could still be adding to;
+  - a **bot round** carries thread IDs and is issued from Phase 3, after this run has observed the
+    state of every configured reviewer. A delegated run that re-derived it would either duplicate
+    this run's wait or block against a reviewer the gate is deliberately not waiting for.
+
+  Write the form exactly: `{{SKILL:iterate}}` returns `ABORT` for an announced review-guard line it
+  cannot parse and never continues as an unguarded run, so a typo costs a round instead of silently
+  removing the guard. Omitting the line is worse: a non-interactive gate run cannot answer the
+  guard's question and comes back as `ABORT: review still in flight`.
+
+  The line stays its own and is deliberately **not** derived from `Item filter:`. A filter states the
+  scope of a run; only the caller knows whether that scope, or its own prior observation, makes the
+  guard unnecessary. Deriving one from the other would hand the exemption to any future workflow that
+  filters merely for scoping, without it ever having earned it;
+
 - for a CI repair, the free-text instruction derived from the failing check names and their reported
   failure detail;
 - **this run's own run state** – gated or non-interactive delegation. A gated gate run therefore
@@ -197,28 +215,37 @@ unsuccessful: do not merge, and report the failed item.
 Read from the Effective Flow configuration (project setup ADR) per the loaded configuration
 building block. A missing line means the default.
 
-| Key                             | Values                       | Default   |
-| ------------------------------- | ---------------------------- | --------- |
-| `prReview.completion`           | `ask`, `merge`, `report`     | `ask`     |
-| `prReview.requireAllChecks`     | `true`, `false`              | `true`    |
-| `prReview.checkWaitMinutes`     | positive integer             | `20`      |
-| `prReview.maxRounds`            | positive integer             | `3`       |
-| `prReview.botWaitMinutes`       | positive integer             | `10`      |
-| `prReview.bots`                 | comma list of logins         | `(empty)` |
-| `prReview.bots.<login>.trigger` | literal trigger comment text | unset     |
-| `delivery.mergeMethod`          | `squash`, `merge`, `rebase`  | `squash`  |
+| Key                              | Values                             | Default   |
+| -------------------------------- | ---------------------------------- | --------- |
+| `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
+| `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
+| `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
+| `mergeGate.maxRounds`            | positive integer                   | `3`       |
+| `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
+| `mergeGate.bots`                 | comma list of logins               | `(empty)` |
+| `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
+| `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
+| `delivery.mergeMethod`           | `squash`, `merge`, `rebase`        | `squash`  |
 
-- `prReview.bots` is a flat comma list of reviewer logins; the trigger text of each bot is its own
-  dotted key. A login containing brackets (`greptileai[bot]`) is a valid middle segment, because the
-  encoding splits on `.` only.
-- An empty `prReview.bots` list means no automatic reviewer is expected. The bot round is then
+- `mergeGate.bots` is a flat comma list of reviewer logins; the trigger text and the check context of
+  each bot are their own dotted keys. A login containing brackets (`greptileai[bot]`) is a valid
+  middle segment, because the encoding splits on `.` only.
+- An empty `mergeGate.bots` list means no automatic reviewer is expected. The bot round is then
   skipped instead of blocking the merge forever.
+- `mergeGate.bots.<login>.check` names the commit status or check run that reviewer publishes, for
+  example `recensor/review`. It is matched against the normalized `name` of an entry in
+  `pr-status-read`'s check list, per the loaded "Automatic reviewer state". Unset is the default and
+  selects that block's fallback signal, so a project that configures nothing keeps its previous
+  behavior exactly.
+- The legacy `prReview.*` names are still read: the loaded configuration building block resolves
+  `mergeGate.<key>` first, falls back to `prReview.<key>`, and reports once that it did. This
+  workflow never writes configuration – `{{SKILL:setup}}` migrates the block.
 - `delivery.mergeMethod` is a delivery property, not a gate property: it describes how this project
   integrates a pull request.
-- **`prReview.*` is not `delivery.prReview`.** The pre-existing `delivery.prReview` decides whether a
+- **`mergeGate.*` is not `delivery.prReview`.** The pre-existing `delivery.prReview` decides whether a
   workflow publishes **its own review findings** onto a pull request it just created. The
-  `prReview.*` keys configure **this gate**. They sit next to each other alphabetically and mean
-  entirely different things; never read one for the other.
+  `mergeGate.*` keys configure **this gate**. They mean entirely different things; never read one for
+  the other, and never let the rename of this gate's namespace reach `delivery.prReview`.
 
 ## Wisdom accumulation
 
@@ -233,7 +260,9 @@ At the start, generate a session ID (e.g. via timestamp) and use
   back; plus `VERIFIED_HEAD_SHA` once a round sets it, and its discard on a Phase-3 restart
 - the provisioned checkout: reused in place, or the Effective Flow-owned worktree with its lifecycle
   record handle and that record's last transition
-- the bot round: which bot has run for which head, which trigger was posted, which threads went to
+- the bot round: the observed state of every configured reviewer – **running**, **not started**, or
+  **has run** – together with the evidence that established it (the check context with its status,
+  the two timestamps, or the value that was missing), which trigger was posted, which threads went to
   `{{SKILL:iterate}}`, and which findings were deferred and reported in chat instead
 - the merge preconditions verified in Phase 4 and the merge result or the blocking condition
 
@@ -254,29 +283,29 @@ Write a summary after each phase and pass it on to later phases. Delete the file
    - Without `pullRequestChecksWait`, the wait step reports and asks instead of waiting (Phase 2).
    - Without `pullRequestMerge`, the run degrades to `report` and states that reason.
    - **Forgejo** declares all three unsupported, so a Forgejo run is report-only by construction.
-3. Resolve the completion mode from `prReview.completion`:
+3. Resolve the completion mode from `mergeGate.completion`:
    - a configured `merge` or `report` is used unchanged, in every run state, and the report states
      that it came from configuration;
    - `ask` or an unset key poses the entry gate **exactly once**, before any wait, delegation, or
      write. Never ask it again later in the run.
    - `ask` or an unset key in a **non-interactive delegation** cannot pose the question, so that
      combination – and only that combination – behaves as `report`. Name
-     `prReview.completion: merge` as the setting that would authorize a merge in such a run.
+     `mergeGate.completion: merge` as the setting that would authorize a merge in such a run.
 
 **`report` scopes the merge, not the run.** In both modes the gate waits for the checks, has failing
-checks repaired through `{{SKILL:iterate}}`, posts a configured bot trigger, and has the bot threads
-answered and resolved through `{{SKILL:iterate}}`. `report` withholds exactly one action: the merge
-in Phase 5. What differs is the ending, not the work.
+checks repaired through `{{SKILL:iterate}}`, posts a configured bot trigger where a bot has **not
+started**, and has the bot threads answered and resolved through `{{SKILL:iterate}}`. `report`
+withholds exactly one action: the merge in Phase 5. What differs is the ending, not the work.
 
 ```ask
-when: `prReview.completion` is `ask` or unset and the run is gated
+when: `mergeGate.completion` is `ask` or unset and the run is gated
 header: Completion
 question: May this run merge the pull request once every gate passes, or only report merge-readiness?
 options:
   - label: Merge
-    description: prReview.completion = merge — repair, have the bot threads answered by the delegated iterate run, and merge with delivery.mergeMethod once every precondition holds
+    description: mergeGate.completion = merge — repair, have the bot threads answered by the delegated iterate run, and merge with delivery.mergeMethod once every precondition holds
   - label: No merge
-    description: prReview.completion = report — still repair failing checks and have the bot threads answered by the delegated iterate run, but never merge; the run ends with a merge-readiness report
+    description: mergeGate.completion = report — still repair failing checks and have the bot threads answered by the delegated iterate run, but never merge; the run ends with a merge-readiness report
 ```
 
 ### Phase 1: Read the state fresh and set the human-comment guard once
@@ -289,7 +318,7 @@ options:
    performed that mutation, so a rule built on it reads every earlier run's output as a stranger's.
 2. Evaluate every comment and thread in **exactly this order** and stop at the first rule that
    matches. The order is load-bearing, not cosmetic:
-   1. **The author is a bot** – either a login listed in `prReview.bots`, or an item whose
+   1. **The author is a bot** – either a login listed in `mergeGate.bots`, or an item whose
       normalized `authorType` is `bot`. Two disjoint cases, and the second one carries app mode: the
       account this gate posts as appears in no configuration table, so it is recognized by
       `authorType` alone. The item is **excluded** and the evaluation stops there – the forge's own
@@ -344,14 +373,16 @@ options:
 
    3. **Otherwise the item is this gate's own output only when both hold:** its author's normalized
       `login` equals the login `viewer-read` returned, **and** its complete body equals the
-      configured `prReview.bots.<login>.trigger` value of some configured bot. Compare the `login`
+      configured `mergeGate.bots.<login>.trigger` value of some configured bot. Compare the `login`
       exactly and compare no other author field – display name, profile URL, and account ID take no
       part in it. Compare the **whole** body after trimming surrounding whitespace; a prefix, a
       substring, a quoted copy, or any other partial or fuzzy match never qualifies. Such an item is
       excluded.
 
-      **This is the only shape this rule has to recognize**, because a gate-initiated run leaves
-      exactly one item of its own on the pull request: this trigger comment. The delegated
+      **This is the only shape this rule has to recognize**, because a gate-initiated run leaves at
+      most one item of its own on the pull request: this trigger comment. It is **at most** rather
+      than exactly one because Phase 3 posts no trigger for a bot it observed as **running**; a run
+      that leaves nothing behind narrows nothing here. The delegated
       `{{SKILL:iterate}}` run's summary comment is suppressed (see "Delegation contract") and its
       thread replies are resolved along with their threads, where rule 2 catches them. A
       `{{SKILL:iterate}}` run the operator started **themselves** is a different case, and rule 4
@@ -445,15 +476,17 @@ for a finding nobody handled, and leaving an unresolved reply behind is precisel
 next run read its predecessor's output as a human comment.
 
 The consequence, stated plainly: **the gate's only own write is the trigger comment** of Phase 3,
-and a **gate-initiated run leaves exactly that one item of its own on the pull request** – because
+and a **gate-initiated run leaves at most that one item of its own on the pull request** – because
 the delegated run's summary comment is suppressed (see "Delegation contract") and its thread replies
-are resolved along with their threads. Every reply for a finding that _is_ implemented is written
+are resolved along with their threads. At most, not exactly: Phase 3 posts no trigger for a bot it
+observed as **running**, and a run that writes nothing at all is the same guarantee one write
+further in the safe direction. Every reply for a finding that _is_ implemented is written
 and resolved by `{{SKILL:iterate}}`, as before, and Phase 1's rule 2 keeps those replies out of the
 guard.
 
 ### Phase 2: Check gate (bounded)
 
-Repeat the round below at most `prReview.maxRounds` times. Run its steps in exactly this order – the
+Repeat the round below at most `mergeGate.maxRounds` times. Run its steps in exactly this order – the
 branch repair comes first so its push is finished before any delegation starts.
 
 **A round runs forward only.** There is no backward jump inside it: whenever the round would return
@@ -479,9 +512,9 @@ run can push an unbounded number of commits onto someone's pull request.
      for inspection.
 2. **Conflict with the base (`DIRTY`).** Not repaired automatically: stop, report the conflict, and
    do not merge.
-3. **Pending checks.** Call `pr-checks-wait` with `prReview.checkWaitMinutes` as its timeout and let
+3. **Pending checks.** Call `pr-checks-wait` with `mergeGate.checkWaitMinutes` as its timeout and let
    the CLI block; the run consumes no tokens while CI runs. Restrict the wait to the forge's own
-   required checks exactly when `prReview.requireAllChecks` is `false`; the helper owns the provider
+   required checks exactly when `mergeGate.requireAllChecks` is `false`; the helper owns the provider
    form of that restriction.
    - On a **timeout result** or when the provider has **no watch capability**: do **not** fall back
      to a prompt-driven poll loop. Report the still-pending checks by name and ask the user once.
@@ -490,10 +523,10 @@ run can push an unbounded number of commits onto someone's pull request.
    **free-text-only** and an instruction derived from the failing check names and their reported
    failure detail. The human-comment guard does **not** block this delegation.
 5. **Re-read the status** and evaluate the check criterion:
-   - `prReview.requireAllChecks: true` (default) – **every** reported check must have completed
+   - `mergeGate.requireAllChecks: true` (default) – **every** reported check must have completed
      successfully. A failed, cancelled, or timed-out check is a failure; a still-pending check ends
      this round and the next round starts again at step 1.
-   - `prReview.requireAllChecks: false` – only checks the forge marks as required count, read from
+   - `mergeGate.requireAllChecks: false` – only checks the forge marks as required count, read from
      the `required` flag `pr-status-read` reports per check. A red optional check is reported but is
      not a blocker. A check whose requiredness the provider does not state **fails closed** and is
      treated as blocking, because an unproven "optional" is exactly the value that would wave a red
@@ -521,35 +554,37 @@ workflow records a head SHA for later use.
 
 #### Round accounting
 
-`prReview.maxRounds` bounds the **whole run**, not one phase. A counter starts at zero and increases
+`mergeGate.maxRounds` bounds the **whole run**, not one phase. A counter starts at zero and increases
 by one every time a Phase-2 round begins – **including** a round that only waits again after a
 still-pending check, and **including** a Phase-2 restart that a Phase-3 bot round triggered. Nothing
 resets the counter and nothing bypasses it, because a round never jumps backwards into itself: a bot
 round that produced an implementation and sent the run back into Phase 2 **consumes a round** like
-any other. When the counter reaches `prReview.maxRounds`, the run ends with a report naming the
+any other. When the counter reaches `mergeGate.maxRounds`, the run ends with a report naming the
 still-unmet condition, never with a merge.
 
 ### Phase 3: Automatic reviewer round
 
-If `prReview.bots` is empty, skip this phase entirely, record that no automatic reviewer is
+If `mergeGate.bots` is empty, skip this phase entirely, record that no automatic reviewer is
 configured, and do not block the merge on it.
 
-Otherwise, for each login in `prReview.bots`:
+Otherwise, for each login in `mergeGate.bots`:
 
-1. **Has it run for the current head?** Compare two normalized fields of the fresh read: the
-   `createdAt` timestamp of that login's newest comment, review thread, or thread reply against the
-   `headCommittedAt` timestamp from `pr-status-read`. The bot counts as having run when its newest
-   `createdAt` is later than `headCommittedAt`; both are RFC-3339 strings and are compared as
-   instants, not as text.
-   - **Fail closed when either value is absent.** The provider does not always expose them, and the
-     helper leaves an unexposed value out rather than guessing. Without both timestamps the gate
-     cannot prove the bot ran for **this** head, so it treats the bot as not having run: it may
-     trigger and wait, and it never merges on an unprovable precondition. Report the missing field
-     as the reason, so a Phase-4 block on this bot is explainable.
-   - Emoji reactions are not readable through the helper and therefore never count, whatever their
-     timing.
-2. **If not:** post its `prReview.bots.<login>.trigger` text **once** as a pull-request comment, then
-   wait.
+1. **Observe its state** through the loaded "Automatic reviewer state", against the fresh read: one
+   of **running**, **not started**, or **has run**. Record the state together with the evidence that
+   established it – the check context with its status, the two timestamps, or the value that was
+   missing – so a Phase-4 block on this bot is explainable instead of mysterious.
+   - **A bot with a configured `mergeGate.bots.<login>.check`** takes the primary signal, and only
+     that signal can report **running**.
+   - **A bot without one** takes the fallback signal, which distinguishes **has run** from **not
+     started** and nothing else. That is exactly the two-way behavior this phase had before, so an
+     existing project sees no change.
+   - **An unprovable state is not started**, never an assumed pass: the gate may trigger and wait,
+     and it never merges on an unprovable precondition.
+2. **Running: wait, and post nothing.** The bot is already working for this head. Post **no** trigger
+   comment: a mention would either queue a redundant second run or, for a reviewer that reads a
+   mention as a fresh request, discard the one in flight. Apply the single wait of step 4.
+3. **Not started: post its `mergeGate.bots.<login>.trigger` text once** as a pull-request comment,
+   then apply the single wait of step 4.
    - Build that comment body yourself: the literal configured trigger text and **nothing else** –
      no marker, no preamble, no signature – posted through the helper's PR-comment mutation. That
      exact body is what Phase 1's rule 3 recognizes as this gate's own on the next run, and it is
@@ -561,40 +596,42 @@ Otherwise, for each login in `prReview.bots`:
      comment exists whose body equals the configured trigger text after trimming surrounding
      whitespace, whose author is established as this gate's own, and whose `createdAt` is **not
      older than** `headCommittedAt`. Both timestamp fields are part of the normalized envelopes
-     already. Post no second trigger then.
+     already. Post no second trigger then, and apply the wait instead.
    - **Establishing that author differs by mode**, and neither case reads a configured login: in
      manual mode the author's `login` equals the one `viewer-read` returned; in app mode the
      author's normalized `authorType` is `bot`. **No configuration names the account this gate posts
-     as** – a `prReview.bots` entry is a reviewer the gate waits for, never the author of the
+     as** – a `mergeGate.bots` entry is a reviewer the gate waits for, never the author of the
      trigger – so matching the trigger's author against that list would look for a comment that
      cannot exist.
    - If a timestamp is absent, or the author cannot be established at all, the comparison is
      unprovable. Treat the trigger as **not yet posted for this head** and post it: a redundant
      mention costs one extra bot run, a wrongly suppressed one costs the merge. This is the same
      direction step 1 fails in.
-   - **The wait is one blocking wait, not a poll.** There is no helper operation for a bot the way
-     `pr-checks-wait` exists for the checks, so block once for `prReview.botWaitMinutes` – a single
-     `sleep` of that span in the shell, or the harness's equivalent single blocking wait – and then
-     re-read exactly once. Never substitute a sequence of status reads: that is the per-interval
-     model turn the design rejects.
+   - If no trigger text is configured for that login, post nothing and apply the same single wait for
+     the bot's own schedule; report that no trigger is configured.
+4. **The wait is one blocking wait, not a poll.** Both states above end in the same wait. There is no
+   helper operation for a bot the way `pr-checks-wait` exists for the checks, so block once for
+   `mergeGate.botWaitMinutes` – a single `sleep` of that span in the shell, or the harness's
+   equivalent single blocking wait – then re-read exactly once and observe the state again. Never
+   substitute a sequence of status reads: that is the per-interval model turn the design rejects.
    - If the harness cannot block that long (a tool timeout below the configured span), block for the
      longest single span it allows, re-read once, and, if the bot still has not run, end with a
      report naming it. Do not chain further waits to make up the difference.
-   - If no trigger text is configured for that login, post nothing and apply the same single wait for
-     the bot's own schedule; report that no trigger is configured.
-   - If the bot still has not run after the wait, the run ends with a report naming that bot as the
-     blocking condition. A timeout here is always a report, never a merge.
-3. **When the bot has run:** hand its unresolved threads to `{{SKILL:iterate}} <PR>` with the item
+   - If the bot is still not **has run** after the wait, the run ends with a report naming that bot
+     and its observed state as the blocking condition. A timeout here is always a report, never a
+     merge – and that holds for **running** exactly as it does for **not started**: a reviewer this
+     run watched working is still a reviewer whose notes nobody has answered.
+5. **When the bot has run:** hand its unresolved threads to `{{SKILL:iterate}} <PR>` with the item
    filter set to **exactly those thread IDs**. `{{SKILL:iterate}}` classifies them, implements the
    valid ones as new commits, replies, and resolves them.
-4. **Any implementation restarts Phase 2** – new commits invalidate both the check result and every
-   bot's run state. Discard `VERIFIED_HEAD_SHA`; the new head is unverified until a Phase-2 round
+6. **Any implementation restarts Phase 2** – new commits invalidate both the check result and every
+   bot's state. Discard `VERIFIED_HEAD_SHA`; the new head is unverified until a Phase-2 round
    sets it again. The restart consumes a round per "Round accounting".
 
-**With the human-comment guard active,** this phase neither delegates nor triggers: step 2's trigger
+**With the human-comment guard active,** this phase neither delegates nor triggers: the trigger
 comment and its wait are skipped as well, because the outcome they wait for – an implementation – is
 unreachable, and an automated mention on an actively discussed pull request costs
-`prReview.botWaitMinutes` per bot for nothing. The gate writes **nothing** into the already present
+`mergeGate.botWaitMinutes` per bot for nothing. The gate writes **nothing** into the already present
 bot threads either: per "A deferred finding gets no thread reply" it leaves every one of them
 untouched and unresolved, and names the findings it did not implement in its chat summary instead.
 
@@ -607,12 +644,12 @@ Verify every one of the following against a **fresh** read. Any unmet condition 
 report naming exactly that condition, and merges nothing:
 
 1. the resolved completion mode is `merge`;
-2. the check criterion from `prReview.requireAllChecks` is satisfied;
+2. the check criterion from `mergeGate.requireAllChecks` is satisfied;
 3. the forge reports the pull request as mergeable and **not a draft**;
 4. the human-comment guard is inactive;
-5. every login in `prReview.bots` has run for the current head, proven by the `createdAt` versus
-   `headCommittedAt` comparison of Phase 3 – a missing timestamp is an unmet condition, never an
-   assumed pass;
+5. every login in `mergeGate.bots` is observed as **has run** for the current head through the loaded
+   "Automatic reviewer state" – **running** and **not started** are both unmet conditions, and an
+   unprovable state is **not started**, never an assumed pass;
 6. every bot thread **whose finding this run implemented** is answered and resolved – those are
    written and resolved by `{{SKILL:iterate}}`. A finding this run deferred or rejected does
    **not** block the merge: it is named in the Phase-6 chat summary and its thread is deliberately
@@ -631,9 +668,10 @@ report naming exactly that condition, and merges nothing:
 ### Phase 5: Merge
 
 In mode `report`, or when any Phase-4 condition failed, report the exact unmet condition and perform
-no merge. In mode `report` that is the only thing withheld: the repairs, the bot trigger, and the
-delegated `{{SKILL:iterate}}` rounds of the earlier phases have already happened, and the run ends
-by reporting whether the pull request is merge-ready and what a merge run would still need.
+no merge. In mode `report` that is the only thing withheld: the repairs, any bot trigger Phase 3
+posted, and the delegated `{{SKILL:iterate}}` rounds of the earlier phases have already happened, and
+the run ends by reporting whether the pull request is merge-ready and what a merge run would still
+need.
 
 Otherwise call `pr-merge` with `delivery.mergeMethod` and `VERIFIED_HEAD_SHA` as the expected head.
 Inspect the default dry-run command preview, then repeat with `--apply`.
@@ -654,7 +692,8 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
    - the check outcome per round;
    - the delegated `{{SKILL:iterate}}` rounds and their results, including the summary content each
      one handed back instead of posting;
-   - the bot round state per configured login;
+   - the bot round per configured login: the observed state, the evidence that established it, and
+     whether the run triggered, waited, or proceeded;
    - whether human comments were found and what that blocked;
    - **every bot finding this run assessed but did not implement**, named here rather than answered
      in its thread;
@@ -664,14 +703,24 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
 
 - **The head moves during the run:** the SHA guard on `pr-merge` rejects the merge; report and do not
   retry blindly.
-- **A bot acknowledges with an emoji reaction instead of a comment.** Greptile does this. Reactions
-  are not readable through the helper, so such a bot times out and blocks the merge – a report, never
-  a wrong merge.
-- **A bot posts nothing because it found nothing** is indistinguishable from "has not run yet"
-  through comments alone; the same timeout applies. Known limitation.
-- **The provider exposes no `createdAt` or no `headCommittedAt`:** bot freshness is unprovable, so
-  the bot counts as not having run, the merge is blocked, and the missing field is named as the
-  reason. Never merge on an assumed precondition.
+- **A bot acknowledges with an emoji reaction instead of a comment.** Greptile does this, and it
+  publishes no check context either, so it stays on the fallback signal. Reactions are not readable
+  through the helper, so such a bot times out and blocks the merge – a report, never a wrong merge.
+- **A bot posts nothing because it found nothing** is indistinguishable from "has not run yet" on
+  the fallback signal; the same timeout applies. A configured `.check` removes this limitation for
+  the bots that publish one.
+- **The provider exposes no `createdAt` or no `headCommittedAt`:** bot freshness is unprovable on the
+  fallback signal, so the bot counts as **not started**, the merge is blocked, and the missing field
+  is named as the reason. Never merge on an assumed precondition.
+- **A bot's configured `.check` context never appears** – a misconfigured value, or an app that is
+  not installed: it is indistinguishable from a context about to appear, so the bot counts as **not
+  started**. The gate triggers, waits, and finally blocks the merge naming the missing context, which
+  is what makes the misconfiguration visible instead of silent.
+- **A bot's configured `.check` is non-terminal:** the bot is **running**, so this run waits for it
+  and posts **no** trigger. That is the one behavioral difference a configured `.check` makes to this
+  phase; a bot without one keeps the previous two-way behavior exactly.
+- **A bot's `.check` is terminal but failed:** it has run. The conclusion states what the reviewer
+  found, not whether it ran, so its threads are handed to `{{SKILL:iterate}}` like any other.
 - **A human quote-replies to the gate's trigger comment,** copying its body: the item is
   human-authored, so it counts and the guard activates. With no marker left to copy there is nothing
   in the body that could mislead the guard, and a quoted body carries the quote markup and therefore
@@ -708,11 +757,11 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   comment by the `<!-- effective-flow-pr-review -->` marker, so the gate can merge the pull request
   its own product wrote on. While such a thread is still unresolved the finding is unhandled and it
   keeps counting, which is the intended block.
-- **`prReview.bots` is empty:** the bot round is skipped and the merge is not blocked on it.
+- **`mergeGate.bots` is empty:** the bot round is skipped and the merge is not blocked on it.
 - **Branch protection requires an approval:** the forge reports a blocked merge state; report that a
   human approval is missing and never attempt to approve.
 - **A non-required check is red while the required ones are green:** with the default
-  `prReview.requireAllChecks: true` this blocks the merge and enters the repair loop like any other
+  `mergeGate.requireAllChecks: true` this blocks the merge and enters the repair loop like any other
   failure. With `false` the forge merge state decides and the red optional check is reported but not
   treated as a blocker.
 - **A check is red and a human comment is open:** the CI repair runs, the merge does not. This is the
@@ -721,7 +770,8 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   fall back to a prompt-driven poll loop.
 - **Forgejo:** `pr-status-read`, `pr-checks-wait`, `pr-merge`, and `viewer-read` are all unsupported,
   so the run degrades to report-only and states the reason. The guard therefore stays active there,
-  which blocks a merge that was unavailable anyway – nothing is lost.
+  which blocks a merge that was unavailable anyway – nothing is lost. Every bot takes the fallback
+  signal there as well, because no check rollup is reported at all.
 - **`{{SKILL:iterate}}` returns `ABORT` for an item:** the round counts as unsuccessful, the run does
   not merge, and the failed item is reported.
 - **The item filter matches nothing** (every named thread was resolved between the read and the
@@ -754,18 +804,22 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
 - Write nothing into the thread of a bot finding this run did not implement – no reply, no
   resolution. Name it in the chat summary instead. The trigger comment is this workflow's only own
   write, and suppressing the delegated run's summary comment keeps it the only item a gate-initiated
-  run leaves on the pull request.
-- Announce `Summary comment: suppressed` in every delegation, and never delegate without it.
-- Never treat a bot as having run for the current head without both `createdAt` and
-  `headCommittedAt`; an unprovable precondition blocks the merge.
+  run can leave on the pull request – at most one, since a bot observed as **running** gets no
+  trigger at all.
+- Announce `Summary comment: suppressed` and `Review guard: established` in every delegation, each on
+  its own line and in exactly that literal form, and never delegate without either of them.
+- Take every bot's state from the loaded "Automatic reviewer state" and never treat an unprovable
+  state as **has run**; an unprovable precondition blocks the merge. Trigger only a bot that has
+  **not started**, never one that is **running** – a mention aimed at a reviewer already working
+  costs the run in flight or queues a redundant one.
 - Read the pull-request status, threads, and comments fresh before every write and before the merge.
-- Ask the entry gate exactly once, at the start. A configured `prReview.completion` of `merge` or
+- Ask the entry gate exactly once, at the start. A configured `mergeGate.completion` of `merge` or
   `report` is used unchanged in every run state; only `ask` or an unset key in a non-interactive
   delegation behaves as `report`.
-- `report` withholds the merge and nothing else: repairs, the bot trigger, and the delegated
-  `{{SKILL:iterate}}` rounds still run.
+- `report` withholds the merge and nothing else: repairs, the bot trigger for a bot that has **not
+  started**, and the delegated `{{SKILL:iterate}}` rounds still run.
 - Never fall back to a prompt-driven poll loop when a wait times out; report and ask once.
-- Never exceed `prReview.maxRounds`, never reset the counter, and never jump backwards inside a
+- Never exceed `mergeGate.maxRounds`, never reset the counter, and never jump backwards inside a
   round – a repeated wait, a repair, and a Phase-2 restart from the bot round each consume a round.
 - Post no summary comment of your own; the run summary goes to the user in chat.
 - Never set a `Co-Authored-By` trailer and add no AI attribution in the merge commit, in trigger

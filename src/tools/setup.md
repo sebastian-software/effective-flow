@@ -57,8 +57,8 @@ The Effective Flow configuration is optional and controls the defaults of the fo
   `documentation.user`, `documentation.technical`, `workflow`, `forge`, `git` overrides
   (`de`/`en`; a missing override inherits `language.project`, whose default is `en`)
 - **`plan`** (source: `{{SKILL:plan}}`): `dir` (string, default `docs/plan`) — directory of the plan files
-- **`delivery`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default `origin/main`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery), `mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when `{{SKILL:pr-review}}` merges it)
-- **`prReview`** (source: `{{SKILL:pr-review}}`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `3`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default). **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes its own findings onto a pull request it created, while `prReview.*` configures the merge gate.
+- **`delivery`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default `origin/main`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery), `mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when `{{SKILL:merge-gate}}` merges it)
+- **`mergeGate`** (source: `{{SKILL:merge-gate}}`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `3`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; the legacy names are still read, and this skill migrates a legacy block in place (Step 6). **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
 - **`worktree`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
 - **`tracker`** (source: `{{SKILL:review}}`, section "Issue-tracker integration" – likewise embedded in `{{SKILL:apply-review}}` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names)
 - **`skills`** (source: building block "Skill discovery"): `enabled` (bool, default `true` — toggles dynamic skill usage), `include` (list — prefer these skills project-wide), `exclude` (list — never apply these skills), `agents.<name>` and `tools.<name>` (each `include`/`exclude` for a single agent or a single tool). Keys are the source agent/tool names (e.g. `ui-implementer`, `plan`).
@@ -94,7 +94,7 @@ settings). Missing `language.*` overrides inherit `language.project`; Express th
 only `language.project = en` unless existing overrides are preserved. The legacy
 `plan.markerLanguage` is never written as a current setting.
 
-The `prReview.*` merge-gate keys and `delivery.mergeMethod` are deliberately **not** part of this
+The `mergeGate.*` merge-gate keys and `delivery.mergeMethod` are deliberately **not** part of this
 base: a missing line means the source skill's default (see the defaults table in Step 5, block 9),
 so Express writes no row for them and an unconfigured project gets the safe gate behavior
 (`ask`, every check green, no automatic reviewer expected).
@@ -170,7 +170,11 @@ options:
    migration case, read `<source-handle>` as the current values and preserve all known and unknown
    keys. Show the respective value at every following question ("currently recorded: …") and use
    it as the pre-selection. If a key is missing, label the pre-selection as the default
-   ("currently not set – default: …").
+   ("currently not set – default: …"). While parsing, record a legacy merge-gate block: every row
+   whose key begins with `prReview.` belongs to the former namespace of the `mergeGate.*` keys, and
+   for each such row note whether a `mergeGate.*` row with the same trailing key already exists.
+   `delivery.prReview` is **not** such a row and never becomes one. Step 6 migrates the recorded
+   block in place.
 4. **Invalid source.** If the ADR table is invalid/ambiguous or the selected `<source-handle>` is
    not valid JSON, do not overwrite silently. Inform the user with that exact handle and the
    error, and ask whether the configuration should be newly created (old backup/overwrite) or the
@@ -194,7 +198,8 @@ options:
 - **Express:** Build the target configuration from the safe-defaults base (config schema above)
   plus – if a valid config exists – its existing values. Derive
   `language.project = en` per the base and retain valid existing language overrides. Apply the
-  confirmed compatibility migration described below when needed. Jump directly to Step 6
+  confirmed compatibility migrations described below — the language keys and a legacy `prReview.*`
+  merge-gate block — when needed. Jump directly to Step 6
   (merge and write); the before/after list and confirmation there
   ensure that no existing, differing config is silently overwritten.
 - **Guided:** Continue with Step 4 (core switches); the optional
@@ -362,26 +367,28 @@ config value or default as the pre-selection:
 6. `worktree`: `worktree.enabled` (already asked in Step 4 — carry over), `worktree.setup`, `worktree.baseDir`
 7. `tracker`: `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo, forge only), `tracker.externalTool` and `tracker.externalToolHint` (free text; required identifier plus optional connection hint for `mode: external`, carried over when already asked in Step 4)
 8. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (global lists) as well as – as an advanced option – `skills.agents.<name>` and `skills.tools.<name>` for individual agents/tools. Additionally offer optionally (do not force) to materialize the built-in per-agent and per-tool recommendations visibly into the config as `skills.agents.<name>.include` or `skills.tools.<name>.include`; for a fallback recommendation (`effective-web › impeccable › frontend-design`), write only the **primary** skill (`effective-web`) — the built-in fallback stays active. Flat recommendations (e.g. `locale-typography`) are carried over unchanged.
-9. `prReview` – the **merge gate** of `{{SKILL:pr-review}}`, asked as its own block: see below.
+9. `mergeGate` – the **merge gate** of `{{SKILL:merge-gate}}`, asked as its own block: see below.
 
 Anyone who wants the former "fast solo workflow" sets, for example, `review.profile: fast`,
 `review.validation: quick`, and `applyReview.finalValidation: changedScope` here.
 
-Note: `applyReview.worktree.*` (apply-review's own worktree mechanism), the top-level `worktree.*` block (execution location), and the top-level `delivery.*` block (delivery branch/completion) are separate, independent config paths — do not confuse them when asking and merging. The same applies to `delivery.prReview` (publish this run's findings after a delivery) and the `prReview.*` block (the merge gate): they are adjacent in the table and unrelated in meaning.
+Note: `applyReview.worktree.*` (apply-review's own worktree mechanism), the top-level `worktree.*` block (execution location), and the top-level `delivery.*` block (delivery branch/completion) are separate, independent config paths — do not confuse them when asking and merging. The same applies to `delivery.prReview` (publish this run's findings after a delivery) and the `mergeGate.*` block (the merge gate): the rename removed the shared name, but the legacy `prReview.*` namespace is still read, so keep the two apart — `delivery.prReview` belongs to the `delivery` block, is never part of a legacy merge-gate block, and is never migrated.
 
 Ask for free-text values (e.g. `baseBranch`, `branchPrefix`, `returnBranch`, `baseDir`, or an explicit `setup` command) as free text. On invalid input for an enumerated key, ask again or use the default and report that.
 
-#### Block 9: the merge gate (`prReview.*`)
+#### Block 9: the merge gate (`mergeGate.*`)
 
 Ask this block **separately** from the `delivery.prReview` question of Step 4 and say so, because
-the two names look alike and mean entirely different things:
+this block was itself named `prReview.*` in an earlier generation and the two mean entirely
+different things:
 
 - **`delivery.prReview`** (Step 4) decides whether a run posts **its own review findings** onto a
-  pull request it just created.
-- **`prReview.*`** (this block) configures the tool that takes an **existing** pull request from
+  pull request it just created. It keeps its name and is untouched by the rename.
+- **`mergeGate.*`** (this block) configures the tool that takes an **existing** pull request from
   open to merged: it waits for the checks, has failures repaired, evaluates the notes of the
   configured automatic reviewers, refuses to implement or merge while a human comment is open, and
-  finally merges.
+  finally merges. If the project still carries these keys as `prReview.*`, show the recorded legacy
+  values as the current ones and say that Step 6 migrates the block.
 
 Explain first, then ask. The gate is safe without any of these keys, so "keep the defaults" is a
 perfectly good answer.
@@ -392,50 +399,60 @@ header: Merge gate
 question: When the merge gate has verified a pull request, may it merge, or should it only report?
 options:
   - label: Ask each time
-    description: prReview.completion = ask (default) — a gated run asks once per pull request
+    description: mergeGate.completion = ask (default) — a gated run asks once per pull request
   - label: Merge
-    description: prReview.completion = merge — merge as soon as every precondition holds
+    description: mergeGate.completion = merge — merge as soon as every precondition holds
   - label: No merge
-    description: prReview.completion = report — the gate still repairs failing checks and answers bot threads, it only never merges
+    description: mergeGate.completion = report — the gate still repairs failing checks and answers bot threads, it only never merges
 ```
 
 Then ask for the remaining keys, each with a short explanation, the valid values, and the current
 value or default as the pre-selection:
 
-| Key                             | Values                       | Default   |
-| ------------------------------- | ---------------------------- | --------- |
-| `prReview.completion`           | `ask`, `merge`, `report`     | `ask`     |
-| `prReview.requireAllChecks`     | `true`, `false`              | `true`    |
-| `prReview.checkWaitMinutes`     | positive integer             | `20`      |
-| `prReview.maxRounds`            | positive integer             | `3`       |
-| `prReview.botWaitMinutes`       | positive integer             | `10`      |
-| `prReview.bots`                 | comma list of logins         | `(empty)` |
-| `prReview.bots.<login>.trigger` | literal trigger comment text | unset     |
+| Key                              | Values                             | Default   |
+| -------------------------------- | ---------------------------------- | --------- |
+| `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
+| `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
+| `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
+| `mergeGate.maxRounds`            | positive integer                   | `3`       |
+| `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
+| `mergeGate.bots`                 | comma list of logins               | `(empty)` |
+| `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
+| `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
 
-- `prReview.requireAllChecks`: `true` (default) requires **every** check to be green; `false` falls
+- `mergeGate.requireAllChecks`: `true` (default) requires **every** check to be green; `false` falls
   back to the checks the forge itself marks as required — useful for a project with a permanently
   red optional check.
-- `prReview.checkWaitMinutes`, `prReview.botWaitMinutes`: how long a single wait for the checks or
+- `mergeGate.checkWaitMinutes`, `mergeGate.botWaitMinutes`: how long a single wait for the checks or
   for an automatic reviewer may take before the run reports instead of waiting longer.
-- `prReview.maxRounds`: how many repair rounds one run may spend in total before it ends with a
+- `mergeGate.maxRounds`: how many repair rounds one run may spend in total before it ends with a
   report instead of a merge.
-- `prReview.bots`: the logins of the automatic reviewers this project expects (e.g.
+- `mergeGate.bots`: the logins of the automatic reviewers this project expects (e.g.
   `greptileai[bot]`), as a comma list. Empty (the default) means no automatic reviewer is expected
   and the bot round is skipped rather than blocking the merge forever.
-- `prReview.bots.<login>.trigger`: free text, the literal comment that re-triggers exactly that bot
-  (e.g. `@greptileai`). Ask for it once per login named in `prReview.bots`. A login containing
+- `mergeGate.bots.<login>.trigger`: free text, the literal comment that re-triggers exactly that bot
+  (e.g. `@greptileai`). Ask for it once per login named in `mergeGate.bots`. A login containing
   brackets is a valid middle segment, because the table encoding splits on `.` only. Say when asking
   that this should be a **distinctive mention** such as `@greptileai`, not generic prose such as
   `please review`, because the gate recognizes its own trigger comment by an exact match against
   this string — a generic value could be matched by an ordinary human comment, which would then be
   excluded from the human-comment guard.
+- `mergeGate.bots.<login>.check`: free text, the commit-status context or check-run name that this
+  reviewer publishes against a head commit (e.g. `recensor/review`). Ask for it once per login named
+  in `mergeGate.bots`, directly after that login's trigger text, and offer "not set" as the answer —
+  it is optional and unset by default. Explain what it buys: with a check context the gate and
+  `{{SKILL:iterate}}` can tell a reviewer that is **still running** from one that has **not started**,
+  so a running reviewer is waited for instead of triggered a second time. Without it both fall back
+  to comparing the reviewer's newest comment against the head commit, which cannot see a reviewer
+  that edits one sticky comment in place. Leave it unset for a reviewer that publishes no readable
+  check — Greptile, for instance, acknowledges with an emoji reaction, which is not a check.
 
 `delivery.mergeMethod` (block 5) decides **how** the gate merges; it stays in the `delivery` block
 because it is a property of this project's delivery, not of the gate.
 
 ### Step 6: Merge and write
 
-1. Build the target configuration non-destructively: set the known keys to the chosen values, carry over existing valid values for keys not asked about, and leave unknown keys unchanged.
+1. Build the target configuration non-destructively: set the known keys to the chosen values, carry over existing valid values for keys not asked about, and leave unknown keys unchanged. A legacy `prReview.*` merge-gate block recorded in Step 2 is not an unknown key: rewrite it as described below before the before/after list is built.
 2. This also applies to the safe defaults: a default value that would replace an already-present, differing config value is set only after explicit confirmation. Before writing, show a before/after list of **all** keys to be changed (whether from the express base, the core switches, or the advanced settings) and obtain confirmation. A full overwrite (discarding existing values) likewise only after explicit confirmation.
 3. Resolve the project setup ADR freshly once more directly before writing (locator) and compare
    its result with the source state recorded in Step 2:
@@ -570,6 +587,32 @@ because it is a property of this project's delivery, not of the gate.
      validation; the pre-write marker check above owns idempotency for an already-complete
      migration.
 
+#### Rewriting a legacy `prReview.*` merge-gate block in place
+
+The merge-gate keys of block 9 were named `prReview.*` in an earlier generation. If Step 2 recorded
+such rows, rewrite that block **in place** as part of this same confirmed write — on the Express
+path as well as the guided one:
+
+- **Carry every legacy row over** to the identical trailing key under `mergeGate.`
+  (`prReview.completion` → `mergeGate.completion`, `prReview.bots.<login>.trigger` →
+  `mergeGate.bots.<login>.trigger`, and so on), preserving the recorded value verbatim. The values
+  are unchanged by the rename; only the namespace moves.
+- **Remove the old rows.** Do not leave both blocks standing. Nothing breaks if you do — every
+  reader resolves `mergeGate.*` first — but two adjacent blocks of plausible-looking configuration,
+  one of them inert, is exactly the artifact a later maintainer edits without effect.
+- **Report a shadowed key, do not merge it.** If a `mergeGate.<key>` and a `prReview.<key>` row are
+  both present with different values, keep the `mergeGate` value, name the discarded legacy value
+  explicitly, and never combine the two into one setting.
+- **`delivery.prReview` is not part of this block.** It is a `delivery` key with an unrelated
+  meaning, keeps its name, and is neither carried over nor removed.
+- Show the whole rewrite — every carried-over row, every removed row, and every shadowed key — in
+  the before/after list of item 2 and write it only after the same confirmation as any other change.
+  Without that confirmation, leave the legacy rows exactly as they are.
+
+This skill is the **only** writer of the configuration. A `{{SKILL:merge-gate}}` or
+`{{SKILL:iterate}}` run that resolves a value through the legacy namespace reports that once and
+points here; it never rewrites the ADR itself.
+
 ### Step 7: Summary
 
 Report to the user:
@@ -582,11 +625,14 @@ Report to the user:
   `language.project` and all explicit `language.*` overrides, `tracker.mode`, and, if applicable,
   `tracker.remoteToolOverride` or `tracker.externalTool` plus `tracker.externalToolHint`) as well
   as `plan.dir` and `concept.dir`, if set or changed from the default
-- if set or changed from the default: the merge-gate values `prReview.completion`,
-  `prReview.requireAllChecks`, `prReview.checkWaitMinutes`, `prReview.maxRounds`,
-  `prReview.botWaitMinutes`, `prReview.bots` with the trigger text recorded per login, and
-  `delivery.mergeMethod`. Name the gate keys separately from `delivery.prReview` so the two are not
-  read as one setting
+- if set or changed from the default: the merge-gate values `mergeGate.completion`,
+  `mergeGate.requireAllChecks`, `mergeGate.checkWaitMinutes`, `mergeGate.maxRounds`,
+  `mergeGate.botWaitMinutes`, `mergeGate.bots` with the trigger text and, where set, the check
+  context recorded per login, and `delivery.mergeMethod`. Name the gate keys separately from
+  `delivery.prReview` so the two are not read as one setting
+- whether a legacy `prReview.*` merge-gate block was rewritten in place: which rows were carried
+  over to `mergeGate.*`, that the old rows were removed, and every shadowed legacy value that was
+  discarded because a `mergeGate.*` row already held a different one
 - for `tracker.mode = external`: both new values verbatim, plus the note that the connection is
   selected at run time from the hint and that a missing, ambiguous, or under-capable connection
   aborts the run instead of falling back to the forge
