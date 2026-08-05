@@ -2959,14 +2959,43 @@ test('every site that matches mergeGate.bots resolves through the shared login r
 test('condition 7 finding no reviewer thread is reported, not passed over in silence', () => {
   const gate = source('src/tools/merge-gate.md');
   const phase4 = section(gate, '### Phase 4');
-  const flatPhase4 = flat(phase4);
+
+  // The numbered preconditions are cut out first, so every assertion below can tell a merge
+  // condition apart from the commentary that follows it. The cut starts at the list's own first
+  // numbered line: anchoring on the section's first blank line lands between the heading and the
+  // intro paragraph — before the list — and leaves an empty slice that asserts nothing. It ends at
+  // the first blank line followed by a line that is neither indented (a condition's own
+  // continuation) nor numbered (the next condition); everything past that point is Phase 4
+  // commentary. Splitting without that cut would file trailing prose under the last condition and
+  // fail a correctly placed report.
+  const listStart = phase4.search(/\n\d+\.\s/);
+  assert.notEqual(listStart, -1, 'Phase 4 must carry its merge preconditions as a numbered list');
+  const list = phase4.slice(listStart);
+  const listEnd = list.search(/\n\n(?![ \t])(?!\d+\.)/);
+  assert.notEqual(listEnd, -1, 'Phase 4 must carry prose after its numbered preconditions');
+  const conditions = list.slice(0, listEnd).split(/(?=\n\d+\.\s)/);
+  const afterList = flat(list.slice(listEnd));
+
+  // The slicing is itself under test: an empty or truncated condition list would let the
+  // not-a-precondition check below pass without ever reading a condition.
+  assert.ok(
+    conditions.length >= 7,
+    'Phase 4 must slice into its numbered preconditions — condition 7 among them — or the checks below assert nothing',
+  );
+
+  // The report's own contract phrase, required of the prose and forbidden of the conditions, so both
+  // halves move together when it is reworded. `\b` keeps the alternation out of `Note`, `nothing`
+  // and `not`, and naming one phrase replaces a bare character distance that could pair a `no` in
+  // one sentence with a `match` in another.
+  const zeroMatch = 'match(?:ed|es|ing)?\\s+\\b(?:no|zero|none of the)\\b\\s+configured\\s+logins?';
+  const zeroMatchPhrase = new RegExp(zeroMatch, 'i');
 
   // "Satisfied" and "no reviewer threads are open" were indistinguishable in the log, which is why
   // a gate whose unassessed-thread protection was inert said so nowhere. A misconfigured or absent
   // login is not a suffix problem, so the matching rule above does not reach this case.
   assert.match(
-    flatPhase4,
-    near('(?:no|zero|none)[^.]{0,80}match', '(?:report|name)', 500),
+    afterList,
+    near(zeroMatch, '(?:report|name)', 500),
     'Phase 4 must report a reviewer list that matched no unresolved thread',
   );
 
@@ -2974,7 +3003,7 @@ test('condition 7 finding no reviewer thread is reported, not passed over in sil
   // guard, so a blocking condition here would double-count it and could stall merges that the
   // guard correctly releases.
   assert.match(
-    flatPhase4,
+    afterList,
     near(
       '(?:reports? only|not a (?:new )?(?:blocking )?condition|never blocks|does not block)',
       'condition',
@@ -2984,25 +3013,15 @@ test('condition 7 finding no reviewer thread is reported, not passed over in sil
   );
 
   // It must not have been written as a numbered precondition, or it would gate the merge after all.
-  // The numbered list ends at the first blank line followed by a line that is neither indented (a
-  // condition's own continuation) nor numbered (the next condition); everything past that point is
-  // Phase 4 commentary. Splitting without that cut would file trailing prose under the last
-  // condition and fail a correctly placed report.
-  const listEnd = phase4.search(/\n\n(?![ \t])(?!\d+\.)/);
-  assert.notEqual(listEnd, -1, 'Phase 4 must carry prose after its numbered preconditions');
-  const conditions = phase4
-    .slice(0, listEnd)
-    .split(/(?=\n\d+\.\s)/)
-    .slice(1);
-  const asCondition = conditions.filter((item) => /(?:no|zero|none)[^.]{0,80}match/i.test(item));
+  const asCondition = conditions.filter((item) => zeroMatchPhrase.test(flat(item)));
   assert.equal(
     asCondition.length,
     0,
     'the zero-match report must not be a numbered Phase 4 merge precondition',
   );
   assert.match(
-    flat(phase4.slice(listEnd)),
-    /(?:no|zero|none)[^.]{0,80}match/i,
-    'the zero-match report must live in the prose after the preconditions',
+    afterList,
+    zeroMatchPhrase,
+    'the zero-match report must live in the prose after the numbered preconditions',
   );
 });
