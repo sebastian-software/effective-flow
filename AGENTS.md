@@ -65,8 +65,18 @@ Source frontmatter carries **no** `name` or `type` field — name and category c
 2. To expose a tool via `/effective-flow`, add it to exactly one intent group in `TOOL_GROUPS` in `build.mjs`; `EXPOSED_TOOLS` is derived from `TOOL_GROUPS` (array/group order = catalog order in the router). An exposed tool also needs a `catalogHint` frontmatter field (strictly double-quoted, a single usage-oriented line).
 3. Run `node build.mjs`. Guards will fail if an exposed tool has no source, if an `include` target is missing, if a Claude agent omits `effort` or uses an unsupported value, if a Codex `sandbox_mode` is unsupported, if an exposed tool is missing or has an unquoted `catalogHint`, or if a tool is missing from or duplicated across `TOOL_GROUPS`.
 4. If the new tool delegates to a worker or does its own analysis/exploration, embed the eager
-   `delegation-mandate` include (see "Delegation" below); a new Claude `src/agents/<name>.md` lists
-   `Agent, Task` in `claude.tools` so its read-only sub-agent grant is fulfillable.
+   `delegation-mandate` include (see "Delegation" below). A new Claude `src/agents/<name>.md`
+   lists `Agent, Task` in `claude.tools` **only if** its `claude.tools` also lists `Write` or
+   `Edit` — a role that produces changes; that grant is what makes the read-only sub-agent
+   fan-out fulfillable without weakening an observation role's own guarantee. An **observation
+   role** that lists neither `Write` nor `Edit` stays without `Agent, Task` and does not delegate
+   at all, regardless of `Bash`: `Bash` gives incidental write capability but withholding the
+   sub-agent grant from such a role is defence in depth, not the role's read-only guarantee — for
+   a role whose tool list genuinely cannot write, withholding the grant is that whole guarantee.
+   Never use the parenthesised form `Agent(<type>)` to try to restrict it instead: a probe agent
+   declared `tools: Read, Glob, Grep, Agent(Explore)` successfully spawned a `general-purpose`
+   subagent, so the parenthesised form is read as an unrestricted grant, not a type filter, and
+   must never be used to fake a read-only allowlist.
 
 ## Delegation
 
@@ -74,15 +84,22 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 through an available sub-agent mechanism; a host default that discourages unrequested sub-agents
 does not apply inside a tool run. Delegating to a named worker role is **mandatory**; delegating
 an analysis, exploration, or research step is the **default**, with a narrow exception for a
-step whose whole cost is smaller than briefing a worker. A worker may fan out **read-only**
-analysis sub-agents but never re-delegates its own assignment and never delegates a write.
+step whose whole cost is smaller than briefing a worker. A worker whose tool list carries a
+sub-agent tool (`Agent, Task`) may fan out **read-only** analysis sub-agents but never
+re-delegates its own assignment and never delegates a write; a worker whose tool list carries no
+sub-agent tool does not delegate at all, and that limit rests on the tool list, not on prose.
 Inline execution stays legitimate only as a **disclosed** fallback — a harness without a
 sub-agent mechanism, or a runtime-declined delegation — never a silent one. The full contract is
 [`src/shared/delegation-mandate.md`](src/shared/delegation-mandate.md), eagerly included in every
-delegating tool and in every `src/agents/*.md` worker (whose Claude frontmatter accordingly lists
-`Agent, Task` in `claude.tools`). It covers worker roles and analysis fan-out only; delegation
-from one workflow to another (`apply-plan`, `pr-review` → `iterate`) keeps that tool's own
-mechanics, including its interactive/gated path.
+delegating tool and in every `src/agents/*.md` worker. Today ten workers whose `claude.tools`
+lists `Write` or `Edit` also carry `Agent, Task`; the five observation roles that list neither
+(`frontend-reviewer`, `nodejs-reviewer`, `rust-reviewer`, `generic-product-reviewer`,
+`code-validator`) do not. For the four reviewers among those five, whose tool list genuinely
+cannot write, that omission is their entire read-only guarantee; `code-validator` also lists
+`Bash`, so withholding the grant there is defence in depth rather than the source of its
+read-only property — it only keeps the easy path to a write-capable child closed. It covers
+worker roles and analysis fan-out only; delegation from one workflow to another (`apply-plan`,
+`pr-review` → `iterate`) keeps that tool's own mechanics, including its interactive/gated path.
 
 ## Skill discovery
 

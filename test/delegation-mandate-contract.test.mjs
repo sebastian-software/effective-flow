@@ -39,6 +39,40 @@ const EXPECTED_EAGER_INCLUDE_TOOLS = new Set([
   'concept-review',
 ]);
 
+// A tool whose whole purpose is to produce changes. Holding one of these marks the agent as a
+// producing role, which is what earns the sub-agent grant; an agent holding neither is an
+// observation role whose output is judgment, and it withholds the grant. `Bash` is deliberately
+// not on this list: it is not harmless, it just does not make an agent a producing role.
+const CHANGE_PRODUCING_TOOLS = ['Write', 'Edit'];
+const SUB_AGENT_TOOLS = ['Agent', 'Task'];
+
+// Enumerate src/agents/ rather than hard-coding the roster, so a newly added agent is in scope
+// without a test edit and a future re-grant on an observation role fails here.
+function readAgentSources() {
+  const agentFiles = readdirSync(AGENTS_DIR).filter((name) => name.endsWith('.md'));
+  assert.ok(agentFiles.length > 0, 'expected at least one agent source under src/agents/');
+
+  return agentFiles.map((file) => {
+    const body = readSource('agents', file);
+    const frontmatter = extractFrontmatter(body);
+    assert.notEqual(frontmatter, '', `src/agents/${file} must have a YAML frontmatter block`);
+    // Same accessor the build uses, so `tools:` is read from inside the `claude:` block only and
+    // a sibling block's `tools:` cannot stand in for a missing one.
+    const rawTools = getNestedArray(frontmatter, 'claude', 'tools', {
+      context: `src/agents/${file}`,
+    });
+    assert.notEqual(
+      rawTools,
+      '',
+      `src/agents/${file} must declare a claude.tools array in its frontmatter`,
+    );
+    // Drop a parenthesised argument list so a hypothetical `Edit(src/**)` still counts as `Edit`
+    // here; the raw string is kept so the dedicated guard below can still see the form it bans.
+    const tools = rawTools.split(',').map((tool) => tool.replace(/\(.*$/, ''));
+    return { body, file, rawTools, tools };
+  });
+}
+
 // Split a markdown body at a top-level heading so an assertion can name which
 // section carries the fact: everything before the heading, and the heading's own
 // section up to the next `## `.
@@ -126,16 +160,37 @@ test('delegation-mandate.md states all six mandate points and carries no unresol
 test('delegation-mandate.md bounds what a worker may itself start', () => {
   assertClauses(delegationMandate, [
     [
-      /never\s+starts\s+a\s+general-purpose[^\n]{0,40}write-capable\s+agent/i,
-      'missing: a worker may start read-only analysis sub-agents only and never a general-purpose ' +
-        'or otherwise write-capable agent type',
+      /A worker that \*\*has\*\* a sub-agent tool may fan out \*\*read-only\*\* analysis sub-agents/,
+      'missing: a worker that has a sub-agent tool may fan out read-only analysis sub-agents',
     ],
+    [
+      /never\s+re-delegates\s+its\s+own\s+assignment/i,
+      'missing: a worker never re-delegates its own assignment',
+    ],
+    [/never\s+delegates\s+a\s+write/i, 'missing: a worker never delegates a write'],
     [
       /never\s+selects\s+or\s+sequences\s+another\s+worker\s+role/i,
       'missing: a worker never selects or sequences another worker role — role selection and ' +
         'sequencing stay with the orchestrating tool',
     ],
+    [
+      /A worker whose tool list carries no sub-agent tool does not delegate at all/i,
+      'missing: a worker whose tool list carries no sub-agent tool does not delegate at all. ' +
+        'This is the only statement of where the read-only guarantee actually lives — the ' +
+        'withheld tool grant, not prose.',
+    ],
   ]);
+  // The fragment used to promise that a worker "never starts a general-purpose or otherwise
+  // write-capable agent". That promise was empirically disproven: an agent granted the sub-agent
+  // tool can start a general-purpose child regardless of what the prose says, so restating it
+  // would advertise an enforcement that does not exist.
+  assert.doesNotMatch(
+    delegationMandate,
+    /never\s+starts\s+a\s+general-purpose/i,
+    'delegation-mandate.md must not promise that a worker never starts a general-purpose agent: ' +
+      'nothing enforces that at runtime. A worker granted Agent/Task can start any agent type, ' +
+      'which is why the read-only guarantee is now carried by withholding the grant instead.',
+  );
 });
 
 test('SKILL.md states invoking a tool is the standing request for internal delegation', () => {
@@ -271,41 +326,88 @@ test('the old optional-delegation phrasing does not regress anywhere under src/'
   }
 });
 
-test('every agent source carries the eager include and pairs Agent with Task in claude.tools', () => {
-  const agentFiles = readdirSync(AGENTS_DIR).filter((name) => name.endsWith('.md'));
-  assert.ok(agentFiles.length > 0, 'expected at least one agent source under src/agents/');
+test('every agent source carries the eager include and pairs the sub-agent grant with the producing roles', () => {
+  const agents = readAgentSources();
+  const producingAgents = [];
+  const observationAgents = [];
+  // Collected instead of asserted per file, so one offender cannot mask another: the roster is
+  // edited by several hands and a failure report that stops at the first file hides the rest.
+  const violations = [];
 
-  for (const file of agentFiles) {
-    const body = readSource('agents', file);
-
+  for (const { file, body, tools } of agents) {
     assert.ok(
       collectIncludeNames(body).eager.has('delegation-mandate'),
       `src/agents/${file} must eagerly include delegation-mandate`,
     );
 
-    const frontmatter = extractFrontmatter(body);
-    assert.notEqual(frontmatter, '', `src/agents/${file} must have a YAML frontmatter block`);
-    // Same accessor the build uses, so `tools:` is read from inside the `claude:` block only and
-    // a sibling block's `tools:` cannot stand in for a missing one.
-    const rawTools = getNestedArray(frontmatter, 'claude', 'tools', {
-      context: `src/agents/${file}`,
-    });
-    assert.notEqual(
-      rawTools,
-      '',
-      `src/agents/${file} must declare a claude.tools array in its frontmatter`,
-    );
-    const tools = rawTools.split(',');
-    // This proves the `Agent` and `Task` strings are present in the source, not that the grant
-    // works at runtime: a mistyped tool name is silently dropped by the harness, and only the
+    const producing = CHANGE_PRODUCING_TOOLS.filter((tool) => tools.includes(tool));
+    // This reads the `Agent` and `Task` strings out of the source; it does not prove the grant
+    // works at runtime. A mistyped tool name is silently dropped by the harness, and only the
     // manual smoke check can catch that.
-    assert.ok(
-      tools.includes('Agent'),
-      `src/agents/${file} claude.tools must list Agent (found: ${tools.join(', ')})`,
-    );
-    assert.ok(
-      tools.includes('Task'),
-      `src/agents/${file} claude.tools must list Task (found: ${tools.join(', ')})`,
+    const subAgent = SUB_AGENT_TOOLS.filter((tool) => tools.includes(tool));
+
+    if (producing.length > 0) {
+      producingAgents.push(file);
+      const missing = SUB_AGENT_TOOLS.filter((tool) => !subAgent.includes(tool));
+      if (missing.length > 0) {
+        violations.push(
+          `src/agents/${file} is a producing role (lists ${producing.join(', ')}) but does not ` +
+            `list ${missing.join(' and ')} — tools: [${tools.join(', ')}]`,
+        );
+      }
+    } else {
+      observationAgents.push(file);
+      if (subAgent.length > 0) {
+        violations.push(
+          `src/agents/${file} is an observation role (lists neither ` +
+            `${CHANGE_PRODUCING_TOOLS.join(' nor ')}) but lists ${subAgent.join(' and ')} — ` +
+            `tools: [${tools.join(', ')}]`,
+        );
+      }
+    }
+  }
+
+  assert.deepEqual(
+    violations,
+    [],
+    'claude.tools drifted from the grant pairing:\n' +
+      `${violations.join('\n')}\n\n` +
+      `An agent that lists ${CHANGE_PRODUCING_TOOLS.join(' or ')} produces changes and must list ` +
+      'both Agent and Task, because the delegation mandate makes read-only analysis fan-out its ' +
+      'default. An agent that lists neither is an observation role and must list neither, ' +
+      'regardless of Bash. It withholds the grant because its output is judgment rather than ' +
+      'changes, and withholding keeps the easy path to a write-capable child closed: a sub-agent ' +
+      "tool starts a child with the child's own tool set, which neither prose nor the " +
+      'Agent(<type>) form constrains. For the reviewers that grant is the entire read-only ' +
+      'guarantee; for an observation role that also holds Bash — which is not harmless and can ' +
+      'reach a write on its own — it is defence in depth rather than a guarantee.',
+  );
+
+  // Without these, a bug that made every agent land on one side of the branch — an empty
+  // CHANGE_PRODUCING_TOOLS match, a broken tool split — would satisfy the rule vacuously.
+  assert.ok(
+    producingAgents.length > 0,
+    'expected at least one producing agent under src/agents/ carrying the Agent/Task grant; ' +
+      'finding none means the tool lists are no longer being read',
+  );
+  assert.ok(
+    observationAgents.length > 0,
+    'expected at least one observation agent under src/agents/ with the Agent/Task grant ' +
+      'withheld; finding none means the boundary this contract pins has been dropped everywhere',
+  );
+});
+
+test('no agent narrows a sub-agent grant with the disproven Agent(<type>) form', () => {
+  for (const { file, rawTools } of readAgentSources()) {
+    assert.doesNotMatch(
+      rawTools,
+      /(?:Agent|Task)\(/,
+      `src/agents/${file} claude.tools must not use the parenthesised Agent(<type>)/Task(<type>) ` +
+        `form (found: ${rawTools}). It was empirically disproven as a restriction: a probe agent ` +
+        'declared with `tools: Read, Glob, Grep, Agent(Explore)` still spawned a general-purpose ' +
+        'subagent. The harness reads the parenthesised form as a plain grant and applies no type ' +
+        'restriction, so using it on an observation role silently reopens the path it was meant ' +
+        'to close. An observation role must omit Agent and Task entirely.',
     );
   }
 });

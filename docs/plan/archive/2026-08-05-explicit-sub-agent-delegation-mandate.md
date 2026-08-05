@@ -304,12 +304,39 @@ Deviations from the plan as written, all deliberate:
 Final always-loaded budget (guard 700): `build 528`, `fix 424`, `docs 557`, `review 675`,
 `plan 490`. `review` is the tightest at 25 lines of headroom.
 
+### Correction after review: the grant is conditional, not universal
+
+The plan granted the sub-agent tool to all 15 workers. Review finding `R-0000079` showed why that
+was wrong for the workers whose tool list cannot write: for them the allowlist **was** the read-only
+guarantee, and a sub-agent tool starts a child with the child's own tool set, so a read-only worker
+reaches a write through that child. Their Codex counterparts keep `sandbox_mode: read-only`, so the
+two build targets were no longer equally strong.
+
+The attempted middle ground — keep the grant and narrow it with the allowlist form
+`Agent(<type>)` — was **empirically disproven**. A probe agent declared
+`tools: Read, Glob, Grep, Agent(Explore)` successfully spawned a `general-purpose` subagent, twice,
+in two independent runs. The parenthesised form reads as a grant and applies no type restriction.
+The contract test now guards against reintroducing it.
+
+The delivered rule is therefore conditional and keyed on role, not on raw write capability:
+
+- a worker whose `claude.tools` lists `Write` or `Edit` **produces changes**, carries `Agent, Task`
+  and may fan out read-only analysis sub-agents — ten workers today;
+- a worker listing neither is an **observation role**, carries neither, and does not delegate at all
+  — the four reviewers plus `code-validator`.
+
+`Bash` is deliberately not the criterion. It is not harmless — `code-validator` holds it to run the
+repository's checks and can reach a write through it — so for that one worker the withheld grant is
+defence in depth, not a guarantee. For the four reviewers it is the whole guarantee. The fragment's
+fan-out bullet states the mechanism rather than a promise: a worker whose tool list carries no
+sub-agent tool does not delegate at all, and that limit rests on the tool list, not on prose.
+
 ## Test results
 
 | Check                    | Result                                                                                                |
 | ------------------------ | ----------------------------------------------------------------------------------------------------- |
 | `pnpm agent:check`       | pass — 266 files, no formatting complaint                                                             |
-| `pnpm test`              | pass — 475/475 (473 before the review fixes, +2 net)                                                  |
+| `pnpm test`              | pass — 476/476 (473 before the review fixes, +3 net)                                                  |
 | `node build.mjs`         | pass — no include, placeholder, worker-reference, agent-frontmatter or eager/lazy-overlap guard fired |
 | `pnpm test:distribution` | pass — offline checks passed                                                                          |
 
@@ -332,12 +359,15 @@ executed from inside this workflow. It remains outstanding for the maintainer.
 
 | Status                 | Count |
 | ---------------------- | ----: |
-| Fixed                  |    18 |
-| Open / Not implemented |     2 |
+| Fixed                  |    19 |
+| Open / Not implemented |     1 |
 
 One Critical (a contract-test guard that could never fire, because its lazy-include regex matched
-no real fence shape) and six Important findings were fixed before completion. The two remaining
-entries are Notes and are recorded in the external report.
+no real fence shape) and six Important findings were fixed before completion. `R-0000079` — the
+sub-agent grant on the observation-role workers — was fixed afterwards on the same branch, see
+"Correction after review" above. The one remaining entry is a Note recorded in the external
+report: the fragment names `Agent`/`Task` in a hedged list, a deliberate divergence from the
+harness-neutral-prose decision.
 
 **External review report:** `.effective-flow/review/review-report-2026-08-05-plan-explicit-sub-agent-delegation-mandate.md`
 

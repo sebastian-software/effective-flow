@@ -100,9 +100,19 @@ of truth, eagerly included in every delegating tool (`build`, `fix`, `refactor`,
 it for read-only analysis fan-out only, restating their existing ban on starting implementers,
 test writers, validators, and reviewers next to the include. Delegating to a named worker role is
 mandatory; analysis and exploration delegation is the default, with a narrow triviality
-exception; a worker may fan out read-only analysis sub-agents but never re-delegates its own
-assignment or a write. Inline execution stays legitimate only as a disclosed fallback — never
-silent. Workflow-to-workflow delegation (`apply-plan`, `pr-review` → `iterate`) keeps its own
+exception; a worker whose `claude.tools` carries `Agent, Task` may fan out read-only analysis
+sub-agents but never re-delegates its own assignment or a write. That grant tracks whether the
+worker's own tool list already lists `Write` or `Edit` — a role that produces changes: today ten
+workers qualify and carry `Agent, Task`, while the five observation roles that list neither
+(`frontend-reviewer`, `nodejs-reviewer`, `rust-reviewer`, `generic-product-reviewer`,
+`code-validator`) omit it and do not delegate at all. For the four reviewers, whose tool list
+genuinely cannot write, that omission is the whole read-only guarantee; `code-validator` also
+lists `Bash`, so withholding the grant there is defence in depth, not the source of its
+read-only property — it only keeps the easy path to a write-capable child closed. The
+parenthesised allowlist form `Agent(<type>)` cannot narrow that grant to read-only sub-agents —
+it is read as an unrestricted grant, not a type filter, and must not be used in its place. Inline
+execution stays legitimate only as a disclosed fallback —
+never silent. Workflow-to-workflow delegation (`apply-plan`, `pr-review` → `iterate`) keeps its own
 mechanics and is out of scope for this mandate. Delegation mechanics are Effective Flow's own
 orchestration ownership, so this carries no central-skill relationship under the layered
 ownership contract in [`AGENTS.md`](../../AGENTS.md#skill-discovery).
