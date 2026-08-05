@@ -27,6 +27,10 @@ language-rules
 task-tracking
 ```
 
+```include
+delegation-mandate
+```
+
 ```lazy-include
 runtime-state-safety
 when: any wisdom, report, memory, runtime migration, or worktree mutation is imminent

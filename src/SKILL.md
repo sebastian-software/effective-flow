@@ -46,4 +46,4 @@ clarification instead of a guess.
 ## Rules
 
 - Never load multiple tool files "just in case"; always only the currently invoked tool (plus, if applicable, the single internal `apply` source).
-- Specialist workers (implementers, reviewers, validators, test/docs writers …) are **not** `{{FIRMO}}` tools. Tools invoke them internally through {{WORKER_RESOLUTION}}. Load or delegate only the selected worker, never the full worker set.
+- Specialist workers (implementers, reviewers, validators, test/docs writers …) are **not** `{{FIRMO}}` tools. Tools invoke them internally through {{WORKER_RESOLUTION}}. Invoking a tool is the user's standing request for exactly that internal delegation. Load or delegate only the selected worker, never the full worker set.

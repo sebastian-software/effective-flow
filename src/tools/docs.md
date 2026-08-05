@@ -20,6 +20,10 @@ when: documentation target languages or delegated language contexts must be reso
 task-tracking
 ```
 
+```include
+delegation-mandate
+```
+
 ```lazy-include
 runtime-state-safety
 when: any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent

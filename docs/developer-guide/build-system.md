@@ -281,10 +281,13 @@ and directive syntax").
 
 - **Core flow stays inline** – blocks that (almost) every run needs, or that must not be missed:
   `task-tracking`, `skill-discovery`, `completion-protocol`, `pre-commit-gate`,
-  `goal-completion`, `apply-clarity-gate`, and the status markers in `plan-status`.
-  `goal-completion` governs every remaining phase rather than one decision point, and
-  `apply-clarity-gate` is a safety gate whose failure mode — silently not running — is the one
-  nobody notices. Neither is deferred, however tempting their size.
+  `goal-completion`, `apply-clarity-gate`, `delegation-mandate`, and the status markers in
+  `plan-status`. `goal-completion` governs every remaining phase rather than one decision point,
+  and `apply-clarity-gate` is a safety gate whose failure mode — silently not running — is the one
+  nobody notices. Neither is deferred, however tempting their size. `delegation-mandate` is eager
+  for the same reason: a lazy pointer at the delegation decision point would let the very host
+  default this fragment corrects skip the pointer's own trigger, so the mandate must be present
+  before the model plans the run.
 - **Mode-gated blocks are lazy** – needed only when the branch is reached: `language-rules`,
   `project-routing`, `commit-message-rules`, `doc-categories`, `plan-contract`,
   `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
@@ -331,9 +334,9 @@ so both managers install the same bytes instead of selecting by traversal order.
 
 **Context budget.** The always-loaded core of the five largest tools stays under **700 lines**
 (measured and enforced during the build, see "Guards"); the build prints the sizes as a report.
-The current cores are `build` 540, `fix` 427, `docs` 543, `review` 598, and `plan` 478 lines —
-roughly 150 to 270 lines of headroom each, deliberately left free for future instruction work
-rather than locked in by lowering the guard. The rest is loaded only when the mode is reached.
+The current cores are `build` 528, `fix` 424, `docs` 557, `review` 675, and `plan` 488 lines —
+headroom ranges from `review`'s 25 lines, the tightest since the eager `delegation-mandate`
+include was added, to `fix`'s 276 lines. The rest is loaded only when the mode is reached.
 
 ## Optional upstream ownership audit
 

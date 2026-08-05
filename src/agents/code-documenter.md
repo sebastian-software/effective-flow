@@ -4,7 +4,7 @@ claude:
   model: sonnet
   effort: medium
   color: cyan
-  tools: [Read, Write, Edit, Glob, Grep, Skill]
+  tools: [Read, Write, Edit, Glob, Grep, Skill, Agent, Task]
 codex:
   model: gpt-5.6-luna
   model_reasoning_effort: medium
@@ -21,6 +21,10 @@ language-rules
 
 ```include
 task-tracking
+```
+
+```include
+delegation-mandate
 ```
 
 ## Recommended skills

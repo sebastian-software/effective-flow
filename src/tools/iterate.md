@@ -36,6 +36,10 @@ language-rules
 task-tracking
 ```
 
+```include
+delegation-mandate
+```
+
 ```lazy-include
 runtime-state-safety
 when: any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent

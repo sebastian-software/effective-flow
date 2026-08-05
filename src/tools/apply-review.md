@@ -20,6 +20,12 @@ language-rules
 task-tracking
 ```
 
+```include
+delegation-mandate
+```
+
+The Phase 4 delegation sub-agent per overlap component is **workflow-to-workflow** delegation, not a worker role: its non-interactive delegation contract, the overlap components, the git commit mutex, the worktree isolation, the synchronization barrier, and the `failed (delegation)` handling stay authoritative and are never replaced by inline work. The mandate adds authorization only.
+
 ```lazy-include
 runtime-state-safety
 when: any wisdom, memory, cache, report, lock, or worktree mutation is imminent

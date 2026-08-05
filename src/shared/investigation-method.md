@@ -5,7 +5,7 @@ This building block describes the read-only core of a bug and behavior investiga
 ### Investigate symptom and code
 
 1. Analyze the symptom or error description thoroughly: expected versus actual behavior.
-2. Investigate the relevant code locally or via an internal Explore sub-agent – read-only.
+2. Delegate the read-only investigation of the relevant code to an internal Explore sub-agent; work inline only under the delegation mandate's triviality exception. Either way it stays read-only.
 3. Clarify open questions directly with the user:
    - when does the behavior occur
    - is there an error message or a clearly nameable expected versus actual behavior

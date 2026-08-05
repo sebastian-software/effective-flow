@@ -5,7 +5,8 @@ Before the actual workflow starts, check whether the project already has documen
 1. Check whether `<plan.dir>/` exists and contains at least one `.md` file.
 2. If no plan files exist:
    - create `<plan.dir>/` if needed
-   - investigate the current project state locally or with an internal sub-agent:
+   - delegate the read-only investigation of the current project state to an internal sub-agent;
+     work inline only under the delegation mandate's triviality exception:
      - project structure
      - existing files
      - technologies used

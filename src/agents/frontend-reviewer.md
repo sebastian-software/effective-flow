@@ -23,6 +23,10 @@ language-rules
 task-tracking
 ```
 
+```include
+delegation-mandate
+```
+
 ## Recommended skills
 
 - `effective-web › impeccable › frontend-design` (fallback)

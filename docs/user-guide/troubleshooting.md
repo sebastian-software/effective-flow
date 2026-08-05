@@ -174,6 +174,25 @@ confirmation. The same run also inventories linked worktrees and ends with the m
 remaining-worktree report described above. It does not commit and does not create a backup – you
 bring the staged changes in afterwards with [`/effective-flow commit`](./tools-deliver.md).
 
+## The tool did everything itself instead of delegating
+
+Symptom: a tool that names a worker role (for example the implementer inside `build` or `fix`)
+reads the codebase, writes the change, and reports completion without ever mentioning that worker
+in the transcript – the orchestrator did the work inline instead of delegating it.
+
+Effective Flow's delegation mandate makes invoking a tool your standing request for internal
+delegation, so a host default that discourages unrequested sub-agents does not apply inside a
+run. Delegating to a named worker role is mandatory, and delegating an analysis or exploration
+step is the default. If the orchestrator still does everything inline without saying so, that is
+exactly the defect the mandate exists to remove and is worth a bug report with the transcript.
+
+A legitimate, disclosed inline fallback looks different: the tool states in one visible line that
+no sub-agent mechanism was available, or that a delegation was declined at runtime, before it
+continues inline. A single trivial step – one known file, one lookup – also stays inline by
+design and needs no disclosure. See also the next entry, "A workflow cannot resolve a worker",
+for the related but distinct case where delegation fails because the worker contract itself is
+missing rather than skipped.
+
 ## A workflow cannot resolve a worker
 
 First identify the installation path:
