@@ -1175,6 +1175,47 @@ export function findForeignHarnessToolParameters(text, target) {
   return findings.sort((a, b) => a.line - b.line || a.parameter.localeCompare(b.parameter));
 }
 
+// --- Router dispatch clause for deprecated tool aliases ---
+//
+// A deprecated alias is built as a tool file but deliberately kept out of the
+// router catalog, so the dispatch rule's "no or unknown tool -> print the
+// catalog" branch would swallow it instead of routing it. This rendered clause
+// is what makes the retired name reachable at all, and it is also the only
+// place that licenses the alias to read a second tool file.
+//
+// The three harnesses spell an invocation differently, so the caller passes its
+// own `skillInvocation(name)`; nothing about the harness is decided here and no
+// target can drift out of sync with another.
+export function renderDeprecatedAliasClause(aliases, skillInvocation) {
+  if (!Array.isArray(aliases)) {
+    throw new Error('Deprecated alias list must be an array');
+  }
+  if (typeof skillInvocation !== 'function') {
+    throw new Error('renderDeprecatedAliasClause requires a skillInvocation(name) function');
+  }
+  if (aliases.length === 0) return '';
+
+  const bullets = aliases.map(({ alias, replacement }) => {
+    if (typeof alias !== 'string' || alias.trim() === '') {
+      throw new Error('Deprecated alias entry requires an alias name');
+    }
+    if (typeof replacement !== 'string' || replacement.trim() === '') {
+      throw new Error(`Deprecated alias "${alias}" requires a replacement tool name`);
+    }
+    return (
+      `- \`${skillInvocation(alias)}\` is the deprecated former name of ` +
+      `\`${skillInvocation(replacement)}\`. Read \`tools/${alias}.md\`, which reports the ` +
+      `deprecation and then follows \`tools/${replacement}.md\` with the arguments unchanged.`
+    );
+  });
+
+  return [
+    'Some retired tool names stay invocable as **deprecated aliases**. They are deliberately absent from the catalog below, so rule 1 does not apply to them, and the tool file of an alias is the one case in which rule 2 allows a second tool file to be read:',
+    '',
+    ...bullets,
+  ].join('\n');
+}
+
 // --- ASK block transforms ---
 
 export function parseAskBlock(block, { context } = {}) {

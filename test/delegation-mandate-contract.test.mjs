@@ -220,8 +220,9 @@ test('exactly the expected tool sources carry the eager delegation-mandate inclu
     'the set of tools eagerly including delegation-mandate drifted from the expected set. ' +
       'Add a tool to EXPECTED_EAGER_INCLUDE_TOOLS when it delegates to worker roles or runs ' +
       'analysis; leave it out for non-delegating tools and for the workflow-to-workflow tools ' +
-      "apply-plan and pr-review, which the mandate's own carve-out excludes. Note that " +
-      'src/tools/ also holds two non-tool fragments (apply-review-commit-mechanics.md, ' +
+      'apply-plan and merge-gate (the renamed gate; its deprecated forwarding alias pr-review ' +
+      "carries no include of its own either), which the mandate's own carve-out excludes. Note " +
+      'that src/tools/ also holds two non-tool fragments (apply-review-commit-mechanics.md, ' +
       'apply-review-remote.md).',
   );
   assert.equal(

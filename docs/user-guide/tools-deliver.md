@@ -239,6 +239,16 @@ pull request it just created – a different thing entirely. Every code change t
 by `/effective-flow iterate`, which the gate calls with the reviewer state it has already
 established, so `iterate`'s own review-in-flight guard does not re-derive it.
 
+#### Deprecated `pr-review` invocation
+
+`/effective-flow merge-gate` was named `/effective-flow pr-review` before this tool was
+renamed. The old name still works: `/effective-flow pr-review` prints a one-time deprecation
+notice naming `/effective-flow merge-gate` and then forwards the run unchanged, with the same
+arguments, into the gate above. It is deliberately absent from the tool overview and from
+autocomplete – reachable by name only, not advertised – and carries no gate logic of its own. The
+alias is removed with the next deliberate major release; use `/effective-flow merge-gate` going
+forward.
+
 ## Further reading
 
 - [Worktree and delivery](worktree-and-delivery.md) – delivery branch, completion actions

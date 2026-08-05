@@ -112,7 +112,7 @@ read-only property — it only keeps the easy path to a write-capable child clos
 parenthesised allowlist form `Agent(<type>)` cannot narrow that grant to read-only sub-agents —
 it is read as an unrestricted grant, not a type filter, and must not be used in its place. Inline
 execution stays legitimate only as a disclosed fallback —
-never silent. Workflow-to-workflow delegation (`apply-plan`, `pr-review` → `iterate`) keeps its own
+never silent. Workflow-to-workflow delegation (`apply-plan`, `merge-gate` → `iterate`) keeps its own
 mechanics and is out of scope for this mandate. Delegation mechanics are Effective Flow's own
 orchestration ownership, so this carries no central-skill relationship under the layered
 ownership contract in [`AGENTS.md`](../../AGENTS.md#skill-discovery).
@@ -132,6 +132,15 @@ src/
   [`build-system.md`](build-system.md)). Unlisted tools (e.g. `apply-plan`, `apply-review`,
   `apply-issues`) are **internal**: built but not visible in the router catalog; `apply` loads
   the matching internal instruction on demand depending on the detected source.
+- **Deprecated tool aliases**: a renamed exposed tool can keep its old name callable through
+  `DEPRECATED_TOOL_ALIASES` in `build.mjs` (see [`build-system.md`](build-system.md)) instead of
+  shipping the rename as a breaking change. An alias is also an internal tool source — absent from
+  `TOOL_GROUPS`, so it is reachable by name only and never appears in the router catalog, the
+  router frontmatter description, or `argument-hint`. The router's dispatch rule still routes it,
+  through a generated `{{DEPRECATED_ALIASES}}` clause that names the alias, its replacement, and
+  the tool source it forwards to. `pr-review` is such an alias for `merge-gate` today: invoking it
+  reports the deprecation once and then forwards the run unchanged to `tools/merge-gate.md`,
+  carrying no gate logic of its own. It is removed with the next deliberate major release.
 - **`src/agents/<name>.md`**: Workers are **not** `/effective-flow` tools. Workflow tools call
   them internally as subagents. The frontmatter carries native per-harness configuration under
   `claude:` and `codex:`; the body is also the single contract rendered into the portable target.

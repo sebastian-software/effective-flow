@@ -218,6 +218,11 @@ The build aborts with an error message if any of these guards is violated:
   strictly quoted `catalogHint` field – the line the router catalog shows per tool.
 - **`TOOL_GROUPS` completeness guard:** Every exposed tool is in exactly one group; duplicates
   or a tool without a matching source file make the build fail.
+- **Deprecated-alias guards:** Every entry in `DEPRECATED_TOOL_ALIASES` must not appear in
+  `TOOL_GROUPS`/`EXPOSED_TOOLS` (an alias stays out of the catalog, the `catalogHint` guard, and
+  `argument-hint`), its replacement must itself be an exposed tool, and its alias name must have a
+  matching `src/tools/<alias>.md` source, since the rendered `{{DEPRECATED_ALIASES}}` router clause
+  routes the retired name to that file.
 - **Codex sandbox guard:** A value given in `codex.sandbox_mode` must be among the modes
   supported by Codex.
 - **Version-drift guard:** The version string stamped into all three router outputs
