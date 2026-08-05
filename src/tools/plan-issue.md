@@ -37,6 +37,15 @@ language-rules
 task-tracking
 ```
 
+```include
+delegation-mandate
+```
+
+```lazy-include
+completion-protocol
+when: an internal sub-agent's result is returned
+```
+
 ```lazy-include
 runtime-state-safety
 when: a remote tracker access is about to write its local migration marker
@@ -166,8 +175,9 @@ central-reasoning-delegation
 For each chosen issue in turn:
 
 1. Read the issue fresh from the tracker – **including comments** (operation
-   `issue-comments-read`) – and examine the relevant codebase locally or with an internal analysis
-   sub-agent. Take maintainer clarifications from comments into account. Find the newest comment
+   `issue-comments-read`) – and delegate the read-only examination of the relevant codebase to an
+   internal analysis sub-agent; examine it inline only under the delegation mandate's triviality
+   exception. Take maintainer clarifications from comments into account. Find the newest comment
    carrying `<!-- effective-flow-plan-issues -->` or the backward-compatible
    `<!-- firmo-plan-issues -->`; retain its normalized positive comment ID, exact body, and body
    hash. Treat it as the canonical update basis. Never create a second planning comment while such

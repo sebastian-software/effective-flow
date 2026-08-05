@@ -10,7 +10,18 @@ themselves.
 A specialist that a tool calls **internally** as a subagent – for example an implementer, a
 reviewer, a validator, or a docs writer. Agents are themselves **not** `/effective-flow` tools
 and are never called directly; at most you see them in a tool's intermediate updates (e.g.
-"delegated to the UI implementer").
+"delegated to the UI implementer"). Calling a named agent is Effective Flow's default, not an
+optional choice; see [Delegation](#delegation).
+
+## Delegation
+
+The default way an Effective Flow tool gets work done: invoking a tool is your standing request
+to hand a named step to an internal [agent](#agent) rather than have the orchestrator do it
+inline. A worker may itself fan out read-only analysis subagents but never re-delegates its own
+assignment or a write. Inline execution stays legitimate only as a disclosed fallback – for
+example when the harness offers no subagent mechanism, or a delegation is declined at runtime –
+and is always announced, never silent. See
+[Troubleshooting](./troubleshooting.md#the-tool-did-everything-itself-instead-of-delegating).
 
 ## Delivery / delivery branch
 

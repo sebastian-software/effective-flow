@@ -20,6 +20,10 @@ when: local or remote review output languages must be resolved
 task-tracking
 ```
 
+```include
+delegation-mandate
+```
+
 ```lazy-include
 runtime-state-safety
 when: any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent

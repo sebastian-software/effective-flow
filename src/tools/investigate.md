@@ -29,6 +29,15 @@ language-rules
 task-tracking
 ```
 
+```include
+delegation-mandate
+```
+
+```lazy-include
+completion-protocol
+when: an internal sub-agent's result is returned
+```
+
 ```lazy-include
 runtime-state-safety
 when: a wisdom file, runtime migration, investigation directory, or report mutation is imminent

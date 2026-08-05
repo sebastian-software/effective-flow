@@ -28,6 +28,17 @@ task-tracking
 ```
 
 ```include
+delegation-mandate
+```
+
+This mandate authorizes **read-only** analysis fan-out only. The `Hard scope boundary` below is unaffected: never start an implementer, test writer, validator, code reviewer, or documentation specialist.
+
+```lazy-include
+completion-protocol
+when: an internal sub-agent's result is returned
+```
+
+```include
 plan-status
 ```
 

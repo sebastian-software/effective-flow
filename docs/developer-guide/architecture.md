@@ -89,6 +89,24 @@ Effective Flow knows two building-block types:
 | **Tool**   | Workflow or utility instruction              | `/effective-flow <tool>` (loads `tools/<tool>.md`)           |
 | **Worker** | specialized contract (implementer, reviewer) | internally by tools as a native or built-in/general subagent |
 
+## Delegation mandate
+
+Invoking a tool is the user's standing request for internal delegation: a harness default that
+discourages unrequested sub-agents does not apply inside a run.
+[`src/shared/delegation-mandate.md`](../../src/shared/delegation-mandate.md) is the single source
+of truth, eagerly included in every delegating tool (`build`, `fix`, `refactor`, `docs`,
+`maintain`, `review`, `iterate`, `apply-review`, `apply-issues`, `plan`, `plan-issue`,
+`investigate`) and in every worker under `src/agents/`; `plan-review` and `concept-review` carry
+it for read-only analysis fan-out only, restating their existing ban on starting implementers,
+test writers, validators, and reviewers next to the include. Delegating to a named worker role is
+mandatory; analysis and exploration delegation is the default, with a narrow triviality
+exception; a worker may fan out read-only analysis sub-agents but never re-delegates its own
+assignment or a write. Inline execution stays legitimate only as a disclosed fallback — never
+silent. Workflow-to-workflow delegation (`apply-plan`, `pr-review` → `iterate`) keeps its own
+mechanics and is out of scope for this mandate. Delegation mechanics are Effective Flow's own
+orchestration ownership, so this carries no central-skill relationship under the layered
+ownership contract in [`AGENTS.md`](../../AGENTS.md#skill-discovery).
+
 ## Source directories
 
 ```text

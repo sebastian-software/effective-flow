@@ -27,6 +27,12 @@ language-rules
 task-tracking
 ```
 
+```include
+delegation-mandate
+```
+
+The per-issue delegation to the target workflow skill is **workflow-to-workflow** delegation, not a worker role: its non-interactive delegation contract, the per-issue execution root, and the skip and failure handling stay authoritative and are never replaced by inline implementation. The mandate adds authorization only.
+
 ```lazy-include
 runtime-state-safety
 when: any wisdom, tracker-marker, or other runtime-state mutation is imminent

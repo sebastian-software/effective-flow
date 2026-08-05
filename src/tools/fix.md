@@ -20,6 +20,10 @@ when: an artifact output language or delegated language context must be resolved
 task-tracking
 ```
 
+```include
+delegation-mandate
+```
+
 ```lazy-include
 runtime-state-safety
 when: any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent

@@ -22,6 +22,15 @@ when: an artifact output language or delegated language context must be resolved
 task-tracking
 ```
 
+```include
+delegation-mandate
+```
+
+```lazy-include
+completion-protocol
+when: an internal sub-agent's result is returned
+```
+
 ```lazy-include
 runtime-state-safety
 when: a legacy runtime directory migration is about to mutate `.effective-flow/`
@@ -99,7 +108,7 @@ central-reasoning-delegation
 1. Analyze the requirement thoroughly.
 2. Review existing plan files in `<plan.dir>/` to adopt structure and existing architecture decisions.
 3. Check whether any plans in the old format (`NNNN-slug.md`) still exist in `<plan.dir>/`. If so, perform the bulk migration according to `Plan file convention`, section "Migration of old plans (NNNN → date)". The actual plan file for this run is only created in Phase 3/7 under `<plan.dir>/YYYY-MM-DD-<slug>.md` — there is no stub, no reservation, and no number.
-4. Examine the relevant areas of the codebase locally or with an internal sub-agent:
+4. Delegate the read-only examination of the relevant areas of the codebase to an internal sub-agent; examine them inline only under the delegation mandate's triviality exception:
    - project structure
    - affected modules and files
    - existing architecture decisions

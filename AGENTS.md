@@ -64,6 +64,25 @@ Source frontmatter carries **no** `name` or `type` field — name and category c
 1. Create `src/tools/<name>.md` (or `src/agents/<name>.md`). For an agent, select one of the repository's role profiles in its native frontmatter: implementers and reviewers use the quality tier (Claude `opus`/`xhigh`, Codex `gpt-5.6-sol`/`high`); support roles use the economical tier (Claude `sonnet`/`medium`, Codex `gpt-5.6-luna`/`medium`). The agent source is the canonical assignment—do not duplicate an exhaustive per-agent matrix in documentation.
 2. To expose a tool via `/effective-flow`, add it to exactly one intent group in `TOOL_GROUPS` in `build.mjs`; `EXPOSED_TOOLS` is derived from `TOOL_GROUPS` (array/group order = catalog order in the router). An exposed tool also needs a `catalogHint` frontmatter field (strictly double-quoted, a single usage-oriented line).
 3. Run `node build.mjs`. Guards will fail if an exposed tool has no source, if an `include` target is missing, if a Claude agent omits `effort` or uses an unsupported value, if a Codex `sandbox_mode` is unsupported, if an exposed tool is missing or has an unquoted `catalogHint`, or if a tool is missing from or duplicated across `TOOL_GROUPS`.
+4. If the new tool delegates to a worker or does its own analysis/exploration, embed the eager
+   `delegation-mandate` include (see "Delegation" below); a new Claude `src/agents/<name>.md` lists
+   `Agent, Task` in `claude.tools` so its read-only sub-agent grant is fulfillable.
+
+## Delegation
+
+Invoking an Effective Flow tool **is** the user's standing request for internal delegation
+through an available sub-agent mechanism; a host default that discourages unrequested sub-agents
+does not apply inside a tool run. Delegating to a named worker role is **mandatory**; delegating
+an analysis, exploration, or research step is the **default**, with a narrow exception for a
+step whose whole cost is smaller than briefing a worker. A worker may fan out **read-only**
+analysis sub-agents but never re-delegates its own assignment and never delegates a write.
+Inline execution stays legitimate only as a **disclosed** fallback — a harness without a
+sub-agent mechanism, or a runtime-declined delegation — never a silent one. The full contract is
+[`src/shared/delegation-mandate.md`](src/shared/delegation-mandate.md), eagerly included in every
+delegating tool and in every `src/agents/*.md` worker (whose Claude frontmatter accordingly lists
+`Agent, Task` in `claude.tools`). It covers worker roles and analysis fan-out only; delegation
+from one workflow to another (`apply-plan`, `pr-review` → `iterate`) keeps that tool's own
+mechanics, including its interactive/gated path.
 
 ## Skill discovery
 

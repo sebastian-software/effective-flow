@@ -4,7 +4,7 @@ claude:
   model: opus
   effort: xhigh
   color: red
-  tools: [Read, Glob, Grep, Skill]
+  tools: [Read, Glob, Grep, Skill, Agent, Task]
 codex:
   model: gpt-5.6-sol
   model_reasoning_effort: high
@@ -21,6 +21,10 @@ language-rules
 
 ```include
 task-tracking
+```
+
+```include
+delegation-mandate
 ```
 
 ## Recommended skills
