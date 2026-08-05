@@ -390,25 +390,41 @@ options:
 
    4. **A top-level pull-request comment is this tool's own when both hold:** its author is this
       tool's own – the login `viewer-read` returned, or a bot under rule 1's two cases – **and** its
-      body's leading line is `<!-- effective-flow-iterate -->`. Such an item is excluded. This
-      reaches the summary comment a directly invoked `{{SKILL:iterate}}` run posts, which rule 3
-      cannot: that rule matches one exact configured trigger text, and a summary comment is not it.
-      Without this rule, running `{{SKILL:iterate}}` by hand and then asking this gate to merge would
-      block on the tool's own report, permanently.
+      body's leading line is `<!-- effective-flow-iterate -->` or `<!-- effective-flow-pr-review -->`.
+      Such an item is excluded. This reaches both top-level comments this tool leaves behind: the
+      summary comment a directly invoked `{{SKILL:iterate}}` run posts, and the comment the outbound
+      direction publishes for findings whose line lies **outside the diff**. Rule 3 reaches neither:
+      it matches one exact configured trigger text, and neither of those bodies is it. Without this
+      rule, running `{{SKILL:iterate}}` by hand – or letting `delivery.prReview` annotate a line
+      outside the diff – and then asking this gate to merge would block on the tool's own output,
+      permanently.
+
+      **Both markers count, and the enumeration is pinned to the helper's marker table**, for the
+      same reason rule 2 names both. The outside-diff case is the one that cannot resolve itself: an
+      inline finding is anchored in a thread and stops counting once that thread is resolved, but a
+      top-level comment has no resolved state, and `{{SKILL:iterate}}` skips an item carrying the
+      outbound marker as this tool's own published output rather than as input awaiting action.
+      Nothing would ever clear it. The enumeration is deliberately not
+      replaced by a reference to the marker table: a future comment kind must not join a fail-open
+      exclusion automatically, so a contract test compares this list against `COMMENT_MARKERS` and
+      fails when they diverge.
 
       **Two conditions here, three in rule 2 – and the missing one has no analogue.** Rule 2's
       `resolved` condition exists because a resolved thread is a container this tool marked handled,
       and an objection can be typed _inside_ it. A top-level comment has no such container: an
-      objection is its own comment, carries no stamp of its own, and still counts under rule 5. The
-      leading-line requirement carries the same weight it does in rule 2 – a quote-reply's copied
-      marker sits behind a `>` and no longer opens the body – and a hand-written opening marker
-      remains the same deliberate self-override.
+      objection is its own comment, carries no stamp of its own, and still counts under rule 5.
+      Requiring resolution here would not tighten the rule but disable it, because the surface it
+      covers is never resolved – which is why the two-condition shape is pinned by the same contract
+      test. The leading-line requirement carries the same weight it does in rule 2 – a quote-reply's
+      copied marker sits behind a `>` and no longer opens the body – and a hand-written opening
+      marker remains the same deliberate self-override.
 
-      **The excluded summary comment hides no open question.** `{{SKILL:iterate}}` posts no
-      substantive reply to a pure reviewer question and defers it, and it replies to and resolves
-      only the threads it addressed. A deferred question therefore keeps its own unresolved thread,
-      and that thread still counts. The summary comment reports on those threads; it never replaces
-      them.
+      **Neither excluded comment hides an open question.** `{{SKILL:iterate}}` posts no substantive
+      reply to a pure reviewer question and defers it, and it replies to and resolves only the
+      threads it addressed. A deferred question therefore keeps its own unresolved thread, and that
+      thread still counts. The summary comment reports on those threads; it never replaces them. An
+      outside-diff finding is not a question at all: it is this product's own review output, which
+      stays on the pull request to be read, and which no run was ever going to act on.
 
    5. **Everything else counts as human**, including an item whose normalized `authorType` is
       `unknown`. That is the fail-safe direction: the only consequence is a narrower run.
@@ -797,6 +813,16 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   comment by the `<!-- effective-flow-pr-review -->` marker, so the gate can merge the pull request
   its own product wrote on. While such a thread is still unresolved the finding is unhandled and it
   keeps counting, which is the intended block.
+- **The same delivery's outside-diff findings:** they are published as one top-level comment carrying
+  the same marker, and rule 4 excludes it by author plus leading marker. The two surfaces therefore
+  block differently on purpose – an inline finding blocks until its thread is resolved, an
+  outside-diff finding never blocks – because a top-level comment has no resolved state to clear.
+  Before rule 4 named this marker, such a comment blocked the merge with no recovery short of
+  deleting the record, since implementing the finding leaves the comment in place and
+  `{{SKILL:iterate}}` skips the marker as this tool's own output.
+- **A review body carrying an Effective Flow marker:** no rule covers it, and none is needed. The
+  guard reads the review threads and the pull-request comments; a review body is in neither, so it
+  can never hold the guard.
 - **`mergeGate.bots` is empty:** the bot round is skipped and the merge is not blocked on it.
 - **Branch protection requires an approval:** the forge reports a blocked merge state; report that a
   human approval is missing and never attempt to approve.
