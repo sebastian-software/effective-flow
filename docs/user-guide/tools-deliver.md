@@ -191,6 +191,15 @@ mention.** A generic value such as `please review` could be typed by a person wh
 discussion; that comment would then match exactly and be excluded from the guard. A mention like
 `@greptileai` does not have this problem.
 
+The gate recognizes Effective Flow's **own published review** the same way. When
+`delivery.prReview` annotated the pull request, findings on a line inside the diff arrive as review
+threads and stop counting once their thread is resolved. A finding whose line lies outside the diff
+cannot be anchored to a thread, so it arrives as one ordinary pull-request comment — and a
+pull-request comment has no resolved state to clear. The gate therefore treats that comment as its
+own output and merges past it. The comment stays on the pull request to be read; it is this
+product's own review, not a person's open question, and nothing in the workflow was ever going to
+act on it.
+
 Two further things worth knowing about what the gate writes:
 
 - **A bot finding it assesses but does not implement gets no thread reply.** Whether the human

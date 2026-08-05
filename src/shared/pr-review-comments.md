@@ -207,7 +207,8 @@ reason, and improvises no provider request.
 Two distinct HTML markers keep the directions and the writers apart:
 
 - `<!-- effective-flow-iterate -->` on thread replies and the `{{SKILL:iterate}}` summary comment.
-- `<!-- effective-flow-pr-review -->` on outbound inline review comments and the review body.
+- `<!-- effective-flow-pr-review -->` on outbound inline review comments, the review body, and the
+  top-level pull-request comment that carries the findings whose line lies outside the diff.
 
 **A marker is stamped as the body's leading line, and only that position counts as a marker.** The
 helper's payload builder prepends it, so every body this tool writes begins with it. A reader must

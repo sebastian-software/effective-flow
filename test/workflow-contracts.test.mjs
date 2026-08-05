@@ -1562,7 +1562,7 @@ test("rule 2's marker enumeration stays in step with the helper's marker table",
   assert.deepEqual(
     Object.keys(COMMENT_MARKERS).sort(),
     ['apply', 'planning', 'pr', 'pr-review'],
-    'a new comment kind must be assessed against the merge gate guard before this list is updated',
+    'a new comment kind must be assessed against merge gate guard rules 2 and 4 before this list is updated',
   );
 });
 
@@ -1595,6 +1595,46 @@ test('the merge gate excludes its own top-level summary comment by author plus l
   // The catch-all must still come last. If the new rule were appended after it, it would never be
   // reached, and the evaluation order is what this whole section is built on.
   ordered(phase1, 'top-level', 'Everything else counts as human');
+});
+
+test("rule 4's marker enumeration and two-condition shape stay pinned", async () => {
+  // The same bargain rule 2 struck: the rule names its markers literally so a future comment kind
+  // cannot join a fail-open exclusion by itself, and this test is what turns the divergence into a
+  // build failure rather than a silent one.
+  const { COMMENT_MARKERS } = await import('../src/scripts/remote-tracker-core.mjs');
+  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
+
+  // Sliced by the top-level property alone, deliberately not by a marker. The neighbouring rule-4
+  // test slices on `top-level` AND the iterate marker, which makes its own assertion about that
+  // marker tautological; a slice that does not mention a marker keeps the assertions below honest.
+  const rule = phase1.split(/(?=\s\d+\.\s)/).find((item) => /top-level/i.test(item));
+  assert.ok(rule, 'Phase 1 must carry a rule about this tool’s own top-level comment');
+
+  // Both pull-request writers land on a top-level comment: `iterate` posts its summary there, and
+  // the outbound direction posts the findings it could not anchor inside the diff. `planning` and
+  // `apply` stamp issue comments and never appear on a pull request.
+  for (const kind of ['pr', 'pr-review']) {
+    assert.ok(
+      Object.hasOwn(COMMENT_MARKERS, kind),
+      `the marker table must still carry the ${kind} comment kind`,
+    );
+    assert.match(
+      rule,
+      new RegExp(`<!-- ${COMMENT_MARKERS[kind]} -->`),
+      `rule 4 must name the ${kind} marker ${COMMENT_MARKERS[kind]} from the marker table`,
+    );
+  }
+
+  // The two-condition shape is load-bearing, not stylistic. A top-level comment is never resolved,
+  // so adopting rule 2's `resolved` condition here would not tighten this rule — it would make the
+  // exclusion unreachable and silently restore the deadlock the rule exists to prevent. Nothing
+  // else in the suite would notice, which is why the shape is asserted rather than assumed.
+  assert.match(rule, /both hold/i, 'rule 4 must hold on exactly the conditions it enumerates');
+  assert.match(
+    rule,
+    /never resolved|no resolved state|would not tighten|disable it|no such container/i,
+    'rule 4 must state why thread resolution cannot become a condition of it',
+  );
 });
 
 test('the merge gate recognizes its own trigger comment by identity plus the complete trigger text', () => {
