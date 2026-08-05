@@ -724,11 +724,18 @@ states for itself, which sends the run back into Phase 3 while rounds remain ins
    change from the changelog. Report the invalid title as the blocking condition – do not rewrite it
    here.
 
-**Report a reviewer list that matched no unresolved thread.** When `mergeGate.bots` is non-empty,
-unresolved threads exist, and **none** of them matched a configured login, say so – naming the
-authors the threads actually carry beside the configured logins. Condition 7 reporting itself
-satisfied is otherwise indistinguishable from "no reviewer threads are open", and the log records
-the same thing in both cases, so a gate whose unassessed-thread protection is inert says so nowhere.
+**Report every unresolved thread that matched no configured login.** When `mergeGate.bots` is
+non-empty and **at least one** unresolved thread of the same fresh read matched no configured login
+under "Matching a configured login", carry those threads into the Phase-6 summary – each one named
+with the author it actually carries, beside the configured logins. The **zero** case is what this
+report began as and stays inside it: where **none** of the unresolved threads matched, condition 7
+reporting itself satisfied is indistinguishable from "no reviewer threads are open", the log records
+the same thing in both cases, and a gate whose unassessed-thread protection is inert would say so
+nowhere. Per thread is that case plus the **mixed** one – a thread from a configured reviewer beside
+a thread under a login no entry names – where condition 7 keeps only the matched thread in its
+record and the other is outside it entirely, so every Phase-4 condition can hold while a
+never-assessed finding sits open. A trigger that fired only on zero would stay silent about exactly
+that pull request.
 
 **This reports only; it is not a condition and never blocks the merge.** An unresolved thread from a
 _human_ already holds condition 4's human-comment guard, so what reaches this point is a thread whose
@@ -773,9 +780,10 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
    - whether human comments were found and what that blocked;
    - **every bot finding this run assessed but did not implement**, named here rather than answered
      in its thread;
-   - **unresolved threads that matched no configured login**, when Phase 4 reported that case, with
-     the authors they carry beside the configured logins – this one did not block the merge, so the
-     summary is the only place it is ever stated;
+   - **every unresolved thread that matched no configured login**, when Phase 4 carried that case
+     here, each with the author it carries beside the configured logins – this one blocked nothing
+     and nothing is written into those threads, so this summary is where that report reaches the
+     user;
    - the merge result, or the precise blocking condition.
 
 ## Edge cases
