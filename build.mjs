@@ -114,11 +114,11 @@ const TOOL_GROUPS = [
   },
   {
     title: 'Ensure quality',
-    tools: ['review', 'pr-review'],
+    tools: ['review'],
   },
   {
     title: 'Deliver changes',
-    tools: ['commit', 'pr'],
+    tools: ['commit', 'pr', 'merge-gate'],
   },
   {
     title: 'Set up & info',

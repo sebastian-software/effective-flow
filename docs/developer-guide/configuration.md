@@ -144,35 +144,43 @@ than guessing.
 ```md
 ## Configuration
 
-| Key                                 | Value                      |
-| ----------------------------------- | -------------------------- |
-| review.profile                      | focused                    |
-| applyReview.defaultCommitStrategy   | null                       |
-| applyReview.worktree.baseDir        | .effective-flow/.worktrees |
-| skills.include                      | (empty)                    |
-| worktree.enabled                    | true                       |
+| Key                               | Value                      |
+| --------------------------------- | -------------------------- |
+| review.profile                    | focused                    |
+| applyReview.defaultCommitStrategy | null                       |
+| applyReview.worktree.baseDir      | .effective-flow/.worktrees |
+| skills.include                    | (empty)                    |
+| worktree.enabled                  | true                       |
 ```
 
 Unknown valid rows are retained across setup maintenance. The user guide's
 [configuration reference](../user-guide/configuration.md) lists all current keys, values, and
 defaults.
 
-### Bot registry encoding (`prReview.bots`)
+### Bot registry encoding (`mergeGate.bots`)
 
-`prReview.bots` is the encoding's concrete example of a comma-separated list paired with one
-dotted key per list member: the list row holds the reviewer logins, and each login gets its own
-`prReview.bots.<login>.trigger` row for its literal trigger-comment text.
+`mergeGate.bots` is the encoding's concrete example of a comma-separated list paired with dotted
+keys per list member: the list row holds the reviewer logins, and each login gets its own
+`mergeGate.bots.<login>.trigger` row for its literal trigger-comment text and, optionally, a
+`mergeGate.bots.<login>.check` row naming the commit status or check run that proves whether it is
+running.
 
 ```md
-| prReview.bots                            | greptile-apps[bot] |
-| prReview.bots.greptile-apps[bot].trigger | @greptileai        |
+| mergeGate.bots | greptile-apps[bot] |
+| mergeGate.bots.greptile-apps[bot].trigger | @greptileai |
 ```
 
 A login containing brackets, such as `greptile-apps[bot]`, is a valid middle segment of that
 dotted key because the encoding splits on `.` only – brackets carry no structural meaning to the
 parser. Only rows whose value differs from the source tool's default belong in a project's own
 ADR; see [`docs/adr/effective-flow-project-setup.md`](../adr/effective-flow-project-setup.md) for
-this repository's own two rows.
+this repository's own rows.
+
+`mergeGate.*` configures the merge-gate tool. It is not `delivery.prReview`, which is an unrelated
+boolean deciding whether a delivery workflow publishes its own review findings onto the pull
+request it just created. `delivery.prReview` keeps its name deliberately: it belongs to the
+review-publication concept, not to the gate, and renaming it would recreate the confusion the
+`pr-review` → `merge-gate` tool rename removed.
 
 ## Read-time backward compatibility
 
@@ -181,6 +189,14 @@ The complete German envelope—`# Effective-Flow-Projektsetup`, `Aktiv`/`Abgelö
 form. The former translated empty-list token `(leer)`, former marker spelling, and former slug
 remain readable compatibility inputs. On write, setup keeps the recognized envelope language,
 uses the stable `(empty)` value, and preserves known and unknown rows.
+
+The former gate namespace `prReview.*` is readable in the same way: a reader resolves
+`mergeGate.<key>` first and falls back to `prReview.<key>` per key, reporting once that it read a
+legacy name. Precedence is per key and never merged at a finer grain. This is one generation of
+read compatibility, the same commitment the `firmo-` label prefix had. Only setup writes: it
+carries the values over to `mergeGate.*`, removes the legacy rows, and reports a shadowed key
+rather than merging it, so the fallback loses its last reader once every project has run setup
+once.
 
 ## Language configuration
 
