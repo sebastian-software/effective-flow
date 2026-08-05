@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.56.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.55.4...effective-flow-v1.56.0) (2026-08-05)
+
+
+### Deprecations
+
+* `/effective-flow pr-review` is now `/effective-flow merge-gate`. **This release is not a breaking change:** the old invocation keeps working as a deprecated alias that prints a notice once and then forwards the run unchanged to the merge gate. It is absent from the tool overview and from autocomplete, and it is removed with the next deliberate major release. The `prReview.*` configuration keys are renamed to `mergeGate.*`; the old names are still read for one generation and `/effective-flow setup` rewrites a legacy block in place. `delivery.prReview` is unaffected.
+
+### Features
+
+* keep the old pr-review name working as a deprecated alias ([#324](https://github.com/sebastian-software/effective-flow/issues/324)) ([9dc8f60](https://github.com/sebastian-software/effective-flow/commit/9dc8f60abf4b55a1ebc07ae2cca7f9ce0bce40c4))
+* make sub-agent delegation the authorized default ([#318](https://github.com/sebastian-software/effective-flow/issues/318)) ([9cc99d3](https://github.com/sebastian-software/effective-flow/commit/9cc99d35e9d37c307d188eb7ac061049f21ef844))
+* rename the pr-review tool to merge-gate and guard iterate against a review in flight ([#317](https://github.com/sebastian-software/effective-flow/issues/317)) ([88979a7](https://github.com/sebastian-software/effective-flow/commit/88979a709c13dc4f56a783c0c3bc8cba1d0bc103))
+
+
+### Bug Fixes
+
+* let the merge gate recognize its own outside-diff review comment ([#322](https://github.com/sebastian-software/effective-flow/issues/322)) ([824a746](https://github.com/sebastian-software/effective-flow/commit/824a74610c52f91de5d43143cafc0c0ec9e487af)), closes [#321](https://github.com/sebastian-software/effective-flow/issues/321)
+* stop treating an emoji acknowledgment as proof a reviewer has no check ([#320](https://github.com/sebastian-software/effective-flow/issues/320)) ([11e6339](https://github.com/sebastian-software/effective-flow/commit/11e6339ae970d8af10d4bd40394a3c8c9601b393))
+
 ## [1.55.4](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.55.3...effective-flow-v1.55.4) (2026-07-30)
 
 
