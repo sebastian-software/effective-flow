@@ -2770,3 +2770,114 @@ test('every workflow action is pinned to a commit', () => {
     }
   }
 });
+
+// --- Deprecated pr-review alias for merge-gate ---
+
+test('src/tools/pr-review.md is a minimal alias that reports deprecation before forwarding to merge-gate', () => {
+  const alias = source('src/tools/pr-review.md');
+
+  const lineCount = alias.split('\n').length;
+  assert.ok(
+    lineCount < 40,
+    `src/tools/pr-review.md has ${lineCount} lines but must stay under 40; the size cap is what ` +
+      'keeps the alias from growing a second gate implementation next to the one in merge-gate.md',
+  );
+
+  assert.doesNotMatch(
+    alias,
+    /^## Phase/m,
+    'the alias must carry no `## Phase` heading; a phase heading is the shape of the gate logic ' +
+      'that belongs only in merge-gate.md',
+  );
+  for (const forbidden of [
+    /\bapprove and request-changes/i,
+    /\brequireAllChecks\b/,
+    /\bbotWaitMinutes\b/,
+    /\bcheckWaitMinutes\b/,
+  ]) {
+    assert.doesNotMatch(
+      alias,
+      forbidden,
+      `the alias must carry no merge/check/reviewer logic of its own (found pattern: ${forbidden})`,
+    );
+  }
+
+  // The deprecation notice must be instructed before the forward, not merely present somewhere
+  // in the file — a reordered file would still "mention" both without actually notifying the
+  // user before the gate's own Phase 1 output starts.
+  ordered(alias, 'Emit the deprecation notice', 'Then read `tools/merge-gate.md`');
+  assert.match(
+    flat(alias),
+    /read `tools\/merge-gate\.md`[\s\S]{0,40}follow it verbatim/,
+    'the alias must state that it reads and follows tools/merge-gate.md verbatim',
+  );
+});
+
+test('src/tools/pr-review.md states it is not the central pr-review skill and must not load it', () => {
+  // merge-gate forbids loading the central `pr-review` skill in bold (see the neighboring test
+  // "skill-ownership.json names no merge gate among the consumers of the pr-review skill"). A
+  // tool source that now shares that skill's name is exactly the accident that rule exists for:
+  // without an explicit exclusion here, the alias is the one place an agent could plausibly
+  // reach for "the pr-review skill" by name and get it wrong.
+  const alias = flat(source('src/tools/pr-review.md'));
+  assert.match(
+    alias,
+    /not the central `pr-review` skill/,
+    'the alias must state it is not the central pr-review skill',
+  );
+  assert.match(
+    alias,
+    /must not load it/,
+    'the alias must state that it must not load the central pr-review skill',
+  );
+});
+
+test('build.mjs declares the pr-review alias and keeps it out of the tool catalog', () => {
+  // TOOL_GROUPS cannot be imported: build.mjs runs the entire build on load, so the group
+  // definition is sliced out of the source text instead, the same technique the neighboring
+  // test "the merge gate is exposed in the Deliver changes group" uses.
+  const groups = section(source('build.mjs'), 'const TOOL_GROUPS = [', '\nconst EXPOSED_TOOLS');
+  assert.doesNotMatch(
+    groups,
+    /'pr-review'/,
+    'pr-review must appear in no TOOL_GROUPS entry; TOOL_GROUPS drives the router catalog, and ' +
+      'listing the retired name there would advertise it again',
+  );
+
+  assert.match(
+    source('build.mjs'),
+    /const DEPRECATED_TOOL_ALIASES = \[\{ alias: 'pr-review', replacement: 'merge-gate' \}\];/,
+    'build.mjs must declare DEPRECATED_TOOL_ALIASES mapping pr-review to merge-gate',
+  );
+});
+
+test('argument-hint is derived from the pure exposed tool set, without the deprecated alias', () => {
+  const argumentHintLine = source('build.mjs')
+    .split('\n')
+    .find((line) => line.includes('const argumentHint ='));
+  assert.ok(argumentHintLine, 'build.mjs must define argumentHint');
+  assert.match(
+    argumentHintLine,
+    /EXPOSED_TOOLS\.join/,
+    'argumentHint must be derived from the pure EXPOSED_TOOLS array, not a set that also carries ' +
+      'deprecated alias names — otherwise the retired pr-review name would get autocomplete',
+  );
+  assert.doesNotMatch(
+    argumentHintLine,
+    /DEPRECATED_TOOL_ALIASES/,
+    'argumentHint must not reference DEPRECATED_TOOL_ALIASES',
+  );
+});
+
+test('src/SKILL.md carries the {{DEPRECATED_ALIASES}} placeholder in its dispatch section', () => {
+  // The rendered alias clause is the only thing that makes an unlisted name route instead of
+  // falling into dispatch rule 1 ("no or unknown tool -> print the catalog"). Losing this
+  // placeholder from the source would silently break the alias without failing anything else,
+  // because the router would still render — just without the clause that routes `pr-review`.
+  const dispatch = section(source('src/SKILL.md'), '## Dispatch rule', '\n```include');
+  assert.match(
+    dispatch,
+    /\{\{DEPRECATED_ALIASES\}\}/,
+    'the dispatch rule section must contain the {{DEPRECATED_ALIASES}} placeholder',
+  );
+});

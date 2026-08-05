@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  escapeRegex,
   extractFrontmatter,
   extractBody,
   normalizeLineEndings,
@@ -32,6 +33,7 @@ import {
   assertNoUnresolvedEagerIncludes,
   collectIncludeNames,
   assertNoEagerLazyOverlap,
+  renderDeprecatedAliasClause,
   DOCUMENTATION_SYNC_CONSUMERS,
   findDocumentationSyncViolations,
   findRuntimeStateSafetyViolations,
@@ -833,6 +835,90 @@ test('transformRefs rejects legacy sf- refs for exposed, internal, and agent nam
       );
     }
   }
+});
+
+// --- renderDeprecatedAliasClause ---
+
+// Mirror the three per-harness invocation spellings build.mjs's own
+// skillInvocation(harness, name) produces, so a drift in either place would
+// show up as a mismatch here rather than being masked by a shared helper.
+const HARNESS_INVOCATIONS = {
+  claude: (name) => `/effective-flow ${name}`,
+  codex: (name) => `$effective-flow ${name}`,
+  portable: (name) => `effective-flow ${name}`,
+};
+
+test('renderDeprecatedAliasClause renders one bullet per alias, using the caller invocation syntax', () => {
+  const aliases = [{ alias: 'pr-review', replacement: 'merge-gate' }];
+  for (const [harness, skillInvocation] of Object.entries(HARNESS_INVOCATIONS)) {
+    const clause = renderDeprecatedAliasClause(aliases, skillInvocation);
+    // Every harness must name the alias's own invocation and the replacement's invocation in
+    // that harness's exact spelling — a hard-coded `/effective-flow` here would pass on Claude
+    // and silently mis-render on Codex/portable.
+    assert.match(
+      clause,
+      new RegExp(`\`${escapeRegex(skillInvocation('pr-review'))}\``),
+      `${harness}: must render the alias invocation`,
+    );
+    assert.match(
+      clause,
+      new RegExp(`\`${escapeRegex(skillInvocation('merge-gate'))}\``),
+      `${harness}: must render the replacement invocation`,
+    );
+  }
+});
+
+test('renderDeprecatedAliasClause names both the alias file and the replacement file', () => {
+  const clause = renderDeprecatedAliasClause(
+    [{ alias: 'pr-review', replacement: 'merge-gate' }],
+    HARNESS_INVOCATIONS.claude,
+  );
+  // The dispatch rule only routes an unlisted name if the clause tells the reader which two
+  // tool files are involved; naming just the alias (or just the replacement) would leave the
+  // "read tools/merge-gate.md" step unstated.
+  assert.match(clause, /`tools\/pr-review\.md`/, 'must name the alias tool file');
+  assert.match(clause, /`tools\/merge-gate\.md`/, 'must name the replacement tool file');
+});
+
+test('renderDeprecatedAliasClause returns an empty string for an empty alias list', () => {
+  assert.equal(renderDeprecatedAliasClause([], HARNESS_INVOCATIONS.claude), '');
+});
+
+test('renderDeprecatedAliasClause throws on a non-array alias list', () => {
+  assert.throws(
+    () => renderDeprecatedAliasClause('pr-review', HARNESS_INVOCATIONS.claude),
+    /must be an array/,
+  );
+});
+
+test('renderDeprecatedAliasClause throws when skillInvocation is not a function', () => {
+  assert.throws(
+    () =>
+      renderDeprecatedAliasClause([{ alias: 'pr-review', replacement: 'merge-gate' }], undefined),
+    /requires a skillInvocation\(name\) function/,
+  );
+});
+
+test('renderDeprecatedAliasClause throws on an entry with a blank alias', () => {
+  assert.throws(
+    () =>
+      renderDeprecatedAliasClause(
+        [{ alias: '', replacement: 'merge-gate' }],
+        HARNESS_INVOCATIONS.claude,
+      ),
+    /requires an alias name/,
+  );
+});
+
+test('renderDeprecatedAliasClause throws on an entry with a blank replacement', () => {
+  assert.throws(
+    () =>
+      renderDeprecatedAliasClause(
+        [{ alias: 'pr-review', replacement: '' }],
+        HARNESS_INVOCATIONS.claude,
+      ),
+    /requires a replacement tool name/,
+  );
 });
 
 test('renderBody rejects a legacy sf- ref on both harnesses', () => {

@@ -20,6 +20,8 @@ This router skill is deliberately **thin**. Beyond the tool catalog, the dispatc
 
 For the `apply` tool, its instructions may in turn load an appropriate **internal** file (`tools/apply-plan.md`, `tools/apply-review.md`, or `tools/apply-issues.md`), depending on the detected source. These internal files are not directly invocable via `{{FIRMO}}`.
 
+{{DEPRECATED_ALIASES}}
+
 ```include
 session-title
 ```

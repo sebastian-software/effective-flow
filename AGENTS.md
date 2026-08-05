@@ -62,7 +62,7 @@ Source frontmatter carries **no** `name` or `type` field — name and category c
 ### Adding a tool or agent
 
 1. Create `src/tools/<name>.md` (or `src/agents/<name>.md`). For an agent, select one of the repository's role profiles in its native frontmatter: implementers and reviewers use the quality tier (Claude `opus`/`xhigh`, Codex `gpt-5.6-sol`/`high`); support roles use the economical tier (Claude `sonnet`/`medium`, Codex `gpt-5.6-luna`/`medium`). The agent source is the canonical assignment—do not duplicate an exhaustive per-agent matrix in documentation.
-2. To expose a tool via `/effective-flow`, add it to exactly one intent group in `TOOL_GROUPS` in `build.mjs`; `EXPOSED_TOOLS` is derived from `TOOL_GROUPS` (array/group order = catalog order in the router). An exposed tool also needs a `catalogHint` frontmatter field (strictly double-quoted, a single usage-oriented line).
+2. To expose a tool via `/effective-flow`, add it to exactly one intent group in `TOOL_GROUPS` in `build.mjs`; `EXPOSED_TOOLS` is derived from `TOOL_GROUPS` (array/group order = catalog order in the router). An exposed tool also needs a `catalogHint` frontmatter field (strictly double-quoted, a single usage-oriented line). **Renaming an exposed tool ships a deprecated forwarding alias for the old name, not a breaking rename.** Add an entry to `DEPRECATED_TOOL_ALIASES` in `build.mjs` (old name → new name) and a matching `src/tools/<old-name>.md` that emits one deprecation notice naming the new invocation and then reads and follows the new tool's source verbatim, with the arguments unchanged. The alias stays out of `TOOL_GROUPS`, so it is reachable by name only and never appears in the router catalog, its frontmatter description, or `argument-hint`; a generated `{{DEPRECATED_ALIASES}}` router clause is what still routes the old name instead of printing the catalog. Remove the alias only in the next deliberate major release, which is the change that legitimately carries the breaking marker this convention otherwise avoids.
 3. Run `node build.mjs`. Guards will fail if an exposed tool has no source, if an `include` target is missing, if a Claude agent omits `effort` or uses an unsupported value, if a Codex `sandbox_mode` is unsupported, if an exposed tool is missing or has an unquoted `catalogHint`, or if a tool is missing from or duplicated across `TOOL_GROUPS`.
 4. If the new tool delegates to a worker or does its own analysis/exploration, embed the eager
    `delegation-mandate` include (see "Delegation" below). A new Claude `src/agents/<name>.md`
@@ -99,7 +99,7 @@ cannot write, that omission is their entire read-only guarantee; `code-validator
 `Bash`, so withholding the grant there is defence in depth rather than the source of its
 read-only property — it only keeps the easy path to a write-capable child closed. It covers
 worker roles and analysis fan-out only; delegation from one workflow to another (`apply-plan`,
-`pr-review` → `iterate`) keeps that tool's own mechanics, including its interactive/gated path.
+`merge-gate` → `iterate`) keeps that tool's own mechanics, including its interactive/gated path.
 
 ## Skill discovery
 
@@ -144,6 +144,15 @@ manually in feature or fix commits. Conventional Commit messages drive the next
 release PR, changelog entries, tags, GitHub releases, and release asset upload.
 The build stamps `<manifest-version> (<git-short-hash>)` into all three routers and a
 **version-drift guard** fails the build if native Claude, native Codex, and portable outputs disagree.
+
+A tool rename shipped as a deprecated alias (see "Adding a tool or agent") carries no `!` and no
+`BREAKING CHANGE:` footer — it is additive, not a break. If an earlier, already-published commit on
+the release branch was mistakenly marked breaking for a change that is not actually one, pin the
+version forward instead of rewriting that commit: add a `Release-As: <version>` footer to the
+commit body of the correcting change. The footer is a one-shot override that release-please
+resolves before it counts breaking commits and that cleans itself up after the release; prefer it
+over setting `release-as` in the release-please configuration, which stays in effect until removed
+and would otherwise silently freeze every later version too.
 
 ## Workflow actions are pinned to commits
 

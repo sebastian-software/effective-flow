@@ -27,6 +27,7 @@ import {
   validateRefs,
   assertQuotedDescription,
   renderBody,
+  renderDeprecatedAliasClause,
   missingCategoryReadmes,
   README_MANDATORY_CATEGORIES,
   findSelfReferentialContractPhrases,
@@ -142,6 +143,37 @@ const TOOL_GROUPS = [
 }
 
 const EXPOSED_TOOLS = TOOL_GROUPS.flatMap((group) => group.tools);
+
+// Retired tool names that stay invocable for one generation, each forwarding to
+// the tool that replaced it. An alias is declared here instead of being listed
+// in TOOL_GROUPS on purpose: TOOL_GROUPS drives the router catalog, the
+// catalogHint guard, and the `argument-hint`, so listing an alias there would
+// advertise the retired name again. Declared rather than implicit, because the
+// router routes an unlisted name to the catalog — the rendered dispatch clause
+// derived from this list is what makes the old name route at all. An entry is
+// removed with the next deliberate major release.
+const DEPRECATED_TOOL_ALIASES = [{ alias: 'pr-review', replacement: 'merge-gate' }];
+
+// Guard: an alias is reachable by name only. It must never be an exposed tool
+// (that would put the retired name back into the catalog and the autocomplete),
+// and it must forward to a tool that is actually invocable.
+{
+  const exposed = new Set(EXPOSED_TOOLS);
+  for (const { alias, replacement } of DEPRECATED_TOOL_ALIASES) {
+    if (exposed.has(alias)) {
+      process.stderr.write(
+        `ERROR: deprecated alias "${alias}" must not be listed in TOOL_GROUPS/EXPOSED_TOOLS\n`,
+      );
+      process.exit(1);
+    }
+    if (!exposed.has(replacement)) {
+      process.stderr.write(
+        `ERROR: deprecated alias "${alias}" forwards to "${replacement}", which is not an exposed tool\n`,
+      );
+      process.exit(1);
+    }
+  }
+}
 
 const releasePleaseManifestPath = join(ROOT_DIR, '.release-please-manifest.json');
 if (!existsSync(releasePleaseManifestPath)) {
@@ -376,7 +408,12 @@ try {
   const knownTools = new Set(toolFiles.map((f) => basename(f, '.md')));
   const knownAgents = new Set(agentFiles.map((f) => basename(f, '.md')));
   const refConfig = {
-    exposedTools: EXPOSED_TOOLS,
+    // Reference rendering counts an alias as invocable: a deprecation notice
+    // addressed to a user has to name the invocation, so `{{SKILL:<alias>}}`
+    // must render as `/effective-flow <alias>` rather than as the internal
+    // `tools/<alias>.md`. The catalog and the `argument-hint` below stay on the
+    // pure EXPOSED_TOOLS, which is what keeps the retired name unadvertised.
+    exposedTools: [...EXPOSED_TOOLS, ...DEPRECATED_TOOL_ALIASES.map((entry) => entry.alias)],
     agentPrefix: AGENT_PREFIX,
     skillName: FIRMO_SKILL_NAME,
     knownTools,
@@ -633,6 +670,14 @@ try {
     }
   }
 
+  // Same for every deprecated alias: the router clause sends the retired name at
+  // `tools/<alias>.md`, so that forwarding source has to be built.
+  for (const { alias } of DEPRECATED_TOOL_ALIASES) {
+    if (!builtToolNames.has(alias)) {
+      throw new Error(`Deprecated tool alias "${alias}" has no matching skill source`);
+    }
+  }
+
   // --- Content guard: versioned frontend standards live only in the central
   // `effective-web` skill, never copied back into agent/tool sources (#104). A
   // versioned WCAG claim (e.g. "WCAG 2.1 AA") pins an evolving standard that the
@@ -743,7 +788,14 @@ try {
       return lines.join('\n');
     }).join('\n\n');
 
-  // Static autocomplete hint for the `<tool>` argument, kept in sync with EXPOSED_TOOLS.
+  // Router dispatch clause for the retired names. Rendered from the declared
+  // alias list through the same per-harness invocation helper as the catalog.
+  const deprecatedAliasesForHarness = (harness) =>
+    renderDeprecatedAliasClause(DEPRECATED_TOOL_ALIASES, (name) => skillInvocation(harness, name));
+
+  // Static autocomplete hint for the `<tool>` argument, kept in sync with
+  // EXPOSED_TOOLS. Deprecated aliases stay out: a user who types the old name is
+  // still routed, but nothing suggests it.
   const argumentHint = `[${EXPOSED_TOOLS.join('|')}]`;
 
   // --- Per-consumer output ---
@@ -763,6 +815,7 @@ try {
     const routerBody = renderGeneratedBody(
       routerBodyRaw
         .replace(/\{\{TOOL_CATALOG\}\}/g, catalogForHarness(harness))
+        .replace(/\{\{DEPRECATED_ALIASES\}\}/g, deprecatedAliasesForHarness(harness))
         .replace(/\{\{WORKER_RESOLUTION\}\}/g, workerResolutionForHarness(harness))
         .replace(/\{\{INVOCATION_GUIDANCE\}\}/g, invocationGuidanceForHarness(harness)),
       harness,
@@ -995,7 +1048,7 @@ try {
         );
       }
       if (
-        /\{\{(?:AGENT|SKILL|FIRMO|WORKER_RESOLUTION|INVOCATION_GUIDANCE)(?::[^}]*)?\}\}/.test(
+        /\{\{(?:AGENT|SKILL|FIRMO|WORKER_RESOLUTION|INVOCATION_GUIDANCE|DEPRECATED_ALIASES)(?::[^}]*)?\}\}/.test(
           content,
         )
       ) {
