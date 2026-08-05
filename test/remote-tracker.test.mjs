@@ -3818,3 +3818,56 @@ test('the shipped process runner detects a removed working directory before spaw
   assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
   assert.equal(envelope.error.details.cwd, '/effective-flow/definitely/removed/worktree');
 });
+
+test('pull-request comments normalize their author exactly as review threads do', async () => {
+  // GitHub's REST API reports a bot account *with* the `[bot]` suffix and exposes no type field,
+  // while the GraphQL review-thread query reports the same account without the suffix and states
+  // `__typename: "Bot"`. Leaving this read unnormalized cost more than a spelling: a top-level
+  // comment carried no `authorType` at all, so merge-gate's human-comment guard could establish bot
+  // authorship only from a configured login, and its Phase-3 trigger idempotency — which reads
+  // `authorType: bot` to recognize its own comment in app mode — could never be proven.
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify([
+        {
+          id: 11,
+          body: 'Found two issues',
+          user: { login: 'greptile-apps[bot]' },
+          created_at: '2026-07-28T20:30:00Z',
+        },
+        { id: 12, body: 'Looks good', user: { login: 'maintainer' } },
+        { id: 13, body: 'Orphaned comment' },
+      ]),
+      stderr: '',
+    },
+  ]);
+
+  const envelope = await executeOperation(
+    'pr-comments-read',
+    { repository: githubRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+
+  // The suffix is what proves the bot here, exactly as `__typename` does on the other surface.
+  assert.deepEqual(envelope.data.result[0].author, {
+    login: 'greptile-apps[bot]',
+    isBot: true,
+    authorType: 'bot',
+  });
+  assert.equal(envelope.data.result[0].createdAt, '2026-07-28T20:30:00.000Z');
+
+  // A plain login carries no bot evidence either way. REST states no type, so this stays `unknown`
+  // rather than being guessed as human — the same discipline the review-thread path follows for a
+  // provider that exposes no bot flag.
+  assert.deepEqual(envelope.data.result[1].author, {
+    login: 'maintainer',
+    isBot: null,
+    authorType: 'unknown',
+  });
+
+  // An author the provider does not expose must not fail the read the way a missing *viewer* login
+  // does: a comment without an author is data, not a broken identity lookup.
+  assert.equal(envelope.data.result[2].author.login, undefined);
+  assert.equal(envelope.data.result[2].author.authorType, 'unknown');
+});

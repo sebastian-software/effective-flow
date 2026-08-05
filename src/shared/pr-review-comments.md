@@ -71,9 +71,19 @@ Read the review comments **directly before** classification fresh from the host 
 can change between runs. Capture per thread: thread ID, author (and whether bot or
 human), file + line, comment text, and the `resolved` status.
 
-Use the normalized review-thread read and PR-comment read operations. The normalized author
-record includes `login`, `isBot`, and `authorType`; when Forgejo does not expose a bot flag and
-the login has no canonical bot suffix, `authorType` is `unknown` rather than guessed as human.
+Use the normalized review-thread read and PR-comment read operations. **Both** carry the same
+normalized author record — a review-thread comment and a top-level pull-request comment are read
+the same way here — and that record includes `login`, `isBot`, and `authorType`; when a provider
+does not expose a bot flag and the login has no canonical bot suffix, `authorType` is `unknown`
+rather than guessed as human. A comment whose author the provider does not state at all keeps that
+same shape with an absent `login` and `authorType: unknown`; unlike a missing **viewer** identity,
+it does not fail the read.
+
+The two surfaces do not spell one bot account identically: GitHub's REST API reports it with the
+`[bot]` suffix and its GraphQL API without. The record preserves whatever the provider reported —
+the suffix is what `isBot` is inferred from on the REST side — so a consumer comparing a reported
+login against a configured one resolves it through "Matching a configured login" instead of
+comparing the two strings literally.
 If the provider reports that resolved status is unavailable, keep the item unresolved and expose
 that limitation in the workflow summary; do not guess.
 

@@ -429,7 +429,11 @@ value or default as the pre-selection:
   report instead of a merge.
 - `mergeGate.bots`: the logins of the automatic reviewers this project expects (e.g.
   `greptileai[bot]`), as a comma list. Empty (the default) means no automatic reviewer is expected
-  and the bot round is skipped rather than blocking the merge forever.
+  and the bot round is skipped rather than blocking the merge forever. Either spelling of a bot
+  login works — `greptileai[bot]` as GitHub's UI shows it, or the bare `greptileai` — because the
+  gate resolves a configured login through "Matching a configured login", which tolerates the
+  trailing `[bot]` on either side. Listing both spellings is therefore redundant rather than a
+  workaround, and the gate reports the collapse when it sees one.
 - `mergeGate.bots.<login>.trigger`: free text, the literal comment that re-triggers exactly that bot
   (e.g. `@greptileai`). Ask for it once per login named in `mergeGate.bots`. A login containing
   brackets is a valid middle segment, because the table encoding splits on `.` only. Say when asking

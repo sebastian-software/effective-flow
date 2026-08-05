@@ -2881,3 +2881,128 @@ test('src/SKILL.md carries the {{DEPRECATED_ALIASES}} placeholder in its dispatc
     'the dispatch rule section must contain the {{DEPRECATED_ALIASES}} placeholder',
   );
 });
+
+test('one rule decides when a configured reviewer login matches a reported one', () => {
+  const state = source('src/shared/review-bot-state.md');
+  // Default stop, so the slice ends at the next `###` heading: assertions must be satisfied by the
+  // rule itself, not by neighbouring prose elsewhere in the fragment.
+  const rule = flat(section(state, '### Matching a configured login'));
+
+  // The defect this rule exists for: the same account arrives as `greptile-apps[bot]` from REST and
+  // `greptile-apps` from GraphQL, so no single configured value satisfied both surfaces. Configured
+  // the REST way, Phase 4's unassessed-thread condition matched nothing and reported itself
+  // satisfied while open reviewer findings sat there.
+  assert.match(rule, /\[bot\]/, 'the rule must name the suffix it tolerates');
+  assert.match(
+    rule,
+    near('trailing', '\\[bot\\]', 200),
+    'only a trailing suffix is trimmed — a `[bot]` elsewhere is part of the login',
+  );
+  assert.match(
+    rule,
+    /exact|exactly/i,
+    'the comparison must stay exact apart from that trim, or it becomes a substring match',
+  );
+
+  // Resolution direction. The dotted config keys are spelled the way the project wrote them, so a
+  // tolerant match that then looked config up under the *reported* spelling would find nothing.
+  assert.match(
+    rule,
+    near('`mergeGate\\.bots\\.<login>\\.(?:trigger|check)`', 'configured spelling', 400),
+    'the rule must state that .trigger/.check are looked up under the configured spelling',
+  );
+
+  // A project may already carry both spellings as the documented workaround. After this rule they
+  // are one reviewer, which must not silently become two rounds, two mentions and two waits.
+  assert.match(
+    rule,
+    near('(?:collapse|collapsing|de-duplicat|duplicate)', '(?:report|conflict)', 400),
+    'collapsing entries must be de-duplicated, and a conflicting trigger/check reported',
+  );
+});
+
+test('every site that matches mergeGate.bots resolves through the shared login rule', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const phase1 = flat(section(gate, '### Phase 1'));
+  const phase3 = flat(section(gate, '### Phase 3'));
+  const phase4 = section(gate, '### Phase 4');
+
+  // Four sites compare a configured login against a reported one, on two surfaces that spell the
+  // same account differently. A site that restates a bare equality instead of resolving through the
+  // shared rule reintroduces the defect at that site alone, which is exactly how it stayed hidden.
+  const reference = /Matching a configured login/;
+
+  assert.match(
+    phase1,
+    reference,
+    'Phase 1 rule 1 must resolve the configured login through the rule',
+  );
+  assert.match(phase3, reference, "Phase 3's per-login round must resolve through the rule");
+
+  const conditions = phase4.split(/(?=\n\d+\.\s)/).slice(1);
+  const hasRunIndex = conditions.findIndex((item) => /has run/i.test(item));
+  const assessedIndex = conditions.findIndex((item) => /assessed/i.test(item));
+  assert.notEqual(hasRunIndex, -1, 'Phase 4 must keep its reviewer has-run condition');
+  assert.notEqual(assessedIndex, -1, 'Phase 4 must keep its never-assessed condition');
+  assert.match(
+    flat(conditions[hasRunIndex]),
+    reference,
+    'the has-run condition must resolve the configured login through the rule',
+  );
+  assert.match(
+    flat(conditions[assessedIndex]),
+    reference,
+    'the never-assessed condition must resolve the configured login through the rule',
+  );
+});
+
+test('condition 7 finding no reviewer thread is reported, not passed over in silence', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const phase4 = section(gate, '### Phase 4');
+  const flatPhase4 = flat(phase4);
+
+  // "Satisfied" and "no reviewer threads are open" were indistinguishable in the log, which is why
+  // a gate whose unassessed-thread protection was inert said so nowhere. A misconfigured or absent
+  // login is not a suffix problem, so the matching rule above does not reach this case.
+  assert.match(
+    flatPhase4,
+    near('(?:no|zero|none)[^.]{0,80}match', '(?:report|name)', 500),
+    'Phase 4 must report a reviewer list that matched no unresolved thread',
+  );
+
+  // Report-only, deliberately. An unresolved *human* thread already blocks at the human-comment
+  // guard, so a blocking condition here would double-count it and could stall merges that the
+  // guard correctly releases.
+  assert.match(
+    flatPhase4,
+    near(
+      '(?:reports? only|not a (?:new )?(?:blocking )?condition|never blocks|does not block)',
+      'condition',
+      400,
+    ),
+    'the zero-match report must state that it is not a blocking condition',
+  );
+
+  // It must not have been written as a numbered precondition, or it would gate the merge after all.
+  // The numbered list ends at the first blank line followed by a line that is neither indented (a
+  // condition's own continuation) nor numbered (the next condition); everything past that point is
+  // Phase 4 commentary. Splitting without that cut would file trailing prose under the last
+  // condition and fail a correctly placed report.
+  const listEnd = phase4.search(/\n\n(?![ \t])(?!\d+\.)/);
+  assert.notEqual(listEnd, -1, 'Phase 4 must carry prose after its numbered preconditions');
+  const conditions = phase4
+    .slice(0, listEnd)
+    .split(/(?=\n\d+\.\s)/)
+    .slice(1);
+  const asCondition = conditions.filter((item) => /(?:no|zero|none)[^.]{0,80}match/i.test(item));
+  assert.equal(
+    asCondition.length,
+    0,
+    'the zero-match report must not be a numbered Phase 4 merge precondition',
+  );
+  assert.match(
+    flat(phase4.slice(listEnd)),
+    /(?:no|zero|none)[^.]{0,80}match/i,
+    'the zero-match report must live in the prose after the preconditions',
+  );
+});

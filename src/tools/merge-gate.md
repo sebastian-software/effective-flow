@@ -318,7 +318,9 @@ options:
    performed that mutation, so a rule built on it reads every earlier run's output as a stranger's.
 2. Evaluate every comment and thread in **exactly this order** and stop at the first rule that
    matches. The order is load-bearing, not cosmetic:
-   1. **The author is a bot** – either a login listed in `mergeGate.bots`, or an item whose
+   1. **The author is a bot** – either a login listed in `mergeGate.bots`, matched through
+      "Matching a configured login" so one account is recognized whichever surface reported it, or an
+      item whose
       normalized `authorType` is `bot`. Two disjoint cases, and the second one carries app mode: the
       account this gate posts as appears in no configuration table, so it is recognized by
       `authorType` alone. The item is **excluded** and the evaluation stops there – the forge's own
@@ -586,7 +588,8 @@ with a report naming the still-unmet condition, never with a merge.
 If `mergeGate.bots` is empty, skip this phase entirely, record that no automatic reviewer is
 configured, and do not block the merge on it.
 
-Otherwise, for each login in `mergeGate.bots`:
+Otherwise, for each login in `mergeGate.bots`, after "Matching a configured login" has de-duplicated
+entries that denote the same reviewer – two spellings of one account are one round here, not two:
 
 1. **Observe its state** through the loaded "Automatic reviewer state", against the fresh read: one
    of **running**, **not started**, or **has run**. Record the state together with the evidence that
@@ -669,7 +672,9 @@ states for itself, which sends the run back into Phase 3 while rounds remain ins
 4. the human-comment guard is inactive;
 5. every login in `mergeGate.bots` is observed as **has run** for the current head through the loaded
    "Automatic reviewer state" – **running** and **not started** are both unmet conditions, and an
-   unprovable state is **not started**, never an assumed pass;
+   unprovable state is **not started**, never an assumed pass. Which reported output belongs to a
+   configured login follows "Matching a configured login", so that contract's fallback signal weighs
+   a reviewer's pull-request comments and its review threads as the one reviewer's evidence;
 6. every bot thread **whose finding this run implemented** is answered and resolved – those are
    written and resolved by `{{SKILL:iterate}}`. A finding this run deferred or rejected does
    **not** block the merge: it is named in the Phase-6 chat summary and its thread is deliberately
@@ -678,7 +683,10 @@ states for itself, which sends the run back into Phase 3 while rounds remain ins
    answer there would be a condition no run could ever satisfy;
 7. **every unresolved thread of a configured reviewer has been assessed by this run** – implemented,
    or deliberately deferred or rejected. Take every unresolved thread of the same fresh read whose
-   author is a login in `mergeGate.bots`, and match it against the record this run kept per round:
+   author is a login in `mergeGate.bots` under "Matching a configured login" – the threads arrive
+   from the surface that reports a bot without its `[bot]` suffix, so a literal comparison against a
+   configured login matches nothing here and reports this condition satisfied while open findings
+   sit there – and match it against the record this run kept per round:
    the thread IDs it handed to `{{SKILL:iterate}}`, plus the threads whose findings it deferred or
    rejected. A thread in neither list arrived after the Phase-3 observation that fixed this run's
    item filter – the reviewer's check had gone terminal by then, which states that the reviewer
@@ -716,6 +724,23 @@ states for itself, which sends the run back into Phase 3 while rounds remain ins
    change from the changelog. Report the invalid title as the blocking condition – do not rewrite it
    here.
 
+**Report a reviewer list that matched no unresolved thread.** When `mergeGate.bots` is non-empty,
+unresolved threads exist, and **none** of them matched a configured login, say so – naming the
+authors the threads actually carry beside the configured logins. Condition 7 reporting itself
+satisfied is otherwise indistinguishable from "no reviewer threads are open", and the log records
+the same thing in both cases, so a gate whose unassessed-thread protection is inert says so nowhere.
+
+**This reports only; it is not a condition and never blocks the merge.** An unresolved thread from a
+_human_ already holds condition 4's human-comment guard, so what reaches this point is a thread whose
+author is bot-typed – excluded from that guard by Phase 1 rule 1 – under a login no entry names.
+Making that block would double-count the human case and could stall merges condition 4 correctly
+releases, and it would strand a project that deliberately ignores a thread-posting bot: its only
+escape would be adding that bot to `mergeGate.bots`, which then makes this gate wait for it as a
+reviewer and trigger it. The residual gap is therefore accepted and made visible rather than closed –
+such a finding can still be merged past, but never without the run saying so. Note that "Matching a
+configured login" does not reach this case at all: a wholly wrong or absent login is not a spelling
+problem.
+
 ### Phase 5: Merge
 
 In mode `report`, or when any Phase-4 condition failed, report the exact unmet condition and perform
@@ -748,6 +773,9 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
    - whether human comments were found and what that blocked;
    - **every bot finding this run assessed but did not implement**, named here rather than answered
      in its thread;
+   - **unresolved threads that matched no configured login**, when Phase 4 reported that case, with
+     the authors they carry beside the configured logins – this one did not block the merge, so the
+     summary is the only place it is ever stated;
    - the merge result, or the precise blocking condition.
 
 ## Edge cases

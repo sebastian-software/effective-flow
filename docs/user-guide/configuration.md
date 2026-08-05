@@ -262,6 +262,15 @@ than blocking the merge forever. `mergeGate.bots.<login>.trigger` and `mergeGate
 are one dotted key each per bot; a login containing brackets (for example `greptile-apps[bot]`) is a
 valid middle segment because the encoding splits on `.` only.
 
+**Either spelling of a bot login works.** GitHub shows `greptile-apps[bot]` in its interface and
+reports that form through its REST API, but reports the same account as bare `greptile-apps` through
+the GraphQL API the gate uses to read review threads. The gate matches a configured login against a
+reported one after trimming a trailing `[bot]` from each, so one entry covers both surfaces and you
+do not need to list a reviewer twice. If a project already lists both spellings, they now count as
+one reviewer — one round, one mention, one wait — and the gate reports the collapse so the redundant
+row can be removed. Two entries that collapse but disagree about `.trigger` or `.check` are reported
+as a configuration conflict rather than silently resolved.
+
 `bots.<login>.check` names a commit status or check run that reviewer publishes, for example
 `recensor/review`. With it, the gate can tell a reviewer that is **still running** from one that has
 **not started**: it waits for the former and triggers only the latter. Leave it unset for a reviewer

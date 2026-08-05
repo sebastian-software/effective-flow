@@ -2324,10 +2324,16 @@ function normalizeComment(comment) {
   // The timestamp is what makes an automatic reviewer's feedback attributable to one head commit
   // rather than to the pull request as a whole, so it travels with every comment that can carry it.
   const createdAt = normalizeTimestamp(comment.created_at, comment.createdAt, comment.created);
+  // The author is normalized exactly as a review-thread author is. Passing the provider's login
+  // straight through left this surface without `isBot` and `authorType` at all, which cost more
+  // than a missing field: the merge gate's human-comment guard could establish bot authorship for a
+  // top-level comment only from a configured login, and its trigger idempotency in app mode — which
+  // recognizes its own comment by `authorType: bot` — could never be proven and re-posted the
+  // trigger every round. REST reports a bot with the `[bot]` suffix, which is what proves it here.
   return {
     id: requireNumber(comment.id, 'provider comment id'),
     body: comment.body ?? comment.content ?? '',
-    author: comment.user?.login ?? comment.poster?.login ?? comment.author?.login,
+    author: normalizeAuthor(comment.user ?? comment.poster ?? comment.author),
     url: comment.html_url ?? comment.url,
     ...(createdAt === undefined ? {} : { createdAt }),
   };

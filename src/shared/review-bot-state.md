@@ -9,6 +9,37 @@ The reviewers are the logins in `mergeGate.bots`; a reviewer's optional check co
 `mergeGate.bots.<login>.check`. An empty `mergeGate.bots` list means no automatic reviewer is
 expected and there is nothing to observe.
 
+### Matching a configured login
+
+A configured `mergeGate.bots` login and a login reported by a read surface denote the same reviewer
+when they are equal after trimming **one trailing** `[bot]` from each. Apart from that trim the
+comparison is exact, and no other author field takes part in it — a display name, a profile URL and
+an account ID decide nothing here. A `[bot]` anywhere but at the end of a login is part of that
+login and is never trimmed.
+
+**The two surfaces spell one account differently, and that is why this rule exists.** GitHub's REST
+API reports a bot account with the `[bot]` suffix while its GraphQL API reports the same account
+without it, so a reviewer's pull-request comments and its review threads arrive under two spellings.
+No single configured value matches both. Configured the REST way, every rule that reads review
+threads matches nothing and reports itself satisfied; configured the GraphQL way, every rule that
+reads pull-request comments stops recognizing the reviewer at all. Both directions are wrong, and
+the first is the dangerous one, because a rule that matched nothing looks exactly like a rule with
+nothing to match.
+
+**Resolution runs from the reported login to the configured entry, and the configured spelling stays
+the key.** `mergeGate.bots.<login>.trigger` and `mergeGate.bots.<login>.check` are dotted
+configuration keys spelled the way the project wrote them, so a reported `greptile-apps` resolves to
+a configured `greptile-apps[bot]` entry and every following `.trigger` and `.check` lookup uses that
+**configured spelling**. Matching tolerantly and then looking configuration up under the reported
+spelling would find nothing, which is the same defect one step later.
+
+**Two entries that collapse to one reviewer are one reviewer.** A project may already list both
+spellings as a workaround; after this rule they de-duplicate to a single reviewer, which is the
+intended outcome — one round, one mention, one wait. Report the collapse, so a maintainer can drop
+the redundant entry instead of keeping a line that no longer does anything. If the collapsing
+entries carry different `.trigger` or `.check` values, that is a configuration conflict: report it
+and resolve nothing by guessing.
+
 ### The three states
 
 - **running** — the reviewer is in flight for the current head. Its output is coming, and it must not

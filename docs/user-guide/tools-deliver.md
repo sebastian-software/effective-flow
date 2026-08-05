@@ -177,8 +177,9 @@ it has to do that again on every later run – not only inside the run that wrot
 modes exist:
 
 - **App mode:** the gate posts as a dedicated bot account (planned, the way Greptile does today).
-  Its writes are recognized by authorship alone – a login listed in `mergeGate.bots`, or a
-  normalized bot account type – so no identity lookup is involved and nothing further is needed.
+  Its writes are recognized by authorship alone – a login listed in `mergeGate.bots`, matched with a
+  trailing `[bot]` trimmed from each side so one entry covers both of GitHub's APIs, or a normalized
+  bot account type – so no identity lookup is involved and nothing further is needed.
 - **Manual mode (today):** the gate posts as the operator's own account, the same account a human
   might also comment from. Its one own write, the trigger comment posted in the automatic-reviewer
   round, is recognized by that account's authenticated identity **plus** an exact match against the
