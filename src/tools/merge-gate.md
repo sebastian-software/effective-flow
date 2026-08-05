@@ -777,6 +777,10 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
      one handed back instead of posting;
    - the bot round per configured login: the observed state, the evidence that established it, and
      whether the run triggered, waited, or proceeded;
+   - **every pair of `mergeGate.bots` entries that collapsed to one reviewer**, with the surviving
+     key so the redundant row can be dropped – and every collapse whose entries set the same
+     `.trigger` or `.check` to different values, that conflict named with both values and named as
+     what blocked the merge on that reviewer;
    - whether human comments were found and what that blocked;
    - **every bot finding this run assessed but did not implement**, named here rather than answered
      in its thread;

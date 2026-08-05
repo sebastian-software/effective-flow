@@ -33,12 +33,21 @@ a configured `greptile-apps[bot]` entry and every following `.trigger` and `.che
 **configured spelling**. Matching tolerantly and then looking configuration up under the reported
 spelling would find nothing, which is the same defect one step later.
 
-**Two entries that collapse to one reviewer are one reviewer.** A project may already list both
-spellings as a workaround; after this rule they de-duplicate to a single reviewer, which is the
-intended outcome — one round, one mention, one wait. Report the collapse, so a maintainer can drop
-the redundant entry instead of keeping a line that no longer does anything. If the collapsing
-entries carry different `.trigger` or `.check` values, that is a configuration conflict: report it
-and resolve nothing by guessing.
+**Two entries that collapse to one reviewer are one reviewer.** Two configured entries collapse when
+they are equal after the same trim — one trailing `[bot]` off each — that this section applies
+between a configured and a reported login; between two configured logins the comparison is the
+identical one. A project may already list both spellings as a workaround; after this rule they
+de-duplicate to a single reviewer, which is the intended outcome — one round, one mention, one wait.
+**The surviving key is the first of the collapsing entries in `mergeGate.bots` list order**, and
+every `.trigger` and `.check` lookup for that reviewer uses that one configured spelling. A value set
+on exactly one of them is adopted for the collapsed reviewer: an unset key disagrees with nothing.
+Report the collapse, so a maintainer can drop the redundant entry instead of keeping a line that no
+longer does anything. If both entries set the same key to **different** values, that is a
+configuration conflict. Report it naming the key and both values, and treat that reviewer as
+unconfigured for triggering and for check lookup: post no trigger, and resolve its state without the
+primary signal of rule 1. A gate then blocks the merge on that reviewer. Never pick one of the two
+values and never combine them — a guessed trigger text and a guessed check context each decide a
+different action, and neither is the one the project configured.
 
 ### The three states
 
