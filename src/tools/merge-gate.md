@@ -744,12 +744,16 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   a check.** Greptile also publishes a `Greptile Review` check context, so configuring `.check` for
   it removes this limitation entirely; do not read the reaction as evidence that a reviewer has no
   check to configure.
-- **A bot edits one sticky comment in place instead of posting a new one.** Its `createdAt` then
-  never moves past `headCommittedAt`, so from the second head onward the fallback signal reports
-  **not started** for a reviewer that has in fact reviewed, and the merge blocks on a precondition
-  that can no longer become true. Greptile and recensor both behave this way. Only a configured
-  `.check` resolves it: the fallback cannot, by construction, because the one timestamp it reads is
-  the one the reviewer stopped moving.
+- **A bot edits one sticky comment in place instead of posting a new one.** Its `createdAt` never
+  moves past `headCommittedAt`, so that edit is invisible to the fallback signal. The fallback reads
+  the newest comment, review **thread**, or thread reply, so a review that also opens a thread for
+  this head is still seen; on a head whose **only** output is that edit it is not, and the fallback
+  reports **not started** for a reviewer that has in fact reviewed – a merge precondition that can no
+  longer become true. recensor edits its summary comment this way, and Greptile did exactly this on
+  the pull request that introduced the check-based signal: it found nothing, therefore opened no
+  thread, and its frozen summary edit was its whole output for that head. Only a configured `.check`
+  resolves it: the fallback cannot, by construction, because the one timestamp it reads is the one
+  the reviewer stopped moving.
 - **A bot posts nothing because it found nothing** is indistinguishable from "has not run yet" on
   the fallback signal; the same timeout applies. A configured `.check` removes this limitation for
   the bots that publish one.

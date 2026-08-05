@@ -2176,33 +2176,138 @@ test('an emoji acknowledgment is never presented as evidence that a reviewer has
   // and it is read from `pr-status-read` like any other check. A reviewer can — and Greptile does
   // — do both. Inferring the absence of the second from the presence of the first is the mistake
   // this test exists to keep out of the sources.
-  const gate = source('src/tools/merge-gate.md');
-  const wizard = source('src/tools/setup.md');
+  //
+  // Asserted as the guarantee the sources must carry, not as the absence of the one sentence that
+  // was deleted. A negative pinned to that wording passes again for any paraphrase of it — dropping
+  // the single word "either" was enough — and it says nothing about what has to stand there
+  // instead. Every claim below is therefore bound to the edge-case bullet that must carry it, and
+  // the one negative left is a second lock on the formulation that already misled a reader once.
+  const edgeCases = section(source('src/tools/merge-gate.md'), '## Edge cases', '\n## ');
+  const bullet = (marker) => {
+    const entry = edgeCases.split(/\n-\s+/).find((item) => item.includes(marker));
+    assert.ok(entry, `the gate's edge cases must carry the bullet about: ${marker}`);
+    return flat(entry);
+  };
 
-  assert.doesNotMatch(
-    gate,
-    /publishes no check context either/,
-    'the gate must not claim Greptile publishes no check context — it publishes `Greptile Review`',
+  const reaction = bullet('acknowledges with an emoji reaction');
+  assert.match(
+    reaction,
+    near('reaction', '`Greptile Review` check', 400),
+    'the emoji-reaction case must name the check context this reviewer does publish',
   );
   assert.match(
-    gate,
-    /An acknowledgment is not\s+a check/,
-    'the gate must separate a trigger acknowledgment from a review check context',
+    reaction,
+    near('reaction', '(?:is not a check|no check to configure)', 300),
+    "a reaction must be stated not to be evidence about the reviewer's check context",
+  );
+  assert.doesNotMatch(
+    flat(edgeCases),
+    /publishes no check/i,
+    'no edge case may reintroduce the claim that this reviewer publishes no check context',
   );
 
   // The sticky-comment case is the concrete failure the fallback cannot survive, and it is the
-  // reason `.check` is not merely an optimisation for these reviewers.
+  // reason `.check` is not merely an optimisation for these reviewers. Each assertion here is
+  // matched on what its message promises: the frozen timestamp, the scope of the consequence, and
+  // the remedy — not on the bullet's opening words, which a trimmed bullet would still satisfy.
+  const sticky = bullet('edits one sticky comment in place');
   assert.match(
-    gate,
-    /edits one sticky comment in place/,
-    'the gate must document that a sticky comment freezes `createdAt` on the fallback signal',
+    sticky,
+    near('edits one sticky comment in place', 'never moves past `headCommittedAt`', 200),
+    "the sticky-comment case must document that the reviewer's `createdAt` freezes against the head",
+  );
+  // Scoped, because the fallback reads threads and thread replies too: a review that also opens a
+  // thread for this head *is* seen, and claiming otherwise would trade one wrong statement about
+  // this reviewer for another.
+  assert.match(
+    sticky,
+    near('only\\*{0,2} output', '\\*\\*not started\\*\\*', 300),
+    'the not-started consequence must be scoped to a head whose only output is that frozen edit',
+  );
+  assert.match(
+    sticky,
+    near('configured `\\.check`', '(?:fallback cannot|the one timestamp it reads)', 200),
+    'the remedy must stay, and stay stated as the one the fallback cannot substitute',
   );
 
+  // The wizard half, bound to the `.check` bullet it belongs to. Its substance is the warning, not
+  // the removed example: delete the warning and an asserted deletion still passes.
+  const checkKey = flat(
+    section(source('src/tools/setup.md'), '#### Block 9: the merge gate (`mergeGate.*`)')
+      .split(/\n-\s+/)
+      .find((entry) => entry.includes('`mergeGate.bots.<login>.check`:')) ?? '',
+  );
+  assert.ok(checkKey, 'the wizard must explain `mergeGate.bots.<login>.check` in its own bullet');
+  assert.match(
+    checkKey,
+    near('reaction', '`Greptile Review` check', 200),
+    'the wizard must state that this reviewer reacts *and* publishes a check context',
+  );
   assert.doesNotMatch(
-    wizard,
-    /acknowledges with an emoji reaction, which is not a check/,
+    checkKey,
+    near('Greptile', '(?:is not a check|publishes no readable check)', 200),
     'the wizard must not use Greptile as its example of a reviewer without a check context',
   );
+
+  // "Publishes no check context at all" is only usable as a criterion if the wizard also says how
+  // to observe which case a reviewer is — and which way to resolve doubt, given that it offers
+  // "not set" as the default answer.
+  assert.match(
+    checkKey,
+    near('checks list', 'pull request', 200),
+    'the wizard must name where the check context is observed',
+  );
+  assert.match(
+    checkKey,
+    near('checks list', 'exactly the name', 200),
+    'the observed entry must be stated to carry exactly the value to configure',
+  );
+  assert.match(
+    checkKey,
+    near('(?:in doubt|unsure)', 'configure it', 120),
+    'doubt must resolve toward configuring the context, never toward leaving it unset',
+  );
+  assert.match(
+    checkKey,
+    near('wrongly set', '(?:never be reported|can never be reported)', 300),
+    'the asymmetry must be stated: a wrong context blocks visibly, an omitted one is never reported',
+  );
+});
+
+test("this repository's own gate is not left on a signal its reviewer cannot use", () => {
+  // `/effective-flow setup` rewrites these rows in place and offers "not set" as the default answer
+  // for `.check`. A wizard run that accepted that default here would silently restore the state
+  // that blocked PR #317 — this repository's reviewer back on a timestamp it stopped moving — and
+  // until now no test read this file at all, so the suite would have stayed green through it.
+  //
+  // Deliberately narrow. `.check` is optional by contract, and a reviewer that genuinely publishes
+  // no context must stay configurable without one, so this asserts nothing about bots in general:
+  // only about the reviewer configured here, whose check context the gate itself documents.
+  const adr = source('docs/adr/effective-flow-project-setup.md');
+  const logins = tableRow(adr, 'mergeGate.bots')
+    .split('|')[2]
+    .split(',')
+    .map((login) => login.trim())
+    .filter(Boolean);
+  const configured = logins.filter((login) => /greptile/i.test(login));
+  assert.ok(
+    configured.length > 0,
+    'this repository must configure the reviewer its gate waits for',
+  );
+
+  for (const login of configured) {
+    const context = tableRow(adr, `mergeGate.bots.${login}.check`).split('|')[2].trim();
+    assert.ok(
+      context && !/^(?:unset|not set|none|null|-)$/i.test(context),
+      `${login} must carry a check context rather than the wizard's "not set" default`,
+    );
+    // And the reviewer's own context, not a plausible-looking typo: a context that never appears
+    // resolves to **not started** exactly like a missing row does, so the two failures are one.
+    assert.ok(
+      source('src/tools/merge-gate.md').includes(context),
+      `the configured context for ${login} must be the one the gate documents: ${context}`,
+    );
+  }
 });
 
 test('the reviewer-state contract pins its three states and its fail-closed precedence', () => {
