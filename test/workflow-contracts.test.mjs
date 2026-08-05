@@ -2165,6 +2165,46 @@ test('the shared reviewer-state contract is loaded by the gate and by the guard'
   }
 });
 
+test('an emoji acknowledgment is never presented as evidence that a reviewer has no check', () => {
+  // This cost a real merge. The gate refused to merge PR #317 because Greptile's freshness could
+  // not be proven, while Greptile's own `Greptile Review` check sat green on the same head: the
+  // sources claimed Greptile "publishes no check context either", so nobody configured `.check`
+  // for it and the gate stayed on a fallback signal that cannot work for that reviewer at all.
+  //
+  // Two distinct things were conflated. A reaction is how a bot acknowledges a *trigger*, and it
+  // is genuinely unreadable through the helper. A check context is how it reports the *review*,
+  // and it is read from `pr-status-read` like any other check. A reviewer can — and Greptile does
+  // — do both. Inferring the absence of the second from the presence of the first is the mistake
+  // this test exists to keep out of the sources.
+  const gate = source('src/tools/merge-gate.md');
+  const wizard = source('src/tools/setup.md');
+
+  assert.doesNotMatch(
+    gate,
+    /publishes no check context either/,
+    'the gate must not claim Greptile publishes no check context — it publishes `Greptile Review`',
+  );
+  assert.match(
+    gate,
+    /An acknowledgment is not\s+a check/,
+    'the gate must separate a trigger acknowledgment from a review check context',
+  );
+
+  // The sticky-comment case is the concrete failure the fallback cannot survive, and it is the
+  // reason `.check` is not merely an optimisation for these reviewers.
+  assert.match(
+    gate,
+    /edits one sticky comment in place/,
+    'the gate must document that a sticky comment freezes `createdAt` on the fallback signal',
+  );
+
+  assert.doesNotMatch(
+    wizard,
+    /acknowledges with an emoji reaction, which is not a check/,
+    'the wizard must not use Greptile as its example of a reviewer without a check context',
+  );
+});
+
 test('the reviewer-state contract pins its three states and its fail-closed precedence', () => {
   const state = source('src/shared/review-bot-state.md');
   const states = flat(section(state, '### The three states'));

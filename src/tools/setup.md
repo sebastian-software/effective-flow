@@ -444,8 +444,10 @@ value or default as the pre-selection:
   `{{SKILL:iterate}}` can tell a reviewer that is **still running** from one that has **not started**,
   so a running reviewer is waited for instead of triggered a second time. Without it both fall back
   to comparing the reviewer's newest comment against the head commit, which cannot see a reviewer
-  that edits one sticky comment in place. Leave it unset for a reviewer that publishes no readable
-  check — Greptile, for instance, acknowledges with an emoji reaction, which is not a check.
+  that edits one sticky comment in place. Leave it unset only for a reviewer that publishes no check
+  context at all, and do not infer that from an emoji acknowledgment: Greptile acknowledges a trigger
+  with a reaction **and** publishes a `Greptile Review` check, so it is a reviewer that wants a
+  configured `.check` rather than the fallback.
 
 `delivery.mergeMethod` (block 5) decides **how** the gate merges; it stays in the `delivery` block
 because it is a property of this project's delivery, not of the gate.

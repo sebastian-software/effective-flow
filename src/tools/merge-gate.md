@@ -738,9 +738,18 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
 
 - **The head moves during the run:** the SHA guard on `pr-merge` rejects the merge; report and do not
   retry blindly.
-- **A bot acknowledges with an emoji reaction instead of a comment.** Greptile does this, and it
-  publishes no check context either, so it stays on the fallback signal. Reactions are not readable
-  through the helper, so such a bot times out and blocks the merge – a report, never a wrong merge.
+- **A bot acknowledges with an emoji reaction instead of a comment.** Greptile does this. Reactions
+  are not readable through the helper, so on the fallback signal that acknowledgment never counts and
+  the bot times out and blocks the merge – a report, never a wrong merge. **An acknowledgment is not
+  a check.** Greptile also publishes a `Greptile Review` check context, so configuring `.check` for
+  it removes this limitation entirely; do not read the reaction as evidence that a reviewer has no
+  check to configure.
+- **A bot edits one sticky comment in place instead of posting a new one.** Its `createdAt` then
+  never moves past `headCommittedAt`, so from the second head onward the fallback signal reports
+  **not started** for a reviewer that has in fact reviewed, and the merge blocks on a precondition
+  that can no longer become true. Greptile and recensor both behave this way. Only a configured
+  `.check` resolves it: the fallback cannot, by construction, because the one timestamp it reads is
+  the one the reviewer stopped moving.
 - **A bot posts nothing because it found nothing** is indistinguishable from "has not run yet" on
   the fallback signal; the same timeout applies. A configured `.check` removes this limitation for
   the bots that publish one.
