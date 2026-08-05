@@ -3,9 +3,9 @@
 ## [1.56.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.55.4...effective-flow-v1.56.0) (2026-08-05)
 
 
-### ⚠ BREAKING CHANGES
+### Deprecations
 
-* `/effective-flow pr-review` is now `/effective-flow merge-gate`. The `prReview.*` configuration keys are renamed to `mergeGate.*`; the old names are still read for one generation and `/effective-flow setup` rewrites a legacy block in place. `delivery.prReview` is unaffected.
+* `/effective-flow pr-review` is now `/effective-flow merge-gate`. **This release is not a breaking change:** the old invocation keeps working as a deprecated alias that prints a notice once and then forwards the run unchanged to the merge gate. It is absent from the tool overview and from autocomplete, and it is removed with the next deliberate major release. The `prReview.*` configuration keys are renamed to `mergeGate.*`; the old names are still read for one generation and `/effective-flow setup` rewrites a legacy block in place. `delivery.prReview` is unaffected.
 
 ### Features
 
