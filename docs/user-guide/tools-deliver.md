@@ -95,10 +95,13 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    `/effective-flow iterate`, which fixes the valid ones, replies, and resolves the threads. See
    [Three reviewer states, not two](#three-reviewer-states-not-two).
 3. **Human-comment guard** – if any unresolved comment or thread has a human author, the run
-   implements no review note and merges nothing. CI repair stays permitted even then. A bot finding
-   the run assesses but does not implement – because the guard is active, or because the finding was
-   rejected – gets no thread reply at all: it is named in the run's chat summary instead, and the
-   thread is left untouched and unresolved. See
+   implements no review note and merges nothing. CI repair stays permitted even then. A top-level
+   comment whose author the forge reports as a bot account never holds the guard, whether or not
+   that bot is listed in `mergeGate.bots` – a CI, coverage, or dependency bot commenting on the
+   pull request therefore does not block the merge. A bot finding the run assesses but does not
+   implement – because the guard is active, or because the finding was rejected – gets no thread
+   reply at all: it is named in the run's chat summary instead, and the thread is left untouched
+   and unresolved. See
    [Recognizing its own writes across runs](#recognizing-its-own-writes-across-runs).
 4. **Merge** – only once every precondition holds (all checks green, the forge reports the pull
    request mergeable, the human guard is inactive, every configured bot has run, and every one of
@@ -177,8 +180,10 @@ it has to do that again on every later run – not only inside the run that wrot
 modes exist:
 
 - **App mode:** the gate posts as a dedicated bot account (planned, the way Greptile does today).
-  Its writes are recognized by authorship alone – a login listed in `mergeGate.bots`, or a
-  normalized bot account type – so no identity lookup is involved and nothing further is needed.
+  Its writes are recognized by authorship alone – a login listed in `mergeGate.bots`, matched with a
+  trailing `[bot]` trimmed from each side when the forge reports that account as a bot, so one entry
+  covers both of GitHub's APIs while a human account of the same name still has to match exactly, or
+  a normalized bot account type – so no identity lookup is involved and nothing further is needed.
 - **Manual mode (today):** the gate posts as the operator's own account, the same account a human
   might also comment from. Its one own write, the trigger comment posted in the automatic-reviewer
   round, is recognized by that account's authenticated identity **plus** an exact match against the

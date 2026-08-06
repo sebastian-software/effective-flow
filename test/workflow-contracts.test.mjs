@@ -1476,6 +1476,73 @@ test('the merge gate evaluates bot authorship before it consults the identity lo
   );
 });
 
+test('a bot-typed author is excluded before the catch-all counts it as human', () => {
+  // What this test is, and what it is not. Phase 1's rules 1 and 5 are textually unchanged by the
+  // author normalization `pr-comments-read` now performs, so every assertion below is satisfied by
+  // the rule as it stood before that change too. This is a forward regression guard on the rule,
+  // never evidence of the behaviour change. The half that detects the change is the
+  // unconfigured-bot arm of `pull-request comments normalize their author exactly as review threads
+  // do` in `test/remote-tracker.test.mjs`: it fails on the old bare-string author, and nothing here
+  // does.
+  //
+  // The two belong together because one contract is read from both ends. The normalizer decides
+  // whether a top-level comment carries `authorType: bot`, and this rule decides what that costs: a
+  // comment from a bot nobody configured — a CI, coverage, or dependency bot — is excluded at rule
+  // 1 and never reaches the human-comment guard. A rewrite that made the exclusion reachable only
+  // through `mergeGate.bots` would put every one of those comments back in front of the guard, and
+  // the normalization test would stay green while it happened.
+  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
+
+  // Both rules are picked by content, deliberately not by position. The numbered split also cuts at
+  // the inline "counts under rule 5. Requiring" inside rule 4, so an index-based pick lands on a
+  // slice that is not a rule at all and asserts against the wrong prose.
+  const rules = phase1.split(/(?=\s\d+\.\s)/);
+  const botRule = rules.find((item) => /\*\*The author is a bot\*\*/.test(item));
+  const catchAll = rules.find((item) => /Everything else counts as human/.test(item));
+  assert.ok(botRule, 'Phase 1 must carry a rule about an item whose author is a bot');
+  assert.ok(catchAll, 'Phase 1 must carry the catch-all that counts every other item as human');
+
+  // The normalized record is what the rule reads, so it has to name the field and the value the
+  // read produces. A rule phrased purely in terms of configuration could not consume the normalized
+  // author at all.
+  assert.match(
+    botRule,
+    /`authorType`[^.]{0,60}`bot`/i,
+    'rule 1 must name the normalized field and the value it excludes on',
+  );
+
+  // And that value has to stand on its own. `mergeGate.bots` lists the reviewers a project asked
+  // for; the bots that comment on a pull request without being listed are the majority, and they
+  // are reachable only through the account class the provider states. If this half were phrased as
+  // a condition on a configured entry, every unlisted bot would fall through to the catch-all.
+  assert.match(
+    botRule,
+    near('`authorType`', '(?:alone|overlap|on its own|do(?:es)? not divide|independent)', 500),
+    'the bot-typed case must stand on its own rather than only qualifying a configured login',
+  );
+
+  // Exclusion and stop are one statement. "Excluded" without "stop" leaves a later rule free to
+  // count the same item again, and the whole section is built on stopping at the first match.
+  assert.match(
+    botRule,
+    near('\\bexcluded\\b', '(?:evaluation stops|stops? there|stop(?:s)? at)', 300),
+    'rule 1 must state both the exclusion and that evaluation stops there',
+  );
+
+  // Order is the rest of the contract: a bot rule written after the catch-all is unreachable.
+  ordered(phase1, '**The author is a bot**', 'Everything else counts as human');
+
+  // The catch-all's own boundary, stated positively so it survives a rewording. `unknown` is what
+  // an author record carries when no field decided — the fail-safe direction, where an unproven
+  // account counts as human and keeps the guard. It is the value this rule admits, and the reason
+  // the rule above must be about a *proven* bot rather than an unrecognized one.
+  assert.match(
+    catchAll,
+    near('`unknown`', 'counts as human', 300),
+    'the catch-all must name `unknown` as the value it counts as human',
+  );
+});
+
 test("a resolved thread excludes only this tool's own items", () => {
   const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
 
@@ -2879,5 +2946,159 @@ test('src/SKILL.md carries the {{DEPRECATED_ALIASES}} placeholder in its dispatc
     dispatch,
     /\{\{DEPRECATED_ALIASES\}\}/,
     'the dispatch rule section must contain the {{DEPRECATED_ALIASES}} placeholder',
+  );
+});
+
+test('one rule decides when a configured reviewer login matches a reported one', () => {
+  const state = source('src/shared/review-bot-state.md');
+  // Default stop, so the slice ends at the next `###` heading: assertions must be satisfied by the
+  // rule itself, not by neighbouring prose elsewhere in the fragment.
+  const rule = flat(section(state, '### Matching a configured login'));
+
+  // The defect this rule exists for: the same account arrives as `greptile-apps[bot]` from REST and
+  // `greptile-apps` from GraphQL, so no single configured value satisfied both surfaces. Configured
+  // the REST way, Phase 4's unassessed-thread condition matched nothing and reported itself
+  // satisfied while open reviewer findings sat there.
+  assert.match(rule, /\[bot\]/, 'the rule must name the suffix it tolerates');
+  assert.match(
+    rule,
+    near('trailing', '\\[bot\\]', 200),
+    'only a trailing suffix is trimmed — a `[bot]` elsewhere is part of the login',
+  );
+  assert.match(
+    rule,
+    /exact|exactly/i,
+    'the comparison must stay exact apart from that trim, or it becomes a substring match',
+  );
+
+  // The trim is an allowance for one bot account spelled two ways, so it takes a bot account.
+  // GitHub mints `foo[bot]` for an app slug `foo` while the bare `foo` stays an ordinary user or
+  // organization name: an ungated trim adds exactly one human-reachable login per configured entry,
+  // and that human's comments then count as the reviewer's output on every consumer of this rule.
+  assert.match(
+    rule,
+    near('trim', '(?:`isBot`|`authorType`|bot-typed)', 400),
+    'the trim must be conditioned on the reported account class, not applied to every login',
+  );
+
+  // Resolution direction. The dotted config keys are spelled the way the project wrote them, so a
+  // tolerant match that then looked config up under the *reported* spelling would find nothing.
+  assert.match(
+    rule,
+    near('`mergeGate\\.bots\\.<login>\\.(?:trigger|check)`', 'configured spelling', 400),
+    'the rule must state that .trigger/.check are looked up under the configured spelling',
+  );
+
+  // A project may already carry both spellings as the documented workaround. After this rule they
+  // are one reviewer, which must not silently become two rounds, two mentions and two waits.
+  assert.match(
+    rule,
+    near('(?:collapse|collapsing|de-duplicat|duplicate)', '(?:report|conflict)', 400),
+    'collapsing entries must be de-duplicated, and a conflicting trigger/check reported',
+  );
+});
+
+test('every site that matches mergeGate.bots resolves through the shared login rule', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const phase1 = flat(section(gate, '### Phase 1'));
+  const phase3 = flat(section(gate, '### Phase 3'));
+  const phase4 = section(gate, '### Phase 4');
+
+  // Four sites compare a configured login against a reported one, on two surfaces that spell the
+  // same account differently. A site that restates a bare equality instead of resolving through the
+  // shared rule reintroduces the defect at that site alone, which is exactly how it stayed hidden.
+  const reference = /Matching a configured login/;
+
+  assert.match(
+    phase1,
+    reference,
+    'Phase 1 rule 1 must resolve the configured login through the rule',
+  );
+  assert.match(phase3, reference, "Phase 3's per-login round must resolve through the rule");
+
+  const conditions = phase4.split(/(?=\n\d+\.\s)/).slice(1);
+  const hasRunIndex = conditions.findIndex((item) => /has run/i.test(item));
+  const assessedIndex = conditions.findIndex((item) => /assessed/i.test(item));
+  assert.notEqual(hasRunIndex, -1, 'Phase 4 must keep its reviewer has-run condition');
+  assert.notEqual(assessedIndex, -1, 'Phase 4 must keep its never-assessed condition');
+  assert.match(
+    flat(conditions[hasRunIndex]),
+    reference,
+    'the has-run condition must resolve the configured login through the rule',
+  );
+  assert.match(
+    flat(conditions[assessedIndex]),
+    reference,
+    'the never-assessed condition must resolve the configured login through the rule',
+  );
+});
+
+test('condition 7 finding no reviewer thread is reported, not passed over in silence', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const phase4 = section(gate, '### Phase 4');
+
+  // The numbered preconditions are cut out first, so every assertion below can tell a merge
+  // condition apart from the commentary that follows it. The cut starts at the list's own first
+  // numbered line: anchoring on the section's first blank line lands between the heading and the
+  // intro paragraph — before the list — and leaves an empty slice that asserts nothing. It ends at
+  // the first blank line followed by a line that is neither indented (a condition's own
+  // continuation) nor numbered (the next condition); everything past that point is Phase 4
+  // commentary. Splitting without that cut would file trailing prose under the last condition and
+  // fail a correctly placed report.
+  const listStart = phase4.search(/\n\d+\.\s/);
+  assert.notEqual(listStart, -1, 'Phase 4 must carry its merge preconditions as a numbered list');
+  const list = phase4.slice(listStart);
+  const listEnd = list.search(/\n\n(?![ \t])(?!\d+\.)/);
+  assert.notEqual(listEnd, -1, 'Phase 4 must carry prose after its numbered preconditions');
+  const conditions = list.slice(0, listEnd).split(/(?=\n\d+\.\s)/);
+  const afterList = flat(list.slice(listEnd));
+
+  // The slicing is itself under test: an empty or truncated condition list would let the
+  // not-a-precondition check below pass without ever reading a condition.
+  assert.ok(
+    conditions.length >= 7,
+    'Phase 4 must slice into its numbered preconditions — condition 7 among them — or the checks below assert nothing',
+  );
+
+  // The report's own contract phrase, required of the prose and forbidden of the conditions, so both
+  // halves move together when it is reworded. `\b` keeps the alternation out of `Note`, `nothing`
+  // and `not`, and naming one phrase replaces a bare character distance that could pair a `no` in
+  // one sentence with a `match` in another.
+  const zeroMatch = 'match(?:ed|es|ing)?\\s+\\b(?:no|zero|none of the)\\b\\s+configured\\s+logins?';
+  const zeroMatchPhrase = new RegExp(zeroMatch, 'i');
+
+  // "Satisfied" and "no reviewer threads are open" were indistinguishable in the log, which is why
+  // a gate whose unassessed-thread protection was inert said so nowhere. A misconfigured or absent
+  // login is not a suffix problem, so the matching rule above does not reach this case.
+  assert.match(
+    afterList,
+    near(zeroMatch, '(?:report|name)', 500),
+    'Phase 4 must report a reviewer list that matched no unresolved thread',
+  );
+
+  // Report-only, deliberately. An unresolved *human* thread already blocks at the human-comment
+  // guard, so a blocking condition here would double-count it and could stall merges that the
+  // guard correctly releases.
+  assert.match(
+    afterList,
+    near(
+      '(?:reports? only|not a (?:new )?(?:blocking )?condition|never blocks|does not block)',
+      'condition',
+      400,
+    ),
+    'the zero-match report must state that it is not a blocking condition',
+  );
+
+  // It must not have been written as a numbered precondition, or it would gate the merge after all.
+  const asCondition = conditions.filter((item) => zeroMatchPhrase.test(flat(item)));
+  assert.equal(
+    asCondition.length,
+    0,
+    'the zero-match report must not be a numbered Phase 4 merge precondition',
+  );
+  assert.match(
+    afterList,
+    zeroMatchPhrase,
+    'the zero-match report must live in the prose after the numbered preconditions',
   );
 });

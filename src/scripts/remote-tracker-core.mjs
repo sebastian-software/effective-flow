@@ -2017,6 +2017,24 @@ function normalizeLabels(value) {
     .filter(Boolean);
 }
 
+// The only two account classes an authorship read can prove. GitHub states the class under two
+// spellings for the same two values — `type` on the REST simple-user object, `__typename` on the
+// GraphQL actor — so one allow-list decides both. A class outside them (a GHES
+// `EnterpriseUserAccount`, a migration `Mannequin`, an `Organization`) proves nothing about
+// automation and must stay undecided: reporting `human` for it would state as a fact something the
+// provider never said, and `unknown` is precisely this record's word for "nobody decided". Matching
+// ignores case, because case is spelling rather than class — the same discipline
+// `VIEWER_ACCOUNT_TYPES` applies to the identity read.
+const AUTHOR_ACCOUNT_TYPES = Object.freeze(['User', 'Bot']);
+
+function declaredAccountBot(value) {
+  const declared = typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+  const type = AUTHOR_ACCOUNT_TYPES.find(
+    (candidate) => candidate.toLowerCase() === declared?.toLowerCase(),
+  );
+  return type === undefined ? undefined : type === 'Bot';
+}
+
 function normalizeAuthor(author) {
   const login =
     typeof author === 'string'
@@ -2026,7 +2044,8 @@ function normalizeAuthor(author) {
     typeof author === 'object' && author !== null
       ? (author.is_bot ??
         author.isBot ??
-        (typeof author.__typename === 'string' ? author.__typename === 'Bot' : undefined))
+        declaredAccountBot(author.type) ??
+        declaredAccountBot(author.__typename))
       : undefined;
   const inferredBot = typeof login === 'string' && /\[bot\]$/i.test(login) ? true : undefined;
   const isBot = explicitBot ?? inferredBot;
@@ -2324,10 +2343,19 @@ function normalizeComment(comment) {
   // The timestamp is what makes an automatic reviewer's feedback attributable to one head commit
   // rather than to the pull request as a whole, so it travels with every comment that can carry it.
   const createdAt = normalizeTimestamp(comment.created_at, comment.createdAt, comment.created);
+  // The author is normalized exactly as a review-thread author is. Passing the provider's login
+  // straight through left this surface without `isBot` and `authorType` at all, which cost more
+  // than a missing field: the merge gate's human-comment guard could establish bot authorship for a
+  // top-level comment only from a configured login, and its trigger idempotency in app mode — which
+  // recognizes its own comment by `authorType: bot` — could never be proven and re-posted the
+  // trigger every round. This read selects no fields, so the REST `user` object arrives complete and
+  // states the account class in `type` — the same `User`/`Bot` distinction the GraphQL actor spells
+  // as `__typename`. The `[bot]` login suffix REST additionally carries stays the fallback for a
+  // payload that states no class.
   return {
     id: requireNumber(comment.id, 'provider comment id'),
     body: comment.body ?? comment.content ?? '',
-    author: comment.user?.login ?? comment.poster?.login ?? comment.author?.login,
+    author: normalizeAuthor(comment.user ?? comment.poster ?? comment.author),
     url: comment.html_url ?? comment.url,
     ...(createdAt === undefined ? {} : { createdAt }),
   };

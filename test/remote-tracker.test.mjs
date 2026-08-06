@@ -3818,3 +3818,220 @@ test('the shipped process runner detects a removed working directory before spaw
   assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
   assert.equal(envelope.error.details.cwd, '/effective-flow/definitely/removed/worktree');
 });
+
+test('pull-request comments normalize their author exactly as review threads do', async () => {
+  // GitHub's REST API reports a bot account *with* the `[bot]` suffix and states its class in the
+  // simple-user `type` field, while the GraphQL review-thread query reports the same account without
+  // the suffix and spells the same class as `__typename: "Bot"`. Leaving this read unnormalized cost
+  // more than a spelling: a top-level comment carried no `authorType` at all, so merge-gate's
+  // human-comment guard could establish bot authorship only from a configured login, and its Phase-3
+  // trigger idempotency — which reads `authorType: bot` to recognize its own comment in app mode —
+  // could never be proven.
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify([
+        {
+          id: 11,
+          body: 'Found two issues',
+          user: { login: 'greptile-apps[bot]', type: 'Bot' },
+          created_at: '2026-07-28T20:30:00Z',
+        },
+        { id: 12, body: 'Looks good', user: { login: 'maintainer' } },
+        { id: 13, body: 'Orphaned comment' },
+        { id: 14, body: 'Reviewed', user: { login: 'maintainer', type: 'User' } },
+        { id: 15, body: 'Automated note', user: { login: 'flow-gate', type: 'bot' } },
+        { id: 16, body: 'Imported note', user: { login: 'legacy-account', type: 'Mannequin' } },
+        { id: 17, body: 'All checks have passed', user: { login: 'github-actions[bot]' } },
+      ]),
+      stderr: '',
+    },
+  ]);
+
+  const envelope = await executeOperation(
+    'pr-comments-read',
+    { repository: githubRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+
+  // The stated class proves the bot here, exactly as `__typename` does on the other surface.
+  assert.deepEqual(envelope.data.result[0].author, {
+    login: 'greptile-apps[bot]',
+    isBot: true,
+    authorType: 'bot',
+  });
+  assert.equal(envelope.data.result[0].createdAt, '2026-07-28T20:30:00.000Z');
+
+  // A payload that states no class and carries no suffix decides nothing, so this stays `unknown`
+  // rather than being guessed as human — the same discipline every surface follows when no field
+  // decides.
+  assert.deepEqual(envelope.data.result[1].author, {
+    login: 'maintainer',
+    isBot: null,
+    authorType: 'unknown',
+  });
+
+  // An author the provider does not expose must not fail the read the way a missing *viewer* login
+  // does: a comment without an author is data, not a broken identity lookup.
+  assert.equal(envelope.data.result[2].author.login, undefined);
+  assert.equal(envelope.data.result[2].author.authorType, 'unknown');
+
+  // `User` is a statement, not an absence: the provider said this is a person, so the record says so
+  // too instead of falling through to `unknown`.
+  assert.deepEqual(envelope.data.result[3].author, {
+    login: 'maintainer',
+    isBot: false,
+    authorType: 'human',
+  });
+
+  // A dedicated bot account whose login carries no suffix is still proven by its class, and case is
+  // spelling rather than class.
+  assert.deepEqual(envelope.data.result[4].author, {
+    login: 'flow-gate',
+    isBot: true,
+    authorType: 'bot',
+  });
+
+  // A class outside `{User, Bot}` proves nothing about automation. Reading it as human would claim
+  // evidence the provider never gave, so the allow-list leaves it undecided.
+  assert.deepEqual(envelope.data.result[5].author, {
+    login: 'legacy-account',
+    isBot: null,
+    authorType: 'unknown',
+  });
+
+  // The unconfigured-bot arm, and the one that carries the merge-gate consequence of this
+  // normalization. `github-actions[bot]` appears in no `mergeGate.bots` table, and this payload
+  // states no class at all, so the login suffix is the only evidence there is. This record is what
+  // merge-gate's Phase 1 rule 1 reads: `authorType: bot` excludes the comment right there, before
+  // rule 5's catch-all can count it as human and hold the human-comment guard. Before this read
+  // normalized its author, a top-level comment carried a bare login string and no `authorType` at
+  // all, so every unconfigured bot's comment reached rule 5 and blocked the merge — which makes
+  // this arm, and not its prose counterpart, the assertion that fails on the old shape.
+  //
+  // Its counterpart is the merge-gate prose test `a bot-typed author is excluded before the
+  // catch-all counts it as human` in `test/workflow-contracts.test.mjs`. That one is a forward
+  // regression guard only: Phase 1's rules 1 and 5 are textually unchanged by this normalization,
+  // so it passes on the old and the new behaviour alike and proves nothing about the widening.
+  assert.deepEqual(envelope.data.result[6].author, {
+    login: 'github-actions[bot]',
+    isBot: true,
+    authorType: 'bot',
+  });
+
+  // The same arm on the surface that never states a class. Forgejo's comment records spell the
+  // author `poster` and carry no `type`, `__typename`, or `is_bot` field whatsoever, so the suffix
+  // is not merely the fallback there — it is the whole evidence. Both provider surfaces reach the
+  // guard through this one normalizer, so both are asserted here.
+  const forgejoRunner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify({
+        index: 2,
+        comments: [
+          {
+            id: 21,
+            body: 'Bump the lockfile',
+            poster: { login: 'dependabot[bot]' },
+            created_at: '2026-07-29T08:15:00+02:00',
+          },
+          {
+            id: 22,
+            body: 'Do not merge — the migration is missing',
+            poster: { login: 'operator' },
+          },
+        ],
+      }),
+      stderr: '',
+    },
+  ]);
+
+  const forgejo = await executeOperation(
+    'pr-comments-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner: forgejoRunner, skipProbe: true },
+  );
+
+  assert.deepEqual(forgejo.data.result[0].author, {
+    login: 'dependabot[bot]',
+    isBot: true,
+    authorType: 'bot',
+  });
+
+  // The contrasting arm, and the reason the one above is a narrowing of the guard rather than a
+  // hole in it: an ordinary login on that same class-less surface stays out of `bot`, so rule 1
+  // does not reach it and rule 5 still counts it as human. Exactly one human comment keeps the
+  // guard active, which is the property the bot arm must not have widened away.
+  assert.deepEqual(forgejo.data.result[1].author, {
+    login: 'operator',
+    isBot: null,
+    authorType: 'unknown',
+  });
+});
+
+test('a GraphQL actor class outside the allow-list leaves bot authorship undecided', async () => {
+  // `__typename` is matched against the same two classes as the REST `type` field, and for the same
+  // reason: GitHub spells more actor types than these two — `Mannequin` for an imported account,
+  // `Organization`, `EnterpriseUserAccount` on GHES — and a bare `!== 'Bot'` comparison would report
+  // every one of them as a proven human.
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                nodes: [
+                  {
+                    id: 'thread-1',
+                    isResolved: false,
+                    path: 'src/a.mjs',
+                    line: 42,
+                    comments: {
+                      nodes: [
+                        {
+                          id: 'comment-1',
+                          body: 'Imported review note',
+                          path: 'src/a.mjs',
+                          line: 42,
+                          author: { __typename: 'Mannequin', login: 'legacy-account' },
+                        },
+                        {
+                          id: 'comment-2',
+                          body: 'Automated note',
+                          path: 'src/a.mjs',
+                          line: 42,
+                          author: { __typename: 'bot', login: 'review-app' },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }),
+      stderr: '',
+    },
+  ]);
+
+  const envelope = await executeOperation(
+    'review-threads-read',
+    { repository: githubRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+
+  assert.deepEqual(envelope.data.result[0].comments[0].author, {
+    login: 'legacy-account',
+    isBot: null,
+    authorType: 'unknown',
+  });
+  // The allow-list ignores case on this surface too, so a differently spelled class still decides.
+  assert.deepEqual(envelope.data.result[0].comments[1].author, {
+    login: 'review-app',
+    isBot: true,
+    authorType: 'bot',
+  });
+});
