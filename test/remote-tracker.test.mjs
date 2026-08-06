@@ -3842,6 +3842,7 @@ test('pull-request comments normalize their author exactly as review threads do'
         { id: 14, body: 'Reviewed', user: { login: 'maintainer', type: 'User' } },
         { id: 15, body: 'Automated note', user: { login: 'flow-gate', type: 'bot' } },
         { id: 16, body: 'Imported note', user: { login: 'legacy-account', type: 'Mannequin' } },
+        { id: 17, body: 'All checks have passed', user: { login: 'github-actions[bot]' } },
       ]),
       stderr: '',
     },
@@ -3895,6 +3896,74 @@ test('pull-request comments normalize their author exactly as review threads do'
   // evidence the provider never gave, so the allow-list leaves it undecided.
   assert.deepEqual(envelope.data.result[5].author, {
     login: 'legacy-account',
+    isBot: null,
+    authorType: 'unknown',
+  });
+
+  // The unconfigured-bot arm, and the one that carries the merge-gate consequence of this
+  // normalization. `github-actions[bot]` appears in no `mergeGate.bots` table, and this payload
+  // states no class at all, so the login suffix is the only evidence there is. This record is what
+  // merge-gate's Phase 1 rule 1 reads: `authorType: bot` excludes the comment right there, before
+  // rule 5's catch-all can count it as human and hold the human-comment guard. Before this read
+  // normalized its author, a top-level comment carried a bare login string and no `authorType` at
+  // all, so every unconfigured bot's comment reached rule 5 and blocked the merge — which makes
+  // this arm, and not its prose counterpart, the assertion that fails on the old shape.
+  //
+  // Its counterpart is the merge-gate prose test `a bot-typed author is excluded before the
+  // catch-all counts it as human` in `test/workflow-contracts.test.mjs`. That one is a forward
+  // regression guard only: Phase 1's rules 1 and 5 are textually unchanged by this normalization,
+  // so it passes on the old and the new behaviour alike and proves nothing about the widening.
+  assert.deepEqual(envelope.data.result[6].author, {
+    login: 'github-actions[bot]',
+    isBot: true,
+    authorType: 'bot',
+  });
+
+  // The same arm on the surface that never states a class. Forgejo's comment records spell the
+  // author `poster` and carry no `type`, `__typename`, or `is_bot` field whatsoever, so the suffix
+  // is not merely the fallback there — it is the whole evidence. Both provider surfaces reach the
+  // guard through this one normalizer, so both are asserted here.
+  const forgejoRunner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify({
+        index: 2,
+        comments: [
+          {
+            id: 21,
+            body: 'Bump the lockfile',
+            poster: { login: 'dependabot[bot]' },
+            created_at: '2026-07-29T08:15:00+02:00',
+          },
+          {
+            id: 22,
+            body: 'Do not merge — the migration is missing',
+            poster: { login: 'operator' },
+          },
+        ],
+      }),
+      stderr: '',
+    },
+  ]);
+
+  const forgejo = await executeOperation(
+    'pr-comments-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner: forgejoRunner, skipProbe: true },
+  );
+
+  assert.deepEqual(forgejo.data.result[0].author, {
+    login: 'dependabot[bot]',
+    isBot: true,
+    authorType: 'bot',
+  });
+
+  // The contrasting arm, and the reason the one above is a narrowing of the guard rather than a
+  // hole in it: an ordinary login on that same class-less surface stays out of `bot`, so rule 1
+  // does not reach it and rule 5 still counts it as human. Exactly one human comment keeps the
+  // guard active, which is the property the bot arm must not have widened away.
+  assert.deepEqual(forgejo.data.result[1].author, {
+    login: 'operator',
     isBot: null,
     authorType: 'unknown',
   });

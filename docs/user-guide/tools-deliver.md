@@ -95,10 +95,13 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    `/effective-flow iterate`, which fixes the valid ones, replies, and resolves the threads. See
    [Three reviewer states, not two](#three-reviewer-states-not-two).
 3. **Human-comment guard** – if any unresolved comment or thread has a human author, the run
-   implements no review note and merges nothing. CI repair stays permitted even then. A bot finding
-   the run assesses but does not implement – because the guard is active, or because the finding was
-   rejected – gets no thread reply at all: it is named in the run's chat summary instead, and the
-   thread is left untouched and unresolved. See
+   implements no review note and merges nothing. CI repair stays permitted even then. A top-level
+   comment whose author the forge reports as a bot account never holds the guard, whether or not
+   that bot is listed in `mergeGate.bots` – a CI, coverage, or dependency bot commenting on the
+   pull request therefore does not block the merge. A bot finding the run assesses but does not
+   implement – because the guard is active, or because the finding was rejected – gets no thread
+   reply at all: it is named in the run's chat summary instead, and the thread is left untouched
+   and unresolved. See
    [Recognizing its own writes across runs](#recognizing-its-own-writes-across-runs).
 4. **Merge** – only once every precondition holds (all checks green, the forge reports the pull
    request mergeable, the human guard is inactive, every configured bot has run, and every one of

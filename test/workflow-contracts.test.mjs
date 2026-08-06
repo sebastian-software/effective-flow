@@ -1476,6 +1476,73 @@ test('the merge gate evaluates bot authorship before it consults the identity lo
   );
 });
 
+test('a bot-typed author is excluded before the catch-all counts it as human', () => {
+  // What this test is, and what it is not. Phase 1's rules 1 and 5 are textually unchanged by the
+  // author normalization `pr-comments-read` now performs, so every assertion below is satisfied by
+  // the rule as it stood before that change too. This is a forward regression guard on the rule,
+  // never evidence of the behaviour change. The half that detects the change is the
+  // unconfigured-bot arm of `pull-request comments normalize their author exactly as review threads
+  // do` in `test/remote-tracker.test.mjs`: it fails on the old bare-string author, and nothing here
+  // does.
+  //
+  // The two belong together because one contract is read from both ends. The normalizer decides
+  // whether a top-level comment carries `authorType: bot`, and this rule decides what that costs: a
+  // comment from a bot nobody configured — a CI, coverage, or dependency bot — is excluded at rule
+  // 1 and never reaches the human-comment guard. A rewrite that made the exclusion reachable only
+  // through `mergeGate.bots` would put every one of those comments back in front of the guard, and
+  // the normalization test would stay green while it happened.
+  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
+
+  // Both rules are picked by content, deliberately not by position. The numbered split also cuts at
+  // the inline "counts under rule 5. Requiring" inside rule 4, so an index-based pick lands on a
+  // slice that is not a rule at all and asserts against the wrong prose.
+  const rules = phase1.split(/(?=\s\d+\.\s)/);
+  const botRule = rules.find((item) => /\*\*The author is a bot\*\*/.test(item));
+  const catchAll = rules.find((item) => /Everything else counts as human/.test(item));
+  assert.ok(botRule, 'Phase 1 must carry a rule about an item whose author is a bot');
+  assert.ok(catchAll, 'Phase 1 must carry the catch-all that counts every other item as human');
+
+  // The normalized record is what the rule reads, so it has to name the field and the value the
+  // read produces. A rule phrased purely in terms of configuration could not consume the normalized
+  // author at all.
+  assert.match(
+    botRule,
+    /`authorType`[^.]{0,60}`bot`/i,
+    'rule 1 must name the normalized field and the value it excludes on',
+  );
+
+  // And that value has to stand on its own. `mergeGate.bots` lists the reviewers a project asked
+  // for; the bots that comment on a pull request without being listed are the majority, and they
+  // are reachable only through the account class the provider states. If this half were phrased as
+  // a condition on a configured entry, every unlisted bot would fall through to the catch-all.
+  assert.match(
+    botRule,
+    near('`authorType`', '(?:alone|overlap|on its own|do(?:es)? not divide|independent)', 500),
+    'the bot-typed case must stand on its own rather than only qualifying a configured login',
+  );
+
+  // Exclusion and stop are one statement. "Excluded" without "stop" leaves a later rule free to
+  // count the same item again, and the whole section is built on stopping at the first match.
+  assert.match(
+    botRule,
+    near('\\bexcluded\\b', '(?:evaluation stops|stops? there|stop(?:s)? at)', 300),
+    'rule 1 must state both the exclusion and that evaluation stops there',
+  );
+
+  // Order is the rest of the contract: a bot rule written after the catch-all is unreachable.
+  ordered(phase1, '**The author is a bot**', 'Everything else counts as human');
+
+  // The catch-all's own boundary, stated positively so it survives a rewording. `unknown` is what
+  // an author record carries when no field decided — the fail-safe direction, where an unproven
+  // account counts as human and keeps the guard. It is the value this rule admits, and the reason
+  // the rule above must be about a *proven* bot rather than an unrecognized one.
+  assert.match(
+    catchAll,
+    near('`unknown`', 'counts as human', 300),
+    'the catch-all must name `unknown` as the value it counts as human',
+  );
+});
+
 test("a resolved thread excludes only this tool's own items", () => {
   const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
 
