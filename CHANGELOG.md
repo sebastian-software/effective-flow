@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.56.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.56.0...effective-flow-v1.56.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* match a configured reviewer login on both surfaces the gate reads ([#325](https://github.com/sebastian-software/effective-flow/issues/325)) ([4031685](https://github.com/sebastian-software/effective-flow/commit/40316858b1937696751d3c547f1275342552a256))
+
 ## [1.56.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.55.4...effective-flow-v1.56.0) (2026-08-05)
 
 
