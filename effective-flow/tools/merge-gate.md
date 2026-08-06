@@ -1333,9 +1333,20 @@ Read the review comments **directly before** classification fresh from the host 
 can change between runs. Capture per thread: thread ID, author (and whether bot or
 human), file + line, comment text, and the `resolved` status.
 
-Use the normalized review-thread read and PR-comment read operations. The normalized author
-record includes `login`, `isBot`, and `authorType`; when Forgejo does not expose a bot flag and
-the login has no canonical bot suffix, `authorType` is `unknown` rather than guessed as human.
+Use the normalized review-thread read and PR-comment read operations. **Both** carry the same
+normalized author record — a review-thread comment and a top-level pull-request comment are read
+the same way here — and that record includes `login`, `isBot`, and `authorType`; when a provider
+does not expose a bot flag and the login has no canonical bot suffix, `authorType` is `unknown`
+rather than guessed as human. A comment whose author the provider does not state at all keeps that
+same shape with an absent `login` and `authorType: unknown`; unlike a missing **viewer** identity,
+it does not fail the read.
+
+The two surfaces do not spell one bot account identically: GitHub's REST API reports it with the
+`[bot]` suffix and its GraphQL API without. The record preserves whatever the provider reported —
+`isBot` is decided by the account class the provider states, `type` on REST and `__typename` on
+GraphQL, and the suffix is only the fallback for a payload that states no class — so a consumer
+comparing a reported login against a configured one resolves it through "Matching a configured
+login" instead of comparing the two strings literally.
 If the provider reports that resolved status is unavailable, keep the item unresolved and expose
 that limitation in the workflow summary; do not guess.
 
@@ -1532,6 +1543,74 @@ from here, so the two never drift into disagreeing about the same pull request.
 The reviewers are the logins in `mergeGate.bots`; a reviewer's optional check context is
 `mergeGate.bots.<login>.check`. An empty `mergeGate.bots` list means no automatic reviewer is
 expected and there is nothing to observe.
+
+### Matching a configured login
+
+A configured `mergeGate.bots` login and a login reported by a read surface denote the same reviewer
+when they are equal after trimming **one trailing** `[bot]` from each — and that trim applies only to
+a reported record the surface typed as a bot, `isBot: true` or equivalently `authorType: bot`. A
+reported login that is **not** bot-typed denotes the same reviewer only when it equals the configured
+one **exactly**. Apart from the trim the comparison is exact either way; `isBot` and `authorType`
+gate the trim and decide nothing else, and no further author field takes part at all — a display
+name, a profile URL and an account ID decide nothing here. A `[bot]` anywhere but at the end of a
+login is part of that login and is never trimmed.
+
+**The two surfaces spell one account differently, and that is why this rule exists.** GitHub's REST
+API reports a bot account with the `[bot]` suffix while its GraphQL API reports the same account
+without it, so a reviewer's pull-request comments and its review threads arrive under two spellings.
+No single configured value matches both. Configured the REST way, every rule that reads review
+threads matches nothing and reports itself satisfied; configured the GraphQL way, every rule that
+reads pull-request comments stops recognizing the reviewer at all. Both directions are wrong, and
+the first is the dangerous one, because a rule that matched nothing looks exactly like a rule with
+nothing to match.
+
+**The trim is an allowance for one bot account spelled two ways, so it takes a bot account.** GitHub
+mints the login `foo[bot]` for an app whose slug is `foo`, while the bare `foo` stays an ordinary
+user or organization name. Trimming whatever a surface reports therefore adds exactly one
+human-reachable login per configured entry: a person or organization named `greptileai` would denote
+the reviewer configured as `greptileai[bot]`, and every consumer of this contract would take that
+account's comments and threads for the reviewer's output. Requiring the account class costs nothing
+the trim exists for, because the two surfaces that disagree about the suffix both state that class —
+`__typename: Bot` on GraphQL, `type: Bot` on REST — and the suffix itself is what forces
+`isBot: true` where a payload states no class at all.
+
+**A refused match fails towards not started.** A configured reviewer that matches no reported login
+has no comment, no thread and no check attributed to it, so rule 3 below resolves it to **not
+started** — which is this contract's own doctrine, that anything unprovable counts as not started,
+applied one step earlier. A gate then blocks the merge and names that reviewer; a guard holds nothing
+on it. **Forgejo is where that is visible.** It states no account class at all, so a **bare** Forgejo
+login no longer matches a configured `X[bot]` entry and that reviewer stays **not started** however
+recently it wrote. A Forgejo login that carries the suffix itself is unaffected, because the suffix
+forces `isBot: true`. Forgejo's gate is report-only by construction — `pr-status-read`,
+`pr-checks-wait` and `pr-merge` are all unsupported there — so what the strict comparison costs there
+is a noisier report, never a wrong merge.
+
+**Resolution runs from the reported login to the configured entry, and the configured spelling stays
+the key.** `mergeGate.bots.<login>.trigger` and `mergeGate.bots.<login>.check` are dotted
+configuration keys spelled the way the project wrote them, so a reported `greptile-apps` resolves to
+a configured `greptile-apps[bot]` entry and every following `.trigger` and `.check` lookup uses that
+**configured spelling**. Matching tolerantly and then looking configuration up under the reported
+spelling would find nothing, which is the same defect one step later.
+
+**Two entries that collapse to one reviewer are one reviewer.** Two configured entries collapse when
+they are equal after trimming one trailing `[bot]` off each. That is the same string comparison this
+section applies between a configured and a reported login, but it neither carries nor needs the
+account-class condition: collapse is decided before any read, and a configuration table states no
+account class to condition on. It needs none because a pair collapses only when one of the two
+spellings carries `[bot]` and therefore names the bot form of the other — two rows, two spellings of
+one bot account, whatever a surface later reports about either. A project may already list both
+spellings as a workaround; after this rule they
+de-duplicate to a single reviewer, which is the intended outcome — one round, one mention, one wait.
+**The surviving key is the first of the collapsing entries in `mergeGate.bots` list order**, and
+every `.trigger` and `.check` lookup for that reviewer uses that one configured spelling. A value set
+on exactly one of them is adopted for the collapsed reviewer: an unset key disagrees with nothing.
+Report the collapse, so a maintainer can drop the redundant entry instead of keeping a line that no
+longer does anything. If both entries set the same key to **different** values, that is a
+configuration conflict. Report it naming the key and both values, and treat that reviewer as
+unconfigured for triggering and for check lookup: post no trigger, and resolve its state without the
+primary signal of rule 1. A gate then blocks the merge on that reviewer. Never pick one of the two
+values and never combine them — a guessed trigger text and a guessed check context each decide a
+different action, and neither is the one the project configured.
 
 ### The three states
 
@@ -1820,10 +1899,16 @@ If `mergeGate.completion` is `ask` or unset and the run is gated: Ask the user: 
    performed that mutation, so a rule built on it reads every earlier run's output as a stranger's.
 2. Evaluate every comment and thread in **exactly this order** and stop at the first rule that
    matches. The order is load-bearing, not cosmetic:
-   1. **The author is a bot** – either a login listed in `mergeGate.bots`, or an item whose
-      normalized `authorType` is `bot`. Two disjoint cases, and the second one carries app mode: the
-      account this gate posts as appears in no configuration table, so it is recognized by
-      `authorType` alone. The item is **excluded** and the evaluation stops there – the forge's own
+   1. **The author is a bot** – either a login listed in `mergeGate.bots`, matched through
+      "Matching a configured login" so one account is recognized whichever surface reported it, or an
+      item whose
+      normalized `authorType` is `bot`. **The two cases overlap; they do not divide the items between
+      them.** That rule trims the `[bot]` suffix only for a bot-typed record, so every item the first
+      case reaches through the trim is one the second reaches anyway. Both still earn their place:
+      only the first reaches a configured login a surface reported unchanged and typed as anything
+      else, and only the second carries app mode – the account this gate posts as appears in no
+      configuration table, so it is recognized by `authorType` alone. The item is **excluded** and
+      the evaluation stops there – the forge's own
       authorship record already separates those writes. **The identity lookup is deliberately not
       consulted for such an item.** `viewer-read` can legitimately fail on an installation token, so
       a rule that reached the identity here would fail closed and block precisely the one mode that
@@ -2088,7 +2173,8 @@ with a report naming the still-unmet condition, never with a merge.
 If `mergeGate.bots` is empty, skip this phase entirely, record that no automatic reviewer is
 configured, and do not block the merge on it.
 
-Otherwise, for each login in `mergeGate.bots`:
+Otherwise, for each login in `mergeGate.bots`, after "Matching a configured login" has de-duplicated
+entries that denote the same reviewer – two spellings of one account are one round here, not two:
 
 1. **Observe its state** through the loaded "Automatic reviewer state", against the fresh read: one
    of **running**, **not started**, or **has run**. Record the state together with the evidence that
@@ -2171,7 +2257,9 @@ states for itself, which sends the run back into Phase 3 while rounds remain ins
 4. the human-comment guard is inactive;
 5. every login in `mergeGate.bots` is observed as **has run** for the current head through the loaded
    "Automatic reviewer state" – **running** and **not started** are both unmet conditions, and an
-   unprovable state is **not started**, never an assumed pass;
+   unprovable state is **not started**, never an assumed pass. Which reported output belongs to a
+   configured login follows "Matching a configured login", so that contract's fallback signal weighs
+   a reviewer's pull-request comments and its review threads as the one reviewer's evidence;
 6. every bot thread **whose finding this run implemented** is answered and resolved – those are
    written and resolved by `effective-flow iterate`. A finding this run deferred or rejected does
    **not** block the merge: it is named in the Phase-6 chat summary and its thread is deliberately
@@ -2180,7 +2268,10 @@ states for itself, which sends the run back into Phase 3 while rounds remain ins
    answer there would be a condition no run could ever satisfy;
 7. **every unresolved thread of a configured reviewer has been assessed by this run** – implemented,
    or deliberately deferred or rejected. Take every unresolved thread of the same fresh read whose
-   author is a login in `mergeGate.bots`, and match it against the record this run kept per round:
+   author is a login in `mergeGate.bots` under "Matching a configured login" – the threads arrive
+   from the surface that reports a bot without its `[bot]` suffix, so a literal comparison against a
+   configured login matches nothing here and reports this condition satisfied while open findings
+   sit there – and match it against the record this run kept per round:
    the thread IDs it handed to `effective-flow iterate`, plus the threads whose findings it deferred or
    rejected. A thread in neither list arrived after the Phase-3 observation that fixed this run's
    item filter – the reviewer's check had gone terminal by then, which states that the reviewer
@@ -2218,6 +2309,30 @@ states for itself, which sends the run back into Phase 3 while rounds remain ins
    change from the changelog. Report the invalid title as the blocking condition – do not rewrite it
    here.
 
+**Report every unresolved thread that matched no configured login.** When `mergeGate.bots` is
+non-empty and **at least one** unresolved thread of the same fresh read matched no configured login
+under "Matching a configured login", carry those threads into the Phase-6 summary – each one named
+with the author it actually carries, beside the configured logins. The **zero** case is what this
+report began as and stays inside it: where **none** of the unresolved threads matched, condition 7
+reporting itself satisfied is indistinguishable from "no reviewer threads are open", the log records
+the same thing in both cases, and a gate whose unassessed-thread protection is inert would say so
+nowhere. Per thread is that case plus the **mixed** one – a thread from a configured reviewer beside
+a thread under a login no entry names – where condition 7 keeps only the matched thread in its
+record and the other is outside it entirely, so every Phase-4 condition can hold while a
+never-assessed finding sits open. A trigger that fired only on zero would stay silent about exactly
+that pull request.
+
+**This reports only; it is not a condition and never blocks the merge.** An unresolved thread from a
+_human_ already holds condition 4's human-comment guard, so what reaches this point is a thread whose
+author is bot-typed – excluded from that guard by Phase 1 rule 1 – under a login no entry names.
+Making that block would double-count the human case and could stall merges condition 4 correctly
+releases, and it would strand a project that deliberately ignores a thread-posting bot: its only
+escape would be adding that bot to `mergeGate.bots`, which then makes this gate wait for it as a
+reviewer and trigger it. The residual gap is therefore accepted and made visible rather than closed –
+such a finding can still be merged past, but never without the run saying so. Note that "Matching a
+configured login" does not reach this case at all: a wholly wrong or absent login is not a spelling
+problem.
+
 ### Phase 5: Merge
 
 In mode `report`, or when any Phase-4 condition failed, report the exact unmet condition and perform
@@ -2247,9 +2362,17 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
      one handed back instead of posting;
    - the bot round per configured login: the observed state, the evidence that established it, and
      whether the run triggered, waited, or proceeded;
+   - **every pair of `mergeGate.bots` entries that collapsed to one reviewer**, with the surviving
+     key so the redundant row can be dropped – and every collapse whose entries set the same
+     `.trigger` or `.check` to different values, that conflict named with both values and named as
+     what blocked the merge on that reviewer;
    - whether human comments were found and what that blocked;
    - **every bot finding this run assessed but did not implement**, named here rather than answered
      in its thread;
+   - **every unresolved thread that matched no configured login**, when Phase 4 carried that case
+     here, each with the author it carries beside the configured logins – this one blocked nothing
+     and nothing is written into those threads, so this summary is where that report reaches the
+     user;
    - the merge result, or the precise blocking condition.
 
 ## Edge cases

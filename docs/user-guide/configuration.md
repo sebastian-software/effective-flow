@@ -262,6 +262,23 @@ than blocking the merge forever. `mergeGate.bots.<login>.trigger` and `mergeGate
 are one dotted key each per bot; a login containing brackets (for example `greptile-apps[bot]`) is a
 valid middle segment because the encoding splits on `.` only.
 
+**Either spelling of a bot login works.** GitHub shows `greptile-apps[bot]` in its interface and
+reports that form through its REST API, but reports the same account as bare `greptile-apps` through
+the GraphQL API the gate uses to read review threads. The gate matches a configured login against a
+reported one after trimming a trailing `[bot]` from each, so one entry covers both surfaces and you
+do not need to list a reviewer twice. **That trim applies only to an account the forge reports as a
+bot.** A reported login the forge does not type as a bot has to match your configured spelling
+exactly, so an ordinary user or organization named `greptile-apps` is never taken for the reviewer
+`greptile-apps[bot]`. On a forge that states no account type at all (Forgejo), only the exact
+spelling matches: a bare login configured as `greptile-apps[bot]` then counts as a reviewer that has
+not run, which the gate reports rather than merges past. If a project already lists both spellings, they now count as
+one reviewer — one round, one mention, one wait — and the gate reports the collapse so the redundant
+row can be removed. The first of the two rows in `mergeGate.bots` order is the one whose `.trigger`
+and `.check` the gate then uses, and a value set on only one of the rows is simply adopted. Two rows
+that set the same key to different values are a configuration conflict: the gate names the key and
+both values, posts no trigger for that reviewer, and blocks the merge on it rather than guessing
+which of the two you meant.
+
 `bots.<login>.check` names a commit status or check run that reviewer publishes, for example
 `recensor/review`. With it, the gate can tell a reviewer that is **still running** from one that has
 **not started**: it waits for the former and triggers only the latter. Leave it unset for a reviewer

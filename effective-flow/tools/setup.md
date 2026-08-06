@@ -702,17 +702,23 @@ value or default as the pre-selection:
   report instead of a merge.
 - `mergeGate.bots`: the logins of the automatic reviewers this project expects (e.g.
   `greptileai[bot]`), as a comma list. Empty (the default) means no automatic reviewer is expected
-  and the bot round is skipped rather than blocking the merge forever.
+  and the bot round is skipped rather than blocking the merge forever. Either spelling of a bot
+  login works — `greptileai[bot]` as GitHub's UI shows it, or the bare `greptileai` — because the
+  gate resolves a configured login through "Matching a configured login", which tolerates the
+  trailing `[bot]` on either side for an account the forge reports as a bot. Listing both spellings
+  is therefore redundant rather than a
+  workaround, and the gate reports the collapse when it sees one — collapse such entries as described
+  below **before** asking the two follow-up questions.
 - `mergeGate.bots.<login>.trigger`: free text, the literal comment that re-triggers exactly that bot
-  (e.g. `@greptileai`). Ask for it once per login named in `mergeGate.bots`. A login containing
-  brackets is a valid middle segment, because the table encoding splits on `.` only. Say when asking
-  that this should be a **distinctive mention** such as `@greptileai`, not generic prose such as
-  `please review`, because the gate recognizes its own trigger comment by an exact match against
-  this string — a generic value could be matched by an ordinary human comment, which would then be
-  excluded from the human-comment guard.
+  (e.g. `@greptileai`). Ask for it once per **reviewer** left after that collapse, never once per
+  configured login. A login containing brackets is a valid middle segment, because the table encoding
+  splits on `.` only. Say when asking that this should be a **distinctive mention** such as
+  `@greptileai`, not generic prose such as `please review`, because the gate recognizes its own
+  trigger comment by an exact match against this string — a generic value could be matched by an
+  ordinary human comment, which would then be excluded from the human-comment guard.
 - `mergeGate.bots.<login>.check`: free text, the commit-status context or check-run name that this
-  reviewer publishes against a head commit (e.g. `recensor/review`). Ask for it once per login named
-  in `mergeGate.bots`, directly after that login's trigger text, and offer "not set" as the answer —
+  reviewer publishes against a head commit (e.g. `recensor/review`). Ask for it once per **reviewer**
+  as well, directly after that reviewer's trigger text, and offer "not set" as the answer —
   it is optional and unset by default. Explain what it buys: with a check context the gate and
   `effective-flow iterate` can tell a reviewer that is **still running** from one that has **not started**,
   so a running reviewer is waited for instead of triggered a second time. Without it both fall back
@@ -729,9 +735,39 @@ value or default as the pre-selection:
 `delivery.mergeMethod` (block 5) decides **how** the gate merges; it stays in the `delivery` block
 because it is a property of this project's delivery, not of the gate.
 
+#### Collapsing two `mergeGate.bots` spellings of one reviewer
+
+A project that lists both spellings of one bot login — the workaround before the gate matched them —
+carries two recorded entries for one reviewer. Resolve them through the gate's "Matching a configured
+login" rule **before** the two follow-up questions above, on the Express path as well as the guided
+one:
+
+- **Collapse first, then ask.** Group the recorded logins into reviewers under that rule and ask
+  `.trigger` and `.check` once per reviewer. Asking once per login asks one reviewer's question
+  twice, and two different answers to it write exactly the conflict that rule refuses to resolve by
+  guessing — one this skill, as the only writer of the configuration, would leave nothing able to
+  repair.
+- **Keep one entry.** The rule keeps the first of the collapsing logins as the reviewer's key, so
+  record the chosen values under that spelling and drop the other entry's `mergeGate.bots` member and
+  its `.trigger`/`.check` rows.
+- **Show a disagreement, never resolve it silently.** If the collapsing entries already carry
+  different recorded values for the same key, name both values verbatim together with the spelling
+  that recorded each, and have the user choose one. Never combine them and never keep one silently. A
+  key set on only one of the two is no disagreement: it is simply the reviewer's value.
+
+If two collapsing `mergeGate.bots` entries carry different recorded values for the same key: Ask the user: **These two entries are one reviewer and recorded different values for this key. Which value should the single entry keep?**
+- First value -- Keep the value recorded under the first of the two collapsing spellings, verbatim
+- Second value -- Keep the value recorded under the second spelling, verbatim
+- Neither -- Neither recorded value is right; capture the replacement as free text
+
+- Show the whole collapse — the kept login, the removed list member and its removed rows, and every
+  resolved disagreement — in the before/after list of Step 6 item 2 and write it only after the same
+  confirmation as any other change. Without that confirmation, leave both entries exactly as they
+  are; the gate keeps working and keeps reporting the collapse.
+
 ### Step 6: Merge and write
 
-1. Build the target configuration non-destructively: set the known keys to the chosen values, carry over existing valid values for keys not asked about, and leave unknown keys unchanged. A legacy `prReview.*` merge-gate block recorded in Step 2 is not an unknown key: rewrite it as described below before the before/after list is built.
+1. Build the target configuration non-destructively: set the known keys to the chosen values, carry over existing valid values for keys not asked about, and leave unknown keys unchanged. A legacy `prReview.*` merge-gate block recorded in Step 2 is not an unknown key: rewrite it as described below before the before/after list is built. Two recorded `mergeGate.bots` entries that denote one reviewer are collapsed just as early, as described for block 9.
 2. This also applies to the safe defaults: a default value that would replace an already-present, differing config value is set only after explicit confirmation. Before writing, show a before/after list of **all** keys to be changed (whether from the express base, the core switches, or the advanced settings) and obtain confirmation. A full overwrite (discarding existing values) likewise only after explicit confirmation.
 3. Resolve the project setup ADR freshly once more directly before writing (locator) and compare
    its result with the source state recorded in Step 2:
@@ -909,6 +945,9 @@ Report to the user:
   `mergeGate.botWaitMinutes`, `mergeGate.bots` with the trigger text and, where set, the check
   context recorded per login, and `delivery.mergeMethod`. Name the gate keys separately from
   `delivery.prReview` so the two are not read as one setting
+- whether two `mergeGate.bots` entries were collapsed into one reviewer: which login was kept, which
+  redundant list member and rows were removed, and, for every key the two disagreed about, both
+  recorded values and the one the user chose
 - whether a legacy `prReview.*` merge-gate block was rewritten in place: which rows were carried
   over to `mergeGate.*`, that the old rows were removed, and every shadowed legacy value that was
   discarded because a `mergeGate.*` row already held a different one
