@@ -12,10 +12,13 @@ expected and there is nothing to observe.
 ### Matching a configured login
 
 A configured `mergeGate.bots` login and a login reported by a read surface denote the same reviewer
-when they are equal after trimming **one trailing** `[bot]` from each. Apart from that trim the
-comparison is exact, and no other author field takes part in it — a display name, a profile URL and
-an account ID decide nothing here. A `[bot]` anywhere but at the end of a login is part of that
-login and is never trimmed.
+when they are equal after trimming **one trailing** `[bot]` from each — and that trim applies only to
+a reported record the surface typed as a bot, `isBot: true` or equivalently `authorType: bot`. A
+reported login that is **not** bot-typed denotes the same reviewer only when it equals the configured
+one **exactly**. Apart from the trim the comparison is exact either way; `isBot` and `authorType`
+gate the trim and decide nothing else, and no further author field takes part at all — a display
+name, a profile URL and an account ID decide nothing here. A `[bot]` anywhere but at the end of a
+login is part of that login and is never trimmed.
 
 **The two surfaces spell one account differently, and that is why this rule exists.** GitHub's REST
 API reports a bot account with the `[bot]` suffix while its GraphQL API reports the same account
@@ -26,6 +29,27 @@ reads pull-request comments stops recognizing the reviewer at all. Both directio
 the first is the dangerous one, because a rule that matched nothing looks exactly like a rule with
 nothing to match.
 
+**The trim is an allowance for one bot account spelled two ways, so it takes a bot account.** GitHub
+mints the login `foo[bot]` for an app whose slug is `foo`, while the bare `foo` stays an ordinary
+user or organization name. Trimming whatever a surface reports therefore adds exactly one
+human-reachable login per configured entry: a person or organization named `greptileai` would denote
+the reviewer configured as `greptileai[bot]`, and every consumer of this contract would take that
+account's comments and threads for the reviewer's output. Requiring the account class costs nothing
+the trim exists for, because the two surfaces that disagree about the suffix both state that class —
+`__typename: Bot` on GraphQL, `type: Bot` on REST — and the suffix itself is what forces
+`isBot: true` where a payload states no class at all.
+
+**A refused match fails towards not started.** A configured reviewer that matches no reported login
+has no comment, no thread and no check attributed to it, so rule 3 below resolves it to **not
+started** — which is this contract's own doctrine, that anything unprovable counts as not started,
+applied one step earlier. A gate then blocks the merge and names that reviewer; a guard holds nothing
+on it. **Forgejo is where that is visible.** It states no account class at all, so a **bare** Forgejo
+login no longer matches a configured `X[bot]` entry and that reviewer stays **not started** however
+recently it wrote. A Forgejo login that carries the suffix itself is unaffected, because the suffix
+forces `isBot: true`. Forgejo's gate is report-only by construction — `pr-status-read`,
+`pr-checks-wait` and `pr-merge` are all unsupported there — so what the strict comparison costs there
+is a noisier report, never a wrong merge.
+
 **Resolution runs from the reported login to the configured entry, and the configured spelling stays
 the key.** `mergeGate.bots.<login>.trigger` and `mergeGate.bots.<login>.check` are dotted
 configuration keys spelled the way the project wrote them, so a reported `greptile-apps` resolves to
@@ -34,9 +58,13 @@ a configured `greptile-apps[bot]` entry and every following `.trigger` and `.che
 spelling would find nothing, which is the same defect one step later.
 
 **Two entries that collapse to one reviewer are one reviewer.** Two configured entries collapse when
-they are equal after the same trim — one trailing `[bot]` off each — that this section applies
-between a configured and a reported login; between two configured logins the comparison is the
-identical one. A project may already list both spellings as a workaround; after this rule they
+they are equal after trimming one trailing `[bot]` off each. That is the same string comparison this
+section applies between a configured and a reported login, but it neither carries nor needs the
+account-class condition: collapse is decided before any read, and a configuration table states no
+account class to condition on. It needs none because a pair collapses only when one of the two
+spellings carries `[bot]` and therefore names the bot form of the other — two rows, two spellings of
+one bot account, whatever a surface later reports about either. A project may already list both
+spellings as a workaround; after this rule they
 de-duplicate to a single reviewer, which is the intended outcome — one round, one mention, one wait.
 **The surviving key is the first of the collapsing entries in `mergeGate.bots` list order**, and
 every `.trigger` and `.check` lookup for that reviewer uses that one configured spelling. A value set

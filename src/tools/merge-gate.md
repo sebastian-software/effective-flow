@@ -321,9 +321,13 @@ options:
    1. **The author is a bot** – either a login listed in `mergeGate.bots`, matched through
       "Matching a configured login" so one account is recognized whichever surface reported it, or an
       item whose
-      normalized `authorType` is `bot`. Two disjoint cases, and the second one carries app mode: the
-      account this gate posts as appears in no configuration table, so it is recognized by
-      `authorType` alone. The item is **excluded** and the evaluation stops there – the forge's own
+      normalized `authorType` is `bot`. **The two cases overlap; they do not divide the items between
+      them.** That rule trims the `[bot]` suffix only for a bot-typed record, so every item the first
+      case reaches through the trim is one the second reaches anyway. Both still earn their place:
+      only the first reaches a configured login a surface reported unchanged and typed as anything
+      else, and only the second carries app mode – the account this gate posts as appears in no
+      configuration table, so it is recognized by `authorType` alone. The item is **excluded** and
+      the evaluation stops there – the forge's own
       authorship record already separates those writes. **The identity lookup is deliberately not
       consulted for such an item.** `viewer-read` can legitimately fail on an installation token, so
       a rule that reached the identity here would fail closed and block precisely the one mode that

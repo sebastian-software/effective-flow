@@ -266,7 +266,12 @@ valid middle segment because the encoding splits on `.` only.
 reports that form through its REST API, but reports the same account as bare `greptile-apps` through
 the GraphQL API the gate uses to read review threads. The gate matches a configured login against a
 reported one after trimming a trailing `[bot]` from each, so one entry covers both surfaces and you
-do not need to list a reviewer twice. If a project already lists both spellings, they now count as
+do not need to list a reviewer twice. **That trim applies only to an account the forge reports as a
+bot.** A reported login the forge does not type as a bot has to match your configured spelling
+exactly, so an ordinary user or organization named `greptile-apps` is never taken for the reviewer
+`greptile-apps[bot]`. On a forge that states no account type at all (Forgejo), only the exact
+spelling matches: a bare login configured as `greptile-apps[bot]` then counts as a reviewer that has
+not run, which the gate reports rather than merges past. If a project already lists both spellings, they now count as
 one reviewer — one round, one mention, one wait — and the gate reports the collapse so the redundant
 row can be removed. The first of the two rows in `mergeGate.bots` order is the one whose `.trigger`
 and `.check` the gate then uses, and a value set on only one of the rows is simply adopted. Two rows

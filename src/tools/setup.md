@@ -432,7 +432,8 @@ value or default as the pre-selection:
   and the bot round is skipped rather than blocking the merge forever. Either spelling of a bot
   login works — `greptileai[bot]` as GitHub's UI shows it, or the bare `greptileai` — because the
   gate resolves a configured login through "Matching a configured login", which tolerates the
-  trailing `[bot]` on either side. Listing both spellings is therefore redundant rather than a
+  trailing `[bot]` on either side for an account the forge reports as a bot. Listing both spellings
+  is therefore redundant rather than a
   workaround, and the gate reports the collapse when it sees one — collapse such entries as described
   below **before** asking the two follow-up questions.
 - `mergeGate.bots.<login>.trigger`: free text, the literal comment that re-triggers exactly that bot

@@ -173,10 +173,12 @@ running.
 A login containing brackets, such as `greptile-apps[bot]`, is a valid middle segment of that
 dotted key because the encoding splits on `.` only – brackets carry no structural meaning to the
 parser. The rows stay keyed by whichever spelling the project wrote: the gate matches a reported
-login against a configured one with a trailing `[bot]` trimmed from each (see "Matching a configured
-login" in `src/shared/review-bot-state.md`), then looks `.trigger` and `.check` up under the
-**configured** spelling. That is what lets one entry serve both of GitHub's APIs, which disagree on
-whether a bot login carries the suffix. Only rows whose value differs from the source tool's default belong in a project's own
+login against a configured one with a trailing `[bot]` trimmed from each **when the reported record
+is bot-typed** (`isBot: true`, equivalently `authorType: bot`), and otherwise requires an exact match
+(see "Matching a configured login" in `src/shared/review-bot-state.md`), then looks `.trigger` and
+`.check` up under the **configured** spelling. That is what lets one entry serve both of GitHub's
+APIs, which disagree on whether a bot login carries the suffix, without letting a human account whose
+login is the app slug inherit a configured reviewer's identity. Only rows whose value differs from the source tool's default belong in a project's own
 ADR; see [`docs/adr/effective-flow-project-setup.md`](../adr/effective-flow-project-setup.md) for
 this repository's own rows.
 

@@ -2904,6 +2904,16 @@ test('one rule decides when a configured reviewer login matches a reported one',
     'the comparison must stay exact apart from that trim, or it becomes a substring match',
   );
 
+  // The trim is an allowance for one bot account spelled two ways, so it takes a bot account.
+  // GitHub mints `foo[bot]` for an app slug `foo` while the bare `foo` stays an ordinary user or
+  // organization name: an ungated trim adds exactly one human-reachable login per configured entry,
+  // and that human's comments then count as the reviewer's output on every consumer of this rule.
+  assert.match(
+    rule,
+    near('trim', '(?:`isBot`|`authorType`|bot-typed)', 400),
+    'the trim must be conditioned on the reported account class, not applied to every login',
+  );
+
   // Resolution direction. The dotted config keys are spelled the way the project wrote them, so a
   // tolerant match that then looked config up under the *reported* spelling would find nothing.
   assert.match(
