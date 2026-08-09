@@ -56,6 +56,11 @@ import {
   assertProjectRoutingContract,
   classifyProjectRoutingScope,
   PROJECT_ROUTING_REQUIRED_ROUTES,
+  parseNextStepsTable,
+  assertNextStepsContract,
+  findNextStepsDocViolations,
+  NEXT_STEPS_TABLE_START,
+  NEXT_STEPS_TABLE_END,
   parseSkillOwnershipManifest,
   parseSkillOwnershipTable,
   collectRecommendedSkillChains,
@@ -747,6 +752,444 @@ test('mixed project routing retains every specialist and fallback bucket in tabl
       'rust',
       'generic-product',
     ],
+  );
+});
+
+// --- Shared next-steps contract ---
+
+// A synthetic table keeps the malformed-input cases independent of the live
+// fragment: a broken table there must fail its own test, not every case below.
+function nextStepsTable(...rows) {
+  return [
+    'prose above the contract',
+    '',
+    NEXT_STEPS_TABLE_START,
+    '',
+    '| Tool | Condition | Then | Or |',
+    '| ---- | --------- | ---- | --- |',
+    ...rows,
+    '',
+    NEXT_STEPS_TABLE_END,
+    '',
+    'prose below the contract',
+  ].join('\n');
+}
+
+const NEXT_STEPS_ROWS = [
+  '| concept | deep review declined | {{SKILL:review}} <concept-file> | — |',
+  '| plan | deep review done | {{SKILL:apply}} <plan-file> | {{SKILL:plan}} <plan-file> |',
+  '| review | local report written | {{SKILL:apply}} <report> | — |',
+  '| apply | plan clarity gate failed | {{SKILL:plan}} <plan-file> | — |',
+];
+const nextStepsFixture = nextStepsTable(...NEXT_STEPS_ROWS);
+const nextStepsEmitting = new Set(['concept', 'plan', 'review', 'apply']);
+
+const NEXT_STEPS_DOC_HEAD = [
+  '# Tool flow',
+  '',
+  'What each tool proposes next.',
+  '',
+  '| Tool | Condition | Then | Or |',
+  '| ---- | --------- | ---- | --- |',
+];
+const NEXT_STEPS_DOC_ROWS = [
+  '| `concept` | deep review declined | `/effective-flow review <concept-file>` | — |',
+  '| `plan` | deep review done | `/effective-flow apply <plan-file>` | `/effective-flow plan <plan-file>` |',
+  '| `review` | local report written | `/effective-flow apply <report>` | — |',
+  '| `apply` | plan clarity gate failed | `/effective-flow plan <plan-file>` | — |',
+];
+
+function nextStepsDoc(mutate = (rows) => rows) {
+  return [...NEXT_STEPS_DOC_HEAD, ...mutate([...NEXT_STEPS_DOC_ROWS])].join('\n');
+}
+
+function replaceDocRow(index, row) {
+  return (rows) => {
+    rows[index] = row;
+    return rows;
+  };
+}
+
+test('parseNextStepsTable reads the live shared next-steps table', () => {
+  const source = readFileSync(new URL('../src/shared/next-steps.md', import.meta.url), 'utf8');
+  const edges = parseNextStepsTable(source, { context: 'src/shared/next-steps.md' });
+
+  assert.ok(edges.length > 0, 'the live table must carry rows');
+  for (const edge of edges) {
+    assert.ok(edge.tool, `every row names a tool: ${JSON.stringify(edge)}`);
+    assert.ok(edge.then, `every row carries a first edge: ${JSON.stringify(edge)}`);
+  }
+  // The requirement's core fix: planning hands the user `apply <plan-file>`
+  // instead of a guessed implementation tool.
+  assert.ok(
+    edges.some((edge) => edge.tool === 'plan' && edge.then.startsWith('{{SKILL:apply}}')),
+    'the live table must route a finished plan to apply',
+  );
+  // Every edge target is itself a tool with rows, so no edge leads into a
+  // terminal that recommends nothing.
+  assert.doesNotThrow(() =>
+    assertNextStepsContract(edges, {
+      emittingTools: new Set(edges.map((edge) => edge.tool)),
+      context: 'src/shared/next-steps.md',
+    }),
+  );
+});
+
+test('parseNextStepsTable normalizes cells and keeps source order', () => {
+  const edges = parseNextStepsTable(nextStepsFixture, { context: 'fixture' });
+  assert.deepEqual(edges, [
+    {
+      tool: 'concept',
+      condition: 'deep review declined',
+      then: '{{SKILL:review}} <concept-file>',
+      or: '',
+    },
+    {
+      tool: 'plan',
+      condition: 'deep review done',
+      then: '{{SKILL:apply}} <plan-file>',
+      or: '{{SKILL:plan}} <plan-file>',
+    },
+    {
+      tool: 'review',
+      condition: 'local report written',
+      then: '{{SKILL:apply}} <report>',
+      or: '',
+    },
+    {
+      tool: 'apply',
+      condition: 'plan clarity gate failed',
+      then: '{{SKILL:plan}} <plan-file>',
+      or: '',
+    },
+  ]);
+  // oxfmt pads every column, so the parser must not depend on the cell width.
+  assert.deepEqual(
+    parseNextStepsTable(nextStepsFixture.replace(/\| concept /, '|  concept   ')),
+    edges,
+  );
+});
+
+test('parseNextStepsTable rejects a missing or duplicated marker pair', () => {
+  assert.throws(
+    () => parseNextStepsTable('| Tool | Condition | Then | Or |\n'),
+    /exactly one start and end marker/,
+  );
+  assert.throws(
+    () => parseNextStepsTable(`${nextStepsFixture}\n${NEXT_STEPS_TABLE_START}\n`),
+    /exactly one start and end marker/,
+  );
+  assert.throws(
+    () =>
+      parseNextStepsTable(
+        [NEXT_STEPS_TABLE_END, '', ...NEXT_STEPS_ROWS, '', NEXT_STEPS_TABLE_START].join('\n'),
+      ),
+    /markers are out of order/,
+  );
+});
+
+test('parseNextStepsTable rejects a malformed table body', () => {
+  assert.throws(
+    () => parseNextStepsTable([NEXT_STEPS_TABLE_START, '', NEXT_STEPS_TABLE_END].join('\n')),
+    /has no data rows/,
+  );
+  assert.throws(
+    () => parseNextStepsTable(nextStepsFixture.replace('| Or |', '| Otherwise |')),
+    /headers must be: Tool, Condition, Then, Or/,
+  );
+  assert.throws(
+    () => parseNextStepsTable(nextStepsFixture.replace('| --------- |', '| ~~~~~~~~~ |')),
+    /invalid separator row/,
+  );
+  // The cell count alone is unusable against a table of dozens of rows, so the
+  // offending row has to be part of the message.
+  assert.throws(
+    () => parseNextStepsTable(nextStepsTable('| plan | deep review done | {{SKILL:apply}} |')),
+    /row has 3 cells; expected 4: "\| plan \| deep review done \| \{\{SKILL:apply\}\} \|"/,
+  );
+});
+
+test('parseNextStepsTable rejects an empty tool, condition or first edge, and a duplicate row key', () => {
+  assert.throws(
+    () => parseNextStepsTable(nextStepsTable('|  | deep review done | {{SKILL:apply}} | — |')),
+    /require a tool, a condition, and a first edge/,
+  );
+  // The condition is the end state a run matches its row on; an empty one makes
+  // the row unaddressable instead of merely undocumented.
+  assert.throws(
+    () => parseNextStepsTable(nextStepsTable('| plan |  | {{SKILL:apply}} <plan-file> | — |')),
+    /require a tool, a condition, and a first edge/,
+  );
+  assert.throws(
+    () => parseNextStepsTable(nextStepsTable('| plan | deep review done | — | — |')),
+    /require a tool, a condition, and a first edge/,
+  );
+  assert.throws(
+    () => parseNextStepsTable(nextStepsTable(NEXT_STEPS_ROWS[1], NEXT_STEPS_ROWS[1])),
+    /Duplicate next-steps row "plan \| deep review done"/,
+  );
+  // Two distinct rows whose fields concatenate to the same string are not a
+  // duplicate: the key is encoded, so the field boundary survives it.
+  assert.doesNotThrow(() =>
+    parseNextStepsTable(
+      nextStepsTable(
+        '| plan | deep review done | {{SKILL:apply}} <plan-file> | — |',
+        '| plan deep | review done | {{SKILL:plan}} <plan-file> | — |',
+      ),
+    ),
+  );
+});
+
+test('assertNextStepsContract accepts a table that covers its emitting set exactly', () => {
+  assert.doesNotThrow(() =>
+    assertNextStepsContract(parseNextStepsTable(nextStepsFixture), {
+      emittingTools: nextStepsEmitting,
+      context: 'fixture',
+    }),
+  );
+});
+
+test('assertNextStepsContract rejects a third edge and an unresolvable edge cell', () => {
+  const threeEdges = parseNextStepsTable(
+    nextStepsTable(
+      ...NEXT_STEPS_ROWS.slice(0, 1),
+      '| plan | deep review done | {{SKILL:apply}} <plan-file> | {{SKILL:review}} <plan-file> {{SKILL:plan}} <plan-file> |',
+      ...NEXT_STEPS_ROWS.slice(2),
+    ),
+  );
+  assert.throws(
+    () => assertNextStepsContract(threeEdges, { emittingTools: nextStepsEmitting }),
+    /carries 3 edges; at most two are allowed/,
+  );
+
+  const handWritten = parseNextStepsTable(
+    nextStepsTable(
+      ...NEXT_STEPS_ROWS.slice(0, 3),
+      '| apply | gate failed | plan <plan-file> | — |',
+    ),
+  );
+  assert.throws(
+    () => assertNextStepsContract(handWritten, { emittingTools: nextStepsEmitting }),
+    /invalid Then cell "plan <plan-file>"/,
+  );
+});
+
+test('assertNextStepsContract rejects a second reference hidden in one edge cell', () => {
+  // The argument tail of the cell shape matches anything, so a second reference
+  // rides along inside it: the shape check reports the first target only, and
+  // the row-level count stays at two because the `Or` cell is empty. Without the
+  // per-cell count the smuggled target reaches no check at all and ships as the
+  // raw `tools/apply-plan.md` path the renderer produces for it.
+  const smuggled = parseNextStepsTable(
+    nextStepsTable(
+      ...NEXT_STEPS_ROWS.slice(0, 3),
+      '| apply | plan clarity gate failed | {{SKILL:apply}} <plan-file> {{SKILL:apply-plan}} | — |',
+    ),
+  );
+  assert.throws(
+    () => assertNextStepsContract(smuggled, { emittingTools: nextStepsEmitting }),
+    /has a Then cell with 2 references .*; expected exactly one/,
+  );
+});
+
+test('assertNextStepsContract rejects an edge target the user cannot invoke', () => {
+  // Emitting and invocable are different questions: a tool may own rows while
+  // the renderer still writes it as `tools/<name>.md`, which nobody can type.
+  const edges = parseNextStepsTable(nextStepsFixture);
+  assert.throws(
+    () =>
+      assertNextStepsContract(edges, {
+        emittingTools: nextStepsEmitting,
+        invocableTools: new Set([...nextStepsEmitting].filter((name) => name !== 'apply')),
+      }),
+    /recommends "apply", which is not a user-invocable tool/,
+  );
+  assert.throws(
+    () =>
+      assertNextStepsContract(edges, {
+        emittingTools: nextStepsEmitting,
+        invocableTools: [],
+      }),
+    /non-empty invocable tool set/,
+  );
+  // Omitted, the emitting set stays the fallback, so the check can never be
+  // silently skipped by a caller that forgets the argument.
+  assert.doesNotThrow(() =>
+    assertNextStepsContract(edges, {
+      emittingTools: nextStepsEmitting,
+      invocableTools: nextStepsEmitting,
+    }),
+  );
+});
+
+test('assertNextStepsContract rejects an edge target outside the emitting set', () => {
+  const deadTarget = parseNextStepsTable(
+    nextStepsTable(
+      ...NEXT_STEPS_ROWS.slice(0, 3),
+      '| apply | plan clarity gate failed | {{SKILL:apply-plan}} <plan-file> | — |',
+    ),
+  );
+  assert.throws(
+    () => assertNextStepsContract(deadTarget, { emittingTools: nextStepsEmitting }),
+    /recommends "apply-plan", which is not an emitting tool/,
+  );
+});
+
+test('assertNextStepsContract enforces two-way coverage between the table and the emitting set', () => {
+  const edges = parseNextStepsTable(nextStepsFixture);
+  assert.throws(
+    () =>
+      assertNextStepsContract(edges, {
+        emittingTools: new Set([...nextStepsEmitting, 'commit', 'pr']),
+      }),
+    /emitting tool\(s\) without a row: commit, pr/,
+  );
+  assert.throws(
+    () =>
+      assertNextStepsContract(edges, {
+        emittingTools: new Set([...nextStepsEmitting].filter((name) => name !== 'concept')),
+      }),
+    /row\(s\) for a non-emitting tool: concept/,
+  );
+  assert.throws(() => assertNextStepsContract(edges, {}), /non-empty emitting tool set/);
+});
+
+test('findNextStepsDocViolations accepts a documentation page in the rendered invocation form', () => {
+  assert.deepEqual(
+    findNextStepsDocViolations(nextStepsDoc(), parseNextStepsTable(nextStepsFixture), {
+      context: 'docs/user-guide/tool-flow.md',
+    }),
+    [],
+  );
+});
+
+test('findNextStepsDocViolations flags one mismatching row per column', () => {
+  const edges = parseNextStepsTable(nextStepsFixture);
+  const context = 'docs/user-guide/tool-flow.md';
+  const cases = [
+    {
+      column: 'Tool',
+      row: 1,
+      expected: 'concept',
+      actual: 'concept-review',
+      mutation: replaceDocRow(
+        0,
+        '| `concept-review` | deep review declined | `/effective-flow review <concept-file>` | — |',
+      ),
+    },
+    {
+      column: 'Condition',
+      row: 1,
+      expected: 'deep review declined',
+      actual: 'deep review skipped',
+      mutation: replaceDocRow(
+        0,
+        '| `concept` | deep review skipped | `/effective-flow review <concept-file>` | — |',
+      ),
+    },
+    {
+      column: 'Then',
+      row: 3,
+      expected: '/effective-flow apply <report>',
+      actual: '/effective-flow apply',
+      mutation: replaceDocRow(
+        2,
+        '| `review` | local report written | `/effective-flow apply` | — |',
+      ),
+    },
+    {
+      column: 'Or',
+      row: 2,
+      expected: '/effective-flow plan <plan-file>',
+      actual: '',
+      mutation: replaceDocRow(
+        1,
+        '| `plan` | deep review done | `/effective-flow apply <plan-file>` | — |',
+      ),
+    },
+  ];
+
+  for (const { column, row, expected, actual, mutation } of cases) {
+    assert.deepEqual(
+      findNextStepsDocViolations(nextStepsDoc(mutation), edges, { context }),
+      [{ row, column, expected, actual, context }],
+      `mismatching ${column} column must be reported once`,
+    );
+  }
+});
+
+test('findNextStepsDocViolations reports a missing table, a missing row, and a surplus row', () => {
+  const edges = parseNextStepsTable(nextStepsFixture);
+  const context = 'docs/user-guide/tool-flow.md';
+
+  assert.deepEqual(
+    findNextStepsDocViolations('# Tool flow\n\nNo table here.\n', edges, { context }),
+    [
+      {
+        row: 0,
+        column: 'table',
+        expected: 'Tool | Condition | Then | Or',
+        actual: 'missing',
+        context,
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    findNextStepsDocViolations(
+      nextStepsDoc((rows) => rows.slice(0, 3)),
+      edges,
+      { context },
+    ),
+    [
+      {
+        row: 4,
+        column: 'row',
+        expected: 'apply | plan clarity gate failed | /effective-flow plan <plan-file> | ',
+        actual: 'missing',
+        context,
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    findNextStepsDocViolations(
+      nextStepsDoc((rows) => [...rows, '| `commit` | always | `/effective-flow pr` | — |']),
+      edges,
+      { context },
+    ),
+    [
+      {
+        row: 5,
+        column: 'row',
+        expected: 'no further row',
+        actual: 'commit | always | /effective-flow pr | ',
+        context,
+      },
+    ],
+  );
+});
+
+test('findNextStepsDocViolations reports a documentation table without a separator row', () => {
+  const edges = parseNextStepsTable(nextStepsFixture);
+  const context = 'docs/user-guide/tool-flow.md';
+  const violation = { row: 0, column: 'separator', expected: '--- | --- | --- | ---', context };
+
+  // Skipping the alignment row blindly would swallow the first data row and
+  // report every following row as shifted — a cascade in place of the one real
+  // defect.
+  assert.deepEqual(
+    findNextStepsDocViolations(
+      [...NEXT_STEPS_DOC_HEAD.slice(0, -1), ...NEXT_STEPS_DOC_ROWS].join('\n'),
+      edges,
+      { context },
+    ),
+    [{ ...violation, actual: NEXT_STEPS_DOC_ROWS[0] }],
+  );
+
+  assert.deepEqual(
+    findNextStepsDocViolations(NEXT_STEPS_DOC_HEAD.slice(0, -1).join('\n'), edges, { context }),
+    [{ ...violation, actual: 'missing' }],
   );
 });
 

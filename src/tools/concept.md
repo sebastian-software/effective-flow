@@ -53,6 +53,11 @@ session-rename
 when: the run's subject is fixed and a session title is about to be applied or emitted
 ```
 
+```lazy-include
+next-steps
+when: the run reaches its completion report
+```
+
 ## Recommended skills
 
 - `product-management`
@@ -179,9 +184,11 @@ options:
 ```
 
 On `Yes`: read the internal instruction `{{SKILL:concept-review}}` and run it with the
-just-written concept file. The write boundary stays unchanged: only that file may be changed.
+just-written concept file. The write boundary stays unchanged: only that file may be changed. The
+delegation payload carries the literal line `Next steps: suppressed` on its own line, because that
+run returns its result here.
 
-On `No`: continue with Phase 6 and name the re-entry `{{SKILL:review}} <concept-file>`.
+On `No`: continue with Phase 6; the next-step block of that phase carries the re-entry.
 
 ### Phase 6: Completion
 
@@ -191,8 +198,9 @@ On `No`: continue with Phase 6 and name the re-entry `{{SKILL:review}} <concept-
    - a short summary of the concept: problem, audience, first version, non-goals
    - the scorecard result
    - the note that no code and no plan file were written
-   - the two possible follow-ups: the deep review via `{{SKILL:review}} <concept-file>`, and — once
-     work packages exist — `{{SKILL:plan}}` per work package
+3. Emit the next-step block per `next-steps` as the last element of the report. A deep review that
+   returned `Revision required` or a nonzero blocking open-point count takes the open-points row,
+   not the ready one — planning a work package comes after those points are closed.
 
 ## Rules
 

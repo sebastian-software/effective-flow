@@ -100,11 +100,20 @@ throughout—header fields, sections, plan review, open points, and status marke
 all English. An existing plan retains its recognizable language when edited or completed. Explicit
 issue input instead produces the canonical issue-planning comment described under `plan-issue`.
 
-**Interplay:** A finished local plan is implemented later with `/effective-flow build <plan file>`,
-`/effective-flow fix <plan file>`, `/effective-flow refactor <plan file>`, or `/effective-flow docs <plan file>`;
-each of these tools first checks the plan file against the clarification gate. Optionally,
+**Interplay:** A finished local plan is implemented later with `/effective-flow apply <plan file>`,
+which reads the plan's own `**Recommended workflow:**` field and routes to the matching
+implementation tool, so the routing decision is made once, at invocation time. Optionally,
 `plan` offers a deeper interactive plan review directly afterwards; if it is
 skipped, it can be caught up later via `/effective-flow review <plan file>`.
+
+**Revising an existing plan:** `/effective-flow plan <plan-file>` on a plan file it already
+wrote does not start a new dated file — it revises that file in place. The earlier plan review
+stays intact as a dated subsection; a new one is appended, not overwritten. On an implemented or
+archived plan, `plan` asks once whether to revise it in place (which moves an archived file back
+to `<plan.dir>/` and resets its status), start a new plan instead, or abort. If the revision
+would change the `**Recommended workflow:**` value, `plan` reports the new classification and asks
+for explicit confirmation before rewriting the field — never a silent flip, since `apply` and
+`open-plans` both route on it.
 
 ## `/effective-flow open-plans`
 

@@ -416,6 +416,9 @@ Example (across actions) with five findings over multiple actions:
    - the prompt suggestion from the report as the task description
    - **Stash convention:** if any stash arises during the implementation of this finding (through a pre-commit hook, a manual `git stash` in the sub-skill or a tool-triggered stash), **the stash message must contain the finding ID**, e.g. `apply-review R-XXXXXXX <short description>`. This allows the stash cleanup in Phase 6 to reliably assign the stash to the finding.
    - the note that the sub-agent runs as a **non-interactive** delegation sub-agent of `{{FIRMO}} apply-review` and therefore opens no approval gate of its own. `{{FIRMO}} apply-review` steers the run at its own gate.
+   - the literal line `Next steps: suppressed` on its own line. Each delegated skill is
+     user-invocable and would otherwise close a per-finding recommendation into the chat, although
+     it returns its result here and this run is an intermediate result of `{{SKILL:apply}}`.
    - the completion protocol
 3. Check each sub-agent for `DONE` or `ABORT`.
 4. On `ABORT`:
@@ -582,6 +585,10 @@ options:
 **Kept stashes:**
 - `stash@{N}` [description] — please check manually
 ```
+
+3. Return that summary and the run's end state — whether a pull request was opened and which source
+   remains unprocessed — to `{{SKILL:apply}}`, which closes the run with its own next-step block.
+   Name no follow-up invocation of your own here.
 
 ## Rules
 

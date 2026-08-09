@@ -77,6 +77,15 @@ Source frontmatter carries **no** `name` or `type` field — name and category c
    declared `tools: Read, Glob, Grep, Agent(Explore)` successfully spawned a `general-purpose`
    subagent, so the parenthesised form is read as an unrestricted grant, not a type filter, and
    must never be used to fake a read-only allowlist.
+5. A new user-invocable tool opts into the next-steps contract deliberately, either way: add a
+   ` ```lazy-include ` fence for `next-steps` plus at least one row for the tool's name in
+   `src/shared/next-steps.md`'s edge table, or add the tool to the exemption set in `build.mjs`
+   with a one-line reason. The build derives the emitting set as
+   `count(src/tools/*.md) − |exemptions|` and fails if a non-exempt tool carries no fence, a fence
+   with no row, or a row for a tool without a fence — there is no silent third option that
+   inherits "no recommendation". Any delegation site whose result returns to its caller (rather
+   than handing the rest of the run to the receiving tool) carries the literal payload line
+   `Next steps: suppressed`, so the caller emits the block once at the end instead of twice.
 
 ## Delegation
 

@@ -48,6 +48,9 @@ import {
   findRemoteTrackerRecipeViolations,
   parseProjectRoutingTable,
   assertProjectRoutingContract,
+  parseNextStepsTable,
+  assertNextStepsContract,
+  findNextStepsDocViolations,
   parseSkillOwnershipManifest,
   parseSkillOwnershipTable,
   collectRecommendedSkillChains,
@@ -181,6 +184,24 @@ const DEPRECATED_TOOL_ALIASES = [{ alias: 'pr-review', replacement: 'merge-gate'
     }
   }
 }
+
+// Tools outside the next-steps emission contract. Every other `src/tools/*.md`
+// must lazily load the fragment and carry at least one row in its table, so the
+// emitting set is `count(src/tools/*.md) - |exemptions|` and a newly added tool
+// has to opt in or out deliberately instead of silently shipping without a
+// recommendation. Each entry names the reason it can never be the run the user
+// is looking at when it ends.
+const NEXT_STEPS_EXEMPT_TOOLS = new Set([
+  'version', // informational output; there is no run state to continue from
+  'pr-review', // deprecated forwarder; the tool it forwards to emits
+  'apply-plan', // not user-invocable (src/SKILL.md); its end states live on `apply`
+  'apply-review', // not user-invocable; its end states live on `apply`
+  'apply-issues', // not user-invocable; its end states live on `apply`
+  'plan-review', // not user-invocable; its end states live on `review` and `plan`
+  'concept-review', // not user-invocable; its end states live on `review` and `concept`
+  'apply-review-remote', // internal sub-file of apply-review with no completion phase
+  'apply-review-commit-mechanics', // internal sub-file of apply-review with no completion phase
+]);
 
 const releasePleaseManifestPath = join(ROOT_DIR, '.release-please-manifest.json');
 if (!existsSync(releasePleaseManifestPath)) {
@@ -435,6 +456,17 @@ try {
   // tool source and every {{AGENT:X}} an agent source.
   const knownTools = new Set(toolFiles.map((f) => basename(f, '.md')));
   const knownAgents = new Set(agentFiles.map((f) => basename(f, '.md')));
+
+  // Guard: no dead next-steps exemption. The emitting set is derived as
+  // `tool sources - exemptions`, so an entry for a renamed or deleted tool would
+  // not fail anywhere — it would silently keep the set one tool too small.
+  for (const name of NEXT_STEPS_EXEMPT_TOOLS) {
+    if (!knownTools.has(name)) {
+      throw new Error(
+        `stale next-steps exemption: NEXT_STEPS_EXEMPT_TOOLS lists "${name}", but src/tools/${name}.md does not exist`,
+      );
+    }
+  }
   const refConfig = {
     // Reference rendering counts an alias as invocable: a deprecation notice
     // addressed to a user has to name the invocation, so `{{SKILL:<alias>}}`
@@ -523,6 +555,68 @@ try {
     knownAgents,
     context: projectRoutingContext,
   });
+
+  // --- Shared next-steps contract guard ---
+  // Every completed run closes with up to two concrete follow-up invocations,
+  // taken from one canonical edge table. Validate the table, cross-check it in
+  // both directions against the emitting tool set, and reconcile the mirrored
+  // user-guide page before rendering, so a dead edge, a tool without a row, or a
+  // drifted documentation table fails every distribution build. The emitting set
+  // is derived here rather than in the per-file fence check below, because that
+  // check runs later and cannot feed this cross-check.
+  const nextStepsContext = 'shared/next-steps.md';
+  const nextStepsPath = join(SHARED_DIR, 'next-steps.md');
+  if (!existsSync(nextStepsPath)) {
+    throw new Error(`Next-steps contract not found: ${nextStepsPath}`);
+  }
+  const nextStepsSource = normalizeLineEndings(readFileSync(nextStepsPath, 'utf8'));
+  const nextStepsEdges = parseNextStepsTable(nextStepsSource, { context: nextStepsContext });
+  const nextStepsEmittingTools = new Set(
+    toolFiles
+      .map((file) => basename(file, '.md'))
+      .filter((name) => !NEXT_STEPS_EXEMPT_TOOLS.has(name)),
+  );
+  // The invocable set is EXPOSED_TOOLS, not the emitting set and not the alias-
+  // widened `refConfig.exposedTools`: an edge is rendered as `/effective-flow
+  // <name>` only for an exposed tool, and a retired alias must never be
+  // recommended as the next step. Passing it explicitly stops the two sets from
+  // agreeing merely by accident of the exemption list.
+  assertNextStepsContract(nextStepsEdges, {
+    emittingTools: nextStepsEmittingTools,
+    invocableTools: new Set(EXPOSED_TOOLS),
+    context: nextStepsContext,
+  });
+  // A fragment is otherwise ref-validated only through its consumers; this one
+  // is validated directly so a dead edge target fails even before a tool loads it.
+  validateRefs(nextStepsSource, {
+    knownTools,
+    knownAgents,
+    context: nextStepsContext,
+  });
+
+  const toolFlowPath = join(DOCS_USER_GUIDE, 'tool-flow.md');
+  if (!existsSync(toolFlowPath)) {
+    throw new Error(
+      `next-steps documentation mirror not found: ${relative(ROOT_DIR, toolFlowPath)} must mirror the ${nextStepsContext} table`,
+    );
+  }
+  const toolFlowViolations = findNextStepsDocViolations(
+    readFileSync(toolFlowPath, 'utf8'),
+    nextStepsEdges,
+    { context: relative(ROOT_DIR, toolFlowPath) },
+  );
+  if (toolFlowViolations.length > 0) {
+    throw new Error(
+      `next-steps documentation guard: ${relative(ROOT_DIR, toolFlowPath)} must mirror the ` +
+        `${nextStepsContext} table, with every edge cell in its rendered invocation form:\n  ` +
+        toolFlowViolations
+          .map(
+            ({ row, column, expected, actual }) =>
+              `row ${row}, ${column}: expected "${expected}", found "${actual}"`,
+          )
+          .join('\n  '),
+    );
+  }
 
   // Shared fragments deferred via ```lazy-include across all sources; each is
   // shipped once per harness as shared/<name>.md (see the per-harness loop).
@@ -635,6 +729,23 @@ try {
       throw new Error(
         `project-routing consumer guard (#164): ${context} must include project-routing`,
       );
+    }
+    // Next-steps consumers are derived from the tool file list, not allowlisted:
+    // an emitting tool defers the fragment (an eager include would spend the
+    // whole table on every run), an exempt tool carries no pointer at all.
+    if (dir === TOOLS_DIR) {
+      const toolName = basename(file, '.md');
+      if (NEXT_STEPS_EXEMPT_TOOLS.has(toolName)) {
+        if (eager.has('next-steps') || lazy.has('next-steps')) {
+          throw new Error(
+            `next-steps exemption guard: ${context} is exempt and must not include next-steps`,
+          );
+        }
+      } else if (!lazy.has('next-steps')) {
+        throw new Error(
+          `next-steps consumer guard: ${context} must lazily include next-steps or be listed in NEXT_STEPS_EXEMPT_TOOLS`,
+        );
+      }
     }
     // Eager includes inline now; each lazy include becomes a load pointer and is
     // recorded for shipping as a standalone shared/<name>.md fragment.

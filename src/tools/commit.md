@@ -31,6 +31,11 @@ task-tracking
 commit-message-rules
 ```
 
+```lazy-include
+next-steps
+when: the run reaches its completion report
+```
+
 ## Project conventions
 
 If the project has an `AGENTS.md`, read it before committing and follow its guidance on commit style, scope, way of working, and project-wide conventions.
@@ -42,6 +47,7 @@ If the project has an `AGENTS.md`, read it before committing and follow its guid
 3. Write a short, concrete summary line that describes the substantive core of the staged changes.
 4. Do not run any standalone project validation; linting, tests, and other quality checks are the job of other skills such as `{{AGENT:code-validator}}` and `{{AGENT:test-writer}}`.
 5. Run `git commit` for exactly these staged changes.
+6. Report the created commit and emit the next-step block per `next-steps` as the last element of that report. The block needs a commit that `git commit` actually created on a branch other than the base branch; a run with nothing staged, a commit a hook blocked, or a commit made on the base branch itself matches no row and emits nothing.
 
 ## Rules
 

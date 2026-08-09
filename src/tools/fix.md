@@ -117,6 +117,11 @@ plan-reference-routing
 when: the argument could point to an existing plan file
 ```
 
+```lazy-include
+next-steps
+when: the run reaches its completion report
+```
+
 ```include
 apply-clarity-gate
 ```
@@ -243,6 +248,7 @@ If open findings or residual risks arise in the process, document them in a stru
    - new or adjusted tests
    - residual risks
    - for an active delivery/worktree mode: delivery branch, final checkout state and result of the completion action (PR URL, merge or retained branch)
+7. Emit the next-step block per `next-steps` as the last element of the report.
 
 ```include
 pre-commit-gate

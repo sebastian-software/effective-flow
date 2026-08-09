@@ -861,6 +861,341 @@ export function assertProjectRoutingContract(routes, { context } = {}) {
   }
 }
 
+// --- Shared next-steps contract ---
+//
+// `src/shared/next-steps.md` carries the one machine-readable map of the
+// workflow graph: which follow-up invocations a completed run may recommend,
+// per emitting tool and end state. The build parses that table, cross-checks it
+// against the set of tools that actually emit the block, and reconciles the
+// mirrored user-guide table against it. These helpers stay pure — build.mjs owns
+// the file I/O, so unit tests can drive synthetic tables and doc pages.
+
+export const NEXT_STEPS_TABLE_START = '<!-- next-steps-table:start -->';
+export const NEXT_STEPS_TABLE_END = '<!-- next-steps-table:end -->';
+
+const NEXT_STEPS_HEADERS = ['Tool', 'Condition', 'Then', 'Or'];
+
+// One edge cell: exactly one `{{SKILL:x}}` reference, optionally followed by the
+// argument the recommended invocation takes (`{{SKILL:apply}} <plan-file>`).
+// The reference form is what keeps validateRefs and the rendering path applying
+// to every edge; a hand-written invocation would bypass both.
+const NEXT_STEPS_EDGE_RE = /^\{\{SKILL:([a-z0-9]+(?:-[a-z0-9]+)*)\}\}(?: +\S.*)?$/;
+const NEXT_STEPS_SKILL_REF_RE = /\{\{SKILL:([^}]+)\}\}/g;
+
+// One Markdown alignment cell (`---`, `:---`, `---:`). The fragment parser and
+// the documentation-mirror scan share this rule, so a separator row that is
+// acceptable in one place cannot be silently skipped in the other.
+const NEXT_STEPS_SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
+
+// The documentation mirror pins the Claude rendering of an edge cell, matching
+// the invocation form the rest of the user guide shows.
+const NEXT_STEPS_DOC_COMMAND = '/effective-flow';
+
+// Trim every cell (oxfmt pads the columns), map the "no second edge" em dash to
+// an empty cell, and strip a single wrapping backtick pair so the fragment and
+// the mirrored documentation compare on the same normalized text.
+function nextStepsCell(value) {
+  const trimmed = value.trim();
+  if (trimmed === '—' || trimmed === '-') return '';
+  return trimmed.replace(/^`([^`]*)`$/, '$1');
+}
+
+function splitNextStepsRow(line) {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(nextStepsCell);
+}
+
+function parseNextStepsRow(line, context) {
+  const cells = splitNextStepsRow(line);
+  if (cells.length !== NEXT_STEPS_HEADERS.length) {
+    // Name the offending row: a cell-count message alone is unusable against a
+    // table of dozens of rows.
+    throw new Error(
+      `Next-steps row has ${cells.length} cells; expected ${NEXT_STEPS_HEADERS.length}${contextSuffix(context)}: "${line}"`,
+    );
+  }
+  return cells;
+}
+
+export function parseNextStepsTable(markdown, { context } = {}) {
+  const normalized = normalizeLineEndings(markdown);
+  const starts = normalized.split(NEXT_STEPS_TABLE_START).length - 1;
+  const ends = normalized.split(NEXT_STEPS_TABLE_END).length - 1;
+  if (starts !== 1 || ends !== 1) {
+    throw new Error(
+      `Next-steps contract requires exactly one start and end marker${contextSuffix(context)}`,
+    );
+  }
+
+  const start = normalized.indexOf(NEXT_STEPS_TABLE_START) + NEXT_STEPS_TABLE_START.length;
+  const end = normalized.indexOf(NEXT_STEPS_TABLE_END);
+  if (end <= start) {
+    throw new Error(`Next-steps table markers are out of order${contextSuffix(context)}`);
+  }
+
+  const lines = normalized
+    .slice(start, end)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 3) {
+    throw new Error(`Next-steps table has no data rows${contextSuffix(context)}`);
+  }
+
+  const headers = parseNextStepsRow(lines[0], context);
+  if (headers.some((header, index) => header !== NEXT_STEPS_HEADERS[index])) {
+    throw new Error(
+      `Next-steps table headers must be: ${NEXT_STEPS_HEADERS.join(', ')}${contextSuffix(context)}`,
+    );
+  }
+  const separator = parseNextStepsRow(lines[1], context);
+  if (separator.some((cell) => !NEXT_STEPS_SEPARATOR_CELL_RE.test(cell))) {
+    throw new Error(`Next-steps table has an invalid separator row${contextSuffix(context)}`);
+  }
+
+  const edges = lines.slice(2).map((line) => {
+    const [tool, condition, then, or] = parseNextStepsRow(line, context);
+    // The condition is what an emitting run matches its end state against, so an
+    // empty one would make the row unaddressable — and, next to a second row for
+    // the same tool, indistinguishable from it.
+    if (!tool || !condition || !then) {
+      throw new Error(
+        `Next-steps rows require a tool, a condition, and a first edge${contextSuffix(context)}: "${line}"`,
+      );
+    }
+    return { tool, condition, then, or };
+  });
+
+  const seen = new Set();
+  for (const edge of edges) {
+    // Both parts are free text that may contain any separator character, so
+    // the key is encoded rather than concatenated: `("a b", "c")` and
+    // `("a", "b c")` must not collapse into the same key. The encoded form
+    // also keeps this source free of an invisible control character.
+    const key = JSON.stringify([edge.tool, edge.condition]);
+    if (seen.has(key)) {
+      throw new Error(
+        `Duplicate next-steps row "${edge.tool} | ${edge.condition}"${contextSuffix(context)}`,
+      );
+    }
+    seen.add(key);
+  }
+  return edges;
+}
+
+// `invocableTools` is the set the renderer treats as invocable (build.mjs passes
+// EXPOSED_TOOLS). It is checked separately from `emittingTools` because the two
+// answer different questions: emitting decides whether the target has a row of
+// its own, invocable decides whether transformRefs renders the edge as
+// `/effective-flow <name>` rather than as a raw `tools/<name>.md` path. That the
+// two sets coincide today is an accident of the exemption list, so an omitted
+// argument falls back to the emitting set rather than skipping the check.
+export function assertNextStepsContract(edges, { emittingTools, invocableTools, context } = {}) {
+  const emitting = emittingTools instanceof Set ? emittingTools : new Set(emittingTools ?? []);
+  if (emitting.size === 0) {
+    throw new Error(
+      `Next-steps contract requires a non-empty emitting tool set${contextSuffix(context)}`,
+    );
+  }
+  const invocable =
+    invocableTools === undefined
+      ? emitting
+      : invocableTools instanceof Set
+        ? invocableTools
+        : new Set(invocableTools);
+  if (invocable.size === 0) {
+    throw new Error(
+      `Next-steps contract requires a non-empty invocable tool set${contextSuffix(context)}`,
+    );
+  }
+
+  const rowTools = new Set();
+  for (const edge of edges) {
+    const where = `row "${edge.tool} | ${edge.condition}"`;
+    const cells = [
+      { column: 'Then', value: edge.then },
+      { column: 'Or', value: edge.or },
+    ].filter(({ value }) => value !== '');
+    if (cells.length === 0) {
+      throw new Error(`Next-steps ${where} carries no edge${contextSuffix(context)}`);
+    }
+    // A recommendation the user has to read and act on stays at two options; a
+    // cell holding a second reference would smuggle in a third. Counted across
+    // the row before the per-cell shape check, so the surplus edge is named as
+    // one rather than as a malformed cell.
+    const references = cells.reduce(
+      (total, { value }) => total + [...value.matchAll(NEXT_STEPS_SKILL_REF_RE)].length,
+      0,
+    );
+    if (references > 2) {
+      throw new Error(
+        `Next-steps ${where} carries ${references} edges; at most two are allowed${contextSuffix(context)}`,
+      );
+    }
+    for (const { column, value } of cells) {
+      const match = NEXT_STEPS_EDGE_RE.exec(value);
+      if (!match) {
+        throw new Error(
+          `Next-steps ${where} has an invalid ${column} cell "${value}"; expected {{SKILL:<tool>}} optionally followed by one argument${contextSuffix(context)}`,
+        );
+      }
+      // The argument tail is deliberately permissive (`<plan-file>`, `<report>`),
+      // so it also swallows a second reference: `{{SKILL:apply}} <p>
+      // {{SKILL:apply-plan}}` matches with `match[1] === "apply"` and the second
+      // target would never reach the checks below. The row-level count above
+      // misses it whenever the other cell is empty, so count per cell too.
+      const cellReferences = [...value.matchAll(NEXT_STEPS_SKILL_REF_RE)].length;
+      if (cellReferences !== 1) {
+        throw new Error(
+          `Next-steps ${where} has a ${column} cell with ${cellReferences} references "${value}"; expected exactly one${contextSuffix(context)}`,
+        );
+      }
+      // An edge is a copy-paste-ready invocation, so its target has to be a tool
+      // that closes a run of its own — which is exactly the emitting set.
+      if (!emitting.has(match[1])) {
+        throw new Error(
+          `Next-steps ${where} recommends "${match[1]}", which is not an emitting tool${contextSuffix(context)}`,
+        );
+      }
+      // …and one the user can actually invoke, because the rendered block shows
+      // the invocation. A target outside the invocable set renders as a raw
+      // `tools/<name>.md` path, which nobody can type.
+      if (!invocable.has(match[1])) {
+        throw new Error(
+          `Next-steps ${where} recommends "${match[1]}", which is not a user-invocable tool${contextSuffix(context)}`,
+        );
+      }
+    }
+    rowTools.add(edge.tool);
+  }
+
+  const withoutRow = setDifference(emitting, rowTools);
+  const notEmitting = setDifference(rowTools, emitting);
+  if (withoutRow.length > 0 || notEmitting.length > 0) {
+    const details = [];
+    if (withoutRow.length > 0) {
+      details.push(`emitting tool(s) without a row: ${withoutRow.join(', ')}`);
+    }
+    if (notEmitting.length > 0) {
+      details.push(`row(s) for a non-emitting tool: ${notEmitting.join(', ')}`);
+    }
+    throw new Error(`Next-steps coverage mismatch: ${details.join('; ')}${contextSuffix(context)}`);
+  }
+}
+
+function renderNextStepsInvocation(cell) {
+  return cell.replace(NEXT_STEPS_SKILL_REF_RE, (_, name) => `${NEXT_STEPS_DOC_COMMAND} ${name}`);
+}
+
+// Locate the mirrored table in a hand-written documentation page: the first
+// Markdown table whose header row carries exactly the contract's four columns.
+// Returns `null` when no such table exists, `{ separator }` when the line after
+// the header is not a separator row, and `{ rows }` otherwise.
+function findNextStepsDocRows(markdown) {
+  const lines = normalizeLineEndings(markdown).split('\n');
+  for (const [index, line] of lines.entries()) {
+    if (!line.trim().startsWith('|')) continue;
+    const cells = splitNextStepsRow(line);
+    if (
+      cells.length !== NEXT_STEPS_HEADERS.length ||
+      cells.some((cell, position) => cell !== NEXT_STEPS_HEADERS[position])
+    ) {
+      continue;
+    }
+    // The row after the header has to be the alignment row. Skipping it blindly
+    // would consume the first data row of a page that lost its separator and
+    // report every following row as shifted, hiding the one real defect behind a
+    // cascade.
+    const separatorLine = (lines[index + 1] ?? '').trim();
+    const separator = separatorLine.startsWith('|') ? splitNextStepsRow(separatorLine) : null;
+    if (
+      !separator ||
+      separator.length !== NEXT_STEPS_HEADERS.length ||
+      separator.some((cell) => !NEXT_STEPS_SEPARATOR_CELL_RE.test(cell))
+    ) {
+      return { separator: separatorLine };
+    }
+    const rows = [];
+    for (let cursor = index + 2; cursor < lines.length; cursor += 1) {
+      if (!lines[cursor].trim().startsWith('|')) break;
+      rows.push(splitNextStepsRow(lines[cursor]));
+    }
+    return { rows };
+  }
+  return null;
+}
+
+// Compare the mirrored user-guide table against the parsed fragment edges. The
+// caller decides how to fail; returning the structured mismatches keeps this
+// checker pure and lets the build name every offending cell at once.
+export function findNextStepsDocViolations(docMarkdown, edges, { context } = {}) {
+  const found = findNextStepsDocRows(docMarkdown);
+  if (!found) {
+    return [
+      {
+        row: 0,
+        column: 'table',
+        expected: NEXT_STEPS_HEADERS.join(' | '),
+        actual: 'missing',
+        context,
+      },
+    ];
+  }
+  if (!found.rows) {
+    return [
+      {
+        row: 0,
+        column: 'separator',
+        expected: NEXT_STEPS_HEADERS.map(() => '---').join(' | '),
+        actual: found.separator === '' ? 'missing' : found.separator,
+        context,
+      },
+    ];
+  }
+  const rows = found.rows;
+
+  const violations = [];
+  for (const [index, edge] of edges.entries()) {
+    const expected = [
+      edge.tool,
+      edge.condition,
+      renderNextStepsInvocation(edge.then),
+      renderNextStepsInvocation(edge.or),
+    ];
+    const actual = rows[index];
+    if (!actual || actual.length !== NEXT_STEPS_HEADERS.length) {
+      violations.push({
+        row: index + 1,
+        column: 'row',
+        expected: expected.join(' | '),
+        actual: actual ? actual.join(' | ') : 'missing',
+        context,
+      });
+      continue;
+    }
+    for (const [position, column] of NEXT_STEPS_HEADERS.entries()) {
+      if (actual[position] !== expected[position]) {
+        violations.push({
+          row: index + 1,
+          column,
+          expected: expected[position],
+          actual: actual[position],
+          context,
+        });
+      }
+    }
+  }
+  for (let index = edges.length; index < rows.length; index += 1) {
+    violations.push({
+      row: index + 1,
+      column: 'row',
+      expected: 'no further row',
+      actual: rows[index].join(' | '),
+      context,
+    });
+  }
+  return violations;
+}
+
 const FRONTEND_EXTENSIONS = new Set(['.jsx', '.tsx', '.vue', '.svelte']);
 const JAVASCRIPT_EXTENSIONS = new Set([
   '.js',

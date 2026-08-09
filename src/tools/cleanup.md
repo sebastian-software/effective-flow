@@ -46,6 +46,11 @@ runtime-state-safety
 when: worktree lifecycle state will be read or mutated, or any confirmed legacy copy or removal, runtime migration, memory, or tracker-marker mutation is imminent
 ```
 
+```lazy-include
+next-steps
+when: the run reaches its completion report
+```
+
 ```include
 worktree-lifecycle
 ```
@@ -331,9 +336,9 @@ worktree.”
 
 Report to the user:
 
-- what was carried over (files to `.effective-flow/`) and which config values were referred to `{{SKILL:setup}}`
+- what was carried over (files to `.effective-flow/`) and which config values `{{SKILL:setup}}` owns
 - what was deleted, separated into tracked (via `git rm`, staged) and physically removed
-- which outdated `.gitignore` lines remain and that `{{SKILL:setup}}` owns their repair
+- which outdated `.gitignore` lines remain and that `{{SKILL:setup}}` owns their repair, not this run
 - which `firmo-` labels were detached from how many issues (or that the label class was skipped)
 - worktrees removed successfully, with their checkout identities and retained/deleted branch
   outcomes
@@ -347,7 +352,11 @@ Report to the user:
   worktrees, so interrupted post-removal state remains visible
 - an explicit statement when no linked worktrees remain
 - what else deliberately remains and why
-- that **no** commit was created; refer to `{{SKILL:commit}}` for the staged changes
+- that **no** commit was created and which removals are staged
+
+Then emit the next-step block per `next-steps` as the last element of the report: the staged-removals
+row when this run staged deletions, the configuration row when it only referred config values on. A
+report that found neither matches no row and emits nothing.
 
 ## Rules
 

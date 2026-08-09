@@ -5,6 +5,9 @@ import { test } from 'node:test';
 import {
   assertNoUnresolvedEagerIncludes,
   collectIncludeNames,
+  findNextStepsDocViolations,
+  LAZY_INCLUDE_RE,
+  parseNextStepsTable,
   renderBody,
   resolveEagerIncludes,
   resolveLazyIncludes,
@@ -248,9 +251,23 @@ test('plan-issue runs the full quality baseline before its per-issue deep-review
     planIssue,
     /On \*\*Yes\*\*, read `\{\{SKILL:plan-review\}\}` and invoke it in \*\*issue mode\*\*/,
   );
+  // The `No` branch still owes the user both halves of the old guarantee: no fabricated open
+  // point, and a later re-entry that stays available. Only the second half moved — out of this
+  // sentence and into the machine-checked edge table — so it is asserted there instead of being
+  // allowed to disappear.
   assert.match(
-    planIssue,
-    /On \*\*No\*\*, retain the approved automatic baseline, record no artificial open point,[\s\S]*`\{\{SKILL:plan-issue\}\} <issue>` as the optional later re-entry/,
+    flat(planIssue),
+    /On \*\*No\*\*, retain the approved automatic baseline and record no artificial open point/,
+  );
+  const edges = parseNextStepsTable(source('src/shared/next-steps.md'), {
+    context: 'src/shared/next-steps.md',
+  });
+  assert.ok(
+    edges.some(
+      (edge) =>
+        edge.tool === 'plan-issue' && [edge.then, edge.or].includes('{{SKILL:plan-issue}} <issue>'),
+    ),
+    'plan-issue must keep the optional later re-entry as a next-steps edge',
   );
 });
 
@@ -904,6 +921,259 @@ test('every source embedding issue-tracker also loads the tracker-target fragmen
   assert.match(flatTracker, /as soon as the resolved target is `external`/);
 });
 
+// --- Next-step recommendations ---
+
+// Tools outside the emission contract, listed with the reason they can never be the run the
+// user is looking at when it ends. Listed, never inferred: an exemption has to be a deliberate
+// edit, and build.mjs holds the same list (asserted below), so neither side can drift alone.
+const NEXT_STEPS_EXEMPT = new Set([
+  'version', // informational output; there is no run state to continue from
+  'pr-review', // deprecated forwarder; the tool it forwards to emits
+  'apply-plan', // not user-invocable; its end states live on `apply`
+  'apply-review', // not user-invocable; its end states live on `apply`
+  'apply-issues', // not user-invocable; its end states live on `apply`
+  'plan-review', // not user-invocable; its end states live on `review` and `plan`
+  'concept-review', // not user-invocable; its end states live on `review` and `concept`
+  'apply-review-remote', // internal sub-file of apply-review with no completion phase
+  'apply-review-commit-mechanics', // internal sub-file of apply-review with no completion phase
+]);
+
+function lazyFragmentNames(body) {
+  return [...body.matchAll(LAZY_INCLUDE_RE)].map((match) => match[1].trim());
+}
+
+test('every emitting tool defers next-steps exactly once and every exemption stays live', () => {
+  // The consumer set is derived — `count(src/tools/*.md) - |exemptions|`, never a hard-coded
+  // number — so a newly added tool fails the build until it opts in or is exempted, instead of
+  // silently inheriting "no recommendation".
+  const toolFiles = readdirSync(new URL('src/tools/', repositoryRoot))
+    .filter((entry) => entry.endsWith('.md'))
+    .sort();
+  assert.ok(toolFiles.length > 0, 'src/tools must contain sources to check');
+
+  const emitting = [];
+  for (const file of toolFiles) {
+    const name = file.replace(/\.md$/, '');
+    const body = source(`src/tools/${file}`);
+    const fences = lazyFragmentNames(body).filter((fragment) => fragment === 'next-steps').length;
+    const { eager } = collectIncludeNames(body);
+    if (NEXT_STEPS_EXEMPT.has(name)) {
+      assert.equal(fences, 0, `${name} is exempt and must not defer next-steps`);
+      assert.equal(eager.has('next-steps'), false, `${name} is exempt and must not inline it`);
+      continue;
+    }
+    emitting.push(name);
+    // Deferred, never eager: `review.md` renders at 675 of its 700 budgeted lines, so an eager
+    // include of the ~40-row table would break the context budget outright.
+    assert.equal(
+      eager.has('next-steps'),
+      false,
+      `src/tools/${file} must defer next-steps, not inline it`,
+    );
+    assert.equal(
+      fences,
+      1,
+      `src/tools/${file} must carry the next-steps load pointer exactly once`,
+    );
+  }
+
+  assert.ok(emitting.length > 0, 'no tool loads next-steps — derivation is vacuous');
+  assert.equal(
+    emitting.length,
+    toolFiles.length - NEXT_STEPS_EXEMPT.size,
+    'the emitting set must be every tool source minus the exemptions',
+  );
+  for (const name of NEXT_STEPS_EXEMPT) {
+    assert.ok(
+      existsSync(new URL(`src/tools/${name}.md`, repositoryRoot)),
+      `stale exemption: src/tools/${name}.md no longer exists`,
+    );
+  }
+
+  // build.mjs derives its guard from the same list; a one-sided edit must fail here. Each entry
+  // is matched line-anchored rather than by scanning the block for quote pairs: an apostrophe in
+  // one of the trailing comments would otherwise pair across it and invent an entry.
+  const declared = section(
+    source('build.mjs'),
+    'const NEXT_STEPS_EXEMPT_TOOLS = new Set([',
+    '\n]);',
+  );
+  assert.deepEqual(
+    [...declared.matchAll(/^\s*'([^']+)',/gm)].map((match) => match[1]).sort(),
+    [...NEXT_STEPS_EXEMPT].sort(),
+    'build.mjs and this contract must share one exemption set',
+  );
+
+  // Two-way coverage on the live table: every emitting tool has a row and no row names a tool
+  // outside the derived set.
+  const edges = parseNextStepsTable(source('src/shared/next-steps.md'), {
+    context: 'src/shared/next-steps.md',
+  });
+  assert.deepEqual(
+    [...new Set(edges.map((edge) => edge.tool))].sort(),
+    [...emitting].sort(),
+    'the edge table and the derived emitting set must cover each other',
+  );
+
+  // The published mirror is otherwise only reconciled by `node build.mjs`, so a drifted user
+  // guide would stay green through the whole test suite.
+  assert.deepEqual(
+    findNextStepsDocViolations(source('docs/user-guide/tool-flow.md'), edges, {
+      context: 'docs/user-guide/tool-flow.md',
+    }),
+    [],
+    'the user-guide table must mirror the fragment in its rendered invocation form',
+  );
+});
+
+test('the next-steps fragment ships standalone and states the emission rule', () => {
+  const fragment = source('src/shared/next-steps.md');
+
+  // The standalone shipping path resolves **eager** includes only, so a nested lazy fence would
+  // survive verbatim into dist/*/effective-flow/shared/next-steps.md — the same constraint the
+  // `issue-tracker` and `pr-review-integration` fragments live under.
+  assert.doesNotMatch(fragment, /```lazy-include/);
+
+  const flatFragment = flat(fragment);
+  assert.match(
+    flatFragment,
+    /last user-invocable tool of a run emits/i,
+    'the fragment must state which run of a delegation chain emits',
+  );
+  assert.match(
+    flatFragment,
+    near('Next steps: suppressed', 'emits nothing'),
+    'the fragment must tie the suppression signal to emitting nothing',
+  );
+});
+
+test('every returning delegation announces the next-step suppression', () => {
+  // A delegation whose result returns to its caller is marked; a handoff that gives the
+  // receiving tool the rest of the run is not. The distinction is mechanical, so it can be
+  // asserted here per call site rather than inferred at runtime.
+  const sites = [
+    { file: 'src/tools/plan.md', delegates: ['plan-review'] },
+    { file: 'src/tools/review.md', delegates: ['plan-review', 'concept-review'] },
+    { file: 'src/tools/concept.md', delegates: ['concept-review'] },
+    { file: 'src/tools/plan-issue.md', delegates: ['plan-review'] },
+    { file: 'src/tools/apply.md', delegates: ['apply-plan', 'apply-review', 'apply-issues'] },
+    { file: 'src/tools/merge-gate.md', delegates: ['iterate'] },
+    // The remaining returning delegations: the worktree completion action that hands delivery to
+    // `pr`, the per-finding and per-issue sub-agent payloads, and the per-item delegation of
+    // `iterate`. Each of these receivers hands its result back, so the caller closes the run.
+    { file: 'src/shared/worktree-integration.md', delegates: ['pr'] },
+    { file: 'src/tools/apply-review.md', delegates: ['fix', 'refactor', 'build', 'docs'] },
+    { file: 'src/tools/apply-issues.md', delegates: ['build', 'fix', 'refactor', 'docs', 'pr'] },
+    { file: 'src/tools/iterate.md', delegates: ['fix', 'refactor', 'build', 'docs'] },
+  ];
+
+  // What the window proves and what it does not: `near` searches the whole flattened file, so it
+  // shows that the literal and the delegation reference exist together in one region — not that
+  // this particular reference is the one the sentence addresses. Where several delegations share
+  // one announcement (`apply.md`: "Every one of those three delegations …"), a single literal
+  // legitimately satisfies all of them, which is why the assertion is not sliced per delegation:
+  // a per-delegate slice would demand a per-delegate sentence the sources deliberately do not
+  // have. The stronger per-run guarantee is the build-time contract in build.mjs, not this test.
+  for (const { file, delegates } of sites) {
+    const body = flat(source(file));
+    assert.match(body, /Next steps: suppressed/, `${file} must carry the suppression literal`);
+    for (const delegate of delegates) {
+      assert.match(
+        body,
+        near(`\\{\\{SKILL:${delegate}\\}\\}`, 'Next steps: suppressed', 900),
+        `${file} must announce the suppression at its ${delegate} delegation`,
+      );
+    }
+  }
+});
+
+test('the apply-plan handoff to the implementation tools carries no suppression line', () => {
+  const applyPlan = source('src/tools/apply-plan.md');
+
+  // A handoff gives the receiving tool the rest of the run, so that tool is the one that emits.
+  // Explaining the omission is expected; carrying the literal as a payload line is not.
+  for (const line of applyPlan.split('\n')) {
+    const payload = line
+      .trim()
+      .replace(/^[-*>\s]+/, '')
+      .replaceAll('`', '')
+      .trim();
+    assert.notEqual(
+      payload,
+      'Next steps: suppressed',
+      `apply-plan must not hand its receiver a suppression line: ${line}`,
+    );
+  }
+
+  const flatApplyPlan = flat(applyPlan);
+  const mentions = [...flatApplyPlan.matchAll(/suppress\w*/gi)];
+  assert.ok(
+    mentions.length > 0,
+    'apply-plan must state why its handoff carries no suppression line',
+  );
+  for (const mention of mentions) {
+    assert.match(
+      flatApplyPlan.slice(Math.max(0, mention.index - 240), mention.index + 240),
+      /\b(?:no|not|never|without|omits?|omitted|omission|absent)\b/i,
+      'every suppression mention in apply-plan must be an explicit omission',
+    );
+  }
+});
+
+test('the plan gateway hands plan-issue the run instead of suppressing its block', () => {
+  // The gateway ends the plan run immediately (see plan-input-gateway), so plan-issue closes in
+  // front of the user and must emit for itself. Suppressing it there would silence both sides.
+  const plan = flat(source('src/tools/plan.md'));
+  // Capture the index first: `indexOf` returns -1 for a vanished reference, and `slice(-1)` would
+  // hand the assertions a one-character string that passes every check below.
+  const handoffIndex = plan.indexOf('{{SKILL:plan-issue}}');
+  assert.notEqual(handoffIndex, -1, 'plan must delegate an issue reference to plan-issue');
+  const handoff = plan.slice(handoffIndex);
+  assert.doesNotMatch(
+    handoff.slice(0, 400),
+    /(?<!no\s|not\s|never\s)carries the literal line `Next steps: suppressed`/,
+    'plan must not suppress the next-step block of the plan-issue run it hands off to',
+  );
+
+  // plan-issue is an exposed tool, so it carries the fence and is expected to emit.
+  const { lazy } = collectIncludeNames(source('src/tools/plan-issue.md'));
+  assert.ok(lazy.has('next-steps'), 'plan-issue must load next-steps to emit for itself');
+});
+
+test('plan stops naming an implementation tool at completion but keeps the template field', () => {
+  const plan = source('src/tools/plan.md');
+
+  // `apply <plan-file>` re-reads the plan's own recommendation at invocation time, so the run
+  // no longer has to guess the workflow twice.
+  const completion = section(plan, '### Phase 7: Completion', '\n## ');
+  for (const tool of ['build', 'fix', 'refactor', 'docs']) {
+    assert.doesNotMatch(
+      completion,
+      new RegExp(`\\{\\{SKILL:${tool}\\}\\}`),
+      `plan.md must not recommend ${tool} at completion`,
+    );
+  }
+  assert.match(completion, /next-step/i, 'the completion phase must emit the next-step block');
+
+  // The header field itself stays: `apply-plan` routes on it and `open-plans` renders it.
+  const workflowLine = plan
+    .split('\n')
+    .find((line) => line.startsWith('**Recommended workflow:**'));
+  assert.ok(workflowLine, 'the plan template must keep the **Recommended workflow:** field');
+  for (const [category, tool] of [
+    ['Feature', 'build'],
+    ['Bugfix', 'fix'],
+    ['Refactoring', 'refactor'],
+    ['Documentation', 'docs'],
+  ]) {
+    assert.ok(workflowLine.includes(category), `the template must keep the ${category} category`);
+    assert.ok(
+      workflowLine.includes(`{{SKILL:${tool}}}`),
+      `the template must keep ${tool} as the ${category} workflow`,
+    );
+  }
+});
+
 test('no source cites the non-existent "Host and CLI detection" section', () => {
   // AC4: the section never existed in `issue-tracker.md`; the surviving references were
   // broken across lines, so the sweep normalizes whitespace and Markdown emphasis.
@@ -1201,7 +1471,7 @@ test('the concept contract pins its four status forms and separates concept from
   assert.match(flat(contract), /Concepts have no archive and no implemented state\./);
 });
 
-test('the concept review gates the elaborated status and points its re-entry at review', () => {
+test('the concept review gates the elaborated status and leaves the re-entry to its caller', () => {
   const conceptReview = source('src/tools/concept-review.md');
 
   assert.match(
@@ -1209,7 +1479,30 @@ test('the concept review gates the elaborated status and points its re-entry at 
     /Set `\*\*Concept status:\*\* Elaborated` \(German: `\*\*Konzeptstatus:\*\* Ausgearbeitet`\) exactly when no critical finding and no blocking open point remains/,
   );
   assert.match(flat(conceptReview), /Otherwise the status stays `Draft`\/`Entwurf`/);
-  assert.match(conceptReview, /the re-entry\n\s*`\{\{SKILL:review\}\} <concept-file>`/);
+
+  // `concept-review` is not user-invocable, so it can never be the run the user is looking at:
+  // it returns its result and the invoking tool closes the run. The re-entry it used to name
+  // itself did not disappear — it became a machine-checked row of the next-steps edge table on
+  // both invoking tools, which is a stronger guarantee than the prose assertion it replaces.
+  assert.doesNotMatch(
+    // Flattened like the assertions above: on raw source a line-wrapped occurrence would slip
+    // past this negative match.
+    flat(conceptReview),
+    /\{\{SKILL:review\}\} <concept-file>/,
+    'concept-review must not name a re-entry its caller already emits',
+  );
+  const edges = parseNextStepsTable(source('src/shared/next-steps.md'), {
+    context: 'src/shared/next-steps.md',
+  });
+  for (const tool of ['concept', 'review']) {
+    assert.ok(
+      edges.some(
+        (edge) =>
+          edge.tool === tool && [edge.then, edge.or].includes('{{SKILL:review}} <concept-file>'),
+      ),
+      `${tool} must carry the concept re-entry edge`,
+    );
+  }
 });
 
 test('the concept handoff stays self-contained text and marks ADR candidates only', () => {

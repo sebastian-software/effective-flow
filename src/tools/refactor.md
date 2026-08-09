@@ -120,6 +120,11 @@ review-report-format
 when: a review report is written or an existing one is augmented
 ```
 
+```lazy-include
+next-steps
+when: the run reaches its completion report
+```
+
 Current workflow for plan references: Refactoring (`{{SKILL:refactor}}`).
 
 ```include
@@ -288,6 +293,7 @@ Start in parallel:
    - if delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand the **residual** finding set of the latest Phase-4 review to that handback — the findings that survived this run's correction rounds, not the full review history — so an automatic PR review publishes them instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
    - summarize what was refactored; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch)
    - confirm that the behavior stayed unchanged
+   - emit the next-step block per `next-steps` as the last element of the report
 
 ```include
 pre-commit-gate

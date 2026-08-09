@@ -56,6 +56,11 @@ effective-flow-dir-migration
 when: a remote tracker access is about to perform its first runtime-state mutation, or a session rename request is about to be written
 ```
 
+```lazy-include
+next-steps
+when: the run reaches its completion report
+```
+
 ```include
 config-migration
 ```
@@ -252,11 +257,12 @@ Do not reuse this answer for any other selected issue.
 
 - On **Yes**, read `{{SKILL:plan-review}}` and invoke it in **issue mode** with exactly this issue,
   the current canonical planning-comment ID and body, its freshly computed body hash, the
-  already-resolved tracker adapter, and the concrete artifact language. The internal review may
-  update only this existing comment and returns whether implementation-blocking open points
-  remain. Do not create a plan file or a second comment.
-- On **No**, retain the approved automatic baseline, record no artificial open point, and name
-  `{{SKILL:plan-issue}} <issue>` as the optional later re-entry.
+  already-resolved tracker adapter, the concrete artifact language, and the literal line
+  `Next steps: suppressed` on its own line, because that run returns its result here. The internal
+  review may update only this existing comment and returns whether implementation-blocking open
+  points remain. Do not create a plan file or a second comment.
+- On **No**, retain the approved automatic baseline and record no artificial open point; the
+  next-step block of Phase 5 carries the optional later re-entry.
 
 After either branch, apply the readiness decision. If the deep review is ended, deferred after it
 starts, fails to persist, or returns a blocking open point, keep or add
@@ -272,9 +278,10 @@ receiving their own baseline, question, comment update, and label decision.
 ### Phase 5: Summary
 
 Report per issue whether it was released for implementation, retained for planning with its open
-points, or failed closed during comment persistence. Mention `{{SKILL:apply}} <issue>` only for
-released issues and `{{SKILL:plan-issue}} <issue>` for later or blocked review. This skill itself
-implements nothing.
+points, or failed closed during comment persistence. This skill itself implements nothing.
+
+Emit the next-step block per `next-steps` as the last element of the report. A run that released at
+least one issue takes the released row; a run that released none takes the retained row.
 
 ## Rules
 
