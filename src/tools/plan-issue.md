@@ -48,12 +48,12 @@ when: an internal sub-agent's result is returned
 
 ```lazy-include
 runtime-state-safety
-when: a remote tracker access is about to write its local migration marker
+when: a remote tracker access is about to write its local migration marker, or a session rename request is about to be written
 ```
 
 ```lazy-include
 effective-flow-dir-migration
-when: a remote tracker access is about to perform its first runtime-state mutation
+when: a remote tracker access is about to perform its first runtime-state mutation, or a session rename request is about to be written
 ```
 
 ```include
@@ -79,6 +79,11 @@ issue-tracker
 ```lazy-include
 tracker-target
 when: the resolved tracker target is `external`
+```
+
+```lazy-include
+session-rename
+when: the run's subject is fixed and a session title is about to be applied or emitted
 ```
 
 ## Comment convention

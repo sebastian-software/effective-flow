@@ -77,6 +77,11 @@ pointer would now fit. The placement stands on the first reason alone, which is 
 Treat this as a bounded exception, not a precedent: further cross-tool behavior belongs in a tool
 or a mode-gated fragment unless it, too, is read once and needed almost always.
 
+The related `session-rename` fragment follows that default rather than the exception: it is
+lazily loaded and pointed to from each work-subject tool, not from the router. The router resolves
+only eager includes, so a lazy pointer placed in `src/SKILL.md` would register no fragment and
+ship a dangling reference.
+
 The same progressive disclosure applies **within** a tool: mode-gated shared fragments (e.g.
 worktree delivery, remote tracker, report handling) are no longer inlined eagerly but loaded on
 demand via `lazy-include` only at the decision point. Details and the context budget are in
