@@ -118,19 +118,28 @@ says nothing once several runs are open at the same time. Two things help:
 
 - **Open with one descriptive sentence** before the command. The host then has something to work
   with from the start, and this is the only thing that fixes the title from the very beginning.
-- **Take the suggestion.** As soon as a run knows its real subject – the plan title, the issue
-  title, the review scope – it proposes one line such as
-  `**Suggested session title:** Harden test-server configuration · plan`. Apply it with your
-  host's own rename function. The two supported hosts differ here: Codex exposes a first-party
-  rename call that a run can reach through a hook running outside the model sandbox, while Claude
-  Code Desktop refuses a self-rename outright – its session-management tool rejects the calling
-  session by design. Effective Flow today still suggests rather than sets; the mechanism that
-  would let a run apply its own suggestion is being introduced separately. On hosts without titled
-  sessions, nothing is printed.
+- **Take the suggestion, or let it apply itself.** As soon as a run knows its real subject – the
+  plan title, the issue title, the review scope – it proposes one line such as
+  `**Suggested session title:** Harden test-server configuration · plan`. On Codex, a run can apply
+  that title on its own once you install and trust a one-time hook – see `/effective-flow setup`.
+  Until that hook is installed, a Codex run prints the suggestion line instead; even once it's
+  trusted, the very first rename after installing still prints that line once while the hook
+  renames in the background, and every later run stays silent. On Claude Code, the host refuses a
+  self-rename outright – its session-management tools reject the calling session by design – so a
+  run applies its title through a second session acting as a rename butler, which you also set up
+  once through `/effective-flow setup`. Without a butler set up, a Claude Code run prints the
+  suggestion line instead; with one set up, the first rename request in a session still prints that
+  line once while the rename happens in the background, and only a later request in the same
+  continuing session stays silent. On hosts with no established rename path, the suggestion line
+  keeps appearing as before; on hosts without titled sessions at all, nothing is printed.
 
   One consequence is easy to miss: once you rename a session by hand, the host marks that title as
   user-set, and every later automatic suggestion is silently discarded from then on – a session you
-  renamed once by hand keeps its title.
+  renamed once by hand keeps its title. Under the hook path that discard is invisible, since the
+  hook simply stops applying anything further. Under the butler path it is visible instead: the
+  butler reads the session back, finds your own title still in place, and reports that back rather
+  than applying anything – so nothing is printed there rather than nagging you about a title you
+  already chose.
 
 ## The typical flow: Plan → Build → Pull Request
 

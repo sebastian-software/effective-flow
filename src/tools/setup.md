@@ -671,41 +671,46 @@ points here; it never rewrites the ADR itself.
 ### Step 7: Session rename capability (optional)
 
 Hosts derive a session title from the first message, so a run is listed under a name that predates
-its subject. Where the running host can rename its own session, Effective Flow applies the better
-title itself instead of suggesting it; where it cannot, every run keeps printing a suggestion the
-user applies by hand. That capability needs a one-time, per-user setup, and this step prepares it.
+its subject. Where the running harness has an established rename path, Effective Flow applies the
+better title itself instead of suggesting it; where it has none, every run keeps printing a
+suggestion the user applies by hand. Both established paths need a one-time, per-user setup, and this
+step prepares it.
 
 This step is **not** part of the configuration. It declares no key, belongs to none of the Step 5
 blocks, and adds nothing to the Step 6 write. It **prints**: it never opens, edits, or creates a
 file above the repository root, and it never touches the user's harness configuration. What the user
-pastes, and whether they paste it at all, stays their decision. It has exactly one announced side
-effect outside this repository: with the user's go-ahead, the probe in item 4 renames the current
-session once, because a rename nobody can see proves nothing.
+pastes, and whether they paste it at all, stays their decision. Its announced side effects outside
+this repository are the verification probe's: with the user's go-ahead it renames the current session
+once, because a rename nobody can see proves nothing, and on the Claude Code path it sends one
+message to the user's own butler session.
 
 ```ask
-when: the configuration write completed and the run may prepare the host's self-rename capability
-header: Self-rename
-question: Should setup check whether this harness can rename its own session and print what that needs?
+when: the configuration write completed and the run may prepare the harness's session-rename capability
+header: Rename path
+question: Should setup check whether this harness has an established session-rename path and print what it needs?
 options:
   - label: Yes
-    description: Detect the harness, print the definition to paste, and prove it once by renaming this session
+    description: Detect the harness, print what the user pastes, and prove it once by renaming this session
   - label: No
     description: Skip it — runs keep printing a suggested title instead of applying it
 ```
 
-For "No", note that runs keep emitting the suggestion line and continue with Step 8. For "Yes":
+For "No", note that runs keep emitting the suggestion line and continue with Step 8. For "Yes",
+**detect the harness** from the running environment first. Two harnesses have an established rename
+path today, and they need different setups: **Codex** installs a hook, **Claude Code** mandates a
+second session as a rename butler. Follow that harness's path below and no other. On any other
+harness, say plainly that no path is established, that runs therefore keep suggesting a title, and
+end this step. Never invent a mechanism, and never probe a harness for one.
 
-1. **Detect the harness** from the running environment. Codex is the only harness with an
-   established rename path today. On any other harness, say plainly that no path is established,
-   that runs therefore keep suggesting a title, and end this step. Never invent a mechanism, and
-   never probe a harness for one.
-2. **Print the definition block from `shared/session-rename.md` verbatim.** That fragment carries the
+#### Codex: the hook the user installs
+
+1. **Print the definition block from `shared/session-rename.md` verbatim.** That fragment carries the
    complete `Stop` handler in both spellings; print the one the user prefers, or both, and replace
    `<skill-root>` with the absolute path of the installed skill first, because a hook resolves no
    placeholder. Name the file to paste it into — `~/.codex/hooks.json` or `~/.codex/config.toml`, or
    the repository-local counterpart — and say that every matching layer loads, so an existing hook
    file gains the `Stop` entry rather than being replaced. Do not open or write either file here.
-3. **State the trust gate before the user pastes.** This is the step whose omission turns the hook
+2. **State the trust gate before the user pastes.** This is the step whose omission turns the hook
    into a permanent silent no-op, so state it plainly: a pasted hook does **not** run until it has
    been reviewed and trusted once, in whichever Codex client the user runs, and any later edit of
    the hook text marks it changed and skips it again until it is reviewed a second time. Name the
@@ -717,7 +722,7 @@ For "No", note that runs keep emitting the suggestion line and continue with Ste
    (`allow_managed_hooks_only`) suppresses user, project and plugin hooks entirely; there the path
    is unavailable by policy, and this step says so instead of leaving the user to debug a hook that
    never fires.
-4. **Probe with a real rename, not a claim.** Once the user confirms the hook is pasted and trusted,
+3. **Probe with a real rename, not a claim.** Once the user confirms the hook is pasted and trusted,
    request the literal probe title `Effective Flow setup check` for the live session through the
    shipped script, exactly as that fragment specifies the call. Say beforehand that this deliberately
    renames the session once — the rename **is** the observable proof — and that the user renames it
@@ -726,7 +731,7 @@ For "No", note that runs keep emitting the suggestion line and continue with Ste
    loaded “Runtime-state write safety” contract from `RUNTIME_STATE_ROOT` to that exact target
    immediately beforehand and run nothing when the guard blocks. Never report a probe that did not
    run.
-5. **Let the hook's own receipt close the loop.** A fresh installation has no receipt yet, so this
+4. **Let the hook's own receipt close the loop.** A fresh installation has no receipt yet, so this
    first call reports the path as undeterminable even where the hook is installed perfectly — say so,
    and do not present it as a failure. The hook consumes the pending request when the turn ends and
    leaves a receipt beside it, so repeat the call in the following turn, which the user's own
@@ -736,6 +741,43 @@ For "No", note that runs keep emitting the suggestion line and continue with Ste
    treating the hook as broken — a title now reading `Effective Flow setup check` proves the hook
    fired whatever the probe concluded. That second call is what turns a printed definition into an
    observed one; never claim a success nobody observed.
+
+#### Claude Code: the butler session the user mandates
+
+1. **Print the marker title and the mandate block from `shared/session-rename.md` verbatim.** Read
+   `<skill-root>/shared/session-rename.md`, resolving `<skill-root>` to the absolute path of the
+   installed skill exactly as the Codex item above resolves it. That fragment owns both: the literal
+   marker title a butler carries, `Effective Flow rename butler`, and the fenced standing-mandate
+   block below it. Print both from that file, character for character — never from memory and never
+   rephrased, so one wording ships everywhere. If the file cannot be read, say so and print nothing
+   rather than reconstructing the text: several of its clauses were put there by a live test, and a
+   remembered paraphrase drops them while looking complete. Never shorten it, never replace it with
+   your own explanation, and never send it to any session yourself: the user pastes it, because a
+   mandate that arrives through the channel it authorizes is not a mandate.
+2. **Say what the user does with them.** They open a second Claude Code session, set that session's
+   title to the marker title exactly, and paste the mandate into it as its first message. Name the
+   two consequences plainly: while a session carries that title it answers rename requests from any
+   session that finds it, so the title is the entire capability and nothing else authenticates it;
+   and a rename costs the butler one model turn, which is why a small, cheap model is the sensible
+   choice for that session.
+3. **Probe with a real rename, not a claim.** Once the user confirms the butler is set up, list the
+   sessions and report what the lookup found before acting on it: no session carrying the marker
+   title, several of them, or exactly one. Only for exactly one, send it this session's own id
+   together with the literal probe title `Effective Flow setup check`, in the request shape the same
+   `<skill-root>/shared/session-rename.md` defines — read it there rather than assembling the message
+   from memory. Say beforehand that this deliberately renames the session once — the rename
+   **is** the observable proof — and that the user renames it back or lets the next run retitle it.
+   This path writes no file at all: the request is a cross-session message, so it creates no runtime
+   target and invokes no write-safety guard. Never report a probe that did not run.
+4. **The reply arrives in the next turn, so close the loop there.** The butler answers as a user turn
+   after this one has ended, so this turn reports only that the request was sent — say so instead of
+   presenting the silence as a failure. In the following turn, which the user's own confirmation
+   already creates, report the reply itself: the title the butler says it observed, verbatim. A
+   reported `Effective Flow setup check` is first-hand evidence that the path works end to end. A
+   different observed title means the host kept a title the user had set, which is the host working
+   as designed rather than a broken setup. No reply at all means the butler is absent, declining, or
+   unattended, and runs will keep printing the suggestion line. Report the concrete outcome and never
+   claim a success nobody observed.
 
 ### Step 8: Summary
 
@@ -767,10 +809,12 @@ Report to the user:
   `language.workflow`, including the visible semantic change and whether the legacy row was removed
 - for a previously existing config: which keys were changed from the old state (before/after)
 - the path of the written project setup ADR and the location of the set `**Effective Flow project setup:**` marker (`AGENTS.md`/`CLAUDE.md`)
-- for the capability step of Step 7: the detected harness, whether a definition was printed, whether
-  the verification ran and with which concrete result, whether a receipt in the following turn
-  confirmed the hook really fired or which reason it reported instead, and that no file above the
-  repository root and no configuration key was changed by it
+- for the capability step of Step 7: the detected harness, which path it followed, whether the hook
+  definition or the marker title and mandate were printed, whether the verification ran and with
+  which concrete result, what the following turn added — on Codex whether a receipt confirmed the
+  hook really fired or which reason it reported instead, on Claude Code whether exactly one butler
+  was found and which title its reply reported — and that no file above the repository root and no
+  configuration key was changed by it
 - in the migration case: identify the exact `<source-handle>` selected by the locator and whether
   both runtime-directory and config migration completed. For a completed migration, report
   whether `<source-path>` was **removed
@@ -790,10 +834,12 @@ with nothing staged matches no row and emits nothing.
   locator selected a transitional config—the runtime targets written by the shared
   runtime-directory migration; no further setup steps like deployment or Git hooks.
 - The capability step of Step 7 **prints**. It writes no file above the repository root, edits no
-  harness configuration, and adds no configuration key. Its probe writes one rename request below
-  `.effective-flow/` through the shipped script under the loaded write-safety contract, and the
-  installed hook leaves its own receipt beside it; both are runtime state, not configuration. The
-  probe renames the current session once, with the user's go-ahead and its own fixed probe title.
+  harness configuration, and adds no configuration key. On the Codex path its probe writes one rename
+  request below `.effective-flow/` through the shipped script under the loaded write-safety contract,
+  and the installed hook leaves its own receipt beside it; both are runtime state, not configuration.
+  The Claude Code path writes no file at all — its request is a cross-session message — so it creates
+  no runtime target and invokes no write-safety guard. Either probe renames the current session once,
+  with the user's go-ahead and its own fixed probe title.
 - Never overwrite existing config values and unknown keys without asking.
 - On an abort during the questions, leave no half-written ADR; write only once at the end.
 - Do not start project validation; linting, tests, and build checks are the job of other skills such as `{{AGENT:code-validator}}`.
