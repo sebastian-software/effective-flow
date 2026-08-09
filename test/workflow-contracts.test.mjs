@@ -173,6 +173,66 @@ test('the session-title contract ships in the router and stays out of the budget
   );
 });
 
+// R1: the router resolves eager includes only, so a lazy `session-rename` pointer must sit in
+// each work-subject tool itself rather than in the router - a router-side pointer would ship
+// nothing. The sixteen tool names are read from the contract's own "Only from work-subject
+// tools" list rather than duplicated here, so a future tool added to that list without its own
+// pointer fails this test instead of silently missing it - the regression the plan calls out.
+test('every work-subject tool carries the session-rename lazy pointer and silent tools carry none', () => {
+  const fragment = source('src/shared/session-title.md');
+
+  const workSubjectSection = fragment.match(
+    /Only from work-subject tools:\*\*([\s\S]*?)\.\s*`version`/,
+  );
+  assert.ok(
+    workSubjectSection,
+    'could not locate the "Only from work-subject tools" list in src/shared/session-title.md',
+  );
+  const workSubjectTools = [...workSubjectSection[1].matchAll(/`([a-z-]+)`/g)].map((m) => m[1]);
+  assert.equal(
+    workSubjectTools.length,
+    16,
+    `expected sixteen work-subject tools, found ${workSubjectTools.length}: ${workSubjectTools.join(', ')}`,
+  );
+
+  const silentSection = fragment.match(/`version`([\s\S]*?)stay silent/);
+  assert.ok(silentSection, 'could not locate the silent-tool list in src/shared/session-title.md');
+  const silentTools = [
+    'version',
+    ...[...silentSection[1].matchAll(/`([a-z-]+)`/g)].map((m) => m[1]),
+  ];
+  assert.deepEqual(
+    silentTools,
+    ['version', 'open-plans', 'setup', 'cleanup', 'commit', 'pr'],
+    'the silent-tool list drifted from the six documented silent tools',
+  );
+
+  const lazyPointer = /```lazy-include\nsession-rename\n/;
+  for (const tool of workSubjectTools) {
+    assert.match(
+      source(`src/tools/${tool}.md`),
+      lazyPointer,
+      `src/tools/${tool}.md must carry the session-rename lazy-include pointer`,
+    );
+  }
+  for (const tool of silentTools) {
+    assert.doesNotMatch(
+      source(`src/tools/${tool}.md`),
+      lazyPointer,
+      `src/tools/${tool}.md must not carry the session-rename lazy-include pointer`,
+    );
+  }
+
+  assert.ok(
+    existsSync(new URL('src/shared/session-rename.md', repositoryRoot)),
+    'src/shared/session-rename.md must exist',
+  );
+  assert.ok(
+    source('src/shared/session-rename.md').trim().length > 0,
+    'src/shared/session-rename.md must not be empty',
+  );
+});
+
 test('plan-issue runs the full quality baseline before its per-issue deep-review gate', () => {
   const planIssue = source('src/tools/plan-issue.md');
 

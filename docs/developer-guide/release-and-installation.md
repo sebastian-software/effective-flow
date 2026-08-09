@@ -220,10 +220,12 @@ out a pull-request head or merge ref. Pull-request text is passed as data throug
 JavaScript context, not interpolated into shell code. Its token permissions are limited to
 reading repository contents and writing issues.
 
-Every target's minimal skill payload includes `scripts/remote-tracker.mjs` and its importable
-core sibling beside the router, tools, and shared resources. Installed skills therefore require
-Node.js 22 or newer at runtime. The scripts have no third-party runtime dependencies; existing
-`gh` or `tea` installations remain the credential and transport boundary.
+Every target's minimal skill payload includes `scripts/remote-tracker.mjs` and
+`scripts/session-title.mjs`, each beside its importable core sibling, next to the router, tools,
+and shared resources. Installed skills therefore require Node.js 22 or newer at runtime. The
+scripts have no third-party runtime dependencies; existing `gh` or `tea` installations remain the
+credential and transport boundary for remote-tracker, and an installed Codex hook is the trust
+boundary for session-title.
 
 ### Documentation separated by audience
 

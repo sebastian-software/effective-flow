@@ -26,17 +26,22 @@ delegation-mandate
 
 ```lazy-include
 runtime-state-safety
-when: any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent
+when: any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent, or a session rename request is about to be written
 ```
 
 ```lazy-include
 effective-flow-dir-migration
-when: any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent
+when: any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent, or a session rename request is about to be written
 ```
 
 ```lazy-include
 project-routing
 when: Phase 1 classifies scoped files into routing buckets
+```
+
+```lazy-include
+session-rename
+when: the run's subject is fixed and a session title is about to be applied or emitted
 ```
 
 ```lazy-include

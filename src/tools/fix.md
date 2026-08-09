@@ -26,12 +26,12 @@ delegation-mandate
 
 ```lazy-include
 runtime-state-safety
-when: any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent
+when: any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent, or a session rename request is about to be written
 ```
 
 ```lazy-include
 effective-flow-dir-migration
-when: any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent
+when: any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent, or a session rename request is about to be written
 ```
 
 ```lazy-include
@@ -42,6 +42,11 @@ when: an affected file or domain must be classified into a routing bucket
 ```lazy-include
 config-migration
 when: the Effective Flow configuration is first read or a legacy config is migrated
+```
+
+```lazy-include
+session-rename
+when: the run's subject is fixed and a session title is about to be applied or emitted
 ```
 
 ```include

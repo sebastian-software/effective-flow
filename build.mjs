@@ -66,7 +66,14 @@ const AGENTS_DIR = join(SOURCE_DIR, 'agents');
 const RUNTIME_SCRIPTS_DIR = join(SOURCE_DIR, 'scripts');
 const ROUTER_SRC = join(SOURCE_DIR, 'SKILL.md');
 const LICENSE_SRC = join(ROOT_DIR, 'LICENSE');
-const RUNTIME_SCRIPT_FILES = ['remote-tracker.mjs', 'remote-tracker-core.mjs'];
+// Allowlist of the dependency-free runtime scripts shipped into every target.
+// A script absent from this list is never copied, whichever subsystem owns it.
+const RUNTIME_SCRIPT_FILES = [
+  'remote-tracker.mjs',
+  'remote-tracker-core.mjs',
+  'session-title.mjs',
+  'session-title-core.mjs',
+];
 
 // Hand-maintained user guide (not generated from src/). A content guard below
 // protects the canonical Plan->Build handoff examples against regression (#107).
@@ -378,20 +385,41 @@ mkdirSync(PORTABLE_WORKERS_DIR, { recursive: true });
   }
 }
 
+// --- Dependency-free runtime guard ---
+// The patterns below are a text scan, not a parser, so their limits are worth
+// stating. They see a static `import`/`export … from '<specifier>'` including a
+// multi-line clause, a side-effect `import '<specifier>'`, and a dynamic
+// `import('<specifier>')`. A static form has to open a statement — file start,
+// newline, `;` or `}` — and the span before the specifier may cross neither a
+// quote nor a parenthesis; that is what keeps prose out of the results, because
+// a comment quoting a phrase after the word "from" never opens a statement.
+// (An unanchored `from\s+['"]…['"]` scan did match such comments, since `\s`
+// crosses newlines.) What the scan does not see: a specifier assembled at
+// runtime (`import(name)`, a template literal) or reached through
+// `createRequire`. A script needing either has to be checked by hand.
+const STATIC_IMPORT_SPECIFIER =
+  /(?:^|[\n;}])\s*(?:import|export)\b[^'";()]*\bfrom\s*['"]([^'"\n]+)['"]/g;
+const SIDE_EFFECT_IMPORT_SPECIFIER = /(?:^|[\n;}])\s*import\s*['"]([^'"\n]+)['"]/g;
+const DYNAMIC_IMPORT_SPECIFIER = /\bimport\s*\(\s*['"]([^'"\n]+)['"]\s*\)/g;
+
 for (const file of RUNTIME_SCRIPT_FILES) {
   const path = join(RUNTIME_SCRIPTS_DIR, file);
   if (!existsSync(path)) {
-    process.stderr.write(`ERROR: remote-tracker runtime source missing: ${path}\n`);
+    process.stderr.write(`ERROR: runtime script source missing: ${path}\n`);
     process.exit(1);
   }
   const source = readFileSync(path, 'utf8');
-  const imports = [...source.matchAll(/from\s+['"]([^'"]+)['"]/g)].map((match) => match[1]);
+  const imports = [
+    ...source.matchAll(STATIC_IMPORT_SPECIFIER),
+    ...source.matchAll(SIDE_EFFECT_IMPORT_SPECIFIER),
+    ...source.matchAll(DYNAMIC_IMPORT_SPECIFIER),
+  ].map((match) => match[1]);
   const thirdParty = imports.filter(
     (specifier) => !specifier.startsWith('node:') && !specifier.startsWith('./'),
   );
   if (thirdParty.length > 0) {
     process.stderr.write(
-      `ERROR: remote-tracker runtime must be dependency-free; ${file} imports ${thirdParty.join(', ')}\n`,
+      `ERROR: runtime scripts must be dependency-free; ${file} imports ${thirdParty.join(', ')}\n`,
     );
     process.exit(1);
   }

@@ -13,7 +13,8 @@ defaults while retaining existing values) or **Guided** (explain and choose each
 
 **When to use:** On the first use of Effective Flow in a project, or later, to adjust individual
 settings (project and surface languages, worktree, completion action, tracker target including an
-external tool, advanced review/apply-review values, skill discovery).
+external tool, advanced review/apply-review values, skill discovery), or to prepare the optional
+session-rename capability described below.
 
 **Typical call:** `/effective-flow setup`
 
@@ -41,6 +42,16 @@ of the complete workflow artifact, propose the new key, and remove the old row o
 confirmation; an existing new key always wins. The values set here
 (`language.*`, `review.*`, `applyReview.*`, `plan.*`, `delivery.*`, `worktree.*`, `tracker.*`,
 `skills.*`) drive the other tools; the complete schema is in [Configuration](configuration.md).
+
+After the configuration write, setup offers an optional session-rename capability step. Where the
+running host can rename its own session, taking it applies a suggested title automatically instead
+of only proposing it; today that means Codex, through a hook the user pastes into their own
+configuration. Declining, or running on a host with no established path, leaves runs printing the
+suggestion line as before. The step declares no configuration key: it only prints what to paste and
+verifies the result against the live session; it never opens, edits, or creates a file above the
+repository root or touches the harness configuration itself. See
+[Getting started](getting-started.md#keeping-sessions-tellable-apart) for the two hosts' current
+self-rename behavior.
 
 `setup` is the only repair path when runtime-state safety blocks a write. It validates the
 repaired ignore and index state before writing any migration marker below `.effective-flow/`;

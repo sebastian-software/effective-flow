@@ -33,7 +33,12 @@ when: an internal sub-agent's result is returned
 
 ```lazy-include
 runtime-state-safety
-when: a legacy runtime directory migration is about to mutate `.effective-flow/`
+when: a legacy runtime directory migration or a session rename request is about to mutate `.effective-flow/`
+```
+
+```lazy-include
+effective-flow-dir-migration
+when: a session rename request is about to be written below the runtime directory
 ```
 
 ```lazy-include
@@ -72,6 +77,11 @@ when: a plan file is created or its date-slug name is resolved
 ```lazy-include
 doc-categories
 when: the requirement is classified as Documentation and a doc category or target path is decided
+```
+
+```lazy-include
+session-rename
+when: the run's subject is fixed and a session title is about to be applied or emitted
 ```
 
 ```lazy-include
