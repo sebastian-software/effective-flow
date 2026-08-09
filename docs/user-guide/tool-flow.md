@@ -61,7 +61,8 @@ only one. Fill every `<...>` placeholder with the run's actual state.
 | `investigate` | missing functionality                               | `/effective-flow build <report>`             | `/effective-flow plan <report>`                 |
 | `investigate` | pure documentation gap or behavior to be documented | `/effective-flow docs <report>`              | —                                               |
 | `plan`        | deep review declined                                | `/effective-flow apply <plan-file>`          | `/effective-flow review <plan-file>`            |
-| `plan`        | deep review done                                    | `/effective-flow apply <plan-file>`          | `/effective-flow plan <plan-file>`              |
+| `plan`        | deep review done, ready                             | `/effective-flow apply <plan-file>`          | `/effective-flow plan <plan-file>`              |
+| `plan`        | deep review done, open points remain                | `/effective-flow review <plan-file>`         | `/effective-flow plan <plan-file>`              |
 | `open-plans`  | at least one open plan                              | `/effective-flow apply`                      | —                                               |
 | `plan-issue`  | released                                            | `/effective-flow apply #<issue>`             | `/effective-flow plan-issue <issue>`            |
 | `plan-issue`  | retained for planning                               | `/effective-flow plan-issue <issue>`         | —                                               |

@@ -49,6 +49,10 @@ The table between the marker comments is a build-validated runtime contract. Kee
 tool names stable. Take the row whose `Tool` is the emitting tool and whose `Condition` describes
 the state this run reached: `Then` is the first option, `Or` the second, and an em dash means the
 row deliberately carries only one. Fill every `<...>` placeholder from the run's actual state.
+`plan | deep review declined` still leads with `apply <plan-file>` where its `concept` counterpart
+offers only `review <concept-file>`, because a declined review leaves no readiness verdict to
+contradict and `apply` re-checks the plan itself — the `apply | plan clarity gate failed` row is the
+backstop for one that carries open points.
 
 <!-- next-steps-table:start -->
 
@@ -62,7 +66,8 @@ row deliberately carries only one. Fill every `<...>` placeholder from the run's
 | investigate | missing functionality                               | {{SKILL:build}} <report>             | {{SKILL:plan}} <report>                 |
 | investigate | pure documentation gap or behavior to be documented | {{SKILL:docs}} <report>              | —                                       |
 | plan        | deep review declined                                | {{SKILL:apply}} <plan-file>          | {{SKILL:review}} <plan-file>            |
-| plan        | deep review done                                    | {{SKILL:apply}} <plan-file>          | {{SKILL:plan}} <plan-file>              |
+| plan        | deep review done, ready                             | {{SKILL:apply}} <plan-file>          | {{SKILL:plan}} <plan-file>              |
+| plan        | deep review done, open points remain                | {{SKILL:review}} <plan-file>         | {{SKILL:plan}} <plan-file>              |
 | open-plans  | at least one open plan                              | {{SKILL:apply}}                      | —                                       |
 | plan-issue  | released                                            | {{SKILL:apply}} #<issue>             | {{SKILL:plan-issue}} <issue>            |
 | plan-issue  | retained for planning                               | {{SKILL:plan-issue}} <issue>         | —                                       |

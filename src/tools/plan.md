@@ -444,7 +444,9 @@ On `No`: Continue with Phase 7; the next-step block of that phase carries the re
    - the scorecard result
    - a note that no code changes were made
    - on a revision run: that the existing file was revised in place, plus every confirmed header change
-4. Emit the next-step block per `next-steps` as the last element of the report.
+4. Emit the next-step block per `next-steps` as the last element of the report. A deep review that
+   returned `Revision required` or a nonzero blocking open-point count takes the open-points row,
+   not the ready one — implementation comes after those points are closed.
 
 ## Rules
 
