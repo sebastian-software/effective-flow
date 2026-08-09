@@ -210,6 +210,18 @@ The build aborts with an error message if any of these guards is violated:
   `test/build-lib.test.mjs`. The core fragment deliberately opens at heading level four: it is
   always embedded inside a consuming tool's `###` phase heading, so an `##` heading would make the
   following phases read as its subsections.
+- **Next-steps contract guard:** The pure `parseNextStepsTable`/`assertNextStepsContract` pair
+  validates the marker-delimited edge table in `src/shared/next-steps.md`: exactly one start and
+  end marker, the fixed `Tool | Condition | Then | Or` headers, a valid separator row, at most two
+  edges per row, every edge cell a resolvable `{{SKILL:X}}` reference, and two-way coverage
+  between the table's `Tool` column and the derived emitting-tool set
+  (`count(src/tools/*.md) − |exemptions|`). The per-file fence check in `readSource` enforces the
+  other half: a non-exempt `src/tools/*.md` lazily includes `next-steps` exactly once, an exempt
+  one zero times. `findNextStepsDocViolations` then reconciles the same parsed edges against the
+  table in `docs/user-guide/tool-flow.md`, row by row and column by column, after normalizing each
+  side (`{{SKILL:X}}` resolved to its rendered Claude form, surrounding backticks stripped, `—`
+  read as empty, cells trimmed) — so the shipped documentation page can never silently drift from
+  the runtime contract it mirrors.
 - **Context-budget guard (#99):** The always-loaded core of the largest tools (`build`, `fix`,
   `docs`, `review`, `plan`) – the built tool file without the lazy fragments – stays under
   **700 lines**. The build prints the measured sizes as a report and aborts if a tool exceeds

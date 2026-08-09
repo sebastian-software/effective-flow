@@ -153,7 +153,9 @@ followed by `$effective-flow build docs/plan/2026-07-17-user-login.md`.
 Details on worktree, delivery branch, and the three completion types are in
 [Worktree and delivery](worktree-and-delivery.md); the complete tool reference for
 `plan`, `build`, and `pr` in [Understand the tools](tools-understand.md),
-[Implement the tools](tools-implement.md), and [Deliver the tools](tools-deliver.md).
+[Implement the tools](tools-implement.md), and [Deliver the tools](tools-deliver.md). Each
+completed run also closes with up to two ready-to-paste follow-up invocations for exactly this
+state — see [Tool flow](tool-flow.md) for the full map.
 
 ## Short recipes
 

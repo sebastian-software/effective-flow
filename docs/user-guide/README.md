@@ -20,6 +20,8 @@ New to Effective Flow? Read in this order:
    - [Deliver changes](tools-deliver.md) – `commit`, `pr`, `merge-gate`.
    - [Set up & info](tools-setup.md) – `setup`, `cleanup`, `version`.
 3. In-depth guides:
+   - [Tool flow](tool-flow.md) – how a completed run recommends its own next step, and every
+     tool's possible follow-ups in one table.
    - [Configuration](configuration.md) – the complete project-setup ADR reference.
    - [Worktree and delivery](worktree-and-delivery.md) – parallel work in
      Git worktrees, delivery branch, pull request/merge/branch completion.
@@ -37,6 +39,7 @@ New to Effective Flow? Read in this order:
 | Document                                             | Content                                               |
 | ---------------------------------------------------- | ----------------------------------------------------- |
 | [getting-started.md](getting-started.md)             | Installation, first invocation, typical flow, recipes |
+| [tool-flow.md](tool-flow.md)                         | Next-step recommendations after a completed run       |
 | [tools-understand.md](tools-understand.md)           | Tool reference: analysis & planning                   |
 | [tools-implement.md](tools-implement.md)             | Tool reference: implementation                        |
 | [tools-quality.md](tools-quality.md)                 | Tool reference: review                                |

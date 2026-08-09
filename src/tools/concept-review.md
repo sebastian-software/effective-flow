@@ -182,9 +182,9 @@ or when the next decision needs information that is not currently available.
    no critical finding and no blocking open point remains, and set the review result to
    `Approved`/`Freigegeben`. Otherwise the status stays `Draft`/`Entwurf` and the result is
    `Revision required`/`Überarbeitung nötig`.
-2. Report the concept path, the number of blocking open points, the re-entry
-   `{{SKILL:review}} <concept-file>`, and the first recommended `{{SKILL:plan}}` handoff from the
-   roadmap.
+2. Return the concept path, the number of blocking open points, and the first work package of the
+   roadmap to the caller, which closes the run with its own next-step block. Name no re-entry
+   invocation here.
 
 ## Rules
 

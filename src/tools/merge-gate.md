@@ -55,6 +55,11 @@ effective-flow-dir-migration
 when: any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent
 ```
 
+```lazy-include
+next-steps
+when: the run reaches its completion report
+```
+
 ```include
 config-migration
 ```
@@ -178,6 +183,12 @@ Every delegation goes to `{{SKILL:iterate}} <PR>` and carries:
   therefore activate the guard against the very work the round just completed, and up to
   `mergeGate.maxRounds` such comments per run were noise on the pull request besides. Nothing is
   lost: `{{SKILL:iterate}}` hands that content back and Phase 6 reports it in chat;
+- the **next-step suppression**, on its own line, in the exact literal form `Next steps: suppressed`.
+  This is mandatory in every delegation from this gate. A delegated round is an intermediate result
+  inside this run, and only Phase 6 knows whether the gate ended merged, blocked, or out of rounds,
+  so a per-round recommendation would name a step the run has not reached. `{{SKILL:iterate}}` reads
+  a malformed line as suppression rather than aborting, so a typo costs nothing here; only an
+  **omitted** line costs one duplicated chat block;
 - the **review-guard exemption**, on its own line, in the exact literal form
   `Review guard: established`. This is mandatory in **every** delegation from this gate, and the two
   kinds of delegation earn it differently – the mandatory rule is not one precondition applied twice:
@@ -793,6 +804,10 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
      and nothing is written into those threads, so this summary is where that report reaches the
      user;
    - the merge result, or the precise blocking condition.
+3. Emit the next-step block per `next-steps` as the last element of that chat report. It stays chat
+   only: nothing of it is written onto the pull request. Omit it after a successful merge when
+   `<plan.dir>/` holds no open plan — the merged row's only edge is `{{SKILL:open-plans}}`, which
+   would then have nothing to list.
 
 ## Edge cases
 
@@ -929,8 +944,9 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   write, and suppressing the delegated run's summary comment keeps it the only item a gate-initiated
   run can leave on the pull request – at most one, since a bot observed as **running** gets no
   trigger at all.
-- Announce `Summary comment: suppressed` and `Review guard: established` in every delegation, each on
-  its own line and in exactly that literal form, and never delegate without either of them.
+- Announce `Summary comment: suppressed`, `Review guard: established`, and `Next steps: suppressed`
+  in every delegation, each on its own line and in exactly that literal form, and never delegate
+  without any of them.
 - Take every bot's state from the loaded "Automatic reviewer state" and never treat an unprovable
   state as **has run**; an unprovable precondition blocks the merge. Trigger only a bot that has
   **not started**, never one that is **running** – a mention aimed at a reviewer already working

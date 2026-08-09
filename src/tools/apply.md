@@ -40,6 +40,11 @@ effective-flow-dir-migration
 when: a remote tracker access is about to perform its first runtime-state mutation
 ```
 
+```lazy-include
+next-steps
+when: the run reaches its completion report
+```
+
 ```include
 config-migration
 ```
@@ -111,9 +116,15 @@ when: the resolved tracker target is `external`
 3. Pass as context that `{{SKILL:apply}}` has already classified the source, including
    the detected source type and the resolved tracker target. After that, the entire
    responsibility lies with the target skill.
-4. The target skill checks the basis itself against the "clarification gate" before it
+4. Every one of those three delegations carries the literal line `Next steps: suppressed` on its
+   own line: the target skill emits no block of its own, and this run closes the report if control
+   returns here.
+5. The target skill checks the basis itself against the "clarification gate" before it
    implements. `{{SKILL:apply}}` itself does not run this check and implements
    nothing.
+6. When control returns here, emit the next-step block per `next-steps` as the last element of the
+   report, taking the row for the end state the delegation reported — the failed plan clarity gate,
+   the applied findings, or the processed issues, each with or without a pull request.
 
 ## Rules
 

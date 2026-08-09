@@ -71,7 +71,7 @@ plan-reference-routing
 ```
 
 5. If no target workflow can be unambiguously determined: ask the user for the target workflow and name the four allowed options.
-6. Additionally check the plan against the "clarification gate": only a fully clarified plan counts as a basis for implementation. If the plan does not pass the gate, per gate behavior point to `{{SKILL:plan}}` or `{{SKILL:review}} <planfile>` and end the skill instead of delegating.
+6. Additionally check the plan against the "clarification gate": only a fully clarified plan counts as a basis for implementation. If the plan does not pass the gate, end the skill instead of delegating and **return** that outcome together with the resolved plan path to `{{SKILL:apply}}`, which closes the run with its own next-step block. Do not name a follow-up invocation to the user here.
 
 ### Phase 2: Handoff to the target workflow
 
@@ -86,6 +86,11 @@ plan-reference-routing
    - `{{SKILL:fix}} <plan.dir>/YYYY-MM-DD-<slug>.md`
    - `{{SKILL:refactor}} <plan.dir>/YYYY-MM-DD-<slug>.md`
    - `{{SKILL:docs}} <plan.dir>/YYYY-MM-DD-<slug>.md`
+
+   This handoff deliberately carries **no** `Next steps: suppressed` line: it gives the receiving
+   workflow the rest of the run, so that workflow is the one that finishes in front of the user and
+   emits its own next-step block.
+
 4. Pass as context:
    - that `{{SKILL:apply-plan}}` has already checked the plan status, the workflow recommendation and the clarification gate
    - the full plan path

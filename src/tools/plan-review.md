@@ -255,9 +255,10 @@ The loop ends when one of these states is reached:
 
 Return an artifact-specific result:
 
-- **File mode, open points remain:** report the plan path, number of blocking open points, and
-  re-entry via `{{SKILL:review}} <plan-file>`.
-- **File mode, ready:** report the plan path and that it is ready for its recommended workflow.
+- **File mode, open points remain:** return the plan path and the number of blocking open points to
+  the caller, which closes the run with its own next-step block. Name no re-entry invocation here.
+- **File mode, ready:** return the plan path and that it is ready for its recommended workflow, on
+  the same terms.
 - **Issue mode:** return to `plan-issue` the issue reference, canonical comment ID, latest body and
   hash, review result, blocking-open-point count, and persistence status. If review is incomplete
   or blocked, name re-entry via `{{SKILL:plan-issue}} <issue>`; never suggest the public `review`

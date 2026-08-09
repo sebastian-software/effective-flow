@@ -31,6 +31,11 @@ when: setup has repaired and validated the runtime ignore state and is about to 
 ```
 
 ```lazy-include
+next-steps
+when: the run reaches its completion report
+```
+
+```lazy-include
 effective-flow-dir-migration
 when: the config locator selected a transitional JSON source and setup has repaired and validated the runtime ignore/index state before the config-migration marker
 ```
@@ -701,6 +706,10 @@ Report to the user:
   Never name the unselected fallback as processed. State that no commit was created and that the
   user handles any cleanup themselves
 
+Then emit the next-step block per `next-steps` as the last element of the report, but only when this
+run left staged changes behind — which happens solely in the `git rm --cached` migration case. A run
+with nothing staged matches no row and emits nothing.
+
 ## Rules
 
 - Change only `.gitignore` (the `.effective-flow/` line or its migration), the project setup ADR,
@@ -710,5 +719,5 @@ Report to the user:
 - Never overwrite existing config values and unknown keys without asking.
 - On an abort during the questions, leave no half-written ADR; write only once at the end.
 - Do not start project validation; linting, tests, and build checks are the job of other skills such as `{{AGENT:code-validator}}`.
-- Do not create commits; committing is done by the user or `{{SKILL:commit}}`. Untracking an old `config.json` only stages an index change (`git rm --cached`) without committing.
+- Do not create commits. Untracking an old `config.json` only stages an index change (`git rm --cached`) without committing; Step 7's next-step block names who commits it.
 - Do not process or store any secrets; the configuration contains only behavior defaults.
