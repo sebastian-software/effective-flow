@@ -287,9 +287,11 @@ into an I/O boundary and a pure, unit-testable core:
 <request|apply>` with one JSON object on standard input and one JSON envelope on standard
   output, mirroring the remote-tracker shape. `request` runs inside the Codex sandbox and only
   records a pending rename; `apply` runs from a `Stop` hook outside the sandbox and performs the
-  app-server RPC. See
-  [`src/shared/session-rename.md`](../../src/shared/session-rename.md) for the request-file
-  contract and degradation rules.
+  app-server RPC. This script serves the Codex path only; see the "Codex: request inside the
+  sandbox, apply from a hook" section of
+  [`src/shared/session-rename.md`](../../src/shared/session-rename.md) for its request-file
+  contract and degradation rules. The Claude Code rename-butler path documented alongside it is
+  prose-only and invokes no script.
 
 Unit tests exercise parsing, payloads, provider plans, redaction, capabilities, compatibility,
 and stale writes with fake runners and fixtures. Forgejo capabilities are derived once per run

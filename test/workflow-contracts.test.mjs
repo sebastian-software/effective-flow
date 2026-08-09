@@ -71,6 +71,16 @@ function flat(text) {
   return text.replace(/\s+/g, ' ');
 }
 
+// Prose pins run against this. `oxfmt` reflows Markdown, so a newline sits
+// wherever it decides a line ends, and emphasis around a word is an editorial
+// choice rather than a contract. Collapsing whitespace and dropping emphasis
+// markers keeps a pin on the wording instead of on the layout - the earlier
+// `fails **open**` pin forced a source author to rewrap a sentence by hand
+// purely to keep two words on one line.
+function prose(text) {
+  return flat(text).replace(/\*+/g, '');
+}
+
 // Two contract tokens inside one bounded window, in either order. Used where the contract is
 // that the two belong together — a rule and its rationale, an exclusion and the marker it
 // names — but not which of them an editor puts first. A reworded paragraph therefore stays
@@ -151,10 +161,29 @@ test('the session-title contract ships in the router and stays out of the budget
 
   // Load-bearing clauses: a host gate that never touches the running session, a
   // single emission, and a subject-first title.
-  assert.match(fragment, /Never call such a tool for the current session/);
-  assert.match(fragment, /apply the title silently instead of proposing it/);
-  assert.match(fragment, /a delegate never repeats a subject its parent already proposed/);
-  assert.match(fragment, /at most 60 characters/);
+  const contract = prose(fragment);
+  assert.match(contract, /Never call such a tool for the current session/);
+  assert.match(contract, /apply the title silently instead of proposing it/);
+  // Shares its source line with the first assertion above ("... they exclude
+  // it, never retitle another session, and never probe speculatively"), which
+  // is exactly why the session-rename-butler carve-out edit is the likeliest
+  // thing to break it: a hand-edit narrowing the requester-side ban can lose
+  // this clause without touching a line number a diff-only reviewer expects.
+  assert.match(contract, /never retitle another session/);
+  assert.match(contract, /a delegate never repeats a subject its parent already proposed/);
+  assert.match(contract, /at most 60 characters/);
+
+  // V6: the butler carve-out is what makes an unmandated session refuse. An
+  // unmandated session declines a cross-session rename request on two grounds,
+  // one of them this very contract - so without this clause every butler on
+  // every harness declines too, while the ADR, the mechanism fragment and each
+  // assertion above survive untouched. Pinned on the rendered router because
+  // that is the copy which actually ships to every user, which also proves the
+  // clause survives eager-include rendering.
+  assert.match(
+    prose(renderedRouter),
+    near('own user.s standing rename mandate', 'rename request for the session that asked', 400),
+  );
   for (const silent of ['version', 'open-plans', 'setup', 'cleanup', 'commit', 'pr']) {
     assert.match(
       fragment,
@@ -231,6 +260,148 @@ test('every work-subject tool carries the session-rename lazy pointer and silent
     source('src/shared/session-rename.md').trim().length > 0,
     'src/shared/session-rename.md must not be empty',
   );
+});
+
+// Regression: the fragment used to open with a Codex-exclusive early exit -
+// "Codex is the only host with an established path today. On any other host,
+// emit the suggestion line and read no further" - which made the Claude Code
+// section below it dead prose: a Claude run would stop reading before ever
+// reaching it, yet a naive "contains Claude Code" assertion stayed green
+// throughout. This pins the ordering that actually matters instead: both
+// host names must appear before the exit clause, and the old Codex-exclusive
+// framing must be gone entirely.
+test('session-rename opens with a host dispatch that keeps Claude Code reachable', () => {
+  const fragment = source('src/shared/session-rename.md');
+  const dispatch = section(fragment, '## Session rename');
+
+  assert.doesNotMatch(fragment, /Codex is the only host/);
+  ordered(fragment, 'Codex', 'Claude Code', 'read no further');
+
+  // The ordering above fails against the old early exit, but on its own it is
+  // satisfied by any mention of Claude Code - including a clause excluding it -
+  // and it ties the third-host exit to nothing. The dispatch is a table, so
+  // assert its structure: all three hosts are routed, and the exit belongs to
+  // the row that may take it rather than sitting anywhere in the file.
+  const hosts = firstColumnCells(dispatch);
+  for (const host of ['Codex', 'Claude Code', 'any other host']) {
+    assert.ok(hosts.includes(host), `the host dispatch table must route ${host}`);
+  }
+  assert.match(tableRow(dispatch, 'any other host'), /read no further/);
+});
+
+test('the Claude Code butler section carries its load-bearing clauses', () => {
+  const fragment = source('src/shared/session-rename.md');
+  const claudeSection = section(fragment, '### Claude Code: a mandated butler renames on request');
+
+  // The pasteable mandate block: `{{SKILL:setup}}` prints this fenced block
+  // verbatim for the user to paste, so losing the fence or the standing-mandate
+  // opener would silently ship a broken paste target. The info string is a
+  // cosmetic choice and deliberately not pinned.
+  const mandateBlock = claudeSection.match(
+    /```[a-z]*\n(Standing mandate for this session[\s\S]*?)\n```/,
+  );
+  assert.ok(mandateBlock, 'missing the fenced standing-mandate block');
+  // Every clause below is pinned inside that block rather than in the
+  // maintainer-facing rationale bullets above it. Only the block reaches a
+  // butler, and shortening a block that `setup` prints verbatim to a user is
+  // the likelier edit of the two - a bullet-only pin stays green through
+  // exactly the regression these assertions exist to catch.
+  const mandate = prose(mandateBlock[1]);
+
+  // V16: a butler asked to rename the session that had just messaged it
+  // refused, believing the target was itself. The mandate answers that
+  // categorically - the id to rename and the id that messaged are the same id
+  // on every ordinary request - and without it the path fails on every run
+  // while looking like correct caution, the hardest failure to diagnose.
+  assert.match(mandate, near('are the same id, always', 'target is therefore never you', 600));
+
+  // V15: the butler reports what it read, it never judges it. The observed
+  // value is the only thing that separates an applied rename from a title the
+  // host kept, and a live butler wrote a verdict in its own chat while
+  // correctly replying with the value - so this rule carries the contract, not
+  // the butler's disposition. The three example words beside it in the source
+  // are illustration and stay unpinned, as does their punctuation.
+  assert.match(mandate, /report the value, never a verdict/i);
+
+  // The marker title is the entire discovery mechanism, and `setup.md` names
+  // the same literal (see the sibling assertion on that file below). Scoped to
+  // the discovery rule because the literal also opens the mandate block, which
+  // would keep a drifted discovery rule green.
+  const discovery = section(
+    fragment,
+    '#### Discovery is the marker title, and nothing else',
+    '\n#### ',
+  );
+  assert.match(prose(discovery), /Effective Flow rename butler/);
+
+  const butlerDegradation = section(fragment, '#### Degradation on the butler path', '\n#### ');
+
+  // Every reply defect - absent, stale, malformed, refused - must fail open to
+  // the suggestion line; none of them may produce silence.
+  assert.match(prose(butlerDegradation), near('fails open', 'may produce silence', 300));
+
+  // The single row that contradicts the fail-open rule above, and therefore the
+  // one a later reader is likeliest to "fix" into printing a suggestion line
+  // for consistency: a title differing from the one the request carried is one
+  // this session's own user chose, where neither a rename nor a notice is
+  // wanted. The live tests exist to justify exactly this row.
+  assert.match(
+    tableRow(
+      butlerDegradation,
+      'bare title reported, differing from the title that earlier request carried',
+    ),
+    /emit nothing/,
+  );
+});
+
+// setup.md must name the same literal marker title the fragment defines, so a
+// butler set up per the instructions is actually discoverable - and must reach
+// the mandate itself by reference. A hand-copied mandate ships a second wording
+// that drifts from the fragment's while every other assertion here stays green.
+test('setup names the fragment-owned marker title and takes the mandate by reference', () => {
+  const setup = prose(source('src/tools/setup.md'));
+  assert.match(setup, /Effective Flow rename butler/);
+  assert.match(setup, /shared\/session-rename\.md/);
+  assert.doesNotMatch(setup, /Standing mandate for this session/);
+});
+
+test('the session-rename-butler ADR exists and is marked Active', () => {
+  assert.ok(
+    existsSync(new URL('docs/adr/session-rename-butler.md', repositoryRoot)),
+    'docs/adr/session-rename-butler.md must exist',
+  );
+  const adr = source('docs/adr/session-rename-butler.md');
+  assert.ok(adr.trim().length > 0, 'docs/adr/session-rename-butler.md must not be empty');
+  // The Status block itself, not the word somewhere below the heading: an
+  // ordered-fragment pin stays green for a superseded ADR whose Consequences
+  // prose happens to contain "Active".
+  assert.match(adr, /^## Status$\s+^Active$/m);
+});
+
+// The plan's "ships into all three dist/{claude,codex,portable}/…/shared/"
+// criterion is owned elsewhere by design: the lazy-include guard (#99) in
+// build.mjs throws when a referenced fragment is missing from a shipped skill
+// directory, and `pnpm test:distribution` checks the built output. Neither half
+// belongs here - `pnpm test` runs before `node build.mjs`, and a clean checkout
+// has no dist/ to read. What this owns is the build's own precondition, for
+// every fragment rather than for one: a lazy name a tool references must have a
+// source for the build to ship and for the guard to then cover.
+test('every lazy-include fragment referenced by a tool has a source in src/shared', () => {
+  const toolFiles = readdirSync(new URL('src/tools/', repositoryRoot)).filter((entry) =>
+    entry.endsWith('.md'),
+  );
+  const lazyNames = new Set();
+  for (const file of toolFiles) {
+    const { lazy } = collectIncludeNames(source(`src/tools/${file}`));
+    for (const name of lazy) lazyNames.add(name);
+  }
+  assert.ok(lazyNames.size > 0, 'no lazy-include names were collected from src/tools');
+  for (const name of lazyNames) {
+    assert.ok(
+      existsSync(new URL(`src/shared/${name}.md`, repositoryRoot)),
+      `src/tools references the lazy include ${name}, but src/shared/${name}.md does not exist`,
+    );
+  }
 });
 
 test('plan-issue runs the full quality baseline before its per-issue deep-review gate', () => {

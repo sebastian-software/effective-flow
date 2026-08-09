@@ -44,12 +44,15 @@ confirmation; an existing new key always wins. The values set here
 `skills.*`) drive the other tools; the complete schema is in [Configuration](configuration.md).
 
 After the configuration write, setup offers an optional session-rename capability step. Where the
-running host can rename its own session, taking it applies a suggested title automatically instead
-of only proposing it; today that means Codex, through a hook the user pastes into their own
-configuration. Declining, or running on a host with no established path, leaves runs printing the
-suggestion line as before. The step declares no configuration key: it only prints what to paste and
-verifies the result against the live session; it never opens, edits, or creates a file above the
-repository root or touches the harness configuration itself. See
+running host has an established self-rename path, taking it applies a suggested title
+automatically instead of only proposing it. On Codex that path is a `Stop` hook the user pastes
+into their own Codex configuration, gated by a one-time trust review. On Claude Code it is a
+second session titled `Effective Flow rename butler`, carrying a pasted standing mandate, that the
+user sets up once. Declining, or running on a host with no established path, leaves runs printing
+the suggestion line as before. The step declares no configuration key: it only prints what to
+paste and verifies the result against the live session – on the Claude Code path, that
+verification sends one message to the user's own butler session – and it never opens, edits, or
+creates a file above the repository root or touches the harness configuration itself. See
 [Getting started](getting-started.md#keeping-sessions-tellable-apart) for the two hosts' current
 self-rename behavior.
 
