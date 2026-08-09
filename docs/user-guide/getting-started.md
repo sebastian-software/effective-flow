@@ -121,8 +121,16 @@ says nothing once several runs are open at the same time. Two things help:
 - **Take the suggestion.** As soon as a run knows its real subject – the plan title, the issue
   title, the review scope – it proposes one line such as
   `**Suggested session title:** Harden test-server configuration · plan`. Apply it with your
-  host's own rename function: no host currently lets a running session rename itself, so Effective
-  Flow suggests rather than sets. On hosts without titled sessions, nothing is printed.
+  host's own rename function. The two supported hosts differ here: Codex exposes a first-party
+  rename call that a run can reach through a hook running outside the model sandbox, while Claude
+  Code Desktop refuses a self-rename outright – its session-management tool rejects the calling
+  session by design. Effective Flow today still suggests rather than sets; the mechanism that
+  would let a run apply its own suggestion is being introduced separately. On hosts without titled
+  sessions, nothing is printed.
+
+  One consequence is easy to miss: once you rename a session by hand, the host marks that title as
+  user-set, and every later automatic suggestion is silently discarded from then on – a session you
+  renamed once by hand keeps its title.
 
 ## The typical flow: Plan → Build → Pull Request
 

@@ -27,7 +27,7 @@ task-tracking
 
 ```lazy-include
 runtime-state-safety
-when: setup has repaired and validated the runtime ignore state and is about to write a runtime marker
+when: setup has repaired and validated the runtime ignore state and is about to write a runtime marker or a capability probe below `.effective-flow/`
 ```
 
 ```lazy-include
@@ -663,7 +663,76 @@ This skill is the **only** writer of the configuration. A `{{SKILL:merge-gate}}`
 `{{SKILL:iterate}}` run that resolves a value through the legacy namespace reports that once and
 points here; it never rewrites the ADR itself.
 
-### Step 7: Summary
+### Step 7: Session rename capability (optional)
+
+Hosts derive a session title from the first message, so a run is listed under a name that predates
+its subject. Where the running host can rename its own session, Effective Flow applies the better
+title itself instead of suggesting it; where it cannot, every run keeps printing a suggestion the
+user applies by hand. That capability needs a one-time, per-user setup, and this step prepares it.
+
+This step is **not** part of the configuration. It declares no key, belongs to none of the Step 5
+blocks, and adds nothing to the Step 6 write. It **prints**: it never opens, edits, or creates a
+file above the repository root, and it never touches the user's harness configuration. What the user
+pastes, and whether they paste it at all, stays their decision. It has exactly one announced side
+effect outside this repository: with the user's go-ahead, the probe in item 4 renames the current
+session once, because a rename nobody can see proves nothing.
+
+```ask
+when: the configuration write completed and the run may prepare the host's self-rename capability
+header: Self-rename
+question: Should setup check whether this harness can rename its own session and print what that needs?
+options:
+  - label: Yes
+    description: Detect the harness, print the definition to paste, and prove it once by renaming this session
+  - label: No
+    description: Skip it — runs keep printing a suggested title instead of applying it
+```
+
+For "No", note that runs keep emitting the suggestion line and continue with Step 8. For "Yes":
+
+1. **Detect the harness** from the running environment. Codex is the only harness with an
+   established rename path today. On any other harness, say plainly that no path is established,
+   that runs therefore keep suggesting a title, and end this step. Never invent a mechanism, and
+   never probe a harness for one.
+2. **Print the definition block from `shared/session-rename.md` verbatim.** That fragment carries the
+   complete `Stop` handler in both spellings; print the one the user prefers, or both, and replace
+   `<skill-root>` with the absolute path of the installed skill first, because a hook resolves no
+   placeholder. Name the file to paste it into — `~/.codex/hooks.json` or `~/.codex/config.toml`, or
+   the repository-local counterpart — and say that every matching layer loads, so an existing hook
+   file gains the `Stop` entry rather than being replaced. Do not open or write either file here.
+3. **State the trust gate before the user pastes.** This is the step whose omission turns the hook
+   into a permanent silent no-op, so state it plainly: a pasted hook does **not** run until it has
+   been reviewed and trusted once, in whichever Codex client the user runs, and any later edit of
+   the hook text marks it changed and skips it again until it is reviewed a second time. Name the
+   route for the detected client rather than one route for everybody: in the CLI the `/hooks`
+   command lists the sources and performs the review; the desktop app records hook trust through its
+   own interface instead, so direct the user there and do not send them to a slash command their
+   client may not have. Where the client is unclear, say only that the review happens once inside
+   the client and that an edit re-gates it. An installation that permits managed hooks only
+   (`allow_managed_hooks_only`) suppresses user, project and plugin hooks entirely; there the path
+   is unavailable by policy, and this step says so instead of leaving the user to debug a hook that
+   never fires.
+4. **Probe with a real rename, not a claim.** Once the user confirms the hook is pasted and trusted,
+   request the literal probe title `Effective Flow setup check` for the live session through the
+   shipped script, exactly as that fragment specifies the call. Say beforehand that this deliberately
+   renames the session once — the rename **is** the observable proof — and that the user renames it
+   back or lets the next run retitle it. Report the concrete envelope, or its exact structured error.
+   The probe writes one rename request below `.effective-flow/` through the script, so apply the
+   loaded “Runtime-state write safety” contract from `RUNTIME_STATE_ROOT` to that exact target
+   immediately beforehand and run nothing when the guard blocks. Never report a probe that did not
+   run.
+5. **Let the hook's own receipt close the loop.** A fresh installation has no receipt yet, so this
+   first call reports the path as undeterminable even where the hook is installed perfectly — say so,
+   and do not present it as a failure. The hook consumes the pending request when the turn ends and
+   leaves a receipt beside it, so repeat the call in the following turn, which the user's own
+   confirmation already creates. A receipt observed there is first-hand evidence that the hook really
+   fired: report its observed timestamp and that the path is live. If the path is still not live,
+   report the concrete reason the script returned and have the user check the session title before
+   treating the hook as broken — a title now reading `Effective Flow setup check` proves the hook
+   fired whatever the probe concluded. That second call is what turns a printed definition into an
+   observed one; never claim a success nobody observed.
+
+### Step 8: Summary
 
 Report to the user:
 
@@ -693,6 +762,10 @@ Report to the user:
   `language.workflow`, including the visible semantic change and whether the legacy row was removed
 - for a previously existing config: which keys were changed from the old state (before/after)
 - the path of the written project setup ADR and the location of the set `**Effective Flow project setup:**` marker (`AGENTS.md`/`CLAUDE.md`)
+- for the capability step of Step 7: the detected harness, whether a definition was printed, whether
+  the verification ran and with which concrete result, whether a receipt in the following turn
+  confirmed the hook really fired or which reason it reported instead, and that no file above the
+  repository root and no configuration key was changed by it
 - in the migration case: identify the exact `<source-handle>` selected by the locator and whether
   both runtime-directory and config migration completed. For a completed migration, report
   whether `<source-path>` was **removed
@@ -707,6 +780,11 @@ Report to the user:
   the `**Effective Flow project setup:**` marker in `AGENTS.md`/`CLAUDE.md`, and—only when the
   locator selected a transitional config—the runtime targets written by the shared
   runtime-directory migration; no further setup steps like deployment or Git hooks.
+- The capability step of Step 7 **prints**. It writes no file above the repository root, edits no
+  harness configuration, and adds no configuration key. Its probe writes one rename request below
+  `.effective-flow/` through the shipped script under the loaded write-safety contract, and the
+  installed hook leaves its own receipt beside it; both are runtime state, not configuration. The
+  probe renames the current session once, with the user's go-ahead and its own fixed probe title.
 - Never overwrite existing config values and unknown keys without asking.
 - On an abort during the questions, leave no half-written ADR; write only once at the end.
 - Do not start project validation; linting, tests, and build checks are the job of other skills such as `{{AGENT:code-validator}}`.

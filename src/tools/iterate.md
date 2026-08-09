@@ -42,12 +42,17 @@ delegation-mandate
 
 ```lazy-include
 runtime-state-safety
-when: any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent
+when: any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent, or a session rename request is about to be written
 ```
 
 ```lazy-include
 effective-flow-dir-migration
-when: any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent
+when: any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent, or a session rename request is about to be written
+```
+
+```lazy-include
+session-rename
+when: the run's subject is fixed and a session title is about to be applied or emitted
 ```
 
 ```include

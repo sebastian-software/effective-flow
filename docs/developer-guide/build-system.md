@@ -151,11 +151,16 @@ The build aborts with an error message if any of these guards is violated:
   | `yield_time_ms`       | Codex         |
   | `sandbox_permissions` | Codex         |
 
-- **Remote-tracker guards (#169):** `src/scripts/remote-tracker.mjs` and its importable core
-  must exist, import only Node.js built-ins or local siblings, and be copied byte-for-byte to
-  native Claude, native Codex, and portable `scripts/` directories. Runtime prompts are scanned
-  with the unit-tested `findRemoteTrackerRecipeViolations` detector so direct `gh`/`tea`
-  recipes, manual origin parsing, GraphQL assembly, and runtime flag discovery cannot return.
+- **Dependency-free runtime guard (#169):** every script named in the `RUNTIME_SCRIPT_FILES`
+  allowlist must exist, import only Node.js built-ins or local siblings, and be copied
+  byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
+  recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
+  `import()`, each anchored to the start of a statement so prose in a comment cannot be
+  misread as one. Two script pairs carry this today: `remote-tracker.mjs`/
+  `remote-tracker-core.mjs` and `session-title.mjs`/`session-title-core.mjs`. Remote-tracker's
+  runtime prompts are additionally scanned with the unit-tested
+  `findRemoteTrackerRecipeViolations` detector so direct `gh`/`tea` recipes, manual origin
+  parsing, GraphQL assembly, and runtime flag discovery cannot return.
 
 - **Retired consumer-config guard (#166):** The hand-maintained root `README.md` and every
   Markdown file under `docs/user-guide/` are scanned for the retired
@@ -258,12 +263,21 @@ Short version (canonical in [`AGENTS.md`](../../AGENTS.md), section "Adding a to
 
 ## Runtime scripts
 
-The remote-tracker adapter is the only consumer runtime code in the skill payload. Invoke it as
-`node <skill-root>/scripts/remote-tracker.mjs <operation> [--apply]` with one JSON object on
-standard input. It emits one stable JSON envelope on standard output and uses nonzero exit codes
-for structured failures. Mutations are dry runs unless `--apply` is present. The core module is
-pure except for an injected process runner; provider CLIs are always executed as an executable
-plus argument array, never through a shell.
+Two dependency-free script pairs ship as consumer runtime code in the skill payload, each split
+into an I/O boundary and a pure, unit-testable core:
+
+- **Remote-tracker.** Invoke it as `node <skill-root>/scripts/remote-tracker.mjs <operation>
+[--apply]` with one JSON object on standard input. It emits one stable JSON envelope on
+  standard output and uses nonzero exit codes for structured failures. Mutations are dry runs
+  unless `--apply` is present. The core module is pure except for an injected process runner;
+  provider CLIs are always executed as an executable plus argument array, never through a shell.
+- **Session-title.** Invoke it as `node <skill-root>/scripts/session-title.mjs
+<request|apply>` with one JSON object on standard input and one JSON envelope on standard
+  output, mirroring the remote-tracker shape. `request` runs inside the Codex sandbox and only
+  records a pending rename; `apply` runs from a `Stop` hook outside the sandbox and performs the
+  app-server RPC. See
+  [`src/shared/session-rename.md`](../../src/shared/session-rename.md) for the request-file
+  contract and degradation rules.
 
 Unit tests exercise parsing, payloads, provider plans, redaction, capabilities, compatibility,
 and stale writes with fake runners and fixtures. Forgejo capabilities are derived once per run
