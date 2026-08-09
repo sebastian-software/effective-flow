@@ -1,10 +1,19 @@
 # shellcheck shell=sh
-# Shared deployment logic for install-skill.sh (copy) and local-link.sh (symlink).
+# Shared installer logic for install-skill.sh and local-link.sh.
 #
-# The entry scripts set ROOT_DIR and INSTALL_MODE (copy|link), source this file
-# and call `effective_flow_deploy`. Only the install strategy (cp -R / ln -s) and
-# the final report differ between the two; everything else is identical, so it
-# lives here to avoid drift.
+# Two installation paths live here:
+#
+#   * Native deployment from this checkout, used by `install-skill.sh local`
+#     (copy) and `local-link.sh` (symlink). The entry scripts set ROOT_DIR and
+#     INSTALL_MODE (copy|link), source this file and call
+#     `effective_flow_deploy`. Only the install strategy (cp -R / ln -s) and the
+#     final report differ between the two; everything else is identical, so it
+#     lives here to avoid drift.
+#
+#   * The default mode of install-skill.sh, which installs and updates the
+#     published portable build through the DALO skill manager
+#     (`effective_flow_install_through_dalo`) and migrates away the artifacts a
+#     previous native installation left behind.
 
 CLAUDE_HOME="${CLAUDE_HOME:-$HOME/.claude}"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
@@ -285,6 +294,11 @@ effective_flow_report() {
     printf 'Deployed effective-flow skill to:\n'
     printf '  Claude Code: %s/effective-flow (+ agents in %s/effective-flow-*.md)\n' "$CLAUDE_SKILLS" "$CLAUDE_AGENTS"
     printf '  Codex:       %s/effective-flow (+ agents in %s/effective-flow-*.toml)\n' "$CODEX_SKILLS" "$CODEX_AGENTS"
+    # A native copy claims the skill slot outright, so a DALO-managed link that
+    # occupied it before is gone. Say so instead of letting the next DALO run
+    # surprise the developer.
+    printf 'The skill slot is now installer-owned; dalo sync --check reports a conflict for it\n'
+    printf 'until the default installer mode runs again.\n'
     # Backticks are intentional literal CLI notation in this user-facing text.
     # shellcheck disable=SC2016
     printf 'Alternatively install as a standard agent skill via `npx skills`, or link it with dalo.\n'
@@ -322,56 +336,259 @@ effective_flow_deploy() {
   effective_flow_deploy_from_dist
 }
 
+# The optional second argument is a remediation line printed below the generic
+# message, so one missing command produces one coherent report instead of two
+# separate checks each printing their own half.
 effective_flow_require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
     printf 'Required command not found: %s\n' "$1" >&2
+    if [ -n "${2:-}" ]; then
+      printf '%s\n' "$2" >&2
+    fi
     exit 1
   fi
 }
 
-effective_flow_release_repo() {
-  # EFFECTIVE_FLOW_REPO overrides the release repo; the legacy FIRMO_REPO is still
-  # honoured for backward compatibility.
-  if [ -n "${EFFECTIVE_FLOW_REPO:-}" ]; then
-    printf '%s\n' "$EFFECTIVE_FLOW_REPO"
-    return 0
+# --- DALO driver -------------------------------------------------------------
+#
+# The default mode of install-skill.sh installs and updates the published
+# portable build through the DALO skill manager. Every command behaviour the
+# driver relies on was verified against DALO 0.9.2.
+
+EFFECTIVE_FLOW_DALO_SOURCE=effective-flow
+EFFECTIVE_FLOW_DALO_SLOT=effective-flow
+EFFECTIVE_FLOW_DALO_HOMEPAGE='https://github.com/sebastian-software/dalo'
+EFFECTIVE_FLOW_DEFAULT_CATALOG_URL='https://github.com/sebastian-software/effective-flow.git'
+
+# Resolve the catalog Git URL. EFFECTIVE_FLOW_REPO overrides it and the legacy
+# FIRMO_REPO is still honoured; both accept a full clone URL or an `owner/name`
+# GitHub slug. The override is what allows exercising the driver against a local
+# Git fixture without network access.
+effective_flow_catalog_url() {
+  configured="${EFFECTIVE_FLOW_REPO:-}"
+  if [ -z "$configured" ]; then
+    configured="${FIRMO_REPO:-}"
   fi
-  if [ -n "${FIRMO_REPO:-}" ]; then
-    printf '%s\n' "$FIRMO_REPO"
+  if [ -z "$configured" ]; then
+    printf '%s\n' "$EFFECTIVE_FLOW_DEFAULT_CATALOG_URL"
     return 0
   fi
 
-  remote="$(git -C "$ROOT_DIR" remote get-url origin 2>/dev/null || printf '')"
-  repo="$(printf '%s\n' "$remote" | sed -n \
-    -e 's#^https://github.com/\([^/][^/]*/[^/][^/]*\)\.git$#\1#p' \
-    -e 's#^https://github.com/\([^/][^/]*/[^/][^/]*\)$#\1#p' \
-    -e 's#^git@github.com:\([^/][^/]*/[^/][^/]*\)\.git$#\1#p')"
-  if [ -n "$repo" ]; then
-    printf '%s\n' "$repo"
+  # A slug carries no scheme, no `host:path` SSH prefix, no leading path
+  # separator and exactly one slash. Everything else is already a clone URL and
+  # is passed through untouched.
+  case "$configured" in
+    *://* | *:*/* | /* | ./* | ../* | */*/*) printf '%s\n' "$configured" ;;
+    */*) printf 'https://github.com/%s.git\n' "$configured" ;;
+    *) printf '%s\n' "$configured" ;;
+  esac
+}
+
+# --- One-time migration off the native direct installation -------------------
+#
+# The previous default mode copied native agents and skill directories into the
+# harness homes, and DALO cannot adopt those files. The driver therefore removes
+# what this project provably owns before DALO claims the slot. The migration is
+# condition-based rather than marker-based: it acts only when leftovers exist,
+# which makes it idempotent without a state file.
+
+# Remove the agents an ownership manifest records, then the manifest itself.
+# `remove_recorded_agents` is manifest-scoped and already ignores path-traversal
+# entries, so a corrupt manifest cannot widen the removal.
+effective_flow_migrate_recorded_agents() {
+  migrate_harness="$1"
+  migrate_dir="$2"
+  migrate_manifest="$3"
+  migrate_extension="$4"
+
+  [ -f "$migrate_manifest" ] || return 0
+
+  migrate_count=0
+  while IFS= read -r migrate_name || [ -n "$migrate_name" ]; do
+    is_owned_agent_name "$migrate_name" "$migrate_extension" || continue
+    migrate_path="$migrate_dir/$migrate_name"
+    if [ -e "$migrate_path" ] || [ -L "$migrate_path" ]; then
+      migrate_count=$((migrate_count + 1))
+    fi
+  done < "$migrate_manifest"
+
+  remove_recorded_agents "$migrate_dir" "$migrate_manifest" "$migrate_extension" || return 1
+  if [ "$migrate_count" -gt 0 ]; then
+    printf 'Removed %s native %s agent(s) recorded in %s\n' \
+      "$migrate_count" "$migrate_harness" "$migrate_manifest"
+  fi
+  rm -f "$migrate_manifest" || return 1
+  printf 'Removed the native %s agent manifest %s\n' "$migrate_harness" "$migrate_manifest"
+}
+
+# Reclaim a target skill slot only in the two shapes the native installers
+# produce: a real directory (copy mode) or a symlink into this checkout's dist/
+# (link mode). A symlink pointing anywhere else, including a DALO-managed link
+# into the DALO store, is never touched; whatever the migration declines to
+# remove is caught afterwards by `dalo sync --check`.
+effective_flow_migrate_skill_slot() {
+  slot_harness="$1"
+  slot_path="$2"
+
+  if [ -L "$slot_path" ]; then
+    slot_target="$(readlink "$slot_path" 2>/dev/null || printf '')"
+    case "$slot_target" in
+      "$DIST_ROOT"/*) ;;
+      *) return 0 ;;
+    esac
+  elif [ ! -d "$slot_path" ]; then
+    return 0
+  fi
+
+  rm -rf "$slot_path" || return 1
+  printf 'Removed the native %s skill install %s\n' "$slot_harness" "$slot_path"
+}
+
+# Report every removal on its own line, and stay silent when there is nothing to
+# migrate.
+effective_flow_migrate_native_install() {
+  effective_flow_migrate_recorded_agents \
+    Claude "$CLAUDE_AGENTS" "$CLAUDE_AGENT_MANIFEST" md || return 1
+  effective_flow_migrate_recorded_agents \
+    Codex "$CODEX_AGENTS" "$CODEX_AGENT_MANIFEST" toml || return 1
+  effective_flow_migrate_skill_slot Claude "$CLAUDE_SKILLS/effective-flow" || return 1
+  effective_flow_migrate_skill_slot Codex "$CODEX_SKILLS/effective-flow" || return 1
+}
+
+# --- DALO command helpers ----------------------------------------------------
+
+# `dalo --json source list` pretty-prints one field per line, so the registered
+# entry is located by collapsing the document and splitting it back into one line
+# per object. Emits nothing when the source is not registered. Verified against
+# DALO 0.9.2.
+# A pipeline reports only its last command's status, so the listing runs on its
+# own first. Otherwise a broken store would look exactly like an unregistered
+# source, and the run would fail later with a misattributed "already exists".
+effective_flow_dalo_source_entry() {
+  if ! source_list_output="$(dalo --json source list 2>&1)"; then
+    printf '%s\n' "$source_list_output" >&2
+    printf 'DALO could not list its sources, so whether %s is registered is unknown.\n' \
+      "$EFFECTIVE_FLOW_DALO_SOURCE" >&2
+    return 1
+  fi
+
+  printf '%s\n' "$source_list_output" |
+    tr -d ' \n\t' |
+    tr '{' '\n' |
+    grep "\"id\":\"$EFFECTIVE_FLOW_DALO_SOURCE\"" |
+    sed -n '1p'
+}
+
+effective_flow_dalo_source_url() {
+  printf '%s\n' "$1" | sed -n 's/.*,"url":"\([^"]*\)".*/\1/p' | sed -n '1p'
+}
+
+# `source select` (first install) and `source refresh --advance` (update) both
+# fail with a message that embeds the staged audit path. That path is derived
+# from the candidate's content hash and therefore has to be read from the failing
+# command rather than reconstructed. Verified against DALO 0.9.2; a future DALO
+# release that exposes the staged path as a JSON field should replace this text
+# extraction. The installer never accepts the risk itself and never suggests a
+# reason: the reason is the operator's own declaration.
+effective_flow_dalo_guarded() {
+  gate_step="$1"
+  shift
+  if gate_output="$(dalo "$@" 2>&1)"; then
+    if [ -n "$gate_output" ]; then
+      printf '%s\n' "$gate_output"
+    fi
+    return 0
+  fi
+
+  printf '%s\n' "$gate_output" >&2
+  gate_path="$(printf '%s\n' "$gate_output" |
+    sed -n "s/.*dalo audit '\([^']*\)'.*/\1/p" | sed -n '1p')"
+  if [ -z "$gate_path" ]; then
+    printf 'DALO failed during %s.\n' "$gate_step" >&2
+    exit 1
+  fi
+
+  printf "DALO's security audit blocks the effective-flow skill, so %s stopped.\n" "$gate_step" >&2
+  printf 'Review the staged copy and, if you accept its findings, run:\n' >&2
+  printf "  dalo audit '%s' --accept-risk \"<reason>\"\n" "$gate_path" >&2
+  printf 'Write <reason> yourself; this installer never accepts risk on your behalf.\n' >&2
+  printf 'Then run this installer again.\n' >&2
+  exit 1
+}
+
+effective_flow_dalo_report() {
+  report_targets="$1"
+  printf 'Effective Flow is installed and managed by DALO.\n'
+  printf 'Linked harness targets:%s\n' "$report_targets"
+  printf 'DALO materializes the portable build: one skill with bundled worker contracts under\n'
+  printf 'workers/, delegated through the harness subagent mechanism instead of native agent\n'
+  printf 'sidecars. Run "dalo status" for the installed locations, or ./install-skill.sh local\n'
+  printf 'for a native install of the current checkout with its per-role model and effort\n'
+  printf 'profiles.\n'
+}
+
+effective_flow_install_through_dalo() {
+  effective_flow_require_command dalo \
+    "Install DALO first: $EFFECTIVE_FLOW_DALO_HOMEPAGE"
+
+  catalog_url="$(effective_flow_catalog_url)"
+
+  dalo init
+
+  # `dalo target link` creates a missing harness directory, so a single failure
+  # is tolerated; only losing both targets leaves nothing to sync into.
+  dalo_targets=''
+  for dalo_target in claude codex; do
+    if dalo target link "$dalo_target"; then
+      dalo_targets="$dalo_targets $dalo_target"
+    else
+      printf 'DALO could not link the %s target; continuing without it.\n' "$dalo_target" >&2
+    fi
+  done
+  if [ -z "$dalo_targets" ]; then
+    printf 'DALO linked no harness target, so there is nothing to install into.\n' >&2
+    exit 1
+  fi
+
+  # `source add-catalog` is not idempotent, so it runs only for an unregistered
+  # source. A registered source pointing elsewhere is reported, never silently
+  # re-pointed.
+  source_entry="$(effective_flow_dalo_source_entry)" || exit 1
+  if [ -z "$source_entry" ]; then
+    dalo source add-catalog "$EFFECTIVE_FLOW_DALO_SOURCE" "$catalog_url"
+    source_registered=false
   else
-    printf 'sebastian-software/effective-flow\n'
+    registered_url="$(effective_flow_dalo_source_url "$source_entry")"
+    if [ -n "$registered_url" ] && [ "$registered_url" != "$catalog_url" ]; then
+      printf 'The registered DALO source %s points at a different repository.\n' \
+        "$EFFECTIVE_FLOW_DALO_SOURCE" >&2
+      printf '  registered: %s\n' "$registered_url" >&2
+      printf '  requested:  %s\n' "$catalog_url" >&2
+      printf 'Re-point or remove the source yourself, then run this installer again.\n' >&2
+      exit 1
+    fi
+    source_registered=true
   fi
-}
 
-effective_flow_install_latest_release() {
-  effective_flow_require_command gh
-  effective_flow_require_command mktemp
-  effective_flow_require_command tar
+  effective_flow_dalo_guarded 'the skill selection' \
+    source select "$EFFECTIVE_FLOW_DALO_SOURCE" "$EFFECTIVE_FLOW_DALO_SLOT"
+  # The catalog pin is deliberate, so an already-registered source only moves to
+  # a newer release through an explicit advance.
+  if [ "$source_registered" = true ]; then
+    effective_flow_dalo_guarded 'the catalog advance' \
+      source refresh "$EFFECTIVE_FLOW_DALO_SOURCE" --advance
+  fi
 
-  tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "$tmp_dir"' EXIT HUP INT TERM
-  repo="$(effective_flow_release_repo)"
+  # Free the slot before DALO claims it. Bare `dalo sync` exits 0 even when an
+  # unmanaged entry blocks a slot, so only `--check` turns a failed migration
+  # into a visible failure.
+  effective_flow_migrate_native_install || exit 1
 
-  printf 'Downloading latest effective-flow release from %s...\n' "$repo"
-  gh release download --repo "$repo" --pattern 'effective-flow-*.tar.gz' --dir "$tmp_dir"
-  archive="$(find "$tmp_dir" -name 'effective-flow-*.tar.gz' -type f | sort | tail -n 1)"
-  if [ -z "$archive" ]; then
-    printf 'No effective-flow release archive found in latest release.\n' >&2
+  if ! dalo sync --check; then
+    printf 'DALO reports state that needs review; the report above names what is blocked.\n' >&2
+    printf 'Resolve it and run this installer again.\n' >&2
     exit 1
   fi
 
-  mkdir -p "$tmp_dir/dist"
-  tar -xzf "$archive" -C "$tmp_dir/dist"
-  DIST_ROOT="$tmp_dir/dist"
-  effective_flow_deploy_from_dist
+  effective_flow_dalo_report "$dalo_targets"
 }

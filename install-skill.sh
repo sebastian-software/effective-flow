@@ -12,7 +12,7 @@ invalid_usage() {
 }
 
 case "$#" in
-  0) install_source=release ;;
+  0) install_source=dalo ;;
   1)
     case "$1" in
       local) install_source=local ;;
@@ -33,5 +33,5 @@ INSTALL_MODE=copy
 
 case "$install_source" in
   local) effective_flow_deploy ;;
-  release) effective_flow_install_latest_release ;;
+  dalo) effective_flow_install_through_dalo ;;
 esac

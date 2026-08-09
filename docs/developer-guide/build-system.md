@@ -13,18 +13,20 @@ pnpm test               # runs the unit test suite (node:test)
 pnpm format             # formats with oxfmt (Markdown + JS)
 pnpm agent:check        # oxfmt --check, CI mode without write access
 pnpm audit:skill-ownership -- <local-skills-directory> # optional, advisory upstream audit
-pnpm test:distribution  # build/archive/delivery/installer smoke suite
+pnpm test:distribution  # build/archive/delivery smoke suite
 ```
 
 The package manager is **pnpm**; the root `package.json` `packageManager` field is the source of
 truth for the pinned version. Node.js 22 or newer is required by both the build and the shipped
 runtime helper. Correctness rests on three
 complementary layers: the `node:test` suite (`pnpm test`) covers pure transforms and isolated
-installer behavior; the build guards (see "Guards") enforce source and rendered-output
+installer behavior, including `install-skill.sh`'s dispatch and the DALO driver in
+`local-common.sh`; the build guards (see "Guards") enforce source and rendered-output
 completeness during `node build.mjs`; and `pnpm test:distribution` smoke-tests the built native
-and portable layouts, archive, staged delivery tree, and direct release installer. After every
-source or installer change, use the same order as CI: `pnpm agent:check`, `pnpm test`,
-`node build.mjs`, then `pnpm test:distribution`.
+and portable layouts, archive, and staged delivery tree. `pnpm test:managers` separately
+exercises the documented DALO and Skills CLI consumer paths against externally published
+releases of those managers. After every source or installer change, use the same order as CI:
+`pnpm agent:check`, `pnpm test`, `node build.mjs`, then `pnpm test:distribution`.
 
 The build first writes into a temporary directory (`dist.tmp/`) and swaps it atomically against
 `dist/` only after a fully successful run. If the build fails, the previous `dist/` stays
