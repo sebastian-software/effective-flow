@@ -371,6 +371,32 @@ line. Re-run `./install-skill.sh` after resolving whatever it reported. This pat
 maintainer verification of the DALO-based consumer path; see "Consumer installation through DALO or
 Skills CLI" above for the actual end-user instructions.
 
+#### Two independent acceptances
+
+DALO gates the skill behind two acceptances, and neither implies the other:
+
+| Acceptance                                                         | Gate it satisfies                                                      | Survives a new release |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------- | ---------------------- |
+| `dalo audit '<staged-path>' --accept-risk "<reason>"`              | `dalo source refresh --advance` moving a pinned catalog to a candidate | no                     |
+| `dalo approve skill effective-flow:effective-flow --accept-risk …` | `dalo sync` materializing the skill into a linked target               | yes                    |
+
+A first install never meets the advance gate — it selects the slot and reaches `dalo sync`, so it
+needs the approval record only. An update of an already-registered source meets the advance gate
+first, and an operator who has never approved the skill needs both.
+
+Measured against DALO 0.9.2 in an isolated store: after `dalo approve skill` and an advance to a new
+version, `dalo sync --check` passed without a further approval; when the next version landed
+upstream, `dalo source refresh --advance` exited 1 while `dalo --json status` still reported the
+skill as active with no pending approval. The approval record therefore persists across releases,
+while the content-hash acceptance does not and has to be granted per release.
+
+Because the two are independent, a blocked advance reports **every** step that is still open: the
+staged-audit remedy always, plus the `dalo approve skill` line when `dalo --json status` shows the
+skill pending or blocked. An operator who has already approved the skill sees the single remedy
+unchanged, and a status probe that cannot be read leaves the staged-audit remedy intact and says the
+approval state is unknown. The installer still runs neither `dalo audit` nor `dalo approve` and
+still supplies no default reason.
+
 ### Development: symlink instead of copy
 
 ```sh

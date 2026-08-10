@@ -594,30 +594,43 @@ effective_flow_dalo_source_entry() {
 # migration is about to clear, while a pending approval or a blocked audit is a
 # decision only the operator can make. Each array is extracted by its own key, so
 # the check does not depend on the order of the keys around it.
+#
+# Exit status: 0 resolvable, 1 pending approval, 2 the state could not be read,
+# 3 not resolvable for some other reason. Callers that only gate on
+# installability keep treating every non-zero status as "do not proceed"; the
+# blocked-advance report needs the finer answers, because it names a remedy and
+# a remedy for the wrong cause is worse than none. `pending_approval_skills` is
+# the only bucket that proves a missing approval record — a `blocked_skills`
+# entry or an absent one is a different block, and telling an already-approved
+# operator to approve again would leave the real cause unexplained.
 effective_flow_dalo_resolvable() {
   if ! status_output="$(dalo --json status 2>&1)"; then
     printf '%s\n' "$status_output" >&2
     printf 'DALO could not report its status, so whether %s is installable is unknown.\n' \
       "$EFFECTIVE_FLOW_DALO_SLOT" >&2
-    return 1
+    return 2
   fi
 
   status_flat="$(printf '%s\n' "$status_output" | tr -d ' \n\t')"
   status_ref="\"source_ref\":\"$EFFECTIVE_FLOW_DALO_SOURCE:$EFFECTIVE_FLOW_DALO_SLOT\""
 
-  for status_key in pending_approval_skills blocked_skills; do
-    status_group="$(printf '%s\n' "$status_flat" |
-      sed -n "s/.*\"$status_key\":\(\[[^]]*\]\).*/\1/p")"
-    case "$status_group" in
-      *"$status_ref"*) return 1 ;;
-    esac
-  done
+  status_pending="$(printf '%s\n' "$status_flat" |
+    sed -n 's/.*"pending_approval_skills":\(\[[^]]*\]\).*/\1/p')"
+  case "$status_pending" in
+    *"$status_ref"*) return 1 ;;
+  esac
+
+  status_blocked="$(printf '%s\n' "$status_flat" |
+    sed -n 's/.*"blocked_skills":\(\[[^]]*\]\).*/\1/p')"
+  case "$status_blocked" in
+    *"$status_ref"*) return 3 ;;
+  esac
 
   status_active="$(printf '%s\n' "$status_flat" |
     sed -n 's/.*"active_skills":\(\[[^]]*\]\).*/\1/p')"
   case "$status_active" in
     *"$status_ref"*) return 0 ;;
-    *) return 1 ;;
+    *) return 3 ;;
   esac
 }
 
@@ -632,6 +645,12 @@ effective_flow_dalo_source_url() {
 # release that exposes the staged path as a JSON field should replace this text
 # extraction. The installer never accepts the risk itself and never suggests a
 # reason: the reason is the operator's own declaration.
+#
+# DALO gates an update behind two independent acceptances: the staged audit that
+# releases the catalog advance, and the approval record that lets `dalo sync`
+# materialize the skill. Neither implies the other, so a blocked gate also reads
+# the resolution state and names every step that is still open — otherwise the
+# operator resolves one, reruns, and is stopped by the other.
 effective_flow_dalo_guarded() {
   gate_step="$1"
   shift
@@ -653,6 +672,34 @@ effective_flow_dalo_guarded() {
   printf "DALO's security audit blocks the effective-flow skill, so %s stopped.\n" "$gate_step" >&2
   printf 'Review the staged copy and, if you accept its findings, run:\n' >&2
   printf "  dalo audit '%s' --accept-risk \"<reason>\"\n" "$gate_path" >&2
+
+  # The probe enriches the report; it must never replace it, and it names a
+  # remedy only for the state it can actually prove. A skill that is already
+  # approved keeps today's single-remedy output; a missing approval record earns
+  # the second command; every other non-resolvable state says so instead of
+  # asserting a cause it does not know.
+  if effective_flow_dalo_resolvable; then
+    gate_resolution=0
+  else
+    gate_resolution=$?
+  fi
+  case "$gate_resolution" in
+    1)
+      printf 'The skill also carries no approval record, so both acceptance steps are open;\n' >&2
+      printf 'run this one too before starting the installer again:\n' >&2
+      printf '  dalo approve skill %s --accept-risk "<reason>"\n' \
+        "$EFFECTIVE_FLOW_DALO_SOURCE:$EFFECTIVE_FLOW_DALO_SLOT" >&2
+      ;;
+    2)
+      printf 'Whether an approval record is also missing could not be determined; run "dalo status".\n' >&2
+      ;;
+    3)
+      printf 'DALO also reports %s as not installable for another reason; run "dalo status"\n' \
+        "$EFFECTIVE_FLOW_DALO_SLOT" >&2
+      printf 'for that state. It is not a missing approval record.\n' >&2
+      ;;
+  esac
+
   printf 'Write <reason> yourself; this installer never accepts risk on your behalf.\n' >&2
   printf 'Then run this installer again.\n' >&2
   exit 1
@@ -725,6 +772,11 @@ effective_flow_install_through_dalo() {
   # The audit-gated commands above report a block without failing, so this is the
   # step that actually stops an unapproved run — before the migration, never
   # after it.
+  #
+  # This gate needs no aggregation of its own, and that asymmetry is deliberate:
+  # by the time it runs, the advance has already resolved, so the only remaining
+  # open step is the approval record it names here. Making it symmetric with the
+  # blocked-advance report would add a second lookup with nothing left to find.
   if ! effective_flow_dalo_resolvable; then
     printf 'DALO cannot install %s yet, so nothing was removed.\n' \
       "$EFFECTIVE_FLOW_DALO_SLOT" >&2
