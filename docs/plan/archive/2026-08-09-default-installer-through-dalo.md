@@ -142,7 +142,7 @@ The verified DALO 0.9.2 behavior the driver depends on:
 | `dalo init`                          | idempotent, exit 0                                                            |
 | `dalo target link <id>`              | idempotent, exit 0                                                            |
 | `dalo source add-catalog <id> <url>` | **not** idempotent: exit 1, ``error: source `effective-flow` already exists`` |
-| `dalo source select <id> <slot>`     | idempotent, exit 0; runs the audit and fails on a block                       |
+| `dalo source select <id> <slot>`     | idempotent, exit 0; runs the audit and reports a block **without failing**    |
 | `dalo source refresh <id> --advance` | exit 1 with the staged audit path while blocked; exit 0 once accepted         |
 | `dalo sync`                          | exit 0 even when a slot is blocked by an unmanaged entry                      |
 | `dalo sync --check`                  | exit non-zero on any state requiring review                                   |
@@ -331,6 +331,16 @@ Two deviations from the plan, both deliberate:
 - **Migration ordering.** The migration runs after the audit gate rather than before it. A blocked
   audit therefore leaves the existing native installation intact instead of removing it and then
   failing. This strengthens the plan's intent and was kept.
+
+  **Correction (2026-08-10).** That safety claim did not hold as shipped, and the table row above is
+  the reason. `dalo source select` reports a block and still exits 0, so gating on its exit status
+  let an unapproved run walk past the audit, migrate the native install away, and only then fail at
+  `dalo sync --check` — leaving the harness with nothing installed. Observed on a real machine
+  running 1.57.0. The behaviour row was inferred from the command's output without ever checking its
+  exit code, and the stub-driven test encoded the same inference, so the suite confirmed the mistake
+  instead of catching it. The driver now gates the migration on `dalo --json status` reporting the
+  skill as resolvable, which is a state rather than an exit code and separates a pending approval
+  from the unmanaged slot the migration itself is about to clear.
 
 ## Test results
 

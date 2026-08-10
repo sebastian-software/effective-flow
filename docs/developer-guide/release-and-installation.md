@@ -353,12 +353,23 @@ away any leftover native installation this script previously created (recorded a
 `.effective-flow-agents.manifest` files, and a native skill directory or dist-symlink occupying a
 target slot), reporting every removal.
 
-When DALO's security audit blocks the skill, the script prints a ready-to-run
-`dalo audit '<staged-path>' --accept-risk "<reason>"` command and exits non-zero; it never accepts
-the risk itself, since the reason is the operator's own declaration and acceptance is scoped to
-the exact content hash. Re-run `./install-skill.sh` after resolving whatever it reported. This path
-exists for maintainer verification of the DALO-based consumer path; see "Consumer installation
-through DALO or Skills CLI" above for the actual end-user instructions.
+**Nothing is removed before DALO can prove it will install the replacement.** The migration is
+gated on `dalo --json status` reporting the skill under `resolution.active_skills`. That gate is a
+state, not an exit code, and it exists because `dalo source select` prints
+`installation policy: blocked until risk is explicitly accepted` and still **exits 0** — an
+exit-code gate walks straight past an unapproved skill, and the run would then delete the native
+install and fail at `dalo sync --check`, leaving the harness with nothing. The status fields also
+separate a pending approval from the unmanaged slot the migration itself is about to clear, which
+`dalo sync --check` alone cannot do.
+
+When the skill is not installable yet, the script reports that nothing was removed, names
+`dalo approve skill effective-flow:effective-flow --accept-risk "<reason>"`, and exits non-zero; it
+never accepts the risk itself, since the reason is the operator's own declaration and acceptance is
+scoped to the exact content hash. On the update path `dalo source refresh --advance` does fail on a
+blocked candidate, and the script then relays DALO's own `dalo audit '<staged-path>' --accept-risk`
+line. Re-run `./install-skill.sh` after resolving whatever it reported. This path exists for
+maintainer verification of the DALO-based consumer path; see "Consumer installation through DALO or
+Skills CLI" above for the actual end-user instructions.
 
 ### Development: symlink instead of copy
 

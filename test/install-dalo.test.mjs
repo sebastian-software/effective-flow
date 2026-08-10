@@ -19,6 +19,23 @@ import { test } from 'node:test';
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const CATALOG_URL = 'https://github.com/sebastian-software/effective-flow.git';
 
+// `dalo --json status` reports the per-skill resolution state. These fixtures
+// mirror the real DALO 0.9.2 shape, including the `unmanaged_skills` entry for
+// the native install the migration is about to clear: the driver must tell that
+// apart from a skill DALO cannot install at all.
+const statusJson = ({ active = false, pending = false, blocked = false } = {}) =>
+  `${JSON.stringify({
+    resolution: {
+      active_skills: active ? [{ source_ref: 'effective-flow:effective-flow' }] : [],
+      pending_approval_skills: pending ? [{ source_ref: 'effective-flow:effective-flow' }] : [],
+      unlinked_skills: [],
+      blocked_skills: blocked ? [{ source_ref: 'effective-flow:effective-flow' }] : [],
+      diagnostics: pending || blocked ? [{ code: 'pending_approval' }] : [],
+    },
+    unmanaged_skills: [{ slot_name: 'effective-flow' }],
+  })}\n`;
+const STATUS_RESOLVABLE = { match: '--json status', exit: 0, stdout: statusJson({ active: true }) };
+
 // A stub `dalo` executable, placed first on PATH. It records every invocation
 // (one JSON-encoded argv array per line) to DALO_STUB_LOG, and replays a
 // scripted stdout/stderr/exit code for the first plan entry whose `match`
@@ -150,6 +167,7 @@ test('DALO driver: first install with no registered source', async (t) => {
     { match: '--json source list', exit: 0, stdout: '{"sources":[]}\n' },
     { match: 'source add-catalog effective-flow', exit: 0 },
     { match: 'source select effective-flow effective-flow', exit: 0 },
+    STATUS_RESOLVABLE,
     { match: 'sync --check', exit: 0 },
   ];
 
@@ -162,6 +180,7 @@ test('DALO driver: first install with no registered source', async (t) => {
     ['--json', 'source', 'list'],
     ['source', 'add-catalog', 'effective-flow', CATALOG_URL],
     ['source', 'select', 'effective-flow', 'effective-flow'],
+    ['--json', 'status'],
     ['sync', '--check'],
   ]);
   assert.equal(
@@ -186,6 +205,7 @@ test('DALO driver: rerun with an already-registered matching source', async (t) 
     },
     { match: 'source select effective-flow effective-flow', exit: 0 },
     { match: 'source refresh effective-flow --advance', exit: 0 },
+    STATUS_RESOLVABLE,
     { match: 'sync --check', exit: 0 },
   ];
 
@@ -264,6 +284,7 @@ test('DALO driver: continues and syncs when only one target link call fails', as
     { match: '--json source list', exit: 0, stdout: '{"sources":[]}\n' },
     { match: 'source add-catalog effective-flow', exit: 0 },
     { match: 'source select effective-flow effective-flow', exit: 0 },
+    STATUS_RESOLVABLE,
     { match: 'sync --check', exit: 0 },
   ];
 
@@ -309,6 +330,7 @@ test('DALO driver: a harness whose target did not link keeps its native install'
     { match: '--json source list', exit: 0, stdout: '{"sources":[]}\n' },
     { match: 'source add-catalog effective-flow', exit: 0 },
     { match: 'source select effective-flow effective-flow', exit: 0 },
+    STATUS_RESOLVABLE,
     { match: 'sync --check', exit: 0 },
   ];
 
@@ -361,21 +383,28 @@ test('DALO driver: a failing source list stops the installer and never masks the
   }
 });
 
-test('DALO driver: a blocked audit stops the installer without accepting risk', async (t) => {
+test('DALO driver: a blocked catalog advance stops the installer without accepting risk', async (t) => {
   const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-dalo-blocked-'));
   t.after(() => rm(sandbox, { recursive: true, force: true }));
 
+  // The advance is the one audit-gated command that really does fail: DALO 0.9.2
+  // exits non-zero from `source refresh --advance` while the staged candidate is
+  // blocked, and names the staged path in its own error.
   const stagedPath = '/tmp/staging/effective-flow-abc123/effective-flow';
   const plan = [
     { match: 'init', exit: 0 },
     { match: 'target link claude', exit: 0 },
     { match: 'target link codex', exit: 0 },
-    { match: '--json source list', exit: 0, stdout: '{"sources":[]}\n' },
-    { match: 'source add-catalog effective-flow', exit: 0 },
     {
-      match: 'source select effective-flow effective-flow',
+      match: '--json source list',
+      exit: 0,
+      stdout: `{"sources":[{"id":"effective-flow","kind":"catalog","url":"${CATALOG_URL}","update_policy":"pinned","selection":["effective-flow"]}]}\n`,
+    },
+    { match: 'source select effective-flow effective-flow', exit: 0 },
+    {
+      match: 'source refresh effective-flow --advance',
       exit: 1,
-      stderr: `error: security audit blocked (max high)\nreview with \`dalo audit '${stagedPath}' --accept-risk <reason>\`\n`,
+      stderr: `error: catalog pin was not advanced: security audit blocks candidate skill\nreview with \`dalo audit '${stagedPath}' --accept-risk <reason>\`\n`,
     },
   ];
 
@@ -397,6 +426,126 @@ test('DALO driver: a blocked audit stops the installer without accepting risk', 
   );
 });
 
+test('DALO driver: a pending approval stops the run before anything is removed', async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-dalo-pending-'));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+
+  // The regression this guards. DALO 0.9.2 prints "installation policy: blocked
+  // until risk is explicitly accepted" from `source select` and still exits 0,
+  // so an exit-code gate walks past it, migrates the native install away, and
+  // only then fails at `sync --check` — leaving the harness with nothing.
+  const claudeAgents = join(sandbox, 'claude', 'agents');
+  const claudeSlot = join(sandbox, 'claude', 'skills', 'effective-flow');
+  await mkdir(claudeAgents, { recursive: true });
+  await mkdir(claudeSlot, { recursive: true });
+  await writeFile(join(claudeSlot, 'SKILL.md'), NATIVE_SKILL_MD);
+  await writeFile(join(claudeAgents, 'effective-flow-test-writer.md'), 'agent');
+  await writeFile(
+    join(claudeAgents, '.effective-flow-agents.manifest'),
+    'effective-flow-test-writer.md\n',
+  );
+
+  const plan = [
+    { match: 'init', exit: 0 },
+    { match: 'target link claude', exit: 0 },
+    { match: 'target link codex', exit: 0 },
+    { match: '--json source list', exit: 0, stdout: '{"sources":[]}\n' },
+    { match: 'source add-catalog effective-flow', exit: 0 },
+    // Exits 0 while reporting the block, exactly as the real command does.
+    {
+      match: 'source select effective-flow effective-flow',
+      exit: 0,
+      stdout: 'installation policy: blocked until risk is explicitly accepted\n',
+    },
+    { match: '--json status', exit: 0, stdout: statusJson({ pending: true }) },
+  ];
+
+  const result = await runDriver(sandbox, plan);
+  assert.notEqual(result.status, 0, 'an unapproved skill must not produce a successful run');
+
+  assert.equal(await pathExists(claudeSlot), true, 'the native skill slot must survive');
+  assert.equal(await pathExists(join(claudeSlot, 'SKILL.md')), true);
+  assert.equal(await pathExists(join(claudeAgents, 'effective-flow-test-writer.md')), true);
+  assert.equal(
+    await pathExists(join(claudeAgents, '.effective-flow-agents.manifest')),
+    true,
+    'the ownership manifest must survive too',
+  );
+
+  assert.equal(
+    result.log.some((call) => call.includes('sync')),
+    false,
+    'the run must stop before sync, not after a destructive migration',
+  );
+  assert.match(result.stderr, /nothing was removed/);
+  assert.match(result.stderr, /dalo approve skill effective-flow:effective-flow --accept-risk/);
+  for (const forbidden of ['audit', 'approve']) {
+    assert.equal(
+      result.log.some((call) => call.includes(forbidden)),
+      false,
+      `the installer must never invoke dalo ${forbidden} itself`,
+    );
+  }
+});
+
+test('DALO driver: a blocked resolution state stops the run before anything is removed', async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-dalo-blockedstate-'));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+
+  const claudeSlot = join(sandbox, 'claude', 'skills', 'effective-flow');
+  await mkdir(claudeSlot, { recursive: true });
+  await writeFile(join(claudeSlot, 'SKILL.md'), NATIVE_SKILL_MD);
+
+  const plan = [
+    { match: 'init', exit: 0 },
+    { match: 'target link claude', exit: 0 },
+    { match: 'target link codex', exit: 0 },
+    { match: '--json source list', exit: 0, stdout: '{"sources":[]}\n' },
+    { match: 'source add-catalog effective-flow', exit: 0 },
+    { match: 'source select effective-flow effective-flow', exit: 0 },
+    { match: '--json status', exit: 0, stdout: statusJson({ blocked: true }) },
+  ];
+
+  const result = await runDriver(sandbox, plan);
+  assert.notEqual(result.status, 0);
+  assert.equal(await pathExists(claudeSlot), true, 'the native skill slot must survive');
+  assert.equal(
+    result.log.some((call) => call.includes('sync')),
+    false,
+  );
+});
+
+test('DALO driver: an unreadable status stops the run before anything is removed', async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-dalo-statusfail-'));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+
+  const claudeSlot = join(sandbox, 'claude', 'skills', 'effective-flow');
+  await mkdir(claudeSlot, { recursive: true });
+  await writeFile(join(claudeSlot, 'SKILL.md'), NATIVE_SKILL_MD);
+
+  const plan = [
+    { match: 'init', exit: 0 },
+    { match: 'target link claude', exit: 0 },
+    { match: 'target link codex', exit: 0 },
+    { match: '--json source list', exit: 0, stdout: '{"sources":[]}\n' },
+    { match: 'source add-catalog effective-flow', exit: 0 },
+    { match: 'source select effective-flow effective-flow', exit: 0 },
+    { match: '--json status', exit: 1, stderr: 'error: store is corrupt\n' },
+  ];
+
+  const result = await runDriver(sandbox, plan);
+  assert.notEqual(result.status, 0);
+  assert.equal(
+    await pathExists(claudeSlot),
+    true,
+    'an unprovable state must not authorize removal',
+  );
+  assert.equal(
+    result.log.some((call) => call.includes('sync')),
+    false,
+  );
+});
+
 test('DALO driver: a failing sync --check is reported and stops the installer', async (t) => {
   const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-dalo-syncfail-'));
   t.after(() => rm(sandbox, { recursive: true, force: true }));
@@ -408,6 +557,7 @@ test('DALO driver: a failing sync --check is reported and stops the installer', 
     { match: '--json source list', exit: 0, stdout: '{"sources":[]}\n' },
     { match: 'source add-catalog effective-flow', exit: 0 },
     { match: 'source select effective-flow effective-flow', exit: 0 },
+    STATUS_RESOLVABLE,
     { match: 'sync --check', exit: 1, stderr: 'blocked: conflict at slot effective-flow\n' },
   ];
 
