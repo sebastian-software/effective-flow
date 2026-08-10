@@ -585,9 +585,15 @@ test('effective_flow_migrate_native_install keeps a manager-owned skill director
   const nativeSlot = join(sandbox, 'claude', 'skills', 'effective-flow');
   const managedSlot = join(sandbox, 'home', '.agents/skills', 'effective-flow');
 
-  // A native copy-mode leftover: the declared name plus no bundled workers.
+  // A native copy-mode leftover: the declared name, no bundled workers, and the
+  // agent manifest that proves this project's installer wrote the slot.
   await mkdir(nativeSlot, { recursive: true });
   await writeFile(join(nativeSlot, 'SKILL.md'), NATIVE_SKILL_MD);
+  await mkdir(join(sandbox, 'claude', 'agents'), { recursive: true });
+  await writeFile(
+    join(sandbox, 'claude', 'agents', '.effective-flow-agents.manifest'),
+    'effective-flow-test-writer.md\n',
+  );
 
   // The portable build a skill manager materializes: same declared name, but
   // bundled worker contracts the native installer never writes. `npx skills add
@@ -631,6 +637,51 @@ test('effective_flow_migrate_native_install keeps a directory without the native
     assert.equal(await pathExists(survivor), true, `should survive: ${survivor}`);
     assert.match(result.stdout, new RegExp(`Left ${escapeRegExp(survivor)} untouched`));
   }
+});
+
+test('effective_flow_migrate_native_install keeps a native-looking directory this installer never recorded', async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-dalo-migrate-unrecorded-'));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+
+  // A fork carries the same content signature as a native install: the declared
+  // name and no bundled workers. Without this harness's agent manifest nothing
+  // proves this project's installer wrote it, so content alone must not
+  // authorize a recursive delete.
+  const forkSlot = join(sandbox, 'claude', 'skills', 'effective-flow');
+  await mkdir(forkSlot, { recursive: true });
+  await writeFile(join(forkSlot, 'SKILL.md'), NATIVE_SKILL_MD);
+  await writeFile(join(forkSlot, 'local-change.md'), 'work that must not be destroyed');
+
+  const result = await runMigration(sandbox);
+  assert.equal(result.status, 0, result.stderr);
+
+  assert.equal(await pathExists(forkSlot), true, `should survive: ${forkSlot}`);
+  assert.equal(await pathExists(join(forkSlot, 'local-change.md')), true);
+  assert.match(result.stdout, new RegExp(`Left ${escapeRegExp(forkSlot)} untouched`));
+  assert.match(result.stdout, /no Claude agent manifest proves this installer created it/);
+});
+
+test('effective_flow_migrate_native_install does not accept a symlinked manifest as ownership evidence', async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-dalo-migrate-linked-manifest-'));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+
+  const slot = join(sandbox, 'claude', 'skills', 'effective-flow');
+  const agents = join(sandbox, 'claude', 'agents');
+  await mkdir(slot, { recursive: true });
+  await writeFile(join(slot, 'SKILL.md'), NATIVE_SKILL_MD);
+  await mkdir(agents, { recursive: true });
+
+  // A manifest-named symlink is something else pointing somewhere else; letting
+  // it authorize the delete would hand that decision to whoever placed the link.
+  const elsewhere = join(sandbox, 'elsewhere.manifest');
+  await writeFile(elsewhere, 'effective-flow-test-writer.md\n');
+  await symlink(elsewhere, join(agents, '.effective-flow-agents.manifest'));
+
+  const result = await runMigration(sandbox);
+  assert.equal(result.status, 0, result.stderr);
+
+  assert.equal(await pathExists(slot), true, `should survive: ${slot}`);
+  assert.match(result.stdout, /no Claude agent manifest proves this installer created it/);
 });
 
 test('effective_flow_migrate_native_install reports nothing and exits 0 when there is nothing to migrate', async (t) => {

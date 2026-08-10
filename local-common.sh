@@ -456,16 +456,25 @@ effective_flow_is_native_skill_install() {
 }
 
 # Reclaim a target skill slot only in the two shapes the native installers
-# produce: a real directory carrying the native install signature (copy mode) or a
-# symlink into this checkout's dist/ (link mode). Anything else is left alone —
-# a symlink pointing elsewhere, including a DALO-managed link into the DALO store,
-# and a real directory a skill manager or a human placed there. Whatever the
-# migration declines to remove is caught afterwards by `dalo sync --check`, which
-# blocks on an unmanaged entry, so the run still fails loudly instead of silently
-# deleting foreign content.
+# produce: a real directory (copy mode) or a symlink into this checkout's dist/
+# (link mode). Anything else is left alone — a symlink pointing elsewhere,
+# including a DALO-managed link into the DALO store, and a real directory a skill
+# manager or a human placed there. Whatever the migration declines to remove is
+# caught afterwards by `dalo sync --check`, which blocks on an unmanaged entry, so
+# the run still fails loudly instead of silently deleting foreign content.
+#
+# A symlink into dist/ carries its own proof: it points into this very checkout.
+# A real directory does not, so it needs both an ownership proof and a content
+# check, and the ownership proof comes first. `slot_installed` states whether this
+# harness's agent manifest existed when the migration began — a file only
+# `install_native_agents` writes, so its presence is evidence that this project's
+# native installer ran on this machine for this harness. Content alone never
+# qualifies: a directory carrying the native signature can still be a fork or a
+# hand-placed copy, and identity is not ownership.
 effective_flow_migrate_skill_slot() {
   slot_harness="$1"
   slot_path="$2"
+  slot_installed="${3:-false}"
 
   if [ -L "$slot_path" ]; then
     slot_target="$(readlink "$slot_path" 2>/dev/null || printf '')"
@@ -474,6 +483,11 @@ effective_flow_migrate_skill_slot() {
       *) return 0 ;;
     esac
   elif [ -d "$slot_path" ]; then
+    if [ "$slot_installed" != true ]; then
+      printf 'Left %s untouched: no %s agent manifest proves this installer created it\n' \
+        "$slot_path" "$slot_harness"
+      return 0
+    fi
     if ! effective_flow_is_native_skill_install "$slot_path"; then
       printf 'Left %s untouched: it is not a native %s skill install\n' \
         "$slot_path" "$slot_harness"
@@ -501,13 +515,33 @@ effective_flow_target_linked() {
 # install of a harness whose link failed would leave that harness with nothing in
 # its place while the run continues. Report every removal on its own line, and
 # stay silent when there is nothing to migrate.
+# A manifest is read as ownership evidence only as a regular file. A symlink of
+# that name is something else pointing somewhere else, and following it would let
+# a link a stranger placed authorize a recursive delete.
+effective_flow_native_install_recorded() {
+  [ -f "$1" ] && [ ! -L "$1" ]
+}
+
 effective_flow_migrate_native_install() {
   migrate_targets="${1:-}"
+
+  # Capture the manifest evidence before the agent step runs: that step removes
+  # the manifest, so a later check would always find it gone and no real
+  # directory would ever be reclaimed.
+  claude_recorded=false
+  codex_recorded=false
+  if effective_flow_native_install_recorded "$CLAUDE_AGENT_MANIFEST"; then
+    claude_recorded=true
+  fi
+  if effective_flow_native_install_recorded "$CODEX_AGENT_MANIFEST"; then
+    codex_recorded=true
+  fi
 
   if effective_flow_target_linked claude "$migrate_targets"; then
     effective_flow_migrate_recorded_agents \
       Claude "$CLAUDE_AGENTS" "$CLAUDE_AGENT_MANIFEST" md || return 1
-    effective_flow_migrate_skill_slot Claude "$CLAUDE_SKILLS/effective-flow" || return 1
+    effective_flow_migrate_skill_slot \
+      Claude "$CLAUDE_SKILLS/effective-flow" "$claude_recorded" || return 1
   else
     printf 'Left the native Claude install in place: its DALO target did not link\n'
   fi
@@ -515,7 +549,8 @@ effective_flow_migrate_native_install() {
   if effective_flow_target_linked codex "$migrate_targets"; then
     effective_flow_migrate_recorded_agents \
       Codex "$CODEX_AGENTS" "$CODEX_AGENT_MANIFEST" toml || return 1
-    effective_flow_migrate_skill_slot Codex "$CODEX_SKILLS/effective-flow" || return 1
+    effective_flow_migrate_skill_slot \
+      Codex "$CODEX_SKILLS/effective-flow" "$codex_recorded" || return 1
   else
     printf 'Left the native Codex install in place: its DALO target did not link\n'
   fi
