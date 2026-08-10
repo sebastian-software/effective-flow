@@ -487,15 +487,38 @@ effective_flow_migrate_skill_slot() {
   printf 'Removed the native %s skill install %s\n' "$slot_harness" "$slot_path"
 }
 
-# Report every removal on its own line, and stay silent when there is nothing to
-# migrate.
+# Membership test against the space-separated list of DALO targets that linked
+# successfully.
+effective_flow_target_linked() {
+  case " $2 " in
+    *" $1 "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Migrate only the harnesses named in the list of successfully linked DALO
+# targets. DALO materializes into linked targets only, so removing the native
+# install of a harness whose link failed would leave that harness with nothing in
+# its place while the run continues. Report every removal on its own line, and
+# stay silent when there is nothing to migrate.
 effective_flow_migrate_native_install() {
-  effective_flow_migrate_recorded_agents \
-    Claude "$CLAUDE_AGENTS" "$CLAUDE_AGENT_MANIFEST" md || return 1
-  effective_flow_migrate_recorded_agents \
-    Codex "$CODEX_AGENTS" "$CODEX_AGENT_MANIFEST" toml || return 1
-  effective_flow_migrate_skill_slot Claude "$CLAUDE_SKILLS/effective-flow" || return 1
-  effective_flow_migrate_skill_slot Codex "$CODEX_SKILLS/effective-flow" || return 1
+  migrate_targets="${1:-}"
+
+  if effective_flow_target_linked claude "$migrate_targets"; then
+    effective_flow_migrate_recorded_agents \
+      Claude "$CLAUDE_AGENTS" "$CLAUDE_AGENT_MANIFEST" md || return 1
+    effective_flow_migrate_skill_slot Claude "$CLAUDE_SKILLS/effective-flow" || return 1
+  else
+    printf 'Left the native Claude install in place: its DALO target did not link\n'
+  fi
+
+  if effective_flow_target_linked codex "$migrate_targets"; then
+    effective_flow_migrate_recorded_agents \
+      Codex "$CODEX_AGENTS" "$CODEX_AGENT_MANIFEST" toml || return 1
+    effective_flow_migrate_skill_slot Codex "$CODEX_SKILLS/effective-flow" || return 1
+  else
+    printf 'Left the native Codex install in place: its DALO target did not link\n'
+  fi
 }
 
 # --- DALO command helpers ----------------------------------------------------
@@ -622,10 +645,11 @@ effective_flow_install_through_dalo() {
       source refresh "$EFFECTIVE_FLOW_DALO_SOURCE" --advance
   fi
 
-  # Free the slot before DALO claims it. Bare `dalo sync` exits 0 even when an
-  # unmanaged entry blocks a slot, so only `--check` turns a failed migration
-  # into a visible failure.
-  effective_flow_migrate_native_install || exit 1
+  # Free the slot before DALO claims it, for the linked targets only: a harness
+  # DALO cannot materialize into must keep its native install. Bare `dalo sync`
+  # exits 0 even when an unmanaged entry blocks a slot, so only `--check` turns a
+  # failed migration into a visible failure.
+  effective_flow_migrate_native_install "$dalo_targets" || exit 1
 
   if ! dalo sync --check; then
     printf 'DALO reports state that needs review; the report above names what is blocked.\n' >&2

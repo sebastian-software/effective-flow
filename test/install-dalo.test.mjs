@@ -276,6 +276,64 @@ test('DALO driver: continues and syncs when only one target link call fails', as
   );
 });
 
+test('DALO driver: a harness whose target did not link keeps its native install', async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-dalo-unlinked-'));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+
+  const claudeAgents = join(sandbox, 'claude', 'agents');
+  const codexAgents = join(sandbox, 'codex', 'agents');
+  const claudeManifest = join(claudeAgents, '.effective-flow-agents.manifest');
+  const codexManifest = join(codexAgents, '.effective-flow-agents.manifest');
+  const claudeSlot = join(sandbox, 'claude', 'skills', 'effective-flow');
+  const codexSlot = join(sandbox, 'home', '.agents/skills', 'effective-flow');
+
+  await Promise.all([
+    mkdir(claudeAgents, { recursive: true }),
+    mkdir(codexAgents, { recursive: true }),
+    mkdir(claudeSlot, { recursive: true }),
+    mkdir(codexSlot, { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(claudeManifest, 'effective-flow-alpha.md\n'),
+    writeFile(codexManifest, 'effective-flow-beta.toml\n'),
+    writeFile(join(claudeAgents, 'effective-flow-alpha.md'), 'owned'),
+    writeFile(join(codexAgents, 'effective-flow-beta.toml'), 'owned'),
+    writeFile(join(claudeSlot, 'SKILL.md'), NATIVE_SKILL_MD),
+    writeFile(join(codexSlot, 'SKILL.md'), NATIVE_SKILL_MD),
+  ]);
+
+  const plan = [
+    { match: 'init', exit: 0 },
+    { match: 'target link claude', exit: 0 },
+    { match: 'target link codex', exit: 1, stderr: 'error: could not link codex\n' },
+    { match: '--json source list', exit: 0, stdout: '{"sources":[]}\n' },
+    { match: 'source add-catalog effective-flow', exit: 0 },
+    { match: 'source select effective-flow effective-flow', exit: 0 },
+    { match: 'sync --check', exit: 0 },
+  ];
+
+  const result = await runDriver(sandbox, plan);
+  assert.equal(result.status, 0, result.stderr);
+
+  for (const removed of [
+    join(claudeAgents, 'effective-flow-alpha.md'),
+    claudeManifest,
+    claudeSlot,
+  ]) {
+    assert.equal(await pathExists(removed), false, `should be removed: ${removed}`);
+  }
+  // DALO materializes into linked targets only, so the Codex native install is
+  // the only thing that harness still has.
+  for (const survivor of [
+    join(codexAgents, 'effective-flow-beta.toml'),
+    codexManifest,
+    codexSlot,
+  ]) {
+    assert.equal(await pathExists(survivor), true, `should survive: ${survivor}`);
+  }
+  assert.match(result.stdout, /Left the native Codex install in place/);
+});
+
 test('DALO driver: a failing source list stops the installer and never masks the failure as unregistered', async (t) => {
   const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-dalo-listfail-'));
   t.after(() => rm(sandbox, { recursive: true, force: true }));
@@ -405,11 +463,18 @@ test('effective_flow_catalog_url resolves the catalog source', async (t) => {
   });
 });
 
-async function runMigration(sandbox) {
+// The migration takes the DALO targets that linked successfully; the default
+// covers the runs where both harnesses are available.
+async function runMigration(sandbox, targets = 'claude codex') {
   const env = isolatedEnvironment(sandbox);
   return spawnSync(
     '/bin/sh',
-    ['-c', '. "$ROOT_DIR/local-common.sh"; effective_flow_migrate_native_install'],
+    [
+      '-c',
+      '. "$ROOT_DIR/local-common.sh"; effective_flow_migrate_native_install "$1"',
+      'sh',
+      targets,
+    ],
     {
       cwd: ROOT_DIR,
       encoding: 'utf8',
