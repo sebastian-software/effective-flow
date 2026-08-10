@@ -547,6 +547,45 @@ test('DALO driver: a blocked advance with an unreadable status keeps the audit r
   );
 });
 
+test('DALO driver: a blocked advance with a blocked skill does not claim a missing approval', async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-dalo-blockedstate-report-'));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+
+  // Only `pending_approval_skills` proves a missing approval record. A skill in
+  // `blocked_skills` is blocked for a different reason, and telling an operator
+  // who has already approved it to approve again would name the wrong remedy and
+  // leave the real cause unexplained.
+  const stagedPath = '/tmp/staging/effective-flow-blocked/effective-flow';
+  const plan = [
+    { match: 'init', exit: 0 },
+    { match: 'target link claude', exit: 0 },
+    { match: 'target link codex', exit: 0 },
+    {
+      match: '--json source list',
+      exit: 0,
+      stdout: `{"sources":[{"id":"effective-flow","kind":"catalog","url":"${CATALOG_URL}","update_policy":"pinned","selection":["effective-flow"]}]}\n`,
+    },
+    { match: 'source select effective-flow effective-flow', exit: 0 },
+    {
+      match: 'source refresh effective-flow --advance',
+      exit: 1,
+      stderr: `error: catalog pin was not advanced\nreview with \`dalo audit '${stagedPath}' --accept-risk <reason>\`\n`,
+    },
+    { match: '--json status', exit: 0, stdout: statusJson({ blocked: true }) },
+  ];
+
+  const result = await runDriver(sandbox, plan);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--accept-risk/);
+  assert.doesNotMatch(
+    result.stderr,
+    /carries no approval record/,
+    'a blocked skill must not be reported as a missing approval record',
+  );
+  assert.doesNotMatch(result.stderr, /dalo approve skill/, 'the wrong remedy must not be offered');
+  assert.match(result.stderr, /not installable for another reason/);
+});
+
 test('DALO driver: a pending approval stops the run before anything is removed', async (t) => {
   const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-dalo-pending-'));
   t.after(() => rm(sandbox, { recursive: true, force: true }));
