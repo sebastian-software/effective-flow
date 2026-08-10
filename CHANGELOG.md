@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.57.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.57.0...effective-flow-v1.57.1) (2026-08-10)
+
+
+### Bug Fixes
+
+* never remove a native install before DALO can install the replacement ([#333](https://github.com/sebastian-software/effective-flow/issues/333)) ([1d2f49a](https://github.com/sebastian-software/effective-flow/commit/1d2f49a63ac9f5d7e230b530ade790a76df273f6))
+
 ## [1.57.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.56.1...effective-flow-v1.57.0) (2026-08-10)
 
 
