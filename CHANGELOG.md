@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.57.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.56.1...effective-flow-v1.57.0) (2026-08-10)
+
+
+### Features
+
+* apply a session title on Claude Code through a rename butler ([#330](https://github.com/sebastian-software/effective-flow/issues/330)) ([ebf2c6b](https://github.com/sebastian-software/effective-flow/commit/ebf2c6b2fdf0a981ac9e6a9b43c3f740998ca140))
+* install and update the skill through DALO by default ([#331](https://github.com/sebastian-software/effective-flow/issues/331)) ([2f6a809](https://github.com/sebastian-software/effective-flow/commit/2f6a80974b1dc7f82be5d49a5bdce31643bbfa2b))
+* let a Codex run apply its own session title ([#327](https://github.com/sebastian-software/effective-flow/issues/327)) ([6ab4c5d](https://github.com/sebastian-software/effective-flow/commit/6ab4c5d1e308abbb7a4af450c4f56c51cfebf4db))
+* recommend up to two next steps after every tool run ([#328](https://github.com/sebastian-software/effective-flow/issues/328)) ([4abed61](https://github.com/sebastian-software/effective-flow/commit/4abed611f375e13f084284864badf595d104449a))
+
+
+### Bug Fixes
+
+* require installer evidence before deleting a native skill directory ([#332](https://github.com/sebastian-software/effective-flow/issues/332)) ([8d6ef36](https://github.com/sebastian-software/effective-flow/commit/8d6ef362e1640bfb48b25bcee789cc9ae2b8db62))
+
 ## [1.56.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.56.0...effective-flow-v1.56.1) (2026-08-06)
 
 
