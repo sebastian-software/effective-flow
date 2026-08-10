@@ -41,7 +41,8 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
 2. `node build.mjs` builds the distribution into `dist/`.
 3. `release-please-action` creates or updates the release PR and, once merged, the Git tag and
    the GitHub release.
-4. The isolated distribution smoke verifies native/portable layouts and installers.
+4. The isolated distribution smoke verifies native/portable layouts, the staged delivery tree,
+   and the release archive layout.
 5. On an actually created release, all three targets in `dist/` are packed as
    `effective-flow-<tag>.tar.gz`, uploaded, downloaded again, and verified.
 6. Also only on a created release, `scripts/stage-delivery.mjs` pushes the portable
@@ -323,8 +324,9 @@ end-user installation path.
 ./install-skill.sh --help
 ```
 
-With no arguments, the script installs the latest release. The exact, case-sensitive `local`
-argument selects the current checkout. Either help flag prints the usage summary without starting
+With no arguments, the script drives [DALO](https://github.com/sebastian-software/dalo) to
+install and update the published portable build. The exact, case-sensitive `local` argument
+selects the current checkout instead. Either help flag prints the usage summary without starting
 an installation. Any other argument—including an empty argument—or more than one argument is
 rejected before deployment helpers are loaded or installer-managed files can change.
 
@@ -337,14 +339,26 @@ rejected before deployment helpers are loaded or installer-managed files can cha
 Builds the current source checkout and copies both native targets into the local harness
 directories. This is useful for testing unpublished native output during development.
 
-### Verify a published release archive
+### Install and update through DALO
 
 ```sh
 ./install-skill.sh
 ```
 
-Downloads the latest release archive and deploys its two native targets. This path exists for
-maintainer verification and compatibility testing; it is not the supported consumer workflow.
+Drives DALO: `dalo init`, links the Claude Code and Codex targets, registers the Effective Flow
+catalog source on first use, selects or advances it, and finishes with `dalo sync --check`. This
+installs the portable build — the same bundled `workers/effective-flow-<worker>.md` contracts a
+consumer gets from DALO or Skills CLI directly — not the native targets. A first run also migrates
+away any leftover native installation this script previously created (recorded agents, both
+`.effective-flow-agents.manifest` files, and a native skill directory or dist-symlink occupying a
+target slot), reporting every removal.
+
+When DALO's security audit blocks the skill, the script prints a ready-to-run
+`dalo audit '<staged-path>' --accept-risk "<reason>"` command and exits non-zero; it never accepts
+the risk itself, since the reason is the operator's own declaration and acceptance is scoped to
+the exact content hash. Re-run `./install-skill.sh` after resolving whatever it reported. This path
+exists for maintainer verification of the DALO-based consumer path; see "Consumer installation
+through DALO or Skills CLI" above for the actual end-user instructions.
 
 ### Development: symlink instead of copy
 

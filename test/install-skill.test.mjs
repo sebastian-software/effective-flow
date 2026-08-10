@@ -21,7 +21,7 @@ async function runInstaller(root, args) {
       'effective_flow_deploy() {',
       '  printf \'local\\n\' >> "$EFFECTIVE_FLOW_TEST_SENTINEL"',
       '}',
-      'effective_flow_install_latest_release() {',
+      'effective_flow_install_through_dalo() {',
       '  printf \'release\\n\' >> "$EFFECTIVE_FLOW_TEST_SENTINEL"',
       '}',
       '',

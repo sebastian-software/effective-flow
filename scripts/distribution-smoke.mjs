@@ -2,7 +2,6 @@
 
 import { createHash } from 'node:crypto';
 import {
-  chmodSync,
   cpSync,
   lstatSync,
   mkdtempSync,
@@ -309,81 +308,6 @@ export function assertArchiveLayout(archive) {
   }
 }
 
-function runReleaseInstallerSmoke(archive) {
-  const temp = mkdtempSync(join(tmpdir(), 'effective-flow-release-install-smoke-'));
-  try {
-    const bin = join(temp, 'bin');
-    mkdirSync(bin, { recursive: true });
-    const gh = join(bin, 'gh');
-    writeFileSync(
-      gh,
-      [
-        '#!/bin/sh',
-        'set -eu',
-        'destination=',
-        'while [ "$#" -gt 0 ]; do',
-        '  if [ "$1" = "--dir" ]; then',
-        '    shift',
-        '    destination="$1"',
-        '  fi',
-        '  shift',
-        'done',
-        'cp "$EFFECTIVE_FLOW_TEST_ARCHIVE" "$destination/"',
-        '',
-      ].join('\n'),
-    );
-    chmodSync(gh, 0o755);
-
-    const home = join(temp, 'home');
-    const claudeHome = join(temp, 'claude');
-    const codexHome = join(temp, 'codex');
-    mkdirSync(home, { recursive: true });
-    run('/bin/sh', [join(ROOT_DIR, 'install-skill.sh')], {
-      env: {
-        PATH: `${bin}:${process.env.PATH}`,
-        HOME: home,
-        CLAUDE_HOME: claudeHome,
-        CODEX_HOME: codexHome,
-        EFFECTIVE_FLOW_TEST_ARCHIVE: resolve(archive),
-        EFFECTIVE_FLOW_REPO: 'example/effective-flow',
-      },
-    });
-
-    const workers = sourceWorkers();
-    assertSameMembers(
-      readdirSync(join(claudeHome, 'agents')).filter((name) => name.endsWith('.md')),
-      workers.map((name) => `${name}.md`),
-      'release-installed Claude workers',
-    );
-    assertSameMembers(
-      readdirSync(join(codexHome, 'agents')).filter((name) => name.endsWith('.toml')),
-      workers.map((name) => `${name}.toml`),
-      'release-installed Codex workers',
-    );
-    for (const [target, actual, expected] of [
-      [
-        'Claude',
-        join(claudeHome, 'skills', 'effective-flow'),
-        join(ROOT_DIR, 'dist', 'claude', 'effective-flow'),
-      ],
-      [
-        'Codex',
-        join(home, '.agents', 'skills', 'effective-flow'),
-        join(ROOT_DIR, 'dist', 'codex', 'effective-flow'),
-      ],
-    ]) {
-      if (JSON.stringify(snapshotTree(actual)) !== JSON.stringify(snapshotTree(expected))) {
-        fail(`release-installed ${target} skill differs from the built distribution`);
-      }
-    }
-    if (readdirSync(join(home, '.agents', 'skills', 'effective-flow')).includes('workers')) {
-      fail('direct installer selected the portable manager artifact for Codex');
-    }
-  } finally {
-    rmSync(temp, { recursive: true, force: true });
-  }
-}
-
 function parseJson(output, label) {
   try {
     return JSON.parse(output);
@@ -613,7 +537,6 @@ function offlineSmoke() {
     const archive = join(temp, 'effective-flow-test.tar.gz');
     run('tar', ['-czf', archive, '-C', dist, '.']);
     assertArchiveLayout(archive);
-    runReleaseInstallerSmoke(archive);
   } finally {
     rmSync(temp, { recursive: true, force: true });
   }

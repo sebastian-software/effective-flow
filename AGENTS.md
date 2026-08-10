@@ -17,8 +17,8 @@ node build.mjs           # build native + portable targets into dist/ (also: pnp
 pnpm format              # format with oxfmt (Markdown + JS)
 pnpm agent:check         # oxfmt --check (CI-style, no writes)
 pnpm test                # run the unit test suite (node:test)
-pnpm test:distribution   # isolated build/archive/delivery/install smoke suite
-./install-skill.sh       # maintainer verification of the latest release archive
+pnpm test:distribution   # isolated build/archive/delivery smoke suite
+./install-skill.sh       # maintainer install/update of the portable build through DALO
 ./install-skill.sh local # maintainer build + copy of the current checkout
 ./local-link.sh          # developer build + symlink of the current checkout
 ```
@@ -41,7 +41,7 @@ The build emits three consumer targets:
 - **Native Codex** (`dist/codex/`): skill plus registered agent sidecars in `dist/codex/agents/effective-flow-<name>.toml`.
 - **Portable managers** (`dist/portable/effective-flow/`): one harness-neutral skill with bundled `workers/effective-flow-<name>.md` contracts. It delegates through built-in/general subagents and does not rely on managers installing native agent sidecars.
 
-The release archive contains all three for release verification and maintenance; it is not a supported end-user installation interface. The machine-managed default/delivery branch publishes only the contents of `dist/portable/effective-flow/` at `effective-flow/`, so DALO and Skills CLI discover exactly one candidate and consume the built payload directly. `install-skill.sh` and `local-link.sh` are checkout utilities that use only the two native targets.
+The release archive contains all three for release verification and maintenance; it is not a supported end-user installation interface. The machine-managed default/delivery branch publishes only the contents of `dist/portable/effective-flow/` at `effective-flow/`, so DALO and Skills CLI discover exactly one candidate and consume the built payload directly. `install-skill.sh local` and `local-link.sh` are checkout utilities that use only the two native targets; `install-skill.sh` with no arguments instead drives DALO to install and update the portable build, mirroring the DALO/Skills CLI consumer path rather than deploying native output.
 
 ### Placeholder / directive syntax in sources
 

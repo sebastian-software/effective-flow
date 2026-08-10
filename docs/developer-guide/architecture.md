@@ -235,8 +235,8 @@ The build generates three independent outputs from the same source:
 
 | Consumer                     | Skill target                    | Worker resolution                                                                                                                                          |
 | ---------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Native Claude artifact       | `dist/claude/effective-flow/`   | native `.md` agents under `dist/claude/agents/effective-flow-<name>.md`, used by maintainer checkout and release-verification utilities                    |
-| Native Codex artifact        | `dist/codex/effective-flow/`    | native `.toml` agents under `dist/codex/agents/effective-flow-<name>.toml`, used by maintainer checkout and release-verification utilities                 |
+| Native Claude artifact       | `dist/claude/effective-flow/`   | native `.md` agents under `dist/claude/agents/effective-flow-<name>.md`, deployed by `./install-skill.sh local` and `./local-link.sh`                      |
+| Native Codex artifact        | `dist/codex/effective-flow/`    | native `.toml` agents under `dist/codex/agents/effective-flow-<name>.toml`, deployed by `./install-skill.sh local` and `./local-link.sh`                   |
 | DALO / Skills CLI (end user) | `dist/portable/effective-flow/` | bundled `workers/effective-flow-<name>.md` contracts, loaded one at a time and delegated through the harness's built-in general-purpose subagent mechanism |
 
 All outputs use the same `effective-flow-<name>` worker namespace and carry the same version
@@ -283,7 +283,7 @@ effective-flow/                        (Repo)
 │   ├── codex/                # native skill + agents/effective-flow-*.toml
 │   └── portable/effective-flow/ # manager skill + workers/effective-flow-*.md
 ├── build.mjs                 # Build script (see build-system.md)
-├── install-skill.sh          # Maintainer deployment from release or local checkout
+├── install-skill.sh          # Default: drives DALO install/update; `local`: native checkout copy
 └── local-link.sh             # Developer build + symlink helper
 ```
 
