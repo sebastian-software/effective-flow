@@ -421,11 +421,48 @@ effective_flow_migrate_recorded_agents() {
   printf 'Removed the native %s agent manifest %s\n' "$migrate_harness" "$migrate_manifest"
 }
 
+# Read the `name` field a file declares in its leading YAML frontmatter. Only the
+# block between the opening `---` and the next `---` counts, so a `name:` line in
+# the document body cannot fake the declaration. Emits nothing when the file has
+# no frontmatter or declares no name.
+effective_flow_frontmatter_name() {
+  frontmatter_path="$1"
+  frontmatter_first="$(sed -n -e '1s/[[:space:]]*$//' -e '1p' "$frontmatter_path")"
+  [ "$frontmatter_first" = '---' ] || return 0
+
+  sed -n -e '1d' -e '/^---[[:space:]]*$/q' -e 's/^name:[[:space:]]*//p' "$frontmatter_path" |
+    sed -n -e '1s/[[:space:]]*$//' -e '1p'
+}
+
+# Directory shape is no proof of ownership: `npx skills add --copy` and a
+# hand-placed skill both create a real directory in exactly this slot. A directory
+# therefore counts as a native install only with the signature `install-skill.sh
+# local` and `local-link.sh` produce — a regular SKILL.md declaring
+# `name: effective-flow`, and no `workers/` entry. Bundled worker contracts are
+# the portable build's marker, so a `workers/` entry proves a manager (DALO or the
+# Skills CLI) owns the directory and this project's native installer never wrote
+# it.
+effective_flow_is_native_skill_install() {
+  native_slot="$1"
+
+  if [ -e "$native_slot/workers" ] || [ -L "$native_slot/workers" ]; then
+    return 1
+  fi
+  native_skill_md="$native_slot/SKILL.md"
+  if [ ! -f "$native_skill_md" ] || [ -L "$native_skill_md" ]; then
+    return 1
+  fi
+  [ "$(effective_flow_frontmatter_name "$native_skill_md")" = effective-flow ]
+}
+
 # Reclaim a target skill slot only in the two shapes the native installers
-# produce: a real directory (copy mode) or a symlink into this checkout's dist/
-# (link mode). A symlink pointing anywhere else, including a DALO-managed link
-# into the DALO store, is never touched; whatever the migration declines to
-# remove is caught afterwards by `dalo sync --check`.
+# produce: a real directory carrying the native install signature (copy mode) or a
+# symlink into this checkout's dist/ (link mode). Anything else is left alone —
+# a symlink pointing elsewhere, including a DALO-managed link into the DALO store,
+# and a real directory a skill manager or a human placed there. Whatever the
+# migration declines to remove is caught afterwards by `dalo sync --check`, which
+# blocks on an unmanaged entry, so the run still fails loudly instead of silently
+# deleting foreign content.
 effective_flow_migrate_skill_slot() {
   slot_harness="$1"
   slot_path="$2"
@@ -436,7 +473,13 @@ effective_flow_migrate_skill_slot() {
       "$DIST_ROOT"/*) ;;
       *) return 0 ;;
     esac
-  elif [ ! -d "$slot_path" ]; then
+  elif [ -d "$slot_path" ]; then
+    if ! effective_flow_is_native_skill_install "$slot_path"; then
+      printf 'Left %s untouched: it is not a native %s skill install\n' \
+        "$slot_path" "$slot_harness"
+      return 0
+    fi
+  else
     return 0
   fi
 

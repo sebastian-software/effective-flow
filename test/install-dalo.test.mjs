@@ -51,6 +51,25 @@ if (rule) {
 process.exit(0);
 `;
 
+// The signature a native install carries and the migration requires before it
+// removes a real directory: a SKILL.md whose frontmatter declares the skill name.
+// A native install never bundles worker contracts under workers/.
+const NATIVE_SKILL_MD = `---
+name: effective-flow
+description: "Effective Flow — software engineering workflows as tools."
+---
+
+# Effective Flow
+`;
+
+function foreignSkillMd(name) {
+  return `---\nname: ${name}\ndescription: "Another skill."\n---\n\n# Other\n`;
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 async function pathExists(path) {
   try {
     await lstat(path);
@@ -440,9 +459,10 @@ test('effective_flow_migrate_native_install removes only provably owned artifact
     writeFile(join(codexHome, 'outside.toml'), 'must survive path-traversal defence'),
   ]);
 
-  // Claude's slot is a real directory (copy-mode leftover).
+  // Claude's slot is a real directory carrying the native install signature
+  // (copy-mode leftover).
   await mkdir(join(claudeSkills, 'effective-flow'), { recursive: true });
-  await writeFile(join(claudeSkills, 'effective-flow/SKILL.md'), 'native copy');
+  await writeFile(join(claudeSkills, 'effective-flow/SKILL.md'), NATIVE_SKILL_MD);
   // Codex's slot is a symlink into this checkout's dist/ (link-mode leftover).
   await symlink(join(distRoot, 'codex/effective-flow'), join(codexSkills, 'effective-flow'));
   // An unrelated neighboring skill must survive untouched.
@@ -491,6 +511,61 @@ test('effective_flow_migrate_native_install leaves a non-dist symlink untouched'
   const slot = join(claudeSkills, 'effective-flow');
   assert.equal((await lstat(slot)).isSymbolicLink(), true);
   assert.equal(await readlink(slot), externalStore);
+});
+
+test('effective_flow_migrate_native_install keeps a manager-owned skill directory', async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-dalo-migrate-workers-'));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+
+  const nativeSlot = join(sandbox, 'claude', 'skills', 'effective-flow');
+  const managedSlot = join(sandbox, 'home', '.agents/skills', 'effective-flow');
+
+  // A native copy-mode leftover: the declared name plus no bundled workers.
+  await mkdir(nativeSlot, { recursive: true });
+  await writeFile(join(nativeSlot, 'SKILL.md'), NATIVE_SKILL_MD);
+
+  // The portable build a skill manager materializes: same declared name, but
+  // bundled worker contracts the native installer never writes. `npx skills add
+  // --copy` produces exactly this shape as a real directory.
+  await mkdir(join(managedSlot, 'workers'), { recursive: true });
+  await writeFile(join(managedSlot, 'SKILL.md'), NATIVE_SKILL_MD);
+  await writeFile(join(managedSlot, 'workers/effective-flow-test-writer.md'), 'worker contract');
+
+  const result = await runMigration(sandbox);
+  assert.equal(result.status, 0, result.stderr);
+
+  assert.equal(await pathExists(nativeSlot), false, `should be removed: ${nativeSlot}`);
+  assert.equal(await pathExists(managedSlot), true, `should survive: ${managedSlot}`);
+  assert.equal(
+    await pathExists(join(managedSlot, 'workers/effective-flow-test-writer.md')),
+    true,
+    'a manager-owned directory must not be emptied either',
+  );
+  assert.match(result.stdout, new RegExp(`Left ${escapeRegExp(managedSlot)} untouched`));
+});
+
+test('effective_flow_migrate_native_install keeps a directory without the native name declaration', async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-dalo-migrate-foreign-'));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+
+  const foreignSlot = join(sandbox, 'claude', 'skills', 'effective-flow');
+  const bareSlot = join(sandbox, 'home', '.agents/skills', 'effective-flow');
+
+  // A hand-placed skill that occupies the slot under a different identity.
+  await mkdir(foreignSlot, { recursive: true });
+  await writeFile(join(foreignSlot, 'SKILL.md'), foreignSkillMd('other-flow'));
+
+  // A directory without any SKILL.md proves nothing about its origin.
+  await mkdir(bareSlot, { recursive: true });
+  await writeFile(join(bareSlot, 'notes.md'), 'hand-placed content');
+
+  const result = await runMigration(sandbox);
+  assert.equal(result.status, 0, result.stderr);
+
+  for (const survivor of [foreignSlot, bareSlot]) {
+    assert.equal(await pathExists(survivor), true, `should survive: ${survivor}`);
+    assert.match(result.stdout, new RegExp(`Left ${escapeRegExp(survivor)} untouched`));
+  }
 });
 
 test('effective_flow_migrate_native_install reports nothing and exits 0 when there is nothing to migrate', async (t) => {
