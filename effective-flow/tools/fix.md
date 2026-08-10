@@ -39,13 +39,15 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 - If the harness offers no such mechanism, or a delegation is declined at runtime, work inline and say so in one visible line — never silently.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent, or a session rename request is about to be written.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent, or a session rename request is about to be written.
 
 **Load on demand:** Read `shared/project-routing.md`, when an affected file or domain must be classified into a routing bucket.
 
 **Load on demand:** Read `shared/config-migration.md`, when the Effective Flow configuration is first read or a legacy config is migrated.
+
+**Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
 
 ## Plan status convention
 
@@ -180,6 +182,8 @@ Current workflow for review-report backlinks: `effective-flow fix`.
 Current workflow for plan references: Bugfix (`effective-flow fix`).
 
 **Load on demand:** Read `shared/plan-reference-routing.md`, when the argument could point to an existing plan file.
+
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
 ## Clarification gate (fully clarified?)
 
@@ -402,6 +406,7 @@ If open findings or residual risks arise in the process, document them in a stru
    - new or adjusted tests
    - residual risks
    - for an active delivery/worktree mode: delivery branch, final checkout state and result of the completion action (PR URL, merge or retained branch)
+7. Emit the next-step block per `next-steps` as the last element of the report.
 
 ## Pre-commit gate
 

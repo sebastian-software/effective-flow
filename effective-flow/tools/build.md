@@ -35,13 +35,15 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 - If the harness offers no such mechanism, or a delegation is declined at runtime, work inline and say so in one visible line — never silently.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, report, memory, or worktree mutation below `.effective-flow/` is imminent.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, report, memory, or worktree mutation below `.effective-flow/` is imminent, or a session rename request is about to be written.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, report, memory, or worktree mutation below `.effective-flow/` is imminent.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, report, memory, or worktree mutation below `.effective-flow/` is imminent, or a session rename request is about to be written.
 
 **Load on demand:** Read `shared/project-routing.md`, when an affected file or domain must be classified into a routing bucket.
 
 **Load on demand:** Read `shared/config-migration.md`, when the Effective Flow configuration is first read or a legacy config is migrated.
+
+**Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
 
 ## Recommended skills
 
@@ -83,6 +85,8 @@ Rules:
 **Load on demand:** Read `shared/plan-contract.md`, when a plan artifact's fields, sections, or review prose are written or translated.
 
 **Load on demand:** Read `shared/plan-numbering.md`, when a plan file is created or its date-slug name is resolved.
+
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
 ## Phase 0: Intent Gate
 
@@ -498,6 +502,7 @@ Rules for the findings report:
 5. Check whether a formatter is configured and format all changed files including the plan file once, consistently.
 6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand the **residual** Phase-6 finding set to that handback — the findings that survived this run's correction rounds, not the full Phase-6 history — so an automatic PR review publishes them instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
 7. Summarize what was implemented, tested and documented; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch).
+8. Emit the next-step block per `next-steps` as the last element of the report.
 
 ## Rules
 

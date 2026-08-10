@@ -38,6 +38,14 @@ If no task tool is available, give the user a short progress update after each c
 
 **Load on demand:** Read `shared/concept-contract.md`, when a concept artifact's directory, file name, status, or sections are resolved or written.
 
+**Load on demand:** Read `shared/runtime-state-safety.md`, when a session rename request is about to be written below the runtime directory.
+
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a session rename request is about to be written below the runtime directory.
+
+**Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
+
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+
 ## Recommended skills
 
 - `product-management`
@@ -255,9 +263,11 @@ Ask the user: **Start the deep concept review now?**
 - No -- Continue later via review <concept-file>
 
 On `Yes`: read the internal instruction ``tools/concept-review.md`` and run it with the
-just-written concept file. The write boundary stays unchanged: only that file may be changed.
+just-written concept file. The write boundary stays unchanged: only that file may be changed. The
+delegation payload carries the literal line `Next steps: suppressed` on its own line, because that
+run returns its result here.
 
-On `No`: continue with Phase 6 and name the re-entry `effective-flow review <concept-file>`.
+On `No`: continue with Phase 6; the next-step block of that phase carries the re-entry.
 
 ### Phase 6: Completion
 
@@ -267,8 +277,9 @@ On `No`: continue with Phase 6 and name the re-entry `effective-flow review <con
    - a short summary of the concept: problem, audience, first version, non-goals
    - the scorecard result
    - the note that no code and no plan file were written
-   - the two possible follow-ups: the deep review via `effective-flow review <concept-file>`, and — once
-     work packages exist — `effective-flow plan` per work package
+3. Emit the next-step block per `next-steps` as the last element of the report. A deep review that
+   returned `Revision required` or a nonzero blocking open-point count takes the open-points row,
+   not the ready one — planning a work package comes after those points are closed.
 
 ## Rules
 

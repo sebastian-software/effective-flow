@@ -285,6 +285,8 @@ If no task tool is available, give the user a short progress update after each c
 - Choose the commit type by **effect**, not by file type: behavior-changing changes – including pure **config/env/secrets/CI** with deployment or runtime effect (e.g. corrected values in env/secret artifacts that take effect remotely via sync) – are `fix:` (or `feat:` for new functionality). `chore:` only for **deploy-neutral** changes without behavioral effect (pure maintenance, formatting, tooling without runtime effect). This also applies to the **squash PR title**, which determines the release-please bump on a squash merge.
 - Do not expose internal tracking IDs in commit messages, e.g. review finding IDs like `R-0000001`, local plan/review IDs like `F1`, or placeholders like `[Finding-ID]`. Such IDs belong in wisdom/report context, not in the Git history.
 
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+
 ## Project conventions
 
 If the project has an `AGENTS.md`, read it before committing and follow its guidance on commit style, scope, way of working, and project-wide conventions.
@@ -296,6 +298,7 @@ If the project has an `AGENTS.md`, read it before committing and follow its guid
 3. Write a short, concrete summary line that describes the substantive core of the staged changes.
 4. Do not run any standalone project validation; linting, tests, and other quality checks are the job of other skills such as ``effective-flow-code-validator`` and ``effective-flow-test-writer``.
 5. Run `git commit` for exactly these staged changes.
+6. Report the created commit and emit the next-step block per `next-steps` as the last element of that report. The block needs a commit that `git commit` actually created on a branch other than the base branch; a run with nothing staged, a commit a hook blocked, or a commit made on the base branch itself matches no row and emits nothing.
 
 ## Rules
 

@@ -128,6 +128,8 @@ If no task tool is available, give the user a short progress update after each c
 
 **Load on demand:** Read `shared/runtime-state-safety.md`, when worktree lifecycle state will be read or mutated, or any confirmed legacy copy or removal, runtime migration, memory, or tracker-marker mutation is imminent.
 
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+
 ## Effective Flow-owned worktree lifecycle
 
 This contract adds crash-tolerant lifecycle evidence to the execution-location receipt. It never
@@ -1260,9 +1262,9 @@ worktree.”
 
 Report to the user:
 
-- what was carried over (files to `.effective-flow/`) and which config values were referred to `effective-flow setup`
+- what was carried over (files to `.effective-flow/`) and which config values `effective-flow setup` owns
 - what was deleted, separated into tracked (via `git rm`, staged) and physically removed
-- which outdated `.gitignore` lines remain and that `effective-flow setup` owns their repair
+- which outdated `.gitignore` lines remain and that `effective-flow setup` owns their repair, not this run
 - which `firmo-` labels were detached from how many issues (or that the label class was skipped)
 - worktrees removed successfully, with their checkout identities and retained/deleted branch
   outcomes
@@ -1276,7 +1278,11 @@ Report to the user:
   worktrees, so interrupted post-removal state remains visible
 - an explicit statement when no linked worktrees remain
 - what else deliberately remains and why
-- that **no** commit was created; refer to `effective-flow commit` for the staged changes
+- that **no** commit was created and which removals are staged
+
+Then emit the next-step block per `next-steps` as the last element of the report: the staged-removals
+row when this run staged deletions, the configuration row when it only referred config values on. A
+report that found neither matches no row and emits nothing.
 
 ## Rules
 

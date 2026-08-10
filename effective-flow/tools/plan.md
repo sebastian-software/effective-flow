@@ -40,11 +40,19 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/completion-protocol.md`, when an internal sub-agent's result is returned.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when a legacy runtime directory migration is about to mutate `.effective-flow/`.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when a legacy runtime directory migration or a session rename request is about to mutate `.effective-flow/`.
+
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a session rename request is about to be written below the runtime directory.
 
 **Load on demand:** Read `shared/config-migration.md`, when the Effective Flow configuration is read for the first time or an old config is migrated.
 
 **Load on demand:** Read `shared/plan-input-gateway.md`, when the user supplied a non-empty argument, before the local planning workflow starts.
+
+The gateway's handoff to `effective-flow plan-issue` deliberately carries **no** `Next steps: suppressed`
+line: the gateway ends this run immediately, so the receiving run owns the rest of the work and is
+the one that closes in front of the user. It emits its own next-step block.
+
+**Load on demand:** Read `shared/plan-reference-routing.md`, when the gateway classified the argument as an existing plan file and this run revises it.
 
 ## Plan status convention
 
@@ -80,6 +88,10 @@ Rules:
 **Load on demand:** Read `shared/plan-numbering.md`, when a plan file is created or its date-slug name is resolved.
 
 **Load on demand:** Read `shared/doc-categories.md`, when the requirement is classified as Documentation and a doc category or target path is decided.
+
+**Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
+
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
 ## Recommended skills
 
@@ -221,22 +233,66 @@ handbook.
 1. Analyze the requirement thoroughly.
 2. Review existing plan files in `<plan.dir>/` to adopt structure and existing architecture decisions.
 3. Check whether any plans in the old format (`NNNN-slug.md`) still exist in `<plan.dir>/`. If so, perform the bulk migration according to `Plan file convention`, section "Migration of old plans (NNNN → date)". The actual plan file for this run is only created in Phase 3/7 under `<plan.dir>/YYYY-MM-DD-<slug>.md` — there is no stub, no reservation, and no number.
-4. Delegate the read-only examination of the relevant areas of the codebase to an internal sub-agent; examine them inline only under the delegation mandate's triviality exception:
+4. **Revision mode.** If the gateway returned source type `plan`, this run revises that existing
+   plan file instead of writing a new one. Resolve the reference **after** the bulk migration of
+   step 3 and against the post-migration file name — the gateway runs before that migration, so an
+   earlier resolution would already be stale by the time Phase 3 writes.
+
+   Apply only the reference-resolution and status-check sections of the loaded plan-reference rule,
+   and ask **none** of its questions: it carries two — the implemented-plan question and the
+   missing-or-contradictory-status question — and in revision mode neither is asked, because the
+   single question below replaces both. **Skip its workflow-mismatch check** as well: revising a
+   plan is not implementing it, so a recommendation pointing at another workflow is expected here
+   and must trigger neither a warning nor a confirmation round.
+
+   Enter revision mode **without asking** only when both hold: the reference was **exact** — a full
+   path or a date-slug file name — and the resolved plan carries the canonical open status.
+   A legacy number or a title slug is a fuzzy match that can land far from the requirement at hand
+   (`effective-flow plan caching` resolves to an unrelated `2026-01-01-caching.md`), and a plan that is
+   not open is the case the fragment would otherwise ask about. In either case, report the resolved
+   path with the plan's title and status first, then ask exactly once:
+
+If the revision target was resolved from a legacy number or a title slug, or the resolved plan does not carry the canonical open status: Ask the user: **Revise the resolved plan file in place, start a new plan, or stop?**
+- Revise in place -- Reuse the reported file, reset its status to the canonical open value of its plan language, and move an archived plan back to <plan.dir>/
+- New plan -- Leave the resolved plan untouched and write a new dated plan file for this requirement
+- Abort -- End the run without changing any plan file
+
+On a revision run:
+
+- Write to the **same path**: no new dated file, no `-2` suffix.
+- Reset the status to the canonical open value of the plan's complete language, **unconditionally**
+  and not only when the plan was archived. A plan left at `Umgesetzt` / `Implemented` inside
+  `<plan.dir>/` would make the emitted `effective-flow apply <plan-file>` reopen the implemented-plan
+  question this revision just answered, and `effective-flow open-plans` would not list it. An archived
+  plan additionally moves back to `<plan.dir>/` with `git mv`, exactly as the question stated.
+- If the status line was missing, duplicated, or invalid, report that unclear status and obtain
+  explicit confirmation before writing the canonical open value — the same confirmation any other
+  header change needs.
+- Preserve a legacy `# NNNN: <title>` H1 verbatim; the `# <title>` rule of Phase 3 covers newly
+  created plans only.
+- Append this run's review to `## Plan review` / `## Plan-Review` as a **dated subsection**; never
+  overwrite the existing section, so earlier passes stay readable.
+- Report a changed classification and obtain explicit confirmation before rewriting
+  `**Recommended workflow:**`. ``tools/apply-plan.md`` and `effective-flow open-plans` both route on that
+  field, so it never flips silently.
+- Offer Phase 6b again, as on any other run.
+
+5. Delegate the read-only examination of the relevant areas of the codebase to an internal sub-agent; examine them inline only under the delegation mandate's triviality exception:
    - project structure
    - affected modules and files
    - existing architecture decisions
    - technologies used
    - relevant tests and validation paths
-5. Classify the recommended implementation:
+6. Classify the recommended implementation:
    - **Feature:** new functionality, a new UI element, a new page, a new integration, or changed user behavior.
    - **Bugfix:** fix a bug, correct unexpected behavior, or eliminate a regression.
    - **Refactoring:** improve structure, maintainability, or performance without intended behavior change.
    - **Documentation:** change README, guides, API documentation, comments, or other documentation without changing product or code behavior.
-6. If the classification is `Documentation`:
+7. If the classification is `Documentation`:
    - additionally determine the doc category according to `Doc categories` (user-guide, developer-guide, operations, runbooks).
    - propose a topic-based file slug for the target document that is unique within the category.
    - check whether the proposed target path under `docs/<category>/` already exists. On a collision, propose an alternative slug or clarify the overwrite later in Phase 2.
-7. Explicitly record which statements are verified code context and which statements are assumptions.
+8. Explicitly record which statements are verified code context and which statements are assumptions.
 
 ### Phase 2: Clarification
 
@@ -254,7 +310,7 @@ handbook.
 
 ### Phase 3: Plan creation
 
-Write the plan file to `<plan.dir>/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` is the creation date (via `date +%F`), `<slug>` a kebab-case slug from the final title. On a name collision on the same day, append a numeric suffix (`-2`, `-3`, …). The H1 is `# <title>` without a number.
+Write the plan file to `<plan.dir>/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` is the creation date (via `date +%F`), `<slug>` a kebab-case slug from the final title. On a name collision on the same day, append a numeric suffix (`-2`, `-3`, …). The H1 is `# <title>` without a number. On a revision run per Phase 1 step 4, this step targets the resolved existing path instead and none of these naming rules apply.
 
 Before writing, resolve `language.workflow` once through the shared language resolver and retain
 that concrete value for all planning/review delegates. For an existing plan, preserve its
@@ -459,10 +515,10 @@ Ask the user: **Start the deep interactive plan review now?**
 
 On `Yes`: Read the internal instruction ``tools/plan-review.md`` and run it with the
 just-created plan file. Continue to observe the write boundary: only the
-plan file under `<plan.dir>/` may be changed.
+plan file under `<plan.dir>/` may be changed. The delegation payload carries the literal line
+`Next steps: suppressed` on its own line, because that run returns its result here.
 
-On `No`: Continue with Phase 7 and name in the conclusion the re-entry via
-`effective-flow review <plan-file>`.
+On `No`: Continue with Phase 7; the next-step block of that phase carries the re-entry.
 
 ### Phase 7: Completion
 
@@ -474,7 +530,10 @@ On `No`: Continue with Phase 7 and name in the conclusion the re-entry via
    - the recommended workflow with rationale
    - the scorecard result
    - a note that no code changes were made
-   - a note as to which skill call implements the plan later, for example `effective-flow build <plan.dir>/YYYY-MM-DD-<slug>.md`, `effective-flow fix <plan.dir>/YYYY-MM-DD-<slug>.md`, `effective-flow refactor <plan.dir>/YYYY-MM-DD-<slug>.md`, or `effective-flow docs <plan.dir>/YYYY-MM-DD-<slug>.md`
+   - on a revision run: that the existing file was revised in place, plus every confirmed header change
+4. Emit the next-step block per `next-steps` as the last element of the report. A deep review that
+   returned `Revision required` or a nonzero blocking open-point count takes the open-points row,
+   not the ready one — implementation comes after those points are closed.
 
 ## Rules
 

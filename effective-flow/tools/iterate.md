@@ -134,9 +134,13 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 - If the harness offers no such mechanism, or a delegation is declined at runtime, work inline and say so in one visible line — never silently.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent, or a session rename request is about to be written.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent, or a session rename request is about to be written.
+
+**Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
+
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
 ## Effective Flow configuration (project setup ADR)
 
@@ -1206,10 +1210,12 @@ If Delivery was active and no valid value for `delivery.completion` is set: Ask 
      prefer fast-forward, otherwise a merge commit; on conflict stop, leave the branch
      and inform the user, no automatic conflict resolution.
    - `pr`: delegate to `effective-flow pr` and pass the delivery branch, base branch, the verified
-     `RUNTIME_STATE_ROOT` as its execution root, and the workflow/change type
+     `RUNTIME_STATE_ROOT` as its execution root, the workflow/change type
      (`feat`/`fix`/`refactor`/`docs`/`chore` depending on the implementing workflow and effect) as
      a title-type hint, so the PR title carries a valid Conventional Commit type — with a squash
-     merge it is the release signal.
+     merge it is the release signal — and the literal line `Next steps: suppressed` on its own
+     line, because `effective-flow pr` returns its result here and the implementing workflow is the one
+     that closes this run.
      Once `effective-flow pr` returned the pull request, run "PR review publication" with that pull
      request, whether this run is gated or a non-interactive delegation, and either the workflow's
      residual finding set or its explicit declaration that it has none. It uses the same verified
@@ -1702,7 +1708,8 @@ At the start, generate a session ID (e.g. via timestamp) and use
 
 - the resolved PR (number, head/base branch, head SHA, URL) or the local target diff
 - the received item filter (free-text-only, an explicit thread-ID list, or none), whether the
-  caller suppressed the summary comment, and whether it announced an established review guard
+  caller suppressed the summary comment or the next-step block, and whether it announced an
+  established review guard
 - the pull-request status read alongside the threads (head SHA, `headCommittedAt`, `checksReported`),
   or the reason it was unavailable
 - the observed state of every configured automatic reviewer with the evidence that established it,
@@ -1805,6 +1812,22 @@ end.
    it.
 
    Record the switch (or its absence) in the wisdom file and carry it into Phase 1.5.
+
+8. **Optional next-step suppression.** A delegating workflow whose result returns to it may
+   suppress this run's next-step block. Like the switches above this is a caller contract and never
+   user free text, and it is announced on its own line in exactly this literal form:
+   - `Next steps: suppressed` — emit **no** next-step block in Phase 6; the caller emits once for
+     the whole run.
+
+   Two invariants bind it:
+   - **An invocation without that line keeps this run as the outermost one**: Phase 6 emits the
+     block per `next-steps`, as every interactive invocation does.
+   - **An unparseable switch suppresses rather than aborts.** A line announcing `Next steps:` in any
+     other form is a broken caller contract, but the only thing at stake is one chat block, so treat
+     it as suppression and report the malformed line. This is deliberately unlike the two switches
+     above, where a misread line would implement unscoped items or remove a guard.
+
+   Record the switch (or its absence) in the wisdom file and carry it into Phase 6.
 
 ### Phase 1: Gather context
 
@@ -1953,7 +1976,10 @@ Ask the user: **Approve and implement the classified items?**
    parallel.
 2. Delegate each actionable item to the appropriate skill (effective-flow fix, effective-flow refactor,
    effective-flow build, or effective-flow docs), on the PR head branch (PR mode) or the current
-   branch (local mode). Each delegation receives its analyzed owned paths and reports its actual
+   branch (local mode). Every one of those delegations carries the literal line
+   `Next steps: suppressed` on its own line: the skill is user-invocable, but it returns its result
+   here and a per-item recommendation would name a step this run has not reached.
+   Each delegation receives its analyzed owned paths and reports its actual
    paths. If it discovers that it must touch a path outside its analyzed set, it must stop before
    modifying that path and return it to the orchestrator. Add the path to the item's actual
    ownership, compare it with every active item's analyzed and actual paths, and serialize the
@@ -2054,6 +2080,8 @@ and stop delivery for reconciliation.
    - table: implemented / skipped / deferred questions / failed
    - PR URL, pushed commits, resolved threads, final checkout state
    - in local mode: which commits were created on which branch
+3. Emit the next-step block per `next-steps` as the last element of the report — unless Phase 0
+   received `Next steps: suppressed`, in which case emit nothing and let the caller close the run.
 
 ## Rules
 

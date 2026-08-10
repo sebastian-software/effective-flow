@@ -140,6 +140,8 @@ Rules:
 - If the marker is missing, occurs multiple times, contains an invalid value, or uses a mixed form of key and value language, the plan status is unclear. In that case, do not automatically treat the plan as open or completed.
 - When a workflow sets the status to completed, the complete plan language is preserved: a German marker becomes `**Planungsstatus:** Umgesetzt`, an English marker becomes `**Plan status:** Implemented`.
 
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+
 ## Approach
 
 1. Check whether `<plan.dir>/` exists.
@@ -166,6 +168,7 @@ Rules:
    - Then a short list of status-unclear plans, if present
    - If multiple plan files carry the same date-slug name, point this out separately (this duplicate violates the `Plan file convention` and should be resolved via the appropriate workflow)
    - If no open plans exist: a clear message "No open plans found."
+7. Emit the next-step block per `next-steps` as the last element of the output, after the table. A run that found no open plan matches no row and emits nothing.
 
 ## Summary rules
 

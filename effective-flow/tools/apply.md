@@ -115,9 +115,11 @@ If no task tool is available, give the user a short progress update after each c
 - with a single, trivial task
 - when the task is done in fewer than three simple steps
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when a remote tracker access is about to write its local migration marker.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when a remote tracker access is about to write its local migration marker, or a session rename request is about to be written.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a remote tracker access is about to perform its first runtime-state mutation.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a remote tracker access is about to perform its first runtime-state mutation, or a session rename request is about to be written.
+
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
 ## Effective Flow configuration (project setup ADR)
 
@@ -794,6 +796,8 @@ Legacy-label transitions use the helper's add and remove operations in that orde
 
 **Load on demand:** Read `shared/tracker-target.md`, when the resolved tracker target is `external`.
 
+**Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
+
 ## Workflow
 
 ### Phase 1: Classify the source
@@ -839,9 +843,15 @@ Legacy-label transitions use the helper's add and remove operations in that orde
 3. Pass as context that `effective-flow apply` has already classified the source, including
    the detected source type and the resolved tracker target. After that, the entire
    responsibility lies with the target skill.
-4. The target skill checks the basis itself against the "clarification gate" before it
+4. Every one of those three delegations carries the literal line `Next steps: suppressed` on its
+   own line: the target skill emits no block of its own, and this run closes the report if control
+   returns here.
+5. The target skill checks the basis itself against the "clarification gate" before it
    implements. `effective-flow apply` itself does not run this check and implements
    nothing.
+6. When control returns here, emit the next-step block per `next-steps` as the last element of the
+   report, taking the row for the end state the delegation reported — the failed plan clarity gate,
+   the applied findings, or the processed issues, each with or without a pull request.
 
 ## Rules
 

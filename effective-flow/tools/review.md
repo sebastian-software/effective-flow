@@ -39,11 +39,15 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 - If the harness offers no such mechanism, or a delegation is declined at runtime, work inline and say so in one visible line — never silently.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent, or a session rename request is about to be written.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent, or a session rename request is about to be written.
 
 **Load on demand:** Read `shared/project-routing.md`, when Phase 1 classifies scoped files into routing buckets.
+
+**Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
+
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
 ## Task tracking in detail
 
@@ -352,8 +356,10 @@ For an unambiguous plan match:
 1. Do not load any code-review configuration, tracker mode, memory file,
    cache, or wisdom file.
 2. Read the internal instruction ``tools/plan-review.md``.
-3. Run it with the resolved plan file.
-4. Then end this `review` workflow; do not start a code review.
+3. Run it with the resolved plan file and the literal line `Next steps: suppressed`; it returns its
+   result here.
+4. Emit the next-step block per `next-steps` for the returned state, then end this `review`
+   workflow; do not start a code review.
 
 If no plan file or multiple plan files match and the user clearly wanted a plan
 review, do not continue with Phase 1: report the missing plan or ask for the specific
@@ -376,8 +382,9 @@ If exactly one concept file is found:
 
 1. Do not load any code-review configuration, tracker mode, memory file, cache, or wisdom file.
 2. Read the internal instruction ``tools/concept-review.md``.
-3. Run it with the resolved concept file.
-4. Then end this `review` workflow; do not start a code review.
+3. Run it with the resolved concept file and the literal line `Next steps: suppressed`.
+4. Emit the next-step block per `next-steps` for the returned state, then end this `review`
+   workflow; do not start a code review.
 
 An argument that matches both a plan file and a concept file is ambiguous. That case is decided by
 the cross-check in the plan-file special case above, which runs first and asks instead of starting
@@ -406,6 +413,7 @@ On a resolved pull request:
 4. Phases 2 and 3 run unchanged.
 5. Phase 4 publishes the Phase-3 finding set through the loaded "PR review publication" instead of
    the local-mode report or the finding issues of a publishing target.
+6. It emits the pull-request row of `next-steps`, not the local or publishing one.
 
 An argument that plausibly matches both a plan file and a pull request is ambiguous: name both
 interpretations and ask, never guess. A merged or closed pull request, or one belonging to another
@@ -618,6 +626,7 @@ Phase 4 branches according to the tracker target resolved in Phase 1. On the `lo
 5. Update valid cache areas (`designDecisions`, `scopeIndex`, `validatorScripts`) only after a successful recomputation. Do not write review findings to the cache.
 6. Present the most important findings to the user and point to the saved report file.
 7. Delete the wisdom file.
+8. Emit the next-step block per `next-steps` as the last element of the report.
 
 #### Publishing target (forge or external tool)
 
@@ -636,6 +645,7 @@ Reuse the Phase-1 `language.forge` value for finding issues, the container, and 
 9. Do not rewrite `memory.json` after publication; the range was already persisted in Step 4.
 10. Report to the user the resolved target (for `external` including tool identifier, connection, and container mechanism), the epic URL or identifier, the number of newly created findings, the number of deduplicated findings, plus the number of withheld findings and the local report path. If this run published to a different target than the previous run recorded, state that deduplication does not span targets and that findings may already exist in the old one.
 11. Delete the wisdom file.
+12. Emit the next-step block per `next-steps` as the last element of the report.
 
 **Completion condition (no correction loop):** The review is complete when the findings that were quality-checked in Phase 3, filtered against design decisions, and classified by the security gate are available — on the `local` target in the report, on a publishing target as finding issues plus their container (or with the message that all findings already exist), with every withheld finding in the local security report or, if that report was blocked, reported in the chat as not persisted —, the exact published finding range was reserved atomically before publication, and the wisdom file has been deleted. The independent check is provided by the finding-quality check in Phase 3 (confidence filter, duplicate and severity consistency). This workflow only produces a report and implements nothing; therefore there is no bounded correction loop.
 

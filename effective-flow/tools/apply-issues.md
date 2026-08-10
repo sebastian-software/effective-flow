@@ -128,9 +128,11 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 The per-issue delegation to the target workflow skill is **workflow-to-workflow** delegation, not a worker role: its non-interactive delegation contract, the per-issue execution root, and the skip and failure handling stay authoritative and are never replaced by inline implementation. The mandate adds authorization only.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, tracker-marker, or other runtime-state mutation is imminent.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, tracker-marker, session rename, or other runtime-state mutation is imminent.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, tracker-marker, or other runtime-state mutation is imminent.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, tracker-marker, session rename, or other runtime-state mutation is imminent.
+
+**Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
 
 ## Commit message rules
 
@@ -1263,15 +1265,19 @@ Issues with the same target PR run sequentially so that new commits are created 
      The delegation sub-agent runs as a **non-interactive** delegation (context hint "[Context from effective-flow apply-issues: …]"): no approval gate of its own, completion protocol `DONE`/`ABORT`.
      Pass the absolute root and execution-location receipt established by that delegated workflow;
      never rely on an inherited current directory or create a nested worktree around a reused
-     harness-native one.
+     harness-native one. Pass the literal line `Next steps: suppressed` on its own line as well:
+     the delegated skill is user-invocable, but it returns its result here and this run is an
+     intermediate result of `effective-flow apply`.
 2. Commit the changes using resolved `language.git` for the description (Conventional Commit
    type stable, no internal IDs, no `Co-Authored-By`) and push the branch. Pass resolved
    `language.git` and `language.forge` to the delegated delivery path. If a target PR is present:
    **do not create a new PR**, but use the existing PR link and optionally extend its body by one
    exact issue reference through the helper's idempotent body patch, using the fresh body hash so
    concurrent edits fail closed. If no target PR is present: take the branch through
-   `effective-flow pr` as exactly one PR against the base branch and include the issue reference in the
-   helper-validated PR payload. Choose the reference form by tracker target per the
+   `effective-flow pr` as exactly one PR against the base branch — with the literal line
+   `Next steps: suppressed` on its own line, because that run returns its result here — and include
+   the issue reference in the helper-validated PR payload. Choose the reference form by tracker
+   target per the
    `tracker-target` forge boundary: on the forge the auto-close keyword `Closes #<issue>` (or
    `Refs #<issue>`), on an external target a plain, non-auto-closing reference to the tool-native
    identifier. Never write `Closes #<number>` for an external issue — the code host would resolve
@@ -1323,10 +1329,12 @@ Report to the user:
 
 - processed issues with result (implemented / skipped / failed)
 - created PRs with URL
-- skipped issues (`effective-flow-needs-planning`) with reason and the note that `effective-flow plan-issue` can complete the planning
+- skipped issues (`effective-flow-needs-planning`) with the reason each one was not implementable
 - checked-off epic entries, if containers were processed
 
-Then delete the wisdom file.
+Then delete the wisdom file and **return** that report plus the run's end state — the created pull
+requests and the skipped issue references — to `effective-flow apply`, which closes the run with its own
+next-step block. Name no follow-up invocation of your own here.
 
 ## Rules
 

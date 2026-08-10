@@ -121,9 +121,11 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 The Phase 4 delegation sub-agent per overlap component is **workflow-to-workflow** delegation, not a worker role: its non-interactive delegation contract, the overlap components, the git commit mutex, the worktree isolation, the synchronization barrier, and the `failed (delegation)` handling stay authoritative and are never replaced by inline work. The mandate adds authorization only.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, memory, cache, report, lock, or worktree mutation is imminent.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, memory, cache, report, lock, or worktree mutation is imminent, or a session rename request is about to be written.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, memory, cache, report, lock, or worktree mutation is imminent.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, memory, cache, report, lock, or worktree mutation is imminent, or a session rename request is about to be written.
+
+**Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
 
 ## Effective Flow configuration (project setup ADR)
 
@@ -1002,6 +1004,9 @@ Example (across actions) with five findings over multiple actions:
    - the prompt suggestion from the report as the task description
    - **Stash convention:** if any stash arises during the implementation of this finding (through a pre-commit hook, a manual `git stash` in the sub-skill or a tool-triggered stash), **the stash message must contain the finding ID**, e.g. `apply-review R-XXXXXXX <short description>`. This allows the stash cleanup in Phase 6 to reliably assign the stash to the finding.
    - the note that the sub-agent runs as a **non-interactive** delegation sub-agent of `effective-flow apply-review` and therefore opens no approval gate of its own. `effective-flow apply-review` steers the run at its own gate.
+   - the literal line `Next steps: suppressed` on its own line. Each delegated skill is
+     user-invocable and would otherwise close a per-finding recommendation into the chat, although
+     it returns its result here and this run is an intermediate result of `effective-flow apply`.
    - the completion protocol
 3. Check each sub-agent for `DONE` or `ABORT`.
 4. On `ABORT`:
@@ -1161,6 +1166,10 @@ Ask the user: **How should this stash be handled?**
 **Kept stashes:**
 - `stash@{N}` [description] — please check manually
 ```
+
+3. Return that summary and the run's end state — whether a pull request was opened and which source
+   remains unprocessed — to `effective-flow apply`, which closes the run with its own next-step block.
+   Name no follow-up invocation of your own here.
 
 ## Rules
 

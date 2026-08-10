@@ -124,6 +124,12 @@ This mandate authorizes **read-only** analysis fan-out only. The `Hard scope bou
 
 **Load on demand:** Read `shared/concept-contract.md`, when a concept artifact's directory, file name, status, or sections are resolved or written.
 
+**Load on demand:** Read `shared/runtime-state-safety.md`, when a session rename request is about to be written below the runtime directory.
+
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a session rename request is about to be written below the runtime directory.
+
+**Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
+
 ## Recommended skills
 
 - `codebase-improvement`
@@ -365,9 +371,9 @@ or when the next decision needs information that is not currently available.
    no critical finding and no blocking open point remains, and set the review result to
    `Approved`/`Freigegeben`. Otherwise the status stays `Draft`/`Entwurf` and the result is
    `Revision required`/`Überarbeitung nötig`.
-2. Report the concept path, the number of blocking open points, the re-entry
-   `effective-flow review <concept-file>`, and the first recommended `effective-flow plan` handoff from the
-   roadmap.
+2. Return the concept path, the number of blocking open points, and the first work package of the
+   roadmap to the caller, which closes the run with its own next-step block. Name no re-entry
+   invocation here.
 
 ## Rules
 

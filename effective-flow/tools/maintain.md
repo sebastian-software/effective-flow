@@ -125,9 +125,11 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 - If the harness offers no such mechanism, or a delegation is declined at runtime, work inline and say so in one visible line — never silently.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, report, memory, runtime migration, or worktree mutation is imminent.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, report, memory, runtime migration, or worktree mutation is imminent, or a session rename request is about to be written.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, report, memory, runtime migration, or worktree mutation is imminent.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, report, memory, runtime migration, or worktree mutation is imminent, or a session rename request is about to be written.
+
+**Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
 
 # Project-role detection and routing
 
@@ -1219,10 +1221,12 @@ If Delivery was active and no valid value for `delivery.completion` is set: Ask 
      prefer fast-forward, otherwise a merge commit; on conflict stop, leave the branch
      and inform the user, no automatic conflict resolution.
    - `pr`: delegate to `effective-flow pr` and pass the delivery branch, base branch, the verified
-     `RUNTIME_STATE_ROOT` as its execution root, and the workflow/change type
+     `RUNTIME_STATE_ROOT` as its execution root, the workflow/change type
      (`feat`/`fix`/`refactor`/`docs`/`chore` depending on the implementing workflow and effect) as
      a title-type hint, so the PR title carries a valid Conventional Commit type — with a squash
-     merge it is the release signal.
+     merge it is the release signal — and the literal line `Next steps: suppressed` on its own
+     line, because `effective-flow pr` returns its result here and the implementing workflow is the one
+     that closes this run.
      Once `effective-flow pr` returned the pull request, run "PR review publication" with that pull
      request, whether this run is gated or a non-interactive delegation, and either the workflow's
      residual finding set or its explicit declaration that it has none. It uses the same verified
@@ -1367,6 +1371,8 @@ Rules:
 - After writing, output the report path to the user.
 
 **Load on demand:** Read `shared/review-report-format.md`, when a review report is written or an existing one is augmented.
+
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
 ## Workflow
 
@@ -1531,6 +1537,7 @@ Pure dependency bumps without code adaptation need no reviewer pass; note that b
 3. Confirm that the behavior stayed unchanged (baseline comparison green).
 4. Delete the wisdom file.
 5. If delivery or worktree execution was active: run the handback per "Delivery and worktree integration". The per-group commits already sit on the delivery branch; the handback performs ownership-safe worktree cleanup if applicable, runs the completion action `pr`/`merge`/`branch`, and restores only an in-place checkout it switched. Hand the **residual** Phase-4 finding set to that handback — the findings that survived this run's correction rounds, not the full review history — so an automatic PR review publishes them instead of reviewing the pull request a second time; if Phase 4 did not run at all (pure dependency bumps without code adaptation), declare **no** complete finding set, so an automatic PR review reviews the pull request itself. Name the delivery branch, the final checkout state, and the result in the summary.
+6. Emit the next-step block per `next-steps` as the last element of the report.
 
 ## Pre-commit gate
 

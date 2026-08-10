@@ -217,6 +217,8 @@ path and the distinction has no effect.
 
 **Load on demand:** Read `shared/execution-location.md`, when the supplied or resolved execution root must be verified before a push, helper call, or checkout restore.
 
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+
 ## Project conventions
 
 If the project has an `AGENTS.md`, read it before creating the PR and follow its guidance on branch names, PR titles, PR descriptions, and project-wide conventions.
@@ -336,7 +338,7 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
     switch-back fails, report the actual branch explicitly. The
     PR head branch is preserved locally and remotely.
 12. **Report the result:** Output the PR URL, the branch name, and the final local
-    checkout state.
+    checkout state. Emit the next-step block per `next-steps` as the last element of that report.
 
 ## Rules
 

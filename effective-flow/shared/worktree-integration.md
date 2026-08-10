@@ -807,10 +807,12 @@ If Delivery was active and no valid value for `delivery.completion` is set: Ask 
      prefer fast-forward, otherwise a merge commit; on conflict stop, leave the branch
      and inform the user, no automatic conflict resolution.
    - `pr`: delegate to `effective-flow pr` and pass the delivery branch, base branch, the verified
-     `RUNTIME_STATE_ROOT` as its execution root, and the workflow/change type
+     `RUNTIME_STATE_ROOT` as its execution root, the workflow/change type
      (`feat`/`fix`/`refactor`/`docs`/`chore` depending on the implementing workflow and effect) as
      a title-type hint, so the PR title carries a valid Conventional Commit type — with a squash
-     merge it is the release signal.
+     merge it is the release signal — and the literal line `Next steps: suppressed` on its own
+     line, because `effective-flow pr` returns its result here and the implementing workflow is the one
+     that closes this run.
      Once `effective-flow pr` returned the pull request, run "PR review publication" with that pull
      request, whether this run is gated or a non-interactive delegation, and either the workflow's
      residual finding set or its explicit declaration that it has none. It uses the same verified

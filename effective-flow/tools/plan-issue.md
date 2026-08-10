@@ -134,9 +134,11 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/completion-protocol.md`, when an internal sub-agent's result is returned.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when a remote tracker access is about to write its local migration marker.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when a remote tracker access is about to write its local migration marker, or a session rename request is about to be written.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a remote tracker access is about to perform its first runtime-state mutation.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a remote tracker access is about to perform its first runtime-state mutation, or a session rename request is about to be written.
+
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
 ## Effective Flow configuration (project setup ADR)
 
@@ -597,6 +599,8 @@ Legacy-label transitions use the helper's add and remove operations in that orde
 
 **Load on demand:** Read `shared/tracker-target.md`, when the resolved tracker target is `external`.
 
+**Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
+
 ## Comment convention
 
 Write the planning result as an issue comment (operation "Add comment" from the mapping). Resolve
@@ -854,11 +858,12 @@ Do not reuse this answer for any other selected issue.
 
 - On **Yes**, read ``tools/plan-review.md`` and invoke it in **issue mode** with exactly this issue,
   the current canonical planning-comment ID and body, its freshly computed body hash, the
-  already-resolved tracker adapter, and the concrete artifact language. The internal review may
-  update only this existing comment and returns whether implementation-blocking open points
-  remain. Do not create a plan file or a second comment.
-- On **No**, retain the approved automatic baseline, record no artificial open point, and name
-  `effective-flow plan-issue <issue>` as the optional later re-entry.
+  already-resolved tracker adapter, the concrete artifact language, and the literal line
+  `Next steps: suppressed` on its own line, because that run returns its result here. The internal
+  review may update only this existing comment and returns whether implementation-blocking open
+  points remain. Do not create a plan file or a second comment.
+- On **No**, retain the approved automatic baseline and record no artificial open point; the
+  next-step block of Phase 5 carries the optional later re-entry.
 
 After either branch, apply the readiness decision. If the deep review is ended, deferred after it
 starts, fails to persist, or returns a blocking open point, keep or add
@@ -874,9 +879,10 @@ receiving their own baseline, question, comment update, and label decision.
 ### Phase 5: Summary
 
 Report per issue whether it was released for implementation, retained for planning with its open
-points, or failed closed during comment persistence. Mention `effective-flow apply <issue>` only for
-released issues and `effective-flow plan-issue <issue>` for later or blocked review. This skill itself
-implements nothing.
+points, or failed closed during comment persistence. This skill itself implements nothing.
+
+Emit the next-step block per `next-steps` as the last element of the report. A run that released at
+least one issue takes the released row; a run that released none takes the retained row.
 
 ## Rules
 

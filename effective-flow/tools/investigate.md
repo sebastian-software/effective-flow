@@ -126,7 +126,9 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/completion-protocol.md`, when an internal sub-agent's result is returned.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when a wisdom file, runtime migration, investigation directory, or report mutation is imminent.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when a wisdom file, runtime migration, investigation directory, or report mutation is imminent, or a session rename request is about to be written.
+
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
 ## Runtime directory `.effective-flow/` and migration from `.firmo/`/`.sf-plugin/`
 
@@ -331,6 +333,8 @@ two-line pattern `.effective-flow/*` plus `!.effective-flow/config.json`, as wel
 `.firmo/` or `.sf-plugin/` ignore line—is handled only by `effective-flow setup`. Deletion of preserved
 legacy directories remains an explicit, user-confirmed responsibility of `effective-flow cleanup`.
 
+**Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
+
 ## Project conventions
 
 If the project has an `AGENTS.md`, read it early in the workflow and follow its guidance on analysis, diagnosis, and report formats.
@@ -496,8 +500,9 @@ If the scorecard does not support the diagnosis, name the concrete next diagnost
 3. Apply the guard again to the exact diagnosis-report path immediately before writing
    `.effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md`, then write it per the
    report template below.
-4. Output exactly one follow-up recommendation with rationale (see "Routing outward") plus a copy-paste-ready invocation suggestion that references the report path, e.g. `effective-flow fix .effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md`.
+4. State exactly one follow-up classification with its rationale (see "Routing outward"). Do not spell out an invocation here; step 6 carries the copy-paste-ready form once.
 5. Optionally offer to hand over directly to the recommended follow-up workflow; do not start it unprompted.
+6. Emit the next-step block per `next-steps` as the last element of the report. The classification of step 4 selects the row, so the recommendation it already named stays the first option. The fifth class — no bug, deliberately no action, or a product decision needed — matches no row and emits nothing, because it is not a documentation gap. The persisted `## Recommendation` section of the report is unaffected and keeps its single follow-up including its invocation suggestion.
 
 ## Report template
 
