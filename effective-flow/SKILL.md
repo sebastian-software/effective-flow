@@ -6,7 +6,7 @@ argument-hint: "[concept|investigate|plan|open-plans|plan-issue|apply|build|fix|
 
 # Effective Flow
 
-Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.57.0 (fd8a609)).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.57.1 (36ea4fe)).
 
 This router skill is deliberately **thin**. Beyond the tool catalog, the dispatch rule and the session-title contract it carries nothing; a tool's full instructions are loaded from `tools/<tool>.md` **only when needed**. This keeps the session lean and avoids token exhaustion from preloading all tools.
 
