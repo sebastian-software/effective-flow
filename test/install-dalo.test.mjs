@@ -426,6 +426,127 @@ test('DALO driver: a blocked catalog advance stops the installer without accepti
   );
 });
 
+test('DALO driver: a blocked advance with no approval record names both acceptance steps', async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-dalo-blocked-both-'));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+
+  // The two acceptances are independent: the staged audit releases the advance,
+  // the approval record lets `dalo sync` materialize the skill. DALO 0.9.2
+  // reports `pending_approval_skills` from `--json status` at exactly the moment
+  // the advance fails, so both remedies are knowable in the same run.
+  const stagedPath = '/tmp/staging/effective-flow-def456/effective-flow';
+  const plan = [
+    { match: 'init', exit: 0 },
+    { match: 'target link claude', exit: 0 },
+    { match: 'target link codex', exit: 0 },
+    {
+      match: '--json source list',
+      exit: 0,
+      stdout: `{"sources":[{"id":"effective-flow","kind":"catalog","url":"${CATALOG_URL}","update_policy":"pinned","selection":["effective-flow"]}]}\n`,
+    },
+    { match: 'source select effective-flow effective-flow', exit: 0 },
+    {
+      match: 'source refresh effective-flow --advance',
+      exit: 1,
+      stderr: `error: catalog pin was not advanced: security audit blocks candidate skill\nreview with \`dalo audit '${stagedPath}' --accept-risk <reason>\`\n`,
+    },
+    { match: '--json status', exit: 0, stdout: statusJson({ pending: true }) },
+  ];
+
+  const result = await runDriver(sandbox, plan);
+  assert.notEqual(result.status, 0);
+  assert.match(
+    result.stderr,
+    new RegExp(`dalo audit '${escapeRegExp(stagedPath)}' --accept-risk`),
+    'the staged-audit remedy must stay the primary message',
+  );
+  assert.match(
+    result.stderr,
+    /dalo approve skill effective-flow:effective-flow --accept-risk/,
+    'the still-open approval step must be named in the same run',
+  );
+  for (const forbidden of ['audit', 'approve']) {
+    assert.equal(
+      result.log.some((call) => call.includes(forbidden)),
+      false,
+      `the installer must never invoke dalo ${forbidden} itself`,
+    );
+  }
+});
+
+test('DALO driver: a blocked advance with the approval already recorded names only the audit', async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-dalo-blocked-approved-'));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+
+  // The common update case. `--json status` resolves against the still-pinned
+  // content, so an operator who approved the skill once is reported as active
+  // and must not be told to approve it again.
+  const stagedPath = '/tmp/staging/effective-flow-789abc/effective-flow';
+  const plan = [
+    { match: 'init', exit: 0 },
+    { match: 'target link claude', exit: 0 },
+    { match: 'target link codex', exit: 0 },
+    {
+      match: '--json source list',
+      exit: 0,
+      stdout: `{"sources":[{"id":"effective-flow","kind":"catalog","url":"${CATALOG_URL}","update_policy":"pinned","selection":["effective-flow"]}]}\n`,
+    },
+    { match: 'source select effective-flow effective-flow', exit: 0 },
+    {
+      match: 'source refresh effective-flow --advance',
+      exit: 1,
+      stderr: `error: catalog pin was not advanced: security audit blocks candidate skill\nreview with \`dalo audit '${stagedPath}' --accept-risk <reason>\`\n`,
+    },
+    STATUS_RESOLVABLE,
+  ];
+
+  const result = await runDriver(sandbox, plan);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, new RegExp(`dalo audit '${escapeRegExp(stagedPath)}' --accept-risk`));
+  assert.equal(
+    /dalo approve skill/.test(result.stderr),
+    false,
+    'an already-approved skill must not gain a second remedy',
+  );
+});
+
+test('DALO driver: a blocked advance with an unreadable status keeps the audit remedy', async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-dalo-blocked-unknown-'));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+
+  // The secondary probe must never weaken the message it is enriching: losing
+  // the staged-audit remedy to an unreadable status would be a worse failure
+  // than the one this aggregation fixes.
+  const stagedPath = '/tmp/staging/effective-flow-fed321/effective-flow';
+  const plan = [
+    { match: 'init', exit: 0 },
+    { match: 'target link claude', exit: 0 },
+    { match: 'target link codex', exit: 0 },
+    {
+      match: '--json source list',
+      exit: 0,
+      stdout: `{"sources":[{"id":"effective-flow","kind":"catalog","url":"${CATALOG_URL}","update_policy":"pinned","selection":["effective-flow"]}]}\n`,
+    },
+    { match: 'source select effective-flow effective-flow', exit: 0 },
+    {
+      match: 'source refresh effective-flow --advance',
+      exit: 1,
+      stderr: `error: catalog pin was not advanced: security audit blocks candidate skill\nreview with \`dalo audit '${stagedPath}' --accept-risk <reason>\`\n`,
+    },
+    { match: '--json status', exit: 1, stderr: 'error: store is corrupt\n' },
+  ];
+
+  const result = await runDriver(sandbox, plan);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, new RegExp(`dalo audit '${escapeRegExp(stagedPath)}' --accept-risk`));
+  assert.match(result.stderr, /could not be determined; run "dalo status"/);
+  assert.equal(
+    /dalo approve skill/.test(result.stderr),
+    false,
+    'an unknown approval state must not be reported as a missing approval record',
+  );
+});
+
 test('DALO driver: a pending approval stops the run before anything is removed', async (t) => {
   const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-dalo-pending-'));
   t.after(() => rm(sandbox, { recursive: true, force: true }));
