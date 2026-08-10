@@ -580,6 +580,47 @@ effective_flow_dalo_source_entry() {
     sed -n '1p'
 }
 
+# Whether DALO can actually resolve the skill, read from `dalo --json status`.
+#
+# This exists because an exit code is not that answer. `dalo source select`
+# prints "installation policy: blocked until risk is explicitly accepted" and
+# still exits 0, so a run that gates on its status walks straight past an
+# unapproved skill, migrates the native install away and only then fails at
+# `dalo sync --check` — leaving the harness with nothing installed. Verified
+# against DALO 0.9.2.
+#
+# `resolution` reports the state per skill, separately from `unmanaged_skills`.
+# That separation is the point: the unmanaged entry is the native install this
+# migration is about to clear, while a pending approval or a blocked audit is a
+# decision only the operator can make. Each array is extracted by its own key, so
+# the check does not depend on the order of the keys around it.
+effective_flow_dalo_resolvable() {
+  if ! status_output="$(dalo --json status 2>&1)"; then
+    printf '%s\n' "$status_output" >&2
+    printf 'DALO could not report its status, so whether %s is installable is unknown.\n' \
+      "$EFFECTIVE_FLOW_DALO_SLOT" >&2
+    return 1
+  fi
+
+  status_flat="$(printf '%s\n' "$status_output" | tr -d ' \n\t')"
+  status_ref="\"source_ref\":\"$EFFECTIVE_FLOW_DALO_SOURCE:$EFFECTIVE_FLOW_DALO_SLOT\""
+
+  for status_key in pending_approval_skills blocked_skills; do
+    status_group="$(printf '%s\n' "$status_flat" |
+      sed -n "s/.*\"$status_key\":\(\[[^]]*\]\).*/\1/p")"
+    case "$status_group" in
+      *"$status_ref"*) return 1 ;;
+    esac
+  done
+
+  status_active="$(printf '%s\n' "$status_flat" |
+    sed -n 's/.*"active_skills":\(\[[^]]*\]\).*/\1/p')"
+  case "$status_active" in
+    *"$status_ref"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 effective_flow_dalo_source_url() {
   printf '%s\n' "$1" | sed -n 's/.*,"url":"\([^"]*\)".*/\1/p' | sed -n '1p'
 }
@@ -678,6 +719,23 @@ effective_flow_install_through_dalo() {
   if [ "$source_registered" = true ]; then
     effective_flow_dalo_guarded 'the catalog advance' \
       source refresh "$EFFECTIVE_FLOW_DALO_SOURCE" --advance
+  fi
+
+  # Nothing is removed before DALO can prove it will install the replacement.
+  # The audit-gated commands above report a block without failing, so this is the
+  # step that actually stops an unapproved run — before the migration, never
+  # after it.
+  if ! effective_flow_dalo_resolvable; then
+    printf 'DALO cannot install %s yet, so nothing was removed.\n' \
+      "$EFFECTIVE_FLOW_DALO_SLOT" >&2
+    printf 'Its security audit needs an explicit decision. Review the findings with\n' >&2
+    printf '"dalo audit %s" and, if you accept them, run:\n' \
+      "$EFFECTIVE_FLOW_DALO_SOURCE:$EFFECTIVE_FLOW_DALO_SLOT" >&2
+    printf '  dalo approve skill %s --accept-risk "<reason>"\n' \
+      "$EFFECTIVE_FLOW_DALO_SOURCE:$EFFECTIVE_FLOW_DALO_SLOT" >&2
+    printf 'Write <reason> yourself; this installer never accepts risk on your behalf.\n' >&2
+    printf 'Run "dalo status" for the exact blocking state, then run this installer again.\n' >&2
+    exit 1
   fi
 
   # Free the slot before DALO claims it, for the linked targets only: a harness
