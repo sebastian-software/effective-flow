@@ -247,7 +247,11 @@ end.
   instant** as those threads, and carry its head SHA, `headCommittedAt`, `checksReported`, and
   normalized `checks` array into Phase 1.5 — that phase observes every reviewer against exactly this
   one read, so a status read taken at another instant would describe a state the pull request never
-  had. On `UNSUPPORTED_CAPABILITY` or a failed read, record that the status is unavailable and
+  had. Both providers support it; on Forgejo it composes three `tea api` reads — the pull request,
+  its head commit's combined status, and that commit's committer date — which is one read for the
+  caller and reports every command it issued. It states no `mergeState` there and no `required` flag
+  per check, because Forgejo exposes neither. On `UNSUPPORTED_CAPABILITY` or a failed read, record
+  that the status is unavailable and
   continue; Phase 1.5 states what that costs. Take the free-text instructions in as additional items.
   Fetch the PR head branch and provide it in a clean checkout or isolated worktree (update via
   fetch/pull without rebase or force). If the PR is already merged/closed, report that and optionally
@@ -277,8 +281,9 @@ because classification is the thing being protected.
      selects the fallback signal, and it is not an absent field, which the fallback reads as **not
      started**. With no read at all there is nothing for either rule to work on. Skip the phase and
      **report that this run is unguarded and why** rather than letting the guard evaporate silently.
-     On Forgejo that is the permanent state — `pr-status-read` is unsupported there, which is also
-     why {{SKILL:merge-gate}} degrades to report-only on that provider.
+     `pr-status-read` is supported on **both** providers, so this is a genuine failure or an
+     out-of-date CLI rather than a provider's permanent state. On Forgejo it composes three
+     `tea api` reads instead of one query, so any of the three failing lands here.
 2. **Observe** the state of every configured reviewer through the loaded "Automatic reviewer state",
    against the head SHA and the status read Phase 1 carried in, and the threads read at that same
    instant. Record each state with the evidence that established it.

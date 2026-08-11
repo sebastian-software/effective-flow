@@ -321,7 +321,9 @@ bot.** A reported login the forge does not type as a bot has to match your confi
 exactly, so an ordinary user or organization named `greptile-apps` is never taken for the reviewer
 `greptile-apps[bot]`. On a forge that states no account type at all (Forgejo), only the exact
 spelling matches: a bare login configured as `greptile-apps[bot]` then counts as a reviewer that has
-not run, which the gate reports rather than merges past. If a project already lists both spellings, they now count as
+not run, which the gate reports rather than merges past. **Spell a Forgejo entry as the bare login**
+for that reason — since a Forgejo gate can merge, a suffixed entry there blocks the merge on that
+reviewer permanently rather than only making the report noisier. If a project already lists both spellings, they now count as
 one reviewer — one round, one mention, one wait — and the gate reports the collapse so the redundant
 row can be removed. The first of the two rows in `mergeGate.bots` order is the one whose `.trigger`
 and `.check` the gate then uses, and a value set on only one of the rows is simply adopted. Two rows

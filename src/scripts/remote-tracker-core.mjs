@@ -1047,10 +1047,38 @@ function mutationPlan(executable, args, stdin, metadata = {}) {
   return { executable, args, ...(stdin === undefined ? {} : { stdin }), ...metadata };
 }
 
+// One builder for every Forgejo `tea api` read. `--include` is not a convenience here: `tea api`
+// does not use the Gitea SDK and never inspects `resp.StatusCode` — it copies the response body to
+// stdout and returns `nil` (`cmd/api.go` `runApi`, `modules/api/client.go` `Client.Do`, identical at
+// `main` and `v0.15.1`) — so it exits 0 on every 4xx and 5xx alike. Without the status line a 401,
+// 403 or 404 on the combined-status read arrives as a body with no `statuses` key, which is exactly
+// the shape "this repository has no CI" has, and an operator told that would wave through a head
+// whose checks were never read. The same mechanism yields `X-Total-Count`, which is the only sound
+// truncation guard this endpoint offers.
+//
+// The flag is a transport attestation and nothing more. `head_commit_id` is a request-body field
+// and cannot be probed at all, so a server older than the Gitea 1.16 API surface would ignore it
+// silently and leave the merge race unguarded — see `mergeHeadGuard`, which closes no race of its
+// own.
+function teaApiReadPlan(repository, endpoint) {
+  return mutationPlan('tea', [
+    'api',
+    endpoint,
+    '--include',
+    '--login',
+    repository.login ?? repository.host,
+    '--repo',
+    repository.slug ?? `${repository.owner}/${repository.repository}`,
+  ]);
+}
+
 export function buildCommandPlan(operation, input, repository) {
   requireObject(input);
   const { provider, owner, repository: repo, slug, host } = repository;
-  const ghEndpoint = (suffix) => `repos/${owner}/${repo}/${suffix}`;
+  // Both provider CLIs address the same REST path shape, so one builder serves `gh api` and
+  // `tea api` alike.
+  const apiEndpoint = (suffix) => `repos/${owner}/${repo}/${suffix}`;
+  const ghEndpoint = apiEndpoint;
   const teaTarget = ['--login', repository.login ?? host, '--repo', slug];
   const teaJson = [...teaTarget, '--output', 'json'];
   const payload = input.payload ?? input;
@@ -1570,21 +1598,74 @@ export function buildCommandPlan(operation, input, repository) {
         '--fields',
         'id,body,reviewer,path,line,resolver,url',
       ]);
-    // The identity read joins the same group for a reason of its own. `tea logins list` reports the
-    // locally configured logins, which is a client-side setting rather than the account the forge
-    // attributes a write to; the two can differ, and a caller that separates its own comments from a
-    // person's would then claim a stranger's comment as its own. No verified tea surface states the
-    // authenticated account, so this is declared absent instead of guessed from local configuration.
+    // The identity read is credential-scoped, not repository-scoped: `--login` selects the
+    // credential and `tea api user` answers for exactly that one, so no `--repo` is passed at all.
+    // It deliberately does not read `tea logins list`, which reports the locally configured logins —
+    // a client-side setting rather than the account the forge attributes a write to. The two can
+    // differ, and a caller that separates its own comments from a person's would then claim a
+    // stranger's comment as its own.
     case 'viewer-read':
-    // The pull-request gate operations join this group deliberately. The installed tea adapter
-    // exposes no verified surface for a check rollup, for a blocking watch, or for a merge that
-    // honours an expected head commit, so a Forgejo run fails closed here instead of improvising a
-    // provider request around the most irreversible mutation in the set.
+      return mutationPlan('tea', ['api', 'user', '--include', '--login', repository.login ?? host]);
+    // Call 1 of three, and the only one this builder can answer. The head SHA it returns is what
+    // addresses calls 2 and 3, so they are not knowable before it has run;
+    // `readForgejoPullRequestStatus` issues them and publishes all three previews in
+    // `data.commands`. The existing `tea pulls … --output json` renderer is deliberately not used
+    // here: it carries no `mergeable`, no `draft` and no head SHA, so a merge guard built on it
+    // would fail `STALE_WRITE` on every merge.
+    case 'pr-status-read':
+      return teaApiReadPlan(repository, apiEndpoint(`pulls/${prNumber(input)}`));
+    // The merge runs through `tea api` rather than through `tea pulls merge`, because
+    // `MergePullRequestOption` accepts `head_commit_id` and the porcelain subcommand exposes no way
+    // to send it. That field is the atomic server-side head guard `gh --match-head-commit` provides,
+    // and the merge is the most irreversible mutation in the set, so it keeps that guard. The body
+    // travels on stdin via `--data @-` exactly as `issue-comment-update` does: the dry-run preview
+    // publishes the argv, so an inline `--data '<json>'` would put the merge body into the preview.
+    // It carries no `force_merge` (which would bypass the branch protection this adapter relies on
+    // for the merge states Forgejo does not report), no `merge_when_checks_succeed` (which would
+    // turn a guarded synchronous merge into a deferred one the gate never observes), and no
+    // `delete_branch_after_merge`.
+    case 'pr-merge': {
+      const method = mergeMethod(payload);
+      const subject = mergeSubject(payload, method);
+      return mutationPlan(
+        'tea',
+        [
+          'api',
+          apiEndpoint(`pulls/${prNumber(input)}/merge`),
+          '--method',
+          'POST',
+          '--include',
+          ...teaTarget,
+          '--data',
+          '@-',
+        ],
+        // The mixed spelling of this body is not an inconsistency but the wire format itself.
+        // Forgejo's `MergePullRequestForm` (`services/forms/repo_form.go`, branch `forgejo`) tags
+        // only some of its fields: `HeadCommitID` carries `json:"head_commit_id,omitempty"`, while
+        // `Do`, `MergeTitleField`, `MergeMessageField` and `MergeCommitID` carry **no** json tag at
+        // all, so their wire key is the Go field name. Go's `encoding/json` — and the jsoniter
+        // config Forgejo runs in standard-library-compatible mode — matches an incoming key to a
+        // field name case-insensitively but performs **no** snake_case conversion, so a
+        // helpfully-normalized `merge_title_field` would never bind and the subject would be
+        // dropped without a word on every squash merge. That is exactly the failure pinning the
+        // subject exists to prevent: a squash subject that is not a Conventional Commit drops the
+        // change from the changelog silently. Verify against Forgejo before "tidying" this body —
+        // upstream go-gitea/gitea has since tagged every field of the same struct, and reading the
+        // Gitea source instead is the way to arrive confidently at the broken spelling.
+        jsonStdin({
+          Do: method,
+          head_commit_id: expectedHeadSha(payload),
+          ...(subject === undefined ? {} : { MergeTitleField: subject }),
+        }),
+      );
+    }
+    // These three stay refused. `tea` has no `checks` subcommand and Forgejo offers no server-side
+    // blocking watch comparable to `gh pr checks --watch`, so `pr-checks-wait` would have to become
+    // the poll loop the gate explicitly rejects; the documented no-watch degradation carries it
+    // instead. The two review operations have no verified tea surface either.
     case 'review-create':
     case 'review-thread-reply':
-    case 'pr-status-read':
     case 'pr-checks-wait':
-    case 'pr-merge':
       fail('UNSUPPORTED_CAPABILITY', `installed tea adapter does not safely support ${operation}`, {
         operation,
         provider: 'forgejo',
@@ -1646,6 +1727,57 @@ function parseCommandOutput(result, plan, label) {
     raw: parseJsonOutput({ ...result, stdout: body }, label),
     ...(etag ? { version: etag } : {}),
   };
+}
+
+// The response of a `tea api --include` call, split into its status, its headers and its body.
+// `parseCommandOutput`'s `includesHeaders` branch cannot serve this: tea writes the status line and
+// the header block to **stderr** where `gh --include` writes them to stdout, so that branch would
+// find plain JSON on stdout, take the early return, and hand a 403 body on as data. The last status
+// line wins, so an intermediate redirect never masks the response that actually answered.
+function readTeaApiResponse(result, label) {
+  const headerText = stripAnsiSequences(result?.stderr ?? '');
+  const statusLines = [...headerText.matchAll(/^HTTP\/\S+\s+(\d{3})\b/gim)];
+  if (statusLines.length === 0) {
+    fail('INVALID_PAYLOAD', `${label} returned no HTTP status line`, {
+      stderr: redact(headerText.slice(0, 500)),
+    });
+  }
+  const headers = new Map();
+  for (const line of headerText.split(/\r?\n/)) {
+    const match = line.match(/^([A-Za-z0-9-]+):\s*(.*)$/);
+    if (match) headers.set(match[1].toLowerCase(), match[2].trim());
+  }
+  return {
+    status: Number(statusLines.at(-1)[1]),
+    headers,
+    body: parseJsonOutput(result, label),
+  };
+}
+
+function isTeaApiIncludePlan(plan) {
+  return plan.executable === 'tea' && plan.args[0] === 'api' && plan.args.includes('--include');
+}
+
+function teaApiMessage(body) {
+  return typeof body?.message === 'string' && body.message.trim() !== ''
+    ? redact(body.message.trim())
+    : undefined;
+}
+
+// A non-2xx status becomes a structured error rather than data. A 5xx is reported as retryable, a
+// 4xx is not: an auth, path or permission failure repeats identically.
+function teaApiSuccess(result, label) {
+  const response = readTeaApiResponse(result, label);
+  if (response.status < 200 || response.status >= 300) {
+    const message = teaApiMessage(response.body);
+    fail(
+      'COMMAND_FAILED',
+      `${label} was refused by the forge`,
+      { status: response.status, ...(message === undefined ? {} : { message }) },
+      response.status >= 500,
+    );
+  }
+  return response;
 }
 
 // `gh pr checks` reports "the checks are still pending" through exit code 8 rather than through its
@@ -1933,6 +2065,7 @@ export async function probeProvider(repository, runner) {
     comment,
     commentUpdate,
     labelCreate,
+    apiInclude,
   ] = await Promise.all([
     probeTeaHelp(runner, ['issues'], ['--output']),
     probeTeaHelp(runner, ['issues'], ['--comments']),
@@ -1950,7 +2083,15 @@ export async function probeProvider(repository, runner) {
     probeTeaHelp(runner, ['comment'], ['--output']),
     probeTeaHelp(runner, ['api'], ['--method', '--data']),
     probeTeaHelp(runner, ['labels', 'create'], ['--output', '--name']),
+    // The one probe decision 7 requires. `tea api` itself landed in v0.12.0, below this adapter's
+    // 0.14.2 floor, so the transport needs no new version floor; `--include` is source-verified for
+    // `v0.15.1`/`main` only, so it is probed rather than assumed and the floor stays where it is.
+    probeTeaHelp(runner, ['api'], ['--include']),
   ]);
+  // The `tea api` transport probe the three gate capabilities are gated on: the reads need
+  // `--include`, and the merge needs `--method` and `--data` on top of it. It attests transport
+  // only — a request-body field such as `head_commit_id` cannot be probed at all.
+  const teaApiTransport = commentUpdate && apiInclude;
   return {
     executable,
     version,
@@ -1958,10 +2099,10 @@ export async function probeProvider(repository, runner) {
     authenticated: true,
     capabilities: {
       json: true,
-      // No probe is attempted for the identity read either: the login this adapter knows is the one
-      // configured locally, not the one the forge attributes a write to, so the capability is
-      // reported as absent rather than answered from a client-side setting.
-      viewerRead: false,
+      // `tea api user` states the account the forge attributes a write to, which is a different fact
+      // from the locally configured login `tea logins list` reports. It rides on the same transport
+      // probe as the gate reads.
+      viewerRead: teaApiTransport,
       issues,
       issueRead: issues,
       issueCommentsRead: issues && issueComments,
@@ -1977,13 +2118,15 @@ export async function probeProvider(repository, runner) {
       pullRequestRead: pulls,
       prCommentsRead: pulls && pullComments,
       pullRequestList: pulls,
-      // No probe is attempted for the gate operations: the installed tea adapter has no verified
-      // check rollup, no blocking watch, and no merge that honours an expected head commit, so
-      // they stay unsupported until an adapter check proves otherwise. Enabling them later is an
-      // additive change; guessing them now would put an irreversible merge behind a guess.
-      pullRequestStatus: false,
+      // Two of the three gate operations ride on the `tea api` transport: the status read composes
+      // the pull-request object, the combined commit status and the head commit's date, and the
+      // merge sends `head_commit_id` as the server-side head guard. The watch is the one genuine
+      // provider limitation — `tea` has no `checks` subcommand and Forgejo offers no server-side
+      // blocking watch — and stays `false` rather than becoming the poll loop the gate rejects; the
+      // documented no-watch degradation reports the pending checks and asks once instead.
+      pullRequestStatus: teaApiTransport,
       pullRequestChecksWait: false,
-      pullRequestMerge: false,
+      pullRequestMerge: teaApiTransport,
       pullRequestCreate: pullCreate,
       pullRequestDraftCreate: pullCreate && pullCreateDraft,
       pullRequestUpdate: pullEdit,
@@ -2155,14 +2298,16 @@ function normalizeCheck(item) {
 // entry is not the head — and a timestamp taken from the wrong commit would silently certify stale
 // bot feedback as current. Nothing matching means no field, which the caller reads as unprovable.
 function headCommitTimestamp(item, headSha) {
-  // Through the only caller this branch cannot fire: `PR_STATUS_QUERY` selects no top-level
-  // timestamp, and the flattener builds the record from the head commit node itself, so no directly
-  // stated field ever reaches it. It stays because it deliberately outranks the `oid` comparison
-  // below: a value the provider states outright is its own answer rather than one this code
-  // reconstructed. That precedence is the hazard, not the branch. Adding such a field to the query
-  // or to the flattener as a convenience switches head verification off without touching a line of
-  // this function, so anyone introducing one has to decide here whether the stated value may still
-  // skip the match.
+  // A directly stated value outranks the `oid` comparison below, because a value the provider
+  // states outright is its own answer rather than one this code reconstructed. Exactly one producer
+  // sets it, and that is why the precedence is safe there: `flattenForgejoPullRequestStatus` reads
+  // the head commit **by** the head SHA the pull-request read just returned, so the value cannot
+  // describe a different commit — the match this function would perform has already happened, in
+  // the request itself. The GitHub path still reaches the comparison, because `PR_STATUS_QUERY`
+  // selects no top-level timestamp. The precedence stays the hazard: adding such a field to the
+  // query, or to a flattener that does not address the commit by its object name, switches head
+  // verification off without touching a line of this function, so anyone introducing one has to
+  // decide here whether the stated value may still skip the match.
   const direct = normalizeTimestamp(item.headCommittedAt, item.head?.commit?.committer?.date);
   if (direct !== undefined) return direct;
   if (typeof headSha !== 'string' || headSha === '') return undefined;
@@ -2253,6 +2398,116 @@ function flattenPullRequestStatus(raw) {
   };
 }
 
+// One Gitea commit status, restated as a check record. The translation is not optional: a raw
+// `state: "success"` reaching `normalizeCheck` unchanged would be read through
+// `pending = status !== 'COMPLETED'` — `status` is absent on a Gitea status, so the state branch
+// decides — and `success` is in neither pending set nor a `COMPLETED` marker, so the record would
+// have to survive on the `state` fallback alone. Mapping it here instead keeps one shape for both
+// providers, and the record deliberately carries only `name`, `status`, `conclusion` and `url`: no
+// raw Gitea key (`context`, `target_url`, `state`, `id`, `description`) survives into the envelope.
+//
+// `warning` and `skipped` are non-success **completed** checks and therefore block under
+// `requireAllChecks: true`. That matches how GitHub's own `SKIPPED` conclusion already behaves.
+// Anything unknown is `PENDING`, so an unrecognized future state blocks a merge rather than reading
+// as a green result — the same discipline `PENDING_CHECK_STATES` applies on the GitHub side.
+const FORGEJO_CHECK_STATES = Object.freeze({
+  pending: Object.freeze({ status: 'PENDING' }),
+  success: Object.freeze({ status: 'COMPLETED', conclusion: 'SUCCESS' }),
+  failure: Object.freeze({ status: 'COMPLETED', conclusion: 'FAILURE' }),
+  error: Object.freeze({ status: 'COMPLETED', conclusion: 'ERROR' }),
+  warning: Object.freeze({ status: 'COMPLETED', conclusion: 'WARNING' }),
+  skipped: Object.freeze({ status: 'COMPLETED', conclusion: 'SKIPPED' }),
+});
+
+function forgejoCheckRecord(item) {
+  if (!item || typeof item !== 'object') {
+    fail('INVALID_PAYLOAD', 'provider returned an invalid commit status');
+  }
+  const state = typeof item.state === 'string' ? item.state.trim().toLowerCase() : '';
+  const mapped = FORGEJO_CHECK_STATES[state] ?? FORGEJO_CHECK_STATES.pending;
+  const url = item.target_url;
+  // No `required`: Forgejo states no requiredness anywhere, so every check reports it as unstated
+  // and `mergeGate.requireAllChecks: false` fails closed on each of them — stricter than the
+  // default, never looser.
+  return {
+    name: item.context,
+    status: mapped.status,
+    ...(mapped.conclusion === undefined ? {} : { conclusion: mapped.conclusion }),
+    ...(typeof url === 'string' && url !== '' ? { url } : {}),
+  };
+}
+
+// Forgejo clamps `limit` to its `MAX_RESPONSE_ITEMS` setting, so this value is a request rather than
+// a guarantee — the truncation guard below reads the response header instead of comparing against
+// it.
+const FORGEJO_STATUS_LIMIT = 100;
+
+function forgejoCommitStatuses(response) {
+  const statuses = Array.isArray(response.body?.statuses) ? response.body.statuses : [];
+  // A null and an empty `statuses` list mean the same thing here and are reported the same way: the
+  // endpoint answers identically for a repository with no CI at all and for one whose CI has simply
+  // not reported yet, and the two are indistinguishable. No rollup therefore reaches the normalizer,
+  // which makes it state `checksReported: false`. A caller that read emptiness as green would merge
+  // a commit whose checks never ran, and with no merge state to catch it — Forgejo reports none —
+  // nothing else would. A non-2xx status never reaches this path; `teaApiSuccess` failed first.
+  if (statuses.length === 0) return undefined;
+  // The only sound truncation guard on this endpoint. Forgejo clamps `limit` to `MAX_RESPONSE_ITEMS`
+  // (default 50, operator-configurable), so a requested 100 returns 50 and "returned equals
+  // requested" can never fire, while omitting `limit` returns 30 rather than all. The body's own
+  // `total_count` reports the returned page length, not the total. `X-Total-Count` is the
+  // response-wide total, and a merge criterion must never be evaluated on a partial check list —
+  // the same reason GitHub's rollup is compared against its `totalCount`.
+  const total = Number(response.headers.get('x-total-count'));
+  if (Number.isFinite(total) && total > statuses.length) {
+    fail('INVALID_PAYLOAD', 'provider returned a truncated check rollup', {
+      totalCount: total,
+      returnedCount: statuses.length,
+    });
+  }
+  return statuses.map(forgejoCheckRecord);
+}
+
+// The three Forgejo reads, restated as the flat provider record `normalizePullRequestStatus` already
+// reads. The record is built field by field rather than spread from the provider object, so its
+// shape is constrained here and no raw Gitea key can leak into the envelope.
+//
+// `mergeState` is deliberately absent. Forgejo's pull-request object has no `mergeStateStatus`
+// equivalent (`modules/structs/pull.go`: `mergeable` bool, `merge_base`, `draft`, `head.sha`, and no
+// merge-state field), so the adapter states none rather than fabricating a `CLEAN` the provider
+// never reported. `BEHIND` is therefore undetectable on Forgejo; a branch-protection rule that
+// blocks an outdated branch fails the merge closed server-side instead.
+//
+// `mergeable` is emitted as the string `MERGEABLE`, never as the boolean the provider stated, and
+// `false` is emitted as **no field at all**. Forgejo returns `mergeable: false` while its conflict
+// check is still running and for any WIP-titled pull request, so mapping that to `CONFLICTING` would
+// make a caller report a conflict that does not exist — on a branch it may have just repaired. The
+// string form is what makes that irreversible: `normalizePullRequestStatus` accepts a string enum
+// only, so passing the raw boolean through as a "simplification" yields no field rather than the
+// old defect.
+function flattenForgejoPullRequestStatus(pull, statuses, headCommittedAt) {
+  if (!pull || typeof pull !== 'object' || Array.isArray(pull)) {
+    fail('INVALID_PAYLOAD', 'provider returned no pull request for the status read');
+  }
+  // The browser URL replaces the API `url` the pull-request object carries.
+  // `normalizePullRequestStatus` reads exactly `item.url` — unlike `normalizeIssue`, which falls
+  // back through `html_url` — and adding such a fallback there would silently change GitHub's
+  // behaviour too, so the substitution belongs here. The result round-trips through
+  // `parseReference`; the API address does not.
+  const browserUrl = typeof pull.html_url === 'string' ? pull.html_url.trim() : '';
+  return {
+    number: pull.number ?? pull.index,
+    title: pull.title,
+    state: pull.state,
+    draft: pull.draft,
+    head: pull.head,
+    base: pull.base,
+    ...(browserUrl === '' ? {} : { url: browserUrl }),
+    ...(pull.mergeable === true ? { mergeable: 'MERGEABLE' } : {}),
+    ...(headCommittedAt === undefined ? {} : { headCommittedAt }),
+    ...(statuses === undefined ? {} : { statusCheckRollup: statuses }),
+  };
+}
+
 // The merge state is read from the forge, never inferred from the check list: a protected branch can
 // additionally require an approval, an up-to-date branch, or linear history, so "all checks green"
 // and "mergeable" are different statements and both travel in this envelope.
@@ -2265,12 +2520,15 @@ function normalizePullRequestStatus(item, repository) {
   const baseRef = item.baseRefName ?? item.base?.ref ?? item.baseRef;
   const draft = item.isDraft ?? item.draft;
   const mergeState = upperCaseField(item.mergeStateStatus ?? item.mergeState);
-  const mergeable =
-    typeof item.mergeable === 'boolean'
-      ? item.mergeable
-        ? 'MERGEABLE'
-        : 'CONFLICTING'
-      : upperCaseField(item.mergeable);
+  // Read as a string enum only, and deliberately so. A provider that states mergeability as a
+  // boolean has its flattener map the true case to `MERGEABLE` and omit the field otherwise — see
+  // `flattenForgejoPullRequestStatus`, the only such producer — so no boolean ever reaches here. A
+  // boolean branch mapping `false` to `CONFLICTING` used to exist for exactly that provider and was
+  // wrong for it: Forgejo returns `false` while its conflict check is still running and for any
+  // WIP-titled pull request. Without the branch, a later "simplification" that passes the raw field
+  // through cannot restore that defect: `upperCaseField(false)` is `undefined`, which omits the
+  // field, and an unstated mergeability fails closed everywhere it is consumed.
+  const mergeable = upperCaseField(item.mergeable);
   const checks = (Array.isArray(rollup) ? rollup : []).map(normalizeCheck);
   const headCommittedAt = headCommitTimestamp(item, headSha);
   return {
@@ -2674,17 +2932,88 @@ async function staleWriteGuard(operation, input, repository, runner, conditional
   return { unchanged: false, current };
 }
 
+// A full object name and nothing else. Calls 2 and 3 of the Forgejo status read are addressed by
+// the head SHA call 1 returned, so a missing or malformed value skips them entirely rather than
+// falling back to a branch name: a branch resolves to whatever it points at now, which is a
+// different commit from the one this read is about.
+const FULL_OBJECT_NAME = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+
+// The Forgejo status read is three `tea api` calls where GitHub's is one GraphQL query. It has to
+// be: the pull-request object supplies the merge state, the draft flag, `mergeable` and the head
+// SHA, the combined commit status supplies the checks, and the head commit supplies the committer
+// date the automatic-reviewer fallback compares against. Only the first is knowable in advance, so
+// `buildCommandPlan` answers with that one and this reader publishes all three previews.
+async function readForgejoPullRequestStatus(input, repository, runner) {
+  const pullPlan = buildCommandPlan('pr-status-read', input, repository);
+  const commands = [redact(pullPlan)];
+  const pull = teaApiSuccess(
+    await runChecked(runner, pullPlan, 'pr-status-read'),
+    'pr-status-read',
+  ).body;
+  const headSha = typeof pull?.head?.sha === 'string' ? pull.head.sha.trim() : '';
+  const endpoint = (suffix) => `repos/${repository.owner}/${repository.repository}/${suffix}`;
+  let statuses;
+  let headCommittedAt;
+  if (FULL_OBJECT_NAME.test(headSha)) {
+    const statusPlan = teaApiReadPlan(
+      repository,
+      `${endpoint(`commits/${headSha}/status`)}?limit=${FORGEJO_STATUS_LIMIT}`,
+    );
+    commands.push(redact(statusPlan));
+    statuses = forgejoCommitStatuses(
+      teaApiSuccess(
+        await runChecked(runner, statusPlan, 'pr-status-read checks'),
+        'pr-status-read checks',
+      ),
+    );
+    const commitPlan = teaApiReadPlan(repository, endpoint(`git/commits/${headSha}`));
+    commands.push(redact(commitPlan));
+    const commit = teaApiSuccess(
+      await runChecked(runner, commitPlan, 'pr-status-read head commit'),
+      'pr-status-read head commit',
+    ).body;
+    headCommittedAt = normalizeTimestamp(
+      commit?.commit?.committer?.date,
+      commit?.commit?.author?.date,
+      commit?.created,
+    );
+  }
+  return {
+    result: normalizePullRequestStatus(
+      flattenForgejoPullRequestStatus(pull, statuses, headCommittedAt),
+      repository,
+    ),
+    commands,
+  };
+}
+
+// One status reader for both providers, used by `pr-status-read` and by `mergeHeadGuard` alike, so
+// the merge precondition and the status the caller sees can never be read through two code paths
+// that drifted apart.
+async function readPullRequestStatus(input, repository, runner) {
+  if (repository.provider === 'forgejo') {
+    return await readForgejoPullRequestStatus(input, repository, runner);
+  }
+  const readPlan = buildCommandPlan('pr-status-read', input, repository);
+  const readResult = await runChecked(runner, readPlan, 'pr-status-read');
+  const parsed = parseCommandOutput(readResult, readPlan, 'pr-status-read');
+  return {
+    result: normalizeRemoteData('pr-status-read', parsed.raw, repository, input, parsed),
+    commands: [redact(readPlan)],
+  };
+}
+
 // The merge is the most irreversible mutation of the set, so the head the caller verified is
-// re-checked against a fresh read immediately before it runs. The provider-side
-// `--match-head-commit` guards the same race, but only this local check turns a moved head into the
-// tool's own structured error — with the actual head reported and `merged: false` stated — instead
-// of a generic command failure, and it keeps the guard intact for a provider without that flag.
+// re-checked against a fresh read immediately before it runs. The provider-side head guard —
+// `--match-head-commit` on GitHub, `head_commit_id` in the Forgejo merge body — guards the same
+// race, but only this local check turns a moved head into the tool's own structured error — with the
+// actual head reported and `merged: false` stated — instead of a generic command failure. It closes
+// **no** race of its own: it runs before the request, so a server that ignores `head_commit_id`
+// (older than the Gitea 1.16 API surface) leaves the window itself unguarded, and there is no local
+// substitute for that.
 async function mergeHeadGuard(input, repository, runner) {
   const expected = expectedHeadSha(input.payload ?? input);
-  const readPlan = buildCommandPlan('pr-status-read', input, repository);
-  const readResult = await runChecked(runner, readPlan, 'pr-status-read precondition');
-  const parsed = parseCommandOutput(readResult, readPlan, 'pr-status-read');
-  const status = normalizeRemoteData('pr-status-read', parsed.raw, repository, input, parsed);
+  const status = (await readPullRequestStatus(input, repository, runner)).result;
   const actual = typeof status.headSha === 'string' ? status.headSha.toLowerCase() : undefined;
   if (actual !== expected) {
     fail('STALE_WRITE', 'pull-request head moved after the caller verified it', {
@@ -2935,6 +3264,77 @@ export async function executeOperation(operation, input = {}, options = {}) {
         dryRun: false,
       };
     }
+    // Both providers read the status through the same reader, so `mergeHeadGuard` and this branch
+    // can never diverge. What differs is only how many commands that took: GitHub's one GraphQL
+    // query is reported as `data.command`, Forgejo's three `tea api` calls as `data.commands`,
+    // mirroring the `pr-checks-wait` branch below. The plan `buildCommandPlan` answers with — and
+    // therefore the preview computed above — is call 1 alone, because calls 2 and 3 are addressed
+    // by the head SHA call 1 returns and are not knowable before it has run. Only the executed
+    // list below reports all three.
+    if (operation === 'pr-status-read') {
+      const status = await readPullRequestStatus(input, activeRepository, runner);
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: status.result,
+          ...(activeRepository.provider === 'forgejo'
+            ? { commands: status.commands }
+            : { command: status.commands[0] }),
+          conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
+        },
+        dryRun: false,
+      };
+    }
+    // `tea api` exits 0 on every 4xx and 5xx, so the merge result is decided by the HTTP status
+    // rather than by the exit code. A moved head is the one rejection that must stay distinguishable
+    // from every other: Forgejo answers it with 409, which becomes a `STALE_WRITE` stating
+    // `merged: false` instead of a `COMMAND_FAILED` carrying `mutationMayHaveSucceeded: true` — the
+    // caller may safely re-read after this, and must not be told the merge might have gone through.
+    // Every other rejection — 405 for a merge style the repository does not allow, 403 for a
+    // permission or branch-protection refusal — is a failure the server definitively did not act on.
+    if (operation === 'pr-merge' && activeRepository.provider === 'forgejo') {
+      const result = await runChecked(runner, plan, operation);
+      const response = readTeaApiResponse(result, operation);
+      const message = teaApiMessage(response.body);
+      if (response.status === 409) {
+        fail('STALE_WRITE', 'pull-request head moved before the forge accepted the merge', {
+          number: prNumber(input),
+          expectedHeadSha: expectedHeadSha(input.payload ?? input),
+          merged: false,
+          status: response.status,
+          ...(message === undefined ? {} : { message }),
+        });
+      }
+      // The second, cheaper assertion beside the status: Forgejo answers an accepted merge with 200
+      // and an **empty** body, which `parseJsonOutput` turns into `null`, so any returned object is
+      // a rejection carrying `{"message":…}` however the status was spelled.
+      if (response.status < 200 || response.status >= 300 || response.body !== null) {
+        fail(
+          'COMMAND_FAILED',
+          'forgejo refused the merge',
+          {
+            number: prNumber(input),
+            status: response.status,
+            mutationMayHaveSucceeded: false,
+            ...(message === undefined ? {} : { message }),
+          },
+          false,
+        );
+      }
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: normalizeRemoteData(operation, null, activeRepository, input),
+          command: preview,
+          conditionalWriteAvailable: false,
+        },
+        dryRun: false,
+      };
+    }
     // The wait is two gh invocations because one cannot exist: `gh pr checks` rejects `--watch`
     // together with `--json`, so the blocking watch and the structured read never share an argument
     // vector. It stays a single blocking wait for the caller, not a prompt-driven poll loop — the
@@ -2976,7 +3376,13 @@ export async function executeOperation(operation, input = {}, options = {}) {
       };
     }
     const result = await runChecked(runner, plan, operation);
-    const parsed = parseCommandOutput(result, plan, operation);
+    // Every `tea api --include` plan reads its HTTP status before its body is trusted, whichever
+    // operation built it. `parseCommandOutput` cannot do that: tea prints the header block to
+    // stderr where `gh --include` prints it to stdout, so its `includesHeaders` branch would find
+    // plain JSON on stdout and hand a 401 body on as data — and `tea api` exits 0 for it.
+    const parsed = isTeaApiIncludePlan(plan)
+      ? { raw: teaApiSuccess(result, operation).body }
+      : parseCommandOutput(result, plan, operation);
     // A bounded wait reports its outcome through the exit status, not through its payload, so the
     // wait result travels next to the parsed output into the normalizer. A forced stop is reported
     // separately from a clean one: it means the provider ignored SIGTERM, which is worth seeing.

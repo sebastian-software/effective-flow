@@ -446,13 +446,23 @@ Write a summary after each phase and pass it on to later phases. Delete the file
    loaded "PR review comment integration". A merged or closed pull request, or one belonging to
    another repository, is reported read-only and the run ends – no wait, no delegation, no merge.
 2. Run the forge preflight: detect the host and CLI, probe availability and authentication, and read
-   the capabilities `pullRequestStatus`, `pullRequestChecksWait`, and `pullRequestMerge`. On
-   `CLI_MISSING` or `AUTH_FAILED`, abort without side effects. On `AMBIGUOUS_HOST`, ask for the
-   provider once and retry.
+   the capabilities `pullRequestStatus`, `pullRequestChecksWait`, `pullRequestMerge`, and
+   `viewerRead`. On `CLI_MISSING` or `AUTH_FAILED`, abort without side effects. On
+   `AMBIGUOUS_HOST`, ask for the provider once and retry.
    - Without `pullRequestStatus` nothing in this gate can run: report that and end.
    - Without `pullRequestChecksWait`, the wait step reports and asks instead of waiting (Phase 2).
    - Without `pullRequestMerge`, the run degrades to `report` and states that reason.
-   - **Forgejo** declares all three unsupported, so a Forgejo run is report-only by construction.
+   - Without `viewerRead` the run **continues**. This is the one capability of the four whose
+     absence ends nothing: the gate then cannot identify its own earlier writes on the manual path,
+     so every remaining non-bot item counts and the human-comment guard activates (Phase 1). That
+     blocks a merge rather than stopping the run, and the missing identity is reported as the
+     reason.
+   - **Forgejo** supports `pullRequestStatus`, `pullRequestMerge`, and `viewerRead`, and declares
+     only `pullRequestChecksWait` unsupported: `tea` has no `checks` subcommand and Forgejo offers
+     no server-side blocking watch. A Forgejo run therefore takes the documented no-watch path in
+     Phase 2 — report the pending checks and ask once — and is the whole gate minus the blocking
+     wait, not report-only. What stays unsupported there is `pr-checks-wait`, `review-create`, and
+     `review-thread-reply`.
 3. Resolve the completion mode from `mergeGate.completion`:
    - a configured `merge` or `report` is used unchanged, in every run state, and the report states
      that it came from configuration;
@@ -774,12 +784,29 @@ run can push an unbounded number of commits onto someone's pull request.
      substitute: "all checks green" and "mergeable" are different statements, and a protected branch
      can additionally require named checks, an approval, an up-to-date branch, or linear history.
 
-Leave the loop when the check criterion is satisfied and the merge state is **stated** and is
-neither `BEHIND` nor `DIRTY`. An unstated merge state fails closed and keeps the loop running, for
-the same reason an absent `draft` flag blocks and an unstated requiredness blocks: "neither `BEHIND`
-nor `DIRTY`" is vacuously true of a field the provider never reported, and the criterion above
-delegates its own safety to this condition. A compensating condition that disappears when the
-provider goes quiet compensates for nothing. Record the head SHA of that last read as
+Leave the loop when the check criterion is satisfied **and** the forge has stated the branch is
+integrable — either a merge state that is stated and is neither `BEHIND` nor `DIRTY`, **or**
+`mergeable: MERGEABLE` from a provider that reports mergeability but no merge state at all. A
+provider that states **neither** fails closed and keeps the loop running, for the same reason an
+absent `draft` flag blocks and an unstated requiredness blocks: "neither `BEHIND` nor `DIRTY`" is
+vacuously true of a field the provider never reported, and the criterion above delegates its own
+safety to this condition. A compensating condition that disappears when the provider goes quiet
+compensates for nothing.
+
+**The second arm is Forgejo's, and it is a narrowing rather than a loosening.** Forgejo's
+pull-request object has no `mergeStateStatus` equivalent, so the adapter states no merge state
+rather than fabricating a `CLEAN` — which means `BEHIND` is undetectable there, and a
+branch-protection rule that blocks an outdated branch fails the merge closed server-side instead.
+An unstated **mergeability** still blocks in both arms, and Forgejo deliberately leaves it unstated
+whenever the forge said `false`: it reports `false` while a conflict check is still running and for
+any WIP-titled pull request, so the gate keeps looping instead of reporting a conflict that may not
+exist. A genuine conflict on Forgejo therefore does not take the fast "stop and report the conflict"
+path — it loops to `mergeGate.maxRounds` and ends with a report. Where the check list itself is
+**unreported** (`checksReported: false`), the loop does not leave on the check criterion at all:
+report that and ask once per step 2's rule before proceeding, and an unanswered or non-interactive
+run ends there without merging.
+
+Record the head SHA of that last read as
 **`VERIFIED_HEAD_SHA`** – the one commit this run has verified as green and mergeable. Phases 4 and 5 use only that value, and nothing else in this
 workflow records a head SHA for later use.
 
@@ -934,7 +961,13 @@ report naming exactly that condition, and merges nothing – with the single exc
 states for itself, which sends the run back into Phase 3 while rounds remain instead of ending it:
 
 1. the resolved completion mode is `merge`;
-2. the check criterion from `mergeGate.requireAllChecks` is satisfied;
+2. the check criterion from `mergeGate.requireAllChecks` is satisfied, **and the fresh read reported
+   a check list at all**. `checksReported: false` blocks this condition outright. The Phase-2
+   question does not cover it: this condition is re-evaluated against a **different, later** read,
+   and the criterion is vacuously satisfied by an empty list under `requireAllChecks: true` — so a
+   combined-status response that came back empty at Phase-4 time would otherwise pass silently,
+   after the operator answered a question about an entirely different read. An unreported list is an
+   unproven one, exactly as an unstated requiredness and an absent `draft` flag are;
 3. the forge reports the pull request as mergeable and **not a draft**;
 4. the human-comment guard is inactive;
 5. every login in `mergeGate.bots` is observed as **has run** for the current head through the loaded
@@ -1175,9 +1208,11 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
 - **`{{SKILL:iterate}}` could not resolve a thread it answered:** it keeps its reply and reports the
   manual resolution, which leaves an unresolved item behind that carries the operator's account in
   manual mode. On a later run that item is in no resolved thread and its body is not the trigger
-  text, so it counts as human and the guard activates. Thread resolution is unsupported only on
-  Forgejo, where this gate is report-only anyway, so this costs a merge that was unavailable
-  regardless – named here so it is not later read as an oversight.
+  text, so it counts as human and the guard activates. Thread **reply** is unsupported on Forgejo,
+  so the reply itself is what cannot be written there; thread **resolution** is supported. Since a
+  Forgejo merge is now reachable, this genuinely costs a merge rather than blocking one that was
+  unavailable anyway: the operator clears it by resolving the thread by hand, or by leaving no such
+  item behind.
 - **The delegated run's summary comment:** it is suppressed for every gate-initiated round, so it
   never becomes such an item. A summary comment from a `{{SKILL:iterate}}` run the operator started
   themselves does exist, and rule 4 excludes it by its author plus its leading marker; before that
@@ -1208,12 +1243,25 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   one case where the guard is deliberately narrow.
 - **`pr-checks-wait` times out or is unsupported:** report the pending checks and ask once; never
   fall back to a prompt-driven poll loop.
-- **Forgejo:** `pr-status-read`, `pr-checks-wait`, `pr-merge`, and `viewer-read` are all unsupported,
-  so the run degrades to report-only and states the reason. The guard therefore stays active there,
-  which blocks a merge that was unavailable anyway – nothing is lost. Every bot takes the fallback
-  signal there as well, because no check rollup is reported at all. Without `pr-status-read` the run
-  ends in Phase 0, so the conflict resolution is never reached there either – stated so it is not
-  later read as an oversight.
+- **Forgejo:** `pr-status-read`, `pr-merge`, and `viewer-read` are supported; `pr-checks-wait`,
+  `review-create`, and `review-thread-reply` are not. The run is the whole gate minus the blocking
+  wait: step 2 takes the no-watch path, reports the pending checks by name and asks once, and an
+  unanswered or non-interactive run ends there. Three consequences are worth naming.
+  - **Requiredness is unstated on every check**, because Forgejo has no such flag. With
+    `mergeGate.requireAllChecks: false` the existing fail-closed rule therefore treats every check
+    as blocking – stricter than the default, never looser.
+  - **`mergeGate.bots` entries must be spelled as the bare login.** Forgejo states no account class,
+    so every author normalizes to `authorType: 'unknown'`: rule 1's bot case never fires there, a
+    bot comment from an account no entry names counts as human and holds the guard, and an entry
+    spelled `X[bot]` matches no bare Forgejo login at all – leaving that reviewer permanently **not
+    started** and blocking Phase-4 condition 5. The fail-safe direction is correct; on Forgejo it is
+    the only direction.
+  - **The conflict-resolution path has no entry point there.** Forgejo reports no merge state, so
+    neither `BEHIND` nor `DIRTY` is ever observed, and `mergeable: false` is deliberately reported as
+    unstated rather than as `CONFLICTING`. Step 1's forward merge is therefore reached only when
+    something else brings the run to it, and a genuine conflict surfaces as a bounded loop that ends
+    in a report rather than as the fast conflict path – stated so it is not later read as an
+    oversight.
 - **`{{SKILL:iterate}}` returns `ABORT` for an item:** the round counts as unsuccessful, the run does
   not merge, and the failed item is reported.
 - **The item filter matches nothing** (every named thread was resolved between the read and the
