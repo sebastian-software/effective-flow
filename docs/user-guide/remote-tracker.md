@@ -279,28 +279,58 @@ merges through four additional forge operations of the same remote-tracker helpe
 work, they are inherently forge-bound: they never evaluate `tracker.mode` and only need a Git
 repository, an `origin` remote, and an authenticated CLI.
 
-| Operation        | Capability              | What it does                                                                                                                                                                                   |
-| ---------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pr-status-read` | `pullRequestStatus`     | Reads, in one call, the head SHA, base ref, PR state, draft flag, check list (with requiredness), and the forge's merge state                                                                  |
-| `pr-checks-wait` | `pullRequestChecksWait` | Blocks inside the provider's own watch until checks complete or the supplied timeout elapses, then reads back the normalized check list as a second call                                       |
-| `pr-merge`       | `pullRequestMerge`      | Merges the pull request with the configured method; a mutation, so a run without `--apply` produces a dry-run plan and merges nothing                                                          |
-| `viewer-read`    | `viewerRead`            | A read, not a mutation. Returns the authenticated login and, where the provider states it, the account type (`User` or `Bot`), so the gate can tell its own writes from a person's across runs |
+| Operation        | Capability              | What it does                                                                                                                                                                                                                                                                                    |
+| ---------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pr-status-read` | `pullRequestStatus`     | Reads the head SHA, base ref, PR state, draft flag, check list, and mergeability as one logical read. On GitHub that is one GraphQL call carrying per-check requiredness and the forge's merge state; on Forgejo it is three `tea api` calls and reports neither of those two facts (see below) |
+| `pr-checks-wait` | `pullRequestChecksWait` | Blocks inside the provider's own watch until checks complete or the supplied timeout elapses, then reads back the normalized check list as a second call                                                                                                                                        |
+| `pr-merge`       | `pullRequestMerge`      | Merges the pull request with the configured method; a mutation, so a run without `--apply` produces a dry-run plan and merges nothing                                                                                                                                                           |
+| `viewer-read`    | `viewerRead`            | A read, not a mutation. Returns the authenticated login and, where the provider states it, the account type (`User` or `Bot`), so the gate can tell its own writes from a person's across runs                                                                                                  |
 
 **GitHub** supports `pr-status-read`, `pr-checks-wait`, and `pr-merge`, but only from **`gh`
 2.50.0** – a higher floor than the adapter's general `gh` 2.0.0 minimum. `gh pr checks --json`, the
 flag the gate depends on most, only landed in 2.50.0; the other flags those three operations use
 (`--watch`, `--match-head-commit`, `--required`) are older. On a `gh` below 2.50.0 – common on a
 distro-packaged install – those three capabilities report `UNSUPPORTED_CAPABILITY` instead of
-failing mid-run on an unknown flag, and `merge-gate` degrades to report-only exactly as on Forgejo.
-If you see that message on GitHub, upgrade `gh` rather than suspect your repository's forge access.
-`viewer-read` needs no flag beyond every `gh` 2.x line and no scope beyond an authenticated `gh`
-already holds, so it is unaffected by that version floor; it maps to `gh api user`. **Forgejo**
-currently declares all four operations unsupported outright, so `merge-gate` degrades to
-report-only there too and states that reason – nothing in the gate can run on Forgejo until the
-adapter supports at least `pr-status-read`. `viewer-read` stays unsupported on Forgejo by design,
-not by version: the installed `tea` adapter only exposes the locally configured login, which is a
-client-side setting rather than the account the forge attributes a write to, and reporting one as
-the other would let the gate mistake a stranger's comment for its own.
+failing mid-run on an unknown flag, and `merge-gate` degrades to report-only there. If you see that
+message on GitHub, upgrade `gh` rather than suspect your repository's forge access. `viewer-read`
+needs no flag beyond every `gh` 2.x line and no scope beyond an authenticated `gh` already holds, so
+it is unaffected by that version floor; it maps to `gh api user`.
+
+**Forgejo** supports `pr-status-read`, `pr-merge`, and `viewer-read`, and declares only
+`pr-checks-wait` unsupported: `tea` has no `checks` subcommand and Forgejo offers no server-side
+blocking watch comparable to `gh pr checks --watch`, so `merge-gate` takes its documented no-watch
+degradation there – report the pending checks by name and ask once – instead of blocking. A Forgejo
+run is therefore the whole gate minus the blocking wait. Two other operations `merge-gate` and
+`iterate` use stay unsupported on Forgejo: `review-create` and `review-thread-reply`.
+
+The three capabilities are gated on a `tea api` transport probe rather than on a version floor.
+`tea api` itself landed in `tea` v0.12.0, below the adapter's existing 0.14.2 minimum, so nothing
+here raises that floor; what is probed is the `--include` flag, which is source-verified for
+`v0.15.1`/`main` only. A `tea` whose `api` command lacks it reports all three as
+`UNSUPPORTED_CAPABILITY` rather than issuing a request whose HTTP status it could never read – and
+reading that status matters, because `tea api` exits `0` on every 4xx and 5xx alike. The probe
+attests transport only: `head_commit_id`, the field that makes the merge's head guard atomic, is a
+request-body field and cannot be probed at all, so a server older than the Gitea 1.16 API surface
+would ignore it silently.
+
+What a Forgejo `pr-status-read` does **not** report is worth knowing before you configure the gate
+against it:
+
+- **No merge state.** Forgejo's pull-request object has no `mergeStateStatus` equivalent, so the
+  adapter states none rather than fabricating a `CLEAN`. `BEHIND` is therefore undetectable; a
+  branch-protection rule that blocks an outdated branch fails the merge closed server-side instead.
+- **No requiredness per check.** Forgejo has no such flag, so every check reports it as unstated and
+  `mergeGate.requireAllChecks: false` fails closed on each of them – stricter than the default,
+  never looser.
+- **`mergeable: false` is reported as no field at all.** Forgejo returns `false` while its conflict
+  check is still running and for any WIP-titled pull request, so mapping it to `CONFLICTING` would
+  make the gate report a conflict that does not exist. Only `true` is stated, as `MERGEABLE`.
+- **The command previews arrive as `data.commands`.** The Forgejo status read issues three calls –
+  the pull request, its head commit's combined status, and that commit's committer date – because
+  the last two are addressed by the head SHA the first returns and are not knowable before it runs.
+- **`mergeGate.bots` entries must be spelled as the bare login** on Forgejo, without a `[bot]`
+  suffix: the forge states no account class, so a suffixed entry matches nothing and leaves that
+  reviewer permanently _not started_.
 
 Several behaviors worth knowing if you inspect the gate's output or a `merge-gate` transcript:
 
@@ -326,10 +356,11 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
   watch step times out, so `pr-checks-wait` no longer returns an empty list on a timeout – it
   reports whatever check states the provider had at that point, letting the gate show what was
   actually still pending instead of nothing at all.
-- **`pr-checks-wait`'s result envelope carries `data.commands`, not `data.command`.** Because the
-  operation issues two `gh` commands in sequence, it reports both command previews, in execution
-  order, in a `commands` array; every other operation in this table still reports a single
-  `data.command`.
+- **`data.commands` replaces `data.command` wherever one logical read issues several commands.**
+  `pr-checks-wait` does, because `gh` rejects `--watch` together with `--json`, so it reports both
+  previews in execution order in a `commands` array. A Forgejo `pr-status-read` does too, for its
+  three `tea api` calls. Every other operation, and `pr-status-read` on GitHub, still reports a
+  single `data.command`.
 - **An empty check list is not read as "all green".** Both `pr-status-read` and `pr-checks-wait`
   report `checksReported` (whether the provider returned a check rollup at all) and `checkCount`
   (how many checks it contains) alongside the list itself. A wait or a status read only counts as
@@ -387,10 +418,14 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
   current head SHA and fails with `STALE_WRITE` if it no longer matches the SHA the caller
   verified – in addition to the provider-side `--match-head-commit` guard. A human pushing to the
   branch while the gate was working is therefore caught twice, not once.
-- **A failed `pr-merge` reports `retryable: false` together with `mutationMayHaveSucceeded: true`.**
-  The forge may have accepted the merge before the connection dropped, so a second attempt could act
-  on a state nobody verified. Re-read the pull-request state and report what it shows – never
-  blind-retry the mutation.
+- **A failed `pr-merge` reports `retryable: false`, and `mutationMayHaveSucceeded: true` whenever the
+  outcome is genuinely unknown.** The forge may have accepted the merge before the connection
+  dropped, so a second attempt could act on a state nobody verified. Re-read the pull-request state
+  and report what it shows – never blind-retry the mutation. On Forgejo the merge is an HTTP request
+  whose status the adapter reads, so a refusal the server actually stated is reported as what it is:
+  a rejection for a moved head (409) becomes `STALE_WRITE` with `merged: false`, and a rejection for
+  merge style or permission carries `mutationMayHaveSucceeded: false`. Only a merge whose outcome the
+  adapter could not observe at all – a transport failure – carries `true` there.
 
 ## Interplay with issue-driven tools
 

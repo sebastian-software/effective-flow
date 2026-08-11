@@ -46,9 +46,13 @@ applied one step earlier. A gate then blocks the merge and names that reviewer; 
 on it. **Forgejo is where that is visible.** It states no account class at all, so a **bare** Forgejo
 login no longer matches a configured `X[bot]` entry and that reviewer stays **not started** however
 recently it wrote. A Forgejo login that carries the suffix itself is unaffected, because the suffix
-forces `isBot: true`. Forgejo's gate is report-only by construction — `pr-status-read`,
-`pr-checks-wait` and `pr-merge` are all unsupported there — so what the strict comparison costs there
-is a noisier report, never a wrong merge.
+forces `isBot: true`. **On Forgejo a gate can merge**, so what the strict comparison costs there is
+a blocked merge rather than a noisier report: `pr-status-read` and `pr-merge` are supported and only
+`pr-checks-wait` is not. **Spell a Forgejo `mergeGate.bots` entry as the bare login** — the exact
+login the forge reports, without a `[bot]` suffix. An entry spelled `X[bot]` matches no bare Forgejo
+login at all, leaves that reviewer permanently **not started**, and blocks the gate's merge
+precondition on it forever. The failure direction is still the safe one; on Forgejo it is simply the
+only one.
 
 **Resolution runs from the reported login to the configured entry, and the configured spelling stays
 the key.** `mergeGate.bots.<login>.trigger` and `mergeGate.bots.<login>.check` are dotted
@@ -109,8 +113,11 @@ Resolve the state per reviewer, in this order, and stop at the first rule that r
      from here.
    - **no list at all** is a different case. When `pr-status-read` reports `checksReported: false`,
      the primary signal is unavailable rather than negative, and the reviewer falls through to rule 2.
-     Forgejo exposes no such rollup, so every reviewer of a Forgejo pull request takes the fallback
-     path however carefully its `.check` is configured.
+     Forgejo reports a rollup where its combined commit-status endpoint returns one, so a configured
+     `.check` is looked up there exactly as on GitHub — a Gitea status `context` arrives in the same
+     `name` field a check-run name does. Where that endpoint returns an empty or null list,
+     `checksReported` is `false` and every reviewer of that pull request takes the fallback path,
+     however carefully its `.check` is configured.
 2. **`createdAt` versus `headCommittedAt` — the fallback.** It applies to a reviewer with no
    configured `.check`, and to one whose primary signal was unavailable. Compare the `createdAt` of
    that login's newest comment, review thread, or thread reply against `headCommittedAt` from

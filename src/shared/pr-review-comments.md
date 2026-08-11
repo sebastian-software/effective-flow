@@ -118,7 +118,10 @@ trigger comment.
 Do not scrape the login out of the probe's authentication-status output. That is human-readable CLI
 prose, and this building block reads normalized JSON only.
 
-**Forgejo limitation:** `viewerRead` is unsupported there and returns `UNSUPPORTED_CAPABILITY`. A
+**On Forgejo** the identity is read through the same `tea api` transport the gate's status read
+uses, and the capability is reported from that transport probe rather than assumed. Forgejo states
+no account class, so the viewer carries a `login` and no `type` — which is sufficient, because a
+consumer compares the login and nothing else. Where the capability is absent, or a read fails, a
 consumer that cannot establish the identity fails closed and treats an item it cannot prove to be
 its own as someone else's.
 
@@ -148,8 +151,9 @@ comment body from its own marker table, idempotently. Never write that marker by
 and the `{{SKILL:iterate}}` separation are exact string matches, so a hand-written variant silently
 defeats both.
 
-On `UNSUPPORTED_CAPABILITY` – Forgejo does not support review submission, just as it does not
-support thread resolution – fall back to exactly one structured PR comment carrying the `file:line`
+On `UNSUPPORTED_CAPABILITY` – Forgejo supports neither review submission (`review-create`) nor a
+reply into a review thread (`review-thread-reply`); thread **resolution** it does support – fall
+back to exactly one structured PR comment carrying the `file:line`
 references in its text, and report the reduced fidelity; do not improvise a provider request. Build
 that fallback comment with the helper's `pr-review-comment-build` operation, **not** with
 `pr-comment-build`: the latter stamps `<!-- effective-flow-iterate -->`, the marker
@@ -211,9 +215,14 @@ Merging is the most irreversible mutation in this tool set and belongs to `{{SKI
 is never used to work around a blocked merge state, and this building block still never approves a
 pull request and never requests changes — not even to unblock a merge.
 
-**Forgejo limitation:** `pr-status-read`, `pr-checks-wait`, and `pr-merge` are all unsupported there
-and return `UNSUPPORTED_CAPABILITY`. The gate fails closed: it degrades to report-only, states that
-reason, and improvises no provider request.
+**Forgejo limitation:** of the three, only `pr-checks-wait` is unsupported there and returns
+`UNSUPPORTED_CAPABILITY` — `tea` has no `checks` subcommand and Forgejo offers no server-side
+blocking watch, so the gate takes its documented no-watch degradation (report the pending checks and
+ask once) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
+the status read composes the pull-request object, the combined commit status and the head commit's
+date, and the merge sends `head_commit_id` as the server-side head guard. Two further operations
+this building block uses stay unsupported on Forgejo — `review-create` and `review-thread-reply` —
+and the gate still fails closed on anything it cannot read, improvising no provider request.
 
 ### Idempotency via the Effective Flow markers
 
