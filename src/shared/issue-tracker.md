@@ -116,7 +116,7 @@ Reads execute immediately. Mutations are dry runs by default: inspect the return
 
 ### Label convention
 
-In remote mode, use these labels and create missing labels idempotently. The helper's label creation reads the repository's existing labels first and creates only what is genuinely missing, so a repeated run adds no second copy of a label and no issue ends up carrying one label several times; each call reports whether it created anything. Where the existing labels cannot be read, it aborts instead of creating:
+In remote mode, use these labels and create missing labels idempotently. The helper's label creation reads the repository's existing labels first and creates only what is genuinely missing, so a repeated run adds no second copy of a label; each call reports whether it created anything. Copies an earlier version already created are not removed and can still attach several times to one issue. Where the existing labels cannot be read, it aborts instead of creating:
 
 | Label                                                                                          | Meaning                                                                           |
 | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
