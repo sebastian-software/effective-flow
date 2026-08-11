@@ -258,6 +258,11 @@ the resulting merge commit or the abort reason.
 
 - **Forgejo:** `pr-status-read` is unsupported there, so the run is report-only by construction and
   this path is never reached. Stated so it is not later read as an oversight.
+  - ✅ 2026-08-11, `effective-flow build`: superseded. `pr-status-read` and `pr-merge` are now
+    supported on Forgejo, so the run is no longer report-only. The conclusion survives for a
+    different reason: Forgejo reports no merge state at all and states `mergeable: false` as
+    unstated, so neither `BEHIND` nor `DIRTY` is ever observed and this path still has no entry
+    point there.
 - **`mergeState` is unstated:** the loop already fails closed on an unstated merge state. The
   resolution path is entered only from an observed conflict, so an unstated state keeps the loop
   running rather than starting a speculative merge.

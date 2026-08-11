@@ -77,6 +77,7 @@ function teaProbeResults(overrides = {}) {
     help('comment', '--output'),
     help('commentUpdate', '--method --data'),
     help('labelCreate', '--output --name'),
+    help('apiInclude', '--include'),
   ];
 }
 
@@ -3375,18 +3376,92 @@ test('pr-checks-wait reports both command previews in execution order, unlike a 
   assert.equal(Object.hasOwn(status.data, 'commands'), false);
 });
 
-test('the Forgejo probe reports every pull-request gate operation as unsupported', async () => {
+// The response of a `tea api --include` call. tea writes the status line and the header block to
+// **stderr** and the body to stdout, which is the whole reason the adapter cannot reuse the
+// `gh --include` path — and it exits 0 whatever the status, which is why the status is read at all.
+function teaApiResult(status, body, headers = {}) {
+  const lines = [`HTTP/1.1 ${status} ${status === 200 ? 'OK' : 'Refused'}`];
+  for (const [name, value] of Object.entries(headers)) lines.push(`${name}: ${value}`);
+  return {
+    status: 0,
+    stdout: body === undefined ? '' : JSON.stringify(body),
+    stderr: `${lines.join('\r\n')}\r\n\r\n`,
+  };
+}
+
+function forgejoPull(overrides = {}) {
+  return {
+    number: 12,
+    title: 'feat: add the gate',
+    state: 'open',
+    draft: false,
+    mergeable: true,
+    // The API address, which must never reach the envelope: only `html_url` round-trips through
+    // `parseReference`.
+    url: 'https://code.example.test/api/v1/repos/team/flow/pulls/12',
+    html_url: 'https://code.example.test/team/flow/pulls/12',
+    head: { sha: verifiedHead, ref: 'topic' },
+    base: { ref: 'develop' },
+    ...overrides,
+  };
+}
+
+function forgejoGitCommit(date = headCommittedAt) {
+  return { sha: verifiedHead, commit: { committer: { date }, author: { date } } };
+}
+
+// The three canned reads of a Forgejo status call, in execution order.
+function forgejoStatusResults({ pull, statuses, totalCount, commit } = {}) {
+  const body = { state: 'success', sha: verifiedHead, statuses: statuses ?? [] };
+  return [
+    teaApiResult(200, pull ?? forgejoPull()),
+    teaApiResult(
+      200,
+      body,
+      totalCount === undefined ? {} : { 'X-Total-Count': String(totalCount) },
+    ),
+    teaApiResult(200, commit ?? forgejoGitCommit()),
+  ];
+}
+
+async function forgejoStatus(results, input = {}) {
+  const runner = fakeRunner(results);
+  const envelope = await executeOperation(
+    'pr-status-read',
+    { repository: forgejoRepository, number: 12, ...input },
+    { runner, skipProbe: true },
+  );
+  return { envelope, runner };
+}
+
+test('the Forgejo probe gates the pull-request operations on the tea api transport', async () => {
   const probe = await probeProvider(forgejoRepository, fakeRunner(teaProbeResults()));
-  assert.equal(probe.capabilities.pullRequestStatus, false);
+  assert.equal(probe.capabilities.pullRequestStatus, true);
+  assert.equal(probe.capabilities.pullRequestMerge, true);
+  assert.equal(probe.capabilities.viewerRead, true);
+  // The one genuine provider limitation: `tea` has no `checks` subcommand and Forgejo offers no
+  // server-side blocking watch, so the documented no-watch degradation carries it.
   assert.equal(probe.capabilities.pullRequestChecksWait, false);
-  assert.equal(probe.capabilities.pullRequestMerge, false);
-  // The reads the adapter does support stay untouched by the new capabilities.
+  // The reads the adapter already supported stay untouched.
   assert.equal(probe.capabilities.pullRequestRead, true);
 
+  // The probe attests transport, so a tea whose `api` command lacks `--include` reports all three
+  // as unsupported rather than issuing a read whose HTTP status it could never see.
+  const withoutInclude = await probeProvider(
+    forgejoRepository,
+    fakeRunner(teaProbeResults({ apiInclude: { status: 1, stdout: '', stderr: 'unknown flag' } })),
+  );
+  assert.equal(withoutInclude.capabilities.pullRequestStatus, false);
+  assert.equal(withoutInclude.capabilities.pullRequestMerge, false);
+  assert.equal(withoutInclude.capabilities.viewerRead, false);
+});
+
+test('the Forgejo adapter keeps the watch and the two review writes refused', async () => {
+  const probe = await probeProvider(forgejoRepository, fakeRunner(teaProbeResults()));
   for (const [operation, capability] of [
-    ['pr-status-read', 'pullRequestStatus'],
     ['pr-checks-wait', 'pullRequestChecksWait'],
-    ['pr-merge', 'pullRequestMerge'],
+    ['review-create', 'reviewCreate'],
+    ['review-thread-reply', 'reviewThreadReplies'],
   ]) {
     const runner = fakeRunner([]);
     const envelope = await executeOperation(
@@ -3394,8 +3469,9 @@ test('the Forgejo probe reports every pull-request gate operation as unsupported
       {
         repository: forgejoRepository,
         number: 12,
+        commentId: 5,
         probe,
-        payload: { method: 'squash', expectedHeadSha: verifiedHead },
+        payload: { body: 'Body', findings: [] },
       },
       { runner, skipProbe: true, apply: true },
     );
@@ -3406,18 +3482,122 @@ test('the Forgejo probe reports every pull-request gate operation as unsupported
 
     // Even a caller that bypasses the capability gate cannot get a tea command for them.
     assert.throws(
-      () =>
-        buildCommandPlan(
-          operation,
-          {
-            number: 12,
-            payload: { method: 'squash', expectedHeadSha: verifiedHead },
-          },
-          forgejoRepository,
-        ),
+      () => buildCommandPlan(operation, { number: 12, commentId: 5 }, forgejoRepository),
       (error) => error.code === 'UNSUPPORTED_CAPABILITY' && error.details.provider === 'forgejo',
     );
   }
+});
+
+test('Forgejo pr-status-read composes three tea api reads addressed by the head SHA', async () => {
+  // The plan builder answers with call 1 alone: calls 2 and 3 are addressed by the head SHA call 1
+  // returns and are not knowable before it has run.
+  const plan = buildCommandPlan('pr-status-read', { number: 12 }, forgejoRepository);
+  assert.equal(plan.executable, 'tea');
+  assert.deepEqual(plan.args, [
+    'api',
+    'repos/team/flow/pulls/12',
+    '--include',
+    '--login',
+    'work',
+    '--repo',
+    'team/flow',
+  ]);
+  // Never the `tea pulls … --output json` renderer, which carries no `mergeable`, no `draft` and no
+  // head SHA — a merge guard built on it would fail `STALE_WRITE` on every merge.
+  assert.equal(plan.args.includes('pulls'), false);
+
+  const { envelope, runner } = await forgejoStatus(
+    forgejoStatusResults({
+      statuses: [
+        {
+          id: 3,
+          context: 'ci/build',
+          state: 'success',
+          target_url: 'https://code.example.test/team/flow/actions/7',
+          description: 'ignored',
+        },
+      ],
+      totalCount: 1,
+    }),
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(runner.calls.length, 3);
+  assert.deepEqual(runner.calls[1].args, [
+    'api',
+    `repos/team/flow/commits/${verifiedHead}/status?limit=100`,
+    '--include',
+    '--login',
+    'work',
+    '--repo',
+    'team/flow',
+  ]);
+  assert.deepEqual(runner.calls[2].args, [
+    'api',
+    `repos/team/flow/git/commits/${verifiedHead}`,
+    '--include',
+    '--login',
+    'work',
+    '--repo',
+    'team/flow',
+  ]);
+
+  // All three previews travel as `data.commands`, mirroring `pr-checks-wait`; a Forgejo status read
+  // never reports the singular `data.command`.
+  assert.equal(envelope.data.commands.length, 3);
+  assert.equal(Object.hasOwn(envelope.data, 'command'), false);
+
+  const result = envelope.data.result;
+  assert.deepEqual(result, {
+    number: 12,
+    repository: 'team/flow',
+    title: 'feat: add the gate',
+    state: 'open',
+    draft: false,
+    headSha: verifiedHead,
+    // Re-emitted in UTC by `normalizeTimestamp`: Gitea reports a local offset while GitHub reports
+    // `Z`, and the two are compared as instants.
+    headCommittedAt: new Date(headCommittedAt).toISOString(),
+    baseRef: 'develop',
+    mergeable: 'MERGEABLE',
+    // The browser URL, not the API address the pull-request object states in `url`.
+    url: 'https://code.example.test/team/flow/pulls/12',
+    checksReported: true,
+    checkCount: 1,
+    // Only `name`, `status`, `conclusion` and `url`: no raw Gitea key (`context`, `target_url`,
+    // `state`, `id`, `description`) survives into the envelope, and `required` stays absent because
+    // Forgejo states no requiredness anywhere.
+    checks: [
+      {
+        name: 'ci/build',
+        status: 'COMPLETED',
+        conclusion: 'SUCCESS',
+        url: 'https://code.example.test/team/flow/actions/7',
+      },
+    ],
+  });
+  // The published URL round-trips, which the API address would not.
+  assert.equal(
+    parseReference(result.url, { expectedKind: 'pull-request', repository: forgejoRepository })
+      .number,
+    12,
+  );
+
+  // The same key set the GitHub adapter returns, minus `mergeState` alone: Forgejo's pull-request
+  // object has no `mergeStateStatus` equivalent, so none is fabricated.
+  const github = await executeOperation(
+    'pr-status-read',
+    { repository: gateRepository, number: 12 },
+    {
+      runner: fakeRunner([{ status: 0, stdout: prStatusStdout(verifiedHead), stderr: '' }]),
+      skipProbe: true,
+    },
+  );
+  assert.deepEqual(
+    Object.keys(github.data.result)
+      .filter((key) => key !== 'mergeState')
+      .sort(),
+    Object.keys(result).sort(),
+  );
 });
 
 test('viewer-read asks GitHub for the authenticated account and stays a read', async () => {
@@ -3573,28 +3753,314 @@ test('a viewer-read that states no login fails instead of answering with an empt
   }
 });
 
-test('the Forgejo probe reports viewer-read as unsupported', async () => {
-  const probe = await probeProvider(forgejoRepository, fakeRunner(teaProbeResults()));
-  assert.equal(probe.capabilities.viewerRead, false);
-  // The reads the adapter does support are untouched by the new capability.
-  assert.equal(probe.capabilities.pullRequestRead, true);
+test('every Gitea commit-status state maps to one check record', async () => {
+  const cases = [
+    ['pending', 'PENDING', undefined],
+    ['success', 'COMPLETED', 'SUCCESS'],
+    ['failure', 'COMPLETED', 'FAILURE'],
+    ['error', 'COMPLETED', 'ERROR'],
+    // `warning` and `skipped` are non-success completed checks and therefore block under
+    // `requireAllChecks: true` — deliberately, matching GitHub's own `SKIPPED` conclusion.
+    ['warning', 'COMPLETED', 'WARNING'],
+    ['skipped', 'COMPLETED', 'SKIPPED'],
+    // An unrecognized future state blocks rather than reading as a green result.
+    ['something-new', 'PENDING', undefined],
+    ['', 'PENDING', undefined],
+  ];
+  const { envelope } = await forgejoStatus(
+    forgejoStatusResults({
+      statuses: cases.map(([state], index) => ({ context: `ci/${index}`, state })),
+      totalCount: cases.length,
+    }),
+  );
+  assert.deepEqual(
+    envelope.data.result.checks,
+    cases.map(([, status, conclusion], index) => ({
+      name: `ci/${index}`,
+      status,
+      ...(conclusion === undefined ? {} : { conclusion }),
+    })),
+  );
+});
 
-  const runner = fakeRunner([]);
+test('an empty or null Forgejo status list is reported as unreported, never as green', async () => {
+  for (const statuses of [[], null, undefined]) {
+    const results = forgejoStatusResults();
+    results[1] = teaApiResult(200, { state: '', sha: '', statuses, total_count: 0 });
+    const { envelope } = await forgejoStatus(results);
+    assert.equal(envelope.ok, true);
+    // The endpoint answers identically for a repository with no CI at all and for one whose CI has
+    // not reported yet, so the gate is told the list is unreported and blocks on it.
+    assert.equal(envelope.data.result.checksReported, false);
+    assert.equal(envelope.data.result.checkCount, 0);
+    assert.deepEqual(envelope.data.result.checks, []);
+  }
+});
+
+test('Forgejo truncation is detected from X-Total-Count, not from the returned body', async () => {
+  // Forgejo clamps `limit` to `MAX_RESPONSE_ITEMS`, so a requested 100 comes back as 50 and
+  // "returned equals requested" can never fire; the body's own `total_count` reports the page
+  // length. Only the response-wide header states the truth.
+  const statuses = Array.from({ length: 50 }, (_, index) => ({
+    context: `ci/${index}`,
+    state: 'success',
+  }));
+  const results = forgejoStatusResults({ statuses, totalCount: 63 });
+  results[1] = teaApiResult(
+    200,
+    { state: 'success', sha: verifiedHead, statuses, total_count: 50 },
+    { 'X-Total-Count': '63' },
+  );
+  const { envelope } = await forgejoStatus(results);
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+  assert.equal(envelope.error.details.totalCount, 63);
+  assert.equal(envelope.error.details.returnedCount, 50);
+
+  // A header that matches the returned page is not truncation, and the empty-list short-circuit
+  // sets no header at all — harmless, because that path has zero statuses.
+  const complete = await forgejoStatus(forgejoStatusResults({ statuses, totalCount: 50 }));
+  assert.equal(complete.envelope.ok, true);
+  assert.equal(complete.envelope.data.result.checkCount, 50);
+});
+
+test('a non-2xx tea api status becomes a structured error instead of data', async () => {
+  // `tea api` exits 0 on every 4xx, so without the status line a 403 body with no `statuses` key
+  // would be normalized to `checksReported: false` and presented as "this repository has no CI" —
+  // an operator who then said "proceed" would merge a head whose checks were never read.
+  const refusedChecks = forgejoStatusResults();
+  refusedChecks[1] = teaApiResult(403, { message: 'token does not have scope' });
+  const checks = await forgejoStatus(refusedChecks);
+  assert.equal(checks.envelope.ok, false);
+  assert.equal(checks.envelope.error.code, 'COMMAND_FAILED');
+  assert.equal(checks.envelope.error.details.status, 403);
+  // The third read is never issued once the second failed.
+  assert.equal(checks.runner.calls.length, 2);
+
+  const refusedPull = forgejoStatusResults();
+  refusedPull[0] = teaApiResult(404, { message: 'pull request does not exist' });
+  const pull = await forgejoStatus(refusedPull);
+  assert.equal(pull.envelope.ok, false);
+  assert.equal(pull.envelope.error.code, 'COMMAND_FAILED');
+  assert.equal(pull.envelope.error.details.status, 404);
+  assert.equal(pull.runner.calls.length, 1);
+
+  // A response with no status line at all is a broken transport, not a payload.
+  const headerless = await forgejoStatus([{ status: 0, stdout: '{}', stderr: '' }]);
+  assert.equal(headerless.envelope.ok, false);
+  assert.equal(headerless.envelope.error.code, 'INVALID_PAYLOAD');
+});
+
+test('Forgejo mergeability is stated only when the forge stated it true', async () => {
+  const mergeable = await forgejoStatus(forgejoStatusResults());
+  assert.equal(mergeable.envelope.data.result.mergeable, 'MERGEABLE');
+
+  // Forgejo returns `mergeable: false` while its conflict check is still running and for any
+  // WIP-titled pull request, so `false` must never become `CONFLICTING`: the gate would report a
+  // conflict on a branch it may have just repaired. The field is omitted instead, and an unstated
+  // mergeability fails closed and keeps the bounded loop running.
+  for (const overrides of [
+    { mergeable: false, title: 'feat: still checking' },
+    { mergeable: false, title: 'WIP: feat: add the gate' },
+    { mergeable: undefined },
+  ]) {
+    const { envelope } = await forgejoStatus(
+      forgejoStatusResults({ pull: forgejoPull(overrides) }),
+    );
+    assert.equal(envelope.ok, true);
+    assert.equal(Object.hasOwn(envelope.data.result, 'mergeable'), false);
+  }
+
+  // The normalizer accepts a string enum only, so a flattener "simplified" into passing the raw
+  // boolean through yields no field rather than the defect above.
+  const { envelope } = await forgejoStatus(forgejoStatusResults());
+  assert.equal(Object.hasOwn(envelope.data.result, 'mergeState'), false);
+});
+
+test('viewer-read on Forgejo reads tea api user with --login and no --repo', async () => {
+  const plan = buildCommandPlan('viewer-read', {}, forgejoRepository);
+  assert.equal(plan.executable, 'tea');
+  // Credential-scoped, not repository-scoped.
+  assert.deepEqual(plan.args, ['api', 'user', '--include', '--login', 'work']);
+
+  const runner = fakeRunner([teaApiResult(200, { id: 7, login: 'flow-bot' })]);
   const envelope = await executeOperation(
     'viewer-read',
-    { repository: forgejoRepository, probe },
+    { repository: forgejoRepository },
     { runner, skipProbe: true },
   );
-  assert.equal(envelope.ok, false);
-  assert.equal(envelope.error.code, 'UNSUPPORTED_CAPABILITY');
-  assert.equal(envelope.error.details.capability, 'viewerRead');
-  assert.equal(runner.calls.length, 0);
+  assert.equal(envelope.ok, true);
+  // Forgejo states no account class, so the viewer carries a login and no `type` — which is
+  // sufficient: a consumer compares the login and nothing else.
+  assert.deepEqual(envelope.data.result, { login: 'flow-bot' });
 
-  // Even a caller that bypasses the capability gate gets no invented tea equivalent.
-  assert.throws(
-    () => buildCommandPlan('viewer-read', {}, forgejoRepository),
-    (error) => error.code === 'UNSUPPORTED_CAPABILITY' && error.details.provider === 'forgejo',
+  const refused = await executeOperation(
+    'viewer-read',
+    { repository: forgejoRepository },
+    { runner: fakeRunner([teaApiResult(401, { message: 'unauthorized' })]), skipProbe: true },
   );
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'COMMAND_FAILED');
+});
+
+test('Forgejo pr-merge sends Do plus head_commit_id on stdin and nothing else', () => {
+  const plan = buildCommandPlan(
+    'pr-merge',
+    { number: 12, payload: { method: 'squash', expectedHeadSha: verifiedHead } },
+    forgejoRepository,
+  );
+  assert.equal(plan.executable, 'tea');
+  assert.deepEqual(plan.args, [
+    'api',
+    'repos/team/flow/pulls/12/merge',
+    '--method',
+    'POST',
+    '--include',
+    '--login',
+    'work',
+    '--repo',
+    'team/flow',
+    '--data',
+    '@-',
+  ]);
+  // The body rides on stdin exactly as `issue-comment-update`'s does: the dry-run preview publishes
+  // the argv, so an inline `--data '<json>'` would put the merge body into the preview.
+  assert.equal(plan.stdin, `{"Do":"squash","head_commit_id":"${verifiedHead}"}\n`);
+
+  const titled = buildCommandPlan(
+    'pr-merge',
+    {
+      number: 12,
+      payload: { method: 'squash', expectedHeadSha: verifiedHead, subject: 'feat: add the gate' },
+    },
+    forgejoRepository,
+  );
+  assert.equal(
+    titled.stdin,
+    `{"Do":"squash","head_commit_id":"${verifiedHead}","MergeTitleField":"feat: add the gate"}\n`,
+  );
+
+  // No `force_merge`, no `merge_when_checks_succeed`, no `delete_branch_after_merge`: the first
+  // would bypass the branch protection this adapter relies on for the merge states Forgejo does not
+  // report, and the second would turn a guarded synchronous merge into a deferred server-side one
+  // the gate never observes.
+  for (const method of ['squash', 'merge', 'rebase']) {
+    const body = JSON.parse(
+      buildCommandPlan(
+        'pr-merge',
+        { number: 12, payload: { method, expectedHeadSha: verifiedHead } },
+        forgejoRepository,
+      ).stdin,
+    );
+    assert.deepEqual(Object.keys(body), ['Do', 'head_commit_id']);
+    assert.equal(body.Do, method);
+  }
+});
+
+test('a Forgejo merge the server refused is never reported as merged', async () => {
+  const mergeInput = {
+    repository: forgejoRepository,
+    number: 12,
+    payload: { method: 'squash', expectedHeadSha: verifiedHead },
+  };
+  // Case 1: the guard detects the moved head before any merge command is issued at all.
+  const guarded = fakeRunner(
+    forgejoStatusResults({ pull: forgejoPull({ head: { sha: movedHead } }) }),
+  );
+  const stale = await executeOperation('pr-merge', mergeInput, {
+    runner: guarded,
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(stale.ok, false);
+  assert.equal(stale.error.code, 'STALE_WRITE');
+  assert.equal(stale.error.details.merged, false);
+  assert.equal(stale.error.details.actualHeadSha, movedHead);
+  // Only the guard's reads ran; nothing was sent to the merge endpoint.
+  assert.equal(guarded.calls.length, 3);
+  assert.equal(
+    guarded.calls.some((call) => call.args.includes('POST')),
+    false,
+  );
+
+  // Case 2: the guard passed and the server rejected the merge for a head that moved in between.
+  // `tea api` exits 0 there, so the 409 is the discriminator — and it must never surface as a
+  // COMMAND_FAILED carrying `mutationMayHaveSucceeded: true`.
+  const raced = await executeOperation('pr-merge', mergeInput, {
+    runner: fakeRunner([
+      ...forgejoStatusResults(),
+      teaApiResult(409, { message: 'head out of date' }),
+    ]),
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(raced.ok, false);
+  assert.equal(raced.error.code, 'STALE_WRITE');
+  assert.equal(raced.error.details.merged, false);
+  assert.equal(Object.hasOwn(raced.error.details, 'mutationMayHaveSucceeded'), false);
+
+  // A rejection for merge style or permission is a failure the server definitively did not act on.
+  for (const status of [405, 403]) {
+    const refused = await executeOperation('pr-merge', mergeInput, {
+      runner: fakeRunner([
+        ...forgejoStatusResults(),
+        teaApiResult(status, { message: 'merge style is not allowed' }),
+      ]),
+      skipProbe: true,
+      apply: true,
+    });
+    assert.equal(refused.ok, false);
+    assert.equal(refused.error.code, 'COMMAND_FAILED');
+    assert.equal(refused.error.details.mutationMayHaveSucceeded, false);
+    assert.equal(refused.error.details.status, status);
+  }
+
+  // The cheap second assertion: an accepted merge answers 200 with an empty body, so a returned
+  // object is a rejection however the status was spelled.
+  const bodied = await executeOperation('pr-merge', mergeInput, {
+    runner: fakeRunner([
+      ...forgejoStatusResults(),
+      teaApiResult(200, { message: 'not mergeable' }),
+    ]),
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(bodied.ok, false);
+  assert.equal(bodied.error.code, 'COMMAND_FAILED');
+  assert.equal(bodied.error.details.mutationMayHaveSucceeded, false);
+});
+
+test('an accepted Forgejo merge reports the verified head and the method', async () => {
+  const runner = fakeRunner([...forgejoStatusResults(), teaApiResult(200, undefined)]);
+  const envelope = await executeOperation(
+    'pr-merge',
+    {
+      repository: forgejoRepository,
+      number: 12,
+      payload: { method: 'squash', expectedHeadSha: verifiedHead },
+    },
+    { runner, skipProbe: true, apply: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.result.merged, true);
+  assert.equal(envelope.data.result.method, 'squash');
+  assert.equal(envelope.data.result.headSha, verifiedHead);
+  assert.equal(envelope.data.command.args.at(-1), '@-');
+
+  // Without `--apply` the merge previews and executes nothing.
+  const preview = fakeRunner([]);
+  const dry = await executeOperation(
+    'pr-merge',
+    {
+      repository: forgejoRepository,
+      number: 12,
+      payload: { method: 'squash', expectedHeadSha: verifiedHead },
+    },
+    { runner: preview, skipProbe: true },
+  );
+  assert.equal(dry.dryRun, true);
+  assert.equal(preview.calls.length, 0);
+  assert.equal(dry.data.command.executable, 'tea');
 });
 
 test('a supplied cwd roots every process invocation of an operation', async () => {

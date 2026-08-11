@@ -210,8 +210,10 @@ asked. A project that gates pull requests it does not trust should set
 untrusted branch's commands are executed by this gate at all.
 
 Whether the gate may do this at all is `mergeGate.conflictResolution` (default `auto`); see
-[Block `mergeGate`](configuration.md#block-mergegate). On Forgejo the run is report-only by
-construction, so this path is never reached there.
+[Block `mergeGate`](configuration.md#block-mergegate). On Forgejo this path has no entry point:
+the forge reports no merge state at all, so neither `BEHIND` nor `DIRTY` is ever observed there, and
+a genuine conflict surfaces as a bounded loop ending in a report rather than as the fast conflict
+path.
 
 #### Three reviewer states, not two
 
@@ -326,9 +328,12 @@ Two further things worth knowing about what the gate writes:
   run assessed but did not implement, since those get no thread reply, every configured `.check`
   context that never appeared at all, and – for every conflict it met – the per-file record of how it
   was resolved.
-- On GitHub, the check gate and the merge are performed by the remote-tracker helper described in
-  [Remote tracker](remote-tracker.md#merge-gate-operations). Forgejo does not yet support the
-  underlying operations, so a Forgejo run degrades to report-only there.
+- The check gate and the merge are performed by the remote-tracker helper described in
+  [Remote tracker](remote-tracker.md#merge-gate-operations), on both providers. Forgejo supports the
+  status read, the merge and the identity read; only the blocking check wait is unsupported there,
+  because `tea` has no `checks` subcommand and Forgejo offers no server-side watch. A Forgejo run
+  therefore reports the pending checks by name and asks once instead of blocking, and is the whole
+  gate minus that wait. `review-create` and `review-thread-reply` also stay unsupported there.
 
 **Interplay:** Configured entirely under `mergeGate.*` in the project-setup ADR (completion mode,
 conflict-resolution mode, check-wait timeout, round budget, bot registry) plus

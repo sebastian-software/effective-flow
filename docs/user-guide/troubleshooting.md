@@ -30,6 +30,12 @@ names the `installed` and `minimum` versions. Update the CLI (for example `brew 
 head branch, which is exactly the form Effective Flow uses. The check runs at the start of a remote
 run, so you find out before implementation instead of at the delivery point.
 
+The Forgejo merge-gate operations do **not** raise that floor. They ride on `tea api`, which landed
+in v0.12.0, and the flag they need on top of it (`--include`) is probed rather than versioned: a
+`tea` without it reports `pr-status-read`, `pr-merge` and `viewer-read` as
+`UNSUPPORTED_CAPABILITY` instead of failing the version check, so `tea` 0.14.2 stays the minimum for
+every run.
+
 ## The external tracker connection could not be resolved
 
 With `tracker.mode: external` (see [Remote tracker](./remote-tracker.md#external-target)), a run
