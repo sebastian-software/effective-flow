@@ -77,6 +77,10 @@ function teaProbeResults(overrides = {}) {
     help('comment', '--output'),
     help('commentUpdate', '--method --data'),
     help('labelCreate', '--output --name'),
+    // Appended last, matching the probe appended last to the adapter's `Promise.all`. The fixture
+    // is positional, so a new entry inserted anywhere else would silently reassign every probe
+    // after it.
+    help('labelList', '--output --exclude-org --page --limit'),
   ];
 }
 
@@ -790,6 +794,295 @@ test('sf label migration executes add before remove and reports partial completi
   assert.deepEqual(partial.error.details.completedSteps, [
     { operation: 'add', issue: 9, label: 'effective-flow-fix' },
   ]);
+});
+
+const githubLabelPage = (labels) => ({
+  status: 0,
+  stdout: JSON.stringify([labels]),
+  stderr: '',
+});
+
+const alreadyExistsResult = {
+  status: 1,
+  // `gh api` puts the provider's error body on stdout and only its own summary line on stderr, so
+  // the machine-readable reason is where this fixture puts it.
+  stdout: JSON.stringify({
+    message: 'Validation Failed',
+    errors: [{ resource: 'Label', code: 'already_exists', field: 'name' }],
+  }),
+  stderr: 'gh: Validation Failed (HTTP 422)\n',
+};
+
+function labelCreate(repository, results, apply = true) {
+  const runner = fakeRunner(results);
+  return executeOperation(
+    'label-create',
+    { repository, payload: { name: 'effective-flow-fix', color: 'ededed', description: '' } },
+    { runner, skipProbe: true, apply },
+  ).then((envelope) => ({ envelope, runner }));
+}
+
+test('the internal label list enumerates every label and stays uninvocable as an operation', async () => {
+  const github = buildCommandPlan('label-list', {}, githubRepository);
+  assert.equal(github.executable, 'gh');
+  assert.equal(github.args.includes('--paginate'), true);
+  assert.equal(github.args.includes('--slurp'), true);
+  // Without the explicit page size the endpoint returns 30 labels, and a target name on page 2
+  // would be read as absent — which is the duplicate this operation exists to stop.
+  assert.match(github.args.at(-1), /^repos\/example\/flow\/labels\?per_page=100$/);
+
+  const forgejo = buildCommandPlan('label-list', { page: 2, limit: 100 }, forgejoRepository);
+  assert.deepEqual(forgejo.args.slice(0, 2), ['labels', 'list']);
+  assert.equal(forgejo.args.includes('--exclude-org'), true);
+  assert.equal(forgejo.args.at(forgejo.args.indexOf('--page') + 1), '2');
+  assert.equal(forgejo.args.at(forgejo.args.indexOf('--limit') + 1), '100');
+
+  // Constructible by the branch that owns it, refused as a public operation.
+  const envelope = await executeOperation(
+    'label-list',
+    { repository: githubRepository },
+    { runner: fakeRunner([]), skipProbe: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+});
+
+test('label-create skips the create when the exact name is already present', async () => {
+  const { envelope, runner } = await labelCreate(githubRepository, [
+    githubLabelPage([
+      { id: 3, name: 'wontfix', color: 'ffffff', description: '' },
+      { id: 4, name: 'effective-flow-fix', color: 'ededed', description: 'fix' },
+    ]),
+  ]);
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.unchanged, true);
+  assert.equal(envelope.data.result.created, false);
+  assert.deepEqual(envelope.data.result.label, {
+    id: 4,
+    name: 'effective-flow-fix',
+    color: 'ededed',
+    description: 'fix',
+  });
+  // The read happened, the write did not.
+  assert.equal(runner.calls.length, 1);
+  assert.deepEqual(
+    envelope.data.steps.map((step) => step.step),
+    ['list'],
+  );
+  assert.equal(
+    envelope.data.steps.some((step) => step.command.args.includes('POST')),
+    false,
+  );
+  // The create preview stays on `data.command`, so the generic mutation contract still holds.
+  assert.equal(envelope.data.command.args.includes('POST'), true);
+});
+
+test('label-create creates exactly once when the list omits the name', async () => {
+  const { envelope, runner } = await labelCreate(githubRepository, [
+    githubLabelPage([{ id: 3, name: 'wontfix', color: 'ffffff', description: '' }]),
+    {
+      status: 0,
+      stdout: JSON.stringify({
+        id: 9,
+        name: 'effective-flow-fix',
+        color: 'ededed',
+        description: '',
+      }),
+      stderr: '',
+    },
+  ]);
+  assert.equal(envelope.data.unchanged, false);
+  assert.equal(envelope.data.result.created, true);
+  assert.deepEqual(envelope.data.result.label, {
+    id: 9,
+    name: 'effective-flow-fix',
+    color: 'ededed',
+    description: '',
+  });
+  assert.equal(runner.calls.length, 2);
+  assert.deepEqual(
+    envelope.data.steps.map((step) => step.step),
+    ['list', 'create'],
+  );
+  assert.equal(runner.calls.filter((call) => call.args.includes('POST')).length, 1);
+});
+
+test('a lost create race is tolerated through the runner result, not a stdout sentinel', async () => {
+  const { envelope } = await labelCreate(githubRepository, [
+    githubLabelPage([]),
+    alreadyExistsResult,
+  ]);
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.unchanged, true);
+  assert.equal(envelope.data.result.created, false);
+  assert.equal(envelope.data.result.label, null);
+  // The retired sentinel must not reappear anywhere in the envelope.
+  assert.doesNotMatch(JSON.stringify(envelope), /\{"unchanged":true\}/);
+});
+
+test('the already-exists tolerance is keyed on plan metadata, not on the step label', async () => {
+  for (const repository of [githubRepository, forgejoRepository]) {
+    const plan = buildCommandPlan('label-create', { payload: { name: 'x' } }, repository);
+    assert.equal(plan.tolerateAlreadyExists, true);
+  }
+  // Both step labels have moved away from the bare operation name the old tolerance matched
+  // (`label-create list` and `label-create write`), and the race is still tolerated.
+  const { envelope } = await labelCreate(githubRepository, [
+    githubLabelPage([]),
+    alreadyExistsResult,
+  ]);
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.result.created, false);
+
+  // The list plan carries no tolerance flag, so the identical provider response fails there. A
+  // label-keyed match would have swallowed it, because that label starts with `label-create`.
+  const preRead = await labelCreate(githubRepository, [alreadyExistsResult]);
+  assert.equal(preRead.envelope.ok, false);
+  assert.equal(preRead.envelope.error.code, 'COMMAND_FAILED');
+  assert.match(preRead.envelope.error.message, /^label-create list failed$/);
+
+  // And a write that failed for any other reason stays a failure.
+  const other = await labelCreate(githubRepository, [
+    githubLabelPage([]),
+    { status: 1, stdout: '', stderr: 'server error' },
+  ]);
+  assert.equal(other.envelope.ok, false);
+  assert.equal(other.envelope.error.code, 'COMMAND_FAILED');
+  assert.match(other.envelope.error.message, /^label-create write failed$/);
+});
+
+test('label-create pages the Forgejo pre-check and matches a name on the second page', async () => {
+  const { envelope, runner } = await labelCreate(forgejoRepository, [
+    {
+      status: 0,
+      stdout: JSON.stringify([{ index: '1', name: 'wontfix', color: '#ffffff', description: '' }]),
+      stderr: '',
+    },
+    {
+      status: 0,
+      stdout: JSON.stringify([
+        { index: '2', name: 'effective-flow-fix', color: '#ededed', description: 'fix' },
+      ]),
+      stderr: '',
+    },
+    { status: 0, stdout: '[]', stderr: '' },
+  ]);
+  assert.equal(envelope.data.unchanged, true);
+  assert.equal(envelope.data.result.created, false);
+  assert.deepEqual(envelope.data.result.label, {
+    id: '2',
+    name: 'effective-flow-fix',
+    color: '#ededed',
+    description: 'fix',
+  });
+  assert.equal(runner.calls.at(1).args.at(runner.calls.at(1).args.indexOf('--page') + 1), '2');
+  assert.equal(
+    runner.calls.some((call) => call.args.includes('create')),
+    false,
+  );
+});
+
+test('the Forgejo create plan renders for humans and is never parsed as JSON', async () => {
+  const plan = buildCommandPlan('label-create', { payload: { name: 'x' } }, forgejoRepository);
+  assert.equal(plan.expectsJson, false);
+
+  const { envelope } = await labelCreate(forgejoRepository, [
+    { status: 0, stdout: '[]', stderr: '' },
+    { status: 0, stdout: 'created label effective-flow-fix\n', stderr: '' },
+  ]);
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.result.created, true);
+  // tea states no label, so the created label falls back to what was asked for and leaves the
+  // provider-assigned id unknown rather than inventing one.
+  assert.deepEqual(envelope.data.result.label, {
+    id: null,
+    name: 'effective-flow-fix',
+    color: 'ededed',
+    description: '',
+  });
+});
+
+test('an empty Forgejo label page that carries tea failure output never becomes a create', async () => {
+  const { envelope, runner } = await labelCreate(forgejoRepository, [
+    {
+      status: 0,
+      stdout: '[]',
+      stderr: '2026/08/11 12:00:00 Failed to list repository labels: 500 Internal Server Error\n',
+    },
+  ]);
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'COMMAND_FAILED');
+  assert.equal(envelope.error.retryable, true);
+  assert.equal(runner.calls.length, 1);
+
+  // A genuinely label-free repository reports no such failure and still creates.
+  const clean = await labelCreate(forgejoRepository, [
+    { status: 0, stdout: '[]', stderr: '' },
+    { status: 0, stdout: 'created\n', stderr: '' },
+  ]);
+  assert.equal(clean.envelope.data.result.created, true);
+});
+
+test('a failing label pre-read aborts label-create without attempting the create', async () => {
+  const { envelope, runner } = await labelCreate(githubRepository, [
+    { status: 1, stdout: '', stderr: 'bad credentials' },
+  ]);
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'COMMAND_FAILED');
+  assert.equal(envelope.operation, 'label-create');
+  // The label names the step, so the failure is not reported under a different operation.
+  assert.match(envelope.error.message, /^label-create list failed$/);
+  assert.equal(runner.calls.length, 1);
+
+  // The paginated Forgejo read names the same owner, so its failure is not attributed to the
+  // internal plan name no caller can invoke.
+  const forgejo = await labelCreate(forgejoRepository, [
+    { status: 1, stdout: '', stderr: 'no login' },
+  ]);
+  assert.equal(forgejo.envelope.operation, 'label-create');
+  assert.match(forgejo.envelope.error.message, /^label-create list page 1 failed$/);
+  assert.equal(forgejo.runner.calls.length, 1);
+});
+
+test('label-create dry runs preview both steps without calling the provider', async () => {
+  const { envelope, runner } = await labelCreate(githubRepository, [], false);
+  assert.equal(envelope.dryRun, true);
+  assert.equal(runner.calls.length, 0);
+  assert.deepEqual(
+    envelope.data.steps.map((step) => step.step),
+    ['list', 'create'],
+  );
+  assert.equal(envelope.data.steps[0].command.args.includes('--paginate'), true);
+  assert.equal(envelope.data.command.args.includes('POST'), true);
+  // The outcome stays undetermined until apply.
+  assert.equal(envelope.data.result, undefined);
+  assert.equal(envelope.data.unchanged, undefined);
+  // `data.commands` stays unused, so it remains the sole property of `pr-checks-wait`.
+  assert.equal(envelope.data.commands, undefined);
+});
+
+test('a tea without the label-list surface reports label-create as unsupported', async () => {
+  const probe = await probeProvider(
+    forgejoRepository,
+    fakeRunner(teaProbeResults({ labelList: { status: 1, stdout: '', stderr: 'unknown flag' } })),
+  );
+  assert.equal(probe.capabilities.labelList, false);
+  assert.equal(probe.capabilities.labelCreate, false);
+  assert.equal(probe.capabilities.labels, false);
+
+  const runner = fakeRunner([]);
+  const envelope = await executeOperation(
+    'label-create',
+    { repository: forgejoRepository, payload: { name: 'effective-flow-fix' }, probe },
+    { runner, skipProbe: true, apply: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(runner.calls.length, 0);
+
+  const supported = await probeProvider(forgejoRepository, fakeRunner(teaProbeResults()));
+  assert.equal(supported.capabilities.labelList, true);
+  assert.equal(supported.capabilities.labelCreate, true);
 });
 
 test('marker patching changes exactly one block and is idempotent', () => {

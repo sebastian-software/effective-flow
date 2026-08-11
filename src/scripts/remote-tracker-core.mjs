@@ -1064,6 +1064,22 @@ export function buildCommandPlan(operation, input, repository) {
       // is selected per host, so the identity has to be read against the same one.
       case 'viewer-read':
         return mutationPlan('gh', ['api', ...hostArgs, 'user']);
+      // `label-list` is an internal plan, deliberately absent from `REMOTE_OPERATIONS`,
+      // `MUTATIONS`, and `CAPABILITY_BY_OPERATION`. It exists because the `label-create`
+      // pre-check and `executeTeaPaginatedList` both build every plan through this function, and
+      // a name they can construct is the cheapest way to give them one. Leaving it unregistered is
+      // what keeps it internal: `executeOperation` consults `REMOTE_OPERATIONS` and refuses the
+      // name from outside, so the read stays owned by the one branch whose contract defines it.
+      // The explicit `per_page=100` matches `issue-list`; without it the endpoint pages at 30 and
+      // a target name on page 2 would be read as absent.
+      case 'label-list':
+        return mutationPlan('gh', [
+          'api',
+          ...hostArgs,
+          '--paginate',
+          '--slurp',
+          `${ghEndpoint('labels')}?${new URLSearchParams({ per_page: '100' })}`,
+        ]);
       case 'label-create':
         return mutationPlan(
           'gh',
@@ -1073,6 +1089,7 @@ export function buildCommandPlan(operation, input, repository) {
             color: payload.color ?? 'ededed',
             description: payload.description ?? '',
           }),
+          { tolerateAlreadyExists: true },
         );
       case 'issue-read':
         return mutationPlan(
@@ -1361,18 +1378,43 @@ export function buildCommandPlan(operation, input, repository) {
   }
 
   switch (operation) {
-    case 'label-create':
+    // See the GitHub case above for why this plan exists without a registered operation.
+    // `--exclude-org` scopes the pre-check to repository labels: an organization label of the same
+    // name must not suppress creating the repository-scoped one, because the worst case of a
+    // redundant repository label is cosmetic while the worst case of the opposite is an issue that
+    // silently never gets its label.
+    case 'label-list':
       return mutationPlan('tea', [
         'labels',
-        'create',
+        'list',
         ...teaJson,
-        '--name',
-        requireString(payload.name, 'name'),
-        '--color',
-        payload.color ?? 'ededed',
-        '--description',
-        payload.description ?? '',
+        '--exclude-org',
+        '--page',
+        String(input.page ?? 1),
+        '--limit',
+        String(input.limit ?? 100),
       ]);
+    // `expectsJson: false` matches every other tea write: tea's create commands render for humans,
+    // so a JSON parse of their output is a failure mode rather than a contract. Nothing is lost —
+    // the outcome this operation reports comes from the pre-check list, not from this command's
+    // stdout.
+    case 'label-create':
+      return mutationPlan(
+        'tea',
+        [
+          'labels',
+          'create',
+          ...teaJson,
+          '--name',
+          requireString(payload.name, 'name'),
+          '--color',
+          payload.color ?? 'ededed',
+          '--description',
+          payload.description ?? '',
+        ],
+        undefined,
+        { tolerateAlreadyExists: true, expectsJson: false },
+      );
     case 'issue-read':
       return mutationPlan('tea', [
         'issues',
@@ -1697,6 +1739,29 @@ function isJsonArrayPayload(text) {
 // part of the match.
 const NO_REQUIRED_CHECKS_STDERR = 'no required checks reported';
 
+// A create that lost a race against a concurrent run is not a failed command, but recognizing that
+// means reading the right stream. `gh api` writes the provider's error body to **stdout** on a
+// non-zero exit and puts only its own one-line summary (`gh: Validation Failed (HTTP 422)`) on
+// stderr, so a predicate over stderr — which is what this code did before — could never match, and
+// the tolerance it guarded had never once fired. The machine-readable reason lives in the body:
+// GitHub answers a duplicate label with `errors: [{ code: 'already_exists' }]`. The parse is
+// defensive because stdout is whatever the provider sent, including nothing at all; anything that
+// is not that exact shape falls through to COMMAND_FAILED, which is the honest answer for it.
+function reportsAlreadyExists(result) {
+  const text = typeof result?.stdout === 'string' ? result.stdout.trim() : '';
+  if (text === '') return false;
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  return (
+    Array.isArray(payload?.errors) &&
+    payload.errors.some((entry) => entry?.code === 'already_exists')
+  );
+}
+
 function isNoRequiredChecksResponse(result, plan) {
   if (!result || result.status === 0) return false;
   if (!plan.args.includes('--required')) return false;
@@ -1743,8 +1808,14 @@ async function runChecked(runner, plan, label) {
     }
   }
   if (!result || result.status !== 0) {
-    if (label === 'label-create' && /already[_ ]exists/i.test(result?.stderr ?? '')) {
-      return { ...result, status: 0, stdout: '{"unchanged":true}' };
+    // The tolerance is keyed on the plan's own metadata rather than on the step label, because a
+    // label is display text: the moment a caller renames its step — which `label-create` now does,
+    // since it runs two commands — a string comparison would silently stop tolerating the race it
+    // was written for. It signals on the runner result instead of through a synthetic stdout
+    // sentinel, following the `requiredChecksDefined` idiom above: a caller that has to reshape
+    // stdout to state a fact about the run is stating it in the wrong place.
+    if (plan.tolerateAlreadyExists === true && reportsAlreadyExists(result)) {
+      return { ...result, status: 0, stdout: '', alreadyExists: true };
     }
     // A failed merge is not safely retryable: the forge may have accepted it before the connection
     // dropped, so a second attempt could act on a state nobody verified. The caller has to re-read
@@ -1884,6 +1955,7 @@ export async function probeProvider(repository, runner) {
         prComment: true,
         comments: true,
         labels: true,
+        labelList: true,
         labelCreate: true,
         reviewCreate: true,
         reviewThreads: true,
@@ -1933,6 +2005,7 @@ export async function probeProvider(repository, runner) {
     comment,
     commentUpdate,
     labelCreate,
+    labelList,
   ] = await Promise.all([
     probeTeaHelp(runner, ['issues'], ['--output']),
     probeTeaHelp(runner, ['issues'], ['--comments']),
@@ -1950,7 +2023,14 @@ export async function probeProvider(repository, runner) {
     probeTeaHelp(runner, ['comment'], ['--output']),
     probeTeaHelp(runner, ['api'], ['--method', '--data']),
     probeTeaHelp(runner, ['labels', 'create'], ['--output', '--name']),
+    // Label creation is idempotent only because it reads the existing labels first, so the read is
+    // part of the create's contract and every flag that read depends on is probed, not just
+    // `--output`. An older tea missing any of them would otherwise fail the pre-check with an
+    // unstructured COMMAND_FAILED on an unknown flag instead of reporting an unsupported
+    // capability.
+    probeTeaHelp(runner, ['labels', 'list'], ['--output', '--exclude-org', '--page', '--limit']),
   ]);
+  const labelCreateSupported = labelCreate && labelList;
   return {
     executable,
     version,
@@ -1989,8 +2069,13 @@ export async function probeProvider(repository, runner) {
       pullRequestUpdate: pullEdit,
       prComment: comment,
       comments: comment,
-      labels: labelCreate && issueLabelAdd && issueLabelRemove,
-      labelCreate,
+      labels: labelCreateSupported && issueLabelAdd && issueLabelRemove,
+      labelList,
+      // `labelCreate` is the key the operation gate reads, so the read the create depends on is
+      // folded into it rather than exposed as a second per-operation entry. A tea that cannot list
+      // labels therefore reports `label-create` as unsupported and creates nothing, instead of
+      // falling back to the unconditional create whose duplicates this whole path exists to stop.
+      labelCreate: labelCreateSupported,
       reviewCreate: false,
       reviewThreads: pullReviewComments,
       reviewThreadReplies: false,
@@ -2767,15 +2852,48 @@ async function executeSfLabelMigration(input, repository, runner, dryRun) {
   };
 }
 
-async function executeTeaPaginatedList(operation, input, repository, runner) {
+// One label shape for both providers. tea names the identifier `index` and prints every value as a
+// string, while gh's REST payload names it `id` and keeps it typed, so both spellings are read and
+// the result is normalized rather than passed through. A payload that states no name is not a
+// label and is dropped, so it can never match the name being looked for.
+function normalizeRepositoryLabel(label) {
+  if (!label || typeof label !== 'object') return null;
+  const name = label.name;
+  if (typeof name !== 'string' || name === '') return null;
+  return {
+    id: label.id ?? label.index ?? null,
+    name,
+    color: label.color ?? null,
+    description: label.description ?? null,
+  };
+}
+
+// tea 0.14.2 answers a failed label read with **exit 0 and an empty list**: `cmd/labels/list.go`
+// logs the API error from `ListRepoLabels` and returns the labels it does not have, where 0.14.1
+// still returned the error. A transient forge failure is therefore byte-for-byte indistinguishable
+// from a repository that simply carries no labels — and reading it as "no labels" is exactly the
+// input that makes the pre-check conclude "absent", create, and produce the duplicate this whole
+// path exists to prevent. The warning tea writes to stderr is the only surviving signal, so an
+// empty first page is treated as suspect whenever that warning is present and the operation fails
+// closed instead of writing. The coupling to tea's log text is deliberate and is the reason this
+// comment exists: if a later tea drops or rewords the message, this guard degrades to no guard —
+// an empty list is trusted again, exactly as before — rather than to a wrong answer.
+const TEA_LABEL_LIST_FAILURE = /failed to list repository labels/i;
+
+// `label` names the caller in every diagnostic this loop produces. It defaults to the operation, so
+// the two public list operations report exactly as before; an internal read passes the operation it
+// belongs to, so its failure is never attributed to a name no caller can invoke.
+async function executeTeaPaginatedList(operation, input, repository, runner, label = operation) {
   const limit = input.limit === undefined ? 100 : requireNumber(input.limit, 'limit');
   const maxPages = input.maxPages === undefined ? 1000 : requireNumber(input.maxPages, 'maxPages');
   const items = [];
   const commands = [];
+  const diagnostics = [];
   for (let page = 1; page <= maxPages; page += 1) {
     const plan = buildCommandPlan(operation, { ...input, page, limit }, repository);
     commands.push(redact(plan));
-    const result = await runChecked(runner, plan, `${operation} page ${page}`);
+    const result = await runChecked(runner, plan, `${label} page ${page}`);
+    if (typeof result?.stderr === 'string' && result.stderr !== '') diagnostics.push(result.stderr);
     const parsed = parseCommandOutput(result, plan, operation);
     const pageItems = Array.isArray(parsed.raw)
       ? parsed.raw
@@ -2784,13 +2902,131 @@ async function executeTeaPaginatedList(operation, input, repository, runner) {
       fail('INVALID_PAYLOAD', `${operation} returned a non-list page`, { page });
     }
     if (pageItems.length === 0) {
-      return { raw: items, commands, pagesFetched: page };
+      return { raw: items, commands, pagesFetched: page, stderr: diagnostics.join('\n') };
     }
     items.push(...pageItems);
   }
   fail('UNSUPPORTED_CAPABILITY', `${operation} exceeded the bounded tea pagination limit`, {
     maxPages,
     itemsRead: items.length,
+  });
+}
+
+async function readRepositoryLabels(input, repository, runner) {
+  if (repository.provider === 'forgejo') {
+    // `limit` and `maxPages` are pinned here instead of inherited from the caller's payload, which
+    // for this operation is the label to create: a stray `limit` field in it would otherwise shrink
+    // the pre-check's window until it stops seeing the label it is looking for.
+    const paginated = await executeTeaPaginatedList(
+      'label-list',
+      { ...input, limit: 100, maxPages: 100 },
+      repository,
+      runner,
+      'label-create list',
+    );
+    if (paginated.raw.length === 0 && TEA_LABEL_LIST_FAILURE.test(paginated.stderr ?? '')) {
+      fail(
+        'COMMAND_FAILED',
+        'label-create could not read the repository labels',
+        { step: 'list', stderr: redact(paginated.stderr) },
+        true,
+      );
+    }
+    return {
+      labels: paginated.raw,
+      steps: paginated.commands.map((command) => ({ step: 'list', command })),
+    };
+  }
+  const plan = buildCommandPlan('label-list', input, repository);
+  const result = await runChecked(runner, plan, 'label-create list');
+  const labels = flattenPages(parseCommandOutput(result, plan, 'label-create list').raw) ?? [];
+  if (!Array.isArray(labels)) {
+    fail('INVALID_PAYLOAD', 'label-create list returned a non-list payload');
+  }
+  return { labels, steps: [{ step: 'list', command: redact(plan) }] };
+}
+
+// Creating a label is a read-then-write, because neither provider offers an idempotent create and
+// only one of them even rejects a duplicate. Forgejo happily creates a second label of the same
+// name, and `issue-label-add` resolves by name, so every repeated run added another copy and then
+// attached all of them to the issue. The pre-check is what stops that growth on both providers, and
+// it is also what lets this operation report whether it created anything instead of assuming it did.
+async function executeLabelCreate(input, repository, runner, dryRun, probe) {
+  const payload = input.payload ?? input;
+  const name = requireString(payload.name, 'name');
+  const createPlan = buildCommandPlan('label-create', input, repository);
+  const command = redact(createPlan);
+  const envelope = (data) => ({
+    ok: true,
+    operation: 'label-create',
+    provider: repository.provider,
+    data,
+    dryRun,
+  });
+  if (dryRun) {
+    // No provider call, deliberately. Every other mutation's dry run is a pure plan preview, and a
+    // read here would be the one place in this helper where previewing a mutation talks to the
+    // forge and can fail with a COMMAND_FAILED. The cost is that the preview shows a create that
+    // may not run — which is what `steps` says out loud. `data.command` keeps naming the create so
+    // the generic mutation contract, which tells a caller to inspect exactly that, stays true.
+    return envelope({
+      repository,
+      command,
+      steps: [
+        {
+          step: 'list',
+          command: redact(buildCommandPlan('label-list', { ...input, limit: 100 }, repository)),
+        },
+        { step: 'create', command },
+      ],
+      capability: probe.capabilities?.labelCreate ?? true,
+      conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
+    });
+  }
+  const { labels, steps } = await readRepositoryLabels(input, repository, runner);
+  const existing = labels.map(normalizeRepositoryLabel).find((label) => label?.name === name);
+  if (existing) {
+    return envelope({
+      result: { name, created: false, label: existing },
+      unchanged: true,
+      steps,
+      command,
+    });
+  }
+  // Both steps name themselves, following `sf-label-migrate`: a failure of either has to say which
+  // of the two commands produced it rather than reporting under the operation as a whole. That the
+  // create's label is no longer the bare operation name is exactly why the 422 tolerance had to
+  // stop keying on it.
+  const result = await runChecked(runner, createPlan, 'label-create write');
+  steps.push({ step: 'create', command });
+  // The tolerated duplicate rejection: a concurrent run created the label between this run's read
+  // and its write. GitHub's own uniqueness constraint is the only place that race can be caught, so
+  // catching it proves the label exists — the outcome this operation promises — without this run
+  // having created it and without any payload describing it, hence the null label.
+  if (result?.alreadyExists === true) {
+    return envelope({
+      result: { name, created: false, label: null },
+      unchanged: true,
+      steps,
+      command,
+    });
+  }
+  const parsed = parseCommandOutput(result, createPlan, 'label-create write');
+  // tea's create renders for humans and states no label, so the created label falls back to what
+  // was asked for. Only the provider-assigned id is genuinely unknown there, and it stays null
+  // rather than being invented.
+  const created =
+    normalizeRepositoryLabel(parsed.raw) ??
+    normalizeRepositoryLabel({
+      name,
+      color: payload.color ?? 'ededed',
+      description: payload.description ?? '',
+    });
+  return envelope({
+    result: { name, created: true, label: created },
+    unchanged: false,
+    steps,
+    command,
   });
 }
 
@@ -2881,6 +3117,11 @@ export async function executeOperation(operation, input = {}, options = {}) {
     }
     if (operation === 'sf-label-migrate') {
       return await executeSfLabelMigration(input, activeRepository, runner, dryRun);
+    }
+    // Both branches sit ahead of the generic dry-run return below, because both run more than one
+    // command and therefore build their own envelope.
+    if (operation === 'label-create') {
+      return await executeLabelCreate(input, activeRepository, runner, dryRun, probe);
     }
     const plan = buildCommandPlan(operation, input, activeRepository);
     const preview = redact(plan);
