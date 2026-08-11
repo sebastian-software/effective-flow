@@ -2846,12 +2846,32 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
     }
     case 'pr-merge': {
       const payload = input.payload ?? input;
+      // `headSha` names the head the merge applied, so it is reported only where a provider stated
+      // it. On GitHub the request itself is exact: `--match-head-commit` makes the server refuse
+      // any other head, so an accepted merge corroborates the requested value and the fallback
+      // below is that corroboration. Forgejo has no such guarantee — a server older than the Gitea
+      // 1.16 API surface silently ignores `head_commit_id` — so its apply path re-reads the pull
+      // request after the merge and hands the confirmed head down as `confirmedHeadSha`, or states
+      // through `headShaUnconfirmed` why it could not. The gate on the fallback lives here rather
+      // than at that call site because the generic mutation tail passes its `parsed` object as
+      // metadata for every operation, so an absent `confirmedHeadSha` alone cannot tell a Forgejo
+      // read-back that came back unusable apart from a GitHub merge that never runs one.
+      // An absent `headSha` says nothing about the merge: `merged` is decided by the HTTP status.
+      const confirmedHeadSha =
+        typeof metadata.confirmedHeadSha === 'string'
+          ? metadata.confirmedHeadSha
+          : repository.provider === 'github'
+            ? expectedHeadSha(payload)
+            : undefined;
       return {
         number: prNumber(input),
         repository: repository.slug,
         merged: true,
         method: mergeMethod(payload),
-        headSha: expectedHeadSha(payload),
+        ...(confirmedHeadSha === undefined ? {} : { headSha: confirmedHeadSha }),
+        ...(metadata.headShaUnconfirmed === undefined
+          ? {}
+          : { headShaUnconfirmed: metadata.headShaUnconfirmed }),
         // The only provider prose the gate publishes into its envelope: gh echoes the merged
         // branch, and a remote URL carrying an embedded credential is exactly what redaction is for.
         output: redact(flattened?.output ?? ''),
@@ -3577,13 +3597,63 @@ export async function executeOperation(operation, input = {}, options = {}) {
           false,
         );
       }
+      // The merge is applied from here on; everything below only decides what the envelope may
+      // claim about the head it applied. `mergeHeadGuard` corroborated that head one call earlier,
+      // but it closes no race of its own — a server that ignores `head_commit_id` leaves exactly
+      // the window between that read and the merge unguarded — so the head is read back once
+      // afterwards. It is confirm-or-omit deliberately: a differing head has two indistinguishable
+      // causes, the ignored-`head_commit_id` race and a push that landed after a correct merge, so
+      // adopting it could replace a correct record with a wrong one.
+      const expected = expectedHeadSha(input.payload ?? input);
+      const readBackPlan = {
+        ...buildCommandPlan('pr-status-read', input, activeRepository),
+        // Bounded at the call site rather than in `buildCommandPlan`, so the builder keeps
+        // answering with an unbounded plan for every caller: only this one read bounds itself. The
+        // merge already happened, and a forge that stops answering must not leave the operation
+        // hanging on a read whose whole job is a corroboration the envelope can also do without.
+        timeoutMs: 30_000,
+      };
+      let confirmedHeadSha;
+      let headShaUnconfirmed;
+      try {
+        const readBack = teaApiSuccess(
+          await runChecked(runner, readBackPlan, 'pr-merge head read-back'),
+          'pr-merge head read-back',
+        ).body;
+        // Normalized on both sides before comparing: `expectedHeadSha` lowercases and the forge
+        // states whatever casing it stores, so a literal comparison would report a confirmed head
+        // as unconfirmed. A head the response does not state as a usable string is not a differing
+        // head — it is no statement at all.
+        const stated = typeof readBack?.head?.sha === 'string' ? readBack.head.sha.trim() : '';
+        if (stated === '') headShaUnconfirmed = 'unavailable';
+        else if (stated.toLowerCase() === expected) confirmedHeadSha = expected;
+        else headShaUnconfirmed = 'differs';
+      } catch {
+        // Every failure this read can raise is discarded here, and it can raise several: a non-zero
+        // exit is a `COMMAND_FAILED` from `runChecked`, a non-2xx status one from `teaApiSuccess`,
+        // a response without a status line an `INVALID_PAYLOAD` from `readTeaApiResponse`. None of
+        // them may reach the operation catch, where an applied merge would be reported as failed.
+        // The distinct label keeps that error out of the `pr-merge` tolerance too, so no failure
+        // here can ever be dressed up as `mutationMayHaveSucceeded`.
+        headShaUnconfirmed = 'unavailable';
+      }
       return {
         ok: true,
         operation,
         provider: activeRepository.provider,
         data: {
-          result: normalizeRemoteData(operation, null, activeRepository, input),
+          result: normalizeRemoteData(operation, null, activeRepository, input, {
+            ...(confirmedHeadSha === undefined ? {} : { confirmedHeadSha }),
+            ...(headShaUnconfirmed === undefined ? {} : { headShaUnconfirmed }),
+          }),
+          // `data.command` keeps naming the merge, as `label-create` does for its own second call,
+          // so the generic mutation contract — inspect exactly that command — stays true; `steps`
+          // is what states the read-back beside it.
           command: preview,
+          steps: [
+            { step: 'merge', command: preview },
+            { step: 'head-read-back', command: redact(readBackPlan) },
+          ],
           conditionalWriteAvailable: false,
         },
         dryRun: false,
