@@ -1023,6 +1023,32 @@ test('an empty Forgejo label page that carries tea failure output never becomes 
   assert.equal(clean.envelope.data.result.created, true);
 });
 
+test('a tea label failure on a later Forgejo page invalidates the pages already read', async () => {
+  // The warned read is itself the empty page that ends pagination, so the labels from page 1 are a
+  // prefix of an enumeration that stopped early — trusting it would create a duplicate of a name
+  // that lives on a page never reached.
+  const { envelope, runner } = await labelCreate(forgejoRepository, [
+    {
+      status: 0,
+      stdout: JSON.stringify([{ index: '1', name: 'wontfix', color: '#ffffff', description: '' }]),
+      stderr: '',
+    },
+    {
+      status: 0,
+      stdout: '[]',
+      stderr: '2026/08/11 12:00:00 Failed to list repository labels: 500 Internal Server Error\n',
+    },
+  ]);
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'COMMAND_FAILED');
+  assert.equal(envelope.error.retryable, true);
+  assert.equal(runner.calls.length, 2);
+  assert.equal(
+    runner.calls.some((call) => call.args.includes('create')),
+    false,
+  );
+});
+
 test('a failing label pre-read aborts label-create without attempting the create', async () => {
   const { envelope, runner } = await labelCreate(githubRepository, [
     { status: 1, stdout: '', stderr: 'bad credentials' },

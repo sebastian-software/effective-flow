@@ -2884,10 +2884,13 @@ function normalizeRepositoryLabel(label) {
 // from a repository that simply carries no labels — and reading it as "no labels" is exactly the
 // input that makes the pre-check conclude "absent", create, and produce the duplicate this whole
 // path exists to prevent. The warning tea writes to stderr is the only surviving signal, so an
-// empty first page is treated as suspect whenever that warning is present and the operation fails
-// closed instead of writing. The coupling to tea's log text is deliberate and is the reason this
-// comment exists: if a later tea drops or rewords the message, this guard degrades to no guard —
-// an empty list is trusted again, exactly as before — rather than to a wrong answer.
+// **any** page whose read emits that warning invalidates the whole accumulated list and the
+// operation fails closed instead of writing. It has to be any page, not just the first: a warned
+// read yields an empty page, an empty page is what ends pagination, so the warning always marks the
+// point where enumeration stopped early — the pages already collected are a prefix that may well
+// omit the name being looked for. The coupling to tea's log text is deliberate and is the reason
+// this comment exists: if a later tea drops or rewords the message, this guard degrades to no guard
+// — an empty list is trusted again, exactly as before — rather than to a wrong answer.
 const TEA_LABEL_LIST_FAILURE = /failed to list repository labels/i;
 
 // `label` names the caller in every diagnostic this loop produces. It defaults to the operation, so
@@ -2934,7 +2937,7 @@ async function readRepositoryLabels(input, repository, runner) {
       runner,
       'label-create list',
     );
-    if (paginated.raw.length === 0 && TEA_LABEL_LIST_FAILURE.test(paginated.stderr ?? '')) {
+    if (TEA_LABEL_LIST_FAILURE.test(paginated.stderr ?? '')) {
       fail(
         'COMMAND_FAILED',
         'label-create could not read the repository labels',
