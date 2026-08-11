@@ -92,20 +92,22 @@ and two extra `tea` calls on Forgejo per label, which is the price of not produc
 The consequence to know about: if that read cannot run, Effective Flow **aborts instead of
 creating**. Label creation is the first tracker write of `/effective-flow review` and of the
 issue-driven `/effective-flow apply`, so the whole run stops before it changes anything. Two
-things can trigger it, and both are reported as `UNSUPPORTED_CAPABILITY` or as a failed command
-rather than silently worked around:
+things can trigger it, each with its own error code rather than a silent workaround:
 
-- **`tea` cannot list labels the way the pre-check needs.** Effective Flow checks at startup that
-  `tea labels list` accepts `--output`, `--exclude-org`, `--page`, and `--limit`. All four exist
-  from `tea` 0.14.2, the minimum version named above, so this only appears on an installation that
-  reports a new enough version but is patched or replaced. Install an official `tea` 0.14.2 or
+- **`tea` cannot list labels the way the pre-check needs.** Reported as
+  `UNSUPPORTED_CAPABILITY`, raised before any label command runs. Effective Flow checks at startup
+  that `tea labels list` accepts `--output`, `--exclude-org`, `--page`, and `--limit`. All four
+  exist from `tea` 0.14.2, the minimum version named above, so this only appears on an installation
+  that reports a new enough version but is patched or replaced. Install an official `tea` 0.14.2 or
   newer.
-- **The forge failed the label read.** `tea` 0.14.2 answers a failed label listing with an empty
-  list and a `Failed to list repository labels` warning rather than an error exit, which is
-  indistinguishable from a repository that has no labels at all. Effective Flow reads that warning
-  and stops, because trusting the empty list would create the duplicates this pre-check exists to
-  prevent. This is usually transient – a forge outage, an expired token, a repository your login
-  cannot read – so check the forge's availability and your `tea` login, then run the command again.
+- **The forge failed the label read.** Reported as `COMMAND_FAILED`, marked retryable. On Forgejo,
+  `tea` 0.14.2 answers a failed label listing with an empty list and a
+  `Failed to list repository labels` warning rather than an error exit, which is indistinguishable
+  from a repository that has no labels at all. Effective Flow reads that warning and stops, because
+  trusting the empty list would create the duplicates this pre-check exists to prevent. On GitHub
+  the read fails outright and stops the run in the same place. Either way this is usually transient
+  – a forge outage, an expired token, a repository your login cannot read – so check the forge's
+  availability and your CLI login, then run the command again.
 
 Labels that a previous version already duplicated are **not** cleaned up; the pre-check stops the
 growth but removes nothing. Deleting a label on Forgejo also detaches it from every issue that
