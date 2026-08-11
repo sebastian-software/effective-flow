@@ -100,7 +100,7 @@ sub-agent tool does not delegate at all, and that limit rests on the tool list, 
 Inline execution stays legitimate only as a **disclosed** fallback — a harness without a
 sub-agent mechanism, or a runtime-declined delegation — never a silent one. The full contract is
 [`src/shared/delegation-mandate.md`](src/shared/delegation-mandate.md), eagerly included in every
-delegating tool and in every `src/agents/*.md` worker. Today ten workers whose `claude.tools`
+delegating tool and in every `src/agents/*.md` worker. Today eleven workers whose `claude.tools`
 lists `Write` or `Edit` also carry `Agent, Task`; the five observation roles that list neither
 (`frontend-reviewer`, `nodejs-reviewer`, `rust-reviewer`, `generic-product-reviewer`,
 `code-validator`) do not. For the four reviewers among those five, whose tool list genuinely
@@ -108,7 +108,9 @@ cannot write, that omission is their entire read-only guarantee; `code-validator
 `Bash`, so withholding the grant there is defence in depth rather than the source of its
 read-only property — it only keeps the easy path to a write-capable child closed. It covers
 worker roles and analysis fan-out only; delegation from one workflow to another (`apply-plan`,
-`merge-gate` → `iterate`) keeps that tool's own mechanics, including its interactive/gated path.
+`merge-gate` → `iterate`) keeps that tool's own mechanics, including its interactive/gated path. A
+tool can be on both sides of that line: `merge-gate` carries the eager include for its worker-role
+delegations while its handoff to `iterate` stays exempt.
 
 ## Skill discovery
 

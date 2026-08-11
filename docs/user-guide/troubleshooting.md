@@ -68,7 +68,10 @@ follow-up question instead of an automatic continuation:
 
 A merge conflict on completion (`delivery.completion: merge`) is likewise never
 resolved automatically: Effective Flow stops, leaves the delivery branch in place and informs you, so you
-can resolve the conflict deliberately.
+can resolve the conflict deliberately. The one place that does resolve conflicts is
+[`/effective-flow merge-gate`](./tools-deliver.md#resolving-a-conflict-with-the-base), and only for a
+conflict between an open pull request's head branch and its base, in a delegated worker whose result
+is verified before anything is committed. `mergeGate.conflictResolution: off` switches that off.
 
 ## Cleanup keeps a linked worktree
 

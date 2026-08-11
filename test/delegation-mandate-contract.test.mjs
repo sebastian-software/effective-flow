@@ -30,6 +30,7 @@ const EXPECTED_EAGER_INCLUDE_TOOLS = new Set([
   'maintain',
   'review',
   'iterate',
+  'merge-gate',
   'apply-review',
   'apply-issues',
   'plan',
@@ -218,12 +219,11 @@ test('exactly the expected tool sources carry the eager delegation-mandate inclu
     [...actualEager].sort(),
     [...EXPECTED_EAGER_INCLUDE_TOOLS].sort(),
     'the set of tools eagerly including delegation-mandate drifted from the expected set. ' +
-      'Add a tool to EXPECTED_EAGER_INCLUDE_TOOLS when it delegates to worker roles or runs ' +
-      'analysis; leave it out for non-delegating tools and for the workflow-to-workflow tools ' +
-      'apply-plan and merge-gate (the renamed gate; its deprecated forwarding alias pr-review ' +
-      "carries no include of its own either), which the mandate's own carve-out excludes. Note " +
-      'that src/tools/ also holds two non-tool fragments (apply-review-commit-mechanics.md, ' +
-      'apply-review-remote.md).',
+      'A tool belongs on the list when it delegates to a named worker role or runs analysis — ' +
+      'merge-gate does, through the merge-conflict resolver and the code-validator that verifies ' +
+      "its result. It stays off the list when it only hands off to another workflow, the mandate's " +
+      'own carve-out, which is why apply-plan is absent and merge-gate → iterate earns the gate ' +
+      'no include of its own.',
   );
   assert.equal(
     actualLazy.size,

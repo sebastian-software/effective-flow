@@ -631,6 +631,7 @@ try {
     'agents/generic-implementer.md',
     'agents/generic-product-implementer.md',
     'agents/generic-product-reviewer.md',
+    'agents/merge-conflict-resolver.md',
     'agents/test-writer.md',
     'agents/code-validator.md',
     'agents/code-documenter.md',

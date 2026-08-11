@@ -145,9 +145,12 @@ mistaken for an external skill.
   for checks, runs the automatic-reviewer round, and merges. It performs no review-item judgment
   itself and is forbidden from loading the central `pr-review` skill, which brings its own approve
   and request-changes submissions, its own CI recovery, and its own summary conventions — all three
-  of which the gate's workflow excludes. Every code-affecting decision is delegated instead to
-  `{{SKILL:iterate}}` (the `iterate` tool), which is where the skill's caller-owned Mode C handoff
-  actually runs (see the two bullets above). The gate therefore declares **no** consumer
+  of which the gate's workflow excludes. Every review-driven and CI-driven code change is delegated
+  instead to `{{SKILL:iterate}}` (the `iterate` tool), which is where the skill's caller-owned Mode C
+  handoff actually runs (see the two bullets above); the one code-affecting decision that does not go
+  there — resolving a conflict with the base — goes to the `merge-conflict-resolver` worker, which
+  declares no recommended central skill at all and therefore adds no relationship either. The gate
+  therefore declares **no** consumer
   relationship with the skill, in the manifest or in the table above; an entry claiming otherwise
   contradicted the gate's own source and was removed. Do not re-add it: the gate reaches the skill
   only indirectly, through a tool that declares the relationship for itself.

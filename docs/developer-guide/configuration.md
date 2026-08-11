@@ -204,6 +204,14 @@ carries the values over to `mergeGate.*`, removes the legacy rows, and reports a
 rather than merging it, so the fallback loses its last reader once every project has run setup
 once.
 
+`mergeGate.conflictResolution` is the one key in that block with **no** legacy counterpart: it never
+existed as `prReview.conflictResolution`, so the per-key fallback finds nothing to read, migrate, or
+report as shadowed, and a project carrying only an unmigrated legacy block gets the documented
+default `auto`. It is also the one key whose safe fallback and documented default diverge: an
+unreadable or invalid value resolves to `off`, not to `auto`, because an unparseable line must never
+authorize a commit and a push. The reader reports the affected key as the general rule requires and
+continues with `off`.
+
 ## Language configuration
 
 `language.project` defaults to `en`. Optional `language.source`,
