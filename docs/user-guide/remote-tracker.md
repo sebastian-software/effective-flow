@@ -61,7 +61,8 @@ operations behind the `merge-gate` tool need a higher `gh` floor of their own; s
 ### Labels
 
 In remote mode, Effective Flow assigns labels with the prefix `effective-flow-` and creates
-missing labels idempotently as needed:
+missing labels idempotently as needed – it reads the repository's existing labels first and
+creates only the ones that are genuinely missing:
 
 | Label                                                                                             | Meaning                                                                                          |
 | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -79,6 +80,40 @@ backward compatibility) – so a manual rename is not necessary. The even older 
 migrated to `effective-flow-` **once** on the first remote access and is not recognized on an
 ongoing basis afterward. Both compatibility rules are forge history and are never applied to an
 external target.
+
+**Label creation reads before it writes.** Creating a label is two commands, not one: Effective
+Flow lists the repository's labels and only then creates the ones that are missing. That read is
+what makes repeated runs safe. Neither forge offers an idempotent create, and Forgejo in
+particular accepts a second label with the same name, so an unconditional create used to add
+another copy of every lifecycle label on each run – and because labels are attached to issues by
+name, one "add label" then attached all the copies. The read costs one extra `gh` call on GitHub
+and two extra `tea` calls on Forgejo per label, which is the price of not producing duplicates.
+
+The consequence to know about: if that read cannot run, Effective Flow **aborts instead of
+creating**. Label creation is the first tracker write of `/effective-flow review` and of the
+issue-driven `/effective-flow apply`, so the whole run stops before it changes anything. Two
+things can trigger it, each with its own error code rather than a silent workaround:
+
+- **`tea` cannot list labels the way the pre-check needs.** Reported as
+  `UNSUPPORTED_CAPABILITY`, raised before any label command runs. Effective Flow checks at startup
+  that `tea labels list` accepts `--output`, `--exclude-org`, `--page`, and `--limit`. All four
+  exist from `tea` 0.14.2, the minimum version named above, so this only appears on an installation
+  that reports a new enough version but is patched or replaced. Install an official `tea` 0.14.2 or
+  newer.
+- **The forge failed the label read.** Reported as `COMMAND_FAILED`, marked retryable. On Forgejo,
+  `tea` 0.14.2 answers a failed label listing with an empty list and a
+  `Failed to list repository labels` warning rather than an error exit, which is indistinguishable
+  from a repository that has no labels at all. Effective Flow reads that warning and stops, because
+  trusting the empty list would create the duplicates this pre-check exists to prevent. On GitHub
+  the read fails outright and stops the run in the same place. Either way this is usually transient
+  – a forge outage, an expired token, a repository your login cannot read – so check the forge's
+  availability and your CLI login, then run the command again.
+
+Labels that a previous version already duplicated are **not** cleaned up; the pre-check stops the
+growth but removes nothing. Deleting a label on Forgejo also detaches it from every issue that
+carries it, so that cleanup is a deliberate manual decision rather than something a run does on
+your behalf. An existing label is likewise never updated: a label that already carries a different
+color or description keeps it.
 
 ## External target
 
