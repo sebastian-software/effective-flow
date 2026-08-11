@@ -1085,6 +1085,31 @@ test('a tea without the label-list surface reports label-create as unsupported',
   assert.equal(supported.capabilities.labelCreate, true);
 });
 
+test('sf label migration emits one step pair per legacy label, not per duplicate copy', () => {
+  const duplicated = planSfLabelMigration([{ number: 9, labels: ['sf-fix', 'sf-fix'] }]);
+  assert.equal(duplicated.steps.length, 2);
+  assert.deepEqual(duplicated.steps, [
+    { operation: 'add', issue: 9, label: 'effective-flow-fix' },
+    { operation: 'remove', issue: 9, label: 'sf-fix' },
+  ]);
+
+  // Distinct labels still migrate independently, and the same label on another issue is not a
+  // duplicate — the dedup is per issue.
+  const spread = planSfLabelMigration([
+    { number: 9, labels: ['sf-fix', 'sf-fix', 'sf-review-epic'] },
+    { number: 10, labels: ['sf-fix'] },
+  ]);
+  assert.equal(spread.steps.length, 6);
+  assert.deepEqual(
+    spread.steps.filter((step) => step.operation === 'add').map((step) => [step.issue, step.label]),
+    [
+      [9, 'effective-flow-fix'],
+      [9, 'effective-flow-review-epic'],
+      [10, 'effective-flow-fix'],
+    ],
+  );
+});
+
 test('marker patching changes exactly one block and is idempotent', () => {
   const original = 'Before\n<!-- effective-flow-summary -->\nold';
   const first = patchMarkedBlock(original, {

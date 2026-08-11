@@ -684,6 +684,14 @@ export function planSfLabelMigration(issues, marker = {}) {
   for (const issue of issues) {
     const number = requireNumber(issue.number, 'issue.number');
     const labels = Array.isArray(issue.labels) ? issue.labels : [];
+    // Deduplicated per issue, because an issue can genuinely carry the same legacy label more than
+    // once: labels are attached by name, so a repository that accumulated duplicate label objects
+    // hands back one entry per copy. Each copy would otherwise emit its own add/remove pair — the
+    // add is idempotent and the remove detaches the name outright, so every pair after the first is
+    // a redundant round trip, and a failure among them reports a partial migration of work that was
+    // already complete. The same label on two different issues stays two pairs; that is not a
+    // duplicate.
+    const migrated = new Set();
     for (const label of labels) {
       if (
         !/^sf-(review-finding|review-epic|fix|refactor|build|docs|issue-done|needs-planning)$/.test(
@@ -691,6 +699,8 @@ export function planSfLabelMigration(issues, marker = {}) {
         )
       )
         continue;
+      if (migrated.has(label)) continue;
+      migrated.add(label);
       const current = label.replace(/^sf-/, 'effective-flow-');
       steps.push({ operation: 'add', issue: number, label: current });
       steps.push({ operation: 'remove', issue: number, label });
