@@ -67,6 +67,32 @@ function tableRow(text, cell) {
   return row;
 }
 
+// The trimmed cells of one Markdown table row.
+function rowCells(row) {
+  return row
+    .split('|')
+    .slice(1, -1)
+    .map((cell) => cell.trim());
+}
+
+// The Default cell of one row, located through the column index the table's own header
+// gives. Matching a default against the whole row is not an assertion at all where the
+// Values column repeats the same literal: `| `auto`` is true of
+// `| `conflictResolution` | `off` / `ask` / `auto` | `off` |` as well, so a flipped
+// default survives. Reading the named column instead makes the flip fail, and locating
+// that column through the header keeps a reordered table honest.
+function defaultCell(text, cell) {
+  const lines = text.split('\n');
+  const rowIndex = lines.findIndex((line) => line.startsWith('|') && rowCells(line)[0] === cell);
+  assert.notEqual(rowIndex, -1, `missing table row: ${cell}`);
+  const header = lines
+    .slice(0, rowIndex)
+    .reverse()
+    .find((line) => line.startsWith('|') && rowCells(line).includes('Default'));
+  assert.ok(header, `missing a Default column header above the table row: ${cell}`);
+  return rowCells(lines[rowIndex])[rowCells(header).indexOf('Default')];
+}
+
 function flat(text) {
   return text.replace(/\s+/g, ' ');
 }
@@ -2619,47 +2645,510 @@ test('the trigger idempotency check rests on evidence the forge actually exposes
 test('merge-gate states its no-commit/no-push boundary and delegates every other change to iterate', () => {
   const mergeGate = flat(source('src/tools/merge-gate.md'));
 
-  // Both prohibitions must sit close to the stated exception, so a later edit that keeps
+  // Both prohibitions must sit close to the stated boundary, so a later edit that keeps
   // "no commit" but drops "no push" (or vice versa) cannot pass silently.
   assert.match(mergeGate, /performs no `git commit` and no push of its own/);
-  assert.match(
-    mergeGate,
-    /with exactly one exception:.{0,400}`BEHIND`.{0,400}merges `origin\/<base>` into the head branch as\s*a merge commit and pushes that branch normally/,
+
+  // The boundary sanctions **two** kinds of write since the gate repairs a conflict with the base
+  // itself, and both are the same base-into-head merge. Pinned as four separate facts inside the
+  // boundary section rather than as one sentence, so rewording the paragraph stays green while
+  // weakening any single guarantee fails: the count, the mechanism of the clean kind, the
+  // mechanism of the conflicted kind, and the per-occurrence bound. Emphasis is stripped, because
+  // where the bold markers sit is editorial.
+  const boundary = prose(
+    section(source('src/tools/merge-gate.md'), '## Git write boundary', '\n## '),
   );
-  // Two separate contracts, each asserted on meaning rather than on a sentence, so that rewording
+  assert.match(
+    boundary,
+    near('two', 'sanctioned kinds', 40),
+    'the Git write boundary must keep counting its sanctioned kinds, and the count must stay two. ' +
+      'A third kind, or an open-ended phrasing that stops counting them, is what this pin exists ' +
+      'to catch — the wording around the number is free',
+  );
+  assert.match(
+    boundary,
+    near('same operation', 'same branch', 60),
+    'both kinds must stay the same operation on the same branch: the conflicted kind is the clean ' +
+      'kind with its conflicts resolved, never a second mechanism',
+  );
+
+  // The clean kind, pinned as three short facts rather than as one 13-word sentence: which merge,
+  // what it produces, and how it lands. Rewording it stays green; dropping any of the three does not.
+  assert.match(
+    boundary,
+    near('clean', '`origin/<base>`', 120),
+    'the first kind must stay `origin/<base>` merged into the head branch',
+  );
+  assert.match(
+    boundary,
+    near('`origin/<base>`', 'merge commit', 200),
+    'the first kind must land as a merge commit, never as a replay of the head branch',
+  );
+  assert.match(
+    boundary,
+    near('merge commit', '(?:normally|normal push)', 200),
+    'the first kind must be pushed normally — a forced push is not a sanctioned Git write',
+  );
+  assert.match(
+    boundary,
+    near('conflict-resolving', 'base-into-head merge', 120),
+    'the second kind must stay the *same* base-into-head merge with its conflicts resolved',
+  );
+  assert.match(
+    boundary,
+    near('(?:each|every) occurrence', 'one merge commit', 200),
+    'the per-occurrence bound must survive: exactly one merge commit per occurrence',
+  );
+  assert.match(
+    boundary,
+    near('(?:each|every) occurrence', 'one normal push', 250),
+    'and exactly one normal push per occurrence, so neither kind becomes a licence for an ' +
+      'unbounded number of writes',
+  );
+
+  // Direction, not adjacency. Every `near()` above proves only that the two kinds are described;
+  // a boundary rewritten to resolve the conflict "on a rebase of the head branch onto
+  // `origin/<base>`" and to "force-push the result" keeps all of them green. The forbidden
+  // mechanisms are therefore pinned negatively too. Every legitimate mention in this section is
+  // either negated (`no rebase`, `no force-push`) or a fenced configuration value — the `` `rebase` ``
+  // of the `delivery.mergeMethod` list, which is how the forge integrates the PR, not a rewrite.
+  assert.doesNotMatch(
+    boundary,
+    /(?<!\bno )(?<!\bnot )(?<!\bnever )(?<!`)(?:rebase|force-push|force push|cherry-pick)/i,
+    'the Git write boundary must never permit a rebase, a force-push, or a cherry-pick: every ' +
+      'mention of one has to be a prohibition (`no rebase`) or a fenced `delivery.mergeMethod` value',
+  );
+
+  // And the rule the two kinds rest on, asserted separately: deleting the whole no-rewriting
+  // paragraph is a different edit from rewording one kind's mechanism, and neither may pass.
+  assert.match(
+    boundary,
+    near('never rewrite', "head branch's history", 60),
+    "the head branch's history must never be rewritten — here or in a delegation",
+  );
+  assert.match(
+    boundary,
+    near('never rewrite', '(?:no rebase|no force-push)', 150),
+    'the no-rewriting rule must keep naming the operations it forbids, so a rewrite performed ' +
+      'under another name stays covered',
+  );
+  assert.match(
+    boundary,
+    near('(?:need|needs|needed) a rewrite', '(?:reported|never performed)', 150),
+    'a resolution that would need a history rewrite to succeed must be reported, never performed',
+  );
+
+  // The pre-capability sentence this workflow replaced. Re-inserting it would leave the file
+  // claiming both that a conflict stops the run and that the gate repairs it.
+  assert.doesNotMatch(
+    source('src/tools/merge-gate.md'),
+    /Not repaired automatically/i,
+    'the sentence "Not repaired automatically: stop, report the conflict, and do not merge" must ' +
+      'stay removed: the gate now repairs a conflict with the base',
+  );
+
+  // Two further contracts, each asserted on meaning rather than on a sentence, so that rewording
   // the paragraph cannot fail the suite while weakening it still does.
   //
-  // (a) The exception is exhaustive: nothing else may be committed or pushed.
+  // (a) The two kinds are exhaustive: nothing else may be committed or pushed.
   assert.match(
     mergeGate,
     /(complete set of Git writes|no Git write of any other kind|no other (?:Git )?write)/,
   );
-  // (b) The exception is a KIND of write, not a one-time allowance. A branch can fall behind again
-  //     in a later round, and a "single write" reading would refuse that second, legitimate repair.
+  // (b) Each is a KIND of write, not a one-time allowance. A branch can fall behind again in a
+  //     later round, and a "single write" reading would refuse that second, legitimate repair.
   assert.match(mergeGate, /(a \*\*kind\*\* of write|every Phase-2 round|each occurrence)/);
   assert.match(mergeGate, /Every other code change is delegated to `\{\{SKILL:iterate\}\}`/);
+});
+
+test('the conflict resolver aborts on uncertainty and writes nothing the gate owns', () => {
+  const resolverSource = source('src/agents/merge-conflict-resolver.md');
+
+  // Both halves are sliced to the section that owns them rather than run over the whole file.
+  // Unscoped, `contradictory` is also a word in the risk-classification list — 343 characters from
+  // the nearest `ABORT` against a 300-character budget, 43 characters of margin — and
+  // `near('uncertain', '`ABORT`')` is satisfied by the "Abort on uncertainty" heading itself.
+  const abort = prose(section(resolverSource, '## Abort on uncertainty', '\n## '));
+
+  // Abort-on-uncertainty is the default of this role, not one option beside guessing. A wrong
+  // resolution is invisible in the diff of a merge commit and survives every later review, while
+  // an ABORT costs one round and leaves the decision with a human.
+  assert.match(
+    abort,
+    near('(?:contradictory|cannot be reconciled)', 'return `ABORT`', 250),
+    'the resolver must RETURN ABORT where the two sides make contradictory functional statements ' +
+      'that cannot be reconciled without a new product or architecture decision. The imperative is ' +
+      'the contract: a rule that merely mentions ABORT beside the trigger states no obligation',
+  );
+  assert.doesNotMatch(
+    abort,
+    /\b(?:prefer|prefers|preferably|where possible|unless|usually|generally|normally)\b[^.]{0,120}`ABORT`|`ABORT`[^.]{0,120}\b(?:prefer|prefers|preferably|where possible|unless|usually|generally|normally)\b/i,
+    'the abort must stay unhedged. "Prefer `ABORT` — but where one side is clearly the newer ' +
+      'intent, resolve toward it" is precisely the weakening that turns a fail-closed default into ' +
+      'a judgment call, and it satisfies every proximity pin above',
+  );
+  assert.match(
+    abort,
+    near('uncertainty resolves', '`ABORT`', 60),
+    'uncertainty itself must resolve to ABORT, not to the best available reading',
+  );
+  assert.match(
+    abort,
+    near('`ABORT`', 'never to a guess', 80),
+    'the ABORT must be stated as the alternative to guessing — an "assess it as well as you can" ' +
+      'phrasing without that direction is exactly the weakening this pins',
+  );
+  assert.match(
+    abort,
+    near('validation that executed', '`ABORT`', 150),
+    'a validation that executed no check must be an ABORT too: a resolution nobody could check is ' +
+      'not a verified resolution, and an empty evidence list is never an assumed pass',
+  );
+
+  // The commit, the push and the lifecycle stay with the gate. A commit written here races the
+  // run that is waiting for the report, and a blanket `git add` sweeps in precisely the
+  // unreported change the gate reconciles against the per-file record.
+  //
+  // Scoped to the list that owns the bans, and pinned as the phrase rather than as the bare word:
+  // `never` occurs sixteen times in this file, so an unscoped proximity window reaches out of one
+  // bullet's ban into the next bullet's `never` and keeps "prefer staging by explicit path over
+  // `git add .`" green — a rewrite that repeals the ban while keeping every token it named.
+  const bans = prose(section(resolverSource, '**What you never do**', '\n## '));
+  for (const banned of [
+    'git commit',
+    'git merge --continue',
+    'git push',
+    'git merge --abort',
+    'git add \\.',
+    'git add -A',
+    'git commit -a',
+  ]) {
+    const literal = banned.replaceAll('\\', '');
+    assert.match(
+      bans,
+      new RegExp(`never \`${banned}\``),
+      `the resolver must forbid \`${literal}\` in so many words. The gate owns the commit, the ` +
+        'push and the abort; blanket staging would stage a file the per-file record never names, ' +
+        'and the gate would commit an unaudited change',
+    );
+  }
+  for (const banned of ['rebase', 'squash', 'force-push']) {
+    assert.match(
+      bans,
+      new RegExp(`never ${banned}`),
+      `the resolver must forbid ${banned} on its own side of the contract too. The gate's Git ` +
+        'write boundary states the same rule, but a worker that only inherits it by implication ' +
+        'is a worker whose own source permits the rewrite',
+    );
+  }
+  assert.match(bans, /never `commit --amend`/, 'the resolver must forbid `commit --amend`');
+  assert.match(
+    bans,
+    near('merging forward', 'not at all', 80),
+    'the direction must stay stated: a conflict is resolved by merging forward or not at all',
+  );
+  assert.match(
+    bans,
+    near('stage every file', 'explicit path', 150),
+    'staging must stay per explicit path, so the index holds exactly the set the report names',
+  );
+});
+
+test('the resolved tree is verified independently before the gate commits and pushes it', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const contract = prose(section(gate, '## Conflict-resolution delegation contract', '\n## '));
+
+  // The worker validating its own resolution is one layer; `code-validator` is the second, and it
+  // is the one the producing role did not run. Dropping it would leave the run's only pre-push
+  // check in the hands of the role whose work is being checked.
+  assert.match(
+    contract,
+    near(
+      '\\{\\{AGENT:code-validator\\}\\}',
+      '(?:before anything is committed|uncommitted|before it commits)',
+      400,
+    ),
+    'the delegation contract must hand the resolved but uncommitted tree to code-validator before ' +
+      'anything is committed',
+  );
+  assert.match(
+    contract,
+    near('(?:failing verdict|either role)', '`ABORT`', 300),
+    'a failing verdict from either role must be treated as ABORT — the two roles disagreeing is ' +
+      'not a tie for the gate to break in favour of the merge',
+  );
+
+  // Modality, not presence. Every proximity pin above stays green on a contract that says the tree
+  // "**may** be handed" to the validator and that "that step is **skipped**" — a hand-off nobody
+  // is obliged to perform, which is the whole pre-push safety net made optional. The imperative is
+  // pinned positively, and the hedges that would repeal it negatively.
+  assert.match(
+    contract,
+    near('\\bHand\\b', '\\{\\{AGENT:code-validator\\}\\}', 80),
+    'the hand-off to code-validator must stay an imperative instruction, not a described option',
+  );
+  assert.doesNotMatch(
+    contract,
+    /\b(?:may|might|optional|optionally)\b[^.]{0,150}\{\{AGENT:code-validator\}\}|\{\{AGENT:code-validator\}\}[^.]{0,150}\b(?:may|might|optional|optionally|is skipped|can be skipped)\b/i,
+    'the independent verification must stay mandatory. A hedged "may be handed to code-validator", ' +
+      'or a branch in which "that step is skipped", leaves this run\'s only pre-push check with ' +
+      'the very role whose work is being checked',
+  );
+  assert.match(
+    contract,
+    near('exactly this order', '(?:reconcile|verify independently)', 300),
+    'the two pre-commit steps must stay one mandatory ordered sequence rather than a menu of ' +
+      'things the gate could do before committing',
+  );
+
+  // And the order is load-bearing rather than merely stated: resolve, verify, only then commit
+  // and push. A verification that happens after the push verifies nothing that can still be
+  // stopped.
+  const step = section(gate, '#### Resolving a conflict with the base', '\n#### ');
+  ordered(step, '{{AGENT:merge-conflict-resolver}}', '{{AGENT:code-validator}}', 'Commit and push');
+});
+
+test('the human-comment guard and the report mode both leave the conflict resolution running', () => {
+  const gate = source('src/tools/merge-gate.md');
+
+  // The guard blocks what a reviewer is negotiating, not an objective defect of the branch. The
+  // conflict repair sits beside the CI repair for exactly that reason: dropping its bullet would
+  // silently make an actively discussed pull request unrepairable again, while the branch it
+  // conflicts with keeps moving.
+  //
+  // Asserted as direction rather than as adjacency. `near('conflict resolution', 'permitted')` is
+  // co-occurrence, and co-occurrence is equally true of "the conflict resolution **is not
+  // permitted**" — a source that stops the resolution, under a test whose name says it keeps
+  // running. The predicate is pinned in the order it has to read, and its inversion is excluded.
+  const guard = prose(section(gate, '#### Human-comment guard', '\n#### '));
+  assert.match(
+    guard,
+    /conflict resolution stays permitted/i,
+    'the guard bullet list must name the conflict resolution among the actions that stay ' +
+      'permitted while the guard is active',
+  );
+  assert.match(
+    guard,
+    /CI repair stays permitted/i,
+    'the CI repair must stay permitted beside it — the conflict bullet borrows its reason and ' +
+      'reads as an unexplained exception on its own',
+  );
+  assert.doesNotMatch(
+    guard,
+    /conflict resolution[^.]{0,60}\b(?:not|never|is blocked|is withheld|is forbidden)\b|\b(?:no|not|never)\b[^.]{0,40}conflict resolution/i,
+    'the guard must never be rewritten to block the conflict resolution: a branch whose base keeps ' +
+      'moving would become unrepairable for as long as a human comment stays open',
+  );
+  assert.match(
+    guard,
+    near('resolution runs', 'merge does not', 60),
+    'the guard bullet must keep stating which of the two it lets through: the resolution runs, ' +
+      'the merge does not',
+  );
+  assert.match(
+    guard,
+    near('no merge', 'review-driven implementation', 400),
+    'what the guard keeps blocking must stay stated in the same list: the review-driven ' +
+      'implementation and the merge',
+  );
+
+  // `report` withholds the Phase-5 merge and nothing else. A second exception for the conflict
+  // resolution would make a report run report the same conflict forever — the very state the
+  // operator invoked the gate to clear — so the source accepts the one write and says so instead.
+  //
+  // Sliced to the phase that resolves the completion mode rather than run over the whole 1180-line
+  // file, and again pinned as direction: `near('conflict resolution', 'not withhold')` matches "the
+  // conflict resolution **is withheld** with the merge" exactly as well as the rule it is meant to
+  // protect.
+  const completion = prose(section(gate, '### Phase 0', '\n### '));
+  assert.match(
+    completion,
+    near('`report` withholds', 'one action', 60),
+    'the gate must keep `report` at exactly one withheld action',
+  );
+  assert.match(
+    completion,
+    near('one action', 'Phase 5', 80),
+    'and that one action must stay the merge in Phase 5',
+  );
+  assert.match(
+    completion,
+    /conflict resolution[^.]{0,80}does not withhold/i,
+    'the conflict resolution must be named among the actions `report` does NOT withhold, so the ' +
+      'single-exception rule cannot quietly grow a second exception',
+  );
+  assert.doesNotMatch(
+    completion,
+    /conflict resolution[^.]{0,80}\b(?:is withheld|is also withheld|withholds|is suppressed)\b/i,
+    'a `report` run that withholds the conflict resolution too would report the same conflict ' +
+      'forever — the very state the operator invoked the gate to clear',
+  );
+});
+
+test('the adjacent-file allowance keeps its bound at both ends of the conflict contract', () => {
+  // One allowance, two owners: the worker may change a file Git never marked as conflicted, and
+  // the gate proves afterwards that every file the worker touched was reported. Both ends are
+  // asserted so neither can drift away from the other — the allowance without the reconciliation
+  // is an unaudited write, and the reconciliation without the allowance turns every stale
+  // adjacent test into an ABORT.
+  const allowance = prose(
+    section(source('src/agents/merge-conflict-resolver.md'), '## Adjacent files', '\n## '),
+  );
+  assert.match(
+    allowance,
+    near('only', 'named failing check', 200),
+    'the allowance must stay bounded to making a NAMED failing check pass on the resolved tree; ' +
+      'an unbounded "where it is clearly needed" allowance is a licence to improve things mid-merge',
+  );
+  assert.match(
+    allowance,
+    near('never', '(?:improve|tidy|extend)', 150),
+    'the allowance must state what it is not for: improving, tidying, or extending anything',
+  );
+  assert.match(
+    allowance,
+    near('(?:cannot tie|cannot be tied|not tied)', '`ABORT`', 300),
+    'a change the worker cannot tie to a named failing check must be an ABORT rather than a ' +
+      'judgment call',
+  );
+
+  const contract = prose(
+    section(
+      source('src/tools/merge-gate.md'),
+      '## Conflict-resolution delegation contract',
+      '\n## ',
+    ),
+  );
+  // Trigger and consequence as separate assertions. An alternation over the two — a window
+  // containing `reconcile` OR `modified path` beside `record does not name` OR `commit nothing` —
+  // is satisfied by whichever half a weakening leaves standing, so a reconciliation downgraded to
+  // "reported as a warning and committed with the rest" passes it untouched.
+  assert.match(
+    contract,
+    near('(?:reconcile|reconciliation)', '(?:every )?modified path', 250),
+    'the gate must reconcile the worker’s per-file record against the paths actually modified in ' +
+      'the working tree',
+  );
+  // Anchored on the modified-path rule itself rather than on a token the neighboring adjacent-path
+  // rule also carries: `unnamed path` appears in both, so an alternation over the two lets the
+  // second sentence stand in for the first and the downgrade survives again.
+  assert.match(
+    contract,
+    near('modified path[^.]{0,60}does not name', 'abort the merge', 150),
+    'a modified path the worker’s record does not name must abort the merge',
+  );
+  assert.match(
+    contract,
+    near('modified path[^.]{0,60}does not name', 'commit nothing', 200),
+    'and it must commit nothing: a path downgraded to a warning and committed with the rest is ' +
+      'exactly the unaudited write this reconciliation exists to prevent',
+  );
+  assert.match(
+    contract,
+    near('unnamed path', 'commit nothing', 200),
+    'an adjacent path named without its check, or without that check’s verbatim failure output, ' +
+      'must count exactly as an unnamed path — otherwise the disclosure requirement is satisfied ' +
+      'by naming the file and nothing else',
+  );
+});
+
+test('the conflict-resolution mode gate is resolved before any write and degrades ask towards off', () => {
+  // `mergeGate.conflictResolution` lives in three documentation tables and, before this test, in no
+  // behavioural prose at all: deleting the `off` bullet, running the resolution whatever the mode
+  // says, and making a non-interactive `ask` behave as `auto` were all invisible to the suite.
+  const gate = source('src/tools/merge-gate.md');
+  const step = section(gate, '#### Resolving a conflict with the base', '\n#### ');
+  const flatStep = prose(step);
+
+  // The mode decides before the first write, not after it. A step that resolves first and consults
+  // the key afterwards has already executed the untrusted head branch's own commands — which is
+  // the exposure this key exists to control.
+  assert.match(
+    flatStep,
+    near('`mergeGate.conflictResolution`', 'before any further write', 200),
+    'the mode must be resolved before any further write in the provisioned checkout',
+  );
+  ordered(
+    step,
+    'Resolve the mode',
+    'mergeGate.conflictResolution',
+    '{{AGENT:merge-conflict-resolver}}',
+  );
+
+  // `off`: abort the in-progress merge, report the conflict, and write nothing.
+  const off = prose(section(step, '**`off`:**', '- **`ask`'));
+  assert.match(off, /`git merge --abort`/, '`off` must end the merge with `git merge --abort`');
+  assert.match(
+    off,
+    near('report', 'conflicted paths', 150),
+    '`off` must report the conflict with its conflicted paths rather than ending silently',
+  );
+  assert.match(
+    off,
+    near('no commit', 'no push', 60),
+    '`off` must make no commit and no push, so the branch ends exactly where it started',
+  );
+
+  // `ask` in a non-interactive delegated run degrades to `off` — towards the outcome that writes
+  // nothing, never towards the one that writes a merge commit nobody authorized.
+  const askDelegated = prose(
+    section(step, '**`ask` in a non-interactive delegated run:**', '- **`auto`'),
+  );
+  assert.match(
+    askDelegated,
+    near('cannot be posed', '`off`', 80),
+    'an `ask` nobody can answer must behave as `off`',
+  );
+  assert.doesNotMatch(
+    askDelegated,
+    /(?:behaves|acts|counts) as `auto`|treated as `auto`/i,
+    'the unanswerable question must never degrade towards `auto`: that would push a merge commit ' +
+      'onto someone else’s pull request on the strength of a question nobody was asked',
+  );
+
+  // One attempt per round, bounded by maxRounds — not a loop that retries until the tree is clean.
+  assert.match(
+    flatStep,
+    near('one attempt per round', 'no retry loop', 200),
+    'the step must make one resolution attempt per round and open no retry loop of its own',
+  );
+  assert.match(
+    flatStep,
+    near('`mergeGate.maxRounds`', 'bounds', 120),
+    'how often the run may come back here must stay bounded by `mergeGate.maxRounds`',
+  );
+  assert.doesNotMatch(
+    flatStep,
+    /repeat until/i,
+    'an unbounded "repeat until the tree is clean" would push an unbounded number of commits onto ' +
+      'a pull request this run does not own',
+  );
 });
 
 test('setup carries the mergeGate.* and delivery.mergeMethod configuration keys with their defaults', () => {
   const setup = source('src/tools/setup.md');
 
-  // The block-9 wizard table pairs each dotted key with its default in the third column.
-  const table = section(
-    setup,
-    '| Key                              | Values                             | Default   |',
-  );
+  // The block-9 wizard table pairs each dotted key with its default. Sliced from its own header
+  // row inclusively, so the Default column can be located by name rather than by position.
+  const tableStart = setup.indexOf('| Key                              | Values');
+  assert.notEqual(tableStart, -1, 'missing the block-9 configuration table in setup.md');
+  const table = setup.slice(tableStart, setup.indexOf('\n\n', tableStart));
   for (const [key, value] of [
-    ['mergeGate.completion', 'ask'],
-    ['mergeGate.requireAllChecks', 'true'],
-    ['mergeGate.checkWaitMinutes', '20'],
-    ['mergeGate.maxRounds', '3'],
-    ['mergeGate.botWaitMinutes', '10'],
-    ['mergeGate.bots', '(empty)'],
+    ['mergeGate.completion', '`ask`'],
+    // The default is `auto`, and it must read the same here, in the shared configuration
+    // fragment, and in the user guide: a key whose three places disagree hands a project a
+    // behavior nobody configured, and this one decides whether a gate run writes a merge commit.
+    ['mergeGate.conflictResolution', '`auto`'],
+    ['mergeGate.requireAllChecks', '`true`'],
+    ['mergeGate.checkWaitMinutes', '`20`'],
+    ['mergeGate.maxRounds', '`3`'],
+    ['mergeGate.botWaitMinutes', '`10`'],
+    ['mergeGate.bots', '`(empty)`'],
   ]) {
-    assert.match(
-      tableRow(table, `\`${key}\``),
-      new RegExp(`\\| \`${value.replace(/[().]/g, '\\$&')}\``),
-      `setup.md's block-9 table must pair ${key} with its default ${value}`,
+    assert.equal(
+      defaultCell(table, `\`${key}\``),
+      value,
+      `setup.md's block-9 table must pair ${key} with its default ${value} in the Default column`,
     );
   }
   assert.match(table, /`mergeGate\.bots\.<login>\.trigger`/);
@@ -2676,6 +3165,7 @@ test('the user guide disambiguates mergeGate.* from the pre-existing delivery.pr
 
   for (const key of [
     'mergeGate.completion',
+    'mergeGate.conflictResolution',
     'mergeGate.requireAllChecks',
     'mergeGate.checkWaitMinutes',
     'mergeGate.maxRounds',
@@ -2685,14 +3175,29 @@ test('the user guide disambiguates mergeGate.* from the pre-existing delivery.pr
     assert.match(flatDocs, new RegExp(key.replace(/\./g, '\\.')));
   }
 
-  // The dedicated "Block `mergeGate`" table carries the untraded key/default pairs.
+  // The dedicated "Block `mergeGate`" table carries the untraded key/default pairs. Read from the
+  // Default column, not from the row: this table's Values column lists every accepted value, so a
+  // whole-row match on `` `auto` `` is already satisfied by `off` / `ask` / `auto` and survives a
+  // Default column flipped to `off`. Same default as setup.md's block-9 table and the shared
+  // configuration fragment — the three places are read by three different audiences, and a
+  // divergence here is a project running a gate that resolves conflicts while its documentation
+  // says it does not.
   const block = section(docs, '## Block `mergeGate`', '\n## ');
-  assert.match(tableRow(block, '`completion`'), /`ask`/);
-  assert.match(tableRow(block, '`requireAllChecks`'), /`true`/);
-  assert.match(tableRow(block, '`checkWaitMinutes`'), /`20`/);
-  assert.match(tableRow(block, '`maxRounds`'), /`3`/);
-  assert.match(tableRow(block, '`botWaitMinutes`'), /`10`/);
-  assert.match(tableRow(block, '`bots`'), /`\(empty\)`/);
+  for (const [key, value] of [
+    ['completion', '`ask`'],
+    ['conflictResolution', '`auto`'],
+    ['requireAllChecks', '`true`'],
+    ['checkWaitMinutes', '`20`'],
+    ['maxRounds', '`3`'],
+    ['botWaitMinutes', '`10`'],
+    ['bots', '`(empty)`'],
+  ]) {
+    assert.equal(
+      defaultCell(block, `\`${key}\``),
+      value,
+      `the user guide must carry ${value} in the Default column of \`${key}\``,
+    );
+  }
 
   // The rename removed the shared name but not the confusion: `delivery.prReview` is still a
   // configuration key about publishing this run's own findings, while the gate's block is about
@@ -3217,6 +3722,7 @@ test('the shared configuration fragment documents every merge-gate key and the l
 
   for (const key of [
     'mergeGate.completion',
+    'mergeGate.conflictResolution',
     'mergeGate.requireAllChecks',
     'mergeGate.checkWaitMinutes',
     'mergeGate.maxRounds',
@@ -3226,6 +3732,25 @@ test('the shared configuration fragment documents every merge-gate key and the l
     'mergeGate.bots.<login>.check',
   ]) {
     assert.ok(block.includes(`\`${key}\``), `the configuration fragment must document ${key}`);
+  }
+
+  // The third of the three places these keys live, and the defaults have to agree with setup.md's
+  // block-9 table and the user guide. `auto` is what makes a gate run resolve a conflict and push
+  // a merge commit at all, so a fragment carrying a different default would resolve the key one
+  // way while the wizard that writes it promised another. Read from the Default column: this
+  // table's Values column repeats every default it accepts.
+  for (const [key, value] of [
+    ['mergeGate.completion', '`ask`'],
+    ['mergeGate.conflictResolution', '`auto`'],
+    ['mergeGate.requireAllChecks', '`true`'],
+    ['mergeGate.bots', '`(empty)`'],
+  ]) {
+    assert.equal(
+      defaultCell(block, `\`${key}\``),
+      value,
+      `the configuration fragment must carry the same default ${value} for ${key} as setup.md and ` +
+        'the user guide',
+    );
   }
 
   // The read fallback with its per-key precedence. A whole-block fallback would let one migrated

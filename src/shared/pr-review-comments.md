@@ -11,8 +11,10 @@ It serves both directions plus the merge gate. **Inbound**, `{{SKILL:iterate}}` 
 what others wrote. **Outbound**, "PR review publication" writes Effective Flow's own findings onto
 the pull request; that fragment owns which findings are published and which gates run first, while
 this one provides the operations. **The gate**, `{{SKILL:merge-gate}}`, reads status and checks,
-waits, posts its configured bot trigger — its only own write — and finally merges; it owns the
-ordered gate and the merge decision, while this one again provides the operations.
+waits, posts its configured bot trigger — its only own write onto the pull request's **discussion** —
+and finally merges; it owns the ordered gate and the merge decision, while this one again provides
+the operations. Its writes to the head **branch** are a different surface, bounded by that tool's own
+Git write boundary and not by this building block.
 
 Boundary to `issue-tracker.md`: that building block is tailored to **issues** and the tracker
 target. PR review threads are a different API object. A workflow working on a pull request is
@@ -232,9 +234,12 @@ this tool's own.
 **`{{SKILL:merge-gate}}`, the merge gate, writes no marker at all — by design, not by oversight.** A
 marker left in a raw comment body keeps announcing which tool composed that comment, and removing
 that disclosure is exactly why the gate's former third marker (`effective-flow-pr-gate`) is gone.
-The gate's only own write is its configured trigger comment, and it recognizes that comment again
-through the authenticated login plus the comment's exact configured body — evidence that discloses
-nothing and needs no persistence. Do not reintroduce a gate marker.
+The gate's only own write onto the pull request's **discussion** is its configured trigger comment,
+and it recognizes that comment again through the authenticated login plus the comment's exact
+configured body — evidence that discloses nothing and needs no persistence. Do not reintroduce a gate
+marker. Its writes to the head **branch** — the two kinds of base-into-head merge its Git write
+boundary sanctions — are on another surface and carry no marker either: a merge commit uses Git's
+default message and announces no tool.
 
 Both strings are **distinct and neither is a substring of the other**; every match is an exact
 string match. Reusing one for another writer would make `{{SKILL:iterate}}` treat foreign replies as
@@ -270,3 +275,10 @@ A head branch that has fallen **behind** its base is brought forward the same wa
 `origin/<base>` into the head branch as a merge commit and push normally. That merge, performed by
 `{{SKILL:merge-gate}}`, is the sanctioned repair; a rebase or a force-push of the head branch is not,
 whatever the forge suggests.
+
+A head branch that **conflicts** with its base is brought forward by the same merge, with its
+conflicts resolved inside it: that is the **second** sanctioned repair, likewise performed by
+`{{SKILL:merge-gate}}` and scoped to it – no other workflow resolves a conflict on a head branch.
+It changes nothing about the rule above: the result is still one ordinary merge commit pushed
+normally, and a resolution that would need a rebase, a squash, an amend, or a force-push to succeed
+is reported instead of performed.

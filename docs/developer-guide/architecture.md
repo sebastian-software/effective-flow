@@ -101,13 +101,14 @@ discourages unrequested sub-agents does not apply inside a run.
 [`src/shared/delegation-mandate.md`](../../src/shared/delegation-mandate.md) is the single source
 of truth, eagerly included in every delegating tool (`build`, `fix`, `refactor`, `docs`,
 `maintain`, `review`, `iterate`, `apply-review`, `apply-issues`, `plan`, `plan-issue`,
-`investigate`) and in every worker under `src/agents/`; `plan-review` and `concept-review` carry
+`investigate`, `merge-gate`) and in every worker under `src/agents/`; `plan-review` and
+`concept-review` carry
 it for read-only analysis fan-out only, restating their existing ban on starting implementers,
 test writers, validators, and reviewers next to the include. Delegating to a named worker role is
 mandatory; analysis and exploration delegation is the default, with a narrow triviality
 exception; a worker whose `claude.tools` carries `Agent, Task` may fan out read-only analysis
 sub-agents but never re-delegates its own assignment or a write. That grant tracks whether the
-worker's own tool list already lists `Write` or `Edit` — a role that produces changes: today ten
+worker's own tool list already lists `Write` or `Edit` — a role that produces changes: today eleven
 workers qualify and carry `Agent, Task`, while the five observation roles that list neither
 (`frontend-reviewer`, `nodejs-reviewer`, `rust-reviewer`, `generic-product-reviewer`,
 `code-validator`) omit it and do not delegate at all. For the four reviewers, whose tool list
@@ -118,7 +119,9 @@ parenthesised allowlist form `Agent(<type>)` cannot narrow that grant to read-on
 it is read as an unrestricted grant, not a type filter, and must not be used in its place. Inline
 execution stays legitimate only as a disclosed fallback —
 never silent. Workflow-to-workflow delegation (`apply-plan`, `merge-gate` → `iterate`) keeps its own
-mechanics and is out of scope for this mandate. Delegation mechanics are Effective Flow's own
+mechanics and is out of scope for this mandate — which is why `merge-gate` carries the include for
+its worker-role delegations (`merge-conflict-resolver`, `code-validator`) while that one handoff
+stays exempt. Delegation mechanics are Effective Flow's own
 orchestration ownership, so this carries no central-skill relationship under the layered
 ownership contract in [`AGENTS.md`](../../AGENTS.md#skill-discovery).
 
@@ -253,8 +256,8 @@ skill at `effective-flow/`, which is the payload consumed by DALO and Skills CLI
 
 The model running the Effective Flow tool is the **caller**: it interprets the workflow,
 delegates work, and integrates the results. Native worker sidecars have independent,
-role-specific profiles. Implementers and reviewers use the quality tier—Claude `opus` with
-`xhigh` effort and Codex `gpt-5.6-sol` with `high` reasoning effort. Documentation, testing,
+role-specific profiles. Implementers, reviewers, and the merge-conflict resolver use the quality
+tier—Claude `opus` with `xhigh` effort and Codex `gpt-5.6-sol` with `high` reasoning effort. Documentation, testing,
 validation, and other support roles use the economical tier—Claude `sonnet` with `medium`
 effort and Codex `gpt-5.6-luna` with `medium` reasoning effort. The individual files under
 `src/agents/` remain the exhaustive source of truth for which role belongs to which tier.
