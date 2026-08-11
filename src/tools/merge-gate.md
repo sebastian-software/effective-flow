@@ -730,11 +730,19 @@ run can push an unbounded number of commits onto someone's pull request.
      Flow-owned worktree goes `active` → `cleanup-ready` and through the shared
      claim/remove/reconcile sequence; a reused in-place checkout has no record to close. A later
      round that needs this step again provisions a checkout again.
-   - If the push is rejected because of diverged remote history, or the conflict path ends in a
-     controlled stop: end the in-progress merge with `git merge --abort` so the checkout is left
-     clean, then stop, report, rewrite no history, and merge nothing. Transition an Effective
-     Flow-owned worktree to `aborted` for a controlled stop or `failed` for an error, retaining the
-     worktree and its branch for inspection.
+   - **A controlled stop on the conflict path** – `off`, an `ask` nobody answered, an `ABORT` from
+     either verification role, or a conflict this run may not or cannot resolve – happens **before**
+     the commit: the merge is still in progress, so end it with `git merge --abort` so the checkout
+     is left clean, transition an Effective Flow-owned worktree to `aborted`, then stop, report, and
+     merge nothing.
+   - **A rejected push** happens **after** the merge commit already exists – diverged remote
+     history, a protected head branch, a head branch in a fork. There is **no** merge to abort at
+     that point, so `git merge --abort` is not run here: it would fail with "There is no merge to
+     abort". The merge commit stays on the local branch – reset, amend, rebase and force-push
+     nothing, and rewrite no history – transition an Effective Flow-owned worktree to `failed`, then
+     stop, report the rejected push, and merge nothing. The edge cases below state this same stop
+     per cause.
+   - Both stops retain the worktree and its branch for inspection.
 2. **Pending checks.** Call `pr-checks-wait` with `mergeGate.checkWaitMinutes` as its timeout and let
    the CLI block; the run consumes no tokens while CI runs. Restrict the wait to the forge's own
    required checks exactly when `mergeGate.requireAllChecks` is `false`; the helper owns the provider
@@ -1072,7 +1080,8 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   starts a speculative merge.
 - **The push is rejected after a successful resolution** – someone pushed to the head branch while
   the worker was working: stop, report, rewrite no history, and transition the worktree to `failed`.
-  Never retry with force.
+  Never retry with force. The merge commit already exists here, so there is no merge to abort – this
+  is the post-commit stop Phase 2 step 1 separates from the pre-commit one.
 - **The conflict is in a file the repository generates** (a lockfile, a build output that is
   tracked): the resolver regenerates it from its source instead of merging its text. `dist/` is
   gitignored in this repository and cannot conflict here, but a consumer project's generated tracked
@@ -1096,7 +1105,8 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   the run ends by reporting merge-readiness. Only the Phase-5 merge is withheld.
 - **The head branch is protected against direct pushes:** the resolution succeeds locally and the
   push is rejected. Report that the branch protection blocks the repair, transition the worktree to
-  `failed`, and never work around it.
+  `failed`, and never work around it. It is the post-commit stop of the rejected-push case above:
+  the merge commit stays, and there is no merge to abort.
 - **The head branch lives in a fork:** the pull request's head is a branch in **another** repository,
   and pushing to it requires the contributor to have allowed maintainer edits. Without that
   permission the resolution succeeds locally and the push is rejected – the same failure mode as the
