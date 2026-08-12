@@ -427,6 +427,9 @@ At the start, generate a session ID (e.g. via timestamp) and use
   mode with its source (configuration or entry gate)
 - the authenticated login `viewer-read` returned, or the reason it could not be read
 - the human-comment guard state and the evidence that set it
+- every item the guard's identity rule excluded that would otherwise have counted: its author, the
+  surface it sits on – unresolved review thread or top-level comment – and its thread or comment
+  identifier; the list Phase 6 must report, and no later read reaches it again
 - per round: the round number, the check result, the merge state, what was delegated, and what came
   back; plus `VERIFIED_HEAD_SHA` once a round sets it, and its discard on a Phase-3 restart
 - per round, where the base-into-head merge conflicted: the observed merge state and which entry
