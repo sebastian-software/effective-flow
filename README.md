@@ -15,7 +15,8 @@ close the loop all the way to the merge.
   `build`, `fix`, `refactor`, `docs` and `maintain` implement it, `review` checks it,
   `commit` and `pr` bring the change in, and `merge-gate` drives an open pull request the rest
   of the way – answering automatic reviewers and merging once it is genuinely clean, but
-  never past an open human comment – with no break between the phases.
+  never past an open comment from an account other than the one it runs as – with no break
+  between the phases.
 - **Thin router, lazy loading.** Effective Flow loads only the tool catalog at startup; the
   full instruction of a tool arrives only on invocation. This keeps sessions lean and
   prevents the token limit from being exhausted by tools loaded up front.

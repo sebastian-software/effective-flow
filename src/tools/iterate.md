@@ -182,9 +182,14 @@ end.
      carries it.
    - **Fail closed on an unparseable switch.** A line announcing `Summary comment:` in any other
      form is a broken caller contract: return `ABORT: unparseable summary-comment switch`
-     immediately, before Phase 1. Never continue such a run as an unsuppressed one — a caller
-     suppresses that comment because its own delegated output would otherwise be read back as a
-     third party's writing on a later run.
+     immediately, before Phase 1. Never continue such a run as an unsuppressed one: a caller
+     suppresses that comment because it reports the same content itself, and because one summary
+     comment per delegated round accumulates on someone's pull request — so an unsuppressed run
+     publishes onto a discussion surface the caller is deliberately keeping bounded.
+     {{SKILL:merge-gate}} is the example: it may delegate up to `mergeGate.maxRounds` rounds and
+     guarantees that a gated run leaves at most one item of its own on the pull request, and a gate
+     authenticated as a **different** account than this run additionally reads that summary as
+     someone else's writing.
 
    Suppression removes the **summary comment only**. The thread replies for implemented items,
    their resolution, the commits, and the push are unaffected.
