@@ -1,5 +1,5 @@
 ---
-description: "Shepherds an existing pull request from open to merged: resolves the pull request, asks once whether the run may merge at the end or only report merge-readiness, then drives an ordered gate – wait for and repair the checks, have the notes of the configured automatic reviewers evaluated and answered through {{SKILL:iterate}}, block review-driven work and the merge while a human comment is open, and finally merge with the configured merge method. Every code change is delegated to {{SKILL:iterate}}; the tool itself commits and pushes nothing except the base-into-head merge that brings the head branch forward – cleanly, or with its conflicts resolved by a delegated worker."
+description: "Shepherds an existing pull request from open to merged: resolves the pull request, asks once whether the run may merge at the end or only report merge-readiness, then drives an ordered gate – wait for and repair the checks, have the notes of the configured automatic reviewers evaluated and answered through {{SKILL:iterate}}, block review-driven work and the merge while a comment from an account that is neither a bot nor the one the gate is authenticated as is open, and finally merge with the configured merge method. Every code change is delegated to {{SKILL:iterate}}; the tool itself commits and pushes nothing except the base-into-head merge that brings the head branch forward – cleanly, or with its conflicts resolved by a delegated worker."
 catalogHint: "Drives an open pull request through checks, bot notes, and – if allowed – the merge."
 ---
 
@@ -18,9 +18,12 @@ Resolve a pull request from an argument or the current branch and drive an order
 2. once green, hand the notes of the configured automatic reviewers (Greptile and comparable bots)
    to `{{SKILL:iterate}}`, which fixes the valid ones and answers and resolves their threads, and
    re-trigger the reviewer where needed;
-3. if human pull-request comments exist, implement no review note and merge nothing – the CI repair
-   and the repair of a conflict with the base stay permitted (see "Human-comment guard");
-4. if no human comments exist, everything is green, every configured automatic reviewer has run for
+3. if an open pull-request comment exists from an account that is **neither a bot nor the one this
+   run is authenticated as**, implement no review note and merge nothing – the CI repair and the
+   repair of a conflict with the base stay permitted (see "Human-comment guard"). Neither a bot's
+   comment nor a comment the gate's own account wrote – including one the operator typed themselves
+   in manual mode – blocks;
+4. if no such comment exists, everything is green, every configured automatic reviewer has run for
    the current head, and its comments have been answered – merge.
 
 The result is either a merged pull request or a report naming the exact condition that blocks the
@@ -221,13 +224,16 @@ Every delegation goes to `{{SKILL:iterate}} <PR>` and carries:
   to an unfiltered run, so a typo costs a round instead of implementing every open finding;
 
 - the **summary-comment suppression**, on its own line, in the exact literal form
-  `Summary comment: suppressed`. This is mandatory in every delegation from this gate. In manual
-  mode the delegated run posts under the same account as the gate and the operator, so its per-round
-  summary comment would be a top-level, unresolvable, non-trigger item that the next fresh read –
-  including **this run's own Phase 4 read** – counts as human. An unsuppressed summary would
-  therefore activate the guard against the very work the round just completed, and up to
-  `mergeGate.maxRounds` such comments per run were noise on the pull request besides. Nothing is
-  lost: `{{SKILL:iterate}}` hands that content back and Phase 6 reports it in chat;
+  `Summary comment: suppressed`. This is mandatory in every delegation from this gate, and it rests
+  on four grounds, none of which is how this run's own Phase 4 read would classify such a comment:
+  up to `mergeGate.maxRounds` summary comments per run is noise on someone's pull request; nothing
+  is lost, because `{{SKILL:iterate}}` hands that content back and Phase 6 reports it in chat; the
+  guarantee that a **gate-initiated run leaves at most one item of its own** on the discussion (see
+  "A deferred finding gets no thread reply") depends on it; and a gate running under a **different**
+  account than the delegated run reads that summary as a foreign comment, which would activate the
+  guard against the very work the round just completed. Under the same account the guard's identity
+  rule excludes it, so that last ground is the residual rather than the main case – but the
+  obligation is not conditional on the mode, and neither is the line;
 - the **next-step suppression**, on its own line, in the exact literal form `Next steps: suppressed`.
   This is mandatory in every delegation from this gate. A delegated round is an intermediate result
   inside this run, and only Phase 6 knows whether the gate ended merged, blocked, or out of rounds,
@@ -421,6 +427,18 @@ At the start, generate a session ID (e.g. via timestamp) and use
   mode with its source (configuration or entry gate)
 - the authenticated login `viewer-read` returned, or the reason it could not be read
 - the human-comment guard state and the evidence that set it
+- every item the guard's identity rule excluded that would otherwise have counted: its author, the
+  surface it sits on – unresolved review thread or top-level comment – and its thread or comment
+  identifier. This is the list Phase 6 must report, and it is **appended at every fresh read, not
+  only Phase 1's**. It moves in the guard's own direction one step further: the guard is set once
+  and a later fresh read may only set it, and this list may only be **added to** – never re-derived
+  from the latest read, and never shortened because a later read no longer reports an entry. Phase 4
+  verifies its preconditions against a second fresh read, and between the two sit up to
+  `mergeGate.maxRounds` delegated rounds whose thread replies carry this run's own account in manual
+  mode; the identity rule excludes exactly those items at Phase 4, and no earlier read could reach
+  them, so a Phase-1 snapshot would under-report them and Phase 6 would silently owe a disclosure it
+  no longer makes. Key each entry by its thread or comment identifier, so a re-read of an item
+  already recorded appends no duplicate
 - per round: the round number, the check result, the merge state, what was delegated, and what came
   back; plus `VERIFIED_HEAD_SHA` once a round sets it, and its discard on a Phase-3 restart
 - per round, where the base-into-head merge conflicted: the observed merge state and which entry
@@ -507,160 +525,94 @@ options:
    between runs – the comment or reply ID a mutation returned is known only to the run that
    performed that mutation, so a rule built on it reads every earlier run's output as a stranger's.
 2. Evaluate every comment and thread in **exactly this order** and stop at the first rule that
-   matches. The order is load-bearing, not cosmetic:
-   1. **The author is a bot** – either a login listed in `mergeGate.bots`, matched through
-      "Matching a configured login" so one account is recognized whichever surface reported it, or an
-      item whose
-      normalized `authorType` is `bot`. **The two cases overlap; they do not divide the items between
-      them.** That rule trims the `[bot]` suffix only for a bot-typed record, so every item the first
-      case reaches through the trim is one the second reaches anyway. Both still earn their place:
-      only the first reaches a configured login a surface reported unchanged and typed as anything
-      else, and only the second carries app mode – the account this gate posts as appears in no
-      configuration table, so it is recognized by `authorType` alone. The item is **excluded** and
-      the evaluation stops there – the forge's own
-      authorship record already separates those writes. **The identity lookup is deliberately not
-      consulted for such an item.** `viewer-read` can legitimately fail on an installation token, so
-      a rule that reached the identity here would fail closed and block precisely the one mode that
-      never needed an identity.
-   2. **The item sits inside a `resolved` review thread, its author is this tool's own, _and_ it
-      carries `<!-- effective-flow-iterate -->` or `<!-- effective-flow-pr-review -->`** – the author
-      being the login `viewer-read` returned, or a bot under rule 1's two cases. Only then does it
-      **not** count. All three conditions are required. This is stated for the individual comments,
-      not only for the thread, because it has to cover both directions this tool writes into a
-      thread: the replies `{{SKILL:iterate}}` writes and resolves, and the inline review comments the
-      outbound direction publishes. In manual mode both carry the same account as the operator, so
-      without this rule the guard would stay active for exactly the pull requests this tool
-      successfully worked on — including the ones it annotated itself through `delivery.prReview`.
+   matches. The order is load-bearing, not cosmetic. **An item is human when the account that wrote
+   it is neither a bot under rule 1 nor the one this run is authenticated as** – the guard keeps its
+   name, so the name is told here what it means, and both halves of that definition are needed: a
+   bot is an account other than this run's own, and a definition naming only the identity would make
+   every automatic reviewer's note human:
+   1. **The author is a bot** – either a login listed in `mergeGate.bots`, matched through "Matching
+      a configured login" so one account is recognized whichever surface reported it, or an item
+      whose normalized `authorType` is `bot`. **The two cases overlap; they do not divide the items
+      between them.** That rule trims the `[bot]` suffix only for a bot-typed record, so every item
+      the first case reaches through the trim is one the second reaches anyway. Both still earn their
+      place: only the first reaches a configured login a surface reported unchanged and typed as
+      anything else, and only the second carries app mode – the account this gate posts as appears in
+      no configuration table, so it is recognized by `authorType` alone. The item is **excluded** and
+      the evaluation stops there – the forge's own authorship record already separates those writes.
+      **The identity lookup is deliberately not consulted for such an item.** `viewer-read` can
+      legitimately fail on an installation token, so a rule that reached the identity here would fail
+      closed and block precisely the one mode that never needed an identity.
+   2. **The author is this run's own account** – the item's normalized `login` equals the login
+      `viewer-read` returned. The item is **excluded**: whatever its body says, whichever of the two
+      surfaces it sits on, and whether or not its thread is `resolved`.
 
-      **Both markers count, and the enumeration is pinned to the helper's marker table.** The two
-      directions stamp different markers by design, because idempotency and repeat suppression need
-      to tell _which_ writer produced a body. This rule needs the opposite granularity: _whether any_
-      Effective Flow writer produced it. Naming both is therefore the point, not an oversight — a
-      rule that knew only the `{{SKILL:iterate}}` marker could never exclude an outbound review
-      comment, whatever its author and however resolved its thread. The enumeration is deliberately
-      not replaced by a reference to the marker table: a future comment kind must not join a
-      fail-open exclusion automatically, so a contract test compares this list against
-      `COMMENT_MARKERS` and fails when they diverge. Adding a writer is then a decision someone
-      makes, not a silent widening.
+      **The comparison has three boundaries, and each one is load-bearing.** Compare the `login`
+      values as the loaded operations normalized them, with **no case folding**, and compare no
+      other author field – display name, profile URL, and account ID take no part in it. **No
+      `[bot]` trim applies here:** that trim belongs to rule 1's "Matching a configured login",
+      where it reconciles the two spellings one reviewer is reported under, and letting it reach an
+      identity comparison would let a foreign login differing from this run's by exactly that suffix
+      pass as the run's own. An item whose `login` is **absent** cannot match and therefore counts –
+      the same fail-safe direction as an `unknown` author type.
 
-      **Each condition removes a different way the guard could fail open.** A resolved thread is not
-      a closed discussion: neither provider auto-unresolves a thread when someone replies into it,
-      so a reviewer can object inside a thread `{{SKILL:iterate}}` resolved – "this fix is wrong, do
-      not merge" – and that reply must still count. The author condition alone does not achieve
-      that in manual mode, because there the operator and this tool **are the same account**: an
-      objection the operator types themselves into such a thread would otherwise be read as this
-      tool's own output and discarded. The marker is what separates the two, and it is legitimate
-      evidence **here** precisely because it is not doing the work alone – the helper stamps every
-      reply `{{SKILL:iterate}}` writes and every inline comment the outbound direction publishes, so
-      an item from the right account, in a resolved thread, carrying either stamp is this tool's; a
-      hand-typed objection in the same place carries no stamp and counts. This does not soften the
-      rule that a marker never excludes an item on its own: it is the third condition here, never the
-      first.
+      **What rule 2 subsumes.** All of these are now excluded by authorship alone: this gate's own
+      trigger comment from an earlier run, the thread replies and the per-round summary comments
+      `{{SKILL:iterate}}` writes, the inline findings and the single outside-diff comment
+      `delivery.prReview` publishes, and every comment the operator typed by hand. The guard no
+      longer distinguishes between them, and it no longer has to know which writer produced which
+      body.
 
-      **A marker counts only as the body's first line.** The helper stamps it as a leading line,
-      so every item this tool writes begins with one. A quote-reply does not: both providers prefix
-      the quoted body with `>`, so a copied marker lands inside a blockquote and no longer opens the
-      body. That distinction is the whole reason the position is part of the rule – an operator
-      quote-replying their objection into a resolved thread would otherwise carry the marker along
-      and have their own objection discarded. A marker found anywhere else in a body is quoted text
-      and is disregarded. An operator who hand-writes the marker as their opening line is overriding
-      their own guard deliberately, which is a different thing from being caught out by a quote
-      button.
+      **What rule 2 gives up.** An objection the operator types themselves no longer holds the
+      guard – on either surface, and however long it stays unresolved. That is the deliberate trade:
+      the operator running this gate is present by definition, and the guard exists to stop a merge
+      out from under **someone else's** open discussion, not to stop an operator from merging past
+      their own note. A comment from any other account is untouched by this rule and counts exactly
+      as it did before. The loosening is not silent either: Phase 6 reports every item this rule
+      excluded that would otherwise have counted.
 
-   3. **Otherwise the item is this gate's own output only when both hold:** its author's normalized
-      `login` equals the login `viewer-read` returned, **and** its complete body equals the
-      configured `mergeGate.bots.<login>.trigger` value of some configured bot. Compare the `login`
-      exactly and compare no other author field – display name, profile URL, and account ID take no
-      part in it. Compare the **whole** body after trimming surrounding whitespace; a prefix, a
-      substring, a quoted copy, or any other partial or fuzzy match never qualifies. Such an item is
-      excluded.
-
-      **This is the only shape this rule has to recognize**, because a gate-initiated run leaves at
-      most one item of its own on the pull request: this trigger comment. It is **at most** rather
-      than exactly one because Phase 3 posts no trigger for a bot it observed as **running**; a run
-      that leaves nothing behind narrows nothing here. The delegated
-      `{{SKILL:iterate}}` run's summary comment is suppressed (see "Delegation contract") and its
-      thread replies are resolved along with their threads, where rule 2 catches them. A
-      `{{SKILL:iterate}}` run the operator started **themselves** is a different case, and rule 4
-      covers it.
-
-   4. **A top-level pull-request comment is this tool's own when both hold:** its author is this
-      tool's own – the login `viewer-read` returned, or a bot under rule 1's two cases – **and** its
-      body's leading line is `<!-- effective-flow-iterate -->` or `<!-- effective-flow-pr-review -->`.
-      Such an item is excluded. This reaches both top-level comments this tool leaves behind: the
-      summary comment a directly invoked `{{SKILL:iterate}}` run posts, and the comment the outbound
-      direction publishes for findings whose line lies **outside the diff**. Rule 3 reaches neither:
-      it matches one exact configured trigger text, and neither of those bodies is it. Without this
-      rule, running `{{SKILL:iterate}}` by hand – or letting `delivery.prReview` annotate a line
-      outside the diff – and then asking this gate to merge would block on the tool's own output,
-      permanently.
-
-      **Both markers count, and the enumeration is pinned to the helper's marker table**, for the
-      same reason rule 2 names both. The outside-diff case is the one that cannot resolve itself: an
-      inline finding is anchored in a thread and stops counting once that thread is resolved, but a
-      top-level comment has no resolved state, and `{{SKILL:iterate}}` skips an item carrying the
-      outbound marker as this tool's own published output rather than as input awaiting action.
-      Nothing would ever clear it. The enumeration is deliberately not
-      replaced by a reference to the marker table: a future comment kind must not join a fail-open
-      exclusion automatically, so a contract test compares this list against `COMMENT_MARKERS` and
-      fails when they diverge.
-
-      **Two conditions here, three in rule 2 – and the missing one has no analogue.** Rule 2's
-      `resolved` condition exists because a resolved thread is a container this tool marked handled,
-      and an objection can be typed _inside_ it. A top-level comment has no such container: an
-      objection is its own comment, carries no stamp of its own, and still counts under rule 5.
-      Requiring resolution here would not tighten the rule but disable it, because the surface it
-      covers is never resolved – which is why the two-condition shape is pinned by the same contract
-      test. The leading-line requirement carries the same weight it does in rule 2 – a quote-reply's
-      copied marker sits behind a `>` and no longer opens the body – and a hand-written opening
-      marker remains the same deliberate self-override.
-
-      **Neither excluded comment hides an open question.** `{{SKILL:iterate}}` posts no substantive
-      reply to a pure reviewer question and defers it, and it replies to and resolves only the
-      threads it addressed. A deferred question therefore keeps its own unresolved thread, and that
-      thread still counts. The summary comment reports on those threads; it never replaces them. An
-      outside-diff finding is not a question at all: it is this product's own review output, which
-      stays on the pull request to be read, and which no run was ever going to act on.
-
-   5. **Everything else counts as human**, including an item whose normalized `authorType` is
+   3. **Everything else counts as human**, including an item whose normalized `authorType` is
       `unknown`. That is the fail-safe direction: the only consequence is a narrower run.
 
    **Fail closed – but never on rule 1.** A `viewer-read` that fails, is unsupported, or states no
-   authenticated login leaves the identity unknown. A non-bot item can then not be _proven_ to be
-   the gate's own under rule 3, and the `viewer-read` half of rules 2 and 4 is unprovable in exactly
-   the same way; every such item therefore counts and the guard activates. Report the missing
-   identity as the reason, so the block is explainable instead of mysterious. **Rule 1 needs no
-   identity and stays untouched by this** – bot authorship is read from the item itself, as is the
-   bot half of rules 2 and 4 – and that is what keeps app mode running when the identity lookup does
-   not.
+   authenticated login leaves the identity unknown. Rule 2 is then **unprovable for every item** –
+   there is no login to compare against – so every non-bot item counts and the guard activates.
+   Report the missing identity as the reason, so the block is explainable instead of mysterious.
+   **Rule 1 needs no identity and stays untouched by this** – bot authorship is read from the item's
+   own record – and that is what keeps app mode running when the identity lookup does not.
 
-   **This is a same-account contract.** Rules 2 and 4 recognize an item only when the account that
-   wrote it is the one `viewer-read` returns, or is bot-typed. A pull request annotated through
+   **This is a same-account contract.** Rule 2 recognizes an item only when the account that wrote it
+   is the one `viewer-read` returns for **this** run. A pull request annotated through
    `delivery.prReview` under one account and then merged by a gate running under another – an
-   operator-driven delivery and an app-driven gate, for instance – fails that condition and still
-   blocks. That is the accepted residual gap, not an oversight: closing it would mean letting a
-   marker prove authorship on its own, which this guard refuses everywhere else.
+   operator-driven delivery and an app-driven gate, for instance – fails that condition, so those
+   items count and still block. That residual is accepted rather than closed: closing it would mean
+   proving authorship from body content, which this guard no longer does anywhere.
 
 3. Decide **what counts** for the guard, because the two surfaces differ:
-   - a **review thread** counts while it is not `resolved`, and rule 2 above extends that to this
-     tool's own comments inside a resolved one;
+   - a **review thread** counts while it is not `resolved`. That is a **counting surface**, not an
+     exclusion rule: it decides which threads are open at all, and it is the one place a resolution
+     state still means anything to this guard. It is not a filter over what a resolved thread
+     contains: **every item inside a resolved thread is still evaluated individually** under the
+     rules above, and one written by any other account counts and holds the guard exactly as it
+     would anywhere else. A resolution is a claim about the finding, never consent to whatever
+     arrives after it, and neither provider un-resolves a thread when someone replies into it – so
+     reading the resolution as a filter over the whole thread would silence precisely the objection
+     this guard exists for;
    - a **top-level pull-request comment** has no resolved state on either provider, so it always
-     counts unless rule 1, rule 3, or rule 4 excluded it. A single old human comment therefore keeps
-     the guard active until it is deleted – the deliberate fail-safe reading, since the alternative
-     is merging a pull request under an open human discussion;
-   - **an item is excluded only through the rules above.** Three of them read a body, and each reads
-     it narrowly: rule 3 as an exact match against a value this project configured, rules 2 and 4 as
-     a marker occupying the body's first line. None of them searches a body for a tool's signature.
-   - **An Effective Flow marker never excludes an item on its own**, whoever the author looks like.
-     A marker is body content, and content is not authorship evidence: GitHub's quote-reply copies
-     the quoted body verbatim, HTML comment included, so a human answering one of
-     `{{SKILL:iterate}}`'s replies would otherwise silently switch off the guard that exists to
-     protect them. That is why a marker never appears as a rule's only condition, and never counts
-     anywhere but as the body's leading line. This gate writes no marker of its own at all
-     (Phase 3), so no marker on this pull request is ever evidence about the gate itself.
-4. **Set the guard.** If at least one counting item has a human author, the human-comment guard is
-   **active**. The guard is set once, here, from this first fresh read, and stays set for the rest
-   of the run. A later fresh read may only set it – a human comment that appears mid-run is new
+     counts unless rule 1 or rule 2 excluded it. A single old comment from another account therefore
+     keeps the guard active until it is deleted – the deliberate fail-safe reading, since the
+     alternative is merging a pull request under an open discussion;
+   - **no exclusion rule reads a body.** Both rules above decide on the item's author record and
+     nothing else, so no text an item carries – a copied trigger, a quoted Effective Flow marker, a
+     signature, a hand-written stamp – can move it into or out of the guard in either direction. That
+     does not defend the quote-reply surface, it removes it: there is no body read left for a copied
+     body to mislead. This gate writes no marker of its own either (Phase 3), so no marker on this
+     pull request is evidence about anything here.
+4. **Set the guard.** If at least one counting item was excluded by **no** rule of step 2 – neither
+   the bot rule nor the identity rule reached it, so the catch-all counted it as human – the
+   human-comment guard is **active**. Reading it from the rule outcome rather than from the word
+   "human" is deliberate: an item rule 1 excluded is a bot's and never activates the guard, however
+   the noun is read. The guard is set once, here, from this first fresh read, and stays set for the
+   rest of the run. A later fresh read may only set it – a human comment that appears mid-run is new
    information in the fail-safe direction – and nothing ever moves it from active back to inactive.
 
 #### Human-comment guard
@@ -689,23 +641,29 @@ writes **nothing** into its thread. It resolves nothing either.
 This **supersedes** the earlier rule that the guard permits the gate to answer bot threads itself.
 The two are not two standing options: the later decision replaces the earlier one, and it is written
 here so that the two are not read as a contradiction. Resolving such a thread would signal "handled"
-for a finding nobody handled, and leaving an unresolved reply behind is precisely what makes the
-next run read its predecessor's output as a human comment.
+for a finding nobody handled: a resolution is a claim about the **finding**, never a statement about
+who wrote the last word in the thread, so no authorship rule can make that claim true. A reply is no
+better – it puts this gate's name under a finding it deliberately did not act on, where the reviewer
+and the next reader look for the outcome. The chat summary is where that outcome belongs, because it
+reaches the person who can decide about it.
 
 The consequence, stated plainly: **the gate's only own write onto the pull request's discussion is
 the trigger comment** of Phase 3, and a **gate-initiated run leaves at most that one item of its own
-there** – because
-the delegated run's summary comment is suppressed (see "Delegation contract") and its thread replies
-are resolved along with their threads. At most, not exactly: Phase 3 posts no trigger for a bot it
-observed as **running**, and a run that posts no comment at all is the same guarantee one write
-further in the safe direction. Every reply for a finding that _is_ implemented is written
-and resolved by `{{SKILL:iterate}}`, as before, and Phase 1's rule 2 keeps those replies out of the
-guard.
+there** – because the delegated run's summary comment is suppressed (see "Delegation contract") and
+its thread replies are resolved along with their threads. At most, not exactly: Phase 3 posts no
+trigger for a bot it observed as **running**, and a run that posts no comment at all is the same
+guarantee one write further in the safe direction. Every reply for a finding that _is_ implemented is
+written and resolved by `{{SKILL:iterate}}`, as before, and those replies leave the guard untouched:
+in manual mode they carry this run's own account and the identity rule excludes them, and in app mode
+the bot rule does, before any identity is consulted.
 
 **This bounds the discussion surface, not the branch.** The gate also writes to the head **branch** –
 the two kinds of base-into-head merge – and those writes are bounded by "Git write boundary", not
 here. Both statements are exact and neither weakens the other: nothing this gate pushes ever appears
-as a comment, and the at-most-one guarantee above is what Phase 1's rule 3 rests on.
+as a comment, and the at-most-one guarantee above is a bound this gate keeps on the discussion for
+its own sake. No guard rule reads it back – suppressing the delegated run's summary comment (see
+"Delegation contract") is what sustains it, and that suppression is a contract of this file rather
+than a consequence of how the next run classifies anything.
 
 ### Phase 2: Check gate (bounded)
 
@@ -902,12 +860,13 @@ entries that denote the same reviewer – two spellings of one account are one r
 3. **Not started: post its `mergeGate.bots.<login>.trigger` text once** as a pull-request comment,
    then apply the single wait of step 4.
    - Build that comment body yourself: the literal configured trigger text and **nothing else** –
-     no marker, no preamble, no signature – posted through the helper's PR-comment mutation. That
-     exact body is what Phase 1's rule 3 recognizes as this gate's own on the next run, and it is
-     also what keeps the raw comment from announcing which tool composed it. Do **not** use the `pr`
-     comment-kind builder – it stamps `<!-- effective-flow-iterate -->`, the marker
-     `{{SKILL:iterate}}` reads as its own already processed work, and any marker at all would defeat
-     both purposes above.
+     no marker, no preamble, no signature – posted through the helper's PR-comment mutation. Two
+     things still need that exact body: this step's own idempotency check below, which compares the
+     body against the configured text, and keeping the raw comment from announcing which tool
+     composed it. The guard is no longer one of them – it reads no body at all, and it excludes this
+     comment on the next run by its author alone. Do **not** use the `pr` comment-kind builder – it
+     stamps `<!-- effective-flow-iterate -->`, the marker `{{SKILL:iterate}}` reads as its own
+     already processed work, and any marker at all would defeat both purposes above.
    - **Idempotency without a marker.** A trigger has already been posted for the current head when a
      comment exists whose body equals the configured trigger text after trimming surrounding
      whitespace, whose author is established as this gate's own, and whose `createdAt` is **not
@@ -1037,13 +996,15 @@ record and the other is outside it entirely, so every Phase-4 condition can hold
 never-assessed finding sits open. A trigger that fired only on zero would stay silent about exactly
 that pull request.
 
-**This reports only; it is not a condition and never blocks the merge.** An unresolved thread from a
-_human_ already holds condition 4's human-comment guard, so what reaches this point is a thread whose
-author is bot-typed – excluded from that guard by Phase 1 rule 1 – under a login no entry names.
-Making that block would double-count the human case and could stall merges condition 4 correctly
-releases, and it would strand a project that deliberately ignores a thread-posting bot: its only
-escape would be adding that bot to `mergeGate.bots`, which then makes this gate wait for it as a
-reviewer and trigger it. The residual gap is therefore accepted and made visible rather than closed –
+**This reports only; it is not a condition and never blocks the merge.** An unresolved thread from
+another account already holds condition 4's human-comment guard, so what reaches this point is one of
+two things: a thread whose author is bot-typed – excluded from that guard by Phase 1's bot rule –
+under a login no entry names, **or** a thread this run's own account wrote, which the guard's
+identity rule excludes on either surface and whatever its body. Making that block would double-count
+the first case and could stall merges condition 4 correctly releases, it would re-block exactly what
+the identity rule was changed to release in the second, and it would strand a project that
+deliberately ignores a thread-posting bot: its only escape would be adding that bot to
+`mergeGate.bots`, which then makes this gate wait for it as a reviewer and trigger it. The residual gap is therefore accepted and made visible rather than closed –
 such a finding can still be merged past, but never without the run saying so. Note that "Matching a
 configured login" does not reach this case at all: a wholly wrong or absent login is not a spelling
 problem.
@@ -1091,7 +1052,19 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
      key so the redundant row can be dropped – and every collapse whose entries set the same
      `.trigger` or `.check` to different values, that conflict named with both values and named as
      what blocked the merge on that reviewer;
-   - whether human comments were found and what that blocked;
+   - whether comments from another account were found and what that blocked;
+   - **every item the guard's identity rule excluded that would otherwise have counted** – every
+     unresolved review thread **and** every top-level comment this run's own account wrote, each
+     named with its author and the surface it sits on. This is the only place such a **top-level
+     comment** is reported at all, and – for as long as `mergeGate.bots` is empty, which is the
+     default – the only place any such item is reported: they no longer hold the guard, and Phase 4's
+     unmatched-thread report fires only for a non-empty `mergeGate.bots` and reaches no top-level
+     comment in any case, so without this line the loudest case – an objection the operator typed
+     themselves – would be silent. With a **non-empty** `mergeGate.bots` an unresolved thread this
+     run's own account wrote also lands in that report, because this gate's own account is never one
+     of its entries; report such an item **once**, here, rather than in both places. It reads **no
+     body**, deliberately: that is the same authorship reading the rule itself uses, and the price is
+     that this gate's own trigger comment is listed here beside a hand-typed objection;
    - **every bot finding this run assessed but did not implement**, named here rather than answered
      in its thread;
    - **every unresolved thread that matched no configured login**, when Phase 4 carried that case
@@ -1184,54 +1157,66 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   the run back into Phase 3 for exactly those threads at the cost of a round, and blocks the merge
   outright once the rounds are used up. This is the window "Automatic reviewer state" narrows and
   leaves to its consumer to close.
-- **A human quote-replies to the gate's trigger comment,** copying its body: the item is
-  human-authored, so it counts and the guard activates. With no marker left to copy there is nothing
-  in the body that could mislead the guard, and a quoted body carries the quote markup and therefore
-  no longer equals the trigger text exactly.
-- **The operator writes the configured trigger text by hand:** it matches rule 3 and is excluded.
-  That is correct – a trigger is not a discussion, and treating it as one would block the merge for
-  no reason. It also means the configured trigger should be a distinctive mention: a
-  non-distinctive text such as `please review` could be typed by a person who genuinely wants a
-  discussion and would then be excluded too.
+- **A colleague comments on the pull request:** it counts and the guard activates. Unchanged, and the
+  reason the guard exists at all.
+- **A human quote-replies to the gate's trigger comment,** copying its body: it counts and the guard
+  activates, because the author is another account. The copied body is irrelevant in both directions
+  now – no exclusion rule reads a body, so neither a quoted trigger text nor a quoted marker can move
+  the item either way.
+- **The operator types an objection themselves:** it no longer counts, whichever surface it sits on
+  and whatever it says. This is the requested change rather than a gap, and Phase 6's summary names
+  every such item so the merge is never quiet about it.
+- **The operator writes the configured trigger text by hand:** excluded – not for what it says, but
+  because the operator's account is the account this run is authenticated as, exactly like every
+  other comment that operator types. The advice that a configured trigger should be a distinctive
+  mention survives, but not for this reason any more: it has to actually summon the reviewer, and
+  Phase 3's idempotency compares the configured text against the bodies on the pull request.
 - **`viewer-read` fails, is unsupported, or exposes no login:** the gate cannot identify its own
   writes on the manual path, so every remaining non-bot item counts, the guard activates, and the
   missing identity is reported as the reason for the block.
 - **App mode with an installation token:** `viewer-read` may fail there, but every item the gate
-  wrote is already excluded by rule 1 before the identity is consulted, so the run proceeds
+  wrote is already excluded by the bot rule before the identity is consulted, so the run proceeds
   normally. This is the case the evaluation order exists for.
+- **An item this run's own account wrote that the surface reports with `authorType: unknown`:** the
+  identity rule still excludes it, because that rule reads the `login` and not the account class. If
+  `viewer-read` failed as well, it counts – the residual, and the fail-safe direction.
+- **An item whose `login` is absent while `viewer-read` succeeded:** the identity rule cannot match,
+  so it counts. Same fail-safe direction, and the reason the boundary is stated with the rule.
 - **The authenticated identity changes between runs** (a different token): earlier writes are no
   longer recognized as own output and count as human. Fail-safe and correct – the gate genuinely
   cannot prove they were its own.
-- **A thread `{{SKILL:iterate}}` answered and resolved:** rule 2 keeps its replies out of the guard,
-  so a successful earlier run does not block the next one. A reply from **any other** account inside
-  that same resolved thread still counts – resolution is not consent.
+- **A thread `{{SKILL:iterate}}` answered and resolved:** its replies carry this run's own account,
+  so the identity rule excludes them and a successful earlier run does not block the next one. The
+  thread's resolution plays no part in that any more – it never has to, because authorship settles
+  it. A reply from **any other** account inside that same resolved thread still counts and still
+  holds the guard: step 3 evaluates every item in a resolved thread individually, and a resolution is
+  not consent.
 - **`{{SKILL:iterate}}` could not resolve a thread it answered:** it keeps its reply and reports the
-  manual resolution, which leaves an unresolved item behind that carries the operator's account in
-  manual mode. On a later run that item is in no resolved thread and its body is not the trigger
-  text, so it counts as human and the guard activates. Thread **reply** is unsupported on Forgejo,
-  so the reply itself is what cannot be written there; thread **resolution** is supported. Since a
-  Forgejo merge is now reachable, this genuinely costs a merge rather than blocking one that was
-  unavailable anyway: the operator clears it by resolving the thread by hand, or by leaving no such
-  item behind.
+  manual resolution, which leaves an unresolved item behind carrying this run's own account in manual
+  mode. That item no longer counts – the identity rule excludes it, resolved or not – and Phase 6
+  names it. Thread **reply** is unsupported on Forgejo, so the reply itself is what cannot be written
+  there; thread **resolution** is supported. Since a Forgejo merge is reachable, this is a real
+  loosening there rather than a theoretical one: the operator no longer has to resolve such a thread
+  by hand before this gate will merge.
 - **The delegated run's summary comment:** it is suppressed for every gate-initiated round, so it
-  never becomes such an item. A summary comment from a `{{SKILL:iterate}}` run the operator started
-  themselves does exist, and rule 4 excludes it by its author plus its leading marker; before that
-  rule it fell through to the catch-all and blocked the merge permanently.
+  never appears at all – for the four grounds the "Delegation contract" states, none of which is the
+  guard any more. A summary comment from a `{{SKILL:iterate}}` run the operator started **themselves**
+  does exist, and the identity rule excludes it by its author alone; posted under a **different**
+  account than this run's it counts, like any other foreign comment.
 - **A pull request this delivery annotated itself** (`delivery.prReview` published inline findings):
-  once a finding is implemented, answered, and its thread resolved, rule 2 excludes the outbound
-  comment by the `<!-- effective-flow-pr-review -->` marker, so the gate can merge the pull request
-  its own product wrote on. While such a thread is still unresolved the finding is unhandled and it
-  keeps counting, which is the intended block.
-- **The same delivery's outside-diff findings:** they are published as one top-level comment carrying
-  the same marker, and rule 4 excludes it by author plus leading marker. The two surfaces therefore
-  block differently on purpose – an inline finding blocks until its thread is resolved, an
-  outside-diff finding never blocks – because a top-level comment has no resolved state to clear.
-  Before rule 4 named this marker, such a comment blocked the merge with no recovery short of
-  deleting the record, since implementing the finding leaves the comment in place and
-  `{{SKILL:iterate}}` skips the marker as this tool's own output.
-- **A review body carrying an Effective Flow marker:** no rule covers it, and none is needed. The
-  guard reads the review threads and the pull-request comments; a review body is in neither, so it
-  can never hold the guard.
+  under the account this run is authenticated as, those inline comments are excluded by author alone
+  – resolved or not. Where such a finding used to block until its thread was resolved, it now stops
+  blocking immediately, which is a genuine loosening: an unhandled finding of this product's own
+  review can be merged past. Phase 6 names each one, so it is reported rather than silent. Published
+  under a **different** account they still count and still block while their thread is unresolved.
+- **The same delivery's outside-diff findings:** published as one top-level comment, and excluded by
+  the same author rule. The two surfaces no longer block differently: neither blocks under this run's
+  own account, and both count under any other. Phase 4's unmatched-thread report reaches no top-level
+  comment at all, which is why Phase 6's report of excluded items covers both surfaces rather than
+  threads alone.
+- **A review body rather than a comment:** no rule covers it, and none is needed. The guard reads the
+  review threads and the pull-request comments; a review body is in neither, so it can never hold the
+  guard.
 - **`mergeGate.bots` is empty:** the bot round is skipped and the merge is not blocked on it.
 - **Branch protection requires an approval:** the forge reports a blocked merge state; report that a
   human approval is missing and never attempt to approve.
@@ -1239,8 +1224,8 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   `mergeGate.requireAllChecks: true` this blocks the merge and enters the repair loop like any other
   failure. With `false` the forge merge state decides and the red optional check is reported but not
   treated as a blocker.
-- **A check is red and a human comment is open:** the CI repair runs, the merge does not. This is the
-  one case where the guard is deliberately narrow.
+- **A check is red and a comment from another account is open:** the CI repair runs, the merge does
+  not. This is the one case where the guard is deliberately narrow.
 - **`pr-checks-wait` times out or is unsupported:** report the pending checks and ask once; never
   fall back to a prompt-driven poll loop.
 - **Forgejo:** `pr-status-read`, `pr-merge`, and `viewer-read` are supported; `pr-checks-wait`,
@@ -1251,11 +1236,11 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
     `mergeGate.requireAllChecks: false` the existing fail-closed rule therefore treats every check
     as blocking – stricter than the default, never looser.
   - **`mergeGate.bots` entries must be spelled as the bare login.** Forgejo states no account class,
-    so every author normalizes to `authorType: 'unknown'`: rule 1's bot case never fires there, a
-    bot comment from an account no entry names counts as human and holds the guard, and an entry
-    spelled `X[bot]` matches no bare Forgejo login at all – leaving that reviewer permanently **not
-    started** and blocking Phase-4 condition 5. The fail-safe direction is correct; on Forgejo it is
-    the only direction.
+    so every author normalizes to `authorType: 'unknown'`: the bot rule's `authorType` case never
+    fires there, a bot comment from an account no entry names counts as human and holds the guard –
+    its login is neither configured nor this run's own – and an entry spelled `X[bot]` matches no
+    bare Forgejo login at all, leaving that reviewer permanently **not started** and blocking Phase-4
+    condition 5. The fail-safe direction is correct; on Forgejo it is the only direction.
   - **The conflict-resolution path has no entry point there.** Forgejo reports no merge state, so
     neither `BEHIND` nor `DIRTY` is ever observed, and `mergeable: false` is deliberately reported as
     unstated rather than as `CONFLICTING`. Step 1's forward merge is therefore reached only when
@@ -1301,11 +1286,13 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
 - Make **one** resolution attempt per round. There is no retry loop inside the step; a conflict that
   survives is reported, and `mergeGate.maxRounds` bounds how often the run returns to it.
 - Never approve a pull request and never request changes, not even to unblock a merge.
-- Never read an Effective Flow marker as authorship evidence **on its own**, and write none. A
-  marker is only ever one condition beside the author, and only as the body's leading line.
-  Evaluate the guard in Phase 1's order – bot authorship first, then this tool's own items inside a
-  resolved thread, then the authenticated login plus the exact configured trigger text, then this
-  tool's own top-level comment by its leading iterate marker – and count everything else as human.
+- Evaluate the guard in Phase 1's order – bot authorship first, then the item's login against this
+  run's own authenticated login – and count everything else as human. The guard's **exclusions** read
+  authorship only: no exclusion rule reads a body, and none reads a thread's resolution state. A
+  thread's `resolved` state decides one thing and nothing else – whether that thread is open at all –
+  never whether an item inside it is excluded, so an item another account wrote into a resolved
+  thread counts like any other. This workflow writes no Effective Flow marker of its own either, so no
+  marker anywhere on the pull request is evidence about anything here.
 - Never let an unprovable identity clear the guard. A failed, unsupported, or login-less
   `viewer-read` makes every remaining non-bot item count, which activates the guard wherever such an
   item exists and leaves a pull request without one unblocked; report the missing identity as the

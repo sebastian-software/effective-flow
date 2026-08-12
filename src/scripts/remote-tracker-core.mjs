@@ -438,11 +438,7 @@ export function buildFindingPayload(input, options = {}) {
   };
 }
 
-// Exported so the merge gate's contract test can compare its rule-2 enumeration against the real
-// set of writers. The guard names both pull-request markers literally rather than referring to this
-// table, so that adding a comment kind cannot widen a fail-open exclusion by itself; the test is
-// what turns that divergence into a build failure instead of a silent one.
-export const COMMENT_MARKERS = Object.freeze({
+const COMMENT_MARKERS = Object.freeze({
   planning: 'effective-flow-plan-issues',
   apply: 'effective-flow-apply-issues',
   pr: 'effective-flow-iterate',

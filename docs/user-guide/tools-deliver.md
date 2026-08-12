@@ -97,15 +97,17 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    head, triggers only the ones that have not started, waits, and then delegates their findings to
    `/effective-flow iterate`, which fixes the valid ones, replies, and resolves the threads. See
    [Three reviewer states, not two](#three-reviewer-states-not-two).
-3. **Human-comment guard** – if any unresolved comment or thread has a human author, the run
-   implements no review note and merges nothing. CI repair stays permitted even then, and so does
-   the repair of a conflict with the base. A top-level
-   comment whose author the forge reports as a bot account never holds the guard, whether or not
-   that bot is listed in `mergeGate.bots` – a CI, coverage, or dependency bot commenting on the
-   pull request therefore does not block the merge. A bot finding the run assesses but does not
-   implement – because the guard is active, or because the finding was rejected – gets no thread
-   reply at all: it is named in the run's chat summary instead, and the thread is left untouched
-   and unresolved. See
+3. **Human-comment guard** – if any unresolved comment or thread was written by an account that is
+   **neither a bot nor the one the run is authenticated as**, the run implements no review note and
+   merges nothing. That is what "human" means here: the guard decides on the author record alone. A
+   comment from the gate's own account never holds it – including, in the usual manual mode, a
+   comment you typed yourself – and neither does an item whose author the forge reports as a bot
+   account, on either surface and whether or not that bot is listed in `mergeGate.bots`, so a CI,
+   coverage, or dependency bot commenting on the pull request does not block the merge either. CI
+   repair stays permitted even when the guard is active, and so does the repair of a conflict with
+   the base. A bot finding the run assesses but does not implement – because the guard is active, or
+   because the finding was rejected – gets no thread reply at all: it is named in the run's chat
+   summary instead, and the thread is left untouched and unresolved. See
    [Recognizing its own writes across runs](#recognizing-its-own-writes-across-runs).
 4. **Merge** – only once every precondition holds (all checks green, the forge reports the pull
    request mergeable, the human guard is inactive, every configured bot has run, and every one of
@@ -123,10 +125,10 @@ exactly what is still blocking a pull request.
 request or submits a "request changes" review, never rewrites history (no amend, rebase, squash, or
 force-push of the head branch – a branch behind or in conflict with its base is only ever brought
 forward with a merge commit, and a conflict that could only be resolved by rewriting history is
-reported instead), and never merges past an open human comment. It implements no code itself: CI
-repairs and bot-finding fixes are delegated to `/effective-flow iterate`, and a merge conflict is
-delegated to a dedicated resolver worker. The gate itself only ever writes that one merge commit and
-pushes it.
+reported instead), and never merges past an open comment from an account that is neither a bot nor
+the one it runs as. It implements no code itself: CI repairs and bot-finding fixes are delegated to
+`/effective-flow iterate`, and a merge conflict is delegated to a dedicated resolver worker. The gate
+itself only ever writes that one merge commit and pushes it.
 
 #### Resolving a conflict with the base
 
@@ -186,8 +188,8 @@ Three details worth knowing:
 
 - **The human-comment guard does not block the resolution.** A conflict with the merge target is an
   objective defect of the branch, not a position a reviewer is negotiating, so the resolution runs
-  even while an open human comment blocks everything else. What the guard keeps blocking is
-  unchanged: review-driven implementation and the merge itself.
+  even while an open comment from someone else blocks everything else. What the guard keeps blocking
+  is unchanged: review-driven implementation and the merge itself.
 - **Completion mode `report` does not withhold it either.** `report` withholds exactly one action:
   the merge of the pull request in the final phase. A `report` run therefore still resolves a
   conflict and pushes that one merge commit. That is deliberate – a `report` run would otherwise
@@ -269,35 +271,52 @@ What you will see when a late thread turns up:
 
 #### Recognizing its own writes across runs
 
-The human-comment guard only works if the gate can tell its own writes apart from a person's, and
-it has to do that again on every later run – not only inside the run that wrote them. Two operating
-modes exist:
+The human-comment guard only works if the gate can tell its own writes apart from someone else's,
+and it has to do that again on every later run – not only inside the run that wrote them. It
+decides that from the **author record alone**: no comment body, no Effective Flow marker, and no
+thread resolution state takes any part in it. Two operating modes exist:
 
 - **App mode:** the gate posts as a dedicated bot account (planned, the way Greptile does today).
-  Its writes are recognized by authorship alone – a login listed in `mergeGate.bots`, matched with a
+  Its writes are recognized by authorship – a login listed in `mergeGate.bots`, matched with a
   trailing `[bot]` trimmed from each side when the forge reports that account as a bot, so one entry
   covers both of GitHub's APIs while a human account of the same name still has to match exactly, or
   a normalized bot account type – so no identity lookup is involved and nothing further is needed.
-- **Manual mode (today):** the gate posts as the operator's own account, the same account a human
-  might also comment from. Its one own write, the trigger comment posted in the automatic-reviewer
-  round, is recognized by that account's authenticated identity **plus** an exact match against the
-  configured `mergeGate.bots.<login>.trigger` text. A comment that matches only one of the two – the
-  right account with different wording, or the right wording from a different account – does not
-  count as the gate's own.
+- **Manual mode (today):** the gate posts as the operator's own account, the same account a person
+  might also comment from. It reads that account's authenticated login once per run and excludes
+  **every** comment and thread carrying it – whatever the text says, on either surface, and whether
+  or not the thread is resolved. The comparison is on the login exactly as the forge reported it:
+  no case folding, no `[bot]` trimming (that trim belongs to bot matching, not to identity), and an
+  item the forge reports without a login cannot match, so it counts. If the identity read fails or
+  is unavailable, nothing can be proven as the gate's own, so every non-bot item counts and the
+  guard activates – reported as the reason.
 
-Because manual mode matches on exact wording, **the configured trigger text should be a distinctive
-mention.** A generic value such as `please review` could be typed by a person who genuinely wants a
-discussion; that comment would then match exactly and be excluded from the guard. A mention like
-`@greptileai` does not have this problem.
+**What this means for a comment you write yourself.** In manual mode you and the gate are the same
+account, so a comment you type on the pull request does **not** hold the guard – not as a top-level
+comment, not as an unresolved thread, and not however long you leave it. This is a deliberate
+loosening: the gate assumes the operator starting it is present by definition, and the guard exists
+to stop it merging out from under **someone else's** open discussion. It is not configurable, so if
+a comment has to stop this gate it must come from another account – or simply do not start the run,
+or start it in report mode. The change is not silent either: the run's chat summary names every
+comment and thread it skipped because its own account wrote it, so an objection you typed by hand
+shows up in the report instead of blocking.
 
-The gate recognizes Effective Flow's **own published review** the same way. When
-`delivery.prReview` annotated the pull request, findings on a line inside the diff arrive as review
-threads and stop counting once their thread is resolved. A finding whose line lies outside the diff
-cannot be anchored to a thread, so it arrives as one ordinary pull-request comment — and a
-pull-request comment has no resolved state to clear. The gate therefore treats that comment as its
-own output and merges past it. The comment stays on the pull request to be read; it is this
-product's own review, not a person's open question, and nothing in the workflow was ever going to
-act on it.
+**The configured trigger text should still be a distinctive mention** – for a different reason than
+before. It has to actually summon the reviewer, and the gate suppresses a duplicate trigger by
+comparing that exact text against the comments its own account already left for the current head. A
+generic value such as `please review` could be a sentence you typed yourself after the head commit,
+and the gate would then read it as a trigger it had already posted and skip the mention the reviewer
+was waiting for. A mention like `@greptileai` does not have this problem.
+
+Effective Flow's **own published review** is recognized by the same single rule. When
+`delivery.prReview` annotated the pull request from the account the gate runs as, both surfaces it
+writes – the findings on a line inside the diff, which arrive as review threads, and the single
+outside-diff finding, which has no line to anchor to and arrives as an ordinary pull-request comment
+– are excluded by authorship alone. For the outside-diff comment that is what it effectively was
+before; for the inline findings it is a change: they used to hold the guard until their thread was
+resolved, and now they stop holding it at once. An unhandled finding from this product's own review
+can therefore be merged past. The findings stay on the pull request to be read, and the chat summary
+names each one that was skipped. Published from a **different** account than the gate runs as, they
+count like any other foreign comment and block as before.
 
 Two further things worth knowing about what the gate writes:
 
@@ -308,7 +327,9 @@ Two further things worth knowing about what the gate writes:
 - **The gate writes no Effective Flow marker.** A marker in the raw comment body would keep
   announcing which tool composed it, so the trigger comment carries only the configured text and
   nothing else. Reading the raw body of anything the gate posted shows no tool or model attribution
-  beyond the posting account itself.
+  beyond the posting account itself. A marker would not buy the guard anything in either direction
+  either: the guard reads no body, so no marker on this pull request is evidence about anything it
+  decides.
 
 **Typical call:**
 
@@ -322,12 +343,14 @@ Two further things worth knowing about what the gate writes:
   at the start; a non-interactive run behaves as report-only.
 - The result is either a merged pull request or a chat report naming the exact condition that is
   still blocking the merge (pending or failing checks, a reviewer still running or not yet answered,
-  a reviewer thread that arrived too late for any round to assess it, an open human comment, a
-  conflict with the base the run was not allowed or not able to resolve, a non-mergeable state, or a
-  squash-merge title that is not a Conventional Commit). The report also names every bot finding the
-  run assessed but did not implement, since those get no thread reply, every configured `.check`
-  context that never appeared at all, and – for every conflict it met – the per-file record of how it
-  was resolved.
+  a reviewer thread that arrived too late for any round to assess it, an open comment from an account
+  that is neither a bot nor the one the run is authenticated as, a conflict with the base the run was
+  not allowed or not able to resolve, a non-mergeable state, or a squash-merge title that is not a
+  Conventional Commit). The report also names every bot finding the
+  run assessed but did not implement, since those get no thread reply, every comment and unresolved
+  thread that did **not** hold the guard because the run's own account wrote it, every configured
+  `.check` context that never appeared at all, and – for every conflict it met – the per-file record
+  of how it was resolved.
 - The check gate and the merge are performed by the remote-tracker helper described in
   [Remote tracker](remote-tracker.md#merge-gate-operations), on both providers. Forgejo supports the
   status read, the merge and the identity read; only the blocking check wait is unsupported there,

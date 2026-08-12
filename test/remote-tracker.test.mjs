@@ -237,6 +237,20 @@ test('planning, apply, and PR comment builders emit canonical markers and reject
     () => buildCommentPayload('pr', { body: 'Generated with Codex' }),
     (error) => error.code === 'INVALID_PAYLOAD',
   );
+
+  // The complete set of comment kinds, read back out of the rejection message because the marker
+  // table itself is module-private. A new kind must be assessed against `iterate`'s Phase 2
+  // exclusion list before it is added here: that list names its markers literally rather than
+  // deriving them from this table, so a pull-request-facing writer nobody added to it publishes
+  // bodies an `iterate` round then classifies as somebody else's input — and a writer added to it
+  // by reflex would have Effective Flow skipping threads nobody decided it should skip. Failing
+  // here is what turns that into a decision instead of a default.
+  assert.throws(
+    () => buildCommentPayload('release', { body: 'Shipped' }),
+    (error) =>
+      error.code === 'INVALID_PAYLOAD' &&
+      error.message === 'comment kind must be one of planning, apply, pr, pr-review',
+  );
 });
 
 test('dedup unions issue numbers before comparing canonical and legacy signatures', () => {
@@ -2175,13 +2189,14 @@ test('the Forgejo review fallback comment carries the pr-review marker, not the 
 });
 
 test('a stamped marker opens the body, which is what a quote-reply cannot reproduce', async () => {
-  // The merge gate's human-comment guard excludes an `iterate` reply inside a resolved thread by
-  // its marker, because in manual mode the tool and the operator share one account and authorship
-  // alone cannot separate them. That rule is only safe while the marker is the body's LEADING
-  // line: both providers prefix a quoted body with `>`, so a quote-reply carries a copied marker
-  // inside a blockquote where it no longer opens the body. If the helper ever appended the marker
-  // instead, or tolerated it mid-body, any person could reproduce one by pressing quote and have
-  // their own objection read as this tool's output.
+  // `iterate` excludes the threads carrying one of these markers from the ones it classifies, so
+  // the marker is what keeps a round from reading Effective Flow's own output back as third-party
+  // input. That exclusion is only safe while the marker is the body's LEADING line: both providers
+  // prefix a quoted body with `>`, so a quote-reply carries a copied marker inside a blockquote
+  // where it no longer opens the body. If the helper ever appended the marker instead, or tolerated
+  // it mid-body, any person could reproduce one by pressing quote and have their own objection read
+  // as this tool's output. The merge gate's human-comment guard is deliberately not part of this
+  // rationale any more: it reads no body at all and excludes its own account's items by authorship.
   for (const kind of ['pr', 'pr-review']) {
     const operation = kind === 'pr' ? 'pr-comment-build' : 'pr-review-comment-build';
     const envelope = await executeOperation(operation, { body: 'first line\nsecond line' });
@@ -2199,7 +2214,8 @@ test('a stamped marker opens the body, which is what a quote-reply cannot reprod
 test('an already-quoted marker is not treated as a stamp and does not suppress a new one', async () => {
   // A quote-reply body literally contains the marker behind a `>` prefix. The stamper's
   // idempotency check must not mistake that for an existing stamp, or a genuine reply quoting an
-  // earlier one would go out unmarked and the guard would later read it as a human's.
+  // earlier one would go out unmarked and the next `iterate` round would classify it as somebody
+  // else's input.
   const quoted = '> <!-- effective-flow-iterate -->\n> earlier reply\n\nmy answer';
   const envelope = await executeOperation('pr-comment-build', { body: quoted });
   assert.equal(envelope.ok, true);
@@ -2212,9 +2228,9 @@ test('an already-quoted marker is not treated as a stamp and does not suppress a
 test('review-thread-reply stamps the iterate marker as the reply body’s leading line', () => {
   // The marker contract states that these markers are never written by hand, but this operation
   // used to pass the caller's body through untouched — no payload builder involved — while
-  // `iterate` was told to "use the marker". The merge gate matches it as an exact string, so an
-  // unstamped reply came back on the next run as a human comment and blocked the merge on this
-  // tool's own output.
+  // `iterate` was told to "use the marker". `iterate` matches it as an exact string when it decides
+  // which threads are its own already processed work, so an unstamped reply came back on the next
+  // round as third-party input and was classified again.
   const plan = buildCommandPlan(
     'review-thread-reply',
     { number: 7, commentId: 42, payload: { body: 'Fixed in the latest commit.' } },
@@ -4726,8 +4742,8 @@ test('pull-request comments normalize their author exactly as review threads do'
   // GitHub's REST API reports a bot account *with* the `[bot]` suffix and states its class in the
   // simple-user `type` field, while the GraphQL review-thread query reports the same account without
   // the suffix and spells the same class as `__typename: "Bot"`. Leaving this read unnormalized cost
-  // more than a spelling: a top-level comment carried no `authorType` at all, so merge-gate's
-  // human-comment guard could establish bot authorship only from a configured login, and its Phase-3
+  // more than a spelling: a top-level comment carried no `authorType` at all, so merge-gate's Phase 1
+  // rule 1 could exclude a bot's comment only through a `mergeGate.bots` entry, and its Phase-3
   // trigger idempotency — which reads `authorType: bot` to recognize its own comment in app mode —
   // could never be proven.
   const runner = fakeRunner([
@@ -4807,15 +4823,16 @@ test('pull-request comments normalize their author exactly as review threads do'
   // normalization. `github-actions[bot]` appears in no `mergeGate.bots` table, and this payload
   // states no class at all, so the login suffix is the only evidence there is. This record is what
   // merge-gate's Phase 1 rule 1 reads: `authorType: bot` excludes the comment right there, before
-  // rule 5's catch-all can count it as human and hold the human-comment guard. Before this read
+  // rule 3's catch-all can count it as human and hold the human-comment guard. Before this read
   // normalized its author, a top-level comment carried a bare login string and no `authorType` at
-  // all, so every unconfigured bot's comment reached rule 5 and blocked the merge — which makes
-  // this arm, and not its prose counterpart, the assertion that fails on the old shape.
+  // all, so every unconfigured bot's comment reached the catch-all and blocked the merge — which
+  // makes this arm, and not its prose counterpart, the assertion that fails on the old shape.
   //
   // Its counterpart is the merge-gate prose test `a bot-typed author is excluded before the
   // catch-all counts it as human` in `test/workflow-contracts.test.mjs`. That one is a forward
-  // regression guard only: Phase 1's rules 1 and 5 are textually unchanged by this normalization,
-  // so it passes on the old and the new behaviour alike and proves nothing about the widening.
+  // regression guard only: Phase 1's bot rule and its catch-all are textually unchanged by this
+  // normalization, so it passes on the old and the new behaviour alike and proves nothing about the
+  // widening.
   assert.deepEqual(envelope.data.result[6].author, {
     login: 'github-actions[bot]',
     isBot: true,
@@ -4863,8 +4880,8 @@ test('pull-request comments normalize their author exactly as review threads do'
 
   // The contrasting arm, and the reason the one above is a narrowing of the guard rather than a
   // hole in it: an ordinary login on that same class-less surface stays out of `bot`, so rule 1
-  // does not reach it and rule 5 still counts it as human. Exactly one human comment keeps the
-  // guard active, which is the property the bot arm must not have widened away.
+  // does not reach it and rule 3's catch-all still counts it as human. Exactly one human comment
+  // keeps the guard active, which is the property the bot arm must not have widened away.
   assert.deepEqual(forgejo.data.result[1].author, {
     login: 'operator',
     isBot: null,

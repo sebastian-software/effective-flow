@@ -394,9 +394,10 @@ different things:
   pull request it just created. It keeps its name and is untouched by the rename.
 - **`mergeGate.*`** (this block) configures the tool that takes an **existing** pull request from
   open to merged: it waits for the checks, has failures repaired, evaluates the notes of the
-  configured automatic reviewers, refuses to implement or merge while a human comment is open, and
-  finally merges. If the project still carries these keys as `prReview.*`, show the recorded legacy
-  values as the current ones and say that Step 6 migrates the block.
+  configured automatic reviewers, refuses to implement or merge while a comment from an account
+  that is neither a bot nor the one it runs as is open, and finally merges. If the project still
+  carries these keys as `prReview.*`, show the recorded legacy values as the current ones and say
+  that Step 6 migrates the block.
 
 Explain first, then ask. The gate is safe without any of these keys, so "keep the defaults" is a
 perfectly good answer.
@@ -461,9 +462,12 @@ value or default as the pre-selection:
   (e.g. `@greptileai`). Ask for it once per **reviewer** left after that collapse, never once per
   configured login. A login containing brackets is a valid middle segment, because the table encoding
   splits on `.` only. Say when asking that this should be a **distinctive mention** such as
-  `@greptileai`, not generic prose such as `please review`, because the gate recognizes its own
-  trigger comment by an exact match against this string — a generic value could be matched by an
-  ordinary human comment, which would then be excluded from the human-comment guard.
+  `@greptileai`, not generic prose such as `please review`, because the literal string does two jobs.
+  It has to actually summon that reviewer — generic prose mentions nobody and the round then waits
+  for output no one requested. And the gate suppresses a duplicate trigger by comparing this exact
+  text, trimmed, against the comments its own account already left on the current head; in manual
+  mode that account is the operator's own, so a phrase the operator might type by hand reads as a
+  trigger already posted and the reviewer is waited for instead of summoned.
 - `mergeGate.bots.<login>.check`: free text, the commit-status context or check-run name that this
   reviewer publishes against a head commit (e.g. `recensor/review`). Ask for it once per **reviewer**
   as well, directly after that reviewer's trigger text, and offer "not set" as the answer —

@@ -1854,9 +1854,11 @@ const PULL_REQUEST_MARKERS = [
   '<!-- effective-flow-pr-review -->', // Effective Flow's published review findings
 ];
 
-// The merge gate writes none. It recognizes its own trigger comment across runs through
-// authorship plus the configured trigger text, so a marker would only put the tool's name
-// into a body posted under the operator's own account.
+// The merge gate writes none. Its human-comment guard reads no body at all — it excludes an item
+// its own account wrote by that author record alone — and the one place that still compares a body
+// is Phase 3's trigger idempotency, which matches the configured trigger text from this gate's own
+// account for the current head and needs no marker for it either. A marker would only put the
+// tool's name into a body posted under the operator's own account.
 //
 // The retired literal is read out of the marker contract that documents its removal instead of
 // being pinned here. Pinning it is what let the token rot through the rename: a marker
@@ -1964,9 +1966,10 @@ test("iterate excludes Effective Flow's own marked threads from the ones it clas
 });
 
 test('the merge gate writes no marker of its own', () => {
-  // The gate used to mark its trigger comment and its thread replies. Both jobs are gone:
-  // authorship plus the configured trigger text now identify its one own write across runs,
-  // and a marker in the raw body would announce which tool composed a comment that manual
+  // The gate used to mark its trigger comment and its thread replies. Both jobs are gone: the
+  // guard recognizes every own write across runs by its author alone, Phase 3's idempotency check
+  // recognizes the trigger comment by that author plus the configured trigger text for the current
+  // head, and a marker in the raw body would announce which tool composed a comment that manual
   // mode posts under the operator's own account.
   const token = gateMarkerToken();
   assert.equal(
@@ -1999,17 +2002,66 @@ test('the merge gate writes no marker of its own', () => {
   }
 });
 
+test('a marker counts only as a body’s leading line, and a reader must require that position', () => {
+  // This rule used to be pinned through `merge-gate.md`, whose guard excluded an item by a marker
+  // and therefore had to say where a marker counts. The guard reads no body any more, so those
+  // pins left the gate with it — but the requirement did not become irrelevant, it only lost its
+  // loudest reader. `iterate` still skips a thread carrying one of these markers, and its own
+  // exclusion rule states no position, so this contract is the single place the requirement is
+  // written down. Both providers prefix a quoted body with `>`, which means anyone who presses
+  // quote-reply reproduces a marker inside a blockquote; a reader that accepts a marker found
+  // anywhere therefore reads a third party's comment as Effective Flow's own output. The behaviour
+  // side is covered in `test/remote-tracker.test.mjs` — the stamper puts the marker on the first
+  // line and refuses to treat a quoted one as a stamp — and this is the prose half that keeps a
+  // reader obliged to require it.
+  const contract = flat(
+    section(
+      source('src/shared/pr-review-comments.md'),
+      '### Idempotency via the Effective Flow markers',
+    ),
+  );
+
+  // Where a marker counts, stated as an exclusive position rather than as a description of how the
+  // stamper happens to write one.
+  assert.match(
+    contract,
+    near('(?:leading line|first line|opens the body)', '(?:only that position|that position)', 250),
+    'the marker contract must state that only the body’s leading line counts as a marker',
+  );
+
+  // And the obligation on the reading side, which is the half a writer-only rule leaves open: a
+  // stamper that always prepends still lets a reader search the whole body.
+  assert.match(
+    contract,
+    near('reader', '(?:require|only honou?rs?)[^.]{0,60}position', 300),
+    'the marker contract must require the reader to demand that position, not merely the writer to produce it',
+  );
+
+  // With the reason, so the requirement survives an editor who reads it as a formatting detail.
+  assert.match(
+    contract,
+    near('quote-repl', '(?:blockquote|no longer opens|`>`)', 300),
+    'the position requirement must name the quote-reply that defeats a whole-body search',
+  );
+});
+
 test('the merge gate evaluates bot authorship before it consults the identity lookup', () => {
   const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
 
   // The rules are an ordered evaluation, not a set of independent conditions.
   assert.match(phase1, /\border\b/i, 'Phase 1 must state that its rules are evaluated in order');
 
-  // Anchored on the tokens that carry each rule — the configured-bot key, the thread state,
-  // and the key that supplies the trigger text — so the order can be pinned without pinning a
-  // sentence. `mergeGate.bots` is matched with its backticks, which keeps the bot rule apart
-  // from the longer trigger key that contains it.
-  ordered(phase1, '`mergeGate.bots`', 'resolved', '`mergeGate.bots.<login>.trigger`');
+  // Anchored on the heading of each of the three rules rather than on a sentence inside it, so a
+  // reworded rationale stays green while a reordered evaluation fails. The order is the whole
+  // contract: bot authorship, then this run's own account, then the catch-all. Hoisting the
+  // identity rule above the bot rule is the refactor this pins against, and appending the bot rule
+  // after the catch-all would make it unreachable.
+  ordered(
+    phase1,
+    '**The author is a bot**',
+    "**The author is this run's own account**",
+    'Everything else counts as human',
+  );
 
   // This is the assertion that guards app mode. `viewer-read` maps to `gh api user`, which
   // can legitimately fail on an installation token, so the bot rule must be decided from
@@ -2027,8 +2079,9 @@ test('the merge gate evaluates bot authorship before it consults the identity lo
 });
 
 test('a bot-typed author is excluded before the catch-all counts it as human', () => {
-  // What this test is, and what it is not. Phase 1's rules 1 and 5 are textually unchanged by the
-  // author normalization `pr-comments-read` now performs, so every assertion below is satisfied by
+  // What this test is, and what it is not. Phase 1's bot rule and its catch-all are textually
+  // unchanged by the author normalization `pr-comments-read` performs, so every assertion below is
+  // satisfied by
   // the rule as it stood before that change too. This is a forward regression guard on the rule,
   // never evidence of the behaviour change. The half that detects the change is the
   // unconfigured-bot arm of `pull-request comments normalize their author exactly as review threads
@@ -2043,9 +2096,9 @@ test('a bot-typed author is excluded before the catch-all counts it as human', (
   // the normalization test would stay green while it happened.
   const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
 
-  // Both rules are picked by content, deliberately not by position. The numbered split also cuts at
-  // the inline "counts under rule 5. Requiring" inside rule 4, so an index-based pick lands on a
-  // slice that is not a rule at all and asserts against the wrong prose.
+  // Both rules are picked by content, deliberately not by position. The numbered split cuts at every
+  // " <n>. " a rule's own prose contains, so an index-based pick can land on a slice that is not a
+  // rule at all and assert against the wrong prose.
   const rules = phase1.split(/(?=\s\d+\.\s)/);
   const botRule = rules.find((item) => /\*\*The author is a bot\*\*/.test(item));
   const catchAll = rules.find((item) => /Everything else counts as human/.test(item));
@@ -2093,190 +2146,223 @@ test('a bot-typed author is excluded before the catch-all counts it as human', (
   );
 });
 
-test("a resolved thread excludes only this tool's own items", () => {
-  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
-
-  // The evaluation is a numbered list, so the rule that carries the resolved-thread case is
-  // sliced out of it: a neighbouring rule names `viewer-read` and bot authorship too, and
-  // matching those across the item boundary would pass on a rule that dropped its own.
-  const rule = phase1.split(/(?=\s\d+\.\s)/).find((item) => /\bresolved\b/i.test(item));
-  assert.ok(rule, 'Phase 1 must carry a rule about items inside a resolved thread');
-
-  // The author condition is the first half of the contract. Author-agnostic reads as "resolved
-  // means settled", but neither provider auto-unresolves a thread when someone replies into it: a
-  // reviewer objecting inside a thread `iterate` resolved would be discarded and the gate would
-  // merge under an open objection — fail-open, in the one place this guard exists to be fail-safe.
-  assert.match(
-    rule,
-    /viewer-?read|`?authorType`?|\bbot\b/i,
-    'an item in a resolved thread may only be excluded through its author',
-  );
-
-  // The second half, and the one the author condition cannot cover: in manual mode the operator
-  // and this tool are the SAME account, so authorship alone still discards an objection the
-  // operator types into such a thread. The helper stamps every item this tool writes into a
-  // thread, so the marker is what separates it from a hand-typed one. Dropping this condition
-  // reopens the fail-open path for the single most likely objector on a manually driven pull
-  // request.
-  //
-  // BOTH pull-request markers must appear. The two directions stamp different ones by design —
-  // idempotency needs to tell which writer produced a body — while this rule needs the union.
-  // A rule that knew only the iterate marker could never exclude an outbound review comment,
-  // however resolved its thread and whoever wrote it, which is exactly the defect that made the
-  // gate refuse to merge a pull request this product had annotated itself.
-  for (const marker of ['effective-flow-iterate', 'effective-flow-pr-review']) {
-    assert.match(
-      rule,
-      new RegExp(`<!-- ${marker} -->`),
-      `an item in a resolved thread must be excludable by the ${marker} marker`,
-    );
-  }
-
-  // And the marker only counts where a quote-reply cannot put it. Both providers prefix a quoted
-  // body with `>`, so a copied marker lands inside a blockquote instead of opening the body.
-  // Without the position requirement the operator's own quoted objection carries the marker along
-  // and is discarded — the same bypass, one press of the quote button away.
-  assert.match(
-    rule,
-    /first line|leading line|opens the body|begins with it/i,
-    'the marker must only count as the body’s leading line, not anywhere in it',
-  );
-
-  // The rule's other property — that it decides per item rather than per thread, so it reaches
-  // `iterate`'s replies inside a resolved thread — is carried by the shape of the rule itself
-  // and is deliberately not asserted separately: every wording that survives the assertion
-  // above already speaks about an item's author, and every token set tried for the per-item
-  // half matched a thread-level rule too.
-});
-
-test("rule 2's marker enumeration stays in step with the helper's marker table", async () => {
-  // The rule names its markers literally instead of referring to the table, and that is deliberate:
-  // a reference would let a future comment kind join a fail-open exclusion automatically, with
-  // nobody deciding that it should. This test is the other half of that bargain — it turns the
-  // divergence into a build failure, so adding a writer forces a conscious choice about the guard
-  // rather than silently widening or silently under-covering it.
-  const { COMMENT_MARKERS } = await import('../src/scripts/remote-tracker-core.mjs');
-  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
-  const rule = phase1.split(/(?=\s\d+\.\s)/).find((item) => /\bresolved\b/i.test(item));
-
-  // Only the pull-request writers belong in this rule. `planning` and `apply` stamp issue
-  // comments, which never appear on a pull request's threads.
-  const pullRequestKinds = ['pr', 'pr-review'];
-  for (const kind of pullRequestKinds) {
-    assert.ok(
-      Object.hasOwn(COMMENT_MARKERS, kind),
-      `the marker table must still carry the ${kind} comment kind`,
-    );
-    assert.match(
-      rule,
-      new RegExp(`<!-- ${COMMENT_MARKERS[kind]} -->`),
-      `rule 2 must name the ${kind} marker ${COMMENT_MARKERS[kind]} from the marker table`,
-    );
-  }
-
-  // If a new pull-request-facing kind appears, this fails and the guard gets a decision instead of
-  // a default.
-  assert.deepEqual(
-    Object.keys(COMMENT_MARKERS).sort(),
-    ['apply', 'planning', 'pr', 'pr-review'],
-    'a new comment kind must be assessed against merge gate guard rules 2 and 4 before this list is updated',
-  );
-});
-
-test('the merge gate excludes its own top-level summary comment by author plus leading marker', () => {
-  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
-
-  // A top-level comment has no resolved state, so before this rule existed a summary comment from
-  // a directly invoked `iterate` run fell through to the catch-all and blocked the merge forever.
-  // The rule is sliced out by the property no other rule has: it is about a top-level comment and
-  // it names the iterate marker.
+// The identity rule of Phase 1, sliced out of the numbered evaluation. The slice isolates this rule
+// from the OTHER rules: a condition bot authorship carries above it, or the counting surfaces
+// below it, cannot satisfy a check about this one. It isolates nothing inside itself — two
+// thousand characters of rule and rationale sit in here, so a few-hundred-character window opened
+// on one sentence can still land in a paragraph further down. Where an assertion is about what the
+// exclusion covers, it binds `exclusionSentence()` instead.
+function identityRule(phase1) {
   const rule = phase1
     .split(/(?=\s\d+\.\s)/)
-    .find((item) => /top-level/i.test(item) && /<!-- effective-flow-iterate -->/.test(item));
-  assert.ok(rule, 'Phase 1 must carry a rule excluding this tool’s own top-level comment');
+    .find((item) => /\*\*The author is this run's own account\*\*/.test(item));
+  assert.ok(rule, 'Phase 1 must carry a rule excluding an item this run’s own account wrote');
 
-  // Author remains a required condition — the marker never excludes an item on its own.
+  // The boundary the cross-rule isolation rests on. If the numbered split stopped cutting between
+  // the rules, this slice would silently run on to the end of the evaluation and every window
+  // below would widen with it — a loss that shows up as nothing failing anywhere.
+  assert.doesNotMatch(
+    rule,
+    /Everything else counts as human/,
+    'the identity slice must end before the catch-all, or every assertion on it may read a neighbouring rule',
+  );
+  return rule;
+}
+
+// The one sentence of that rule which states the exclusion. What the exclusion covers — the body,
+// the surface, the resolution state — has to be read off this sentence rather than off the rule:
+// the rule's own rationale says `on either surface` some nine hundred characters below, about what
+// the change GIVES UP rather than about what the exclusion holds for, and a window wide enough to
+// reach it is satisfied by prose that would survive deleting the coverage entirely.
+function exclusionSentence(rule) {
+  const sentence = rule.split(/(?<=\.)\s/).find((part) => /\*\*excluded\*\*/.test(part));
+  assert.ok(
+    sentence,
+    'the identity rule must state in one sentence that a matching item is **excluded**',
+  );
+  return sentence;
+}
+
+test('the merge gate excludes every item its own account wrote', () => {
+  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
+  const rule = identityRule(phase1);
+
+  // The rule is an identity comparison and nothing else: the login the identity operation returned,
+  // against the login the item carries. Asserted as ONE window rather than as two independent
+  // matches over a two-thousand-character slice — separately, a rule that named `viewer-read` only
+  // in a rationale while comparing the item's login against something else satisfies both.
   assert.match(
     rule,
-    /viewer-?read|`?authorType`?|\bbot\b/i,
-    'a top-level comment may only be excluded when its author is this tool’s own',
+    near('viewer-?read', '`login`[^.]{0,80}(?:equals?|equal to|is the same as|identical)', 200),
+    'the identity rule must compare the item’s login against the login viewer-read returned',
   );
 
-  // And the marker only counts where a quote-reply cannot put it, exactly as in rule 2.
+  // And the comparison must EXCLUDE. Without this the rule can be inverted wholesale — "the item
+  // counts: whatever its body says, whichever of the two surfaces…" — while every other assertion
+  // in this file still passes. That mutation does not narrow the guard, it turns it inside out:
+  // every own write would hold it and no gate run could ever merge.
   assert.match(
     rule,
-    /first line|leading line|opens the body|begins with it/i,
-    'the marker must only count as the body’s leading line, not anywhere in it',
+    near('\\*\\*excluded\\*\\*', '`login`', 200),
+    'the identity rule must state that the matching item is excluded, not that it counts',
   );
 
-  // The catch-all must still come last. If the new rule were appended after it, it would never be
-  // reached, and the evaluation order is what this whole section is built on.
-  ordered(phase1, 'top-level', 'Everything else counts as human');
+  const exclusion = exclusionSentence(rule);
+
+  // No body is read, and that is a property of the exclusion itself rather than of the paragraph
+  // around it. Pinned as an explicit dismissal of the body next to the word, so a rule that made
+  // the body a condition again — "excluded when its body is also the configured trigger text" —
+  // fails here even though it never says "marker" and never says "trigger text".
+  assert.match(
+    exclusion,
+    /(?:whatever|regardless of|no matter (?:what|which))[^,;.]{0,40}\bbody\b/i,
+    'the exclusion must dismiss what the item’s body says instead of making it a condition',
+  );
+
+  // Resolution appears only to be dismissed, and in that same sentence. Asserted positively rather
+  // than as a bare absence of the word: the rule has to say that a resolved thread and an
+  // unresolved one are excluded alike, or a later editor could reintroduce the condition as an
+  // unstated assumption.
+  assert.match(
+    exclusion,
+    near('`resolved`', '(?:whether or not|regardless|no matter|either way)', 200),
+    'the identity rule must state that the thread’s resolution state is not a condition of it',
+  );
+
+  // The two conditions that used to sit beside authorship, pinned as absent. These are samples, not
+  // the invariant: a body comparison can be reintroduced under any wording that avoids both
+  // phrases, which is why the positive statement below is what actually carries the property.
+  assert.doesNotMatch(
+    rule,
+    /<!-- effective-flow-[a-z0-9-]+ -->/,
+    'the identity rule must name no marker: it decides on the author record alone',
+  );
+  assert.doesNotMatch(
+    rule,
+    /trigger text/i,
+    'the identity rule must not make the configured trigger text a condition',
+  );
+
+  // The invariant itself, where the contract states it: step 3 of this phase says that no exclusion
+  // rule reads a body at all. A positive claim about every rule survives rewording, and it is what
+  // makes the two absences above meaningful rather than a blacklist of two spellings. Tied to what
+  // the rules read INSTEAD, so "no exclusion rule reads a body" cannot be left standing beside a
+  // rule that quietly does.
+  assert.match(
+    phase1,
+    /no exclusion rule reads a body/i,
+    'Phase 1 must state positively that no exclusion rule reads a body',
+  );
+  assert.match(
+    phase1,
+    near('no exclusion rule reads a body', '(?:author record|authorship)', 300),
+    'the no-body invariant must name the author record as what the rules decide on instead',
+  );
+
+  // And the catch-all still follows it. An identity rule written after the catch-all is
+  // unreachable, and the entire section is built on stopping at the first rule that matches.
+  ordered(phase1, "**The author is this run's own account**", 'Everything else counts as human');
 });
 
-test("rule 4's marker enumeration and two-condition shape stay pinned", async () => {
-  // The same bargain rule 2 struck: the rule names its markers literally so a future comment kind
-  // cannot join a fail-open exclusion by itself, and this test is what turns the divergence into a
-  // build failure rather than a silent one.
-  const { COMMENT_MARKERS } = await import('../src/scripts/remote-tracker-core.mjs');
+test('the merge gate excludes its own top-level summary comment by author alone', () => {
   const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
+  const rule = identityRule(phase1);
 
-  // Sliced by the top-level property alone, deliberately not by a marker. The neighbouring rule-4
-  // test slices on `top-level` AND the iterate marker, which makes its own assertion about that
-  // marker tautological; a slice that does not mention a marker keeps the assertions below honest.
-  const rule = phase1.split(/(?=\s\d+\.\s)/).find((item) => /top-level/i.test(item));
-  assert.ok(rule, 'Phase 1 must carry a rule about this tool’s own top-level comment');
-
-  // Both pull-request writers land on a top-level comment: `iterate` posts its summary there, and
-  // the outbound direction posts the findings it could not anchor inside the diff. `planning` and
-  // `apply` stamp issue comments and never appear on a pull request.
-  for (const kind of ['pr', 'pr-review']) {
-    assert.ok(
-      Object.hasOwn(COMMENT_MARKERS, kind),
-      `the marker table must still carry the ${kind} comment kind`,
-    );
-    assert.match(
-      rule,
-      new RegExp(`<!-- ${COMMENT_MARKERS[kind]} -->`),
-      `rule 4 must name the ${kind} marker ${COMMENT_MARKERS[kind]} from the marker table`,
-    );
-  }
-
-  // The two-condition shape is load-bearing, not stylistic. A top-level comment is never resolved,
-  // so adopting rule 2's `resolved` condition here would not tighten this rule — it would make the
-  // exclusion unreachable and silently restore the deadlock the rule exists to prevent. Nothing
-  // else in the suite would notice, which is why the shape is asserted rather than assumed.
-  assert.match(rule, /both hold/i, 'rule 4 must hold on exactly the conditions it enumerates');
+  // A top-level comment has no resolved state on either provider, so a summary comment from a
+  // directly invoked `iterate` run used to fall through to the catch-all and block the merge
+  // forever. It is now excluded by its author, and the rule has to say so: the summary comment is
+  // the case that has no second condition available to it, which is why it is pinned by name.
   assert.match(
     rule,
-    /never resolved|no resolved state|would not tighten|disable it|no such container/i,
-    'rule 4 must state why thread resolution cannot become a condition of it',
+    near('summary comment', 'iterate', 400),
+    'the identity rule must name the delegated run’s summary comment among the writes it subsumes',
+  );
+
+  // Named among what the rule EXCLUDES, which is a second assertion rather than an alternation
+  // beside the writer's name. `{{SKILL:iterate}}` stands in that sentence either way, so one
+  // window accepting either token is satisfied by the writer alone — and "excluded by authorship
+  // alone" could be rewritten to "counted by authorship alone" without failing anything.
+  assert.match(
+    rule,
+    near('summary comment', '\\bexcluded\\b', 250),
+    'the summary comment must be named among what the rule excludes, not merely among what it lists',
+  );
+
+  // By author alone. The marker that used to be the second condition is not merely optional here —
+  // it is absent, and a rule that reintroduced it would exclude nothing in app mode, where the
+  // gate's own account stamps no marker at all.
+  assert.doesNotMatch(
+    rule,
+    /first line|leading line|opens the body/i,
+    'no marker position may qualify the exclusion of this tool’s own top-level comment',
+  );
+
+  // Neither surface is treated differently. The exclusion holds for a top-level comment exactly as
+  // it does for an item inside a review thread, which is what removes the deadlock rather than
+  // moving it to the other surface.
+  //
+  // Bound to the sentence that states the exclusion, deliberately not to the rule: the rule's
+  // rationale says `on either surface` about the objection the operator no longer holds the guard
+  // with, which is a claim about what the change gives up and stays true of a rule narrowed to one
+  // surface. Matched against the rule, this assertion passed both on a rule that had dropped the
+  // surface clause and on one that exempted review threads outright — the second being exactly the
+  // regression the retired thread-surface rule used to catch.
+  assert.match(
+    exclusionSentence(rule),
+    near('(?:surfaces?|top-level)', '(?:whichever|either|both|alike)', 200),
+    'the exclusion must hold on both comment surfaces, not on one of them',
   );
 });
 
-test('the merge gate recognizes its own trigger comment by identity plus the complete trigger text', () => {
-  const phase1 = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
-
-  // Both halves are one rule, and both are anchored on machine tokens: the operation that
-  // supplies the authenticated login, and the configuration key that supplies the text.
-  assert.match(phase1, /viewer-?read/i, 'Phase 1 must name the identity operation');
-  assert.match(
-    phase1,
-    near('viewer-?read', '`mergeGate\\.bots\\.<login>\\.trigger`', 500),
-    'identity and configured trigger text must be one rule, not two independent ones',
+test('Phase 6 reports every item the identity rule excluded that would otherwise have counted', () => {
+  // The compensating control for the loosening, and the only one there is. Rule 2 withdraws a
+  // protection — an objection the operator types themselves no longer holds the guard — and the
+  // source accepts that withdrawal on the ground that it is not silent: Phase 6 names every item
+  // the rule excluded that would otherwise have counted. Delete that bullet and the loosening
+  // becomes invisible, with nothing else in the suite noticing. The disclosure is the condition
+  // the change was accepted under, so it is guarded like one.
+  //
+  // Sliced to Phase 6 rather than to the rest of the file: "Edge cases" below it discusses the same
+  // exclusions in the same words, so a deleted summary item would otherwise be satisfied by an edge
+  // case that reports nothing to anyone.
+  const phase6 = flat(section(source('src/tools/merge-gate.md'), '### Phase 6', '\n## '));
+  const item = phase6
+    .split(/(?=\s-\s)/)
+    .find((bullet) => /\bexcluded\b/i.test(bullet) && /\bcounted\b/i.test(bullet));
+  assert.ok(
+    item,
+    'Phase 6 must report every item an exclusion rule removed that would otherwise have counted',
   );
 
-  // The comparison is over the whole body. A substring rule would let a quote-reply that
-  // copies the trigger text switch the guard off, which is the bypass an exact match closes.
+  // Attributed to the rule that does the excluding. A report phrased over "own comments" in general
+  // would also cover items rule 1 excluded, which were never in front of the guard and whose report
+  // would say nothing about the loosening.
   assert.match(
-    phase1,
-    /\b(?:complete|whole|entire|full)\b[^.]{0,40}\bbody\b/i,
-    'the body comparison must be stated as covering the complete body',
+    item,
+    near('identity rule', '\\bexcluded\\b', 200),
+    'the reported items must be attributed to the identity rule that excluded them',
   );
+
+  // Both surfaces, named together in what the bullet reports. The top-level comment is the case
+  // with no other report anywhere — Phase 4's unmatched-thread report reaches no top-level comment
+  // and fires only for a non-empty `mergeGate.bots` — so a report narrowed to threads leaves the
+  // loudest case silent. The window is short on purpose: the bullet mentions the top-level comment
+  // again a sentence later, to say that this is the only place it is reported at all, and a window
+  // wide enough to reach that mention is satisfied by a bullet whose enumeration no longer covers
+  // it.
   assert.match(
-    phase1,
-    /\b(?:partial|substring|prefix|fuzzy)\b/i,
-    'a partial match must be ruled out explicitly, not left to the reader',
+    item,
+    near('review threads?', 'top-level', 80),
+    'the report must enumerate both surfaces, not only the review threads',
+  );
+
+  // And it reads no body, like the rule it reports on. A report that started reading bodies to
+  // spare the reader this gate's own trigger comment would reintroduce the body read the guard
+  // removed, one phase further on.
+  assert.match(
+    item,
+    near('reads?', 'no body', 120),
+    'the report must state that it reads no body, exactly as the rule it reports on does not',
   );
 });
 
@@ -2388,14 +2474,16 @@ test('iterate lets a caller suppress its summary comment and posts it by default
   );
 
   // Fail closed on a switch it cannot parse. Continuing as an unsuppressed run is the one
-  // resolution that must not happen: the caller suppresses precisely because an unsuppressed
-  // comment would be read back as a third party's writing on its next run.
+  // resolution that must not happen: the caller suppresses for grounds the merge gate's delegation
+  // contract states — the noise of one comment per round, the guarantee that a gate-initiated run
+  // leaves at most one item of its own, and a gate running under a different account than the
+  // delegated run, which does read that summary as foreign.
   assert.match(suppression, /ABORT/, 'an unparseable switch must abort');
   assert.match(suppression, near('(?:never|not)', 'unsuppress', 150));
 
-  // Suppression removes the summary comment only. The thread replies and their resolution are
-  // what Phase 1's rule 2 needs in order to keep an earlier round's output out of the guard, so
-  // widening the switch to them would reintroduce the defect it exists to remove.
+  // Suppression removes the summary comment only. The thread replies are how a delegated round
+  // answers the reviewer at all and their resolution is what closes the thread, so widening the
+  // switch to them would silence the round's actual work rather than its noise.
   assert.match(
     suppression,
     near('(?:repl(?:y|ies)|resolution)', '(?:unaffected|unchanged|still|only)', 300),
@@ -2419,11 +2507,13 @@ test('iterate lets a caller suppress its summary comment and posts it by default
 test('the merge gate announces the exact suppression literal iterate parses', () => {
   const contract = section(source('src/tools/merge-gate.md'), '## Delegation contract', '\n## ');
 
-  // The suppression belongs in the delegation contract rather than in one phase: `iterate`
-  // posts one summary comment per delegated round under the operator's own account in manual
-  // mode, so a single unsuppressed round leaves a top-level, unresolvable, non-trigger item
-  // that the very next fresh read — including this run's own Phase 4 read — counts as human.
-  // That is the defect this change removes, relocated one delegation deep.
+  // The suppression belongs in the delegation contract rather than in one phase: `iterate` posts
+  // one summary comment per delegated round, so an unsuppressed run leaves up to
+  // `mergeGate.maxRounds` comments on someone else's pull request while Phase 6 reports the same
+  // content in chat anyway. How this run's own Phase 4 read would classify such a comment is
+  // deliberately not among the grounds — under the same account the guard's identity rule excludes
+  // it — but a gate running under a *different* account than the delegated run does read it as
+  // foreign, and the obligation is not conditional on the mode.
   //
   // Sliced to its own list item, because the neighbouring item-filter item calls itself
   // mandatory in every delegation too: matched against the whole section, the second assertion
@@ -4125,9 +4215,10 @@ test('condition 7 finding no reviewer thread is reported, not passed over in sil
     'Phase 4 must report a reviewer list that matched no unresolved thread',
   );
 
-  // Report-only, deliberately. An unresolved *human* thread already blocks at the human-comment
-  // guard, so a blocking condition here would double-count it and could stall merges that the
-  // guard correctly releases.
+  // Report-only, deliberately. A thread another account left unresolved already blocks at the
+  // human-comment guard, so a blocking condition here would double-count it and could stall merges
+  // that the guard correctly releases — including the ones it releases because this run's own
+  // account wrote the item.
   assert.match(
     afterList,
     near(
