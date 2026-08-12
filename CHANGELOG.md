@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.58.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.57.1...effective-flow-v1.58.0) (2026-08-12)
+
+
+### Features
+
+* resolve a merge conflict with the base in the merge gate ([#341](https://github.com/sebastian-software/effective-flow/issues/341)) ([12145c5](https://github.com/sebastian-software/effective-flow/commit/12145c561f345bdd63740763872c09c07b4bcf47))
+* run the merge gate against a Forgejo remote ([#343](https://github.com/sebastian-software/effective-flow/issues/343)) ([63241e1](https://github.com/sebastian-software/effective-flow/commit/63241e10555fd18392b0d8326e6c8d3ee5d87d18)), closes [#340](https://github.com/sebastian-software/effective-flow/issues/340)
+
+
+### Bug Fixes
+
+* confirm the Forgejo merge head before reporting it ([#345](https://github.com/sebastian-software/effective-flow/issues/345)) ([08da54e](https://github.com/sebastian-software/effective-flow/commit/08da54e24ea002a26987ca474b2a15091d0fa45b))
+* **deps:** update oxc toolchain to ^0.62.0 ([#338](https://github.com/sebastian-software/effective-flow/issues/338)) ([e8c6fd1](https://github.com/sebastian-software/effective-flow/commit/e8c6fd18b1808b6b46cfa0db69e1bfdf39bdc873))
+* **deps:** update pnpm/action-setup digest to 0977fd9 ([#337](https://github.com/sebastian-software/effective-flow/issues/337)) ([aba3373](https://github.com/sebastian-software/effective-flow/commit/aba3373d2fd83adea86464cc3380893c2f579388))
+* report every open DALO acceptance step when a gate blocks ([#335](https://github.com/sebastian-software/effective-flow/issues/335)) ([5b2b9e7](https://github.com/sebastian-software/effective-flow/commit/5b2b9e7db0af231061a0a9f7a1a22421d3f6b57b))
+* stop duplicating tracker labels on every apply run ([#342](https://github.com/sebastian-software/effective-flow/issues/342)) ([abe0d3a](https://github.com/sebastian-software/effective-flow/commit/abe0d3aa50d577341e5770aa505ccaadb37ed282))
+
 ## [1.57.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.57.0...effective-flow-v1.57.1) (2026-08-10)
 
 
