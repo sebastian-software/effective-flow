@@ -429,7 +429,16 @@ At the start, generate a session ID (e.g. via timestamp) and use
 - the human-comment guard state and the evidence that set it
 - every item the guard's identity rule excluded that would otherwise have counted: its author, the
   surface it sits on – unresolved review thread or top-level comment – and its thread or comment
-  identifier; the list Phase 6 must report, and no later read reaches it again
+  identifier. This is the list Phase 6 must report, and it is **appended at every fresh read, not
+  only Phase 1's**. It moves in the guard's own direction one step further: the guard is set once
+  and a later fresh read may only set it, and this list may only be **added to** – never re-derived
+  from the latest read, and never shortened because a later read no longer reports an entry. Phase 4
+  verifies its preconditions against a second fresh read, and between the two sit up to
+  `mergeGate.maxRounds` delegated rounds whose thread replies carry this run's own account in manual
+  mode; the identity rule excludes exactly those items at Phase 4, and no earlier read could reach
+  them, so a Phase-1 snapshot would under-report them and Phase 6 would silently owe a disclosure it
+  no longer makes. Key each entry by its thread or comment identifier, so a re-read of an item
+  already recorded appends no duplicate
 - per round: the round number, the check result, the merge state, what was delegated, and what came
   back; plus `VERIFIED_HEAD_SHA` once a round sets it, and its discard on a Phase-3 restart
 - per round, where the base-into-head merge conflicted: the observed merge state and which entry
