@@ -315,6 +315,7 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 | Key                              | Values                             | Default   |
 | -------------------------------- | ---------------------------------- | --------- |
 | `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
+| `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
 | `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
 | `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
 | `mergeGate.maxRounds`            | positive integer                   | `3`       |
@@ -325,6 +326,23 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 
 A login containing brackets (`greptileai[bot]`) is a valid middle segment, because the encoding
 splits on `.` only.
+
+**`mergeGate.conflictResolution` is new and has no `prReview.*` predecessor.** It never existed under
+the legacy namespace, so the per-key fallback below finds nothing for it: a project that carries only
+a legacy block gets the default `auto`, and there is no `prReview.conflictResolution` row to read,
+migrate, or report as shadowed. `auto` resolves a conflict with the base through
+effective-flow merge-gate's dedicated worker, `ask` asks once **per conflicted round** in a gated run —
+once per conflict rather than once per run, deliberately unlike `mergeGate.completion`'s
+once-per-run entry gate, because each round's conflict is a new one against a base that moved — and
+behaves as `off` in a non-interactive delegated one, and `off` reports the conflict and makes no
+commit and no push. That last claim is about the branch: the gate provisions its checkout before it
+reads this key, and cleans it up on the same stop path.
+
+**An unreadable or invalid `mergeGate.conflictResolution` resolves to `off`, not to `auto`.** The
+general rule above says to use a safe default for the run; for every other key in this block the safe
+default and the documented default are the same value, and for this one they are not — an
+unparseable line must never authorize a commit and a push. Report the affected key as that rule
+requires and continue with `off`.
 
 **Backcompat (one generation):** these keys were formerly named `prReview.*`. Where a
 `mergeGate.<key>` line is absent, read `prReview.<key>` and use its value; report **once per run**
@@ -395,7 +413,7 @@ The Effective Flow configuration is optional and controls the defaults of the fo
   (`de`/`en`; a missing override inherits `language.project`, whose default is `en`)
 - **`plan`** (source: `effective-flow plan`): `dir` (string, default `docs/plan`) — directory of the plan files
 - **`delivery`** (source: `effective-flow build`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default `origin/main`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery), `mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when `effective-flow merge-gate` merges it)
-- **`mergeGate`** (source: `effective-flow merge-gate`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `3`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; the legacy names are still read, and this skill migrates a legacy block in place (Step 6). **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
+- **`mergeGate`** (source: `effective-flow merge-gate`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `3`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; the legacy names are still read, and this skill migrates a legacy block in place (Step 6). **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
 - **`worktree`** (source: `effective-flow build`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
 - **`tracker`** (source: `effective-flow review`, section "Issue-tracker integration" – likewise embedded in ``tools/apply-review.md`` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names)
 - **`skills`** (source: building block "Skill discovery"): `enabled` (bool, default `true` — toggles dynamic skill usage), `include` (list — prefer these skills project-wide), `exclude` (list — never apply these skills), `agents.<name>` and `tools.<name>` (each `include`/`exclude` for a single agent or a single tool). Keys are the source agent/tool names (e.g. `ui-implementer`, `plan`).
@@ -433,8 +451,11 @@ only `language.project = en` unless existing overrides are preserved. The legacy
 
 The `mergeGate.*` merge-gate keys and `delivery.mergeMethod` are deliberately **not** part of this
 base: a missing line means the source skill's default (see the defaults table in Step 5, block 9),
-so Express writes no row for them and an unconfigured project gets the safe gate behavior
-(`ask`, every check green, no automatic reviewer expected).
+so Express writes no row for them and an unconfigured project gets the gate's own defaults:
+`completion: ask`, every check green, no automatic reviewer expected — and
+`conflictResolution: auto`, which authorizes a gate run to resolve a conflict between the head
+branch and its base and to push the resulting merge commit. That last one is the only default here
+that writes, and it is what changes behavior for a project upgrading from an earlier generation.
 
 ## Workflow
 
@@ -679,7 +700,7 @@ perfectly good answer.
 If the user chose the advanced settings and the merge gate block is being asked: Ask the user: **When the merge gate has verified a pull request, may it merge, or should it only report?**
 - Ask each time -- mergeGate.completion = ask (default) — a gated run asks once per pull request
 - Merge -- mergeGate.completion = merge — merge as soon as every precondition holds
-- No merge -- mergeGate.completion = report — the gate still repairs failing checks and answers bot threads, it only never merges
+- No merge -- mergeGate.completion = report — the gate still repairs failing checks, answers bot threads, and resolves a conflict with the base by pushing one merge commit; it only never merges the pull request. mergeGate.conflictResolution = off is the switch for a run that makes no commit and no push at all
 
 Then ask for the remaining keys, each with a short explanation, the valid values, and the current
 value or default as the pre-selection:
@@ -687,6 +708,7 @@ value or default as the pre-selection:
 | Key                              | Values                             | Default   |
 | -------------------------------- | ---------------------------------- | --------- |
 | `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
+| `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
 | `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
 | `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
 | `mergeGate.maxRounds`            | positive integer                   | `3`       |
@@ -695,6 +717,18 @@ value or default as the pre-selection:
 | `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
 | `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
 
+- `mergeGate.conflictResolution`: what a gate run does when the head branch conflicts with its base.
+  `auto` (the default) has the conflict resolved by the gate's dedicated worker, the result verified
+  independently, and one ordinary merge commit pushed — the branch moves forward instead of the run
+  ending at the conflict. `off` reports the conflict and makes no commit and no push, which is
+  exactly the outcome the gate produced on the branch before this key existed — it still provisions
+  and cleans up a local checkout. `ask` asks once **per conflicted round** in a gated run — once per
+  conflict, not once per run as `mergeGate.completion` does, because each round's conflict is a new
+  one — and behaves as `off` in a non-interactive delegated one. Say when asking that the default
+  **changes** behavior for
+  a project upgrading from an earlier generation, and that `off` restores the previous behavior
+  exactly. This key is new: it never existed as `prReview.conflictResolution`, so there is no legacy
+  row to carry over for it.
 - `mergeGate.requireAllChecks`: `true` (default) requires **every** check to be green; `false` falls
   back to the checks the forge itself marks as required — useful for a project with a permanently
   red optional check.
@@ -1047,6 +1081,7 @@ Report to the user:
   `tracker.remoteToolOverride` or `tracker.externalTool` plus `tracker.externalToolHint`) as well
   as `plan.dir` and `concept.dir`, if set or changed from the default
 - if set or changed from the default: the merge-gate values `mergeGate.completion`,
+  `mergeGate.conflictResolution`,
   `mergeGate.requireAllChecks`, `mergeGate.checkWaitMinutes`, `mergeGate.maxRounds`,
   `mergeGate.botWaitMinutes`, `mergeGate.bots` with the trigger text and, where set, the check
   context recorded per login, and `delivery.mergeMethod`. Name the gate keys separately from

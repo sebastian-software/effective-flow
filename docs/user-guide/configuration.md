@@ -140,6 +140,7 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | applyReview.worktree.baseDir         | .effective-flow/.worktrees |
 | applyReview.worktree.setup           | auto                       |
 | mergeGate.completion                 | ask                        |
+| mergeGate.conflictResolution         | auto                       |
 | mergeGate.requireAllChecks           | true                       |
 | mergeGate.checkWaitMinutes           | 20                         |
 | mergeGate.maxRounds                  | 3                          |
@@ -247,6 +248,7 @@ already-open pull request to merge-readiness and, if allowed, merges it.
 | Key                    | Values                              | Default   | Meaning                                                                  |
 | ---------------------- | ----------------------------------- | --------- | ------------------------------------------------------------------------ |
 | `completion`           | `ask` / `merge` / `report` / `null` | `ask`     | May the run merge at the end, or only report merge-readiness             |
+| `conflictResolution`   | `off` / `ask` / `auto`              | `auto`    | May the run resolve a conflict between the head branch and its base      |
 | `requireAllChecks`     | `true` / `false`                    | `true`    | Require every reported check green, not only the forge's required ones   |
 | `checkWaitMinutes`     | Positive integer                    | `20`      | Timeout, in minutes, for one wait on pending checks                      |
 | `maxRounds`            | Positive integer                    | `3`       | Upper bound on check-gate rounds for the whole run                       |
@@ -262,6 +264,54 @@ than blocking the merge forever. `mergeGate.bots.<login>.trigger` and `mergeGate
 are one dotted key each per bot; a login containing brackets (for example `greptile-apps[bot]`) is a
 valid middle segment because the encoding splits on `.` only.
 
+**`mergeGate.conflictResolution` decides what happens when the head branch conflicts with its base.**
+The gate already brings a branch that has merely fallen _behind_ its base forward with a merge
+commit; this key covers the case where that same merge does not apply cleanly.
+
+- `auto` (the default) hands the conflicted files to the gate's dedicated resolver, has the resolved
+  tree verified independently before anything is committed, and pushes one ordinary merge commit.
+  The run then continues its gate instead of ending at the conflict.
+- `off` makes **no commit and no push**: the merge is aborted, the conflict is reported with its
+  conflicted paths, and the run ends. That is exactly the outcome the gate produced **on the branch**
+  before this key existed. It is not a claim that such a run touches nothing at all — the gate
+  provisions its local checkout before it reads this key, and cleans that checkout up again on the
+  same stop path.
+- `ask` poses the question once per **conflicted round** in a gated run — once per conflict, not once
+  per run. Each round's conflict is a different conflict against a base that has moved again, so
+  consent given for one is not consent for the next, and with the default `mergeGate.maxRounds: 3` a
+  single run may therefore pose the question up to three times. This deliberately deviates from
+  `mergeGate.completion`, whose entry question settles one fixed decision for the whole run and is
+  never asked again. A **non-interactive delegated** run has nobody to ask, so that combination
+  behaves as `off` and the report names `mergeGate.conflictResolution: auto` as the setting that
+  would authorize the resolution — that part is the same way `mergeGate.completion` degrades.
+
+**An unreadable or invalid value resolves to `off`, not to the documented default `auto`.** For every
+other key in this block the safe fallback and the documented default are the same value; for this one
+they diverge, because an unparseable line must never authorize a commit and a push. The run reports
+the affected key and continues with `off`.
+
+**The head branch is untrusted input.** The gate runs on any open pull request, including one whose
+head branch lives in a fork this repository does not control. To validate a resolution, the resolver
+discovers the repository's own validation commands from files that head branch supplies — scoped
+instructions, CI workflows, task runners, manifests, package scripts — and executes them in the
+provisioned checkout with full filesystem and network access. Under `auto`, the default, that happens
+automatically and without anyone being asked. A project that gates pull requests it does not trust
+should set `ask`, so a human authorizes every resolution, or `off`, so no untrusted branch's commands
+are executed by this gate at all.
+
+The default `auto` **changes behavior when you upgrade**: a project that never configured this key
+gets automatic conflict resolution, and `off` restores the branch behavior of an earlier generation
+exactly. Note also that completion mode `report` does not withhold it. `report` withholds exactly one
+action, the merge of the pull request itself, so a `report` run still resolves a conflict and pushes
+that one merge commit; `conflictResolution: off` is the switch for a run that makes no commit and no
+push at all. What the resolver does with a conflict, and where it refuses to guess, is described
+under [`/effective-flow merge-gate`](./tools-deliver.md#resolving-a-conflict-with-the-base).
+
+**This key is new and has no legacy `prReview.*` counterpart.** It never existed as
+`prReview.conflictResolution`, so the per-key legacy fallback described below finds nothing for it
+and `/effective-flow setup` has no row to migrate. A project that carries only an unmigrated legacy
+block therefore gets the default `auto` here.
+
 **Either spelling of a bot login works.** GitHub shows `greptile-apps[bot]` in its interface and
 reports that form through its REST API, but reports the same account as bare `greptile-apps` through
 the GraphQL API the gate uses to read review threads. The gate matches a configured login against a
@@ -271,7 +321,9 @@ bot.** A reported login the forge does not type as a bot has to match your confi
 exactly, so an ordinary user or organization named `greptile-apps` is never taken for the reviewer
 `greptile-apps[bot]`. On a forge that states no account type at all (Forgejo), only the exact
 spelling matches: a bare login configured as `greptile-apps[bot]` then counts as a reviewer that has
-not run, which the gate reports rather than merges past. If a project already lists both spellings, they now count as
+not run, which the gate reports rather than merges past. **Spell a Forgejo entry as the bare login**
+for that reason — since a Forgejo gate can merge, a suffixed entry there blocks the merge on that
+reviewer permanently rather than only making the report noisier. If a project already lists both spellings, they now count as
 one reviewer — one round, one mention, one wait — and the gate reports the collapse so the redundant
 row can be removed. The first of the two rows in `mergeGate.bots` order is the one whose `.trigger`
 and `.check` the gate then uses, and a value set on only one of the rows is simply adopted. Two rows
@@ -411,6 +463,7 @@ values are retained unless the user explicitly confirms a change.
 | `applyReview.worktree.baseDir`      | `.effective-flow/.worktrees` |
 | `applyReview.worktree.setup`        | `auto`                       |
 | `mergeGate.completion`              | `ask` (ask at run time)      |
+| `mergeGate.conflictResolution`      | `auto`                       |
 | `mergeGate.requireAllChecks`        | `true`                       |
 | `mergeGate.checkWaitMinutes`        | `20`                         |
 | `mergeGate.maxRounds`               | `3`                          |
@@ -426,6 +479,15 @@ values are retained unless the user explicitly confirms a change.
 
 Language overrides are absent in the safe base and therefore inherit `language.project`. If the
 entire `language.*` block is absent, the default remains `en`.
+
+The `mergeGate.*` rows and `delivery.mergeMethod` are listed here as the values a run uses, not as
+rows Express writes: they belong to their source tools, a missing line means exactly the value above,
+and the Express path writes no row for them. One of them is worth singling out. **`mergeGate.conflictResolution: auto` is the only default in this
+list that leads a run to write:** it authorizes a merge-gate run to resolve a conflict between the
+head branch and its base and to push the resulting merge commit. Every other default here only
+changes how a run decides or how long it waits. A project upgrading from an earlier generation
+therefore gets that one behavior change without configuring anything; see
+[Block `mergeGate`](#block-mergegate) for how to switch it off.
 
 There is no second “fast” preset. A faster solo flow is configured key by key, for example with
 `review.profile: fast`, `review.validation: quick`, and

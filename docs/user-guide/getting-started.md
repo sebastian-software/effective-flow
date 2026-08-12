@@ -28,8 +28,25 @@ manages persistent project configuration and automation. Changed skill content r
 review and approval.
 
 If you use only one harness, run only its `dalo target link` command. `dalo sync` materializes the
-selected skill into every linked target. Run it again after a new Effective Flow release to
-refresh the installation.
+selected skill into every linked target.
+
+#### Updating to a new release
+
+A catalog source is pinned, so `dalo sync` alone never moves it to a newer release. Advance the pin
+explicitly, accept the new candidate's audit, then sync:
+
+```sh
+dalo source refresh effective-flow --advance
+dalo audit '<staged-path>' --accept-risk "<reason>"
+dalo source refresh effective-flow --advance
+dalo sync
+```
+
+The first `source refresh --advance` fails while the staged candidate's audit is unaccepted and
+names the staged path in its own error; paste that path into the `dalo audit` command and write the
+reason yourself. Every release needs a fresh content-hash acceptance, because the previous one is
+scoped to the content it was granted for. The `dalo approve skill` record from the installation
+above keeps standing across releases and does not have to be repeated.
 
 ### Alternative: Skills CLI
 

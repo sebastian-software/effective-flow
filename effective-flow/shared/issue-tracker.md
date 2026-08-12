@@ -110,7 +110,7 @@ Reads execute immediately. Mutations are dry runs by default: inspect the return
 
 ### Label convention
 
-In remote mode, use these labels and create missing labels idempotently (tolerate an "already exists" message, do not treat it as an error):
+In remote mode, use these labels and create missing labels idempotently. The helper's label creation reads the repository's existing labels first and creates only what is genuinely missing, so a repeated run adds no second copy of a label; each call reports whether it created anything. Copies an earlier version already created are not removed and can still attach several times to one issue. Where the existing labels cannot be read, it aborts instead of creating:
 
 | Label                                                                                          | Meaning                                                                           |
 | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
@@ -122,7 +122,7 @@ In remote mode, use these labels and create missing labels idempotently (tolerat
 | `effective-flow-issue-done`                                                                    | issue implemented by ``tools/apply-issues.md`` (PR created)                        |
 | `effective-flow-needs-planning`                                                                | skipped by ``tools/apply-issues.md``; planning via `effective-flow plan-issue` needed   |
 
-`wontfix` already exists on many trackers; create it only if it is missing. `effective-flow-issue-done` and `effective-flow-needs-planning` belong to the issue-driven flow (``tools/apply-issues.md``/`effective-flow plan-issue`) and are created idempotently there.
+`wontfix` already exists on many trackers; the helper creates it only if it is missing. `effective-flow-issue-done` and `effective-flow-needs-planning` belong to the issue-driven flow (``tools/apply-issues.md``/`effective-flow plan-issue`) and are created idempotently there.
 
 **Backward compatibility (severity labels):** The English severity labels `critical`/`important`/`note` are the default; newly created or set is exclusively the English label. The former German labels `kritisch`/`wichtig`/`hinweis` are **not** upgraded but stay **recognized** permanently when reading, listing, deduplicating and detecting a finding's severity — run a severity query per language variant (once `critical`/`important`/`note`, once `kritisch`/`wichtig`/`hinweis`) and union by issue number, analogous to the `firmo-`/`effective-flow-` prefix rule above.
 

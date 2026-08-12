@@ -24,6 +24,14 @@ session-rename capability described below.
 already exists, the wizard shows current values and changes them only after explicit
 confirmation. Unknown ADR rows are preserved.
 
+Express writes no `mergeGate.*` row and no `delivery.mergeMethod` row: a missing line means the
+merge gate's own default, so an unconfigured project gets `completion: ask`, every check required
+green, no automatic reviewer expected — and `conflictResolution: auto`, which authorizes a gate run
+to resolve a conflict between an open pull request's head branch and its base and to push the
+resulting merge commit. That last one is the only one of those defaults that leads a run to write,
+and it is what changes behavior for a project upgrading from an earlier generation; see
+[Block `mergeGate`](configuration.md#block-mergegate).
+
 Express stores `language.project: en` and lets every absent override inherit it. Guided asks for
 the project language first, then offers independent `de`/`en` overrides for source prose, user
 documentation, technical documentation, local workflow artifacts, Forge prose, and Git/release

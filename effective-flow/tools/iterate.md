@@ -235,6 +235,7 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 | Key                              | Values                             | Default   |
 | -------------------------------- | ---------------------------------- | --------- |
 | `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
+| `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
 | `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
 | `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
 | `mergeGate.maxRounds`            | positive integer                   | `3`       |
@@ -245,6 +246,23 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 
 A login containing brackets (`greptileai[bot]`) is a valid middle segment, because the encoding
 splits on `.` only.
+
+**`mergeGate.conflictResolution` is new and has no `prReview.*` predecessor.** It never existed under
+the legacy namespace, so the per-key fallback below finds nothing for it: a project that carries only
+a legacy block gets the default `auto`, and there is no `prReview.conflictResolution` row to read,
+migrate, or report as shadowed. `auto` resolves a conflict with the base through
+effective-flow merge-gate's dedicated worker, `ask` asks once **per conflicted round** in a gated run —
+once per conflict rather than once per run, deliberately unlike `mergeGate.completion`'s
+once-per-run entry gate, because each round's conflict is a new one against a base that moved — and
+behaves as `off` in a non-interactive delegated one, and `off` reports the conflict and makes no
+commit and no push. That last claim is about the branch: the gate provisions its checkout before it
+reads this key, and cleans it up on the same stop path.
+
+**An unreadable or invalid `mergeGate.conflictResolution` resolves to `off`, not to `auto`.** The
+general rule above says to use a safe default for the run; for every other key in this block the safe
+default and the documented default are the same value, and for this one they are not — an
+unparseable line must never authorize a commit and a push. Report the affected key as that rule
+requires and continue with `off`.
 
 **Backcompat (one generation):** these keys were formerly named `prReview.*`. Where a
 `mergeGate.<key>` line is absent, read `prReview.<key>` and use its value; report **once per run**
@@ -1244,8 +1262,10 @@ It serves both directions plus the merge gate. **Inbound**, `effective-flow iter
 what others wrote. **Outbound**, "PR review publication" writes Effective Flow's own findings onto
 the pull request; that fragment owns which findings are published and which gates run first, while
 this one provides the operations. **The gate**, `effective-flow merge-gate`, reads status and checks,
-waits, posts its configured bot trigger — its only own write — and finally merges; it owns the
-ordered gate and the merge decision, while this one again provides the operations.
+waits, posts its configured bot trigger — its only own write onto the pull request's **discussion** —
+and finally merges; it owns the ordered gate and the merge decision, while this one again provides
+the operations. Its writes to the head **branch** are a different surface, bounded by that tool's own
+Git write boundary and not by this building block.
 
 Boundary to `issue-tracker.md`: that building block is tailored to **issues** and the tracker
 target. PR review threads are a different API object. A workflow working on a pull request is
@@ -1349,7 +1369,10 @@ trigger comment.
 Do not scrape the login out of the probe's authentication-status output. That is human-readable CLI
 prose, and this building block reads normalized JSON only.
 
-**Forgejo limitation:** `viewerRead` is unsupported there and returns `UNSUPPORTED_CAPABILITY`. A
+**On Forgejo** the identity is read through the same `tea api` transport the gate's status read
+uses, and the capability is reported from that transport probe rather than assumed. Forgejo states
+no account class, so the viewer carries a `login` and no `type` — which is sufficient, because a
+consumer compares the login and nothing else. Where the capability is absent, or a read fails, a
 consumer that cannot establish the identity fails closed and treats an item it cannot prove to be
 its own as someone else's.
 
@@ -1379,8 +1402,9 @@ comment body from its own marker table, idempotently. Never write that marker by
 and the `effective-flow iterate` separation are exact string matches, so a hand-written variant silently
 defeats both.
 
-On `UNSUPPORTED_CAPABILITY` – Forgejo does not support review submission, just as it does not
-support thread resolution – fall back to exactly one structured PR comment carrying the `file:line`
+On `UNSUPPORTED_CAPABILITY` – Forgejo supports neither review submission (`review-create`) nor a
+reply into a review thread (`review-thread-reply`); thread **resolution** it does support – fall
+back to exactly one structured PR comment carrying the `file:line`
 references in its text, and report the reduced fidelity; do not improvise a provider request. Build
 that fallback comment with the helper's `pr-review-comment-build` operation, **not** with
 `pr-comment-build`: the latter stamps `<!-- effective-flow-iterate -->`, the marker
@@ -1442,9 +1466,14 @@ Merging is the most irreversible mutation in this tool set and belongs to `effec
 is never used to work around a blocked merge state, and this building block still never approves a
 pull request and never requests changes — not even to unblock a merge.
 
-**Forgejo limitation:** `pr-status-read`, `pr-checks-wait`, and `pr-merge` are all unsupported there
-and return `UNSUPPORTED_CAPABILITY`. The gate fails closed: it degrades to report-only, states that
-reason, and improvises no provider request.
+**Forgejo limitation:** of the three, only `pr-checks-wait` is unsupported there and returns
+`UNSUPPORTED_CAPABILITY` — `tea` has no `checks` subcommand and Forgejo offers no server-side
+blocking watch, so the gate takes its documented no-watch degradation (report the pending checks and
+ask once) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
+the status read composes the pull-request object, the combined commit status and the head commit's
+date, and the merge sends `head_commit_id` as the server-side head guard. Two further operations
+this building block uses stay unsupported on Forgejo — `review-create` and `review-thread-reply` —
+and the gate still fails closed on anything it cannot read, improvising no provider request.
 
 ### Idempotency via the Effective Flow markers
 
@@ -1465,9 +1494,12 @@ this tool's own.
 **`effective-flow merge-gate`, the merge gate, writes no marker at all — by design, not by oversight.** A
 marker left in a raw comment body keeps announcing which tool composed that comment, and removing
 that disclosure is exactly why the gate's former third marker (`effective-flow-pr-gate`) is gone.
-The gate's only own write is its configured trigger comment, and it recognizes that comment again
-through the authenticated login plus the comment's exact configured body — evidence that discloses
-nothing and needs no persistence. Do not reintroduce a gate marker.
+The gate's only own write onto the pull request's **discussion** is its configured trigger comment,
+and it recognizes that comment again through the authenticated login plus the comment's exact
+configured body — evidence that discloses nothing and needs no persistence. Do not reintroduce a gate
+marker. Its writes to the head **branch** — the two kinds of base-into-head merge its Git write
+boundary sanctions — are on another surface and carry no marker either: a merge commit uses Git's
+default message and announces no tool.
 
 Both strings are **distinct and neither is a substring of the other**; every match is an exact
 string match. Reusing one for another writer would make `effective-flow iterate` treat foreign replies as
@@ -1503,6 +1535,13 @@ A head branch that has fallen **behind** its base is brought forward the same wa
 `origin/<base>` into the head branch as a merge commit and push normally. That merge, performed by
 `effective-flow merge-gate`, is the sanctioned repair; a rebase or a force-push of the head branch is not,
 whatever the forge suggests.
+
+A head branch that **conflicts** with its base is brought forward by the same merge, with its
+conflicts resolved inside it: that is the **second** sanctioned repair, likewise performed by
+`effective-flow merge-gate` and scoped to it – no other workflow resolves a conflict on a head branch.
+It changes nothing about the rule above: the result is still one ordinary merge commit pushed
+normally, and a resolution that would need a rebase, a squash, an amend, or a force-push to succeed
+is reported instead of performed.
 
 ## Automatic reviewer state
 
@@ -1552,9 +1591,13 @@ applied one step earlier. A gate then blocks the merge and names that reviewer; 
 on it. **Forgejo is where that is visible.** It states no account class at all, so a **bare** Forgejo
 login no longer matches a configured `X[bot]` entry and that reviewer stays **not started** however
 recently it wrote. A Forgejo login that carries the suffix itself is unaffected, because the suffix
-forces `isBot: true`. Forgejo's gate is report-only by construction — `pr-status-read`,
-`pr-checks-wait` and `pr-merge` are all unsupported there — so what the strict comparison costs there
-is a noisier report, never a wrong merge.
+forces `isBot: true`. **On Forgejo a gate can merge**, so what the strict comparison costs there is
+a blocked merge rather than a noisier report: `pr-status-read` and `pr-merge` are supported and only
+`pr-checks-wait` is not. **Spell a Forgejo `mergeGate.bots` entry as the bare login** — the exact
+login the forge reports, without a `[bot]` suffix. An entry spelled `X[bot]` matches no bare Forgejo
+login at all, leaves that reviewer permanently **not started**, and blocks the gate's merge
+precondition on it forever. The failure direction is still the safe one; on Forgejo it is simply the
+only one.
 
 **Resolution runs from the reported login to the configured entry, and the configured spelling stays
 the key.** `mergeGate.bots.<login>.trigger` and `mergeGate.bots.<login>.check` are dotted
@@ -1615,8 +1658,11 @@ Resolve the state per reviewer, in this order, and stop at the first rule that r
      from here.
    - **no list at all** is a different case. When `pr-status-read` reports `checksReported: false`,
      the primary signal is unavailable rather than negative, and the reviewer falls through to rule 2.
-     Forgejo exposes no such rollup, so every reviewer of a Forgejo pull request takes the fallback
-     path however carefully its `.check` is configured.
+     Forgejo reports a rollup where its combined commit-status endpoint returns one, so a configured
+     `.check` is looked up there exactly as on GitHub — a Gitea status `context` arrives in the same
+     `name` field a check-run name does. Where that endpoint returns an empty or null list,
+     `checksReported` is `false` and every reviewer of that pull request takes the fallback path,
+     however carefully its `.check` is configured.
 2. **`createdAt` versus `headCommittedAt` — the fallback.** It applies to a reviewer with no
    configured `.check`, and to one whose primary signal was unavailable. Compare the `createdAt` of
    that login's newest comment, review thread, or thread reply against `headCommittedAt` from
@@ -1837,7 +1883,11 @@ end.
   instant** as those threads, and carry its head SHA, `headCommittedAt`, `checksReported`, and
   normalized `checks` array into Phase 1.5 — that phase observes every reviewer against exactly this
   one read, so a status read taken at another instant would describe a state the pull request never
-  had. On `UNSUPPORTED_CAPABILITY` or a failed read, record that the status is unavailable and
+  had. Both providers support it; on Forgejo it composes three `tea api` reads — the pull request,
+  its head commit's combined status, and that commit's committer date — which is one read for the
+  caller and reports every command it issued. It states no `mergeState` there and no `required` flag
+  per check, because Forgejo exposes neither. On `UNSUPPORTED_CAPABILITY` or a failed read, record
+  that the status is unavailable and
   continue; Phase 1.5 states what that costs. Take the free-text instructions in as additional items.
   Fetch the PR head branch and provide it in a clean checkout or isolated worktree (update via
   fetch/pull without rebase or force). If the PR is already merged/closed, report that and optionally
@@ -1867,8 +1917,9 @@ because classification is the thing being protected.
      selects the fallback signal, and it is not an absent field, which the fallback reads as **not
      started**. With no read at all there is nothing for either rule to work on. Skip the phase and
      **report that this run is unguarded and why** rather than letting the guard evaporate silently.
-     On Forgejo that is the permanent state — `pr-status-read` is unsupported there, which is also
-     why effective-flow merge-gate degrades to report-only on that provider.
+     `pr-status-read` is supported on **both** providers, so this is a genuine failure or an
+     out-of-date CLI rather than a provider's permanent state. On Forgejo it composes three
+     `tea api` reads instead of one query, so any of the three failing lands here.
 2. **Observe** the state of every configured reviewer through the loaded "Automatic reviewer state",
    against the head SHA and the status read Phase 1 carried in, and the threads read at that same
    instant. Record each state with the evidence that established it.

@@ -17,8 +17,8 @@ Resolve a pull request from an argument or the current branch and drive an order
 2. once green, hand the notes of the configured automatic reviewers (Greptile and comparable bots)
    to `effective-flow iterate`, which fixes the valid ones and answers and resolves their threads, and
    re-trigger the reviewer where needed;
-3. if human pull-request comments exist, implement no review note and merge nothing – CI repair
-   stays permitted (see "Human-comment guard");
+3. if human pull-request comments exist, implement no review note and merge nothing – the CI repair
+   and the repair of a conflict with the base stay permitted (see "Human-comment guard");
 4. if no human comments exist, everything is green, every configured automatic reviewer has run for
    the current head, and its comments have been answered – merge.
 
@@ -133,6 +133,33 @@ If no task tool is available, give the user a short progress update after each c
 - with a single, trivial task
 - when the task is done in fewer than three simple steps
 
+## Delegation mandate
+
+Invoking an Effective Flow tool **is** the user's standing request for internal delegation through an available sub-agent mechanism (e.g. an `Agent`/`Task` tool, a bundled worker contract, or a comparable mechanism). A host default that discourages unrequested sub-agents does not apply inside a tool run.
+
+- Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
+- For analysis, exploration, and research, delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition.
+- A worker that **has** a sub-agent tool may fan out **read-only** analysis sub-agents and passes its supplied language context to them. It never re-delegates its own assignment, never delegates a write, and never selects or sequences another worker role; that stays with the orchestrator. A worker whose tool list carries no sub-agent tool does not delegate at all — that limit rests on the tool list, not on prose.
+- If the harness offers no such mechanism, or a delegation is declined at runtime, work inline and say so in one visible line — never silently.
+- This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
+
+This gate is a delegator twice over, and the mandate governs the second kind. Handing the rest of a
+code change to `effective-flow iterate` is a workflow-to-workflow delegation and keeps that tool's own
+mechanics, including its interactive path – the mandate's own carve-out. Handing a conflicted merge
+to ``effective-flow-merge-conflict-resolver`` and the resolved tree to ``effective-flow-code-validator`` is a
+delegation to **named worker roles**, which is exactly what the mandate binds: those two are
+mandatory, never a judgment call. Where the mandate's inline fallback would apply – no sub-agent
+mechanism, or a delegation declined at run time – this gate does not resolve inline: it says so
+visibly and stops, because implementing is the one thing this workflow never does itself.
+
+**The mandate's "delegation is the default for analysis" does not reach this gate's own state
+reading and guard evaluation.** Reading the pull-request status, the threads, and the comments
+fresh, classifying every item through Phase 1's ordered rules, setting the human-comment guard, and
+evaluating the Phase-4 conditions stay **in this run**. They are the security-relevant reasoning this
+gate exists to perform, they read state only this run holds, and a sub-agent's summarized answer
+would be exactly the kind of unprovable evidence every one of those rules fails closed on. What the
+mandate binds here is the two worker-role delegations above, not the gate's own reading.
+
 **Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent.
 
 **Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent.
@@ -232,6 +259,7 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 | Key                              | Values                             | Default   |
 | -------------------------------- | ---------------------------------- | --------- |
 | `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
+| `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
 | `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
 | `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
 | `mergeGate.maxRounds`            | positive integer                   | `3`       |
@@ -242,6 +270,23 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 
 A login containing brackets (`greptileai[bot]`) is a valid middle segment, because the encoding
 splits on `.` only.
+
+**`mergeGate.conflictResolution` is new and has no `prReview.*` predecessor.** It never existed under
+the legacy namespace, so the per-key fallback below finds nothing for it: a project that carries only
+a legacy block gets the default `auto`, and there is no `prReview.conflictResolution` row to read,
+migrate, or report as shadowed. `auto` resolves a conflict with the base through
+effective-flow merge-gate's dedicated worker, `ask` asks once **per conflicted round** in a gated run —
+once per conflict rather than once per run, deliberately unlike `mergeGate.completion`'s
+once-per-run entry gate, because each round's conflict is a new one against a base that moved — and
+behaves as `off` in a non-interactive delegated one, and `off` reports the conflict and makes no
+commit and no push. That last claim is about the branch: the gate provisions its checkout before it
+reads this key, and cleans it up on the same stop path.
+
+**An unreadable or invalid `mergeGate.conflictResolution` resolves to `off`, not to `auto`.** The
+general rule above says to use a safe default for the run; for every other key in this block the safe
+default and the documented default are the same value, and for this one they are not — an
+unparseable line must never authorize a commit and a push. Report the affected key as that rule
+requires and continue with `off`.
 
 **Backcompat (one generation):** these keys were formerly named `prReview.*`. Where a
 `mergeGate.<key>` line is absent, read `prReview.<key>` and use its value; report **once per run**
@@ -401,13 +446,16 @@ Scope of that completion control here: the bounded correction rounds and the vis
 apply, and `mergeGate.maxRounds` is this workflow's concrete bound. The completion condition is the
 pull request's own checks plus the Phase-4 preconditions, read from the forge rather than
 self-assessed. This workflow therefore starts **no** validator and **no** reviewer of its own; the
-independent verification happens in CI and inside the delegated `effective-flow iterate` run.
+independent verification happens in CI, inside the delegated `effective-flow iterate` run, and – for a
+resolved merge conflict – inside the delegated ``effective-flow-merge-conflict-resolver`` and
+``effective-flow-code-validator`` roles. Delegating a check is not starting one here.
 
 ## Checkout provisioning boundary
 
 Read this before the delivery and worktree integration below, because only a narrow part of that
 fragment applies here. Two things are used: the verified execution location with its two roots, and
-provisioning a checkout for the one Git write of Phase 2 step 1.
+provisioning a checkout for the Git write of Phase 2 step 1 – the same one checkout whether that
+merge applies cleanly or has to be resolved first.
 
 Provision that checkout the way `effective-flow iterate` does: fetch the pull request's **existing** head
 branch and provide it in a clean checkout or isolated worktree, updated via fetch/pull. Never create
@@ -429,8 +477,9 @@ already has the head branch checked out and clean: work in place, create no work
 lifecycle record. Otherwise create one Effective Flow-owned worktree with the fragment's receipt and
 its version 1 lifecycle record, and close that record in the same run: after the push of Phase 2
 step 1 is confirmed, transition `active` to `cleanup-ready` and run the shared
-claim/remove/reconcile sequence; on a controlled stop before the push transition it to `aborted`; on
-an error transition it to `failed`. `aborted` and `failed` retain the worktree and the branch for
+claim/remove/reconcile sequence; on a controlled stop before the push – including a conflict this run
+may not or cannot resolve – end the in-progress merge with `git merge --abort` so the checkout is
+left clean, then transition it to `aborted`; on an error transition it to `failed`. `aborted` and `failed` retain the worktree and the branch for
 inspection. Never end a run leaving an `active` record behind – `effective-flow cleanup` will correctly
 refuse to remove it.
 
@@ -1277,8 +1326,10 @@ It serves both directions plus the merge gate. **Inbound**, `effective-flow iter
 what others wrote. **Outbound**, "PR review publication" writes Effective Flow's own findings onto
 the pull request; that fragment owns which findings are published and which gates run first, while
 this one provides the operations. **The gate**, `effective-flow merge-gate`, reads status and checks,
-waits, posts its configured bot trigger — its only own write — and finally merges; it owns the
-ordered gate and the merge decision, while this one again provides the operations.
+waits, posts its configured bot trigger — its only own write onto the pull request's **discussion** —
+and finally merges; it owns the ordered gate and the merge decision, while this one again provides
+the operations. Its writes to the head **branch** are a different surface, bounded by that tool's own
+Git write boundary and not by this building block.
 
 Boundary to `issue-tracker.md`: that building block is tailored to **issues** and the tracker
 target. PR review threads are a different API object. A workflow working on a pull request is
@@ -1382,7 +1433,10 @@ trigger comment.
 Do not scrape the login out of the probe's authentication-status output. That is human-readable CLI
 prose, and this building block reads normalized JSON only.
 
-**Forgejo limitation:** `viewerRead` is unsupported there and returns `UNSUPPORTED_CAPABILITY`. A
+**On Forgejo** the identity is read through the same `tea api` transport the gate's status read
+uses, and the capability is reported from that transport probe rather than assumed. Forgejo states
+no account class, so the viewer carries a `login` and no `type` — which is sufficient, because a
+consumer compares the login and nothing else. Where the capability is absent, or a read fails, a
 consumer that cannot establish the identity fails closed and treats an item it cannot prove to be
 its own as someone else's.
 
@@ -1412,8 +1466,9 @@ comment body from its own marker table, idempotently. Never write that marker by
 and the `effective-flow iterate` separation are exact string matches, so a hand-written variant silently
 defeats both.
 
-On `UNSUPPORTED_CAPABILITY` – Forgejo does not support review submission, just as it does not
-support thread resolution – fall back to exactly one structured PR comment carrying the `file:line`
+On `UNSUPPORTED_CAPABILITY` – Forgejo supports neither review submission (`review-create`) nor a
+reply into a review thread (`review-thread-reply`); thread **resolution** it does support – fall
+back to exactly one structured PR comment carrying the `file:line`
 references in its text, and report the reduced fidelity; do not improvise a provider request. Build
 that fallback comment with the helper's `pr-review-comment-build` operation, **not** with
 `pr-comment-build`: the latter stamps `<!-- effective-flow-iterate -->`, the marker
@@ -1475,9 +1530,14 @@ Merging is the most irreversible mutation in this tool set and belongs to `effec
 is never used to work around a blocked merge state, and this building block still never approves a
 pull request and never requests changes — not even to unblock a merge.
 
-**Forgejo limitation:** `pr-status-read`, `pr-checks-wait`, and `pr-merge` are all unsupported there
-and return `UNSUPPORTED_CAPABILITY`. The gate fails closed: it degrades to report-only, states that
-reason, and improvises no provider request.
+**Forgejo limitation:** of the three, only `pr-checks-wait` is unsupported there and returns
+`UNSUPPORTED_CAPABILITY` — `tea` has no `checks` subcommand and Forgejo offers no server-side
+blocking watch, so the gate takes its documented no-watch degradation (report the pending checks and
+ask once) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
+the status read composes the pull-request object, the combined commit status and the head commit's
+date, and the merge sends `head_commit_id` as the server-side head guard. Two further operations
+this building block uses stay unsupported on Forgejo — `review-create` and `review-thread-reply` —
+and the gate still fails closed on anything it cannot read, improvising no provider request.
 
 ### Idempotency via the Effective Flow markers
 
@@ -1498,9 +1558,12 @@ this tool's own.
 **`effective-flow merge-gate`, the merge gate, writes no marker at all — by design, not by oversight.** A
 marker left in a raw comment body keeps announcing which tool composed that comment, and removing
 that disclosure is exactly why the gate's former third marker (`effective-flow-pr-gate`) is gone.
-The gate's only own write is its configured trigger comment, and it recognizes that comment again
-through the authenticated login plus the comment's exact configured body — evidence that discloses
-nothing and needs no persistence. Do not reintroduce a gate marker.
+The gate's only own write onto the pull request's **discussion** is its configured trigger comment,
+and it recognizes that comment again through the authenticated login plus the comment's exact
+configured body — evidence that discloses nothing and needs no persistence. Do not reintroduce a gate
+marker. Its writes to the head **branch** — the two kinds of base-into-head merge its Git write
+boundary sanctions — are on another surface and carry no marker either: a merge commit uses Git's
+default message and announces no tool.
 
 Both strings are **distinct and neither is a substring of the other**; every match is an exact
 string match. Reusing one for another writer would make `effective-flow iterate` treat foreign replies as
@@ -1536,6 +1599,13 @@ A head branch that has fallen **behind** its base is brought forward the same wa
 `origin/<base>` into the head branch as a merge commit and push normally. That merge, performed by
 `effective-flow merge-gate`, is the sanctioned repair; a rebase or a force-push of the head branch is not,
 whatever the forge suggests.
+
+A head branch that **conflicts** with its base is brought forward by the same merge, with its
+conflicts resolved inside it: that is the **second** sanctioned repair, likewise performed by
+`effective-flow merge-gate` and scoped to it – no other workflow resolves a conflict on a head branch.
+It changes nothing about the rule above: the result is still one ordinary merge commit pushed
+normally, and a resolution that would need a rebase, a squash, an amend, or a force-push to succeed
+is reported instead of performed.
 
 ## Automatic reviewer state
 
@@ -1585,9 +1655,13 @@ applied one step earlier. A gate then blocks the merge and names that reviewer; 
 on it. **Forgejo is where that is visible.** It states no account class at all, so a **bare** Forgejo
 login no longer matches a configured `X[bot]` entry and that reviewer stays **not started** however
 recently it wrote. A Forgejo login that carries the suffix itself is unaffected, because the suffix
-forces `isBot: true`. Forgejo's gate is report-only by construction — `pr-status-read`,
-`pr-checks-wait` and `pr-merge` are all unsupported there — so what the strict comparison costs there
-is a noisier report, never a wrong merge.
+forces `isBot: true`. **On Forgejo a gate can merge**, so what the strict comparison costs there is
+a blocked merge rather than a noisier report: `pr-status-read` and `pr-merge` are supported and only
+`pr-checks-wait` is not. **Spell a Forgejo `mergeGate.bots` entry as the bare login** — the exact
+login the forge reports, without a `[bot]` suffix. An entry spelled `X[bot]` matches no bare Forgejo
+login at all, leaves that reviewer permanently **not started**, and blocks the gate's merge
+precondition on it forever. The failure direction is still the safe one; on Forgejo it is simply the
+only one.
 
 **Resolution runs from the reported login to the configured entry, and the configured spelling stays
 the key.** `mergeGate.bots.<login>.trigger` and `mergeGate.bots.<login>.check` are dotted
@@ -1648,8 +1722,11 @@ Resolve the state per reviewer, in this order, and stop at the first rule that r
      from here.
    - **no list at all** is a different case. When `pr-status-read` reports `checksReported: false`,
      the primary signal is unavailable rather than negative, and the reviewer falls through to rule 2.
-     Forgejo exposes no such rollup, so every reviewer of a Forgejo pull request takes the fallback
-     path however carefully its `.check` is configured.
+     Forgejo reports a rollup where its combined commit-status endpoint returns one, so a configured
+     `.check` is looked up there exactly as on GitHub — a Gitea status `context` arrives in the same
+     `name` field a check-run name does. Where that endpoint returns an empty or null list,
+     `checksReported` is `false` and every reviewer of that pull request takes the fallback path,
+     however carefully its `.check` is configured.
 2. **`createdAt` versus `headCommittedAt` — the fallback.** It applies to a reviewer with no
    configured `.check`, and to one whose primary signal was unavailable. Compare the `createdAt` of
    that login's newest comment, review thread, or thread reply against `headCommittedAt` from
@@ -1724,12 +1801,30 @@ Where each consumer discharges that obligation, so the two stay in step with thi
 
 ## Git write boundary
 
-**This workflow performs no `git commit` and no push of its own, with exactly one exception:** when
-the forge reports the branch as `BEHIND` its base, it merges `origin/<base>` into the head branch as
-a merge commit and pushes that branch normally. That exception is a **kind** of write, not a
-one-time allowance: it applies in every Phase-2 round whose fresh read reports `BEHIND`, each
-occurrence is exactly one merge commit plus one normal push of the head branch, and no Git write of
-any other kind is permitted at any point.
+**This workflow performs no `git commit` and no push of its own, with exactly two sanctioned kinds
+of Git write, and both are the same operation on the same branch:** the **clean** base-into-head
+merge – `origin/<base>` merged into the head branch as a merge commit and pushed normally, when that
+merge applies without a conflict – and the **conflict-resolving** base-into-head merge, where the
+same merge conflicts, ``effective-flow-merge-conflict-resolver`` resolves the conflicted files, and the gate
+commits and pushes the result. Each is a **kind** of write, not a one-time allowance: either applies
+in every Phase-2 round whose fresh read calls for it, each occurrence is exactly one merge commit
+plus one normal push of the head branch, and no Git write of any other kind is permitted at any
+point.
+
+The second kind is bounded by `mergeGate.conflictResolution`: `off` and an `ask` nobody can answer
+make it unavailable, and the run then reports the conflict and makes **no commit and no push** –
+exactly the previous outcome on the branch. That claim is about the branch, not about the machine:
+step 1 provisions its checkout before the mode is evaluated, and that checkout is left clean by
+`git merge --abort` and closed through its lifecycle on the same stop path.
+
+**Which gate stands in for `pre-commit-gate` on the second kind of write.** This workflow carries no
+`pre-commit-gate` include and runs no project validation itself, yet the conflict-resolving merge
+commits newly authored content – so the stand-in is named rather than left to inference: it is the
+``effective-flow-code-validator`` verification of the "Conflict-resolution delegation contract", delegated
+in **`full`** mode, which is the mode that preserves a repository-mandated combined or top-level gate
+instead of only the checks a role scope would select. The worker's own validation is the first layer
+and does not replace it, and a verification that executed no check is treated as `ABORT` there. No
+commit of this kind is ever written without that gate having run and passed.
 
 **Every other code change is delegated to `effective-flow iterate`** – CI failures as free-text
 instructions, bot findings as the review threads it already reads. This workflow therefore inherits
@@ -1739,7 +1834,9 @@ push path.
 
 Never rewrite the **head branch's** history – no rebase, no squashing of its commits, no
 `commit --amend`, no force-push – here or in a delegation. A branch behind its base is fixed by
-merging the base into it, never by replaying it.
+merging the base into it, never by replaying it, and a branch that **conflicts** with its base is
+fixed the same way: the conflict is resolved inside that forward merge. A resolution that would need
+a rewrite to succeed is reported, never performed.
 
 The forge-side merge method from `delivery.mergeMethod` (`squash`, `merge`, or `rebase`) is a
 different thing and is untouched by that rule: it is how the forge **integrates** the pull request
@@ -1781,7 +1878,7 @@ Every delegation goes to `effective-flow iterate <PR>` and carries:
   kinds of delegation earn it differently – the mandatory rule is not one precondition applied twice:
   - a **CI repair** carries `Item filter: free-text-only`, so the delegated run classifies no review
     thread at all and a review-in-flight guard would protect nothing. That delegation is issued from
-    Phase 2 step 4, **before** this run has observed any reviewer, and the exemption is correct there
+    Phase 2 step 3, **before** this run has observed any reviewer, and the exemption is correct there
     precisely because the run's scope excludes every item a reviewer could still be adding to;
   - a **bot round** carries thread IDs and is issued from Phase 3, after this run has observed the
     state of every configured reviewer. A delegated run that re-derived it would either duplicate
@@ -1808,6 +1905,98 @@ Every delegation goes to `effective-flow iterate <PR>` and carries:
 Consume `effective-flow iterate`'s reported outcome per item. On `ABORT` for an item, the round counts as
 unsuccessful: do not merge, and report the failed item.
 
+## Conflict-resolution delegation contract
+
+The second delegation of this workflow is a **worker-role** delegation, not a workflow handoff, and
+it is separate from the `effective-flow iterate` contract above precisely because nothing it carries is
+the same. It is issued from Phase 2 step 1, only from an observed conflict, and only once per round.
+
+Hand ``effective-flow-merge-conflict-resolver``:
+
+- the **provisioned checkout's absolute root** – the invocation checkout or the Effective
+  Flow-owned worktree of this step, never a second one it provisions for itself;
+- the **base and head refs** of the merge that is in progress, and the fact that it **is** in
+  progress;
+- the **conflicted paths** as `git status` reports them in that checkout, with their staged and
+  unstaged state;
+- the **resolved language values**, so the worker does not re-read the project setup ADR;
+- **this run's own run state** – gated or non-interactive delegation – so the worker knows whether a
+  question could be answered at all;
+- the **boundary it works inside**, restated because it is the gate's boundary and not the worker's
+  to relax: it resolves, validates, and stages by explicit path, and it never commits, never
+  continues the merge, never aborts it, never pushes, and never rewrites history. The commit, the
+  push, and every lifecycle transition stay here.
+
+Consume from it:
+
+- `DONE` with the **per-file record** – each conflicted path with its routing role, its risk
+  classification, and what was done with it; each **adjacent** non-conflicted file with the named
+  failing check that demanded the change; the exact validation commands with their results and every
+  check skipped with its reason; and the complete list of staged paths;
+- or `ABORT` with the file and the concrete contradiction, which ends the step as a controlled stop.
+
+Then, before anything is committed, in **exactly this order** – the order is load-bearing and is
+stated for the reason the second bullet gives:
+
+- **reconcile the record against the working tree, first.** Every modified path must appear in the
+  worker's own record, named and justified. A modified path the record does not name is an error:
+  abort the merge, report it, and commit nothing. The adjacent-file allowance covers **reported**
+  files, never unreported ones.
+
+  **What this reconciliation proves, and what it does not.** It verifies that every modified path is
+  **named**, and that every **adjacent** path carries a named check together with the **verbatim**
+  failure output that check produced before the change. It does **not** re-run that check – this
+  workflow runs no validation of its own – so the bound on adjacent files is enforced as a
+  disclosure requirement plus a presence check on the evidence, and the Phase-6 report is where a
+  human audits whether the named failure actually justified the change. An adjacent path named
+  without a check, or named with a check but without its verbatim failure output, counts exactly as
+  an unnamed path: abort the merge, report it, commit nothing;
+
+- **verify independently, second.** Hand the resolved but uncommitted tree to
+  ``effective-flow-code-validator`` for an independent execution and report of the repository's checks, so
+  the resolution is not verified only by the role that produced it. A failing verdict from **either**
+  role is treated as `ABORT`; the two roles disagreeing is not a tie to break. This is the only
+  validation this workflow commissions directly, and it still happens inside delegated roles – the
+  gate starts none of its own.
+
+  Hand ``effective-flow-code-validator``:
+  - the **provisioned checkout's absolute root** – the same checkout, with the merge still in
+    progress and the worker's paths staged;
+  - its **assigned scope**: the union of the conflicted paths and every adjacent path the worker
+    reported, bucketed and ordered per that role's `Project routing`;
+  - the **validation mode `full`**, because this commit has no other pre-commit gate (see "Git write
+    boundary") and `full` is the mode that preserves a repository-mandated combined or top-level
+    gate;
+  - the **resolved language values**, so the validator does not re-read the project setup ADR – its
+    own language rule forbids that, so a validator handed none has no compliant option.
+
+  **``effective-flow-code-validator``'s own result declares the working-tree changes its validation
+  generated.** Those paths come into existence **after** the reconciliation above and are therefore
+  never measured against the worker's record – a reconciliation run afterwards would abort a correct
+  resolution over a file the validator itself wrote. They are not staged either: the merge commit
+  contains exactly the paths the worker staged, and a validation-generated change is reported and
+  left in the working tree;
+
+- **fail closed on an unverified resolution.** The resolution counts as verified only when these two
+  layers together **executed at least one** of the repository's own checks and every executed check
+  passed. A run in which every check was reported skipped – by the worker, with its reason, or by
+  ``effective-flow-code-validator`` returning `SKIPPED` – and any verdict that is not an affirmative pass
+  are treated **exactly as `ABORT`**: abort the merge, report that the resolution could not be
+  verified together with every check that did not run, and push nothing. An unprovable verification
+  is never an assumed pass, exactly as an unstated merge state, an unstated `required` flag, an
+  unprovable bot state, an unprovable assessment, and an unprovable identity are never assumed
+  passes in this file.
+
+**The head branch is untrusted input, and this is the threat model.** This gate operates on any open
+pull request, including one from an external contributor whose head branch this repository does not
+control. ``effective-flow-merge-conflict-resolver`` discovers its validation commands from files that head
+branch supplies – scoped instructions, CI workflows, task runners, manifests, package scripts – and
+executes them in the provisioned checkout with full filesystem and network access, fully
+automatically whenever `mergeGate.conflictResolution` is `auto`, which is the default. A project that
+gates pull requests it does not trust should set `mergeGate.conflictResolution: ask`, so a human
+authorizes every resolution, or `off`, so no untrusted branch's commands are executed by this
+workflow at all. Stated here so the exposure is a configuration decision rather than a discovery.
+
 ## Configuration
 
 Read from the Effective Flow configuration (project setup ADR) per the loaded configuration
@@ -1816,6 +2005,7 @@ building block. A missing line means the default.
 | Key                              | Values                             | Default   |
 | -------------------------------- | ---------------------------------- | --------- |
 | `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
+| `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
 | `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
 | `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
 | `mergeGate.maxRounds`            | positive integer                   | `3`       |
@@ -1825,6 +2015,22 @@ building block. A missing line means the default.
 | `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
 | `delivery.mergeMethod`           | `squash`, `merge`, `rebase`        | `squash`  |
 
+- `mergeGate.conflictResolution` decides what the gate does when the base-into-head merge of Phase 2
+  conflicts. `auto` (the default) resolves it through ``effective-flow-merge-conflict-resolver``, has the
+  resolved tree verified by ``effective-flow-code-validator``, and pushes one merge commit. `off` makes no
+  commit and no push: the merge is aborted, the conflict is reported, and the **branch** ends exactly
+  where it did before this capability existed – the checkout of Phase 2 step 1 is still provisioned
+  before the mode is read and is cleaned up on the same stop path. `ask` poses the question **once
+  per conflicted Phase-2 round** in a **gated** run – once per conflict, not once per run; in a
+  **non-interactive delegated** run the question cannot be posed, so that combination – and only that
+  combination – behaves as `off`, and the report names `mergeGate.conflictResolution: auto` as the
+  setting that would authorize the resolution. The degradation mirrors how `mergeGate.completion`
+  degrades; the per-round cadence deliberately does **not** mirror that key's once-per-run entry
+  gate, for the reason Phase 2 states where the question is posed.
+- **`mergeGate.conflictResolution` has no `prReview.*` predecessor.** It is new, it never existed
+  under the legacy namespace, and the per-key legacy fallback below therefore finds nothing for it.
+  A project that configured the old namespace and nothing since gets the default `auto` here, which
+  is a behavior change on upgrade; `off` restores the previous behavior exactly.
 - `mergeGate.bots` is a flat comma list of reviewer logins; the trigger text and the check context of
   each bot are their own dotted keys. A login containing brackets (`greptileai[bot]`) is a valid
   middle segment, because the encoding splits on `.` only.
@@ -1856,6 +2062,11 @@ At the start, generate a session ID (e.g. via timestamp) and use
 - the human-comment guard state and the evidence that set it
 - per round: the round number, the check result, the merge state, what was delegated, and what came
   back; plus `VERIFIED_HEAD_SHA` once a round sets it, and its discard on a Phase-3 restart
+- per round, where the base-into-head merge conflicted: the observed merge state and which entry
+  point detected the conflict, the resolved `mergeGate.conflictResolution` mode with its source, the
+  conflicted paths with their risk classification, ``effective-flow-merge-conflict-resolver``'s per-file
+  resolution record including every adjacent file with the check that demanded it, both verification
+  verdicts, and the resulting merge commit or the abort reason
 - the provisioned checkout: reused in place, or the Effective Flow-owned worktree with its lifecycle
   record handle and that record's last transition
 - the bot round: the observed state of every configured reviewer – **running**, **not started**, or
@@ -1874,13 +2085,23 @@ Write a summary after each phase and pass it on to later phases. Delete the file
    loaded "PR review comment integration". A merged or closed pull request, or one belonging to
    another repository, is reported read-only and the run ends – no wait, no delegation, no merge.
 2. Run the forge preflight: detect the host and CLI, probe availability and authentication, and read
-   the capabilities `pullRequestStatus`, `pullRequestChecksWait`, and `pullRequestMerge`. On
-   `CLI_MISSING` or `AUTH_FAILED`, abort without side effects. On `AMBIGUOUS_HOST`, ask for the
-   provider once and retry.
+   the capabilities `pullRequestStatus`, `pullRequestChecksWait`, `pullRequestMerge`, and
+   `viewerRead`. On `CLI_MISSING` or `AUTH_FAILED`, abort without side effects. On
+   `AMBIGUOUS_HOST`, ask for the provider once and retry.
    - Without `pullRequestStatus` nothing in this gate can run: report that and end.
    - Without `pullRequestChecksWait`, the wait step reports and asks instead of waiting (Phase 2).
    - Without `pullRequestMerge`, the run degrades to `report` and states that reason.
-   - **Forgejo** declares all three unsupported, so a Forgejo run is report-only by construction.
+   - Without `viewerRead` the run **continues**. This is the one capability of the four whose
+     absence ends nothing: the gate then cannot identify its own earlier writes on the manual path,
+     so every remaining non-bot item counts and the human-comment guard activates (Phase 1). That
+     blocks a merge rather than stopping the run, and the missing identity is reported as the
+     reason.
+   - **Forgejo** supports `pullRequestStatus`, `pullRequestMerge`, and `viewerRead`, and declares
+     only `pullRequestChecksWait` unsupported: `tea` has no `checks` subcommand and Forgejo offers
+     no server-side blocking watch. A Forgejo run therefore takes the documented no-watch path in
+     Phase 2 — report the pending checks and ask once — and is the whole gate minus the blocking
+     wait, not report-only. What stays unsupported there is `pr-checks-wait`, `review-create`, and
+     `review-thread-reply`.
 3. Resolve the completion mode from `mergeGate.completion`:
    - a configured `merge` or `report` is used unchanged, in every run state, and the report states
      that it came from configuration;
@@ -1892,12 +2113,22 @@ Write a summary after each phase and pass it on to later phases. Delete the file
 
 **`report` scopes the merge, not the run.** In both modes the gate waits for the checks, has failing
 checks repaired through `effective-flow iterate`, posts a configured bot trigger where a bot has **not
-started**, and has the bot threads answered and resolved through `effective-flow iterate`. `report`
-withholds exactly one action: the merge in Phase 5. What differs is the ending, not the work.
+started**, has the bot threads answered and resolved through `effective-flow iterate`, and – where the
+head branch conflicts with its base and `mergeGate.conflictResolution` allows it – resolves that
+conflict and pushes the resulting merge commit. `report` withholds exactly one action: the merge in
+Phase 5. What differs is the ending, not the work.
+
+**The conflict resolution is explicitly among the things `report` does not withhold**, and that is a
+deliberate cost rather than an oversight: a run the operator asked only to _report_ still writes one
+semantic merge commit onto the head branch. The alternative is worse in practice – a `report` run
+would otherwise report the same conflict forever, which is the very state the operator invoked the
+gate to clear. An operator who wants no commit and no push at all in such a run sets
+`mergeGate.conflictResolution: off`, which is the switch for exactly that, instead of giving this
+rule a second exception.
 
 If `mergeGate.completion` is `ask` or unset and the run is gated: Ask the user: **May this run merge the pull request once every gate passes, or only report merge-readiness?**
 - Merge -- mergeGate.completion = merge — repair, have the bot threads answered by the delegated iterate run, and merge with delivery.mergeMethod once every precondition holds
-- No merge -- mergeGate.completion = report — still repair failing checks and have the bot threads answered by the delegated iterate run, but never merge; the run ends with a merge-readiness report
+- No merge -- mergeGate.completion = report — still repair failing checks, have the bot threads answered by the delegated iterate run, and resolve a conflict with the base and push that one merge commit, but never merge the pull request; the run ends with a merge-readiness report. Set mergeGate.conflictResolution = off for a run that makes no commit and no push at all.
 
 ### Phase 1: Read the state fresh and set the human-comment guard once
 
@@ -2074,6 +2305,11 @@ While the guard is active:
   currently negotiating, so Phase 2 may still repair it. This narrowing is deliberate: it keeps the
   gate useful on an actively discussed pull request without ever landing a change out from under a
   reviewer;
+- **the conflict resolution stays permitted** too, for the same reason and beside the same rule. A
+  conflict with the merge target is an objective defect of the branch, not a position a reviewer is
+  negotiating, and the repair is the one the gate already performs for a branch that is merely
+  `BEHIND` – which the guard has never blocked either. What the guard keeps blocking is unchanged:
+  the review-driven implementation and the merge. The resolution runs, the merge does not;
 - **no thread reply, and no thread resolution, of any kind** – see the rule below.
 
 #### A deferred finding gets no thread reply
@@ -2088,14 +2324,20 @@ here so that the two are not read as a contradiction. Resolving such a thread wo
 for a finding nobody handled, and leaving an unresolved reply behind is precisely what makes the
 next run read its predecessor's output as a human comment.
 
-The consequence, stated plainly: **the gate's only own write is the trigger comment** of Phase 3,
-and a **gate-initiated run leaves at most that one item of its own on the pull request** – because
+The consequence, stated plainly: **the gate's only own write onto the pull request's discussion is
+the trigger comment** of Phase 3, and a **gate-initiated run leaves at most that one item of its own
+there** – because
 the delegated run's summary comment is suppressed (see "Delegation contract") and its thread replies
 are resolved along with their threads. At most, not exactly: Phase 3 posts no trigger for a bot it
-observed as **running**, and a run that writes nothing at all is the same guarantee one write
+observed as **running**, and a run that posts no comment at all is the same guarantee one write
 further in the safe direction. Every reply for a finding that _is_ implemented is written
 and resolved by `effective-flow iterate`, as before, and Phase 1's rule 2 keeps those replies out of the
 guard.
+
+**This bounds the discussion surface, not the branch.** The gate also writes to the head **branch** –
+the two kinds of base-into-head merge – and those writes are bounded by "Git write boundary", not
+here. Both statements are exact and neither weakens the other: nothing this gate pushes ever appears
+as a comment, and the at-most-one guarantee above is what Phase 1's rule 3 rests on.
 
 ### Phase 2: Check gate (bounded)
 
@@ -2108,34 +2350,52 @@ a re-read shows a new failure – the current round **ends** there and the run c
 round under "Round accounting". Every wait and every repair is therefore counted and bounded, and no
 run can push an unbounded number of commits onto someone's pull request.
 
-1. **Branch behind its base (`BEHIND`).** Provision a checkout of the existing head branch per
+1. **Bring the head branch forward (`BEHIND` or `DIRTY`).** Both forge states are repaired by the
+   **same** local operation – merge `origin/<base>` into the head branch – and `DIRTY` only states in
+   advance that the operation will conflict. Provision a checkout of the existing head branch per
    "Checkout provisioning boundary" (verified execution location, rooted operations), fetch the
-   base, merge `origin/<base>` into the head branch as a **merge commit**, and push the branch
-   normally. Then re-read the status. This is the only kind of Git write this workflow performs; see
-   "Git write boundary". It must be completed and pushed **before** any `effective-flow iterate`
-   delegation in this or a later round. Use Git's default merge-commit message; add no
-   `Co-Authored-By` trailer and no AI attribution.
+   base, and merge `origin/<base>` into the head branch as a **merge commit**. Use Git's default
+   merge-commit message; add no `Co-Authored-By` trailer and no AI attribution.
+   - **The merge applies cleanly:** commit it and push the branch normally, then re-read the status.
+   - **The merge conflicts:** continue with "Resolving a conflict with the base" below before
+     anything is committed or pushed. That path ends either in the same one merge commit and one
+     normal push, or in a controlled stop that makes no commit and no push and leaves the checkout
+     clean.
+   - These are the only kinds of Git write this workflow performs; see "Git write boundary". The push
+     must be completed **before** any `effective-flow iterate` delegation in this or a later round.
+   - **The conflict is discovered locally, never read from the forge.** `pr-status-read` reports
+     `mergeState` and `mergeable` but no conflicted-file list, so `DIRTY` and `CONFLICTING` are an
+     advance warning and nothing more. A branch reported `BEHIND` whose merge conflicts anyway enters
+     exactly the same path, which is why this is one step and not two: the conflict appears in one
+     place either way.
    - **Close the checkout's lifecycle in the same step.** Once the push is confirmed, an Effective
      Flow-owned worktree goes `active` → `cleanup-ready` and through the shared
      claim/remove/reconcile sequence; a reused in-place checkout has no record to close. A later
      round that needs this step again provisions a checkout again.
-   - If the merge conflicts or the push is rejected because of diverged remote history: stop,
-     report, rewrite no history, and merge nothing. Transition an Effective Flow-owned worktree to
-     `aborted` for a controlled stop or `failed` for an error, retaining the worktree and its branch
-     for inspection.
-2. **Conflict with the base (`DIRTY`).** Not repaired automatically: stop, report the conflict, and
-   do not merge.
-3. **Pending checks.** Call `pr-checks-wait` with `mergeGate.checkWaitMinutes` as its timeout and let
+   - **A controlled stop on the conflict path** – `off`, an `ask` nobody answered, an `ABORT` from
+     either verification role, or a conflict this run may not or cannot resolve – happens **before**
+     the commit: the merge is still in progress, so end it with `git merge --abort` so the checkout
+     is left clean, transition an Effective Flow-owned worktree to `aborted`, then stop, report, and
+     merge nothing.
+   - **A rejected push** happens **after** the merge commit already exists – diverged remote
+     history, a protected head branch, a head branch in a fork. There is **no** merge to abort at
+     that point, so `git merge --abort` is not run here: it would fail with "There is no merge to
+     abort". The merge commit stays on the local branch – reset, amend, rebase and force-push
+     nothing, and rewrite no history – transition an Effective Flow-owned worktree to `failed`, then
+     stop, report the rejected push, and merge nothing. The edge cases below state this same stop
+     per cause.
+   - Both stops retain the worktree and its branch for inspection.
+2. **Pending checks.** Call `pr-checks-wait` with `mergeGate.checkWaitMinutes` as its timeout and let
    the CLI block; the run consumes no tokens while CI runs. Restrict the wait to the forge's own
    required checks exactly when `mergeGate.requireAllChecks` is `false`; the helper owns the provider
    form of that restriction.
    - On a **timeout result** or when the provider has **no watch capability**: do **not** fall back
      to a prompt-driven poll loop. Report the still-pending checks by name and ask the user once.
    - An **unanswered or non-interactive** run ends there with a report and never merges.
-4. **Failed checks.** Delegate to `effective-flow iterate <PR>` with the item filter set to
+3. **Failed checks.** Delegate to `effective-flow iterate <PR>` with the item filter set to
    **free-text-only** and an instruction derived from the failing check names and their reported
    failure detail. The human-comment guard does **not** block this delegation.
-5. **Re-read the status** and evaluate the check criterion:
+4. **Re-read the status** and evaluate the check criterion:
    - `mergeGate.requireAllChecks: true` (default) – **every** reported check must have completed
      successfully. A failed, cancelled, or timed-out check is a failure; a still-pending check ends
      this round and the next round starts again at step 1.
@@ -2156,14 +2416,78 @@ run can push an unbounded number of commits onto someone's pull request.
      substitute: "all checks green" and "mergeable" are different statements, and a protected branch
      can additionally require named checks, an approval, an up-to-date branch, or linear history.
 
-Leave the loop when the check criterion is satisfied and the merge state is **stated** and is
-neither `BEHIND` nor `DIRTY`. An unstated merge state fails closed and keeps the loop running, for
-the same reason an absent `draft` flag blocks and an unstated requiredness blocks: "neither `BEHIND`
-nor `DIRTY`" is vacuously true of a field the provider never reported, and the criterion above
-delegates its own safety to this condition. A compensating condition that disappears when the
-provider goes quiet compensates for nothing. Record the head SHA of that last read as
+Leave the loop when the check criterion is satisfied **and** the forge has stated the branch is
+integrable — either a merge state that is stated and is neither `BEHIND` nor `DIRTY`, **or**
+`mergeable: MERGEABLE` from a provider that reports mergeability but no merge state at all. A
+provider that states **neither** fails closed and keeps the loop running, for the same reason an
+absent `draft` flag blocks and an unstated requiredness blocks: "neither `BEHIND` nor `DIRTY`" is
+vacuously true of a field the provider never reported, and the criterion above delegates its own
+safety to this condition. A compensating condition that disappears when the provider goes quiet
+compensates for nothing.
+
+**The second arm is Forgejo's, and it is a narrowing rather than a loosening.** Forgejo's
+pull-request object has no `mergeStateStatus` equivalent, so the adapter states no merge state
+rather than fabricating a `CLEAN` — which means `BEHIND` is undetectable there, and a
+branch-protection rule that blocks an outdated branch fails the merge closed server-side instead.
+An unstated **mergeability** still blocks in both arms, and Forgejo deliberately leaves it unstated
+whenever the forge said `false`: it reports `false` while a conflict check is still running and for
+any WIP-titled pull request, so the gate keeps looping instead of reporting a conflict that may not
+exist. A genuine conflict on Forgejo therefore does not take the fast "stop and report the conflict"
+path — it loops to `mergeGate.maxRounds` and ends with a report. Where the check list itself is
+**unreported** (`checksReported: false`), the loop does not leave on the check criterion at all:
+report that and ask once per step 2's rule before proceeding, and an unanswered or non-interactive
+run ends there without merging.
+
+Record the head SHA of that last read as
 **`VERIFIED_HEAD_SHA`** – the one commit this run has verified as green and mergeable. Phases 4 and 5 use only that value, and nothing else in this
 workflow records a head SHA for later use.
+
+#### Resolving a conflict with the base
+
+Entered from step 1 above, and only from a merge that has actually conflicted in the provisioned
+checkout. The merge is in progress at this point: nothing is committed, nothing is pushed, and the
+checkout is the one step 1 provisioned – never a second one.
+
+1. **Resolve the mode before any further write.** Read `mergeGate.conflictResolution` and record the
+   resolved value with its source.
+   - **`off`:** end the merge with `git merge --abort`, report the conflict with the conflicted paths
+     as `git status` reported them, and merge nothing. No commit and no push – exactly the outcome
+     this workflow produced on the branch before the capability existed. The checkout was provisioned
+     by step 1 before this mode was read; it is left clean here and its lifecycle record is closed as
+     a controlled stop.
+   - **`ask` in a gated run:** pose the question below **exactly once per Phase-2 round** – once per
+     conflict, not once per run. An answer against the resolution is treated as `off` for that round.
+     This deliberately deviates from `mergeGate.completion`'s once-per-run entry gate: that question
+     settles one fixed decision for the whole run, while each round's conflict is a **different**
+     conflict against a base that moved again, so consent given for one is not consent for the next.
+     With the default `mergeGate.maxRounds: 3` a run may therefore pose it up to three times.
+   - **`ask` in a non-interactive delegated run:** the question cannot be posed, so it behaves as
+     `off`, and the report names `mergeGate.conflictResolution: auto` as the setting that would
+     authorize the resolution.
+   - **`auto`** (the default): continue with step 2.
+2. **Capture the conflict state** – the conflicted paths, their staged and unstaged status, and the
+   two sides per file – and delegate to ``effective-flow-merge-conflict-resolver`` per
+   "Conflict-resolution delegation contract". The human-comment guard does **not** block this
+   delegation, for the reason stated beside the CI repair.
+3. **Consume the worker's outcome.** `ABORT` ends this step as a controlled stop under step 1's last
+   bullet. `DONE` continues.
+4. **Reconcile, then verify independently** – in that order, per that contract: first match the
+   worker's per-file record against the modified paths in the working tree, then hand the resolved
+   but uncommitted tree to ``effective-flow-code-validator`` in `full` mode. A modified path the record does
+   not name and justify, a failing verdict from either role, or a verification that executed **no**
+   check at all ends this step as a stop that commits nothing.
+5. **Commit and push.** The gate – not the worker – completes the merge commit and pushes the head
+   branch normally. Keep Git's default merge-commit message, which already lists the conflicted paths;
+   add no `Co-Authored-By` trailer and no AI attribution. Then re-read the status, exactly as the
+   clean path does, and close the checkout's lifecycle per step 1.
+6. **One attempt per round.** There is no retry loop inside this step: it makes one resolution
+   attempt, it opens **no round of its own** – it lives inside the round step 1 belongs to, which
+   continues into step 2 – and `mergeGate.maxRounds` bounds how often the run may come back here. A conflict that re-appears in a later round because the base moved again is a new
+   round's work, not a second attempt inside this one.
+
+If a Phase-2 base-into-head merge has conflicted, `mergeGate.conflictResolution` is `ask`, and the run is gated: Ask the user: **The head branch conflicts with its base. May this run resolve the conflict, verify the result, and push the merge commit?**
+- Resolve -- mergeGate.conflictResolution = auto — hand the conflicted files to the merge-conflict resolver, have the resolved tree verified independently, and push one merge commit
+- Report only -- mergeGate.conflictResolution = off — abort the merge, leave the branch untouched, and end the run with a report of the conflict
 
 #### Round accounting
 
@@ -2262,7 +2586,13 @@ report naming exactly that condition, and merges nothing – with the single exc
 states for itself, which sends the run back into Phase 3 while rounds remain instead of ending it:
 
 1. the resolved completion mode is `merge`;
-2. the check criterion from `mergeGate.requireAllChecks` is satisfied;
+2. the check criterion from `mergeGate.requireAllChecks` is satisfied, **and the fresh read reported
+   a check list at all**. `checksReported: false` blocks this condition outright. The Phase-2
+   question does not cover it: this condition is re-evaluated against a **different, later** read,
+   and the criterion is vacuously satisfied by an empty list under `requireAllChecks: true` — so a
+   combined-status response that came back empty at Phase-4 time would otherwise pass silently,
+   after the operator answered a question about an entirely different read. An unreported list is an
+   unproven one, exactly as an unstated requiredness and an absent `draft` flag are;
 3. the forge reports the pull request as mergeable and **not a draft**;
 4. the human-comment guard is inactive;
 5. every login in `mergeGate.bots` is observed as **has run** for the current head through the loaded
@@ -2346,10 +2676,10 @@ problem.
 ### Phase 5: Merge
 
 In mode `report`, or when any Phase-4 condition failed, report the exact unmet condition and perform
-no merge. In mode `report` that is the only thing withheld: the repairs, any bot trigger Phase 3
-posted, and the delegated `effective-flow iterate` rounds of the earlier phases have already happened, and
-the run ends by reporting whether the pull request is merge-ready and what a merge run would still
-need.
+no merge. In mode `report` that is the only thing withheld: the repairs, any conflict resolution and
+its pushed merge commit, any bot trigger Phase 3 posted, and the delegated `effective-flow iterate` rounds
+of the earlier phases have already happened, and the run ends by reporting whether the pull request
+is merge-ready and what a merge run would still need.
 
 Otherwise call `pr-merge` with `delivery.mergeMethod` and `VERIFIED_HEAD_SHA` as the expected head.
 Inspect the default dry-run command preview, then repeat with `--apply`.
@@ -2368,6 +2698,16 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
    instead. The merge itself is visible on the pull request anyway. Report:
    - the resolved pull request and the resolved mode with its source;
    - the check outcome per round;
+   - **every conflict with the base this run met**: the resolved `mergeGate.conflictResolution` mode
+     with its source, the conflicted paths with their risk classification, the resolver's per-file
+     record – the side kept, the sides merged, or the generated file regenerated – every **adjacent**
+     non-conflicted file with the named check that demanded it **and that check's verbatim pre-change
+     failure output**, both verification verdicts with the checks each layer actually executed, and
+     the merge commit that resulted or the concrete reason the run stopped instead. This is what makes
+     a semantic resolution auditable file by file rather than silent, and it is the only place a
+     human can check whether a named failure genuinely justified an adjacent change – the gate
+     verified that the evidence is present, never that it is convincing. Report it even when
+     everything went well;
    - the delegated `effective-flow iterate` rounds and their results, including the summary content each
      one handed back instead of posting;
    - the bot round per configured login: the observed state, the evidence that established it, and
@@ -2393,6 +2733,46 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
 
 - **The head moves during the run:** the SHA guard on `pr-merge` rejects the merge; report and do not
   retry blindly.
+- **The merge state is unstated:** the loop already fails closed on it and keeps running. The
+  resolution path is entered only from a merge that actually conflicted, so an unstated state never
+  starts a speculative merge.
+- **The push is rejected after a successful resolution** – someone pushed to the head branch while
+  the worker was working: stop, report, rewrite no history, and transition the worktree to `failed`.
+  Never retry with force. The merge commit already exists here, so there is no merge to abort – this
+  is the post-commit stop Phase 2 step 1 separates from the pre-commit one.
+- **The conflict is in a file the repository generates** (a lockfile, a build output that is
+  tracked): the resolver regenerates it from its source instead of merging its text. `dist/` is
+  gitignored in this repository and cannot conflict here, but a consumer project's generated tracked
+  files can.
+- **The conflict re-appears in a later round** because the base moved again: the next round runs the
+  same step, and the round counter bounds it.
+- **The human-comment guard is active:** the resolution runs, the merge does not – named beside the
+  CI repair for the same reason.
+- **`mergeGate.conflictResolution: ask` in a non-interactive delegated run:** it behaves as `off`,
+  and the report names `auto` as the setting that would authorize the resolution.
+- **The two verification roles disagree** – ``effective-flow-merge-conflict-resolver`` reports `DONE` and
+  ``effective-flow-code-validator`` reports a failure: treated as `ABORT`. Abort the merge and report both
+  verdicts; a disagreement is never a tie to break in the merge's favor.
+- **The resolver changed a file it did not report:** the gate compares the modified paths against the
+  worker's own record before committing. A file the record does not name and justify is an error –
+  abort the merge, report it, commit nothing. The adjacent-file allowance is for **reported** files,
+  never for unreported ones. An adjacent file named without its verbatim pre-change failure output is
+  treated the same way: the gate cannot re-run the check, so the evidence's presence is what it
+  enforces and the Phase-6 report is what a human audits.
+- **Completion mode `report` with a conflict:** the resolution runs, the merge commit is pushed, and
+  the run ends by reporting merge-readiness. Only the Phase-5 merge is withheld.
+- **The head branch is protected against direct pushes:** the resolution succeeds locally and the
+  push is rejected. Report that the branch protection blocks the repair, transition the worktree to
+  `failed`, and never work around it. It is the post-commit stop of the rejected-push case above:
+  the merge commit stays, and there is no merge to abort.
+- **The head branch lives in a fork:** the pull request's head is a branch in **another** repository,
+  and pushing to it requires the contributor to have allowed maintainer edits. Without that
+  permission the resolution succeeds locally and the push is rejected – the same failure mode as the
+  protected-branch case above and handled identically: report it, transition the worktree to
+  `failed`, never work around it. This is also where the untrusted-input exposure named in the
+  "Conflict-resolution delegation contract" is highest, because a fork's head branch is written by
+  someone outside this repository; a project gating such pull requests sets
+  `mergeGate.conflictResolution` to `ask` or `off`.
 - **A bot acknowledges with an emoji reaction instead of a comment.** Greptile does this. Reactions
   are not readable through the helper, so on the fallback signal that acknowledgment never counts and
   the bot times out and blocks the merge – a report, never a wrong merge. **An acknowledgment is not
@@ -2453,9 +2833,11 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
 - **`effective-flow iterate` could not resolve a thread it answered:** it keeps its reply and reports the
   manual resolution, which leaves an unresolved item behind that carries the operator's account in
   manual mode. On a later run that item is in no resolved thread and its body is not the trigger
-  text, so it counts as human and the guard activates. Thread resolution is unsupported only on
-  Forgejo, where this gate is report-only anyway, so this costs a merge that was unavailable
-  regardless – named here so it is not later read as an oversight.
+  text, so it counts as human and the guard activates. Thread **reply** is unsupported on Forgejo,
+  so the reply itself is what cannot be written there; thread **resolution** is supported. Since a
+  Forgejo merge is now reachable, this genuinely costs a merge rather than blocking one that was
+  unavailable anyway: the operator clears it by resolving the thread by hand, or by leaving no such
+  item behind.
 - **The delegated run's summary comment:** it is suppressed for every gate-initiated round, so it
   never becomes such an item. A summary comment from a `effective-flow iterate` run the operator started
   themselves does exist, and rule 4 excludes it by its author plus its leading marker; before that
@@ -2486,10 +2868,25 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   one case where the guard is deliberately narrow.
 - **`pr-checks-wait` times out or is unsupported:** report the pending checks and ask once; never
   fall back to a prompt-driven poll loop.
-- **Forgejo:** `pr-status-read`, `pr-checks-wait`, `pr-merge`, and `viewer-read` are all unsupported,
-  so the run degrades to report-only and states the reason. The guard therefore stays active there,
-  which blocks a merge that was unavailable anyway – nothing is lost. Every bot takes the fallback
-  signal there as well, because no check rollup is reported at all.
+- **Forgejo:** `pr-status-read`, `pr-merge`, and `viewer-read` are supported; `pr-checks-wait`,
+  `review-create`, and `review-thread-reply` are not. The run is the whole gate minus the blocking
+  wait: step 2 takes the no-watch path, reports the pending checks by name and asks once, and an
+  unanswered or non-interactive run ends there. Three consequences are worth naming.
+  - **Requiredness is unstated on every check**, because Forgejo has no such flag. With
+    `mergeGate.requireAllChecks: false` the existing fail-closed rule therefore treats every check
+    as blocking – stricter than the default, never looser.
+  - **`mergeGate.bots` entries must be spelled as the bare login.** Forgejo states no account class,
+    so every author normalizes to `authorType: 'unknown'`: rule 1's bot case never fires there, a
+    bot comment from an account no entry names counts as human and holds the guard, and an entry
+    spelled `X[bot]` matches no bare Forgejo login at all – leaving that reviewer permanently **not
+    started** and blocking Phase-4 condition 5. The fail-safe direction is correct; on Forgejo it is
+    the only direction.
+  - **The conflict-resolution path has no entry point there.** Forgejo reports no merge state, so
+    neither `BEHIND` nor `DIRTY` is ever observed, and `mergeable: false` is deliberately reported as
+    unstated rather than as `CONFLICTING`. Step 1's forward merge is therefore reached only when
+    something else brings the run to it, and a genuine conflict surfaces as a bounded loop that ends
+    in a report rather than as the fast conflict path – stated so it is not later read as an
+    oversight.
 - **`effective-flow iterate` returns `ABORT` for an item:** the round counts as unsuccessful, the run does
   not merge, and the failed item is reported.
 - **The item filter matches nothing** (every named thread was resolved between the read and the
@@ -2504,11 +2901,30 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
 
 ## Rules
 
-- Perform **no** `git commit` and **no** push other than the base-into-head merge that Phase 2 step 1
-  allows. Delegate every other code change to `effective-flow iterate`.
+- Perform **no** `git commit` and **no** push other than the two kinds of base-into-head merge that
+  Phase 2 step 1 allows – the clean one and the conflict-resolving one. Delegate every other code
+  change to `effective-flow iterate`.
 - Never rewrite the head branch's history: no `commit --amend`, no rebase, no squashing of its
   commits, no force-push. The forge-side `delivery.mergeMethod` – including `squash` and `rebase` –
-  is the integration of the pull request in Phase 5 and is not covered by this rule.
+  is the integration of the pull request in Phase 5 and is not covered by this rule. A conflict is
+  resolved inside the forward merge or not at all; a resolution that would need a rewrite is
+  reported.
+- Resolve a conflict only through ``effective-flow-merge-conflict-resolver``, never inline, and only when
+  `mergeGate.conflictResolution` allows it: `off`, and `ask` in a non-interactive delegated run,
+  make no commit and no push and report. Never commit a resolved tree that
+  ``effective-flow-code-validator`` did not verify, and never commit a modified path the worker's own record
+  does not name and justify – an **adjacent** path is justified only by a named check carried with
+  its verbatim pre-change failure output.
+- **Never treat an unverified resolution as a verified one.** A resolution whose two verification
+  layers together executed **no** check at all, or whose verdict is anything other than an
+  affirmative pass, is treated exactly as `ABORT`: abort the merge, report that the resolution could
+  not be verified and which checks did not run, and push nothing. An unprovable verification is never
+  an assumed pass, as no unprovable condition is anywhere in this workflow.
+- Leave no checkout mid-merge: every controlled stop on the conflict path aborts the in-progress
+  merge and transitions the lifecycle record to `aborted`; an error transitions it to `failed`.
+  Never end a run leaving an `active` record behind.
+- Make **one** resolution attempt per round. There is no retry loop inside the step; a conflict that
+  survives is reported, and `mergeGate.maxRounds` bounds how often the run returns to it.
 - Never approve a pull request and never request changes, not even to unblock a merge.
 - Never read an Effective Flow marker as authorship evidence **on its own**, and write none. A
   marker is only ever one condition beside the author, and only as the body's leading line.
@@ -2521,9 +2937,10 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   reason. The identity is never consulted for an item rule 1 already excluded.
 - Write nothing into the thread of a bot finding this run did not implement – no reply, no
   resolution. Name it in the chat summary instead. The trigger comment is this workflow's only own
-  write, and suppressing the delegated run's summary comment keeps it the only item a gate-initiated
-  run can leave on the pull request – at most one, since a bot observed as **running** gets no
-  trigger at all.
+  write **onto the pull request's discussion**, and suppressing the delegated run's summary comment
+  keeps it the only item a gate-initiated run can leave there – at most one, since a bot observed as
+  **running** gets no trigger at all. The head **branch** is a different surface: the two kinds of
+  base-into-head merge are bounded by "Git write boundary" and by the rule above, never by this one.
 - Announce `Summary comment: suppressed`, `Review guard: established`, and `Next steps: suppressed`
   in every delegation, each on its own line and in exactly that literal form, and never delegate
   without any of them.
@@ -2535,8 +2952,9 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
 - Ask the entry gate exactly once, at the start. A configured `mergeGate.completion` of `merge` or
   `report` is used unchanged in every run state; only `ask` or an unset key in a non-interactive
   delegation behaves as `report`.
-- `report` withholds the merge and nothing else: repairs, the bot trigger for a bot that has **not
-  started**, and the delegated `effective-flow iterate` rounds still run.
+- `report` withholds the merge and nothing else: repairs, the conflict resolution with its pushed
+  merge commit, the bot trigger for a bot that has **not started**, and the delegated
+  `effective-flow iterate` rounds still run.
 - Never fall back to a prompt-driven poll loop when a wait times out; report and ask once.
 - Never exceed `mergeGate.maxRounds`, never reset the counter, and never jump backwards inside a
   round – a repeated wait, a repair, a Phase-2 restart from the bot round, and a Phase-4 return into
@@ -2545,6 +2963,8 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
 - Never set a `Co-Authored-By` trailer and add no AI attribution in the merge commit, in trigger
   comments, or in any other published text.
 - Do not start project validation such as linting, tests, or builds yourself; the pull request's own
-  checks are the criterion, and repairs run through `effective-flow iterate`.
+  checks are the criterion, repairs run through `effective-flow iterate`, and the two verifications of a
+  resolved merge conflict run inside ``effective-flow-merge-conflict-resolver`` and
+  ``effective-flow-code-validator`` – delegated roles, never a command this workflow runs.
 - Give the user a brief status update after each phase.
 - On a missing or unauthenticated CLI: abort cleanly and perform no local side effects.

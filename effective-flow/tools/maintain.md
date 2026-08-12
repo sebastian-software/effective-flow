@@ -280,6 +280,7 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 | Key                              | Values                             | Default   |
 | -------------------------------- | ---------------------------------- | --------- |
 | `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
+| `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
 | `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
 | `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
 | `mergeGate.maxRounds`            | positive integer                   | `3`       |
@@ -290,6 +291,23 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 
 A login containing brackets (`greptileai[bot]`) is a valid middle segment, because the encoding
 splits on `.` only.
+
+**`mergeGate.conflictResolution` is new and has no `prReview.*` predecessor.** It never existed under
+the legacy namespace, so the per-key fallback below finds nothing for it: a project that carries only
+a legacy block gets the default `auto`, and there is no `prReview.conflictResolution` row to read,
+migrate, or report as shadowed. `auto` resolves a conflict with the base through
+effective-flow merge-gate's dedicated worker, `ask` asks once **per conflicted round** in a gated run —
+once per conflict rather than once per run, deliberately unlike `mergeGate.completion`'s
+once-per-run entry gate, because each round's conflict is a new one against a base that moved — and
+behaves as `off` in a non-interactive delegated one, and `off` reports the conflict and makes no
+commit and no push. That last claim is about the branch: the gate provisions its checkout before it
+reads this key, and cleans it up on the same stop path.
+
+**An unreadable or invalid `mergeGate.conflictResolution` resolves to `off`, not to `auto`.** The
+general rule above says to use a safe default for the run; for every other key in this block the safe
+default and the documented default are the same value, and for this one they are not — an
+unparseable line must never authorize a commit and a push. Report the affected key as that rule
+requires and continue with `off`.
 
 **Backcompat (one generation):** these keys were formerly named `prReview.*`. Where a
 `mergeGate.<key>` line is absent, read `prReview.<key>` and use its value; report **once per run**

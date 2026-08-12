@@ -302,6 +302,7 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 | Key                              | Values                             | Default   |
 | -------------------------------- | ---------------------------------- | --------- |
 | `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
+| `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
 | `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
 | `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
 | `mergeGate.maxRounds`            | positive integer                   | `3`       |
@@ -312,6 +313,23 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 
 A login containing brackets (`greptileai[bot]`) is a valid middle segment, because the encoding
 splits on `.` only.
+
+**`mergeGate.conflictResolution` is new and has no `prReview.*` predecessor.** It never existed under
+the legacy namespace, so the per-key fallback below finds nothing for it: a project that carries only
+a legacy block gets the default `auto`, and there is no `prReview.conflictResolution` row to read,
+migrate, or report as shadowed. `auto` resolves a conflict with the base through
+effective-flow merge-gate's dedicated worker, `ask` asks once **per conflicted round** in a gated run —
+once per conflict rather than once per run, deliberately unlike `mergeGate.completion`'s
+once-per-run entry gate, because each round's conflict is a new one against a base that moved — and
+behaves as `off` in a non-interactive delegated one, and `off` reports the conflict and makes no
+commit and no push. That last claim is about the branch: the gate provisions its checkout before it
+reads this key, and cleans it up on the same stop path.
+
+**An unreadable or invalid `mergeGate.conflictResolution` resolves to `off`, not to `auto`.** The
+general rule above says to use a safe default for the run; for every other key in this block the safe
+default and the documented default are the same value, and for this one they are not — an
+unparseable line must never authorize a commit and a push. Report the affected key as that rule
+requires and continue with `off`.
 
 **Backcompat (one generation):** these keys were formerly named `prReview.*`. Where a
 `mergeGate.<key>` line is absent, read `prReview.<key>` and use its value; report **once per run**
@@ -479,7 +497,7 @@ Reads execute immediately. Mutations are dry runs by default: inspect the return
 
 ### Label convention
 
-In remote mode, use these labels and create missing labels idempotently (tolerate an "already exists" message, do not treat it as an error):
+In remote mode, use these labels and create missing labels idempotently. The helper's label creation reads the repository's existing labels first and creates only what is genuinely missing, so a repeated run adds no second copy of a label; each call reports whether it created anything. Copies an earlier version already created are not removed and can still attach several times to one issue. Where the existing labels cannot be read, it aborts instead of creating:
 
 | Label                                                                                          | Meaning                                                                           |
 | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
@@ -491,7 +509,7 @@ In remote mode, use these labels and create missing labels idempotently (tolerat
 | `effective-flow-issue-done`                                                                    | issue implemented by ``tools/apply-issues.md`` (PR created)                        |
 | `effective-flow-needs-planning`                                                                | skipped by ``tools/apply-issues.md``; planning via `effective-flow plan-issue` needed   |
 
-`wontfix` already exists on many trackers; create it only if it is missing. `effective-flow-issue-done` and `effective-flow-needs-planning` belong to the issue-driven flow (``tools/apply-issues.md``/`effective-flow plan-issue`) and are created idempotently there.
+`wontfix` already exists on many trackers; the helper creates it only if it is missing. `effective-flow-issue-done` and `effective-flow-needs-planning` belong to the issue-driven flow (``tools/apply-issues.md``/`effective-flow plan-issue`) and are created idempotently there.
 
 **Backward compatibility (severity labels):** The English severity labels `critical`/`important`/`note` are the default; newly created or set is exclusively the English label. The former German labels `kritisch`/`wichtig`/`hinweis` are **not** upgraded but stay **recognized** permanently when reading, listing, deduplicating and detecting a finding's severity — run a severity query per language variant (once `critical`/`important`/`note`, once `kritisch`/`wichtig`/`hinweis`) and union by issue number, analogous to the `firmo-`/`effective-flow-` prefix rule above.
 
@@ -905,7 +923,7 @@ Do not expose internal tracking IDs or session details in comments.
    - source type `review-epic` or `review-finding` → these are epic/finding issues produced by `effective-flow review`; ``tools/apply-review.md`` is responsible for them. Point to it and end.
    - `ambiguous` → ask instead of guessing. When ``tools/apply-issues.md`` runs as a delegation from `effective-flow apply`, foreign types should not occur; the switch remains as a safeguard.
    - No argument (`none`): list open issues that carry neither `effective-flow-issue-done` nor `effective-flow-needs-planning`, and ask the user which ones to process. On the forge target, exclude the legacy prefix `firmo-` equivalently (see "Label convention"); on an external target that legacy prefix is forge history and is neither queried nor written. Do **not** use a heuristic auto-selection.
-3. Create the required labels idempotently (`effective-flow-issue-done`, `effective-flow-needs-planning`; tolerate an "already exists" message). On an external target, ensure exactly these two canonical strings in the connection's classification primitive per the `tracker-target` classification mapping — never a `firmo-`/`sf-` variant, which would materialize forge history in a foreign workspace; if the target exposes no classification primitive, abort instead of losing the lifecycle.
+3. Create the required labels idempotently (`effective-flow-issue-done`, `effective-flow-needs-planning`). The helper's label creation reads the repository's existing labels first and creates only what is genuinely missing, so a repeated run adds no second copy; it reports per label whether it created one. Where it cannot read the existing labels, it aborts rather than creating — treat that as a blocked run, not as a reason to create the label another way. On an external target, ensure exactly these two canonical strings in the connection's classification primitive per the `tracker-target` classification mapping — never a `firmo-`/`sf-` variant, which would materialize forge history in a foreign workspace; if the target exposes no classification primitive, abort instead of losing the lifecycle.
 
 ### Phase 2: Expansion & work list
 
