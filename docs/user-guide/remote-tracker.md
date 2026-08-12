@@ -418,6 +418,21 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
   current head SHA and fails with `STALE_WRITE` if it no longer matches the SHA the caller
   verified – in addition to the provider-side `--match-head-commit` guard. A human pushing to the
   branch while the gate was working is therefore caught twice, not once.
+- **`pr-merge` reports a head SHA only when a provider stated it.** On GitHub `--match-head-commit`
+  makes the request itself exact – the server refuses any other head – so an accepted merge
+  corroborates the requested SHA and `headSha` always carries it. Forgejo has no equivalent the
+  server is bound to honour: one older than the Gitea 1.16 API surface silently ignores
+  `head_commit_id`, so an accepted merge reads the pull request back once (bounded at 30 seconds,
+  reported as the `head-read-back` entry of `data.steps` beside the merge that stays `data.command`)
+  and reports `headSha` only when that read states a head equal to the requested one. Otherwise the
+  field is **omitted** and a `headShaUnconfirmed` field says why: `differs` when the read-back stated
+  a usable head that is not the requested one, `unavailable` when it could state no head at all – it
+  failed, timed out, or answered without one. A differing head is never adopted, because it has two
+  indistinguishable causes: the ignored `head_commit_id`, and a push that landed right after a
+  correct merge. **An absent `headSha` is not a failure signal.** `merged: true` is decided by the
+  HTTP status and the empty response body, never by the read-back, so a merge that went through is
+  reported as such whatever the read-back did; `headShaUnconfirmed` appears only where `headSha` is
+  omitted, and only on Forgejo.
 - **A failed `pr-merge` reports `retryable: false`, and `mutationMayHaveSucceeded: true` whenever the
   outcome is genuinely unknown.** The forge may have accepted the merge before the connection
   dropped, so a second attempt could act on a state nobody verified. Re-read the pull-request state

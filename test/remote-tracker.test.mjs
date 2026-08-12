@@ -4374,22 +4374,65 @@ test('a Forgejo merge the server refused is never reported as merged', async () 
   assert.equal(bodied.error.details.mutationMayHaveSucceeded, false);
 });
 
+// The merge itself is decided by the HTTP status; the head the envelope reports is not. Forgejo
+// offers no `--match-head-commit` equivalent it is bound to honour, so the head is read back once
+// after the merge and reported only when the server states it.
+const forgejoMergeInput = {
+  repository: forgejoRepository,
+  number: 12,
+  payload: { method: 'squash', expectedHeadSha: verifiedHead },
+};
+
+// The read-back's own argv: the `pr-status-read` plan plus the bound it applies to itself.
+const READ_BACK_ARGS = [
+  'api',
+  'repos/team/flow/pulls/12',
+  '--include',
+  '--login',
+  'work',
+  '--repo',
+  'team/flow',
+];
+
+async function forgejoMerge(readBack) {
+  const runner = fakeRunner([...forgejoStatusResults(), teaApiResult(200, undefined), readBack]);
+  const envelope = await executeOperation('pr-merge', forgejoMergeInput, {
+    runner,
+    skipProbe: true,
+    apply: true,
+  });
+  return { envelope, runner };
+}
+
 test('an accepted Forgejo merge reports the verified head and the method', async () => {
-  const runner = fakeRunner([...forgejoStatusResults(), teaApiResult(200, undefined)]);
-  const envelope = await executeOperation(
-    'pr-merge',
-    {
-      repository: forgejoRepository,
-      number: 12,
-      payload: { method: 'squash', expectedHeadSha: verifiedHead },
-    },
-    { runner, skipProbe: true, apply: true },
+  // The forge states the head in whatever casing it stores it, so the confirmation is normalized on
+  // both sides; a literal comparison would call this confirmed head unconfirmed.
+  const { envelope, runner } = await forgejoMerge(
+    teaApiResult(
+      200,
+      forgejoPull({ head: { sha: ` ${verifiedHead.toUpperCase()} `, ref: 'topic' } }),
+    ),
   );
   assert.equal(envelope.ok, true);
   assert.equal(envelope.data.result.merged, true);
   assert.equal(envelope.data.result.method, 'squash');
   assert.equal(envelope.data.result.headSha, verifiedHead);
+  assert.equal(Object.hasOwn(envelope.data.result, 'headShaUnconfirmed'), false);
   assert.equal(envelope.data.command.args.at(-1), '@-');
+
+  // Exactly one read follows the merge: the three status reads of the head guard, the merge, and
+  // the read-back — which bounds itself, unlike every other plan this file builds.
+  assert.equal(runner.calls.length, 5);
+  assert.deepEqual(runner.calls[4].args, READ_BACK_ARGS);
+  assert.equal(runner.calls[4].timeoutMs, 30_000);
+
+  // `data.command` keeps naming the merge, as `label-create` does; `steps` states both calls.
+  assert.deepEqual(
+    envelope.data.steps.map((step) => step.step),
+    ['merge', 'head-read-back'],
+  );
+  assert.deepEqual(envelope.data.steps[0].command, envelope.data.command);
+  assert.deepEqual(envelope.data.steps[1].command.args, READ_BACK_ARGS);
 
   // Without `--apply` the merge previews and executes nothing.
   const preview = fakeRunner([]);
@@ -4405,6 +4448,53 @@ test('an accepted Forgejo merge reports the verified head and the method', async
   assert.equal(dry.dryRun, true);
   assert.equal(preview.calls.length, 0);
   assert.equal(dry.data.command.executable, 'tea');
+  // The dry run is the merge preview alone, produced before any provider branch runs.
+  assert.equal(Object.hasOwn(dry.data, 'steps'), false);
+});
+
+// Every omission case asserts the five calls too: an implementation that just skips the read-back
+// would otherwise satisfy "no `headSha`" by never looking.
+async function assertUnconfirmedForgejoMerge(readBack, reason) {
+  const { envelope, runner } = await forgejoMerge(readBack);
+  // A merge is never reported as failed or possibly-unapplied because a read after it failed.
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.result.merged, true);
+  assert.equal(Object.hasOwn(envelope.data.result, 'headSha'), false);
+  assert.equal(envelope.data.result.headShaUnconfirmed, reason);
+  assert.equal(Object.hasOwn(envelope.data.result, 'mutationMayHaveSucceeded'), false);
+  assert.doesNotMatch(JSON.stringify(envelope), /mutationMayHaveSucceeded/);
+  assert.equal(runner.calls.length, 5);
+  assert.deepEqual(runner.calls[4].args, READ_BACK_ARGS);
+}
+
+test('a Forgejo merge whose read-back states a different head omits the head SHA', async () => {
+  // Two indistinguishable causes — the ignored `head_commit_id`, or a push that landed after a
+  // correct merge — so the stated head is reported as a disagreement, never adopted.
+  await assertUnconfirmedForgejoMerge(
+    teaApiResult(200, forgejoPull({ head: { sha: movedHead, ref: 'topic' } })),
+    'differs',
+  );
+});
+
+test('a Forgejo merge whose read-back states no usable head omits the head SHA', async () => {
+  for (const head of [undefined, {}, { sha: '' }, { sha: '   ' }, { sha: 42 }]) {
+    await assertUnconfirmedForgejoMerge(teaApiResult(200, forgejoPull({ head })), 'unavailable');
+  }
+});
+
+test('a Forgejo merge whose read-back fails still reports the merge, without a head SHA', async () => {
+  // Each of these raises a different error from a different helper, and all of them are discarded:
+  // a non-zero exit from `runChecked`, a non-2xx status from `teaApiSuccess`, a response with no
+  // status line from `readTeaApiResponse`, and a killed child from the read-back's own bound.
+  for (const failure of [
+    { status: 1, stdout: '', stderr: 'connection reset' },
+    teaApiResult(500, { message: 'internal server error' }),
+    teaApiResult(404, { message: 'not found' }),
+    { status: 0, stdout: 'not json', stderr: '' },
+    { status: null, stdout: '', stderr: '', timedOut: true },
+  ]) {
+    await assertUnconfirmedForgejoMerge(failure, 'unavailable');
+  }
 });
 
 test('a supplied cwd roots every process invocation of an operation', async () => {
@@ -4522,7 +4612,10 @@ function runShippedCli(operation, input, env = {}, flags = []) {
 test('the shipped process runner bounds a watch and leaves every other spawn unbounded', () => {
   const repository = { host: 'github.com', owner: 'example', repository: 'flow' };
 
-  // Only the wait carries a bound; no other plan does, so no other spawn can be cut short.
+  // Only the wait carries a bound the builder puts there; no other plan does, so no other spawn can
+  // be cut short by one it was handed. The single exception bounds itself at its call site: the
+  // Forgejo post-merge head read-back spreads its own `timeoutMs` onto the plan this builder
+  // answers with, which is exactly why the builder stays free of it.
   assert.equal(
     buildCommandPlan('pr-checks-wait', { number: 12, timeoutMinutes: 20 }, githubRepository)
       .timeoutMs,
