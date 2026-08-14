@@ -39,16 +39,6 @@ when: a concept artifact's directory, file name, status, or sections are resolve
 ```
 
 ```lazy-include
-runtime-state-safety
-when: a session rename request is about to be written below the runtime directory
-```
-
-```lazy-include
-effective-flow-dir-migration
-when: a session rename request is about to be written below the runtime directory
-```
-
-```lazy-include
 session-rename
 when: the run's subject is fixed and a session title is about to be applied or emitted
 ```

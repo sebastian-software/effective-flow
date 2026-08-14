@@ -28,12 +28,12 @@ The Phase 4 delegation sub-agent per overlap component is **workflow-to-workflow
 
 ```lazy-include
 runtime-state-safety
-when: any wisdom, memory, cache, report, lock, or worktree mutation is imminent, or a session rename request is about to be written
+when: any wisdom, memory, cache, report, lock, or worktree mutation is imminent
 ```
 
 ```lazy-include
 effective-flow-dir-migration
-when: any wisdom, memory, cache, report, lock, or worktree mutation is imminent, or a session rename request is about to be written
+when: any wisdom, memory, cache, report, lock, or worktree mutation is imminent
 ```
 
 ```lazy-include

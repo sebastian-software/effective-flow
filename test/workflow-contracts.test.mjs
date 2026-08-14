@@ -177,25 +177,25 @@ test('the session-title contract ships in the router and stays out of the budget
     );
     assert.ok(sources.length > 0, `${directory} must contain sources to check`);
     for (const file of sources) {
+      const content = source(`${directory}/${file}`);
       assert.doesNotMatch(
-        source(`${directory}/${file}`),
-        /session-title/,
-        `${directory}/${file} must not carry the always-loaded session-title fragment`,
+        content,
+        /```include\nsession-title\n```|^## Session title$/m,
+        `${directory}/${file} must not duplicate the eagerly loaded session-title contract`,
       );
     }
   }
 
-  // Load-bearing clauses: a host gate that never touches the running session, a
-  // single emission, and a subject-first title.
+  // Load-bearing clauses: only the explicitly established app-native path may
+  // target the caller, arbitrary cross-session renames stay forbidden, and the
+  // title remains a single subject-first emission. This is an instruction
+  // contract; it does not claim to execute the Desktop operation.
   const contract = prose(fragment);
-  assert.match(contract, /Never call such a tool for the current session/);
+  assert.match(contract, near('app-native current-task path', 'takes no task id', 200));
   assert.match(contract, /apply the title silently instead of proposing it/);
-  // Shares its source line with the first assertion above ("... they exclude
-  // it, never retitle another session, and never probe speculatively"), which
-  // is exactly why the session-rename-butler carve-out edit is the likeliest
-  // thing to break it: a hand-edit narrowing the requester-side ban can lose
-  // this clause without touching a line number a diff-only reviewer expects.
   assert.match(contract, /never retitle another session/);
+  assert.match(contract, /never probe speculatively/);
+  assert.match(contract, near('later automatic title', 'replace one the user set manually', 200));
   assert.match(contract, /a delegate never repeats a subject its parent already proposed/);
   assert.match(contract, /at most 60 characters/);
 
@@ -264,11 +264,21 @@ test('every work-subject tool carries the session-rename lazy pointer and silent
 
   const lazyPointer = /```lazy-include\nsession-rename\n/;
   for (const tool of workSubjectTools) {
+    const toolSource = source(`src/tools/${tool}.md`);
     assert.match(
-      source(`src/tools/${tool}.md`),
+      toolSource,
       lazyPointer,
       `src/tools/${tool}.md must carry the session-rename lazy-include pointer`,
     );
+    for (const match of toolSource.matchAll(
+      /```lazy-include\n(?:runtime-state-safety|effective-flow-dir-migration)\nwhen:[\s\S]*?\n```/g,
+    )) {
+      assert.doesNotMatch(
+        match[0],
+        /session rename/i,
+        `src/tools/${tool}.md must not load runtime-state guidance for a session rename`,
+      );
+    }
   }
   for (const tool of silentTools) {
     assert.doesNotMatch(
@@ -288,31 +298,204 @@ test('every work-subject tool carries the session-rename lazy pointer and silent
   );
 });
 
-// Regression: the fragment used to open with a Codex-exclusive early exit -
-// "Codex is the only host with an established path today. On any other host,
-// emit the suggestion line and read no further" - which made the Claude Code
-// section below it dead prose: a Claude run would stop reading before ever
-// reaching it, yet a naive "contains Claude Code" assertion stayed green
-// throughout. This pins the ordering that actually matters instead: both
-// host names must appear before the exit clause, and the old Codex-exclusive
-// framing must be gone entirely.
-test('session-rename opens with a host dispatch that keeps Claude Code reachable', () => {
+// The old architecture routed the umbrella host name "Codex" into the hook
+// transport. Pin the narrower table cells so that restoring that generic row,
+// or accidentally routing Codex CLI into the app-only operation, fails even if
+// both host names still occur elsewhere in the prose.
+test('session-rename dispatches only the ChatGPT Desktop Codex tab to the native path', () => {
   const fragment = source('src/shared/session-rename.md');
   const dispatch = section(fragment, '## Session rename');
 
-  assert.doesNotMatch(fragment, /Codex is the only host/);
-  ordered(fragment, 'Codex', 'Claude Code', 'read no further');
-
-  // The ordering above fails against the old early exit, but on its own it is
-  // satisfied by any mention of Claude Code - including a clause excluding it -
-  // and it ties the third-host exit to nothing. The dispatch is a table, so
-  // assert its structure: all three hosts are routed, and the exit belongs to
-  // the row that may take it rather than sitting anywhere in the file.
   const hosts = firstColumnCells(dispatch);
-  for (const host of ['Codex', 'Claude Code', 'any other host']) {
-    assert.ok(hosts.includes(host), `the host dispatch table must route ${host}`);
+  assert.deepEqual(
+    hosts.filter((host) => !/^[-:]+$/.test(host)),
+    ['Host', 'ChatGPT Desktop, Codex tab', 'Claude Code', 'Codex CLI or any other running host'],
+  );
+  assert.match(tableRow(dispatch, 'ChatGPT Desktop, Codex tab'), /calling task directly/);
+  assert.match(tableRow(dispatch, 'Claude Code'), /mandated butler/);
+  assert.match(tableRow(dispatch, 'Codex CLI or any other running host'), /read no further/);
+  assert.doesNotMatch(dispatch, /^\| Codex\s+\|/m);
+});
+
+test('the Desktop section requires one title-only current-task call and visible failure fallback', () => {
+  const fragment = source('src/shared/session-rename.md');
+  const desktop = section(
+    fragment,
+    '### ChatGPT Desktop: rename the calling task directly',
+    '\n### ',
+  );
+  const contract = prose(desktop);
+
+  // These pins describe what a run must ask the host to do. They deliberately
+  // do not mock or simulate codex_app__set_thread_title and therefore prove no
+  // app-side behavior.
+  assert.match(contract, /currently `codex_app__set_thread_title`/);
+  assert.match(contract, near('Call it once', 'with exactly the already-cut `title`', 200));
+  assert.match(contract, near('Omit `threadId`', 'targets the calling task', 200));
+  assert.match(contract, /Never list tasks/);
+  assert.match(contract, /resolve or supply an id/);
+  assert.match(contract, /target another task/);
+  assert.match(contract, /retry with this or another title/);
+  assert.match(contract, near('call succeeded', 'stay silent', 200));
+  assert.match(contract, near('capability is absent or denied', 'Suggested session title', 400));
+  assert.match(contract, near('call errors', 'Do not block', 400));
+  assert.match(contract, /without `threadId`/);
+
+  for (const retired of [
+    /session-title\.mjs/,
+    /hooks\.Stop/,
+    /session-title\.json/,
+    /session-title-hook\.json/,
+    /codex app-server/i,
+  ]) {
+    assert.doesNotMatch(desktop, retired);
   }
-  assert.match(tableRow(dispatch, 'any other host'), /read no further/);
+});
+
+test('setup probes the Desktop capability directly without reinstalling the retired hook path', () => {
+  const setup = source('src/tools/setup.md');
+  const step = section(setup, '### Step 7: Session rename capability (optional)', '\n### Step 8');
+  const desktop = section(
+    step,
+    '#### ChatGPT Desktop, Codex tab: the native capability needs no installation',
+    '\n#### ',
+  );
+  const contract = prose(desktop);
+
+  assert.match(contract, /currently `codex_app__set_thread_title`/);
+  assert.match(contract, near('call the native operation once', 'only the literal title', 300));
+  assert.match(contract, near('Effective Flow setup check', 'omit `threadId`', 200));
+  assert.match(contract, /never list or resolve tasks/);
+  assert.match(contract, /never retry/);
+  assert.match(contract, near('successful call proves the path', 'absent, denied or failed', 300));
+  assert.match(
+    contract,
+    near('remove only that matching handler', 'preserving unrelated handlers', 300),
+  );
+  assert.doesNotMatch(desktop, /"hooks"\s*:|\[\[hooks\.Stop\]\]|statusMessage/);
+});
+
+test('setup No and a failed Desktop probe never persistently disable later rename attempts', () => {
+  const setup = source('src/tools/setup.md');
+  const step = section(setup, '### Step 7: Session rename capability (optional)', '\n### Step 8');
+  const contract = prose(step);
+  const askBlock = step.match(/```ask\n([\s\S]*?)\n```/);
+  assert.ok(askBlock, 'missing the Step 7 capability-check question');
+
+  assert.match(
+    prose(askBlock[1]),
+    near('label: No', 'Skip only this visible capability check', 300),
+  );
+  assert.match(contract, near('not part of the configuration', 'declares no key', 200));
+  assert.match(
+    contract,
+    near(
+      'For "No", note that setup skips only this visible check',
+      'later eligible runs still attempt the native operation',
+      300,
+    ),
+  );
+  assert.match(contract, near('fall back independently', "each call's result", 150));
+  assert.match(
+    contract,
+    near('this setup probe failed', 'Later eligible runs still attempt the operation', 200),
+  );
+  assert.match(
+    contract,
+    near(
+      'setup neither prepares nor verifies a butler',
+      'later runs keep emitting the suggestion line',
+      300,
+    ),
+  );
+});
+
+test('the delivered setup guide keeps Desktop probe outcomes call-local', () => {
+  const guide = source('docs/user-guide/tools-setup.md');
+  const contract = prose(
+    section(
+      guide,
+      'After the configuration write, setup offers an optional session-rename capability step.',
+      '\n`setup` is the only repair path',
+    ),
+  );
+
+  assert.match(
+    contract,
+    near(
+      '(?:Declining the (?:step|check)|Choosing No)',
+      'skips only this visible setup check',
+      200,
+    ),
+  );
+  assert.match(
+    contract,
+    near('failed (?:capability|probe)', 'means only that this probe failed', 200),
+  );
+  assert.match(
+    contract,
+    near('later (?:eligible )?Desktop runs still (?:attempt|try)', 'individual call', 250),
+  );
+  assert.match(
+    contract,
+    near('suggestion-only', 'Claude Code without (?:an? )?(?:configured|working) butler', 300),
+  );
+  assert.match(contract, near('suggestion-only', 'Codex CLI', 300));
+  assert.match(
+    contract,
+    near('suggestion-only', 'other host without a (?:supported|established)(?: title)? path', 300),
+  );
+});
+
+test('active title surfaces contain no retired transport signatures outside precise removal guidance', () => {
+  const activeSurfaces = [
+    'build.mjs',
+    'src/shared/session-title.md',
+    'src/shared/session-rename.md',
+    'src/tools/setup.md',
+    'docs/user-guide/getting-started.md',
+    'docs/user-guide/tools-setup.md',
+    'docs/developer-guide/build-system.md',
+    'docs/developer-guide/release-and-installation.md',
+    'docs/adr/session-rename-butler.md',
+  ];
+  const removalGuides = new Set([
+    'src/tools/setup.md',
+    'docs/user-guide/getting-started.md',
+    'docs/user-guide/tools-setup.md',
+  ]);
+
+  for (const path of activeSurfaces) {
+    const content = source(path);
+    for (const retired of [
+      /hooks\.Stop/,
+      /codex app-server/i,
+      /session-title\.json/,
+      /session-title-hook\.json/,
+    ]) {
+      assert.doesNotMatch(content, retired, `${path} still carries a retired title transport`);
+    }
+
+    const commandReferences = content.match(/session-title\.mjs apply/g) ?? [];
+    if (removalGuides.has(path)) {
+      assert.equal(commandReferences.length, 1, `${path} must name one exact stale-hook command`);
+      assert.match(
+        prose(content),
+        near('remove only', 'session-title.mjs apply', 400),
+        `${path} may name the retired command only as precise removal guidance`,
+      );
+    } else {
+      assert.equal(commandReferences.length, 0, `${path} must not name the retired command`);
+    }
+  }
+
+  for (const path of [
+    'src/scripts/session-title.mjs',
+    'src/scripts/session-title-core.mjs',
+    'test/session-title.test.mjs',
+  ]) {
+    assert.equal(existsSync(new URL(path, repositoryRoot)), false, `${path} must stay retired`);
+  }
 });
 
 test('the Claude Code butler section carries its load-bearing clauses', () => {

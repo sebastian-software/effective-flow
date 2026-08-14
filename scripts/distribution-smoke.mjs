@@ -3,6 +3,7 @@
 import { createHash } from 'node:crypto';
 import {
   cpSync,
+  existsSync,
   lstatSync,
   mkdtempSync,
   mkdirSync,
@@ -174,6 +175,9 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
     const scripts = join(distRoot, target, 'effective-flow', 'scripts');
     for (const file of ['remote-tracker.mjs', 'remote-tracker-core.mjs']) {
       if (!lstatSync(join(scripts, file)).isFile()) fail(`${target} is missing scripts/${file}`);
+    }
+    for (const file of ['session-title.mjs', 'session-title-core.mjs']) {
+      if (existsSync(join(scripts, file))) fail(`${target} must not ship scripts/${file}`);
     }
     const helper = join(scripts, 'remote-tracker.mjs');
     const result = spawnSync(process.execPath, [helper, 'body-hash'], {

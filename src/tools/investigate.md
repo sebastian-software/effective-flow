@@ -40,7 +40,7 @@ when: an internal sub-agent's result is returned
 
 ```lazy-include
 runtime-state-safety
-when: a wisdom file, runtime migration, investigation directory, or report mutation is imminent, or a session rename request is about to be written
+when: a wisdom file, runtime migration, investigation directory, or report mutation is imminent
 ```
 
 ```lazy-include
