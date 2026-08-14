@@ -410,6 +410,43 @@ test('setup No and a failed Desktop probe never persistently disable later renam
   );
 });
 
+test('the delivered setup guide keeps Desktop probe outcomes call-local', () => {
+  const guide = source('docs/user-guide/tools-setup.md');
+  const contract = prose(
+    section(
+      guide,
+      'After the configuration write, setup offers an optional session-rename capability step.',
+      '\n`setup` is the only repair path',
+    ),
+  );
+
+  assert.match(
+    contract,
+    near(
+      '(?:Declining the (?:step|check)|Choosing No)',
+      'skips only this visible setup check',
+      200,
+    ),
+  );
+  assert.match(
+    contract,
+    near('failed (?:capability|probe)', 'means only that this probe failed', 200),
+  );
+  assert.match(
+    contract,
+    near('later (?:eligible )?Desktop runs still (?:attempt|try)', 'individual call', 250),
+  );
+  assert.match(
+    contract,
+    near('suggestion-only', 'Claude Code without (?:an? )?(?:configured|working) butler', 300),
+  );
+  assert.match(contract, near('suggestion-only', 'Codex CLI', 300));
+  assert.match(
+    contract,
+    near('suggestion-only', 'other host without a (?:supported|established)(?: title)? path', 300),
+  );
+});
+
 test('active title surfaces contain no retired transport signatures outside precise removal guidance', () => {
   const activeSurfaces = [
     'build.mjs',

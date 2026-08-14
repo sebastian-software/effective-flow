@@ -56,17 +56,19 @@ After the configuration write, setup offers an optional session-rename capabilit
 installation or configuration. After the user consents to the visible check, setup calls it once
 with the fixed title `Effective Flow setup check` and reports the concrete result. It supplies no
 task id, performs no task lookup, and does not retry. A successful call proves the path for that
-run; an absent, denied, or failed capability leaves ordinary runs printing one suggested title.
-Because the app exposes no reliable manual-title ownership check, a later Desktop run may replace a
-title the user set manually.
+run; an absent, denied, or failed capability means only that this probe failed. Later eligible
+Desktop runs still attempt the native operation independently and print one suggested title only
+when that individual call is unavailable or fails. Because the app exposes no reliable manual-title
+ownership check, a later Desktop run may replace a title the user set manually.
 
 On Claude Code, setup retains the existing one-time path: the user creates a second session titled
 `Effective Flow rename butler`, pastes the standing mandate, and lets setup verify it by sending one
-message to that session. Codex CLI has no automatic title path in this scope. Declining the step or
-running on any other host without an established path leaves runs printing the suggestion as before.
-The step adds no configuration key, never edits harness configuration, and creates no title runtime
-file. See [Getting started](getting-started.md#keeping-sessions-tellable-apart) for each host's
-current behavior.
+message to that session. Codex CLI has no automatic title path in this scope. Choosing **No** skips
+only this visible setup check; it does not disable later host-specific title handling. Runs stay
+suggestion-only on Claude Code without a configured butler, Codex CLI, and any other host without a
+supported title path. The step adds no configuration key, never edits harness configuration, and
+creates no title runtime file. See [Getting
+started](getting-started.md#keeping-sessions-tellable-apart) for each host's current behavior.
 
 Users who installed the former Codex path must remove only the `Stop` handler whose command invokes
 `session-title.mjs apply` from their personal or repository-local Codex configuration. Preserve
