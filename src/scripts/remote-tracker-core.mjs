@@ -41,6 +41,7 @@ const REMOTE_OPERATIONS = new Set([
   'viewer-read',
   'label-create',
   'issue-read',
+  'issue-state-wait',
   'issue-comments-read',
   'issue-list',
   'issue-create',
@@ -70,6 +71,7 @@ const CAPABILITY_BY_OPERATION = Object.freeze({
   'viewer-read': 'viewerRead',
   'label-create': 'labelCreate',
   'issue-read': 'issueRead',
+  'issue-state-wait': 'issueRead',
   'issue-comments-read': 'issueCommentsRead',
   'issue-list': 'issueList',
   'issue-create': 'issueCreate',
@@ -193,6 +195,387 @@ export function bodyHash(body) {
   return createHash('sha256')
     .update(requireString(body, 'body', { allowEmpty: true }))
     .digest('hex');
+}
+
+export const ISSUE_LIFECYCLE_RECEIPT_PREFIX = 'effective-flow-issue-lifecycle';
+export const ISSUE_LIFECYCLE_RECEIPT_VERSION = 'v1';
+export const ISSUE_STATE_WAIT_MS = 30_000;
+
+const ISSUE_LIFECYCLE_TARGETS = new Set(['forge', 'external']);
+const ISSUE_LIFECYCLE_RELATIONSHIPS = new Set(['closes', 'refs']);
+const ISSUE_LIFECYCLE_CONTAINER_MECHANISMS = new Set(['native', 'checklist']);
+const ISSUE_LIFECYCLE_RECEIPT_KEYS = Object.freeze([
+  'target',
+  'repository',
+  'externalTool',
+  'items',
+]);
+const ISSUE_LIFECYCLE_ITEM_KEYS = Object.freeze([
+  'issue',
+  'relationship',
+  'container',
+  'containerMechanism',
+]);
+
+function exactObjectKeys(value, expected, label) {
+  requireObject(value, label);
+  const keys = Object.keys(value);
+  if (keys.length !== expected.length || keys.some((key) => !expected.includes(key))) {
+    fail('INVALID_PAYLOAD', `${label} must contain exactly ${expected.join(', ')}`, {
+      field: label,
+      keys,
+    });
+  }
+}
+
+function lifecycleSafeString(value, label, { nullable = false } = {}) {
+  if (nullable && value === null) return null;
+  const text = requireString(value, label).trim();
+  if (text.length > 512) {
+    fail('INVALID_PAYLOAD', `${label} is too long`, { field: label, maximum: 512 });
+  }
+  if (/\p{Cc}|<!--|-->/u.test(text)) {
+    fail('INVALID_PAYLOAD', `${label} contains unsafe comment or control characters`, {
+      field: label,
+    });
+  }
+  return text;
+}
+
+function lifecycleExternalTool(value, label) {
+  const identifier = requireString(value, label);
+  if (
+    identifier.length > 64 ||
+    !/^[\p{L}\p{N}][\p{L}\p{N}._-]*$/u.test(identifier) ||
+    redact(identifier) !== identifier
+  ) {
+    fail('INVALID_PAYLOAD', `${label} must be a short stable external-tool identifier`, {
+      field: label,
+      maximum: 64,
+    });
+  }
+  return identifier;
+}
+
+function lifecycleRepository(value) {
+  const repository = lifecycleSafeString(value, 'receipt.repository');
+  if (!/^[^\s/@]+(?:\/[^\s/@]+)+$/u.test(repository)) {
+    fail('INVALID_PAYLOAD', 'receipt.repository must be an owner/repository slug', {
+      field: 'receipt.repository',
+    });
+  }
+  return repository;
+}
+
+function lifecycleRepositoryBinding(context = {}) {
+  const configured = context.expectedRepository ?? context.repository;
+  if (configured === undefined) return undefined;
+  if (typeof configured === 'string') return { slug: lifecycleRepository(configured) };
+  requireObject(configured, 'receipt repository context');
+  const owner = lifecycleSafeString(configured.owner, 'receipt repository context.owner');
+  const name = lifecycleSafeString(
+    configured.repository ?? configured.name,
+    'receipt repository context.repository',
+  );
+  return {
+    slug: lifecycleRepository(configured.slug ?? `${owner}/${name}`),
+    host: normalizeHost(configured.host),
+  };
+}
+
+function normalizeForgeLifecycleReference(value, label, repository) {
+  const reference = lifecycleSafeString(value, label);
+  const shorthand = reference.match(/^#?([1-9]\d*)$/);
+  if (shorthand) return `#${shorthand[1]}`;
+  let parsed;
+  try {
+    parsed = new URL(reference);
+  } catch {
+    fail('INVALID_REFERENCE', `${label} must be a forge issue number or issue URL`, {
+      field: label,
+    });
+  }
+  if (
+    !['http:', 'https:'].includes(parsed.protocol) ||
+    parsed.username ||
+    parsed.password ||
+    parsed.search ||
+    parsed.hash ||
+    redact(reference) !== reference
+  ) {
+    fail('INVALID_REFERENCE', `${label} must be a plain credential-free HTTP(S) issue URL`, {
+      field: label,
+    });
+  }
+  if (repository?.host === undefined) {
+    fail('INVALID_PAYLOAD', `${label} requires the resolved forge repository host`, {
+      field: label,
+    });
+  }
+  let parsedReference;
+  try {
+    parsedReference = parseReference(reference, { expectedKind: 'issue' });
+  } catch (error) {
+    if (error instanceof RemoteTrackerError) {
+      fail(error.code, error.message, redact(error.details), error.retryable);
+    }
+    throw error;
+  }
+  if (
+    parsedReference.repository.slug !== repository.slug ||
+    normalizeHost(parsedReference.repository.host) !== repository.host
+  ) {
+    fail('REFERENCE_REPOSITORY_MISMATCH', `${label} belongs to another repository`, {
+      expected: `${repository.host}/${repository.slug}`,
+      actual: redact(`${parsedReference.repository.host}/${parsedReference.repository.slug}`),
+    });
+  }
+  return `#${parsedReference.number}`;
+}
+
+function externalLifecycleUrlHasCredentialMaterial(reference, parsed) {
+  if (parsed.username || parsed.password) return true;
+  const credentialName =
+    /auth(?:orization)?|cookie|credential|pass(?:word)?|secret|session|token|api[_-]?key/i;
+  for (const name of parsed.searchParams.keys()) {
+    if (credentialName.test(name)) return true;
+  }
+  const rawFragment = parsed.hash.replace(/^#/, '');
+  let fragment = rawFragment;
+  try {
+    fragment = decodeURIComponent(rawFragment);
+  } catch {
+    // A malformed escape is not credential evidence by itself; the raw fragment is still screened.
+  }
+  if (credentialName.test(fragment)) return true;
+  return redact(reference) !== reference;
+}
+
+function normalizeExternalLifecycleReference(value, label) {
+  const reference = lifecycleSafeString(value, label);
+  if (/^#?\d+$/.test(reference)) {
+    fail('INVALID_REFERENCE', `${label} must not be an ambiguous bare number`, { field: label });
+  }
+  if (/^https?:\/\//i.test(reference)) {
+    let parsed;
+    try {
+      parsed = new URL(reference);
+    } catch {
+      fail('INVALID_REFERENCE', `${label} is not a valid external issue URL`, { field: label });
+    }
+    if (
+      !['http:', 'https:'].includes(parsed.protocol) ||
+      externalLifecycleUrlHasCredentialMaterial(reference, parsed)
+    ) {
+      fail('INVALID_REFERENCE', `${label} must be a credential-free HTTP(S) issue URL`, {
+        field: label,
+      });
+    }
+    return reference;
+  }
+  if (/^[a-z][a-z\d+.-]*:/i.test(reference) || /[\s?&=#@]/u.test(reference)) {
+    fail('INVALID_REFERENCE', `${label} must be one tool-native identifier or HTTP(S) URL`, {
+      field: label,
+    });
+  }
+  return reference;
+}
+
+function normalizeLifecycleItem(item, target, repository, index) {
+  const label = `receipt.items[${index}]`;
+  exactObjectKeys(item, ISSUE_LIFECYCLE_ITEM_KEYS, label);
+  const normalizeReference =
+    target === 'forge' ? normalizeForgeLifecycleReference : normalizeExternalLifecycleReference;
+  const issue = normalizeReference(item.issue, `${label}.issue`, repository);
+  const relationship = lifecycleSafeString(item.relationship, `${label}.relationship`);
+  if (!ISSUE_LIFECYCLE_RELATIONSHIPS.has(relationship)) {
+    fail('INVALID_PAYLOAD', `${label}.relationship must be closes or refs`, {
+      field: `${label}.relationship`,
+    });
+  }
+  if (target === 'external' && relationship !== 'refs') {
+    fail('INVALID_PAYLOAD', `${label}.relationship must be refs for an external target`, {
+      field: `${label}.relationship`,
+      target,
+    });
+  }
+  const container =
+    item.container === null
+      ? null
+      : normalizeReference(item.container, `${label}.container`, repository);
+  const containerMechanism =
+    item.containerMechanism === null
+      ? null
+      : lifecycleSafeString(item.containerMechanism, `${label}.containerMechanism`);
+  if (
+    containerMechanism !== null &&
+    !ISSUE_LIFECYCLE_CONTAINER_MECHANISMS.has(containerMechanism)
+  ) {
+    fail('INVALID_PAYLOAD', `${label}.containerMechanism must be native, checklist, or null`, {
+      field: `${label}.containerMechanism`,
+    });
+  }
+  if ((container === null) !== (containerMechanism === null)) {
+    fail('INVALID_PAYLOAD', `${label}.container and containerMechanism must both be null or set`, {
+      field: label,
+    });
+  }
+  return { issue, relationship, container, containerMechanism };
+}
+
+function normalizeIssueLifecycleReceipt(value, context = {}) {
+  exactObjectKeys(value, ISSUE_LIFECYCLE_RECEIPT_KEYS, 'receipt');
+  const target = lifecycleSafeString(value.target, 'receipt.target');
+  if (!ISSUE_LIFECYCLE_TARGETS.has(target)) {
+    fail('INVALID_PAYLOAD', 'receipt.target must be forge or external', {
+      field: 'receipt.target',
+    });
+  }
+  const expectedTarget = context.expectedTarget ?? context.target;
+  if (expectedTarget !== undefined && target !== expectedTarget) {
+    fail('INVALID_PAYLOAD', 'receipt target does not match the resolved tracker target', {
+      expectedTarget,
+      actualTarget: target,
+    });
+  }
+
+  let repository = null;
+  let repositoryBinding;
+  let externalTool = null;
+  if (target === 'forge') {
+    repository = lifecycleRepository(value.repository);
+    if (value.externalTool !== null) {
+      fail('INVALID_PAYLOAD', 'a forge receipt must set externalTool to null', {
+        field: 'receipt.externalTool',
+      });
+    }
+    repositoryBinding = lifecycleRepositoryBinding(context) ?? { slug: repository };
+    if (repository !== repositoryBinding.slug) {
+      fail('REFERENCE_REPOSITORY_MISMATCH', 'receipt belongs to another repository', {
+        expected: repositoryBinding.slug,
+        actual: repository,
+      });
+    }
+  } else {
+    if (value.repository !== null) {
+      fail('INVALID_PAYLOAD', 'an external receipt must set repository to null', {
+        field: 'receipt.repository',
+      });
+    }
+    externalTool = lifecycleExternalTool(value.externalTool, 'receipt.externalTool');
+    const configuredExternalTool = context.expectedExternalTool ?? context.externalTool;
+    const expectedExternalTool =
+      configuredExternalTool === undefined
+        ? undefined
+        : lifecycleExternalTool(configuredExternalTool, 'tracker.externalTool');
+    if (expectedExternalTool !== undefined && externalTool !== expectedExternalTool) {
+      fail('INVALID_PAYLOAD', 'receipt externalTool does not match tracker configuration', {
+        field: 'receipt.externalTool',
+        configuredField: 'tracker.externalTool',
+      });
+    }
+  }
+
+  if (!Array.isArray(value.items) || value.items.length === 0) {
+    fail('INVALID_PAYLOAD', 'receipt.items must be a non-empty array', {
+      field: 'receipt.items',
+    });
+  }
+  const items = [];
+  const byIssue = new Map();
+  for (const [index, rawItem] of value.items.entries()) {
+    const item = normalizeLifecycleItem(rawItem, target, repositoryBinding, index);
+    const prior = byIssue.get(item.issue);
+    if (prior !== undefined) {
+      if (JSON.stringify(prior) !== JSON.stringify(item)) {
+        fail('INVALID_PAYLOAD', 'duplicate receipt issue carries conflicting lifecycle data', {
+          issue: item.issue,
+        });
+      }
+      continue;
+    }
+    byIssue.set(item.issue, item);
+    items.push(item);
+  }
+  return { target, repository, externalTool, items };
+}
+
+function lifecycleReceiptMarker(receipt) {
+  return `<!-- ${ISSUE_LIFECYCLE_RECEIPT_PREFIX}:${ISSUE_LIFECYCLE_RECEIPT_VERSION} ${JSON.stringify(receipt)} -->`;
+}
+
+export function parseIssueLifecycleReceipt(body, context = {}) {
+  const text = requireString(body, 'body', { allowEmpty: true });
+  const prefix = `<!-- ${ISSUE_LIFECYCLE_RECEIPT_PREFIX}:`;
+  const starts = text.split(prefix).length - 1;
+  if (starts === 0) return { found: false, receipt: null };
+  if (starts !== 1) {
+    fail('INVALID_PAYLOAD', 'pull-request body contains multiple issue lifecycle receipts', {
+      count: starts,
+    });
+  }
+  const lines = text.split(/\r?\n/).filter((line) => line.includes(prefix));
+  if (lines.length !== 1 || lines[0].trim() !== lines[0]) {
+    fail('INVALID_PAYLOAD', 'issue lifecycle receipt must occupy exactly one complete line');
+  }
+  const match = lines[0].match(/^<!-- effective-flow-issue-lifecycle:([^\s]+) (\{.*\}) -->$/);
+  if (!match) fail('INVALID_PAYLOAD', 'issue lifecycle receipt is malformed');
+  if (match[1] !== ISSUE_LIFECYCLE_RECEIPT_VERSION) {
+    fail('INVALID_PAYLOAD', 'issue lifecycle receipt version is unsupported', {
+      version: match[1],
+      supported: [ISSUE_LIFECYCLE_RECEIPT_VERSION],
+    });
+  }
+  let raw;
+  try {
+    raw = JSON.parse(match[2]);
+  } catch {
+    fail('INVALID_PAYLOAD', 'issue lifecycle receipt contains malformed JSON');
+  }
+  const receipt = normalizeIssueLifecycleReceipt(raw, context);
+  return { found: true, version: ISSUE_LIFECYCLE_RECEIPT_VERSION, receipt };
+}
+
+export function buildIssueLifecycleReceipt(input, context = {}) {
+  requireObject(input, 'input');
+  const proposed = normalizeIssueLifecycleReceipt(input.receipt ?? input, context);
+  if (input.body === undefined) {
+    return { receipt: proposed, marker: lifecycleReceiptMarker(proposed) };
+  }
+
+  const body = requireString(input.body, 'body', { allowEmpty: true });
+  const existing = parseIssueLifecycleReceipt(body, context);
+  if (existing.found) {
+    for (const field of ['target', 'repository', 'externalTool']) {
+      if (existing.receipt[field] !== proposed[field]) {
+        fail(
+          'INVALID_PAYLOAD',
+          'pull-request body contains a lifecycle receipt for another target',
+          {
+            field: `receipt.${field}`,
+            existing: existing.receipt[field],
+            proposed: proposed[field],
+          },
+        );
+      }
+    }
+    const receipt = normalizeIssueLifecycleReceipt(
+      { ...proposed, items: [...existing.receipt.items, ...proposed.items] },
+      context,
+    );
+    const marker = lifecycleReceiptMarker(receipt);
+    const existingLine = body
+      .split(/\r?\n/)
+      .find((line) => line.startsWith(`<!-- ${ISSUE_LIFECYCLE_RECEIPT_PREFIX}:`));
+    const updatedBody = body.replace(existingLine, marker);
+    return { receipt, marker, body: updatedBody, changed: updatedBody !== body };
+  }
+  const receipt = proposed;
+  const marker = lifecycleReceiptMarker(receipt);
+  const newline = body.includes('\r\n') ? '\r\n' : '\n';
+  const separator = body === '' || body.endsWith('\n') ? '' : newline;
+  const updatedBody = `${body}${separator}${marker}`;
+  return { receipt, marker, body: updatedBody, changed: updatedBody !== body };
 }
 
 function normalizeHost(host) {
@@ -1126,6 +1509,7 @@ export function buildCommandPlan(operation, input, repository) {
           { tolerateAlreadyExists: true },
         );
       case 'issue-read':
+      case 'issue-state-wait':
         return mutationPlan(
           'gh',
           ['api', ...hostArgs, '--include', ghEndpoint(`issues/${issueNumber(input)}`)],
@@ -1450,6 +1834,7 @@ export function buildCommandPlan(operation, input, repository) {
         { tolerateAlreadyExists: true, expectsJson: false },
       );
     case 'issue-read':
+    case 'issue-state-wait':
       return mutationPlan('tea', [
         'issues',
         String(issueNumber(input)),
@@ -2293,6 +2678,9 @@ function normalizeAuthor(author) {
 function normalizeIssue(item, repository, metadata = {}) {
   if (!item || typeof item !== 'object')
     fail('INVALID_PAYLOAD', 'provider returned an invalid issue');
+  if (Object.hasOwn(item, 'pull_request')) {
+    fail('INVALID_PAYLOAD', 'provider returned a pull request where an issue was required');
+  }
   return {
     number: requireNumber(item.number ?? item.index, 'provider issue number'),
     title: item.title ?? '',
@@ -2972,9 +3360,107 @@ function localOperation(operation, input) {
       return patchChecklistEntry(input.body, input.patch ?? input);
     case 'body-hash':
       return { hash: bodyHash(input.body) };
+    case 'issue-lifecycle-receipt-build':
+      return buildIssueLifecycleReceipt(input, input.context ?? input);
+    case 'issue-lifecycle-receipt-parse':
+      return parseIssueLifecycleReceipt(input.body, input.context ?? input);
     default:
       return undefined;
   }
+}
+
+function issueStateWaitClock(clock) {
+  const read =
+    typeof clock === 'function'
+      ? clock
+      : clock && typeof clock.now === 'function'
+        ? () => clock.now()
+        : () => Date.now();
+  return () => {
+    const value = read();
+    if (!Number.isFinite(value)) {
+      fail('INVALID_PAYLOAD', 'issue-state-wait clock returned an invalid time');
+    }
+    return value;
+  };
+}
+
+function assertFixedIssueStateWait(input) {
+  const payload = input.payload ?? input;
+  for (const field of [
+    'timeoutMs',
+    'timeoutSeconds',
+    'timeoutMinutes',
+    'waitMs',
+    'waitSeconds',
+    'waitMinutes',
+    'intervalSeconds',
+  ]) {
+    if (payload[field] !== undefined) {
+      fail('INVALID_PAYLOAD', 'issue-state-wait uses a fixed 30-second grace period', {
+        field: `payload.${field}`,
+        waitMs: ISSUE_STATE_WAIT_MS,
+      });
+    }
+  }
+}
+
+async function readIssueForStateWait(input, repository, runner) {
+  const plan = buildCommandPlan('issue-read', input, repository);
+  const result = await runChecked(runner, plan, 'issue-state-wait read');
+  const parsed = isTeaApiIncludePlan(plan)
+    ? { raw: teaApiSuccess(result, 'issue-state-wait read').body }
+    : parseCommandOutput(result, plan, 'issue-state-wait read');
+  const issue = normalizeRemoteData('issue-read', parsed.raw, repository, input, parsed);
+  if (!['open', 'closed'].includes(issue.state)) {
+    fail('INVALID_PAYLOAD', 'forge returned an unsupported issue lifecycle state', {
+      number: issue.number,
+      state: issue.state,
+      supported: ['open', 'closed'],
+    });
+  }
+  return { issue, command: redact(plan) };
+}
+
+async function executeIssueStateWait(input, repository, runner, options = {}) {
+  assertFixedIssueStateWait(input);
+  const now = issueStateWaitClock(options.clock);
+  const sleeper =
+    options.sleeper ?? ((durationMs) => new Promise((resolve) => setTimeout(resolve, durationMs)));
+  if (typeof sleeper !== 'function') {
+    fail('INVALID_PAYLOAD', 'issue-state-wait requires a callable sleeper');
+  }
+
+  const first = await readIssueForStateWait(input, repository, runner);
+  if (first.issue.state === 'closed') {
+    return {
+      result: {
+        issue: first.issue,
+        outcome: 'terminal',
+        terminal: true,
+        timedOut: false,
+        waitMs: 0,
+      },
+      commands: [first.command],
+    };
+  }
+
+  const startedAt = now();
+  await sleeper(ISSUE_STATE_WAIT_MS);
+  const waitedMs = Math.min(ISSUE_STATE_WAIT_MS, Math.max(0, now() - startedAt));
+  const final = await readIssueForStateWait(input, repository, runner);
+  const terminal = final.issue.state === 'closed';
+  return {
+    result: {
+      issue: final.issue,
+      outcome: terminal ? 'terminal' : 'open',
+      terminal,
+      timedOut: !terminal,
+      waitMs: ISSUE_STATE_WAIT_MS,
+      observedWaitMs: waitedMs,
+    },
+    commands: [first.command, final.command],
+  };
 }
 
 async function staleWriteGuard(operation, input, repository, runner, conditionalWriteAvailable) {
@@ -3480,6 +3966,19 @@ export async function executeOperation(operation, input = {}, options = {}) {
     // command and therefore build their own envelope.
     if (operation === 'label-create') {
       return await executeLabelCreate(input, activeRepository, runner, dryRun, probe);
+    }
+    if (operation === 'issue-state-wait') {
+      const observed = await executeIssueStateWait(input, activeRepository, runner, options);
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          ...observed,
+          conditionalWriteAvailable: probe.capabilities?.conditionalWrites === true,
+        },
+        dryRun: false,
+      };
     }
     const plan = buildCommandPlan(operation, input, activeRepository);
     const preview = redact(plan);

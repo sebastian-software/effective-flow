@@ -57,6 +57,48 @@ deduplication needs, and any way to classify an issue, without which severity, a
 lifecycle states cannot be stored. Once the connection is fixed, simply start the run again; it
 had not written anything.
 
+## The external started state could not be resolved
+
+Issue-backed implementation needs one writable native state that the selected tracker context
+normalizes as started. Effective Flow lists the states fresh immediately before implementation and
+fails before code changes when `tracker.externalStartedState` is missing, stale, belongs to another
+workspace or team, is terminal or read-only, or no longer resolves by stable ID or exact accepted
+token. It never falls back to matching a display name such as “In Progress.”
+
+If the run reports exactly one qualifying candidate, check its displayed name and stable value,
+then run `/effective-flow setup` to discover and persist it through the confirmed before/after
+change. An interactive implementation run can use that one value for its current run after asking,
+but does not save it. If zero or several candidates are listed, refine
+`tracker.externalToolHint` so the connection resolves the intended workspace, team, or project, or
+adjust the tracker workflow. Do not copy an arbitrary display name into the ADR.
+
+An issue already marked started without a PR link is handled as an interrupted delivery. Effective
+Flow reads its comments and searches the forge once by the exact issue reference. If that does not
+produce exactly one verifiable pull request, it keeps the issue state, branch, and existing pull
+requests unchanged and starts no replacement implementation. Identify the correct delivery or
+retire the interrupted one manually, then rerun `apply`.
+
+## A linked issue remains open after merge
+
+`/effective-flow merge-gate` waits for tracker automation for one fixed 30-second grace period after
+a confirmed merge. A still-open issue does not make the merge fail, and Effective Flow never closes
+it forcibly. Read the issue row in the report: it names the first observed next action—an
+intentional non-closing `Refs` relationship, open sub-items or checklist entries, the
+`effective-flow-needs-planning` path, a still-started external state, or only the terminal tracker
+transition when no remaining implementation work is visible.
+
+If automation simply needs longer, run `/effective-flow merge-gate <PR>` again. For an already
+merged pull request, this is observer-only: it repeats receipt validation, tracker observation,
+terminal forge-label cleanup, and eligible container completion, but not checks, review work,
+branch writes, or merge.
+
+If the report says the issue is unobservable, fix the named external connection or read capability
+and use the same re-entry command. If it says the lifecycle receipt is missing, duplicated,
+malformed, or mismatched, the pull request still remains merged, but Effective Flow will not infer
+issue identities from its prose. Restore the single valid receipt through the issue-owning workflow
+or verify and close the issue manually. A native sub-item or checklist entry remains open until its
+linked issue is freshly observed terminal.
+
 ## Worktree conflicts and uncommitted changes
 
 By default, Effective Flow works in a separate [worktree](./worktree-and-delivery.md) and does not

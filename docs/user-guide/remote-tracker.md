@@ -71,6 +71,7 @@ creates only the ones that are genuinely missing:
 | `effective-flow-fix` / `effective-flow-refactor` / `effective-flow-build` / `effective-flow-docs` | target action of the finding (exactly one per finding issue)                                     |
 | `critical` / `important` / `note`                                                                 | severity (exactly one per finding issue; German `kritisch`/`wichtig`/`hinweis` still recognized) |
 | `wontfix`                                                                                         | deliberately not implemented (ADR instead of code)                                               |
+| `effective-flow-issue-in-progress`                                                                | issue-backed implementation has started; removed after terminal closure is observed              |
 | `effective-flow-issue-done`                                                                       | implemented by `/effective-flow apply` (issue-driven), PR created                                |
 | `effective-flow-needs-planning`                                                                   | skipped, clarification via `/effective-flow plan-issue` needed                                   |
 
@@ -118,20 +119,24 @@ color or description keeps it.
 ## External target
 
 With `tracker.mode: external`, issue work lives in a project-management tool outside your Git
-forge. Two settings describe it:
+forge. Three settings describe it:
 
 - `tracker.externalTool` – the short, stable identifier of the tool that holds the issues.
   Required for this mode.
 - `tracker.externalToolHint` – optional free text that lets a run find the right connection:
   the name of an MCP server, a workspace, a team or project key, the tool's identifier
   convention, or the names of its states.
+- `tracker.externalStartedState` – the stable ID of the native state that means started in that
+  exact tracker context, or the connection's exact write token only when it exposes no ID.
 
 Effective Flow ships **no** adapter, no list of supported tools, and no mapping onto any
-product's API. Both values are hints for the run, not a dispatch table: a run establishes the
-connection and its capabilities at run time, from a connection you have already set up on this
-machine – an MCP connection or an installed, authenticated CLI. There is no whitelist, and no
-capability is ever inferred from the tool's name. Naming your tool here does not make it a
-supported integration: a run knows only what the connection you provide can actually do.
+product's API. `externalTool` and `externalToolHint` are connection hints for the run, not a
+dispatch table; `externalStartedState` is a tracker-native value that the run verifies against that
+connection. A run establishes the connection and its capabilities at run time, from a connection
+you have already set up on this machine – an MCP connection or an installed, authenticated CLI.
+There is no whitelist, and no capability is ever inferred from the tool's name. Naming your tool
+here does not make it a supported integration: a run knows only what the connection you provide
+can actually do.
 
 Configure the target with [`/effective-flow setup`](./tools-setup.md). The first-call query
 (see below) can only offer local and remote, because it never writes configuration and therefore
@@ -174,6 +179,7 @@ and never quietly writes somewhere else:
 | no MCP connection and no authenticated CLI for that tool                | abort with the missing connection named                     |
 | several plausible connections and no decisive hint                      | abort; sharpen `tracker.externalToolHint`                   |
 | the connection cannot do something a flow needs (e.g. update a comment) | abort before the first write, naming the missing capability |
+| no single writable started state can be resolved for implementation     | abort before code; run `/effective-flow setup`              |
 
 There is no fallback to the forge and none to `local`. Publishing to the forge instead would
 scatter your issues across two systems, and falling back to a local report would hide work you
@@ -183,7 +189,8 @@ intact, so the run is resumable once the connection is fixed. See
 
 ### Labels, containers, and deduplication
 
-Effective Flow's label strings stay canonical on an external target: `effective-flow-review-finding`,
+Effective Flow's classification strings stay canonical on an external target:
+`effective-flow-review-finding`,
 `effective-flow-review-epic`, the action labels, the severity labels, `wontfix`,
 `effective-flow-issue-done`, and `effective-flow-needs-planning` keep exactly the spellings listed
 under [Labels](#labels). A run stores them in whichever classification primitive your tool offers –
@@ -191,10 +198,23 @@ labels, tags, workflow states, or a custom field – and reports which one it us
 exposes no such primitive, the run aborts rather than creating findings without severity and action
 or losing the lifecycle states.
 
+These classifications are separate from the tracker's native workflow state.
+`effective-flow-issue-done` means that implementation is secured in a pull request; it does not
+mean that the issue is closed. Before issue-backed implementation begins, Effective Flow lists the
+writable native states fresh in the workspace, team, or project selected by
+`tracker.externalToolHint`. A configured `tracker.externalStartedState` must resolve by stable ID
+or exact accepted token to one writable, non-terminal state normalized as started. A display-name
+match is not enough. If the key is unset and exactly one candidate qualifies, an interactive run
+may propose its display name and stable value for that run. Only `/effective-flow setup` persists
+the value. Zero or several candidates, a stale value, or a non-interactive run without a configured
+value stops before implementation rather than guessing.
+
 The container that groups a review run's findings uses the tool's native parent/sub-issue relation
 when the connection exposes one, and the Markdown checklist otherwise. Which mechanism was used is
 reported per run. Either way, every finding stays reachable from its container and its completion
-stays visible.
+stays visible. Creating the pull request does not complete the native sub-item or tick its checklist
+entry. That happens only after `merge-gate` observes the linked work item in a terminal state after
+merge.
 
 **Deduplication does not span targets.** A run only sees the target it currently resolves, so if
 you switch targets, findings that already exist in the old one are published again in the new one.
@@ -275,16 +295,21 @@ publishing.
 ## Merge gate operations
 
 [`/effective-flow merge-gate`](./tools-deliver.md) reads pull-request status, waits for checks, and
-merges through four additional forge operations of the same remote-tracker helper. Like all PR
+merges through five additional forge operations of the same remote-tracker helper. Like all PR
 work, they are inherently forge-bound: they never evaluate `tracker.mode` and only need a Git
 repository, an `origin` remote, and an authenticated CLI.
 
-| Operation        | Capability              | What it does                                                                                                                                                                                                                                                                                    |
-| ---------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pr-status-read` | `pullRequestStatus`     | Reads the head SHA, base ref, PR state, draft flag, check list, and mergeability as one logical read. On GitHub that is one GraphQL call carrying per-check requiredness and the forge's merge state; on Forgejo it is three `tea api` calls and reports neither of those two facts (see below) |
-| `pr-checks-wait` | `pullRequestChecksWait` | Blocks inside the provider's own watch until checks complete or the supplied timeout elapses, then reads back the normalized check list as a second call                                                                                                                                        |
-| `pr-merge`       | `pullRequestMerge`      | Merges the pull request with the configured method; a mutation, so a run without `--apply` produces a dry-run plan and merges nothing                                                                                                                                                           |
-| `viewer-read`    | `viewerRead`            | A read, not a mutation. Returns the authenticated login and, where the provider states it, the account type (`User` or `Bot`), so the gate can tell its own writes from another account's across runs                                                                                           |
+| Operation          | Capability              | What it does                                                                                                                                                                                                                                                                                    |
+| ------------------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pr-status-read`   | `pullRequestStatus`     | Reads the head SHA, base ref, PR state, draft flag, check list, and mergeability as one logical read. On GitHub that is one GraphQL call carrying per-check requiredness and the forge's merge state; on Forgejo it is three `tea api` calls and reports neither of those two facts (see below) |
+| `pr-checks-wait`   | `pullRequestChecksWait` | Blocks inside the provider's own watch until checks complete or the supplied timeout elapses, then reads back the normalized check list as a second call                                                                                                                                        |
+| `pr-merge`         | `pullRequestMerge`      | Merges the pull request with the configured method; a mutation, so a run without `--apply` produces a dry-run plan and merges nothing                                                                                                                                                           |
+| `viewer-read`      | `viewerRead`            | A read, not a mutation. Returns the authenticated login and, where the provider states it, the account type (`User` or `Bot`), so the gate can tell its own writes from another account's across runs                                                                                           |
+| `issue-state-wait` | `issueRead`             | Reads a linked forge issue, waits once for the fixed 30-second grace period when it is still open, then performs one final read; it never polls or closes the issue                                                                                                                             |
+
+`issue-state-wait` uses the adapter's general CLI floor, not the higher GitHub merge-gate floor.
+Its 30-second bound is fixed and has no configuration key. A still-open issue is a successful
+observation result, not a merge failure.
 
 **GitHub** supports `pr-status-read`, `pr-checks-wait`, and `pr-merge`, but only from **`gh`
 2.50.0** – a higher floor than the adapter's general `gh` 2.0.0 minimum. `gh pr checks --json`, the
@@ -454,6 +479,30 @@ and an authenticated CLI; on an external target it means the resolved connection
 Delivery stays with the forge in either case: these tools create branches and pull requests on
 `origin`, reference the issue by its identifier in the PR body, and post the PR link back as a
 comment on the issue.
+
+After clarity and approval, but immediately before the first implementation delegation, an
+implementable issue advances at least to started. A forge issue receives the idempotent
+`effective-flow-issue-in-progress` fallback label; an external issue moves to the freshly validated
+native state selected by `tracker.externalStartedState`. Terminal, skipped, `wontfix`, and
+container-only items are not moved. If the transition cannot be proved, implementation fails closed
+before code changes. An issue that is already started or in a later active state stays there; the
+workflow never moves it backwards. The delegated `build`, `fix`, `refactor`, or `docs` run does not
+repeat this transition; its issue-owning `apply` workflow already performed it.
+
+Every resulting pull request carries one strict, versioned lifecycle receipt in its body. The
+receipt binds the issue references to the resolved tracker target and records the closing or
+non-closing relationship plus any container mechanism. It contains no credentials or connection
+details. A malformed, duplicated, cross-repository, or configuration-mismatched receipt authorizes
+no tracker access and is never replaced by guessing identifiers from PR prose.
+
+Once the pull request is confirmed merged, `merge-gate` gives tracker automation one fixed
+30-second grace period and reads every receipted issue again. It never force-closes an issue. A
+terminal forge issue loses its in-progress label, and an eligible container entry completes only
+after terminal closure is observed. For an open or unobservable issue, the report names the first
+observable closing step: an intentional `Refs` relationship, open sub-items or checklist entries,
+the planning path, a still-started external state, or the remaining terminal tracker transition.
+Run `/effective-flow merge-gate <PR>` again to use its observer-only path when automation takes
+longer or tracker access was unavailable.
 
 ## See also
 

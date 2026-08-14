@@ -174,9 +174,10 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 
 The seven explicit language rows illustrate every override. In a typical project, only
 `language.project` is needed; omit an override to inherit the project language. Omit optional
-skill override rows when no override is needed. `tracker.externalTool` and
-`tracker.externalToolHint` are absent because this example pins `tracker.mode: local`; they belong
-to an external target only (see [Block `tracker`](#block-tracker)).
+skill override rows when no override is needed. `tracker.externalTool`,
+`tracker.externalToolHint`, and `tracker.externalStartedState` are absent because this example pins
+`tracker.mode: local`; they belong to an external target only (see
+[Block `tracker`](#block-tracker)).
 
 ## Block `language`
 
@@ -414,18 +415,38 @@ Controls where issue-shaped work lives: in local Markdown reports, in GitHub/For
 an external project-management tool. See [Remote tracker](./remote-tracker.md) for target
 selection, CLI requirements, and what an external target sends to a third party.
 
-| Key                  | Values                          | Default   | Meaning                                                                 |
-| -------------------- | ------------------------------- | --------- | ----------------------------------------------------------------------- |
-| `mode`               | `local` / `remote` / `external` | `local`   | Markdown report, forge issues, or issues in the tool named below        |
-| `remoteToolOverride` | `auto` / `github` / `forgejo`   | `auto`    | Override host-based CLI detection; forge only, ignored for `external`   |
-| `externalTool`       | Short identifier                | `(unset)` | Tool that holds the issues; required for `mode: external`, no whitelist |
-| `externalToolHint`   | Free text                       | `(unset)` | How to find the connection: MCP server, workspace, key, state names     |
+| Key                    | Values                           | Default   | Meaning                                                                         |
+| ---------------------- | -------------------------------- | --------- | ------------------------------------------------------------------------------- |
+| `mode`                 | `local` / `remote` / `external`  | `local`   | Markdown report, forge issues, or issues in the tool named below                |
+| `remoteToolOverride`   | `auto` / `github` / `forgejo`    | `auto`    | Override host-based CLI detection; forge only, ignored for `external`           |
+| `externalTool`         | Short identifier                 | `(unset)` | Tool that holds the issues; required for `mode: external`, no whitelist         |
+| `externalToolHint`     | Free text                        | `(unset)` | How to find the connection: MCP server, workspace, key, state names             |
+| `externalStartedState` | Stable ID / exact token / `null` | `(unset)` | Writable, non-terminal native state normalized as started; external target only |
 
 `externalTool` and `externalToolHint` are hints for the run, not an adapter: Effective Flow ships
 no product-specific integration and establishes every capability from the connection it resolves
 at run time. Both keys are ignored for routing while the mode is `local` or `remote`, and are kept
 in the ADR. A `mode: external` without a non-empty `externalTool` is invalid configuration: the run
 aborts instead of falling back to the forge or to `local`.
+
+`externalStartedState` is a nullable structured connection value, not a display-name preference.
+Missing or `null` means unset and never authorizes a guessed transition. A non-null value stores the
+state ID exposed by the selected workspace, team, or project. Only when the connection exposes no
+stable ID may it store the exact token accepted by the transition operation. Before use,
+Effective Flow lists writable states fresh in that same context and requires the configured value
+to resolve to exactly one writable, non-terminal state normalized as started. A stale,
+cross-context, read-only, terminal, missing, or display-name-only match fails before implementation.
+
+When this key is absent and the tracker exposes exactly one qualifying started candidate, an
+interactive implementation run may propose the candidate's display name and stable value for that
+run. The run does not edit configuration. Only `/effective-flow setup`, after repeating discovery
+and showing the before/after table for confirmation, persists the suggestion. Zero or several
+candidates and non-interactive runs fail closed instead of choosing a familiar state name.
+
+The post-merge issue grace period is fixed at 30 seconds and is deliberately not configurable. It
+is separate from `mergeGate.checkWaitMinutes`, which controls pull-request checks. Use
+`/effective-flow merge-gate <PR>` again for observer-only re-entry when tracker automation needs
+longer.
 
 ## Block `skills`
 
