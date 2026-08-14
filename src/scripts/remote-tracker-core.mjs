@@ -199,6 +199,7 @@ export function bodyHash(body) {
 
 export const ISSUE_LIFECYCLE_RECEIPT_PREFIX = 'effective-flow-issue-lifecycle';
 export const ISSUE_LIFECYCLE_RECEIPT_VERSION = 'v1';
+export const ISSUE_STATE_READ_TIMEOUT_MS = 30_000;
 export const ISSUE_STATE_WAIT_MS = 30_000;
 
 const ISSUE_LIFECYCLE_TARGETS = new Set(['forge', 'external']);
@@ -1509,12 +1510,18 @@ export function buildCommandPlan(operation, input, repository) {
           { tolerateAlreadyExists: true },
         );
       case 'issue-read':
-      case 'issue-state-wait':
         return mutationPlan(
           'gh',
           ['api', ...hostArgs, '--include', ghEndpoint(`issues/${issueNumber(input)}`)],
           undefined,
           { includesHeaders: true },
+        );
+      case 'issue-state-wait':
+        return mutationPlan(
+          'gh',
+          ['api', ...hostArgs, '--include', ghEndpoint(`issues/${issueNumber(input)}`)],
+          undefined,
+          { includesHeaders: true, timeoutMs: ISSUE_STATE_READ_TIMEOUT_MS },
         );
       case 'issue-comments-read':
         return mutationPlan('gh', [
@@ -1834,7 +1841,6 @@ export function buildCommandPlan(operation, input, repository) {
         { tolerateAlreadyExists: true, expectsJson: false },
       );
     case 'issue-read':
-    case 'issue-state-wait':
       return mutationPlan('tea', [
         'issues',
         String(issueNumber(input)),
@@ -1842,6 +1848,19 @@ export function buildCommandPlan(operation, input, repository) {
         '--fields',
         'index,title,state,body,labels,url',
       ]);
+    case 'issue-state-wait':
+      return mutationPlan(
+        'tea',
+        [
+          'issues',
+          String(issueNumber(input)),
+          ...teaJson,
+          '--fields',
+          'index,title,state,body,labels,url',
+        ],
+        undefined,
+        { timeoutMs: ISSUE_STATE_READ_TIMEOUT_MS },
+      );
     case 'issue-comments-read':
       return mutationPlan('tea', [
         'issues',
@@ -3406,7 +3425,7 @@ function assertFixedIssueStateWait(input) {
 }
 
 async function readIssueForStateWait(input, repository, runner) {
-  const plan = buildCommandPlan('issue-read', input, repository);
+  const plan = buildCommandPlan('issue-state-wait', input, repository);
   const result = await runChecked(runner, plan, 'issue-state-wait read');
   const parsed = isTeaApiIncludePlan(plan)
     ? { raw: teaApiSuccess(result, 'issue-state-wait read').body }

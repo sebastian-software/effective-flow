@@ -25,6 +25,7 @@ import {
   planSfLabelMigration,
   probeProvider,
   redact,
+  ISSUE_STATE_READ_TIMEOUT_MS,
   ISSUE_STATE_WAIT_MS,
 } from '../src/scripts/remote-tracker-core.mjs';
 
@@ -4582,6 +4583,11 @@ case "$1" in
   --version) echo 'gh version 2.70.0 (2026-01-01)'; exit 0 ;;
   auth) exit 0 ;;
 esac
+if [ "$1" = api ] && [ -n "$FAKE_GH_HANG_ISSUE_READ" ]; then
+  case " $* " in
+    *' repos/example/flow/issues/17 '*) exec sleep 30 ;;
+  esac
+fi
 case "$2" in
   checks)
     case " $* " in
@@ -4602,10 +4608,32 @@ esac
 exit 1
 `;
 
+function processTimeoutScaler(timeoutMs) {
+  return `
+const childProcess = require('node:child_process');
+const { syncBuiltinESMExports } = require('node:module');
+const originalSpawn = childProcess.spawn;
+
+childProcess.spawn = function spawnWithScaledIssueReadTimeout(executable, args, options) {
+  const scaled = options?.timeout === ${timeoutMs} ? { ...options, timeout: 250 } : options;
+  return originalSpawn.call(this, executable, args, scaled);
+};
+syncBuiltinESMExports();
+`;
+}
+
 function runShippedCli(operation, input, env = {}, flags = []) {
   const directory = mkdtempSync(join(tmpdir(), 'effective-flow-runner-'));
   try {
     writeFileSync(join(directory, 'gh'), FAKE_GH, { mode: 0o755 });
+    const childEnv = { ...process.env, ...env, PATH: `${directory}:${process.env.PATH}` };
+    if (env.EFFECTIVE_FLOW_TEST_SCALE_ISSUE_READ_TIMEOUT === '1') {
+      const preload = join(directory, 'scale-issue-read-timeout.cjs');
+      writeFileSync(preload, processTimeoutScaler(ISSUE_STATE_READ_TIMEOUT_MS));
+      childEnv.NODE_OPTIONS = [childEnv.NODE_OPTIONS, `--require=${preload}`]
+        .filter(Boolean)
+        .join(' ');
+    }
     const result = spawnSync(
       process.execPath,
       ['src/scripts/remote-tracker.mjs', operation, ...flags],
@@ -4613,7 +4641,7 @@ function runShippedCli(operation, input, env = {}, flags = []) {
         cwd: new URL('..', import.meta.url),
         input: JSON.stringify(input),
         encoding: 'utf8',
-        env: { ...process.env, ...env, PATH: `${directory}:${process.env.PATH}` },
+        env: childEnv,
       },
     );
     // A run that dies before printing anything is itself a result worth asserting on, so an empty
@@ -4691,6 +4719,28 @@ test('a watch that ignores the polite stop is killed and reported as forced', ()
   assert.equal(forced.envelope.data.result.complete, false);
   // Distinguishable from a clean bounded stop: the provider had to be killed.
   assert.equal(forced.envelope.data.result.forcedKill, true);
+});
+
+test('the shipped process runner bounds an issue-state-wait provider read', () => {
+  const repository = { host: 'github.com', owner: 'example', repository: 'flow' };
+  assert.equal(buildCommandPlan('issue-read', { number: 17 }, repository).timeoutMs, undefined);
+
+  const startedAt = Date.now();
+  const failed = runShippedCli(
+    'issue-state-wait',
+    { repository, number: 17 },
+    {
+      EFFECTIVE_FLOW_TEST_SCALE_ISSUE_READ_TIMEOUT: '1',
+      FAKE_GH_HANG_ISSUE_READ: '1',
+    },
+  );
+  const elapsed = Date.now() - startedAt;
+
+  assert.ok(elapsed < 15_000, `the bound did not stop the issue read (${elapsed}ms)`);
+  assert.equal(failed.status, 1);
+  assert.notEqual(failed.envelope, undefined, failed.stderr);
+  assert.equal(failed.envelope.ok, false);
+  assert.equal(failed.envelope.error.code, 'COMMAND_FAILED');
 });
 
 test('the shipped process runner reports a child that dies before its payload lands', () => {
@@ -5431,6 +5481,7 @@ test('issue-state-wait builds provider-specific single-issue read plans', () => 
   assert.equal(github.executable, 'gh');
   assert.deepEqual(github.args.slice(0, 2), ['api', '--include']);
   assert.equal(github.args.at(-1), 'repos/example/flow/issues/17');
+  assert.equal(github.timeoutMs, ISSUE_STATE_READ_TIMEOUT_MS);
 
   const forgejo = buildCommandPlan('issue-state-wait', { number: 17 }, forgejoRepository);
   assert.equal(forgejo.executable, 'tea');
@@ -5438,6 +5489,16 @@ test('issue-state-wait builds provider-specific single-issue read plans', () => 
   assert.equal(
     forgejo.args.at(forgejo.args.indexOf('--fields') + 1),
     'index,title,state,body,labels,url',
+  );
+  assert.equal(forgejo.timeoutMs, ISSUE_STATE_READ_TIMEOUT_MS);
+
+  assert.equal(
+    buildCommandPlan('issue-read', { number: 17 }, githubRepository).timeoutMs,
+    undefined,
+  );
+  assert.equal(
+    buildCommandPlan('issue-read', { number: 17 }, forgejoRepository).timeoutMs,
+    undefined,
   );
 });
 
@@ -5485,6 +5546,10 @@ test('issue-state-wait performs one injected 30-second wait and one fresh read',
     assert.equal(envelope.ok, true);
     assert.deepEqual(sleeps, [ISSUE_STATE_WAIT_MS]);
     assert.equal(runner.calls.length, 2);
+    assert.deepEqual(
+      runner.calls.map(({ timeoutMs }) => timeoutMs),
+      [ISSUE_STATE_READ_TIMEOUT_MS, ISSUE_STATE_READ_TIMEOUT_MS],
+    );
     assert.equal(envelope.data.result.waitMs, ISSUE_STATE_WAIT_MS);
     assert.equal(envelope.data.result.terminal, repository.provider === 'github');
     assert.equal(envelope.data.result.timedOut, repository.provider === 'forgejo');
