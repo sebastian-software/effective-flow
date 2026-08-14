@@ -4242,3 +4242,215 @@ test('condition 7 finding no reviewer thread is reported, not passed over in sil
     'the zero-match report must live in the prose after the numbered preconditions',
   );
 });
+
+test('issue-backed apply workflows share one started-before-delegation lifecycle contract', () => {
+  const lifecycle = source('src/shared/issue-lifecycle.md');
+  const applyIssues = source('src/tools/apply-issues.md');
+  const applyReview = source('src/tools/apply-review-remote.md');
+  const mergeGate = source('src/tools/merge-gate.md');
+
+  for (const workflow of [applyIssues, applyReview, mergeGate]) {
+    assert.match(workflow, /```include\nissue-lifecycle\n```/);
+  }
+
+  const issueImplementation = section(applyIssues, '**Sufficient issues (`sufficient`)');
+  ordered(
+    issueImplementation,
+    '**Immediately before delegation**',
+    'apply the started transition',
+    'Delegate to the target skill',
+  );
+  const reviewImplementation = section(
+    applyReview,
+    '### Phase 4 remote: Implementation, PR and deferred epic completion',
+  );
+  ordered(
+    reviewImplementation,
+    'Immediately before the first implementation delegation',
+    'transition the finding at least to\n   started',
+    'Pre-analysis and implementation',
+  );
+
+  const started = prose(section(lifecycle, '### Started transition'));
+  assert.match(
+    started,
+    /Skipped, `wontfix`, terminal, container-only, and failed-before-start items receive no transition/,
+  );
+  assert.match(
+    started,
+    /Never move a terminal issue, reopen it, or move a later active state backwards/,
+  );
+  assert.match(started, /stop before delegation and before code changes/);
+});
+
+test('native workflow state remains separate from Effective Flow classifications', () => {
+  const lifecycle = prose(source('src/shared/issue-lifecycle.md'));
+  const trackerTarget = prose(source('src/shared/tracker-target.md'));
+
+  assert.match(
+    lifecycle,
+    /the tracker's native workflow state.*Effective Flow classifications.*pull request's versioned lifecycle receipt/,
+  );
+  assert.match(
+    trackerTarget,
+    /`effective-flow-issue-done` remains orchestration metadata for a secured PR and never substitutes for a terminal native state/,
+  );
+  assert.match(
+    trackerTarget,
+    /`tracker\.externalStartedState` is a tool-native state value and is never stored as an Effective Flow classification/,
+  );
+});
+
+test('issue lifecycle receipt propagation is exact and existing PR writes stay guarded', () => {
+  const lifecycle = source('src/shared/issue-lifecycle.md');
+  const lifecycleProse = prose(lifecycle);
+  const canonical =
+    '<!-- effective-flow-issue-lifecycle:v1 {"target":"forge|external","repository":"owner/repo|null","externalTool":"tool|null","items":[{"issue":"reference","relationship":"closes|refs","container":"reference|null","containerMechanism":"native|checklist|null"}]} -->';
+  assert.match(lifecycle, new RegExp(canonical.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(
+    lifecycleProse,
+    /Serialize keys in exactly the shown order, on one line, with no insignificant whitespace/,
+  );
+  assert.match(
+    lifecycleProse,
+    /Reject malformed JSON, unknown or missing keys, multiple receipt lines, conflicting duplicates, mixed targets, cross-repository bindings, a tool mismatch, and invalid references/,
+  );
+
+  for (const path of ['src/tools/apply-issues.md', 'src/tools/apply-review-remote.md']) {
+    const workflow = prose(source(path));
+    assert.match(workflow, /fresh body read/);
+    assert.match(workflow, /hash-guarded `pr-update-body`/);
+    assert.match(workflow, /receipt/);
+  }
+  assert.match(
+    prose(lifecycle),
+    /`STALE_WRITE`, an invalid existing receipt, or a concurrent edit aborts delivery bookkeeping without overwriting prose or silently dropping the receipt/,
+  );
+});
+
+test('interrupted in-progress issue recovery fails closed instead of duplicating implementation', () => {
+  const lifecycle = prose(
+    section(source('src/shared/issue-lifecycle.md'), '### Started transition'),
+  );
+  assert.match(
+    lifecycle,
+    /Read its comments and search the current forge exactly once by the exact issue reference/,
+  );
+  assert.match(
+    lifecycle,
+    /Exactly one candidate.*may have its PR-link comment and receipt restored/,
+  );
+  assert.match(lifecycle, /Zero or multiple candidates fail closed/);
+  assert.match(
+    lifecycle,
+    /never reset the issue to unstarted and never start a replacement implementation automatically/,
+  );
+
+  for (const path of ['src/tools/apply-issues.md', 'src/tools/apply-review-remote.md']) {
+    const workflow = prose(source(path));
+    assert.match(workflow, /one-search fail-closed recovery|single exact-reference recovery/);
+    assert.match(workflow, /zero or multiple/);
+  }
+});
+
+test('container completion is deferred until a linked issue is observed terminal after merge', () => {
+  const lifecycle = prose(source('src/shared/issue-lifecycle.md'));
+  const applyIssues = prose(source('src/tools/apply-issues.md'));
+  const applyReview = prose(source('src/tools/apply-review-remote.md'));
+  const mergeObservation = prose(
+    section(source('src/tools/merge-gate.md'), '### Phase 5.5: Observe linked issues after merge'),
+  );
+
+  assert.match(lifecycle, /must not complete a native sub-item or tick a container checklist/);
+  assert.match(
+    applyIssues,
+    /Do not set a native sub-item to done and do not tick a checklist entry/,
+  );
+  assert.match(applyReview, /Do not set a native sub-item to done or tick an epic checklist/);
+  assert.match(
+    mergeObservation,
+    /Only for an observed terminal issue, complete its optional receipted container/,
+  );
+  assert.match(
+    mergeObservation,
+    /An open, timed-out, or unobservable issue leaves its container entry open/,
+  );
+  assert.match(mergeObservation, /fresh container body and exact hash-guarded patch/);
+});
+
+test('merge-gate supports already-merged observer re-entry with terminal-only reconciliation', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const phase0 = prose(
+    section(gate, '### Phase 0: Resolve the pull request and the completion mode'),
+  );
+  const observation = prose(section(gate, '### Phase 5.5: Observe linked issues after merge'));
+
+  assert.match(
+    phase0,
+    /already-merged pull request with one valid receipt enters observer-only mode and jumps to Phase 5\.5/,
+  );
+  assert.match(phase0, /performs no check wait, delegation, branch provisioning, or merge/);
+  assert.match(phase0, /observer-only mode skip completion-mode resolution/);
+  assert.match(
+    observation,
+    /only after a fresh PR read proves either that Phase 5 merged the pull request or that Phase 0 selected observer-only mode/,
+  );
+  assert.match(observation, /fixed 30-second grace period/);
+  assert.match(observation, /Never model-poll/);
+  assert.match(
+    observation,
+    /freshly observed terminal forge issue, remove `effective-flow-issue-in-progress` idempotently/,
+  );
+  assert.match(observation, /Keep the marker for every other outcome/);
+  assert.match(observation, /Never force-close an issue/);
+});
+
+test('external started-state configuration is tracker-verified and only setup persists suggestions', () => {
+  const migration = prose(source('src/shared/config-migration.md'));
+  const tracker = prose(source('src/shared/tracker-target.md'));
+  const setup = prose(source('src/tools/setup.md'));
+
+  assert.match(migration, /tracker\.externalStartedState.*nullable string.*stable state ID/);
+  assert.match(
+    migration,
+    /Missing or `null` means unset and never authorizes a guessed transition/,
+  );
+  assert.match(
+    migration,
+    /Only `\{\{SKILL:setup\}\}` writes a confirmed tracker-verified suggestion/,
+  );
+  assert.match(tracker, /Before the first implementation delegation, list those states fresh/);
+  assert.match(
+    tracker,
+    /Exactly one candidate may be proposed with both its display name and stable value/,
+  );
+  assert.match(tracker, /A gated run may use that value for this run only after confirmation/);
+  assert.match(
+    tracker,
+    /A non-interactive run, zero candidates, or multiple candidates aborts before code/,
+  );
+  assert.match(setup, /Persist the suggestion only in the confirmed Step 6 write/);
+  assert.match(setup, /Never infer a state from the tool name or a familiar display name/);
+});
+
+test('linked-issue re-entry is mirrored by next steps and user documentation', () => {
+  const nextSteps = source('src/shared/next-steps.md');
+  const row = nextSteps
+    .split('\n')
+    .find(
+      (line) =>
+        line.startsWith('| merge-gate') &&
+        line.includes('merged but at least one linked issue is open or unobservable'),
+    );
+  assert.ok(row, 'missing merged-but-linked-issues-open next-step row');
+  assert.match(row, /\{\{SKILL:merge-gate\}\} <PR>/);
+  assert.match(
+    source('docs/user-guide/tool-flow.md'),
+    /merged but at least one linked issue is open or unobservable/,
+  );
+  assert.match(source('docs/user-guide/tools-deliver.md'), /observer-only re-entry/);
+  assert.match(
+    source('docs/user-guide/troubleshooting.md'),
+    /A linked issue remains open after merge/,
+  );
+});

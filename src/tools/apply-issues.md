@@ -74,7 +74,7 @@ Use `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` for:
 
 - the resolved work list (issue number, optional epic reference)
 - the analysis per issue (classification, sufficient/insufficient, target skill, prompt suggestion, confidence, what is missing)
-- created PRs and checked-off epic entries
+- created PRs and container entries retained for post-merge reconciliation
 - skipped issues with reason
 - failed delegations
 
@@ -90,6 +90,10 @@ config-migration
 
 ```include
 issue-tracker
+```
+
+```include
+issue-lifecycle
 ```
 
 ```lazy-include
@@ -124,24 +128,24 @@ Do not expose internal tracking IDs or session details in comments.
 
 ### Phase 1: Argument & tracker setup
 
-1. Resolve the tracker target per "Tracker target" in the included building block. On the forge target, determine host and CLI and check availability/authentication per "Remote helper contract"; precondition there is a git repository with an `origin` remote, and a missing `origin`, CLI, or authentication is reported clearly and aborts without side effects. On an external target, establish exactly one connection and verify the capabilities this skill needs — read issue and comments, list issues by classification, create a comment, add/remove a classification value, and patch an exact checklist entry. Because this skill ticks a container entry off only **after** a pull request exists, also settle the container mechanism here: use a native parent/sub-issue relation only when the connection proves it can write a sub-item's completion state, and otherwise select the checklist fallback and report why. An unproven completion write must never be discovered after delivery. Any of the four fail-closed classes aborts before the first write (no silent fallback to the forge or to a local flow).
+1. Resolve the tracker target per "Tracker target" in the included building block. On the forge target, determine host and CLI and check availability/authentication per "Remote helper contract"; precondition there is a git repository with an `origin` remote, and a missing `origin`, CLI, or authentication is reported clearly and aborts without side effects. On an external target, establish exactly one connection and verify the capabilities this skill needs — read issue and comments, list issues by classification, create a comment, add/remove a classification value, and patch an exact checklist entry. Settle the container mechanism here: select a native parent/sub-issue relation only when the connection proves it can write a sub-item's completion state; otherwise select the checklist fallback. Defer every completion write of the selected mechanism until post-merge reconciliation. The phase-specific state-list and transition capabilities from "Issue implementation lifecycle" are required only for issues that survive the clarity and approval gates; resolve them before their first started transition, never as a prerequisite for listing or skipping issues. Any fail-closed class aborts before the first affected write (no silent fallback to the forge or to a local flow).
 2. Read the user argument and classify it via the "apply-source detection" (stage A and — for issue references — stage B):
    - source type `container-issue` or `plain-issue` → `{{SKILL:apply-issues}}` processes it itself; continue. Multiple issue references (number, `#123` or issue URL) are allowed as a list.
    - source type `plan` or `review-report` → point to the responsible skill (`{{SKILL:apply-plan}}` or `{{SKILL:apply-review}}`, or `{{SKILL:apply}}` for automatic routing) and end the skill.
    - source type `review-epic` or `review-finding` → these are epic/finding issues produced by `{{SKILL:review}}`; `{{SKILL:apply-review}}` is responsible for them. Point to it and end.
    - `ambiguous` → ask instead of guessing. When `{{SKILL:apply-issues}}` runs as a delegation from `{{SKILL:apply}}`, foreign types should not occur; the switch remains as a safeguard.
    - No argument (`none`): list open issues that carry neither `effective-flow-issue-done` nor `effective-flow-needs-planning`, and ask the user which ones to process. On the forge target, exclude the legacy prefix `firmo-` equivalently (see "Label convention"); on an external target that legacy prefix is forge history and is neither queried nor written. Do **not** use a heuristic auto-selection.
-3. Create the required labels idempotently (`effective-flow-issue-done`, `effective-flow-needs-planning`). The helper's label creation reads the repository's existing labels first and creates only what is genuinely missing, so a repeated run adds no second copy; it reports per label whether it created one. Where it cannot read the existing labels, it aborts rather than creating — treat that as a blocked run, not as a reason to create the label another way. On an external target, ensure exactly these two canonical strings in the connection's classification primitive per the `tracker-target` classification mapping — never a `firmo-`/`sf-` variant, which would materialize forge history in a foreign workspace; if the target exposes no classification primitive, abort instead of losing the lifecycle.
+3. On the forge, create the required labels idempotently (`effective-flow-issue-in-progress`, `effective-flow-issue-done`, `effective-flow-needs-planning`). The helper's label creation reads the repository's existing labels first and creates only what is genuinely missing, so a repeated run adds no second copy; it reports per label whether it created one. Where it cannot read the existing labels, it aborts rather than creating — treat that as a blocked run, not as a reason to create the label another way. On an external target, ensure the two Effective Flow classifications `effective-flow-issue-done` and `effective-flow-needs-planning` in the connection's classification primitive; native started state remains separate and is resolved only for implementable items. Never create a `firmo-`/`sf-` variant in a foreign workspace; if the target exposes no classification primitive, abort instead of losing the lifecycle.
 
 ### Phase 2: Expansion & work list
 
 1. Read each referenced issue **fresh** from the tracker (body, labels, status and **comments** via the "read comments" operation). The comments are part of the analysis basis: a planning comment from `{{SKILL:plan-issue}}` (marker `<!-- effective-flow-plan-issues -->`) contains the completed specification, and maintainers may add clarifications as a comment rather than in the body. Your own Effective Flow comments (`<!-- effective-flow-apply-issues -->`) are only noted here for the idempotency check in Phase 4, not counted as a functional requirement. **Backcompat (one generation):** the legacy markers `<!-- firmo-plan-issues -->` and `<!-- firmo-apply-issues -->` from earlier runs are recognized equivalently when reading; only the `effective-flow-` variant is written anew.
 2. **Container detection:** if the body contains a task list with issue references (`- [ ] <reference> …` / `- [x] <reference> …`, where `<reference>` is a forge `#NNN` or a tool-native identifier such as `ABC-123`), or — on a target whose connection exposes a native parent/sub-issue relation — if the issue has sub-items, treat the issue as a container. The reference-agnostic checklist form matters because it is the fallback container an external target without a native relation uses:
-   - expand to the **open** (`- [ ]`) sub-issue references and remember the container issue as an epic for the later check-off,
+   - expand to the **open** (`- [ ]`) sub-issue references and remember the container issue for the lifecycle receipt and later post-merge reconciliation,
    - skip done (`- [x]`) entries,
    - then read each open sub-issue fresh from the tracker.
      If the body contains no such list, the issue itself is a single work item.
-3. Skip work items that are already closed or carry the label `effective-flow-issue-done` (idempotency); on the forge target the legacy `firmo-issue-done` counts as equivalent, on an external target it is not looked up.
+3. Skip work items that are already closed or carry the label `effective-flow-issue-done` (idempotency); on the forge target the legacy `firmo-issue-done` counts as equivalent, on an external target it is not looked up. For an item already in a native started/later-active state or carrying `effective-flow-issue-in-progress` without a retained PR-link comment or receipt, run the single exact-reference recovery from "Issue implementation lifecycle" before analysis. Only a unique verified PR restores bookkeeping; zero or multiple candidates stop that item before implementation without resetting its state.
 4. Deduplicate the work list (the same issue number only once, even if it is reachable via multiple containers).
 5. Result: a flat list of work-item issues, each with an optional epic reference. Record it in the wisdom file.
 6. Create a task per work item (task tracking with per-issue granularity) and give the user an overview:
@@ -200,7 +204,7 @@ This is the approval boundary of this workflow: the classification is fixed, and
 | #<nr> | … | insufficient | missing: … |
 ```
 
-2. Per "Goal-driven completion control" (principle 1), declare the explicit completion condition for phases 4–5: every `sufficient` issue is implemented via the matching implementation skill and has either a newly created PR or a new commit on the specified target PR with a PR comment, label `effective-flow-issue-done` and — for container origin — a checked-off epic entry; every `insufficient` issue carries `effective-flow-needs-planning` together with a comment; the project-configured checks of the delegated workflows are green; nothing outside the chosen issues is changed.
+2. Per "Goal-driven completion control" (principle 1), declare the explicit completion condition for phases 4–5: every `sufficient` issue is transitioned at least to started, implemented via the matching implementation skill, and has either a newly created PR or a new commit on the specified target PR with one validated lifecycle receipt, a PR-link comment, and label `effective-flow-issue-done`; container completion stays pending for `{{SKILL:merge-gate}}`. Every `insufficient` issue carries `effective-flow-needs-planning` together with a comment; the project-configured checks of the delegated workflows are green; nothing outside the chosen issues is changed.
 3. **Dropping the gate:** if `{{SKILL:apply-issues}}` itself runs as a non-interactive sub-agent of a higher-level orchestrator (recognizable from the call context, e.g. "[Context from …]"), skip the following gate entirely and continue directly with Phase 4. A direct call by the user does **not** count as such a delegation.
 4. Otherwise obtain the approval:
 
@@ -255,7 +259,8 @@ Issues with the same target PR run sequentially so that new commits are created 
 
 **Sufficient issues (`sufficient`), each with its own verified execution root:**
 
-1. Delegate to the target skill determined in Phase 3 and pass along the prompt suggestion as the task description:
+1. **Immediately before delegation**, apply the started transition from "Issue implementation lifecycle" exactly once. On the forge add `effective-flow-issue-in-progress`; on an external target freshly list states, validate or gatedly confirm `tracker.externalStartedState`, and make the native transition. Preserve terminal or later-active states. A missing, stale, ambiguous, non-writable, or unconfirmable external state stops this item before code; a transition error likewise delegates nothing.
+2. Delegate to the target skill determined in Phase 3 and pass along the prompt suggestion as the task description:
    - Feature: `Use the skill {{SKILL:build}} for this issue.`
    - Bugfix: `Use the skill {{SKILL:fix}} for this issue.`
    - Refactoring: `Use the skill {{SKILL:refactor}} for this issue.`
@@ -266,7 +271,7 @@ Issues with the same target PR run sequentially so that new commits are created 
      harness-native one. Pass the literal line `Next steps: suppressed` on its own line as well:
      the delegated skill is user-invocable, but it returns its result here and this run is an
      intermediate result of `{{SKILL:apply}}`.
-2. Commit the changes using resolved `language.git` for the description (Conventional Commit
+3. Commit the changes using resolved `language.git` for the description (Conventional Commit
    type stable, no internal IDs, no `Co-Authored-By`) and push the branch. Pass resolved
    `language.git` and `language.forge` to the delegated delivery path. If a target PR is present:
    **do not create a new PR**, but use the existing PR link and optionally extend its body by one
@@ -279,16 +284,18 @@ Issues with the same target PR run sequentially so that new commits are created 
    `tracker-target` forge boundary: on the forge the auto-close keyword `Closes #<issue>` (or
    `Refs #<issue>`), on an external target a plain, non-auto-closing reference to the tool-native
    identifier. Never write `Closes #<number>` for an external issue — the code host would resolve
-   it against its own issue of that number and close an unrelated one on merge.
-3. **Immediately after a successful push or PR creation:** build and write the PR-link comment
-   through the helper, set label `effective-flow-issue-done`, and — if the issue originates from
-   a container — read the container body fresh and use the helper's exact checklist patch with
-   its body hash and PR-link suffix. Apply only when the stale-write precondition still matches.
-   On an external target, write the comment and the classification value through the resolved
-   connection under the `tracker-target` write discipline, and complete the container with the
-   mechanism decided once for this run — the native sub-item state or the checklist plus exact
-   patch — never a mix of both. The pull request itself always stays on the forge behind `origin`.
-4. **Release the worktree for cleanup:** if this issue ran in a worktree this workflow created,
+   it against its own issue of that number and close an unrelated one on merge. Build the exact
+   versioned lifecycle receipt from the retained target, repository, relationship, issue, optional
+   container, and container mechanism. A new PR contains it at creation; a reused PR is extended only
+   after a fresh body read through the hash-guarded `pr-update-body` path. Invalid, duplicate,
+   mismatched, or stale receipt state fails closed.
+4. **Immediately after a successful push or PR creation:** write the PR-link comment through the
+   helper and set label `effective-flow-issue-done`; on an external target use the resolved
+   connection under the `tracker-target` write discipline. Do **not** set a native sub-item to done
+   and do not tick a checklist entry. The receipt retains the optional container/mechanism until
+   `{{SKILL:merge-gate}}` observes the linked issue as terminal. The pull request itself always stays
+   on the forge behind `origin`.
+5. **Release the worktree for cleanup:** if this issue ran in a worktree this workflow created,
    transition its lifecycle record from `active` to `cleanup-ready` under the record lock, per the
    embedded contract. The work is durably secured at this point — the branch is pushed and its pull
    request exists — so the worktree itself is no longer needed. Skipping this leaves a record stuck
@@ -296,7 +303,7 @@ Issues with the same target PR run sequentially so that new commits are created 
    ends in a status: a failed delegation, a rejected push and a failed pull-request creation all set
    `failed`, a controlled stop sets `aborted`, and only a completed pull request sets
    `cleanup-ready`. A record must never be left at `active` once the issue is done with.
-5. Task to `completed`.
+6. Task to `completed`.
 
 This path creates its pull requests without the delivery completion action, so it invokes the
 automatic review itself: after step 2 created a pull request, run "PR review publication" with that
@@ -314,7 +321,7 @@ when: the completion action created or reused a pull request and the automatic P
 
 **Error cases:**
 
-- If the delegation (`ABORT`), the push to the target PR or the PR creation fails: do **not** mark the issue as done, do not set `effective-flow-issue-done`, do **not** check off the epic entry, append a failed comment and continue with the next issue. Task to `completed` with the addition `[failed]`.
+- If the started transition, delegation (`ABORT`), push, PR creation, or guarded receipt write fails: do **not** mark the issue as done, do not set `effective-flow-issue-done`, do **not** complete the container, append a failed comment where a transition had already started the issue, and continue with the next issue. Preserve the in-progress/native state because resetting it would hide interrupted work. Task to `completed` with the addition `[failed]`.
   If the issue ran in a worktree this workflow created, transition its lifecycle record to `failed`
   with the exact reason, whether the failure happened during delegation or afterwards during push
   or pull-request creation. Retain the worktree and the branch so the work stays recoverable —
@@ -331,7 +338,7 @@ Report to the user:
 - processed issues with result (implemented / skipped / failed)
 - created PRs with URL
 - skipped issues (`effective-flow-needs-planning`) with the reason each one was not implementable
-- checked-off epic entries, if containers were processed
+- container entries retained for post-merge reconciliation, if containers were processed
 
 Then delete the wisdom file and **return** that report plus the run's end state — the created pull
 requests and the skipped issue references — to `{{SKILL:apply}}`, which closes the run with its own

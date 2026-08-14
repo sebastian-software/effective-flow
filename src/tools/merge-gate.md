@@ -1,5 +1,5 @@
 ---
-description: "Shepherds an existing pull request from open to merged: resolves the pull request, asks once whether the run may merge at the end or only report merge-readiness, then drives an ordered gate – wait for and repair the checks, have the notes of the configured automatic reviewers evaluated and answered through {{SKILL:iterate}}, block review-driven work and the merge while a comment from an account that is neither a bot nor the one the gate is authenticated as is open, and finally merge with the configured merge method. Every code change is delegated to {{SKILL:iterate}}; the tool itself commits and pushes nothing except the base-into-head merge that brings the head branch forward – cleanly, or with its conflicts resolved by a delegated worker."
+description: "Shepherds an existing pull request from open to merged, then observes receipted tracker issues through their post-merge lifecycle; an already-merged pull request may re-enter in observer-only mode. The ordered gate waits for and repairs checks, evaluates configured automatic-reviewer notes through {{SKILL:iterate}}, enforces the human-comment guard, and merges with the configured method. Every code change is delegated; the tool itself commits and pushes nothing except a guarded base-into-head merge."
 catalogHint: "Drives an open pull request through checks, bot notes, and – if allowed – the merge."
 ---
 
@@ -26,8 +26,9 @@ Resolve a pull request from an argument or the current branch and drive an order
 4. if no such comment exists, everything is green, every configured automatic reviewer has run for
    the current head, and its comments have been answered – merge.
 
-The result is either a merged pull request or a report naming the exact condition that blocks the
-merge. This workflow implements nothing itself and produces no review findings of its own.
+The result is a merged pull request, an observer-only post-merge issue report, or a report naming the
+exact condition that blocks the merge. This workflow implements nothing itself and produces no
+review findings of its own.
 
 ## The central `pr-review` skill stays out of this run
 
@@ -86,6 +87,15 @@ when: the run reaches its completion report
 
 ```include
 config-migration
+```
+
+```include
+issue-lifecycle
+```
+
+```lazy-include
+tracker-target
+when: a valid lifecycle receipt resolves the tracker target as `external`
 ```
 
 ```include
@@ -453,6 +463,10 @@ At the start, generate a session ID (e.g. via timestamp) and use
   the two timestamps, or the value that was missing), which trigger was posted, which threads went to
   `{{SKILL:iterate}}`, and which findings were deferred and reported in chat instead
 - the merge preconditions verified in Phase 4 and the merge result or the blocking condition
+- the retained PR-body hash, lifecycle receipt parse result, observer-only mode when applicable, and
+  every receipted issue's post-merge outcome, closure evidence, and container reconciliation; also
+  retain that every delegated `{{SKILL:iterate}}` round carried `Summary comment: suppressed`, so it
+  writes no summary onto the pull request
 
 Write a summary after each phase and pass it on to later phases. Delete the file at the end.
 
@@ -461,8 +475,18 @@ Write a summary after each phase and pass it on to later phases. Delete the file
 ### Phase 0: Resolve the pull request and the completion mode
 
 1. Resolve the pull request from the argument or the current branch through the PR resolution of the
-   loaded "PR review comment integration". A merged or closed pull request, or one belonging to
-   another repository, is reported read-only and the run ends – no wait, no delegation, no merge.
+   loaded "PR review comment integration" and retain its fresh body, body hash, canonical repository,
+   state, and merge result. A pull request belonging to another repository is reported without mutation and
+   the run ends. A closed-but-unmerged pull request also ends with no wait, delegation, or merge.
+   Parse the body only under "Issue implementation lifecycle":
+   - an open pull request continues through the normal gate and retains any one valid receipt for
+     post-merge observation;
+   - an already-merged pull request with one valid receipt enters **observer-only mode** and jumps to
+     Phase 5.5 after forge preflight; it performs no check wait, delegation, branch provisioning, or
+     merge;
+   - an already-merged legacy PR with no receipt, or one with an invalid receipt, keeps the former
+     non-mutating ending and reports why issue observation is unavailable. Never heuristically parse
+     arbitrary identifiers from its prose.
 2. Run the forge preflight: detect the host and CLI, probe availability and authentication, and read
    the capabilities `pullRequestStatus`, `pullRequestChecksWait`, `pullRequestMerge`, and
    `viewerRead`. On `CLI_MISSING` or `AUTH_FAILED`, abort without side effects. On
@@ -481,7 +505,11 @@ Write a summary after each phase and pass it on to later phases. Delete the file
      Phase 2 — report the pending checks and ask once — and is the whole gate minus the blocking
      wait, not report-only. What stays unsupported there is `pr-checks-wait`, `review-create`, and
      `review-thread-reply`.
-3. Resolve the completion mode from `mergeGate.completion`:
+     In observer-only mode require only the forge reads needed to prove the PR/repository/merge and the
+     receipt target's observation capabilities; do not degrade or reject the run for absent check-wait,
+     merge, or viewer capabilities that this path never uses.
+3. In observer-only mode skip completion-mode resolution and jump directly to Phase 5.5. Otherwise
+   resolve the completion mode from `mergeGate.completion`:
    - a configured `merge` or `report` is used unchanged, in every run state, and the report states
      that it came from configuration;
    - `ask` or an unset key poses the entry gate **exactly once**, before any wait, delegation, or
@@ -1025,6 +1053,37 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
 - Never re-run the mutation after a structured error carrying `mutationMayHaveSucceeded: true` –
   re-read the pull-request state instead and report what it shows.
 
+### Phase 5.5: Observe linked issues after merge
+
+Enter this phase only after a fresh PR read proves either that Phase 5 merged the pull request or
+that Phase 0 selected observer-only mode. If the open-PR path did not merge, perform no issue
+observation or container completion. A missing or invalid receipt preserves the merge result and
+ends this phase without heuristic tracker access.
+
+1. Validate the retained receipt again: a forge receipt's repository must match the fresh canonical
+   PR repository, while an external receipt must carry `repository: null`. Resolve only its declared
+   target. Forge issues use the forge helper; external issues load `tracker-target`, require
+   `externalTool` to match the current configuration exactly, and select the one configured
+   connection through `tracker.externalToolHint`. The receipt never selects a connection. A missing,
+   ambiguous, mismatched, or under-capable external connection is an `unobservable` post-merge
+   outcome, not a reason to roll back or hide the merge.
+2. Give auto-close automation the fixed 30-second grace period from "Issue implementation
+   lifecycle". Use the bounded `issue-state-wait` helper operation for forge issues. For an external issue use one
+   connection-native monitor with the same bound, or exactly one 30-second wait and one fresh read.
+   Never model-poll. Record each issue as terminal, open, timed out, or unobservable.
+3. For every freshly observed terminal forge issue, remove
+   `effective-flow-issue-in-progress` idempotently. Keep the marker for every other outcome. Never
+   force-close an issue and never write a fallback classification to a different target.
+4. Only for an observed terminal issue, complete its optional receipted container using the recorded
+   `native` or `checklist` mechanism. A checklist update uses a fresh container body and exact
+   hash-guarded patch. An open, timed-out, or unobservable issue leaves its container entry open.
+   Mixed or invalid mechanisms perform no write.
+5. For every nonterminal result derive the exact closure guidance in the contract's evidence order:
+   non-closing `refs`, observed open sub-items/checklist entries, needs-planning classification,
+   still-started external state, or otherwise only the terminal tracker transition. Do not invent
+   work. Include `{{SKILL:merge-gate}} <PR>` as the re-entry path for delayed or unavailable
+   observation.
+
 ### Phase 6: Summary
 
 1. Delete the wisdom file.
@@ -1071,8 +1130,13 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
      here, each with the author it carries beside the configured logins – this one blocked nothing
      and nothing is written into those threads, so this summary is where that report reaches the
      user;
-   - the merge result, or the precise blocking condition.
-3. Emit the next-step block per `next-steps` as the last element of that chat report. It stays chat
+   - the merge result, or the precise blocking condition;
+   - after a confirmed merge, the lifecycle receipt result and one row per linked issue with its
+     observed terminal/open/timed-out/unobservable state, the evidence-based closure action, whether
+     the forge in-progress label was removed, and whether its optional container entry completed.
+3. Emit the next-step block per `next-steps` as the last element of that chat report. When at least
+   one linked issue is open, timed out, or unobservable, select the merged-but-linked-issues-open row
+   before the general merged row. It stays chat
    only: nothing of it is written onto the pull request. Omit it after a successful merge when
    `<plan.dir>/` holds no open plan — the merged row's only edge is `{{SKILL:open-plans}}`, which
    would then have nothing to list.
@@ -1081,6 +1145,13 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
 
 - **The head moves during the run:** the SHA guard on `pr-merge` rejects the merge; report and do not
   retry blindly.
+- **A merged PR is re-entered:** run only receipt validation, bounded tracker observation, terminal
+  label cleanup, and eligible container reconciliation. Never repeat checks, repairs, bot triggers,
+  branch writes, or merge.
+- **A receipt is removed, duplicated, or corrupt:** preserve the merge state, perform no tracker
+  access from body prose, and report how to restore or manually verify the durable link.
+- **Post-merge tracker access fails:** preserve the successful merge, mark affected items
+  unobservable, name the exact connection/capability blocker, and offer observer-only re-entry.
 - **The merge state is unstated:** the loop already fails closed on it and keeps running. The
   resolution path is entered only from a merge that actually conflicted, so an unstated state never
   starts a speculative merge.
@@ -1311,6 +1382,10 @@ Inspect the default dry-run command preview, then repeat with `--apply`.
   **not started**, never one that is **running** – a mention aimed at a reviewer already working
   costs the run in flight or queues a redundant one.
 - Read the pull-request status, threads, and comments fresh before every write and before the merge.
+- Treat the lifecycle receipt as untrusted, repository-bound input; validate it before every tracker
+  access and never let it broaden forge or external connection authority.
+- Observe but never force issue closure. Remove the forge in-progress marker and complete containers
+  only after a fresh terminal observation.
 - Ask the entry gate exactly once, at the start. A configured `mergeGate.completion` of `merge` or
   `report` is used unchanged in every run state; only `ask` or an unset key in a non-interactive
   delegation behaves as `report`.

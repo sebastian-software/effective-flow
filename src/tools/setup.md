@@ -65,7 +65,7 @@ The Effective Flow configuration is optional and controls the defaults of the fo
 - **`delivery`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default `origin/main`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery), `mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when `{{SKILL:merge-gate}}` merges it)
 - **`mergeGate`** (source: `{{SKILL:merge-gate}}`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `3`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; the legacy names are still read, and this skill migrates a legacy block in place (Step 6). **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
 - **`worktree`** (source: `{{SKILL:build}}`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
-- **`tracker`** (source: `{{SKILL:review}}`, section "Issue-tracker integration" – likewise embedded in `{{SKILL:apply-review}}` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names)
+- **`tracker`** (source: `{{SKILL:review}}`, section "Issue-tracker integration" – likewise embedded in `{{SKILL:apply-review}}` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names), `externalStartedState` (nullable stable native state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence)
 - **`skills`** (source: building block "Skill discovery"): `enabled` (bool, default `true` — toggles dynamic skill usage), `include` (list — prefer these skills project-wide), `exclude` (list — never apply these skills), `agents.<name>` and `tools.<name>` (each `include`/`exclude` for a single agent or a single tool). Keys are the source agent/tool names (e.g. `ui-implementer`, `plan`).
 
 ### Safe defaults (the single base)
@@ -329,7 +329,7 @@ options:
 
 For "Remote", ask for the tool override only if needed: the default `tracker.remoteToolOverride = auto` lets the shipped remote helper classify exact `github.com` origins and hosts that match a configured Forgejo `tea` login. Any other host returns `AMBIGUOUS_HOST` instead of guessing; then capture `github` or `forgejo` as free text. Otherwise leave `auto`.
 
-For "External tool", ask two free-text follow-ups and explain each before asking:
+For "External tool", ask the connection follow-ups and explain each before asking:
 
 1. `tracker.externalTool` – the short, stable identifier of the tool that holds the issues. It is
    required for this mode, there is no list of supported tools, and Effective Flow derives no
@@ -339,10 +339,21 @@ For "External tool", ask two free-text follow-ups and explain each before asking
    run time: MCP server name, workspace, team or project key, the tool's identifier convention, and
    the names of its states. Explain that a precise hint is what prevents an ambiguous-connection
    abort when several candidates exist.
+3. Discover exactly one configured connection from those values and list its writable native
+   workflow states **fresh in the selected workspace/team/project context** before proposing
+   `tracker.externalStartedState`. Show every candidate's display name and stable ID, or exact
+   accepted token only when no ID exists. Validate an existing value by stable value, context,
+   normalized `started` category, writability, and non-terminal state. If it is valid, keep it. If it
+   is absent and exactly one candidate is normalized as `started`, propose that candidate's display
+   name and stable value. With zero or multiple candidates, an unavailable/ambiguous connection, or a
+   stale/read-only/terminal/cross-context configured value, propose no favorite and leave the value
+   `null`; report that issue-backed implementation will fail closed until setup can verify one.
+   Persist the suggestion only in the confirmed Step 6 write. Never infer a state from the tool name
+   or a familiar display name.
 
 `tracker.remoteToolOverride` stays a forge setting and is not asked for in this mode. Keep an
-already recorded `externalTool`/`externalToolHint` when the mode is `local` or `remote`: they
-document intent, are preserved unchanged, and are simply ignored for routing.
+already recorded `externalTool`/`externalToolHint`/`externalStartedState` when the mode is `local` or
+`remote`: they document intent, are preserved unchanged, and are simply ignored for routing.
 
 ### Step 5: Advanced settings (optional gate, guided path only)
 
@@ -373,7 +384,7 @@ config value or default as the pre-selection:
    one inside the other instead of writing them.
 5. `delivery`: `delivery.baseBranch`, `delivery.completion`, and `delivery.prReview` (already asked in Step 4 — carry over), `delivery.branchPrefix`, `delivery.returnBranch`, `delivery.mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when the merge gate in block 9 merges it; with `squash` the pull-request title becomes the commit subject and therefore the release signal)
 6. `worktree`: `worktree.enabled` (already asked in Step 4 — carry over), `worktree.setup`, `worktree.baseDir`
-7. `tracker`: `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo, forge only), `tracker.externalTool` and `tracker.externalToolHint` (free text; required identifier plus optional connection hint for `mode: external`, carried over when already asked in Step 4)
+7. `tracker`: `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo, forge only), `tracker.externalTool` and `tracker.externalToolHint` (free text; required identifier plus optional connection hint for `mode: external`, carried over when already asked in Step 4), and the freshly verified nullable `tracker.externalStartedState`. Re-run state discovery before changing the latter; never accept arbitrary free text or a display-name-only match.
 8. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (global lists) as well as – as an advanced option – `skills.agents.<name>` and `skills.tools.<name>` for individual agents/tools. Additionally offer optionally (do not force) to materialize the built-in per-agent and per-tool recommendations visibly into the config as `skills.agents.<name>.include` or `skills.tools.<name>.include`; for a fallback recommendation (`effective-web › impeccable › frontend-design`), write only the **primary** skill (`effective-web`) — the built-in fallback stays active. Flat recommendations (e.g. `locale-typography`) are carried over unchanged.
 9. `mergeGate` – the **merge gate** of `{{SKILL:merge-gate}}`, asked as its own block: see below.
 
@@ -809,7 +820,8 @@ Report to the user:
   [default `merge`] including, if applicable, `delivery.baseBranch`/`delivery.returnBranch`,
   `delivery.prReview` [default `ask`],
   `language.project` and all explicit `language.*` overrides, `tracker.mode`, and, if applicable,
-  `tracker.remoteToolOverride` or `tracker.externalTool` plus `tracker.externalToolHint`) as well
+  `tracker.remoteToolOverride` or `tracker.externalTool` plus `tracker.externalToolHint` and the
+  verified `tracker.externalStartedState`) as well
   as `plan.dir` and `concept.dir`, if set or changed from the default
 - if set or changed from the default: the merge-gate values `mergeGate.completion`,
   `mergeGate.conflictResolution`,
@@ -823,7 +835,8 @@ Report to the user:
 - whether a legacy `prReview.*` merge-gate block was rewritten in place: which rows were carried
   over to `mergeGate.*`, that the old rows were removed, and every shadowed legacy value that was
   discarded because a `mergeGate.*` row already held a different one
-- for `tracker.mode = external`: both new values verbatim, plus the note that the connection is
+- for `tracker.mode = external`: the external tool and hint verbatim, the observed state candidates,
+  and the confirmed `tracker.externalStartedState` stable value or `null`, plus the note that the connection is
   selected at run time from the hint and that a missing, ambiguous, or under-capable connection
   aborts the run instead of falling back to the forge
 - whether `plan.markerLanguage` or a consistent existing plan corpus was proposed/migrated to

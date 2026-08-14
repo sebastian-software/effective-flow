@@ -20,6 +20,10 @@ when: a remote tracker access is about to perform its first runtime-state mutati
 issue-tracker
 ```
 
+```include
+issue-lifecycle
+```
+
 ```lazy-include
 tracker-target
 when: the resolved tracker target is `external`
@@ -41,11 +45,11 @@ Classify the passed argument via the "apply-source detection" (stage A and — f
 
 - **`review-report`** (report file under `.effective-flow/review/`) → `local` (existing behavior, unchanged).
 - **`review-epic`** (issue with `effective-flow-review-epic` label, legacy `firmo-review-epic` equivalent) → `remote`, **epic mode**: work through all finding issues linked in the epic.
-- **`review-finding`** (a single finding issue or a list of finding-issue references) → `remote`, **issue-list mode**: work through exactly these findings only. The corresponding epic per finding is determined for the later check-off from the sub-issue (`Epic` field/reference), if present.
+- **`review-finding`** (a single finding issue or a list of finding-issue references) → `remote`, **issue-list mode**: work through exactly these findings only. The corresponding epic per finding is retained from the sub-issue (`Epic` field/reference), if present, for the lifecycle receipt and post-merge reconciliation.
 - **`remote` without argument** → list open epics and let the user choose.
 - **`plan`, `container-issue` or `plain-issue`** → does not belong to `{{SKILL:apply-review}}`: point to the responsible skill (`{{SKILL:apply-plan}}` for plan files, `{{SKILL:apply-issues}}` for other issues, or `{{SKILL:apply}}` for automatic routing) and end. When delegating from `{{SKILL:apply}}` this case should not occur; the switch remains as a safeguard.
 
-The argument type takes precedence over the config (see "Determine mode" in the tracker integration): `review-report` forces `local`, and `review-epic`/`review-finding` force the tracker target that reference belongs to — the forge for a forge reference, `external` for a tool-native one. On the forge target, detect host and CLI beforehand and check CLI availability; if the CLI is missing, abort clearly (no silent fallback to `local`). On an external target, establish the single connection and verify its capabilities beforehand instead; a missing, ambiguous, or under-capable connection aborts just as clearly, again without falling back to `local` or to the forge. Settle the container mechanism in that same step: because the epic entry is ticked off only after a pull request exists, a native parent/sub-issue relation may be used only when the connection proves it can write a sub-item's completion state; otherwise select the checklist fallback and report why.
+The argument type takes precedence over the config (see "Determine mode" in the tracker integration): `review-report` forces `local`, and `review-epic`/`review-finding` force the tracker target that reference belongs to — the forge for a forge reference, `external` for a tool-native one. On the forge target, detect host and CLI beforehand and check CLI availability; if the CLI is missing, abort clearly (no silent fallback to `local`). On an external target, establish the single connection and verify its base capabilities beforehand instead; a missing, ambiguous, or under-capable connection aborts just as clearly, again without falling back to `local` or to the forge. Settle the container mechanism in that same step: select a native relation only when the connection proves it can write a sub-item's completion state; otherwise select the checklist fallback. Defer its completion write until after merge. Require state-list and transition capabilities only for implementable findings immediately before their started transition; `wontfix`, container-only, and publication paths do not inherit them.
 
 ### Phase 1 remote: Read findings from issues
 
@@ -88,34 +92,40 @@ Findings with the same target PR run sequentially so that new commits are create
 
 For each `wontfix` finding, the same ownership rule as in Phase 3 (local) applies: delegate the candidate to `decision-records` (the skill decides whether an ADR is justified and authors it per the discovered repo convention; minimal living-slug fallback from `adr-convention.md` if the skill is missing). The candidate's context here references the **issue number and epic** (`Issue #<nr>` and `Epic #<nr>`) instead of a report finding; the `wontfix` rationale replaces the developer note. **No** numbered ADR is created. If a permanent ADR arises, mark the finding in the epic later via slug reference as `- [x] … — not implemented (ADR: <slug>)`; if the skill classifies the rejection as non-permanent, it stays documented without an ADR on the issue/epic (`- [x] … — not implemented (see issue rationale)`).
 
-### Phase 4 remote: Implementation, PR and epic check-off
+### Phase 4 remote: Implementation, PR and deferred epic completion
 
 Per implementable finding, in its verified execution root:
 
-1. Pre-analysis and implementation as in Phase 4.1/4.3 via the matching delegation skill
+1. Immediately before the first implementation delegation, transition the finding at least to
+   started under "Issue implementation lifecycle": add `effective-flow-issue-in-progress` on the
+   forge, or freshly validate and apply `tracker.externalStartedState` on an external target. A
+   terminal finding is skipped and a later-active finding is preserved. Missing, stale, ambiguous,
+   or unavailable lifecycle capabilities stop before code. An already-started finding without
+   delivery bookkeeping enters the one-search fail-closed recovery and is never reimplemented on
+   zero or multiple matches.
+2. Pre-analysis and implementation as in Phase 4.1/4.3 via the matching delegation skill
    (`{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}`, `{{SKILL:docs}}`). Pass a
    developer comment detected in Phase 1 remote as additional context, together with the
    delegated workflow's absolute execution root and receipt. Do not rely on inherited CWD or
    nest an Effective Flow worktree around a reused harness-native one.
-2. Commit the changes (Conventional Commit message, no internal finding IDs, no `Co-Authored-By`), push the branch.
-3. If a target PR is present: **do not create a new PR**, but use the existing PR link and optionally extend the PR body non-destructively by one reference to the finding issue, if that is possible without overwriting others' changes. If no target PR is present: create exactly one PR against the base branch via `{{SKILL:pr}}` and put that reference in the PR body. Choose the form by tracker target per the `tracker-target` forge boundary: on the forge the auto-close keyword `Closes #<sub-issue>` (or `Refs #<sub-issue>`), on an external target a plain, non-auto-closing reference to the tool-native identifier, whose lifecycle the classification value and the PR-link comment carry instead. Never write `Closes #<number>` for an external finding — the code host resolves it against its own issue of that number.
-4. **Immediately after a successful push or PR creation** tick the finding off in its container
-   with the mechanism decided once for this run:
-   - **Native parent/sub-issue relation** (preferred when the resolved connection exposes one):
-     set the sub-item's own state to done and derive the container's progress from it. Do not
-     additionally patch a checklist.
-   - **Checklist plus exact patch** (the forge mechanism and the fallback otherwise): read the
-     epic body fresh and pass its body hash, the exact finding reference, and the PR-link suffix
-     to the helper's checklist patch. Preview the issue-body mutation and apply it only when the
-     fresh-write precondition still matches.
+3. Commit the changes (Conventional Commit message, no internal finding IDs, no `Co-Authored-By`), push the branch.
+4. If a target PR is present: **do not create a new PR**, but use the existing PR link and extend its
+   body only through a fresh body read plus hash-guarded `pr-update-body`. If no target PR is present:
+   create exactly one PR against the base branch via `{{SKILL:pr}}`. Choose the reference form by
+   tracker target: `Closes #<sub-issue>` or `Refs #<sub-issue>` on the forge, and a plain non-closing
+   reference on external. Add exactly one validated versioned lifecycle receipt carrying the issue,
+   relationship, and optional epic/mechanism. Reject malformed, duplicate, mismatched, or stale
+   receipt state rather than overwriting body prose or dropping the handoff.
+5. **Immediately after a successful push or PR creation**, optionally write the PR link through the
+   helper's comment payload/mutation, or through the external connection's create-comment
+   capability. Do **not** set a native sub-item to done or tick an epic checklist. The receipt retains
+   that relationship, and `{{SKILL:merge-gate}}` completes it only after merge and freshly observed
+   terminal issue state. Never mix native and checklist mechanisms. The pull request stays on the
+   forge behind `origin`.
 
-   Never mix the two within one epic and never downgrade a native relation to a checklist mid-run.
-   Optionally write the PR link through the helper's comment payload/mutation, or through the
-   resolved connection's create-comment capability on an external target. The pull request itself
-   always stays on the forge behind `origin`.
-
-5. **If push or PR creation fails** (push rejected, no commit): mark the finding as failed, do **not** check off the epic entry, continue with the next finding.
-6. **If an assigned epic is missing** (issue-list mode): implement the finding anyway and create a PR; the check-off is omitted and reported to the user.
+6. **If transition, push, PR creation, or receipt persistence fails**: mark the finding as failed, do
+   not complete the epic, preserve any started state, and continue with the next finding.
+7. **If an assigned epic is missing** (issue-list mode): implement the finding anyway and create a PR; container reconciliation is omitted and reported to the user.
 
 This path creates its pull requests without the delivery completion action, so it invokes the
 automatic review itself: after step 3 created a pull request, run "PR review publication" with that
@@ -133,8 +143,11 @@ when: the completion action created or reused a pull request and the automatic P
 
 ### Phase 5 remote: Tracking surface instead of report
 
-No report file is updated. Instead, ensure that all epic checkboxes or sub-item states and all sub-issue comments/classification values reflect the final state (implemented → checked off with PR link; `wontfix` with permanent decision → checked off with ADR reference; `wontfix` without permanent decision → checked off with a reference to the issue rationale, without an ADR).
+No report file is updated. Ensure comments and classifications reflect delivery, but keep an
+implemented finding's epic checkbox or native sub-item incomplete until merge reconciliation.
+`wontfix` findings keep their existing decision path: permanent decision → checked off with ADR
+reference; non-permanent decision → checked off with the issue rationale.
 
 ### Phase 7/8 remote
 
-Final validation and summary as in local mode; the summary additionally names the resolved tracker target (with the tool identifier and connection for `external`), the container mechanism used, the epic URL or identifier, the created PRs and the checked-off findings.
+Final validation and summary as in local mode; the summary additionally names the resolved tracker target (with the tool identifier and connection for `external`), the container mechanism used, the epic URL or identifier, the created PRs, and the findings retained for post-merge reconciliation.

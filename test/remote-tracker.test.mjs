@@ -10,10 +10,12 @@ import {
   buildCommentPayload,
   buildEpicPayload,
   buildFindingPayload,
+  buildIssueLifecycleReceipt,
   buildReviewPayload,
   deduplicateFindings,
   executeOperation,
   labelQueryVariants,
+  parseIssueLifecycleReceipt,
   parseFindingSignature,
   parseReference,
   parseReferences,
@@ -23,6 +25,8 @@ import {
   planSfLabelMigration,
   probeProvider,
   redact,
+  ISSUE_STATE_READ_TIMEOUT_MS,
+  ISSUE_STATE_WAIT_MS,
 } from '../src/scripts/remote-tracker-core.mjs';
 
 const githubRepository = {
@@ -4579,6 +4583,11 @@ case "$1" in
   --version) echo 'gh version 2.70.0 (2026-01-01)'; exit 0 ;;
   auth) exit 0 ;;
 esac
+if [ "$1" = api ] && [ -n "$FAKE_GH_HANG_ISSUE_READ" ]; then
+  case " $* " in
+    *' repos/example/flow/issues/17 '*) exec sleep 30 ;;
+  esac
+fi
 case "$2" in
   checks)
     case " $* " in
@@ -4599,10 +4608,32 @@ esac
 exit 1
 `;
 
+function processTimeoutScaler(timeoutMs) {
+  return `
+const childProcess = require('node:child_process');
+const { syncBuiltinESMExports } = require('node:module');
+const originalSpawn = childProcess.spawn;
+
+childProcess.spawn = function spawnWithScaledIssueReadTimeout(executable, args, options) {
+  const scaled = options?.timeout === ${timeoutMs} ? { ...options, timeout: 250 } : options;
+  return originalSpawn.call(this, executable, args, scaled);
+};
+syncBuiltinESMExports();
+`;
+}
+
 function runShippedCli(operation, input, env = {}, flags = []) {
   const directory = mkdtempSync(join(tmpdir(), 'effective-flow-runner-'));
   try {
     writeFileSync(join(directory, 'gh'), FAKE_GH, { mode: 0o755 });
+    const childEnv = { ...process.env, ...env, PATH: `${directory}:${process.env.PATH}` };
+    if (env.EFFECTIVE_FLOW_TEST_SCALE_ISSUE_READ_TIMEOUT === '1') {
+      const preload = join(directory, 'scale-issue-read-timeout.cjs');
+      writeFileSync(preload, processTimeoutScaler(ISSUE_STATE_READ_TIMEOUT_MS));
+      childEnv.NODE_OPTIONS = [childEnv.NODE_OPTIONS, `--require=${preload}`]
+        .filter(Boolean)
+        .join(' ');
+    }
     const result = spawnSync(
       process.execPath,
       ['src/scripts/remote-tracker.mjs', operation, ...flags],
@@ -4610,7 +4641,7 @@ function runShippedCli(operation, input, env = {}, flags = []) {
         cwd: new URL('..', import.meta.url),
         input: JSON.stringify(input),
         encoding: 'utf8',
-        env: { ...process.env, ...env, PATH: `${directory}:${process.env.PATH}` },
+        env: childEnv,
       },
     );
     // A run that dies before printing anything is itself a result worth asserting on, so an empty
@@ -4688,6 +4719,28 @@ test('a watch that ignores the polite stop is killed and reported as forced', ()
   assert.equal(forced.envelope.data.result.complete, false);
   // Distinguishable from a clean bounded stop: the provider had to be killed.
   assert.equal(forced.envelope.data.result.forcedKill, true);
+});
+
+test('the shipped process runner bounds an issue-state-wait provider read', () => {
+  const repository = { host: 'github.com', owner: 'example', repository: 'flow' };
+  assert.equal(buildCommandPlan('issue-read', { number: 17 }, repository).timeoutMs, undefined);
+
+  const startedAt = Date.now();
+  const failed = runShippedCli(
+    'issue-state-wait',
+    { repository, number: 17 },
+    {
+      EFFECTIVE_FLOW_TEST_SCALE_ISSUE_READ_TIMEOUT: '1',
+      FAKE_GH_HANG_ISSUE_READ: '1',
+    },
+  );
+  const elapsed = Date.now() - startedAt;
+
+  assert.ok(elapsed < 15_000, `the bound did not stop the issue read (${elapsed}ms)`);
+  assert.equal(failed.status, 1);
+  assert.notEqual(failed.envelope, undefined, failed.stderr);
+  assert.equal(failed.envelope.ok, false);
+  assert.equal(failed.envelope.error.code, 'COMMAND_FAILED');
 });
 
 test('the shipped process runner reports a child that dies before its payload lands', () => {
@@ -4954,4 +5007,595 @@ test('a GraphQL actor class outside the allow-list leaves bot authorship undecid
     isBot: true,
     authorType: 'bot',
   });
+});
+
+const forgeLifecycleReceipt = {
+  target: 'forge',
+  repository: 'example/flow',
+  externalTool: null,
+  items: [
+    {
+      issue: '#17',
+      relationship: 'closes',
+      container: '#3',
+      containerMechanism: 'checklist',
+    },
+  ],
+};
+
+test('issue lifecycle receipts serialize one canonical line and extend idempotently', () => {
+  const canonical =
+    '<!-- effective-flow-issue-lifecycle:v1 ' +
+    '{"target":"forge","repository":"example/flow","externalTool":null,"items":[' +
+    '{"issue":"#17","relationship":"closes","container":"#3","containerMechanism":"checklist"}' +
+    ']} -->';
+  const built = buildIssueLifecycleReceipt(forgeLifecycleReceipt, {
+    expectedTarget: 'forge',
+    expectedRepository: 'example/flow',
+  });
+  assert.equal(built.marker, canonical);
+  assert.deepEqual(Object.keys(built.receipt), ['target', 'repository', 'externalTool', 'items']);
+  assert.deepEqual(Object.keys(built.receipt.items[0]), [
+    'issue',
+    'relationship',
+    'container',
+    'containerMechanism',
+  ]);
+
+  const body = `Summary\n\n${canonical}`;
+  const unchanged = buildIssueLifecycleReceipt(
+    { body, receipt: { ...forgeLifecycleReceipt, items: [...forgeLifecycleReceipt.items] } },
+    { expectedRepository: 'example/flow' },
+  );
+  assert.equal(unchanged.changed, false);
+  assert.equal(unchanged.body, body);
+  assert.equal(unchanged.receipt.items.length, 1);
+
+  const extended = buildIssueLifecycleReceipt(
+    {
+      body,
+      receipt: {
+        ...forgeLifecycleReceipt,
+        items: [
+          forgeLifecycleReceipt.items[0],
+          {
+            issue: '#18',
+            relationship: 'refs',
+            container: null,
+            containerMechanism: null,
+          },
+        ],
+      },
+    },
+    { expectedRepository: 'example/flow' },
+  );
+  assert.equal(extended.changed, true);
+  assert.equal(extended.receipt.items.length, 2);
+  assert.equal(extended.body.match(/effective-flow-issue-lifecycle:/g).length, 1);
+  assert.match(extended.body, /"issue":"#17".*"issue":"#18"/);
+});
+
+test('issue lifecycle receipt parsing rejects untrusted bindings, shapes, and versions', () => {
+  const marker = buildIssueLifecycleReceipt(forgeLifecycleReceipt).marker;
+  assert.deepEqual(
+    parseIssueLifecycleReceipt(marker, {
+      expectedTarget: 'forge',
+      expectedRepository: 'example/flow',
+    }).receipt,
+    forgeLifecycleReceipt,
+  );
+
+  const invalidBodies = [
+    `${marker}\n${marker}`,
+    marker.replace(':v1 ', ':v2 '),
+    '<!-- effective-flow-issue-lifecycle:v1 { -->',
+    marker.replace('"items"', '"unknown"'),
+  ];
+  for (const body of invalidBodies) {
+    assert.throws(
+      () => parseIssueLifecycleReceipt(body),
+      (error) => error.code === 'INVALID_PAYLOAD',
+    );
+  }
+
+  assert.throws(
+    () => parseIssueLifecycleReceipt(marker, { expectedRepository: 'other/repo' }),
+    (error) => error.code === 'REFERENCE_REPOSITORY_MISMATCH',
+  );
+  assert.throws(
+    () => parseIssueLifecycleReceipt(marker, { expectedTarget: 'external' }),
+    (error) => error.code === 'INVALID_PAYLOAD',
+  );
+  assert.throws(
+    () =>
+      buildIssueLifecycleReceipt({
+        ...forgeLifecycleReceipt,
+        items: [
+          forgeLifecycleReceipt.items[0],
+          { ...forgeLifecycleReceipt.items[0], relationship: 'refs' },
+        ],
+      }),
+    (error) => error.code === 'INVALID_PAYLOAD',
+  );
+  assert.throws(
+    () =>
+      buildIssueLifecycleReceipt({
+        target: 'external',
+        repository: null,
+        externalTool: 'linear',
+        items: [
+          {
+            issue: '#17',
+            relationship: 'refs',
+            container: null,
+            containerMechanism: null,
+          },
+        ],
+      }),
+    (error) => error.code === 'INVALID_REFERENCE',
+  );
+  assert.throws(
+    () =>
+      buildIssueLifecycleReceipt(
+        {
+          target: 'external',
+          repository: null,
+          externalTool: 'linear',
+          items: [
+            {
+              issue: 'ENG-17',
+              relationship: 'refs',
+              container: null,
+              containerMechanism: null,
+            },
+          ],
+        },
+        { expectedExternalTool: 'jira' },
+      ),
+    (error) => error.code === 'INVALID_PAYLOAD',
+  );
+  assert.throws(
+    () =>
+      buildIssueLifecycleReceipt({
+        target: 'external',
+        repository: null,
+        externalTool: 'linear',
+        items: [
+          {
+            issue: 'ENG-17',
+            relationship: 'closes',
+            container: null,
+            containerMechanism: null,
+          },
+        ],
+      }),
+    (error) => error.code === 'INVALID_PAYLOAD',
+  );
+});
+
+function lifecycleItem(issue, relationship = 'refs') {
+  return { issue, relationship, container: null, containerMechanism: null };
+}
+
+function externalLifecycleReceipt(issue) {
+  return {
+    target: 'external',
+    repository: null,
+    externalTool: 'linear',
+    items: [lifecycleItem(issue)],
+  };
+}
+
+function externalLifecycleReceiptForTool(externalTool) {
+  return { ...externalLifecycleReceipt('ENG-17'), externalTool };
+}
+
+const githubLifecycleContext = {
+  expectedRepository: {
+    host: 'github.com',
+    owner: 'example',
+    repository: 'flow',
+  },
+};
+
+test('external lifecycle tool identifiers round-trip only stable identifier forms', () => {
+  for (const externalTool of ['linear', 'linear-cloud', 'linear_cloud', 'linear.cloud_v2-beta']) {
+    const built = buildIssueLifecycleReceipt(externalLifecycleReceiptForTool(externalTool), {
+      expectedExternalTool: externalTool,
+    });
+    assert.equal(built.receipt.externalTool, externalTool);
+    assert.equal(built.marker.includes(`"externalTool":"${externalTool}"`), true);
+    assert.equal(
+      parseIssueLifecycleReceipt(built.marker, { expectedExternalTool: externalTool }).receipt
+        .externalTool,
+      externalTool,
+    );
+  }
+});
+
+test('external lifecycle tool identifiers reject locators and secrets with value-free errors', async () => {
+  const invalid = [
+    ['https://linear.example/tool', 'linear.example'],
+    ['alice@linear', 'alice'],
+    ['linear/workspaceSecret', 'workspaceSecret'],
+    ['linear?querySecret=1', 'querySecret'],
+    ['linear#fragmentSecret', 'fragmentSecret'],
+    ['linear spaceSecret', 'spaceSecret'],
+    ['linear\ncontrolSecret', 'controlSecret'],
+    ['linear<!--commentSecret-->', 'commentSecret'],
+    ['ghp_round2Secret', 'ghp_round2Secret'],
+    ['github_pat_round2Secret', 'github_pat_round2Secret'],
+  ];
+  const validMarker = buildIssueLifecycleReceipt(externalLifecycleReceipt('ENG-17')).marker;
+
+  for (const [externalTool, forbidden] of invalid) {
+    const buildEnvelope = await executeOperation(
+      'issue-lifecycle-receipt-build',
+      externalLifecycleReceiptForTool(externalTool),
+    );
+    assert.equal(buildEnvelope.ok, false, externalTool);
+    assert.equal(buildEnvelope.error.code, 'INVALID_PAYLOAD', externalTool);
+    assert.deepEqual(buildEnvelope.error.details, {
+      field: 'receipt.externalTool',
+      maximum: 64,
+    });
+    assert.doesNotMatch(JSON.stringify(buildEnvelope), new RegExp(forbidden, 'i'));
+
+    const parseEnvelope = await executeOperation('issue-lifecycle-receipt-parse', {
+      body: validMarker,
+      context: { expectedExternalTool: externalTool },
+    });
+    assert.equal(parseEnvelope.ok, false, externalTool);
+    assert.equal(parseEnvelope.error.code, 'INVALID_PAYLOAD', externalTool);
+    assert.deepEqual(parseEnvelope.error.details, {
+      field: 'tracker.externalTool',
+      maximum: 64,
+    });
+    assert.doesNotMatch(JSON.stringify(parseEnvelope), new RegExp(forbidden, 'i'));
+  }
+
+  for (const contextKey of ['expectedExternalTool', 'externalTool']) {
+    const mismatches = [
+      await executeOperation('issue-lifecycle-receipt-build', {
+        receipt: externalLifecycleReceipt('ENG-17'),
+        context: { [contextKey]: 'jira' },
+      }),
+      await executeOperation('issue-lifecycle-receipt-parse', {
+        body: validMarker,
+        context: { [contextKey]: 'jira' },
+      }),
+    ];
+    for (const mismatch of mismatches) {
+      assert.equal(mismatch.ok, false);
+      assert.equal(mismatch.error.code, 'INVALID_PAYLOAD');
+      assert.deepEqual(mismatch.error.details, {
+        field: 'receipt.externalTool',
+        configuredField: 'tracker.externalTool',
+      });
+      assert.doesNotMatch(JSON.stringify(mismatch), /linear|jira/i);
+    }
+  }
+});
+
+test('lifecycle references reject credential material without disclosing it', () => {
+  const forgeReferences = [
+    'https://alice:verysecret@github.com/example/flow/issues/17',
+    'https://github.com/example/flow/issues/17?view=compact',
+    'https://github.com/example/flow/issues/17#discussion',
+    'https://github.com/example/flow/issues/17?token=ghp_supersecret',
+    'https://github.com/example/flow/issues/17/ghp_supersecret',
+  ];
+  for (const issue of forgeReferences) {
+    let failure;
+    try {
+      buildIssueLifecycleReceipt(
+        { ...forgeLifecycleReceipt, items: [lifecycleItem(issue, 'closes')] },
+        githubLifecycleContext,
+      );
+    } catch (error) {
+      failure = error;
+    }
+    assert.equal(failure?.code, 'INVALID_REFERENCE', issue);
+    const diagnostic = JSON.stringify({ message: failure?.message, details: failure?.details });
+    assert.doesNotMatch(diagnostic, /verysecret|ghp_supersecret/);
+  }
+
+  const externalReferences = [
+    'https://alice:verysecret@linear.app/acme/issue/ENG-17/title',
+    'https://linear.app/acme/issue/ENG-17/title?api_key=external-secret',
+    'https://linear.app/acme/issue/ENG-17/title#session=external-secret',
+    'https://linear.app/acme/issue/ENG-17/ghp_supersecret',
+    'ENG-17?token=external-secret',
+  ];
+  for (const issue of externalReferences) {
+    let failure;
+    try {
+      buildIssueLifecycleReceipt(externalLifecycleReceipt(issue));
+    } catch (error) {
+      failure = error;
+    }
+    assert.equal(failure?.code, 'INVALID_REFERENCE', issue);
+    const diagnostic = JSON.stringify({ message: failure?.message, details: failure?.details });
+    assert.doesNotMatch(diagnostic, /verysecret|external-secret|ghp_supersecret/);
+  }
+
+  const safeUrl = 'https://linear.app/acme/issue/ENG-17/title?view=compact#comments';
+  assert.equal(
+    buildIssueLifecycleReceipt(externalLifecycleReceipt(safeUrl)).receipt.items[0].issue,
+    safeUrl,
+  );
+  assert.equal(
+    buildIssueLifecycleReceipt(externalLifecycleReceipt('ENG-17')).receipt.items[0].issue,
+    'ENG-17',
+  );
+});
+
+test('forge lifecycle references bind the host and deduplicate canonical issue identities', () => {
+  assert.throws(
+    () =>
+      buildIssueLifecycleReceipt(
+        {
+          ...forgeLifecycleReceipt,
+          items: [lifecycleItem('https://code.example.test/example/flow/issues/17', 'closes')],
+        },
+        githubLifecycleContext,
+      ),
+    (error) =>
+      error.code === 'REFERENCE_REPOSITORY_MISMATCH' &&
+      error.details.expected === 'github.com/example/flow' &&
+      error.details.actual === 'code.example.test/example/flow',
+  );
+
+  const receipt = buildIssueLifecycleReceipt(
+    {
+      ...forgeLifecycleReceipt,
+      items: [
+        lifecycleItem('17', 'closes'),
+        lifecycleItem('#17', 'closes'),
+        lifecycleItem('https://github.com/example/flow/issues/17', 'closes'),
+      ],
+    },
+    githubLifecycleContext,
+  ).receipt;
+  assert.deepEqual(receipt.items, [lifecycleItem('#17', 'closes')]);
+});
+
+test('issue-state-wait rejects a GitHub pull request before sleeping or reconciling', async () => {
+  let sleeps = 0;
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout:
+        'HTTP/2 200 OK\ncontent-type: application/json\n\n' +
+        JSON.stringify({
+          number: 17,
+          title: 'Not an issue',
+          body: '',
+          state: 'open',
+          labels: [],
+          html_url: 'https://github.com/example/flow/pull/17',
+          pull_request: { url: 'https://api.github.com/repos/example/flow/pulls/17' },
+        }),
+      stderr: '',
+    },
+  ]);
+  const envelope = await executeOperation(
+    'issue-state-wait',
+    { repository: githubRepository, number: 17 },
+    {
+      runner,
+      skipProbe: true,
+      sleeper: async () => {
+        sleeps += 1;
+      },
+    },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+  assert.match(envelope.error.message, /pull request where an issue was required/);
+  assert.equal(runner.calls.length, 1);
+  assert.equal(sleeps, 0);
+});
+
+test('receipt append preserves body bytes and adds only the required line separator', () => {
+  const marker = buildIssueLifecycleReceipt(forgeLifecycleReceipt).marker;
+  for (const [body, expected] of [
+    ['', marker],
+    ['Summary', `Summary\n${marker}`],
+    ['Summary\n', `Summary\n${marker}`],
+    ['Summary\n\n', `Summary\n\n${marker}`],
+    ['Summary\nTail', `Summary\nTail\n${marker}`],
+    ['Summary\r\nTail', `Summary\r\nTail\r\n${marker}`],
+    ['Summary\r\n', `Summary\r\n${marker}`],
+    ['Summary  \n', `Summary  \n${marker}`],
+  ]) {
+    const result = buildIssueLifecycleReceipt({ body, receipt: forgeLifecycleReceipt });
+    assert.equal(result.body, expected, JSON.stringify(body));
+    assert.equal(result.body.slice(0, body.length), body, JSON.stringify(body));
+    assert.equal(result.body.endsWith(marker), true);
+  }
+});
+
+test('issue lifecycle receipt operations are wired through the JSON CLI', () => {
+  const built = spawnSync(
+    process.execPath,
+    ['src/scripts/remote-tracker.mjs', 'issue-lifecycle-receipt-build'],
+    {
+      cwd: new URL('..', import.meta.url),
+      input: JSON.stringify(forgeLifecycleReceipt),
+      encoding: 'utf8',
+    },
+  );
+  assert.equal(built.status, 0);
+  const buildEnvelope = JSON.parse(built.stdout);
+  assert.equal(buildEnvelope.ok, true);
+  assert.match(buildEnvelope.data.marker, /^<!-- effective-flow-issue-lifecycle:v1 /);
+
+  const parsed = spawnSync(
+    process.execPath,
+    ['src/scripts/remote-tracker.mjs', 'issue-lifecycle-receipt-parse'],
+    {
+      cwd: new URL('..', import.meta.url),
+      input: JSON.stringify({ body: buildEnvelope.data.marker }),
+      encoding: 'utf8',
+    },
+  );
+  assert.equal(parsed.status, 0);
+  assert.deepEqual(JSON.parse(parsed.stdout).data.receipt, forgeLifecycleReceipt);
+});
+
+function githubIssueResult(state) {
+  return {
+    status: 0,
+    stdout:
+      'HTTP/2 200 OK\ncontent-type: application/json\n\n' +
+      JSON.stringify({
+        number: 17,
+        title: 'Lifecycle',
+        body: '',
+        state,
+        labels: [],
+        html_url: 'https://github.com/example/flow/issues/17',
+      }),
+    stderr: '',
+  };
+}
+
+function forgejoIssueResult(state) {
+  return {
+    status: 0,
+    stdout: JSON.stringify({
+      index: 17,
+      title: 'Lifecycle',
+      description: '',
+      state,
+      labels: [],
+      url: 'https://code.example.test/team/flow/issues/17',
+    }),
+    stderr: '',
+  };
+}
+
+test('issue-state-wait builds provider-specific single-issue read plans', () => {
+  const github = buildCommandPlan('issue-state-wait', { number: 17 }, githubRepository);
+  assert.equal(github.executable, 'gh');
+  assert.deepEqual(github.args.slice(0, 2), ['api', '--include']);
+  assert.equal(github.args.at(-1), 'repos/example/flow/issues/17');
+  assert.equal(github.timeoutMs, ISSUE_STATE_READ_TIMEOUT_MS);
+
+  const forgejo = buildCommandPlan('issue-state-wait', { number: 17 }, forgejoRepository);
+  assert.equal(forgejo.executable, 'tea');
+  assert.deepEqual(forgejo.args.slice(0, 2), ['issues', '17']);
+  assert.equal(
+    forgejo.args.at(forgejo.args.indexOf('--fields') + 1),
+    'index,title,state,body,labels,url',
+  );
+  assert.equal(forgejo.timeoutMs, ISSUE_STATE_READ_TIMEOUT_MS);
+
+  assert.equal(
+    buildCommandPlan('issue-read', { number: 17 }, githubRepository).timeoutMs,
+    undefined,
+  );
+  assert.equal(
+    buildCommandPlan('issue-read', { number: 17 }, forgejoRepository).timeoutMs,
+    undefined,
+  );
+});
+
+test('issue-state-wait returns immediately for a terminal issue without sleeping', async () => {
+  let sleeps = 0;
+  const runner = fakeRunner([githubIssueResult('closed')]);
+  const envelope = await executeOperation(
+    'issue-state-wait',
+    { repository: githubRepository, number: 17 },
+    {
+      runner,
+      skipProbe: true,
+      sleeper: async () => {
+        sleeps += 1;
+      },
+    },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.result.issue.state, 'closed');
+  assert.equal(envelope.data.result.outcome, 'terminal');
+  assert.equal(envelope.data.result.terminal, true);
+  assert.equal(envelope.data.result.timedOut, false);
+  assert.equal(envelope.data.result.waitMs, 0);
+  assert.equal(sleeps, 0);
+  assert.equal(runner.calls.length, 1);
+});
+
+test('issue-state-wait performs one injected 30-second wait and one fresh read', async () => {
+  for (const [repository, results] of [
+    [githubRepository, [githubIssueResult('open'), githubIssueResult('closed')]],
+    [forgejoRepository, [forgejoIssueResult('open'), forgejoIssueResult('open')]],
+  ]) {
+    const sleeps = [];
+    const runner = fakeRunner(results);
+    const envelope = await executeOperation(
+      'issue-state-wait',
+      { repository, number: 17 },
+      {
+        runner,
+        skipProbe: true,
+        sleeper: async (durationMs) => sleeps.push(durationMs),
+        clock: () => 0,
+      },
+    );
+    assert.equal(envelope.ok, true);
+    assert.deepEqual(sleeps, [ISSUE_STATE_WAIT_MS]);
+    assert.equal(runner.calls.length, 2);
+    assert.deepEqual(
+      runner.calls.map(({ timeoutMs }) => timeoutMs),
+      [ISSUE_STATE_READ_TIMEOUT_MS, ISSUE_STATE_READ_TIMEOUT_MS],
+    );
+    assert.equal(envelope.data.result.waitMs, ISSUE_STATE_WAIT_MS);
+    assert.equal(envelope.data.result.terminal, repository.provider === 'github');
+    assert.equal(envelope.data.result.timedOut, repository.provider === 'forgejo');
+    assert.equal(
+      envelope.data.result.outcome,
+      repository.provider === 'github' ? 'terminal' : 'open',
+    );
+  }
+});
+
+test('issue-state-wait rejects timing overrides and malformed or unknown provider states', async () => {
+  for (const payload of [{ waitMs: 1 }, { timeoutSeconds: 30 }, { intervalSeconds: 1 }]) {
+    const runner = fakeRunner([]);
+    const envelope = await executeOperation(
+      'issue-state-wait',
+      { repository: githubRepository, number: 17, payload },
+      { runner, skipProbe: true, sleeper: async () => {} },
+    );
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+    assert.equal(runner.calls.length, 0);
+  }
+
+  const malformed = await executeOperation(
+    'issue-state-wait',
+    { repository: githubRepository, number: 17 },
+    {
+      runner: fakeRunner([{ status: 0, stdout: 'not json', stderr: '' }]),
+      skipProbe: true,
+      sleeper: async () => {},
+    },
+  );
+  assert.equal(malformed.ok, false);
+  assert.equal(malformed.error.code, 'INVALID_PAYLOAD');
+
+  for (const [repository, result] of [
+    [githubRepository, githubIssueResult('merged')],
+    [forgejoRepository, forgejoIssueResult('done')],
+  ]) {
+    const envelope = await executeOperation(
+      'issue-state-wait',
+      { repository, number: 17 },
+      { runner: fakeRunner([result]), skipProbe: true, sleeper: async () => {} },
+    );
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+    assert.match(envelope.error.message, /unsupported issue lifecycle state/);
+  }
 });

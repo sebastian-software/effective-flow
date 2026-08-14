@@ -115,11 +115,19 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    merge method, guarded by the expected head commit. A reviewer thread that turned up after the
    round that handled its reviewer sends the run back for another round instead; see
    [A reviewer thread that arrives late](#a-reviewer-thread-that-arrives-late).
+5. **Linked-issue observation** – after a confirmed merge, validates the pull request's lifecycle
+   receipt and gives tracker automation one fixed 30-second grace period. It reports each linked
+   issue as terminal, open, timed out, or unobservable. A terminal forge issue loses the
+   `effective-flow-issue-in-progress` label, and a recorded native sub-item or checklist entry is
+   completed only after its linked issue is observed terminal.
 
 **When to use:** On a pull request that is otherwise done and only needs CI to pass, its automatic
 reviewers to be satisfied, and the merge button pressed – so you do not have to babysit checks and
 bot notes by hand. Also useful as a pure merge-readiness report: run it in report mode to see
-exactly what is still blocking a pull request.
+exactly what is still blocking a pull request. Re-enter it with an already merged PR when a linked
+issue was still open, timed out, or could not be observed. That observer-only path skips checks,
+reviewers, branch writes, and merge, then validates the receipt and repeats only post-merge issue
+observation and eligible reconciliation.
 
 **What it never does:** It never reviews. It produces no findings of its own, never approves a pull
 request or submits a "request changes" review, never rewrites history (no amend, rebase, squash, or
@@ -129,6 +137,11 @@ reported instead), and never merges past an open comment from an account that is
 the one it runs as. It implements no code itself: CI repairs and bot-finding fixes are delegated to
 `/effective-flow iterate`, and a merge conflict is delegated to a dedicated resolver worker. The gate
 itself only ever writes that one merge commit and pushes it.
+
+It also never force-closes a linked issue and never treats PR prose as a substitute for a valid
+lifecycle receipt. A missing, malformed, duplicated, or mismatched receipt leaves the merge result
+unchanged and authorizes no tracker access. Post-merge tracker failure likewise cannot roll back a
+successful merge.
 
 #### Resolving a conflict with the base
 
@@ -350,7 +363,11 @@ Two further things worth knowing about what the gate writes:
   run assessed but did not implement, since those get no thread reply, every comment and unresolved
   thread that did **not** hold the guard because the run's own account wrote it, every configured
   `.check` context that never appeared at all, and – for every conflict it met – the per-file record
-  of how it was resolved.
+  of how it was resolved. After a confirmed merge, the report also gives each receipted issue's
+  observed state and an evidence-based closure step when it remains nonterminal. It checks, in
+  order, for an intentional non-closing `Refs` relationship, open sub-items or checklist entries,
+  `effective-flow-needs-planning`, a still-started external state, and finally a remaining terminal
+  tracker transition. It does not invent unobserved work.
 - The check gate and the merge are performed by the remote-tracker helper described in
   [Remote tracker](remote-tracker.md#merge-gate-operations), on both providers. Forgejo supports the
   status read, the merge and the identity read; only the blocking check wait is unsupported there,
@@ -367,6 +384,12 @@ CI-driven code change the gate wants is made by `/effective-flow iterate`, which
 the reviewer state it has already established, so `iterate`'s own review-in-flight guard does not
 re-derive it; a merge conflict goes to the resolver worker instead, because nothing in `iterate`'s
 item model resolves an in-progress merge.
+
+Issue observation is deliberately different from the configurable check wait: the lifecycle grace
+period is always 30 seconds and has no configuration key. Pull-request mechanics stay on the forge,
+while an external lifecycle receipt resolves only the currently configured external connection; the
+receipt never selects one. If observation remains incomplete, the final next-step block recommends
+`/effective-flow merge-gate <PR>` for observer-only re-entry before the general open-plans path.
 
 #### Deprecated `pr-review` invocation
 
