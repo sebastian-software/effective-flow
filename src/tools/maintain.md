@@ -33,12 +33,12 @@ delegation-mandate
 
 ```lazy-include
 runtime-state-safety
-when: any wisdom, report, memory, runtime migration, or worktree mutation is imminent, or a session rename request is about to be written
+when: any wisdom, report, memory, runtime migration, or worktree mutation is imminent
 ```
 
 ```lazy-include
 effective-flow-dir-migration
-when: any wisdom, report, memory, runtime migration, or worktree mutation is imminent, or a session rename request is about to be written
+when: any wisdom, report, memory, runtime migration, or worktree mutation is imminent
 ```
 
 ```lazy-include

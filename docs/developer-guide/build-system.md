@@ -158,9 +158,8 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Two script pairs carry this today: `remote-tracker.mjs`/
-  `remote-tracker-core.mjs` and `session-title.mjs`/`session-title-core.mjs`. Remote-tracker's
-  runtime prompts are additionally scanned with the unit-tested
+  misread as one. One script pair carries this today: `remote-tracker.mjs`/
+  `remote-tracker-core.mjs`. Its runtime prompts are additionally scanned with the unit-tested
   `findRemoteTrackerRecipeViolations` detector so direct `gh`/`tea` recipes, manual origin
   parsing, GraphQL assembly, and runtime flag discovery cannot return.
 
@@ -277,34 +276,29 @@ Short version (canonical in [`AGENTS.md`](../../AGENTS.md), section "Adding a to
 
 ## Runtime scripts
 
-Two dependency-free script pairs ship as consumer runtime code in the skill payload, each split
-into an I/O boundary and a pure, unit-testable core:
+One dependency-free script pair ships as consumer runtime code in the skill payload, split into an
+I/O boundary and a pure, unit-testable core:
 
 - **Remote-tracker.** Invoke it as `node <skill-root>/scripts/remote-tracker.mjs <operation>
 [--apply]` with one JSON object on standard input. It emits one stable JSON envelope on
   standard output and uses nonzero exit codes for structured failures. Mutations are dry runs
   unless `--apply` is present. The core module is pure except for an injected process runner;
   provider CLIs are always executed as an executable plus argument array, never through a shell.
-- **Session-title.** Invoke it as `node <skill-root>/scripts/session-title.mjs
-<request|apply>` with one JSON object on standard input and one JSON envelope on standard
-  output, mirroring the remote-tracker shape. `request` runs inside the Codex sandbox and only
-  records a pending rename; `apply` runs from a `Stop` hook outside the sandbox and performs the
-  app-server RPC. This script serves the Codex path only; see the "Codex: request inside the
-  sandbox, apply from a hook" section of
-  [`src/shared/session-rename.md`](../../src/shared/session-rename.md) for its request-file
-  contract and degradation rules. The Claude Code rename-butler path documented alongside it is
-  prose-only and invokes no script.
 
-Unit tests exercise parsing, payloads, provider plans, redaction, capabilities, compatibility,
-and stale writes with fake runners and fixtures. Forgejo capabilities are derived once per run
-from authenticated login JSON plus documented `tea ... --help` command/flag surfaces; absent
-commands become `UNSUPPORTED_CAPABILITY` before mutation. GitHub reads retain ETags for
-diagnostics, but body writes are reported as non-atomic because GitHub does not support
-conditional requests for these unsafe endpoints. Forgejo list reads page until an empty page,
-and create results are normalized from the final URL that supported `tea` versions print after a
-successful issue or pull-request creation. The CLI-level test spawns the real entry point;
-the build and distribution checks prove that all three installed payloads contain identical,
-usable scripts.
+Unit tests exercise remote-tracker parsing, payloads, provider plans, redaction, capabilities,
+compatibility, and stale writes with fake runners and fixtures. Forgejo capabilities are derived
+once per run from authenticated login JSON plus documented `tea ... --help` command/flag surfaces;
+absent commands become `UNSUPPORTED_CAPABILITY` before mutation. GitHub reads retain ETags for
+diagnostics, but body writes are reported as non-atomic because GitHub does not support conditional
+requests for these unsafe endpoints. Forgejo list reads page until an empty page, and create results
+are normalized from the final URL that supported `tea` versions print after a successful issue or
+pull-request creation. The CLI-level test spawns the real entry point; the build and distribution
+checks prove that all three installed payloads contain identical, usable scripts.
+
+Session titles have no shipped runtime helper. The ChatGPT Desktop Codex tab calls the app-native
+current-task capability directly, while Claude Code follows the instruction-level rename-butler
+contract in [`src/shared/session-rename.md`](../../src/shared/session-rename.md). Codex CLI has no
+automatic title path in this scope.
 
 ## Progressive disclosure beyond the router
 

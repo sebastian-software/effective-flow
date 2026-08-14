@@ -33,12 +33,7 @@ when: an internal sub-agent's result is returned
 
 ```lazy-include
 runtime-state-safety
-when: a legacy runtime directory migration or a session rename request is about to mutate `.effective-flow/`
-```
-
-```lazy-include
-effective-flow-dir-migration
-when: a session rename request is about to be written below the runtime directory
+when: a legacy runtime directory migration is about to mutate `.effective-flow/`
 ```
 
 ```lazy-include

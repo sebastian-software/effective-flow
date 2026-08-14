@@ -68,12 +68,7 @@ const ROUTER_SRC = join(SOURCE_DIR, 'SKILL.md');
 const LICENSE_SRC = join(ROOT_DIR, 'LICENSE');
 // Allowlist of the dependency-free runtime scripts shipped into every target.
 // A script absent from this list is never copied, whichever subsystem owns it.
-const RUNTIME_SCRIPT_FILES = [
-  'remote-tracker.mjs',
-  'remote-tracker-core.mjs',
-  'session-title.mjs',
-  'session-title-core.mjs',
-];
+const RUNTIME_SCRIPT_FILES = ['remote-tracker.mjs', 'remote-tracker-core.mjs'];
 
 // Hand-maintained user guide (not generated from src/). A content guard below
 // protects the canonical Plan->Build handoff examples against regression (#107).

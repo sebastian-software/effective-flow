@@ -6,8 +6,9 @@ Active
 
 ## Context
 
-The Codex path ships a self-rename: a run applies its own session title through a hook. On Claude
-Code, the same run cannot do that. The host's rename tool refuses the caller —
+The Codex tab embedded in the ChatGPT Desktop app applies its title through an app-native
+current-task operation that needs no task id. Codex CLI has no automatic path in this scope. On
+Claude Code, the same run cannot rename itself. The host's rename tool refuses the caller —
 `Refusing to rename the current session from within itself.` — and all three session tools
 (`set_session_title`, `get_session`, `list_sessions`) exclude the caller's own session. A run
 therefore cannot even read its own title back by any route. A second session is structurally
@@ -44,8 +45,9 @@ The carve-out is scoped narrowly:
 - **Discovery is marker-title-only.** The butler is found by a session title set during setup;
   there is no separate machine-local configuration value for "which session is the butler".
 
-The mechanism lives in `src/shared/session-rename.md` (Claude Code section, dispatched alongside
-the existing Codex path) and the carve-out sentence itself in `src/shared/session-title.md`.
+The mechanism lives in `src/shared/session-rename.md` (Claude Code section, dispatched separately
+from the independent ChatGPT Desktop current-task path) and the carve-out sentence itself in
+`src/shared/session-title.md`.
 
 ## Consequences
 
