@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.59.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.58.0...effective-flow-v1.59.0) (2026-08-16)
+
+
+### Features
+
+* allow plan-issue to create native sub-issues ([#350](https://github.com/sebastian-software/effective-flow/issues/350)) ([a881d3f](https://github.com/sebastian-software/effective-flow/commit/a881d3f99ac74abc8e625fde0e912c7b17f086ea))
+* exclude the merge gate's own account from the human-comment guard ([#346](https://github.com/sebastian-software/effective-flow/issues/346)) ([455caf2](https://github.com/sebastian-software/effective-flow/commit/455caf2c9f4256f945bacfee29b5706f95803af3))
+* track issue lifecycle through merge ([#348](https://github.com/sebastian-software/effective-flow/issues/348)) ([3440025](https://github.com/sebastian-software/effective-flow/commit/344002564662cc778d47ba0d33fb07f41e34d535))
+
+
+### Bug Fixes
+
+* use native ChatGPT Desktop task titles ([043bc6c](https://github.com/sebastian-software/effective-flow/commit/043bc6c990f6455ef767303884e82c0dbb495ffd))
+
 ## [1.58.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.57.1...effective-flow-v1.58.0) (2026-08-12)
 
 
