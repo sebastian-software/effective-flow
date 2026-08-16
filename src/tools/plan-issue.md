@@ -330,10 +330,23 @@ Complete this entire phase for the active issue before starting another issue:
      `issue-create`, create first and link later, or fall back to a checklist;
    - after success or unique-key recovery, call `issue-sub-issues-read` once more and require exactly
      one valid same-parent match for the key. A concurrently visible duplicate fails closed before
-     the comment update. Then guardedly update the canonical comment with the normalized child
+     the comment update. **The just-created child's key being absent from that fresh list is marker
+     non-persistence, not a failed create:** the tracker accepted the issue but did not store the
+     stable-key marker in its body, so no later run can reconcile that child by key. This is the
+     bounded proof that the marker survives on this connection — there is no pre-flight capability
+     probe for it, because proving it would itself require creating a scratch item. The blast radius
+     is bounded by this check running after **every** child: the run stops after at most one child,
+     before any sibling is created and before the canonical comment is updated. Then guardedly
+     update the canonical comment with the normalized child
      reference and a `created` status before continuing. Every status/reference transition rebuilds
      the complete section through `decomposition-records-build`; never patch encoded marker data or
      the visible rendering independently.
+   - on an external target, `issue-sub-issues-read` and its marker normalization never run, so the
+     two canonical local operations carry that work instead: `decomposition-key-build` produces the
+     exact child body for the create — it is the external child-body step and the only permitted
+     writer of the marker — and `decomposition-key-parse` performs the post-create key match against
+     the freshly re-read child body, with the same expected target and parent. Never handwrite the
+     marker or match keys by string comparison on the external path.
 
    If a create failure says `mutationMayHaveSucceeded`, perform `issue-sub-issues-read` immediately
    and replace the local reconciliation state before any decision. A unique valid key match recovers
