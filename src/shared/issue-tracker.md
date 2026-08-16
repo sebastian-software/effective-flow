@@ -318,12 +318,18 @@ Canonical decomposition state uses these dependency-free local helper operations
 - `decomposition-key-build` is the single canonical writer of the stable-key marker for both
   targets. It accepts `target`, the target-aware `parent`, the resolved forge `repository` binding
   when the parent is a URL, and the stable lowercase `key`, either flat or under `decomposition`.
-  Without a `body` it returns `{ marker }`. With a `body` it rejects an unclosed Markdown fence, a
-  body that already carries a marker, and an appended marker it cannot read back, then returns
+  Without a `body` it returns `{ marker }`. With a `body` it first runs the same child-text
+  sanitization the forge child payload applies — generation attribution is rejected and credential
+  material is redacted — and then rejects an unclosed Markdown fence, a body that already carries a
+  marker, and an appended marker it cannot read back, before returning
   `{ marker, body, parent, key }` with the marker as the final nonblank standalone line. Never
-  handwrite that marker or concatenate it by hand: the three guards live only here. Fail-closed
-  codes are `INVALID_PAYLOAD` for an unclosed fence (`reason: unclosed-markdown-fence`), a
-  caller-supplied marker, an unreadable appended marker
+  handwrite that marker or concatenate it by hand: the four guards live only here. Fail-closed
+  codes are `INVALID_PAYLOAD` for generation attribution in the body, an empty or whitespace-only
+  body, credential material that cannot be safely redacted (`reason: unterminated-private-key`,
+  `unterminated-quoted-secret`, `ambiguous-empty-secret-assignment`, `empty-secret-assignment`,
+  `ambiguous-secret-assignment`, `ambiguous-colon-credential-assignment`,
+  `residual-secret-assignment`, or `residual-private-key`), an unclosed fence
+  (`reason: unclosed-markdown-fence`), a caller-supplied marker, an unreadable appended marker
   (`reason: unreadable-appended-decomposition-marker`), an unknown target, or an invalid key, and
   `INVALID_REFERENCE` for a parent that is not a valid identity of that target.
 - `decomposition-key-parse` accepts the fresh stored child body plus the expected `target` and

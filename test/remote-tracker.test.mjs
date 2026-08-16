@@ -2258,6 +2258,26 @@ test('decomposition-key-build splices a body under the same guards the forge chi
     () => buildDecompositionKey({ ...external, body: spliced.body }),
     (error) => error.code === 'INVALID_PAYLOAD' && error.details.field === 'body',
   );
+
+  assert.throws(
+    () =>
+      buildDecompositionKey({
+        ...external,
+        body: 'Requirement\n\nCo-Authored-By: Someone <a@b.c>',
+      }),
+    (error) => error.code === 'INVALID_PAYLOAD' && error.details.field === 'body',
+  );
+  assert.equal(
+    buildDecompositionKey({
+      ...external,
+      body: 'Requirement\n\napi_key = hunter2verysecretvalue',
+    }).body.includes('api_key = [REDACTED]'),
+    true,
+  );
+  assert.throws(
+    () => buildDecompositionKey({ ...external, body: '' }),
+    (error) => error.code === 'INVALID_PAYLOAD' && error.details.field === 'body',
+  );
 });
 
 test('the two decomposition key operations are local reads that distinguish an absent marker', async () => {

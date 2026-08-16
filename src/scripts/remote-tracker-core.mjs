@@ -1725,9 +1725,11 @@ export function parseDecompositionKey(body, context = {}) {
 }
 
 // The canonical writer for both targets. Without a body it returns the marker only; with one it
-// performs the same three guards the forge-only child payload applies — closed fences, no
-// caller-supplied marker, and a post-append re-inspection — so an external caller never has to
-// concatenate marker data by hand.
+// performs the same four guards the forge-only child payload applies — child-text sanitization
+// (generation-attribution rejection plus the redaction passes), closed fences, no caller-supplied
+// marker, and a post-append re-inspection — so an external caller never has to concatenate marker
+// data by hand. Sanitization runs first because redaction can delete backticks, so a fence balance
+// checked before it would be measured on text that is about to change.
 export function buildDecompositionKey(input) {
   requireObject(input, 'input');
   const proposal = requireObject(input.decomposition ?? input, 'decomposition');
@@ -1741,7 +1743,7 @@ export function buildDecompositionKey(input) {
   const marker = buildDecompositionKeyMarker(parent, key, scope);
   if (input.body === undefined) return { marker };
 
-  const body = requireString(input.body, 'body', { allowEmpty: true });
+  const body = sanitizeChildText(input.body, 'body');
   assertClosedMarkdownFences(body, 'body');
   if (inspectDecompositionKey(body, parent, scope).status !== 'absent') {
     fail('INVALID_PAYLOAD', 'body must not supply its own decomposition key marker', {
