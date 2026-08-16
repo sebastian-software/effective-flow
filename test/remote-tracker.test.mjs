@@ -1994,6 +1994,72 @@ test('child sanitization covers quoted, multiword, multiline, session, client, a
   );
 });
 
+test('child sanitization handles long slash runs without changing quoted-secret semantics', () => {
+  // Keep the pathological pre-fix scan in an isolated process so the suite remains bounded. The
+  // ten-second ceiling is deliberately far above the expected linear work; it is a safety bound,
+  // not a narrow timing assertion.
+  const probe = String.raw`
+import assert from 'node:assert/strict';
+import { buildCommandPlan } from './src/scripts/remote-tracker-core.mjs';
+
+const repository = {
+  host: 'github.com',
+  owner: 'example',
+  repository: 'flow',
+  provider: 'github',
+};
+const evenSlashes = '\\'.repeat(300_000);
+const oddSlashes = evenSlashes + '\\';
+const publicSuffix = '\nPublic suffix stays exact.';
+const expectedBody =
+  'api_key =[REDACTED]' +
+  publicSuffix +
+  '\n\n<!-- effective-flow-decomposition-key:v1 {"parent":42,"key":"child-01"} -->';
+
+function plannedBody(body) {
+  const plan = buildCommandPlan(
+    'issue-sub-issue-create',
+    {
+      parent: 42,
+      payload: { decompositionKey: 'child-01', title: 'Child', body },
+    },
+    repository,
+  );
+  return plan.args.at(plan.args.indexOf('--body') + 1);
+}
+
+const evenBody = plannedBody('api_key = "' + evenSlashes + '"' + publicSuffix);
+assert.equal(evenBody, expectedBody);
+assert.doesNotMatch(evenBody, /\\\\/);
+
+const oddBody = plannedBody(
+  'api_key = "' + oddSlashes + '"still secret"' + publicSuffix,
+);
+assert.equal(oddBody, expectedBody);
+assert.doesNotMatch(oddBody, /still secret|\\\\/);
+
+assert.throws(
+  () => plannedBody('api_key = "' + oddSlashes + '"still secret'),
+  (error) =>
+    error.code === 'INVALID_PAYLOAD' &&
+    error.details.reason === 'unterminated-quoted-secret',
+);
+`;
+  const result = spawnSync(process.execPath, ['--input-type=module', '--eval', probe], {
+    cwd: new URL('..', import.meta.url),
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+
+  assert.equal(
+    result.status,
+    0,
+    result.error?.code === 'ETIMEDOUT'
+      ? 'quoted-secret sanitization exceeded its broad linear-time safety bound'
+      : result.stderr,
+  );
+});
+
 test('native child listing isolates malformed, duplicate, and foreign-parent markers per child', async () => {
   const valid = '<!-- effective-flow-decomposition-key:v1 {"parent":42,"key":"child-01"} -->';
   const runner = fakeRunner([

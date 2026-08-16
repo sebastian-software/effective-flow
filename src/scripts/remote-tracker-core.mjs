@@ -1679,16 +1679,15 @@ function redactChildQuotedAssignments(text, field) {
     const quote = text[valueStart];
     if (quote !== '"' && quote !== "'") continue;
     let valueCursor = valueStart + 1;
+    let consecutiveBackslashes = 0;
     let closed = false;
     while (valueCursor < text.length) {
-      let escapes = 0;
-      for (let index = valueCursor - 1; index >= 0 && text[index] === '\\'; index -= 1) {
-        escapes += 1;
-      }
-      if (text[valueCursor] === quote && escapes % 2 === 0) {
+      const character = text[valueCursor];
+      if (character === quote && consecutiveBackslashes % 2 === 0) {
         closed = true;
         break;
       }
+      consecutiveBackslashes = character === '\\' ? consecutiveBackslashes + 1 : 0;
       valueCursor += 1;
     }
     if (!closed) failUnsafeChildSecret(field, 'unterminated-quoted-secret');
