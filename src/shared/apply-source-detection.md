@@ -84,12 +84,30 @@ target; a skill that uses stage B therefore also embeds `issue-tracker.md`.
 `{{SKILL:apply-plan}}` does not need stage B — for a plan skill, stage A is enough
 to recognize an issue reference as a foreign type and forward it.
 
-Per issue, read classification values and body **once fresh** from the tracker and determine the
-subtype in this precedence — **classification before body structure**:
+Per issue, read classification values, body, and comments **once fresh** from the tracker and
+determine the subtype in this precedence — **classification before body structure**. Select the
+newest comment that begins with `<!-- effective-flow-plan-issues -->` (or the one-generation legacy
+marker) exactly as `{{SKILL:plan-issue}}` does; a quoted or embedded marker is not canonical. Parse
+its decomposition records through `decomposition-records-parse`, never with ad hoc prose or JSON
+matching.
+
+On the forge target, obtain native-child evidence only through the helper operation
+`issue-sub-issues-read` with the candidate issue as `parent`. GitHub's normalized result is the
+authoritative native-child list. `UNSUPPORTED_CAPABILITY` on Forgejo means that this provider has no
+usable native-containment signal and classification continues from labels and body structure; any
+other read error stops classification instead of guessing. On an external target, use only the
+resolved connection's proven native-child listing capability. For a found active canonical
+decomposition, pass that comment and the fresh normalized child list to
+`decomposition-container-compare`. Such a parent is a `container-issue` even when the native list
+is empty; retain its integrity result for `{{SKILL:apply-issues}}`. A malformed canonical
+decomposition marker is likewise retained as an integrity-blocked container instead of being
+downgraded to a plain issue. An all-`declined` record set is inactive and does not by itself make a
+container. Never infer containment from issue prose, a matching title, or an unverified provider
+feature.
 
 1. Label `effective-flow-review-epic` (or old `firmo-review-epic`) → `review-epic`.
 2. Label `effective-flow-review-finding` (or old `firmo-review-finding`) → `review-finding`.
-3. no review label, but the body contains a sub-issue checklist
+3. no review label, but an active canonical decomposition exists, the body contains a sub-issue checklist
    (`- [ ] <reference> …` / `- [x] <reference> …`, where `<reference>` is a forge `#NNN` or a
    tool-native identifier such as `ABC-123`), or the issue has native sub-items on a target that
    models containment natively → `container-issue`.

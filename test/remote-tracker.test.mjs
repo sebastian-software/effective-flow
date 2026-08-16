@@ -8,14 +8,18 @@ import {
   bodyHash,
   buildCommandPlan,
   buildCommentPayload,
+  buildDecompositionRecords,
   buildEpicPayload,
   buildFindingPayload,
   buildIssueLifecycleReceipt,
   buildReviewPayload,
+  compareDecompositionContainer,
   deduplicateFindings,
   executeOperation,
   labelQueryVariants,
   parseIssueLifecycleReceipt,
+  parseDecompositionChildWorkflow,
+  parseDecompositionRecords,
   parseFindingSignature,
   parseReference,
   parseReferences,
@@ -44,6 +48,18 @@ const forgejoRepository = {
   provider: 'forgejo',
   login: 'work',
 };
+
+function buildGithubDecomposition(records, overrides = {}) {
+  return buildDecompositionRecords({
+    language: 'en',
+    target: 'forge',
+    repository: githubRepository,
+    externalTool: null,
+    parent: 42,
+    records,
+    ...overrides,
+  });
+}
 
 function fakeRunner(results) {
   const calls = [];
@@ -1215,6 +1231,1149 @@ test('dry-run mutations emit redacted executable, argument vector, and stdin wit
   assert.ok(Array.isArray(envelope.data.command.args));
   assert.doesNotMatch(envelope.data.command.stdin, /github_pat_secret/);
   assert.equal(runner.calls.length, 0);
+});
+
+test('native sub-issue plans require a repository-bound parent and a publishable stable draft', () => {
+  assert.throws(
+    () =>
+      buildCommandPlan(
+        'issue-sub-issue-create',
+        {
+          payload: { decompositionKey: 'child-01', title: 'Child', body: 'Complete body' },
+        },
+        githubRepository,
+      ),
+    (error) => error.code === 'INVALID_REFERENCE' && error.details.field === 'parent',
+  );
+  assert.throws(
+    () =>
+      buildCommandPlan(
+        'issue-sub-issues-read',
+        { parent: 'https://github.com/other/repo/issues/42' },
+        githubRepository,
+      ),
+    (error) => error.code === 'REFERENCE_REPOSITORY_MISMATCH',
+  );
+
+  for (const payload of [
+    { decompositionKey: 'Child-01', title: 'Child', body: 'Complete body' },
+    { decompositionKey: 'child-01', title: '', body: 'Complete body' },
+    { decompositionKey: 'child-01', title: 'Child', body: '' },
+    { decompositionKey: 'child-01', title: 'Child', body: 'Generated with Codex' },
+  ]) {
+    assert.throws(
+      () => buildCommandPlan('issue-sub-issue-create', { parent: 42, payload }, githubRepository),
+      (error) => error.code === 'INVALID_PAYLOAD',
+    );
+  }
+
+  const plan = buildCommandPlan(
+    'issue-sub-issue-create',
+    {
+      parent: '#42',
+      payload: {
+        decompositionKey: 'child-01',
+        title: 'Extract token=github_pat_title',
+        body: 'Use password=hunter2 in the fixture',
+        labels: ['feature'],
+      },
+    },
+    githubRepository,
+  );
+  assert.deepEqual(plan.args.slice(0, 4), ['issue', 'create', '--repo', 'example/flow']);
+  assert.equal(plan.args.at(plan.args.indexOf('--parent') + 1), '42');
+  assert.equal(plan.args.at(plan.args.indexOf('--label') + 1), 'feature');
+  const title = plan.args.at(plan.args.indexOf('--title') + 1);
+  const body = plan.args.at(plan.args.indexOf('--body') + 1);
+  assert.doesNotMatch(`${title}\n${body}`, /github_pat_title|hunter2/);
+  assert.match(title, /token=\[REDACTED\]/);
+  assert.match(body, /password=\[REDACTED\]/);
+  assert.equal(
+    body.match(/<!-- effective-flow-decomposition-key:v1 \{"parent":42,"key":"child-01"\} -->/g)
+      ?.length,
+    1,
+  );
+});
+
+test('sub-issue dry-runs reject unclosed backtick and tilde fences before provider access', async () => {
+  for (const [body, fence] of [
+    ['Self-contained requirement\n\n```js\nconst value = 1;', '`'],
+    ['Self-contained requirement\n\n~~~~markdown\nexample', '~'],
+  ]) {
+    const runner = fakeRunner([]);
+    const envelope = await executeOperation(
+      'issue-sub-issue-create',
+      {
+        repository: githubRepository,
+        parent: 42,
+        payload: { decompositionKey: 'child-01', title: 'Child', body },
+      },
+      { runner, skipProbe: true },
+    );
+
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+    assert.equal(envelope.error.details.reason, 'unclosed-markdown-fence');
+    assert.equal(envelope.error.details.fence, fence);
+    assert.equal(runner.calls.length, 0);
+  }
+});
+
+test('an accepted child body reads back with exactly one final key marker', async () => {
+  const input = {
+    repository: githubRepository,
+    parent: 42,
+    payload: {
+      decompositionKey: 'child-01',
+      title: 'Child',
+      body: 'Requirement with a closed fence\n\n```text\nexample\n```',
+    },
+  };
+  const preview = await executeOperation('issue-sub-issue-create', input, {
+    runner: fakeRunner([]),
+    skipProbe: true,
+  });
+  assert.equal(preview.ok, true);
+  const acceptedBody = preview.data.command.args.at(
+    preview.data.command.args.indexOf('--body') + 1,
+  );
+  const marker = '<!-- effective-flow-decomposition-key:v1 {"parent":42,"key":"child-01"} -->';
+  assert.equal(acceptedBody.endsWith(marker), true);
+  assert.equal(acceptedBody.split(marker).length - 1, 1);
+
+  const read = await executeOperation(
+    'issue-sub-issues-read',
+    { repository: githubRepository, parent: 42 },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify([
+            [
+              {
+                number: 51,
+                title: 'Child',
+                body: acceptedBody,
+                state: 'open',
+                labels: [],
+                html_url: 'https://github.com/example/flow/issues/51',
+              },
+            ],
+          ]),
+          stderr: '',
+        },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(read.ok, true);
+  assert.equal(read.data.result[0].body, acceptedBody);
+  assert.equal(read.data.result[0].decompositionKey, 'child-01');
+  assert.equal(read.data.result[0].body.endsWith(marker), true);
+  assert.equal(read.data.result[0].body.split(marker).length - 1, 1);
+});
+
+test('GitHub lists paginated native children and normalizes their parent and stable key', async () => {
+  const marker = '<!-- effective-flow-decomposition-key:v1 {"parent":42,"key":"child-01"} -->';
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify([
+        [
+          {
+            number: 51,
+            title: 'First child',
+            body: `Requirement\n\n${marker}`,
+            state: 'OPEN',
+            labels: [{ name: 'feature' }],
+            html_url: 'https://github.com/example/flow/issues/51',
+          },
+        ],
+        [
+          {
+            number: 52,
+            title: 'Second child',
+            body: 'Requirement',
+            state: 'closed',
+            labels: [],
+            html_url: 'https://github.com/example/flow/issues/52',
+          },
+          { number: 53, title: 'Not an issue', pull_request: {}, state: 'open' },
+        ],
+      ]),
+      stderr: '',
+    },
+  ]);
+  const envelope = await executeOperation(
+    'issue-sub-issues-read',
+    { repository: githubRepository, parent: 42 },
+    { runner, skipProbe: true },
+  );
+
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(
+    envelope.data.result.map(({ number, state, parent, decompositionKey }) => ({
+      number,
+      state,
+      parent,
+      decompositionKey,
+    })),
+    [
+      {
+        number: 51,
+        state: 'open',
+        parent: { number: 42, repository: 'example/flow' },
+        decompositionKey: 'child-01',
+      },
+      {
+        number: 52,
+        state: 'closed',
+        parent: { number: 42, repository: 'example/flow' },
+        decompositionKey: undefined,
+      },
+    ],
+  );
+  assert.ok(runner.calls[0].args.includes('--paginate'));
+  assert.ok(runner.calls[0].args.includes('--slurp'));
+  assert.match(runner.calls[0].args.at(-1), /issues\/42\/sub_issues\?per_page=100$/);
+});
+
+test('GitHub sub-issue creation previews and applies the same atomic parent-aware command', async () => {
+  const input = {
+    repository: githubRepository,
+    parent: 42,
+    payload: {
+      decompositionKey: 'child-01',
+      title: 'First child',
+      body: 'Self-contained requirement',
+      labels: ['feature'],
+    },
+  };
+  const previewRunner = fakeRunner([]);
+  const preview = await executeOperation('issue-sub-issue-create', input, {
+    runner: previewRunner,
+    skipProbe: true,
+  });
+  assert.equal(preview.ok, true);
+  assert.equal(preview.dryRun, true);
+  assert.equal(previewRunner.calls.length, 0);
+  assert.deepEqual(preview.data.command.args, [
+    'issue',
+    'create',
+    '--repo',
+    'example/flow',
+    '--title',
+    'First child',
+    '--body',
+    'Self-contained requirement\n\n<!-- effective-flow-decomposition-key:v1 {"parent":42,"key":"child-01"} -->',
+    '--parent',
+    '42',
+    '--label',
+    'feature',
+  ]);
+
+  const applyRunner = fakeRunner([
+    {
+      status: 0,
+      stdout: 'https://github.com/example/flow/issues/51\n',
+      stderr: '',
+    },
+  ]);
+  const applied = await executeOperation('issue-sub-issue-create', input, {
+    runner: applyRunner,
+    skipProbe: true,
+    apply: true,
+  });
+  assert.equal(applied.ok, true);
+  assert.deepEqual(applied.data.command.args, preview.data.command.args);
+  assert.equal(applied.data.result.number, 51);
+  assert.deepEqual(applied.data.result.parent, { number: 42, repository: 'example/flow' });
+  assert.equal(applied.data.result.decompositionKey, 'child-01');
+});
+
+test('sub-issue creation fails closed before Forgejo writes and after uncertain GitHub outcomes', async () => {
+  const forgejoRunner = fakeRunner([]);
+  const forgejo = await executeOperation(
+    'issue-sub-issue-create',
+    {
+      repository: forgejoRepository,
+      parent: 42,
+      payload: { decompositionKey: 'child-01', title: 'Child', body: 'Complete body' },
+    },
+    { runner: forgejoRunner, skipProbe: true, apply: true },
+  );
+  assert.equal(forgejo.ok, false);
+  assert.equal(forgejo.error.code, 'UNSUPPORTED_CAPABILITY');
+  assert.equal(forgejoRunner.calls.length, 0);
+
+  for (const result of [
+    { status: 1, stdout: '', stderr: 'connection reset after upload' },
+    { status: 0, stdout: 'created, but no result URL was reported', stderr: '' },
+  ]) {
+    const envelope = await executeOperation(
+      'issue-sub-issue-create',
+      {
+        repository: githubRepository,
+        parent: 42,
+        payload: { decompositionKey: 'child-01', title: 'Child', body: 'Complete body' },
+      },
+      { runner: fakeRunner([result]), skipProbe: true, apply: true },
+    );
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.retryable, false);
+    assert.equal(envelope.error.details.mutationMayHaveSucceeded, true);
+  }
+});
+
+test('sub-issue capability mapping and the GitHub help probe fail before create', async () => {
+  for (const [operation, capability] of [
+    ['issue-sub-issues-read', 'issueSubIssuesRead'],
+    ['issue-sub-issue-create', 'issueSubIssueCreate'],
+  ]) {
+    const runner = fakeRunner([]);
+    const envelope = await executeOperation(
+      operation,
+      {
+        repository: githubRepository,
+        parent: 42,
+        payload: { decompositionKey: 'child-01', title: 'Child', body: 'Complete body' },
+        probe: { capabilities: { [capability]: false } },
+      },
+      { runner, skipProbe: true, apply: true },
+    );
+    assert.equal(envelope.error.code, 'UNSUPPORTED_CAPABILITY');
+    assert.equal(envelope.error.details.capability, capability);
+    assert.equal(runner.calls.length, 0);
+  }
+
+  for (const [help, supported] of [
+    ['Create an issue\n      --parent int   Parent issue number\n', true],
+    ['Create an issue\n      --project string   Add to project\n', false],
+  ]) {
+    const runner = fakeRunner([
+      { status: 0, stdout: 'gh version 2.80.0\n', stderr: '' },
+      { status: 0, stdout: '', stderr: '' },
+      { status: 0, stdout: help, stderr: '' },
+    ]);
+    const probe = await probeProvider(githubRepository, runner, {
+      issueSubIssueCreate: true,
+    });
+    assert.equal(probe.capabilities.issueSubIssuesRead, true);
+    assert.equal(probe.capabilities.issueSubIssueCreate, supported);
+    assert.deepEqual(runner.calls[2].args, ['issue', 'create', '--help']);
+  }
+});
+
+test('canonical decomposition and native markers preserve all four implementation routes', async () => {
+  const routes = [
+    ['Feature', 'build'],
+    ['Bugfix', 'fix'],
+    ['Refactoring', 'refactor'],
+    ['Documentation', 'docs'],
+  ];
+  const records = routes.map(([workflow], index) => ({
+    key: `child-0${index + 1}`,
+    title: `${workflow} child`,
+    workflow,
+    body: `**Recommended workflow:** ${workflow}\n\nSelf-contained requirement`,
+    status: 'created',
+    issue: 51 + index,
+  }));
+  const proposal = buildGithubDecomposition(records);
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify([
+        records.map((record, index) => ({
+          number: 51 + index,
+          title: record.title,
+          body: `${record.body}\n\n<!-- effective-flow-decomposition-key:v1 {"parent":42,"key":"${record.key}"} -->`,
+          state: 'open',
+          labels: [],
+          html_url: `https://github.com/example/flow/issues/${51 + index}`,
+        })),
+      ]),
+      stderr: '',
+    },
+  ]);
+  const listed = await executeOperation(
+    'issue-sub-issues-read',
+    { repository: githubRepository, parent: 42 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(listed.ok, true);
+  assert.deepEqual(
+    listed.data.result.map((child) => child.decompositionKey),
+    records.map((record) => record.key),
+  );
+
+  const reconciled = compareDecompositionContainer({
+    body: proposal.section,
+    parent: 42,
+    children: listed.data.result,
+  });
+  assert.equal(reconciled.containerOnly, true);
+  assert.equal(reconciled.ok, true);
+  assert.deepEqual(
+    records.map((record) =>
+      parseDecompositionChildWorkflow({
+        body: record.body,
+        language: 'en',
+        expectedWorkflow: record.workflow,
+      }),
+    ),
+    routes.map(([workflow, implementationWorkflow]) => ({ workflow, implementationWorkflow })),
+  );
+});
+
+test('canonical v2 decomposition sections round-trip every visible field and reject tampering', () => {
+  const built = buildGithubDecomposition([
+    {
+      key: 'child-01',
+      title: 'Preserve the exact draft',
+      workflow: 'Feature',
+      body: '**Recommended workflow:** Feature\n\nImplement `alpha` exactly.\n\n- Keep this list.',
+      status: 'approved',
+      issue: null,
+    },
+  ]);
+  const parsed = parseDecompositionRecords(`Planning preface\n\n${built.section}\n\nReview suffix`);
+
+  assert.equal(parsed.found, true);
+  assert.equal(parsed.active, true);
+  assert.deepEqual(parsed.context, built.context);
+  assert.deepEqual(parsed.records, built.records);
+  assert.match(built.section, /#### `child-01` — Preserve the exact draft/);
+  assert.match(built.section, /\*\*Workflow:\*\* Feature/);
+  assert.match(built.section, /\*\*Status:\*\* Approved/);
+  assert.match(built.section, /Implement `alpha` exactly\./);
+
+  const marker = built.section.match(
+    /<!-- effective-flow-decomposition-record:v2 ([A-Za-z0-9_-]+) -->/,
+  );
+  assert.ok(marker);
+  const payload = JSON.parse(Buffer.from(marker[1], 'base64url').toString('utf8'));
+  payload.draftHash = payload.draftHash === '0'.repeat(64) ? '1'.repeat(64) : '0'.repeat(64);
+  const changedHashMarker = marker[0].replace(
+    marker[1],
+    Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url'),
+  );
+  for (const tampered of [
+    built.section.replace('Preserve the exact draft', 'Altered visible title'),
+    built.section.replace('Implement `alpha` exactly.', 'Implement `beta` instead.'),
+    built.section.replace(marker[0], changedHashMarker),
+  ]) {
+    assert.throws(
+      () => parseDecompositionRecords(tampered),
+      (error) => error.code === 'INVALID_PAYLOAD',
+    );
+  }
+});
+
+test('canonical decomposition ignores quoted and fenced marker examples', () => {
+  const section = buildGithubDecomposition([
+    {
+      key: 'child-01',
+      title: 'Example child',
+      workflow: 'Feature',
+      body: '**Recommended workflow:** Feature\n\nRequirement',
+      status: 'proposed',
+      issue: null,
+    },
+  ]).section;
+  const quoted = section
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n');
+  const fenced = `~~~~markdown\n${section}\n~~~~`;
+
+  for (const body of [quoted, fenced]) {
+    assert.deepEqual(parseDecompositionRecords(body), {
+      found: false,
+      active: false,
+      context: null,
+      records: [],
+    });
+  }
+});
+
+test('decomposition build requires exactly one language-matching workflow field', () => {
+  const record = {
+    key: 'child-01',
+    title: 'Workflow-bound child',
+    workflow: 'Feature',
+    body: '**Recommended workflow:** Feature\n\nRequirement',
+    status: 'proposed',
+    issue: null,
+  };
+  for (const body of [
+    'Requirement without a workflow field',
+    '**Recommended workflow:** Feature\n**Recommended workflow:** Feature\n\nRequirement',
+    '**Empfohlener Workflow:** Feature\n\nAnforderung',
+    '**Recommended workflow:** Bugfix\n\nRequirement',
+  ]) {
+    assert.throws(
+      () => buildGithubDecomposition([{ ...record, body }]),
+      (error) => error.code === 'INVALID_PAYLOAD',
+    );
+  }
+  for (const body of [
+    '**Recommended workflow:** Feature\n\n```js\nconst value = 1;',
+    '**Recommended workflow:** Feature\n\n~~~~markdown\nexample',
+  ]) {
+    assert.throws(
+      () => buildGithubDecomposition([{ ...record, body }]),
+      (error) =>
+        error.code === 'INVALID_PAYLOAD' &&
+        error.details.field === 'decomposition.records[0].body' &&
+        error.details.reason === 'unclosed-markdown-fence',
+    );
+  }
+
+  const german = buildGithubDecomposition(
+    [
+      {
+        ...record,
+        body: '**Empfohlener Workflow:** Feature\n\nAnforderung',
+      },
+    ],
+    { language: 'de' },
+  );
+  assert.deepEqual(parseDecompositionRecords(german.section).records, german.records);
+  for (const body of [
+    '**Recommended workflow:** Feature\n\nRequirement',
+    '**Empfohlener Workflow:** Feature\n**Empfohlener Workflow:** Feature\n\nAnforderung',
+    '**Empfohlener Workflow:** Bugfix\n\nAnforderung',
+  ]) {
+    assert.throws(
+      () => buildGithubDecomposition([{ ...record, body }], { language: 'de' }),
+      (error) => error.code === 'INVALID_PAYLOAD',
+    );
+  }
+});
+
+test('workflow parsing ignores quoted and fenced examples in English and German', () => {
+  for (const input of [
+    {
+      language: 'en',
+      body: '> **Recommended workflow:** Feature\n\n```markdown\n**Recommended workflow:** Bugfix\n```',
+    },
+    {
+      language: 'de',
+      body: '> **Empfohlener Workflow:** Feature\n\n~~~markdown\n**Empfohlener Workflow:** Bugfix\n~~~',
+    },
+  ]) {
+    assert.throws(
+      () => parseDecompositionChildWorkflow(input),
+      (error) =>
+        error.code === 'INVALID_PAYLOAD' &&
+        error.details.matches === 0 &&
+        error.details.foreignMatches === 0,
+    );
+  }
+
+  assert.deepEqual(
+    parseDecompositionChildWorkflow({
+      language: 'en',
+      expectedWorkflow: 'Feature',
+      body: [
+        '**Recommended workflow:** Feature',
+        '> **Recommended workflow:** Bugfix',
+        '~~~markdown',
+        '**Empfohlener Workflow:** Documentation',
+        '~~~',
+      ].join('\n'),
+    }),
+    { workflow: 'Feature', implementationWorkflow: 'build' },
+  );
+  assert.deepEqual(
+    parseDecompositionChildWorkflow({
+      language: 'de',
+      expectedWorkflow: 'Documentation',
+      body: [
+        '**Empfohlener Workflow:** Documentation',
+        '> **Empfohlener Workflow:** Refactoring',
+        '```markdown',
+        '**Recommended workflow:** Bugfix',
+        '```',
+      ].join('\n'),
+    }),
+    { workflow: 'Documentation', implementationWorkflow: 'docs' },
+  );
+});
+
+test('decomposition identities bind forge URLs but preserve exact external IDs', () => {
+  const created = {
+    key: 'child-01',
+    title: 'Created child',
+    workflow: 'Feature',
+    body: '**Recommended workflow:** Feature\n\nRequirement',
+    status: 'created',
+    issue: 'https://github.com/example/flow/issues/51',
+  };
+  assert.equal(buildGithubDecomposition([created]).records[0].issue, '#51');
+  for (const issue of [
+    'https://git.example.test/example/flow/issues/51',
+    'https://github.com/other/flow/issues/51',
+    'https://github.com/example/other/issues/51',
+  ]) {
+    assert.throws(
+      () => buildGithubDecomposition([{ ...created, issue }]),
+      (error) => error.code === 'REFERENCE_REPOSITORY_MISMATCH',
+    );
+  }
+
+  const external = buildDecompositionRecords({
+    language: 'en',
+    target: 'external',
+    repository: null,
+    externalTool: 'Linear',
+    parent: 'FLOW-42',
+    records: [
+      { ...created, issue: 'CORE-51' },
+      { ...created, key: 'child-02', issue: 'UI-51' },
+      {
+        ...created,
+        key: 'child-03',
+        issue: 'https://tracker.example.test/teams/core/issues/51',
+      },
+      {
+        ...created,
+        key: 'child-04',
+        issue: 'https://tracker.example.test/teams/ui/issues/51',
+      },
+    ],
+  });
+  assert.deepEqual(
+    external.records.map((record) => record.issue),
+    [
+      'CORE-51',
+      'UI-51',
+      'https://tracker.example.test/teams/core/issues/51',
+      'https://tracker.example.test/teams/ui/issues/51',
+    ],
+  );
+  assert.deepEqual(parseDecompositionRecords(external.section).records, external.records);
+});
+
+test('child sanitization covers quoted, multiword, multiline, session, client, and private-key secrets', () => {
+  const built = buildGithubDecomposition([
+    {
+      key: 'child-01',
+      title: 'Rotate client_secret = "alpha beta gamma" safely',
+      workflow: 'Feature',
+      body: [
+        '**Recommended workflow:** Feature',
+        '"api key" = "quoted multiword value"',
+        "session ID: 'session value with spaces'",
+        'client_secret: client-secret-value',
+        'private key: "quoted private assignment"',
+        'AWS_ACCESS_KEY_ID=AKIAEXAMPLEVALUE',
+        'AWS_SECRET_ACCESS_KEY: aws-secret-value',
+        'refresh_token = refresh-token-value',
+        'Authorization: Basic dXNlcjpwYXNzd29yZA==',
+        'GH_TOKEN=github-cli-value',
+        'NPM_TOKEN=npm-registry-value',
+        'DATABASE_PASSWORD=database-password-value',
+        'SERVICE_TOKEN=service-token-value',
+        'BACKUP_PASSWORD=backup-password-value',
+        'SIGNING_SECRET=signing-secret-value',
+        'PUBLIC_API_KEY=public-api-key-value',
+        'access token: |',
+        '  first secret line',
+        '  second secret line',
+        'Continue with public guidance.',
+        '-----BEGIN PRIVATE KEY-----',
+        'private-key-material',
+        '-----END PRIVATE KEY-----',
+        'Password: require rotation, after every incident.',
+        'Secret: never log values (including debug).',
+        'Token: support refresh-token rotation.',
+      ].join('\n'),
+      status: 'proposed',
+      issue: null,
+    },
+  ]);
+  const serialized = JSON.stringify(built);
+  assert.doesNotMatch(
+    serialized,
+    /alpha beta gamma|quoted multiword value|session value|client-secret-value|quoted private assignment|AKIAEXAMPLEVALUE|aws-secret-value|refresh-token-value|dXNlcjpwYXNzd29yZA|github-cli-value|npm-registry-value|database-password-value|service-token-value|backup-password-value|signing-secret-value|public-api-key-value|first secret line|second secret line|private-key-material|-----BEGIN PRIVATE KEY-----/,
+  );
+  assert.match(built.records[0].title, /\[REDACTED\]/);
+  assert.match(built.records[0].body, /\[REDACTED PRIVATE KEY\]/);
+  assert.match(built.records[0].body, /Continue with public guidance\./);
+  for (const field of [
+    'GH_TOKEN',
+    'NPM_TOKEN',
+    'DATABASE_PASSWORD',
+    'SERVICE_TOKEN',
+    'BACKUP_PASSWORD',
+    'SIGNING_SECRET',
+    'PUBLIC_API_KEY',
+  ]) {
+    assert.match(built.records[0].body, new RegExp(`${field}=\\[REDACTED\\]`));
+  }
+  for (const prose of [
+    'Password: require rotation, after every incident.',
+    'Secret: never log values (including debug).',
+    'Token: support refresh-token rotation.',
+  ]) {
+    assert.match(built.records[0].body, new RegExp(prose.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+
+  assert.throws(
+    () =>
+      buildGithubDecomposition([
+        {
+          key: 'child-01',
+          title: 'Child',
+          workflow: 'Feature',
+          body: '-----BEGIN PRIVATE KEY-----\nunterminated',
+          status: 'proposed',
+          issue: null,
+        },
+      ]),
+    (error) =>
+      error.code === 'INVALID_PAYLOAD' && error.details.reason === 'unterminated-private-key',
+  );
+  for (const body of [
+    '**Recommended workflow:** Feature\nrefresh_token:',
+    '**Recommended workflow:** Feature\nAWS_SECRET_ACCESS_KEY: |',
+  ]) {
+    assert.throws(
+      () =>
+        buildGithubDecomposition([
+          {
+            key: 'child-01',
+            title: 'Child',
+            workflow: 'Feature',
+            body,
+            status: 'proposed',
+            issue: null,
+          },
+        ]),
+      (error) =>
+        error.code === 'INVALID_PAYLOAD' &&
+        ['empty-secret-assignment', 'ambiguous-empty-secret-assignment'].includes(
+          error.details.reason,
+        ),
+    );
+  }
+  assert.throws(
+    () =>
+      buildGithubDecomposition([
+        {
+          key: 'child-01',
+          title: 'Child',
+          workflow: 'Feature',
+          body: '**Recommended workflow:** Feature\nPassword: perhaps use several words',
+          status: 'proposed',
+          issue: null,
+        },
+      ]),
+    (error) =>
+      error.code === 'INVALID_PAYLOAD' &&
+      error.details.reason === 'ambiguous-colon-credential-assignment',
+  );
+  assert.throws(
+    () =>
+      buildCommandPlan(
+        'issue-sub-issue-create',
+        {
+          parent: 42,
+          payload: {
+            decompositionKey: 'child-01',
+            title: 'Child',
+            body: 'Complete body',
+            labels: ['client_secret=label secret'],
+          },
+        },
+        githubRepository,
+      ),
+    (error) => error.code === 'INVALID_PAYLOAD' && error.details.reason === 'secret-in-label',
+  );
+});
+
+test('native child listing isolates malformed, duplicate, and foreign-parent markers per child', async () => {
+  const valid = '<!-- effective-flow-decomposition-key:v1 {"parent":42,"key":"child-01"} -->';
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify([
+        [
+          { number: 51, title: 'Valid', body: valid, state: 'open' },
+          {
+            number: 52,
+            title: 'Malformed',
+            body: '<!-- effective-flow-decomposition-key:v1 not-json -->',
+            state: 'open',
+          },
+          { number: 53, title: 'Duplicate', body: `${valid}\n${valid}`, state: 'open' },
+          {
+            number: 54,
+            title: 'Foreign parent',
+            body: '<!-- effective-flow-decomposition-key:v1 {"parent":99,"key":"child-04"} -->',
+            state: 'open',
+          },
+          { number: 55, title: 'Legacy child', body: 'No marker', state: 'open' },
+          { number: 56, title: 'Quoted example', body: `> ${valid}`, state: 'open' },
+          {
+            number: 57,
+            title: 'Fenced example',
+            body: `~~~~markdown\n${valid}\n~~~~`,
+            state: 'open',
+          },
+          {
+            number: 58,
+            title: 'Marker before prose',
+            body: `${valid}\n\nLater prose`,
+            state: 'open',
+          },
+        ],
+      ]),
+      stderr: '',
+    },
+  ]);
+  const envelope = await executeOperation(
+    'issue-sub-issues-read',
+    { repository: githubRepository, parent: 42 },
+    { runner, skipProbe: true },
+  );
+
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.result.length, 8);
+  assert.equal(envelope.data.result[0].decompositionKey, 'child-01');
+  assert.equal(envelope.data.result[1].decompositionKeyError.code, 'MALFORMED');
+  assert.equal(envelope.data.result[2].decompositionKeyError.code, 'DUPLICATE');
+  assert.equal(envelope.data.result[3].decompositionKeyError.code, 'PARENT_MISMATCH');
+  assert.equal(Object.hasOwn(envelope.data.result[4], 'decompositionKey'), false);
+  assert.equal(Object.hasOwn(envelope.data.result[4], 'decompositionKeyError'), false);
+  for (const child of envelope.data.result.slice(5, 7)) {
+    assert.equal(Object.hasOwn(child, 'decompositionKey'), false);
+    assert.equal(Object.hasOwn(child, 'decompositionKeyError'), false);
+  }
+  assert.equal(envelope.data.result[7].decompositionKeyError.code, 'INVALID_POSITION');
+  for (const child of envelope.data.result) {
+    assert.deepEqual(child.parent, { number: 42, repository: 'example/flow' });
+  }
+});
+
+test('decomposition proposals enforce exact schema, status pairs, and unique identities', () => {
+  const statusRecords = [
+    ['proposed', null],
+    ['approved', null],
+    ['created', 53],
+    ['missing', null],
+    ['declined', null],
+  ].map(([status, issue], index) => ({
+    key: `child-0${index + 1}`,
+    title: `Child ${index + 1}`,
+    workflow: 'Feature',
+    body: '**Recommended workflow:** Feature\n\nRequirement',
+    status,
+    issue,
+  }));
+  const built = buildGithubDecomposition(statusRecords);
+  assert.deepEqual(Object.keys(built.records[0]), [
+    'key',
+    'title',
+    'workflow',
+    'body',
+    'status',
+    'issue',
+    'draftHash',
+  ]);
+  const parsed = parseDecompositionRecords(built.section);
+  assert.equal(parsed.found, true);
+  assert.equal(parsed.active, true);
+  assert.deepEqual(
+    parsed.records.map(({ key, status, issue, workflow }) => ({ key, status, issue, workflow })),
+    statusRecords.map(({ key, status, issue, workflow }) => ({
+      key,
+      status,
+      issue: issue === null ? null : `#${issue}`,
+      workflow,
+    })),
+  );
+
+  for (const record of [
+    { ...statusRecords[0], issue: 51 },
+    { ...statusRecords[1], issue: 51 },
+    { ...statusRecords[3], issue: 51 },
+    { ...statusRecords[4], issue: 51 },
+    { ...statusRecords[2], issue: null },
+    { ...statusRecords[0], status: 'unknown' },
+    { ...statusRecords[0], extra: true },
+    Object.fromEntries(Object.entries(statusRecords[0]).filter(([key]) => key !== 'body')),
+  ]) {
+    assert.throws(
+      () => buildGithubDecomposition([record]),
+      (error) => error.code === 'INVALID_PAYLOAD',
+    );
+  }
+  assert.throws(
+    () =>
+      buildGithubDecomposition([
+        statusRecords[0],
+        { ...statusRecords[1], key: statusRecords[0].key },
+      ]),
+    (error) => error.code === 'AMBIGUOUS_TARGET',
+  );
+  assert.throws(
+    () =>
+      buildGithubDecomposition([
+        statusRecords[2],
+        { ...statusRecords[2], key: 'child-06', issue: '#53' },
+      ]),
+    (error) => error.code === 'AMBIGUOUS_TARGET',
+  );
+
+  const declined = buildGithubDecomposition([{ ...statusRecords[4], key: 'declined-only' }]);
+  assert.deepEqual(parseDecompositionRecords(declined.section), {
+    found: true,
+    active: false,
+    context: declined.context,
+    records: [
+      {
+        key: 'declined-only',
+        title: 'Child 5',
+        status: 'declined',
+        issue: null,
+        workflow: 'Feature',
+        body: '**Recommended workflow:** Feature\n\nRequirement',
+        draftHash: declined.records[0].draftHash,
+      },
+    ],
+  });
+});
+
+test('canonical container reconciliation reports every integrity shape and stays container-only', () => {
+  const created = buildGithubDecomposition([
+    {
+      key: 'child-01',
+      title: 'First child',
+      workflow: 'Feature',
+      body: '**Recommended workflow:** Feature\n\nRequirement',
+      status: 'created',
+      issue: 51,
+    },
+    {
+      key: 'child-02',
+      title: 'Second child',
+      workflow: 'Bugfix',
+      body: '**Recommended workflow:** Bugfix\n\nRequirement',
+      status: 'created',
+      issue: 52,
+    },
+  ]);
+  const body = created.section;
+  const child = (number, decompositionKey, parent = 42) => ({
+    number,
+    decompositionKey,
+    parent: { number: parent },
+  });
+  const cases = [
+    {
+      name: 'one missing child',
+      children: [child(51, 'child-01')],
+      codes: ['MISSING_CHILD'],
+    },
+    {
+      name: 'detached child',
+      children: [child(51, 'child-01', 99), child(52, 'child-02')],
+      codes: ['DETACHED_CHILD'],
+    },
+    {
+      name: 'duplicate key',
+      children: [child(51, 'child-01'), child(61, 'child-01'), child(52, 'child-02')],
+      codes: ['DUPLICATE_KEY'],
+    },
+    {
+      name: 'unexpected key',
+      children: [child(51, 'child-01'), child(52, 'child-02'), child(60, 'child-99')],
+      codes: ['UNEXPECTED_KEY'],
+    },
+    {
+      name: 'all children absent',
+      children: [],
+      codes: ['MISSING_CHILD', 'MISSING_CHILD'],
+    },
+  ];
+  for (const entry of cases) {
+    const result = compareDecompositionContainer({ body, parent: 42, children: entry.children });
+    assert.equal(result.canonical, true, entry.name);
+    assert.equal(result.active, true, entry.name);
+    assert.equal(result.containerOnly, true, entry.name);
+    assert.equal(result.ok, false, entry.name);
+    assert.deepEqual(
+      result.discrepancies.map((item) => item.code),
+      entry.codes,
+      entry.name,
+    );
+  }
+
+  const missingRecord = buildGithubDecomposition([
+    {
+      key: 'child-01',
+      title: 'First child',
+      workflow: 'Feature',
+      body: '**Recommended workflow:** Feature\n\nRequirement',
+      status: 'missing',
+      issue: null,
+    },
+  ]);
+  const incomplete = compareDecompositionContainer({
+    body: missingRecord.section,
+    parent: 42,
+    children: [],
+  });
+  assert.equal(incomplete.containerOnly, true);
+  assert.deepEqual(incomplete.discrepancies, [
+    { code: 'INCOMPLETE_RECORD', key: 'child-01', status: 'missing' },
+  ]);
+
+  assert.deepEqual(compareDecompositionContainer({ body: 'Plain issue', children: [] }), {
+    canonical: false,
+    active: false,
+    containerOnly: false,
+    ok: true,
+    records: [],
+    discrepancies: [],
+  });
+  const declined = buildGithubDecomposition([
+    {
+      key: 'child-01',
+      title: 'Declined child',
+      workflow: 'Feature',
+      body: '**Recommended workflow:** Feature\n\nRequirement',
+      status: 'declined',
+      issue: null,
+    },
+  ]);
+  assert.equal(
+    compareDecompositionContainer({ body: declined.section, children: [] }).containerOnly,
+    false,
+  );
+});
+
+test('GitHub decomposition sections and final planning comments enforce the 65,536-byte boundary', () => {
+  const boundaryBody = `**Recommended workflow:** Feature\n\n${'ä'.repeat(13_881)}`;
+  const boundaryRecord = {
+    key: 'child-01',
+    title: 'Boundary childy',
+    workflow: 'Feature',
+    body: boundaryBody,
+    status: 'proposed',
+    issue: null,
+  };
+  const exactSection = buildGithubDecomposition([boundaryRecord]);
+  assert.equal(Buffer.byteLength(exactSection.section, 'utf8'), 65_536);
+  assert.throws(
+    () => buildGithubDecomposition([{ ...boundaryRecord, body: `${boundaryBody}ä` }]),
+    (error) => {
+      assert.equal(error.code, 'INVALID_PAYLOAD');
+      assert.equal(error.details.field, 'decomposition.section');
+      assert.equal(error.details.maximum, 65_536);
+      assert.ok(error.details.actual > 65_536);
+      assert.equal(error.details.unit, 'utf8-bytes');
+      assert.equal(error.details.contributions.sectionBytes, error.details.actual);
+      assert.equal(error.details.contributions.otherCommentBytes, 0);
+      assert.deepEqual(
+        error.details.contributions.records.map((record) => record.key),
+        ['child-01'],
+      );
+      assert.equal(
+        error.details.contributions.records[0].bodyBytes,
+        Buffer.byteLength(`${boundaryBody}ä`, 'utf8'),
+      );
+      assert.ok(error.details.contributions.records[0].titleBytes > 0);
+      assert.ok(error.details.contributions.records[0].encodedRecordBytes > 0);
+      return true;
+    },
+  );
+  assert.throws(
+    () =>
+      buildGithubDecomposition([{ ...boundaryRecord, body: `${boundaryBody}ä` }], {
+        repository: {
+          host: 'enterprise.example.test',
+          owner: 'team',
+          repository: 'flow',
+          provider: 'github',
+        },
+      }),
+    (error) => {
+      assert.equal(error.code, 'INVALID_PAYLOAD');
+      assert.equal(error.details.field, 'decomposition.section');
+      assert.equal(error.details.maximum, 65_536);
+      assert.ok(error.details.actual > 65_536);
+      return true;
+    },
+  );
+
+  const compact = buildGithubDecomposition([
+    {
+      ...boundaryRecord,
+      title: 'Compact child',
+      body: '**Recommended workflow:** Feature\n\nCompact requirement',
+    },
+  ]);
+  const stampedPrefix = '<!-- effective-flow-plan-issues -->\n';
+  const separator = '\n\n';
+  const paddingBytes =
+    65_536 -
+    Buffer.byteLength(stampedPrefix, 'utf8') -
+    Buffer.byteLength(separator, 'utf8') -
+    Buffer.byteLength(compact.section, 'utf8');
+  assert.ok(paddingBytes > 2);
+  const padding = `ä${'x'.repeat(paddingBytes - 2)}`;
+  const exactComment = buildCommentPayload('planning', {
+    body: `${padding}${separator}${compact.section}`,
+  });
+  assert.equal(Buffer.byteLength(exactComment.body, 'utf8'), 65_536);
+  assert.throws(
+    () =>
+      buildCommentPayload('planning', {
+        body: `${padding}x${separator}${compact.section}`,
+      }),
+    (error) => {
+      assert.equal(error.code, 'INVALID_PAYLOAD');
+      assert.equal(error.details.field, 'comment.body');
+      assert.equal(error.details.maximum, 65_536);
+      assert.equal(error.details.actual, 65_537);
+      assert.equal(error.details.unit, 'utf8-bytes');
+      assert.equal(
+        error.details.contributions.sectionBytes,
+        Buffer.byteLength(compact.section, 'utf8'),
+      );
+      assert.equal(
+        error.details.contributions.otherCommentBytes,
+        error.details.actual - error.details.contributions.sectionBytes,
+      );
+      assert.deepEqual(
+        error.details.contributions.records.map((record) => record.key),
+        ['child-01'],
+      );
+      return true;
+    },
+  );
+
+  const legacy = buildCommentPayload('planning', {
+    body: `Legacy planning prose\n${'ä'.repeat(32_769)}`,
+  });
+  assert.ok(Buffer.byteLength(legacy.body, 'utf8') > 65_536);
+  assert.match(legacy.body, /Legacy planning prose/);
+});
+
+test('planning comments validate decomposition markers while legacy prose remains unchanged', () => {
+  const plain = buildCommentPayload('planning', { body: 'Legacy plan without decomposition' });
+  assert.match(plain.body, /Legacy plan without decomposition/);
+  assert.throws(
+    () =>
+      buildCommentPayload('planning', {
+        body: '<!-- effective-flow-decomposition-child:v1 not-json -->',
+      }),
+    (error) => error.code === 'INVALID_PAYLOAD',
+  );
 });
 
 test('body mutation previews require a caller-supplied fresh body hash', async () => {

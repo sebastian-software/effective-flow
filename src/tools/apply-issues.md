@@ -128,7 +128,7 @@ Do not expose internal tracking IDs or session details in comments.
 
 ### Phase 1: Argument & tracker setup
 
-1. Resolve the tracker target per "Tracker target" in the included building block. On the forge target, determine host and CLI and check availability/authentication per "Remote helper contract"; precondition there is a git repository with an `origin` remote, and a missing `origin`, CLI, or authentication is reported clearly and aborts without side effects. On an external target, establish exactly one connection and verify the capabilities this skill needs — read issue and comments, list issues by classification, create a comment, add/remove a classification value, and patch an exact checklist entry. Settle the container mechanism here: select a native parent/sub-issue relation only when the connection proves it can write a sub-item's completion state; otherwise select the checklist fallback. Defer every completion write of the selected mechanism until post-merge reconciliation. The phase-specific state-list and transition capabilities from "Issue implementation lifecycle" are required only for issues that survive the clarity and approval gates; resolve them before their first started transition, never as a prerequisite for listing or skipping issues. Any fail-closed class aborts before the first affected write (no silent fallback to the forge or to a local flow).
+1. Resolve the tracker target per "Tracker target" in the included building block. On the forge target, determine host and CLI and check availability/authentication per "Remote helper contract"; precondition there is a git repository with an `origin` remote, and a missing `origin`, CLI, or authentication is reported clearly and aborts without side effects. For every candidate forge parent, request native children through `issue-sub-issues-read`: GitHub uses the normalized result as its native container mechanism, while Forgejo's `UNSUPPORTED_CAPABILITY` leaves only the existing checklist detection available. On an external target, establish exactly one connection and verify the capabilities this skill needs — read issue and comments, list issues by classification, create a comment, add/remove a classification value, and patch an exact checklist entry. Settle the container mechanism here: select a native parent/sub-issue relation only when the connection proves it can write a sub-item's completion state; otherwise select the checklist fallback. Defer every completion write of the selected mechanism until post-merge reconciliation. The phase-specific state-list and transition capabilities from "Issue implementation lifecycle" are required only for issues that survive the clarity and approval gates; resolve them before their first started transition, never as a prerequisite for listing or skipping issues. Any fail-closed class aborts before the first affected write (no silent fallback to the forge or to a local flow).
 2. Read the user argument and classify it via the "apply-source detection" (stage A and — for issue references — stage B):
    - source type `container-issue` or `plain-issue` → `{{SKILL:apply-issues}}` processes it itself; continue. Multiple issue references (number, `#123` or issue URL) are allowed as a list.
    - source type `plan` or `review-report` → point to the responsible skill (`{{SKILL:apply-plan}}` or `{{SKILL:apply-review}}`, or `{{SKILL:apply}}` for automatic routing) and end the skill.
@@ -140,11 +140,36 @@ Do not expose internal tracking IDs or session details in comments.
 ### Phase 2: Expansion & work list
 
 1. Read each referenced issue **fresh** from the tracker (body, labels, status and **comments** via the "read comments" operation). The comments are part of the analysis basis: a planning comment from `{{SKILL:plan-issue}}` (marker `<!-- effective-flow-plan-issues -->`) contains the completed specification, and maintainers may add clarifications as a comment rather than in the body. Your own Effective Flow comments (`<!-- effective-flow-apply-issues -->`) are only noted here for the idempotency check in Phase 4, not counted as a functional requirement. **Backcompat (one generation):** the legacy markers `<!-- firmo-plan-issues -->` and `<!-- firmo-apply-issues -->` from earlier runs are recognized equivalently when reading; only the `effective-flow-` variant is written anew.
-2. **Container detection:** if the body contains a task list with issue references (`- [ ] <reference> …` / `- [x] <reference> …`, where `<reference>` is a forge `#NNN` or a tool-native identifier such as `ABC-123`), or — on a target whose connection exposes a native parent/sub-issue relation — if the issue has sub-items, treat the issue as a container. The reference-agnostic checklist form matters because it is the fallback container an external target without a native relation uses:
-   - expand to the **open** (`- [ ]`) sub-issue references and remember the container issue for the lifecycle receipt and later post-merge reconciliation,
-   - skip done (`- [x]`) entries,
-   - then read each open sub-issue fresh from the tracker.
-     If the body contains no such list, the issue itself is a single work item.
+2. **Container detection:** select the newest canonical planning comment with the same exact
+   leading-marker rule as step 1 and parse its records through `decomposition-records-parse`. On the
+   forge, call `issue-sub-issues-read` with this issue as the parent; on an external target with a
+   proven native relation, use its equivalent. If the comment has an active canonical
+   decomposition, compare it with the fresh normalized children through
+   `decomposition-container-compare` before any empty-list/plain-issue decision:
+   - `containerOnly: true` means the parent is never a work item, including when the native child
+     list is empty;
+   - `ok: true` expands only the open, freshly read children bound one-to-one to `created` records;
+     retain each record's workflow and draft hash with its work item;
+   - any malformed record, child `decompositionKeyError`, proposed/approved/missing record, missing
+     or duplicate child, detached child, recorded-issue mismatch, or unexpected key is an integrity
+     failure. Keep or add `effective-flow-needs-planning`, post the ordinary language-matching
+     skipped comment naming container reconciliation as the missing detail, and route the parent to
+     `{{SKILL:plan-issue}}`; expand neither children nor parent.
+
+   An all-`declined` record set is inactive. Without an active canonical decomposition, preserve the
+   legacy behavior: a nonempty normalized native-child list classifies the issue as a container
+   before checklist expansion. Otherwise, if the body contains a task list with issue references (`- [ ] <reference> …` /
+   `- [x] <reference> …`, where `<reference>` is a forge `#NNN` or a tool-native identifier such as
+   `ABC-123`), treat it as a checklist container. The reference-agnostic checklist form matters
+   because it is the fallback container an external target without a native relation uses:
+   - for a native container, expand only children whose normalized state is not terminal, remember
+     the parent with `containerMechanism: native`, and read every remaining child fresh;
+   - for a checklist container, expand to the **open** (`- [ ]`) references, remember the parent
+     with `containerMechanism: checklist`, skip done (`- [x]`) entries, and read each open child
+     fresh;
+   - if both signals exist, the verified native relation wins and the checklist is not mixed into
+     the same container. If neither exists, the issue itself is a single work item.
+
 3. Skip work items that are already closed or carry the label `effective-flow-issue-done` (idempotency); on the forge target the legacy `firmo-issue-done` counts as equivalent, on an external target it is not looked up. For an item already in a native started/later-active state or carrying `effective-flow-issue-in-progress` without a retained PR-link comment or receipt, run the single exact-reference recovery from "Issue implementation lifecycle" before analysis. Only a unique verified PR restores bookkeeping; zero or multiple candidates stop that item before implementation without resetting its state.
 4. Deduplicate the work list (the same issue number only once, even if it is reachable via multiple containers).
 5. Result: a flat list of work-item issues, each with an optional epic reference. Record it in the wisdom file.
@@ -178,7 +203,20 @@ Each analysis sub-agent receives the issue body **and the issue comments** and t
   implementation.
   Further maintainer comments count as clarifications. Pure Effective Flow status comments
   (`<!-- effective-flow-apply-issues -->`) are not counted as requirements.
-- **Classification:** Feature / Bugfix / Refactoring / Documentation (definitions as in `{{SKILL:plan}}`, Phase 1) and from that the target skill (`{{SKILL:build}}` / `{{SKILL:fix}}` / `{{SKILL:refactor}}` / `{{SKILL:docs}}`).
+- **Canonical decomposed-child workflow:** when the work item came from a validated active
+  decomposition, its parent record is authoritative. Pass the fresh child body, artifact language,
+  and recorded workflow through `decomposition-child-workflow-parse`. Exactly one English
+  `**Recommended workflow:** <value>` field or German
+  `**Empfohlener Workflow:** <value>` field must match that record. Route the returned stable value
+  directly: `Feature` → `{{SKILL:build}}`, `Bugfix` → `{{SKILL:fix}}`, `Refactoring` →
+  `{{SKILL:refactor}}`, `Documentation` → `{{SKILL:docs}}`. Do not reclassify a decomposed child. A
+  missing, duplicated, wrong-language, invalid, or mismatched field is `insufficient`, keeps the
+  parent container-only, and returns the parent to `{{SKILL:plan-issue}}`. Only legacy native,
+  checklist, and plain issues without this authoritative record use the ordinary classification
+  judgment below.
+- **Classification:** For those legacy/plain issues, derive Feature / Bugfix / Refactoring /
+  Documentation (definitions as in `{{SKILL:plan}}`, Phase 1) and from that the target skill
+  (`{{SKILL:build}}` / `{{SKILL:fix}}` / `{{SKILL:refactor}}` / `{{SKILL:docs}}`).
 - **Sufficiency check:** applies the "clarification gate" analogously at issue granularity: can a clear target behavior and at least one **measurable acceptance criterion** be derived from the issue (body **and comments**), and are there enough file/area hints for the target workflow to start autonomously? Result: `sufficient` or `insufficient`. On `insufficient`: a concrete list of what is missing (open functional questions, missing acceptance criteria, unclear scope).
   A canonical planning comment passes this gate only when its required sections meet those checks
   and its review/open-points state contains no implementation blocker. Older planning comments

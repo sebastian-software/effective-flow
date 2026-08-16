@@ -116,6 +116,14 @@ write, name the connection remediation, and give the observer-only re-entry comm
 
 After a forge issue is freshly observed terminal, remove
 `effective-flow-issue-in-progress` idempotently. Keep it for open, timed-out, and unobservable
-outcomes. Complete a receipted native sub-item or checklist entry only after that linked issue is
-observed terminal; otherwise leave the container open and report why. Repeated observation and
-completion writes are idempotent.
+outcomes. For a forge-native container, do not issue a second completion mutation: GitHub derives
+parent progress from the child's own terminal state. Instead, re-read the recorded parent through
+`issue-sub-issues-read`, verify that the receipted child still belongs to it, and report the
+remaining open native children; this read is the idempotent reconciliation. A per-child
+`decompositionKeyError` remains visible as a planning-integrity diagnostic but does not erase the
+provider-verified native relation: lifecycle observation continues by the receipted normalized
+issue identity. For an external native
+container, use only the connection's previously proven completion operation. Complete a checklist
+entry only after the linked issue is observed terminal. An open, timed-out, unobservable, missing,
+or mismatched child leaves the container unchanged and is reported. Repeated observation, native
+parent reads, and eligible completion writes are idempotent.

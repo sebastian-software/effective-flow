@@ -200,6 +200,27 @@ relation to a checklist mid-run — that leaves a container whose progress the t
 about. Both mechanisms must produce the same observable outcome: every finding reachable from its
 container, and completion visible per finding.
 
+Issue decomposition builds on the **complete native-container mechanism** above and adds one more
+conditional capability. It does **not** inherit the checklist fallback:
+
+| Capability                                | Required guarantee                                                        |
+| ----------------------------------------- | ------------------------------------------------------------------------- |
+| native parent/sub-issue relation          | stable child identifiers, state, body, and the proven parent relationship |
+| write native sub-item completion          | the recorded container can converge after merge                           |
+| atomically create under a supplied parent | the issue and native parent relationship are one semantic mutation        |
+
+`{{SKILL:plan-issue}}` discovers all three guarantees from the selected connection before it
+proposes a split. The first two are the existing native-container contract that
+`{{SKILL:apply-issues}}` later needs to expand the parent and that `{{SKILL:merge-gate}}` needs to
+reconcile it; decomposition is unavailable unless that complete mechanism was selected. A
+connection that can create a free issue and attach it later does not satisfy atomic create, and a
+connection that can read and populate a relation but cannot write its completion does not satisfy
+the native-container prerequisite. Missing coverage blocks decomposition only, names the missing
+capability, and leaves the ordinary canonical-comment planning path available. It never falls back
+to the forge, to generic issue creation, or to the checklist container mechanism. When every
+guarantee is proven, every child create supplies the current parent as a mandatory input and every
+retry starts from a fresh native-child list plus the persisted stable decomposition key.
+
 ### Reference syntax
 
 - A **tool-native identifier** (e.g. `ABC-123`) or a URL of the configured tool resolves against
