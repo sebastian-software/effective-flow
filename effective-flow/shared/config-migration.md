@@ -64,6 +64,13 @@ language; changing `language.documentation.technical` does not translate an exis
 - **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
   automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
   per the rule above.
+- **`tracker.externalStartedState`** → a nullable string containing the external connection's stable
+  state ID, or its exact accepted token only when that connection exposes no ID. Missing or `null`
+  means unset and never authorizes a guessed transition. Readers validate a non-null value against a
+  fresh list of writable states in the exact configured tracker context before every implementation
+  run; stale, terminal, read-only, cross-context, and display-name-only matches fail closed before
+  code. Only `effective-flow setup` writes a confirmed tracker-verified suggestion. The fixed post-merge
+  observation grace period has no configuration key.
 
 Reading a single value is a trivial line lookup (line with dotted key →
 value cell). Example excerpt (interface sketch, not full content):

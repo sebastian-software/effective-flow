@@ -39,9 +39,9 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 - If the harness offers no such mechanism, or a delegation is declined at runtime, work inline and say so in one visible line — never silently.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent, or a session rename request is about to be written.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent, or a session rename request is about to be written.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent.
 
 **Load on demand:** Read `shared/project-routing.md`, when Phase 1 classifies scoped files into routing buckets.
 

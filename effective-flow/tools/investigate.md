@@ -126,7 +126,7 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/completion-protocol.md`, when an internal sub-agent's result is returned.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when a wisdom file, runtime migration, investigation directory, or report mutation is imminent, or a session rename request is about to be written.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when a wisdom file, runtime migration, investigation directory, or report mutation is imminent.
 
 **Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 

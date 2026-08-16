@@ -180,6 +180,13 @@ language; changing `language.documentation.technical` does not translate an exis
 - **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
   automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
   per the rule above.
+- **`tracker.externalStartedState`** → a nullable string containing the external connection's stable
+  state ID, or its exact accepted token only when that connection exposes no ID. Missing or `null`
+  means unset and never authorizes a guessed transition. Readers validate a non-null value against a
+  fresh list of writable states in the exact configured tracker context before every implementation
+  run; stale, terminal, read-only, cross-context, and display-name-only matches fail closed before
+  code. Only `effective-flow setup` writes a confirmed tracker-verified suggestion. The fixed post-merge
+  observation grace period has no configuration key.
 
 Reading a single value is a trivial line lookup (line with dotted key →
 value cell). Example excerpt (interface sketch, not full content):
@@ -405,12 +412,30 @@ target; a skill that uses stage B therefore also embeds `issue-tracker.md`.
 ``tools/apply-plan.md`` does not need stage B — for a plan skill, stage A is enough
 to recognize an issue reference as a foreign type and forward it.
 
-Per issue, read classification values and body **once fresh** from the tracker and determine the
-subtype in this precedence — **classification before body structure**:
+Per issue, read classification values, body, and comments **once fresh** from the tracker and
+determine the subtype in this precedence — **classification before body structure**. Select the
+newest comment that begins with `<!-- effective-flow-plan-issues -->` (or the one-generation legacy
+marker) exactly as `effective-flow plan-issue` does; a quoted or embedded marker is not canonical. Parse
+its decomposition records through `decomposition-records-parse`, never with ad hoc prose or JSON
+matching.
+
+On the forge target, obtain native-child evidence only through the helper operation
+`issue-sub-issues-read` with the candidate issue as `parent`. GitHub's normalized result is the
+authoritative native-child list. `UNSUPPORTED_CAPABILITY` on Forgejo means that this provider has no
+usable native-containment signal and classification continues from labels and body structure; any
+other read error stops classification instead of guessing. On an external target, use only the
+resolved connection's proven native-child listing capability. For a found active canonical
+decomposition, pass that comment and the fresh normalized child list to
+`decomposition-container-compare`. Such a parent is a `container-issue` even when the native list
+is empty; retain its integrity result for ``tools/apply-issues.md``. A malformed canonical
+decomposition marker is likewise retained as an integrity-blocked container instead of being
+downgraded to a plain issue. An all-`declined` record set is inactive and does not by itself make a
+container. Never infer containment from issue prose, a matching title, or an unverified provider
+feature.
 
 1. Label `effective-flow-review-epic` (or old `firmo-review-epic`) → `review-epic`.
 2. Label `effective-flow-review-finding` (or old `firmo-review-finding`) → `review-finding`.
-3. no review label, but the body contains a sub-issue checklist
+3. no review label, but an active canonical decomposition exists, the body contains a sub-issue checklist
    (`- [ ] <reference> …` / `- [x] <reference> …`, where `<reference>` is a forge `#NNN` or a
    tool-native identifier such as `ABC-123`), or the issue has native sub-items on a target that
    models containment natively → `container-issue`.
@@ -552,10 +577,6 @@ Internal "repeat until done" loops of this workflow follow a uniform completion 
 2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
 3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
 4. **Visible progress.** Every run maintains a visible phase task list and concise chat updates even when only a few phases remain. This overview is required regardless of the generic task-tracking thresholds, which keep governing only ad-hoc subtask lists: before work, create or reconcile every known remaining numbered phase in stable order; mark each phase when it starts and reaches an end state; add findings, issues or parallel subtasks as soon as their set is known, without matching duplicates; on resume, continue the existing list; and keep more specific per-finding, per-issue, per-source and per-reviewer detail rules authoritative. Exactly one workflow owns the progress overview on the shared interaction surface: the orchestrator responsible for the remaining scope; `effective-flow apply-plan` hands ownership to its selected target workflow before that workflow’s remaining phases begin and opens no competing list, while `effective-flow apply-issues` and `effective-flow apply-review` retain ownership of their overall phases and issue or finding tasks; a non-interactively delegated subworkflow reports status and results to the owner and may keep a local detail list only in a harness-isolated subcontext, never as a second progress overview. Follow the native task tool’s state model: if only one entry may be active, keep the overall phase active while parallel detail work follows its existing rules and is summarized in chat; submit result-dependent status changes only after the determining tool result is known, never in the same parallel tool batch. After each numbered phase and each bounded correction round, post a short update with its result and the next step, adding a deviation or blocker only when present; during correction keep the phase active, report the failed check and correction result, and name the retry or escalation; these updates are not gates, so continue with the next step unless an existing approval rule or genuine blocker requires user input. Give skipped, terminally failed and aborted steps the best native end state, or an unambiguous `[skipped]`, `[failed]` or `[aborted]` suffix when none exists; keep a step awaiting user input open with its blocker, and never treat terminal failure or abort as satisfying the completion condition. If the task tool is unavailable, list the known remaining phases compactly in chat before continuing and carry their state in later updates; if updates fail irrecoverably, report that failure once, move all still-open tracking to chat without claiming a successful tool update, and continue the domain work. Immediately before reporting completion, the owner reconciles every known phase and dynamic entry—including the equivalent final chat summary in fallback mode—to a truthful visible end state, and independently verifies the domain completion condition; never report completion with an unresolved entry.
-
-**Load on demand:** Read `shared/runtime-state-safety.md`, when a session rename request is about to be written below the runtime directory.
-
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a session rename request is about to be written below the runtime directory.
 
 **Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
 

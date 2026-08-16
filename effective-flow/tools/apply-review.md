@@ -121,9 +121,9 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 The Phase 4 delegation sub-agent per overlap component is **workflow-to-workflow** delegation, not a worker role: its non-interactive delegation contract, the overlap components, the git commit mutex, the worktree isolation, the synchronization barrier, and the `failed (delegation)` handling stay authoritative and are never replaced by inline work. The mandate adds authorization only.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, memory, cache, report, lock, or worktree mutation is imminent, or a session rename request is about to be written.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, memory, cache, report, lock, or worktree mutation is imminent.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, memory, cache, report, lock, or worktree mutation is imminent, or a session rename request is about to be written.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, memory, cache, report, lock, or worktree mutation is imminent.
 
 **Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
 
@@ -193,6 +193,13 @@ language; changing `language.documentation.technical` does not translate an exis
 - **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
   automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
   per the rule above.
+- **`tracker.externalStartedState`** → a nullable string containing the external connection's stable
+  state ID, or its exact accepted token only when that connection exposes no ID. Missing or `null`
+  means unset and never authorizes a guessed transition. Readers validate a non-null value against a
+  fresh list of writable states in the exact configured tracker context before every implementation
+  run; stale, terminal, read-only, cross-context, and display-name-only matches fail closed before
+  code. Only `effective-flow setup` writes a confirmed tracker-verified suggestion. The fixed post-merge
+  observation grace period has no configuration key.
 
 Reading a single value is a trivial line lookup (line with dotted key →
 value cell). Example excerpt (interface sketch, not full content):
@@ -666,12 +673,30 @@ target; a skill that uses stage B therefore also embeds `issue-tracker.md`.
 ``tools/apply-plan.md`` does not need stage B — for a plan skill, stage A is enough
 to recognize an issue reference as a foreign type and forward it.
 
-Per issue, read classification values and body **once fresh** from the tracker and determine the
-subtype in this precedence — **classification before body structure**:
+Per issue, read classification values, body, and comments **once fresh** from the tracker and
+determine the subtype in this precedence — **classification before body structure**. Select the
+newest comment that begins with `<!-- effective-flow-plan-issues -->` (or the one-generation legacy
+marker) exactly as `effective-flow plan-issue` does; a quoted or embedded marker is not canonical. Parse
+its decomposition records through `decomposition-records-parse`, never with ad hoc prose or JSON
+matching.
+
+On the forge target, obtain native-child evidence only through the helper operation
+`issue-sub-issues-read` with the candidate issue as `parent`. GitHub's normalized result is the
+authoritative native-child list. `UNSUPPORTED_CAPABILITY` on Forgejo means that this provider has no
+usable native-containment signal and classification continues from labels and body structure; any
+other read error stops classification instead of guessing. On an external target, use only the
+resolved connection's proven native-child listing capability. For a found active canonical
+decomposition, pass that comment and the fresh normalized child list to
+`decomposition-container-compare`. Such a parent is a `container-issue` even when the native list
+is empty; retain its integrity result for ``tools/apply-issues.md``. A malformed canonical
+decomposition marker is likewise retained as an integrity-blocked container instead of being
+downgraded to a plain issue. An all-`declined` record set is inactive and does not by itself make a
+container. Never infer containment from issue prose, a matching title, or an unverified provider
+feature.
 
 1. Label `effective-flow-review-epic` (or old `firmo-review-epic`) → `review-epic`.
 2. Label `effective-flow-review-finding` (or old `firmo-review-finding`) → `review-finding`.
-3. no review label, but the body contains a sub-issue checklist
+3. no review label, but an active canonical decomposition exists, the body contains a sub-issue checklist
    (`- [ ] <reference> …` / `- [x] <reference> …`, where `<reference>` is a forge `#NNN` or a
    tool-native identifier such as `ABC-123`), or the issue has native sub-items on a target that
    models containment natively → `container-issue`.

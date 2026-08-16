@@ -124,10 +124,6 @@ This mandate authorizes **read-only** analysis fan-out only. The `Hard scope bou
 
 **Load on demand:** Read `shared/concept-contract.md`, when a concept artifact's directory, file name, status, or sections are resolved or written.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when a session rename request is about to be written below the runtime directory.
-
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a session rename request is about to be written below the runtime directory.
-
 **Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
 
 ## Recommended skills

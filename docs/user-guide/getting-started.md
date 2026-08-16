@@ -137,26 +137,31 @@ says nothing once several runs are open at the same time. Two things help:
   with from the start, and this is the only thing that fixes the title from the very beginning.
 - **Take the suggestion, or let it apply itself.** As soon as a run knows its real subject – the
   plan title, the issue title, the review scope – it proposes one line such as
-  `**Suggested session title:** Harden test-server configuration · plan`. On Codex, a run can apply
-  that title on its own once you install and trust a one-time hook – see `/effective-flow setup`.
-  Until that hook is installed, a Codex run prints the suggestion line instead; even once it's
-  trusted, the very first rename after installing still prints that line once while the hook
-  renames in the background, and every later run stays silent. On Claude Code, the host refuses a
-  self-rename outright – its session-management tools reject the calling session by design – so a
-  run applies its title through a second session acting as a rename butler, which you also set up
-  once through `/effective-flow setup`. Without a butler set up, a Claude Code run prints the
-  suggestion line instead; with one set up, the first rename request in a session still prints that
-  line once while the rename happens in the background, and only a later request in the same
-  continuing session stays silent. On hosts with no established rename path, the suggestion line
-  keeps appearing as before; on hosts without titled sessions at all, nothing is printed.
+  `**Suggested session title:** Harden test-server configuration · plan`.
 
-  One consequence is easy to miss: once you rename a session by hand, the host marks that title as
-  user-set, and every later automatic suggestion is silently discarded from then on – a session you
-  renamed once by hand keeps its title. Under the hook path that discard is invisible, since the
-  hook simply stops applying anything further. Under the butler path it is visible instead: the
-  butler reads the session back, finds your own title still in place, and reports that back rather
-  than applying anything – so nothing is printed there rather than nagging you about a title you
-  already chose.
+  - In the **Codex tab embedded in the ChatGPT Desktop app**, Effective Flow applies the title to
+    the current task through the app's native capability. It needs no installation or hook. A
+    successful rename stays silent; if the capability is absent, denied, or fails, the run prints
+    the suggestion once and continues. `/effective-flow setup` can run a consented visible probe
+    titled `Effective Flow setup check`, but ordinary Desktop runs need no setup. The app does not
+    expose a reliable manual-title ownership check, so a later Effective Flow run may replace a
+    title you set manually.
+  - On **Claude Code**, the host refuses a self-rename outright – its session-management tools
+    reject the calling session by design – so a run applies its title through a second session
+    acting as a rename butler, which you set up once through `/effective-flow setup`. Without a
+    butler, the run prints the suggestion. With one, the first rename request in a session still
+    prints it once while the rename happens in the background; a later request in the same
+    continuing session stays silent. If you rename that session manually, the butler reads the
+    retained title back and stops sending further rename requests, so Claude preserves the title
+    you chose.
+  - **Codex CLI has no automatic title path in this scope.** It keeps printing the suggestion when
+    its host carries titles. Other hosts without an established rename path behave the same; hosts
+    without titled sessions stay silent.
+
+  If you previously installed the retired Codex hook, remove only the `Stop` handler whose command
+  invokes `session-title.mjs apply`. Preserve unrelated handlers and the containing personal or
+  repository-local Codex configuration file. Old title request and receipt files are inert and may
+  remain; Effective Flow does not delete them or edit your Codex configuration.
 
 ## The typical flow: Plan → Build → Pull Request
 

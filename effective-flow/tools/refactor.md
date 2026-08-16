@@ -117,9 +117,9 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 - If the harness offers no such mechanism, or a delegation is declined at runtime, work inline and say so in one visible line — never silently.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, report, memory, backlink, runtime migration, or worktree mutation is imminent, or a session rename request is about to be written.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, report, memory, backlink, runtime migration, or worktree mutation is imminent.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, report, memory, backlink, runtime migration, or worktree mutation is imminent, or a session rename request is about to be written.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, report, memory, backlink, runtime migration, or worktree mutation is imminent.
 
 **Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
 
@@ -245,6 +245,13 @@ language; changing `language.documentation.technical` does not translate an exis
 - **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
   automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
   per the rule above.
+- **`tracker.externalStartedState`** → a nullable string containing the external connection's stable
+  state ID, or its exact accepted token only when that connection exposes no ID. Missing or `null`
+  means unset and never authorizes a guessed transition. Readers validate a non-null value against a
+  fresh list of writable states in the exact configured tracker context before every implementation
+  run; stale, terminal, read-only, cross-context, and display-name-only matches fail closed before
+  code. Only `effective-flow setup` writes a confirmed tracker-verified suggestion. The fixed post-merge
+  observation grace period has no configuration key.
 
 Reading a single value is a trivial line lookup (line with dotted key →
 value cell). Example excerpt (interface sketch, not full content):

@@ -9,8 +9,8 @@ You are the orchestrator that makes incompletely specified issues implementable 
 implementation and marks them with `effective-flow-needs-planning`. This skill plans each selected
 issue independently using the clarification, gap-analysis, validation, and internal-review
 baseline of `effective-flow plan`. It persists that baseline and an optional deep interactive review in
-one marked issue comment, and removes `effective-flow-needs-planning` only when no
-implementation-blocking open point remains.
+one marked parent comment, may create an exactly approved set of native child issues, and removes
+`effective-flow-needs-planning` only when no implementation-blocking open point remains.
 
 `<plan.dir>` is the plan directory from the Effective Flow configuration (project-setup ADR) `plan.dir` (default `docs/plan`).
 
@@ -18,12 +18,16 @@ Hard scope boundary:
 
 - This skill **generates no code** and starts no implementation, test, validator, or code-review
   phase. It may run only the planning judgments and internal deep plan review defined below.
-- It creates **no** `<plan.dir>/` file; the issue remains the only source. All results end up as an issue comment.
+- It creates **no** `<plan.dir>/` file. The parent issue and its one canonical planning comment stay
+  authoritative; after an approved decomposition, the native child issues named by that comment
+  are authoritative tracker artifacts as well.
 - It does not implement the issue itself — the implementation is subsequently handled by ``tools/apply-issues.md``.
 - Tracker writes are limited to creating the first canonical planning comment, updating that exact
-  comment by its tracker ID, and changing the issue's planning-readiness labels. This holds on
-  every tracker target. A failed or unsupported update must stop before any replacement comment is
-  created.
+  comment by its tracker ID, changing the issue's planning-readiness labels, and — only after the
+  decomposition gate below — creating an approved issue atomically as a native child of the active
+  parent. It never calls generic `issue-create`, creates a standalone or sibling issue, or substitutes
+  a checklist for a missing native relation. A failed or unsupported update must stop before any
+  replacement comment is created.
 
 ## Language resolution
 
@@ -134,9 +138,9 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/completion-protocol.md`, when an internal sub-agent's result is returned.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when a remote tracker access is about to write its local migration marker, or a session rename request is about to be written.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when a remote tracker access is about to write its local migration marker.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a remote tracker access is about to perform its first runtime-state mutation, or a session rename request is about to be written.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a remote tracker access is about to perform its first runtime-state mutation.
 
 **Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
@@ -206,6 +210,13 @@ language; changing `language.documentation.technical` does not translate an exis
 - **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
   automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
   per the rule above.
+- **`tracker.externalStartedState`** → a nullable string containing the external connection's stable
+  state ID, or its exact accepted token only when that connection exposes no ID. Missing or `null`
+  means unset and never authorizes a guessed transition. Readers validate a non-null value against a
+  fresh list of writable states in the exact configured tracker context before every implementation
+  run; stale, terminal, read-only, cross-context, and display-name-only matches fail closed before
+  code. Only `effective-flow setup` writes a confirmed tracker-verified suggestion. The fixed post-merge
+  observation grace period has no configuration key.
 
 Reading a single value is a trivial line lookup (line with dotted key →
 value cell). Example excerpt (interface sketch, not full content):
@@ -450,16 +461,22 @@ In remote mode, use these labels and create missing labels idempotently. The hel
 | `critical`, `important`, `note`                                                                | severity of the finding (exactly one per finding issue; `note` for note findings) |
 | `wontfix`                                                                                      | deliberately do not implement finding → ADR instead of code                       |
 | `effective-flow-issue-done`                                                                    | issue implemented by ``tools/apply-issues.md`` (PR created)                        |
+| `effective-flow-issue-in-progress`                                                             | forge fallback showing issue-backed implementation has started                    |
 | `effective-flow-needs-planning`                                                                | skipped by ``tools/apply-issues.md``; planning via `effective-flow plan-issue` needed   |
 
-`wontfix` already exists on many trackers; the helper creates it only if it is missing. `effective-flow-issue-done` and `effective-flow-needs-planning` belong to the issue-driven flow (``tools/apply-issues.md``/`effective-flow plan-issue`) and are created idempotently there.
+`wontfix` already exists on many trackers; the helper creates it only if it is missing.
+`effective-flow-issue-in-progress`, `effective-flow-issue-done`, and
+`effective-flow-needs-planning` belong to the issue-driven lifecycle and are created idempotently
+where needed. The in-progress label is a forge fallback for a native started state; the done label
+continues to mean "implementation secured in a PR", not "tracker issue closed". Merge reconciliation
+removes the in-progress label only after it freshly observes the issue as terminal.
 
 **Backward compatibility (severity labels):** The English severity labels `critical`/`important`/`note` are the default; newly created or set is exclusively the English label. The former German labels `kritisch`/`wichtig`/`hinweis` are **not** upgraded but stay **recognized** permanently when reading, listing, deduplicating and detecting a finding's severity — run a severity query per language variant (once `critical`/`important`/`note`, once `kritisch`/`wichtig`/`hinweis`) and union by issue number, analogous to the `firmo-`/`effective-flow-` prefix rule above.
 
 **Backward compatibility (legacy prefix `firmo-`):** Earlier versions used the prefix `firmo-` instead of `effective-flow-` (`firmo-review-finding`, `firmo-review-epic`, `firmo-fix`/`firmo-refactor`/`firmo-build`/`firmo-docs`, `firmo-issue-done`, `firmo-needs-planning`). Newly **created or set** is exclusively the `effective-flow-` label; an upgrade of existing `firmo-` labels is **not** needed. When **reading, listing, deduplicating and detecting**, every `firmo-` variant counts permanently as equivalent to the associated `effective-flow-` variant:
 
 - **Listing/filtering** (dedup, epic/issue search): `gh`/`tea` combine multiple `--label` specifications with AND semantics. Therefore run the query **separately per prefix** (once `effective-flow-…`, once `firmo-…`) and union the matches by the issue number.
-- **Removing a status label** (`effective-flow-needs-planning`, `effective-flow-issue-done`): additionally remove the legacy `firmo-` variant, if present, so an issue does not stay "stuck" through a leftover legacy label.
+- **Removing a status label** (`effective-flow-needs-planning`, `effective-flow-issue-done`): additionally remove the legacy `firmo-` variant, if present, so an issue does not stay "stuck" through a leftover legacy label. `effective-flow-issue-in-progress` is new and has no legacy variant.
 
 **One-time `sf-` label migration:** The even older prefix `sf-` (`sf-review-finding`, `sf-review-epic`, `sf-fix`/`sf-refactor`/`sf-build`/`sf-docs`, `sf-issue-done`, `sf-needs-planning`) is **no longer** detected continuously, but **migrated once per repo**. On the **first** remote tracker access — provided the marker `labelMigration.sf.done` in the retained absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle is missing and an authenticated CLI is present — an idempotent migration moves every still-present `sf-<x>` label to `effective-flow-<x>`: first add `effective-flow-<x>` on the issue, then remove `sf-<x>` (not the other way around, so an abort leaves no issue unclassified). If the runtime directory is missing, apply the owning workflow's loaded “Runtime-state write safety” contract from `RUNTIME_STATE_ROOT` to that exact directory immediately before its `mkdir`. After the remote migration, use the loaded shared memory mutation contract against the retained absolute memory handle: acquire its lock, re-read memory, merge only `labelMigration.sf`, and atomically persist `done` plus the completion timestamp while preserving every sibling and unknown field. If this marker mutation blocks or fails, preserve local state, report that the remote labels may already have migrated, and direct the user to `effective-flow setup`; the next run may repeat the idempotent remote migration. If the migration finds no `sf-` labels, it is a silent no-op. If the marker is set, any further scan is skipped — ongoing operations know only `effective-flow-` and `firmo-`. `sf-` is referenced exclusively in this migration.
 
@@ -574,10 +591,96 @@ Rules for the task list:
 ### Tracker operations
 
 Describe tracker access only as a helper operation: issue/PR read and list, issue/PR create,
-comment read/create/update, label create/change, PR review-thread read/reply/resolve,
+native sub-issue read/create, comment read/create/update, label create/change, PR review-thread read/reply/resolve,
 marker/checklist patch, or PR creation. Use the helper's normalized output rather than
 provider-specific fields. For list operations, request the compatibility variants and let the
 helper union matches by issue number before signature deduplication.
+
+The two native-containment operations are deliberately separate from generic issue creation:
+
+- `issue-sub-issues-read` takes a mandatory top-level `parent` issue reference and returns a list of
+  normalized issue objects. Every item additionally carries
+  `parent: { number, repository }`; a child created from an Effective Flow decomposition also
+  carries its normalized `decompositionKey` from the canonical marker in its body. A malformed,
+  duplicated, invalid, or different-parent marker does not discard the provider-verified native
+  child or abort its siblings: that child instead carries a safe structured
+  `decompositionKeyError`. Planning reconciliation must fail closed on that diagnostic; lifecycle
+  and merge observation still use the verified native relation and issue identity.
+- `issue-sub-issue-create` is a mutation whose top-level `parent` is mandatory. Its `payload`
+  contains a non-empty `title`, non-empty self-contained `body`, optional `labels`, and the stable
+  lowercase `decompositionKey`. The helper validates that a parent URL belongs to the active
+  repository, redacts complete recognizable secret values in titles and bodies, rejects an unsafe
+  credential form it cannot transform deterministically, rejects secret-bearing labels and
+  generation attribution, appends exactly
+  one `<!-- effective-flow-decomposition-key:v1 {"parent":<number>,"key":"<key>"} -->`
+  marker as the final nonblank standalone line of the child body, and returns the normalized child
+  with the same parent relation and key. Reads recognize the marker only in that canonical appended
+  position; quoted and fenced examples are ordinary issue prose. A body with an unclosed Markdown
+  fence is rejected before preview, because an appended marker would remain unreadable inside that
+  fence. Explicit secret forms include AWS access-key fields, refresh tokens, private-key blocks,
+  client/session credentials, Authorization Bearer/token/Basic values, and common environment
+  identifiers such as `GH_TOKEN`, `NPM_TOKEN`, `DATABASE_PASSWORD`, `*_SECRET`, and `*_API_KEY`.
+  Quoted values, equals assignments, indented credential blocks, and single-token colon values are
+  high-confidence and fully redacted. Sentence-like prose such as `Password: require …`,
+  `Secret: do not log …`, or `Token: support …` remains unchanged; other multiword colon forms are
+  ambiguous and fail closed with a value-free diagnostic instead of silently deleting specification
+  semantics.
+
+Canonical decomposition state uses four dependency-free local helper operations:
+
+- `decomposition-records-build` accepts a nonempty exact record array with
+  `key`, `title`, `workflow`, `body`, `status`, and `issue`, plus the artifact language, target,
+  resolved target binding, and parent. It sanitizes publishable title/body text, requires exactly
+  one language-matching Recommended-workflow field equal to the record workflow, validates the
+  `proposed|approved|created|missing|declined` status/issue combination, enforces unique keys and
+  target-aware created issue identities, binds each exact draft with a SHA-256 `draftHash`, and
+  returns one complete canonical v2 section. Insert that returned section verbatim; never handwrite
+  a record marker or its visible rendering.
+- `decomposition-records-parse` accepts the fresh stored parent-comment body and validates those
+  v2 boundaries, safe-encoded full records, target binding, exact schema, body workflow, recomputed
+  hash, and byte-for-byte visible rendering. Quoted and fenced examples are ignored. A changed
+  visible title/body, encoded record, status, identity, or rendering fails closed. It reports
+  whether records were found and whether any active (`proposed|approved|created|missing`) record
+  keeps the issue a decomposition container.
+- `decomposition-container-compare` combines that fresh comment body with the fresh normalized
+  native children. It reports `containerOnly: true` for an active canonical decomposition even when
+  the child list is empty, and returns safe discrepancy codes for incomplete, missing, duplicated,
+  invalid-marker, detached, mismatched, or unexpected children.
+- `decomposition-child-workflow-parse` requires exactly one language-matching canonical
+  Recommended-workflow field in a decomposed child's body, validates it against the parent record,
+  and returns the stable workflow plus its `build|fix|refactor|docs` implementation route. It uses
+  the Markdown inventory: blockquoted and fenced examples do not count, so an example-only body is
+  rejected while one top-level field plus examples is accepted.
+
+For a decomposition bound to GitHub, `decomposition-records-build` enforces the 65,536-byte UTF-8
+comment ceiling on the generated section, and `planning-comment-build` enforces it again on the
+complete stamped planning comment. The structured error reports `maximum`, `actual`, the unit, the
+section/other-comment split, and per-record title/body/encoded-record contributions. This limit is
+not applied to ordinary non-decomposition legacy planning comments; another provider may still
+reject a smaller target-specific limit, which remains a fail-closed persistence error.
+
+Forge identities are normalized only through the resolved host/repository and `parseReference`;
+a URL from another host or repository never aliases `#N`. External tool-native identifiers and
+URLs remain exact strings and are never collapsed by their trailing number. These operations are
+local validation and reconciliation, not provider transport. Callers never parse marker data or
+infer proposal identity from titles themselves. `planning-comment-build` also validates every
+decomposition-bearing comment so a caller cannot bypass the canonical parser before persistence.
+
+Both operations are provider-neutral at the workflow boundary. On GitHub, the helper maps child
+reads to the paginated native sub-issues endpoint and creation to the provider's atomic
+parent-aware create capability with the verified parent identity. The helper probes that create
+capability before the first create preview or write. On Forgejo, both capabilities are false and the create operation returns
+`UNSUPPORTED_CAPABILITY` before any write until a verified native operation exists. The helper
+never routes `issue-sub-issue-create` through `issue-create`, never creates first and links later,
+and never fabricates a checklist relation.
+
+The normal mutation discipline applies: preview the exact redacted command and publishable child
+payload, obtain the owning workflow's approval, then apply the identical operation. A command
+failure during `issue-sub-issue-create`, or a successful command without a parseable same-repository
+child URL, reports `mutationMayHaveSucceeded: true` and is non-retryable. The caller must read
+`issue-sub-issues-read` fresh and reconcile the stable key before any later attempt. Zero matches
+does not authorize a blind retry after an unknown outcome; one unique match recovers it; multiple
+matches fail closed as ambiguous.
 
 The targeted issue-comment update operation is `issue-comment-update`. Its input contains the
 issue number, the positive `commentId` returned by `issue-comments-read`, the freshly computed
@@ -603,7 +706,11 @@ payload. Zero or multiple semantic matches are structured errors; unchanged stat
 and idempotent. The helper exposes whether provider-level conditional writes are available; the
 expected-body precondition is mandatory regardless. GitHub returns the read ETag for diagnostics
 but documents unsafe-method conditional requests as unsupported for these endpoints, so the
-adapter reports the write as non-atomic instead of sending a misleading `If-Match` header.
+adapter reports the write as non-atomic instead of sending a misleading `If-Match` header. The
+fresh read therefore detects sequential re-entry and the per-draft child reads detect duplicates,
+but neither is a cross-process lease: two simultaneous writers can still race between the final
+read and PATCH/create. Fail closed on every duplicate observed before or after an uncertain result;
+do not claim the client-side hash guard closes that provider TOCTOU window.
 
 Legacy-label transitions use the helper's add and remove operations in that order. The one-time `sf-` migration returns its completion marker only after every step succeeds; a partial failure reports completed steps and keeps the marker pending. Cleanup of recognized `firmo-` aliases uses the same add-before-remove operations without changing that one-time marker contract.
 
@@ -650,21 +757,25 @@ values, paths, checklist syntax, and the HTML marker remain stable.
 ### Assumptions
 - [deliberately documented remaining point]
 
+### Proposed decomposition
+
+[the complete canonical v2 section returned by `decomposition-records-build`, inserted verbatim]
+
 ### Plan review
 
 **Result:** Approved / Revision required
 
 #### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 0 | 0 |
-| Security | 0 | 0 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 0 | 0 |
-| Testability | 0 | 0 | 0 |
-| Scope | 0 | 0 | 0 |
-| Maintainability | 0 | 0 | 0 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         0 |    0 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         0 |    0 |
+| Testability     |        0 |         0 |    0 |
+| Scope           |        0 |         0 |    0 |
+| Maintainability |        0 |         0 |    0 |
 
 #### Findings
 
@@ -673,18 +784,36 @@ values, paths, checklist syntax, and the HTML marker remain stable.
 ### Open points
 
 - No open points. / [implementation-blocking decision and re-entry note]
+
 ```
 
 The complete German form additionally uses `Plan-Review`, `Ergebnis`, `Freigegeben`,
 `Überarbeitung nötig`, `Zusammenfassung`, `Befunde`, `Offene Punkte`, and
 `Keine offenen Punkte.`. Preserve one complete language throughout the comment. An older comment
 without review/open-point sections remains readable; the next baseline update adds both sections.
+The `Proposed decomposition` section is optional and is omitted when no split is proposed. Its
+versioned boundaries, safely encoded full records, and exact visible child rendering are stable
+machine data. Build the complete section through `decomposition-records-build`, supplying
+artifact language, target, resolved target binding, parent, and records; insert only its returned
+section verbatim. Parse it again through `decomposition-records-parse`; never compose or interpret
+its marker data ad hoc. `key` is
+a lowercase parent-scoped slot key matching `[a-z0-9][a-z0-9._-]{0,79}`, `status` is `proposed`,
+`approved`, `created`, `missing`, or `declined`, and `issue` is a positive normalized child reference
+only for `created`. Forge identities bind to the exact resolved host/repository; external IDs stay
+exact. `workflow` is exactly one supported workflow value and `draftHash` binds the approved key,
+title, workflow, and body. The parser recomputes that hash and the complete visible rendering, so a
+changed persisted title or body fails closed. Keys and created issue identities are unique within
+the parent comment. Once persisted, a key is never derived again from an edited title or body and
+is never reassigned to another child slot. Every English child body carries exactly one matching
+`**Recommended workflow:** <value>` field; a German body uses
+`**Empfohlener Workflow:** <value>` instead. The stable values remain `Feature`, `Bugfix`,
+`Refactoring`, and `Documentation` in either language.
 
 ## Workflow
 
 ### Phase 1: Tracker setup & collection
 
-1. Resolve the tracker target according to "Tracker target". On the forge target, determine the host and CLI and check availability/authentication according to "Remote helper contract"; precondition there is a Git repository with an `origin` remote. On an external target, establish exactly one connection per the loaded `tracker-target` contract and verify the capabilities this skill needs — read issue and comments, list issues by classification, create a comment, update a comment by its ID, and add/remove a classification value. If something is missing: report clearly and abort without side effects.
+1. Resolve the tracker target according to "Tracker target". On the forge target, determine the host and CLI and check availability/authentication according to "Remote helper contract"; precondition there is a Git repository with an `origin` remote. On an external target, establish exactly one connection per the loaded `tracker-target` contract and verify the capabilities this skill always needs — read issue and comments, list issues by classification, create a comment, update a comment by its ID, and add/remove a classification value. External decomposition additionally requires the complete native-container mechanism — native-child listing plus writable native sub-item completion — and atomic create-under-parent. Discover all three guarantees before proposing a split; when one is unavailable, keep ordinary comment-based planning available. If an always-required capability is missing: report clearly and abort without side effects.
 2. Determine the issues to plan:
    - without an argument: list all open issues with the label `effective-flow-needs-planning`. On the forge target, also query the old label `firmo-needs-planning` as equivalent (see "Label convention"); on an external target that legacy prefix is forge history and is neither queried nor written there.
    - with an argument: use the passed issue references (number, `#123`, URL).
@@ -694,7 +823,7 @@ without review/open-point sections remains readable; the next baseline update ad
 
 Before planning, review useful skills according to the following building block. The no-code boundary of this
 tool remains strict: skills only inform the clarification/planning, generate no code
-and change nothing except the issue comments.
+and do not widen the tracker-write boundary defined above.
 
 ## Skill discovery
 
@@ -820,7 +949,26 @@ For each chosen issue in turn:
 2. Apply the clarification methodology from `effective-flow plan` (Phase 1/2): identify the genuinely relevant ambiguities — target behavior, domain rules, technical requirements, dependencies, edge cases, acceptance criteria — and ask the user about them specifically.
 3. Repeat the clarification until a reliable basis exists. Document unimportant remaining points as assumptions instead of blocking the process.
 4. Determine the recommended implementation (Feature / Bugfix / Refactoring / Documentation) according to the classification definitions from `effective-flow plan`.
-5. If a central clarification is unanswered, normalize it as an implementation-blocking open point,
+5. Decide proactively whether the active issue is too broad for one coherent implementation or
+   combines independently implementable outcomes. If so, prepare a concrete decomposition only
+   when the forge helper proves its parent-aware operations or the external target proves the full
+   native-container contract plus atomic create-under-parent. Give each
+   child its own derived workflow and a complete body containing its refined requirement,
+   measurable acceptance criteria, affected areas/files, edge cases, assumptions, and a plain
+   parent reference. Give every body exactly one language-matching canonical workflow field:
+   `**Recommended workflow:** <value>` in English or
+   `**Empfohlener Workflow:** <value>` in German. Its stable value must equal the child's record
+   workflow and must be a top-level field; blockquoted or fenced examples do not count. Require
+   every Markdown fence in the child body to close before preview so the helper-appended final key
+   marker remains readable. Do not copy credentials, secrets, session identifiers, or generation attribution;
+   let the helper redact complete sensitive values and fail closed on a form it cannot transform
+   safely. Labels pass through the same secret boundary and are rejected rather than redacted when
+   sensitive. Do not attach `effective-flow-needs-planning`: every proposed child must already pass
+   the implementation clarity gate. Allocate stable keys such as
+   `child-01` once per parent and preserve existing keys on re-entry. If the target lacks any
+   applicable guarantee, report decomposition as unavailable without creating a checklist or
+   blocking the ordinary single-issue planning path.
+6. If a central clarification is unanswered, normalize it as an implementation-blocking open point,
    persist the current artifact per Phase 4, retain `effective-flow-needs-planning`, report the
    re-entry `effective-flow plan-issue <issue>`, and continue with the next selected issue.
 
@@ -846,7 +994,21 @@ workflow for the active issue only:
    review, scorecard, findings, and open-points section. `Approved` / `Freigegeben` requires no
    critical finding and no implementation-blocking open point; otherwise use
    `Revision required` / `Überarbeitung nötig`.
-5. If critical findings or implementation-blocking open points remain, persist the baseline,
+5. When a decomposition was prepared, include its exact child records, titles, workflows, and
+   publishable bodies in the canonical comment before any approval or create operation. Review the
+   proposed children as implementation units as well as reviewing the overall parent. Any child
+   that is not self-contained or that still has a blocking open point blocks the decomposition.
+   Pass the artifact language, target binding, active parent, and complete record set through
+   `decomposition-records-build`, insert only its complete canonical section verbatim, and then pass
+   the assembled comment through `planning-comment-build`. A schema error,
+   duplicate key or created issue identity, invalid workflow, invalid status/issue combination,
+   unsafe secret form, unclosed child fence, or body/record workflow mismatch blocks persistence.
+   For GitHub, both operations enforce the 65,536-byte aggregate UTF-8 comment limit: the section
+   must fit at build time and the complete stamped planning comment must fit before persistence. If
+   it does not, report the structured size contributions and reduce the proposal/comment; never
+   truncate a child body or bypass the canonical section. A smaller provider-specific rejection is
+   likewise fail closed.
+6. If critical findings or implementation-blocking open points remain, persist the baseline,
    retain the Needs-Planning label, do **not** offer the deep review yet, report re-entry via
    `effective-flow plan-issue <issue>`, and continue with the next selected issue.
 
@@ -866,7 +1028,57 @@ Complete this entire phase for the active issue before starting another issue:
    the `tracker-target` write discipline: preview the payload, re-read the exact comment
    immediately before the update, compare it verbatim, and treat a missing capability, a missing or
    ambiguous comment, or a changed body as the same fail-closed stop.
-2. With a baseline that has no critical findings, ask for this issue only:
+2. If the freshly persisted baseline contains a proposed decomposition, re-read that exact comment
+   and confirm its body hash. Parse the body through `decomposition-records-parse` and reject any
+   noncanonical, duplicate, or invalid record before showing the parent and every exact child title,
+   workflow, body, stable key, and bound draft hash. Ask whether to create **that exact set** as
+   native children of this parent. An unanswered or rejected prompt creates nothing. On approval,
+   rebuild the complete canonical section from the parsed records with exactly those `proposed`
+   statuses changed to `approved` and unchanged title/body hashes, then perform the guarded comment
+   update, re-read, and parse it again. On rejection, rebuild and guardedly persist the section with
+   the proposal `declined`, then continue with the existing single-issue planning and deep-review path;
+   do not interpret approval of another parent or an earlier draft as approval here.
+3. After approval, re-read the parent and canonical comment. For an external target, revalidate the full native-container contract
+   and atomic create-under-parent before the first mutation. Enforce child-count and parent-state
+   constraints that these reads expose; treat hierarchy-depth, permission, parent-state, or limit
+   rejections surfaced only by the provider as fail-closed create errors rather than claiming a
+   local preflight. For each approved draft in order:
+   - immediately before the create preview, call `issue-sub-issues-read` and replace the local
+     reconciliation state with that fresh list. A child-level `decompositionKeyError`, more than one
+     match for any canonical key, a wrong-parent marker, or another record/list integrity error
+     fails closed for this parent. Match the draft's stable key: exactly one valid match is reused;
+     zero permits a preview; multiple matches stop before a write;
+   - when zero matches remain, preview the parent-aware create and verify that its parent, key, exact
+     publishable payload, and workflow still match the approved draft. Validate the body again with
+     `decomposition-child-workflow-parse` using its artifact language and record workflow.
+     Immediately before apply,
+     call `issue-sub-issues-read` again and replace the local reconciliation state. One now-matching
+     child is recovered without applying, zero permits applying the unchanged previewed operation,
+     and multiple matches or any marker/integrity error stop before a write. Never call
+     `issue-create`, create first and link later, or fall back to a checklist;
+   - after success or unique-key recovery, call `issue-sub-issues-read` once more and require exactly
+     one valid same-parent match for the key. A concurrently visible duplicate fails closed before
+     the comment update. Then guardedly update the canonical comment with the normalized child
+     reference and a `created` status before continuing. Every status/reference transition rebuilds
+     the complete section through `decomposition-records-build`; never patch encoded marker data or
+     the visible rendering independently.
+
+   If a create failure says `mutationMayHaveSucceeded`, perform `issue-sub-issues-read` immediately
+   and replace the local reconciliation state before any decision. A unique valid key match recovers
+   the result; zero, multiple, or marker-error matches remain blocked and are never blindly retried.
+   If any later child fails, preserve created children, mark all missing or unknown drafts explicitly
+   in the canonical comment when its hash guard still permits that update, retain
+   `effective-flow-needs-planning`, report fresh re-entry through
+   `effective-flow plan-issue <parent>`, and stop only this parent. Never delete or recreate a valid child.
+
+   This three-read sequence and its duplicate checks protect the approved sequential/re-entry
+   workflow but are not a cross-process lease. The forge comment update is a non-atomic
+   read-then-PATCH and the provider exposes no supported conditional unsafe write here, so
+   simultaneous writers can still race after the last pre-create read. Never claim the body hash
+   closes that TOCTOU window; if a duplicate or uncertain result becomes visible, stop and reconcile
+   rather than retrying.
+
+4. With a baseline that has no critical findings, ask for this issue only:
 
 Ask the user: **Start the deep interactive plan review now?**
 - Yes -- Search now for unknown, imprecise, and decision-requiring points
@@ -883,7 +1095,11 @@ Do not reuse this answer for any other selected issue.
 - On **No**, retain the approved automatic baseline and record no artificial open point; the
   next-step block of Phase 5 carries the optional later re-entry.
 
-After either branch, apply the readiness decision. If the deep review is ended, deferred after it
+After either branch, apply the readiness decision. For an approved decomposition, readiness also
+requires a fresh `decomposition-container-compare` over the stored canonical comment and fresh
+native-child list to return `ok: true`; every active record must be `created` and resolve to exactly
+one same-parent native child with the recorded identity. The parent then remains a container and is
+not itself an additional implementation work item. If the deep review is ended, deferred after it
 starts, fails to persist, or returns a blocking open point, keep or add
 `effective-flow-needs-planning` and persist the exact re-entry need in the comment. Otherwise
 remove `effective-flow-needs-planning`, plus any present `firmo-needs-planning` variant on the
@@ -913,5 +1129,8 @@ least one issue takes the released row; a run that released none takes the retai
   label while an entry remains.
 - Process multiple issues artifact by artifact. Questions and answers apply only to the currently
   named issue.
+- Child creation is legal only through `issue-sub-issue-create` with the active parent supplied.
+  Generic `issue-create`, a create-then-link sequence, sibling creation, and checklist degradation
+  are forbidden in this tool.
 - Never set `Co-Authored-By` trailers and do not expose internal IDs in comments.
 - Give the user a brief status update after each phase.

@@ -90,8 +90,30 @@ The connection must cover the provider-neutral operations the forge flows alread
 | read comments                     | the full comment list with stable comment identifiers                                       |
 | create a comment                  | status comments and the canonical planning comment                                          |
 | update a comment by its ID        | the idempotent update of that one canonical comment                                         |
-| add and remove a classification   | the lifecycle states of the issue-driven flow                                               |
+| add and remove a classification   | Effective Flow orchestration metadata such as done or needs-planning                        |
 | patch an exact block or checklist | replacing one exact marked block or checklist entry inside a body                           |
+
+Issue-backed implementation adds two **phase-specific** native lifecycle capabilities: list the
+workflow states writable in the exact selected workspace/team/project context, including stable ID
+or exact accepted token, display name, normalized category, terminal flag, and writability; and
+transition one issue to a selected writable state. Require both only when an issue is about to enter
+implementation. Post-merge observation requires only a fresh native-state read (and an optional
+bounded monitor); review publication, planning, and other tracker reads do not inherit the started
+state write requirement.
+
+Before the first implementation delegation, list those states fresh and resolve
+`tracker.externalStartedState`. A configured value must match the stable state ID, or only when the
+connection exposes no ID the exact accepted token, in this same tracker context; it must be writable,
+non-terminal, and normalized as `started`. A display-name match is never enough. A stale,
+cross-context, terminal, read-only, or missing value aborts before code and reports the current
+candidates.
+
+When the key is unset, filter the fresh states to writable, non-terminal candidates normalized as
+`started`. Exactly one candidate may be proposed with both its display name and stable value. A gated
+run may use that value for this run only after confirmation; only `effective-flow setup` persists it. A
+non-interactive run, zero candidates, or multiple candidates aborts before code and lists the
+evidence without choosing a favorite. Never infer a state from `tracker.externalTool` or from a
+brand-specific name such as "In Progress".
 
 A connection that cannot cover one of them makes the flows depending on it unavailable: abort
 before the first write and name the missing capability — the external equivalent of
@@ -103,9 +125,10 @@ One capability is **conditional**: a native parent/sub-issue relation **whose su
 state this connection can write**. Discovery must prove that write, not merely that the relation
 exists. A relation the connection can read and populate but whose completion state it cannot set
 would otherwise pass discovery, be chosen as the container mechanism, and then fail to mark
-completion _after_ the pull request already exists — leaving a work item that carries neither a
-done classification nor a closed state, which the next run implements again and delivers twice.
-That failure lands after the first write and therefore breaks the fail-closed guarantee above.
+completion after merge. The pull request and issue terminal state remain authoritative, so this
+post-merge failure does not roll back delivery, but selecting a mechanism that could never converge
+would make every observer-only re-entry fail. Prove the write before recording the mechanism in the
+receipt.
 
 An unproven or missing completion write never aborts: the run selects the checklist fallback, which
 needs only capabilities that are already required, and reports that a relation exists but is not
@@ -150,6 +173,12 @@ be represented: ``tools/apply-issues.md`` and `effective-flow plan-issue` abort 
 `effective-flow-needs-planning` or `effective-flow-issue-done`, and review publication aborts
 rather than creating findings without severity and action.
 
+Classification values and native workflow states are separate concepts even when a connection
+represents both through one product field. In particular, `effective-flow-issue-done` remains
+orchestration metadata for a secured PR and never substitutes for a terminal native state;
+`tracker.externalStartedState` is a tool-native state value and is never stored as an Effective Flow
+classification.
+
 The `firmo-` read compatibility and the one-time `sf-` migration are forge history. Do not run,
 emulate, or record them against an external target.
 
@@ -170,6 +199,27 @@ decision, not a downgrade. Never mix the two within one container, and never dow
 relation to a checklist mid-run — that leaves a container whose progress the two systems disagree
 about. Both mechanisms must produce the same observable outcome: every finding reachable from its
 container, and completion visible per finding.
+
+Issue decomposition builds on the **complete native-container mechanism** above and adds one more
+conditional capability. It does **not** inherit the checklist fallback:
+
+| Capability                                | Required guarantee                                                        |
+| ----------------------------------------- | ------------------------------------------------------------------------- |
+| native parent/sub-issue relation          | stable child identifiers, state, body, and the proven parent relationship |
+| write native sub-item completion          | the recorded container can converge after merge                           |
+| atomically create under a supplied parent | the issue and native parent relationship are one semantic mutation        |
+
+`effective-flow plan-issue` discovers all three guarantees from the selected connection before it
+proposes a split. The first two are the existing native-container contract that
+``tools/apply-issues.md`` later needs to expand the parent and that `effective-flow merge-gate` needs to
+reconcile it; decomposition is unavailable unless that complete mechanism was selected. A
+connection that can create a free issue and attach it later does not satisfy atomic create, and a
+connection that can read and populate a relation but cannot write its completion does not satisfy
+the native-container prerequisite. Missing coverage blocks decomposition only, names the missing
+capability, and leaves the ordinary canonical-comment planning path available. It never falls back
+to the forge, to generic issue creation, or to the checklist container mechanism. When every
+guarantee is proven, every child create supplies the current parent as a mandatory input and every
+retry starts from a fresh native-child list plus the persisted stable decomposition key.
 
 ### Reference syntax
 

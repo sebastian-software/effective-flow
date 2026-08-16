@@ -118,6 +118,8 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     envelope = await executeOperation(operation, input, {
       apply,
       runner: io.runner ?? createProcessRunner(),
+      sleeper: io.sleeper,
+      clock: io.clock,
       skipProbe: io.skipProbe,
     });
   } catch (error) {

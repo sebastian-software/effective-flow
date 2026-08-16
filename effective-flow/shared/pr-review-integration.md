@@ -128,8 +128,12 @@ person. A value the provider does not expose stays absent rather than being gues
 This is the only authorship evidence that **survives a run**. The ID a mutation returned identifies
 a write only inside the run that performed it, so a workflow asking "did I write this on an earlier
 run?" has nothing to compare it against and must use the authenticated login instead.
-`effective-flow merge-gate` is that consumer: it pairs the login with the exact configured body of its
-trigger comment.
+`effective-flow merge-gate` is that consumer: its human-comment guard excludes an item whose author
+`login` equals the authenticated one, and that login is the whole comparison — no body, no thread
+state, no second author field takes part. Its trigger idempotency establishes that comment's author
+by mode before it compares the body it posted: in manual mode through this same login comparison, in
+app mode from the normalized `authorType` instead, because a gate posting as an app has no viewer
+login to recognize itself by.
 
 Do not scrape the login out of the probe's authentication-status output. That is human-readable CLI
 prose, and this building block reads normalized JSON only.
@@ -145,9 +149,10 @@ its own as someone else's.
 
 Use the helper's review-thread reply operation. It stamps the marker
 `<!-- effective-flow-iterate -->` onto the reply body from its own marker table, idempotently, so
-never write that marker by hand (see idempotency). This matters beyond tidiness: `effective-flow merge-gate`
-matches the marker as an exact string when it decides whether an item in a resolved thread is this
-tool's own, so an unstamped reply is later read as a human's and blocks the merge.
+never write that marker by hand (see idempotency). This matters beyond tidiness: the marker is what a
+later `effective-flow iterate` run reads to recognize a thread it has already answered, so an unstamped
+reply leaves that thread looking unaddressed and it is classified, implemented, and replied to a
+second time.
 
 ### Resolve a thread
 
@@ -183,10 +188,15 @@ posted: which points were implemented, which skipped, and which pure questions a
 open/deferred.
 
 A delegating caller may suppress that comment, and `effective-flow merge-gate` does so for every round it
-delegates. The reason is the guard: the delegated run posts under the same account in manual mode,
-so a summary comment left on the pull request would be a top-level, unresolvable item that the next
-authorship evaluation counts as a human comment. The content is handed back to the caller instead of
-being dropped.
+delegates. Four grounds carry that, none of them about how a later read classifies the author. One
+summary comment per delegated round accumulates: a gated run may spend up to `mergeGate.maxRounds`
+rounds, and that is noise on someone's pull request. Nothing is lost, because the reader of that pull
+request receives the same content in the gate's own chat summary. The gate's stated guarantee — a
+gate-initiated run leaves **at most one** item of its own on the pull request, its trigger comment —
+is false the moment a delegated round adds a second. And a gate authenticated as a **different**
+account than the delegated run reads that summary as someone else's, where it would hold the very
+merge the delegation was meant to reach. The content is handed back to the caller instead of being
+dropped.
 
 ### Read the pull-request status
 
@@ -260,11 +270,11 @@ this tool's own.
 marker left in a raw comment body keeps announcing which tool composed that comment, and removing
 that disclosure is exactly why the gate's former third marker (`effective-flow-pr-gate`) is gone.
 The gate's only own write onto the pull request's **discussion** is its configured trigger comment,
-and it recognizes that comment again through the authenticated login plus the comment's exact
-configured body — evidence that discloses nothing and needs no persistence. Do not reintroduce a gate
-marker. Its writes to the head **branch** — the two kinds of base-into-head merge its Git write
-boundary sanctions — are on another surface and carry no marker either: a merge commit uses Git's
-default message and announces no tool.
+and it establishes that comment's authorship again through the authenticated login rather than
+through anything in the body — evidence that discloses nothing and needs no persistence. Do not
+reintroduce a gate marker. Its writes to the head **branch** — the two kinds of base-into-head merge
+its Git write boundary sanctions — are on another surface and carry no marker either: a merge commit
+uses Git's default message and announces no tool.
 
 Both strings are **distinct and neither is a substring of the other**; every match is an exact
 string match. Reusing one for another writer would make `effective-flow iterate` treat foreign replies as

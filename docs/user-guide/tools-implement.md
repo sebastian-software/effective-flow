@@ -60,11 +60,22 @@ decide yourself which tool is responsible.
 **Input/output:** Without an argument, `apply` lists local candidates (open plans from
 `<plan.dir>/`, report files under `.effective-flow/review/`) and, on a tracker target, additionally
 open review epics, and then asks for the concrete source. The output consists of the
-detected source type, the resolved handle, and the started target tool.
+detected source type, the resolved handle, and the started target tool. For an issue or remote
+review finding that will be implemented, the owning internal workflow first passes clarification
+and approval, then advances the work item at least to started immediately before it delegates the
+first code change. Forge issues use `effective-flow-issue-in-progress`; external issues use the
+freshly validated native state from `tracker.externalStartedState`. A failed transition stops that
+item before code changes.
 
 **Interplay:** Pure classification and routing layer; implementation, validation,
 review, and commit preparation lie entirely with the respective target tool. With an
-ambiguous or mixed source type, `apply` asks instead of guessing heuristically.
+ambiguous or mixed source type, `apply` asks instead of guessing heuristically. The internal
+issue-owning workflow also writes the pull request's lifecycle receipt and later hands observation
+to [`/effective-flow merge-gate`](./tools-deliver.md). Delegated `build`, `fix`, `refactor`, and
+`docs` runs do not repeat the tracker transition. Skipped, `wontfix`, terminal, container-only, and
+failed-before-start items remain unchanged. If an issue is already in progress but no unique prior
+delivery can be recovered from its comments and one exact-reference PR search, `apply` fails closed
+instead of resetting or implementing it again.
 
 ## `/effective-flow build`
 

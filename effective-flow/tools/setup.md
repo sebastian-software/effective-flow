@@ -113,7 +113,7 @@ If no task tool is available, give the user a short progress update after each c
 - with a single, trivial task
 - when the task is done in fewer than three simple steps
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when setup has repaired and validated the runtime ignore state and is about to write a runtime marker or a capability probe below `.effective-flow/`.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when setup has repaired and validated the runtime ignore state and is about to write a runtime marker.
 
 **Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
@@ -288,6 +288,13 @@ language; changing `language.documentation.technical` does not translate an exis
 - **`delivery.prReview`** → the literal string `ask` (default), `always`, or `off`; it governs the
   automatic PR review publication after a delivery. No `delivery.prReview` line → default `ask`,
   per the rule above.
+- **`tracker.externalStartedState`** → a nullable string containing the external connection's stable
+  state ID, or its exact accepted token only when that connection exposes no ID. Missing or `null`
+  means unset and never authorizes a guessed transition. Readers validate a non-null value against a
+  fresh list of writable states in the exact configured tracker context before every implementation
+  run; stale, terminal, read-only, cross-context, and display-name-only matches fail closed before
+  code. Only `effective-flow setup` writes a confirmed tracker-verified suggestion. The fixed post-merge
+  observation grace period has no configuration key.
 
 Reading a single value is a trivial line lookup (line with dotted key →
 value cell). Example excerpt (interface sketch, not full content):
@@ -415,7 +422,7 @@ The Effective Flow configuration is optional and controls the defaults of the fo
 - **`delivery`** (source: `effective-flow build`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default `origin/main`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery), `mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when `effective-flow merge-gate` merges it)
 - **`mergeGate`** (source: `effective-flow merge-gate`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `3`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; the legacy names are still read, and this skill migrates a legacy block in place (Step 6). **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
 - **`worktree`** (source: `effective-flow build`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
-- **`tracker`** (source: `effective-flow review`, section "Issue-tracker integration" – likewise embedded in ``tools/apply-review.md`` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names)
+- **`tracker`** (source: `effective-flow review`, section "Issue-tracker integration" – likewise embedded in ``tools/apply-review.md`` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names), `externalStartedState` (nullable stable native state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence)
 - **`skills`** (source: building block "Skill discovery"): `enabled` (bool, default `true` — toggles dynamic skill usage), `include` (list — prefer these skills project-wide), `exclude` (list — never apply these skills), `agents.<name>` and `tools.<name>` (each `include`/`exclude` for a single agent or a single tool). Keys are the source agent/tool names (e.g. `ui-implementer`, `plan`).
 
 ### Safe defaults (the single base)
@@ -631,7 +638,7 @@ Ask the user: **Where should issue work live: locally as a Markdown report, remo
 
 For "Remote", ask for the tool override only if needed: the default `tracker.remoteToolOverride = auto` lets the shipped remote helper classify exact `github.com` origins and hosts that match a configured Forgejo `tea` login. Any other host returns `AMBIGUOUS_HOST` instead of guessing; then capture `github` or `forgejo` as free text. Otherwise leave `auto`.
 
-For "External tool", ask two free-text follow-ups and explain each before asking:
+For "External tool", ask the connection follow-ups and explain each before asking:
 
 1. `tracker.externalTool` – the short, stable identifier of the tool that holds the issues. It is
    required for this mode, there is no list of supported tools, and Effective Flow derives no
@@ -641,10 +648,21 @@ For "External tool", ask two free-text follow-ups and explain each before asking
    run time: MCP server name, workspace, team or project key, the tool's identifier convention, and
    the names of its states. Explain that a precise hint is what prevents an ambiguous-connection
    abort when several candidates exist.
+3. Discover exactly one configured connection from those values and list its writable native
+   workflow states **fresh in the selected workspace/team/project context** before proposing
+   `tracker.externalStartedState`. Show every candidate's display name and stable ID, or exact
+   accepted token only when no ID exists. Validate an existing value by stable value, context,
+   normalized `started` category, writability, and non-terminal state. If it is valid, keep it. If it
+   is absent and exactly one candidate is normalized as `started`, propose that candidate's display
+   name and stable value. With zero or multiple candidates, an unavailable/ambiguous connection, or a
+   stale/read-only/terminal/cross-context configured value, propose no favorite and leave the value
+   `null`; report that issue-backed implementation will fail closed until setup can verify one.
+   Persist the suggestion only in the confirmed Step 6 write. Never infer a state from the tool name
+   or a familiar display name.
 
 `tracker.remoteToolOverride` stays a forge setting and is not asked for in this mode. Keep an
-already recorded `externalTool`/`externalToolHint` when the mode is `local` or `remote`: they
-document intent, are preserved unchanged, and are simply ignored for routing.
+already recorded `externalTool`/`externalToolHint`/`externalStartedState` when the mode is `local` or
+`remote`: they document intent, are preserved unchanged, and are simply ignored for routing.
 
 ### Step 5: Advanced settings (optional gate, guided path only)
 
@@ -669,7 +687,7 @@ config value or default as the pre-selection:
    one inside the other instead of writing them.
 5. `delivery`: `delivery.baseBranch`, `delivery.completion`, and `delivery.prReview` (already asked in Step 4 — carry over), `delivery.branchPrefix`, `delivery.returnBranch`, `delivery.mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when the merge gate in block 9 merges it; with `squash` the pull-request title becomes the commit subject and therefore the release signal)
 6. `worktree`: `worktree.enabled` (already asked in Step 4 — carry over), `worktree.setup`, `worktree.baseDir`
-7. `tracker`: `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo, forge only), `tracker.externalTool` and `tracker.externalToolHint` (free text; required identifier plus optional connection hint for `mode: external`, carried over when already asked in Step 4)
+7. `tracker`: `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo, forge only), `tracker.externalTool` and `tracker.externalToolHint` (free text; required identifier plus optional connection hint for `mode: external`, carried over when already asked in Step 4), and the freshly verified nullable `tracker.externalStartedState`. Re-run state discovery before changing the latter; never accept arbitrary free text or a display-name-only match.
 8. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (global lists) as well as – as an advanced option – `skills.agents.<name>` and `skills.tools.<name>` for individual agents/tools. Additionally offer optionally (do not force) to materialize the built-in per-agent and per-tool recommendations visibly into the config as `skills.agents.<name>.include` or `skills.tools.<name>.include`; for a fallback recommendation (`effective-web › impeccable › frontend-design`), write only the **primary** skill (`effective-web`) — the built-in fallback stays active. Flat recommendations (e.g. `locale-typography`) are carried over unchanged.
 9. `mergeGate` – the **merge gate** of `effective-flow merge-gate`, asked as its own block: see below.
 
@@ -690,9 +708,10 @@ different things:
   pull request it just created. It keeps its name and is untouched by the rename.
 - **`mergeGate.*`** (this block) configures the tool that takes an **existing** pull request from
   open to merged: it waits for the checks, has failures repaired, evaluates the notes of the
-  configured automatic reviewers, refuses to implement or merge while a human comment is open, and
-  finally merges. If the project still carries these keys as `prReview.*`, show the recorded legacy
-  values as the current ones and say that Step 6 migrates the block.
+  configured automatic reviewers, refuses to implement or merge while a comment from an account
+  that is neither a bot nor the one it runs as is open, and finally merges. If the project still
+  carries these keys as `prReview.*`, show the recorded legacy values as the current ones and say
+  that Step 6 migrates the block.
 
 Explain first, then ask. The gate is safe without any of these keys, so "keep the defaults" is a
 perfectly good answer.
@@ -749,9 +768,12 @@ value or default as the pre-selection:
   (e.g. `@greptileai`). Ask for it once per **reviewer** left after that collapse, never once per
   configured login. A login containing brackets is a valid middle segment, because the table encoding
   splits on `.` only. Say when asking that this should be a **distinctive mention** such as
-  `@greptileai`, not generic prose such as `please review`, because the gate recognizes its own
-  trigger comment by an exact match against this string — a generic value could be matched by an
-  ordinary human comment, which would then be excluded from the human-comment guard.
+  `@greptileai`, not generic prose such as `please review`, because the literal string does two jobs.
+  It has to actually summon that reviewer — generic prose mentions nobody and the round then waits
+  for output no one requested. And the gate suppresses a duplicate trigger by comparing this exact
+  text, trimmed, against the comments its own account already left on the current head; in manual
+  mode that account is the operator's own, so a phrase the operator might type by hand reads as a
+  trigger already posted and the reviewer is waited for instead of summoned.
 - `mergeGate.bots.<login>.check`: free text, the commit-status context or check-run name that this
   reviewer publishes against a head commit (e.g. `recensor/review`). Ask for it once per **reviewer**
   as well, directly after that reviewer's trigger text, and offer "not set" as the answer —
@@ -969,73 +991,55 @@ points here; it never rewrites the ADR itself.
 Hosts derive a session title from the first message, so a run is listed under a name that predates
 its subject. Where the running harness has an established rename path, Effective Flow applies the
 better title itself instead of suggesting it; where it has none, every run keeps printing a
-suggestion the user applies by hand. Both established paths need a one-time, per-user setup, and this
-step prepares it.
+suggestion the user applies by hand. The ChatGPT Desktop Codex tab exposes its path directly and
+needs no installation; Claude Code still needs a one-time, per-user butler setup.
 
 This step is **not** part of the configuration. It declares no key, belongs to none of the Step 5
-blocks, and adds nothing to the Step 6 write. It **prints**: it never opens, edits, or creates a
-file above the repository root, and it never touches the user's harness configuration. What the user
-pastes, and whether they paste it at all, stays their decision. Its announced side effects outside
-this repository are the verification probe's: with the user's go-ahead it renames the current session
-once, because a rename nobody can see proves nothing, and on the Claude Code path it sends one
-message to the user's own butler session.
+blocks, and adds nothing to the Step 6 write. It explains the detected path and, on Claude Code,
+prints what the user pastes; it never opens, edits, or creates a file above the repository root, and
+it never touches the user's harness configuration. What the user pastes, and whether they paste it
+at all, stays their decision. Its announced side effects outside this repository are the verification
+probe's: with the user's go-ahead it renames the current session once, because a rename nobody can
+see proves nothing, and on the Claude Code path it sends one message to the user's own butler session.
 
-If the configuration write completed and the run may prepare the harness's session-rename capability: Ask the user: **Should setup check whether this harness has an established session-rename path and print what it needs?**
-- Yes -- Detect the harness, print what the user pastes, and prove it once by renaming this session
-- No -- Skip it — runs keep printing a suggested title instead of applying it
+If the configuration write completed and the run may prepare the harness's session-rename capability: Ask the user: **Should setup check this harness's established session-rename path and prove it once?**
+- Yes -- Detect the harness, explain or prepare its path, and prove it once by renaming this session
+- No -- Skip only this visible capability check; later runs keep following their host's path
 
-For "No", note that runs keep emitting the suggestion line and continue with Step 8. For "Yes",
-**detect the harness** from the running environment first. Two harnesses have an established rename
-path today, and they need different setups: **Codex** installs a hook, **Claude Code** mandates a
-second session as a rename butler. Follow that harness's path below and no other. On any other
-harness, say plainly that no path is established, that runs therefore keep suggesting a title, and
-end this step. Never invent a mechanism, and never probe a harness for one.
+For "No", note that setup skips only this visible check and continue with Step 8. On ChatGPT Desktop,
+later eligible runs still attempt the native operation and fall back independently from each call's
+result. On Claude Code, setup neither prepares nor verifies a butler; without an already working
+butler, later runs keep emitting the suggestion line. For "Yes", **detect the harness** from the
+running environment first. Two harnesses have an established rename path today: the **ChatGPT
+Desktop Codex tab** exposes a native current-task operation, while **Claude Code** mandates a second
+session as a rename butler. Follow that harness's path below and no other. Codex CLI has no automatic
+path in this scope. On any other harness, say plainly that no path is established, that runs therefore
+keep suggesting a title, and end this step. Never invent a mechanism, and never probe a harness for
+one.
 
-#### Codex: the hook the user installs
+#### ChatGPT Desktop, Codex tab: the native capability needs no installation
 
-1. **Print the definition block from `shared/session-rename.md` verbatim.** That fragment carries the
-   complete `Stop` handler in both spellings; print the one the user prefers, or both, and replace
-   `<skill-root>` with the absolute path of the installed skill first, because a hook resolves no
-   placeholder. Name the file to paste it into — `~/.codex/hooks.json` or `~/.codex/config.toml`, or
-   the repository-local counterpart — and say that every matching layer loads, so an existing hook
-   file gains the `Stop` entry rather than being replaced. Do not open or write either file here.
-2. **State the trust gate before the user pastes.** This is the step whose omission turns the hook
-   into a permanent silent no-op, so state it plainly: a pasted hook does **not** run until it has
-   been reviewed and trusted once, in whichever Codex client the user runs, and any later edit of
-   the hook text marks it changed and skips it again until it is reviewed a second time. Name the
-   route for the detected client rather than one route for everybody: in the CLI the `/hooks`
-   command lists the sources and performs the review; the desktop app records hook trust through its
-   own interface instead, so direct the user there and do not send them to a slash command their
-   client may not have. Where the client is unclear, say only that the review happens once inside
-   the client and that an edit re-gates it. An installation that permits managed hooks only
-   (`allow_managed_hooks_only`) suppresses user, project and plugin hooks entirely; there the path
-   is unavailable by policy, and this step says so instead of leaving the user to debug a hook that
-   never fires.
-3. **Probe with a real rename, not a claim.** Once the user confirms the hook is pasted and trusted,
-   request the literal probe title `Effective Flow setup check` for the live session through the
-   shipped script, exactly as that fragment specifies the call. Say beforehand that this deliberately
-   renames the session once — the rename **is** the observable proof — and that the user renames it
-   back or lets the next run retitle it. Report the concrete envelope, or its exact structured error.
-   The probe writes one rename request below `.effective-flow/` through the script, so apply the
-   loaded “Runtime-state write safety” contract from `RUNTIME_STATE_ROOT` to that exact target
-   immediately beforehand and run nothing when the guard blocks. Never report a probe that did not
-   run.
-4. **Let the hook's own receipt close the loop.** A fresh installation has no receipt yet, so this
-   first call reports the path as undeterminable even where the hook is installed perfectly — say so,
-   and do not present it as a failure. The hook consumes the pending request when the turn ends and
-   leaves a receipt beside it, so repeat the call in the following turn, which the user's own
-   confirmation already creates. A receipt observed there is first-hand evidence that the hook really
-   fired: report its observed timestamp and that the path is live. If the path is still not live,
-   report the concrete reason the script returned and have the user check the session title before
-   treating the hook as broken — a title now reading `Effective Flow setup check` proves the hook
-   fired whatever the probe concluded. That second call is what turns a printed definition into an
-   observed one; never claim a success nobody observed.
+1. **Explain the direct path.** The app already exposes its current-task title operation, currently
+   `codex_app__set_thread_title`; there is no hook, trust review, file or one-time configuration to
+   install. Ordinary Effective Flow runs use it directly when their subject is fixed.
+2. **Name the precise stale-hook cleanup without performing it.** A user who followed the former
+   setup may still have a `Stop` handler whose command invokes `session-title.mjs apply` in
+   `~/.codex/hooks.json`, `~/.codex/config.toml`, or a repository-local counterpart. Tell them to
+   remove only that matching handler themselves, preserving unrelated handlers and the containing
+   file. Never open, edit or delete their harness configuration here.
+3. **Probe with a real rename, not a claim.** Say beforehand that this deliberately renames the
+   current session once and that the user may rename it back or let the next run retitle it. Then
+   call the native operation once with only the literal title `Effective Flow setup check`; omit
+   `threadId`, never list or resolve tasks, and never retry. Report the concrete result. A successful
+   call proves the path for this run; an absent, denied or failed operation means only that this setup
+   probe failed. Later eligible runs still attempt the operation and fall back independently from
+   each call's result. Never report a probe that did not run or claim more than the host reported.
 
 #### Claude Code: the butler session the user mandates
 
 1. **Print the marker title and the mandate block from `shared/session-rename.md` verbatim.** Read
    `<skill-root>/shared/session-rename.md`, resolving `<skill-root>` to the absolute path of the
-   installed skill exactly as the Codex item above resolves it. That fragment owns both: the literal
+   installed skill. That fragment owns both: the literal
    marker title a butler carries, `Effective Flow rename butler`, and the fenced standing-mandate
    block below it. Print both from that file, character for character — never from memory and never
    rephrased, so one wording ships everywhere. If the file cannot be read, say so and print nothing
@@ -1078,7 +1082,8 @@ Report to the user:
   [default `merge`] including, if applicable, `delivery.baseBranch`/`delivery.returnBranch`,
   `delivery.prReview` [default `ask`],
   `language.project` and all explicit `language.*` overrides, `tracker.mode`, and, if applicable,
-  `tracker.remoteToolOverride` or `tracker.externalTool` plus `tracker.externalToolHint`) as well
+  `tracker.remoteToolOverride` or `tracker.externalTool` plus `tracker.externalToolHint` and the
+  verified `tracker.externalStartedState`) as well
   as `plan.dir` and `concept.dir`, if set or changed from the default
 - if set or changed from the default: the merge-gate values `mergeGate.completion`,
   `mergeGate.conflictResolution`,
@@ -1092,19 +1097,20 @@ Report to the user:
 - whether a legacy `prReview.*` merge-gate block was rewritten in place: which rows were carried
   over to `mergeGate.*`, that the old rows were removed, and every shadowed legacy value that was
   discarded because a `mergeGate.*` row already held a different one
-- for `tracker.mode = external`: both new values verbatim, plus the note that the connection is
+- for `tracker.mode = external`: the external tool and hint verbatim, the observed state candidates,
+  and the confirmed `tracker.externalStartedState` stable value or `null`, plus the note that the connection is
   selected at run time from the hint and that a missing, ambiguous, or under-capable connection
   aborts the run instead of falling back to the forge
 - whether `plan.markerLanguage` or a consistent existing plan corpus was proposed/migrated to
   `language.workflow`, including the visible semantic change and whether the legacy row was removed
 - for a previously existing config: which keys were changed from the old state (before/after)
 - the path of the written project setup ADR and the location of the set `**Effective Flow project setup:**` marker (`AGENTS.md`/`CLAUDE.md`)
-- for the capability step of Step 7: the detected harness, which path it followed, whether the hook
-  definition or the marker title and mandate were printed, whether the verification ran and with
-  which concrete result, what the following turn added — on Codex whether a receipt confirmed the
-  hook really fired or which reason it reported instead, on Claude Code whether exactly one butler
-  was found and which title its reply reported — and that no file above the repository root and no
-  configuration key was changed by it
+- for the capability step of Step 7: the detected harness, which path it followed, whether the
+  Desktop native path was explained or the Claude marker title and mandate were printed, whether the
+  verification ran and with which concrete result, whether stale-hook removal guidance was relevant,
+  and — on Claude Code — what the following turn added, whether exactly one butler was found and
+  which title its reply reported. State that no file above the repository root and no configuration
+  key was changed by the step
 - in the migration case: identify the exact `<source-handle>` selected by the locator and whether
   both runtime-directory and config migration completed. For a completed migration, report
   whether `<source-path>` was **removed
@@ -1123,13 +1129,11 @@ with nothing staged matches no row and emits nothing.
   the `**Effective Flow project setup:**` marker in `AGENTS.md`/`CLAUDE.md`, and—only when the
   locator selected a transitional config—the runtime targets written by the shared
   runtime-directory migration; no further setup steps like deployment or Git hooks.
-- The capability step of Step 7 **prints**. It writes no file above the repository root, edits no
-  harness configuration, and adds no configuration key. On the Codex path its probe writes one rename
-  request below `.effective-flow/` through the shipped script under the loaded write-safety contract,
-  and the installed hook leaves its own receipt beside it; both are runtime state, not configuration.
-  The Claude Code path writes no file at all — its request is a cross-session message — so it creates
-  no runtime target and invokes no write-safety guard. Either probe renames the current session once,
-  with the user's go-ahead and its own fixed probe title.
+- The capability step of Step 7 writes no file, edits no harness configuration, and adds no
+  configuration key. The Desktop path calls the app-native current-task title operation directly;
+  the Claude Code path sends a cross-session message. Neither creates a runtime target or invokes a
+  write-safety guard. Either probe renames the current session once, with the user's go-ahead and its
+  own fixed probe title.
 - Never overwrite existing config values and unknown keys without asking.
 - On an abort during the questions, leave no half-written ADR; write only once at the end.
 - Do not start project validation; linting, tests, and build checks are the job of other skills such as ``effective-flow-code-validator``.
