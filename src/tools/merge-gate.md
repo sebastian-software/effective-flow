@@ -1074,10 +1074,19 @@ ends this phase without heuristic tracker access.
 3. For every freshly observed terminal forge issue, remove
    `effective-flow-issue-in-progress` idempotently. Keep the marker for every other outcome. Never
    force-close an issue and never write a fallback classification to a different target.
-4. Only for an observed terminal issue, complete its optional receipted container using the recorded
-   `native` or `checklist` mechanism. A checklist update uses a fresh container body and exact
-   hash-guarded patch. An open, timed-out, or unobservable issue leaves its container entry open.
-   Mixed or invalid mechanisms perform no write.
+4. Only for an observed terminal issue, complete its optional receipted container reconciliation
+   using the recorded mechanism. For a forge
+   `native` container, call `issue-sub-issues-read` on the recorded parent, verify that the linked
+   issue is still one of its native children, and report every remaining open child. GitHub derives
+   the parent's progress from child state, so perform no native-completion mutation and no checklist
+   patch. A child's `decompositionKeyError` is a planning-integrity diagnostic, not evidence that
+   the provider-verified native relation disappeared: continue relation and terminal-state
+   observation by normalized issue identity, report the diagnostic, and never substitute marker
+   matching for the receipted child number. For an external `native` container, use only the connection's previously proven
+   completion operation. A `checklist` update uses a fresh container body and exact hash-guarded
+   patch. An open, timed-out, or unobservable issue leaves its container entry open. A missing or
+   parent-mismatched child likewise leaves its container unchanged. Mixed or invalid mechanisms
+   perform no write.
 5. For every nonterminal result derive the exact closure guidance in the contract's evidence order:
    non-closing `refs`, observed open sub-items/checklist entries, needs-planning classification,
    still-started external state, or otherwise only the terminal tracker transition. Do not invent
@@ -1133,7 +1142,9 @@ ends this phase without heuristic tracker access.
    - the merge result, or the precise blocking condition;
    - after a confirmed merge, the lifecycle receipt result and one row per linked issue with its
      observed terminal/open/timed-out/unobservable state, the evidence-based closure action, whether
-     the forge in-progress label was removed, and whether its optional container entry completed.
+     the forge in-progress label was removed, and the optional container result — checklist or
+     external-native completion, or for forge-native containment the freshly observed remaining
+     child count and references.
 3. Emit the next-step block per `next-steps` as the last element of that chat report. When at least
    one linked issue is open, timed out, or unobservable, select the merged-but-linked-issues-open row
    before the general merged row. It stays chat

@@ -673,6 +673,105 @@ test('plan-issue completes readiness sequentially and never releases blocked art
   assert.match(planIssue, /A nonempty open-points section is implementation-blocking/);
 });
 
+test('plan-issue persists and approves an exact native-child set before sequential creation', () => {
+  const planIssue = source('src/tools/plan-issue.md');
+  const phase2 = prose(section(planIssue, '### Phase 2: Planning per issue (interactive)'));
+  const phase3 = prose(section(planIssue, '### Phase 3: Automatic quality baseline per issue'));
+  const phase4 = prose(section(planIssue, '### Phase 4: Persist, deep-review gate, and readiness'));
+  const target = prose(section(source('src/shared/tracker-target.md'), '### Container mechanism'));
+
+  assert.match(
+    phase2,
+    /external target proves the full native-container contract plus atomic create-under-parent/,
+  );
+  assert.match(
+    target,
+    /native parent\/sub-issue relation.*write native sub-item completion.*atomically create under a supplied parent/,
+  );
+  assert.match(
+    phase3,
+    /include its exact child records, titles, workflows, and publishable bodies in the canonical comment before any approval or create operation/,
+  );
+  ordered(
+    phase4,
+    'Persist the self-contained baseline comment',
+    're-read that exact comment and confirm its body hash',
+    'before showing the parent and every exact child title',
+    'Ask whether to create that exact set as native children of this parent',
+    'After approval, re-read the parent and canonical comment',
+    'For each approved draft in order',
+    "Match the draft's stable key",
+    'preview the parent-aware create',
+    'guardedly update the canonical comment',
+  );
+  assert.match(phase4, /An unanswered or rejected prompt creates nothing/);
+  assert.match(phase4, /Never call `issue-create`, create first and link later, or fall back/);
+});
+
+test('plan-issue reconciles every stable key and preserves partial creation before readiness', () => {
+  const planIssue = prose(source('src/tools/plan-issue.md'));
+
+  assert.match(
+    planIssue,
+    /exactly one valid match is reused; zero permits a preview; multiple matches stop before a write/,
+  );
+  assert.match(
+    planIssue,
+    /mutationMayHaveSucceeded.*issue-sub-issues-read.*unique valid key match recovers the result; zero, multiple, or marker-error matches remain blocked and are never blindly retried/i,
+  );
+  assert.match(
+    planIssue,
+    /If any later child fails, preserve created children, mark all missing or unknown drafts explicitly in the canonical comment/,
+  );
+  ordered(
+    planIssue,
+    'If any later child fails',
+    'retain `effective-flow-needs-planning`',
+    'After either branch, apply the readiness decision',
+    'readiness also requires a fresh `decomposition-container-compare`',
+  );
+  assert.match(
+    planIssue,
+    /Child creation is legal only through `issue-sub-issue-create` with the active parent supplied/,
+  );
+  assert.match(
+    planIssue,
+    /Generic `issue-create`, a create-then-link sequence, sibling creation, and checklist degradation are forbidden/,
+  );
+});
+
+test('plan-issue re-reads native children before preview, apply, and post-create persistence', () => {
+  const phase4 = prose(
+    section(
+      source('src/tools/plan-issue.md'),
+      '### Phase 4: Persist, deep-review gate, and readiness',
+    ),
+  );
+  const perChild = phase4.slice(phase4.indexOf('For each approved draft in order'));
+  assert.notEqual(perChild.length, phase4.length, 'missing per-child creation loop');
+  ordered(
+    perChild,
+    'immediately before the create preview, call `issue-sub-issues-read`',
+    'replace the local reconciliation state with that fresh list',
+    'preview the parent-aware create',
+    'Immediately before apply, call `issue-sub-issues-read` again',
+    'replace the local reconciliation state',
+    'zero permits applying the unchanged previewed operation',
+    'after success or unique-key recovery, call `issue-sub-issues-read` once more',
+    'require exactly one valid same-parent match for the key',
+    'A concurrently visible duplicate fails closed before the comment update',
+    'guardedly update the canonical comment',
+  );
+  assert.match(
+    perChild,
+    /One now-matching child is recovered without applying.*multiple matches or any marker\/integrity error stop before a write/,
+  );
+  assert.match(
+    phase4,
+    /forge comment update is a non-atomic read-then-PATCH.*simultaneous writers can still race after the last (?:pre-create )?read.*duplicate or uncertain result becomes visible, stop and reconcile rather than retrying/,
+  );
+});
+
 test('plan-review exposes file and issue adapters while issue mode stays comment-only', () => {
   const review = source('src/tools/plan-review.md');
 
@@ -1164,6 +1263,78 @@ test('the external container mechanism is chosen once, reported, and never mixed
       `${path} must settle the container mechanism before delivery`,
     );
   }
+});
+
+test('Stage B and apply-issues reconcile canonical containers before legacy expansion', () => {
+  const detection = prose(source('src/shared/apply-source-detection.md'));
+  const expansion = prose(
+    section(source('src/tools/apply-issues.md'), '### Phase 2: Expansion & work list'),
+  );
+
+  assert.match(
+    detection,
+    /obtain native-child evidence only through the helper operation `issue-sub-issues-read` with the candidate issue as `parent`/,
+  );
+  assert.match(detection, /GitHub's normalized result is the authoritative native-child list/);
+  assert.match(
+    detection,
+    /active canonical decomposition exists.*body contains a sub-issue checklist.*or the issue has native sub-items.*→ `container-issue`/,
+  );
+  assert.match(detection, /`container-issue` even when the native list is empty/);
+  assert.match(detection, /all-`declined` record set is inactive/);
+
+  ordered(
+    expansion,
+    'parse its records through `decomposition-records-parse`',
+    'call `issue-sub-issues-read` with this issue as the parent',
+    'compare it with the fresh normalized children through `decomposition-container-compare`',
+    '`containerOnly: true` means the parent is never a work item',
+    'any malformed record',
+    'expand neither children nor parent',
+    'Without an active canonical decomposition, preserve the legacy behavior',
+    'a nonempty normalized native-child list classifies the issue as a container before checklist expansion',
+    'expand only children whose normalized state is not terminal',
+    'Deduplicate the work list',
+  );
+  assert.match(
+    expansion,
+    /if both signals exist, the verified native relation wins and the checklist is not mixed/i,
+  );
+  assert.match(
+    expansion,
+    /for a checklist container, expand to the open.*skip done.*read each open child fresh/,
+  );
+  assert.match(expansion, /If neither exists, the issue itself is a single work item/);
+});
+
+test('decomposition parsers derive their exact matcher from the versioned prefix contract', () => {
+  const core = source('src/scripts/remote-tracker-core.mjs');
+  assert.match(
+    core,
+    /const DECOMPOSITION_KEY_PREFIX = `\$\{DECOMPOSITION_KEY_MARKER\}:\$\{DECOMPOSITION_KEY_VERSION\}`/,
+  );
+  assert.match(
+    core,
+    /const DECOMPOSITION_RECORD_PREFIX = `\$\{DECOMPOSITION_RECORD_MARKER\}:\$\{DECOMPOSITION_RECORD_VERSION\}`/,
+  );
+  assert.match(
+    core,
+    /const DECOMPOSITION_SECTION_PREFIX = `\$\{DECOMPOSITION_SECTION_MARKER\}:\$\{DECOMPOSITION_SECTION_VERSION\}`/,
+  );
+
+  const keyParser = core.slice(
+    core.indexOf('function inspectDecompositionKey'),
+    core.indexOf('export function parseDecompositionKey'),
+  );
+  const recordParser = core.slice(
+    core.indexOf('export function parseDecompositionRecords'),
+    core.indexOf('function decompositionChildIdentity'),
+  );
+  assert.match(keyParser, /escapeRegExp\(DECOMPOSITION_KEY_PREFIX\)/);
+  assert.match(recordParser, /escapeRegExp\(DECOMPOSITION_RECORD_PREFIX\)/);
+  assert.match(recordParser, /escapeRegExp\(DECOMPOSITION_SECTION_PREFIX\)/);
+  assert.doesNotMatch(keyParser, /effective-flow-decomposition-key:v1/);
+  assert.doesNotMatch(recordParser, /effective-flow-decomposition-child:v1/);
 });
 
 test('plan files stay committed and pull requests stay on the forge in every tracker target', () => {
@@ -4559,6 +4730,24 @@ test('container completion is deferred until a linked issue is observed terminal
     /An open, timed-out, or unobservable issue leaves its container entry open/,
   );
   assert.match(mergeObservation, /fresh container body and exact hash-guarded patch/);
+
+  const nativeReconciliation = prose(
+    section(source('src/shared/issue-lifecycle.md'), '### Post-merge observation'),
+  );
+  assert.match(
+    nativeReconciliation,
+    /For a forge-native container, do not issue a second completion mutation/,
+  );
+  ordered(
+    nativeReconciliation,
+    're-read the recorded parent through `issue-sub-issues-read`',
+    'verify that the receipted child still belongs to it',
+    'report the remaining open native children',
+  );
+  assert.match(
+    nativeReconciliation,
+    /Repeated observation, native parent reads, and eligible completion writes are idempotent/,
+  );
 });
 
 test('merge-gate supports already-merged observer re-entry with terminal-only reconciliation', () => {

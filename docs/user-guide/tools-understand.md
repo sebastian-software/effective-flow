@@ -1,9 +1,9 @@
 # Tool reference: Understand what needs doing
 
-This group covers analysis and planning – **before** any code is written. All five tools are
-pure read phases or write exclusively to their designated stores
-(`.effective-flow/investigation/`, `<concept.dir>/`, `<plan.dir>/`, or an issue comment); none
-changes source code, tests, or configuration.
+This group covers analysis and planning – **before** any code is written. The five tools either
+read only or keep their writes within the designated planning surfaces
+(`.effective-flow/investigation/`, `<concept.dir>/`, `<plan.dir>/`, issue comments and labels, or
+approved native sub-issues); none changes source code, tests, or configuration.
 
 `<plan.dir>` is the `plan.dir` value and `<concept.dir>` the `concept.dir` value from the
 Effective Flow project-setup ADR (defaults `docs/plan` and `docs/concept`; see
@@ -142,7 +142,9 @@ issue implementation workflow) skipped due to missing information and marked wit
 the same clarification methodology as `/effective-flow plan` and writes the result as a structured
 comment back to the issue. It then runs the full automatic baseline—gap analysis, validation, and
 internal plan review—before offering the same optional deep interactive review as local planning.
-It produces neither code nor a plan file – the issue remains the single source.
+When one issue contains several independently implementable outcomes, it can also propose a split
+into native sub-issues. It produces neither code nor a plan file – the parent issue and its planning
+comment remain the source for the overall scope.
 
 **When to use:** When your issues live in a tracker – the Git forge or an external tool – and
 some of them still contain too little information for an autonomous implementation.
@@ -163,16 +165,77 @@ criteria, affected areas, assumptions, baseline review result, and open points. 
 are processed separately and completely, so one blocked issue does not prevent the others from
 being planned.
 
+**Splitting a broad issue:** `plan-issue` proposes a decomposition only when the planning analysis
+finds that the parent is too broad for one coherent implementation or combines independently
+implementable outcomes. The canonical planning comment shows the exact title, workflow, and
+self-contained body for every proposed child before anything is created. The tracker helper builds
+this as one canonical v2 section bound to the exact target and parent; the workflow inserts
+that complete section without assembling its markers or visible entries itself. Each proposal also
+gets a stable parent-scoped key and a draft hash that binds that key to its exact title, workflow,
+and body. Keys must be unique within the parent, as must the issue identities of created children.
+A record has exactly one valid status—`proposed`, `approved`, `created`, `missing`, or `declined`—and
+only `created` may carry a child issue reference. Any change to the bound records or their visible
+rendering fails validation instead of being accepted as a partial manual edit.
+
+Creation requires your explicit approval of that exact child set for that parent. Approval for a
+different parent or an earlier draft does not carry over. The tool creates each approved item only
+as a native child of the active parent; it never substitutes a standalone issue, a create-then-link
+sequence, a sibling issue, or a checklist. GitHub must support native child listing and
+create-under-parent; an external tracker must additionally support native sub-item completion so
+the downstream container can converge. If the applicable guarantees are unavailable, ordinary
+single-issue planning remains available but the split is not.
+
+Before the proposal can be persisted, every child body must already contain exactly one
+language-appropriate workflow field matching its canonical record. That field must be top-level;
+examples inside block quotes or fenced code blocks do not count. Every Markdown fence in the child
+body must also be closed, because an unclosed fence would hide the final machine-readable child
+marker. Proposed titles and bodies pass through the tracker helper's publication safety boundary.
+Recognizable assigned values such as AWS access keys, refresh tokens, Authorization credentials,
+private keys, client or session credentials, and prefixed environment variables such as `GH_TOKEN`
+or `DATABASE_PASSWORD` are redacted. Sentence-like, punctuated security guidance such as
+`Token: support refresh-token rotation.` remains unchanged. An empty, unterminated, residual, or
+otherwise ambiguous credential form that cannot be transformed safely blocks persistence or
+creation. This is a fail-closed safety boundary, not a promise to detect every possible secret.
+Labels containing secret material are rejected rather than rewritten.
+
+For a GitHub decomposition, the complete canonical planning comment—not only its child section—must
+fit within 65,536 UTF-8 bytes. The helper validates the section while building it and validates the
+assembled comment again before persistence; it reports size contributions instead of truncating a
+child. This decomposition-specific guard does not change ordinary planning comments that contain no
+decomposition.
+
+The stable keys make interrupted runs resumable. For every approved child, `plan-issue` reads the
+parent's native children immediately before it previews creation and reads them again immediately
+before it applies that unchanged preview. A unique child that appears between those reads is
+recovered instead of duplicated. If a create outcome is unknown, another fresh read replaces the
+local state before any decision; it is never retried blindly. A missing or ambiguous match, or a
+later child failure, keeps already created children, records the unresolved proposals in the
+planning comment, retains `effective-flow-needs-planning`, and points back to `plan-issue` for a
+fresh run. After a reported success or recovery, a third child read must show exactly one valid
+same-parent match before the planning comment records it as created.
+
+These checks reduce duplicate creation during sequential and resumed runs, but they are not a
+cross-process lock. A provider may not offer an atomic conditional write for this mutation, so two
+simultaneous runs can still race after the last read. A duplicate that becomes visible is detected
+and fails closed for reconciliation; Effective Flow does not claim globally unique creation under
+concurrent writers.
+
 After the automatic baseline, answer **Yes** to continue with the shared plan-review method as a
 deep interactive review or **No** to release the ready baseline. A skipped review can be resumed later with
 `/effective-flow plan-issue #123`. The label `effective-flow-needs-planning` is removed only when
-the issue plan is ready; unresolved implementation-blocking points keep the label and the canonical
+the issue plan is ready and every approved child is accounted for. Unresolved
+implementation-blocking points or an incomplete decomposition keep the label, and the canonical
 comment records the re-entry state.
 
 **Interplay:** This tool is inherently tracker-bound: it always works against the resolved tracker
 target – the issue tracker of the `origin` remote, or the external tool named in the project setup
-(see [Remote tracker](remote-tracker.md)). The local/remote distinction does not apply here. Once complete, `/effective-flow apply` can implement the now-planned
-issue.
+(see [Native sub-issues](remote-tracker.md#native-sub-issues-created-during-planning)). The
+local/remote distinction does not apply here. Once complete, `/effective-flow apply` implements a
+normal planned issue directly; for an approved decomposition, it treats the parent as a container
+and expands its open native children without implementing the parent a second time. The workflow
+stored in each canonical parent record is authoritative and must match exactly one
+language-appropriate workflow field in the child body. `apply` does not reclassify it: `Feature`
+routes to `build`, `Bugfix` to `fix`, `Refactoring` to `refactor`, and `Documentation` to `docs`.
 
 ## Further reading
 

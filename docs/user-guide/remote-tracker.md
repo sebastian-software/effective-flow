@@ -116,6 +116,88 @@ carries it, so that cleanup is a deliberate manual decision rather than somethin
 your behalf. An existing label is likewise never updated: a label that already carries a different
 color or description keeps it.
 
+### Native sub-issues created during planning
+
+`/effective-flow plan-issue` may propose splitting a broad issue into independently implementable
+children, but only when the resolved tracker proves that it can both list native children and
+create an issue under the current parent as one operation. These capabilities are deliberately
+stricter than generic issue creation:
+
+- **GitHub:** the tracker helper owns the provider-specific mapping for native child reads and
+  atomic parent-aware creation. It probes that capability before the first creation preview or
+  write; workflows use only the provider-neutral helper operations and never assemble a raw GitHub
+  command themselves.
+- **Forgejo/Gitea:** the `tea` adapter currently exposes neither verified native operation, so
+  decomposition fails closed. `plan-issue` can still complete the parent as one issue; it does not
+  create standalone children or invent a checklist relation.
+
+Before the first child write, the canonical planning comment records the exact proposed set in one
+v2 section built by the tracker helper. The whole section is bound to the artifact language,
+the resolved target, the active parent, and every child's unique stable key, title, workflow,
+self-contained body, status, and draft hash. On a forge, identities belong to the exact resolved
+host and repository; a URL from another host or repository never aliases the same issue number. An
+external tracker keeps each tool-native identifier or URL as an exact identity and never collapses
+it by a trailing number. Created child identities must also be unique, and only a record with
+status `created` may carry one. You approve that exact set explicitly.
+
+The helper validates the complete persisted section against its bound records and byte-for-byte
+visible rendering. Editing a displayed title, body, workflow, status, identity, or the encoded
+record independently is treated as tampering or corruption and fails closed. The workflow rebuilds
+the full section for a legitimate state transition; it never patches one hidden marker or visible
+entry in isolation.
+
+Before persistence, each child body must contain exactly one language-matching workflow field that
+agrees with its bound record. The field must be top-level: blockquoted and fenced examples do not
+count. Every Markdown fence in the body must close before persistence; otherwise the helper-appended
+final child marker would remain hidden inside the fence and the operation fails closed. Child titles
+and bodies are also sanitized: recognizable assigned values such as AWS access keys, refresh tokens,
+Authorization Bearer/token/Basic credentials, private keys, client or session credentials, and
+prefixed environment variables such as `GH_TOKEN`, `NPM_TOKEN`, or `DATABASE_PASSWORD` are redacted.
+Sentence-like, punctuated security prose such as `Token: support refresh-token rotation.` remains
+unchanged. Empty, unterminated, residual, or other ambiguous credential forms fail closed rather
+than being guessed at, and secret-bearing labels are rejected rather than redacted. This boundary
+does not claim to recognize every possible secret.
+
+For a GitHub decomposition, the complete canonical planning comment has an aggregate limit of
+65,536 UTF-8 bytes. The helper checks the generated child section and then the complete stamped
+comment before persistence, reporting the section, other comment content, and per-child size
+contributions if it does not fit. It never truncates a child or bypasses the canonical section.
+This decomposition-specific validation does not apply to ordinary planning comments without a
+decomposition; a provider can still reject its own smaller limit as a fail-closed persistence error.
+
+For each approved draft, Effective Flow reads the native child list immediately before the create
+preview and again immediately before applying the unchanged preview. If the child appears between
+the two reads, its stable key recovers it without another write. The local checks enforce only the
+child-count and parent-state constraints those reads expose. Hierarchy depth, permissions, or
+provider limits that cannot be proved locally remain fail-closed provider errors; the guide does
+not treat them as preflighted. After a successful create or recovery, a third native-child read
+must show exactly one valid same-parent match before the canonical comment is updated to `created`.
+
+The three-read sequence reduces duplicate creation for one sequential or resumed workflow, but it
+is not a provider-wide lock. Where the provider offers no atomic conditional mutation, simultaneous
+runs can still race after the final pre-create read. A duplicate that becomes visible during the
+post-create read or later reconciliation fails closed. Effective Flow therefore does not promise
+global uniqueness across concurrent writers.
+
+If a create command fails after the tracker may already have accepted it, Effective Flow does not
+retry blindly. It reads the native children again: one matching key recovers the child, while zero
+or multiple matches keep that proposal unresolved. If only part of a set was created, valid
+children remain in place, the planning comment records created and missing items, and the parent
+keeps `effective-flow-needs-planning` until a fresh run reconciles the set. There is no fallback to
+generic issue creation, a create-then-link sequence, sibling issues, or a Markdown checklist.
+
+A native child's decomposition key is recognized only as the final nonblank standalone line of its
+body. Quoted or fenced child markers remain ordinary prose. The parent comment likewise accepts
+one ordered canonical section whose record controls stay inside its boundaries; quoted or fenced
+section examples are ignored. Record controls outside those boundaries, duplicate controls, or any
+noncanonical encoded or visible rendering are rejected, and callers must not handwrite them. A
+malformed, duplicated, invalid, misplaced, or wrong-parent child marker is isolated as a structured
+diagnostic on that provider-verified child; it does not discard the child or abort reads of its
+siblings. Planning and implementation reconciliation still fail closed on that diagnostic. They
+never infer a key from the child's title or quietly accept an incomplete mapping. Lifecycle and
+merge observation can still use the provider-verified native relationship and the receipted child
+identity.
+
 ## External target
 
 With `tracker.mode: external`, issue work lives in a project-management tool outside your Git
@@ -210,11 +292,20 @@ the value. Zero or several candidates, a stale value, or a non-interactive run w
 value stops before implementation rather than guessing.
 
 The container that groups a review run's findings uses the tool's native parent/sub-issue relation
-when the connection exposes one, and the Markdown checklist otherwise. Which mechanism was used is
-reported per run. Either way, every finding stays reachable from its container and its completion
-stays visible. Creating the pull request does not complete the native sub-item or tick its checklist
-entry. That happens only after `merge-gate` observes the linked work item in a terminal state after
-merge.
+only when the connection both exposes it and can write the sub-item's completion state; otherwise
+it uses the Markdown checklist. Which mechanism was used is reported per run. Either way, every
+finding stays reachable from its container and its completion stays visible. Creating the pull
+request does not complete the native sub-item or tick its checklist entry. That happens only after
+`merge-gate` observes the linked work item in a terminal state after merge.
+
+That checklist fallback applies to containers that group review findings; it does **not** authorize
+issue decomposition by `plan-issue`. An external connection can offer decomposition only when it
+proves the complete native-container mechanism—native child listing plus writable native sub-item
+completion—and atomic create-under-parent. When any guarantee is missing, the parent can still
+follow the ordinary canonical-comment planning path, but no child issue is created and Effective
+Flow does not fall back to the forge or a checklist. When all three are proven, the same exact-set
+approval, stable-key reconciliation, and no-blind-retry behavior described for the forge applies
+through that one external connection.
 
 **Deduplication does not span targets.** A run only sees the target it currently resolves, so if
 you switch targets, findings that already exist in the old one are published again in the new one.
@@ -470,15 +561,32 @@ Several behaviors worth knowing if you inspect the gate's output or a `merge-gat
 ## Interplay with issue-driven tools
 
 Besides `/effective-flow review`/`/effective-flow apply`, [`/effective-flow apply` (issue mode)](./tools-implement.md)
-and [`/effective-flow plan-issue`](./tools-understand.md) also work on the resolved tracker target
-– but for **arbitrary** issues, not only for findings created by Effective Flow. These two tools
-are inherently tracker-bound: they do not evaluate whether findings are kept locally, and always
-need a reachable tracker. On the forge target that means a Git repository with an `origin` remote
-and an authenticated CLI; on an external target it means the resolved connection of that tool.
+and [`/effective-flow plan-issue`](./tools-understand.md#effective-flow-plan-issue) also work on the
+resolved tracker target – but for **arbitrary** issues, not only for findings created by Effective
+Flow. These two tools are inherently tracker-bound: they do not evaluate whether findings are kept
+locally, and always need a reachable tracker. On the forge target that means a Git repository with
+an `origin` remote and an authenticated CLI; on an external target it means the resolved connection
+of that tool.
 
 Delivery stays with the forge in either case: these tools create branches and pull requests on
 `origin`, reference the issue by its identifier in the PR body, and post the PR link back as a
 comment on the issue.
+
+When `plan-issue` has created native children, the parent becomes a container. Issue-mode `apply`
+reads the canonical parent comment and native relationship fresh, then requires an exact one-to-one
+match between active records and native children. An active decomposition keeps the parent
+container-only even when the child list is empty. A malformed proposal record, proposed, approved,
+or missing status, absent or detached child, marker diagnostic, duplicated identity, recorded-issue
+mismatch, or unexpected key retains `effective-flow-needs-planning`, routes the parent back to
+`plan-issue`, and expands neither parent nor children. Only a complete match expands the open
+children; a verified native relationship still wins if the parent body also contains a checklist,
+so the mechanisms are never mixed.
+
+For an expanded child, the workflow in its canonical parent record is authoritative. Its body must
+contain exactly one language-matching workflow field with the same stable value. Issue-mode `apply`
+routes `Feature` to `build`, `Bugfix` to `fix`, `Refactoring` to `refactor`, and `Documentation` to
+`docs` without reclassifying the child. A missing, duplicated, wrong-language, invalid, or
+mismatched workflow field keeps the parent container-only and routes it back to `plan-issue`.
 
 After clarity and approval, but immediately before the first implementation delegation, an
 implementable issue advances at least to started. A forge issue receives the idempotent
@@ -497,12 +605,16 @@ no tracker access and is never replaced by guessing identifiers from PR prose.
 
 Once the pull request is confirmed merged, `merge-gate` gives tracker automation one fixed
 30-second grace period and reads every receipted issue again. It never force-closes an issue. A
-terminal forge issue loses its in-progress label, and an eligible container entry completes only
-after terminal closure is observed. For an open or unobservable issue, the report names the first
-observable closing step: an intentional `Refs` relationship, open sub-items or checklist entries,
-the planning path, a still-started external state, or the remaining terminal tracker transition.
-Run `/effective-flow merge-gate <PR>` again to use its observer-only path when automation takes
-longer or tracker access was unavailable.
+terminal forge issue loses its in-progress label. For a GitHub-native container, `merge-gate`
+re-reads the parent, verifies that the completed issue is still its child, and reports the remaining
+open children; GitHub derives parent progress from child state, so Effective Flow performs no
+second completion write or checklist patch. External-native containers use only the connection's
+previously proven completion operation. For an open, missing, mismatched, or unobservable issue,
+the container remains unchanged and the report names the first observable closing step: an
+intentional `Refs` relationship, open sub-items or checklist entries, the planning path, a
+still-started external state, or the remaining terminal tracker transition. Run
+`/effective-flow merge-gate <PR>` again to use its observer-only path when automation takes longer
+or tracker access was unavailable.
 
 ## See also
 

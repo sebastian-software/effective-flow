@@ -19,6 +19,7 @@ export const ERROR_CODES = Object.freeze([
 const MUTATIONS = new Set([
   'label-create',
   'issue-create',
+  'issue-sub-issue-create',
   'issue-update-body',
   'issue-comment',
   'issue-comment-update',
@@ -45,6 +46,8 @@ const REMOTE_OPERATIONS = new Set([
   'issue-comments-read',
   'issue-list',
   'issue-create',
+  'issue-sub-issues-read',
+  'issue-sub-issue-create',
   'issue-update-body',
   'issue-comment',
   'issue-comment-update',
@@ -75,6 +78,8 @@ const CAPABILITY_BY_OPERATION = Object.freeze({
   'issue-comments-read': 'issueCommentsRead',
   'issue-list': 'issueList',
   'issue-create': 'issueCreate',
+  'issue-sub-issues-read': 'issueSubIssuesRead',
+  'issue-sub-issue-create': 'issueSubIssueCreate',
   'issue-update-body': 'issueUpdate',
   'issue-comment': 'issueComment',
   'issue-comment-update': 'issueCommentUpdate',
@@ -863,7 +868,19 @@ export function buildCommentPayload(kind, input) {
   const marker = commentMarker(kind);
   requireObject(input, 'comment');
   const content = publishableText(input.body, 'comment.body');
-  return { kind, marker, body: stampMarker(marker, content) };
+  const body = stampMarker(marker, content);
+  if (kind === 'planning') {
+    const decomposition = parseDecompositionRecords(body);
+    if (decomposition.found) {
+      assertGithubDecompositionCommentSize(
+        body,
+        decomposition.context,
+        decomposition.records,
+        'comment.body',
+      );
+    }
+  }
+  return { kind, marker, body };
 }
 
 // A thread reply is an `iterate` write, so it carries the same marker as that direction's summary
@@ -1181,8 +1198,8 @@ export function redact(value) {
   return value
     .replace(/(?<![a-z\d+.-])([a-z][a-z\d+.-]*:\/\/)[^\s/@]+@/gi, '$1[REDACTED]@')
     .replace(/\b(?:gh[opusr]_|github_pat_|gitea_)[A-Za-z0-9_=-]+\b/g, '[REDACTED]')
-    .replace(/(Authorization\s*:\s*(?:Bearer|token)\s+)\S+/gi, '$1[REDACTED]')
-    .replace(/([?&](?:access_)?token=)[^&\s]+/gi, '$1[REDACTED]');
+    .replace(/(Authorization\s*:\s*(?:Bearer|token|Basic)\s+)\S+/gi, '$1[REDACTED]')
+    .replace(/([?&](?:access_|refresh_)?token=)[^&\s]+/gi, '$1[REDACTED]');
 }
 
 function repositoryFromInput(input) {
@@ -1429,6 +1446,957 @@ function issueNumber(input) {
   return requireNumber(input.number ?? input.issue, 'issue number');
 }
 
+const DECOMPOSITION_KEY_MARKER = 'effective-flow-decomposition-key';
+const DECOMPOSITION_KEY_VERSION = 'v1';
+const DECOMPOSITION_KEY_PREFIX = `${DECOMPOSITION_KEY_MARKER}:${DECOMPOSITION_KEY_VERSION}`;
+const DECOMPOSITION_SECTION_MARKER = 'effective-flow-decomposition';
+const DECOMPOSITION_SECTION_VERSION = 'v2';
+const DECOMPOSITION_SECTION_PREFIX = `${DECOMPOSITION_SECTION_MARKER}:${DECOMPOSITION_SECTION_VERSION}`;
+const DECOMPOSITION_RECORD_MARKER = 'effective-flow-decomposition-record';
+const DECOMPOSITION_RECORD_VERSION = 'v2';
+const DECOMPOSITION_RECORD_PREFIX = `${DECOMPOSITION_RECORD_MARKER}:${DECOMPOSITION_RECORD_VERSION}`;
+const GITHUB_DECOMPOSITION_COMMENT_MAX_BYTES = 65_536;
+const DECOMPOSITION_KEY_PATTERN = /^[a-z0-9][a-z0-9._-]{0,79}$/;
+const DECOMPOSITION_WORKFLOWS = Object.freeze([
+  'Feature',
+  'Bugfix',
+  'Refactoring',
+  'Documentation',
+]);
+const DECOMPOSITION_STATUSES = Object.freeze([
+  'proposed',
+  'approved',
+  'created',
+  'missing',
+  'declined',
+]);
+const ACTIVE_DECOMPOSITION_STATUSES = new Set(['proposed', 'approved', 'created', 'missing']);
+const SENSITIVE_CHILD_FIELD =
+  '(?:(?:[A-Z][A-Z0-9]*_)+(?:TOKEN|PASSWORD|SECRET|API_KEY|ACCESS_KEY_ID|SECRET_ACCESS_KEY|PRIVATE_KEY|CLIENT_SECRET|SESSION_ID)|access[ _-]?token|refresh[ _-]?token|api[ _-]?key|client[ _-]?secret|password|private[ _-]?key|secret|session[ _-]?id|aws[ _-]?access[ _-]?key[ _-]?id|aws[ _-]?secret[ _-]?access[ _-]?key|token)';
+const SENSITIVE_CHILD_ASSIGNMENT = `(?<![A-Za-z0-9_])["']?${SENSITIVE_CHILD_FIELD}["']?(?![A-Za-z0-9_])\\s*[:=]\\s*`;
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function markdownLineInventory(text) {
+  const lines = text.split(/\r?\n/);
+  const inventory = [];
+  let fence;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const quoted = /^\s{0,3}>/.test(line);
+    const fenceMatch = quoted ? null : line.match(/^ {0,3}(`{3,}|~{3,})(?:.*)$/);
+    const outsideFence = fence === undefined;
+    inventory.push({ index, line, quoted, outsideFence });
+    if (quoted || !fenceMatch) continue;
+    const marker = fenceMatch[1];
+    if (fence === undefined) {
+      fence = { character: marker[0], length: marker.length };
+      continue;
+    }
+    if (
+      marker[0] === fence.character &&
+      marker.length >= fence.length &&
+      new RegExp(`^ {0,3}${escapeRegExp(marker[0])}{${fence.length},}\\s*$`).test(line)
+    ) {
+      fence = undefined;
+    }
+  }
+  return { lines, inventory, unclosedFence: fence };
+}
+
+function assertClosedMarkdownFences(text, field) {
+  const inventory = markdownLineInventory(text);
+  if (inventory.unclosedFence !== undefined) {
+    fail('INVALID_PAYLOAD', `${field} contains an unclosed Markdown fence`, {
+      field,
+      reason: 'unclosed-markdown-fence',
+      fence: inventory.unclosedFence.character,
+      minimumClosingLength: inventory.unclosedFence.length,
+    });
+  }
+  return inventory;
+}
+
+function untrustedControlLines(text, marker) {
+  const inventory = markdownLineInventory(text);
+  return {
+    ...inventory,
+    controls: inventory.inventory.filter(
+      ({ line, quoted, outsideFence }) =>
+        outsideFence && !quoted && line.startsWith(`<!-- ${marker}`),
+    ),
+  };
+}
+
+function parentIssueNumber(input, repository) {
+  const parent = input.parent ?? input.parentIssue;
+  if (parent === undefined || parent === null) {
+    fail('INVALID_REFERENCE', 'parent issue is required', { field: 'parent' });
+  }
+  return parseReference(parent, { expectedKind: 'issue', repository }).number;
+}
+
+function decompositionKey(value, field = 'payload.decompositionKey') {
+  const key = requireString(value, field).trim();
+  if (!DECOMPOSITION_KEY_PATTERN.test(key) || redact(key) !== key) {
+    fail('INVALID_PAYLOAD', `${field} must be a stable lowercase decomposition key`, {
+      field,
+      maximum: 80,
+    });
+  }
+  return key;
+}
+
+export function buildDecompositionKeyMarker(parent, key) {
+  return `<!-- ${DECOMPOSITION_KEY_PREFIX} ${JSON.stringify({
+    parent: requireNumber(parent, 'parent issue'),
+    key: decompositionKey(key, 'decomposition key'),
+  })} -->`;
+}
+
+function decompositionKeyFailure(code, message, details = {}) {
+  return { code, message, details: redact(details) };
+}
+
+function inspectDecompositionKey(body, expectedParent) {
+  const text = requireString(body, 'issue body', { allowEmpty: true });
+  const inspected = untrustedControlLines(text, `${DECOMPOSITION_KEY_MARKER}:`);
+  if (inspected.controls.length === 0) return { status: 'absent' };
+  if (inspected.controls.length > 1) {
+    return {
+      status: 'invalid',
+      error: decompositionKeyFailure(
+        'DUPLICATE',
+        'issue body contains more than one decomposition key marker',
+        { matches: inspected.controls.length },
+      ),
+    };
+  }
+  const candidate = inspected.controls[0];
+  if (inspected.lines.slice(candidate.index + 1).some((line) => line.trim() !== '')) {
+    return {
+      status: 'invalid',
+      error: decompositionKeyFailure(
+        'INVALID_POSITION',
+        'decomposition key marker must be the final nonblank standalone line',
+      ),
+    };
+  }
+  const exact = new RegExp(
+    `^<!-- ${escapeRegExp(DECOMPOSITION_KEY_PREFIX)} (\\{[^\\r\\n]*\\}) -->$`,
+  );
+  const match = candidate.line.match(exact);
+  if (!match) {
+    return {
+      status: 'invalid',
+      error: decompositionKeyFailure(
+        'MALFORMED',
+        'issue body contains a malformed decomposition key marker',
+      ),
+    };
+  }
+  let value;
+  try {
+    value = JSON.parse(match[1]);
+  } catch {
+    return {
+      status: 'invalid',
+      error: decompositionKeyFailure(
+        'MALFORMED',
+        'issue body contains a malformed decomposition key marker',
+      ),
+    };
+  }
+  try {
+    exactObjectKeys(value, ['parent', 'key'], 'decomposition key marker');
+    const parent = requireNumber(value.parent, 'decomposition key marker parent');
+    const key = decompositionKey(value.key, 'decomposition key marker key');
+    if (expectedParent !== undefined && parent !== requireNumber(expectedParent, 'parent issue')) {
+      return {
+        status: 'invalid',
+        error: decompositionKeyFailure(
+          'PARENT_MISMATCH',
+          'decomposition key marker names a different parent issue',
+          { expectedParent, actualParent: parent },
+        ),
+      };
+    }
+    return { status: 'valid', parent, key };
+  } catch (error) {
+    return {
+      status: 'invalid',
+      error: decompositionKeyFailure(
+        'INVALID_SCHEMA',
+        error?.message ?? 'decomposition key marker has an invalid schema',
+      ),
+    };
+  }
+}
+
+export function parseDecompositionKey(body, expectedParent) {
+  const inspected = inspectDecompositionKey(body, expectedParent);
+  if (inspected.status === 'absent') return undefined;
+  if (inspected.status === 'valid') return { parent: inspected.parent, key: inspected.key };
+  fail(
+    inspected.error.code === 'DUPLICATE' ? 'AMBIGUOUS_TARGET' : 'INVALID_PAYLOAD',
+    inspected.error.message,
+    inspected.error.details,
+  );
+}
+
+function sensitiveChildAssignmentPattern(flags = 'gi') {
+  return new RegExp(`(${SENSITIVE_CHILD_ASSIGNMENT})`, flags);
+}
+
+function failUnsafeChildSecret(field, reason) {
+  fail('INVALID_PAYLOAD', `${field} contains credential material that cannot be safely redacted`, {
+    field,
+    reason,
+  });
+}
+
+function redactChildPrivateKeys(text, field) {
+  const begin = /-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----/g;
+  const end = /-----END(?: [A-Z0-9]+)* PRIVATE KEY-----/g;
+  if ((text.match(begin) ?? []).length !== (text.match(end) ?? []).length) {
+    failUnsafeChildSecret(field, 'unterminated-private-key');
+  }
+  return text.replace(
+    /-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----[\s\S]*?-----END(?: [A-Z0-9]+)* PRIVATE KEY-----/g,
+    '[REDACTED PRIVATE KEY]',
+  );
+}
+
+function redactChildQuotedAssignments(text, field) {
+  const matcher = sensitiveChildAssignmentPattern('gi');
+  let cursor = 0;
+  let output = '';
+  for (const match of text.matchAll(matcher)) {
+    if (match.index < cursor) continue;
+    const valueStart = match.index + match[0].length;
+    const quote = text[valueStart];
+    if (quote !== '"' && quote !== "'") continue;
+    let valueCursor = valueStart + 1;
+    let consecutiveBackslashes = 0;
+    let closed = false;
+    while (valueCursor < text.length) {
+      const character = text[valueCursor];
+      if (character === quote && consecutiveBackslashes % 2 === 0) {
+        closed = true;
+        break;
+      }
+      consecutiveBackslashes = character === '\\' ? consecutiveBackslashes + 1 : 0;
+      valueCursor += 1;
+    }
+    if (!closed) failUnsafeChildSecret(field, 'unterminated-quoted-secret');
+    output += `${text.slice(cursor, valueStart)}[REDACTED]`;
+    cursor = valueCursor + 1;
+  }
+  return `${output}${text.slice(cursor)}`;
+}
+
+function indentationWidth(value) {
+  return value.replace(/\t/g, '    ').length;
+}
+
+function redactChildBlockAssignments(text, field) {
+  const newline = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = text.split(/\r?\n/);
+  const output = [];
+  const blockStart = new RegExp(`^(\\s*)(${SENSITIVE_CHILD_ASSIGNMENT})(?:[|>]\\s*)?$`, 'i');
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(blockStart);
+    if (!match) {
+      output.push(lines[index]);
+      continue;
+    }
+    const baseIndent = indentationWidth(match[1]);
+    output.push(`${match[1]}${match[2]}[REDACTED]`);
+    let consumedValue = false;
+    while (index + 1 < lines.length) {
+      const next = lines[index + 1];
+      const nextIndent = next.match(/^\s*/)?.[0] ?? '';
+      if (next.trim() !== '' && indentationWidth(nextIndent) <= baseIndent) break;
+      if (next.trim() !== '') consumedValue = true;
+      index += 1;
+    }
+    if (!consumedValue) failUnsafeChildSecret(field, 'ambiguous-empty-secret-assignment');
+  }
+  return output.join(newline);
+}
+
+function redactChildAssignments(text, field) {
+  const assignment = new RegExp(
+    `(${SENSITIVE_CHILD_ASSIGNMENT})(?!\\[REDACTED(?: PRIVATE KEY)?\\])[^\\r\\n]*`,
+    'gi',
+  );
+  return text.replace(assignment, (matched, prefix) => {
+    const value = matched.slice(prefix.length);
+    if (value.startsWith('[REDACTED]')) return matched;
+    if (value.trim() === '') failUnsafeChildSecret(field, 'empty-secret-assignment');
+    if (/=\s*$/.test(prefix) || /^\S+$/.test(value.trim())) return `${prefix}[REDACTED]`;
+    if (!/:\s*$/.test(prefix)) failUnsafeChildSecret(field, 'ambiguous-secret-assignment');
+    if (isLegitimateCredentialProse(prefix, value)) return matched;
+    failUnsafeChildSecret(field, 'ambiguous-colon-credential-assignment');
+  });
+}
+
+function isLegitimateCredentialProse(prefix, value) {
+  if (!/:\s*$/.test(prefix)) return false;
+  const prose = value.trim();
+  if (!/^\p{Ll}[\p{L}\p{N}._,'’()\/-]*(?:\s+[^\s]+)+[.!?]?$/u.test(prose)) return false;
+  return /^(?:require|support|do|never|avoid|keep|use|store|rotate|redact|document|accept|reject|must|should|is|are|verlange|unterstütze|nutze|verwende|speichere|rotiere|protokolliere)\b/iu.test(
+    prose,
+  );
+}
+
+function isLegitimateCredentialProseMatch(match, text) {
+  const prefix = match[0];
+  const value = text.slice(match.index + prefix.length).split(/\r?\n/, 1)[0];
+  return isLegitimateCredentialProse(prefix, value);
+}
+
+function sanitizeChildText(value, field) {
+  let text = publishableText(value, field);
+  text = redactChildPrivateKeys(text, field);
+  text = redactChildBlockAssignments(text, field);
+  text = redactChildQuotedAssignments(text, field);
+  text = redactChildAssignments(redact(text), field);
+  for (const match of text.matchAll(sensitiveChildAssignmentPattern('gi'))) {
+    if (
+      !text.slice(match.index + match[0].length).startsWith('[REDACTED]') &&
+      !isLegitimateCredentialProseMatch(match, text)
+    ) {
+      failUnsafeChildSecret(field, 'residual-secret-assignment');
+    }
+  }
+  if (/-----BEGIN(?: [A-Z0-9]+)* PRIVATE KEY-----/.test(text)) {
+    failUnsafeChildSecret(field, 'residual-private-key');
+  }
+  return publishableText(text, field);
+}
+
+function sanitizeChildLabel(value, field) {
+  const label = publishableText(value, field);
+  const sanitized = sanitizeChildText(label, field);
+  if (sanitized !== label) failUnsafeChildSecret(field, 'secret-in-label');
+  return label;
+}
+
+function decompositionWorkflow(value, field = 'record.workflow') {
+  const workflow = requireString(value, field).trim();
+  if (!DECOMPOSITION_WORKFLOWS.includes(workflow)) {
+    fail('INVALID_PAYLOAD', `${field} must name a supported implementation workflow`, {
+      field,
+      supported: [...DECOMPOSITION_WORKFLOWS],
+    });
+  }
+  return workflow;
+}
+
+export function parseDecompositionChildWorkflow(input) {
+  requireObject(input, 'decomposition child workflow');
+  const body = requireString(input.body, 'decomposition child workflow body');
+  const language = requireString(input.language, 'decomposition child workflow language').trim();
+  if (!['en', 'de'].includes(language)) {
+    fail('INVALID_PAYLOAD', 'decomposition child workflow language must be en or de', {
+      field: 'language',
+      supported: ['en', 'de'],
+    });
+  }
+  const inventory = markdownLineInventory(body).inventory.filter(
+    ({ quoted, outsideFence }) => !quoted && outsideFence,
+  );
+  const collect = (pattern) =>
+    inventory.map(({ line }) => line.match(pattern)).filter((match) => match !== null);
+  const english = collect(/^\*\*Recommended workflow:\*\*\s*([^\r\n]+)\s*$/);
+  const german = collect(/^\*\*Empfohlener Workflow:\*\*\s*([^\r\n]+)\s*$/);
+  const matching = language === 'de' ? german : english;
+  const foreign = language === 'de' ? english : german;
+  if (matching.length !== 1 || foreign.length !== 0) {
+    fail(
+      'INVALID_PAYLOAD',
+      'decomposition child body must contain exactly one language-matching recommended workflow field',
+      { field: 'body', language, matches: matching.length, foreignMatches: foreign.length },
+    );
+  }
+  const workflow = decompositionWorkflow(matching[0][1], 'decomposition child workflow');
+  if (
+    input.expectedWorkflow !== undefined &&
+    workflow !== decompositionWorkflow(input.expectedWorkflow, 'expected decomposition workflow')
+  ) {
+    fail('INVALID_PAYLOAD', 'decomposition child workflow does not match its canonical record', {
+      field: 'body',
+    });
+  }
+  const implementationWorkflow = {
+    Feature: 'build',
+    Bugfix: 'fix',
+    Refactoring: 'refactor',
+    Documentation: 'docs',
+  }[workflow];
+  return { workflow, implementationWorkflow };
+}
+
+function decompositionStatus(value, field = 'record.status') {
+  const status = requireString(value, field).trim();
+  if (!DECOMPOSITION_STATUSES.includes(status)) {
+    fail('INVALID_PAYLOAD', `${field} must name a supported decomposition status`, {
+      field,
+      supported: [...DECOMPOSITION_STATUSES],
+    });
+  }
+  return status;
+}
+
+function decompositionDraftHash(record) {
+  return bodyHash(
+    JSON.stringify({
+      key: record.key,
+      title: record.title,
+      workflow: record.workflow,
+      body: record.body,
+    }),
+  );
+}
+
+function decompositionLanguage(value, field = 'decomposition.language') {
+  const language = requireString(value, field).trim();
+  if (!['en', 'de'].includes(language)) {
+    fail('INVALID_PAYLOAD', `${field} must be en or de`, { field, supported: ['en', 'de'] });
+  }
+  return language;
+}
+
+function canonicalDecompositionContext(input, field = 'decomposition') {
+  requireObject(input, field);
+  const language = decompositionLanguage(input.language, `${field}.language`);
+  const target = requireString(input.target, `${field}.target`).trim();
+  if (!['forge', 'external'].includes(target)) {
+    fail('INVALID_PAYLOAD', `${field}.target must be forge or external`, {
+      field: `${field}.target`,
+    });
+  }
+  if (target === 'forge') {
+    const repository = lifecycleRepositoryBinding({ repository: input.repository });
+    if (repository?.host === undefined) {
+      fail('INVALID_PAYLOAD', `${field}.repository must include the resolved forge host`, {
+        field: `${field}.repository`,
+      });
+    }
+    if (input.externalTool !== null) {
+      fail('INVALID_PAYLOAD', `${field}.externalTool must be null for forge`, {
+        field: `${field}.externalTool`,
+      });
+    }
+    return {
+      language,
+      target,
+      host: repository.host,
+      repository: repository.slug,
+      externalTool: null,
+      parent: normalizeForgeLifecycleReference(
+        typeof input.parent === 'number' ? String(input.parent) : input.parent,
+        `${field}.parent`,
+        repository,
+      ),
+    };
+  }
+  if (input.repository !== null) {
+    fail('INVALID_PAYLOAD', `${field}.repository must be null for external`, {
+      field: `${field}.repository`,
+    });
+  }
+  return {
+    language,
+    target,
+    host: null,
+    repository: null,
+    externalTool: lifecycleExternalTool(input.externalTool, `${field}.externalTool`),
+    parent: normalizeExternalLifecycleReference(input.parent, `${field}.parent`),
+  };
+}
+
+function canonicalDecompositionRepository(context) {
+  return context.target === 'forge' ? { host: context.host, slug: context.repository } : undefined;
+}
+
+function normalizeCanonicalDecompositionReference(value, field, context) {
+  return context.target === 'forge'
+    ? normalizeForgeLifecycleReference(
+        typeof value === 'number' ? String(value) : value,
+        field,
+        canonicalDecompositionRepository(context),
+      )
+    : normalizeExternalLifecycleReference(value, field);
+}
+
+function canonicalDecompositionIssue(value, status, field, context) {
+  if (status !== 'created') {
+    if (value !== null) {
+      fail('INVALID_PAYLOAD', `${field} must be null unless record.status is created`, { field });
+    }
+    return null;
+  }
+  return normalizeCanonicalDecompositionReference(value, field, context);
+}
+
+function encodeCanonicalDecomposition(value) {
+  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
+}
+
+function decodeCanonicalDecomposition(value, field) {
+  const encoded = requireString(value, field).trim();
+  if (!/^[A-Za-z0-9_-]+$/.test(encoded)) {
+    fail('INVALID_PAYLOAD', `${field} must be canonical base64url`, { field });
+  }
+  const decoded = Buffer.from(encoded, 'base64url').toString('utf8');
+  if (Buffer.from(decoded, 'utf8').toString('base64url') !== encoded) {
+    fail('INVALID_PAYLOAD', `${field} must use canonical base64url encoding`, { field });
+  }
+  try {
+    return JSON.parse(decoded);
+  } catch {
+    fail('INVALID_PAYLOAD', `${field} does not contain valid JSON`, { field });
+  }
+}
+
+function canonicalDecompositionRecordPayload(record) {
+  return {
+    key: record.key,
+    title: record.title,
+    workflow: record.workflow,
+    body: record.body,
+    status: record.status,
+    issue: record.issue,
+    draftHash: record.draftHash,
+  };
+}
+
+function canonicalDecompositionRecordMarker(record) {
+  return `<!-- ${DECOMPOSITION_RECORD_PREFIX} ${encodeCanonicalDecomposition(
+    canonicalDecompositionRecordPayload(record),
+  )} -->`;
+}
+
+function canonicalDecompositionHeader(context) {
+  return `<!-- ${DECOMPOSITION_SECTION_PREFIX}:begin ${encodeCanonicalDecomposition(context)} -->`;
+}
+
+function canonicalDecompositionEnd() {
+  return `<!-- ${DECOMPOSITION_SECTION_PREFIX}:end -->`;
+}
+
+function canonicalDecompositionBodyFence(body) {
+  const longest = Math.max(0, ...(body.match(/`+/g) ?? []).map((run) => run.length));
+  return '`'.repeat(Math.max(3, longest + 1));
+}
+
+function canonicalDecompositionStatus(record, language) {
+  const values =
+    language === 'de'
+      ? {
+          proposed: 'Vorgeschlagen',
+          approved: 'Freigegeben',
+          created: `Erstellt als ${record.issue}`,
+          missing: 'Fehlend',
+          declined: 'Abgelehnt',
+        }
+      : {
+          proposed: 'Proposed',
+          approved: 'Approved',
+          created: `Created as ${record.issue}`,
+          missing: 'Missing',
+          declined: 'Declined',
+        };
+  return values[record.status];
+}
+
+function renderCanonicalDecompositionSection(context, records) {
+  const strings =
+    context.language === 'de'
+      ? { workflow: 'Workflow', status: 'Status', body: 'Body (exaktes Markdown)' }
+      : { workflow: 'Workflow', status: 'Status', body: 'Body (exact Markdown)' };
+  const blocks = records.map((record) => {
+    const fence = canonicalDecompositionBodyFence(record.body);
+    return [
+      canonicalDecompositionRecordMarker(record),
+      `#### \`${record.key}\` — ${record.title}`,
+      '',
+      `**${strings.workflow}:** ${record.workflow}`,
+      `**${strings.status}:** ${canonicalDecompositionStatus(record, context.language)}`,
+      '',
+      `**${strings.body}:**`,
+      `${fence}markdown`,
+      record.body,
+      fence,
+    ].join('\n');
+  });
+  return [canonicalDecompositionHeader(context), ...blocks, canonicalDecompositionEnd()].join(
+    '\n\n',
+  );
+}
+
+function decompositionSizeContributions(commentBody, context, records) {
+  const sectionBytes = Buffer.byteLength(
+    renderCanonicalDecompositionSection(context, records),
+    'utf8',
+  );
+  return {
+    sectionBytes,
+    otherCommentBytes: Math.max(0, Buffer.byteLength(commentBody, 'utf8') - sectionBytes),
+    records: records.map((record) => ({
+      key: record.key,
+      titleBytes: Buffer.byteLength(record.title, 'utf8'),
+      bodyBytes: Buffer.byteLength(record.body, 'utf8'),
+      encodedRecordBytes: Buffer.byteLength(canonicalDecompositionRecordMarker(record), 'utf8'),
+    })),
+  };
+}
+
+function assertGithubDecompositionCommentSize(commentBody, context, records, field) {
+  if (context.target !== 'forge') return;
+  const actual = Buffer.byteLength(commentBody, 'utf8');
+  if (actual <= GITHUB_DECOMPOSITION_COMMENT_MAX_BYTES) return;
+  fail('INVALID_PAYLOAD', `${field} exceeds GitHub's decomposition planning comment limit`, {
+    field,
+    maximum: GITHUB_DECOMPOSITION_COMMENT_MAX_BYTES,
+    actual,
+    unit: 'utf8-bytes',
+    contributions: decompositionSizeContributions(commentBody, context, records),
+  });
+}
+
+function normalizeCanonicalDecompositionRecord(raw, index, context, persisted = false) {
+  const field = `decomposition.records[${index}]`;
+  exactObjectKeys(
+    raw,
+    persisted
+      ? ['key', 'title', 'workflow', 'body', 'status', 'issue', 'draftHash']
+      : ['key', 'title', 'workflow', 'body', 'status', 'issue'],
+    field,
+  );
+  const title = sanitizeChildText(raw.title, `${field}.title`).trim();
+  if (/\r|\n/.test(title)) {
+    fail('INVALID_PAYLOAD', `${field}.title must occupy one line`, { field: `${field}.title` });
+  }
+  const workflow = decompositionWorkflow(raw.workflow, `${field}.workflow`);
+  const body = sanitizeChildText(raw.body, `${field}.body`).trim();
+  assertClosedMarkdownFences(body, `${field}.body`);
+  parseDecompositionChildWorkflow({ body, language: context.language, expectedWorkflow: workflow });
+  const status = decompositionStatus(raw.status, `${field}.status`);
+  const record = {
+    key: decompositionKey(raw.key, `${field}.key`),
+    title,
+    workflow,
+    body,
+    status,
+    issue: canonicalDecompositionIssue(raw.issue, status, `${field}.issue`, context),
+  };
+  const draftHash = decompositionDraftHash(record);
+  if (persisted) {
+    const supplied = requireString(raw.draftHash, `${field}.draftHash`).trim().toLowerCase();
+    if (!/^[0-9a-f]{64}$/.test(supplied) || supplied !== draftHash) {
+      fail('INVALID_PAYLOAD', `${field}.draftHash does not match the persisted draft`, {
+        field: `${field}.draftHash`,
+      });
+    }
+  }
+  return { ...record, draftHash };
+}
+
+function validateUniqueDecompositionRecords(records) {
+  const keys = new Set();
+  const issues = new Set();
+  for (const record of records) {
+    if (keys.has(record.key)) {
+      fail('AMBIGUOUS_TARGET', 'decomposition records contain a duplicate key', {
+        key: record.key,
+      });
+    }
+    keys.add(record.key);
+    if (record.issue === null) continue;
+    if (issues.has(record.issue)) {
+      fail('AMBIGUOUS_TARGET', 'decomposition records contain a duplicate created issue', {
+        issue: record.issue,
+      });
+    }
+    issues.add(record.issue);
+  }
+  return records;
+}
+
+export function buildDecompositionRecords(input) {
+  requireObject(input, 'decomposition');
+  exactObjectKeys(
+    input,
+    ['language', 'target', 'repository', 'externalTool', 'parent', 'records'],
+    'decomposition',
+  );
+  if (!Array.isArray(input.records) || input.records.length === 0) {
+    fail('INVALID_PAYLOAD', 'decomposition.records must be a non-empty array', {
+      field: 'decomposition.records',
+    });
+  }
+  const context = canonicalDecompositionContext(input);
+  const records = validateUniqueDecompositionRecords(
+    input.records.map((raw, index) => normalizeCanonicalDecompositionRecord(raw, index, context)),
+  );
+  const section = renderCanonicalDecompositionSection(context, records);
+  assertGithubDecompositionCommentSize(section, context, records, 'decomposition.section');
+  return { context, records, section };
+}
+
+export function parseDecompositionRecords(body) {
+  const text = requireString(body, 'planning comment body', { allowEmpty: true });
+  const sectionInventory = untrustedControlLines(text, `${DECOMPOSITION_SECTION_MARKER}:`);
+  const recordInventory = untrustedControlLines(text, `${DECOMPOSITION_RECORD_MARKER}:`);
+  const obsoleteInventory = untrustedControlLines(text, 'effective-flow-decomposition-child:');
+  if (obsoleteInventory.controls.length > 0) {
+    fail(
+      'INVALID_PAYLOAD',
+      'planning comment contains a noncanonical decomposition record version',
+    );
+  }
+  if (sectionInventory.controls.length === 0 && recordInventory.controls.length === 0) {
+    return { found: false, active: false, context: null, records: [] };
+  }
+  if (sectionInventory.controls.length !== 2) {
+    fail(
+      'INVALID_PAYLOAD',
+      'planning comment must contain exactly one canonical decomposition section',
+    );
+  }
+  const [begin, end] = sectionInventory.controls;
+  const beginMatch = begin.line.match(
+    new RegExp(`^<!-- ${escapeRegExp(DECOMPOSITION_SECTION_PREFIX)}:begin ([A-Za-z0-9_-]+) -->$`),
+  );
+  if (
+    !beginMatch ||
+    end.line !== canonicalDecompositionEnd() ||
+    begin.index >= end.index ||
+    recordInventory.controls.some(
+      (record) => record.index <= begin.index || record.index >= end.index,
+    )
+  ) {
+    fail('INVALID_PAYLOAD', 'planning comment contains malformed decomposition section boundaries');
+  }
+  const rawContext = decodeCanonicalDecomposition(beginMatch[1], 'decomposition section context');
+  exactObjectKeys(
+    rawContext,
+    ['language', 'target', 'host', 'repository', 'externalTool', 'parent'],
+    'decomposition section context',
+  );
+  const repositoryParts =
+    rawContext.target === 'forge' ? String(rawContext.repository).split('/') : [];
+  const context = canonicalDecompositionContext({
+    language: rawContext.language,
+    target: rawContext.target,
+    repository:
+      rawContext.target === 'forge'
+        ? {
+            host: rawContext.host,
+            owner: repositoryParts.slice(0, -1).join('/'),
+            repository: repositoryParts.at(-1),
+          }
+        : null,
+    externalTool: rawContext.externalTool,
+    parent: rawContext.parent,
+  });
+  if (JSON.stringify(context) !== JSON.stringify(rawContext)) {
+    fail('INVALID_PAYLOAD', 'decomposition section context is not canonical');
+  }
+  if (recordInventory.controls.length === 0) {
+    fail('INVALID_PAYLOAD', 'canonical decomposition section must contain at least one record');
+  }
+  const records = validateUniqueDecompositionRecords(
+    recordInventory.controls.map((record, index) => {
+      const match = record.line.match(
+        new RegExp(`^<!-- ${escapeRegExp(DECOMPOSITION_RECORD_PREFIX)} ([A-Za-z0-9_-]+) -->$`),
+      );
+      if (!match) {
+        fail('INVALID_PAYLOAD', 'planning comment contains a malformed decomposition record');
+      }
+      const raw = decodeCanonicalDecomposition(match[1], `decomposition.records[${index}]`);
+      return normalizeCanonicalDecompositionRecord(raw, index, context, true);
+    }),
+  );
+  const persistedSection = sectionInventory.lines.slice(begin.index, end.index + 1).join('\n');
+  if (persistedSection !== renderCanonicalDecompositionSection(context, records)) {
+    fail('INVALID_PAYLOAD', 'canonical decomposition section visible content was modified');
+  }
+  return {
+    found: true,
+    active: records.some((record) => ACTIVE_DECOMPOSITION_STATUSES.has(record.status)),
+    context,
+    records,
+  };
+}
+
+function decompositionChildIdentity(child, context) {
+  if (
+    context.target === 'forge' &&
+    child.repository !== undefined &&
+    child.repository !== context.repository
+  ) {
+    fail('REFERENCE_REPOSITORY_MISMATCH', 'decomposition child belongs to another repository');
+  }
+  const value =
+    context.target === 'forge'
+      ? (child.reference ?? child.issue ?? child.url ?? child.number ?? child.id)
+      : (child.reference ?? child.issue ?? child.id ?? child.url);
+  if (value === undefined || value === null) {
+    fail('INVALID_PAYLOAD', 'decomposition child must carry a stable issue identity', {
+      field: 'children',
+    });
+  }
+  return normalizeCanonicalDecompositionReference(value, 'decomposition child identity', context);
+}
+
+function decompositionParentIdentity(parent, context) {
+  if (parent === undefined || parent === null) return undefined;
+  if (typeof parent !== 'object') {
+    return normalizeCanonicalDecompositionReference(parent, 'decomposition parent', context);
+  }
+  if (
+    context.target === 'forge' &&
+    parent.repository !== undefined &&
+    parent.repository !== context.repository
+  ) {
+    return undefined;
+  }
+  const value =
+    context.target === 'forge'
+      ? (parent.reference ?? parent.issue ?? parent.url ?? parent.number ?? parent.id)
+      : (parent.reference ?? parent.issue ?? parent.id ?? parent.url);
+  return value === undefined
+    ? undefined
+    : normalizeCanonicalDecompositionReference(value, 'decomposition parent', context);
+}
+
+export function compareDecompositionContainer(input) {
+  requireObject(input, 'decomposition container');
+  const proposal = parseDecompositionRecords(input.body ?? input.commentBody ?? '');
+  if (!proposal.active) {
+    return {
+      canonical: proposal.found,
+      active: false,
+      containerOnly: false,
+      ok: true,
+      records: proposal.records,
+      discrepancies: [],
+    };
+  }
+  if (!Array.isArray(input.children)) {
+    fail('INVALID_PAYLOAD', 'decomposition container children must be an array', {
+      field: 'children',
+    });
+  }
+  const discrepancies = [];
+  const expectedParent = proposal.context.parent;
+  if (decompositionParentIdentity(input.parent, proposal.context) !== expectedParent) {
+    discrepancies.push({ code: 'PARENT_MISMATCH' });
+  }
+  const recordsByKey = new Map(proposal.records.map((record) => [record.key, record]));
+  const childrenByKey = new Map();
+  for (const child of input.children) {
+    requireObject(child, 'decomposition child');
+    let issue;
+    try {
+      issue = decompositionChildIdentity(child, proposal.context);
+    } catch (error) {
+      if (!(error instanceof RemoteTrackerError)) throw error;
+      discrepancies.push({ code: 'INVALID_CHILD_IDENTITY' });
+      continue;
+    }
+    if (child.decompositionKeyError !== undefined) {
+      discrepancies.push({ code: 'INVALID_CHILD_MARKER', issue });
+      continue;
+    }
+    if (child.decompositionKey === undefined) {
+      discrepancies.push({ code: 'DETACHED_CHILD', issue });
+      continue;
+    }
+    const key = decompositionKey(child.decompositionKey, 'decomposition child key');
+    if (!recordsByKey.has(key)) {
+      discrepancies.push({ code: 'UNEXPECTED_KEY', issue, key });
+      continue;
+    }
+    const group = childrenByKey.get(key) ?? [];
+    group.push(child);
+    childrenByKey.set(key, group);
+  }
+  for (const record of proposal.records) {
+    if (!ACTIVE_DECOMPOSITION_STATUSES.has(record.status)) continue;
+    if (record.status !== 'created') {
+      discrepancies.push({ code: 'INCOMPLETE_RECORD', key: record.key, status: record.status });
+      continue;
+    }
+    const matches = childrenByKey.get(record.key) ?? [];
+    if (matches.length === 0) {
+      discrepancies.push({ code: 'MISSING_CHILD', key: record.key, issue: record.issue });
+      continue;
+    }
+    if (matches.length > 1) {
+      discrepancies.push({ code: 'DUPLICATE_KEY', key: record.key, matches: matches.length });
+      continue;
+    }
+    const child = matches[0];
+    const childIdentity = decompositionChildIdentity(child, proposal.context);
+    if (record.issue !== childIdentity) {
+      discrepancies.push({ code: 'ISSUE_MISMATCH', key: record.key, issue: childIdentity });
+    }
+    if (decompositionParentIdentity(child.parent, proposal.context) !== expectedParent) {
+      discrepancies.push({ code: 'DETACHED_CHILD', key: record.key, issue: childIdentity });
+    }
+  }
+  return {
+    canonical: true,
+    active: true,
+    containerOnly: true,
+    ok: discrepancies.length === 0,
+    context: proposal.context,
+    records: proposal.records,
+    discrepancies,
+  };
+}
+
+function childIssuePayload(input, repository) {
+  const payload = requireObject(input.payload ?? input, 'payload');
+  const parent = parentIssueNumber(input, repository);
+  const key = decompositionKey(payload.decompositionKey);
+  const title = sanitizeChildText(payload.title, 'payload.title');
+  const sourceBody = sanitizeChildText(payload.body, 'payload.body');
+  assertClosedMarkdownFences(sourceBody, 'payload.body');
+  if (inspectDecompositionKey(sourceBody, parent).status !== 'absent') {
+    fail('INVALID_PAYLOAD', 'payload.body must not supply its own decomposition key marker', {
+      field: 'payload.body',
+    });
+  }
+  const labels = payload.labels ?? [];
+  if (!Array.isArray(labels)) fail('INVALID_PAYLOAD', 'payload.labels must be an array');
+  const normalizedLabels = labels.map((label, index) =>
+    sanitizeChildLabel(label, `payload.labels[${index}]`),
+  );
+  const body = `${sourceBody.trimEnd()}\n\n${buildDecompositionKeyMarker(parent, key)}`;
+  const appended = inspectDecompositionKey(body, parent);
+  if (appended.status !== 'valid' || appended.key !== key) {
+    fail('INVALID_PAYLOAD', 'payload.body cannot carry one readable final decomposition marker', {
+      field: 'payload.body',
+      reason: 'unreadable-appended-decomposition-marker',
+    });
+  }
+  return {
+    parent,
+    decompositionKey: key,
+    title,
+    body,
+    labels: normalizedLabels,
+  };
+}
+
 function prNumber(input) {
   return requireNumber(input.number ?? input.pullRequest, 'pull-request number');
 }
@@ -1531,6 +2499,14 @@ export function buildCommandPlan(operation, input, repository) {
           '--slurp',
           ghEndpoint(`issues/${issueNumber(input)}/comments`),
         ]);
+      case 'issue-sub-issues-read':
+        return mutationPlan('gh', [
+          'api',
+          ...hostArgs,
+          '--paginate',
+          '--slurp',
+          `${ghEndpoint(`issues/${parentIssueNumber(input, repository)}/sub_issues`)}?${new URLSearchParams({ per_page: '100' })}`,
+        ]);
       case 'issue-list': {
         const query = new URLSearchParams({ state: input.state ?? 'all', per_page: '100' });
         if (input.labels?.length) query.set('labels', input.labels.join(','));
@@ -1552,6 +2528,27 @@ export function buildCommandPlan(operation, input, repository) {
             labels: payload.labels ?? [],
           }),
         );
+      case 'issue-sub-issue-create': {
+        const child = childIssuePayload(input, repository);
+        const args = [
+          'issue',
+          'create',
+          ...ghRepoArgs(repository),
+          '--title',
+          child.title,
+          '--body',
+          child.body,
+          '--parent',
+          String(child.parent),
+        ];
+        for (const label of child.labels) args.push('--label', label);
+        return mutationPlan('gh', args, undefined, {
+          expectsJson: false,
+          parent: child.parent,
+          decompositionKey: child.decompositionKey,
+          childPayload: child,
+        });
+      }
       case 'issue-update-body':
         return mutationPlan(
           'gh',
@@ -1898,6 +2895,12 @@ export function buildCommandPlan(operation, input, repository) {
       if (payload.labels?.length) args.push('--labels', payload.labels.join(','));
       return mutationPlan('tea', args, undefined, { expectsJson: false });
     }
+    case 'issue-sub-issues-read':
+    case 'issue-sub-issue-create':
+      fail('UNSUPPORTED_CAPABILITY', `installed tea adapter does not safely support ${operation}`, {
+        operation,
+        provider: 'forgejo',
+      });
     case 'issue-update-body':
       return mutationPlan(
         'tea',
@@ -2359,10 +3362,11 @@ async function runChecked(runner, plan, label) {
     if (plan.tolerateAlreadyExists === true && reportsAlreadyExists(result)) {
       return { ...result, status: 0, stdout: '', alreadyExists: true };
     }
-    // A failed merge is not safely retryable: the forge may have accepted it before the connection
-    // dropped, so a second attempt could act on a state nobody verified. The caller has to re-read
-    // instead — the same discipline the tea create fallback already states for its own writes.
-    const irreversible = label === 'pr-merge';
+    // A failed merge or parent-aware issue create is not safely retryable: the forge may have
+    // accepted it before the connection dropped, so a second attempt could act on state nobody
+    // verified. The caller has to re-read instead — the same discipline the human-output create
+    // normalizers require when a successful command yields no usable result URL.
+    const irreversible = label === 'pr-merge' || label === 'issue-sub-issue-create';
     fail(
       'COMMAND_FAILED',
       `${label} failed`,
@@ -2425,7 +3429,14 @@ async function probeTeaHelp(runner, args, required = []) {
   return required.every((token) => output.includes(token));
 }
 
-export async function probeProvider(repository, runner) {
+async function probeGhHelp(runner, args, required = []) {
+  const result = await runner({ executable: 'gh', args: [...args, '--help'] });
+  if (!result || result.status !== 0) return false;
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+  return required.every((token) => output.includes(token));
+}
+
+export async function probeProvider(repository, runner, requestedCapabilities) {
   if (typeof runner !== 'function') {
     fail('INVALID_PAYLOAD', 'probeProvider requires an injected process runner');
   }
@@ -2460,6 +3471,14 @@ export async function probeProvider(repository, runner) {
         stderr: redact(auth?.stderr ?? ''),
       });
     }
+    // Native sub-issue creation is deliberately tied to the installed porcelain surface rather
+    // than to a guessed gh version. The operation is atomic only when `issue create` itself accepts
+    // `--parent`; without that flag the adapter must fail before it can create a standalone issue.
+    const probeSubIssueCreate =
+      requestedCapabilities === undefined || requestedCapabilities.issueSubIssueCreate === true;
+    const issueSubIssueCreate = probeSubIssueCreate
+      ? await probeGhHelp(runner, ['issue', 'create'], ['--parent'])
+      : undefined;
     // Read from the version already parsed above — the floor costs no extra spawn.
     const gateSupported = meetsMinimumVersion(versionTuple, GH_PR_GATE_MINIMUM_VERSION);
     return {
@@ -2476,6 +3495,8 @@ export async function probeProvider(repository, runner) {
         issueCommentsRead: true,
         issueList: true,
         issueCreate: true,
+        issueSubIssuesRead: true,
+        ...(issueSubIssueCreate === undefined ? {} : { issueSubIssueCreate }),
         issueUpdate: true,
         issueComment: true,
         issueCommentUpdate: true,
@@ -2598,6 +3619,8 @@ export async function probeProvider(repository, runner) {
       issueCommentsRead: issues && issueComments,
       issueList: issues,
       issueCreate,
+      issueSubIssuesRead: false,
+      issueSubIssueCreate: false,
       issueUpdate,
       issueComment: comment,
       issueCommentUpdate: commentUpdate,
@@ -2709,6 +3732,17 @@ function normalizeIssue(item, repository, metadata = {}) {
     url: item.html_url ?? item.url ?? item.web_url,
     repository: repository.slug,
     ...(metadata.version ? { version: metadata.version } : {}),
+  };
+}
+
+function normalizeSubIssue(item, repository, parent, metadata = {}) {
+  const issue = normalizeIssue(item, repository, metadata);
+  const marker = inspectDecompositionKey(issue.body, parent);
+  return {
+    ...issue,
+    parent: { number: parent, repository: repository.slug },
+    ...(marker.status === 'valid' ? { decompositionKey: marker.key } : {}),
+    ...(marker.status === 'invalid' ? { decompositionKeyError: marker.error } : {}),
   };
 }
 
@@ -3175,6 +4209,30 @@ function normalizeTeaCreate(operation, raw, repository, input) {
   return normalized;
 }
 
+function normalizeSubIssueCreate(raw, repository, input) {
+  const output = raw?.output;
+  const url = selectTeaResultUrl(output, 'issue', repository);
+  if (!url) {
+    fail('INVALID_PAYLOAD', 'issue-sub-issue-create succeeded without a parseable result URL', {
+      mutationMayHaveSucceeded: true,
+      stdout: redact(output ?? ''),
+    });
+  }
+  const reference = parseReference(url, { expectedKind: 'issue', repository });
+  const child = childIssuePayload(input, repository);
+  return {
+    number: reference.number,
+    title: child.title,
+    body: child.body,
+    state: 'open',
+    labels: child.labels,
+    url,
+    repository: repository.slug,
+    parent: { number: child.parent, repository: repository.slug },
+    decompositionKey: child.decompositionKey,
+  };
+}
+
 function normalizeRemoteData(operation, raw, repository, input = {}, metadata = {}) {
   const flattened = flattenPages(raw);
   switch (operation) {
@@ -3189,6 +4247,14 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
       return repository.provider === 'forgejo'
         ? normalizeTeaCreate(operation, flattened, repository, input)
         : normalizeIssue(flattened, repository, metadata);
+    case 'issue-sub-issue-create':
+      return normalizeSubIssueCreate(flattened, repository, input);
+    case 'issue-sub-issues-read': {
+      const parent = parentIssueNumber(input, repository);
+      return (Array.isArray(flattened) ? flattened : (flattened?.issues ?? []))
+        .filter((item) => !item.pull_request)
+        .map((item) => normalizeSubIssue(item, repository, parent));
+    }
     case 'issue-list':
       return (Array.isArray(flattened) ? flattened : (flattened?.issues ?? []))
         .filter((item) => !item.pull_request)
@@ -3358,6 +4424,14 @@ function localOperation(operation, input) {
       return buildEpicPayload(input.epic ?? input, { language: input.language });
     case 'planning-comment-build':
       return buildCommentPayload('planning', input.comment ?? input);
+    case 'decomposition-records-build':
+      return buildDecompositionRecords(input.decomposition ?? input);
+    case 'decomposition-records-parse':
+      return parseDecompositionRecords(input.body);
+    case 'decomposition-container-compare':
+      return compareDecompositionContainer(input.container ?? input);
+    case 'decomposition-child-workflow-parse':
+      return parseDecompositionChildWorkflow(input.workflow ?? input);
     case 'apply-comment-build':
       return buildCommentPayload('apply', input.comment ?? input);
     case 'pr-comment-build':
@@ -3940,7 +5014,9 @@ export async function executeOperation(operation, input = {}, options = {}) {
             executable: repository.provider === 'github' ? 'gh' : 'tea',
             capabilities: {},
           })
-        : await probeProvider(repository, runner);
+        : await probeProvider(repository, runner, {
+            issueSubIssueCreate: operation === 'probe' || operation === 'issue-sub-issue-create',
+          });
     if (operation === 'probe') {
       return {
         ok: true,
