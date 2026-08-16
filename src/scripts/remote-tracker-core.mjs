@@ -1455,6 +1455,9 @@ const DECOMPOSITION_SECTION_PREFIX = `${DECOMPOSITION_SECTION_MARKER}:${DECOMPOS
 const DECOMPOSITION_RECORD_MARKER = 'effective-flow-decomposition-record';
 const DECOMPOSITION_RECORD_VERSION = 'v2';
 const DECOMPOSITION_RECORD_PREFIX = `${DECOMPOSITION_RECORD_MARKER}:${DECOMPOSITION_RECORD_VERSION}`;
+// Every marker version this file writes is `v<N>`, so a probe that reports a stored version back
+// to a caller captures exactly that shape and nothing wider.
+const DECOMPOSITION_MARKER_VERSION_PATTERN = 'v[0-9]{1,3}';
 const GITHUB_DECOMPOSITION_COMMENT_MAX_BYTES = 65_536;
 const DECOMPOSITION_KEY_PATTERN = /^[a-z0-9][a-z0-9._-]{0,79}$/;
 const DECOMPOSITION_WORKFLOWS = Object.freeze([
@@ -1608,11 +1611,18 @@ function inspectDecompositionKey(body, expectedParent, context) {
   // Two stages, both derived from the versioned prefix contract rather than a literal marker
   // string: the strict current form first, and only on no match a version probe that names the
   // stored version in a fail-closed diagnostic. A legacy marker is never parsed or rewritten.
+  // The marker line comes from an issue body on a tracker this repository does not control, and
+  // the probe echoes the captured segment into a failure envelope an agent reads; `redact()` does
+  // not cover a `version` key. The capture is therefore bounded by the grammar every version this
+  // file writes actually uses, so an attacker-chosen segment falls through to `MALFORMED`, whose
+  // details stay empty, instead of being repeated back verbatim and unbounded.
   const exact = new RegExp(`^<!-- ${escapeRegExp(DECOMPOSITION_KEY_PREFIX)} ([A-Za-z0-9_-]+) -->$`);
   const match = candidate.line.match(exact);
   if (!match) {
     const versioned = candidate.line.match(
-      new RegExp(`^<!-- ${escapeRegExp(DECOMPOSITION_KEY_MARKER)}:(\\S+)(?: [^\\r\\n]*)? -->$`),
+      new RegExp(
+        `^<!-- ${escapeRegExp(DECOMPOSITION_KEY_MARKER)}:(${DECOMPOSITION_MARKER_VERSION_PATTERN})(?: [^\\r\\n]*)? -->$`,
+      ),
     );
     if (versioned && versioned[1] !== DECOMPOSITION_KEY_VERSION) {
       return {
