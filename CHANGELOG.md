@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.60.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.59.0...effective-flow-v1.60.0) (2026-08-17)
+
+
+### Features
+
+* make the decomposition stable-key marker target-aware ([#352](https://github.com/sebastian-software/effective-flow/issues/352)) ([6be9529](https://github.com/sebastian-software/effective-flow/commit/6be952972370157d723708e399ae41a10e655ba1))
+
 ## [1.59.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.58.0...effective-flow-v1.59.0) (2026-08-16)
 
 
