@@ -221,6 +221,20 @@ to the forge, to generic issue creation, or to the checklist container mechanism
 guarantee is proven, every child create supplies the current parent as a mandatory input and every
 retry starts from a fresh native-child list plus the persisted stable decomposition key.
 
+Persistence of that stable key is **not** a fourth discovered capability. Discovery cannot prove it
+without writing and re-reading a marker on a real item, which is a mutation before the user has
+approved any create. It is proven instead by the bounded post-create check in
+`effective-flow plan-issue` Phase 4: after each child, the just-created key must be readable again from
+the freshly re-read child, and a missing key stops the run after at most one child — before any
+sibling and before the canonical comment update.
+
+On an external target the forge's native-child listing and its marker normalization do not exist,
+so the decomposition path runs through two dependency-free local operations instead:
+`decomposition-key-build` writes the child body carrying the target-aware key marker, and
+`decomposition-key-parse` performs the post-create key match against the re-read child body. Both
+are target-aware and cross-check the stored target, so a forge marker never reconciles as an
+external one or the reverse.
+
 ### Reference syntax
 
 - A **tool-native identifier** (e.g. `ABC-123`) or a URL of the configured tool resolves against

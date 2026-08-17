@@ -1447,7 +1447,7 @@ function issueNumber(input) {
 }
 
 const DECOMPOSITION_KEY_MARKER = 'effective-flow-decomposition-key';
-const DECOMPOSITION_KEY_VERSION = 'v1';
+const DECOMPOSITION_KEY_VERSION = 'v2';
 const DECOMPOSITION_KEY_PREFIX = `${DECOMPOSITION_KEY_MARKER}:${DECOMPOSITION_KEY_VERSION}`;
 const DECOMPOSITION_SECTION_MARKER = 'effective-flow-decomposition';
 const DECOMPOSITION_SECTION_VERSION = 'v2';
@@ -1455,6 +1455,9 @@ const DECOMPOSITION_SECTION_PREFIX = `${DECOMPOSITION_SECTION_MARKER}:${DECOMPOS
 const DECOMPOSITION_RECORD_MARKER = 'effective-flow-decomposition-record';
 const DECOMPOSITION_RECORD_VERSION = 'v2';
 const DECOMPOSITION_RECORD_PREFIX = `${DECOMPOSITION_RECORD_MARKER}:${DECOMPOSITION_RECORD_VERSION}`;
+// Every marker version this file writes is `v<N>`, so a probe that reports a stored version back
+// to a caller captures exactly that shape and nothing wider.
+const DECOMPOSITION_MARKER_VERSION_PATTERN = 'v[0-9]{1,3}';
 const GITHUB_DECOMPOSITION_COMMENT_MAX_BYTES = 65_536;
 const DECOMPOSITION_KEY_PATTERN = /^[a-z0-9][a-z0-9._-]{0,79}$/;
 const DECOMPOSITION_WORKFLOWS = Object.freeze([
@@ -1549,9 +1552,29 @@ function decompositionKey(value, field = 'payload.decompositionKey') {
   return key;
 }
 
-export function buildDecompositionKeyMarker(parent, key) {
-  return `<!-- ${DECOMPOSITION_KEY_PREFIX} ${JSON.stringify({
-    parent: requireNumber(parent, 'parent issue'),
+// The marker is target-aware because an external tracker names its parents with tool-native
+// identifiers (`SEB-31`), not forge issue numbers. The caller supplies the target it expects — as
+// the bare literal `'forge'` on the forge path, or as a context object when a repository binding is
+// needed to resolve an issue URL — and the marker carries its own target so a parse can cross-check
+// it instead of guessing from the shape of the parent.
+function decompositionKeyContext(value, field = 'decomposition key context') {
+  const input = typeof value === 'string' ? { target: value } : requireObject(value ?? {}, field);
+  const target = requireString(input.target, `${field}.target`).trim();
+  if (!['forge', 'external'].includes(target)) {
+    fail('INVALID_PAYLOAD', `${field}.target must be forge or external`, {
+      field: `${field}.target`,
+    });
+  }
+  if (target !== 'forge') return { target, host: null, repository: null };
+  const repository = lifecycleRepositoryBinding({ repository: input.repository });
+  return { target, host: repository?.host, repository: repository?.slug };
+}
+
+export function buildDecompositionKeyMarker(parent, key, context) {
+  const scope = decompositionKeyContext(context);
+  return `<!-- ${DECOMPOSITION_KEY_PREFIX} ${encodeCanonicalDecomposition({
+    target: scope.target,
+    parent: normalizeCanonicalDecompositionReference(parent, 'decomposition key parent', scope),
     key: decompositionKey(key, 'decomposition key'),
   })} -->`;
 }
@@ -1560,8 +1583,9 @@ function decompositionKeyFailure(code, message, details = {}) {
   return { code, message, details: redact(details) };
 }
 
-function inspectDecompositionKey(body, expectedParent) {
+function inspectDecompositionKey(body, expectedParent, context) {
   const text = requireString(body, 'issue body', { allowEmpty: true });
+  const scope = decompositionKeyContext(context);
   const inspected = untrustedControlLines(text, `${DECOMPOSITION_KEY_MARKER}:`);
   if (inspected.controls.length === 0) return { status: 'absent' };
   if (inspected.controls.length > 1) {
@@ -1584,11 +1608,32 @@ function inspectDecompositionKey(body, expectedParent) {
       ),
     };
   }
-  const exact = new RegExp(
-    `^<!-- ${escapeRegExp(DECOMPOSITION_KEY_PREFIX)} (\\{[^\\r\\n]*\\}) -->$`,
-  );
+  // Two stages, both derived from the versioned prefix contract rather than a literal marker
+  // string: the strict current form first, and only on no match a version probe that names the
+  // stored version in a fail-closed diagnostic. A legacy marker is never parsed or rewritten.
+  // The marker line comes from an issue body on a tracker this repository does not control, and
+  // the probe echoes the captured segment into a failure envelope an agent reads; `redact()` does
+  // not cover a `version` key. The capture is therefore bounded by the grammar every version this
+  // file writes actually uses, so an attacker-chosen segment falls through to `MALFORMED`, whose
+  // details stay empty, instead of being repeated back verbatim and unbounded.
+  const exact = new RegExp(`^<!-- ${escapeRegExp(DECOMPOSITION_KEY_PREFIX)} ([A-Za-z0-9_-]+) -->$`);
   const match = candidate.line.match(exact);
   if (!match) {
+    const versioned = candidate.line.match(
+      new RegExp(
+        `^<!-- ${escapeRegExp(DECOMPOSITION_KEY_MARKER)}:(${DECOMPOSITION_MARKER_VERSION_PATTERN})(?: [^\\r\\n]*)? -->$`,
+      ),
+    );
+    if (versioned && versioned[1] !== DECOMPOSITION_KEY_VERSION) {
+      return {
+        status: 'invalid',
+        error: decompositionKeyFailure(
+          'UNSUPPORTED_VERSION',
+          'decomposition key marker version is unsupported',
+          { version: versioned[1], supported: [DECOMPOSITION_KEY_VERSION] },
+        ),
+      };
+    }
     return {
       status: 'invalid',
       error: decompositionKeyFailure(
@@ -1597,9 +1642,12 @@ function inspectDecompositionKey(body, expectedParent) {
       ),
     };
   }
+  // Decoding is routed separately from schema validation on purpose: the shared base64url decoder
+  // reports its own `INVALID_PAYLOAD`, so folding it into the schema guard below would report an
+  // undecodable payload as a schema error instead of a malformed marker.
   let value;
   try {
-    value = JSON.parse(match[1]);
+    value = decodeCanonicalDecomposition(match[1], 'decomposition key marker payload');
   } catch {
     return {
       status: 'invalid',
@@ -1610,20 +1658,47 @@ function inspectDecompositionKey(body, expectedParent) {
     };
   }
   try {
-    exactObjectKeys(value, ['parent', 'key'], 'decomposition key marker');
-    const parent = requireNumber(value.parent, 'decomposition key marker parent');
-    const key = decompositionKey(value.key, 'decomposition key marker key');
-    if (expectedParent !== undefined && parent !== requireNumber(expectedParent, 'parent issue')) {
+    exactObjectKeys(value, ['target', 'parent', 'key'], 'decomposition key marker');
+    const markerTarget = requireString(value.target, 'decomposition key marker target').trim();
+    if (!['forge', 'external'].includes(markerTarget)) {
+      fail('INVALID_PAYLOAD', 'decomposition key marker target must be forge or external', {
+        field: 'decomposition key marker target',
+      });
+    }
+    if (markerTarget !== scope.target) {
       return {
         status: 'invalid',
         error: decompositionKeyFailure(
-          'PARENT_MISMATCH',
-          'decomposition key marker names a different parent issue',
-          { expectedParent, actualParent: parent },
+          'TARGET_MISMATCH',
+          'decomposition key marker names a different tracker target',
+          { expectedTarget: scope.target, actualTarget: markerTarget },
         ),
       };
     }
-    return { status: 'valid', parent, key };
+    const parent = normalizeCanonicalDecompositionReference(
+      value.parent,
+      'decomposition key marker parent',
+      scope,
+    );
+    const key = decompositionKey(value.key, 'decomposition key marker key');
+    if (expectedParent !== undefined && expectedParent !== null) {
+      const expected = normalizeCanonicalDecompositionReference(
+        expectedParent,
+        'parent issue',
+        scope,
+      );
+      if (parent !== expected) {
+        return {
+          status: 'invalid',
+          error: decompositionKeyFailure(
+            'PARENT_MISMATCH',
+            'decomposition key marker names a different parent issue',
+            { expectedParent: expected, actualParent: parent },
+          ),
+        };
+      }
+    }
+    return { status: 'valid', target: markerTarget, parent, key };
   } catch (error) {
     return {
       status: 'invalid',
@@ -1635,15 +1710,65 @@ function inspectDecompositionKey(body, expectedParent) {
   }
 }
 
-export function parseDecompositionKey(body, expectedParent) {
-  const inspected = inspectDecompositionKey(body, expectedParent);
-  if (inspected.status === 'absent') return undefined;
-  if (inspected.status === 'valid') return { parent: inspected.parent, key: inspected.key };
+// The absent case returns a wrapper rather than `undefined`: `executeOperation` reads an
+// `undefined` local result as "not a local operation", so a bare `undefined` here would make every
+// clean body fail as an unknown operation.
+export function parseDecompositionKey(body, context = {}) {
+  const scope =
+    typeof context === 'string' ? { target: context } : requireObject(context ?? {}, 'context');
+  const inspected = inspectDecompositionKey(body, scope.parent, scope);
+  if (inspected.status === 'absent') return { found: false, key: null };
+  if (inspected.status === 'valid') {
+    return {
+      found: true,
+      version: DECOMPOSITION_KEY_VERSION,
+      target: inspected.target,
+      parent: inspected.parent,
+      key: inspected.key,
+    };
+  }
   fail(
     inspected.error.code === 'DUPLICATE' ? 'AMBIGUOUS_TARGET' : 'INVALID_PAYLOAD',
     inspected.error.message,
     inspected.error.details,
   );
+}
+
+// The canonical writer for both targets. Without a body it returns the marker only; with one it
+// performs the same four guards the forge-only child payload applies — child-text sanitization
+// (generation-attribution rejection plus the redaction passes), closed fences, no caller-supplied
+// marker, and a post-append re-inspection — so an external caller never has to concatenate marker
+// data by hand. Sanitization runs first because redaction can delete backticks, so a fence balance
+// checked before it would be measured on text that is about to change.
+export function buildDecompositionKey(input) {
+  requireObject(input, 'input');
+  const proposal = requireObject(input.decomposition ?? input, 'decomposition');
+  const scope = decompositionKeyContext(proposal, 'decomposition');
+  const parent = normalizeCanonicalDecompositionReference(
+    proposal.parent,
+    'decomposition.parent',
+    scope,
+  );
+  const key = decompositionKey(proposal.key ?? proposal.decompositionKey, 'decomposition.key');
+  const marker = buildDecompositionKeyMarker(parent, key, scope);
+  if (input.body === undefined) return { marker };
+
+  const body = sanitizeChildText(input.body, 'body');
+  assertClosedMarkdownFences(body, 'body');
+  if (inspectDecompositionKey(body, parent, scope).status !== 'absent') {
+    fail('INVALID_PAYLOAD', 'body must not supply its own decomposition key marker', {
+      field: 'body',
+    });
+  }
+  const updated = `${body.trimEnd()}\n\n${marker}`;
+  const appended = inspectDecompositionKey(updated, parent, scope);
+  if (appended.status !== 'valid' || appended.key !== key) {
+    fail('INVALID_PAYLOAD', 'body cannot carry one readable final decomposition key marker', {
+      field: 'body',
+      reason: 'unreadable-appended-decomposition-marker',
+    });
+  }
+  return { marker, body: updated, parent: appended.parent, key: appended.key };
 }
 
 function sensitiveChildAssignmentPattern(flags = 'gi') {
@@ -2370,7 +2495,7 @@ function childIssuePayload(input, repository) {
   const title = sanitizeChildText(payload.title, 'payload.title');
   const sourceBody = sanitizeChildText(payload.body, 'payload.body');
   assertClosedMarkdownFences(sourceBody, 'payload.body');
-  if (inspectDecompositionKey(sourceBody, parent).status !== 'absent') {
+  if (inspectDecompositionKey(sourceBody, parent, 'forge').status !== 'absent') {
     fail('INVALID_PAYLOAD', 'payload.body must not supply its own decomposition key marker', {
       field: 'payload.body',
     });
@@ -2380,8 +2505,8 @@ function childIssuePayload(input, repository) {
   const normalizedLabels = labels.map((label, index) =>
     sanitizeChildLabel(label, `payload.labels[${index}]`),
   );
-  const body = `${sourceBody.trimEnd()}\n\n${buildDecompositionKeyMarker(parent, key)}`;
-  const appended = inspectDecompositionKey(body, parent);
+  const body = `${sourceBody.trimEnd()}\n\n${buildDecompositionKeyMarker(parent, key, 'forge')}`;
+  const appended = inspectDecompositionKey(body, parent, 'forge');
   if (appended.status !== 'valid' || appended.key !== key) {
     fail('INVALID_PAYLOAD', 'payload.body cannot carry one readable final decomposition marker', {
       field: 'payload.body',
@@ -3737,7 +3862,7 @@ function normalizeIssue(item, repository, metadata = {}) {
 
 function normalizeSubIssue(item, repository, parent, metadata = {}) {
   const issue = normalizeIssue(item, repository, metadata);
-  const marker = inspectDecompositionKey(issue.body, parent);
+  const marker = inspectDecompositionKey(issue.body, parent, 'forge');
   return {
     ...issue,
     parent: { number: parent, repository: repository.slug },
@@ -4428,6 +4553,10 @@ function localOperation(operation, input) {
       return buildDecompositionRecords(input.decomposition ?? input);
     case 'decomposition-records-parse':
       return parseDecompositionRecords(input.body);
+    case 'decomposition-key-build':
+      return buildDecompositionKey(input);
+    case 'decomposition-key-parse':
+      return parseDecompositionKey(input.body, input.context ?? input);
     case 'decomposition-container-compare':
       return compareDecompositionContainer(input.container ?? input);
     case 'decomposition-child-workflow-parse':

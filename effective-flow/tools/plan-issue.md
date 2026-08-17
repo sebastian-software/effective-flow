@@ -612,9 +612,13 @@ The two native-containment operations are deliberately separate from generic iss
   repository, redacts complete recognizable secret values in titles and bodies, rejects an unsafe
   credential form it cannot transform deterministically, rejects secret-bearing labels and
   generation attribution, appends exactly
-  one `<!-- effective-flow-decomposition-key:v1 {"parent":<number>,"key":"<key>"} -->`
+  one `<!-- effective-flow-decomposition-key:v2 <base64url> -->`
   marker as the final nonblank standalone line of the child body, and returns the normalized child
-  with the same parent relation and key. Reads recognize the marker only in that canonical appended
+  with the same parent relation and key. The encoded payload is exactly
+  `{"target":"forge|external","parent":"<identity>","key":"<key>"}`; a forge parent is stored in its
+  normalized `#<number>` form and an external identity byte for byte. A `v1` marker is **not**
+  parsed: it fails closed as an unsupported version reporting `version` and `supported`, never as a
+  malformed marker and never rewritten. Reads recognize the marker only in that canonical appended
   position; quoted and fenced examples are ordinary issue prose. A body with an unclosed Markdown
   fence is rejected before preview, because an appended marker would remain unreadable inside that
   fence. Explicit secret forms include AWS access-key fields, refresh tokens, private-key blocks,
@@ -626,7 +630,7 @@ The two native-containment operations are deliberately separate from generic iss
   ambiguous and fail closed with a value-free diagnostic instead of silently deleting specification
   semantics.
 
-Canonical decomposition state uses four dependency-free local helper operations:
+Canonical decomposition state uses these dependency-free local helper operations:
 
 - `decomposition-records-build` accepts a nonempty exact record array with
   `key`, `title`, `workflow`, `body`, `status`, and `issue`, plus the artifact language, target,
@@ -646,6 +650,32 @@ Canonical decomposition state uses four dependency-free local helper operations:
   native children. It reports `containerOnly: true` for an active canonical decomposition even when
   the child list is empty, and returns safe discrepancy codes for incomplete, missing, duplicated,
   invalid-marker, detached, mismatched, or unexpected children.
+- `decomposition-key-build` is the single canonical writer of the stable-key marker for both
+  targets. It accepts `target`, the target-aware `parent`, the resolved forge `repository` binding
+  when the parent is a URL, and the stable lowercase `key`, either flat or under `decomposition`.
+  Without a `body` it returns `{ marker }`. With a `body` it first runs the same child-text
+  sanitization the forge child payload applies — generation attribution is rejected and credential
+  material is redacted — and then rejects an unclosed Markdown fence, a body that already carries a
+  marker, and an appended marker it cannot read back, before returning
+  `{ marker, body, parent, key }` with the marker as the final nonblank standalone line. Never
+  handwrite that marker or concatenate it by hand: the four guards live only here. Fail-closed
+  codes are `INVALID_PAYLOAD` for generation attribution in the body, an empty or whitespace-only
+  body, credential material that cannot be safely redacted (`reason: unterminated-private-key`,
+  `unterminated-quoted-secret`, `ambiguous-empty-secret-assignment`, `empty-secret-assignment`,
+  `ambiguous-secret-assignment`, `ambiguous-colon-credential-assignment`,
+  `residual-secret-assignment`, or `residual-private-key`), an unclosed fence
+  (`reason: unclosed-markdown-fence`), a caller-supplied marker, an unreadable appended marker
+  (`reason: unreadable-appended-decomposition-marker`), an unknown target, or an invalid key, and
+  `INVALID_REFERENCE` for a parent that is not a valid identity of that target.
+- `decomposition-key-parse` accepts the fresh stored child body plus the expected `target` and
+  `parent` (flat or under `context`). It reports `{ found: false, key: null }` for an absent marker
+  and `{ found: true, version, target, parent, key }` otherwise, with both parents normalized
+  through the same target-aware rule the writer uses, so `42`, `'42'`, `'#42'`, and a
+  repository-bound issue URL all compare equal while an external identity compares byte for byte.
+  It fails closed with `AMBIGUOUS_TARGET` for more than one marker and `INVALID_PAYLOAD` for a
+  marker that is not the final nonblank standalone line, an unsupported version (`version`,
+  `supported`), a malformed or undecodable payload, an invalid schema, a target mismatch
+  (`expectedTarget`, `actualTarget`), or a different parent (`expectedParent`, `actualParent`).
 - `decomposition-child-workflow-parse` requires exactly one language-matching canonical
   Recommended-workflow field in a decomposed child's body, validates it against the parent record,
   and returns the stable workflow plus its `build|fix|refactor|docs` implementation route. It uses
@@ -1058,13 +1088,34 @@ Complete this entire phase for the active issue before starting another issue:
      `issue-create`, create first and link later, or fall back to a checklist;
    - after success or unique-key recovery, call `issue-sub-issues-read` once more and require exactly
      one valid same-parent match for the key. A concurrently visible duplicate fails closed before
-     the comment update. Then guardedly update the canonical comment with the normalized child
+     the comment update. **The just-created child's key being absent from that fresh list is marker
+     non-persistence, not a failed create:** the tracker accepted the issue but did not store the
+     stable-key marker in its body, so no later run can reconcile that child by key. This is the
+     bounded proof that the marker survives on this connection — there is no pre-flight capability
+     probe for it, because proving it would itself require creating a scratch item. The blast radius
+     is bounded by this check running after **every** child: the run stops after at most one child,
+     before any sibling is created and before the canonical comment is updated. Then guardedly
+     update the canonical comment with the normalized child
      reference and a `created` status before continuing. Every status/reference transition rebuilds
      the complete section through `decomposition-records-build`; never patch encoded marker data or
      the visible rendering independently.
+   - on an external target, `issue-sub-issues-read` and its marker normalization never run. The
+     listing is carried by the connection's native-child listing proven in Phase 1 step 1: it
+     supplies the fresh child list for all three reads of this loop and for every later
+     reconciliation read, and because those children carry no normalized `decompositionKey`,
+     `decomposition-key-parse` supplies the key per freshly re-read child body. The two canonical
+     local operations carry the marker work instead: `decomposition-key-build` produces the
+     exact child body for the create — it is the external child-body step and the only permitted
+     writer of the marker — and `decomposition-key-parse` performs the post-create key match against
+     the freshly re-read child body, with the same expected target and parent. Every fail-closed
+     outcome of the three reads is unchanged on this path, including the bounded post-create proof
+     that the marker survives. Never handwrite the
+     marker or match keys by string comparison on the external path.
 
    If a create failure says `mutationMayHaveSucceeded`, perform `issue-sub-issues-read` immediately
-   and replace the local reconciliation state before any decision. A unique valid key match recovers
+   and replace the local reconciliation state before any decision; on an external target that read
+   is the connection's proven native-child listing plus `decomposition-key-parse` over each re-read
+   child body, and the outcomes below are the same. A unique valid key match recovers
    the result; zero, multiple, or marker-error matches remain blocked and are never blindly retried.
    If any later child fails, preserve created children, mark all missing or unknown drafts explicitly
    in the canonical comment when its hash guard still permits that update, retain
@@ -1097,7 +1148,9 @@ Do not reuse this answer for any other selected issue.
 
 After either branch, apply the readiness decision. For an approved decomposition, readiness also
 requires a fresh `decomposition-container-compare` over the stored canonical comment and fresh
-native-child list to return `ok: true`; every active record must be `created` and resolve to exactly
+native-child list — read on the forge through `issue-sub-issues-read`, and on an external target
+through the connection's proven native-child listing with `decomposition-key-parse` per child — to
+return `ok: true`; every active record must be `created` and resolve to exactly
 one same-parent native child with the recorded identity. The parent then remains a container and is
 not itself an additional implementation work item. If the deep review is ended, deferred after it
 starts, fails to persist, or returns a blocking open point, keep or add
