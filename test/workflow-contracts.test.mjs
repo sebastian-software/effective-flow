@@ -1337,6 +1337,42 @@ test('decomposition parsers derive their exact matcher from the versioned prefix
   assert.doesNotMatch(recordParser, /effective-flow-decomposition-child:v1/);
 });
 
+test('stable-key persistence is proven by the bounded post-create check, not by discovery', () => {
+  const planIssue = prose(source('src/tools/plan-issue.md'));
+  assert.match(
+    planIssue,
+    /The just-created child's key being absent from that fresh list is marker non-persistence, not a failed create/,
+  );
+  assert.match(
+    planIssue,
+    /the run stops after at most one child, before any sibling is created and before the canonical comment is updated/,
+  );
+  assert.match(planIssue, /there is no pre-flight capability probe for it/);
+  assert.match(planIssue, /`decomposition-key-build` produces the exact child body for the create/);
+  assert.match(
+    planIssue,
+    /`decomposition-key-parse` performs the post-create key match against the freshly re-read child body/,
+  );
+
+  const trackerTarget = prose(source('src/shared/tracker-target.md'));
+  assert.match(
+    trackerTarget,
+    /Persistence of that stable key is not a fourth discovered capability/,
+  );
+  assert.match(
+    trackerTarget,
+    /proven instead by the bounded post-create check in `\{\{SKILL:plan-issue\}\}` Phase 4/,
+  );
+  assert.match(
+    trackerTarget,
+    /`decomposition-key-build` writes the child body carrying the target-aware key marker/,
+  );
+  assert.match(
+    trackerTarget,
+    /`decomposition-key-parse` performs the post-create key match against the re-read child body/,
+  );
+});
+
 test('plan files stay committed and pull requests stay on the forge in every tracker target', () => {
   const target = source('src/shared/tracker-target.md');
   const prComments = source('src/shared/pr-review-comments.md');
