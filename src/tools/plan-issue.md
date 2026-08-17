@@ -341,15 +341,23 @@ Complete this entire phase for the active issue before starting another issue:
      reference and a `created` status before continuing. Every status/reference transition rebuilds
      the complete section through `decomposition-records-build`; never patch encoded marker data or
      the visible rendering independently.
-   - on an external target, `issue-sub-issues-read` and its marker normalization never run, so the
-     two canonical local operations carry that work instead: `decomposition-key-build` produces the
+   - on an external target, `issue-sub-issues-read` and its marker normalization never run. The
+     listing is carried by the connection's native-child listing proven in Phase 1 step 1: it
+     supplies the fresh child list for all three reads of this loop and for every later
+     reconciliation read, and because those children carry no normalized `decompositionKey`,
+     `decomposition-key-parse` supplies the key per freshly re-read child body. The two canonical
+     local operations carry the marker work instead: `decomposition-key-build` produces the
      exact child body for the create — it is the external child-body step and the only permitted
      writer of the marker — and `decomposition-key-parse` performs the post-create key match against
-     the freshly re-read child body, with the same expected target and parent. Never handwrite the
+     the freshly re-read child body, with the same expected target and parent. Every fail-closed
+     outcome of the three reads is unchanged on this path, including the bounded post-create proof
+     that the marker survives. Never handwrite the
      marker or match keys by string comparison on the external path.
 
    If a create failure says `mutationMayHaveSucceeded`, perform `issue-sub-issues-read` immediately
-   and replace the local reconciliation state before any decision. A unique valid key match recovers
+   and replace the local reconciliation state before any decision; on an external target that read
+   is the connection's proven native-child listing plus `decomposition-key-parse` over each re-read
+   child body, and the outcomes below are the same. A unique valid key match recovers
    the result; zero, multiple, or marker-error matches remain blocked and are never blindly retried.
    If any later child fails, preserve created children, mark all missing or unknown drafts explicitly
    in the canonical comment when its hash guard still permits that update, retain
@@ -388,7 +396,9 @@ Do not reuse this answer for any other selected issue.
 
 After either branch, apply the readiness decision. For an approved decomposition, readiness also
 requires a fresh `decomposition-container-compare` over the stored canonical comment and fresh
-native-child list to return `ok: true`; every active record must be `created` and resolve to exactly
+native-child list — read on the forge through `issue-sub-issues-read`, and on an external target
+through the connection's proven native-child listing with `decomposition-key-parse` per child — to
+return `ok: true`; every active record must be `created` and resolve to exactly
 one same-parent native child with the recorded identity. The parent then remains a container and is
 not itself an additional implementation work item. If the deep review is ended, deferred after it
 starts, fails to persist, or returns a blocking open point, keep or add
