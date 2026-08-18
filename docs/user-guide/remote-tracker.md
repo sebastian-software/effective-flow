@@ -447,6 +447,12 @@ against it:
 - **`mergeGate.bots` entries must be spelled as the bare login** on Forgejo, without a `[bot]`
   suffix: the forge states no account class, so a suffixed entry matches nothing and leaves that
   reviewer permanently _not started_.
+- **A commit status with no readable state fails the whole read.** An entry that states neither
+  `status` nor `state` ends the `pr-status-read` with `INVALID_PAYLOAD` instead of degrading to a
+  silent pending reading – a state that is present but unrecognized still reads as pending. The
+  reach is wider than `merge-gate`'s check loop: `readPullRequestStatus` is the single reader
+  shared with the merge's head guard, and `pr-status-read` also feeds the bot-state observation and
+  the review-in-flight guard of `iterate`.
 
 Several behaviors worth knowing if you inspect the gate's output or a `merge-gate` transcript:
 
