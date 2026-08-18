@@ -4055,13 +4055,20 @@ function flattenPullRequestStatus(raw) {
   };
 }
 
-// One Gitea commit status, restated as a check record. The translation is not optional: a raw
-// `state: "success"` reaching `normalizeCheck` unchanged would be read through
-// `pending = status !== 'COMPLETED'` — `status` is absent on a Gitea status, so the state branch
-// decides — and `success` is in neither pending set nor a `COMPLETED` marker, so the record would
-// have to survive on the `state` fallback alone. Mapping it here instead keeps one shape for both
-// providers, and the record deliberately carries only `name`, `status`, `conclusion` and `url`: no
-// raw Gitea key (`context`, `target_url`, `state`, `id`, `description`) survives into the envelope.
+// One Gitea commit status, restated as a check record. Read the JSON tag, never the Go field name:
+// `structs.CommitStatus` declares its `State` field with the tag `status`, so a per-entry state
+// arrives on the wire as `status`, while only the enclosing `structs.CombinedStatus` declares its
+// `State` with the tag `state`. The Go field is called `State` at both levels — that is the trap,
+// and reading the field name instead of the tag is what gives the wrong key for an entry.
+//
+// The translation into a check record is not optional either: a raw `status: "success"` reaching
+// `normalizeCheck` unchanged would be read through `pending = status !== 'COMPLETED'`, and
+// `success` is not `COMPLETED`, so a finished check would report as pending. Mapping it here keeps
+// one shape for both providers, and the record deliberately carries only `name`, `status`,
+// `conclusion` and `url`: no raw Gitea key (`context`, `target_url`, `status`, `id`,
+// `description`) survives into the envelope. The record's own `status` key is the normalized
+// output field `normalizeCheck` reads back; despite the shared name it is unrelated to the raw
+// input key above.
 //
 // `warning` and `skipped` are non-success **completed** checks and therefore block under
 // `requireAllChecks: true`. That matches how GitHub's own `SKIPPED` conclusion already behaves.
@@ -4076,11 +4083,25 @@ const FORGEJO_CHECK_STATES = Object.freeze({
   skipped: Object.freeze({ status: 'COMPLETED', conclusion: 'SKIPPED' }),
 });
 
-function forgejoCheckRecord(item) {
+function forgejoCheckRecord(item, index) {
   if (!item || typeof item !== 'object') {
     fail('INVALID_PAYLOAD', 'provider returned an invalid commit status');
   }
-  const state = typeof item.state === 'string' ? item.state.trim().toLowerCase() : '';
+  // `status` is the per-entry tag; `state` is kept as a fallback for any fork or older
+  // serialization that ever spelled it the other way. The type test rather than a plain `??` on
+  // `item.status` is deliberate: a non-string `status` must not shadow a usable `state`.
+  const raw = typeof item.status === 'string' ? item.status : item.state;
+  // A key that is present but holds an unrecognized value is a state this adapter does not know
+  // yet, and falls through to `PENDING` below. A key that is absent entirely is a payload it
+  // cannot read at all, and reading that as pending is precisely what made the wrong-key bug
+  // invisible from the outside — so it fails closed here, like the truncation guard below.
+  if (typeof raw !== 'string') {
+    fail('INVALID_PAYLOAD', 'provider returned a commit status with no state', {
+      index,
+      context: item.context,
+    });
+  }
+  const state = raw.trim().toLowerCase();
   const mapped = FORGEJO_CHECK_STATES[state] ?? FORGEJO_CHECK_STATES.pending;
   const url = item.target_url;
   // No `required`: Forgejo states no requiredness anywhere, so every check reports it as unstated
@@ -4121,7 +4142,7 @@ function forgejoCommitStatuses(response) {
       returnedCount: statuses.length,
     });
   }
-  return statuses.map(forgejoCheckRecord);
+  return statuses.map((item, index) => forgejoCheckRecord(item, index));
 }
 
 // The three Forgejo reads, restated as the flat provider record `normalizePullRequestStatus` already

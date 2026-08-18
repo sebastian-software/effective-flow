@@ -5396,7 +5396,7 @@ test('Forgejo pr-status-read composes three tea api reads addressed by the head 
         {
           id: 3,
           context: 'ci/build',
-          state: 'success',
+          status: 'success',
           target_url: 'https://code.example.test/team/flow/actions/7',
           description: 'ignored',
         },
@@ -5653,7 +5653,7 @@ test('every Gitea commit-status state maps to one check record', async () => {
   ];
   const { envelope } = await forgejoStatus(
     forgejoStatusResults({
-      statuses: cases.map(([state], index) => ({ context: `ci/${index}`, state })),
+      statuses: cases.map(([state], index) => ({ context: `ci/${index}`, status: state })),
       totalCount: cases.length,
     }),
   );
@@ -5665,6 +5665,80 @@ test('every Gitea commit-status state maps to one check record', async () => {
       ...(conclusion === undefined ? {} : { conclusion }),
     })),
   );
+});
+
+test('an observed Forgejo status payload maps its finished check to COMPLETED/SUCCESS', async () => {
+  // Transcribed verbatim from the `GET /repos/{owner}/{repo}/commits/{sha}/status` body observed
+  // against Forgejo at `git.dal12.de`, whose single workflow had finished successfully. The entry
+  // carries no `state` key at all: `structs.CommitStatus` tags its Go `State` field as `status`,
+  // and only the enclosing `structs.CombinedStatus` tags its own `State` as `state`. This fixture
+  // is a transcription rather than a hand-authored shape on purpose — a fixture written from a
+  // belief about the wire format is what let the wrong-key read ship and stay invisible.
+  const observed = {
+    state: 'success',
+    total_count: 1,
+    statuses: [
+      {
+        id: 3,
+        status: 'success',
+        context: 'checks / checks (pull_request)',
+        description: 'Successful in 1m53s',
+        target_url: '/fastner/proxmox/actions/runs/1/jobs/0',
+      },
+    ],
+  };
+  const results = forgejoStatusResults();
+  results[1] = teaApiResult(200, observed, { 'X-Total-Count': '1' });
+  const { envelope } = await forgejoStatus(results);
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(envelope.data.result.checks, [
+    {
+      name: 'checks / checks (pull_request)',
+      status: 'COMPLETED',
+      conclusion: 'SUCCESS',
+      url: '/fastner/proxmox/actions/runs/1/jobs/0',
+    },
+  ]);
+});
+
+test('a Forgejo entry carrying only `state` still maps through the fallback', async () => {
+  const { envelope } = await forgejoStatus(
+    forgejoStatusResults({
+      statuses: [
+        // A fork or older serialization that spells the per-entry key the combined object's way.
+        { context: 'ci/legacy', state: 'failure' },
+        // A non-string `status` must not shadow a usable `state`, which a plain `??` would let it.
+        { context: 'ci/shadowed', status: 3, state: 'success' },
+      ],
+      totalCount: 2,
+    }),
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(envelope.data.result.checks, [
+    { name: 'ci/legacy', status: 'COMPLETED', conclusion: 'FAILURE' },
+    { name: 'ci/shadowed', status: 'COMPLETED', conclusion: 'SUCCESS' },
+  ]);
+});
+
+test('a Forgejo commit status carrying neither key fails closed instead of reading as pending', async () => {
+  // An absent state is not an unrecognized one. The whole `pr-status-read` fails, exactly as the
+  // truncation guard does: a merge criterion must never be evaluated on a check list that cannot
+  // be read.
+  const { envelope } = await forgejoStatus(
+    forgejoStatusResults({
+      statuses: [
+        { context: 'ci/build', status: 'success' },
+        { id: 9, context: 'ci/lint', description: 'no state anywhere' },
+      ],
+      totalCount: 2,
+    }),
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+  assert.equal(envelope.error.details.index, 1);
+  assert.equal(envelope.error.details.context, 'ci/lint');
+  // Position and context only — the guard reports where the entry sits, never its payload.
+  assert.deepEqual(Object.keys(envelope.error.details).sort(), ['context', 'index']);
 });
 
 test('an empty or null Forgejo status list is reported as unreported, never as green', async () => {
@@ -5687,7 +5761,7 @@ test('Forgejo truncation is detected from X-Total-Count, not from the returned b
   // length. Only the response-wide header states the truth.
   const statuses = Array.from({ length: 50 }, (_, index) => ({
     context: `ci/${index}`,
-    state: 'success',
+    status: 'success',
   }));
   const results = forgejoStatusResults({ statuses, totalCount: 63 });
   results[1] = teaApiResult(
