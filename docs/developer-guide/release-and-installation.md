@@ -191,13 +191,44 @@ seconds later than before.
 The retry is a plain `bash` helper rather than a marketplace action: this job holds the delivery and
 release App private keys, and any action in it can reach them, so it gains no third-party
 dependency for twenty lines of shell. Each `run:` block is its own shell, so the delivery step and
-`Verify delivered commit` each define their own copy. Nothing in this repository executes or lints
-a workflow `run:` block — `ci.yml` shellchecks three `.sh` files and no workflow, and the contract
-tests read `release.yml` as text — so the retries are held in place by step-scoped assertions in
-`test/workflow-contracts.test.mjs` (the attempt count, both sleep values, the retried commands, and
-the nonzero exhaustion) rather than by anything ever running them. That the retried command really
-sits inside its loop is not testable by any mechanism this repository has; like the delivery
-identity above, it is observable only on a real release.
+`Verify delivered commit` each define their own copy, and both counters are `local` to `retry`: the
+verification retries a named unit, and a unit that itself retried something would otherwise reset
+the outer loop's shared attempt counter.
+
+Nothing in this repository currently executes or lints a workflow `run:` block — `ci.yml`
+shellchecks exactly `install-skill.sh`, `local-common.sh`, and `local-link.sh`, and the contract
+tests read `release.yml` as text — so both copies are held in place by step-scoped assertions in
+`test/workflow-contracts.test.mjs`. Those assertions go well past checking that the expected
+literals are present, because a helper can carry every literal the retry needs and still retry
+nothing: they pin the bound as the literal `3` exactly once per block, that the helper loops at all,
+that the loop tests its counter against `$attempts` rather than against a literal, that the counter
+advances, and that the backoff sleeps 5 s before 15 s — the last as one order-aware match, because a
+reversed pair satisfies two separate existence checks. They further pin that the retried command
+runs in an `if` test position, that exhausted attempts return nonzero so `Report a failed delivery`
+still fires, that git's own stderr is never discarded, that the helper never echoes the retried
+command, and that no step turns on shell tracing; the last two guard the same thing, since the push
+URL carries the delivery App installation token and Actions masking must not be the only barrier
+keeping it out of the run log. Both retried call sites are matched verbatim, no unguarded copy of
+either may survive beside them, and the retried argument in `Verify delivered commit` must be a
+named unit containing both the fetch and the equality comparison.
+
+Text matching is what this change used, not the only mechanism available. A `run:` block can be
+extracted and executed under `bash -e` with stubs standing in for the retried command — `false` for
+the exhaustion path, `true` for the success path, a counter for a recovery on the third attempt, and
+a stub `git` earlier on `PATH` to establish that the retried command really does sit inside the
+loop. That verifies in a handful of lines what the assertions above can only approximate from the
+outside. It was a real option here and was deliberately not taken; what is described above is what
+the repository asserts today, not the limit of what it could assert.
+
+A follow-up would remove the duplication rather than assert around it. Both `run:` blocks execute
+inside the checkout, so the helper could live once as a shell file under `.github/scripts/`, be
+`source`d by both steps, join the `shellcheck` invocation in `ci.yml` — the first linter ever to
+read it — and be covered by a `node:test` that runs it against a stub command. That would collapse
+the verbatim copy in two steps into one file, bring the helper under a linter for the first time,
+and make it executable in CI. `scripts/stage-delivery.mjs` stages only two allowlisted `.github`
+paths, `close-develop-issues.yml` and `close-develop-issues.mjs`, so such a file would stay on
+`develop` and never reach the delivered `main`. That is more than a focused bugfix should carry,
+and it is left for a later change rather than promised by this one.
 
 Detection is already hard: `Verify delivered commit` asserts that `origin/main` equals the delivery
 commit and re-runs the delivery smoke test against it, so a payload that does not land fails the
