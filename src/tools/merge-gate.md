@@ -500,11 +500,11 @@ Write a summary after each phase and pass it on to later phases. Delete the file
      blocks a merge rather than stopping the run, and the missing identity is reported as the
      reason.
    - **Forgejo** supports `pullRequestStatus`, `pullRequestMerge`, and `viewerRead`, and declares
-     only `pullRequestChecksWait` unsupported: `tea` has no `checks` subcommand and Forgejo offers
-     no server-side blocking watch. A Forgejo run therefore takes the documented no-watch path in
+     only `pullRequestChecksWait` unsupported among those three: `tea` has no `checks` subcommand and
+     Forgejo offers no server-side blocking watch. A Forgejo run therefore takes the documented no-watch path in
      Phase 2 — report the pending checks and ask once — and is the whole gate minus the blocking
-     wait, not report-only. What stays unsupported there is `pr-checks-wait`, `review-create`, and
-     `review-thread-reply`.
+     wait, not report-only. What stays unsupported there is `pr-checks-wait`, `review-create`,
+     `review-thread-reply`, and `review-thread-resolve`.
      In observer-only mode require only the forge reads needed to prove the PR/repository/merge and the
      receipt target's observation capabilities; do not degrade or reject the run for absent check-wait,
      merge, or viewer capabilities that this path never uses.
@@ -1311,7 +1311,8 @@ ends this phase without heuristic tracker access.
 - **`pr-checks-wait` times out or is unsupported:** report the pending checks and ask once; never
   fall back to a prompt-driven poll loop.
 - **Forgejo:** `pr-status-read`, `pr-merge`, and `viewer-read` are supported; `pr-checks-wait`,
-  `review-create`, and `review-thread-reply` are not. The run is the whole gate minus the blocking
+  `review-create`, `review-thread-reply`, and `review-thread-resolve` are not. The run is the whole
+  gate minus the blocking
   wait: step 2 takes the no-watch path, reports the pending checks by name and asks once, and an
   unanswered or non-interactive run ends there. Three consequences are worth naming.
   - **Requiredness is unstated on every check**, because Forgejo has no such flag. With

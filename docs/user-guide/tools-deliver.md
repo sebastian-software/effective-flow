@@ -373,7 +373,9 @@ Two further things worth knowing about what the gate writes:
   status read, the merge and the identity read; only the blocking check wait is unsupported there,
   because `tea` has no `checks` subcommand and Forgejo offers no server-side watch. A Forgejo run
   therefore reports the pending checks by name and asks once instead of blocking, and is the whole
-  gate minus that wait. `review-create` and `review-thread-reply` also stay unsupported there.
+  gate minus that wait. `review-create`, `review-thread-reply`, and `review-thread-resolve` also stay
+  unsupported there; the last of the three because Forgejo serves no resolve route, not because
+  `tea` lacks the subcommand.
 
 **Interplay:** Configured entirely under `mergeGate.*` in the project-setup ADR (completion mode,
 conflict-resolution mode, check-wait timeout, round budget, bot registry) plus

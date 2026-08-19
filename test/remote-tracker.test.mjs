@@ -101,8 +101,6 @@ function teaProbeResults(overrides = {}) {
     help('issueLabelRemove', '--remove-labels'),
     help('pulls', '--output'),
     help('pullComments', '--comments'),
-    help('pullReviewComments', '--output --fields'),
-    help('pullResolve', '--output'),
     help('pullCreate', '--head --base'),
     help('pullCreateDraft', '--draft'),
     help('pullEdit', '--description'),
@@ -514,34 +512,54 @@ test('Forgejo command plans use supported tea forms and filter PR heads after re
   assert.equal(create.args.includes('--output'), false);
   assert.equal(create.args.at(-1), 'one,two');
 
+  // The review-thread read is a raw-API walk now, and the builder answers with its first call.
   const reviewThreads = buildCommandPlan(
     'review-threads-read',
     { pullRequest: 7 },
     forgejoRepository,
   );
-  assert.deepEqual(reviewThreads.args.slice(0, 3), ['pulls', 'review-comments', '7']);
-  const resolve = buildCommandPlan('review-thread-resolve', { threadId: 44 }, forgejoRepository);
-  assert.deepEqual(resolve.args.slice(0, 3), ['pulls', 'resolve', '44']);
+  assert.deepEqual(reviewThreads.args.slice(0, 3), [
+    'api',
+    'repos/team/flow/pulls/7/reviews?limit=100&page=1',
+    '--include',
+  ]);
+  // The resolve route does not exist on Forgejo, so no caller can obtain a command for it.
+  assert.throws(
+    () => buildCommandPlan('review-thread-resolve', { threadId: 44 }, forgejoRepository),
+    (error) => error.code === 'UNSUPPORTED_CAPABILITY' && error.details.provider === 'forgejo',
+  );
 
+  // The pulls endpoint states no head filter, so the head is still matched after the read.
   const runner = fakeRunner([
     {
       status: 0,
       stdout: JSON.stringify([
-        { index: 1, title: 'one', state: 'open', head: 'other', base: 'develop' },
-        { index: 2, title: 'two', state: 'open', head: 'topic', base: 'develop' },
+        {
+          number: 1,
+          title: 'one',
+          state: 'open',
+          head: { ref: 'other' },
+          base: { ref: 'develop' },
+        },
+        {
+          number: 2,
+          title: 'two',
+          state: 'open',
+          head: { ref: 'topic' },
+          base: { ref: 'develop' },
+        },
       ]),
-      stderr: '',
+      stderr: 'HTTP/2 200\r\n',
     },
-    { status: 0, stdout: '[]', stderr: '' },
+    { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\n' },
   ]);
   const envelope = await executeOperation(
     'pr-list',
     { repository: forgejoRepository, head: 'topic' },
     { runner, skipProbe: true },
   );
-  assert.equal(runner.calls[0].args.includes('--head'), false);
-  assert.equal(runner.calls[0].args.includes('--limit'), true);
-  assert.equal(runner.calls[1].args.at(runner.calls[1].args.indexOf('--page') + 1), '2');
+  assert.equal(runner.calls[0].args[1], 'repos/team/flow/pulls?state=open&limit=100&page=1');
+  assert.equal(runner.calls[1].args[1], 'repos/team/flow/pulls?state=open&limit=100&page=2');
   assert.equal(envelope.data.pagesFetched, 2);
   assert.deepEqual(
     envelope.data.result.map((item) => item.number),
@@ -725,78 +743,193 @@ test('escape sanitization covers every non-JSON tea result and leaves JSON untou
   assert.equal(readEnvelope.data.result.body, body);
 });
 
-test('tea list results normalize labels flattened into a string', async () => {
+test('the ported Forgejo lists read labels as the array the raw API states', async () => {
   const listEnvelope = async (operation, items) =>
     executeOperation(
       operation,
       { repository: forgejoRepository },
       {
         runner: fakeRunner([
-          { status: 0, stdout: JSON.stringify(items), stderr: '' },
-          { status: 0, stdout: '[]', stderr: '' },
+          { status: 0, stdout: JSON.stringify(items), stderr: 'HTTP/2 200\r\n' },
+          { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\n' },
         ]),
         skipProbe: true,
       },
     );
 
-  // The reported crash: tea 0.14.x renders an empty label set as "" and `?? []` does not cover it.
-  const empty = await listEnvelope('pr-list', [
-    { index: 2, title: 'two', state: 'open', labels: '' },
+  // Class A: `modules/structs`. `Labels` is a real array of objects, so the whitespace ambiguity of
+  // tea's renderer does not exist here — a multi-word label name survives intact.
+  const labelled = await listEnvelope('pr-list', [
+    {
+      number: 2,
+      title: 'two',
+      state: 'open',
+      labels: [{ name: 'effective-flow-fix' }, { name: 'good first issue' }],
+    },
   ]);
-  assert.equal(empty.ok, true);
-  assert.deepEqual(empty.data.result[0].labels, []);
+  assert.equal(labelled.ok, true);
+  assert.deepEqual(labelled.data.result[0].labels, ['effective-flow-fix', 'good first issue']);
 
-  // Real labels are flattened into the same string, so they must be split, not discarded.
-  const flattened = await listEnvelope('pr-list', [
-    { index: 3, title: 'three', state: 'open', labels: 'one, two' },
+  const unlabelled = await listEnvelope('pr-list', [
+    { number: 3, title: 'three', state: 'open', labels: [] },
   ]);
-  assert.deepEqual(flattened.data.result[0].labels, ['one', 'two']);
+  assert.deepEqual(unlabelled.data.result[0].labels, []);
 
-  const unpadded = await listEnvelope('pr-list', [
-    { index: 4, title: 'four', state: 'open', labels: 'one,two' },
-  ]);
-  assert.deepEqual(unpadded.data.result[0].labels, ['one', 'two']);
-
-  const separatorsOnly = await listEnvelope('pr-list', [
-    { index: 5, title: 'five', state: 'open', labels: ', ,' },
-  ]);
-  assert.deepEqual(separatorsOnly.data.result[0].labels, []);
-
-  // Existing array shapes keep working: the single-item renderer and gh both return arrays.
-  const arrays = await listEnvelope('pr-list', [
-    { index: 6, title: 'six', state: 'open', labels: [{ name: 'x' }] },
-    { index: 7, title: 'seven', state: 'open', labels: ['x'] },
-    { index: 8, title: 'eight', state: 'open' },
-  ]);
-  assert.deepEqual(
-    arrays.data.result.map((item) => item.labels),
-    [['x'], ['x'], []],
-  );
-
-  // issue-list shares the normalizer, so the same crash applied there.
+  // issue-list shares the normalizer, and every raw-API issue carries `"pull_request": null`.
   const issues = await listEnvelope('issue-list', [
-    { index: 9, title: 'nine', state: 'open', labels: '' },
+    { number: 9, title: 'nine', state: 'open', labels: [{ name: 'bug' }], pull_request: null },
   ]);
   assert.equal(issues.ok, true);
-  assert.deepEqual(issues.data.result[0].labels, []);
+  assert.deepEqual(issues.data.result[0].labels, ['bug']);
+  assert.equal(issues.data.result[0].number, 9);
 
-  // An item without head/base must survive normalization so callers can still hydrate it.
-  const thin = await listEnvelope('pr-list', [
-    { index: 10, title: 'ten', state: 'open', labels: '' },
+  // `head`/`base` arrive complete on the raw API, so nothing has to be hydrated, and `draft` is a
+  // real value where tea's renderer left it permanently `false`.
+  const full = await listEnvelope('pr-list', [
+    {
+      number: 10,
+      title: 'ten',
+      state: 'open',
+      labels: [],
+      draft: true,
+      head: { ref: 'topic' },
+      base: { ref: 'develop' },
+    },
   ]);
-  assert.equal(thin.data.result[0].head, undefined);
-  assert.equal(thin.data.result[0].base, undefined);
+  assert.equal(full.data.result[0].head, 'topic');
+  assert.equal(full.data.result[0].base, 'develop');
+  assert.equal(full.data.result[0].draft, true);
 });
 
-test('tea pr-list requests the same fields as pr-read', () => {
-  const list = buildCommandPlan('pr-list', {}, forgejoRepository);
-  const read = buildCommandPlan('pr-read', { pullRequest: 2 }, forgejoRepository);
-  const fields = 'index,title,state,body,labels,url,head,base';
-  assert.equal(list.args.at(list.args.indexOf('--fields') + 1), fields);
-  assert.equal(read.args.at(read.args.indexOf('--fields') + 1), fields);
+test('the renderer label split survives for the paths that still consume tea output', async () => {
+  // The detail path still returns tea's rendering, so the whitespace split stays load-bearing there
+  // — and stays ambiguous for a multi-word label name, which is why the lists moved off it.
+  const detail = async (labels) =>
+    executeOperation(
+      'pr-read',
+      { repository: forgejoRepository, pullRequest: 6 },
+      {
+        runner: fakeRunner([
+          {
+            status: 0,
+            stdout: JSON.stringify({ index: '6', title: 'six', state: 'open', labels }),
+            stderr: '',
+          },
+        ]),
+        skipProbe: true,
+      },
+    );
+  assert.deepEqual((await detail('one two')).data.result.labels, ['one', 'two']);
+  assert.deepEqual((await detail('  one   two  ')).data.result.labels, ['one', 'two']);
+  assert.deepEqual((await detail('   ')).data.result.labels, []);
+  assert.deepEqual((await detail([{ name: 'x' }])).data.result.labels, ['x']);
+  assert.deepEqual((await detail(['x'])).data.result.labels, ['x']);
+  assert.deepEqual((await detail(undefined)).data.result.labels, []);
+});
 
-  const github = buildCommandPlan('pr-list', {}, githubRepository);
-  assert.equal(github.args.includes('--fields'), false);
+test('the ported Forgejo issue list states type=issues and filters pull requests out', async () => {
+  // The parameter has to be asserted, not merely its effect: `ListIssues` defaults `type` to "both"
+  // and an unrecognized value falls through to that same default with no error path, so a port that
+  // dropped or misspelled it would return a plausible superset.
+  const plan = buildCommandPlan('issue-list', {}, forgejoRepository);
+  assert.equal(plan.executable, 'tea');
+  assert.equal(plan.args[1], 'repos/team/flow/issues?state=all&type=issues&limit=100&page=1');
+
+  const labelled = buildCommandPlan(
+    'issue-list',
+    { labels: ['effective-flow-fix'], state: 'open' },
+    forgejoRepository,
+  );
+  assert.equal(
+    labelled.args[1],
+    'repos/team/flow/issues?state=open&type=issues&labels=effective-flow-fix&limit=100&page=1',
+  );
+
+  // And the client-side filter is the second line of defence: an issue carrying `"pull_request":
+  // null` normalizes, one carrying an object is dropped from the listing.
+  const envelope = await executeOperation(
+    'issue-list',
+    { repository: forgejoRepository },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify([
+            { number: 1, title: 'issue', state: 'open', labels: [], pull_request: null },
+            {
+              number: 2,
+              title: 'pull',
+              state: 'open',
+              labels: [],
+              pull_request: { merged: false },
+            },
+          ]),
+          stderr: 'HTTP/2 200\r\n',
+        },
+        { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\n' },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.deepEqual(
+    envelope.data.result.map((item) => item.number),
+    [1],
+  );
+});
+
+test('normalizeIssue rejects a pull request by truthiness, not by key presence', async () => {
+  // `Issue.PullRequest` has no `omitempty`, so every raw-API issue carries `"pull_request": null`
+  // and a key-presence guard would have rejected 100% of rows.
+  const read = async (item) =>
+    executeOperation(
+      'issue-read',
+      { repository: forgejoRepository, number: item.number },
+      {
+        runner: fakeRunner([{ status: 0, stdout: JSON.stringify(item), stderr: '' }]),
+        skipProbe: true,
+      },
+    );
+  const issue = await read({
+    number: 17,
+    title: 'Title',
+    state: 'open',
+    labels: [],
+    pull_request: null,
+  });
+  assert.equal(issue.ok, true);
+  assert.equal(issue.data.result.number, 17);
+
+  const pull = await read({
+    number: 18,
+    title: 'Title',
+    state: 'open',
+    labels: [],
+    pull_request: { merged: false },
+  });
+  assert.equal(pull.ok, false);
+  assert.equal(pull.error.code, 'INVALID_PAYLOAD');
+});
+
+test('a truncated Forgejo issue listing fails closed instead of reporting a prefix', async () => {
+  const envelope = await executeOperation(
+    'issue-list',
+    { repository: forgejoRepository },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify([{ number: 1, title: 'one', state: 'open', labels: [] }]),
+          stderr: 'HTTP/2 200\r\nX-Total-Count: 7\r\n',
+        },
+        { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\nX-Total-Count: 7\r\n' },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+  assert.equal(envelope.error.details.totalCount, 7);
+  assert.equal(envelope.error.details.returnedCount, 1);
 });
 
 test('sf label migration executes add before remove and reports partial completion', async () => {
@@ -1002,13 +1135,13 @@ test('label-create pages the Forgejo pre-check and matches a name on the second 
   const { envelope, runner } = await labelCreate(forgejoRepository, [
     {
       status: 0,
-      stdout: JSON.stringify([{ index: '1', name: 'wontfix', color: '#ffffff', description: '' }]),
+      stdout: JSON.stringify([{ index: '1', name: 'wontfix', color: 'ffffff', description: '' }]),
       stderr: '',
     },
     {
       status: 0,
       stdout: JSON.stringify([
-        { index: '2', name: 'effective-flow-fix', color: '#ededed', description: 'fix' },
+        { index: '2', name: 'effective-flow-fix', color: 'ededed', description: 'fix' },
       ]),
       stderr: '',
     },
@@ -1019,7 +1152,7 @@ test('label-create pages the Forgejo pre-check and matches a name on the second 
   assert.deepEqual(envelope.data.result.label, {
     id: '2',
     name: 'effective-flow-fix',
-    color: '#ededed',
+    color: 'ededed',
     description: 'fix',
   });
   assert.equal(runner.calls.at(1).args.at(runner.calls.at(1).args.indexOf('--page') + 1), '2');
@@ -3219,41 +3352,212 @@ test('review-thread reads normalize file, line, author, text, and resolution', a
   assert.match(runner.calls[0].stdin, /originalStartLine createdAt author/);
 });
 
-test('a flat review-thread record carries its timestamp on the thread and its comment', async () => {
-  // The Forgejo shape has one record per thread instead of a comment list, so the same instant
-  // describes both. A record without a timestamp still produces none.
+test('the Forgejo review-thread read walks the two documented raw-API routes', async () => {
+  // Class A fixtures: `modules/structs/pull_review.go`. Read by JSON tag — `user`, `position`,
+  // `resolver`, `created_at` — never by Go field name.
+  const teaApi = (body, headers = '') => ({
+    status: 0,
+    stdout: JSON.stringify(body),
+    stderr: `HTTP/2 200\r\n${headers}`,
+  });
   const runner = fakeRunner([
-    {
-      status: 0,
-      stdout: JSON.stringify([
-        {
-          id: 5,
-          body: 'Automated note',
-          reviewer: { login: 'review-app[bot]' },
-          path: 'src/a.mjs',
-          line: 42,
-          created_at: '2026-07-28T22:30:00+02:00',
-        },
-        {
-          id: 6,
-          body: 'Undated note',
-          reviewer: { login: 'reviewer' },
-          path: 'src/b.mjs',
-          line: 1,
-        },
-      ]),
-      stderr: '',
-    },
+    teaApi([{ id: 31 }, { id: 32 }], 'X-Total-Count: 2\r\n'),
+    teaApi([]),
+    teaApi([
+      {
+        id: 5,
+        body: 'Automated note',
+        user: { login: 'review-app[bot]', type: 'Bot' },
+        resolver: null,
+        path: 'src/a.mjs',
+        position: 42,
+        html_url: 'https://code.example.test/team/flow/pulls/2/files#issuecomment-5',
+        created_at: '2026-07-28T22:30:00+02:00',
+      },
+      {
+        id: 6,
+        body: 'Resolved note',
+        user: { login: 'reviewer', type: 'User' },
+        resolver: { login: 'maintainer' },
+        path: 'src/b.mjs',
+        position: 1,
+        created_at: '2026-07-29T08:00:00Z',
+      },
+    ]),
   ]);
   const envelope = await executeOperation(
     'review-threads-read',
     { repository: forgejoRepository, pullRequest: 2 },
     { runner, skipProbe: true },
   );
+  assert.equal(envelope.ok, true);
+  // One listing plus one comment read per review — the fan-out tea performed client-side, now
+  // visible in `data.commands`.
+  assert.deepEqual(
+    runner.calls.map((call) => call.args[1]),
+    [
+      'repos/team/flow/pulls/2/reviews?limit=100&page=1',
+      'repos/team/flow/pulls/2/reviews/31/comments',
+      'repos/team/flow/pulls/2/reviews/32/comments',
+    ],
+  );
+  assert.equal(envelope.data.commands.length, 3);
+  assert.equal(envelope.data.command, undefined);
+
+  // A real login reaches `author.login`, where the renderer would have supplied a display name.
+  assert.deepEqual(envelope.data.result[0].comments[0].author, {
+    login: 'review-app[bot]',
+    isBot: true,
+    authorType: 'bot',
+  });
+  // `position`, never `line`, and it stays a number.
+  assert.equal(envelope.data.result[0].line, 42);
+  assert.equal(envelope.data.result[0].comments[0].line, 42);
+  // Every thread carries a timestamp, normalized to UTC from Gitea's local offset.
   assert.equal(envelope.data.result[0].createdAt, '2026-07-28T20:30:00.000Z');
   assert.equal(envelope.data.result[0].comments[0].createdAt, '2026-07-28T20:30:00.000Z');
-  assert.equal(Object.hasOwn(envelope.data.result[1], 'createdAt'), false);
-  assert.equal(Object.hasOwn(envelope.data.result[1].comments[0], 'createdAt'), false);
+  assert.equal(envelope.data.result[1].createdAt, '2026-07-29T08:00:00.000Z');
+  // `resolver: null` versus an object is the whole resolved test.
+  assert.equal(envelope.data.result[0].isResolved, false);
+  assert.equal(envelope.data.result[1].isResolved, true);
+  // The thread id is what the pre-port renderer path produced for the same comment: tea stringified
+  // every table cell, so `PullReviewComment.ID` 5 was `'5'` there and stays `'5'` here.
+  assert.equal(envelope.data.result[0].id, '5');
+  assert.equal(envelope.data.result[0].comments[0].id, '5');
+});
+
+test('a pull request without reviews reads as an empty thread list, not as a failure', async () => {
+  const runner = fakeRunner([
+    { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\nX-Total-Count: 0\r\n' },
+  ]);
+  const envelope = await executeOperation(
+    'review-threads-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(envelope.data.result, []);
+  assert.equal(runner.calls.length, 1);
+});
+
+test('a pending review another user owns does not make the review listing look truncated', async () => {
+  // `ListPullReviews` counts the `review` rows while `convert.ToPullReviewList` omits every pending
+  // review belonging to someone else, so `X-Total-Count` legitimately exceeds the body there. Read
+  // as an exact count it would fail an ordinary read for as long as that review stays unsubmitted.
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify([{ id: 31 }, { id: 32 }]),
+      stderr: 'HTTP/2 200\r\nX-Total-Count: 3\r\n',
+    },
+    { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\nX-Total-Count: 3\r\n' },
+    { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\n' },
+    { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\n' },
+  ]);
+  const envelope = await executeOperation(
+    'review-threads-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(envelope.data.result, []);
+});
+
+test('an unreadable Forgejo review page fails closed instead of reporting a prefix', async () => {
+  // The reviews header cannot condemn a walk, but a page that is not a list still can: an
+  // incomplete thread list reaching `merge-gate` would let condition 7 report every thread assessed
+  // while an unassessed finding sits open.
+  const runner = fakeRunner([
+    { status: 0, stdout: JSON.stringify({ message: 'nope' }), stderr: 'HTTP/2 200\r\n' },
+  ]);
+  const envelope = await executeOperation(
+    'review-threads-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+
+  // A per-review comment read whose total exceeds its body is still a truncation there: that
+  // endpoint hides nothing, so the header states the whole list.
+  const truncated = fakeRunner([
+    { status: 0, stdout: JSON.stringify([{ id: 31 }]), stderr: 'HTTP/2 200\r\n' },
+    { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\n' },
+    {
+      status: 0,
+      stdout: JSON.stringify([{ id: 5, body: 'x', user: { login: 'a' }, position: 1 }]),
+      stderr: 'HTTP/2 200\r\nX-Total-Count: 4\r\n',
+    },
+  ]);
+  const partial = await executeOperation(
+    'review-threads-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner: truncated, skipProbe: true },
+  );
+  assert.equal(partial.ok, false);
+  assert.equal(partial.error.code, 'INVALID_PAYLOAD');
+  assert.equal(partial.error.details.totalCount, 4);
+  assert.equal(partial.error.details.returnedCount, 1);
+});
+
+test('a pull request whose head branch the forge deleted keeps its branch name', async () => {
+  // `services/convert` leaves `ref` at `refs/pull/<index>/head` when the head branch or head repo
+  // is gone, and states the branch name in `label` — the opposite of GitHub's spelling, where
+  // `label` is `owner:branch`. Reading `ref` blindly would make `pr-list`'s head filter and
+  // `src/tools/pr.md`'s exact match miss a pull request that exists.
+  const envelope = await executeOperation(
+    'pr-list',
+    { repository: forgejoRepository, head: 'topic' },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify([
+            {
+              number: 4,
+              title: 'gone',
+              state: 'open',
+              labels: [],
+              head: { label: 'topic', ref: 'refs/pull/4/head' },
+              base: { label: 'develop', ref: 'develop' },
+            },
+          ]),
+          stderr: 'HTTP/2 200\r\n',
+        },
+        { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\n' },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(envelope.data.result[0].head, 'topic');
+  assert.equal(envelope.data.result[0].base, 'develop');
+
+  // GitHub spells the pair the other way round, and its `ref` still wins.
+  const github = await executeOperation(
+    'pr-list',
+    { repository: githubRepository },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify([
+            {
+              number: 5,
+              title: 'fork',
+              state: 'open',
+              labels: [],
+              head: { label: 'someone:topic', ref: 'topic' },
+              base: { label: 'example:develop', ref: 'develop' },
+            },
+          ]),
+          stderr: '',
+        },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(github.data.result[0].head, 'topic');
+  assert.equal(github.data.result[0].base, 'develop');
 });
 
 test('provider probes normalize missing CLI, auth failure, and Forgejo capabilities', async () => {
@@ -3291,7 +3595,8 @@ test('provider probes normalize missing CLI, auth failure, and Forgejo capabilit
   );
   assert.equal(forgejo.login, 'work');
   assert.equal(forgejo.capabilities.reviewThreads, true);
-  assert.equal(forgejo.capabilities.reviewThreadResolution, true);
+  // Not a `tea pulls resolve --help` probe any more: the subcommand exists, the route does not.
+  assert.equal(forgejo.capabilities.reviewThreadResolution, false);
   assert.equal(forgejo.capabilities.reviewThreadReplies, false);
   assert.equal(forgejo.capabilities.reviewCreate, false);
   assert.equal(forgejo.capabilities.labelMigration, true);
@@ -3303,7 +3608,6 @@ test('Forgejo probe reports missing commands and flags as unsupported capabiliti
     fakeRunner(
       teaProbeResults({
         issueLabelRemove: { status: 1, stdout: '', stderr: 'unknown flag' },
-        pullResolve: { status: 1, stdout: '', stderr: 'unknown command' },
       }),
     ),
   );
@@ -5340,12 +5644,13 @@ test('the Forgejo probe gates the pull-request operations on the tea api transpo
   assert.equal(withoutInclude.capabilities.viewerRead, false);
 });
 
-test('the Forgejo adapter keeps the watch and the two review writes refused', async () => {
+test('the Forgejo adapter keeps the watch and the three review writes refused', async () => {
   const probe = await probeProvider(forgejoRepository, fakeRunner(teaProbeResults()));
   for (const [operation, capability] of [
     ['pr-checks-wait', 'pullRequestChecksWait'],
     ['review-create', 'reviewCreate'],
     ['review-thread-reply', 'reviewThreadReplies'],
+    ['review-thread-resolve', 'reviewThreadResolution'],
   ]) {
     const runner = fakeRunner([]);
     const envelope = await executeOperation(
@@ -5366,7 +5671,8 @@ test('the Forgejo adapter keeps the watch and the two review writes refused', as
 
     // Even a caller that bypasses the capability gate cannot get a tea command for them.
     assert.throws(
-      () => buildCommandPlan(operation, { number: 12, commentId: 5 }, forgejoRepository),
+      () =>
+        buildCommandPlan(operation, { number: 12, commentId: 5, threadId: 44 }, forgejoRepository),
       (error) => error.code === 'UNSUPPORTED_CAPABILITY' && error.details.provider === 'forgejo',
     );
   }
