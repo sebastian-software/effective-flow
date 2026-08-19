@@ -2634,6 +2634,36 @@ async function readForgejoPaginated(repository, endpoint, runner, label, options
   });
 }
 
+// The two Forgejo list endpoints, built once and shared by the plan builder — which answers with
+// page 1 as the preview — and by the reader that pages them. Keeping one builder is what makes the
+// preview and the executed request provably the same request.
+//
+// `type=issues` is mandatory rather than decorative. `ListIssues` defaults `type` to
+// `optional.None`, which returns issues **and** pull requests together, and an unrecognized value
+// falls through to that same default with no error path — so a port that dropped or misspelled it
+// would return a plausible superset that nothing downstream could tell apart. The client-side
+// `pull_request` filter is the second line of defence, not the first.
+function forgejoIssueListEndpoint(input, repository) {
+  const query = new URLSearchParams({ state: input.state ?? 'all', type: 'issues' });
+  // One single-label query per variant, exactly as the renderer path passed. `/issues?labels=`
+  // resolves label **names** and means **AND** — `count(*) = len(includedLabelIDs)` — so a
+  // multi-label value would intersect rather than union. `labelQueryVariants` exists to express OR
+  // across label *spellings* (`effective-flow-fix` ∪ `firmo-fix`), which no endpoint offers by name,
+  // and it already emits one single-label query per variant. Nothing about this endpoint obsoletes
+  // it, and collapsing its variants into one `labels=` value would silently intersect them.
+  if (input.labels?.length) query.set('labels', input.labels.join(','));
+  return `repos/${repository.owner}/${repository.repository}/issues?${query}`;
+}
+
+// No label filter, and none may be added here. `/pulls?labels=` takes numeric label **IDs** as
+// repeated parameters and means OR; a label *name* fails `StringsToInt64s` and the forge answers
+// HTTP 500 rather than an empty result. Filtering pull requests by label would need a name-to-ID
+// resolution step first.
+function forgejoPullListEndpoint(input, repository) {
+  const query = new URLSearchParams({ state: input.state ?? 'open' });
+  return `repos/${repository.owner}/${repository.repository}/pulls?${query}`;
+}
+
 export function buildCommandPlan(operation, input, repository) {
   requireObject(input);
   const { provider, owner, repository: repo, slug, host } = repository;
@@ -2660,7 +2690,8 @@ export function buildCommandPlan(operation, input, repository) {
       // a name they can construct is the cheapest way to give them one. Leaving it unregistered is
       // what keeps it internal: `executeOperation` consults `REMOTE_OPERATIONS` and refuses the
       // name from outside, so the read stays owned by the one branch whose contract defines it.
-      // The explicit `per_page=100` matches `issue-list`; without it the endpoint pages at 30 and
+      // The explicit `per_page=100` matches this adapter's other `gh api` list reads; without it
+      // the endpoint pages at 30 and
       // a target name on page 2 would be read as absent.
       case 'label-list':
         return mutationPlan('gh', [
@@ -3003,7 +3034,24 @@ export function buildCommandPlan(operation, input, repository) {
     }
   }
 
+  // Every Forgejo read below consumes one of **two** wire formats, and which one is not visible
+  // from the read site unless it says so — that invisibility is what produced every defect this
+  // adapter has had in this area, #355 included. Each case therefore states its class:
+  //
+  // - **Class A — raw Gitea/Forgejo API JSON**, obtained through `tea api`. The JSON **tags** of
+  //   `modules/structs` are the authority for every key, and the Go **field names** are not: `Index`
+  //   is `number`, `Poster` is `user`, `LineNum` is `position`, `PRBranchInfo.Name` is `label`,
+  //   `HTMLURL` is `html_url`. Reading a field name instead of its tag yields `undefined`, which
+  //   looks like an absent value rather than an error.
+  // - **Class B — tea's own CLI renderers**, obtained through `tea … --output json`. The Go tags are
+  //   **irrelevant** here: `modules/print` and `cmd/detail_json.go` re-shape every value, stringify
+  //   every table cell, drop what the `--fields` list did not request, and join collections into
+  //   display strings. The authority is tea's source at the pinned floor, not the forge's structs.
+  //
+  // A new read belongs in Class A unless there is a reason it cannot be, and it states which one.
   switch (operation) {
+    // Class B: tea renderer output; the authority for its keys is tea's `modules/print`, not
+    // `modules/structs`. Colors arrive without a leading `#` and `index` arrives stringified.
     // See the GitHub case above for why this plan exists without a registered operation.
     // `--exclude-org` scopes the pre-check to repository labels: an organization label of the same
     // name must not suppress creating the repository-scoped one, because the worst case of a
@@ -3041,6 +3089,9 @@ export function buildCommandPlan(operation, input, repository) {
         undefined,
         { tolerateAlreadyExists: true, expectsJson: false },
       );
+    // Class B: tea's detail renderer (`cmd/detail_json.go`). `--fields` is ignored on this path, so
+    // the object arrives whole and stringified; `labels` is an array here, not the joined string the
+    // list renderer produced.
     case 'issue-read':
       return mutationPlan('tea', [
         'issues',
@@ -3062,6 +3113,7 @@ export function buildCommandPlan(operation, input, repository) {
         undefined,
         { timeoutMs: ISSUE_STATE_READ_TIMEOUT_MS },
       );
+    // Class B: tea renderer output.
     case 'issue-comments-read':
       return mutationPlan('tea', [
         'issues',
@@ -3071,21 +3123,22 @@ export function buildCommandPlan(operation, input, repository) {
         '--fields',
         'index,comments',
       ]);
-    case 'issue-list': {
-      const args = [
-        'issues',
-        'list',
-        ...teaJson,
-        '--state',
-        input.state ?? 'all',
-        '--page',
-        String(input.page ?? 1),
-        '--limit',
-        String(input.limit ?? 100),
-      ];
-      if (input.labels?.length) args.push('--labels', input.labels.join(','));
-      return mutationPlan('tea', args);
-    }
+    // Class A: raw Gitea/Forgejo API JSON, read through the `modules/structs` tags — `Index` is
+    // `number`, `Poster` is `user`. `tea issues list` is deliberately not used and could not be
+    // repaired in place: its renderer joins `Labels` into one whitespace-separated string, and Gitea
+    // permits a space inside a label name, so that string cannot be decoded back into the set it
+    // came from. The raw API states `Labels` as a real array.
+    //
+    // The builder answers with page 1; the reader pages to exhaustion and guards `X-Total-Count`.
+    case 'issue-list':
+      return teaApiReadPlan(
+        repository,
+        forgejoPagedEndpoint(
+          forgejoIssueListEndpoint(input, repository),
+          input.page ?? 1,
+          input.limit ?? FORGEJO_PAGE_LIMIT,
+        ),
+      );
     case 'issue-create': {
       const args = [
         'issues',
@@ -3172,6 +3225,7 @@ export function buildCommandPlan(operation, input, repository) {
         undefined,
         { expectsJson: false },
       );
+    // Class B: tea's detail renderer, as `issue-read` is.
     case 'pr-read':
       return mutationPlan('tea', [
         'pulls',
@@ -3180,6 +3234,7 @@ export function buildCommandPlan(operation, input, repository) {
         '--fields',
         'index,title,state,body,labels,url,head,base',
       ]);
+    // Class B: tea renderer output.
     case 'pr-comments-read':
       return mutationPlan('tea', [
         'pulls',
@@ -3189,24 +3244,21 @@ export function buildCommandPlan(operation, input, repository) {
         '--fields',
         'index,comments',
       ]);
-    case 'pr-list': {
-      return mutationPlan('tea', [
-        'pulls',
-        'list',
-        ...teaJson,
-        '--state',
-        input.state ?? 'open',
-        '--page',
-        String(input.page ?? 1),
-        '--limit',
-        String(input.limit ?? 100),
-        // Same field list as `pr-read`: without it tea's list renderer omits head and base, and
-        // every item has to be hydrated through a separate read. Purely additive — callers keep
-        // hydrating an incomplete item, so a tea that ignores the request behaves as before.
-        '--fields',
-        'index,title,state,body,labels,url,head,base',
-      ]);
-    }
+    // Class A, and no field selection: the raw API always returns the complete object, including
+    // `head`, `base` and `draft`. Two values change with the move and both are corrections. `head`
+    // is now `head.ref`, the bare branch name — tea's `formatPRHead` prefixed `owner:` for a
+    // cross-fork head, which no other provider path does and which nothing downstream parsed. And
+    // `draft` becomes real: tea's list renderer never carried it, so it fell through to `false` on
+    // every Forgejo pull request, and a draft one will now be reported as one.
+    case 'pr-list':
+      return teaApiReadPlan(
+        repository,
+        forgejoPagedEndpoint(
+          forgejoPullListEndpoint(input, repository),
+          input.page ?? 1,
+          input.limit ?? FORGEJO_PAGE_LIMIT,
+        ),
+      );
     case 'pr-create':
       return mutationPlan(
         'tea',
@@ -3265,6 +3317,7 @@ export function buildCommandPlan(operation, input, repository) {
         repository,
         forgejoPagedEndpoint(apiEndpoint(`pulls/${prNumber(input)}/reviews`), 1),
       );
+    // Class A: raw API JSON (`modules/structs.User`).
     // The identity read is credential-scoped, not repository-scoped: `--login` selects the
     // credential and `tea api user` answers for exactly that one, so no `--repo` is passed at all.
     // It deliberately does not read `tea logins list`, which reports the locally configured logins —
@@ -3273,6 +3326,7 @@ export function buildCommandPlan(operation, input, repository) {
     // stranger's comment as its own.
     case 'viewer-read':
       return mutationPlan('tea', ['api', 'user', '--include', '--login', repository.login ?? host]);
+    // Class A: raw API JSON (`modules/structs.PullRequest`, `CombinedStatus`, `Commit`).
     // Call 1 of three, and the only one this builder can answer. The head SHA it returns is what
     // addresses calls 2 and 3, so they are not knowable before it has run;
     // `readForgejoPullRequestStatus` issues them and publishes all three previews in
@@ -3946,7 +4000,11 @@ function normalizeAuthor(author) {
 function normalizeIssue(item, repository, metadata = {}) {
   if (!item || typeof item !== 'object')
     fail('INVALID_PAYLOAD', 'provider returned an invalid issue');
-  if (Object.hasOwn(item, 'pull_request')) {
+  // Truthiness, never key presence. `Issue.PullRequest` carries no `omitempty`, so **every** raw
+  // Gitea/Forgejo issue arrives with `"pull_request": null` and a key-presence guard would reject
+  // the entire result set rather than the pull requests in it. The sibling filters that drop pull
+  // requests out of an issue listing are truthiness-based for the same reason.
+  if (item.pull_request) {
     fail('INVALID_PAYLOAD', 'provider returned a pull request where an issue was required');
   }
   return {
@@ -5424,13 +5482,22 @@ export async function executeOperation(operation, input = {}, options = {}) {
       activeRepository.provider === 'forgejo' &&
       (operation === 'issue-list' || operation === 'pr-list')
     ) {
-      const paginated = await executeTeaPaginatedList(operation, input, activeRepository, runner);
+      const endpoint =
+        operation === 'issue-list'
+          ? forgejoIssueListEndpoint(input, activeRepository)
+          : forgejoPullListEndpoint(input, activeRepository);
+      const paginated = await readForgejoPaginated(activeRepository, endpoint, runner, operation, {
+        ...(input.limit === undefined ? {} : { limit: requireNumber(input.limit, 'limit') }),
+        ...(input.maxPages === undefined
+          ? {}
+          : { maxPages: requireNumber(input.maxPages, 'maxPages') }),
+      });
       return {
         ok: true,
         operation,
         provider: activeRepository.provider,
         data: {
-          result: normalizeRemoteData(operation, paginated.raw, activeRepository, input),
+          result: normalizeRemoteData(operation, paginated.items, activeRepository, input),
           commands: paginated.commands,
           pagesFetched: paginated.pagesFetched,
           conditionalWriteAvailable: false,

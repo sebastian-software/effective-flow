@@ -529,25 +529,37 @@ test('Forgejo command plans use supported tea forms and filter PR heads after re
     (error) => error.code === 'UNSUPPORTED_CAPABILITY' && error.details.provider === 'forgejo',
   );
 
+  // The pulls endpoint states no head filter, so the head is still matched after the read.
   const runner = fakeRunner([
     {
       status: 0,
       stdout: JSON.stringify([
-        { index: 1, title: 'one', state: 'open', head: 'other', base: 'develop' },
-        { index: 2, title: 'two', state: 'open', head: 'topic', base: 'develop' },
+        {
+          number: 1,
+          title: 'one',
+          state: 'open',
+          head: { ref: 'other' },
+          base: { ref: 'develop' },
+        },
+        {
+          number: 2,
+          title: 'two',
+          state: 'open',
+          head: { ref: 'topic' },
+          base: { ref: 'develop' },
+        },
       ]),
-      stderr: '',
+      stderr: 'HTTP/2 200\r\n',
     },
-    { status: 0, stdout: '[]', stderr: '' },
+    { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\n' },
   ]);
   const envelope = await executeOperation(
     'pr-list',
     { repository: forgejoRepository, head: 'topic' },
     { runner, skipProbe: true },
   );
-  assert.equal(runner.calls[0].args.includes('--head'), false);
-  assert.equal(runner.calls[0].args.includes('--limit'), true);
-  assert.equal(runner.calls[1].args.at(runner.calls[1].args.indexOf('--page') + 1), '2');
+  assert.equal(runner.calls[0].args[1], 'repos/team/flow/pulls?state=open&limit=100&page=1');
+  assert.equal(runner.calls[1].args[1], 'repos/team/flow/pulls?state=open&limit=100&page=2');
   assert.equal(envelope.data.pagesFetched, 2);
   assert.deepEqual(
     envelope.data.result.map((item) => item.number),
@@ -731,75 +743,67 @@ test('escape sanitization covers every non-JSON tea result and leaves JSON untou
   assert.equal(readEnvelope.data.result.body, body);
 });
 
-test('tea list results normalize labels flattened into a string', async () => {
+test('the ported Forgejo lists read labels as the array the raw API states', async () => {
   const listEnvelope = async (operation, items) =>
     executeOperation(
       operation,
       { repository: forgejoRepository },
       {
         runner: fakeRunner([
-          { status: 0, stdout: JSON.stringify(items), stderr: '' },
-          { status: 0, stdout: '[]', stderr: '' },
+          { status: 0, stdout: JSON.stringify(items), stderr: 'HTTP/2 200\r\n' },
+          { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\n' },
         ]),
         skipProbe: true,
       },
     );
 
-  // Class B fixture: `tea pulls list --output json`. tea re-shapes every value through
-  // `modules/print`, so the Go JSON tags of `modules/structs` say nothing about this payload —
-  // every table cell arrives stringified and `labels` arrives as one joined string.
-  // The reported crash: tea 0.14.x renders an empty label set as "" and `?? []` does not cover it.
-  const empty = await listEnvelope('pr-list', [
-    { index: '2', title: 'two', state: 'open', labels: '' },
+  // Class A: `modules/structs`. `Labels` is a real array of objects, so the whitespace ambiguity of
+  // tea's renderer does not exist here — a multi-word label name survives intact.
+  const labelled = await listEnvelope('pr-list', [
+    {
+      number: 2,
+      title: 'two',
+      state: 'open',
+      labels: [{ name: 'effective-flow-fix' }, { name: 'good first issue' }],
+    },
   ]);
-  assert.equal(empty.ok, true);
-  assert.deepEqual(empty.data.result[0].labels, []);
+  assert.equal(labelled.ok, true);
+  assert.deepEqual(labelled.data.result[0].labels, ['effective-flow-fix', 'good first issue']);
 
-  // Real labels are flattened into the same string, so they must be split, not discarded. tea joins
-  // them with a single space in both v0.14.2 and v0.15.1; it never emits a comma.
-  const flattened = await listEnvelope('pr-list', [
-    { index: '3', title: 'three', state: 'open', labels: 'one two' },
+  const unlabelled = await listEnvelope('pr-list', [
+    { number: 3, title: 'three', state: 'open', labels: [] },
   ]);
-  assert.deepEqual(flattened.data.result[0].labels, ['one', 'two']);
+  assert.deepEqual(unlabelled.data.result[0].labels, []);
 
-  // A repeated separator and surrounding padding must not produce empty entries.
-  const padded = await listEnvelope('pr-list', [
-    { index: '4', title: 'four', state: 'open', labels: '  one   two  ' },
-  ]);
-  assert.deepEqual(padded.data.result[0].labels, ['one', 'two']);
-
-  const separatorsOnly = await listEnvelope('pr-list', [
-    { index: '5', title: 'five', state: 'open', labels: '   ' },
-  ]);
-  assert.deepEqual(separatorsOnly.data.result[0].labels, []);
-
-  // The limit the separator fix cannot lift: Gitea permits a space inside a label name, so a
-  // whitespace-joined string is ambiguous by construction. This is what the raw-API port removes
-  // for the list reads; it stays true for every renderer path that survives.
-  const multiWord = await listEnvelope('pr-list', [
-    { index: '11', title: 'eleven', state: 'open', labels: 'good first issue' },
-  ]);
-  assert.deepEqual(multiWord.data.result[0].labels, ['good', 'first', 'issue']);
-
-  // issue-list shares the normalizer, so the same crash applied there.
+  // issue-list shares the normalizer, and every raw-API issue carries `"pull_request": null`.
   const issues = await listEnvelope('issue-list', [
-    { index: '9', title: 'nine', state: 'open', labels: '' },
+    { number: 9, title: 'nine', state: 'open', labels: [{ name: 'bug' }], pull_request: null },
   ]);
   assert.equal(issues.ok, true);
-  assert.deepEqual(issues.data.result[0].labels, []);
+  assert.deepEqual(issues.data.result[0].labels, ['bug']);
+  assert.equal(issues.data.result[0].number, 9);
 
-  // An item without head/base must survive normalization so callers can still hydrate it.
-  const thin = await listEnvelope('pr-list', [
-    { index: '10', title: 'ten', state: 'open', labels: '' },
+  // `head`/`base` arrive complete on the raw API, so nothing has to be hydrated, and `draft` is a
+  // real value where tea's renderer left it permanently `false`.
+  const full = await listEnvelope('pr-list', [
+    {
+      number: 10,
+      title: 'ten',
+      state: 'open',
+      labels: [],
+      draft: true,
+      head: { ref: 'topic' },
+      base: { ref: 'develop' },
+    },
   ]);
-  assert.equal(thin.data.result[0].head, undefined);
-  assert.equal(thin.data.result[0].base, undefined);
+  assert.equal(full.data.result[0].head, 'topic');
+  assert.equal(full.data.result[0].base, 'develop');
+  assert.equal(full.data.result[0].draft, true);
 });
 
-test('the array label shapes belong to the detail path, not to tea list output', async () => {
-  // The single-item renderer and gh both return a real array, and the normalizer keeps handling
-  // both element shapes. Asserting that off a list fixture was the fiction: `tea pulls list` emits
-  // a joined string there and never an array.
+test('the renderer label split survives for the paths that still consume tea output', async () => {
+  // The detail path still returns tea's rendering, so the whitespace split stays load-bearing there
+  // — and stays ambiguous for a multi-word label name, which is why the lists moved off it.
   const detail = async (labels) =>
     executeOperation(
       'pr-read',
@@ -815,20 +819,117 @@ test('the array label shapes belong to the detail path, not to tea list output',
         skipProbe: true,
       },
     );
+  assert.deepEqual((await detail('one two')).data.result.labels, ['one', 'two']);
+  assert.deepEqual((await detail('  one   two  ')).data.result.labels, ['one', 'two']);
+  assert.deepEqual((await detail('   ')).data.result.labels, []);
   assert.deepEqual((await detail([{ name: 'x' }])).data.result.labels, ['x']);
   assert.deepEqual((await detail(['x'])).data.result.labels, ['x']);
   assert.deepEqual((await detail(undefined)).data.result.labels, []);
 });
 
-test('tea pr-list requests the same fields as pr-read', () => {
-  const list = buildCommandPlan('pr-list', {}, forgejoRepository);
-  const read = buildCommandPlan('pr-read', { pullRequest: 2 }, forgejoRepository);
-  const fields = 'index,title,state,body,labels,url,head,base';
-  assert.equal(list.args.at(list.args.indexOf('--fields') + 1), fields);
-  assert.equal(read.args.at(read.args.indexOf('--fields') + 1), fields);
+test('the ported Forgejo issue list states type=issues and filters pull requests out', async () => {
+  // The parameter has to be asserted, not merely its effect: `ListIssues` defaults `type` to "both"
+  // and an unrecognized value falls through to that same default with no error path, so a port that
+  // dropped or misspelled it would return a plausible superset.
+  const plan = buildCommandPlan('issue-list', {}, forgejoRepository);
+  assert.equal(plan.executable, 'tea');
+  assert.equal(plan.args[1], 'repos/team/flow/issues?state=all&type=issues&limit=100&page=1');
 
-  const github = buildCommandPlan('pr-list', {}, githubRepository);
-  assert.equal(github.args.includes('--fields'), false);
+  const labelled = buildCommandPlan(
+    'issue-list',
+    { labels: ['effective-flow-fix'], state: 'open' },
+    forgejoRepository,
+  );
+  assert.equal(
+    labelled.args[1],
+    'repos/team/flow/issues?state=open&type=issues&labels=effective-flow-fix&limit=100&page=1',
+  );
+
+  // And the client-side filter is the second line of defence: an issue carrying `"pull_request":
+  // null` normalizes, one carrying an object is dropped from the listing.
+  const envelope = await executeOperation(
+    'issue-list',
+    { repository: forgejoRepository },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify([
+            { number: 1, title: 'issue', state: 'open', labels: [], pull_request: null },
+            {
+              number: 2,
+              title: 'pull',
+              state: 'open',
+              labels: [],
+              pull_request: { merged: false },
+            },
+          ]),
+          stderr: 'HTTP/2 200\r\n',
+        },
+        { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\n' },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.deepEqual(
+    envelope.data.result.map((item) => item.number),
+    [1],
+  );
+});
+
+test('normalizeIssue rejects a pull request by truthiness, not by key presence', async () => {
+  // `Issue.PullRequest` has no `omitempty`, so every raw-API issue carries `"pull_request": null`
+  // and a key-presence guard would have rejected 100% of rows.
+  const read = async (item) =>
+    executeOperation(
+      'issue-read',
+      { repository: forgejoRepository, number: item.number },
+      {
+        runner: fakeRunner([{ status: 0, stdout: JSON.stringify(item), stderr: '' }]),
+        skipProbe: true,
+      },
+    );
+  const issue = await read({
+    number: 17,
+    title: 'Title',
+    state: 'open',
+    labels: [],
+    pull_request: null,
+  });
+  assert.equal(issue.ok, true);
+  assert.equal(issue.data.result.number, 17);
+
+  const pull = await read({
+    number: 18,
+    title: 'Title',
+    state: 'open',
+    labels: [],
+    pull_request: { merged: false },
+  });
+  assert.equal(pull.ok, false);
+  assert.equal(pull.error.code, 'INVALID_PAYLOAD');
+});
+
+test('a truncated Forgejo issue listing fails closed instead of reporting a prefix', async () => {
+  const envelope = await executeOperation(
+    'issue-list',
+    { repository: forgejoRepository },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify([{ number: 1, title: 'one', state: 'open', labels: [] }]),
+          stderr: 'HTTP/2 200\r\nX-Total-Count: 7\r\n',
+        },
+        { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\nX-Total-Count: 7\r\n' },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+  assert.equal(envelope.error.details.totalCount, 7);
+  assert.equal(envelope.error.details.returnedCount, 1);
 });
 
 test('sf label migration executes add before remove and reports partial completion', async () => {
