@@ -74,6 +74,12 @@ function shellFunction(text, name) {
 // `/^\s*git fetch origin main$/m` stops matching it. The guard would then report "no
 // unguarded fetch" for a genuinely unguarded one — silently, and only in the direction
 // that matters.
+//
+// Known limitation: this is line-based and quote-unaware, so a `#` preceded by whitespace
+// starts a comment even inside a quoted string — `git commit -m "chore: closes #278"` is
+// blanked from the `#` onwards and the assertions never see the rest of the line. A `#`
+// without a preceding space is untouched, which covers URL fragments, `${#var}`, and
+// `${var#prefix}`. Widen this only when a workflow actually needs such a line.
 function shellCode(text) {
   return text
     .split('\n')
