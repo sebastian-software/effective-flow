@@ -739,53 +739,74 @@ test('tea list results normalize labels flattened into a string', async () => {
       },
     );
 
+  // Class B fixture: `tea pulls list --output json`. tea re-shapes every value through
+  // `modules/print`, so the Go JSON tags of `modules/structs` say nothing about this payload —
+  // every table cell arrives stringified and `labels` arrives as one joined string.
   // The reported crash: tea 0.14.x renders an empty label set as "" and `?? []` does not cover it.
   const empty = await listEnvelope('pr-list', [
-    { index: 2, title: 'two', state: 'open', labels: '' },
+    { index: '2', title: 'two', state: 'open', labels: '' },
   ]);
   assert.equal(empty.ok, true);
   assert.deepEqual(empty.data.result[0].labels, []);
 
-  // Real labels are flattened into the same string, so they must be split, not discarded.
+  // Real labels are flattened into the same string, so they must be split, not discarded. tea joins
+  // them with a single space in both v0.14.2 and v0.15.1; it never emits a comma.
   const flattened = await listEnvelope('pr-list', [
-    { index: 3, title: 'three', state: 'open', labels: 'one, two' },
+    { index: '3', title: 'three', state: 'open', labels: 'one two' },
   ]);
-  assert.deepEqual(flattened.data.result[0].labels, ['one', 'two']);
+  // Pre-fix characterization: the normalizer splits on `,`, so the whole joined string survives as
+  // a single label. The label-separator commit replaces this expectation with `['one', 'two']`.
+  assert.deepEqual(flattened.data.result[0].labels, ['one two']);
 
-  const unpadded = await listEnvelope('pr-list', [
-    { index: 4, title: 'four', state: 'open', labels: 'one,two' },
+  // A repeated separator and surrounding padding must not produce empty entries.
+  const padded = await listEnvelope('pr-list', [
+    { index: '4', title: 'four', state: 'open', labels: '  one   two  ' },
   ]);
-  assert.deepEqual(unpadded.data.result[0].labels, ['one', 'two']);
+  // Pre-fix characterization, corrected by the label-separator commit.
+  assert.deepEqual(padded.data.result[0].labels, ['one   two']);
 
   const separatorsOnly = await listEnvelope('pr-list', [
-    { index: 5, title: 'five', state: 'open', labels: ', ,' },
+    { index: '5', title: 'five', state: 'open', labels: '   ' },
   ]);
   assert.deepEqual(separatorsOnly.data.result[0].labels, []);
 
-  // Existing array shapes keep working: the single-item renderer and gh both return arrays.
-  const arrays = await listEnvelope('pr-list', [
-    { index: 6, title: 'six', state: 'open', labels: [{ name: 'x' }] },
-    { index: 7, title: 'seven', state: 'open', labels: ['x'] },
-    { index: 8, title: 'eight', state: 'open' },
-  ]);
-  assert.deepEqual(
-    arrays.data.result.map((item) => item.labels),
-    [['x'], ['x'], []],
-  );
-
   // issue-list shares the normalizer, so the same crash applied there.
   const issues = await listEnvelope('issue-list', [
-    { index: 9, title: 'nine', state: 'open', labels: '' },
+    { index: '9', title: 'nine', state: 'open', labels: '' },
   ]);
   assert.equal(issues.ok, true);
   assert.deepEqual(issues.data.result[0].labels, []);
 
   // An item without head/base must survive normalization so callers can still hydrate it.
   const thin = await listEnvelope('pr-list', [
-    { index: 10, title: 'ten', state: 'open', labels: '' },
+    { index: '10', title: 'ten', state: 'open', labels: '' },
   ]);
   assert.equal(thin.data.result[0].head, undefined);
   assert.equal(thin.data.result[0].base, undefined);
+});
+
+test('the array label shapes belong to the detail path, not to tea list output', async () => {
+  // The single-item renderer and gh both return a real array, and the normalizer keeps handling
+  // both element shapes. Asserting that off a list fixture was the fiction: `tea pulls list` emits
+  // a joined string there and never an array.
+  const detail = async (labels) =>
+    executeOperation(
+      'pr-read',
+      { repository: forgejoRepository, pullRequest: 6 },
+      {
+        runner: fakeRunner([
+          {
+            status: 0,
+            stdout: JSON.stringify({ index: '6', title: 'six', state: 'open', labels }),
+            stderr: '',
+          },
+        ]),
+        skipProbe: true,
+      },
+    );
+  assert.deepEqual((await detail([{ name: 'x' }])).data.result.labels, ['x']);
+  assert.deepEqual((await detail(['x'])).data.result.labels, ['x']);
+  assert.deepEqual((await detail(undefined)).data.result.labels, []);
 });
 
 test('tea pr-list requests the same fields as pr-read', () => {
@@ -1002,13 +1023,13 @@ test('label-create pages the Forgejo pre-check and matches a name on the second 
   const { envelope, runner } = await labelCreate(forgejoRepository, [
     {
       status: 0,
-      stdout: JSON.stringify([{ index: '1', name: 'wontfix', color: '#ffffff', description: '' }]),
+      stdout: JSON.stringify([{ index: '1', name: 'wontfix', color: 'ffffff', description: '' }]),
       stderr: '',
     },
     {
       status: 0,
       stdout: JSON.stringify([
-        { index: '2', name: 'effective-flow-fix', color: '#ededed', description: 'fix' },
+        { index: '2', name: 'effective-flow-fix', color: 'ededed', description: 'fix' },
       ]),
       stderr: '',
     },
@@ -1019,7 +1040,7 @@ test('label-create pages the Forgejo pre-check and matches a name on the second 
   assert.deepEqual(envelope.data.result.label, {
     id: '2',
     name: 'effective-flow-fix',
-    color: '#ededed',
+    color: 'ededed',
     description: 'fix',
   });
   assert.equal(runner.calls.at(1).args.at(runner.calls.at(1).args.indexOf('--page') + 1), '2');
@@ -3219,27 +3240,33 @@ test('review-thread reads normalize file, line, author, text, and resolution', a
   assert.match(runner.calls[0].stdin, /originalStartLine createdAt author/);
 });
 
-test('a flat review-thread record carries its timestamp on the thread and its comment', async () => {
-  // The Forgejo shape has one record per thread instead of a comment list, so the same instant
-  // describes both. A record without a timestamp still produces none.
+test('the tea review-comment renderer states no login and no timestamp', async () => {
+  // Class B fixture: `tea pulls review-comments --output json` with the field list the adapter
+  // requests. `modules/print` stringifies every cell, `formatUserName` renders `reviewer` as the
+  // display name rather than the login, `resolver` and `url` are always present and empty when
+  // unset, and no timestamp is emitted at all — the request asks for none, and tea's own column for
+  // it would be `created`, never `created_at`.
   const runner = fakeRunner([
     {
       status: 0,
       stdout: JSON.stringify([
         {
-          id: 5,
+          id: '5',
           body: 'Automated note',
-          reviewer: { login: 'review-app[bot]' },
+          reviewer: 'Review App',
           path: 'src/a.mjs',
-          line: 42,
-          created_at: '2026-07-28T22:30:00+02:00',
+          line: '42',
+          resolver: '',
+          url: 'https://code.example.test/team/flow/pulls/2/files#issuecomment-5',
         },
         {
-          id: 6,
+          id: '6',
           body: 'Undated note',
-          reviewer: { login: 'reviewer' },
+          reviewer: 'Reviewer Person',
           path: 'src/b.mjs',
-          line: 1,
+          line: '1',
+          resolver: '',
+          url: '',
         },
       ]),
       stderr: '',
@@ -3250,10 +3277,20 @@ test('a flat review-thread record carries its timestamp on the thread and its co
     { repository: forgejoRepository, pullRequest: 2 },
     { runner, skipProbe: true },
   );
-  assert.equal(envelope.data.result[0].createdAt, '2026-07-28T20:30:00.000Z');
-  assert.equal(envelope.data.result[0].comments[0].createdAt, '2026-07-28T20:30:00.000Z');
+  // Pre-fix characterization, corrected by the review-thread port: the renderer carries no
+  // timestamp under any spelling, so no thread and no comment can state one and nothing downstream
+  // can order them against the head commit.
+  assert.equal(Object.hasOwn(envelope.data.result[0], 'createdAt'), false);
+  assert.equal(Object.hasOwn(envelope.data.result[0].comments[0], 'createdAt'), false);
   assert.equal(Object.hasOwn(envelope.data.result[1], 'createdAt'), false);
   assert.equal(Object.hasOwn(envelope.data.result[1].comments[0], 'createdAt'), false);
+  // Pre-fix characterization, corrected by the review-thread port: a display name reaches
+  // `author.login`, so no comment can be matched against the account a write is attributed to.
+  assert.deepEqual(envelope.data.result[0].comments[0].author, {
+    login: 'Review App',
+    isBot: null,
+    authorType: 'unknown',
+  });
 });
 
 test('provider probes normalize missing CLI, auth failure, and Forgejo capabilities', async () => {
