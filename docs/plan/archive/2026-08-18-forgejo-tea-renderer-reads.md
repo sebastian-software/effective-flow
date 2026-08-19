@@ -1,6 +1,6 @@
 # Correct the Forgejo tea-renderer reads and the resolve capability claim
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 
