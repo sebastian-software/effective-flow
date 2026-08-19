@@ -101,8 +101,6 @@ function teaProbeResults(overrides = {}) {
     help('issueLabelRemove', '--remove-labels'),
     help('pulls', '--output'),
     help('pullComments', '--comments'),
-    help('pullReviewComments', '--output --fields'),
-    help('pullResolve', '--output'),
     help('pullCreate', '--head --base'),
     help('pullCreateDraft', '--draft'),
     help('pullEdit', '--description'),
@@ -514,14 +512,22 @@ test('Forgejo command plans use supported tea forms and filter PR heads after re
   assert.equal(create.args.includes('--output'), false);
   assert.equal(create.args.at(-1), 'one,two');
 
+  // The review-thread read is a raw-API walk now, and the builder answers with its first call.
   const reviewThreads = buildCommandPlan(
     'review-threads-read',
     { pullRequest: 7 },
     forgejoRepository,
   );
-  assert.deepEqual(reviewThreads.args.slice(0, 3), ['pulls', 'review-comments', '7']);
-  const resolve = buildCommandPlan('review-thread-resolve', { threadId: 44 }, forgejoRepository);
-  assert.deepEqual(resolve.args.slice(0, 3), ['pulls', 'resolve', '44']);
+  assert.deepEqual(reviewThreads.args.slice(0, 3), [
+    'api',
+    'repos/team/flow/pulls/7/reviews?limit=100&page=1',
+    '--include',
+  ]);
+  // The resolve route does not exist on Forgejo, so no caller can obtain a command for it.
+  assert.throws(
+    () => buildCommandPlan('review-thread-resolve', { threadId: 44 }, forgejoRepository),
+    (error) => error.code === 'UNSUPPORTED_CAPABILITY' && error.details.provider === 'forgejo',
+  );
 
   const runner = fakeRunner([
     {
@@ -3245,57 +3251,114 @@ test('review-thread reads normalize file, line, author, text, and resolution', a
   assert.match(runner.calls[0].stdin, /originalStartLine createdAt author/);
 });
 
-test('the tea review-comment renderer states no login and no timestamp', async () => {
-  // Class B fixture: `tea pulls review-comments --output json` with the field list the adapter
-  // requests. `modules/print` stringifies every cell, `formatUserName` renders `reviewer` as the
-  // display name rather than the login, `resolver` and `url` are always present and empty when
-  // unset, and no timestamp is emitted at all — the request asks for none, and tea's own column for
-  // it would be `created`, never `created_at`.
+test('the Forgejo review-thread read walks the two documented raw-API routes', async () => {
+  // Class A fixtures: `modules/structs/pull_review.go`. Read by JSON tag — `user`, `position`,
+  // `resolver`, `created_at` — never by Go field name.
+  const teaApi = (body, headers = '') => ({
+    status: 0,
+    stdout: JSON.stringify(body),
+    stderr: `HTTP/2 200\r\n${headers}`,
+  });
   const runner = fakeRunner([
-    {
-      status: 0,
-      stdout: JSON.stringify([
-        {
-          id: '5',
-          body: 'Automated note',
-          reviewer: 'Review App',
-          path: 'src/a.mjs',
-          line: '42',
-          resolver: '',
-          url: 'https://code.example.test/team/flow/pulls/2/files#issuecomment-5',
-        },
-        {
-          id: '6',
-          body: 'Undated note',
-          reviewer: 'Reviewer Person',
-          path: 'src/b.mjs',
-          line: '1',
-          resolver: '',
-          url: '',
-        },
-      ]),
-      stderr: '',
-    },
+    teaApi([{ id: 31 }, { id: 32 }], 'X-Total-Count: 2\r\n'),
+    teaApi([]),
+    teaApi([
+      {
+        id: 5,
+        body: 'Automated note',
+        user: { login: 'review-app[bot]', type: 'Bot' },
+        resolver: null,
+        path: 'src/a.mjs',
+        position: 42,
+        html_url: 'https://code.example.test/team/flow/pulls/2/files#issuecomment-5',
+        created_at: '2026-07-28T22:30:00+02:00',
+      },
+      {
+        id: 6,
+        body: 'Resolved note',
+        user: { login: 'reviewer', type: 'User' },
+        resolver: { login: 'maintainer' },
+        path: 'src/b.mjs',
+        position: 1,
+        created_at: '2026-07-29T08:00:00Z',
+      },
+    ]),
   ]);
   const envelope = await executeOperation(
     'review-threads-read',
     { repository: forgejoRepository, pullRequest: 2 },
     { runner, skipProbe: true },
   );
-  // Pre-fix characterization, corrected by the review-thread port: the renderer carries no
-  // timestamp under any spelling, so no thread and no comment can state one and nothing downstream
-  // can order them against the head commit.
-  assert.equal(Object.hasOwn(envelope.data.result[0], 'createdAt'), false);
-  assert.equal(Object.hasOwn(envelope.data.result[0].comments[0], 'createdAt'), false);
-  assert.equal(Object.hasOwn(envelope.data.result[1], 'createdAt'), false);
-  assert.equal(Object.hasOwn(envelope.data.result[1].comments[0], 'createdAt'), false);
-  // Pre-fix characterization, corrected by the review-thread port: a display name reaches
-  // `author.login`, so no comment can be matched against the account a write is attributed to.
+  assert.equal(envelope.ok, true);
+  // One listing plus one comment read per review — the fan-out tea performed client-side, now
+  // visible in `data.commands`.
+  assert.deepEqual(
+    runner.calls.map((call) => call.args[1]),
+    [
+      'repos/team/flow/pulls/2/reviews?limit=100&page=1',
+      'repos/team/flow/pulls/2/reviews/31/comments',
+      'repos/team/flow/pulls/2/reviews/32/comments',
+    ],
+  );
+  assert.equal(envelope.data.commands.length, 3);
+  assert.equal(envelope.data.command, undefined);
+
+  // A real login reaches `author.login`, where the renderer would have supplied a display name.
   assert.deepEqual(envelope.data.result[0].comments[0].author, {
-    login: 'Review App',
-    isBot: null,
-    authorType: 'unknown',
+    login: 'review-app[bot]',
+    isBot: true,
+    authorType: 'bot',
   });
+  // `position`, never `line`, and it stays a number.
+  assert.equal(envelope.data.result[0].line, 42);
+  assert.equal(envelope.data.result[0].comments[0].line, 42);
+  // Every thread carries a timestamp, normalized to UTC from Gitea's local offset.
+  assert.equal(envelope.data.result[0].createdAt, '2026-07-28T20:30:00.000Z');
+  assert.equal(envelope.data.result[0].comments[0].createdAt, '2026-07-28T20:30:00.000Z');
+  assert.equal(envelope.data.result[1].createdAt, '2026-07-29T08:00:00.000Z');
+  // `resolver: null` versus an object is the whole resolved test.
+  assert.equal(envelope.data.result[0].isResolved, false);
+  assert.equal(envelope.data.result[1].isResolved, true);
+  // The thread id is what the pre-port renderer path produced for the same comment: tea stringified
+  // every table cell, so `PullReviewComment.ID` 5 was `'5'` there and stays `'5'` here.
+  assert.equal(envelope.data.result[0].id, '5');
+  assert.equal(envelope.data.result[0].comments[0].id, '5');
+});
+
+test('a pull request without reviews reads as an empty thread list, not as a failure', async () => {
+  const runner = fakeRunner([
+    { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\nX-Total-Count: 0\r\n' },
+  ]);
+  const envelope = await executeOperation(
+    'review-threads-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(envelope.data.result, []);
+  assert.equal(runner.calls.length, 1);
+});
+
+test('a truncated Forgejo review listing fails closed instead of reporting a prefix', async () => {
+  // An incomplete thread list reaching `merge-gate` would let condition 7 report every thread
+  // assessed while an unassessed finding sits open.
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify([{ id: 31 }]),
+      stderr: 'HTTP/2 200\r\nX-Total-Count: 9\r\n',
+    },
+    { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\nX-Total-Count: 9\r\n' },
+  ]);
+  const envelope = await executeOperation(
+    'review-threads-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, false);
+  assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+  assert.equal(envelope.error.details.totalCount, 9);
+  assert.equal(envelope.error.details.returnedCount, 1);
 });
 
 test('provider probes normalize missing CLI, auth failure, and Forgejo capabilities', async () => {
@@ -3333,7 +3396,8 @@ test('provider probes normalize missing CLI, auth failure, and Forgejo capabilit
   );
   assert.equal(forgejo.login, 'work');
   assert.equal(forgejo.capabilities.reviewThreads, true);
-  assert.equal(forgejo.capabilities.reviewThreadResolution, true);
+  // Not a `tea pulls resolve --help` probe any more: the subcommand exists, the route does not.
+  assert.equal(forgejo.capabilities.reviewThreadResolution, false);
   assert.equal(forgejo.capabilities.reviewThreadReplies, false);
   assert.equal(forgejo.capabilities.reviewCreate, false);
   assert.equal(forgejo.capabilities.labelMigration, true);
@@ -3345,7 +3409,6 @@ test('Forgejo probe reports missing commands and flags as unsupported capabiliti
     fakeRunner(
       teaProbeResults({
         issueLabelRemove: { status: 1, stdout: '', stderr: 'unknown flag' },
-        pullResolve: { status: 1, stdout: '', stderr: 'unknown command' },
       }),
     ),
   );
@@ -5382,12 +5445,13 @@ test('the Forgejo probe gates the pull-request operations on the tea api transpo
   assert.equal(withoutInclude.capabilities.viewerRead, false);
 });
 
-test('the Forgejo adapter keeps the watch and the two review writes refused', async () => {
+test('the Forgejo adapter keeps the watch and the three review writes refused', async () => {
   const probe = await probeProvider(forgejoRepository, fakeRunner(teaProbeResults()));
   for (const [operation, capability] of [
     ['pr-checks-wait', 'pullRequestChecksWait'],
     ['review-create', 'reviewCreate'],
     ['review-thread-reply', 'reviewThreadReplies'],
+    ['review-thread-resolve', 'reviewThreadResolution'],
   ]) {
     const runner = fakeRunner([]);
     const envelope = await executeOperation(
@@ -5408,7 +5472,8 @@ test('the Forgejo adapter keeps the watch and the two review writes refused', as
 
     // Even a caller that bypasses the capability gate cannot get a tea command for them.
     assert.throws(
-      () => buildCommandPlan(operation, { number: 12, commentId: 5 }, forgejoRepository),
+      () =>
+        buildCommandPlan(operation, { number: 12, commentId: 5, threadId: 44 }, forgejoRepository),
       (error) => error.code === 'UNSUPPORTED_CAPABILITY' && error.details.provider === 'forgejo',
     );
   }

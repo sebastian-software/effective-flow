@@ -156,8 +156,9 @@ comment body from its own marker table, idempotently. Never write that marker by
 and the `{{SKILL:iterate}}` separation are exact string matches, so a hand-written variant silently
 defeats both.
 
-On `UNSUPPORTED_CAPABILITY` – Forgejo supports neither review submission (`review-create`) nor a
-reply into a review thread (`review-thread-reply`); thread **resolution** it does support – fall
+On `UNSUPPORTED_CAPABILITY` – Forgejo supports none of review submission (`review-create`), a reply
+into a review thread (`review-thread-reply`), or thread resolution (`review-thread-resolve`); the
+last because the forge serves no resolve route, not because `tea` lacks the subcommand – fall
 back to exactly one structured PR comment carrying the `file:line`
 references in its text, and report the reduced fidelity; do not improvise a provider request. Build
 that fallback comment with the helper's `pr-review-comment-build` operation, **not** with
@@ -231,8 +232,9 @@ blocking watch, so the gate takes its documented no-watch degradation (report th
 ask once) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
 the status read composes the pull-request object, the combined commit status and the head commit's
 date, and the merge sends `head_commit_id` as the server-side head guard. Two further operations
-this building block uses stay unsupported on Forgejo — `review-create` and `review-thread-reply` —
-and the gate still fails closed on anything it cannot read, improvising no provider request.
+this building block uses stay unsupported on Forgejo — `review-create`, `review-thread-reply` and
+`review-thread-resolve` — and the gate still fails closed on anything it cannot read, improvising no
+provider request.
 
 ### Idempotency via the Effective Flow markers
 

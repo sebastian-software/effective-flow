@@ -413,11 +413,32 @@ needs no flag beyond every `gh` 2.x line and no scope beyond an authenticated `g
 it is unaffected by that version floor; it maps to `gh api user`.
 
 **Forgejo** supports `pr-status-read`, `pr-merge`, and `viewer-read`, and declares only
-`pr-checks-wait` unsupported: `tea` has no `checks` subcommand and Forgejo offers no server-side
-blocking watch comparable to `gh pr checks --watch`, so `merge-gate` takes its documented no-watch
-degradation there – report the pending checks by name and ask once – instead of blocking. A Forgejo
-run is therefore the whole gate minus the blocking wait. Two other operations `merge-gate` and
-`iterate` use stay unsupported on Forgejo: `review-create` and `review-thread-reply`.
+`pr-checks-wait` unsupported among the three: `tea` has no `checks` subcommand and Forgejo offers no
+server-side blocking watch comparable to `gh pr checks --watch`, so `merge-gate` takes its documented
+no-watch degradation there – report the pending checks by name and ask once – instead of blocking. A
+Forgejo run is therefore the whole gate minus the blocking wait. Three other operations `merge-gate`
+and `iterate` use stay unsupported on Forgejo: `review-create`, `review-thread-reply`, and
+`review-thread-resolve`.
+
+**`review-thread-resolve` is unsupported because Forgejo serves no route for it**, not because
+`tea` lacks a subcommand – `tea pulls resolve` exists. Forgejo's `/pulls` router group declares no
+`resolve`, `unresolve` or `replies` path at any nesting level, where Gitea `main` declares all three,
+and a live `15.0.3+gitea-1.22.0` instance confirms it: its `/swagger.v1.json` lists 314 paths and not
+one of them matches `…/pulls/comments/…`; an authenticated `POST …/pulls/comments/{id}/resolve` is
+rejected by the router with the same status a deliberately nonsense path draws, while the
+neighbouring `…/reviews/{id}/dismissals` reaches its handler. The capability is therefore stated as a
+provider fact, exactly as `pullRequestStatus` and `pullRequestMerge` are, rather than derived from a
+`--help` probe that could only ever attest the client subcommand. `iterate` keeps its reply, leaves
+the thread unresolved and says so; `merge-gate` reads the same refusal as workflow input rather than
+as a failure.
+
+**Reading review threads costs one request per review, plus one.** Forgejo exposes no flat
+review-comment listing at any nesting level, so the read enumerates `…/pulls/{index}/reviews` and
+then asks each review for its comments – `ceil(N/50) + N` requests for `N` reviews, the same fan-out
+`tea pulls review-comments` performed internally and did not report. Every call appears in
+`data.commands`. What moved is not the cost but the wire format: the renderer states no login and no
+timestamp under any spelling, so the read now goes through the raw API, where `modules/structs`
+declares both.
 
 The three capabilities are gated on a `tea api` transport probe rather than on a version floor.
 `tea api` itself landed in `tea` v0.12.0, below the adapter's existing 0.14.2 minimum, so nothing

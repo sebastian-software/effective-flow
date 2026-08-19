@@ -2555,6 +2555,85 @@ function teaApiReadPlan(repository, endpoint) {
   ]);
 }
 
+// Forgejo clamps `limit` to `MAX_RESPONSE_ITEMS` (default 50, operator-configurable) and pages at
+// 30 when it is omitted, so this value is a request rather than a guarantee. Every raw-API list read
+// below therefore pages until the forge stops answering and checks `X-Total-Count` instead of
+// comparing what came back against what was asked for.
+const FORGEJO_PAGE_LIMIT = 100;
+const FORGEJO_MAX_PAGES = 1000;
+
+function forgejoPagedEndpoint(endpoint, page, limit = FORGEJO_PAGE_LIMIT) {
+  const query = new URLSearchParams({ limit: String(limit), page: String(page) });
+  return `${endpoint}${endpoint.includes('?') ? '&' : '?'}${query}`;
+}
+
+// The shape and the total, read off one `tea api --include` response. A body that is not an array is
+// never silently treated as an empty page: on this transport a 4xx body is an object, and
+// `teaApiSuccess` has already rejected those, so anything else left here is a payload nobody can
+// interpret.
+function forgejoListPage(response, label, page) {
+  if (!Array.isArray(response.body)) {
+    fail('INVALID_PAYLOAD', `${label} returned a non-list payload`, {
+      ...(page === undefined ? {} : { page }),
+    });
+  }
+  const total = Number(response.headers.get('x-total-count'));
+  return { items: response.body, total: Number.isFinite(total) ? total : undefined };
+}
+
+// A single unpaginated raw-API list read. Forgejo's review-comment endpoint takes no `page` or
+// `limit`, so paging it would re-request the same list until the bound ran out; it is read once and
+// guarded by the header instead.
+async function readForgejoList(repository, endpoint, runner, label) {
+  const plan = teaApiReadPlan(repository, endpoint);
+  const response = teaApiSuccess(await runChecked(runner, plan, label), label);
+  const { items, total } = forgejoListPage(response, label);
+  if (total !== undefined && total > items.length) {
+    fail('INVALID_PAYLOAD', `${label} returned a truncated list`, {
+      totalCount: total,
+      returnedCount: items.length,
+    });
+  }
+  return { items, commands: [redact(plan)] };
+}
+
+// One bounded pagination loop for every paginated Forgejo raw-API list read. It fails closed on a
+// short result rather than returning a prefix, which is what a criterion evaluated over the list
+// requires: an incomplete thread list would let `merge-gate` report every thread assessed while an
+// unassessed finding sits open, and an incomplete issue list would let a dedup pass miss a
+// duplicate. `X-Total-Count` is set on the issue, pull-request and review endpoints alike — strictly
+// better evidence than the renderer path had, which could only notice an empty page, and an empty
+// page is also what a warned read produces.
+async function readForgejoPaginated(repository, endpoint, runner, label, options = {}) {
+  const limit = options.limit ?? FORGEJO_PAGE_LIMIT;
+  const maxPages = options.maxPages ?? FORGEJO_MAX_PAGES;
+  const items = [];
+  const commands = [];
+  let total;
+  for (let page = 1; page <= maxPages; page += 1) {
+    const plan = teaApiReadPlan(repository, forgejoPagedEndpoint(endpoint, page, limit));
+    commands.push(redact(plan));
+    const stepLabel = `${label} page ${page}`;
+    const response = teaApiSuccess(await runChecked(runner, plan, stepLabel), stepLabel);
+    const parsed = forgejoListPage(response, label, page);
+    if (parsed.total !== undefined) total = parsed.total;
+    items.push(...parsed.items);
+    if (parsed.items.length === 0 || (total !== undefined && items.length >= total)) {
+      if (total !== undefined && total > items.length) {
+        fail('INVALID_PAYLOAD', `${label} returned a truncated list`, {
+          totalCount: total,
+          returnedCount: items.length,
+        });
+      }
+      return { items, commands, pagesFetched: page };
+    }
+  }
+  fail('UNSUPPORTED_CAPABILITY', `${label} exceeded the bounded pagination limit`, {
+    maxPages,
+    itemsRead: items.length,
+  });
+}
+
 export function buildCommandPlan(operation, input, repository) {
   requireObject(input);
   const { provider, owner, repository: repo, slug, host } = repository;
@@ -3169,15 +3248,23 @@ export function buildCommandPlan(operation, input, repository) {
         ...teaJson,
         assertPublishable(payload.body, 'payload.body'),
       ]);
+    // Call 1 of the review-thread walk, and the only one this builder can answer. Neither forge
+    // exposes a flat review-comment listing — Forgejo's router declares
+    // `GET …/pulls/{index}/reviews` and `GET …/pulls/{index}/reviews/{id}/comments` and nothing
+    // between them — so the comment reads are addressed by the review IDs call 1 returns and are
+    // not knowable before it has run. `readForgejoReviewThreads` issues them and publishes every
+    // preview in `data.commands`, exactly as `readForgejoPullRequestStatus` does.
+    //
+    // The `tea pulls review-comments` renderer is deliberately not used here, and could not be
+    // repaired in place: `modules/print` renders `reviewer` through `formatUserName`, which returns
+    // the display name whenever the account has one, so **no login is obtainable from that surface
+    // at all** — and the field list carries no timestamp under any spelling. Both are read here
+    // from the raw API, where `modules/structs` states them.
     case 'review-threads-read':
-      return mutationPlan('tea', [
-        'pulls',
-        'review-comments',
-        String(prNumber(input)),
-        ...teaJson,
-        '--fields',
-        'id,body,reviewer,path,line,resolver,url',
-      ]);
+      return teaApiReadPlan(
+        repository,
+        forgejoPagedEndpoint(apiEndpoint(`pulls/${prNumber(input)}/reviews`), 1),
+      );
     // The identity read is credential-scoped, not repository-scoped: `--login` selects the
     // credential and `tea api user` answers for exactly that one, so no `--repo` is passed at all.
     // It deliberately does not read `tea logins list`, which reports the locally configured logins —
@@ -3243,20 +3330,19 @@ export function buildCommandPlan(operation, input, repository) {
     // blocking watch comparable to `gh pr checks --watch`, so `pr-checks-wait` would have to become
     // the poll loop the gate explicitly rejects; the documented no-watch degradation carries it
     // instead. The two review operations have no verified tea surface either.
+    // `review-thread-resolve` joins them: `tea pulls resolve` exists as a client subcommand, but
+    // the route behind it does not. Forgejo's `/pulls` router group declares no `resolve`,
+    // `unresolve` or `replies` path at any nesting level, where Gitea `main` declares all three, and
+    // a live instance confirms it — see the user guide. The former `--help` probe attested the
+    // subcommand and never the route, so it reported a write capability the forge does not serve.
     case 'review-create':
     case 'review-thread-reply':
+    case 'review-thread-resolve':
     case 'pr-checks-wait':
       fail('UNSUPPORTED_CAPABILITY', `installed tea adapter does not safely support ${operation}`, {
         operation,
         provider: 'forgejo',
       });
-    case 'review-thread-resolve':
-      return mutationPlan('tea', [
-        'pulls',
-        'resolve',
-        String(requireNumber(input.threadId, 'threadId')),
-        ...teaJson,
-      ]);
     default:
       fail('UNSUPPORTED_CAPABILITY', `unsupported Forgejo operation: ${operation}`, { operation });
   }
@@ -3685,8 +3771,6 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
     issueLabelRemove,
     pulls,
     pullComments,
-    pullReviewComments,
-    pullResolve,
     pullCreate,
     pullCreateDraft,
     pullEdit,
@@ -3704,8 +3788,6 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
     probeTeaHelp(runner, ['issues', 'edit'], ['--remove-labels']),
     probeTeaHelp(runner, ['pulls'], ['--output']),
     probeTeaHelp(runner, ['pulls'], ['--comments']),
-    probeTeaHelp(runner, ['pulls', 'review-comments'], ['--output', '--fields']),
-    probeTeaHelp(runner, ['pulls', 'resolve'], ['--output']),
     probeTeaHelp(runner, ['pulls', 'create'], ['--head', '--base']),
     probeTeaHelp(runner, ['pulls', 'create'], ['--draft']),
     probeTeaHelp(runner, ['pulls', 'edit'], ['--description']),
@@ -3778,9 +3860,20 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       // falling back to the unconditional create whose duplicates this whole path exists to stop.
       labelCreate: labelCreateSupported,
       reviewCreate: false,
-      reviewThreads: pullReviewComments,
+      // The review-thread read rides on the same `tea api` transport as the gate reads, because that
+      // is where it now goes: `tea pulls review-comments` states no login and no timestamp, so the
+      // subcommand's presence never attested a usable read in the first place.
+      reviewThreads: teaApiTransport,
       reviewThreadReplies: false,
-      reviewThreadResolution: pullResolve,
+      // A stated provider fact, as `pullRequestStatus` and `pullRequestMerge` already are, and no
+      // longer a `--help` probe of `tea pulls resolve`. That probe attested the **client
+      // subcommand**; the route behind it does not exist on Forgejo. `/swagger.v1.json` on a live
+      // `15.0.3+gitea-1.22.0` instance declares 314 paths and not one `…/pulls/comments/…`, no
+      // `resolve`, no `unresolve`, no `replies`; an authenticated `POST …/pulls/comments/{id}/resolve`
+      // is rejected by the router with the same 405 a deliberately nonsense path draws, while the
+      // neighbouring `…/reviews/{id}/dismissals` reaches its handler. Reporting this as supported
+      // made `merge-gate` act on a write the forge never serves.
+      reviewThreadResolution: false,
       conditionalWrites: false,
     },
   };
@@ -4539,20 +4632,38 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
             comments,
           };
         }
+        // Class A: raw Gitea/Forgejo API JSON. `modules/structs/pull_review.go` declares
+        // `PullReviewComment` with `ID json:"id"`, `Poster json:"user"`, `Resolver json:"resolver"`,
+        // `LineNum json:"position"` and `HTMLURL json:"html_url"`, and those tags — not the Go field
+        // names — are the authority for every key read here.
+        //
+        // **`position`, never `line`.** That pair is the same Go-field-versus-JSON-tag divergence
+        // that shipped as #354, inside this very struct: reading `line` returns `undefined` on every
+        // comment, which is a plausible-looking absence rather than an error.
+        //
+        // `id` is stringified because the pre-port renderer stringified every table cell, so a
+        // thread identifier stays byte-identical across the port and no caller holding one from an
+        // earlier read has to be told which side of the change produced it.
         const createdAt = normalizeTimestamp(thread.created_at, thread.createdAt, thread.created);
+        const line = thread.position ?? thread.line;
         return {
-          id: thread.id,
+          id: String(thread.id),
+          // `resolver` is `null` while a thread is open and an object once someone resolved it, so
+          // truthiness is the whole test. `Boolean(null)` is false and `Boolean({})` is true.
           isResolved: Boolean(thread.resolver),
           path: thread.path,
-          line: thread.line,
+          line,
           ...(createdAt === undefined ? {} : { createdAt }),
           comments: [
             {
-              id: thread.id,
+              id: String(thread.id),
               body: thread.body ?? '',
-              author: normalizeAuthor(thread.reviewer),
+              // `user`, not `reviewer`: `Poster` carries the tag `user`, and a comment whose author
+              // the forge does not state leaves the login unset. `merge-gate` counts an item with no
+              // login as human, so the guard activates — the fail-safe direction.
+              author: normalizeAuthor(thread.user ?? thread.reviewer),
               path: thread.path,
-              line: thread.line,
+              line,
               ...(createdAt === undefined ? {} : { createdAt }),
             },
           ],
@@ -4831,6 +4942,47 @@ async function readForgejoPullRequestStatus(input, repository, runner) {
       flattenForgejoPullRequestStatus(pull, statuses, headCommittedAt),
       repository,
     ),
+    commands,
+  };
+}
+
+// The two-step walk both forges force. Forgejo's router declares `GET …/pulls/{index}/reviews` and
+// `GET …/pulls/{index}/reviews/{id}/comments`; there is no flat review-comment listing at any
+// nesting level on either forge, so the reviews have to be enumerated before their comments can be
+// addressed. This adds no requests: `tea pulls review-comments` already performs the same
+// `ceil(N/50) + N` fan-out client-side, so the port relocates that cost into `data.commands` rather
+// than creating it. What the adapter newly owns is the pagination over `/reviews` and its truncation
+// guard, which tea handled through `resp.NextPage`.
+async function readForgejoReviewThreads(input, repository, runner) {
+  const number = prNumber(input);
+  const endpoint = (suffix) => `repos/${repository.owner}/${repository.repository}/${suffix}`;
+  const reviews = await readForgejoPaginated(
+    repository,
+    endpoint(`pulls/${number}/reviews`),
+    runner,
+    'review-threads-read reviews',
+  );
+  const commands = [...reviews.commands];
+  const comments = [];
+  for (const review of reviews.items) {
+    const id = review?.id;
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      fail('INVALID_PAYLOAD', 'provider returned a review without a usable id');
+    }
+    // A pull request with no reviews yields no comment read at all, and a review with no inline
+    // comments yields an empty list — neither is a failed read, exactly as `forgejoCommitStatuses`
+    // keeps an empty rollup distinct from a refused one.
+    const page = await readForgejoList(
+      repository,
+      endpoint(`pulls/${number}/reviews/${id}/comments`),
+      runner,
+      `review-threads-read review ${id} comments`,
+    );
+    commands.push(...page.commands);
+    comments.push(...page.items);
+  }
+  return {
+    result: normalizeRemoteData('review-threads-read', comments, repository, input),
     commands,
   };
 }
@@ -5281,6 +5433,24 @@ export async function executeOperation(operation, input = {}, options = {}) {
           result: normalizeRemoteData(operation, paginated.raw, activeRepository, input),
           commands: paginated.commands,
           pagesFetched: paginated.pagesFetched,
+          conditionalWriteAvailable: false,
+        },
+        dryRun: false,
+      };
+    }
+    // The review-thread walk publishes every call it made, for the same reason the status read does:
+    // the plan `buildCommandPlan` answered with — and therefore the preview computed above — is the
+    // review listing alone, because the per-review comment reads are addressed by the IDs it
+    // returns and are not knowable before it has run.
+    if (operation === 'review-threads-read' && activeRepository.provider === 'forgejo') {
+      const threads = await readForgejoReviewThreads(input, activeRepository, runner);
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: threads.result,
+          commands: threads.commands,
           conditionalWriteAvailable: false,
         },
         dryRun: false,
