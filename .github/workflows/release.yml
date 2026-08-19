@@ -153,9 +153,13 @@ jobs:
           #
           # The retried command runs in the `if` test position, which makes its exemption from
           # `errexit` syntactically obvious at a glance.
-          attempts=3
           retry() {
-            n=1
+            # Both counters are function-local. `retry` retries a named unit, so a unit that
+            # itself calls `retry` would otherwise reset the outer loop's shared `n` — silently
+            # collapsing three attempts to one, or never terminating. A local `attempts` also
+            # keeps the `[` test below from ever seeing an empty bound.
+            local attempts=3
+            local n=1
             while :; do
               if "$@"; then return 0; fi
               # The command itself is deliberately not echoed: the push URL carries the
@@ -208,9 +212,13 @@ jobs:
           # The retried command runs in the `if` test position, which makes its exemption from
           # `errexit` syntactically obvious at a glance and reads the same as the guarded
           # returns in `confirm_delivered_commit` below.
-          attempts=3
           retry() {
-            n=1
+            # Both counters are function-local. `retry` retries a named unit, so a unit that
+            # itself calls `retry` would otherwise reset the outer loop's shared `n` — silently
+            # collapsing three attempts to one, or never terminating. A local `attempts` also
+            # keeps the `[` test below from ever seeing an empty bound.
+            local attempts=3
+            local n=1
             while :; do
               if "$@"; then return 0; fi
               # The command itself is deliberately not echoed: the push URL carries the
