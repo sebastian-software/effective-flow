@@ -754,21 +754,26 @@ test('tea list results normalize labels flattened into a string', async () => {
   const flattened = await listEnvelope('pr-list', [
     { index: '3', title: 'three', state: 'open', labels: 'one two' },
   ]);
-  // Pre-fix characterization: the normalizer splits on `,`, so the whole joined string survives as
-  // a single label. The label-separator commit replaces this expectation with `['one', 'two']`.
-  assert.deepEqual(flattened.data.result[0].labels, ['one two']);
+  assert.deepEqual(flattened.data.result[0].labels, ['one', 'two']);
 
   // A repeated separator and surrounding padding must not produce empty entries.
   const padded = await listEnvelope('pr-list', [
     { index: '4', title: 'four', state: 'open', labels: '  one   two  ' },
   ]);
-  // Pre-fix characterization, corrected by the label-separator commit.
-  assert.deepEqual(padded.data.result[0].labels, ['one   two']);
+  assert.deepEqual(padded.data.result[0].labels, ['one', 'two']);
 
   const separatorsOnly = await listEnvelope('pr-list', [
     { index: '5', title: 'five', state: 'open', labels: '   ' },
   ]);
   assert.deepEqual(separatorsOnly.data.result[0].labels, []);
+
+  // The limit the separator fix cannot lift: Gitea permits a space inside a label name, so a
+  // whitespace-joined string is ambiguous by construction. This is what the raw-API port removes
+  // for the list reads; it stays true for every renderer path that survives.
+  const multiWord = await listEnvelope('pr-list', [
+    { index: '11', title: 'eleven', state: 'open', labels: 'good first issue' },
+  ]);
+  assert.deepEqual(multiWord.data.result[0].labels, ['good', 'first', 'issue']);
 
   // issue-list shares the normalizer, so the same crash applied there.
   const issues = await listEnvelope('issue-list', [

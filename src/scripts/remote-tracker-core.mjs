@@ -3790,12 +3790,20 @@ function normalizeLabel(label) {
   return typeof label === 'string' ? label : label?.name;
 }
 
-// tea's list renderer flattens `labels` into a comma-separated string while its single-item
+// tea's list renderer flattens `labels` into a **whitespace**-joined string while its single-item
 // renderer returns an array, so the same field arrives in two shapes one call apart. Splitting
 // the string rather than discarding it matters: an `Array.isArray(...) ? ... : []` guard would
 // stop the crash but silently drop every label the list form actually carries.
+//
+// The separator is a space, not a comma: `modules/print` joins the names with `" "` in v0.14.2
+// and v0.15.1 alike, so splitting on `,` returned the whole joined list as one label name. That
+// makes the split lossy in the other direction — Gitea permits a space inside a label name, and
+// `good first issue` cannot be told apart from three labels on this wire format at all. Every
+// read that has somewhere better to go now takes the raw API instead, where `Labels` is a real
+// array; this split is what remains for the renderer paths that have no such alternative, and it
+// is a best effort rather than a faithful decoding.
 function normalizeLabels(value) {
-  const items = typeof value === 'string' ? value.split(',') : value;
+  const items = typeof value === 'string' ? value.split(/\s+/) : value;
   if (!Array.isArray(items)) return [];
   return items
     .map(normalizeLabel)
