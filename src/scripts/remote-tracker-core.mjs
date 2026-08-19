@@ -2577,8 +2577,14 @@ function forgejoListPage(response, label, page) {
       ...(page === undefined ? {} : { page }),
     });
   }
-  const total = Number(response.headers.get('x-total-count'));
-  return { items: response.body, total: Number.isFinite(total) ? total : undefined };
+  // A header that is absent, blank, or not a plain count states no total. `Number('')` is `0`, so
+  // reading it numerically without this test would turn an empty header into "the forge reported
+  // zero items" — and a guard whose whole job is failing closed would wave the first page through as
+  // complete.
+  const stated = response.headers.get('x-total-count');
+  const total =
+    typeof stated === 'string' && /^\d+$/.test(stated.trim()) ? Number(stated) : undefined;
+  return { items: response.body, total };
 }
 
 // A single unpaginated raw-API list read. Forgejo's review-comment endpoint takes no `page` or
@@ -2601,12 +2607,24 @@ async function readForgejoList(repository, endpoint, runner, label) {
 // short result rather than returning a prefix, which is what a criterion evaluated over the list
 // requires: an incomplete thread list would let `merge-gate` report every thread assessed while an
 // unassessed finding sits open, and an incomplete issue list would let a dedup pass miss a
-// duplicate. `X-Total-Count` is set on the issue, pull-request and review endpoints alike — strictly
-// better evidence than the renderer path had, which could only notice an empty page, and an empty
-// page is also what a warned read produces.
+// duplicate.
+//
+// **`totalIsExact` decides whether `X-Total-Count` may prove truncation, and it is not uniform
+// across the endpoints this loop serves.** On the issue and pull-request listings the header is
+// counted from the same search options that produce the body, so a total above the item count means
+// items are missing. On `…/pulls/{index}/reviews` it is not: `ListPullReviews` counts the `review`
+// rows with `CountReviews`, while `convert.ToPullReviewList` then **omits** every pending review
+// belonging to another user unless the caller is an admin. The header there legitimately exceeds the
+// body, so treating it as an exact count would fail an ordinary read with `INVALID_PAYLOAD` for as
+// long as a third party keeps an unsubmitted review open — and take `merge-gate` condition 7 down
+// with it. For such an endpoint the header stays an upper bound: it may end the walk early but never
+// condemn it, and exhaustion is proved the way `tea`'s `resp.NextPage` proved it, by paging until a
+// page comes back empty. A short page is deliberately **not** the terminator: Forgejo clamps `limit`
+// to `MAX_RESPONSE_ITEMS`, so a full page is routinely shorter than the page size requested.
 async function readForgejoPaginated(repository, endpoint, runner, label, options = {}) {
   const limit = options.limit ?? FORGEJO_PAGE_LIMIT;
   const maxPages = options.maxPages ?? FORGEJO_MAX_PAGES;
+  const totalIsExact = options.totalIsExact ?? true;
   const items = [];
   const commands = [];
   let total;
@@ -2619,7 +2637,7 @@ async function readForgejoPaginated(repository, endpoint, runner, label, options
     if (parsed.total !== undefined) total = parsed.total;
     items.push(...parsed.items);
     if (parsed.items.length === 0 || (total !== undefined && items.length >= total)) {
-      if (total !== undefined && total > items.length) {
+      if (totalIsExact && total !== undefined && total > items.length) {
         fail('INVALID_PAYLOAD', `${label} returned a truncated list`, {
           totalCount: total,
           returnedCount: items.length,
@@ -3246,10 +3264,11 @@ export function buildCommandPlan(operation, input, repository) {
       ]);
     // Class A, and no field selection: the raw API always returns the complete object, including
     // `head`, `base` and `draft`. Two values change with the move and both are corrections. `head`
-    // is now `head.ref`, the bare branch name — tea's `formatPRHead` prefixed `owner:` for a
-    // cross-fork head, which no other provider path does and which nothing downstream parsed. And
-    // `draft` becomes real: tea's list renderer never carried it, so it fell through to `false` on
-    // every Forgejo pull request, and a draft one will now be reported as one.
+    // becomes the bare branch name — tea's `formatPRHead` prefixed `owner:` for a cross-fork head,
+    // which no other provider path does and which nothing downstream parsed; `normalizeBranchRef`
+    // owns which of the object's two branch keys states it. And `draft` becomes real: tea's list
+    // renderer never carried it, so it fell through to `false` on every Forgejo pull request, and a
+    // draft one will now be reported as one.
     case 'pr-list':
       return teaApiReadPlan(
         repository,
@@ -4030,12 +4049,35 @@ function normalizeSubIssue(item, repository, parent, metadata = {}) {
   };
 }
 
+// A pull request states its branch twice, and the two providers spell the pair the other way round.
+// Gitea's `PRBranchInfo` declares `Ref json:"ref"` and `Name json:"label"`: `services/convert` sets
+// `Ref` to the branch name only while **both** the head repository record and the head branch still
+// exist, and otherwise leaves it at `refs/pull/<index>/head` — a deleted head branch, a deleted fork
+// and an AGit-flow pull request all land there — while `Name` is unconditionally `pr.HeadBranch`.
+// GitHub states the same two keys with the opposite meaning: its `ref` is the bare branch and its
+// `label` is `owner:branch`.
+//
+// So neither key can be preferred unconditionally. `ref` wins, and `label` is consulted only when
+// `ref` is a pull ref, which GitHub never states — so the fallback is unreachable there and exact on
+// Gitea. Getting this wrong is silent in the worst way: `pr-list`'s `input.head` filter and
+// `src/tools/pr.md`'s `head === <head-branch>` match would both miss an open pull request whose
+// branch the forge has already deleted, and the caller would create a second one.
+const PULL_HEAD_REF = /^refs\/pull\/\d+\/head$/;
+
+function normalizeBranchRef(branch) {
+  if (typeof branch !== 'object' || branch === null) return undefined;
+  const ref = typeof branch.ref === 'string' && branch.ref !== '' ? branch.ref : undefined;
+  if (ref !== undefined && !PULL_HEAD_REF.test(ref)) return ref;
+  const label = typeof branch.label === 'string' && branch.label !== '' ? branch.label : undefined;
+  return label ?? ref;
+}
+
 function normalizePullRequest(item, repository, metadata = {}) {
   const issue = normalizeIssue(item, repository, metadata);
   return {
     ...issue,
-    head: item.head?.ref ?? item.headRefName ?? item.head_branch ?? item.head,
-    base: item.base?.ref ?? item.baseRefName ?? item.base_branch ?? item.base,
+    head: normalizeBranchRef(item.head) ?? item.headRefName ?? item.head_branch ?? item.head,
+    base: normalizeBranchRef(item.base) ?? item.baseRefName ?? item.base_branch ?? item.base,
     draft: item.draft ?? item.isDraft ?? false,
   };
 }
@@ -5019,6 +5061,9 @@ async function readForgejoReviewThreads(input, repository, runner) {
     endpoint(`pulls/${number}/reviews`),
     runner,
     'review-threads-read reviews',
+    // The reviews listing counts pending reviews its body hides, so its header cannot prove
+    // truncation. See `readForgejoPaginated`.
+    { totalIsExact: false },
   );
   const commands = [...reviews.commands];
   const comments = [];

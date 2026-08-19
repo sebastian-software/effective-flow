@@ -500,8 +500,8 @@ Write a summary after each phase and pass it on to later phases. Delete the file
      blocks a merge rather than stopping the run, and the missing identity is reported as the
      reason.
    - **Forgejo** supports `pullRequestStatus`, `pullRequestMerge`, and `viewerRead`, and declares
-     only `pullRequestChecksWait` unsupported: `tea` has no `checks` subcommand and Forgejo offers
-     no server-side blocking watch. A Forgejo run therefore takes the documented no-watch path in
+     only `pullRequestChecksWait` unsupported among those three: `tea` has no `checks` subcommand and
+     Forgejo offers no server-side blocking watch. A Forgejo run therefore takes the documented no-watch path in
      Phase 2 — report the pending checks and ask once — and is the whole gate minus the blocking
      wait, not report-only. What stays unsupported there is `pr-checks-wait`, `review-create`,
      `review-thread-reply`, and `review-thread-resolve`.

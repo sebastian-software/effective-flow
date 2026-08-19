@@ -3440,16 +3440,35 @@ test('a pull request without reviews reads as an empty thread list, not as a fai
   assert.equal(runner.calls.length, 1);
 });
 
-test('a truncated Forgejo review listing fails closed instead of reporting a prefix', async () => {
-  // An incomplete thread list reaching `merge-gate` would let condition 7 report every thread
-  // assessed while an unassessed finding sits open.
+test('a pending review another user owns does not make the review listing look truncated', async () => {
+  // `ListPullReviews` counts the `review` rows while `convert.ToPullReviewList` omits every pending
+  // review belonging to someone else, so `X-Total-Count` legitimately exceeds the body there. Read
+  // as an exact count it would fail an ordinary read for as long as that review stays unsubmitted.
   const runner = fakeRunner([
     {
       status: 0,
-      stdout: JSON.stringify([{ id: 31 }]),
-      stderr: 'HTTP/2 200\r\nX-Total-Count: 9\r\n',
+      stdout: JSON.stringify([{ id: 31 }, { id: 32 }]),
+      stderr: 'HTTP/2 200\r\nX-Total-Count: 3\r\n',
     },
-    { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\nX-Total-Count: 9\r\n' },
+    { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\nX-Total-Count: 3\r\n' },
+    { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\n' },
+    { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\n' },
+  ]);
+  const envelope = await executeOperation(
+    'review-threads-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(envelope.data.result, []);
+});
+
+test('an unreadable Forgejo review page fails closed instead of reporting a prefix', async () => {
+  // The reviews header cannot condemn a walk, but a page that is not a list still can: an
+  // incomplete thread list reaching `merge-gate` would let condition 7 report every thread assessed
+  // while an unassessed finding sits open.
+  const runner = fakeRunner([
+    { status: 0, stdout: JSON.stringify({ message: 'nope' }), stderr: 'HTTP/2 200\r\n' },
   ]);
   const envelope = await executeOperation(
     'review-threads-read',
@@ -3458,8 +3477,87 @@ test('a truncated Forgejo review listing fails closed instead of reporting a pre
   );
   assert.equal(envelope.ok, false);
   assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
-  assert.equal(envelope.error.details.totalCount, 9);
-  assert.equal(envelope.error.details.returnedCount, 1);
+
+  // A per-review comment read whose total exceeds its body is still a truncation there: that
+  // endpoint hides nothing, so the header states the whole list.
+  const truncated = fakeRunner([
+    { status: 0, stdout: JSON.stringify([{ id: 31 }]), stderr: 'HTTP/2 200\r\n' },
+    { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\n' },
+    {
+      status: 0,
+      stdout: JSON.stringify([{ id: 5, body: 'x', user: { login: 'a' }, position: 1 }]),
+      stderr: 'HTTP/2 200\r\nX-Total-Count: 4\r\n',
+    },
+  ]);
+  const partial = await executeOperation(
+    'review-threads-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner: truncated, skipProbe: true },
+  );
+  assert.equal(partial.ok, false);
+  assert.equal(partial.error.code, 'INVALID_PAYLOAD');
+  assert.equal(partial.error.details.totalCount, 4);
+  assert.equal(partial.error.details.returnedCount, 1);
+});
+
+test('a pull request whose head branch the forge deleted keeps its branch name', async () => {
+  // `services/convert` leaves `ref` at `refs/pull/<index>/head` when the head branch or head repo
+  // is gone, and states the branch name in `label` — the opposite of GitHub's spelling, where
+  // `label` is `owner:branch`. Reading `ref` blindly would make `pr-list`'s head filter and
+  // `src/tools/pr.md`'s exact match miss a pull request that exists.
+  const envelope = await executeOperation(
+    'pr-list',
+    { repository: forgejoRepository, head: 'topic' },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify([
+            {
+              number: 4,
+              title: 'gone',
+              state: 'open',
+              labels: [],
+              head: { label: 'topic', ref: 'refs/pull/4/head' },
+              base: { label: 'develop', ref: 'develop' },
+            },
+          ]),
+          stderr: 'HTTP/2 200\r\n',
+        },
+        { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\n' },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(envelope.data.result[0].head, 'topic');
+  assert.equal(envelope.data.result[0].base, 'develop');
+
+  // GitHub spells the pair the other way round, and its `ref` still wins.
+  const github = await executeOperation(
+    'pr-list',
+    { repository: githubRepository },
+    {
+      runner: fakeRunner([
+        {
+          status: 0,
+          stdout: JSON.stringify([
+            {
+              number: 5,
+              title: 'fork',
+              state: 'open',
+              labels: [],
+              head: { label: 'someone:topic', ref: 'topic' },
+              base: { label: 'example:develop', ref: 'develop' },
+            },
+          ]),
+          stderr: '',
+        },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(github.data.result[0].head, 'topic');
+  assert.equal(github.data.result[0].base, 'develop');
 });
 
 test('provider probes normalize missing CLI, auth failure, and Forgejo capabilities', async () => {
