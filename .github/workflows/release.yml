@@ -151,12 +151,8 @@ jobs:
           # repair. A retry inside the already running release job needs nothing on `main`, so
           # that reasoning stays untouched.
           #
-          # Keep the retried command in the `if` test position. Bash exempts a failing command
-          # from `errexit` while it is a non-final component of an AND-list, which is why a
-          # bare `cmd && break` survives at top level — but that exemption does not hold for an
-          # AND-list standing as the last command of a shell function, so the same form would
-          # silently swallow failures in here. Do not simplify it back; nothing in CI executes
-          # this block, so the regression would only show up on a real release.
+          # The retried command runs in the `if` test position, which makes its exemption from
+          # `errexit` syntactically obvious at a glance.
           attempts=3
           retry() {
             n=1
@@ -209,12 +205,9 @@ jobs:
           # repair. A retry inside the already running release job needs nothing on `main`. Each
           # `run:` block is its own shell, so each defines its own copy.
           #
-          # Keep the retried command in the `if` test position. Bash exempts a failing command
-          # from `errexit` while it is a non-final component of an AND-list, which is why a
-          # bare `cmd && break` survives at top level — but that exemption does not hold for an
-          # AND-list standing as the last command of a shell function, so the same form would
-          # silently swallow failures in here. Do not simplify it back; nothing in CI executes
-          # this block, so the regression would only show up on a real release.
+          # The retried command runs in the `if` test position, which makes its exemption from
+          # `errexit` syntactically obvious at a glance and reads the same as the guarded
+          # returns in `confirm_delivered_commit` below.
           attempts=3
           retry() {
             n=1
