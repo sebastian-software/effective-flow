@@ -50,6 +50,30 @@ function workflowStep(text, name) {
   return end === -1 ? rest : rest.slice(0, end);
 }
 
+// Slices one shell function body out of a workflow `run:` block so a "retried as one
+// unit" assertion cannot be satisfied by two separately guarded commands that merely
+// happen to sit in the same step. Bounded by indentation, which is what a YAML block
+// scalar guarantees and what the shell in these workflows already follows.
+function shellFunction(text, name) {
+  const opening = text.match(new RegExp(`^([ \\t]*)${name}\\(\\) \\{$`, 'm'));
+  assert.ok(opening, `missing shell function: ${name}`);
+  const rest = text.slice(opening.index + opening[0].length);
+  const end = rest.search(new RegExp(`^${opening[1]}\\}$`, 'm'));
+  assert.notEqual(end, -1, `unterminated shell function: ${name}`);
+  return rest.slice(0, end);
+}
+
+// Blanks out shell comments while keeping every line and its indentation. Rationale
+// comments in a `run:` block quote the very forms a negative assertion forbids, so a
+// prohibition must be checked against executable text only — and a positive assertion
+// must not be satisfiable by prose that merely mentions the command.
+function shellCode(text) {
+  return text
+    .split('\n')
+    .map((line) => line.replace(/(^|\s)#.*$/, '$1'))
+    .join('\n');
+}
+
 // First column of every Markdown table row in the given text, compared
 // literally so no cell value is reinterpreted as a regular expression.
 function firstColumnCells(text) {
@@ -978,6 +1002,95 @@ test('release delegates the licensed develop-to-main payload to central staging'
   // `app-id` is deprecated in actions/create-github-app-token; guard the whole workflow so the
   // deprecated input cannot creep back in (issue #254).
   assert.doesNotMatch(release, /^\s*app-id:/m);
+});
+
+// Regression guard for the 2026-08-19 delivery of v1.60.1: one transient HTTP 403 on the
+// push stranded a released version permanently, because there is deliberately no
+// re-delivery path (issue #278). Every network operation on the delivery path — the
+// pre-fetch, the push, and the verify fetch-and-compare — must therefore survive a
+// transient failure on its own.
+//
+// A sibling test rather than an addition to the payload test above: this is a resilience
+// contract, not a payload contract, and it must be able to fail under its own name.
+// Every assertion is scoped to one step with workflowStep() and never matched against
+// the whole file. `ordered()` advances its search window by a single character, so a
+// whole-file fragment can be satisfied by a neighboring step; a step slice cannot.
+test('the release delivery retries every network operation on its path', () => {
+  const release = source('.github/workflows/release.yml');
+  const deliverName = 'Deliver portable skill, consumer docs, and trusted automation to main';
+  const deliver = shellCode(workflowStep(release, deliverName));
+  const verify = shellCode(workflowStep(release, 'Verify delivered commit'));
+
+  for (const [name, step] of [
+    [deliverName, deliver],
+    ['Verify delivered commit', verify],
+  ]) {
+    // Each `run:` block is its own shell, so no step can borrow another step's helper:
+    // every step that retries defines its own.
+    const retry = shellFunction(step, 'retry');
+
+    // The bound is a single literal per block. Two hand-synchronized integers would
+    // either cap the attempts silently or let the loop fall through with exit 0 — in
+    // which case the step would succeed with nothing pushed.
+    assert.deepEqual(
+      step.match(/attempts=\d+/g),
+      ['attempts=3'],
+      `${name}: the retry bound must be the literal 3, exactly once per run block`,
+    );
+    // Three attempts sleeping 5 s and then 15 s: long enough to ride out a GitHub-side
+    // blip, short enough that a failed delivery still alarms promptly.
+    assert.match(retry, /sleep[^\n]*\b5\b/, `${name}: the first backoff must sleep 5 s`);
+    assert.match(retry, /sleep[^\n]*\b15\b/, `${name}: the second backoff must sleep 15 s`);
+
+    // The retried command runs in an `if` test position, never as a bare `cmd && break`.
+    // Bash exempts a failing command from `errexit` while it is a non-final component of
+    // an AND-list, which is why `push && break` works today — but an AND-list standing as
+    // the last command of a shell function is not exempt, so that form would start
+    // swallowing failures the moment it moved inside this helper.
+    assert.match(
+      retry,
+      /\bif (?:! )?"\$@"; then/,
+      `${name}: the retried command must run in an if test position`,
+    );
+    assert.doesNotMatch(step, /&&\s*break\b/, `${name}: no bare cmd && break`);
+    assert.doesNotMatch(step, /\|\|\s*break\b/, `${name}: no bare cmd || break`);
+
+    // Exhausting the attempts must leave the step nonzero so `Report a failed delivery`
+    // still fires on a permanently broken delivery.
+    assert.match(retry, /\b(?:return|exit) 1\b/, `${name}: exhausted attempts must return nonzero`);
+    // git's own stderr stays visible: swallowing it would turn a diagnosable 403 into an
+    // anonymous "delivery failed" and make the next investigation impossible.
+    assert.doesNotMatch(retry, /2>\/dev\/null/, `${name}: git stderr must stay visible`);
+  }
+
+  // Both network operations in the delivery step go through the helper, and no unguarded
+  // copy of either survives. The push string itself is unchanged, so the `ordered()`
+  // contract above still binds it as one contiguous single-line substring.
+  assert.match(deliver, /^\s*retry git fetch origin main$/m);
+  assert.doesNotMatch(deliver, /^\s*git fetch origin main$/m);
+  assert.match(
+    deliver,
+    /^\s*retry git -C "\$work" push "https:\/\/x-access-token:\$\{DELIVERY_TOKEN\}@github\.com\/\$\{GITHUB_REPOSITORY\}\.git" HEAD:main$/m,
+  );
+  assert.doesNotMatch(deliver, /^\s*git -C "\$work" push /m);
+
+  // `Verify delivered commit` retries the fetch and the equality check as ONE unit. A
+  // read-after-write lag on `origin/main` would otherwise fail the comparison for a
+  // delivery that actually landed and open a `delivery-failed` alarm for a healthy
+  // release, contradicting the alarm's premise that an open alarm always means real,
+  // current drift. Retrying the fetch on its own would leave that hole open, so the
+  // retried argument must be a named unit and both operations must live inside it.
+  const unitCall = verify.match(/^[ \t]*retry (?!git\b)([A-Za-z_]\w*)[ \t]*$/m);
+  assert.ok(unitCall, 'Verify delivered commit must retry one named unit, not a bare git command');
+  const unit = shellFunction(verify, unitCall[1]);
+  assert.match(unit, /^\s*(?:if ! )?git fetch origin main\b/m);
+  assert.match(
+    unit,
+    /test "\$\(git rev-parse origin\/main\)" = "\$\{\{ steps\.deliver\.outputs\.commit \}\}"/,
+  );
+  assert.doesNotMatch(verify, /^\s*retry git fetch origin main$/m);
+  // Not `git fetch … && test …`: an AND-list as the unit's last command trips `errexit`.
+  assert.doesNotMatch(verify, /git fetch origin main &&/);
 });
 
 test('release-please opens its pull request with an explicit non-default token', () => {

@@ -51,7 +51,9 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
    authenticates with a dedicated delivery GitHub App installation token (the
    `DELIVERY_APP_CLIENT_ID` repository variable plus the `DELIVERY_APP_PRIVATE_KEY` secret) rather
    than the default `GITHUB_TOKEN`, so the delivery app is the identity that updates `main`. The
-   workflow fetches that exact commit and verifies its layout.
+   workflow fetches that exact commit and verifies its layout. Every network operation on that
+   path — the fetch before staging, the push itself, and the fetch-and-compare of the
+   verification — runs through a bounded retry of three attempts, sleeping 5 s and then 15 s.
 7. After the delivered commit is verified, a separate catalog job updates the `effective-flow`
    entry in the team catalog repository through Dalo. **This job is currently disabled** — see
    below. While it is enabled, a failure in this downstream job marks the release workflow as
@@ -169,8 +171,33 @@ what actually applies to a branch for the calling user with
 testing the rule with a real push: if the rule were misconfigured, the push would land on `develop`
 and start the release workflow — the exact accident the ruleset exists to prevent.
 
-Delivery runs only on a created release, so a failed delivery waits for the next one. That is
-deliberate, and it is the reason the run must be impossible to miss.
+Delivery runs only on a created release, so a delivery that fails for good waits for the next one.
+That is deliberate, and it is the reason the run must be impossible to miss.
+
+A transient failure no longer gets that far. Each network operation on the delivery path — the
+`git fetch origin main` before staging, the `git push … HEAD:main` itself, and the fetch-and-compare
+in `Verify delivered commit` — runs through a bounded retry of three attempts that sleeps 5 s after
+the first failure and 15 s after the second. It exists because a single transient HTTP 403 on the
+push stranded `effective-flow-v1.60.1` permanently on 2026-08-19: every persistent precondition —
+the App installation, its `contents: write` grant, the ruleset bypass, the credentials, the
+repository state, the CI sources — was verified unchanged since before the successful 1.60.0
+delivery, so the denial was GitHub-side and momentary. Both fetches additionally run **anonymously**,
+because `persist-credentials: false` and the cleared `extraheader` leave `origin` without a
+credential and the repository is public; that is the class of call most exposed to the rate-limit
+load of whoever else shares a runner address. The retry deliberately does not match on GitHub's
+error wording, which is not a contract, so a permanently broken delivery simply fails about twenty
+seconds later than before.
+
+The retry is a plain `bash` helper rather than a marketplace action: this job holds the delivery and
+release App private keys, and any action in it can reach them, so it gains no third-party
+dependency for twenty lines of shell. Each `run:` block is its own shell, so the delivery step and
+`Verify delivered commit` each define their own copy. Nothing in this repository executes or lints
+a workflow `run:` block — `ci.yml` shellchecks three `.sh` files and no workflow, and the contract
+tests read `release.yml` as text — so the retries are held in place by step-scoped assertions in
+`test/workflow-contracts.test.mjs` (the attempt count, both sleep values, the retried commands, and
+the nonzero exhaustion) rather than by anything ever running them. That the retried command really
+sits inside its loop is not testable by any mechanism this repository has; like the delivery
+identity above, it is observable only on a real release.
 
 Detection is already hard: `Verify delivered commit` asserts that `origin/main` equals the delivery
 commit and re-runs the delivery smoke test against it, so a payload that does not land fails the
@@ -182,9 +209,12 @@ gated on `failure() && release_created == 'true'`, so an ordinary red run create
 release there is no drift, and an alarm that fires for unrelated failures gets ignored. Cancellation
 is excluded for the same reason. Consecutive failures comment on the open issue instead of opening a
 second one, and `Close a resolved delivery alarm` closes it once a later release delivers
-successfully — an open alarm therefore always means real, current drift. That closing step is
-`continue-on-error`: a stale open alarm is recoverable, a red run on a good delivery would erode
-trust in the signal.
+successfully — an open alarm therefore always means real, current drift. The verification's fetch
+and its equality check are retried as **one unit** precisely so that premise survives a healthy
+delivery: retrying the fetch alone would leave a read-after-write lag on `origin/main` failing the
+comparison for a delivery that actually landed, and a `delivery-failed` issue against a release that
+did land is a worse outcome than a slow one. That closing step is `continue-on-error`: a stale open
+alarm is recoverable, a red run on a good delivery would erode trust in the signal.
 
 The assignee is `github.actor`, never `github.repository_owner`: the owner here is the
 `sebastian-software` organization, and GitHub accepts only user accounts with repository access as
@@ -200,7 +230,10 @@ it requires the workflow file on the default branch, and `main` deliberately car
 workflow. Neither can a scheduled check, which has the same default-branch requirement. More
 fundamentally, a workflow reaches `main` only through a _successful_ delivery, so a re-delivery
 workflow would first need the very thing whose absence it was meant to repair. Repairing a failed
-delivery means cutting the next release deliberately.
+delivery means cutting the next release deliberately. The in-run retry described above is **not**
+that rejected re-delivery: #278 rejects a _separate workflow reachable from `main`_, which cannot
+exist for the reason just given, whereas a retry inside the already running release job needs
+nothing on `main` at all and leaves that reasoning intact.
 
 ### Trusted default-branch automation
 
