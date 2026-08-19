@@ -141,6 +141,37 @@ jobs:
         env:
           DELIVERY_TOKEN: ${{ steps.delivery-token.outputs.token }}
         run: |
+          # Bounded retry for every network operation on the delivery path. On 2026-08-19 a
+          # single transient HTTP 403 on the push stranded effective-flow-v1.60.1 permanently:
+          # every persistent precondition was verified unchanged, so the denial was
+          # GitHub-side and momentary, and there is deliberately no re-delivery path
+          # (issue #278). An in-run retry is NOT that rejected re-delivery: #278 rejects a
+          # re-delivery path in any form, because a workflow reaches `main` only through a
+          # *successful* delivery and would therefore first need the very thing it was meant to
+          # repair. A retry inside the already running release job needs nothing on `main`, so
+          # that reasoning stays untouched.
+          #
+          # The retried command runs in the `if` test position, which makes its exemption from
+          # `errexit` syntactically obvious at a glance.
+          retry() {
+            # Both counters are function-local. `retry` retries a named unit, so a unit that
+            # itself calls `retry` would otherwise reset the outer loop's shared `n` — silently
+            # collapsing three attempts to one, or never terminating. A local `attempts` also
+            # keeps the `[` test below from ever seeing an empty bound.
+            local attempts=3
+            local n=1
+            while :; do
+              if "$@"; then return 0; fi
+              # The command itself is deliberately not echoed: the push URL carries the
+              # delivery App installation token, and Actions masking must not be the only
+              # barrier keeping it out of the run log. The failing command's own stderr sits
+              # directly above this line and already identifies what failed.
+              if [ "$n" -ge "$attempts" ]; then echo "failed after $attempts attempts" >&2; return 1; fi
+              echo "attempt $n failed, retrying" >&2
+              sleep $(( n == 1 ? 5 : 15 ))
+              n=$(( n + 1 ))
+            done
+          }
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # Belt and braces with `persist-credentials: false` above: any surviving
@@ -149,7 +180,7 @@ jobs:
           # normal case and `git config --unset-all` exits 5 for a missing key under
           # `bash -e`; a genuine failure still surfaces as a rejected push.
           git config --unset-all http.https://github.com/.extraheader || true
-          git fetch origin main
+          retry git fetch origin main
           work="$(mktemp -d)"
           git worktree add --force "$work" origin/main
           node scripts/stage-delivery.mjs "$work" "$GITHUB_REPOSITORY" develop
@@ -161,7 +192,7 @@ jobs:
             git -C "$work" commit -m "chore(delivery): ${{ steps.release.outputs.tag_name }}"
             # Push with the dedicated delivery GitHub App token so it is the sole bypass
             # identity once the `main` ruleset restricts direct pushes (issue #143).
-            git -C "$work" push "https://x-access-token:${DELIVERY_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main
+            retry git -C "$work" push "https://x-access-token:${DELIVERY_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main
           fi
           echo "commit=$(git -C "$work" rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           git worktree remove --force "$work"
@@ -169,8 +200,47 @@ jobs:
       - name: Verify delivered commit
         if: ${{ steps.release.outputs.release_created == 'true' }}
         run: |
-          git fetch origin main
-          test "$(git rev-parse origin/main)" = "${{ steps.deliver.outputs.commit }}"
+          # Same bounded retry as the delivery step above, for the same 2026-08-19 v1.60.1
+          # incident: one transient failure here strands a released version just as the push
+          # does, and a stale read raises a `delivery-failed` alarm for a delivery that landed.
+          # An in-run retry is NOT the re-delivery rejected in issue #278: that rejection covers
+          # a re-delivery path in any form, because a workflow reaches `main` only through a
+          # *successful* delivery and would therefore first need the very thing it was meant to
+          # repair. A retry inside the already running release job needs nothing on `main`. Each
+          # `run:` block is its own shell, so each defines its own copy.
+          #
+          # The retried command runs in the `if` test position, which makes its exemption from
+          # `errexit` syntactically obvious at a glance and reads the same as the guarded
+          # returns in `confirm_delivered_commit` below.
+          retry() {
+            # Both counters are function-local. `retry` retries a named unit, so a unit that
+            # itself calls `retry` would otherwise reset the outer loop's shared `n` — silently
+            # collapsing three attempts to one, or never terminating. A local `attempts` also
+            # keeps the `[` test below from ever seeing an empty bound.
+            local attempts=3
+            local n=1
+            while :; do
+              if "$@"; then return 0; fi
+              # The command itself is deliberately not echoed: the push URL carries the
+              # delivery App installation token, and Actions masking must not be the only
+              # barrier keeping it out of the run log. The failing command's own stderr sits
+              # directly above this line and already identifies what failed.
+              if [ "$n" -ge "$attempts" ]; then echo "failed after $attempts attempts" >&2; return 1; fi
+              echo "attempt $n failed, retrying" >&2
+              sleep $(( n == 1 ? 5 : 15 ))
+              n=$(( n + 1 ))
+            done
+          }
+          # The fetch and the comparison are retried as ONE unit. Retrying the fetch alone
+          # would leave a read-after-write lag on `origin/main` failing the comparison for a
+          # delivery that actually landed, which contradicts the alarm's premise that an open
+          # alarm always means real, current drift.
+          confirm_delivered_commit() {
+            if ! git fetch origin main; then return 1; fi
+            if ! test "$(git rev-parse origin/main)" = "${{ steps.deliver.outputs.commit }}"; then return 1; fi
+            return 0
+          }
+          retry confirm_delivered_commit
           verify_work="$(mktemp -d)"
           git worktree add --detach "$verify_work" "${{ steps.deliver.outputs.commit }}"
           node scripts/distribution-smoke.mjs delivery "$verify_work"
