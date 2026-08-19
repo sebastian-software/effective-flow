@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.60.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.60.0...effective-flow-v1.60.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* correct the Forgejo tea-renderer reads and the resolve capability claim ([#357](https://github.com/sebastian-software/effective-flow/issues/357)) ([9efe8c5](https://github.com/sebastian-software/effective-flow/commit/9efe8c587d19282e48aad181e1a1ebbc1aee401d))
+* read the Forgejo commit-status state from its JSON tag ([#355](https://github.com/sebastian-software/effective-flow/issues/355)) ([6cec190](https://github.com/sebastian-software/effective-flow/commit/6cec190adad6a453e1563ad45cec4a00b9dcd977))
+
 ## [1.60.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.59.0...effective-flow-v1.60.0) (2026-08-17)
 
 
