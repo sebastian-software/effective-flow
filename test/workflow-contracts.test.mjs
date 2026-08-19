@@ -1037,6 +1037,26 @@ test('the release delivery retries every network operation on its path', () => {
       ['attempts=3'],
       `${name}: the retry bound must be the literal 3, exactly once per run block`,
     );
+    // Assigning the bound is not retrying. Without the three assertions below, a helper
+    // whose `while :; do` became `if false; then`, whose test compares against a literal
+    // instead of `$attempts`, or that never advances `n` still carries `attempts=3` and
+    // still passes a test named "retries every network operation" while retrying zero
+    // times. Pin the loop, the consumed bound, and the advancing counter instead.
+    assert.match(
+      retry,
+      /^\s*(?:while|until)\b[^\n]*\bdo$/m,
+      `${name}: the retry helper must loop over its attempts`,
+    );
+    assert.match(
+      retry,
+      /"?\$\{?n\}?"?\s*-(?:ge|gt|eq)\s*"?\$\{?attempts\}?"?/,
+      `${name}: the attempt counter must be tested against the retry bound, not a literal`,
+    );
+    assert.match(
+      retry,
+      /\bn=\$\(\(\s*n\s*\+\s*1\s*\)\)|\(\(\s*n\+\+\s*\)\)|\bn\+=1\b/,
+      `${name}: the attempt counter must advance, or the bound is never reached`,
+    );
     // Three attempts sleeping 5 s and then 15 s: long enough to ride out a GitHub-side
     // blip, short enough that a failed delivery still alarms promptly.
     assert.match(retry, /sleep[^\n]*\b5\b/, `${name}: the first backoff must sleep 5 s`);
