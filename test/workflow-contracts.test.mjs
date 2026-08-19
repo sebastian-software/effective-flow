@@ -1110,6 +1110,22 @@ test('the release delivery retries every network operation on its path', () => {
     // git's own stderr stays visible: swallowing it would turn a diagnosable 403 into an
     // anonymous "delivery failed" and make the next investigation impossible.
     assert.doesNotMatch(retry, /2>\/dev\/null/, `${name}: git stderr must stay visible`);
+    // The retried command itself is never echoed. `retry` is called with the push, whose
+    // URL carries the delivery App installation token, and Actions masking must not be the
+    // only barrier keeping that token out of the run log. The obvious debugging addition —
+    // `echo "attempt $n failed, retrying: $*"` — would print it verbatim, which is why the
+    // prohibition is asserted rather than left to the rationale comment in the workflow.
+    assert.doesNotMatch(
+      retry,
+      /\b(?:echo|printf)\b[^\n]*\$[@*]/,
+      `${name}: the retry helper must not echo the retried command — the push URL carries the delivery App installation token`,
+    );
+    // Same reason from the other direction: tracing prints every retried command.
+    assert.doesNotMatch(
+      step,
+      /^\s*set\s+-\w*x\b/m,
+      `${name}: no shell tracing — it would print the token-bearing push URL`,
+    );
   }
 
   // Both network operations in the delivery step go through the helper, and no unguarded
