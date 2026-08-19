@@ -67,10 +67,17 @@ function shellFunction(text, name) {
 // comments in a `run:` block quote the very forms a negative assertion forbids, so a
 // prohibition must be checked against executable text only — and a positive assertion
 // must not be satisfiable by prose that merely mentions the command.
+//
+// Every line is right-trimmed afterwards. The replacement re-inserts the character in
+// front of the `#`, so blanking a trailing comment would otherwise leave the line ending
+// in a space: `git fetch origin main # refresh` becomes `git fetch origin main ` and
+// `/^\s*git fetch origin main$/m` stops matching it. The guard would then report "no
+// unguarded fetch" for a genuinely unguarded one — silently, and only in the direction
+// that matters.
 function shellCode(text) {
   return text
     .split('\n')
-    .map((line) => line.replace(/(^|\s)#.*$/, '$1'))
+    .map((line) => line.replace(/(^|\s)#.*$/, '$1').trimEnd())
     .join('\n');
 }
 
