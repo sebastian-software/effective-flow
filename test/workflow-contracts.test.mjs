@@ -1115,13 +1115,26 @@ test('the release delivery retries every network operation on its path', () => {
   // Both network operations in the delivery step go through the helper, and no unguarded
   // copy of either survives. The push string itself is unchanged, so the `ordered()`
   // contract above still binds it as one contiguous single-line substring.
-  assert.match(deliver, /^\s*retry git fetch origin main$/m);
-  assert.doesNotMatch(deliver, /^\s*git fetch origin main$/m);
+  assert.match(
+    deliver,
+    /^\s*retry git fetch origin main$/m,
+    'the delivery pre-fetch must go through the retry helper',
+  );
+  assert.doesNotMatch(
+    deliver,
+    /^\s*git fetch origin main$/m,
+    'no unguarded delivery pre-fetch may survive next to the retried one',
+  );
   assert.match(
     deliver,
     /^\s*retry git -C "\$work" push "https:\/\/x-access-token:\$\{DELIVERY_TOKEN\}@github\.com\/\$\{GITHUB_REPOSITORY\}\.git" HEAD:main$/m,
+    'the delivery push must go through the retry helper, unchanged',
   );
-  assert.doesNotMatch(deliver, /^\s*git -C "\$work" push /m);
+  assert.doesNotMatch(
+    deliver,
+    /^\s*git -C "\$work" push /m,
+    'no unguarded delivery push may survive next to the retried one',
+  );
 
   // `Verify delivered commit` retries the fetch and the equality check as ONE unit. A
   // read-after-write lag on `origin/main` would otherwise fail the comparison for a
@@ -1132,10 +1145,15 @@ test('the release delivery retries every network operation on its path', () => {
   const unitCall = verify.match(/^[ \t]*retry (?!git\b)([A-Za-z_]\w*)[ \t]*$/m);
   assert.ok(unitCall, 'Verify delivered commit must retry one named unit, not a bare git command');
   const unit = shellFunction(verify, unitCall[1]);
-  assert.match(unit, /^\s*(?:if ! )?git fetch origin main\b/m);
+  assert.match(
+    unit,
+    /^\s*(?:if ! )?git fetch origin main\b/m,
+    `the retried unit ${unitCall[1]} must contain the verify fetch`,
+  );
   assert.match(
     unit,
     /test "\$\(git rev-parse origin\/main\)" = "\$\{\{ steps\.deliver\.outputs\.commit \}\}"/,
+    `the retried unit ${unitCall[1]} must contain the delivered-commit comparison`,
   );
   assert.doesNotMatch(verify, /^\s*retry git fetch origin main$/m);
   // Not `git fetch … && test …`: an AND-list as the unit's last command trips `errexit`.
