@@ -1092,10 +1092,12 @@ test('the release delivery retries every network operation on its path', () => {
     );
 
     // The retried command runs in an `if` test position, never as a bare `cmd && break`.
-    // Bash exempts a failing command from `errexit` while it is a non-final component of
-    // an AND-list, which is why `push && break` works today — but an AND-list standing as
-    // the last command of a shell function is not exempt, so that form would start
-    // swallowing failures the moment it moved inside this helper.
+    // This is a legibility contract, not an `errexit` one: inside this helper `"$@" &&
+    // return 0` recovers and reports exhaustion exactly like `if "$@"; then return 0; fi`,
+    // on bash 3.2 and 5.2 alike, and swallows nothing the `if` form would catch. The `if`
+    // form earns the assertion because it makes the exempt test position syntactically
+    // obvious instead of resting on the reader knowing the AND-list rule, and because it
+    // reads the same as the guarded returns in `confirm_delivered_commit`.
     assert.match(
       retry,
       /\bif (?:! )?"\$@"; then/,
