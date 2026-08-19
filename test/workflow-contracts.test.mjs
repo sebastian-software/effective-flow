@@ -54,8 +54,18 @@ function workflowStep(text, name) {
 // unit" assertion cannot be satisfied by two separately guarded commands that merely
 // happen to sit in the same step. Bounded by indentation, which is what a YAML block
 // scalar guarantees and what the shell in these workflows already follows.
+//
+// The opening accepts every spelling of the same definition — `name() {`, `name(){`,
+// `name ()  {`, and `function name {`. Requiring exactly one space before the brace made
+// a merely reformatted function abort with `missing shell function`, reporting a rename
+// or a deletion that never happened.
 function shellFunction(text, name) {
-  const opening = text.match(new RegExp(`^([ \\t]*)${name}\\(\\) \\{$`, 'm'));
+  const opening = text.match(
+    new RegExp(
+      `^([ \\t]*)(?:function[ \\t]+${name}(?:[ \\t]*\\([ \\t]*\\))?|${name}[ \\t]*\\([ \\t]*\\))[ \\t]*\\{$`,
+      'm',
+    ),
+  );
   assert.ok(opening, `missing shell function: ${name}`);
   const rest = text.slice(opening.index + opening[0].length);
   const end = rest.search(new RegExp(`^${opening[1]}\\}$`, 'm'));
