@@ -1071,9 +1071,15 @@ test('the release delivery retries every network operation on its path', () => {
       `${name}: the attempt counter must advance, or the bound is never reached`,
     );
     // Three attempts sleeping 5 s and then 15 s: long enough to ride out a GitHub-side
-    // blip, short enough that a failed delivery still alarms promptly.
-    assert.match(retry, /sleep[^\n]*\b5\b/, `${name}: the first backoff must sleep 5 s`);
-    assert.match(retry, /sleep[^\n]*\b15\b/, `${name}: the second backoff must sleep 15 s`);
+    // blip, short enough that a failed delivery still alarms promptly. One order-aware
+    // assertion rather than two existence checks: `sleep $(( n == 1 ? 15 : 5 ))` satisfies
+    // both halves of a split pair, so a reversed backoff used to pass under messages that
+    // claimed first 5 s and then 15 s. The arithmetic spelling stays free.
+    assert.match(
+      retry,
+      /sleep[^\n]*\b5\b[^\n]*\b15\b/,
+      `${name}: the backoff must sleep 5 s on the first retry and 15 s on the second`,
+    );
 
     // The retried command runs in an `if` test position, never as a bare `cmd && break`.
     // Bash exempts a failing command from `errexit` while it is a non-final component of
