@@ -6240,6 +6240,100 @@ test('iterate splits the delegation message at the delimiter before it parses a 
   );
 });
 
+test('the item framing below the delimiter is a declared length no item text can forge', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const iterate = source('src/tools/iterate.md');
+  const contract = prose(section(gate, '## Delegation contract', '\n## '));
+  const manifest = prose(
+    section(iterate, '### Phase 0')
+      .split(/(?=\n\d+\.\s)/)
+      .find((item) => /body delimiter/i.test(item)) ?? '',
+  );
+  assert.ok(manifest, 'Phase 0 must parse the body delimiter');
+
+  // The length is what frames an item, so both ends of the channel have to carry it: a sender that
+  // declares no count leaves the receiver with nothing to cut the region by, and a receiver that
+  // reads none is back to looking for a pattern in text it does not trust.
+  for (const [text, label] of [
+    [contract, 'merge-gate'],
+    [manifest, 'iterate'],
+  ]) {
+    assert.match(text, /Item: <stable identifier> \| review=<review id>/, `${label} manifest form`);
+    assert.match(text, /bytes=/, `${label} must declare a byte count per item`);
+    assert.match(
+      text,
+      near('bytes=', 'UTF-8', 200),
+      `${label} must state the unit the declared count is in`,
+    );
+    assert.match(
+      text,
+      near('manifest order', '(?:no separator|concatenated)', 300),
+      `${label} must lay the item texts out in manifest order with nothing between them`,
+    );
+  }
+
+  // The instance being fixed. An introducer line is a grammar, and a grammar is exactly what
+  // caller-supplied text can match: one body writing that line re-frames the region around it.
+  for (const [text, label] of [
+    [gate, 'merge-gate'],
+    [iterate, 'iterate'],
+  ]) {
+    assert.doesNotMatch(
+      prose(text),
+      /each body is introduced by a line carrying its identifier/i,
+      `${label} must no longer frame an item by an introducer line`,
+    );
+    assert.doesNotMatch(
+      prose(text),
+      /runs to the next such line/i,
+      `${label} must no longer end an item at the next matching line`,
+    );
+  }
+
+  // The property, stated rather than left to be inferred from the mechanism.
+  assert.match(
+    manifest,
+    /No sequence of characters an item text can contain changes how it is framed/i,
+    'the receiver must state the property its framing establishes',
+  );
+  assert.match(
+    manifest,
+    near('sum of counts stated above it', 'never consults a byte', 400),
+    'the property must rest on the declared counts, not on trusting the text',
+  );
+  assert.match(
+    manifest,
+    near('stricter grammar', '(?:still a grammar|out of the content)', 400),
+    'the contract must say why a stricter introducer grammar is not the fix',
+  );
+  assert.match(
+    contract,
+    near('cannot be stated from inside the span it measures', 'never a pattern', 700),
+    'the sender must state why a length cannot be forged from inside the text it measures',
+  );
+
+  // The negative half: an item that spells out the framing syntax is not refused, not escaped and
+  // not cut short — its extent was fixed before any byte of it was read.
+  assert.match(
+    manifest,
+    near('bracketed identifier', '(?:delivered whole|inside the single span)', 400),
+    'an item containing the framing syntax must still be delivered whole',
+  );
+  assert.match(
+    prose(gate),
+    /review body containing the item-framing syntax:\s*delegated unchanged and delivered whole/i,
+    'the case list must name the framing-syntax body as delegated and delivered whole',
+  );
+
+  // The abort survives for the one fault it was always about — the caller's arithmetic — and is no
+  // longer reachable by writing something particular into an item.
+  assert.match(
+    manifest,
+    near('ABORT: manifest and body mismatch', "only from the caller's own arithmetic", 600),
+    'the mismatch abort must be unreachable from what an item text contains',
+  );
+});
+
 test('no contract still carries the four retired claims about reviews and surfaces', () => {
   const state = source('src/shared/review-bot-state.md');
   const integration = source('src/shared/pr-review-integration.md');
