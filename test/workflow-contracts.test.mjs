@@ -6240,7 +6240,7 @@ test('iterate splits the delegation message at the delimiter before it parses a 
   );
 });
 
-test('the item framing below the delimiter is a declared length no item text can forge', () => {
+test('the item framing below the delimiter is a minted token no item text can forge', () => {
   const gate = source('src/tools/merge-gate.md');
   const iterate = source('src/tools/iterate.md');
   const contract = prose(section(gate, '## Delegation contract', '\n## '));
@@ -6251,33 +6251,76 @@ test('the item framing below the delimiter is a declared length no item text can
   );
   assert.ok(manifest, 'Phase 0 must parse the body delimiter');
 
-  // The length is what frames an item, so both ends of the channel have to carry it: a sender that
-  // declares no count leaves the receiver with nothing to cut the region by, and a receiver that
-  // reads none is back to looking for a pattern in text it does not trust.
+  // The token is what frames an item, so both ends of the channel have to carry it: a sender that
+  // declares none leaves the receiver with nothing to split the region on, and a receiver that reads
+  // none is back to looking for a pattern in text it does not trust.
   for (const [text, label] of [
     [contract, 'merge-gate'],
     [manifest, 'iterate'],
   ]) {
     assert.match(text, /Item: <stable identifier> \| review=<review id>/, `${label} manifest form`);
-    assert.match(text, /bytes=/, `${label} must declare a byte count per item`);
+    assert.match(text, /`Boundary token: <token>`/, `${label} must declare the boundary token`);
     assert.match(
       text,
-      near('bytes=', 'UTF-8', 200),
-      `${label} must state the unit the declared count is in`,
+      near('manifest order', 'separated by (?:that|the boundary) token', 300),
+      `${label} must lay the item texts out in manifest order, separated by the token`,
     );
     assert.match(
       text,
-      near('manifest order', '(?:no separator|concatenated)', 300),
-      `${label} must lay the item texts out in manifest order with nothing between them`,
+      near('own line', 'no separator before the first', 300),
+      `${label} must put the token on its own line and only between the items`,
     );
   }
 
-  // The instance being fixed. An introducer line is a grammar, and a grammar is exactly what
-  // caller-supplied text can match: one body writing that line re-frames the region around it.
+  // The sender's whole obligation, and both halves of it: an unpredictable token, and the substring
+  // search that establishes it is absent before the message goes out. Without the search the token
+  // is only probably absent, and "probably" is what the untrusted text gets to attack.
+  assert.match(
+    contract,
+    near('Mint it freshly for every message', 'at random', 300),
+    'the sender must mint an unpredictable token per message',
+  );
+  assert.match(
+    contract,
+    near('search every body', 'plain substring', 300),
+    'the sender must verify the token is absent by substring search',
+  );
+  assert.match(
+    contract,
+    near('search every body', 'every other part of the message', 200),
+    'the absence check must cover the rest of the message, not the bodies alone',
+  );
+  assert.match(
+    contract,
+    near('occurs anywhere', 'mint another one and search again', 200),
+    'a token that collides must be re-minted and re-checked',
+  );
+
+  // The receiver's whole obligation, and the explicit refusal of the arithmetic the byte count
+  // demanded: a split on the token, and nothing else that could decide a boundary.
+  assert.match(
+    manifest,
+    near('Split the region', 'on that exact token', 200),
+    'the receiver must split the region on the token',
+  );
+  assert.match(
+    manifest,
+    near('do nothing else to find a boundary', '(?:no counting|no byte offsets|no grammar)', 200),
+    'the receiver must determine boundaries by the split alone',
+  );
+
+  // The byte-count framing is replaced, not layered under the token: two framings would be two
+  // things to keep in step, and the arithmetic one is the half a language model gets wrong.
   for (const [text, label] of [
     [gate, 'merge-gate'],
     [iterate, 'iterate'],
   ]) {
+    assert.doesNotMatch(prose(text), /bytes=/, `${label} must not still declare a byte count`);
+    assert.doesNotMatch(
+      prose(text),
+      /(?:sum of the counts|declared sum|byte count of that)/i,
+      `${label} must not still frame an item by a declared length`,
+    );
     assert.doesNotMatch(
       prose(text),
       /each body is introduced by a line carrying its identifier/i,
@@ -6290,34 +6333,66 @@ test('the item framing below the delimiter is a declared length no item text can
     );
   }
 
-  // The property, stated rather than left to be inferred from the mechanism.
-  assert.match(
-    manifest,
-    /No sequence of characters an item text can contain changes how it is framed/i,
-    'the receiver must state the property its framing establishes',
-  );
-  assert.match(
-    manifest,
-    near('sum of counts stated above it', 'never consults a byte', 400),
-    'the property must rest on the declared counts, not on trusting the text',
-  );
+  // The property, stated rather than left to be inferred from the mechanism, and argued from the
+  // one fact that establishes it: the token was verified absent from the bodies before they shipped.
+  for (const [text, label] of [
+    [contract, 'merge-gate'],
+    [manifest, 'iterate'],
+  ]) {
+    assert.match(
+      text,
+      /No sequence of characters a(?:n item text|\s+body) can contain changes how it is framed/i,
+      `${label} must state the property its framing establishes`,
+    );
+    assert.match(
+      text,
+      near('substring search', 'occurs in none of them', 400),
+      `${label} must rest the property on the verified-absent token, not on trusting the text`,
+    );
+  }
   assert.match(
     manifest,
     near('stricter grammar', '(?:still a grammar|out of the content)', 400),
     'the contract must say why a stricter introducer grammar is not the fix',
   );
+  // Why the swap keeps what it replaced, and what it stops asking of a language-model operator.
   assert.match(
     contract,
-    near('cannot be stated from inside the span it measures', 'never a pattern', 700),
-    'the sender must state why a length cannot be forged from inside the text it measures',
+    near('unforgeability', 'fixed from outside the span', 400),
+    'the sender must say why the token keeps the unforgeability the declared length had',
+  );
+  assert.match(
+    contract,
+    near('multibyte Unicode', '(?:substring search and a split|unreliably)', 600),
+    'the sender must say why byte arithmetic was the part worth removing',
   );
 
-  // The negative half: an item that spells out the framing syntax is not refused, not escaped and
-  // not cut short — its extent was fixed before any byte of it was read.
+  // The negative half: an item that spells out the framing syntax, a control line, or the text
+  // around the delimiter is not refused, not escaped and not cut short — its extent was fixed
+  // before any character of it was read.
   assert.match(
     manifest,
-    near('bracketed identifier', '(?:delivered whole|inside the single span)', 400),
+    near(
+      'bracketed identifier',
+      '(?:delivered whole|inside the single span already fixed for it)',
+      500,
+    ),
     'an item containing the framing syntax must still be delivered whole',
+  );
+  assert.match(
+    manifest,
+    near('all four control lines', 'delivered whole', 500),
+    'an item containing a control line must still be delivered whole',
+  );
+  assert.match(
+    manifest,
+    near('may contain the delimiter', 'delivered whole', 500),
+    'an item containing the delimiter itself must still be delivered whole',
+  );
+  assert.match(
+    manifest,
+    near('`Boundary token:` line', 'delivered whole', 500),
+    'an item containing a boundary-token line must still be delivered whole',
   );
   assert.match(
     prose(gate),
@@ -6325,11 +6400,25 @@ test('the item framing below the delimiter is a declared length no item text can
     'the case list must name the framing-syntax body as delegated and delivered whole',
   );
 
-  // The abort survives for the one fault it was always about — the caller's arithmetic — and is no
-  // longer reachable by writing something particular into an item.
+  // The abort survives for the one fault it was always about — a message the caller assembled wrong
+  // — and it now counts items rather than bytes.
   assert.match(
     manifest,
-    near('ABORT: manifest and body mismatch', "only from the caller's own arithmetic", 600),
+    near(
+      'ABORT: manifest and body mismatch',
+      'different number of spans than the manifest declares entries',
+      400,
+    ),
+    'the mismatch abort must fire on a span count, not on a length',
+  );
+  assert.match(
+    manifest,
+    near('ABORT: manifest and body mismatch', 'counts items, never bytes', 600),
+    'the mismatch abort must be a count of items rather than of bytes',
+  );
+  assert.match(
+    manifest,
+    near('ABORT: manifest and body mismatch', 'never from what an item text contains', 700),
     'the mismatch abort must be unreachable from what an item text contains',
   );
 });
