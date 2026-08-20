@@ -1687,16 +1687,11 @@ test('every source embedding issue-tracker also loads the tracker-target fragmen
     'review.md lazily embeds issue-tracker and must be part of the derived consumer set',
   );
 
-  // Deviation from the plan, which predicted one nested fence inside this fragment.
-  // `build.mjs:571` does resolve lazy fences after eager inlining, so the five tools
-  // that eagerly include `issue-tracker` would have rendered fine. The dead pointer
-  // comes from `src/tools/review.md`, which defers `issue-tracker` itself: the fragment
-  // then also ships standalone through the eager-only path at `build.mjs:803`, where a
-  // raw lazy fence survives verbatim. Guard #99 would not have caught it either, because
-  // `tracker-target` still ships via the other roots. Do not "simplify" these fences
-  // back into the fragment.
+  // A nested lazy fence inside this fragment is no longer a hazard: the standalone
+  // shipping path resolves lazy fences too, and `assertNoUnresolvedLazyIncludes` fails
+  // the build if one ever survives into a rendered artifact. Whether the fence lives here
+  // or in the deferring tool is now purely an authoring choice.
   const tracker = source('src/shared/issue-tracker.md');
-  assert.doesNotMatch(tracker, /```lazy-include/);
   const flatTracker = flat(tracker);
   assert.match(flatTracker, /lives in the `tracker-target` fragment\./);
   assert.match(
@@ -1813,11 +1808,6 @@ test('every emitting tool defers next-steps exactly once and every exemption sta
 
 test('the next-steps fragment ships standalone and states the emission rule', () => {
   const fragment = source('src/shared/next-steps.md');
-
-  // The standalone shipping path resolves **eager** includes only, so a nested lazy fence would
-  // survive verbatim into dist/*/effective-flow/shared/next-steps.md — the same constraint the
-  // `issue-tracker` and `pr-review-integration` fragments live under.
-  assert.doesNotMatch(fragment, /```lazy-include/);
 
   const flatFragment = flat(fragment);
   assert.match(
@@ -1989,11 +1979,9 @@ test('the pr-review-integration fragment resolves through the build into all thr
   const fragment = source('src/shared/pr-review-integration.md');
 
   // The fragment ships once per harness as a lazily loaded shared/pr-review-integration.md
-  // (build.mjs's #99 guard). That path resolves nested **eager** includes — the fragment loads
-  // `pr-review-comments` and `security-disclosure-gate` that way — but it never runs the lazy
-  // resolver, so a ```lazy-include fence here would survive into the shipped file unresolved.
-  assert.doesNotMatch(fragment, /```lazy-include/);
-
+  // (build.mjs's #99 guard). That path resolves nested eager includes — the fragment loads
+  // `pr-review-comments` and `security-disclosure-gate` that way — and, since the shipped-fragment
+  // path gained the lazy resolver, nested lazy fences as well.
   const knownTools = new Set(
     readdirSync(new URL('src/tools/', repositoryRoot))
       .filter((entry) => entry.endsWith('.md'))

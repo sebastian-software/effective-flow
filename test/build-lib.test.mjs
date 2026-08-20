@@ -31,6 +31,8 @@ import {
   resolveEagerIncludes,
   findUnresolvedEagerIncludes,
   assertNoUnresolvedEagerIncludes,
+  findUnresolvedLazyIncludes,
+  assertNoUnresolvedLazyIncludes,
   collectIncludeNames,
   assertNoEagerLazyOverlap,
   renderDeprecatedAliasClause,
@@ -2296,6 +2298,27 @@ test('unresolved eager-include output is rejected with source line diagnostics',
   assert.throws(
     () => assertNoUnresolvedEagerIncludes(unresolved, { context: 'generated/tools/x.md' }),
     /unresolved eager include fence \(in generated\/tools\/x\.md\): line 2 \(memory-state\)/,
+  );
+});
+
+test('unresolved lazy-include output is rejected with source line diagnostics', () => {
+  const unresolved =
+    'before\n```lazy-include\npr-review-integration\nwhen: a PR exists\n```\nafter\n';
+  assert.deepEqual(findUnresolvedLazyIncludes(unresolved), [
+    { line: 2, name: 'pr-review-integration' },
+  ]);
+  assert.throws(
+    () => assertNoUnresolvedLazyIncludes(unresolved, { context: 'generated/shared/x.md' }),
+    /unresolved lazy include fence \(in generated\/shared\/x\.md\): line 2 \(pr-review-integration\)/,
+  );
+  // A rendered pointer is the resolved form and must not trip the guard.
+  assert.doesNotThrow(() =>
+    assertNoUnresolvedLazyIncludes(resolveLazyIncludes(unresolved).body, { context: 'x' }),
+  );
+  // The eager guard must not fire on a lazy fence, nor the lazy guard on an eager one.
+  assert.doesNotThrow(() => assertNoUnresolvedEagerIncludes(unresolved, { context: 'x' }));
+  assert.doesNotThrow(() =>
+    assertNoUnresolvedLazyIncludes('a\n```include\nmemory-state\n```\n', { context: 'x' }),
   );
 });
 

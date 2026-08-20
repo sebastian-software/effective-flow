@@ -1856,6 +1856,29 @@ export function resolveLazyIncludes(body, { context } = {}) {
   return { body: out, names };
 }
 
+export function findUnresolvedLazyIncludes(body) {
+  const findings = [];
+  const lines = normalizeLineEndings(body).split('\n');
+  for (let index = 0; index < lines.length; index += 1) {
+    if (lines[index].trim() !== '```lazy-include') continue;
+    findings.push({ line: index + 1, name: (lines[index + 1] ?? '').trim() });
+  }
+  return findings;
+}
+
+// The lazy counterpart to assertNoUnresolvedEagerIncludes. A raw fence that
+// survives into a generated artifact ships as literal markdown a worker cannot
+// act on: nothing in the delivered skill explains what a ```lazy-include fence
+// means, so the deferred fragment is silently never loaded.
+export function assertNoUnresolvedLazyIncludes(body, { context } = {}) {
+  const findings = findUnresolvedLazyIncludes(body);
+  if (findings.length === 0) return;
+  const details = findings
+    .map(({ line, name }) => `line ${line}${name ? ` (${name})` : ' (missing fragment name)'}`)
+    .join(', ');
+  throw new Error(`unresolved lazy include fence${contextSuffix(context)}: ${details}`);
+}
+
 // Collect the shared-fragment names a raw body references eagerly (```include)
 // and lazily (```lazy-include). Run this on the raw source body, before either
 // resolver rewrites it.
