@@ -1986,16 +1986,23 @@ test('the revision-mode move back from the archive never touches the Git index',
   );
 
   // Fail-closed tracked-state detection in the house style: one explicit command, an explicit
-  // reading of every result, and no guess on a nonzero exit.
-  assert.match(revision, /git -C <project root> ls-files -- <archived path>/);
+  // reading of every result, and no guess on a nonzero exit. The probe covers BOTH paths — the
+  // destination can be tracked while the archived source never was, so a source-only probe would
+  // report a restored tracked path as untracked.
+  assert.match(revision, /git -C <project root> ls-files -- <archived path> <plan\.dir>\/<file>/);
   ordered(
     revision,
-    'nonempty output means it was tracked',
-    'empty output with exit `0`',
+    'Establish the Git state of **both** paths first',
+    'read each path from its own line of that listing',
+    '**Never infer one side from the other:**',
+    'a listed destination means the move restored a tracked path',
     'Any nonzero exit or command-launch error',
     'is not permission to guess',
   );
-  assert.match(revision, /untracked at `<plan\.dir>\/<file>`/);
+  assert.match(
+    revision,
+    /an unlisted one means the plan is now untracked at `<plan\.dir>\/<file>`/,
+  );
 
   // The ask block promises exactly the behavior the run performs.
   const ask = flat(section(plan, '```ask\nwhen: the revision target was resolved', '```'));

@@ -175,14 +175,17 @@ On a revision run:
   `<plan.dir>/` and `<plan.dir>/archive/` the same way, so the reset status is visible to both the
   moment the file lands at its new path.
 - Report the move as an uncommitted working-tree change that this run does not stage and no later
-  step of it cleans up: the file is now untracked at `<plan.dir>/<file>`, and its removal from
-  `<plan.dir>/archive/<file>` is likewise unstaged. Establish whether the archived path was
-  tracked at all before reporting, with `git -C <project root> ls-files -- <archived path>`, and
-  interpret the result exactly: nonempty output means it was tracked and the report names both
-  sides of the move; empty output with exit `0` means the archived file was never tracked and only
-  the new path is worth naming. Any nonzero exit or command-launch error — a missing Git, a
-  non-repository checkout — is not permission to guess: report the completed move and state that
-  its Git effect could not be determined.
+  step of it cleans up. Establish the Git state of **both** paths first, with one
+  `git -C <project root> ls-files -- <archived path> <plan.dir>/<file>` call, and read each path
+  from its own line of that listing. **Never infer one side from the other:** an index entry left
+  at `<plan.dir>/<file>` whose file was absent from the working tree is tracked there while the
+  archived copy never was, so a probe of the source alone would report a restored tracked path as
+  untracked. Report each side as the listing found it — a listed archived path means its removal is
+  an unstaged deletion and an unlisted one leaves no deletion to mention; a listed destination means
+  the move restored a tracked path rather than producing a new untracked file, and an unlisted one
+  means the plan is now untracked at `<plan.dir>/<file>`. Any nonzero exit or command-launch error —
+  a missing Git, a non-repository checkout — is not permission to guess: report the completed move
+  and state that its Git effect could not be determined.
 - If the status line was missing, duplicated, or invalid, report that unclear status and obtain
   explicit confirmation before writing the canonical open value — the same confirmation any other
   header change needs.
