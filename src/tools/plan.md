@@ -176,6 +176,15 @@ On a revision run:
   this order the run writes nothing at all until the plan is at its new path, so every stop below
   leaves the archive exactly as it found it. A plan that was not archived has no move and is reset
   where it lies.
+- **Ask everything before the move; after the move, only write.** Every question this revision owes
+  the user — the revision question above, and the unclear-status confirmation below — is asked and
+  answered before the plan is moved, and no question is posed once it has been. This is the general
+  rule the two orderings above are instances of, and it is what makes a decline safe at every point:
+  before the move a decline changes nothing because nothing has been written, and after the move
+  there is nothing left to decline. Posing the unclear-status question after the move would leave
+  the declining user a plan sitting in `<plan.dir>/` without a valid status marker — visible only
+  in `{{SKILL:open-plans}}`'s status-unclear list rather than among the open plans, and answering
+  the same question again on the next `{{SKILL:apply}}`.
 - Perform that move back as a **plain filesystem move**, never with `git mv`. This run creates no
   commit, so a staged rename would sit in the user's index until some later, unrelated commit
   swept it up. Nothing depends on the move being staged: `{{SKILL:open-plans}}` lists the top level
@@ -214,7 +223,9 @@ On a revision run:
   and state that its Git effect could not be determined.
 - If the status line was missing, duplicated, or invalid, report that unclear status and obtain
   explicit confirmation before writing the canonical open value — the same confirmation any other
-  header change needs.
+  header change needs. Obtain it **before the move**, per the ask-before-the-move rule above; a
+  decline then ends the run with the plan untouched in `<plan.dir>/archive/`, rather than moved and
+  left without a valid status.
 - Preserve a legacy `# NNNN: <title>` H1 verbatim; the `# <title>` rule of Phase 3 covers newly
   created plans only.
 - Append this run's review to `## Plan review` / `## Plan-Review` as a **dated subsection**; never

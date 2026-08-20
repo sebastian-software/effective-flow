@@ -2019,9 +2019,29 @@ test('the revision-mode move back from the archive never touches the Git index',
     '**For an archived plan the move comes first, and the status reset follows on the file at its final path.**',
     'reset first and a move that is then refused strands an archived file marked open',
     'the run writes nothing at all until the plan is at its new path',
+    '**Ask everything before the move; after the move, only write.**',
     '**The destination must be absent, and the move itself has to enforce that.**',
     '**On a collision, stop having written nothing.**',
     'the status reset happens only after the move has been confirmed',
+  );
+
+  // The general rule the orderings are instances of: a decline is safe at every point because
+  // nothing is written before the questions are answered. Both questions are named, and the
+  // unclear-status bullet points back at it — a rule stated once but applied nowhere would drift.
+  ordered(
+    revision,
+    'the revision question above, and the unclear-status confirmation below',
+    'is asked and answered before the plan is moved',
+    'no question is posed once it has been',
+    'before the move a decline changes nothing because nothing has been written',
+  );
+  assert.match(
+    revision,
+    /Obtain it \*\*before the move\*\*, per the ask-before-the-move rule above/,
+  );
+  assert.match(
+    revision,
+    /a decline then ends the run with the plan untouched in `<plan\.dir>\/archive\/`/,
   );
 
   // A check and a move are two steps, so the no-overwrite guarantee has to live in the move
