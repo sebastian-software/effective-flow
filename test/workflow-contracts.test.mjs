@@ -1991,12 +1991,17 @@ test('the revision-mode move back from the archive never touches the Git index',
   // reading of every result, and no guess on a nonzero exit. The probe covers BOTH paths — the
   // destination can be tracked while the archived source never was, so a source-only probe would
   // report a restored tracked path as untracked.
-  assert.match(revision, /git -C <project root> ls-files -- <archived path> <plan\.dir>\/<file>/);
+  assert.match(
+    revision,
+    /git -C <project root> ls-files -z -- <archived path> <plan\.dir>\/<file>/,
+  );
   ordered(
     revision,
     'Establish the Git state of **both** paths first',
-    'read each path from its own line of that listing',
-    '**Never infer one side from the other:**',
+    'match each path against the NUL-separated entries',
+    '`-z` is load-bearing rather than tidy',
+    'a tracked file would be read as untracked',
+    '**Never infer one side from the other either:**',
     'a listed destination means the move restored a tracked path',
     'Any nonzero exit or command-launch error',
     'is not permission to guess',

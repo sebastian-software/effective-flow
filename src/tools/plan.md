@@ -191,9 +191,12 @@ On a revision run:
   above and stop.
 - Report the move as an uncommitted working-tree change that this run does not stage and no later
   step of it cleans up. Establish the Git state of **both** paths first, with one
-  `git -C <project root> ls-files -- <archived path> <plan.dir>/<file>` call, and read each path
-  from its own line of that listing. **Never infer one side from the other:** an index entry left
-  at `<plan.dir>/<file>` whose file was absent from the working tree is tracked there while the
+  `git -C <project root> ls-files -z -- <archived path> <plan.dir>/<file>` call, and match each
+  path against the NUL-separated entries that come back. `-z` is load-bearing rather than tidy:
+  without it Git quotes any path `core.quotePath` covers, and a quoted entry matches neither path
+  literally, so a tracked file would be read as untracked — the one direction this probe must not
+  fail in. **Never infer one side from the other either:** an index entry left at
+  `<plan.dir>/<file>` whose file was absent from the working tree is tracked there while the
   archived copy never was, so a probe of the source alone would report a restored tracked path as
   untracked. Report each side as the listing found it — a listed archived path means its removal is
   an unstaged deletion and an unlisted one leaves no deletion to mention; a listed destination means
