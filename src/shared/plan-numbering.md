@@ -47,8 +47,11 @@ Umgesetzt/Implemented marker is retained in the file.
   worktree branch merged): the implementing workflow sets the status marker to
   `Umgesetzt`/`Implemented` and moves the file via `git mv` to `<plan.dir>/archive/`
   (creating the directory if needed), still on the delivery branch, so that the move is part
-  of the same PR/merge (implementation documentation). For details see "Delivery and
-  worktree integration".
+  of the same PR/merge (implementation documentation). This convention states the **what**;
+  `plan-archival` owns the **how** — which state the plan is in and therefore whether `git mv` is
+  the right primitive at all. It is, for a plan already tracked on the delivery base; a plan the
+  authoring run left untracked is written into the archive and added instead, because `git mv`
+  cannot move an untracked path. See also "Delivery and worktree integration".
 - The **reverse** move is not coupled to a delivery event and therefore not staged: when a
   revision run brings an archived plan back to `<plan.dir>/`, it moves the file with a plain
   filesystem move, never with `git mv`. `{{SKILL:plan}}` creates no commit, so a staged rename

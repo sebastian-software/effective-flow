@@ -85,8 +85,11 @@ only through a confirmed before/after change.
 
 `<plan.dir>/` contains only **open** or **in-progress** plans. As soon as a plan is fully
 implemented, the implementing workflow sets the status marker to `Umgesetzt`/`Implemented` and
-moves the file via `git mv` to `<plan.dir>/archive/` (directory created if needed) – still in
-the same delivery branch, so the move is part of the same pull request or merge.
+archives the file under `<plan.dir>/archive/` – still in the same delivery branch, so the move is
+part of the same pull request or merge. Which primitive that takes depends on whether the plan is
+already tracked in the delivery checkout's index.
+`src/shared/plan-archival.md` owns that state model, the detection behind it, and the cleanup of
+the redundant copy in the main checkout.
 `/effective-flow open-plans` lists only the top level of `<plan.dir>/`, not the archive;
 resolvers for plan references (path, file name, legacy number, or title slug), by contrast,
 search both `<plan.dir>/` and `<plan.dir>/archive/`.

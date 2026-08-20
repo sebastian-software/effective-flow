@@ -336,9 +336,12 @@ and directive syntax").
   `project-routing`, `commit-message-rules`, `doc-categories`, `plan-contract`,
   `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
   `worktree-integration`, `issue-tracker`, `review-report-backlinks`,
-  `unresolved-review-report`, `plan-numbering`, `plan-reference-routing`,
+  `unresolved-review-report`, `plan-numbering`, `plan-reference-routing`, `plan-archival`,
   `effective-flow-dir-migration`. The load trigger (`when:`) sits at the decision point where
-  the mode/branch is determined.
+  the mode/branch is determined. `plan-archival` is pointed at from the four tool sources that
+  keep a plan file rather than from inside `worktree-integration`: its decision point is the
+  delivery point of the handback, and in-place execution without delivery reaches that point
+  while performing no other step of that fragment.
 
 A fragment qualifies for deferral only when it serves **one nameable decision point** and the
 pointer states that trigger. Where a fragment is read in nearly every run anyway — review's

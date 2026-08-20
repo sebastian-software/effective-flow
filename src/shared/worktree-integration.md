@@ -121,7 +121,8 @@ At the start of the actual implementation work, determine the effective mode:
 - If the worktree is disabled via config (`worktree.enabled: false`), give a brief
   note that the (default) worktree mode is off via config. If the user then also
   requests no delivery action, perform no further steps from this fragment
-  (in-place without delivery).
+  (in-place without delivery). Plan archival still applies in that mode: it is owned by
+  `plan-archival`, which the workflow loads through its own pointer rather than from here.
 
 ### Shared preconditions
 
@@ -355,22 +356,15 @@ stop and report the conflict instead of overwriting history.
 1. **Mark the plan as implemented, archive it and take it into the delivery branch:**
    Provided the workflow kept a plan file, this is the **delivery point** at which
    the plan counts as implemented (immediately before the PR is opened or the delivery branch
-   is merged):
-   - Set the canonical status marker to `Umgesetzt`/`Implemented` (preserve the complete plan
-     language: German plan → `**Planungsstatus:** Umgesetzt`, English plan →
-     `**Plan status:** Implemented`).
-   - Move the plan file via `git mv` to `<plan.dir>/archive/` (create the directory if
-     needed), per "Archive of implemented plans" of the plan-file convention.
-   - If the implementation ran in a worktree or partial-diff worktree, provide this final,
-     archived and implemented-marked state in the worktree (under
-     `<plan.dir>/archive/<file>`). Marking and move are **committed along with it** and
-     are thereby part of the PR/merge (implementation documentation). The `.effective-flow/` artifacts stay in the
-     main repo.
-   - If the workflow kept no plan file, this step does not apply.
-   - If the workflow exceptionally runs in-place without delivery (no worktree, no
-     branch/PR/merge action), the workflow performs the same status switch and
-     archive move directly in the working tree; the final commit/merge into the
-     target branch is then the delivery event.
+   is merged). The contract for that — which state the plan is in, what that state's action is,
+   where every operation runs, and how the main-checkout copy is cleaned up — is owned by
+   `plan-archival`, which every workflow that keeps a plan file loads through its own deferred
+   pointer. Hand it the inputs it declares: `EXECUTION_ROOT` and `RUNTIME_STATE_ROOT` from this
+   run's verified receipt, `plan.dir`, the plan file's repository-relative path, the plan's complete
+   language, the delivery shape, and — only when this run recorded one — the delivery branch's
+   creation OID. Marking and move are **committed along with it** by step 2 and are thereby part of the
+   PR/merge (implementation documentation). The `.effective-flow/` artifacts stay in the main repo.
+   If the workflow kept no plan file, this step does not apply.
 2. **Ensure commit:** Commit all intended changes in the delivery branch
    – code, test and documentation deliverables as well as the taken-over plan file – via the
    commit logic from `{{SKILL:commit}}` (stage exclusively known changed files

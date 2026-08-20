@@ -91,9 +91,10 @@ and terminates.
 
 **Input/output:** Input is the feature requirement or a referenced plan file.
 Output is the code changes including tests and docs, an updated plan file (status
-`Umgesetzt`/`Implemented`, review-findings summary, archive move to
-`<plan.dir>/archive/`) as well as – with delivery/worktree mode active – a delivery branch with
-PR, merge, or left-standing branch.
+`Umgesetzt`/`Implemented`, review-findings summary, archived under `<plan.dir>/archive/` – by a
+rename or an add, depending on whether the plan was already tracked, and never re-added at top
+level if an earlier run already archived it) as well as – with delivery/worktree mode active – a
+delivery branch with PR, merge, or left-standing branch.
 
 **Interplay:** Delegates internally per affected file/domain to specialized or reduced-depth
 implementer and reviewer workers, plus repository-native test, validation, and documentation
