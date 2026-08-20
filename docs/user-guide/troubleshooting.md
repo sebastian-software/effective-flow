@@ -32,9 +32,11 @@ run, so you find out before implementation instead of at the delivery point.
 
 The Forgejo merge-gate operations do **not** raise that floor. They ride on `tea api`, which landed
 in v0.12.0, and the flag they need on top of it (`--include`) is probed rather than versioned: a
-`tea` without it reports `pr-status-read`, `pr-merge` and `viewer-read` as
+`tea` without it reports `pr-status-read`, `pr-reviews-read`, `pr-merge` and `viewer-read` as
 `UNSUPPORTED_CAPABILITY` instead of failing the version check, so `tea` 0.14.2 stays the minimum for
-every run.
+every run. Without `pr-reviews-read` the merge gate cannot establish a reviewer's changes-requested
+verdict, so it reports that and asks once instead of merging – and never merges at all in a
+non-interactive run.
 
 ## The external tracker connection could not be resolved
 
