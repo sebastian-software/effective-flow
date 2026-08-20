@@ -165,6 +165,20 @@ function near(first, second, span = 300) {
   );
 }
 
+// The Phase-4 merge preconditions, cut out as one array of numbered conditions. The cut ends at the
+// first blank line followed by a line that is neither indented (a condition's own continuation) nor
+// numbered (the next condition); without it the last condition absorbs every trailing paragraph of
+// the phase, and an assertion about that condition passes on prose that sits outside it.
+function mergeConditions(gate) {
+  const phase4 = section(gate, '### Phase 4');
+  const listStart = phase4.search(/\n\d+\.\s/);
+  assert.notEqual(listStart, -1, 'Phase 4 must carry its merge preconditions as a numbered list');
+  const list = phase4.slice(listStart);
+  const listEnd = list.search(/\n\n(?![ \t])(?!\d+\.)/);
+  assert.notEqual(listEnd, -1, 'Phase 4 must carry prose after its numbered preconditions');
+  return list.slice(0, listEnd).split(/(?=\n\d+\.\s)/);
+}
+
 test('plan routes an unambiguous issue through Stage A and exits before local planning', () => {
   const plan = source('src/tools/plan.md');
   const gateway = source('src/shared/plan-input-gateway.md');
@@ -3319,11 +3333,22 @@ test('a reviewer thread no round assessed blocks the merge in a condition of its
   // vocabulary: matched against the whole Phase-4 section, the assertions below would stay green
   // with the new condition deleted outright.
   const conditions = phase4.split(/(?=\n\d+\.\s)/).slice(1);
-  const unassessedIndex = conditions.findIndex((item) => /assessed/i.test(item));
+  // Condition 7 is selected by its **ordinal**, never by first match on "assessed". Condition 10
+  // carries that word too — it is the same protection one surface over, for a changes-requested
+  // review nobody assessed — so a first-match selector would retarget this whole battery the moment
+  // the two are reordered, and condition 7 would go unchecked while every assertion stayed green.
+  const ordinal = (number) =>
+    conditions.findIndex((item) => item.trimStart().startsWith(`${number}.`));
+  const unassessedIndex = ordinal(7);
   const implementedIndex = conditions.findIndex((item) =>
     /implement[a-z]*[\s\S]{0,160}(?:answered|resolved)/i.test(item),
   );
-  assert.notEqual(unassessedIndex, -1, 'Phase 4 must carry a never-assessed precondition');
+  assert.notEqual(unassessedIndex, -1, 'Phase 4 must carry a condition 7');
+  assert.match(
+    conditions[unassessedIndex],
+    /assessed/i,
+    'condition 7 must remain the never-assessed precondition',
+  );
   assert.notEqual(implementedIndex, -1, 'Phase 4 must keep its implemented-and-answered condition');
 
   // Two conditions, never one. Folding them back together is the realistic regression — they read
@@ -3381,9 +3406,34 @@ test('a reviewer thread no round assessed blocks the merge in a condition of its
   const accounting = flat(section(gate, '#### Round accounting', '\n### '));
   assert.match(
     accounting,
-    near('(?:Phase 4|condition 7)', '(?:by one more|consumes a round)', 400),
+    near('(?:Phase[- ]4|condition 7)', '(?:by one more|consumes a round)', 400),
     'round accounting must count the Phase-4 return, which begins no Phase-2 round of its own',
   );
+
+  // Two conditions return into Phase 3 now, so the counting rule has to be stated over the return
+  // itself. Bound to one condition by name — "the single exception condition 7 states for itself" —
+  // the second returning condition is unbounded the day it is added, which is the regression this
+  // pair of assertions closes at both sites.
+  const preamble = flat(phase4.slice(0, phase4.search(/\n\d+\.\s/)));
+  assert.match(
+    preamble,
+    near('return', 'condition 10', 400),
+    'the Phase-4 preamble must name both returning conditions, not condition 7 alone',
+  );
+  for (const [label, text] of [
+    ['round accounting', accounting],
+    ['the Phase-4 preamble', preamble],
+  ]) {
+    assert.match(
+      text,
+      near(
+        '(?:at most\\s+\\*{0,2}one\\*{0,2}|one)\\s+return',
+        '(?:one round|exactly one round)',
+        400,
+      ),
+      `${label} must bind one evaluation to at most one return consuming exactly one round`,
+    );
+  }
 
   // Fail closed, like every other precondition here: an assessment the read cannot establish is
   // not an assessment.
@@ -4162,10 +4212,20 @@ test('an emoji acknowledgment is never presented as evidence that a reviewer has
     near('only\\*{0,2} output', '\\*\\*not started\\*\\*', 300),
     'the not-started consequence must be scoped to a head whose only output is that frozen edit',
   );
+  // The remedy is now two remedies, and the bullet has to name both: a configured `.check`, and the
+  // reviewer's own submitted review, which the fallback reads as a fourth surface. The former
+  // wording — "only a configured `.check` resolves it: the fallback cannot, by construction" —
+  // became false the moment the reviews surface was added, and asserting it would pin a
+  // contradiction in place.
   assert.match(
     sticky,
-    near('configured `\\.check`', '(?:fallback cannot|the one timestamp it reads)', 200),
-    'the remedy must stay, and stay stated as the one the fallback cannot substitute',
+    near('configured `\\.check`', 'submitted review', 300),
+    "the remedy must name both a configured check and the reviewer's own submitted review",
+  );
+  assert.doesNotMatch(
+    sticky,
+    /the fallback cannot, by construction/i,
+    'the fallback now reads a fourth surface, so it is no longer the one signal that cannot resolve this',
   );
 
   // The wizard half, bound to the `.check` bullet it belongs to. Its substance is the warning, not
@@ -4868,10 +4928,16 @@ test('every site that matches mergeGate.bots resolves through the shared login r
   assert.match(phase3, reference, "Phase 3's per-login round must resolve through the rule");
 
   const conditions = phase4.split(/(?=\n\d+\.\s)/).slice(1);
-  const hasRunIndex = conditions.findIndex((item) => /has run/i.test(item));
-  const assessedIndex = conditions.findIndex((item) => /assessed/i.test(item));
+  // Selected by ordinal, not by first match: conditions 7 and 10 both carry "assessed", so a
+  // first-match selector would silently check one of them twice and the other never.
+  const ordinal = (number) =>
+    conditions.findIndex((item) => item.trimStart().startsWith(`${number}.`));
+  const hasRunIndex = ordinal(5);
+  const assessedIndex = ordinal(7);
+  const verdictIndex = ordinal(10);
   assert.notEqual(hasRunIndex, -1, 'Phase 4 must keep its reviewer has-run condition');
   assert.notEqual(assessedIndex, -1, 'Phase 4 must keep its never-assessed condition');
+  assert.notEqual(verdictIndex, -1, 'Phase 4 must keep its unassessed-verdict condition');
   assert.match(
     flat(conditions[hasRunIndex]),
     reference,
@@ -4881,6 +4947,14 @@ test('every site that matches mergeGate.bots resolves through the shared login r
     flat(conditions[assessedIndex]),
     reference,
     'the never-assessed condition must resolve the configured login through the rule',
+  );
+  // The fifth site, and the newest: which login counts as a configured reviewer is exactly the same
+  // question on the review surface as on the thread surface, and a restated bare equality here would
+  // reintroduce the two-spellings defect at one more site.
+  assert.match(
+    flat(conditions[verdictIndex]),
+    reference,
+    'the unassessed-verdict condition must resolve the configured login through the rule',
   );
 });
 
@@ -4907,8 +4981,8 @@ test('condition 7 finding no reviewer thread is reported, not passed over in sil
   // The slicing is itself under test: an empty or truncated condition list would let the
   // not-a-precondition check below pass without ever reading a condition.
   assert.ok(
-    conditions.length >= 7,
-    'Phase 4 must slice into its numbered preconditions — condition 7 among them — or the checks below assert nothing',
+    conditions.length >= 10,
+    'Phase 4 must slice into its numbered preconditions — conditions 7 and 10 among them — or the checks below assert nothing',
   );
 
   // The report's own contract phrase, required of the prose and forbidden of the conditions, so both
@@ -5182,5 +5256,365 @@ test('linked-issue re-entry is mirrored by next steps and user documentation', (
   assert.match(
     source('docs/user-guide/troubleshooting.md'),
     /A linked issue remains open after merge/,
+  );
+});
+
+test('both consumers of the reviewer contract read the submitted reviews', () => {
+  // The shared fragment is loaded by two tools that evaluate it independently against their own
+  // fresh read. Widening one consumer's read and not the other's makes the two disagree about the
+  // same reviewer on the same pull request — the exact drift the fragment's own contract forbids,
+  // and one that no assertion on either file alone would catch.
+  const gate = flat(section(source('src/tools/merge-gate.md'), '### Phase 1'));
+  const iterate = flat(section(source('src/tools/iterate.md'), '### Phase 1:'));
+
+  for (const [label, text] of [
+    ['the gate', gate],
+    ['iterate', iterate],
+  ]) {
+    assert.match(text, /`pr-reviews-read`/, `${label} must read the submitted reviews`);
+    assert.match(
+      text,
+      /`prReviewsRead`/,
+      `${label} must name the capability key the read is gated on`,
+    );
+    // One instant, or the state assembled from two reads describes no state the pull request ever
+    // had — the same invariant the status read and the threads already carry.
+    assert.match(
+      text,
+      near('`pr-reviews-read`', '(?:same instant|one instant)', 600),
+      `${label} must read the reviews at the same instant as the status and the threads`,
+    );
+  }
+
+  // Each consumer states its own unavailability rule. `iterate` degrades and reports; the gate
+  // separates a capability that is absent from a read that failed this time, because only the
+  // second can be repaired by trying again.
+  assert.match(
+    iterate,
+    near('`prReviewsRead`|`pr-reviews-read`', '(?:UNSUPPORTED_CAPABILITY|unavailable)', 900),
+    'iterate must state what an unavailable review read costs its run',
+  );
+
+  const preflight = flat(section(source('src/tools/merge-gate.md'), '### Phase 0'));
+  assert.match(
+    preflight,
+    /`prReviewsRead`/,
+    "the gate's capability read list must include the new key",
+  );
+  assert.match(
+    preflight,
+    near('`prReviewsRead`', '(?:ask once|asks once)', 700),
+    'an absent review capability must degrade like the check wait: report and ask once',
+  );
+  assert.match(
+    preflight,
+    near('`prReviewsRead`', '(?:never merges|never merge)', 700),
+    'a non-interactive run must never merge on an unestablished verdict',
+  );
+});
+
+test('one supersession rule serves the gate condition and the guard, and lives in one place', () => {
+  const shared = source('src/shared/review-bot-state.md');
+  const verdict = prose(section(shared, '### A changes-requested verdict and what supersedes it'));
+
+  // Three cases, and the third is the one the reported defect turns on: treating a commented review
+  // as superseding lets a reviewer request changes in its body, add one inline comment at the same
+  // head, and clear the condition in silence.
+  assert.match(
+    verdict,
+    near('approved', '(?:clears|supersed)', 200),
+    'a later approved review at the same head must clear the verdict',
+  );
+  assert.match(
+    verdict,
+    near('dismiss', '(?:clears|supersed)', 300),
+    'a dismissal must clear the verdict',
+  );
+  assert.match(
+    verdict,
+    near('commented', '(?:never clears|does not clear)', 300),
+    'a later commented review must never clear a standing changes-requested verdict',
+  );
+  // Both providers' spellings, or the rule fires on one forge only — which is a rule that ships,
+  // passes every test, and protects nothing on the other.
+  assert.match(
+    verdict,
+    near('commented', "(?:both providers|either provider|providers' spellings)", 400),
+    'the commented state must be recognized under both providers spellings',
+  );
+
+  // The three fail-closed causes, each of which leaves no latest review to read at all.
+  for (const [label, pattern] of [
+    ['an unestablishable author', 'author cannot be established'],
+    ['an unestablishable head binding', 'head binding cannot be established'],
+    ['identical submission times', 'identical submission times'],
+  ]) {
+    assert.match(verdict, new RegExp(pattern, 'i'), `${label} must be named as fail-closed`);
+  }
+
+  // One home, referenced from every consumer, as the login-matching rule already is. Four sites
+  // restating it is four places for it to drift.
+  const gate = source('src/tools/merge-gate.md');
+  const conditions = mergeConditions(gate);
+  const verdictCondition = flat(
+    conditions.find((item) => item.trimStart().startsWith('10.')) ?? '',
+  );
+  assert.ok(verdictCondition, 'Phase 4 must carry condition 10');
+  assert.match(
+    verdictCondition,
+    /Automatic reviewer state/,
+    'condition 10 must resolve the latest review through the shared rule, not restate it',
+  );
+  assert.match(
+    flat(section(gate, '### Phase 1')),
+    /Automatic reviewer state/,
+    "the guard's review surface must resolve the latest review through the shared rule",
+  );
+});
+
+test('the unassessed-verdict condition blocks the absence of an outcome, never the verdict', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const conditions = mergeConditions(gate);
+  const condition = prose(conditions.find((item) => item.trimStart().startsWith('10.')) ?? '');
+  assert.ok(condition, 'Phase 4 must carry condition 10');
+
+  assert.match(condition, /`VERIFIED_HEAD_SHA`/, 'the condition must bind to the verified head');
+  for (const outcome of ['implement', 'defer', 'reject']) {
+    assert.match(
+      condition,
+      new RegExp(outcome, 'i'),
+      `the condition must name ${outcome} as an outcome that counts as assessed`,
+    );
+  }
+
+  // The gate writes no verdict of its own and must not start enforcing one it is forbidden to
+  // write: what blocks is the missing outcome, not the reviewer's disagreement.
+  assert.match(
+    condition,
+    near('(?:never approves|forbidden to write|verdict itself is never)', 'block', 400),
+    'a verdict whose findings were all assessed must not block on the verdict alone',
+  );
+  // An earlier head is condition 5's business, not this one's; without that split the condition
+  // would block on a verdict about a commit nobody is merging.
+  assert.match(
+    condition,
+    near('earlier head', '(?:does not block|not block)', 300),
+    'a review bound to an earlier head must not block on its own',
+  );
+  assert.match(
+    condition,
+    near('earlier head', 'condition 5', 500),
+    'the earlier-head rule must name the condition that carries the weight instead',
+  );
+
+  // The two failure causes are different in kind, and conflating them burns the whole round budget
+  // on a condition no round can change.
+  assert.match(
+    condition,
+    near('unreadable this time|unreadable', '(?:return|Phase 3)', 400),
+    'a list unreadable this time must block and return into Phase 3',
+  );
+  assert.match(
+    condition,
+    near('`prReviewsRead`', '(?:ask once|asks once)', 500),
+    'an absent capability must report and ask once instead of returning',
+  );
+
+  assert.match(
+    condition,
+    near('Phase 3', 'consumes a round', 400),
+    'the return to Phase 3 must consume a round',
+  );
+  assert.match(
+    condition,
+    near('`mergeGate\\.maxRounds`', '(?:never with a merge|never a merge)', 300),
+    'an exhausted round budget must end the run with a report, never with a merge',
+  );
+  // Every continuation paragraph of condition 10 is indented, or the Phase-4 list terminator in the
+  // neighbouring test truncates the slice and stops asserting anything past this condition.
+  for (const line of (conditions.find((item) => item.trimStart().startsWith('10.')) ?? '')
+    .replace(/^\n+/, '')
+    .split('\n')
+    .slice(1)) {
+    assert.ok(
+      line.trim() === '' || /^\s/.test(line),
+      `condition 10 continuation must stay indented: ${line}`,
+    );
+  }
+});
+
+test('a changes-requested review is the guard third counting surface, decided by state alone', () => {
+  const phase1 = prose(section(source('src/tools/merge-gate.md'), '### Phase 1'));
+
+  assert.match(
+    phase1,
+    near('(?:submitted review|changes-requested)', 'counting surface|counts', 500),
+    'the guard must count a changes-requested review as a third surface',
+  );
+  // Restricted to that one state, or a routine commented "looks good" activates a guard that is set
+  // once and never cleared.
+  assert.match(
+    phase1,
+    near('changes-requested', '(?:latest|newest) review', 700),
+    'the surface must be decided on the latest review per author',
+  );
+  // The author rules stay the ones already written; a fourth rule reading a review body is exactly
+  // what "no exclusion rule reads a body" forbids.
+  assert.match(
+    phase1,
+    near('review', 'no exclusion rule reads a body', 1200),
+    'no exclusion rule may read a review body',
+  );
+});
+
+test('the gate reports every reviewer verdict per finding, and every unmatched one', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const phase6 = prose(section(gate, '### Phase 6'));
+
+  assert.match(
+    phase6,
+    near('changes-requested review', 'per finding|one line per finding', 400),
+    'Phase 6 must report a reviewer verdict per finding, never as a binary',
+  );
+  assert.match(
+    phase6,
+    /never a binary/i,
+    'the report must forbid a binary assessed, which hides an auto-classification',
+  );
+  assert.match(
+    phase6,
+    near('changes-requested review', 'another condition already blocks|even when another', 600),
+    'the verdict must be reported even when another condition already blocks the merge',
+  );
+  assert.match(
+    phase6,
+    near('changes-requested review', 'matched no configured login', 900),
+    'Phase 6 must report a changes-requested review that matched no configured login',
+  );
+
+  const phase4 = prose(section(gate, '### Phase 4'));
+  assert.match(
+    phase4,
+    near('changes-requested review', 'matched no configured login', 500),
+    'Phase 4 must carry the unmatched-review report, modelled on the unmatched-thread one',
+  );
+  assert.match(
+    phase4,
+    near(
+      'changes-requested review that matched no configured login',
+      '(?:never blocks|not a condition)',
+      1400,
+    ),
+    'the unmatched-review report must state that it never blocks the merge',
+  );
+});
+
+test('a review body reaches iterate as identified free text, never as direction', () => {
+  const iterate = source('src/tools/iterate.md');
+  const phase0 = flat(section(iterate, '### Phase 0', '\n### Phase 1'));
+
+  // The grammar is deliberately unchanged: free text is already accepted beside a thread list.
+  assert.match(
+    phase0,
+    near('review body', '(?:free text|free-text)', 400),
+    'a body-carried finding must arrive as free text',
+  );
+  // The zero-thread case is the one that aborts if a caller improvises: an empty `threads=` list is
+  // unparseable and costs a round.
+  assert.match(
+    phase0,
+    near('`free-text-only`', 'empty `threads=`', 500),
+    'the filter form for a body-only delegation with zero threads must be stated',
+  );
+  assert.match(
+    phase0,
+    near('stable identifier', '(?:one item for every|one returned item)', 700),
+    'free text must carry a caller-supplied stable identifier for the return contract',
+  );
+
+  const phase2 = flat(section(iterate, '### Phase 2: Classification'));
+  assert.match(
+    phase2,
+    near('review body', 'Mode C', 400),
+    'a review body must be classified through the same Mode C path as any other item',
+  );
+  assert.match(
+    phase2,
+    near('review body', '(?:never.{0,40}direction|never treated as direction)', 500),
+    'a review body must never be treated as direction',
+  );
+
+  // And the gate's own side of the same contract: the exemption's grounds may no longer rest on
+  // "before this run has observed any reviewer", which a Phase-3 body-only delegation falsifies.
+  const contract = prose(
+    section(source('src/tools/merge-gate.md'), '## Delegation contract', '\n## '),
+  );
+  assert.doesNotMatch(
+    contract,
+    /and the exemption is correct there precisely because/i,
+    'the review-guard exemption may not rest on a claim a Phase-3 body-only delegation falsifies',
+  );
+  assert.match(
+    contract,
+    near('`free-text-only`', 'scope', 500),
+    'the CI repair exemption must rest on its scope rather than on when it is issued',
+  );
+  // And the falsifier is named, so the corrected grounds cannot be re-simplified back into the old
+  // ones by a reader who never meets the Phase-3 body-only delegation.
+  assert.match(
+    contract,
+    near('before this run has observed any reviewer', 'Phase-3|Phase 3', 500),
+    'the corrected grounds must name the Phase-3 body-only delegation that falsified the old ones',
+  );
+});
+
+test('the sentences reviews make false are corrected rather than left standing', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const shared = source('src/shared/review-bot-state.md');
+  const prComments = source('src/shared/pr-review-comments.md');
+
+  // Each of these was true only while no workflow read a review. Left standing they contradict the
+  // condition, the guard and the fallback that now do.
+  assert.doesNotMatch(
+    gate,
+    /a review body is in neither/i,
+    'the claim that a review body can never hold the guard must go',
+  );
+  assert.doesNotMatch(
+    gate,
+    /Only a configured `\.check` resolves it/i,
+    'the fallback now reads a fourth surface, so the check is no longer the only remedy',
+  );
+  assert.doesNotMatch(
+    gate,
+    /the single exception condition 7 states for itself/i,
+    'the returning exception must be stated over the return, not over one condition by name',
+  );
+  assert.doesNotMatch(
+    shared,
+    /newest comment, review thread, or thread reply/i,
+    'the fallback evidence set must name the submitted reviews too',
+  );
+  assert.doesNotMatch(
+    prComments,
+    /Two further operations/i,
+    'the Forgejo limitation paragraph miscounted its own three-item list',
+  );
+
+  // And the positive halves, so a deletion cannot pass as a correction.
+  assert.match(
+    flat(section(shared, '### Precedence')),
+    near('submitted review', 'headCommittedAt', 900),
+    'the fallback must weigh a submitted review against the head commit timestamp',
+  );
+  assert.match(
+    flat(section(shared, '### This narrows the window')),
+    near('review', 'Phase-4|Phase 4', 500),
+    'the narrowing-window obligation must name the review surface its consumer closes',
+  );
+  assert.match(
+    flat(section(prComments, '### Read the submitted reviews')),
+    /`prReviewsRead`/,
+    'the new read section must name its capability key',
   );
 });

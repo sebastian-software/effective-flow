@@ -3,14 +3,14 @@
 This shared building block connects Effective Flow workflows with the review comments of an
 existing pull request (GitHub via `gh`, Forgejo via `tea`). It encapsulates the
 **PR-specific plumbing** that `issue-tracker.md` deliberately does not contain: PR resolution,
-reading review threads, replying to a thread, resolving a thread, submitting a review with inline
-comments, posting a PR summary comment, reading the pull-request status, waiting for pending
-checks, and merging the pull request.
+reading review threads, reading the submitted reviews themselves, replying to a thread, resolving a
+thread, submitting a review with inline comments, posting a PR summary comment, reading the
+pull-request status, waiting for pending checks, and merging the pull request.
 
 It serves both directions plus the merge gate. **Inbound**, `{{SKILL:iterate}}` reads and answers
 what others wrote. **Outbound**, "PR review publication" writes Effective Flow's own findings onto
 the pull request; that fragment owns which findings are published and which gates run first, while
-this one provides the operations. **The gate**, `{{SKILL:merge-gate}}`, reads status and checks,
+this one provides the operations. **The gate**, `{{SKILL:merge-gate}}`, reads status, checks and reviews,
 waits, posts its configured bot trigger — its only own write onto the pull request's **discussion** —
 and finally merges; it owns the ordered gate and the merge decision, while this one again provides
 the operations. Its writes to the head **branch** are a different surface, bounded by that tool's own
@@ -202,6 +202,36 @@ require named checks, an approval, an up-to-date branch, or linear history, so "
 and "mergeable" are different statements. The forge's merge state is authoritative; a blocked state
 is reported, never worked around.
 
+### Read the submitted reviews
+
+Use the helper's `pr-reviews-read` operation (capability key `prReviewsRead`). It is a **read**, and
+it returns per review the normalized author record, the commit the review was submitted against, its
+state, its body, its submission time, its id and its URL. The author record is normalized exactly as
+a comment's and a thread's are, so "Matching a configured login" resolves a reviewer here without a
+second rule.
+
+**This is the third surface, beside the review threads and the top-level comments, and it carries
+what neither of the others can.** A reviewer's verdict — approved, changes requested, dismissed —
+exists only on the review object, and so does any finding a reviewer states in its review body rather
+than as an inline comment. A workflow reasoning about a reviewer from threads and comments alone is
+blind to both.
+
+**The state is a provider-neutral enum, resolved inside the helper.** The two forges spell the same
+verdicts differently, and one of them models a withdrawal as a separate flag beside an unchanged
+state rather than as a state of its own; the helper reconciles both vocabularies onto one token set
+so a consumer never branches on the provider. A value outside that set fails closed and is reported
+as undecided rather than passed through, exactly as `authorType` is for an account class the provider
+did not state.
+
+**Two absences mean two different things.** A review with no submission time is a **pending** draft —
+both providers return one in this listing — and is never a verdict. A review whose head binding or
+whose author cannot be established is undecidable, and a consumer treats it in whichever fail-closed
+direction its own rule states, never as an absence.
+
+`{{SKILL:merge-gate}}` reads this to decide a merge precondition and `{{SKILL:iterate}}` to see a
+finding carried in a review body; the shared "Automatic reviewer state" owns which review decides and
+what supersedes a standing verdict, so neither tool restates that rule.
+
 ### Wait for pending checks
 
 Use the helper's `pr-checks-wait` operation (capability key `pullRequestChecksWait`). It blocks
@@ -231,10 +261,14 @@ pull request and never requests changes — not even to unblock a merge.
 blocking watch, so the gate takes its documented no-watch degradation (report the pending checks and
 ask once) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
 the status read composes the pull-request object, the combined commit status and the head commit's
-date, and the merge sends `head_commit_id` as the server-side head guard. Two further operations
+date, and the merge sends `head_commit_id` as the server-side head guard. **Three further operations**
 this building block uses stay unsupported on Forgejo — `review-create`, `review-thread-reply` and
 `review-thread-resolve` — and the gate still fails closed on anything it cannot read, improvising no
-provider request.
+provider request. `pr-reviews-read` is **not** among them: it is served on both providers, because
+the raw route it reads is the same one the review-thread walk already pages there, and the listing it
+returns is what a merge precondition is evaluated over. Its Forgejo read is paginated to exhaustion
+and its page count is reported, since a truncated review list would report a verdict that is missing
+as a verdict that does not exist.
 
 ### Idempotency via the Effective Flow markers
 

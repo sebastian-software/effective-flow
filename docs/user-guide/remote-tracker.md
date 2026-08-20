@@ -385,14 +385,16 @@ publishing.
 
 ## Merge gate operations
 
-[`/effective-flow merge-gate`](./tools-deliver.md) reads pull-request status, waits for checks, and
-merges through five additional forge operations of the same remote-tracker helper. Like all PR
+[`/effective-flow merge-gate`](./tools-deliver.md) reads pull-request status, reads the submitted
+reviews, waits for checks, and
+merges through six additional forge operations of the same remote-tracker helper. Like all PR
 work, they are inherently forge-bound: they never evaluate `tracker.mode` and only need a Git
 repository, an `origin` remote, and an authenticated CLI.
 
 | Operation          | Capability              | What it does                                                                                                                                                                                                                                                                                    |
 | ------------------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pr-status-read`   | `pullRequestStatus`     | Reads the head SHA, base ref, PR state, draft flag, check list, and mergeability as one logical read. On GitHub that is one GraphQL call carrying per-check requiredness and the forge's merge state; on Forgejo it is three `tea api` calls and reports neither of those two facts (see below) |
+| `pr-reviews-read`  | `prReviewsRead`         | A read. Returns every submitted review with its author, the commit it was submitted against, its state as one provider-neutral verdict token, its body, its submission time, its id, and its URL. A review with no submission time is a pending draft, never a verdict                          |
 | `pr-checks-wait`   | `pullRequestChecksWait` | Blocks inside the provider's own watch until checks complete or the supplied timeout elapses, then reads back the normalized check list as a second call                                                                                                                                        |
 | `pr-merge`         | `pullRequestMerge`      | Merges the pull request with the configured method; a mutation, so a run without `--apply` produces a dry-run plan and merges nothing                                                                                                                                                           |
 | `viewer-read`      | `viewerRead`            | A read, not a mutation. Returns the authenticated login and, where the provider states it, the account type (`User` or `Bot`), so the gate can tell its own writes from another account's across runs                                                                                           |
@@ -402,6 +404,11 @@ repository, an `origin` remote, and an authenticated CLI.
 Its 30-second bound is fixed and has no configuration key. A still-open issue is a successful
 observation result, not a merge failure.
 
+`pr-reviews-read` normalizes the two forges' different spellings of the same verdicts onto one
+token set, and folds Gitea's separate dismissal flag into the dismissed token, so a rule written
+against it behaves identically on both. A state the mapping does not know is reported as undecided
+rather than passed through.
+
 **GitHub** supports `pr-status-read`, `pr-checks-wait`, and `pr-merge`, but only from **`gh`
 2.50.0** – a higher floor than the adapter's general `gh` 2.0.0 minimum. `gh pr checks --json`, the
 flag the gate depends on most, only landed in 2.50.0; the other flags those three operations use
@@ -410,15 +417,19 @@ distro-packaged install – those three capabilities report `UNSUPPORTED_CAPABIL
 failing mid-run on an unknown flag, and `merge-gate` degrades to report-only there. If you see that
 message on GitHub, upgrade `gh` rather than suspect your repository's forge access. `viewer-read`
 needs no flag beyond every `gh` 2.x line and no scope beyond an authenticated `gh` already holds, so
-it is unaffected by that version floor; it maps to `gh api user`.
+it is unaffected by that version floor; it maps to `gh api user`. `pr-reviews-read` is likewise
+unaffected: it is a paginated REST read available on every `gh` 2.x line.
 
-**Forgejo** supports `pr-status-read`, `pr-merge`, and `viewer-read`, and declares only
-`pr-checks-wait` unsupported among the three: `tea` has no `checks` subcommand and Forgejo offers no
+**Forgejo** supports `pr-status-read`, `pr-reviews-read`, `pr-merge`, and `viewer-read`, and
+declares only
+`pr-checks-wait` unsupported among them: `tea` has no `checks` subcommand and Forgejo offers no
 server-side blocking watch comparable to `gh pr checks --watch`, so `merge-gate` takes its documented
 no-watch degradation there – report the pending checks by name and ask once – instead of blocking. A
 Forgejo run is therefore the whole gate minus the blocking wait. Three other operations `merge-gate`
 and `iterate` use stay unsupported on Forgejo: `review-create`, `review-thread-reply`, and
-`review-thread-resolve`.
+`review-thread-resolve`. `pr-reviews-read` is **not** among them – it reads the same raw route the
+review-thread walk already pages there, and it is paginated to exhaustion, because a truncated review
+list would report a missing verdict as a verdict that does not exist.
 
 **`review-thread-resolve` is unsupported because Forgejo serves no route for it**, not because
 `tea` lacks a subcommand – `tea pulls resolve` exists. Forgejo's `/pulls` router group declares no

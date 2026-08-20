@@ -3500,6 +3500,137 @@ test('an unreadable Forgejo review page fails closed instead of reporting a pref
   assert.equal(partial.error.details.returnedCount, 1);
 });
 
+test('the Forgejo review listing pages to exhaustion and normalizes the neutral verdict', async () => {
+  // Class A fixtures: `modules/structs/pull_review.go`, read by JSON tag — `user`, `team`,
+  // `commit_id`, `submitted_at`, `dismissed`, `html_url` — never by Go field name.
+  const teaApi = (body, headers = '') => ({
+    status: 0,
+    stdout: JSON.stringify(body),
+    stderr: `HTTP/2 200\r\n${headers}`,
+  });
+  const head = 'd'.repeat(40);
+  // Two pages, read to exhaustion. Without a named `executeOperation` branch this operation falls
+  // through to the generic tail, issues page 1 alone, and reports a truncated list as complete —
+  // which on this endpoint drops exactly the changes-requested review the merge gate blocks on.
+  const runner = fakeRunner([
+    teaApi(
+      [
+        {
+          id: 71,
+          state: 'COMMENT',
+          body: 'nit',
+          user: { login: 'review-app' },
+          commit_id: head,
+          submitted_at: '2026-07-28T22:30:00+02:00',
+          html_url: 'https://code.example.test/team/flow/pulls/2#pullrequestreview-71',
+        },
+        {
+          id: 72,
+          state: 'REQUEST_CHANGES',
+          body: 'Blocking: the head guard is missing.',
+          user: { login: 'reviewer' },
+          commit_id: head,
+          submitted_at: '2026-07-29T08:00:00Z',
+        },
+      ],
+      'X-Total-Count: 6\r\n',
+    ),
+    teaApi([
+      {
+        id: 73,
+        state: 'REQUEST_CHANGES',
+        dismissed: true,
+        body: 'withdrawn',
+        user: { login: 'reviewer' },
+        commit_id: head,
+        submitted_at: '2026-07-29T09:00:00Z',
+      },
+      {
+        id: 74,
+        state: 'REQUEST_REVIEW',
+        body: '',
+        team: { name: 'platform' },
+        commit_id: head,
+        submitted_at: '2026-07-29T09:30:00Z',
+      },
+      {
+        id: 75,
+        state: 'SOMETHING_NEW',
+        body: '',
+        user: { login: 'reviewer' },
+        commit_id: head,
+      },
+    ]),
+    teaApi([]),
+  ]);
+  const envelope = await executeOperation(
+    'pr-reviews-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(
+    runner.calls.map((call) => call.args[1]),
+    [
+      'repos/team/flow/pulls/2/reviews?limit=100&page=1',
+      'repos/team/flow/pulls/2/reviews?limit=100&page=2',
+      'repos/team/flow/pulls/2/reviews?limit=100&page=3',
+    ],
+  );
+  // `data.commands` plural, as every paginated Forgejo read publishes; the generic tail's singular
+  // `data.command` would state one request, which this path is not.
+  assert.equal(envelope.data.commands.length, 3);
+  assert.equal(envelope.data.command, undefined);
+  assert.equal(envelope.data.pagesFetched, 3);
+  // `X-Total-Count: 6` above the five rows returned proves nothing here: `ListPullReviews` counts a
+  // pending review `convert.ToPullReviewList` then omits — another user's, which this caller may not
+  // see — so the header may end the walk early but never condemn it. Exhaustion is proved by the
+  // empty third page instead, and `totalIsExact: false` keeps the surplus from failing the read.
+  assert.equal(envelope.data.result.length, 5);
+
+  assert.deepEqual(
+    envelope.data.result.map((review) => review.state),
+    ['COMMENTED', 'CHANGES_REQUESTED', 'DISMISSED', 'REVIEW_REQUESTED', 'UNKNOWN'],
+  );
+  assert.equal(envelope.data.result[0].commitSha, head);
+  assert.equal(envelope.data.result[0].submittedAt, '2026-07-28T20:30:00.000Z');
+  assert.equal(
+    envelope.data.result[0].url,
+    'https://code.example.test/team/flow/pulls/2#pullrequestreview-71',
+  );
+  assert.equal(envelope.data.result[1].body, 'Blocking: the head guard is missing.');
+  // Forgejo states no account class at all, so every author normalizes to `unknown` — the reason a
+  // `mergeGate.bots` entry there must be spelled as the bare login.
+  assert.deepEqual(envelope.data.result[1].author, {
+    login: 'reviewer',
+    isBot: null,
+    authorType: 'unknown',
+  });
+  // A team-authored review is a real review: `ReviewerTeam json:"team"` carries the only name the
+  // payload states, so it becomes the author record rather than leaving the review unattributable.
+  assert.equal(envelope.data.result[3].author.login, 'platform');
+  // `dismissed` is a separate boolean on Gitea, not a state. Folding it in here is what gives a
+  // withdrawn Forgejo verdict the same clearing path a GitHub `DISMISSED` state has.
+  assert.equal(envelope.data.result[2].state, 'DISMISSED');
+  // A state outside the mapping fails closed and is never passed through.
+  assert.equal(envelope.data.result[4].state, 'UNKNOWN');
+  assert.equal(envelope.data.result[4].submittedAt, undefined);
+});
+
+test('a pull request with no reviews reads as an empty review list', async () => {
+  const runner = fakeRunner([
+    { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\nX-Total-Count: 0\r\n' },
+  ]);
+  const envelope = await executeOperation(
+    'pr-reviews-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(envelope.data.result, []);
+  assert.equal(runner.calls.length, 1);
+});
+
 test('a pull request whose head branch the forge deleted keeps its branch name', async () => {
   // `services/convert` leaves `ref` at `refs/pull/<index>/head` when the head branch or head repo
   // is gone, and states the branch name in `label` — the opposite of GitHub's spelling, where
@@ -4512,6 +4643,141 @@ test('pr-status-read reads head, base, merge state, and checks in a single GitHu
       },
     ],
   });
+});
+
+test('pr-reviews-read pages the GitHub review listing and normalizes the neutral verdict', async () => {
+  const plan = buildCommandPlan('pr-reviews-read', { number: 12 }, githubRepository);
+  assert.equal(plan.executable, 'gh');
+  // `--paginate --slurp` plus an explicit `per_page=100`, matching `label-list`, `issue-list` and
+  // `pr-list` rather than `pr-comments-read`, which omits the page size and reads thirty at a time.
+  assert.deepEqual(plan.args, [
+    'api',
+    '--paginate',
+    '--slurp',
+    'repos/example/flow/pulls/12/reviews?per_page=100',
+  ]);
+  assert.deepEqual(
+    buildCommandPlan(
+      'pr-reviews-read',
+      { number: 12 },
+      { ...githubRepository, host: 'code.example.test' },
+    ).args.slice(0, 3),
+    ['api', '--hostname', 'code.example.test'],
+  );
+
+  const runner = fakeRunner([
+    {
+      status: 0,
+      // `--slurp` hands back one array per page; `flattenPages` collapses them.
+      stdout: JSON.stringify([
+        [
+          {
+            id: 101,
+            state: 'COMMENTED',
+            body: 'nit',
+            user: { login: 'greptileai[bot]', type: 'Bot' },
+            commit_id: verifiedHead,
+            submitted_at: '2026-07-28T20:05:00Z',
+            html_url: 'https://github.com/example/flow/pull/12#pullrequestreview-101',
+          },
+          {
+            id: 102,
+            state: 'CHANGES_REQUESTED',
+            body: 'Blocking: the head guard is missing.',
+            user: { login: 'reviewer', type: 'User' },
+            commit_id: verifiedHead,
+            submitted_at: '2026-07-28T22:10:00+02:00',
+            html_url: 'https://github.com/example/flow/pull/12#pullrequestreview-102',
+          },
+        ],
+        [
+          {
+            id: 103,
+            state: 'DISMISSED',
+            body: '',
+            user: { login: 'reviewer', type: 'User' },
+            commit_id: earlierHead,
+            submitted_at: '2026-07-28T19:00:00Z',
+          },
+          // A pending review the caller owns comes back in the same listing with no submission
+          // time at all. It is not a verdict and must never be read as one.
+          {
+            id: 104,
+            state: 'PENDING',
+            body: 'draft',
+            user: { login: 'operator', type: 'User' },
+            commit_id: verifiedHead,
+            submitted_at: null,
+          },
+          { id: 105, state: 'SOMETHING_NEW', body: '', user: { login: 'reviewer' } },
+        ],
+      ]),
+      stderr: '',
+    },
+  ]);
+  const envelope = await executeOperation(
+    'pr-reviews-read',
+    { repository: gateRepository, number: 12 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  // One request, so the GitHub envelope publishes `data.command` singular through the generic tail.
+  assert.equal(typeof envelope.data.command, 'object');
+  assert.equal(envelope.data.commands, undefined);
+  assert.deepEqual(
+    envelope.data.result.map((review) => review.state),
+    ['COMMENTED', 'CHANGES_REQUESTED', 'DISMISSED', 'PENDING', 'UNKNOWN'],
+  );
+  assert.deepEqual(envelope.data.result[0], {
+    id: 101,
+    url: 'https://github.com/example/flow/pull/12#pullrequestreview-101',
+    author: { login: 'greptileai[bot]', isBot: true, authorType: 'bot' },
+    commitSha: verifiedHead,
+    state: 'COMMENTED',
+    body: 'nit',
+    submittedAt: '2026-07-28T20:05:00.000Z',
+  });
+  // The head binding is what makes a verdict decidable against one head rather than against the
+  // pull request as a whole.
+  assert.equal(envelope.data.result[1].commitSha, verifiedHead);
+  assert.equal(envelope.data.result[2].commitSha, earlierHead);
+  assert.equal(envelope.data.result[1].submittedAt, '2026-07-28T20:10:00.000Z');
+  // A pending review states no submission time, and the absence is reported rather than defaulted
+  // to the read's own instant.
+  assert.equal(envelope.data.result[3].submittedAt, undefined);
+  // An unrecognized state fails closed; the raw provider spelling is never passed through.
+  assert.equal(envelope.data.result[4].state, 'UNKNOWN');
+});
+
+test('pr-reviews-read is capability-gated on both providers', async () => {
+  const github = await probeProvider(
+    githubRepository,
+    fakeRunner([
+      { status: 0, stdout: 'gh version 2.70.0\n', stderr: '' },
+      { status: 0, stdout: '', stderr: '' },
+    ]),
+  );
+  assert.equal(github.capabilities.prReviewsRead, true);
+
+  const forgejo = await probeProvider(forgejoRepository, fakeRunner(teaProbeResults()));
+  assert.equal(forgejo.capabilities.prReviewsRead, true);
+  // It rides on the same `tea api --include` transport as the status read and the thread walk, and
+  // adds no probe spawn of its own.
+  const withoutInclude = await probeProvider(
+    forgejoRepository,
+    fakeRunner(teaProbeResults({ apiInclude: { status: 1, stdout: '', stderr: 'unknown flag' } })),
+  );
+  assert.equal(withoutInclude.capabilities.prReviewsRead, false);
+
+  // A named `CAPABILITY_BY_OPERATION` entry is what makes the gate testable at all: the operation
+  // gate compares against `false`, so an absent key would wave this read through unprobed.
+  const refused = await executeOperation(
+    'pr-reviews-read',
+    { repository: forgejoRepository, pullRequest: 2, probe: withoutInclude },
+    { skipProbe: true },
+  );
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'UNSUPPORTED_CAPABILITY');
 });
 
 test('the check list states a required flag only where the provider exposes one', async () => {
