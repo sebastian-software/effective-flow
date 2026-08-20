@@ -6131,6 +6131,31 @@ test('the gate delimits caller-supplied item text from the control lines it anno
     /refused, never neutralised/i,
     'the contract must decide whether a body carrying the delimiter is refused or neutralised',
   );
+
+  // The refusal is scoped to the delimiter, and that scope is the decision rather than an omission:
+  // the four control lines are quoted throughout this repository's own contracts, so a sender that
+  // also refused a body merely stating one would report ordinary prose about this protocol as an
+  // unassessed finding and block the merge on it.
+  assert.match(
+    contract,
+    /comparison is against the delimiter and nothing else/i,
+    'the refusal must be scoped to the delimiter, not extended to the control lines',
+  );
+  assert.match(
+    contract,
+    near('delegated unchanged', 'body text', 300),
+    'a body stating a control line but not the delimiter must still be delegated',
+  );
+
+  // Both halves of the case list, so a later edit cannot quietly drop the second one and leave the
+  // refusal reading as if it covered every control line too.
+  const cases = prose(gate);
+  assert.match(cases, /review body containing the delegation delimiter:\s*refused/i);
+  assert.match(
+    cases,
+    /review body containing a control line but not the delimiter:\s*delegated\s+unchanged/i,
+    'the case list must name the control-line body as delegated, beside the refused one',
+  );
 });
 
 test('iterate splits the delegation message at the delimiter before it parses a switch', () => {
@@ -6144,15 +6169,53 @@ test('iterate splits the delegation message at the delimiter before it parses a 
   // that hunts for them before it knows where the untrusted text begins has lost the boundary.
   ordered(prose(phase0), 'Split the message at the body delimiter', 'Optional item filter');
 
+  // Below the delimiter is data, and data is all it is. An abort there fires on the ordinary prose
+  // of a reviewer discussing this protocol — the four lines are quoted throughout these contracts —
+  // so it would report that reviewer's finding as unassessed and block the merge on it, and it would
+  // hand a pull request able to induce one such line a reliable way to stop the gate.
   assert.match(
     split,
-    /ABORT: control line below the body delimiter/,
-    'a control keyword below the delimiter must abort',
+    near('below the delimiter', '(?:is body text|belongs to the body)', 300),
+    'a control line below the delimiter must be read as body text',
   );
+  assert.match(
+    split,
+    /never parsed as a switch, never overrides the one announced above, and never aborts/i,
+    'the body-text reading must state all three of what it does not do',
+  );
+  assert.match(
+    split,
+    /Position decides what is protocol, not content/i,
+    'the rule must rest on position rather than on content',
+  );
+  assert.doesNotMatch(
+    prose(iterate),
+    /ABORT: control line below the body delimiter/,
+    'no abort may remain for a control line below the delimiter',
+  );
+  // The protection the abort nominally offered stays, on the only side that can tell a caller's
+  // misplaced line from a reviewer's quoted one apart: the sender writing the control lines first.
+  assert.match(
+    split,
+    near(
+      "misplaced below the delimiter is the sender's to prevent",
+      'same bytes in the same place',
+      300,
+    ),
+    'a misplaced control line must be assigned to the sender rather than detected here',
+  );
+
   assert.match(
     split,
     /ABORT: duplicated control line/,
     'a control keyword repeated above the delimiter must abort',
+  );
+  // Duplication is counted in the caller's own region only; otherwise the removed abort returns
+  // through the back door as "the body stated it a second time".
+  assert.match(
+    split,
+    near("Only the caller's own region is counted", 'never the second announcement', 200),
+    'the duplicate rule must count only the region above the delimiter',
   );
   assert.match(
     split,
@@ -6165,9 +6228,9 @@ test('iterate splits the delegation message at the delimiter before it parses a 
     'only the first delimiter occurrence may be the boundary',
   );
 
-  // The positional rule covers `Next steps:` too, while its malformed-line tolerance survives: a
-  // misplaced or repeated line is a fault of the channel, a malformed one costs a chat block.
-  assert.match(split, /`Next steps:`/, 'the positional rule must cover all four control lines');
+  // Both positional rules cover `Next steps:` too, while its malformed-line tolerance survives: a
+  // repeated line is a fault of the channel, a malformed one costs a chat block.
+  assert.match(split, /`Next steps:`/, 'the positional rules must cover all four control lines');
   const nextSteps = prose(items.find((item) => /next-step suppression/i.test(item)) ?? '');
   assert.ok(nextSteps, 'Phase 0 must keep its next-step suppression item');
   assert.match(
