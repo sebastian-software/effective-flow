@@ -2011,26 +2011,34 @@ test('the revision-mode move back from the archive never touches the Git index',
     /an unlisted one means the plan is now untracked at `<plan\.dir>\/<file>`/,
   );
 
-  // A plain move silently overwrites where `git mv` would have refused, so the destination-absence
-  // requirement replaces that lost safety — and it is checked before the status reset, so a run
-  // that stops leaves no half-applied revision behind.
+  // Ordering is the real guarantee: the move lands before the status reset, so a refused move
+  // cannot strand an archived file rewritten to the open status. Assert the two in sequence —
+  // a reversed pair is exactly the defect, and neither clause alone would catch it.
   ordered(
     revision,
-    '**The destination must be absent, and that is checked before any write.**',
-    'Verify that `<plan.dir>/<file>` does not exist before the status reset as well as before the move',
-    'never overwrite a file that does',
-    'Report both paths, revise nothing, and stop',
+    '**For an archived plan the move comes first, and the status reset follows on the file at its final path.**',
+    'reset first and a move that is then refused strands an archived file marked open',
+    'the run writes nothing at all until the plan is at its new path',
+    '**The destination must be absent, and the move itself has to enforce that.**',
+    '**On a collision, stop having written nothing.**',
+    'the status reset happens only after the move has been confirmed',
   );
 
   // A check and a move are two steps, so the no-overwrite guarantee has to live in the move
-  // primitive rather than in the check that precedes it.
+  // primitive rather than in a check that precedes it.
   ordered(
     revision,
-    '**The refusal must not rest on the check alone.**',
+    'A check alone cannot carry it',
     '`mv -n` or an equivalent no-overwrite move',
-    'may report success while silently skipping the move',
-    'treat a skipped move as the collision case',
+    'may report success while silently skipping',
+    'a skipped move is the collision case, not a completed one',
   );
+  assert.match(revision, /Report both paths, revise nothing, and stop/);
+
+  // The retired wording put the check before the status reset instead of moving the reset after
+  // the move; a revert to it would reopen the half-applied-revision window.
+  assert.doesNotMatch(revision, /checked before any write/);
+  assert.doesNotMatch(revision, /before the status reset as well as before the move/);
 
   // The ask block promises exactly the behavior the run performs.
   const ask = flat(section(plan, '```ask\nwhen: the revision target was resolved', '```'));

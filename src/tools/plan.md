@@ -168,27 +168,35 @@ On a revision run:
   question this revision just answered, and `{{SKILL:open-plans}}` would not list it. An archived
   plan additionally moves back from `<plan.dir>/archive/` to `<plan.dir>/`, exactly as the question
   stated.
+- **For an archived plan the move comes first, and the status reset follows on the file at its
+  final path.** The order is what keeps a refused move from leaving a half-applied revision behind:
+  reset first and a move that is then refused strands an archived file marked open — an
+  implemented plan sitting in `<plan.dir>/archive/` under the canonical open status, which
+  `{{SKILL:apply}}` and `{{SKILL:open-plans}}` both read as a plan that was never implemented. In
+  this order the run writes nothing at all until the plan is at its new path, so every stop below
+  leaves the archive exactly as it found it. A plan that was not archived has no move and is reset
+  where it lies.
 - Perform that move back as a **plain filesystem move**, never with `git mv`. This run creates no
   commit, so a staged rename would sit in the user's index until some later, unrelated commit
   swept it up. Nothing depends on the move being staged: `{{SKILL:open-plans}}` lists the top level
   of `<plan.dir>/` from the file system, and the plan-reference rule resolves against
   `<plan.dir>/` and `<plan.dir>/archive/` the same way, so the reset status is visible to both the
   moment the file lands at its new path.
-- **The destination must be absent, and that is checked before any write.** `git mv` refuses to
+- **The destination must be absent, and the move itself has to enforce that.** `git mv` refuses to
   clobber an existing file without `-f`; a plain move carries no such refusal, so the requirement
-  is stated here instead. Verify that `<plan.dir>/<file>` does not exist before the status reset
-  as well as before the move, and never overwrite a file that does — a run that stops here must
-  leave no rewritten status marker behind in the archive either. A present destination is not this
-  run's to resolve: it is a same-name duplicate across `<plan.dir>/` and `<plan.dir>/archive/`,
-  which the plan-file convention forbids and `{{SKILL:open-plans}}` reports on its own. Report both
-  paths, revise nothing, and stop, so the user decides which of the two files survives.
-- **The refusal must not rest on the check alone.** A check and a move are two steps, so a file
-  created in between would be overwritten by a move that already read the destination as absent.
-  Perform the move with a primitive that refuses to clobber on its own — `mv -n` or an equivalent
-  no-overwrite move — so the destination's absence is enforced where it matters. Such a primitive
-  may report success while silently skipping the move, so confirm afterwards that the archived path
-  is gone and the destination holds the revised plan; treat a skipped move as the collision case
-  above and stop.
+  is stated here instead. A check alone cannot carry it — a check and a move are two steps, and a
+  file created in between would be overwritten by a move that already read the destination as
+  absent. Perform the move with a primitive that refuses to clobber on its own, `mv -n` or an
+  equivalent no-overwrite move, so the absence is enforced at the moment it matters rather than at
+  the moment it was read. Such a primitive may report success while silently skipping, so confirm
+  afterwards that the archived path is gone and the destination holds the plan; a skipped move is
+  the collision case, not a completed one.
+- **On a collision, stop having written nothing.** A present destination is not this run's to
+  resolve: it is a same-name duplicate across `<plan.dir>/` and `<plan.dir>/archive/`, which the
+  plan-file convention forbids and `{{SKILL:open-plans}}` reports on its own. Report both paths,
+  revise nothing, and stop, so the user decides which of the two files survives. Because the status
+  reset happens only after the move has been confirmed, this stop needs no cleanup of its own —
+  there is no rewritten marker to undo.
 - Report the move as an uncommitted working-tree change that this run does not stage and no later
   step of it cleans up. Establish the Git state of **both** paths first, with one
   `git -C <project root> ls-files -z -- <archived path> <plan.dir>/<file>` call, and match each
