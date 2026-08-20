@@ -224,7 +224,10 @@ as undecided rather than passed through, exactly as `authorType` is for an accou
 did not state.
 
 **Two absences mean two different things.** A review with no submission time is a **pending** draft —
-both providers return one in this listing — and is never a verdict. A review whose head binding or
+both providers return one in this listing — and is never a verdict. The two spell that absence
+differently and the helper reconciles them: one omits the field, the other serialises a zero instant
+the helper normalizes to absent, so the sentence above is true on both. The `PENDING` state token is
+the portable cross-check for a consumer that wants a second signal, since both providers emit it. A review whose head binding or
 whose author cannot be established is undecidable, and a consumer treats it in whichever fail-closed
 direction its own rule states, never as an absence.
 

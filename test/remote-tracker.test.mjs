@@ -3614,7 +3614,89 @@ test('the Forgejo review listing pages to exhaustion and normalizes the neutral 
   assert.equal(envelope.data.result[2].state, 'DISMISSED');
   // A state outside the mapping fails closed and is never passed through.
   assert.equal(envelope.data.result[4].state, 'UNKNOWN');
+  // Absent because this payload states **no** submission candidate at all — not `submitted_at`, not
+  // `created_at`. The zero-instant case is a different one and is pinned in its own test below, so
+  // this assertion is not quietly doing that one's work.
   assert.equal(envelope.data.result[4].submittedAt, undefined);
+});
+
+test('a Forgejo pending review states the Go zero instant and normalizes to no submission time', async () => {
+  // Gitea declares `Submitted time.Time` with no `omitempty`, so a pending review serialises
+  // `0001-01-01T00:00:00Z` rather than omitting the field — and nothing filtered it, which made
+  // every Forgejo pending review read as a submitted verdict at the top of year 1.
+  const head = 'e'.repeat(40);
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify([
+        {
+          id: 81,
+          state: 'PENDING',
+          body: 'draft',
+          user: { login: 'reviewer' },
+          commit_id: head,
+          submitted_at: '0001-01-01T00:00:00Z',
+          // Populated on purpose: the candidate chain resolves
+          // `submitted_at → submittedAt → submitted → created_at`, so a fix that merely skipped the
+          // zero-instant candidate would let this value resurface as a submission time and re-break
+          // the discriminator one candidate later.
+          created_at: '2026-07-29T10:00:00Z',
+        },
+        // The same instant, spelled with a UTC offset instead of `Z`. What counts as the zero
+        // instant is decided by the instant, never by the string.
+        {
+          id: 82,
+          state: 'PENDING',
+          body: '',
+          user: { login: 'reviewer' },
+          commit_id: head,
+          submitted_at: '0000-12-31T23:00:00-01:00',
+        },
+        // And with sub-second precision, which a marshaller may or may not emit.
+        {
+          id: 83,
+          state: 'PENDING',
+          body: '',
+          user: { login: 'reviewer' },
+          commit_id: head,
+          submitted_at: '0001-01-01T00:00:00.000Z',
+        },
+        // A payload with no `state` field at all. `normalizeReviewState` collapses that to the same
+        // empty string an explicit empty state gives, so it must keep reaching `UNKNOWN` and
+        // blocking — mapping the empty state to a benign token would hand this one a pass.
+        {
+          id: 84,
+          body: '',
+          user: { login: 'reviewer' },
+          commit_id: head,
+          submitted_at: '2026-07-29T11:00:00Z',
+        },
+      ]),
+      stderr: 'HTTP/2 200\r\n',
+    },
+    { status: 0, stdout: '[]', stderr: 'HTTP/2 200\r\n' },
+  ]);
+  const envelope = await executeOperation(
+    'pr-reviews-read',
+    { repository: forgejoRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.result.length, 4);
+  for (const index of [0, 1, 2]) {
+    assert.equal(
+      envelope.data.result[index].submittedAt,
+      undefined,
+      'the Go zero instant is never reported as a submission time',
+    );
+  }
+  // The state token is the portable cross-check the contracts name: both providers emit `PENDING`.
+  assert.deepEqual(
+    envelope.data.result.map((review) => review.state),
+    ['PENDING', 'PENDING', 'PENDING', 'UNKNOWN'],
+  );
+  // Every other timestamp is untouched — the short-circuit matches the zero instant and nothing else.
+  assert.equal(envelope.data.result[3].submittedAt, '2026-07-29T11:00:00.000Z');
 });
 
 test('a pull request with no reviews reads as an empty review list', async () => {

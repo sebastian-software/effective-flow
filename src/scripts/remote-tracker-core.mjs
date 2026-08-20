@@ -4138,6 +4138,23 @@ function normalizeTimestamp(...values) {
   return undefined;
 }
 
+// **The Go zero instant is not a timestamp; it is the marshalled form of "never set".** Gitea
+// declares its review submission field as a plain `time.Time` with no `omitempty`, so a review that
+// was never submitted serialises `0001-01-01T00:00:00Z` instead of omitting the field.
+//
+// What counts as that instant is decided by the **instant**, never by the string: every
+// serialisation that parses to the same moment counts — the bare `Z` form, any UTC-offset variant of
+// it (`0001-01-01T00:00:00+00:00`, `0000-12-31T23:00:00-01:00`), and any sub-second form
+// (`0001-01-01T00:00:00.000Z`). Every other timestamp is left untouched, so the only thing this can
+// misread is a genuine year-1 submission time, which no forge can produce.
+const GO_ZERO_INSTANT_MS = Date.parse('0001-01-01T00:00:00Z');
+
+function isGoZeroInstant(value) {
+  if (typeof value !== 'string' || value.trim() === '') return false;
+  const parsed = Date.parse(value.trim());
+  return !Number.isNaN(parsed) && parsed === GO_ZERO_INSTANT_MS;
+}
+
 // A pending check has no conclusion yet. Every state that is not a finished one counts as pending,
 // so an unknown future provider state blocks a merge instead of being read as a green result.
 const PENDING_CHECK_STATES = new Set([
@@ -4584,19 +4601,26 @@ function normalizeReviewState(state, dismissed) {
 // than against the pull request as a whole. `submittedAt` is absent for a **pending** review, which
 // both forges return in this listing and neither has submitted: an absent submission time is how a
 // consumer tells a draft verdict from a published one, so it is reported as absent and never
-// defaulted to the read's own instant. A **team**-authored review carries `team` rather than `user`;
+// defaulted to the read's own instant. **The two forges state that absence differently** — GitHub
+// omits the field or nulls it, Gitea serialises the Go zero instant — and normalizing the second
+// onto the first is what makes that one sentence true on both. The `PENDING` state token is the
+// portable cross-check for a consumer that wants a second signal: both providers emit it, so the
+// state answers the same question the missing instant does.
+// A **team**-authored review carries `team` rather than `user`;
 // it is a real review and its team name is what the author record can state, so the team is read as
 // the author rather than leaving the review author-unestablished.
 function normalizeReview(review) {
   if (!review || typeof review !== 'object') {
     fail('INVALID_PAYLOAD', 'provider returned a review that is not an object');
   }
-  const submittedAt = normalizeTimestamp(
-    review.submitted_at,
-    review.submittedAt,
-    review.submitted,
-    review.created_at,
-  );
+  // **Short-circuit the whole candidate chain**, not merely the candidate that states it. The chain
+  // resolves `submitted_at → submittedAt → submitted → created_at`, so skipping only the declared
+  // submission field would let `created_at` resurface as a submission time and re-break the pending
+  // discriminator one candidate later.
+  const declaredSubmission = [review.submitted_at, review.submittedAt, review.submitted];
+  const submittedAt = declaredSubmission.some(isGoZeroInstant)
+    ? undefined
+    : normalizeTimestamp(...declaredSubmission, review.created_at);
   const commitSha = review.commit_id ?? review.commitId ?? review.commit?.sha;
   return {
     id: review.id,
