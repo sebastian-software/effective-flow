@@ -165,18 +165,40 @@ function near(first, second, span = 300) {
   );
 }
 
-// The Phase-4 merge preconditions, cut out as one array of numbered conditions. The cut ends at the
-// first blank line followed by a line that is neither indented (a condition's own continuation) nor
-// numbered (the next condition); without it the last condition absorbs every trailing paragraph of
-// the phase, and an assertion about that condition passes on prose that sits outside it.
-function mergeConditions(gate) {
+// The Phase-4 merge preconditions, cut out as one array of numbered conditions, plus the prose that
+// follows them. The cut ends at the first blank line followed by a line that is neither indented (a
+// condition's own continuation) nor numbered (the next condition); without it the last condition
+// absorbs every trailing paragraph of the phase, and an assertion about that condition passes on
+// prose that sits outside it — which is exactly how the login-rule assertion below went vacuous
+// while reading its own copy of this logic.
+//
+// The tail comes back from the same cut rather than from a second hand-rolled one. The reports that
+// deliberately are **not** merge preconditions live there, so a test asserting about them needs the
+// same boundary; two copies of one boundary is how the copies drift.
+function mergeConditionsAndTail(gate) {
   const phase4 = section(gate, '### Phase 4');
   const listStart = phase4.search(/\n\d+\.\s/);
   assert.notEqual(listStart, -1, 'Phase 4 must carry its merge preconditions as a numbered list');
   const list = phase4.slice(listStart);
   const listEnd = list.search(/\n\n(?![ \t])(?!\d+\.)/);
   assert.notEqual(listEnd, -1, 'Phase 4 must carry prose after its numbered preconditions');
-  return list.slice(0, listEnd).split(/(?=\n\d+\.\s)/);
+  return {
+    conditions: list.slice(0, listEnd).split(/(?=\n\d+\.\s)/),
+    afterList: list.slice(listEnd),
+  };
+}
+
+function mergeConditions(gate) {
+  return mergeConditionsAndTail(gate).conditions;
+}
+
+// One numbered Phase-4 condition, selected by its **ordinal** and never by first match on a word
+// several conditions share: conditions 7 and 10 both carry "assessed", so a first-match selector
+// would check one of them twice and the other never.
+function mergeCondition(conditions, number) {
+  const index = conditions.findIndex((item) => item.trimStart().startsWith(`${number}.`));
+  assert.notEqual(index, -1, `Phase 4 must carry a condition ${number}`);
+  return conditions[index];
 }
 
 test('plan routes an unambiguous issue through Stage A and exits before local planning', () => {
@@ -3171,10 +3193,13 @@ test('iterate lets a caller suppress its summary comment and posts it by default
   // run ignores. Its list item is sliced out so the item filter — a neighbouring, almost
   // identically shaped contract with its own `ABORT` and its own additive invariant — cannot
   // satisfy a single assertion below.
+  // Selected by the item's own title, not by the bare word "summary": the delimiter item above it
+  // names all four control lines, so a first match on "summary" would retarget every assertion
+  // below onto the item that merely lists the switch.
   const suppression = flat(
     section(iterate, '### Phase 0')
       .split(/(?=\n\d+\.\s)/)
-      .find((item) => /summary/i.test(item)) ?? '',
+      .find((item) => /summary-comment suppression/i.test(item)) ?? '',
   );
   assert.ok(suppression, 'Phase 0 must parse an optional summary-comment suppression');
   assert.ok(
@@ -4913,7 +4938,6 @@ test('every site that matches mergeGate.bots resolves through the shared login r
   const gate = source('src/tools/merge-gate.md');
   const phase1 = flat(section(gate, '### Phase 1'));
   const phase3 = flat(section(gate, '### Phase 3'));
-  const phase4 = section(gate, '### Phase 4');
 
   // Four sites compare a configured login against a reported one, on two surfaces that spell the
   // same account differently. A site that restates a bare equality instead of resolving through the
@@ -4927,24 +4951,18 @@ test('every site that matches mergeGate.bots resolves through the shared login r
   );
   assert.match(phase3, reference, "Phase 3's per-login round must resolve through the rule");
 
-  const conditions = phase4.split(/(?=\n\d+\.\s)/).slice(1);
-  // Selected by ordinal, not by first match: conditions 7 and 10 both carry "assessed", so a
-  // first-match selector would silently check one of them twice and the other never.
-  const ordinal = (number) =>
-    conditions.findIndex((item) => item.trimStart().startsWith(`${number}.`));
-  const hasRunIndex = ordinal(5);
-  const assessedIndex = ordinal(7);
-  const verdictIndex = ordinal(10);
-  assert.notEqual(hasRunIndex, -1, 'Phase 4 must keep its reviewer has-run condition');
-  assert.notEqual(assessedIndex, -1, 'Phase 4 must keep its never-assessed condition');
-  assert.notEqual(verdictIndex, -1, 'Phase 4 must keep its unassessed-verdict condition');
+  // `mergeConditions`, never a raw split of the whole phase. A raw split files every trailing
+  // Phase-4 paragraph under the last condition, and three of those paragraphs name this same rule —
+  // so the condition-10 assertion below passed on prose outside condition 10 and stayed green with
+  // the reference deleted from the condition itself. That is the regression this test exists for.
+  const conditions = mergeConditions(gate);
   assert.match(
-    flat(conditions[hasRunIndex]),
+    flat(mergeCondition(conditions, 5)),
     reference,
     'the has-run condition must resolve the configured login through the rule',
   );
   assert.match(
-    flat(conditions[assessedIndex]),
+    flat(mergeCondition(conditions, 7)),
     reference,
     'the never-assessed condition must resolve the configured login through the rule',
   );
@@ -4952,7 +4970,7 @@ test('every site that matches mergeGate.bots resolves through the shared login r
   // question on the review surface as on the thread surface, and a restated bare equality here would
   // reintroduce the two-spellings defect at one more site.
   assert.match(
-    flat(conditions[verdictIndex]),
+    flat(mergeCondition(conditions, 10)),
     reference,
     'the unassessed-verdict condition must resolve the configured login through the rule',
   );
@@ -4960,23 +4978,12 @@ test('every site that matches mergeGate.bots resolves through the shared login r
 
 test('condition 7 finding no reviewer thread is reported, not passed over in silence', () => {
   const gate = source('src/tools/merge-gate.md');
-  const phase4 = section(gate, '### Phase 4');
 
-  // The numbered preconditions are cut out first, so every assertion below can tell a merge
-  // condition apart from the commentary that follows it. The cut starts at the list's own first
-  // numbered line: anchoring on the section's first blank line lands between the heading and the
-  // intro paragraph — before the list — and leaves an empty slice that asserts nothing. It ends at
-  // the first blank line followed by a line that is neither indented (a condition's own
-  // continuation) nor numbered (the next condition); everything past that point is Phase 4
-  // commentary. Splitting without that cut would file trailing prose under the last condition and
-  // fail a correctly placed report.
-  const listStart = phase4.search(/\n\d+\.\s/);
-  assert.notEqual(listStart, -1, 'Phase 4 must carry its merge preconditions as a numbered list');
-  const list = phase4.slice(listStart);
-  const listEnd = list.search(/\n\n(?![ \t])(?!\d+\.)/);
-  assert.notEqual(listEnd, -1, 'Phase 4 must carry prose after its numbered preconditions');
-  const conditions = list.slice(0, listEnd).split(/(?=\n\d+\.\s)/);
-  const afterList = flat(list.slice(listEnd));
+  // The numbered preconditions and the commentary after them come out of one shared cut, so every
+  // assertion below can tell a merge condition apart from the prose that follows it — and so this
+  // test does not carry a second copy of that boundary to drift against the first.
+  const { conditions, afterList: tail } = mergeConditionsAndTail(gate);
+  const afterList = flat(tail);
 
   // The slicing is itself under test: an empty or truncated condition list would let the
   // not-a-precondition check below pass without ever reading a condition.
@@ -6009,4 +6016,511 @@ test('the sentences reviews make false are corrected rather than left standing',
     /`prReviewsRead`/,
     'the new read section must name its capability key',
   );
+});
+
+test('an undecided latest verdict blocks in its own right, on both halves of the rule', () => {
+  const state = source('src/shared/review-bot-state.md');
+  const gate = source('src/tools/merge-gate.md');
+  const supersession = prose(
+    section(state, '### A changes-requested verdict and what supersedes it'),
+  );
+  const condition = prose(mergeCondition(mergeConditions(gate), 10));
+
+  // Two halves, asserted separately, because the merged change shipped a remedy that closed only
+  // the first: an implementer could satisfy every criterion and fix half the bug.
+  for (const [surface, text] of [
+    ['the shared contract', supersession],
+    ['condition 10', condition],
+  ]) {
+    assert.match(
+      text,
+      /undecided latest neither clears nor supersedes/i,
+      `${surface} must state that an undecided latest does not clear a standing verdict`,
+    );
+    assert.match(
+      text,
+      /undecided[\s\S]{0,120}is itself an unassessed verdict/i,
+      `${surface} must state that an undecided latest is itself an unassessed verdict`,
+    );
+  }
+
+  // The supersession list grew a fourth case, and its own closing count has to grow with it — the
+  // stale count is what a reader applies when the list and the sentence disagree.
+  assert.match(supersession, /these four cases are the whole rule/i);
+  assert.doesNotMatch(state, /three cases/i, 'the supersession list no longer holds three cases');
+  assert.doesNotMatch(
+    gate,
+    /three fail-closed causes/i,
+    "Phase 6's fail-closed-cause count must follow condition 10",
+  );
+  assert.match(prose(section(gate, '### Phase 6')), /four fail-closed causes/i);
+});
+
+test('the undecided cause is scoped to condition 10 and never reaches the human-comment guard', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const state = source('src/shared/review-bot-state.md');
+  const guard = prose(section(gate, '### Phase 1'));
+
+  // The guard is not scoped to configured logins and is never cleared once set, so inheriting this
+  // cause would let one unmapped review state from any unrelated account halt every write of the
+  // run permanently. Stated in so many words, because the shared contract's own wording would
+  // otherwise pull it in by inheritance.
+  assert.match(
+    guard,
+    /undecided-verdict cause[\s\S]{0,60}does not reach this guard/i,
+    'the guard clause must exclude the undecided cause explicitly',
+  );
+  assert.match(
+    guard,
+    near('(?:never cleared|not scoped to configured logins)', 'undecided', 500),
+    'the guard clause must say why the exclusion exists',
+  );
+  assert.match(
+    prose(state),
+    /fourth cause is scoped[\s\S]{0,140}no other consumer inherits it/i,
+    'the shared contract must scope the fourth cause rather than leaving it to inheritance',
+  );
+
+  // Three counting surfaces, and the lead-in that introduces them has to agree with the list it
+  // opens — its own closing bullet already says "All three surfaces".
+  assert.match(guard, /because the three surfaces differ/i);
+  assert.doesNotMatch(guard, /because the two surfaces differ/i);
+});
+
+test('condition 10 retains an undecidable review before it applies its filters', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const condition = prose(mergeCondition(mergeConditions(gate), 10));
+
+  assert.match(
+    condition,
+    /retained, never dropped/i,
+    'a review the filters cannot decide must be retained rather than dropped',
+  );
+  // Order is behaviour here: an executor applying the condition top-down has already discarded the
+  // author-unestablishable and head-unbindable reviews before it reaches the fail-closed clause.
+  ordered(condition, 'retained, never dropped', 'keep those whose author is a login');
+});
+
+test('the gate delimits caller-supplied item text from the control lines it announces', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const contract = prose(section(gate, '## Delegation contract', '\n## '));
+  const DELIMITER = '--- caller-supplied item text follows ---';
+
+  assert.ok(contract.includes(DELIMITER), 'the contract must name one literal body delimiter');
+  assert.match(
+    contract,
+    /all four control lines/i,
+    'all four control lines must sit above the delimiter, not three of them',
+  );
+  // The manifest is the whole point of the boundary: identifiers left inline would let one body
+  // forge another finding's provenance exactly where condition 10 keys its assessment record.
+  assert.match(contract, /Item: <stable identifier> \| review=<review id>/);
+  assert.match(
+    contract,
+    near('manifest', '(?:above the delimiter|above it)', 400),
+    'the per-item manifest must sit above the delimiter',
+  );
+  assert.match(
+    contract,
+    near('(?:manifest entry|body)', 'ABORT', 500),
+    'a manifest and body that do not pair must abort rather than be matched up',
+  );
+  // Decided and stated, per the plan: refusal, not neutralisation.
+  assert.match(
+    contract,
+    /refused, never neutralised/i,
+    'the contract must decide whether a body carrying the delimiter is refused or neutralised',
+  );
+
+  // The refusal is scoped to the delimiter, and that scope is the decision rather than an omission:
+  // the four control lines are quoted throughout this repository's own contracts, so a sender that
+  // also refused a body merely stating one would report ordinary prose about this protocol as an
+  // unassessed finding and block the merge on it.
+  assert.match(
+    contract,
+    /comparison is against the delimiter and nothing else/i,
+    'the refusal must be scoped to the delimiter, not extended to the control lines',
+  );
+  assert.match(
+    contract,
+    near('delegated unchanged', 'body text', 300),
+    'a body stating a control line but not the delimiter must still be delegated',
+  );
+
+  // Both halves of the case list, so a later edit cannot quietly drop the second one and leave the
+  // refusal reading as if it covered every control line too.
+  const cases = prose(gate);
+  assert.match(cases, /review body containing the delegation delimiter:\s*refused/i);
+  assert.match(
+    cases,
+    /review body containing a control line but not the delimiter:\s*delegated\s+unchanged/i,
+    'the case list must name the control-line body as delegated, beside the refused one',
+  );
+});
+
+test('iterate splits the delegation message at the delimiter before it parses a switch', () => {
+  const iterate = source('src/tools/iterate.md');
+  const phase0 = section(iterate, '### Phase 0');
+  const items = phase0.split(/(?=\n\d+\.\s)/);
+  const split = prose(items.find((item) => /body delimiter/i.test(item)) ?? '');
+  assert.ok(split, 'Phase 0 must parse the body delimiter');
+
+  // Before the switches, not after: every switch is recognized by its literal form alone, so a run
+  // that hunts for them before it knows where the untrusted text begins has lost the boundary.
+  ordered(prose(phase0), 'Split the message at the body delimiter', 'Optional item filter');
+
+  // Below the delimiter is data, and data is all it is. An abort there fires on the ordinary prose
+  // of a reviewer discussing this protocol — the four lines are quoted throughout these contracts —
+  // so it would report that reviewer's finding as unassessed and block the merge on it, and it would
+  // hand a pull request able to induce one such line a reliable way to stop the gate.
+  assert.match(
+    split,
+    near('below the delimiter', '(?:is body text|belongs to the body)', 300),
+    'a control line below the delimiter must be read as body text',
+  );
+  assert.match(
+    split,
+    /never parsed as a switch, never overrides the one announced above, and never aborts/i,
+    'the body-text reading must state all three of what it does not do',
+  );
+  assert.match(
+    split,
+    /Position decides what is protocol, not content/i,
+    'the rule must rest on position rather than on content',
+  );
+  assert.doesNotMatch(
+    prose(iterate),
+    /ABORT: control line below the body delimiter/,
+    'no abort may remain for a control line below the delimiter',
+  );
+  // The protection the abort nominally offered stays, on the only side that can tell a caller's
+  // misplaced line from a reviewer's quoted one apart: the sender writing the control lines first.
+  assert.match(
+    split,
+    near(
+      "misplaced below the delimiter is the sender's to prevent",
+      'same bytes in the same place',
+      300,
+    ),
+    'a misplaced control line must be assigned to the sender rather than detected here',
+  );
+
+  assert.match(
+    split,
+    /ABORT: duplicated control line/,
+    'a control keyword repeated above the delimiter must abort',
+  );
+  // Duplication is counted in the caller's own region only; otherwise the removed abort returns
+  // through the back door as "the body stated it a second time".
+  assert.match(
+    split,
+    near("Only the caller's own region is counted", 'never the second announcement', 200),
+    'the duplicate rule must count only the region above the delimiter',
+  );
+  assert.match(
+    split,
+    /ABORT: manifest and body mismatch/,
+    'a manifest entry with no body, or a body with none, must abort',
+  );
+  assert.match(
+    split,
+    near('first occurrence', '(?:body text|cannot terminate its own block)', 400),
+    'only the first delimiter occurrence may be the boundary',
+  );
+
+  // Both positional rules cover `Next steps:` too, while its malformed-line tolerance survives: a
+  // repeated line is a fault of the channel, a malformed one costs a chat block.
+  assert.match(split, /`Next steps:`/, 'the positional rules must cover all four control lines');
+  const nextSteps = prose(items.find((item) => /next-step suppression/i.test(item)) ?? '');
+  assert.ok(nextSteps, 'Phase 0 must keep its next-step suppression item');
+  assert.match(
+    nextSteps,
+    /suppresses rather than aborts/i,
+    'a merely malformed `Next steps:` line must still suppress rather than abort',
+  );
+});
+
+test('the item framing below the delimiter is a minted token no item text can forge', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const iterate = source('src/tools/iterate.md');
+  const contract = prose(section(gate, '## Delegation contract', '\n## '));
+  const manifest = prose(
+    section(iterate, '### Phase 0')
+      .split(/(?=\n\d+\.\s)/)
+      .find((item) => /body delimiter/i.test(item)) ?? '',
+  );
+  assert.ok(manifest, 'Phase 0 must parse the body delimiter');
+
+  // The token is what frames an item, so both ends of the channel have to carry it: a sender that
+  // declares none leaves the receiver with nothing to split the region on, and a receiver that reads
+  // none is back to looking for a pattern in text it does not trust.
+  for (const [text, label] of [
+    [contract, 'merge-gate'],
+    [manifest, 'iterate'],
+  ]) {
+    assert.match(text, /Item: <stable identifier> \| review=<review id>/, `${label} manifest form`);
+    assert.match(text, /`Boundary token: <token>`/, `${label} must declare the boundary token`);
+    assert.match(
+      text,
+      near('manifest order', 'separated by (?:that|the boundary) token', 300),
+      `${label} must lay the item texts out in manifest order, separated by the token`,
+    );
+    assert.match(
+      text,
+      near('own line', 'no separator before the first', 300),
+      `${label} must put the token on its own line and only between the items`,
+    );
+  }
+
+  // The sender's whole obligation, and both halves of it: an unpredictable token, and the substring
+  // search that establishes it is absent before the message goes out. Without the search the token
+  // is only probably absent, and "probably" is what the untrusted text gets to attack.
+  assert.match(
+    contract,
+    near('Mint it freshly for every message', 'at random', 300),
+    'the sender must mint an unpredictable token per message',
+  );
+  assert.match(
+    contract,
+    near('search every body', 'plain substring', 300),
+    'the sender must verify the token is absent by substring search',
+  );
+  // Scope is the whole of it. The check covers what the caller supplied — the bodies plus the
+  // provenance values the manifest carries on their behalf — and stops there.
+  assert.match(
+    contract,
+    near('search every body', 'caller-supplied value the manifest carries', 200),
+    'the absence check must cover every body plus the caller-supplied manifest values',
+  );
+  assert.match(
+    contract,
+    near('occurs in any of them', 'mint another one and search again', 200),
+    'a token colliding with caller-supplied content must be re-minted and re-checked',
+  );
+  // And it must stop there, explicitly. The token stands in its own declaration line and in every
+  // separator by construction, so a check that covered "the message" would collide with the
+  // sender's own framing on every candidate and re-mint forever: no delegation would ever be sent
+  // and every finding would come back unassessed with the merge blocked on it.
+  assert.match(
+    contract,
+    near('`Boundary token:` declaration line', 'separator line', 200),
+    'the sender must name the two places its own framing carries the token by construction',
+  );
+  assert.match(
+    contract,
+    near("sender's own occurrences are not a collision", 'they are the framing', 200),
+    "the contract must state that the sender's own occurrences are the framing, not a collision",
+  );
+  assert.match(
+    contract,
+    near('mint,', 'then write the declaration and the separator lines', 300),
+    'the contract must order the mint and the absence check before the framing is written',
+  );
+  for (const [text, label] of [
+    [contract, 'merge-gate'],
+    [manifest, 'iterate'],
+  ]) {
+    assert.doesNotMatch(
+      text,
+      /(?:every other part of the message|nowhere else in the message|anywhere in the message)/i,
+      `${label} must not extend the absence check over the sender's own protocol text`,
+    );
+  }
+  // The receiver rests the property on the sender's check, so it has to restate the same scope: an
+  // "and nowhere else in the message" here is the identical non-terminating rule, one file over.
+  assert.match(
+    manifest,
+    near('occurs in none of them', 'caller-supplied values its manifest carries', 300),
+    'the receiver must restate the absence check as scoped to caller-supplied content',
+  );
+  assert.match(
+    manifest,
+    near('declaration line and its separator lines', 'never terminate', 300),
+    "the receiver must say why the check cannot reach the sender's own framing",
+  );
+
+  // The receiver's whole obligation, and the explicit refusal of the arithmetic the byte count
+  // demanded: a split on the token, and nothing else that could decide a boundary.
+  assert.match(
+    manifest,
+    near('Split the region', 'on that exact token', 200),
+    'the receiver must split the region on the token',
+  );
+  assert.match(
+    manifest,
+    near('do nothing else to find a boundary', '(?:no counting|no byte offsets|no grammar)', 200),
+    'the receiver must determine boundaries by the split alone',
+  );
+
+  // The byte-count framing is replaced, not layered under the token: two framings would be two
+  // things to keep in step, and the arithmetic one is the half a language model gets wrong.
+  for (const [text, label] of [
+    [gate, 'merge-gate'],
+    [iterate, 'iterate'],
+  ]) {
+    assert.doesNotMatch(prose(text), /bytes=/, `${label} must not still declare a byte count`);
+    assert.doesNotMatch(
+      prose(text),
+      /(?:sum of the counts|declared sum|byte count of that)/i,
+      `${label} must not still frame an item by a declared length`,
+    );
+    assert.doesNotMatch(
+      prose(text),
+      /each body is introduced by a line carrying its identifier/i,
+      `${label} must no longer frame an item by an introducer line`,
+    );
+    assert.doesNotMatch(
+      prose(text),
+      /runs to the next such line/i,
+      `${label} must no longer end an item at the next matching line`,
+    );
+  }
+
+  // The property, stated rather than left to be inferred from the mechanism, and argued from the
+  // one fact that establishes it: the token was verified absent from the bodies before they shipped.
+  for (const [text, label] of [
+    [contract, 'merge-gate'],
+    [manifest, 'iterate'],
+  ]) {
+    assert.match(
+      text,
+      /No sequence of characters a(?:n item text|\s+body) can contain changes how it is framed/i,
+      `${label} must state the property its framing establishes`,
+    );
+    assert.match(
+      text,
+      near('substring search', 'occurs in none of them', 400),
+      `${label} must rest the property on the verified-absent token, not on trusting the text`,
+    );
+  }
+  assert.match(
+    manifest,
+    near('stricter grammar', '(?:still a grammar|out of the content)', 400),
+    'the contract must say why a stricter introducer grammar is not the fix',
+  );
+  // Why the swap keeps what it replaced, and what it stops asking of a language-model operator.
+  assert.match(
+    contract,
+    near('unforgeability', 'fixed from outside the span', 400),
+    'the sender must say why the token keeps the unforgeability the declared length had',
+  );
+  assert.match(
+    contract,
+    near('multibyte Unicode', '(?:substring search and a split|unreliably)', 600),
+    'the sender must say why byte arithmetic was the part worth removing',
+  );
+
+  // The negative half: an item that spells out the framing syntax, a control line, or the text
+  // around the delimiter is not refused, not escaped and not cut short — its extent was fixed
+  // before any character of it was read.
+  assert.match(
+    manifest,
+    near(
+      'bracketed identifier',
+      '(?:delivered whole|inside the single span already fixed for it)',
+      500,
+    ),
+    'an item containing the framing syntax must still be delivered whole',
+  );
+  assert.match(
+    manifest,
+    near('all four control lines', 'delivered whole', 500),
+    'an item containing a control line must still be delivered whole',
+  );
+  assert.match(
+    manifest,
+    near('may contain the delimiter', 'delivered whole', 500),
+    'an item containing the delimiter itself must still be delivered whole',
+  );
+  assert.match(
+    manifest,
+    near('`Boundary token:` line', 'delivered whole', 500),
+    'an item containing a boundary-token line must still be delivered whole',
+  );
+  assert.match(
+    prose(gate),
+    /review body containing the item-framing syntax:\s*delegated unchanged and delivered whole/i,
+    'the case list must name the framing-syntax body as delegated and delivered whole',
+  );
+
+  // The abort survives for the one fault it was always about — a message the caller assembled wrong
+  // — and it now counts items rather than bytes.
+  assert.match(
+    manifest,
+    near(
+      'ABORT: manifest and body mismatch',
+      'different number of spans than the manifest declares entries',
+      400,
+    ),
+    'the mismatch abort must fire on a span count, not on a length',
+  );
+  assert.match(
+    manifest,
+    near('ABORT: manifest and body mismatch', 'counts items, never bytes', 600),
+    'the mismatch abort must be a count of items rather than of bytes',
+  );
+  assert.match(
+    manifest,
+    near('ABORT: manifest and body mismatch', 'never from what an item text contains', 700),
+    'the mismatch abort must be unreachable from what an item text contains',
+  );
+});
+
+test('no contract still carries the four retired claims about reviews and surfaces', () => {
+  const state = source('src/shared/review-bot-state.md');
+  const integration = source('src/shared/pr-review-integration.md');
+  const deliver = source('docs/user-guide/tools-deliver.md');
+
+  // Each of the four was load-bearing for a rule a reader or an executor has to apply, and each
+  // became false — or was already stale — when the review surface was added.
+  for (const [claim, text, label] of [
+    [/not readable through the plumbing/i, integration, 'a review body is unreadable'],
+    [/not readable through those operations/i, integration, 'a review body is unreadable'],
+    [/two surfaces the state is read from/i, state, 'the state is read across two surfaces'],
+    [/exactly three ways/i, deliver, 'a verdict stops blocking in exactly three ways'],
+  ]) {
+    assert.doesNotMatch(text, claim, `the retired claim must be gone: ${label}`);
+  }
+
+  // The stale `One read, one head` enumeration omitted the submitted reviews both consumers read.
+  const oneRead = prose(section(state, '### One read, one head'));
+  assert.match(
+    oneRead,
+    /submitted reviews/i,
+    'the one-read enumeration must name the submitted reviews it now covers',
+  );
+
+  // The replacement grounds, so a deletion cannot pass as a correction.
+  assert.match(
+    prose(integration),
+    near('(?:threads and the|two surfaces)', '(?:scope|reads those two surfaces only)', 400),
+    'the outside-diff ground must be restated as scope rather than as capability',
+  );
+  assert.match(
+    prose(deliver),
+    /undecided[\s\S]{0,200}unassessed verdict/i,
+    'the user-facing enumeration must name the undecided cause the contract blocks on',
+  );
+});
+
+test('every site stating the pending discriminator is true on both providers', () => {
+  // Five sites carry the claim that a missing submission time is what marks a pending review. On
+  // Forgejo the field is never missing — Gitea declares it without `omitempty` — so each site has
+  // to say that the helper normalizes the zero instant, and each names the portable `PENDING`
+  // cross-check both providers emit.
+  const sites = [
+    ['src/shared/review-bot-state.md', /A review with no `submittedAt` is a pending/],
+    ['src/shared/pr-review-comments.md', /A review with no submission time is a pending/],
+    ['src/tools/merge-gate.md', /A pending review the caller owns/],
+    ['docs/user-guide/remote-tracker.md', /A review with no submission time is a pending draft/],
+    ['src/scripts/remote-tracker-core.mjs', /`submittedAt` is absent for a pending review/],
+  ];
+  for (const [path, anchor] of sites) {
+    const text = prose(source(path));
+    const at = text.search(anchor);
+    assert.notEqual(at, -1, `${path} must still carry the pending discriminator`);
+    const window = text.slice(at, at + 700);
+    assert.match(window, /zero instant/i, `${path} must name the zero instant it normalizes`);
+    assert.match(window, /PENDING/, `${path} must name the portable PENDING cross-check`);
+  }
 });

@@ -317,11 +317,14 @@ the new one. Exactly as with a late thread, a verdict the run cannot assess send
 round while rounds remain and ends in a report once they are spent – and where both a late thread and
 an unassessed verdict are outstanding, one round handles them together rather than costing two.
 
-A verdict stops blocking in exactly three ways, and only those: the reviewer submits a later
-**approving** review for the same head, the verdict is **dismissed**, or this run assesses every
-finding it carries. A later **commented** review – the shape every batch of inline comments takes –
-withdraws nothing, so a reviewer that requests changes and then adds one more inline comment does not
-quietly clear the block.
+A verdict stops blocking in these ways and no others: the reviewer submits a later **approving**
+review for the same head, the verdict is **dismissed**, or this run assesses every finding it
+carries. A later **commented** review – the shape every batch of inline comments takes – withdraws
+nothing, so a reviewer that requests changes and then adds one more inline comment does not quietly
+clear the block. A later **undecided** review – one whose state the run cannot map onto a known
+verdict – clears nothing either, and it blocks in its own right: a configured reviewer whose latest
+review at the verified head is undecided counts as an unassessed verdict even where no
+changes-requested review stands behind it.
 
 **A third surface for the human-comment guard.** A changes-requested review from an account that is
 neither a bot nor the one the run is authenticated as holds the guard, exactly as an open comment
@@ -330,8 +333,11 @@ commented or approving review never activates a guard that, once set, is never c
 reviewer who later approves stops holding one.
 
 Where the reviewer's verdict cannot be established at all – an author or a head binding the read
-cannot pin down, or two reviews from one login at the same head with identical submission times – the
-verdict counts as unassessed and the merge blocks. If the forge cannot serve the review read at all,
+cannot pin down, two reviews from one login at the same head with identical submission times, or a
+latest review whose state the run cannot map onto a known verdict – the verdict counts as unassessed
+and the merge blocks. That last cause is scoped to this merge condition alone: it deliberately does
+not activate the human-comment guard, which is not scoped to configured reviewers and, once set, is
+never cleared. If the forge cannot serve the review read at all,
 the run reports that the verdicts are unestablished and asks once; a non-interactive run ends there
 and never merges. The run's summary lists every configured reviewer's changes-requested review at the
 verified head with a per-finding outcome, and every changes-requested review whose author matches no
