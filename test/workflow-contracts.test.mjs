@@ -1949,6 +1949,142 @@ test('plan stops naming an implementation tool at completion but keeps the templ
   }
 });
 
+test('the revision-mode move back from the archive never touches the Git index', () => {
+  const plan = source('src/tools/plan.md');
+  const flat = (text) => text.replace(/\s+/g, ' ');
+
+  // `plan` creates no commit, so a staged rename would outlive the run in the user's index and
+  // ride along with the next unrelated commit. The move back is a plain filesystem move, and the
+  // rules block states that instead of contradicting it. Both mentions of the command are
+  // clauses about not using it — one forbidding it, one explaining the safety it took away.
+  assert.deepEqual(
+    plan.match(/git mv/g) ?? [],
+    ['git mv', 'git mv'],
+    'plan.md may mention git mv only in the clauses that forbid it and explain its loss',
+  );
+  assert.match(plan, /never with `git mv`/);
+  assert.match(plan, /`git mv` refuses to\s+clobber an existing file without `-f`/);
+
+  const revision = flat(section(plan, 'On a revision run:', '\n5. '));
+  assert.match(revision, /moves back from `<plan\.dir>\/archive\/` to `<plan\.dir>\/`/);
+  assert.match(revision, /\*\*plain filesystem move\*\*, never with `git mv`/);
+
+  // The consumers of the moved file read the working tree; that is what makes an unstaged move
+  // sufficient, and it is the reason this rule can differ from the archive-forward handshake.
+  ordered(
+    revision,
+    '`{{SKILL:open-plans}}` lists the top level of `<plan.dir>/` from the file system',
+    'the plan-reference rule resolves against `<plan.dir>/` and `<plan.dir>/archive/`',
+  );
+
+  // Fail-closed tracked-state detection in the house style: one explicit command, an explicit
+  // reading of every result, and no guess on a nonzero exit. The probe covers BOTH paths — the
+  // destination can be tracked while the archived source never was, so a source-only probe would
+  // report a restored tracked path as untracked.
+  assert.match(
+    revision,
+    /git -C <project root> ls-files -z -- ':\(literal\)<archived path>' ':\(literal\)<plan\.dir>\/<file>'/,
+  );
+  ordered(
+    revision,
+    'Establish the Git state of **both** paths first',
+    'match each path against the NUL-separated entries',
+    '`-z` is load-bearing rather than tidy',
+    '`:(literal)` is what makes the arguments paths rather than patterns',
+    '`--` only separates paths from revisions and does not disable pathspec globbing',
+    'Either one omitted lets the probe read a tracked file as untracked',
+    '**Never infer one side from the other either:**',
+    'a listed destination means the move restored a tracked path',
+    'Any nonzero exit or command-launch error',
+    'is not permission to guess',
+  );
+  assert.match(
+    revision,
+    /an unlisted one means the plan is now untracked at `<plan\.dir>\/<file>`/,
+  );
+
+  // Ordering is the real guarantee: the move lands before the status reset, so a refused move
+  // cannot strand an archived file rewritten to the open status. Assert the two in sequence —
+  // a reversed pair is exactly the defect, and neither clause alone would catch it.
+  ordered(
+    revision,
+    '**For an archived plan the move comes first, and the status reset follows on the file at its final path.**',
+    'reset first and a move that is then refused strands an archived file marked open',
+    'the run writes nothing at all until the plan is at its new path',
+    '**Ask everything before the move; after the move, only write.**',
+    '**The destination must be absent, and the move itself has to enforce that.**',
+    '**On a collision, stop having written nothing.**',
+    'the status reset happens only after the move has been confirmed',
+  );
+
+  // The general rule the orderings are instances of: a decline is safe at every point because
+  // nothing is written before the questions are answered. Both questions are named, and the
+  // unclear-status bullet points back at it — a rule stated once but applied nowhere would drift.
+  ordered(
+    revision,
+    'the revision question above, and the unclear-status confirmation below',
+    'is asked and answered before the plan is moved',
+    'no question is posed once it has been',
+    'before the move a decline changes nothing because nothing has been written',
+  );
+  assert.match(
+    revision,
+    /Obtain it \*\*before the move\*\*, per the ask-before-the-move rule above/,
+  );
+  assert.match(
+    revision,
+    /a decline then ends the run with the plan untouched in `<plan\.dir>\/archive\/`/,
+  );
+
+  // A check and a move are two steps, so the no-overwrite guarantee has to live in the move
+  // primitive rather than in a check that precedes it.
+  ordered(
+    revision,
+    'A check alone cannot carry it',
+    '`mv -n` or an equivalent no-overwrite move',
+    'may report success while silently skipping',
+    'a skipped move is the collision case, not a completed one',
+  );
+  assert.match(revision, /Report both paths, revise nothing, and stop/);
+
+  // The retired wording put the check before the status reset instead of moving the reset after
+  // the move; a revert to it would reopen the half-applied-revision window.
+  assert.doesNotMatch(revision, /checked before any write/);
+  assert.doesNotMatch(revision, /before the status reset as well as before the move/);
+
+  // The ask block promises exactly the behavior the run performs.
+  const ask = flat(section(plan, '```ask\nwhen: the revision target was resolved', '```'));
+  assert.match(ask, /move an archived plan file back to <plan\.dir>\/ without staging that move/);
+
+  // The rules block carries the boundary, so no later reader has to infer it from
+  // "Do not create any commits." alone.
+  const rules = flat(section(plan, '## Rules', '\n## '));
+  ordered(
+    rules,
+    'Do not create any commits.',
+    'Do not stage anything or otherwise write to the Git index.',
+    'plain filesystem move',
+  );
+
+  // The leftover working-tree change is part of the completion report, not a silent side effect.
+  const completion = flat(section(plan, '### Phase 7: Completion', '\n## '));
+  assert.match(completion, /the unstaged move and its Git effect/);
+
+  // The archive convention states both directions, so a reader who arrives at the staged
+  // forward move does not carry it over to the reverse one.
+  const archive = flat(
+    section(source('src/shared/plan-numbering.md'), '### Archive of implemented plans'),
+  );
+  ordered(
+    archive,
+    'The move is coupled to the **delivery event**',
+    'moves the file via `git mv` to `<plan.dir>/archive/`',
+    'The **reverse** move is not coupled to a delivery event and therefore not staged',
+    'plain filesystem move, never with `git mv`',
+    '`{{SKILL:plan}}` creates no commit',
+  );
+});
+
 test('no source cites the non-existent "Host and CLI detection" section', () => {
   // AC4: the section never existed in `issue-tracker.md`; the surviving references were
   // broken across lines, so the sweep normalizes whitespace and Markdown emphasis.

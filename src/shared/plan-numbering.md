@@ -49,6 +49,11 @@ Umgesetzt/Implemented marker is retained in the file.
   (creating the directory if needed), still on the delivery branch, so that the move is part
   of the same PR/merge (implementation documentation). For details see "Delivery and
   worktree integration".
+- The **reverse** move is not coupled to a delivery event and therefore not staged: when a
+  revision run brings an archived plan back to `<plan.dir>/`, it moves the file with a plain
+  filesystem move, never with `git mv`. `{{SKILL:plan}}` creates no commit, so a staged rename
+  would outlive the run in the user's index. That path belongs to `{{SKILL:plan}}`; its
+  revision-mode rules carry the reporting duty that comes with the unstaged move.
 - `{{SKILL:open-plans}}` lists only the top level of `<plan.dir>/`, not the archive.
 - Resolvers (see below) search in `<plan.dir>/` **and** `<plan.dir>/archive/`.
 
