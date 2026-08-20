@@ -34,6 +34,7 @@ import {
   resolveLazyIncludes,
   resolveEagerIncludes,
   assertNoUnresolvedEagerIncludes,
+  assertNoUnresolvedLazyIncludes,
   collectIncludeNames,
   assertNoEagerLazyOverlap,
   assertDocumentationSyncConsumers,
@@ -477,6 +478,10 @@ try {
   const renderGeneratedBody = (body, harness, config) => {
     const rendered = renderBody(body, harness, config);
     assertNoUnresolvedEagerIncludes(rendered, { context: `${config.context} (${harness})` });
+    // A lazy fence is just as unshippable as an eager one: the delivered skill
+    // never explains the directive, so a raw fence reads as inert prose and the
+    // deferred fragment is silently skipped.
+    assertNoUnresolvedLazyIncludes(rendered, { context: `${config.context} (${harness})` });
     return rendered;
   };
 
@@ -933,6 +938,44 @@ try {
   // still routed, but nothing suggests it.
   const argumentHint = `[${EXPOSED_TOOLS.join('|')}]`;
 
+  // --- Lazy-fragment closure (#99) ---
+  //
+  // A shipped fragment goes through the same two-stage include resolution as a
+  // tool body: eager includes inline, then every remaining ```lazy-include fence
+  // — its own or one pulled in by an eager include — becomes a load pointer.
+  // Skipping the second stage shipped the raw fence into shared/<name>.md, where
+  // the directive means nothing to a worker.
+  //
+  // Resolving a fragment can name fragments no tool references directly, so the
+  // walk is a worklist rather than one pass: a newly discovered name is queued
+  // and shipped too, which is what makes its own pointer resolve. `seen` doubles
+  // as the cycle guard the lazy path otherwise lacks (the eager resolver tracks
+  // its own chain).
+  //
+  // The result is harness-neutral, so it is computed once here and only rendered
+  // per target below — the same split as tool bodies, which readSource resolves
+  // ahead of the per-consumer loop.
+  const lazyFragmentBodies = new Map();
+  const pendingFragments = [...lazyFragments];
+  const seenFragments = new Set(pendingFragments);
+  while (pendingFragments.length > 0) {
+    const name = pendingFragments.shift();
+    const fragPath = join(SHARED_DIR, `${name}.md`);
+    if (!existsSync(fragPath)) {
+      throw new Error(`lazy-include fragment source not found: ${fragPath}`);
+    }
+    const context = `shared/${name}.md`;
+    const eager = resolveIncludes(normalizeLineEndings(readFileSync(fragPath, 'utf8')), context);
+    const { body, names } = resolveLazyIncludes(eager, { context });
+    for (const nested of names) {
+      lazyFragments.add(nested);
+      if (seenFragments.has(nested)) continue;
+      seenFragments.add(nested);
+      pendingFragments.push(nested);
+    }
+    lazyFragmentBodies.set(name, body.replace(/\{\{VERSION\}\}/g, VERSION_STRING));
+  }
+
   // --- Per-consumer output ---
 
   for (const harness of ['claude', 'codex', 'portable']) {
@@ -987,24 +1030,18 @@ try {
     }
 
     // Lazy-loaded shared fragments (#99): each deferred fragment is shipped once
-    // per harness as shared/<name>.md so a tool's load pointer resolves. Rendered
-    // through the same pipeline as a tool body (nested eager includes, version,
-    // refs/ask).
-    if (lazyFragments.size > 0) {
+    // per harness as shared/<name>.md so a tool's load pointer resolves. Bodies
+    // come from the closure above (nested eager includes, nested load pointers,
+    // version); only the harness-specific rendering (refs/ask) happens here.
+    if (lazyFragmentBodies.size > 0) {
       mkdirSync(join(skillDir, 'shared'), { recursive: true });
-      for (const name of lazyFragments) {
-        const fragPath = join(SHARED_DIR, `${name}.md`);
-        if (!existsSync(fragPath)) {
-          throw new Error(`lazy-include fragment source not found: ${fragPath}`);
-        }
-        const context = `shared/${name}.md`;
-        const rawFrag = resolveIncludes(
-          normalizeLineEndings(readFileSync(fragPath, 'utf8')),
-          context,
-        ).replace(/\{\{VERSION\}\}/g, VERSION_STRING);
+      for (const [name, fragBody] of lazyFragmentBodies) {
         writeFileSync(
           join(skillDir, 'shared', `${name}.md`),
-          renderGeneratedBody(rawFrag, harness, { ...refConfig, context }),
+          renderGeneratedBody(fragBody, harness, {
+            ...refConfig,
+            context: `shared/${name}.md`,
+          }),
         );
       }
     }

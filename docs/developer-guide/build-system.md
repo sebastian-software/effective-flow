@@ -105,6 +105,14 @@ Shared fragments may contain eager includes. In particular, both the lazy
 ownership-safe cleanup. Rendering each of those direct eager includes places the same contract
 in all native and portable targets.
 
+A shared fragment may equally contain a `lazy-include` fence, and a deferred fragment is not a
+leaf: `worktree-integration` defers `pr-review-integration` at its own decision point. Nested
+fences resolve to load pointers exactly like top-level ones, so a fragment reached through a
+pointer can defer further work rather than paying for it. Because resolving one fragment can
+name a fragment no tool references directly, the build walks the fragment set as a worklist —
+every newly discovered name is queued, shipped, and revisited, with a `seen` set closing the
+cycle the walk would otherwise not terminate on.
+
 ## Guards
 
 The build aborts with an error message if any of these guards is violated:
@@ -203,9 +211,16 @@ The build aborts with an error message if any of these guards is violated:
 - **Lazy-include guards (#99):** (a) No fragment may be embedded in the same file both eagerly
   (` ```include `) **and** lazily (` ```lazy-include `) (otherwise the block would be loaded
   twice). (b) Every lazily referenced fragment must be delivered as `shared/<name>.md` for
-  **all three** targets so that the load pointer resolves in both native and portable installs. The pure check
-  logic (`resolveLazyIncludes`, `collectIncludeNames`, `assertNoEagerLazyOverlap`) lives in
-  `build-lib.mjs` and is covered in `test/build-lib.test.mjs`.
+  **all three** targets so that the load pointer resolves in both native and portable installs. The
+  fragment set is the transitive closure, so a fragment named only from inside another deferred
+  fragment is delivered and checked just the same. (c) No generated artifact may still contain a
+  raw ` ```include ` or ` ```lazy-include ` fence. Nothing in a delivered skill explains either
+  directive, so a surviving fence reads as inert prose and the deferred fragment is silently never
+  loaded — `assertNoUnresolvedEagerIncludes` and `assertNoUnresolvedLazyIncludes` run on every
+  rendered body, tool, agent, router, and shipped fragment alike. The pure check logic
+  (`resolveLazyIncludes`, `collectIncludeNames`, `assertNoEagerLazyOverlap`,
+  `findUnresolvedLazyIncludes`) lives in `build-lib.mjs` and is covered in
+  `test/build-lib.test.mjs`.
 - **Documentation-sync consumer guard:** `tools/build.md`, `tools/fix.md`, `tools/refactor.md`, and
   `tools/maintain.md` must each embed the `documentation-sync` fragment **eagerly**. A lazy pointer
   does not satisfy the guard: its `when:` condition could be judged inapplicable, which is exactly
@@ -332,9 +347,9 @@ anything real, so it stays inline.
 
 The fragment is delivered **once per consumer target**, deduplicated, to that skill's `shared/`
 directory and rendered there through the same pipeline as a tool body (nested eager includes,
-`{{VERSION}}`, `ask`, portable worker preparation, then references). A worker reads the file at runtime
-the same way the router loads `tools/<tool>.md` on demand or `apply` loads its `apply-*.md`
-siblings.
+nested load pointers, `{{VERSION}}`, `ask`, portable worker preparation, then references). A
+worker reads the file at runtime the same way the router loads `tools/<tool>.md` on demand or
+`apply` loads its `apply-*.md` siblings.
 
 Execution-location behavior intentionally remains instruction-level and harness-neutral: Git
 metadata verifies the absolute root and checkout identity, while Claude- or Codex-managed
