@@ -21,6 +21,11 @@ delegation-mandate
 ```
 
 ```lazy-include
+plan-archival
+when: the delivery point of the handback is reached, or in-place execution archives a plan file
+```
+
+```lazy-include
 runtime-state-safety
 when: any wisdom, report, memory, or worktree mutation below `.effective-flow/` is imminent
 ```

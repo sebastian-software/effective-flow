@@ -5259,6 +5259,398 @@ test('linked-issue re-entry is mirrored by next steps and user documentation', (
   );
 });
 
+// --- plan archival ---------------------------------------------------------
+// The handback's mark-and-archive step used to instruct an unconditional
+// `git mv`, which is fatal on the untracked path it normally meets, had no
+// state for an already-archived plan, and named no execution root. The
+// contract now lives in its own fragment; these assertions pin the parts a
+// later edit could quietly undo.
+
+test('the plan-archival fragment states its detection, states and cleanup', () => {
+  const fragment = source('src/shared/plan-archival.md');
+
+  // Detection is index-first and uses the hardened probe shape the reverse
+  // archive move already established: `--` does not disable pathspec globbing.
+  assert.match(
+    fragment,
+    /git -C <EXECUTION_ROOT> ls-files -z -- ':\(literal\)<P>' ':\(literal\)<A>'/,
+  );
+  assert.doesNotMatch(fragment, /ls-tree/);
+  assert.doesNotMatch(fragment, /merge-base/);
+
+  // Result interpretation: only the output decides, a nonzero exit blocks.
+  ordered(
+    fragment,
+    'The path appears among the entries → tracked.',
+    'The path is absent from the entries → not tracked.',
+    '**blocks archival**',
+    'It is never read',
+  );
+  // A blocked probe or a collision must not abort the handback: the run reports
+  // and delivers, because stranding finished work uncommitted is the worse
+  // outcome. This is the sentence that decides whether work survives.
+  assert.match(fragment, /They never\s+abort the handback/);
+  assert.match(fragment, /The delivery continues/);
+
+  // Exactly the four documented outcomes plus the collision stop, in order.
+  ordered(
+    fragment,
+    '**Archived basis**',
+    '**Collision**',
+    '**State D — already archived.**',
+    '**State A — tracked.**',
+    '**State C — untracked.**',
+  );
+
+  // The state table carries exactly four rows, each with a condition and an
+  // action. A fifth row, or a row that lost its action, fails here.
+  const states = section(fragment, '### States', '\n### ');
+  const stateRows = states
+    .split('\n')
+    .filter((line) => line.startsWith('| **'))
+    .map((line) =>
+      line
+        .split('|')
+        .map((cell) => cell.trim())
+        .filter(Boolean),
+    );
+  assert.equal(stateRows.length, 4, 'the state table must carry exactly four rows');
+  for (const [label, meaning, action] of stateRows) {
+    assert.ok(meaning && meaning.length > 20, `state ${label} needs a condition`);
+    assert.ok(action && action.length > 40, `state ${label} needs an action`);
+  }
+  assert.deepEqual(
+    stateRows.map(([label]) => label),
+    ['**A** — tracked', '**C** — untracked', '**D** — already archived', '**Archived basis**'],
+  );
+
+  // The three actions that caused the original bug.
+  assert.match(states, /No `git mv`: there is nothing tracked to move/);
+  assert.match(states, /`git -C <EXECUTION_ROOT> add -- ':\(literal\)<A>'`/);
+  assert.match(states, /Never re-add at top level/);
+  assert.match(states, /refresh it if it differs/);
+  assert.match(states, /Terminal: report that the basis is already archived/);
+
+  // `mkdir -p` precedes both the move and the write, in both rows.
+  const [rowA, rowC] = stateRows;
+  ordered(rowA[2], 'mkdir -p', 'git -C <EXECUTION_ROOT> mv');
+  ordered(rowC[2], 'mkdir -p', 'place it atomically');
+
+  // The archived basis is decided before the paths are derived at all — the
+  // predicate cannot be a comparison of two paths that can never be equal.
+  assert.match(fragment, /check the basis first/i);
+  assert.match(fragment, /nested `<plan\.dir>\/archive\/archive\/<file>\.md`/);
+  assert.match(fragment, /the basis check precedes/);
+  // The condition cell itself, not just the row label: the never-satisfiable
+  // "P and A resolve to the same path" comparison must not come back.
+  const detectionRow1 = fragment.split('\n').find((line) => line.startsWith('| 1 '));
+  assert.ok(detectionRow1, 'missing detection row 1');
+  assert.match(detectionRow1, /the basis lies under `<plan\.dir>\/archive\/`/);
+  assert.doesNotMatch(fragment, /resolve to the same path/);
+
+  // The mark happens after the take-over, superseding the older arrangement.
+  assert.match(fragment, /The order is read → take over → mark/);
+  assert.match(fragment, /Autorisierung im Haupt-Repo/);
+
+  // Emptiness, not string equality: the `-z` rationale must survive.
+  assert.match(fragment, /`-z` is load-bearing rather than tidy/);
+  assert.match(fragment, /C-quotes any path `core\.quotePath` covers/);
+  assert.match(fragment, /matches neither\s+path literally/);
+
+  // The collision arm, including the untracked-target case.
+  // Regression: the index probe cannot see an untracked file, so without a
+  // filesystem existence check the untracked-archive-target arm of the collision
+  // rule is unreachable and State C writes straight over that file. Detection
+  // must carry the check, not just the Collision prose.
+  const detectionRows = fragment
+    .split('\n')
+    .filter((line) => /^\|\s*\d+\s*\|/.test(line))
+    .map((line) =>
+      line
+        .split('|')
+        .map((cell) => cell.trim())
+        .filter(Boolean),
+    );
+  assert.equal(detectionRows.length, 6, 'detection must carry six rows');
+  const [, stateCRow] = [detectionRows[4], detectionRows[4]];
+  assert.match(
+    stateCRow[1],
+    /no file exists at `A`/,
+    'State C must require an empty archive target',
+  );
+  assert.match(detectionRows[5][1], /a file exists at `A`/);
+  assert.match(detectionRows[5][2], /Collision/);
+  assert.match(fragment, /filesystem existence check on `A`/);
+  // The check alone is a TOCTOU window: a file created between row 5 and the
+  // write would be silently replaced. The write itself must refuse to clobber.
+  assert.match(fragment, /\*\*The check is not the guarantee — the placement is\.\*\*/);
+  // The target is created complete or not at all: content goes to a temporary
+  // file beside it, then one no-clobber placement. A plain write into the
+  // target leaves a partial file when the run dies mid-write, and the next run
+  // reads that artifact as a collision it cannot clear.
+  assert.match(fragment, /never writes into the target at all/);
+  assert.match(fragment, /temporary file \*\*in the same directory\*\*/);
+  assert.match(fragment, /`link\(<temp>, <A>\)` followed by `unlink\(<temp>\)`/);
+  assert.match(fragment, /a plain `rename` is unusable here/);
+  assert.match(fragment, /\*\*is the collision stop\*\*/);
+  assert.match(fragment, /On any failure, remove the temporary file/);
+  assert.match(fragment, /A leftover temporary is never mistaken for the archive/);
+  assert.match(states, /place it atomically/);
+
+  const collision = section(fragment, '### Collision', '\n### ');
+  assert.match(collision, /report\s+both paths/);
+  assert.match(collision, /An archive target that exists as an \*\*untracked\*\* file/);
+
+  // EXECUTION_ROOT must be the repository root, or the probe silently matches
+  // nothing from a subdirectory.
+  assert.match(
+    fragment,
+    /repository root\*\*; `ls-files` output is relative to the directory it runs in/,
+  );
+
+  // `git mv -f` may appear, but only inside its own prohibition: it produces a
+  // modify-plus-delete rather than a rename and discards the destination.
+  for (const match of fragment.matchAll(/git mv -f/g)) {
+    const context = fragment.slice(
+      Math.max(0, match.index - 180),
+      match.index + match[0].length + 80,
+    );
+    assert.match(
+      context,
+      /(?:never|must not|do not|forbidden|prohibit)/i,
+      '`git mv -f` must only occur in an explicit prohibition',
+    );
+  }
+
+  // The rationale for index-first must survive, or a later edit re-derives the
+  // two defects it removed.
+  assert.match(
+    fragment,
+    /re-selects State A, and runs `git mv` on a source\s+that no longer exists/,
+  );
+  assert.match(fragment, /two copies of one plan on the base branch/);
+
+  // Cleanup preconditions, in order, with State D comparing against the
+  // archived file rather than against itself.
+  const cleanup = section(fragment, '### Main-checkout cleanup', '\n### ');
+  ordered(
+    cleanup,
+    'The take-over is staged in `EXECUTION_ROOT`',
+    'is untracked there',
+    'still hashes to the value captured',
+    'matches the already-archived file with the status marker',
+    're-verified immediately before removal',
+  );
+  assert.match(cleanup, /Applies to States A, C, and D\./);
+  assert.match(cleanup, /nothing to clean up/);
+  assert.match(cleanup, /report which precondition failed/);
+  assert.match(cleanup, /The cleanup is idempotent/);
+  assert.match(cleanup, /The archived-basis arm runs no cleanup\./);
+  // The cleanup must disambiguate itself from the worktree-cleanup prohibition
+  // in execution-location, which forbids RUNTIME_STATE_ROOT as a cleanup target.
+  assert.match(cleanup, /\*\*This is not worktree cleanup\.\*\*/);
+  assert.match(cleanup, /never the root, never a directory, and never\s+anything Git tracks/);
+
+  // Execution roots are named, never inherited.
+  const roots = section(fragment, '### Execution roots', '\n### ');
+  for (const operation of [
+    '`ls-files` detection',
+    '`mkdir -p`',
+    'status-marker edit',
+    '`git mv`',
+    '`git add`',
+  ]) {
+    assert.ok(roots.includes(operation), `the roots table must place ${operation}`);
+  }
+  assert.match(roots, /Reading the plan's final content for the take-over/);
+  assert.match(roots, /`EXECUTION_ROOT`, passed explicitly with `git -C`/);
+  assert.match(roots, /`RUNTIME_STATE_ROOT`, from the retained absolute handle/);
+  assert.match(roots, /No operation relies on an inherited working directory\./);
+
+  // Both in-place shapes, and the five report shapes.
+  const inPlace = section(fragment, '### In-place execution contexts', '\n### ');
+  assert.match(inPlace, /\*\*In-place with delivery:\*\*/);
+  assert.match(inPlace, /\*\*In-place without delivery:\*\*/);
+  assert.match(inPlace, /the cleanup still runs/);
+  assert.match(inPlace, /The\s+cleanup runs here too/);
+  const report = section(fragment, '### Report vocabulary', '\n## ');
+  for (const shape of [
+    'archived a tracked plan (State A)',
+    'archived as a new file (State C)',
+    'already archived (State D)',
+    'the basis was itself an archived plan',
+    'stopped because the plan is tracked at both top level and in the archive',
+  ]) {
+    assert.ok(report.includes(shape), `missing report shape: ${shape}`);
+  }
+  for (const shape of [
+    /the removed path with its digest/,
+    /nothing to clean up/,
+    /the\s+precondition that prevented removal/,
+  ]) {
+    assert.match(report, shape, `missing cleanup report shape: ${shape}`);
+  }
+
+  // Declared inputs, including the base commit as optional and decision-free.
+  const inputs = section(fragment, '### Inputs', '\n### ');
+  for (const input of [
+    '`EXECUTION_ROOT`',
+    '`RUNTIME_STATE_ROOT`',
+    '`plan.dir`',
+    "the plan file's repository-relative path",
+    "the plan's complete language",
+    'the delivery shape',
+  ]) {
+    assert.ok(inputs.includes(input), `missing declared input: ${input}`);
+  }
+  assert.match(inputs, /optionally, the delivery branch's creation OID/);
+  assert.match(inputs, /decides nothing/);
+  assert.match(inputs, /An absent creation OID is not an error and never blocks/);
+
+  // The fragment reads runtime state and mutates none, so it carries no write
+  // guard — and it must not smuggle one in through a nested fence either.
+  assert.equal(collectIncludeNames(fragment).eager.size, 0);
+  assert.equal(collectIncludeNames(fragment).lazy.size, 0);
+  // The fragment must stay clear of the runtime directory in substance and in
+  // wording: `findRuntimeStateSafetyViolations` fires on a mutation verb sharing
+  // a line with an `.effective-flow/` path, so the guard is a build-time
+  // co-assertion of this one.
+  assert.match(fragment, /carries no runtime-state write guard, because it needs none/);
+  assert.match(fragment, /neither reads from nor writes to it/);
+  assert.match(fragment, /Its one destructive\s+act is on a \*\*project\*\* file/);
+  // Neither may be named as a flow that archives: they keep no plan file, so
+  // saying so would ship a false statement in all three targets.
+  const opening = fragment.slice(0, fragment.indexOf('### Inputs'));
+  assert.match(
+    opening,
+    /`\{\{SKILL:iterate\}\}`, `\{\{SKILL:maintain\}\}` and `\{\{SKILL:merge-gate\}\}` keep no plan\s+file and carry no pointer/,
+  );
+});
+
+test('every workflow that keeps a plan file defers plan-archival, and every exemption says why', () => {
+  // The consumer set is derived, not listed: an eighth tool that embeds the
+  // delivery fragment and keeps a plan file must fail here rather than ship an
+  // unloadable archive contract.
+  const toolNames = readdirSync(new URL('src/tools/', repositoryRoot))
+    .filter((file) => file.endsWith('.md'))
+    .map((file) => file.slice(0, -3));
+  const deliveryConsumers = toolNames.filter((name) => {
+    const { eager, lazy } = collectIncludeNames(source(`src/tools/${name}.md`));
+    return eager.has('worktree-integration') || lazy.has('worktree-integration');
+  });
+  assert.deepEqual(
+    [...deliveryConsumers].sort(),
+    ['build', 'docs', 'fix', 'iterate', 'maintain', 'merge-gate', 'refactor'],
+    'the delivery-fragment consumer set changed; re-derive the plan-archival pointers',
+  );
+
+  // Exempt because they keep no plan file. Each states that in its own source.
+  const exemptions = new Map([
+    ['iterate', /keeps no plan file[\s\S]{0,200}no deferred pointer to `plan-archival`/],
+    ['maintain', /keeps no plan file[\s\S]{0,200}no deferred pointer to `plan-archival`/],
+    ['merge-gate', /no deferred pointer to `plan-archival`/],
+  ]);
+
+  for (const name of deliveryConsumers) {
+    const body = source(`src/tools/${name}.md`);
+    const { eager, lazy } = collectIncludeNames(body);
+    assert.equal(
+      eager.has('plan-archival'),
+      false,
+      `${name} must not eagerly include plan-archival`,
+    );
+
+    const reason = exemptions.get(name);
+    if (reason) {
+      assert.equal(lazy.has('plan-archival'), false, `${name} is exempt and must carry no pointer`);
+      assert.match(body, reason, `${name} must state why it carries no plan-archival pointer`);
+      continue;
+    }
+
+    assert.equal(
+      lazy.has('plan-archival'),
+      true,
+      `${name} keeps a plan file and must defer plan-archival`,
+    );
+    const fences = [...body.matchAll(LAZY_INCLUDE_RE)].filter((match) =>
+      match[0].includes('plan-archival'),
+    );
+    assert.equal(fences.length, 1, `${name} must carry exactly one plan-archival fence`);
+    assert.match(fences[0][0], /when:\s*\S/, `${name}'s plan-archival fence needs a load trigger`);
+    assert.match(fences[0][0], /in-place/, `${name}'s trigger must cover in-place execution`);
+  }
+});
+
+test('the handback delegates archival instead of instructing a git mv', () => {
+  const delivery = source('src/shared/worktree-integration.md');
+
+  // The defective instruction is gone, and the fence is deliberately not here:
+  // in-place without delivery is told to perform no further steps from this
+  // fragment, so a pointer at the handback step would be unreachable there.
+  assert.doesNotMatch(delivery, /git mv/);
+  assert.equal(collectIncludeNames(delivery).lazy.has('plan-archival'), false);
+  assert.match(
+    delivery,
+    /is owned by\s+`plan-archival`, which every workflow that keeps a plan file loads through its own deferred\s+pointer/,
+  );
+  assert.match(
+    delivery,
+    /Plan archival still applies in that mode: it is owned by\s+`plan-archival`/,
+  );
+  // The fragment declares inputs it cannot obtain itself; step 1 must supply
+  // them, or the contract is only inferrable from "Rooted operations".
+  assert.match(delivery, /Hand it the inputs it declares/);
+  for (const input of ['`EXECUTION_ROOT`', '`RUNTIME_STATE_ROOT`', '`plan.dir`', 'creation OID']) {
+    assert.ok(delivery.includes(input), `step 1 must hand over ${input}`);
+  }
+});
+
+test('the four plan-carrying tools keep their in-place-without-delivery instruction', () => {
+  // After the fence relocation this sentence is the only executing archival
+  // trigger in the mode the relocation was decided for. Nothing else pins it.
+  for (const name of ['build', 'fix', 'docs', 'refactor']) {
+    assert.match(
+      source(`src/tools/${name}.md`),
+      /in-place without delivery[\s\S]{0,240}same status switch and archive move/,
+      `${name} lost its in-place-without-delivery archival instruction`,
+    );
+  }
+});
+
+test('the plan-file conventions name plan-archival as the owner of the mechanism', () => {
+  // plan-numbering keeps its `git mv` literal: 830e07a made it one half of a
+  // forward/reverse contrast and pinned it. It gains an ownership pointer only.
+  const numbering = source('src/shared/plan-numbering.md');
+  assert.match(numbering, /moves the file via `git mv` to `<plan\.dir>\/archive\/`/);
+  assert.match(numbering, /`plan-archival` owns the \*\*how\*\*/);
+  assert.match(numbering, /cannot move an untracked path/);
+
+  // The developer-guide copy drops the mechanism outright.
+  const conventions = source('docs/developer-guide/plan-conventions.md');
+  const archiveSection = section(conventions, '## Archive of implemented plans', '\n## ');
+  assert.doesNotMatch(archiveSection, /git mv/);
+  assert.match(archiveSection, /src\/shared\/plan-archival\.md` owns that state model/);
+
+  // And the fragment is listed among the mode-gated lazy blocks.
+  assert.match(
+    source('docs/developer-guide/build-system.md'),
+    /`plan-archival`,\s+`effective-flow-dir-migration`/,
+  );
+});
+
+test('the user guide describes archival as state-dependent', () => {
+  for (const [path, phrase] of [
+    [
+      'docs/user-guide/worktree-and-delivery.md',
+      /What archiving does depends on the state the plan is in/,
+    ],
+    ['docs/user-guide/glossary.md', /depending on whether the plan was already\s+tracked/],
+    ['docs/user-guide/tools-implement.md', /depending on whether the plan was already tracked/],
+  ]) {
+    assert.match(source(path), phrase, `${path} still describes the archive move as unconditional`);
+  }
+});
+
 test('both consumers of the reviewer contract read the submitted reviews', () => {
   // The shared fragment is loaded by two tools that evaluate it independently against their own
   // fresh read. Widening one consumer's read and not the other's makes the two disagree about the

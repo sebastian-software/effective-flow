@@ -98,6 +98,10 @@ goal-completion
 worktree-integration
 ```
 
+This workflow keeps no plan file — its basis is the dependency and security surface, not a plan —
+so it carries no deferred pointer to `plan-archival` and performs no plan-file status switch and no
+archiving.
+
 ## Wisdom Accumulation
 
 At the start, generate a session ID (e.g. via timestamp `date +%Y%m%d%H%M%S`) and use it consistently for the wisdom file `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`. This prevents collisions on parallel runs.

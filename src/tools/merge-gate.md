@@ -144,7 +144,8 @@ a branch (no `-b` on `git worktree add`, no `git checkout -b`), never rebase, ne
 Everything else in that fragment stays off:
 
 - no delivery branch and no branch-name construction – the head branch already exists;
-- no plan-file status switch and no archiving;
+- no plan-file status switch and no archiving, and no deferred pointer to `plan-archival` – this
+  workflow holds no plan file;
 - no completion action (`pr`, `merge`, `branch`) and no `{{SKILL:pr}}` call – the pull request
   already exists, and Phase 5 merges it on the forge instead;
 - no "PR review publication" and no lazily loaded `pr-review-integration`. Its trigger condition –

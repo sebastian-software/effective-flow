@@ -91,6 +91,10 @@ goal-completion
 worktree-integration
 ```
 
+This workflow keeps no plan file — it feeds review notes back into an existing pull request — so
+it carries no deferred pointer to `plan-archival` and performs no plan-file status switch and no
+archiving.
+
 ```include
 pr-review-comments
 ```

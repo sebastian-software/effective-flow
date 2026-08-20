@@ -104,7 +104,9 @@ linked issue is freshly observed terminal.
 ## Worktree conflicts and uncommitted changes
 
 By default, Effective Flow works in a separate [worktree](./worktree-and-delivery.md) and does not
-touch your current checkout in the process. Two situations still lead to a
+touch your current checkout in the process. The one file it may remove there is the redundant,
+still untracked copy of a plan file it has archived, and only once the archived state is safely in
+the delivery branch and that copy has not changed in the meantime. Two situations still lead to a
 follow-up question instead of an automatic continuation:
 
 - **Uncommitted changes in the main checkout**, when delivery is to happen without a worktree
