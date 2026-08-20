@@ -5334,7 +5334,7 @@ test('the plan-archival fragment states its detection, states and cleanup', () =
   // `mkdir -p` precedes both the move and the write, in both rows.
   const [rowA, rowC] = stateRows;
   ordered(rowA[2], 'mkdir -p', 'git -C <EXECUTION_ROOT> mv');
-  ordered(rowC[2], 'mkdir -p', 'write the final');
+  ordered(rowC[2], 'mkdir -p', 'place it atomically');
 
   // The archived basis is decided before the paths are derived at all — the
   // predicate cannot be a comparison of two paths that can never be equal.
@@ -5383,10 +5383,19 @@ test('the plan-archival fragment states its detection, states and cleanup', () =
   assert.match(fragment, /filesystem existence check on `A`/);
   // The check alone is a TOCTOU window: a file created between row 5 and the
   // write would be silently replaced. The write itself must refuse to clobber.
-  assert.match(fragment, /\*\*The check is not the guarantee — the write is\.\*\*/);
-  assert.match(fragment, /creates `A`\s+\*\*exclusively\*\*/);
-  assert.match(fragment, /that failure is the collision\s+stop/);
-  assert.match(states, /\*\*exclusive-create\*\* semantics/);
+  assert.match(fragment, /\*\*The check is not the guarantee — the placement is\.\*\*/);
+  // The target is created complete or not at all: content goes to a temporary
+  // file beside it, then one no-clobber placement. A plain write into the
+  // target leaves a partial file when the run dies mid-write, and the next run
+  // reads that artifact as a collision it cannot clear.
+  assert.match(fragment, /never writes into the target at all/);
+  assert.match(fragment, /temporary file \*\*in the same directory\*\*/);
+  assert.match(fragment, /`link\(<temp>, <A>\)` followed by `unlink\(<temp>\)`/);
+  assert.match(fragment, /a plain `rename` is unusable here/);
+  assert.match(fragment, /\*\*is the collision stop\*\*/);
+  assert.match(fragment, /On any failure, remove the temporary file/);
+  assert.match(fragment, /A leftover temporary is never mistaken for the archive/);
+  assert.match(states, /place it atomically/);
 
   const collision = section(fragment, '### Collision', '\n### ');
   assert.match(collision, /report\s+both paths/);
