@@ -2017,6 +2017,16 @@ test('the revision-mode move back from the archive never touches the Git index',
     'Report both paths, revise nothing, and stop',
   );
 
+  // A check and a move are two steps, so the no-overwrite guarantee has to live in the move
+  // primitive rather than in the check that precedes it.
+  ordered(
+    revision,
+    '**The refusal must not rest on the check alone.**',
+    '`mv -n` or an equivalent no-overwrite move',
+    'may report success while silently skipping the move',
+    'treat a skipped move as the collision case',
+  );
+
   // The ask block promises exactly the behavior the run performs.
   const ask = flat(section(plan, '```ask\nwhen: the revision target was resolved', '```'));
   assert.match(ask, /move an archived plan file back to <plan\.dir>\/ without staging that move/);

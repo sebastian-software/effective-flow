@@ -182,6 +182,13 @@ On a revision run:
   run's to resolve: it is a same-name duplicate across `<plan.dir>/` and `<plan.dir>/archive/`,
   which the plan-file convention forbids and `{{SKILL:open-plans}}` reports on its own. Report both
   paths, revise nothing, and stop, so the user decides which of the two files survives.
+- **The refusal must not rest on the check alone.** A check and a move are two steps, so a file
+  created in between would be overwritten by a move that already read the destination as absent.
+  Perform the move with a primitive that refuses to clobber on its own — `mv -n` or an equivalent
+  no-overwrite move — so the destination's absence is enforced where it matters. Such a primitive
+  may report success while silently skipping the move, so confirm afterwards that the archived path
+  is gone and the destination holds the revised plan; treat a skipped move as the collision case
+  above and stop.
 - Report the move as an uncommitted working-tree change that this run does not stage and no later
   step of it cleans up. Establish the Git state of **both** paths first, with one
   `git -C <project root> ls-files -- <archived path> <plan.dir>/<file>` call, and read each path
