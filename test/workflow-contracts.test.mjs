@@ -6466,6 +6466,447 @@ test('the item framing below the delimiter is a minted token no item text can fo
   );
 });
 
+// The return direction of the merge-gate -> iterate delegation. The forward direction is framed by
+// the four control lines above; the way back is framed by nothing, and is instead made safe by a key
+// set the receiver pre-commits. These assertions pin that rule, the closed vocabulary both ends
+// speak, and the identifier requirement the rule rests on.
+const returnedRecord = (text, label) => {
+  const record = prose(section(text, '## Returned outcome record', '\n## '));
+  assert.ok(record.trim(), `${label} must declare its returned outcome record in its own section`);
+  return record;
+};
+
+test('both ends of the iterate return declare one closed outcome vocabulary', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const iterate = source('src/tools/iterate.md');
+
+  // Extracted rather than pattern-matched, so a fifth value or a renamed one fails instead of
+  // passing because the four expected words happen to be somewhere in the section.
+  const declared = (text, label) => {
+    const match = returnedRecord(text, label).match(
+      /agreed outcome vocabulary is closed and has four values:([^.]+)\./i,
+    );
+    assert.ok(match, `${label} must declare the closed outcome vocabulary in one sentence`);
+    const values = [...match[1].matchAll(/`([a-z]+)`/g)].map((hit) => hit[1]).sort();
+    assert.deepEqual(
+      [...new Set(values)],
+      values,
+      `${label} must not declare a value twice in the vocabulary sentence`,
+    );
+    return values;
+  };
+
+  const expected = ['deferred', 'implemented', 'rejected', 'unassessed'];
+  const gateValues = declared(gate, 'merge-gate');
+  const iterateValues = declared(iterate, 'iterate');
+  assert.deepEqual(gateValues, expected, 'merge-gate must declare exactly the agreed four values');
+  assert.deepEqual(iterateValues, expected, 'iterate must declare exactly the agreed four values');
+  assert.deepEqual(gateValues, iterateValues, 'the two ends of the channel must not drift apart');
+
+  // The mapping itself, compared row for row rather than probed for keywords. A `near()` probe went
+  // vacuous here in review: with the rows adjacent, dropping one still left its neighbour's value
+  // inside the window. Both files carry the identical table deliberately — one end holding the
+  // mapping alone is the end the other drifts from.
+  const mapping = (text, label) => {
+    returnedRecord(text, label);
+    const table = section(text, '## Returned outcome record', '\n## ')
+      .split('\n')
+      .filter((line) => line.startsWith('|') && !/^\|[\s-]+\|[\s-]+\|$/.test(line))
+      .map((line) =>
+        line
+          .split('|')
+          .slice(1, -1)
+          .map((cell) => cell.trim()),
+      );
+    assert.ok(table.length >= 7, `${label} must map every processing outcome, header included`);
+    return table;
+  };
+
+  const gateTable = mapping(gate, 'merge-gate');
+  const iterateTable = mapping(iterate, 'iterate');
+  assert.deepEqual(
+    gateTable,
+    iterateTable,
+    'the two ends must carry the identical processing-to-outcome mapping',
+  );
+
+  // The three rows that are not word-for-word, and are therefore the ones a drift reinterprets
+  // silently: `skipped` is a processing outcome on one side and two different assessments on the
+  // other, while `failed` and a deselected item are no assessment at all.
+  const mapped = new Map(gateTable.slice(1).map(([from, to]) => [from, to]));
+  assert.deepEqual(
+    [...mapped.values()].filter((value) => value === '`unassessed`').length,
+    2,
+    'exactly the two non-assessments must map onto `unassessed`',
+  );
+  for (const [pattern, expected, label] of [
+    [/^`skipped` as a false positive/, '`rejected`', 'a false positive'],
+    [/^`skipped` as out of scope/, '`deferred`', 'an out-of-scope item'],
+    [/^`failed`/, '`unassessed`', 'a failed implementation'],
+    [/^deselected/, '`unassessed`', 'a deselected item'],
+  ]) {
+    const row = [...mapped].find(([from]) => pattern.test(from));
+    assert.ok(row, `the mapping must carry a row for ${label}`);
+    assert.equal(row[1], expected, `${label} must map onto ${expected}`);
+  }
+  for (const value of new Set(mapped.values())) {
+    assert.ok(
+      expected.includes(value.replaceAll('`', '')),
+      `the mapping must not produce a value outside the closed vocabulary: ${value}`,
+    );
+  }
+});
+
+test('the gate consumes the iterate return only through identifiers it recorded before delegating', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const record = returnedRecord(gate, 'merge-gate');
+
+  // The sentence the whole section exists for. Its absence was the defect: the gate consumed "the
+  // reported outcome per item" out of free prose, so any text in the return could state one.
+  assert.match(
+    record,
+    /No outcome is derived from anything else in the returned text/i,
+    'the receiver rule must state that nothing else in the return produces an outcome',
+  );
+  assert.doesNotMatch(
+    prose(gate),
+    /Consume `\{\{SKILL:iterate\}\}`'s reported outcome per item/i,
+    'the retired consumption sentence must be gone rather than supplemented',
+  );
+
+  // Keyed to what was recorded, and recorded covers both halves: the identifiers this run mints for
+  // body findings and the forge thread IDs it hands over. Keyed to the minted half alone, every
+  // thread outcome would be inert and conditions 6 and 7 would have nothing to read.
+  assert.match(
+    record,
+    near('receiver rule', 'recorded', 200),
+    'the rule must be keyed to the identifiers recorded before the delegation',
+  );
+  assert.match(
+    record,
+    near('recorded every item identifier it is about to supply', 'forge thread IDs', 300),
+    'the pre-committed key set must cover the forge thread IDs beside the minted identifiers',
+  );
+  assert.match(
+    record,
+    near('pre-commitment', 'unpredictability', 400),
+    'the rule must rest on pre-commitment rather than on the unpredictability of one half',
+  );
+
+  // The four outcomes of a match, each of which a naive rule gets wrong in a different direction.
+  assert.match(
+    record,
+    near('same', 'idempotent', 200),
+    'a repeated identical outcome must be idempotent rather than a second outcome',
+  );
+  assert.match(
+    record,
+    near('suppressed summary', '(?:restates|idempotent)', 400),
+    'the idempotence must be grounded in the suppressed summary restating the outcomes',
+  );
+  assert.match(
+    record,
+    near('conflicting', 'mismatch', 200),
+    'two different values for one identifier must be a mismatch',
+  );
+  assert.match(
+    record,
+    near('no outcome at all', 'same mismatch', 200),
+    'a recorded identifier with no outcome must be the same mismatch',
+  );
+  assert.match(
+    record,
+    near('did not record', 'inert', 200),
+    'an outcome naming an unrecorded identifier must be inert',
+  );
+  assert.match(
+    record,
+    near('inert', '(?:never fatal|never be fatal)', 300),
+    'the inert case must be stated as never fatal',
+  );
+  // Inertness is narrowness, not immunity — the overclaim this section must not make.
+  assert.match(
+    record,
+    near('narrowness, not immunity', 'whole-run', 400),
+    'the rationale must concede that a forged whole-run abort stays reachable',
+  );
+
+  // Unbounded, quoted inert outcomes would put attacker-influenceable text into the Phase 6 summary
+  // and into this gate's own return when it runs delegated. Containment is deferred, so the report
+  // itself is what has to be bounded and de-quoted.
+  assert.match(
+    record,
+    near('identifier and a count', 'never by reproducing its text', 200),
+    'an inert outcome must be reported by identifier and count, never by its text',
+  );
+  assert.match(record, near('at most', 'ten', 120), 'the inert report must state a concrete bound');
+  assert.match(
+    prose(section(gate, '### Phase 6')),
+    near('inert returned outcome', '(?:count|identifier)', 300),
+    'Phase 6 must be where the inert outcomes reach the user',
+  );
+
+  // A non-assessment survives the round and blocks at condition 10; any other out-of-set value is a
+  // mismatch. Collapsing the two would either lose a round or wave a finding through.
+  assert.match(
+    record,
+    near('outside the closed vocabulary', 'mismatch', 200),
+    'an out-of-set value must be a mismatch',
+  );
+  assert.match(
+    record,
+    near('outside the closed vocabulary', 'non-assessment', 200),
+    'the mapped non-assessment must be stated as the exception to that mismatch',
+  );
+  assert.match(
+    record,
+    near('non-assessment leaves the item `unassessed`', 'condition 10 blocks', 300),
+    'a mapped non-assessment must leave the item unassessed rather than end the round',
+  );
+});
+
+test('the Phase 3 assessment record is written from the validated return and two gate-internal writers', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const record = returnedRecord(gate, 'merge-gate');
+
+  assert.match(
+    record,
+    near('Phase 3 per-finding record', 'validated return', 400),
+    'the delegated half of the record must come from the validated return alone',
+  );
+  // Both writers, named. Step 5 of the plan contradicted an existing rule by omitting the first:
+  // an empty-bodied review still has to be assessed, and it has no identifier at all.
+  assert.match(
+    record,
+    near('empty body', '(?:no identifier of any kind|no identifier)', 400),
+    'the empty-bodied review must be named as a gate-internal writer with no identifier',
+  );
+  assert.match(
+    record,
+    near('human-comment guard', "(?:gate's own decision|delegates nothing)", 300),
+    'a finding assessed under the guard must be named as the second gate-internal writer',
+  );
+
+  // The identifier-free delegation. Its return is consumed, so a rule that only spoke about
+  // identified items would leave it undescribed rather than out of scope.
+  assert.match(
+    record,
+    near('CI repair', '(?:free-text-only|no manifest)', 400),
+    'the identifier-free CI repair must be covered explicitly',
+  );
+  assert.match(
+    record,
+    near('CI repair', '(?:fresh check read|whole-run abort)', 600),
+    'the CI repair outcome must be consumed through the check read and the whole-run abort',
+  );
+});
+
+test('no side of the iterate channel still claims a per-item ABORT', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const iterate = source('src/tools/iterate.md');
+
+  assert.doesNotMatch(
+    prose(gate),
+    /On `ABORT` for an item/i,
+    'the gate must no longer presume a per-item ABORT that iterate never emits',
+  );
+  for (const [text, label] of [
+    [gate, 'merge-gate'],
+    [iterate, 'iterate'],
+  ]) {
+    const record = returnedRecord(text, label);
+    assert.match(
+      record,
+      near('whole-run', '`ABORT`', 200),
+      `${label} must state that every returned ABORT is whole-run`,
+    );
+    assert.match(record, /per-item `ABORT`/, `${label} must name the per-item ABORT it rules out`);
+  }
+  // Per file, because the sentence differs on each side and a shared `near()` probe was satisfied by
+  // the mapping table sitting a few lines above it.
+  assert.match(
+    returnedRecord(gate, 'merge-gate'),
+    near('implementation delegation aborted comes back marked', '`unassessed`', 60),
+    'the gate must read an aborted item as unassessed rather than as a channel fault',
+  );
+  assert.match(
+    returnedRecord(iterate, 'iterate'),
+    near("sub-agent's `ABORT` marks that one item", '`unassessed`', 60),
+    'iterate must map an aborted sub-agent onto the unassessed outcome',
+  );
+  // The DONE/ABORT note lives in the two tools that need it, never in the eagerly included
+  // completion-protocol fragment: fifteen tools carry that fragment and review.md renders within a
+  // handful of lines of its 700-line budget.
+  assert.doesNotMatch(
+    source('src/shared/completion-protocol.md'),
+    /whole-run|per-item/i,
+    'the workflow-handoff note must not be added to the eagerly included completion protocol',
+  );
+});
+
+test('iterate returns exactly one outcome per caller-supplied item identifier', () => {
+  const iterate = source('src/tools/iterate.md');
+  const record = returnedRecord(iterate, 'iterate');
+
+  assert.match(
+    record,
+    near('One outcome per caller-supplied item identifier', 'exactly one', 200),
+    'iterate must state one outcome per supplied identifier',
+  );
+  // Both halves of the key set, and explicitly no difference between them: a rule stated only for
+  // the minted identifiers would leave every thread outcome unpromised.
+  assert.match(
+    record,
+    near('minted for a body-carried finding', 'forge thread ID', 100),
+    'both a minted identifier and a thread ID must be covered by the same promise',
+  );
+  assert.match(
+    record,
+    near('forge thread ID', 'no difference between the two', 100),
+    'the two halves of the key set must be promised identically',
+  );
+  assert.match(
+    record,
+    near('mints no identifier of its own', 'merges no two', 300),
+    'iterate must mint no identifier of its own and merge no two identified items',
+  );
+  // The record is stated separately from the handed-back summary, while the receiving rule is
+  // explicitly not allowed to depend on that separation.
+  assert.match(
+    record,
+    near('Summary comment: suppressed', 'own complete list', 400),
+    'the record must be stated separately from the handed-back summary content',
+  );
+  assert.match(
+    record,
+    near('must not depend on the separation', 'idempotent', 300),
+    'the caller rule must not be allowed to rest on that separation',
+  );
+});
+
+test('the gate mints its item identifier per message, to the token concrete requirement', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const contract = prose(section(gate, '## Delegation contract', '\n## '));
+
+  // The same concrete numbers the boundary token carries. "Comparable to" was unmeasurable, and an
+  // unmeasurable requirement is one no reader and no test can check.
+  assert.match(
+    contract,
+    near('Mint that identifier', 'at least 32 characters', 300),
+    'the identifier requirement must state the token concrete length',
+  );
+  assert.match(
+    contract,
+    near('at least 32 characters', '`A`–`Z` and `0`–`9`', 200),
+    'the identifier requirement must state the token alphabet',
+  );
+  assert.doesNotMatch(
+    contract,
+    /comparable to the (?:boundary )?token/i,
+    'the unmeasurable "comparable to" requirement must be gone',
+  );
+
+  // Per-message channel key, with the durable key named separately: an identifier disclosed in a
+  // report or in a delegated gate own return must be worthless in a later round.
+  assert.match(
+    contract,
+    near('freshly for every delegation message', 'per-message channel key', 400),
+    'the identifier must be minted per delegation message',
+  );
+  assert.match(
+    contract,
+    near('durable', 'finding ordinal', 300),
+    'the durable key must be the review id plus a finding ordinal',
+  );
+  assert.match(
+    contract,
+    near('Record each per-message identifier', 'before the delegation, never after it', 300),
+    'the identifiers must be recorded before the delegation, never after it',
+  );
+  assert.match(
+    contract,
+    near('pre-committed key set', '(?:forge thread ID|thread ID)', 400),
+    'the recorded key set must include the thread IDs the item filter carries',
+  );
+
+  // The absence check keeps the identifiers in scope and drops only the wrong label. The scope
+  // itself is pinned by the framing test; what this asserts is that the correction did not narrow
+  // it while removing the contradiction.
+  assert.match(
+    contract,
+    near('search every body', 'caller-supplied value the manifest carries', 200),
+    'the absence check must still cover the manifest values',
+  );
+  assert.match(
+    contract,
+    /the stable identifiers, which do not/i,
+    'the identifiers must be named as content this gate did write',
+  );
+  assert.match(
+    contract,
+    near('identifiers stay inside the check', 'lose that label', 300),
+    'the identifiers must stay in the absence-check scope while losing the wrong label',
+  );
+  assert.doesNotMatch(
+    contract,
+    /the stable identifiers, the review ids, the author logins and the review URLs/i,
+    'the retired origin claim must be gone rather than merely supplemented',
+  );
+});
+
+test('the return is declared in its own section and adds no fifth control line', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const record = returnedRecord(gate, 'merge-gate');
+  const contract = prose(section(gate, '## Delegation contract', '\n## '));
+
+  // The four control lines are counted by the delimiter test above. A return announced as a fifth
+  // one would move a boundary that test guards, so the return gets a section instead.
+  assert.match(contract, /all four control lines/i, 'the forward direction must still carry four');
+  assert.match(
+    record,
+    near('not', 'fifth control line', 200),
+    'the return must state that it is not a fifth control line',
+  );
+  ordered(gate, '## Delegation contract', '## Returned outcome record');
+
+  // The sibling contract in the shared fragment: one classification set behind the other, and the
+  // "one item per supplied ID" requirement stated once on each channel rather than conflated.
+  const integration = prose(source('src/shared/pr-review-integration.md'));
+  assert.match(
+    integration,
+    near('judgment vocabulary', '(?:behind|never these values)', 400),
+    'the handoff classification set must be marked as a vocabulary behind the outcome ones',
+  );
+  assert.match(
+    integration,
+    near('`{{SKILL:iterate}}`', '`skipped`', 300),
+    'the fragment must name where iterate skipped is actually produced',
+  );
+  assert.match(
+    integration,
+    near('sibling', 'pre-commits', 500),
+    'the fragment must separate its own one-item-per-ID rule from the pre-committed one',
+  );
+
+  // The user-facing surface the documentation-sync gate makes mandatory here.
+  const deliver = prose(source('docs/user-guide/tools-deliver.md'));
+  assert.match(
+    deliver,
+    near('`unassessed`', '(?:deselected|implementation failed)', 500),
+    'the user guide must name the fourth value and when a reader sees it',
+  );
+  assert.match(
+    deliver,
+    near('recorded before delegating', 'written down every item identifier', 300),
+    'the user guide must describe the pre-committed key set',
+  );
+  assert.match(
+    deliver,
+    near('never handed over', 'reported and otherwise ignored', 100),
+    'the user guide must say that an unrecognized identifier is ignored rather than fatal',
+  );
+});
+
 test('no contract still carries the four retired claims about reviews and surfaces', () => {
   const state = source('src/shared/review-bot-state.md');
   const integration = source('src/shared/pr-review-integration.md');

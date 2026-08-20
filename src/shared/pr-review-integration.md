@@ -112,6 +112,19 @@ supplied ID. Map its classifications:
 - `question_or_information` → reported to the user, never posted as a defect.
 - `needs_evidence` → dropped, with the exact missing proof recorded.
 
+**These five are `pr-review`'s judgment vocabulary, and no workflow returns them as an outcome.** They
+sit **behind** the outcome vocabularies of the workflows that consume this handoff – `unsupported` is
+where `{{SKILL:iterate}}`'s `skipped` is produced, for one – so a caller that consumes a per-item
+outcome from a delegated run reads that run's own closed vocabulary instead, never these values.
+Keeping the two apart is what stops a third set from being mistaken for the agreed one.
+
+**The "exactly one returned item per supplied ID" requirement above is a sibling of the same
+requirement on a workflow handoff, not the same contract.** This one binds a skill's analysis handoff,
+where the caller holds both ends within a single run. The one on the `{{SKILL:merge-gate}}` →
+`{{SKILL:iterate}}` channel binds a workflow handoff whose key set the caller pre-commits before
+delegating, and whose receiver counts an outcome only for a key it recorded; that contract lives in
+those two tools and is not restated here.
+
 If `pr-review` is unavailable (not installed, `skills.enabled: false`, excluded), publish the
 findings that survive the remaining steps and disclose that the PR-level judgment was unavailable.
 Never invent the missing classification.
