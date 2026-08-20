@@ -90,6 +90,14 @@ described under "Collision" would be unreachable, and State C would overwrite th
 stopping. Run that check only when neither path is tracked; every other row is already decided by the
 index.
 
+**The check is not the guarantee — the write is.** Row 5 and State C's write are two moments, and a
+file created between them would be silently replaced by a plain write. State C therefore creates `A`
+**exclusively**: the write must fail if the path already exists, and that failure is the collision
+stop, not an error to retry through. The row-5 check remains worth running because it reports the
+collision before anything is taken over; the exclusive create is what makes the guarantee hold when
+it does not. This is the same discipline the cleanup applies in the other direction, where the hash is
+re-verified immediately before the removal.
+
 Evaluate in this order; the first match wins:
 
 | #   | Condition                                                                          | Result                                                          |
@@ -116,12 +124,12 @@ Keying on the index removes both and makes this step idempotent.
 
 ### States
 
-| State                    | Meaning                                                          | Action                                                                                                                                                                                                                                                                                                               |
-| ------------------------ | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **A** — tracked          | `P` is a tracked file in the delivery checkout.                  | Take over the plan's final content, set the canonical status marker to the implemented value of the plan's own language, run `mkdir -p <plan.dir>/archive` in `EXECUTION_ROOT`, then `git -C <EXECUTION_ROOT> mv <P> <A>`. The commit step of the handback commits both. Then run the main-checkout cleanup.         |
-| **C** — untracked        | Neither path is tracked and nothing exists at `A`.               | Run `mkdir -p <plan.dir>/archive` in `EXECUTION_ROOT`, write the final, implemented-marked content directly to `A` there, and `git -C <EXECUTION_ROOT> add -- ':(literal)<A>'`. No `git mv`: there is nothing tracked to move, and `git mv` on an untracked path exits non-zero. Then run the main-checkout cleanup. |
-| **D** — already archived | `A` is tracked, by an earlier run or by this one.                | Never re-add at top level. Compare `A`'s content in `EXECUTION_ROOT` with the final, implemented-marked state and refresh it if it differs, so a re-entered handback carries the run's latest content. Never fail. Then run the main-checkout cleanup.                                                               |
-| **Archived basis**       | The supplied basis is itself a file under `<plan.dir>/archive/`. | Terminal: report that the basis is already archived, derive no paths, run no probe, change nothing, run no cleanup.                                                                                                                                                                                                  |
+| State                    | Meaning                                                          | Action                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------ | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A** — tracked          | `P` is a tracked file in the delivery checkout.                  | Take over the plan's final content, set the canonical status marker to the implemented value of the plan's own language, run `mkdir -p <plan.dir>/archive` in `EXECUTION_ROOT`, then `git -C <EXECUTION_ROOT> mv <P> <A>`. The commit step of the handback commits both. Then run the main-checkout cleanup.                                    |
+| **C** — untracked        | Neither path is tracked and nothing exists at `A`.               | Run `mkdir -p <plan.dir>/archive` in `EXECUTION_ROOT`, write the final, implemented-marked content to `A` there with **exclusive-create** semantics, and `git -C <EXECUTION_ROOT> add -- ':(literal)<A>'`. No `git mv`: there is nothing tracked to move, and `git mv` on an untracked path exits non-zero. Then run the main-checkout cleanup. |
+| **D** — already archived | `A` is tracked, by an earlier run or by this one.                | Never re-add at top level. Compare `A`'s content in `EXECUTION_ROOT` with the final, implemented-marked state and refresh it if it differs, so a re-entered handback carries the run's latest content. Never fail. Then run the main-checkout cleanup.                                                                                          |
+| **Archived basis**       | The supplied basis is itself a file under `<plan.dir>/archive/`. | Terminal: report that the basis is already archived, derive no paths, run no probe, change nothing, run no cleanup.                                                                                                                                                                                                                             |
 
 **The mark is applied to the taken-over copy, in `EXECUTION_ROOT`, never to the original in the main
 checkout.** The order is read → take over → mark. This supersedes the earlier

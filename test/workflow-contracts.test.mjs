@@ -5307,6 +5307,12 @@ test('the plan-archival fragment states its detection, states and cleanup', () =
   assert.match(detectionRows[5][1], /a file exists at `A`/);
   assert.match(detectionRows[5][2], /Collision/);
   assert.match(fragment, /filesystem existence check on `A`/);
+  // The check alone is a TOCTOU window: a file created between row 5 and the
+  // write would be silently replaced. The write itself must refuse to clobber.
+  assert.match(fragment, /\*\*The check is not the guarantee — the write is\.\*\*/);
+  assert.match(fragment, /creates `A`\s+\*\*exclusively\*\*/);
+  assert.match(fragment, /that failure is the collision\s+stop/);
+  assert.match(states, /\*\*exclusive-create\*\* semantics/);
 
   const collision = section(fragment, '### Collision', '\n### ');
   assert.match(collision, /report\s+both paths/);
