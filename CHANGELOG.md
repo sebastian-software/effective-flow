@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.60.2](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.60.1...effective-flow-v1.60.2) (2026-08-19)
+
+
+### Bug Fixes
+
+* retry every network operation on the release delivery path ([#359](https://github.com/sebastian-software/effective-flow/issues/359)) ([de3ba34](https://github.com/sebastian-software/effective-flow/commit/de3ba34f1a4e056073b3ebf499407a7d301cbd89))
+
 ## [1.60.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.60.0...effective-flow-v1.60.1) (2026-08-19)
 
 
