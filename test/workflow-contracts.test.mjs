@@ -1965,13 +1965,15 @@ test('the revision-mode move back from the archive never touches the Git index',
 
   // `plan` creates no commit, so a staged rename would outlive the run in the user's index and
   // ride along with the next unrelated commit. The move back is a plain filesystem move, and the
-  // rules block states that instead of contradicting it.
+  // rules block states that instead of contradicting it. Both mentions of the command are
+  // clauses about not using it — one forbidding it, one explaining the safety it took away.
   assert.deepEqual(
     plan.match(/git mv/g) ?? [],
-    ['git mv'],
-    'plan.md may mention git mv only once, in the clause that forbids it',
+    ['git mv', 'git mv'],
+    'plan.md may mention git mv only in the clauses that forbid it and explain its loss',
   );
   assert.match(plan, /never with `git mv`/);
+  assert.match(plan, /`git mv` refuses to\s+clobber an existing file without `-f`/);
 
   const revision = flat(section(plan, 'On a revision run:', '\n5. '));
   assert.match(revision, /moves back from `<plan\.dir>\/archive\/` to `<plan\.dir>\/`/);
@@ -2002,6 +2004,17 @@ test('the revision-mode move back from the archive never touches the Git index',
   assert.match(
     revision,
     /an unlisted one means the plan is now untracked at `<plan\.dir>\/<file>`/,
+  );
+
+  // A plain move silently overwrites where `git mv` would have refused, so the destination-absence
+  // requirement replaces that lost safety — and it is checked before the status reset, so a run
+  // that stops leaves no half-applied revision behind.
+  ordered(
+    revision,
+    '**The destination must be absent, and that is checked before any write.**',
+    'Verify that `<plan.dir>/<file>` does not exist before the status reset as well as before the move',
+    'never overwrite a file that does',
+    'Report both paths, revise nothing, and stop',
   );
 
   // The ask block promises exactly the behavior the run performs.

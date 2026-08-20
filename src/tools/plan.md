@@ -174,6 +174,14 @@ On a revision run:
   of `<plan.dir>/` from the file system, and the plan-reference rule resolves against
   `<plan.dir>/` and `<plan.dir>/archive/` the same way, so the reset status is visible to both the
   moment the file lands at its new path.
+- **The destination must be absent, and that is checked before any write.** `git mv` refuses to
+  clobber an existing file without `-f`; a plain move carries no such refusal, so the requirement
+  is stated here instead. Verify that `<plan.dir>/<file>` does not exist before the status reset
+  as well as before the move, and never overwrite a file that does — a run that stops here must
+  leave no rewritten status marker behind in the archive either. A present destination is not this
+  run's to resolve: it is a same-name duplicate across `<plan.dir>/` and `<plan.dir>/archive/`,
+  which the plan-file convention forbids and `{{SKILL:open-plans}}` reports on its own. Report both
+  paths, revise nothing, and stop, so the user decides which of the two files survives.
 - Report the move as an uncommitted working-tree change that this run does not stage and no later
   step of it cleans up. Establish the Git state of **both** paths first, with one
   `git -C <project root> ls-files -- <archived path> <plan.dir>/<file>` call, and read each path
