@@ -5284,6 +5284,30 @@ test('the plan-archival fragment states its detection, states and cleanup', () =
   assert.match(fragment, /matches neither\s+path literally/);
 
   // The collision arm, including the untracked-target case.
+  // Regression: the index probe cannot see an untracked file, so without a
+  // filesystem existence check the untracked-archive-target arm of the collision
+  // rule is unreachable and State C writes straight over that file. Detection
+  // must carry the check, not just the Collision prose.
+  const detectionRows = fragment
+    .split('\n')
+    .filter((line) => /^\|\s*\d+\s*\|/.test(line))
+    .map((line) =>
+      line
+        .split('|')
+        .map((cell) => cell.trim())
+        .filter(Boolean),
+    );
+  assert.equal(detectionRows.length, 6, 'detection must carry six rows');
+  const [, stateCRow] = [detectionRows[4], detectionRows[4]];
+  assert.match(
+    stateCRow[1],
+    /no file exists at `A`/,
+    'State C must require an empty archive target',
+  );
+  assert.match(detectionRows[5][1], /a file exists at `A`/);
+  assert.match(detectionRows[5][2], /Collision/);
+  assert.match(fragment, /filesystem existence check on `A`/);
+
   const collision = section(fragment, '### Collision', '\n### ');
   assert.match(collision, /report\s+both paths/);
   assert.match(collision, /An archive target that exists as an \*\*untracked\*\* file/);

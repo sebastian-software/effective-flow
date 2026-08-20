@@ -84,15 +84,22 @@ the completion action proceeds — because the implementation is finished work a
 uncommitted on a delivery branch is a worse outcome than a plan that stays unarchived. The report
 names the condition so the plan can be archived deliberately afterwards.
 
+`ls-files` reports the **index**, so it cannot see an untracked file. Rows 5 and 6 therefore add one
+filesystem existence check on `A` in `EXECUTION_ROOT` — without it the untracked-archive-target case
+described under "Collision" would be unreachable, and State C would overwrite that file instead of
+stopping. Run that check only when neither path is tracked; every other row is already decided by the
+index.
+
 Evaluate in this order; the first match wins:
 
-| #   | Condition                                                                          | Result                                        |
-| --- | ---------------------------------------------------------------------------------- | --------------------------------------------- |
-| 1   | the basis lies under `<plan.dir>/archive/`, checked before `P` and `A` are derived | **Archived basis** — terminal; no probe runs. |
-| 2   | `P` tracked **and** `A` tracked                                                    | **Collision** — stop and report both paths.   |
-| 3   | `A` tracked, `P` not                                                               | **State D — already archived.**               |
-| 4   | `P` tracked, `A` not                                                               | **State A — tracked.**                        |
-| 5   | neither tracked                                                                    | **State C — untracked.**                      |
+| #   | Condition                                                                          | Result                                                          |
+| --- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| 1   | the basis lies under `<plan.dir>/archive/`, checked before `P` and `A` are derived | **Archived basis** — terminal; no probe runs.                   |
+| 2   | `P` tracked **and** `A` tracked                                                    | **Collision** — stop and report both paths.                     |
+| 3   | `A` tracked, `P` not                                                               | **State D — already archived.**                                 |
+| 4   | `P` tracked, `A` not                                                               | **State A — tracked.**                                          |
+| 5   | neither tracked, and no file exists at `A`                                         | **State C — untracked.**                                        |
+| 6   | neither tracked, but a file exists at `A`                                          | **Collision** — an untracked archive target; report both paths. |
 
 **Why the index and not a base tree.** An earlier design keyed this table on the commit the delivery
 branch was created from. That produced two defects, and both are the reason the rule above must not
@@ -112,7 +119,7 @@ Keying on the index removes both and makes this step idempotent.
 | State                    | Meaning                                                          | Action                                                                                                                                                                                                                                                                                                               |
 | ------------------------ | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **A** — tracked          | `P` is a tracked file in the delivery checkout.                  | Take over the plan's final content, set the canonical status marker to the implemented value of the plan's own language, run `mkdir -p <plan.dir>/archive` in `EXECUTION_ROOT`, then `git -C <EXECUTION_ROOT> mv <P> <A>`. The commit step of the handback commits both. Then run the main-checkout cleanup.         |
-| **C** — untracked        | Neither path is tracked.                                         | Run `mkdir -p <plan.dir>/archive` in `EXECUTION_ROOT`, write the final, implemented-marked content directly to `A` there, and `git -C <EXECUTION_ROOT> add -- ':(literal)<A>'`. No `git mv`: there is nothing tracked to move, and `git mv` on an untracked path exits non-zero. Then run the main-checkout cleanup. |
+| **C** — untracked        | Neither path is tracked and nothing exists at `A`.               | Run `mkdir -p <plan.dir>/archive` in `EXECUTION_ROOT`, write the final, implemented-marked content directly to `A` there, and `git -C <EXECUTION_ROOT> add -- ':(literal)<A>'`. No `git mv`: there is nothing tracked to move, and `git mv` on an untracked path exits non-zero. Then run the main-checkout cleanup. |
 | **D** — already archived | `A` is tracked, by an earlier run or by this one.                | Never re-add at top level. Compare `A`'s content in `EXECUTION_ROOT` with the final, implemented-marked state and refresh it if it differs, so a re-entered handback carries the run's latest content. Never fail. Then run the main-checkout cleanup.                                                               |
 | **Archived basis**       | The supplied basis is itself a file under `<plan.dir>/archive/`. | Terminal: report that the basis is already archived, derive no paths, run no probe, change nothing, run no cleanup.                                                                                                                                                                                                  |
 
@@ -137,7 +144,8 @@ both paths, and change nothing. Never resolve it by choosing one, and never use 
 produces a modify-plus-delete rather than a rename and discards the destination's content silently.
 
 An archive target that exists as an **untracked** file while `A` is not tracked is the same case:
-stop and report rather than overwrite.
+stop and report rather than overwrite. Detection row 6 is what makes this reachable — the index probe
+alone cannot see such a file, so without that row State C would write straight over it.
 
 ### Main-checkout cleanup
 
