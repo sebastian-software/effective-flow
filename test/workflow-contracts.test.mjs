@@ -1959,6 +1959,77 @@ test('plan stops naming an implementation tool at completion but keeps the templ
   }
 });
 
+test('the revision-mode move back from the archive never touches the Git index', () => {
+  const plan = source('src/tools/plan.md');
+  const flat = (text) => text.replace(/\s+/g, ' ');
+
+  // `plan` creates no commit, so a staged rename would outlive the run in the user's index and
+  // ride along with the next unrelated commit. The move back is a plain filesystem move, and the
+  // rules block states that instead of contradicting it.
+  assert.deepEqual(
+    plan.match(/git mv/g) ?? [],
+    ['git mv'],
+    'plan.md may mention git mv only once, in the clause that forbids it',
+  );
+  assert.match(plan, /never with `git mv`/);
+
+  const revision = flat(section(plan, 'On a revision run:', '\n5. '));
+  assert.match(revision, /moves back from `<plan\.dir>\/archive\/` to `<plan\.dir>\/`/);
+  assert.match(revision, /\*\*plain filesystem move\*\*, never with `git mv`/);
+
+  // The consumers of the moved file read the working tree; that is what makes an unstaged move
+  // sufficient, and it is the reason this rule can differ from the archive-forward handshake.
+  ordered(
+    revision,
+    '`{{SKILL:open-plans}}` lists the top level of `<plan.dir>/` from the file system',
+    'the plan-reference rule resolves against `<plan.dir>/` and `<plan.dir>/archive/`',
+  );
+
+  // Fail-closed tracked-state detection in the house style: one explicit command, an explicit
+  // reading of every result, and no guess on a nonzero exit.
+  assert.match(revision, /git -C <project root> ls-files -- <archived path>/);
+  ordered(
+    revision,
+    'nonempty output means it was tracked',
+    'empty output with exit `0`',
+    'Any nonzero exit or command-launch error',
+    'is not permission to guess',
+  );
+  assert.match(revision, /untracked at `<plan\.dir>\/<file>`/);
+
+  // The ask block promises exactly the behavior the run performs.
+  const ask = flat(section(plan, '```ask\nwhen: the revision target was resolved', '```'));
+  assert.match(ask, /move an archived plan file back to <plan\.dir>\/ without staging that move/);
+
+  // The rules block carries the boundary, so no later reader has to infer it from
+  // "Do not create any commits." alone.
+  const rules = flat(section(plan, '## Rules', '\n## '));
+  ordered(
+    rules,
+    'Do not create any commits.',
+    'Do not stage anything or otherwise write to the Git index.',
+    'plain filesystem move',
+  );
+
+  // The leftover working-tree change is part of the completion report, not a silent side effect.
+  const completion = flat(section(plan, '### Phase 7: Completion', '\n## '));
+  assert.match(completion, /the unstaged move and its Git effect/);
+
+  // The archive convention states both directions, so a reader who arrives at the staged
+  // forward move does not carry it over to the reverse one.
+  const archive = flat(
+    section(source('src/shared/plan-numbering.md'), '### Archive of implemented plans'),
+  );
+  ordered(
+    archive,
+    'The move is coupled to the **delivery event**',
+    'moves the file via `git mv` to `<plan.dir>/archive/`',
+    'The **reverse** move is not coupled to a delivery event and therefore not staged',
+    'plain filesystem move, never with `git mv`',
+    '`{{SKILL:plan}}` creates no commit',
+  );
+});
+
 test('no source cites the non-existent "Host and CLI detection" section', () => {
   // AC4: the section never existed in `issue-tracker.md`; the surviving references were
   // broken across lines, so the sweep normalizes whitespace and Markdown emphasis.

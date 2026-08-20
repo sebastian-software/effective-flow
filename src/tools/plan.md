@@ -152,7 +152,7 @@ header: Revision
 question: Revise the resolved plan file in place, start a new plan, or stop?
 options:
   - label: Revise in place
-    description: Reuse the reported file, reset its status to the canonical open value of its plan language, and move an archived plan back to <plan.dir>/
+    description: Reuse the reported file, reset its status to the canonical open value of its plan language, and move an archived plan file back to <plan.dir>/ without staging that move
   - label: New plan
     description: Leave the resolved plan untouched and write a new dated plan file for this requirement
   - label: Abort
@@ -166,7 +166,23 @@ On a revision run:
   and not only when the plan was archived. A plan left at `Umgesetzt` / `Implemented` inside
   `<plan.dir>/` would make the emitted `{{SKILL:apply}} <plan-file>` reopen the implemented-plan
   question this revision just answered, and `{{SKILL:open-plans}}` would not list it. An archived
-  plan additionally moves back to `<plan.dir>/` with `git mv`, exactly as the question stated.
+  plan additionally moves back from `<plan.dir>/archive/` to `<plan.dir>/`, exactly as the question
+  stated.
+- Perform that move back as a **plain filesystem move**, never with `git mv`. This run creates no
+  commit, so a staged rename would sit in the user's index until some later, unrelated commit
+  swept it up. Nothing depends on the move being staged: `{{SKILL:open-plans}}` lists the top level
+  of `<plan.dir>/` from the file system, and the plan-reference rule resolves against
+  `<plan.dir>/` and `<plan.dir>/archive/` the same way, so the reset status is visible to both the
+  moment the file lands at its new path.
+- Report the move as an uncommitted working-tree change that this run does not stage and no later
+  step of it cleans up: the file is now untracked at `<plan.dir>/<file>`, and its removal from
+  `<plan.dir>/archive/<file>` is likewise unstaged. Establish whether the archived path was
+  tracked at all before reporting, with `git -C <project root> ls-files -- <archived path>`, and
+  interpret the result exactly: nonempty output means it was tracked and the report names both
+  sides of the move; empty output with exit `0` means the archived file was never tracked and only
+  the new path is worth naming. Any nonzero exit or command-launch error — a missing Git, a
+  non-repository checkout — is not permission to guess: report the completed move and state that
+  its Git effect could not be determined.
 - If the status line was missing, duplicated, or invalid, report that unclear status and obtain
   explicit confirmation before writing the canonical open value — the same confirmation any other
   header change needs.
@@ -439,6 +455,8 @@ On `No`: Continue with Phase 7; the next-step block of that phase carries the re
    - the scorecard result
    - a note that no code changes were made
    - on a revision run: that the existing file was revised in place, plus every confirmed header change
+   - on a revision run that brought a plan back from `<plan.dir>/archive/`: the unstaged move and
+     its Git effect, per the revision-mode reporting rule of Phase 1
 4. Emit the next-step block per `next-steps` as the last element of the report. A deep review that
    returned `Revision required` or a nonzero blocking open-point count takes the open-points row,
    not the ready one — implementation comes after those points are closed.
@@ -448,5 +466,9 @@ On `No`: Continue with Phase 7; the next-step block of that phase carries the re
 - Do not start any implementation phase.
 - Do not run any tests that could change project files.
 - Do not create any commits.
+- Do not stage anything or otherwise write to the Git index. The revision-mode move back
+  from `<plan.dir>/archive/` is the one file move this tool performs, and it is a plain
+  filesystem move for that reason — this tool has no step that would ever commit a staged
+  rename it left behind.
 - Give the user a brief status update after each phase.
 - If the plan would not be reliable due to missing information, ask instead of guessing.
