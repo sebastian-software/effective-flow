@@ -1993,14 +1993,16 @@ test('the revision-mode move back from the archive never touches the Git index',
   // report a restored tracked path as untracked.
   assert.match(
     revision,
-    /git -C <project root> ls-files -z -- <archived path> <plan\.dir>\/<file>/,
+    /git -C <project root> ls-files -z -- ':\(literal\)<archived path>' ':\(literal\)<plan\.dir>\/<file>'/,
   );
   ordered(
     revision,
     'Establish the Git state of **both** paths first',
     'match each path against the NUL-separated entries',
     '`-z` is load-bearing rather than tidy',
-    'a tracked file would be read as untracked',
+    '`:(literal)` is what makes the arguments paths rather than patterns',
+    '`--` only separates paths from revisions and does not disable pathspec globbing',
+    'Either one omitted lets the probe read a tracked file as untracked',
     '**Never infer one side from the other either:**',
     'a listed destination means the move restored a tracked path',
     'Any nonzero exit or command-launch error',

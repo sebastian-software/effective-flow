@@ -208,11 +208,15 @@ On a revision run:
   there is no rewritten marker to undo.
 - Report the move as an uncommitted working-tree change that this run does not stage and no later
   step of it cleans up. Establish the Git state of **both** paths first, with one
-  `git -C <project root> ls-files -z -- <archived path> <plan.dir>/<file>` call, and match each
-  path against the NUL-separated entries that come back. `-z` is load-bearing rather than tidy:
-  without it Git quotes any path `core.quotePath` covers, and a quoted entry matches neither path
-  literally, so a tracked file would be read as untracked — the one direction this probe must not
-  fail in. **Never infer one side from the other either:** an index entry left at
+  `git -C <project root> ls-files -z -- ':(literal)<archived path>' ':(literal)<plan.dir>/<file>'`
+  call, and match each path against the NUL-separated entries that come back. Both pieces of that
+  invocation earn their place, and each guards the same failure. `-z` is load-bearing rather than
+  tidy: without it Git quotes any path `core.quotePath` covers, and a quoted entry matches neither
+  path literally. `:(literal)` is what makes the arguments paths rather than patterns: `--` only
+  separates paths from revisions and does not disable pathspec globbing, so a `plan.dir` carrying
+  `*`, `?`, or `[` would be matched as a glob. Either one omitted lets the probe read a tracked
+  file as untracked — the one direction it must not fail in. **Never infer one side from the other
+  either:** an index entry left at
   `<plan.dir>/<file>` whose file was absent from the working tree is tracked there while the
   archived copy never was, so a probe of the source alone would report a restored tracked path as
   untracked. Report each side as the listing found it — a listed archived path means its removal is
