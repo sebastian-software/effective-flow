@@ -2555,6 +2555,133 @@ function teaApiReadPlan(repository, endpoint) {
   ]);
 }
 
+// Forgejo clamps `limit` to `MAX_RESPONSE_ITEMS` (default 50, operator-configurable) and pages at
+// 30 when it is omitted, so this value is a request rather than a guarantee. Every raw-API list read
+// below therefore pages until the forge stops answering and checks `X-Total-Count` instead of
+// comparing what came back against what was asked for.
+const FORGEJO_PAGE_LIMIT = 100;
+const FORGEJO_MAX_PAGES = 1000;
+
+function forgejoPagedEndpoint(endpoint, page, limit = FORGEJO_PAGE_LIMIT) {
+  const query = new URLSearchParams({ limit: String(limit), page: String(page) });
+  return `${endpoint}${endpoint.includes('?') ? '&' : '?'}${query}`;
+}
+
+// The shape and the total, read off one `tea api --include` response. A body that is not an array is
+// never silently treated as an empty page: on this transport a 4xx body is an object, and
+// `teaApiSuccess` has already rejected those, so anything else left here is a payload nobody can
+// interpret.
+function forgejoListPage(response, label, page) {
+  if (!Array.isArray(response.body)) {
+    fail('INVALID_PAYLOAD', `${label} returned a non-list payload`, {
+      ...(page === undefined ? {} : { page }),
+    });
+  }
+  // A header that is absent, blank, or not a plain count states no total. `Number('')` is `0`, so
+  // reading it numerically without this test would turn an empty header into "the forge reported
+  // zero items" — and a guard whose whole job is failing closed would wave the first page through as
+  // complete.
+  const stated = response.headers.get('x-total-count');
+  const total =
+    typeof stated === 'string' && /^\d+$/.test(stated.trim()) ? Number(stated) : undefined;
+  return { items: response.body, total };
+}
+
+// A single unpaginated raw-API list read. Forgejo's review-comment endpoint takes no `page` or
+// `limit`, so paging it would re-request the same list until the bound ran out; it is read once and
+// guarded by the header instead.
+async function readForgejoList(repository, endpoint, runner, label) {
+  const plan = teaApiReadPlan(repository, endpoint);
+  const response = teaApiSuccess(await runChecked(runner, plan, label), label);
+  const { items, total } = forgejoListPage(response, label);
+  if (total !== undefined && total > items.length) {
+    fail('INVALID_PAYLOAD', `${label} returned a truncated list`, {
+      totalCount: total,
+      returnedCount: items.length,
+    });
+  }
+  return { items, commands: [redact(plan)] };
+}
+
+// One bounded pagination loop for every paginated Forgejo raw-API list read. It fails closed on a
+// short result rather than returning a prefix, which is what a criterion evaluated over the list
+// requires: an incomplete thread list would let `merge-gate` report every thread assessed while an
+// unassessed finding sits open, and an incomplete issue list would let a dedup pass miss a
+// duplicate.
+//
+// **`totalIsExact` decides whether `X-Total-Count` may prove truncation, and it is not uniform
+// across the endpoints this loop serves.** On the issue and pull-request listings the header is
+// counted from the same search options that produce the body, so a total above the item count means
+// items are missing. On `…/pulls/{index}/reviews` it is not: `ListPullReviews` counts the `review`
+// rows with `CountReviews`, while `convert.ToPullReviewList` then **omits** every pending review
+// belonging to another user unless the caller is an admin. The header there legitimately exceeds the
+// body, so treating it as an exact count would fail an ordinary read with `INVALID_PAYLOAD` for as
+// long as a third party keeps an unsubmitted review open — and take `merge-gate` condition 7 down
+// with it. For such an endpoint the header stays an upper bound: it may end the walk early but never
+// condemn it, and exhaustion is proved the way `tea`'s `resp.NextPage` proved it, by paging until a
+// page comes back empty. A short page is deliberately **not** the terminator: Forgejo clamps `limit`
+// to `MAX_RESPONSE_ITEMS`, so a full page is routinely shorter than the page size requested.
+async function readForgejoPaginated(repository, endpoint, runner, label, options = {}) {
+  const limit = options.limit ?? FORGEJO_PAGE_LIMIT;
+  const maxPages = options.maxPages ?? FORGEJO_MAX_PAGES;
+  const totalIsExact = options.totalIsExact ?? true;
+  const items = [];
+  const commands = [];
+  let total;
+  for (let page = 1; page <= maxPages; page += 1) {
+    const plan = teaApiReadPlan(repository, forgejoPagedEndpoint(endpoint, page, limit));
+    commands.push(redact(plan));
+    const stepLabel = `${label} page ${page}`;
+    const response = teaApiSuccess(await runChecked(runner, plan, stepLabel), stepLabel);
+    const parsed = forgejoListPage(response, label, page);
+    if (parsed.total !== undefined) total = parsed.total;
+    items.push(...parsed.items);
+    if (parsed.items.length === 0 || (total !== undefined && items.length >= total)) {
+      if (totalIsExact && total !== undefined && total > items.length) {
+        fail('INVALID_PAYLOAD', `${label} returned a truncated list`, {
+          totalCount: total,
+          returnedCount: items.length,
+        });
+      }
+      return { items, commands, pagesFetched: page };
+    }
+  }
+  fail('UNSUPPORTED_CAPABILITY', `${label} exceeded the bounded pagination limit`, {
+    maxPages,
+    itemsRead: items.length,
+  });
+}
+
+// The two Forgejo list endpoints, built once and shared by the plan builder — which answers with
+// page 1 as the preview — and by the reader that pages them. Keeping one builder is what makes the
+// preview and the executed request provably the same request.
+//
+// `type=issues` is mandatory rather than decorative. `ListIssues` defaults `type` to
+// `optional.None`, which returns issues **and** pull requests together, and an unrecognized value
+// falls through to that same default with no error path — so a port that dropped or misspelled it
+// would return a plausible superset that nothing downstream could tell apart. The client-side
+// `pull_request` filter is the second line of defence, not the first.
+function forgejoIssueListEndpoint(input, repository) {
+  const query = new URLSearchParams({ state: input.state ?? 'all', type: 'issues' });
+  // One single-label query per variant, exactly as the renderer path passed. `/issues?labels=`
+  // resolves label **names** and means **AND** — `count(*) = len(includedLabelIDs)` — so a
+  // multi-label value would intersect rather than union. `labelQueryVariants` exists to express OR
+  // across label *spellings* (`effective-flow-fix` ∪ `firmo-fix`), which no endpoint offers by name,
+  // and it already emits one single-label query per variant. Nothing about this endpoint obsoletes
+  // it, and collapsing its variants into one `labels=` value would silently intersect them.
+  if (input.labels?.length) query.set('labels', input.labels.join(','));
+  return `repos/${repository.owner}/${repository.repository}/issues?${query}`;
+}
+
+// No label filter, and none may be added here. `/pulls?labels=` takes numeric label **IDs** as
+// repeated parameters and means OR; a label *name* fails `StringsToInt64s` and the forge answers
+// HTTP 500 rather than an empty result. Filtering pull requests by label would need a name-to-ID
+// resolution step first.
+function forgejoPullListEndpoint(input, repository) {
+  const query = new URLSearchParams({ state: input.state ?? 'open' });
+  return `repos/${repository.owner}/${repository.repository}/pulls?${query}`;
+}
+
 export function buildCommandPlan(operation, input, repository) {
   requireObject(input);
   const { provider, owner, repository: repo, slug, host } = repository;
@@ -2581,7 +2708,8 @@ export function buildCommandPlan(operation, input, repository) {
       // a name they can construct is the cheapest way to give them one. Leaving it unregistered is
       // what keeps it internal: `executeOperation` consults `REMOTE_OPERATIONS` and refuses the
       // name from outside, so the read stays owned by the one branch whose contract defines it.
-      // The explicit `per_page=100` matches `issue-list`; without it the endpoint pages at 30 and
+      // The explicit `per_page=100` matches this adapter's other `gh api` list reads; without it
+      // the endpoint pages at 30 and
       // a target name on page 2 would be read as absent.
       case 'label-list':
         return mutationPlan('gh', [
@@ -2924,7 +3052,24 @@ export function buildCommandPlan(operation, input, repository) {
     }
   }
 
+  // Every Forgejo read below consumes one of **two** wire formats, and which one is not visible
+  // from the read site unless it says so — that invisibility is what produced every defect this
+  // adapter has had in this area, #355 included. Each case therefore states its class:
+  //
+  // - **Class A — raw Gitea/Forgejo API JSON**, obtained through `tea api`. The JSON **tags** of
+  //   `modules/structs` are the authority for every key, and the Go **field names** are not: `Index`
+  //   is `number`, `Poster` is `user`, `LineNum` is `position`, `PRBranchInfo.Name` is `label`,
+  //   `HTMLURL` is `html_url`. Reading a field name instead of its tag yields `undefined`, which
+  //   looks like an absent value rather than an error.
+  // - **Class B — tea's own CLI renderers**, obtained through `tea … --output json`. The Go tags are
+  //   **irrelevant** here: `modules/print` and `cmd/detail_json.go` re-shape every value, stringify
+  //   every table cell, drop what the `--fields` list did not request, and join collections into
+  //   display strings. The authority is tea's source at the pinned floor, not the forge's structs.
+  //
+  // A new read belongs in Class A unless there is a reason it cannot be, and it states which one.
   switch (operation) {
+    // Class B: tea renderer output; the authority for its keys is tea's `modules/print`, not
+    // `modules/structs`. Colors arrive without a leading `#` and `index` arrives stringified.
     // See the GitHub case above for why this plan exists without a registered operation.
     // `--exclude-org` scopes the pre-check to repository labels: an organization label of the same
     // name must not suppress creating the repository-scoped one, because the worst case of a
@@ -2962,6 +3107,9 @@ export function buildCommandPlan(operation, input, repository) {
         undefined,
         { tolerateAlreadyExists: true, expectsJson: false },
       );
+    // Class B: tea's detail renderer (`cmd/detail_json.go`). `--fields` is ignored on this path, so
+    // the object arrives whole and stringified; `labels` is an array here, not the joined string the
+    // list renderer produced.
     case 'issue-read':
       return mutationPlan('tea', [
         'issues',
@@ -2983,6 +3131,7 @@ export function buildCommandPlan(operation, input, repository) {
         undefined,
         { timeoutMs: ISSUE_STATE_READ_TIMEOUT_MS },
       );
+    // Class B: tea renderer output.
     case 'issue-comments-read':
       return mutationPlan('tea', [
         'issues',
@@ -2992,21 +3141,22 @@ export function buildCommandPlan(operation, input, repository) {
         '--fields',
         'index,comments',
       ]);
-    case 'issue-list': {
-      const args = [
-        'issues',
-        'list',
-        ...teaJson,
-        '--state',
-        input.state ?? 'all',
-        '--page',
-        String(input.page ?? 1),
-        '--limit',
-        String(input.limit ?? 100),
-      ];
-      if (input.labels?.length) args.push('--labels', input.labels.join(','));
-      return mutationPlan('tea', args);
-    }
+    // Class A: raw Gitea/Forgejo API JSON, read through the `modules/structs` tags — `Index` is
+    // `number`, `Poster` is `user`. `tea issues list` is deliberately not used and could not be
+    // repaired in place: its renderer joins `Labels` into one whitespace-separated string, and Gitea
+    // permits a space inside a label name, so that string cannot be decoded back into the set it
+    // came from. The raw API states `Labels` as a real array.
+    //
+    // The builder answers with page 1; the reader pages to exhaustion and guards `X-Total-Count`.
+    case 'issue-list':
+      return teaApiReadPlan(
+        repository,
+        forgejoPagedEndpoint(
+          forgejoIssueListEndpoint(input, repository),
+          input.page ?? 1,
+          input.limit ?? FORGEJO_PAGE_LIMIT,
+        ),
+      );
     case 'issue-create': {
       const args = [
         'issues',
@@ -3093,6 +3243,7 @@ export function buildCommandPlan(operation, input, repository) {
         undefined,
         { expectsJson: false },
       );
+    // Class B: tea's detail renderer, as `issue-read` is.
     case 'pr-read':
       return mutationPlan('tea', [
         'pulls',
@@ -3101,6 +3252,7 @@ export function buildCommandPlan(operation, input, repository) {
         '--fields',
         'index,title,state,body,labels,url,head,base',
       ]);
+    // Class B: tea renderer output.
     case 'pr-comments-read':
       return mutationPlan('tea', [
         'pulls',
@@ -3110,24 +3262,22 @@ export function buildCommandPlan(operation, input, repository) {
         '--fields',
         'index,comments',
       ]);
-    case 'pr-list': {
-      return mutationPlan('tea', [
-        'pulls',
-        'list',
-        ...teaJson,
-        '--state',
-        input.state ?? 'open',
-        '--page',
-        String(input.page ?? 1),
-        '--limit',
-        String(input.limit ?? 100),
-        // Same field list as `pr-read`: without it tea's list renderer omits head and base, and
-        // every item has to be hydrated through a separate read. Purely additive — callers keep
-        // hydrating an incomplete item, so a tea that ignores the request behaves as before.
-        '--fields',
-        'index,title,state,body,labels,url,head,base',
-      ]);
-    }
+    // Class A, and no field selection: the raw API always returns the complete object, including
+    // `head`, `base` and `draft`. Two values change with the move and both are corrections. `head`
+    // becomes the bare branch name — tea's `formatPRHead` prefixed `owner:` for a cross-fork head,
+    // which no other provider path does and which nothing downstream parsed; `normalizeBranchRef`
+    // owns which of the object's two branch keys states it. And `draft` becomes real: tea's list
+    // renderer never carried it, so it fell through to `false` on every Forgejo pull request, and a
+    // draft one will now be reported as one.
+    case 'pr-list':
+      return teaApiReadPlan(
+        repository,
+        forgejoPagedEndpoint(
+          forgejoPullListEndpoint(input, repository),
+          input.page ?? 1,
+          input.limit ?? FORGEJO_PAGE_LIMIT,
+        ),
+      );
     case 'pr-create':
       return mutationPlan(
         'tea',
@@ -3169,15 +3319,24 @@ export function buildCommandPlan(operation, input, repository) {
         ...teaJson,
         assertPublishable(payload.body, 'payload.body'),
       ]);
+    // Call 1 of the review-thread walk, and the only one this builder can answer. Neither forge
+    // exposes a flat review-comment listing — Forgejo's router declares
+    // `GET …/pulls/{index}/reviews` and `GET …/pulls/{index}/reviews/{id}/comments` and nothing
+    // between them — so the comment reads are addressed by the review IDs call 1 returns and are
+    // not knowable before it has run. `readForgejoReviewThreads` issues them and publishes every
+    // preview in `data.commands`, exactly as `readForgejoPullRequestStatus` does.
+    //
+    // The `tea pulls review-comments` renderer is deliberately not used here, and could not be
+    // repaired in place: `modules/print` renders `reviewer` through `formatUserName`, which returns
+    // the display name whenever the account has one, so **no login is obtainable from that surface
+    // at all** — and the field list carries no timestamp under any spelling. Both are read here
+    // from the raw API, where `modules/structs` states them.
     case 'review-threads-read':
-      return mutationPlan('tea', [
-        'pulls',
-        'review-comments',
-        String(prNumber(input)),
-        ...teaJson,
-        '--fields',
-        'id,body,reviewer,path,line,resolver,url',
-      ]);
+      return teaApiReadPlan(
+        repository,
+        forgejoPagedEndpoint(apiEndpoint(`pulls/${prNumber(input)}/reviews`), 1),
+      );
+    // Class A: raw API JSON (`modules/structs.User`).
     // The identity read is credential-scoped, not repository-scoped: `--login` selects the
     // credential and `tea api user` answers for exactly that one, so no `--repo` is passed at all.
     // It deliberately does not read `tea logins list`, which reports the locally configured logins —
@@ -3186,6 +3345,7 @@ export function buildCommandPlan(operation, input, repository) {
     // stranger's comment as its own.
     case 'viewer-read':
       return mutationPlan('tea', ['api', 'user', '--include', '--login', repository.login ?? host]);
+    // Class A: raw API JSON (`modules/structs.PullRequest`, `CombinedStatus`, `Commit`).
     // Call 1 of three, and the only one this builder can answer. The head SHA it returns is what
     // addresses calls 2 and 3, so they are not knowable before it has run;
     // `readForgejoPullRequestStatus` issues them and publishes all three previews in
@@ -3243,20 +3403,19 @@ export function buildCommandPlan(operation, input, repository) {
     // blocking watch comparable to `gh pr checks --watch`, so `pr-checks-wait` would have to become
     // the poll loop the gate explicitly rejects; the documented no-watch degradation carries it
     // instead. The two review operations have no verified tea surface either.
+    // `review-thread-resolve` joins them: `tea pulls resolve` exists as a client subcommand, but
+    // the route behind it does not. Forgejo's `/pulls` router group declares no `resolve`,
+    // `unresolve` or `replies` path at any nesting level, where Gitea `main` declares all three, and
+    // a live instance confirms it — see the user guide. The former `--help` probe attested the
+    // subcommand and never the route, so it reported a write capability the forge does not serve.
     case 'review-create':
     case 'review-thread-reply':
+    case 'review-thread-resolve':
     case 'pr-checks-wait':
       fail('UNSUPPORTED_CAPABILITY', `installed tea adapter does not safely support ${operation}`, {
         operation,
         provider: 'forgejo',
       });
-    case 'review-thread-resolve':
-      return mutationPlan('tea', [
-        'pulls',
-        'resolve',
-        String(requireNumber(input.threadId, 'threadId')),
-        ...teaJson,
-      ]);
     default:
       fail('UNSUPPORTED_CAPABILITY', `unsupported Forgejo operation: ${operation}`, { operation });
   }
@@ -3685,8 +3844,6 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
     issueLabelRemove,
     pulls,
     pullComments,
-    pullReviewComments,
-    pullResolve,
     pullCreate,
     pullCreateDraft,
     pullEdit,
@@ -3704,8 +3861,6 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
     probeTeaHelp(runner, ['issues', 'edit'], ['--remove-labels']),
     probeTeaHelp(runner, ['pulls'], ['--output']),
     probeTeaHelp(runner, ['pulls'], ['--comments']),
-    probeTeaHelp(runner, ['pulls', 'review-comments'], ['--output', '--fields']),
-    probeTeaHelp(runner, ['pulls', 'resolve'], ['--output']),
     probeTeaHelp(runner, ['pulls', 'create'], ['--head', '--base']),
     probeTeaHelp(runner, ['pulls', 'create'], ['--draft']),
     probeTeaHelp(runner, ['pulls', 'edit'], ['--description']),
@@ -3778,9 +3933,20 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       // falling back to the unconditional create whose duplicates this whole path exists to stop.
       labelCreate: labelCreateSupported,
       reviewCreate: false,
-      reviewThreads: pullReviewComments,
+      // The review-thread read rides on the same `tea api` transport as the gate reads, because that
+      // is where it now goes: `tea pulls review-comments` states no login and no timestamp, so the
+      // subcommand's presence never attested a usable read in the first place.
+      reviewThreads: teaApiTransport,
       reviewThreadReplies: false,
-      reviewThreadResolution: pullResolve,
+      // A stated provider fact, as `pullRequestStatus` and `pullRequestMerge` already are, and no
+      // longer a `--help` probe of `tea pulls resolve`. That probe attested the **client
+      // subcommand**; the route behind it does not exist on Forgejo. `/swagger.v1.json` on a live
+      // `15.0.3+gitea-1.22.0` instance declares 314 paths and not one `…/pulls/comments/…`, no
+      // `resolve`, no `unresolve`, no `replies`; an authenticated `POST …/pulls/comments/{id}/resolve`
+      // is rejected by the router with the same 405 a deliberately nonsense path draws, while the
+      // neighbouring `…/reviews/{id}/dismissals` reaches its handler. Reporting this as supported
+      // made `merge-gate` act on a write the forge never serves.
+      reviewThreadResolution: false,
       conditionalWrites: false,
     },
   };
@@ -3790,12 +3956,20 @@ function normalizeLabel(label) {
   return typeof label === 'string' ? label : label?.name;
 }
 
-// tea's list renderer flattens `labels` into a comma-separated string while its single-item
+// tea's list renderer flattens `labels` into a **whitespace**-joined string while its single-item
 // renderer returns an array, so the same field arrives in two shapes one call apart. Splitting
 // the string rather than discarding it matters: an `Array.isArray(...) ? ... : []` guard would
 // stop the crash but silently drop every label the list form actually carries.
+//
+// The separator is a space, not a comma: `modules/print` joins the names with `" "` in v0.14.2
+// and v0.15.1 alike, so splitting on `,` returned the whole joined list as one label name. That
+// makes the split lossy in the other direction — Gitea permits a space inside a label name, and
+// `good first issue` cannot be told apart from three labels on this wire format at all. Every
+// read that has somewhere better to go now takes the raw API instead, where `Labels` is a real
+// array; this split is what remains for the renderer paths that have no such alternative, and it
+// is a best effort rather than a faithful decoding.
 function normalizeLabels(value) {
-  const items = typeof value === 'string' ? value.split(',') : value;
+  const items = typeof value === 'string' ? value.split(/\s+/) : value;
   if (!Array.isArray(items)) return [];
   return items
     .map(normalizeLabel)
@@ -3845,7 +4019,11 @@ function normalizeAuthor(author) {
 function normalizeIssue(item, repository, metadata = {}) {
   if (!item || typeof item !== 'object')
     fail('INVALID_PAYLOAD', 'provider returned an invalid issue');
-  if (Object.hasOwn(item, 'pull_request')) {
+  // Truthiness, never key presence. `Issue.PullRequest` carries no `omitempty`, so **every** raw
+  // Gitea/Forgejo issue arrives with `"pull_request": null` and a key-presence guard would reject
+  // the entire result set rather than the pull requests in it. The sibling filters that drop pull
+  // requests out of an issue listing are truthiness-based for the same reason.
+  if (item.pull_request) {
     fail('INVALID_PAYLOAD', 'provider returned a pull request where an issue was required');
   }
   return {
@@ -3871,12 +4049,35 @@ function normalizeSubIssue(item, repository, parent, metadata = {}) {
   };
 }
 
+// A pull request states its branch twice, and the two providers spell the pair the other way round.
+// Gitea's `PRBranchInfo` declares `Ref json:"ref"` and `Name json:"label"`: `services/convert` sets
+// `Ref` to the branch name only while **both** the head repository record and the head branch still
+// exist, and otherwise leaves it at `refs/pull/<index>/head` — a deleted head branch, a deleted fork
+// and an AGit-flow pull request all land there — while `Name` is unconditionally `pr.HeadBranch`.
+// GitHub states the same two keys with the opposite meaning: its `ref` is the bare branch and its
+// `label` is `owner:branch`.
+//
+// So neither key can be preferred unconditionally. `ref` wins, and `label` is consulted only when
+// `ref` is a pull ref, which GitHub never states — so the fallback is unreachable there and exact on
+// Gitea. Getting this wrong is silent in the worst way: `pr-list`'s `input.head` filter and
+// `src/tools/pr.md`'s `head === <head-branch>` match would both miss an open pull request whose
+// branch the forge has already deleted, and the caller would create a second one.
+const PULL_HEAD_REF = /^refs\/pull\/\d+\/head$/;
+
+function normalizeBranchRef(branch) {
+  if (typeof branch !== 'object' || branch === null) return undefined;
+  const ref = typeof branch.ref === 'string' && branch.ref !== '' ? branch.ref : undefined;
+  if (ref !== undefined && !PULL_HEAD_REF.test(ref)) return ref;
+  const label = typeof branch.label === 'string' && branch.label !== '' ? branch.label : undefined;
+  return label ?? ref;
+}
+
 function normalizePullRequest(item, repository, metadata = {}) {
   const issue = normalizeIssue(item, repository, metadata);
   return {
     ...issue,
-    head: item.head?.ref ?? item.headRefName ?? item.head_branch ?? item.head,
-    base: item.base?.ref ?? item.baseRefName ?? item.base_branch ?? item.base,
+    head: normalizeBranchRef(item.head) ?? item.headRefName ?? item.head_branch ?? item.head,
+    base: normalizeBranchRef(item.base) ?? item.baseRefName ?? item.base_branch ?? item.base,
     draft: item.draft ?? item.isDraft ?? false,
   };
 }
@@ -4055,13 +4256,20 @@ function flattenPullRequestStatus(raw) {
   };
 }
 
-// One Gitea commit status, restated as a check record. The translation is not optional: a raw
-// `state: "success"` reaching `normalizeCheck` unchanged would be read through
-// `pending = status !== 'COMPLETED'` — `status` is absent on a Gitea status, so the state branch
-// decides — and `success` is in neither pending set nor a `COMPLETED` marker, so the record would
-// have to survive on the `state` fallback alone. Mapping it here instead keeps one shape for both
-// providers, and the record deliberately carries only `name`, `status`, `conclusion` and `url`: no
-// raw Gitea key (`context`, `target_url`, `state`, `id`, `description`) survives into the envelope.
+// One Gitea commit status, restated as a check record. Read the JSON tag, never the Go field name:
+// `structs.CommitStatus` declares its `State` field with the tag `status`, so a per-entry state
+// arrives on the wire as `status`, while only the enclosing `structs.CombinedStatus` declares its
+// `State` with the tag `state`. The Go field is called `State` at both levels — that is the trap,
+// and reading the field name instead of the tag is what gives the wrong key for an entry.
+//
+// The translation into a check record is not optional either: a raw `status: "success"` reaching
+// `normalizeCheck` unchanged would be read through `pending = status !== 'COMPLETED'`, and
+// `success` is not `COMPLETED`, so a finished check would report as pending. Mapping it here keeps
+// one shape for both providers, and the record deliberately carries only `name`, `status`,
+// `conclusion` and `url`: no raw Gitea key (`context`, `target_url`, `status`, `id`,
+// `description`) survives into the envelope. The record's own `status` key is the normalized
+// output field `normalizeCheck` reads back; despite the shared name it is unrelated to the raw
+// input key above.
 //
 // `warning` and `skipped` are non-success **completed** checks and therefore block under
 // `requireAllChecks: true`. That matches how GitHub's own `SKIPPED` conclusion already behaves.
@@ -4076,11 +4284,25 @@ const FORGEJO_CHECK_STATES = Object.freeze({
   skipped: Object.freeze({ status: 'COMPLETED', conclusion: 'SKIPPED' }),
 });
 
-function forgejoCheckRecord(item) {
+function forgejoCheckRecord(item, index) {
   if (!item || typeof item !== 'object') {
     fail('INVALID_PAYLOAD', 'provider returned an invalid commit status');
   }
-  const state = typeof item.state === 'string' ? item.state.trim().toLowerCase() : '';
+  // `status` is the per-entry tag; `state` is kept as a fallback for any fork or older
+  // serialization that ever spelled it the other way. The type test rather than a plain `??` on
+  // `item.status` is deliberate: a non-string `status` must not shadow a usable `state`.
+  const raw = typeof item.status === 'string' ? item.status : item.state;
+  // A key that is present but holds an unrecognized value is a state this adapter does not know
+  // yet, and falls through to `PENDING` below. A key that is absent entirely is a payload it
+  // cannot read at all, and reading that as pending is precisely what made the wrong-key bug
+  // invisible from the outside — so it fails closed here, like the truncation guard below.
+  if (typeof raw !== 'string') {
+    fail('INVALID_PAYLOAD', 'provider returned a commit status with no state', {
+      index,
+      context: item.context,
+    });
+  }
+  const state = raw.trim().toLowerCase();
   const mapped = FORGEJO_CHECK_STATES[state] ?? FORGEJO_CHECK_STATES.pending;
   const url = item.target_url;
   // No `required`: Forgejo states no requiredness anywhere, so every check reports it as unstated
@@ -4121,7 +4343,7 @@ function forgejoCommitStatuses(response) {
       returnedCount: statuses.length,
     });
   }
-  return statuses.map(forgejoCheckRecord);
+  return statuses.map((item, index) => forgejoCheckRecord(item, index));
 }
 
 // The three Forgejo reads, restated as the flat provider record `normalizePullRequestStatus` already
@@ -4510,20 +4732,38 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
             comments,
           };
         }
+        // Class A: raw Gitea/Forgejo API JSON. `modules/structs/pull_review.go` declares
+        // `PullReviewComment` with `ID json:"id"`, `Poster json:"user"`, `Resolver json:"resolver"`,
+        // `LineNum json:"position"` and `HTMLURL json:"html_url"`, and those tags — not the Go field
+        // names — are the authority for every key read here.
+        //
+        // **`position`, never `line`.** That pair is the same Go-field-versus-JSON-tag divergence
+        // that shipped as #354, inside this very struct: reading `line` returns `undefined` on every
+        // comment, which is a plausible-looking absence rather than an error.
+        //
+        // `id` is stringified because the pre-port renderer stringified every table cell, so a
+        // thread identifier stays byte-identical across the port and no caller holding one from an
+        // earlier read has to be told which side of the change produced it.
         const createdAt = normalizeTimestamp(thread.created_at, thread.createdAt, thread.created);
+        const line = thread.position ?? thread.line;
         return {
-          id: thread.id,
+          id: String(thread.id),
+          // `resolver` is `null` while a thread is open and an object once someone resolved it, so
+          // truthiness is the whole test. `Boolean(null)` is false and `Boolean({})` is true.
           isResolved: Boolean(thread.resolver),
           path: thread.path,
-          line: thread.line,
+          line,
           ...(createdAt === undefined ? {} : { createdAt }),
           comments: [
             {
-              id: thread.id,
+              id: String(thread.id),
               body: thread.body ?? '',
-              author: normalizeAuthor(thread.reviewer),
+              // `user`, not `reviewer`: `Poster` carries the tag `user`, and a comment whose author
+              // the forge does not state leaves the login unset. `merge-gate` counts an item with no
+              // login as human, so the guard activates — the fail-safe direction.
+              author: normalizeAuthor(thread.user ?? thread.reviewer),
               path: thread.path,
-              line: thread.line,
+              line,
               ...(createdAt === undefined ? {} : { createdAt }),
             },
           ],
@@ -4802,6 +5042,50 @@ async function readForgejoPullRequestStatus(input, repository, runner) {
       flattenForgejoPullRequestStatus(pull, statuses, headCommittedAt),
       repository,
     ),
+    commands,
+  };
+}
+
+// The two-step walk both forges force. Forgejo's router declares `GET …/pulls/{index}/reviews` and
+// `GET …/pulls/{index}/reviews/{id}/comments`; there is no flat review-comment listing at any
+// nesting level on either forge, so the reviews have to be enumerated before their comments can be
+// addressed. This adds no requests: `tea pulls review-comments` already performs the same
+// `ceil(N/50) + N` fan-out client-side, so the port relocates that cost into `data.commands` rather
+// than creating it. What the adapter newly owns is the pagination over `/reviews` and its truncation
+// guard, which tea handled through `resp.NextPage`.
+async function readForgejoReviewThreads(input, repository, runner) {
+  const number = prNumber(input);
+  const endpoint = (suffix) => `repos/${repository.owner}/${repository.repository}/${suffix}`;
+  const reviews = await readForgejoPaginated(
+    repository,
+    endpoint(`pulls/${number}/reviews`),
+    runner,
+    'review-threads-read reviews',
+    // The reviews listing counts pending reviews its body hides, so its header cannot prove
+    // truncation. See `readForgejoPaginated`.
+    { totalIsExact: false },
+  );
+  const commands = [...reviews.commands];
+  const comments = [];
+  for (const review of reviews.items) {
+    const id = review?.id;
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      fail('INVALID_PAYLOAD', 'provider returned a review without a usable id');
+    }
+    // A pull request with no reviews yields no comment read at all, and a review with no inline
+    // comments yields an empty list — neither is a failed read, exactly as `forgejoCommitStatuses`
+    // keeps an empty rollup distinct from a refused one.
+    const page = await readForgejoList(
+      repository,
+      endpoint(`pulls/${number}/reviews/${id}/comments`),
+      runner,
+      `review-threads-read review ${id} comments`,
+    );
+    commands.push(...page.commands);
+    comments.push(...page.items);
+  }
+  return {
+    result: normalizeRemoteData('review-threads-read', comments, repository, input),
     commands,
   };
 }
@@ -5243,15 +5527,42 @@ export async function executeOperation(operation, input = {}, options = {}) {
       activeRepository.provider === 'forgejo' &&
       (operation === 'issue-list' || operation === 'pr-list')
     ) {
-      const paginated = await executeTeaPaginatedList(operation, input, activeRepository, runner);
+      const endpoint =
+        operation === 'issue-list'
+          ? forgejoIssueListEndpoint(input, activeRepository)
+          : forgejoPullListEndpoint(input, activeRepository);
+      const paginated = await readForgejoPaginated(activeRepository, endpoint, runner, operation, {
+        ...(input.limit === undefined ? {} : { limit: requireNumber(input.limit, 'limit') }),
+        ...(input.maxPages === undefined
+          ? {}
+          : { maxPages: requireNumber(input.maxPages, 'maxPages') }),
+      });
       return {
         ok: true,
         operation,
         provider: activeRepository.provider,
         data: {
-          result: normalizeRemoteData(operation, paginated.raw, activeRepository, input),
+          result: normalizeRemoteData(operation, paginated.items, activeRepository, input),
           commands: paginated.commands,
           pagesFetched: paginated.pagesFetched,
+          conditionalWriteAvailable: false,
+        },
+        dryRun: false,
+      };
+    }
+    // The review-thread walk publishes every call it made, for the same reason the status read does:
+    // the plan `buildCommandPlan` answered with — and therefore the preview computed above — is the
+    // review listing alone, because the per-review comment reads are addressed by the IDs it
+    // returns and are not knowable before it has run.
+    if (operation === 'review-threads-read' && activeRepository.provider === 'forgejo') {
+      const threads = await readForgejoReviewThreads(input, activeRepository, runner);
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: threads.result,
+          commands: threads.commands,
           conditionalWriteAvailable: false,
         },
         dryRun: false,

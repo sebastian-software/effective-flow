@@ -1614,8 +1614,9 @@ comment body from its own marker table, idempotently. Never write that marker by
 and the `effective-flow iterate` separation are exact string matches, so a hand-written variant silently
 defeats both.
 
-On `UNSUPPORTED_CAPABILITY` – Forgejo supports neither review submission (`review-create`) nor a
-reply into a review thread (`review-thread-reply`); thread **resolution** it does support – fall
+On `UNSUPPORTED_CAPABILITY` – Forgejo supports none of review submission (`review-create`), a reply
+into a review thread (`review-thread-reply`), or thread resolution (`review-thread-resolve`); the
+last because the forge serves no resolve route, not because `tea` lacks the subcommand – fall
 back to exactly one structured PR comment carrying the `file:line`
 references in its text, and report the reduced fidelity; do not improvise a provider request. Build
 that fallback comment with the helper's `pr-review-comment-build` operation, **not** with
@@ -1689,8 +1690,9 @@ blocking watch, so the gate takes its documented no-watch degradation (report th
 ask once) rather than improvising a poll loop. `pr-status-read` and `pr-merge` are supported:
 the status read composes the pull-request object, the combined commit status and the head commit's
 date, and the merge sends `head_commit_id` as the server-side head guard. Two further operations
-this building block uses stay unsupported on Forgejo — `review-create` and `review-thread-reply` —
-and the gate still fails closed on anything it cannot read, improvising no provider request.
+this building block uses stay unsupported on Forgejo — `review-create`, `review-thread-reply` and
+`review-thread-resolve` — and the gate still fails closed on anything it cannot read, improvising no
+provider request.
 
 ### Idempotency via the Effective Flow markers
 
@@ -2279,11 +2281,11 @@ Write a summary after each phase and pass it on to later phases. Delete the file
      blocks a merge rather than stopping the run, and the missing identity is reported as the
      reason.
    - **Forgejo** supports `pullRequestStatus`, `pullRequestMerge`, and `viewerRead`, and declares
-     only `pullRequestChecksWait` unsupported: `tea` has no `checks` subcommand and Forgejo offers
-     no server-side blocking watch. A Forgejo run therefore takes the documented no-watch path in
+     only `pullRequestChecksWait` unsupported among those three: `tea` has no `checks` subcommand and
+     Forgejo offers no server-side blocking watch. A Forgejo run therefore takes the documented no-watch path in
      Phase 2 — report the pending checks and ask once — and is the whole gate minus the blocking
-     wait, not report-only. What stays unsupported there is `pr-checks-wait`, `review-create`, and
-     `review-thread-reply`.
+     wait, not report-only. What stays unsupported there is `pr-checks-wait`, `review-create`,
+     `review-thread-reply`, and `review-thread-resolve`.
      In observer-only mode require only the forge reads needed to prove the PR/repository/merge and the
      receipt target's observation capabilities; do not degrade or reject the run for absent check-wait,
      merge, or viewer capabilities that this path never uses.
@@ -3076,7 +3078,8 @@ ends this phase without heuristic tracker access.
 - **`pr-checks-wait` times out or is unsupported:** report the pending checks and ask once; never
   fall back to a prompt-driven poll loop.
 - **Forgejo:** `pr-status-read`, `pr-merge`, and `viewer-read` are supported; `pr-checks-wait`,
-  `review-create`, and `review-thread-reply` are not. The run is the whole gate minus the blocking
+  `review-create`, `review-thread-reply`, and `review-thread-resolve` are not. The run is the whole
+  gate minus the blocking
   wait: step 2 takes the no-watch path, reports the pending checks by name and asks once, and an
   unanswered or non-interactive run ends there. Three consequences are worth naming.
   - **Requiredness is unstated on every check**, because Forgejo has no such flag. With
