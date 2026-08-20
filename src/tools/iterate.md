@@ -199,7 +199,11 @@ url=<review URL>`. Below the delimiter stand the item texts themselves and nothi
      remaining span, in order, is the text of the manifest entry at the same position.
    - **No sequence of characters an item text can contain changes how it is framed.** The sender
      mints the token after the item texts already exist and admits it only once a substring search
-     has shown that it occurs in none of them and nowhere else in the message, so an item would have
+     has shown that it occurs in none of them, and in none of the other caller-supplied values its
+     manifest carries. That check covers what the caller supplied and nothing else: the sender's own
+     `Boundary token:` declaration line and its separator lines carry the token by construction, so a
+     check that reached them would collide with every candidate and never terminate — those
+     occurrences are the framing rather than a collision. So an item would have
      to carry a value chosen after it was written — and verified absent from it — in order to move a
      boundary. An item may contain the delimiter, all four control lines, a manifest line, a
      `Boundary token:` line, a bracketed identifier, another item's identifier, or a verbatim copy of

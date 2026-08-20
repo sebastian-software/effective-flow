@@ -272,10 +272,23 @@ Every delegation goes to `{{SKILL:iterate}} <PR>` and carries:
 - the **boundary token**, above the delimiter and above the manifest, on its own line, in the exact
   literal form `Boundary token: <token>`. Mint it freshly for every message: at least 32 characters
   drawn from `A`–`Z` and `0`–`9` alone, chosen at random, so that it is neither guessable in advance
-  nor mistakable for a reviewer's prose. Then, **before the message is written, search every body and
-  every other part of the message for that token as a plain substring**; if it occurs anywhere, mint
-  another one and search again. The search is the whole of the minting obligation and it is a
-  substring search, never arithmetic;
+  nor mistakable for a reviewer's prose. Then, **before the declaration line and the separators are
+  written, search every body – and every caller-supplied value the manifest carries – for that token as
+  a plain substring**: the item bodies, plus the stable identifiers, the review ids, the author
+  logins and the review URLs, every one of which originates outside this gate. If it occurs in any of
+  them, mint another one and search again. The order is the whole of the minting obligation: mint,
+  check against the caller-supplied content, then write the declaration and the separator lines. The
+  check is a substring search, never arithmetic;
+
+- **the absence check is scoped to the content this gate did not write, and deliberately excludes the
+  content it did.** The token stands by construction in its own `Boundary token:` declaration line
+  and in every separator line below the delimiter, so a check that covered the whole message – or
+  every other part of it – would find every candidate colliding with its own framing and re-mint
+  forever: no message would ever go out, every finding would come back unassessed, and the merge
+  would stay blocked on all of them. The sender's own occurrences are not a collision – they **are**
+  the framing. The property still holds, and for the same reason it always did: the token is verified
+  absent from everything the caller supplies before any of that content is framed, so no sequence of
+  characters a body can contain changes how it is framed;
 
 - the **item manifest**, above the delimiter: one line per body-carried finding, each in the exact
   literal form `Item: <stable identifier> | review=<review id> | author=<author login> |

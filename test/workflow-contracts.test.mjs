@@ -6285,15 +6285,58 @@ test('the item framing below the delimiter is a minted token no item text can fo
     near('search every body', 'plain substring', 300),
     'the sender must verify the token is absent by substring search',
   );
+  // Scope is the whole of it. The check covers what the caller supplied — the bodies plus the
+  // provenance values the manifest carries on their behalf — and stops there.
   assert.match(
     contract,
-    near('search every body', 'every other part of the message', 200),
-    'the absence check must cover the rest of the message, not the bodies alone',
+    near('search every body', 'caller-supplied value the manifest carries', 200),
+    'the absence check must cover every body plus the caller-supplied manifest values',
   );
   assert.match(
     contract,
-    near('occurs anywhere', 'mint another one and search again', 200),
-    'a token that collides must be re-minted and re-checked',
+    near('occurs in any of them', 'mint another one and search again', 200),
+    'a token colliding with caller-supplied content must be re-minted and re-checked',
+  );
+  // And it must stop there, explicitly. The token stands in its own declaration line and in every
+  // separator by construction, so a check that covered "the message" would collide with the
+  // sender's own framing on every candidate and re-mint forever: no delegation would ever be sent
+  // and every finding would come back unassessed with the merge blocked on it.
+  assert.match(
+    contract,
+    near('`Boundary token:` declaration line', 'separator line', 200),
+    'the sender must name the two places its own framing carries the token by construction',
+  );
+  assert.match(
+    contract,
+    near("sender's own occurrences are not a collision", 'they are the framing', 200),
+    "the contract must state that the sender's own occurrences are the framing, not a collision",
+  );
+  assert.match(
+    contract,
+    near('mint,', 'then write the declaration and the separator lines', 300),
+    'the contract must order the mint and the absence check before the framing is written',
+  );
+  for (const [text, label] of [
+    [contract, 'merge-gate'],
+    [manifest, 'iterate'],
+  ]) {
+    assert.doesNotMatch(
+      text,
+      /(?:every other part of the message|nowhere else in the message|anywhere in the message)/i,
+      `${label} must not extend the absence check over the sender's own protocol text`,
+    );
+  }
+  // The receiver rests the property on the sender's check, so it has to restate the same scope: an
+  // "and nowhere else in the message" here is the identical non-terminating rule, one file over.
+  assert.match(
+    manifest,
+    near('occurs in none of them', 'caller-supplied values its manifest carries', 300),
+    'the receiver must restate the absence check as scoped to caller-supplied content',
+  );
+  assert.match(
+    manifest,
+    near('declaration line and its separator lines', 'never terminate', 300),
+    "the receiver must say why the check cannot reach the sender's own framing",
   );
 
   // The receiver's whole obligation, and the explicit refusal of the arithmetic the byte count
