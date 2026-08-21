@@ -6359,6 +6359,154 @@ test('one set-aside confirmation per round covers both returning conditions and 
   );
 });
 
+test('a mixed Phase-4 evaluation poses the confirmation and returns in the same one round', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const rawConfirmation = section(gate, '#### The set-aside confirmation', '\n**Report every');
+  const confirmation = prose(rawConfirmation);
+  const conditions = mergeConditions(gate);
+
+  // One evaluation used to lose the set-aside item of a mixed outcome set entirely: the
+  // confirmation was gated on the set-aside value being the *only* unmet cause, while the return
+  // carried only the items the confirmation could not clear. The item sat in neither branch.
+  assert.match(
+    confirmation,
+    near('A mixed evaluation still poses it', 'Pose the question anyway', 300),
+    'the confirmation must be posed even where the same evaluation also holds returning items',
+  );
+  assert.match(
+    confirmation,
+    near('the returning items travel into Phase 3', 'consuming one round', 200),
+    'the returning items of a mixed evaluation must travel in the one shared return',
+  );
+  assert.match(
+    confirmation,
+    near('Nothing is stranded outside both branches', 'not put to them a second time', 250),
+    'the mixed case must state that nothing falls outside both branches and nothing is re-asked',
+  );
+
+  // The trade the fix makes, stated rather than left for a reader to discover.
+  assert.match(
+    confirmation,
+    near('posed in a round that will not merge', 'intended trade', 150),
+    'the confirmation must state that it may be posed in a round that will not merge',
+  );
+  assert.match(
+    confirmation,
+    near('Withholding it until no returning item remains', 'strands the set-aside item', 200),
+    'the trade must name the stranding that withholding the question would cause',
+  );
+
+  // The gate on the question itself. "only because" is what suppressed it in a mixed evaluation.
+  const ask = rawConfirmation.match(/```ask\n([\s\S]*?)```/);
+  assert.ok(ask, 'the confirmation must be written as an ask block');
+  const when = ask[1].match(/^when: .*$/m)[0];
+  assert.doesNotMatch(
+    when,
+    /only because/i,
+    'the ask block must not require the set-aside outcome to be the only unmet cause',
+  );
+  assert.match(
+    when,
+    /whatever else the same evaluation left unmet/i,
+    'the ask block must fire regardless of what else the same evaluation left unmet',
+  );
+
+  // Both halves of the single return, so a confirmed item is not carried back a second time.
+  assert.match(
+    prose(mergeCondition(conditions, 7)),
+    near('return to Phase 3', 'never a thread "The set-aside confirmation" cleared', 250),
+    "condition 7's return must exclude a thread the confirmation cleared",
+  );
+  assert.match(
+    prose(mergeCondition(conditions, 10)),
+    near(
+      'declined or unanswered confirmation ends the run',
+      'unassessed item would otherwise have returned',
+      250,
+    ),
+    'a declined confirmation must end the run even in a mixed evaluation',
+  );
+  assert.match(
+    confirmation,
+    near('That holds in a mixed evaluation too', 'decline ends the run', 200),
+    'the decline bullet must state that it also governs a mixed evaluation',
+  );
+
+  // The user guide describes the same round, so a reader is not told the answer means a merge.
+  const guide = prose(
+    section(
+      source('docs/user-guide/tools-deliver.md'),
+      '#### Confirming a finding the run set aside',
+      '\n#### ',
+    ),
+  );
+  assert.match(
+    guide,
+    near('does not always mean the run merges that round', 'same single return', 400),
+    'the guide must say a confirmed round can still return for another one',
+  );
+});
+
+test('a thread item records its inspection URL where the gate still has it', () => {
+  const gate = source('src/tools/merge-gate.md');
+  const delegation = prose(section(gate, '## Delegation contract', '\n## '));
+  const phase3 = prose(section(gate, '### Phase 3'));
+  const wisdom = prose(section(gate, '## Wisdom accumulation', '\n## '));
+  const confirmation = prose(section(gate, '#### The set-aside confirmation', '\n**Report every'));
+
+  // The confirmation promises the operator a link. A thread record carrying only the thread ID has
+  // none, and the fresh read that had it is over by the time Phase 4 asks.
+  assert.match(
+    confirmation,
+    near('for a thread, its thread ID', 'comment URL recorded for it before the delegation', 150),
+    'the confirmation must name the thread comment URL beside the thread ID',
+  );
+
+  // Written at the one site that already writes this record, in every place that describes it.
+  assert.match(
+    delegation,
+    near("Record that thread's comment URL on the same line", 'identifier→thread-ID mapping', 400),
+    'the delegation contract must record the comment URL beside the identifier→thread-ID mapping',
+  );
+  assert.match(
+    delegation,
+    near('promises the operator one to read the finding at', 'never a second read later', 300),
+    'the delegation contract must state why the URL is captured at delegation time',
+  );
+  assert.match(
+    phase3,
+    near("Record that thread's comment URL", 'same fresh read', 200),
+    "Phase 3's per-thread record must carry the comment URL from the same fresh read",
+  );
+  assert.match(
+    wisdom,
+    near(
+      "recorded against its thread ID and that thread's comment URL",
+      'before that delegation went out',
+      200,
+    ),
+    'the wisdom schema must carry the comment URL beside the thread ID it maps',
+  );
+  assert.match(
+    wisdom,
+    near('set-aside confirmation', 'its thread ID and its comment URL', 600),
+    'the wisdom record of the confirmation must carry the thread comment URL',
+  );
+
+  const guide = prose(
+    section(
+      source('docs/user-guide/tools-deliver.md'),
+      '#### Confirming a finding the run set aside',
+      '\n#### ',
+    ),
+  );
+  assert.match(
+    guide,
+    near('its thread ID and its own comment link', 'somewhere you can go and read it', 200),
+    'the guide must promise a thread item its own link rather than a review URL',
+  );
+});
+
 test('condition 7 blocks an unassessed thread and shares the confirmation with condition 10', () => {
   const gate = source('src/tools/merge-gate.md');
   const condition = prose(mergeCondition(mergeConditions(gate), 7));

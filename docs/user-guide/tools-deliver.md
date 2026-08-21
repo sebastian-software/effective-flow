@@ -365,10 +365,18 @@ gate no longer merges on one by itself.
 
 What you see instead, in a run allowed to merge: **one question per round**, listing every finding
 and thread the run set aside with its review id, its author, the review URL and the outcome the
-delegated run returned – and no reviewer text at all. Reading the finding is the point of the
+delegated run returned – a thread is listed with its thread ID and its own comment link, so every
+item on the list has somewhere you can go and read it – and no reviewer text at all. Reading the finding is the point of the
 question, so it sends you to the review rather than quoting it at you. Answering **Confirm** treats
 those items as disposed of for that round and the gate continues; answering **Stop**, or leaving it
 unanswered, ends the run with a report and starts no further round.
+
+**Confirming does not always mean the run merges that round.** One evaluation can hold set-aside
+items beside items nobody assessed at all. The question clears the first group, and the second goes
+back for another round – in the same single return, costing one round rather than two. Holding the
+question back until nothing else is outstanding would be worse: the set-aside item would sit in
+neither branch, and no later round would ever move it. Your answer carries forward, so a confirmed
+item is not put to you again next round.
 
 Three things it deliberately does not do:
 
