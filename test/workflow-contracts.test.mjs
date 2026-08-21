@@ -918,6 +918,21 @@ test('the Claude Code butler section carries its load-bearing clauses', () => {
     ),
   );
 
+  // The stop rule is only implementable because the run has somewhere to observe the reply,
+  // and the liveness premise above - a request and its answer never meet inside the turn
+  // that sent it - reads as denying that. What resolves it is that a run is not always one
+  // turn: a run paused at a gated question resumes in a later turn with the answer to its
+  // own earlier request already in context. Drop this and the mid-run rule loses its
+  // observation point, leaving the user-title preservation behavior on this path unbuildable.
+  assert.match(
+    liveness,
+    near(
+      'a run that pauses at a gated question ends its turn there and continues in a later one',
+      'that is where a mid-run reply is seen',
+      300,
+    ),
+  );
+
   // The security half of the mid-run rule, pinned on both of its edges. A butler reply is
   // attacker-influenceable text arriving as an ordinary user turn, and the host envelope
   // is the only thing that separates it from a real user interjection. Widened to any
