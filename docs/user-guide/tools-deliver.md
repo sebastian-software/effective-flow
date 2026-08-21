@@ -115,7 +115,9 @@ the run may merge at the end or only report merge-readiness, then drives an orde
 4. **Merge** – only once every precondition holds (all checks green, the forge reports the pull
    request mergeable, the human guard is inactive, every configured bot has run, every one of
    their open threads has actually been looked at by this run, and every changes-requested review a
-   configured reviewer published for the verified head has been assessed finding by finding), the run
+   configured reviewer published for the verified head has been disposed of finding by finding –
+   which, for anything the delegated run set aside rather than fixed, takes your confirmation; see
+   [Confirming a finding the run set aside](#confirming-a-finding-the-run-set-aside)), the run
    merges with the configured
    merge method, guarded by the expected head commit. A reviewer thread that turned up after the
    round that handled its reviewer sends the run back for another round instead; see
@@ -283,8 +285,13 @@ merge must not step over.
 Right before merging, the gate therefore re-reads the pull request and requires that **every open
 thread from a configured reviewer has an outcome from this run**: implemented, deferred, or
 rejected. It is a deliberately different question from "was every thread answered and resolved". A
-finding the run assessed and set aside gets no thread reply by design, so it is silent here; a
-thread that was never assessed at all is what blocks.
+finding the run assessed and set aside gets no thread reply by design, so it is silent in that
+other question; a thread that was never assessed at all is what blocks here. Handing a thread over
+is not an assessment of it either: an item whose fix failed, and an item you deselected at the
+delegated run's own approval gate, come back as `unassessed` and block exactly as a thread nobody
+saw does. A thread the run **deferred or rejected** takes the same confirmation a set-aside review
+finding does; see
+[Confirming a finding the run set aside](#confirming-a-finding-the-run-set-aside).
 
 What you will see when a late thread turns up:
 
@@ -307,19 +314,23 @@ It now reads the submitted reviews too, at the same instant as the status and th
 things follow from that.
 
 **A merge precondition of its own.** Where a configured reviewer's **latest** review for the verified
-head requests changes, the merge is blocked while this run has not assessed it – finding by finding,
-each one implemented, deliberately deferred, or rejected. What blocks is the **absence of an
-outcome**, never the disagreement: this gate never approves and never requests changes, so a verdict
-whose findings the run read and deliberately rejected merges, with the rejection named in the run's
-chat summary. A verdict bound to an **earlier** head does not block on its own; a moved head resets
+head requests changes, the merge is blocked while this run has not disposed of it – finding by
+finding. Only a finding the delegated run **implemented**, and only where the head actually moved in
+that round, clears on its own; a finding it deferred or rejected clears once **you** confirm it, and
+a finding that came back unassessed does not clear at all. What blocks is the **absence of a
+disposal the gate may act on**, never the disagreement: this gate never approves and never requests
+changes, so a rejected finding is reported in the run's chat summary rather than argued with. A
+verdict bound to an **earlier** head does not block on its own; a moved head resets
 every reviewer's state instead, and the run may not merge until each configured reviewer has run for
 the new one. Exactly as with a late thread, a verdict the run cannot assess sends it back for another
 round while rounds remain and ends in a report once they are spent – and where both a late thread and
 an unassessed verdict are outstanding, one round handles them together rather than costing two.
 
-A verdict stops blocking in these ways and no others: the reviewer submits a later **approving**
-review for the same head, the verdict is **dismissed**, or this run assesses every finding it
-carries. A later **commented** review – the shape every batch of inline comments takes – withdraws
+A verdict stops blocking when the reviewer submits a later **approving** review for the same head,
+when the verdict is **dismissed**, when the run implements every finding it carries and the head
+moves with it, or when you confirm the findings the run set aside. Which of those apply depends on
+what the reviewer wrote and on how the delegated run classified it, so the list is not a fixed count
+of routes out. A later **commented** review – the shape every batch of inline comments takes – withdraws
 nothing, so a reviewer that requests changes and then adds one more inline comment does not quietly
 clear the block. A later **undecided** review – one whose state the run cannot map onto a known
 verdict – clears nothing either, and it blocks in its own right: a configured reviewer whose latest
@@ -342,6 +353,36 @@ the run reports that the verdicts are unestablished and asks once; a non-interac
 and never merges. The run's summary lists every configured reviewer's changes-requested review at the
 verified head with a per-finding outcome, and every changes-requested review whose author matches no
 configured login – the latter blocks nothing, but the run never stays quiet about it.
+
+#### Confirming a finding the run set aside
+
+`/effective-flow iterate` does not fix every finding: it rejects the ones it reads as false
+positives and defers the ones it reads as out of scope or as questions. Those two classifications
+are a **judgment about text the reviewer wrote**, produced by a run that read that text – and a pull
+request can influence what a reviewer writes. Nothing on the forge corroborates them either, because
+the gate deliberately writes no reply and no resolution for a finding it did not implement. So the
+gate no longer merges on one by itself.
+
+What you see instead, in a run allowed to merge: **one question per round**, listing every finding
+and thread the run set aside with its review id, its author, the review URL and the outcome the
+delegated run returned – and no reviewer text at all. Reading the finding is the point of the
+question, so it sends you to the review rather than quoting it at you. Answering **Confirm** treats
+those items as disposed of for that round and the gate continues; answering **Stop**, or leaving it
+unanswered, ends the run with a report and starts no further round.
+
+Three things it deliberately does not do:
+
+- It never clears an `unassessed` item. A judgment you can go and read and no judgment at all are
+  different things, so an unassessed finding keeps going back for another round instead.
+- It is never posed in a report-mode run, where no answer could authorize a merge anyway, and it
+  cannot be posed in a non-interactive delegated run – which therefore blocks and reports.
+- It does not make the classification true. A run steered by the review body can reach a rejection
+  that looks entirely honest; what changes is that no merge happens on one without somebody having
+  looked at the finding.
+
+A finding the delegated run reports as **implemented** clears on its own, but only where the head
+commit actually moved in that round. That is coarse on purpose – it proves a commit existed, never
+that the commit addressed the finding – and it closes the "claim implemented, change nothing" path.
 
 #### What the gate accepts back from a delegated run
 
