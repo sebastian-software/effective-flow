@@ -83,7 +83,7 @@ character-exactly from the last title this run sent. That is the only comparison
 without re-deriving the title, so a paraphrase triggers a request like any other change; the budget
 below, and not a semantic rule, is what bounds that cost. The case it serves is the late-bound work
 reference: the session-title contract fixes the subject when it becomes known while the reference is
-resolved when the title is applied, and it licenses one further title on an early-applying path where
+resolved when the title is applied, and it re-derives the title on an early-applying path where
 the first carried no reference, one now exists, and the resulting title differs. A pull request opened
 during the run is that case, and the corrective request is how this path carries it.
 

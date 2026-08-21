@@ -32,10 +32,10 @@ subject, propose a better title — once.
   in the completion report only if the final scope diverged from it. Deciding the title and applying
   it are separate moments: decide it here, while the mechanism fragment owns when its host-specific
   operation is sent. The subject is fixed here while the reference is resolved when the title is
-  applied or emitted, so every late-applying path needs nothing further. Only an early-applying
-  path — the ChatGPT Desktop native call and the Claude Code butler request alike — may emit once
-  more per run, and only where the first title carried no reference, one now exists, and the
-  resulting title differs.
+  applied or emitted, so every late-applying path needs nothing further. An early-applying path —
+  the ChatGPT Desktop native call and the Claude Code butler request — re-derives the title when
+  its inputs change, as when the first carried no reference, one now exists, and the resulting
+  title differs. Its mechanism applies it again, as often as that fragment allows.
 - **Reference first:** `<Reference> · <Subject> · <tool>` with the same `·` separator, and
   at most 60 characters, cut at a word boundary; no reference leaves `<Subject> · <tool>`. Reuse an
   existing artifact title verbatim — plan H1 without a legacy number, issue title without its

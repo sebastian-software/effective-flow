@@ -354,10 +354,13 @@ test('the session-title contract ships in the router and stays out of the budget
   // the title is actually used.
   assert.match(contract, /the reference is resolved when the title is applied or emitted/);
 
-  // The bounded second emission must name the ChatGPT Desktop native call itself
-  // rather than a class of early-applying hosts, or a later host inherits it
-  // silently; and it stays gated on all three conditions together.
-  assert.match(contract, near('ChatGPT Desktop native call', 'emit once more per run', 160));
+  // The re-derivation must name the ChatGPT Desktop native call itself rather than
+  // a class of early-applying hosts, or a later host inherits it silently; and it
+  // stays gated on all three conditions together.
+  assert.match(
+    contract,
+    near('ChatGPT Desktop native call', 're-derives the title when its inputs change', 160),
+  );
   ordered(
     contract,
     'ChatGPT Desktop native call',
@@ -369,6 +372,16 @@ test('the session-title contract ships in the router and stays out of the budget
   // being scattered into separate bullets - where they read as three independent
   // permissions rather than one conjunction. This binds them into one window.
   assert.match(contract, near('carried no reference', 'the resulting title differs', 120));
+
+  // How often a re-derived title is applied belongs to the mechanism fragment and not
+  // here: its Claude Code section sends on every character-exact change, six times per
+  // run at most, while its ChatGPT Desktop section licenses exactly one further call. A
+  // per-run count stated here contradicts one of them whatever number it names, so the
+  // delegation is pinned positively and the count this contract used to carry is pinned
+  // absent - restoring "may emit once more per run" beside the delegation would
+  // otherwise leave the suite green on the positive pin alone.
+  assert.match(contract, near('applies it again', 'as often as that fragment allows', 80));
+  assert.doesNotMatch(contract, /once more per run/i);
 
   // The suggestion line is printed in the completion report unconditionally. An
   // earlier draft scoped it to "where no established rename path applies", which
