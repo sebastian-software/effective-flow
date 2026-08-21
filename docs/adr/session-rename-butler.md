@@ -45,6 +45,17 @@ The carve-out is scoped narrowly:
 - **Discovery is marker-title-only.** The butler is found by a session title set during setup;
   there is no separate machine-local configuration value for "which session is the butler".
 
+Two further decisions fix **when** a request is sent:
+
+- **The request goes out as soon as the title is fixed and exactly one butler was discovered**,
+  rather than as the run's last action. Everything between the title decision and a run's final
+  action was an unprotected window: a run interrupted or abandoned inside it left the suggestion
+  line as its only trace and never renamed, which from outside is indistinguishable from an absent
+  butler.
+- **Any character-exact title change sends a further request, capped at six per run.** The
+  character-exact comparison is the only one a run can perform without re-deriving the title, so a
+  budget rather than a semantic rule is what bounds the cost.
+
 The mechanism lives in `src/shared/session-rename.md` (Claude Code section, dispatched separately
 from the independent ChatGPT Desktop current-task path) and the carve-out sentence itself in
 `src/shared/session-title.md`.
@@ -65,12 +76,20 @@ from the independent ChatGPT Desktop current-task path) and the carve-out senten
   absolute project path is deliberately not part of it — only a session id and a title cross the
   boundary.
 - **Each rename costs one model turn and one pseudo-user message**, because the reply that carries
-  the observed title wakes the requesting session as a later turn.
+  the observed title wakes the requesting session as a later turn. A run that corrects its title
+  therefore costs up to six model turns and six pseudo-user messages.
+- **The order in which a butler applies several in-flight requests is unobservable to the
+  requester**, so a session can end on an earlier title than the run's latest one. The requesting
+  side never reads its own title back and cannot repair the outcome without a retry the contract
+  forbids. This is the strongest argument against raising the budget beyond six.
+- **An early send names a session after work that may still fail.** Accepted deliberately: the
+  session list is a re-finding surface rather than a results surface, and a subject beats the host's
+  derived first-message title.
 - **Every failure direction fails open to the suggestion line.** An absent butler, a declining
   butler, and a stale or malformed reply all resolve to the same visible suggestion line; no defect
   produces silence. The single case that emits nothing is not a defect: an observed title that
-  differs from the requested one means the host kept a title the user set themselves, and neither a
-  rename nor a suggestion is wanted there.
+  differs from every title the session requested means the host kept a title the user set
+  themselves, and neither a rename nor a suggestion is wanted there.
 
 ## References
 
